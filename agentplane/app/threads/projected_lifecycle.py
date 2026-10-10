@@ -3,7 +3,6 @@
 from uuid import UUID
 
 from google.protobuf.json_format import MessageToDict, ParseDict
-from sqlalchemy import update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from agentplane.app.threads.events.event_log import EventReplicationError, project_attached
@@ -22,7 +21,8 @@ async def project_lifecycle(
     page: protocol_pb2.ReadSessionEventsResponse,
     *,
     through_cursor: int,
-) -> None:
+) -> bool:
+    previous = (summary.attached, summary.end, summary.resumed_after_cursor)
     attached = None if summary.attached is None else ParseDict(summary.attached, runner_pb2.Attached())
     end = summary.end
     if page.HasField("feed_state"):
@@ -40,8 +40,7 @@ async def project_lifecycle(
     if attached is None:
         # Successful projection clears an earlier projection error even if imported
         # history has no runner lifecycle snapshot. This does not manufacture EOF.
-        await set_operational(session, thread_id, status="active", error=None)
-        return
+        return await set_operational(session, thread_id, status="active", error=None)
     for entry in page.entries:
         if entry.cursor <= attached.last_cursor:
             continue
@@ -55,10 +54,18 @@ async def project_lifecycle(
             summary.resumed_after_cursor = None
     summary.attached = MessageToDict(attached)
     summary.end = end
-    await session.execute(update(EventLog).where(EventLog.id == thread_id).values(model=attached.spec.model))
-    await set_operational(
+    log = await session.get(EventLog, thread_id)
+    assert log is not None
+    model_changed = log.model != attached.spec.model
+    log.model = attached.spec.model
+    operational_changed = await set_operational(
         session,
         thread_id,
         status="active" if end is None else "failed" if end else "ended",
         error=end.get("message") if end else None,
+    )
+    return (
+        previous != (summary.attached, summary.end, summary.resumed_after_cursor)
+        or model_changed
+        or operational_changed
     )

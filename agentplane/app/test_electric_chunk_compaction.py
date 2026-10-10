@@ -44,13 +44,14 @@ from agentplane.app.changes import Changes
 from agentplane.app.database import connect
 from agentplane.app.electric import ElectricProxy, router
 from agentplane.app.testing.electric_service import electric_service
-from agentplane.app.testing.legacy_event_log import LegacyEventLogStore as EventLogStore
-from agentplane.app.testing.legacy_ingestion import LegacyIngestion as Ingestion
+from agentplane.app.testing.history import ProjectedHistory as Ingestion, SeededEventLogStore as EventLogStore
+from agentplane.app.testing.history_service import HistoryService
 from agentplane.app.testing.replication_source import SANDBOX, SESSION, ReplicationSource
 from agentplane.app.threads.models import ThreadEntity, ThreadPayloadChunk
 from agentplane.app.threads.view.content import ContentStore
 from agentplane.app.threads.view.views import ThreadPayloadReference
 from agentplane.protocol import event_pb2
+from agentplane.sandbox_service.client import SandboxServiceClient
 
 # gazelle:include_dep @pypi//protobuf
 
@@ -156,7 +157,9 @@ class _FollowedBody:
 
 
 @asynccontextmanager
-async def _followed_body() -> AsyncIterator[_FollowedBody]:
+async def _followed_body(
+    history_peer: HistoryService, history_client: SandboxServiceClient
+) -> AsyncIterator[_FollowedBody]:
     async with electric_service() as service:
         engine = connect(service.database_url)
         forwarded: list[httpx.Request] = []
@@ -165,7 +168,10 @@ async def _followed_body() -> AsyncIterator[_FollowedBody]:
             forwarded.append(request)
 
         try:
-            event_logs, ingestion = EventLogStore(engine), Ingestion(engine)
+            event_logs, ingestion = (
+                EventLogStore(engine, peer=history_peer, history_reader=history_client),
+                Ingestion(engine, peer=history_peer, history_reader=history_client),
+            )
             source = ReplicationSource()
             thread = await event_logs.open(SANDBOX, SESSION, source.attached.spec)
             lease = await ingestion.acquire(SANDBOX, timedelta(minutes=2))
@@ -190,7 +196,7 @@ async def _followed_body() -> AsyncIterator[_FollowedBody]:
                 )
             reference = ThreadPayloadReference.model_validate(text_ref)
             assert reference.chunk_count == str(len(_STREAMED))
-            content = ContentStore(engine)
+            content = ContentStore(engine, history_reader=history_client)
             scope = await content.current_scope(thread)
             assert scope is not None
             async with (
@@ -238,10 +244,12 @@ def _key(row: Row) -> Row:
     return {column: row[column] for column in _KEY}
 
 
-async def test_compacting_in_place_reaches_every_reader_of_the_field_as_one_batch() -> None:
+async def test_compacting_in_place_reaches_every_reader_of_the_field_as_one_batch(
+    history_peer: HistoryService, history_client: SandboxServiceClient
+) -> None:
     """Chunk 0 rewritten to the whole text and the other chunks deleted: every row the compacted body
     keeps is one a holder of the uncompacted body already has."""
-    async with _followed_body() as body:
+    async with _followed_body(history_peer, history_client) as body:
         async with async_sessionmaker(body.engine)() as session, session.begin():
             await session.execute(
                 update(ThreadPayloadChunk).where(*body.chunks, ThreadPayloadChunk.chunk_index == 0).values(text=_TEXT)
@@ -273,11 +281,13 @@ async def test_compacting_in_place_reaches_every_reader_of_the_field_as_one_batc
         assert await body.load_afresh() == [body.held[0] | {"text": json.dumps(_TEXT)}]
 
 
-async def test_compacting_by_reinsertion_reaches_every_reader_of_the_field_as_one_batch() -> None:
+async def test_compacting_by_reinsertion_reaches_every_reader_of_the_field_as_one_batch(
+    history_peer: HistoryService, history_client: SandboxServiceClient
+) -> None:
     """Every chunk deleted and the compacted row inserted at chunk 0's key. Electric passes both halves
     on, so a holder keeps its text on screen only by applying the batch whole: applied change by
     change, chunk 0's delete withdraws it."""
-    async with _followed_body() as body:
+    async with _followed_body(history_peer, history_client) as body:
         async with async_sessionmaker(body.engine)() as session, session.begin():
             await session.execute(delete(ThreadPayloadChunk).where(*body.chunks))
             session.add(

@@ -1,0 +1,151 @@
+load("@aspect_rules_py//py:defs.bzl", "py_image_layer", aspect_py_binary = "py_binary")
+load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load")
+load("//devinfra/python:defs.bzl", "py_library", "py_test")
+load("//props:oci.bzl", "py_image_entrypoint", "py_image_env")
+
+py_library(
+    name = "exporter",
+    srcs = ["exporter.py"],
+    deps = [
+        ":login",
+        ":pages",
+        ":settings",
+        "@pypi//httpx",
+        "@pypi//prometheus_client",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "login",
+    srcs = ["login.py"],
+    deps = [
+        "@pypi//httpx",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "pages",
+    srcs = ["pages.py"],
+    deps = [
+        ":settings",
+        "@pypi//beautifulsoup4",
+    ],
+)
+
+py_library(
+    name = "settings",
+    srcs = ["settings.py"],
+    visibility = ["//cluster/cdk8s/att_gateway_exporter:__pkg__"],
+    deps = [
+        "@pypi//pydantic",
+        "@pypi//pydantic_settings",
+    ],
+)
+
+py_library(
+    name = "syslog_reconciler",
+    srcs = ["syslog_reconciler.py"],
+    deps = [
+        ":login",
+        ":pages",
+        ":settings",
+        "@pypi//httpx",
+        "@pypi//pydantic",
+    ],
+)
+
+py_test(
+    name = "test_exporter",
+    srcs = ["test_exporter.py"],
+    data = glob(["testdata/*.html"]),
+    deps = [
+        ":exporter",
+        ":pages",
+        "//:conftest",
+        "@pypi//httpx",
+        "@pypi//prometheus_client",
+        "@pypi//pydantic",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_pages",
+    srcs = ["test_pages.py"],
+    data = glob(["testdata/*.html"]),
+    deps = [
+        ":pages",
+        ":settings",
+        "//:conftest",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+aspect_py_binary(
+    name = "exporter_image_bin",
+    main = "exporter.py",
+    deps = [":exporter"],
+)
+
+py_image_layer(
+    name = "layers",
+    binary = ":exporter_image_bin",
+    group = "65532",
+    owner = "65532",
+)
+
+# Run from the same image by the syslog CronJob (cluster/cdk8s/att_gateway_exporter), which
+# overrides the entrypoint.
+aspect_py_binary(
+    name = "syslog_reconciler_image_bin",
+    main = "syslog_reconciler.py",
+    deps = [":syslog_reconciler"],
+)
+
+py_image_layer(
+    name = "syslog_reconciler_layers",
+    binary = ":syslog_reconciler_image_bin",
+    group = "65532",
+    owner = "65532",
+)
+
+oci_image(
+    name = "image",
+    base = "@debian_trixie_slim_linux_amd64",
+    entrypoint = py_image_entrypoint("exporter_image_bin"),
+    env = py_image_env(binary_name = "exporter_image_bin"),
+    labels = {
+        "org.opencontainers.image.source": "https://github.com/agentydragon/ducktape",
+        "org.opencontainers.image.title": "att-gateway-exporter",
+    },
+    tars = [
+        ":layers",
+        ":syslog_reconciler_layers",
+    ],
+    user = "65532:65532",
+)
+
+oci_load(
+    name = "load",
+    image = ":image",
+    repo_tags = ["att-gateway-exporter:latest"],
+)
+
+py_test(
+    name = "test_syslog_reconciler",
+    srcs = ["test_syslog_reconciler.py"],
+    data = glob(["testdata/*.html"]),
+    deps = [
+        ":pages",
+        ":settings",
+        ":syslog_reconciler",
+        "//:conftest",
+        "@pypi//httpx",
+        "@pypi//pydantic",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)

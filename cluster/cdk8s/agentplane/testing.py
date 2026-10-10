@@ -150,7 +150,6 @@ ENV = Environment(
     image_pins=f"{HAND_WRITTEN_ROOT}/agentplane-testing-image-pins",
     extra_resources=(),
     replicas=ReplicaProfile(count=1, strategy=DeploymentStrategy.recreate(), min_ready=None, pdb_min_available=None),
-    model_routes=TESTING_APP_MODELS,
     app_config=app_settings.settings(
         namespace=TESTING_NAMESPACE,
         models=TESTING_APP_MODELS,

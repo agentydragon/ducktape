@@ -13,9 +13,8 @@ locals {
       region       = "home"
       zone         = "home-lan"
       # A fixed LAN address beside the DHCP lease, below the AT&T gateway's DHCP pool
-      # (192.168.1.64-253, its Subnets & DHCP page). The home switch sends its syslog here:
-      # keep in sync with tf/gitops/home-switch, cluster/cdk8s/monitoring/alloy.py and
-      # docs/home_lan.md.
+      # (docs/home_lan.md). The home switch and gateway send their syslog here. Keep in sync with
+      # HOME_LAN.optiplex and .network in cluster/cdk8s/home_lan.py.
       lan_address = "192.168.1.10/24"
       lan_mac     = "e4:54:e8:85:9f:b2"
     }

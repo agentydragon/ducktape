@@ -11,9 +11,7 @@ replaced it.
 from __future__ import annotations
 
 import asyncio
-import hashlib
 import logging
-import re
 import time
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass
@@ -25,7 +23,8 @@ from prometheus_client.core import CounterMetricFamily, GaugeMetricFamily, Metri
 from prometheus_client.registry import Collector
 from pydantic import SecretStr
 
-from cluster.exporters.att_gateway.pages import (
+from att_gateway.login import log_in
+from att_gateway.pages import (
     Broadband,
     Direction,
     Fiber,
@@ -42,7 +41,7 @@ from cluster.exporters.att_gateway.pages import (
     parse_speed,
     parse_sysinfo,
 )
-from cluster.exporters.att_gateway.settings import Settings
+from att_gateway.settings import Settings
 
 logger = logging.getLogger(__name__)
 
@@ -56,7 +55,6 @@ _PARSERS: dict[Page, Callable[[str], Parsed]] = {
     Page.NAT: parse_nat,
     Page.SPEED: parse_speed,
 }
-_NONCE = re.compile(r'name="nonce" value="([0-9a-f]+)"')
 # The gateway's clock is on local time in a zone it does not name; its offset from UTC
 # is read off the clock rounded to this.
 _UTC_OFFSET_STEP_SECONDS = 15 * 60
@@ -279,31 +277,6 @@ class GatewayCollector(Collector):
                     yield from _speed_metrics(speed, _utc_offset_seconds(results))
                 case None:
                     pass
-
-
-async def log_in(client: httpx.AsyncClient, access_code: SecretStr, page_gap_seconds: float) -> None:
-    """The web UI's form login. The first visit sets the session cookie, the second serves
-    the form with a nonce bound to that session, and the form posts the code hashed with
-    the nonce; the session cookie then opens the pages behind the code."""
-    await client.get("/cgi-bin/login.ha")
-    await asyncio.sleep(page_gap_seconds)
-    form = await client.get("/cgi-bin/login.ha")
-    form.raise_for_status()
-    nonce = _NONCE.search(form.text)
-    if nonce is None:
-        raise ValueError("no nonce in the login form")
-    code = access_code.get_secret_value()
-    await asyncio.sleep(page_gap_seconds)
-    response = await client.post(
-        "/cgi-bin/login.ha",
-        data={
-            "nonce": nonce.group(1),
-            "password": "*" * len(code),
-            "hashpassword": hashlib.md5((code + nonce.group(1)).encode(), usedforsecurity=False).hexdigest(),
-            "Continue": "Continue",
-        },
-    )
-    response.raise_for_status()
 
 
 async def _fetch_parsed(client: httpx.AsyncClient, page: Page) -> Parsed:

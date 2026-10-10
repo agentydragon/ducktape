@@ -66,10 +66,11 @@ from agentplane.app.live import LiveIndex, SandboxSnapshot
 from agentplane.app.model_catalog import ModelCatalog, ModelOption
 from agentplane.app.oidc import INSECURE_COOKIE, OIDCSettings
 from agentplane.app.operator_sessions import BrowserSession, OperatorSession, OperatorSessionStore
-from agentplane.app.testing.legacy_event_log import LegacyEventLogStore as EventLogStore
-from agentplane.app.testing.legacy_thread_store import LegacyThreadStore as ThreadStore
+from agentplane.app.testing.history import SeededEventLogStore as EventLogStore
+from agentplane.app.testing.history_service import HistoryService
 from agentplane.app.testing.model_test_data import TEST_REASONING_EFFORTS
 from agentplane.app.threads.bridge import RunnerBridge
+from agentplane.app.threads.store import ThreadStore
 from agentplane.app.threads.view.content import ContentStore
 from agentplane.runner.harness import Harness
 from agentplane.sandbox_service.action_policy_views import MANAGED_BY_APP, MANAGED_BY_LABEL
@@ -143,6 +144,8 @@ async def review(
     direct_federation: bool,
     event_logs: EventLogStore,
     content: ContentStore,
+    history_peer: HistoryService,
+    history_client: SandboxServiceClient,
 ) -> AsyncIterator[Review]:
     ACTIONS_RUNNER.apply(db_url)
     server = FastMCP("test-review")
@@ -370,8 +373,8 @@ async def review(
             operator_actions=None
             if operator_connection == "disabled"
             else FederatedOperatorActions(federation, oidc, downstream_http),
-            event_logs=EventLogStore(replica_engine),
-            content=ContentStore(replica_engine),
+            event_logs=EventLogStore(replica_engine, peer=history_peer, history_reader=history_client),
+            content=ContentStore(replica_engine, history_reader=history_client),
             # Never started: nothing served here listens; the replica shares only the operator sessions.
             database_updates=DatabaseUpdates(replica_engine.url),
             operator_sessions=OperatorSessionStore(replica_engine),

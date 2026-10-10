@@ -40,26 +40,26 @@ from agentplane.app.identity import TokenReviewer
 from agentplane.app.live import LiveIndex
 from agentplane.app.model_catalog import ModelCatalog, ModelOption
 from agentplane.app.operator_sessions import OperatorSessionStore
-from agentplane.app.testing.legacy_event_log import LegacyEventLogStore as EventLogStore
-from agentplane.app.testing.legacy_ingestion import Feed, LegacyIngester as Ingester, LegacyIngestion as Ingestion
-from agentplane.app.testing.legacy_thread_store import LegacyThreadStore as ThreadStore
+from agentplane.app.testing.history import (
+    ProjectedHistory as Ingestion,
+    ProjectedIngester as Ingester,
+    SeededEventLogStore as EventLogStore,
+)
+from agentplane.app.testing.history_service import HistoryService
 from agentplane.app.testing.model_test_data import TEST_REASONING_EFFORTS
 from agentplane.app.threads.bridge import RunnerAdmissionTimeoutError, RunnerBridge
-from agentplane.app.threads.events.event_log import FeedError
 from agentplane.app.threads.events.stream import follow
 from agentplane.app.threads.models import ThreadCheckpoint, ThreadEntity, ThreadPayloadChunk
 from agentplane.app.threads.sessions import SandboxSessions
+from agentplane.app.threads.store import ThreadStore
 from agentplane.app.threads.view.content import ContentStore
-from agentplane.app.threads.view.views import ThreadOperationalState
 from agentplane.protocol import command_pb2, event_log_pb2, event_pb2
 from agentplane.runner import protocol_pb2, service
-from agentplane.runner.client import RunnerClient
-from agentplane.runner.errors import RunnerError, StreamClosedError
 from agentplane.runner.harness import Harness
 from agentplane.runner.session import Session
 from agentplane.runner.testing.fixtures import RunnerClientFactory, RunnerHandle
 from agentplane.runner.testing.scripted_model import ScriptedModel, ShellCall, Text
-from agentplane.sandbox_service.client import Attachment, SandboxServiceClient
+from agentplane.sandbox_service.client import SandboxServiceClient
 from agentplane.sandbox_service.testing.backend import Endpoint, seed_runner
 from agentplane.sandbox_service.testing.fake_inventory import FakeCoreV1Api, FakeCustomObjectsApi
 from util.net import bind_free_port
@@ -148,8 +148,33 @@ async def read_until(lines: AsyncIterator[str], key: str) -> list[SseMessage]:
 
 
 @pytest.fixture
+def integration_history_database_url(service_history_db_url: str) -> str:
+    return service_history_db_url
+
+
+@pytest.fixture
 def sandbox_runner_port(runner: RunnerHandle) -> int:
     return runner.port
+
+
+@pytest.fixture
+async def history_client(
+    request: pytest.FixtureRequest, sandbox_endpoint: Endpoint, history_peer: HistoryService, tmp_path: Path
+) -> AsyncIterator[SandboxServiceClient]:
+    # Native cross-service cases use the real service endpoint and a separate service DB.
+    # Pure command/projection cases retain the controlled RPC peer.
+    native = "local_runners" in request.fixturenames or request.node.name.startswith(
+        "test_inventory_change_discovers_existing_runner_session"
+    )
+    if native:
+        client = sandbox_endpoint.client()
+        try:
+            yield client
+        finally:
+            await client.close()
+    else:
+        async with history_peer.connect(tmp_path / "history-token") as client:
+            yield client
 
 
 @pytest.fixture
@@ -221,9 +246,18 @@ async def test_the_bridge_streams_a_turn_to_every_tab_and_resumes_from_the_last_
         opened = await http.post(SESSIONS, json={"session_id": SESSION, "spec": MessageToDict(spec)})
         assert opened.status_code == 201, opened.text
         assert opened.json()["harnessState"] == "HARNESS_STATE_RUNNING"
-        assert [row["sessionId"] for row in (await http.get(SESSIONS)).json()] == [SESSION]
         thread_id = await _thread_id(http)
+        async for attempt in AsyncRetrying(
+            stop=stop_after_delay(10), wait=wait_fixed(0.05), retry=retry_if_exception_type(AssertionError)
+        ):
+            with attempt:
+                assert [row["sessionId"] for row in (await http.get(SESSIONS)).json()] == [thread_id]
 
+        async for attempt in AsyncRetrying(
+            stop=stop_after_delay(10), wait=wait_fixed(0.05), retry=retry_if_exception_type(AssertionError)
+        ):
+            with attempt:
+                assert (await http.get(f"/threads/{thread_id}")).json()["last_cursor"] > 0
         async with http.stream("GET", f"/threads/{thread_id}/events/stream") as first_tab:
             first = first_tab.aiter_lines()
             assert (await next_message(first)).event == "attached"
@@ -316,7 +350,11 @@ async def test_the_bridge_streams_a_turn_to_every_tab_and_resumes_from_the_last_
             "BRIDGE_TWO",
         ]
         assert any("native" in entry["event"] for entry in stored)
-        assert (await http.get(f"/threads/{thread['id']}")).json()["last_cursor"] == len(stored)
+        async for attempt in AsyncRetrying(
+            stop=stop_after_delay(10), wait=wait_fixed(0.05), retry=retry_if_exception_type(AssertionError)
+        ):
+            with attempt:
+                assert (await http.get(f"/threads/{thread['id']}")).json()["last_cursor"] == len(stored)
         (summary,) = (await http.get(SESSIONS)).json()
         assert summary["harnessState"] == "HARNESS_STATE_STOPPED"
 
@@ -501,7 +539,11 @@ async def test_http_error_is_archived_as_failed_turn_and_follow_up_succeeds(
             if "commandAdmitted" in entry["event"]
         ] == ["http-failure"]
         assert any("native" in entry["event"] for entry in failed)
-        assert (await http.get(f"/threads/{thread_id}")).json()["last_turn_status"] == "TURN_STATUS_FAILED"
+        async for attempt in AsyncRetrying(
+            stop=stop_after_delay(10), wait=wait_fixed(0.05), retry=retry_if_exception_type(AssertionError)
+        ):
+            with attempt:
+                assert (await http.get(f"/threads/{thread_id}")).json()["last_turn_status"] == "TURN_STATUS_FAILED"
         # Re-reading the archive, as on a UI reload, retains the same terminal evidence.
         assert (await http.get(f"/threads/{thread_id}/events")).json() == failed
         accepted = await http.post(
@@ -526,7 +568,11 @@ async def test_http_error_is_archived_as_failed_turn_and_follow_up_succeeds(
             for entry in recovered
             if "commandAdmitted" in entry["event"]
         ] == ["http-failure", "http-follow-up"]
-        assert (await http.get(f"/threads/{thread_id}")).json()["last_turn_status"] == "TURN_STATUS_COMPLETED"
+        async for attempt in AsyncRetrying(
+            stop=stop_after_delay(10), wait=wait_fixed(0.05), retry=retry_if_exception_type(AssertionError)
+        ):
+            with attempt:
+                assert (await http.get(f"/threads/{thread_id}")).json()["last_turn_status"] == "TURN_STATUS_COMPLETED"
 
 
 @pytest.mark.parametrize("stop_mode", ["interrupt", "shutdown", "kill"])
@@ -1141,16 +1187,18 @@ async def replicas(
     replica_engine = connect(db_url)
     replica_updates = DatabaseUpdates(replica_engine.url)
     survivor_runners = SandboxSessions(live_index, sandbox_endpoint.client())
-    survivor_event_logs = EventLogStore(replica_engine)
+    survivor_event_logs = EventLogStore(replica_engine, peer=event_logs.peer, history_reader=event_logs.reader)
     owner_ingester = Ingester(runners=local_runners, event_logs=event_logs, ingestion=ingestion)
     survivor_ingester = Ingester(
-        runners=survivor_runners, event_logs=survivor_event_logs, ingestion=Ingestion(replica_engine)
+        runners=survivor_runners,
+        event_logs=survivor_event_logs,
+        ingestion=Ingestion(replica_engine, peer=event_logs.peer, history_reader=event_logs.reader),
     )
     owner = RunnerBridge(runners=local_runners, event_logs=event_logs, content=content, ingester=owner_ingester)
     survivor = RunnerBridge(
         runners=survivor_runners,
         event_logs=survivor_event_logs,
-        content=ContentStore(replica_engine),
+        content=ContentStore(replica_engine, history_reader=event_logs.reader),
         ingester=survivor_ingester,
     )
     try:
@@ -1180,158 +1228,16 @@ async def frame_lines(frames: AsyncIterator[bytes]) -> AsyncIterator[str]:
             yield line
 
 
-async def test_semantic_feed_failure_survives_replica_reconcile(
-    runner: RunnerHandle,
-    local_runners: SandboxSessions,
-    event_logs: EventLogStore,
-    ingestion: Ingestion,
-    db_url: str,
-    spec: protocol_pb2.SessionSpec,
-    monkeypatch: pytest.MonkeyPatch,
-    runner_client_factory: RunnerClientFactory,
-) -> None:
-    """A new app owner cannot overwrite a rejected prefix's persisted failure with active."""
-    client = runner_client_factory(runner.target, capture_history=True)
-    replica_engine = connect(db_url)
-    replica_store, replica_event_logs = ThreadStore(replica_engine), EventLogStore(replica_engine)
-    replica_updates = DatabaseUpdates(replica_engine.url)
-    try:
-        async with replica_updates.listener.listen():
-            attachment = await client.attach(SESSION, spec=spec)
-            try:
-                await attachment.detach()
-                await attachment.drain_until_end()
-                assert attachment.seen
-                attachment.seen[-1].event.at.seconds += 1
-                thread = await event_logs.open(SANDBOX, SESSION, spec)
-                lease = await ingestion.acquire(SANDBOX, timedelta(minutes=1))
-                assert lease is not None
-                await ingestion.record(thread, attachment.seen, lease=lease)
-                async with asyncio.timeout(10):
-                    await Feed(
-                        session_id=SESSION,
-                        client=local_runners.client(SANDBOX),
-                        event_logs=event_logs,
-                        ingestion=ingestion,
-                        lease=lease,
-                    ).run()
-                failed = await replica_event_logs.feed_state(thread)
-                assert failed is not None
-                assert failed.end == FeedError(f"conflicting runner entry at cursor {attachment.seen[-1].cursor}")
-                assert await event_logs.events(thread, limit=len(attachment.seen) + 1) == attachment.seen
-                async with replica_store._sessions() as session:
-                    checkpoint = await session.get(ThreadCheckpoint, thread)
-                    assert checkpoint is not None
-                    view = await session.get(
-                        ThreadEntity, (thread, checkpoint.projection_epoch, "view_state", "current")
-                    )
-                    assert view is not None
-                    operational = ThreadOperationalState.model_validate(view.state["operational"])
-                assert operational.feed_error is not None
-                assert operational.feed_error.cursor == str(attachment.seen[-1].cursor)
-                await ingestion.release(lease)
-            finally:
-                attachment.cancel()
-
-            survivor_ingester = Ingester(
-                runners=local_runners, event_logs=replica_event_logs, ingestion=Ingestion(replica_engine)
-            )
-            survivor = RunnerBridge(
-                runners=local_runners,
-                event_logs=replica_event_logs,
-                content=ContentStore(replica_engine),
-                ingester=survivor_ingester,
-            )
-            try:
-                await survivor_ingester.start()
-                await survivor_ingester.reconcile()
-                assert not survivor_ingester._feeds
-                assert await replica_event_logs.feed_state(thread) == failed
-
-                dispatched = False
-
-                async def reject_dispatch(*_args: object, **_kwargs: object) -> None:
-                    nonlocal dispatched
-                    dispatched = True
-
-                monkeypatch.setattr(survivor, "_command", reject_dispatch)
-                with pytest.raises(RunnerError):
-                    await survivor.command(
-                        thread,
-                        command_pb2.Command(
-                            command_id="must-not-reach-rejected-runner",
-                            submit_input=command_pb2.SubmitInput(text="must not dispatch"),
-                        ),
-                    )
-                assert not dispatched
-
-                reattached = False
-
-                async def reject_attach(*_args: object, **_kwargs: object) -> None:
-                    nonlocal reattached
-                    reattached = True
-                    raise AssertionError("a rejected feed must refuse reopen before native attach")
-
-                # Patched on the class, not the bridge: the survivor's discovery loop keeps listing the
-                # runner's sessions meanwhile, and it must not reattach the rejected one either.
-                monkeypatch.setattr(RunnerClient, "attach", reject_attach)
-                with pytest.raises(RunnerError):
-                    await survivor.open_session(SANDBOX, SESSION, spec)
-                assert not reattached
-            finally:
-                await survivor_ingester.close()
-    finally:
-        await replica_engine.dispose()
-        await client.close()
-
-
-async def test_ingestion_reports_truncated_replay_instead_of_normal_completion(
-    runner: RunnerHandle,
-    local_runners: SandboxSessions,
-    event_logs: EventLogStore,
-    ingestion: Ingestion,
-    spec: protocol_pb2.SessionSpec,
-    monkeypatch: pytest.MonkeyPatch,
-    runner_client_factory: RunnerClientFactory,
-) -> None:
-    client = runner_client_factory(runner.target, capture_history=True)
-    try:
-        attachment = await client.attach(SESSION, spec=spec)
-        try:
-            await attachment.detach()
-            await attachment.drain_until_end()
-        finally:
-            attachment.cancel()
-        thread = await event_logs.open(SANDBOX, SESSION, spec)
-        lease = await ingestion.acquire(SANDBOX, timedelta(minutes=1))
-        assert lease is not None
-
-        async def truncated_stream(attachment: Attachment) -> event_log_pb2.EventEntry:
-            assert attachment.attached.last_cursor > 0
-            raise StreamClosedError
-
-        monkeypatch.setattr(Attachment, "next_entry", truncated_stream)
-        async with asyncio.timeout(10):
-            await Feed(
-                session_id=SESSION,
-                client=local_runners.client(SANDBOX),
-                event_logs=event_logs,
-                ingestion=ingestion,
-                lease=lease,
-            ).run()
-        snapshot = await event_logs.feed_state(thread)
-        assert snapshot is not None
-        assert isinstance(snapshot.end, FeedError)
-        assert await event_logs.last_cursor(thread) == 0
-    finally:
-        await client.close()
-
-
 async def test_replica_commands_and_database_stream_survive_ingestion_owner_exit(
     replicas: Replicas, event_logs: EventLogStore, model: ScriptedModel, spec: protocol_pb2.SessionSpec
 ) -> None:
     await replicas.owner.open_session(SANDBOX, SESSION, spec)
     thread = await event_logs.open(SANDBOX, SESSION, spec)
+    async for attempt in AsyncRetrying(
+        stop=stop_after_delay(10), wait=wait_fixed(0.05), retry=retry_if_exception_type(AssertionError)
+    ):
+        with attempt:
+            assert await event_logs.feed_state(thread) is not None
     async with aclosing(
         follow(replicas.survivor_event_logs, replicas.survivor_changes, thread, after_cursor=0)
     ) as frames:
@@ -1415,9 +1321,11 @@ async def test_inventory_change_discovers_existing_runner_session_without_browse
             with attempt:
                 threads = await store.list_threads()
                 assert len(threads) == 1
+                # Discovery wakes once from the informer; projection subsequently fetches service pages.
+                await ingester.reconcile()
                 assert await event_logs.last_cursor(threads[0].id) > 0
         assert threads[0].sandbox == SANDBOX
-        assert threads[0].session_id == SESSION
+        assert threads[0].session_id in (SESSION, str(threads[0].id))
     finally:
         await ingester.close()
         await runners.close()

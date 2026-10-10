@@ -18,11 +18,11 @@ from playwright.async_api import Locator, Page, TimeoutError as PlaywrightTimeou
 
 from agentplane.app.testing import history_probe, thread_view_marks
 from agentplane.app.testing.electric_service import ElectricService, electric_service
+from agentplane.app.testing.history import SeededEventLogStore as EventLogStore
 from agentplane.app.testing.http2_proxy import BrowserCertificate, Ingress, browser_certificate, http2_proxy
-from agentplane.app.testing.legacy_event_log import LegacyEventLogStore as EventLogStore
-from agentplane.app.testing.legacy_thread_store import LegacyThreadStore as ThreadStore
 from agentplane.app.testing.replication_process import AppProcess, app_process
 from agentplane.app.testing.replication_source import SANDBOX, SESSION, Opened, ReplicationSource
+from agentplane.app.threads.store import ThreadStore
 from agentplane.app.threads.view.content import ContentStore
 from agentplane.protocol import event_log_pb2, event_pb2
 from util.bazel.runfiles import get_required_path
@@ -125,8 +125,8 @@ def replay_after() -> int | None:
 
 
 @pytest.fixture
-def thread_source() -> ReplicationSource:
-    source = ReplicationSource()
+def thread_source(event_logs: EventLogStore) -> ReplicationSource:
+    source = ReplicationSource(event_logs.peer)
     source.attached.active_turn_id = "test-browser-turn"
     source.append(event_pb2.Event(harness_started=event_pb2.HarnessStarted(pid=123)))
     source.append(

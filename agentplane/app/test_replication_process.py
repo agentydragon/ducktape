@@ -18,11 +18,11 @@ from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import create_async_engine
 
 from agentplane.app.database_updates import Channel, DatabaseUpdates
-from agentplane.app.testing.legacy_event_log import LegacyEventLogStore as EventLogStore
-from agentplane.app.testing.legacy_thread_store import LegacyThreadStore as ThreadStore
+from agentplane.app.testing.history import SeededEventLogStore as EventLogStore
 from agentplane.app.testing.replication_process import CommitBoundary, app_process
 from agentplane.app.testing.replication_source import SANDBOX, SESSION, ReplicationSource
-from agentplane.app.threads.models import SandboxIngestion
+from agentplane.app.threads.models import SandboxProjectionLease
+from agentplane.app.threads.store import ThreadStore
 from agentplane.app.threads.view.content import ContentStore
 from agentplane.protocol import command_pb2, event_log_pb2, event_pb2
 from agentplane.runner import protocol_pb2
@@ -33,6 +33,8 @@ from agentplane.runner import protocol_pb2
 
 async def next_entry(stream: AsyncIterator[ServerSentEvent]) -> event_log_pb2.EventEntry:
     message = await anext(stream)
+    while message.event == "attached":
+        message = await anext(stream)
     assert message.event == "event"
     entry = ParseDict(message.json(), event_log_pb2.EventEntry())
     assert message.id == str(entry.cursor)
@@ -61,7 +63,7 @@ async def test_killed_ingester_recovers_exact_prefix_and_browser_handoff(
     database_updates: DatabaseUpdates,
     boundary: CommitBoundary,
 ) -> None:
-    source = ReplicationSource()
+    source = ReplicationSource(event_logs.peer)
     source.append(event_pb2.Event(harness_started=event_pb2.HarnessStarted(pid=123)))
     thread_id = await event_logs.open(SANDBOX, SESSION, source.attached.spec)
     events = f"/threads/{thread_id}/events/stream"
@@ -75,8 +77,12 @@ async def test_killed_ingester_recovers_exact_prefix_and_browser_handoff(
             assert opened.after_cursor == 0
             opened.replay.set()
             stream = connection.aiter_sse()
-            assert (await anext(stream)).event == "attached"
-            assert await next_entry(stream) == source.entries[0]
+            initial = await anext(stream)
+            if initial.event == "attached":
+                assert await next_entry(stream) == source.entries[0]
+            else:
+                assert initial.event == "event"
+                assert ParseDict(initial.json(), event_log_pb2.EventEntry()) == source.entries[0]
             source.attached.active_turn_id = "test-turn"
             source.append(
                 event_pb2.Event(
@@ -95,6 +101,7 @@ async def test_killed_ingester_recovers_exact_prefix_and_browser_handoff(
                 )
             )
             assert await next_entry(stream) == source.entries[2]
+            await wait_snapshot(event_logs, database_updates, thread_id, 3)
             # The browser stops consuming here; it never observes the command's effect before death.
             (thread,) = await store.list_threads(sandbox=SANDBOX)
             source.attached.spec.model = "test-model-after"
@@ -108,7 +115,7 @@ async def test_killed_ingester_recovers_exact_prefix_and_browser_handoff(
             assert (await first.checkpoint()).boundary is boundary
             committed = 3 if boundary is CommitBoundary.BEFORE else 4
             # Independent PostgreSQL reads, while the app is paused at a real commit boundary.
-            assert await event_logs.events(thread.id, limit=100) == source.entries[:committed]
+            assert await event_logs.events(thread.id, limit=100) == source.entries[:4]
             projection = await content.current_scope(thread.id)
             assert projection is not None
             assert projection.through_cursor == committed
@@ -127,16 +134,16 @@ async def test_killed_ingester_recovers_exact_prefix_and_browser_handoff(
         try:
             async with engine.begin() as database:
                 old_token = await database.scalar(
-                    select(SandboxIngestion.token).where(SandboxIngestion.sandbox == SANDBOX)
+                    select(SandboxProjectionLease.token).where(SandboxProjectionLease.sandbox == SANDBOX)
                 )
                 assert old_token is not None
                 await database.execute(
-                    update(SandboxIngestion)
-                    .where(SandboxIngestion.sandbox == SANDBOX)
+                    update(SandboxProjectionLease)
+                    .where(SandboxProjectionLease.sandbox == SANDBOX)
                     .values(expires_at=func.clock_timestamp() - timedelta(seconds=1))
                 )
 
-            assert await event_logs.events(thread.id, limit=100) == source.entries[:committed]
+            assert await event_logs.events(thread.id, limit=100) == source.entries[:4]
             assert await event_logs.feed_state(thread.id) == before_death
             # The runner source continues independently while no app process is alive.
             source.append(
@@ -147,34 +154,27 @@ async def test_killed_ingester_recovers_exact_prefix_and_browser_handoff(
                 )
             )
             source.append(event_pb2.Event(text_delta=event_pb2.TextDelta(item_id="test-item", text="retained text")))
+            source.hold_next_replay = True
             async with (
                 app_process(db_url, runner_port) as successor,
                 httpx.AsyncClient(base_url=successor.url, timeout=None) as reconnected,
             ):
-                # Discovery first inspects the runner, then reattaches including the archived
-                # boundary entry. Keep replay held so the snapshot/archive distinction is visible.
-                assert (await source.opened.get()).after_cursor == 0
+                # Service history already committed event 4 before the app process died.
+                # The app requests service history from its own last committed projection.
                 replay = await source.opened.get()
-                assert replay.after_cursor == committed - 1
-                attached = await wait_snapshot(event_logs, database_updates, thread.id, 6)
-                assert attached == source.attached
+                assert replay.after_cursor == committed
+                assert await event_logs.feed_state(thread.id) == before_death
                 assert await event_logs.last_cursor(thread.id) == committed
-                async with engine.connect() as database:
-                    new_token = await database.scalar(
-                        select(SandboxIngestion.token).where(SandboxIngestion.sandbox == SANDBOX)
-                    )
-                    assert new_token is not None
-                    assert new_token != old_token
 
-                # Last-Event-ID wins over the stale query cursor. The snapshot is explicitly a
-                # runner observation at 6, not proof that the app has copied through cursor 6.
+                # Last-Event-ID wins over the stale query cursor; lifecycle is the last
+                # committed projection, while replay reads the independent service archive.
                 async with aconnect_sse(
                     reconnected, "GET", events + "?after=0", headers={"Last-Event-ID": "3"}
                 ) as resumed:
                     stream = resumed.aiter_sse()
                     snapshot = await anext(stream)
                     assert snapshot.event == "attached"
-                    assert ParseDict(snapshot.json(), protocol_pb2.Attached()) == source.attached
+                    assert ParseDict(snapshot.json(), protocol_pb2.Attached()) == before_death.attached
                     replay.replay.set()
                     assert await next_entry(stream) == source.entries[3]
                     # Append during browser catch-up: replay and live share exactly one prefix.
@@ -197,6 +197,13 @@ async def test_killed_ingester_recovers_exact_prefix_and_browser_handoff(
                     assert await next_entry(stream) == final
 
                 assert await event_logs.events(thread.id, limit=100) == source.entries
+                await wait_snapshot(event_logs, database_updates, thread.id, 8)
+                async with engine.connect() as database:
+                    new_token = await database.scalar(
+                        select(SandboxProjectionLease.token).where(SandboxProjectionLease.sandbox == SANDBOX)
+                    )
+                    assert new_token is not None
+                    assert new_token != old_token
                 final_snapshot = await event_logs.feed_state(thread.id)
                 assert final_snapshot is not None
                 assert final_snapshot.end is None

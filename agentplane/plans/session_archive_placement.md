@@ -1,17 +1,16 @@
 # Session Event archive placement and first cutover
 
-Status: **selected placement; migration in flight**, not a future placement decision. Service-owned
-store/import/shadow-copy code and opt-in app reads exist. The operator reported partial backfill on
-2026-10-09; the [task DAG](task_dag.md#current-state-and-scheduling) records the scoped progress snapshot,
-not a completion claim. It tracks import verification, live writer handoff, raw reads, app projection
-cutover, ownership capstone and old-table retirement separately. No agent read grants are implied.
+Status: **placement implemented; post-cutover cleanup in progress**. Sandbox Service
+owns the archive and live ingestion; the app reads service history and maintains UI
+projections. The app runtime/test port landed in #9670. Accepted bounded handoff and
+rollout evidence lives in the [read-cutover plan](session_history_read_cutover.md#runtime-cleanup-acceptance).
+This is not a claim that every later cleanup revision has finished deployment.
 
-Unrelated Sandbox Service database additions and app database surgery wait for the ownership
-capstone. New input/metadata work follows it; old app-table cleanup and identity cutover additionally
-gate app migration squashing. Coordinate with the running migration owner rather than starting a
-second importer. The [import runbook](../sandbox_service/session_history/BACKFILL.md) owns operational
-instructions. Detailed failure cases use automated tests; live checks address the actual handoff and
-data-preservation boundary, not hypothetical compound disasters.
+The one-shot importer and its image are retired. Do not start another importer or
+backfill; future repair requires separate review. The [historical handoff checks](../sandbox_service/session_history/CUTOVER.md)
+retain the bounded-verification contract while legacy app tables remain. Table drops,
+identity cleanup and migration squashing remain explicit follow-up work in the
+[task DAG](task_dag.md#current-state-and-scheduling). No agent read grants are implied.
 
 ## Choice
 

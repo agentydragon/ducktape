@@ -20,13 +20,14 @@ from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
 
 from agentplane.app.database import connect
 from agentplane.app.testing.electric_service import electric_service
-from agentplane.app.testing.legacy_event_log import LegacyEventLogStore as EventLogStore
-from agentplane.app.testing.legacy_ingestion import LegacyIngestion as Ingestion
+from agentplane.app.testing.history import ProjectedHistory as Ingestion, SeededEventLogStore as EventLogStore
+from agentplane.app.testing.history_service import HistoryService
 from agentplane.app.testing.replication_source import SANDBOX, SESSION, ReplicationSource
-from agentplane.app.threads.events.ingestion_lease import IngestionLease
+from agentplane.app.threads.events.projection_lease import ProjectionLease
 from agentplane.app.threads.models import ThreadEntity
 from agentplane.app.threads.view.recording import THREAD_FOLD_EPOCH
 from agentplane.protocol import event_pb2
+from agentplane.sandbox_service.client import SandboxServiceClient
 
 # gazelle:include_dep @pypi//protobuf
 
@@ -95,16 +96,21 @@ def _key(row: Row) -> tuple[str, str]:
 
 
 async def _record(
-    ingestion: Ingestion, source: ReplicationSource, thread: UUID, lease: IngestionLease, *events: event_pb2.Event
+    ingestion: Ingestion, source: ReplicationSource, thread: UUID, lease: ProjectionLease, *events: event_pb2.Event
 ) -> None:
     await ingestion.record(thread, [source.append(event) for event in events], lease=lease)
 
 
-async def test_one_thread_shape_serves_a_moving_window() -> None:
+async def test_one_thread_shape_serves_a_moving_window(
+    history_peer: HistoryService, history_client: SandboxServiceClient
+) -> None:
     async with electric_service() as service:
         engine = connect(service.database_url)
         try:
-            event_logs, ingestion = EventLogStore(engine), Ingestion(engine)
+            event_logs, ingestion = (
+                EventLogStore(engine, peer=history_peer, history_reader=history_client),
+                Ingestion(engine, peer=history_peer, history_reader=history_client),
+            )
             source = ReplicationSource()
             thread = await event_logs.open(SANDBOX, SESSION, source.attached.spec)
             lease = await ingestion.acquire(SANDBOX, timedelta(minutes=2))
@@ -202,11 +208,16 @@ async def test_one_thread_shape_serves_a_moving_window() -> None:
             await engine.dispose()
 
 
-async def test_bodies_load_as_subsets_of_one_shape_per_field() -> None:
+async def test_bodies_load_as_subsets_of_one_shape_per_field(
+    history_peer: HistoryService, history_client: SandboxServiceClient
+) -> None:
     async with electric_service() as service:
         engine = connect(service.database_url)
         try:
-            event_logs, ingestion = EventLogStore(engine), Ingestion(engine)
+            event_logs, ingestion = (
+                EventLogStore(engine, peer=history_peer, history_reader=history_client),
+                Ingestion(engine, peer=history_peer, history_reader=history_client),
+            )
             source = ReplicationSource()
             thread = await event_logs.open(SANDBOX, SESSION, source.attached.spec)
             lease = await ingestion.acquire(SANDBOX, timedelta(minutes=2))

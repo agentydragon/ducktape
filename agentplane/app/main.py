@@ -159,7 +159,7 @@ async def async_main(settings: Settings) -> None:
         database_updates = DatabaseUpdates(engine.url)
         store = ThreadStore(engine)
         event_logs = EventLogStore(engine, history_reader=inventory, history_creator=inventory)
-        content = ContentStore(engine)
+        content = ContentStore(engine, history_reader=inventory)
         runners = SandboxSessions(live, inventory)
         ingester = Ingester(
             runners=runners,

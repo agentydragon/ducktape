@@ -8,9 +8,8 @@ from datetime import UTC, datetime, timedelta
 from google.protobuf.timestamp_pb2 import Timestamp
 
 from agentplane.app.operator_sessions import OperatorSessionStore
-from agentplane.app.testing.legacy_event_log import LegacyEventLogStore as EventLogStore
-from agentplane.app.testing.legacy_ingestion import LegacyIngestion as Ingestion
-from agentplane.app.testing.legacy_thread_store import LegacyThreadStore as ThreadStore
+from agentplane.app.testing.history import ProjectedHistory as Ingestion, SeededEventLogStore as EventLogStore
+from agentplane.app.threads.store import ThreadStore
 from agentplane.protocol import event_log_pb2, event_pb2
 from agentplane.runner import protocol_pb2
 

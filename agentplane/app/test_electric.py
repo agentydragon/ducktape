@@ -28,12 +28,12 @@ from testcontainers.postgres import PostgresContainer
 from agentplane.app.conftest import migrated_database
 from agentplane.app.database_updates import Channel, DatabaseUpdates
 from agentplane.app.electric import SUBSET_BODY_LIMIT, SUBSET_ROW_LIMIT, ElectricProxy, router
-from agentplane.app.testing.legacy_event_log import LegacyEventLogStore as EventLogStore
-from agentplane.app.testing.legacy_ingestion import LegacyIngestion as Ingestion
+from agentplane.app.testing.history import ProjectedHistory as Ingestion, SeededEventLogStore as EventLogStore
 from agentplane.app.testing.replication_source import SANDBOX, SESSION, ReplicationSource
-from agentplane.app.threads.events.ingestion_lease import IngestionLease
+from agentplane.app.threads.events.projection_lease import ProjectionLease
 from agentplane.app.threads.view.content import ContentStore, ThreadScope
 from agentplane.protocol import event_pb2
+from agentplane.sandbox_service.client import SandboxServiceClient
 
 # The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.
 # gazelle:include_dep @pypi//protobuf
@@ -60,7 +60,7 @@ class Unfolded:
 
     thread: UUID
     source: ReplicationSource
-    lease: IngestionLease
+    lease: ProjectionLease
 
 
 @pytest.fixture
@@ -140,8 +140,8 @@ async def test_scope_names_the_epoch_and_how_far_the_fold_has_applied(seeded: Se
 class ScopeReads(ContentStore):
     """Signals a scope read that found no fold, so a case can record one while the read waits."""
 
-    def __init__(self, engine: AsyncEngine) -> None:
-        super().__init__(engine)
+    def __init__(self, engine: AsyncEngine, history_reader: SandboxServiceClient) -> None:
+        super().__init__(engine, history_reader=history_reader)
         self.unfolded = asyncio.Event()
 
     async def current_scope(self, thread_id: UUID) -> ThreadScope | None:
@@ -158,7 +158,7 @@ async def test_a_scope_read_before_the_first_fold_answers_once_it_is_recorded(
     ingestion: Ingestion,
     database_updates: DatabaseUpdates,
 ) -> None:
-    content = ScopeReads(engine)
+    content = ScopeReads(engine, event_logs.reader)
     electric = httpx.AsyncClient(transport=httpx.MockTransport(_unexpected), base_url="http://electric")
     app = serving(
         ElectricProxy(

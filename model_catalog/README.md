@@ -4,7 +4,8 @@ Shared Python inputs for Kubernetes and Nix configuration, with no dependency on
 cdk8s. Consumers select source models or gateway routes and serialize them at their
 own boundary.
 
-- `ollama.py`: source tags, names and requested serving variants. Both Ollama
+- `ollama.py`: source tags, names, audited GGUF context facts and requested serving
+  variants. Both Ollama
   provisioning and gateway routing consume these; LiteLLM does not own provisioning.
 - `catalog.py`: account-specific model facts, account/wire identities, named routes,
   compatibility aliases, and ordered rosters. Define named routes **before** rosters;
@@ -18,8 +19,9 @@ own boundary.
 Account means whose credentials/account serve a model, not its manufacturer. Shape
 means the outbound wire, not the client's endpoint. Unknown facts remain unknown;
 comments retain the provenance of published, measured, or configured limits. A
-configured context or client override is not evidence of model capacity. Input/output
-metadata is a `TokenLimits` pair or absent; see the
+configured context or client override is not evidence of model capacity. Generative
+metadata is a `TokenLimits` pair; embeddings use input-only `EmbeddingLimits`.
+Unknown limits remain absent; see the
 [semantics and remaining provenance gaps](design.md#current-token-limit-shape).
 
 Cluster endpoints, credential references, and environment-specific selections stay

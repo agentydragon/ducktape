@@ -1,14 +1,14 @@
 # Model rosters and consumer configuration
 
-Status: design proposal, updated 2026-10-05. Consumer
+Status: ownership design and implementation plan, reconciled 2026-10-10. Consumer
 pauses are approved and recorded under [approved pauses](#approved-pauses-and-remaining-decisions); no shared route retirement is implied.
 The active Codex path has been [audited](client_budgets.md#active-codex-path-audit-2026-10-05). The overall consumer-wiring refactor,
 including limits publication and its end-to-end validation, remains incomplete.
 
-Configuration changes remain separately proposed in
-[#9034](https://github.com/agentydragon/ducktape/pull/9034). Merging this document
-records the design and findings; it does not enable those changes or the long-context
-experiment.
+The former implementation PR [#9034](https://github.com/agentydragon/ducktape/pull/9034)
+is closed as superseded, not merged; its remaining comment cleanup landed separately
+in #9577. Implementation has proceeded in smaller slices tracked below. This design
+does not enable the long-context experiment or authorize unresolved file dispositions.
 
 Current work: [#9574](https://github.com/agentydragon/ducktape/issues/9574); historical revival inventory: [#9121](https://github.com/agentydragon/ducktape/issues/9121).
 
@@ -375,13 +375,18 @@ capacity, and a pair does not imply simultaneous attainability of both maxima.
 LiteLLM projects the mode-appropriate limits; Nix wrappers, OpenClaw, and Agentplane own their
 client budgets separately and do not read it. Ollama `num_ctx` stays independent.
 
-Generative declarations retain their existing numbers and publication choices;
-the mode-specific representation does **not** finish their source audit. In particular, ChatGPT's retained proxy
-allowances include Astra's inherited Codex window and Sol/Luna's inherited GPT-5.6
-values, not independently established provider maxima. Their declaration comments
-state this limitation. Replacing these provisional declarations, refreshing the stale
-Antigravity snapshot, and filling missing pairs remain migration work; the new type
-is not evidence that the old numbers are correct.
+The mode-specific representation does **not** finish the source audit. ChatGPT's
+12 retained entries still include Astra's inherited Codex window and Sol/Luna's
+inherited GPT-5.6 values, not independently established provider maxima. Their
+comments preserve this limitation; publication coverage does not validate them.
+Antigravity text declarations now use the recorded Google response/gateway convention,
+and the refreshed Claude subscription roster uses sourced gateway declarations.
+Neither constitutes a capacity measurement.
+
+Ollama GGUF context facts are now source-owned separately from requested `num_ctx`;
+they do not establish generative pairs. The [migration inventory](migration_inventory.md#token-metadata-ownership-migration)
+records remaining provenance and mode-specific gaps. The tracker owns current
+PR/rollout status; dated research remains evidence rather than an activation claim.
 
 ## Proposed shape and rollout
 

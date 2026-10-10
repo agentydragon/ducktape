@@ -94,8 +94,8 @@
       "registry": "forgejo"
     },
     "att-gateway-exporter": {
-      "target": "//cluster/exporters/att_gateway:image",
-      "test": "//cluster/exporters/att_gateway/...",
+      "target": "//att_gateway:image",
+      "test": "//att_gateway/...",
       "registry": "forgejo"
     },
     "github-api-proxy": {
@@ -264,11 +264,6 @@
     "agentplane-oauth-fixture": {
       "target": "//agentplane/action_service/testing:oauth_mcp_server_image",
       "test": "//agentplane/action_service/testing/...",
-      "registry": "forgejo"
-    },
-    "agentplane-sandbox-service-history-backfill": {
-      "target": "//agentplane/sandbox_service/session_history:backfill_image",
-      "test": "//agentplane/sandbox_service/session_history/...",
       "registry": "forgejo"
     },
     "agentplane-sandbox-service-history-migrate": {

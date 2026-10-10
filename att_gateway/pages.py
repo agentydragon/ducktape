@@ -14,6 +14,8 @@ from enum import StrEnum
 
 from bs4 import BeautifulSoup, Tag
 
+from att_gateway.settings import Syslog, SyslogLevel
+
 
 class Page(StrEnum):
     SYSINFO = "sysinfo"
@@ -23,8 +25,6 @@ class Page(StrEnum):
     # Behind the device access code.
     NAT = "nattable"
     SPEED = "speed"
-    # TODO: consider shipping `logs.ha` to Loki: the firewall drop log, about 20 minutes of
-    # rows with local-time stamps, mostly internet scanners. Left out for now (Rai, 2026-10-10).
 
     @property
     def needs_login(self) -> bool:
@@ -367,3 +367,57 @@ def parse_speed(html: str) -> Speed:
             )
         )
     )
+
+
+@dataclass(frozen=True)
+class SyslogPage:
+    syslog: Syslog
+    # Binds a post of the form to this session.
+    nonce: str
+
+
+def _selected(form: Tag, name: str) -> str:
+    select = form.find("select", attrs={"name": name})
+    option = select.find("option", selected=True) if isinstance(select, Tag) else None
+    if not isinstance(option, Tag):
+        raise ValueError(f"no selected option: {name=}")
+    return str(option["value"])
+
+
+def _input(form: Tag, name: str) -> str:
+    field = form.find("input", attrs={"name": name})
+    if not isinstance(field, Tag):
+        raise ValueError(f"input not found: {name=}")
+    return str(field.get("value", ""))
+
+
+def parse_syslog(html: str) -> SyslogPage:
+    """`syslog.ha`, behind the access code. While syslog is off the page still shows the
+    other fields' values, disabled."""
+    form = _soup(html).find("form", attrs={"action": "/cgi-bin/syslog.ha"})
+    if not isinstance(form, Tag):
+        raise ValueError("syslog form not found")
+    enabled = _selected(form, "syslog")
+    if enabled not in {"on", "off"}:
+        raise ValueError(f"unexpected syslog state: {enabled=}")
+    return SyslogPage(
+        syslog=Syslog(
+            enabled=enabled == "on",
+            server=_input(form, "location"),
+            port=int(_input(form, "port")),
+            level=SyslogLevel(_selected(form, "level")),
+        ),
+        nonce=_input(form, "nonce"),
+    )
+
+
+def syslog_form(syslog: Syslog, nonce: str) -> dict[str, str]:
+    """The `syslog.ha` post that saves `syslog`."""
+    return {
+        "nonce": nonce,
+        "syslog": "on" if syslog.enabled else "off",
+        "location": syslog.server,
+        "port": str(syslog.port),
+        "level": syslog.level,
+        "Save": "Save",
+    }

@@ -20,8 +20,8 @@ py_library(
 )
 
 py_library(
-    name = "ingestion_lease",
-    srcs = ["ingestion_lease.py"],
+    name = "projection_lease",
+    srcs = ["projection_lease.py"],
     deps = [
         "//agentplane/app/threads:models",
         "@pypi//sqlalchemy",
@@ -50,11 +50,9 @@ py_test(
     srcs = ["test_event_log.py"],
     deps = [
         ":event_log",
-        ":ingestion_lease",
         "//:conftest",
         "//agentplane/app:conftest",
-        "//agentplane/app/testing:legacy_event_log",
-        "//agentplane/app/testing:legacy_ingestion",
+        "//agentplane/app/testing:retained_history",
         "//agentplane/app/testing:thread_test_support",
         "//agentplane/app/threads:models",
         "//agentplane/protocol:event_pb2",
@@ -78,7 +76,6 @@ py_test(
         "//:conftest",
         "//agentplane/app:changes",
         "//agentplane/app:conftest",
-        "//agentplane/app/testing:legacy_event_log",
         "//agentplane/protocol:event_log_pb2",
         "//agentplane/runner:protocol_pb2",
         "@pypi//protobuf",

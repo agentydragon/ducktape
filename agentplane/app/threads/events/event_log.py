@@ -93,8 +93,8 @@ class EventLogStore:
             async with self._sessions() as session:
                 existing = await session.scalar(existing_query)
                 if existing is not None:
-                    # Discovery must keep existing Threads running during staged handoff.
-                    # Only explicit handoff may fence an already-created legacy prefix.
+                    # Discovery does not reconstruct missing projection metadata from raw rows.
+                    # Existing app identities and summaries remain authoritative for the UI.
                     return existing.id
             if str(thread_id) != session_id:
                 raise EventReplicationError("new service-projected Thread requires a canonical public Session ID")
@@ -111,6 +111,7 @@ class EventLogStore:
                     harness=Harness(protocol_pb2.Harness.Name(spec.harness)),
                     model=spec.model,
                     cwd=spec.cwd,
+                    # Preserve old-table write rejection until schema/trigger retirement.
                     raw_ingestion_fenced_at_cursor=0 if self._history_creator is not None else None,
                 )
                 .on_conflict_do_nothing()
@@ -124,16 +125,13 @@ class EventLogStore:
             existing = (await session.scalars(existing_query)).one_or_none()
             if existing is None:
                 raise EventReplicationError("public Session ID belongs to another sandbox")
-            # A legacy replica may win this insert race. Preserve its mapping and
-            # leave its final cursor to the explicit handoff, rather than killing discovery.
+            # Another replica may win this insert race. Preserve its mapping and
+            # projection state rather than reinitializing an existing Thread.
             return existing.id
 
-    async def is_raw_ingestion_fenced(self, thread_id: UUID) -> bool:
+    async def has_projection_metadata(self, thread_id: UUID) -> bool:
         async with self._sessions() as session:
-            cursor = await session.scalar(
-                select(EventLog.raw_ingestion_fenced_at_cursor).where(EventLog.id == thread_id)
-            )
-            return cursor is not None
+            return await session.get(ThreadHistorySummary, thread_id) is not None
 
     async def resume_pending(self, thread_id: UUID) -> None:
         """A runner-confirmed restart supersedes a normal terminal feed, not a replay error.
@@ -173,12 +171,12 @@ class EventLogStore:
                 )
             ) or 0
 
-    async def fenced_sessions(self) -> dict[UUID, RunnerSession]:
-        """Retained Threads to project, including those whose Sandbox no longer exists."""
+    async def projection_sessions(self) -> dict[UUID, RunnerSession]:
+        """Sessions with app projection metadata, including deleted Sandboxes."""
         async with self._sessions() as session:
             rows = await session.execute(
-                select(EventLog.id, EventLog.sandbox, EventLog.session_id).where(
-                    EventLog.raw_ingestion_fenced_at_cursor.is_not(None)
+                select(EventLog.id, EventLog.sandbox, EventLog.session_id).join(
+                    ThreadHistorySummary, ThreadHistorySummary.thread_id == EventLog.id
                 )
             )
             return {row.id: RunnerSession(row.sandbox, row.session_id) for row in rows}

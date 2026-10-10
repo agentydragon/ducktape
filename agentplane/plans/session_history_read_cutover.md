@@ -250,3 +250,47 @@ uses the app projection checkpoint for its local cursor, and reads lifecycle/Thr
 metadata solely from ThreadHistorySummary. Retained-schema test setup moves to
 test-only helpers. This does not remove table models, historical migrations, retained
 records or the handoff tool; tooling and grant retirement remain separate work.
+
+## Post-cutover schema cleanup
+
+Follow-up runtime cleanup retires `history_handoff.py` and its migration-only tests.
+The coordinator selects Sessions by `ThreadHistorySummary`, not the old raw-writer
+fence. The projector still checks service coverage of the app checkpoint and fences
+commits with the replica lease; it no longer consults the migration barrier. Tests
+seed service evidence through the app's gRPC peer rather than a retained raw writer.
+This is code retirement, not a claim of deployed schema removal.
+
+TODO(session-schema-cleanup): follow the runtime/test port in #9670 with an explicit
+schema-cleanup PR after the new readers are deployed. This is migration completion
+work, not an indefinitely deferred task. Preserve public Session/Thread UUIDs and
+runner storage; use bounded checks, not another full-history scan.
+
+- Rename app `EventLog` / `event_log` to reflect an app-side Session reference rather
+  than ownership of a raw archive. Choose the final name with the schema change and
+  update foreign keys, queries and documentation together.
+- **Sandbox Service is authoritative for the runner locator.** App command dispatch,
+  resume, discovery and reconciliation should use the public service Session UUID.
+  Remove the app's physical runner-locator copy (`event_log.session_id`) and its
+  `(sandbox, session_id)` uniqueness constraint after replacing current consumers.
+  Audit legacy HTTP filters/links and identifier translation explicitly; preserve
+  mappings in Sandbox Service, not by inventing another app-owned routing map.
+- Drop `raw_ingestion_fenced_at_cursor` with the old-table write-rejection triggers.
+  Runtime projection no longer reads it; new identity setup still writes zero to
+  preserve old-table write rejection until that explicit schema change.
+- Drop retained app `event` and `feed_state` tables and their ORM classes only after
+  deployment verification shows no runtime dependencies and handoff tooling is retired.
+  Make retained-data deletion explicit in that PR rather than incidental to a rename.
+- Rename the physical `sandbox_ingestion` table in the schema cleanup. The Python
+  API is now `SandboxProjectionLease` / `ProjectionLease` / `projection_lease`; it
+  coordinates app projection work, not archive ingestion. The naming cleanup keeps
+  the physical table, lease tokens, expiry and fencing semantics unchanged.
+- Audit app `sandbox`, `harness`, `model` and `cwd` fields: distinguish necessary UI
+  projections from redundant launch/routing metadata. They are not all proven dead.
+  Session identity, runner bindings and frozen launch configuration remain service-owned;
+  any app copies must be derived/read-side data, not competing sources of truth.
+- Audit `ThreadHistorySummary` attachment/end/resume fields and duplicate model/activity
+  metadata against actual consumers. Remove only demonstrated redundancy; projection
+  progress and operational UI state need not equal the service archive watermark.
+- Update misleading model/helper docstrings (`runner_session`, raw-reader wording,
+  "app ingestion") as their contracts change. Leave durable rules in AGENTS.md;
+  keep this temporary cleanup checklist here and in the DAG.

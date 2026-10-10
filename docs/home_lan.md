@@ -1,7 +1,9 @@
 # Home LAN
 
 `192.168.1.0/24` behind the AT&T BGW320 gateway. Addresses that something depends on, and who owns
-each; read from the gateway's Subnets & DHCP and IP Allocation pages on 2026-10-10.
+each; read from the gateway's Subnets & DHCP and IP Allocation pages on 2026-10-10. The cluster
+reads these fixed addresses from `cluster/cdk8s/home_lan.py`; `home-nodes.tf` and
+`tf/gitops/home-switch/bootstrap.sh` repeat theirs with a sync comment.
 
 | Address                        | What                                     | Owner                                                                                       |
 | ------------------------------ | ---------------------------------------- | ------------------------------------------------------------------------------------------- |

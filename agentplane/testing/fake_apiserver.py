@@ -152,6 +152,18 @@ class FakeApiServer:
             return web.json_response({"kind": "Status", "code": 404, "reason": "NotFound"}, status=404)
         return web.json_response(pod)
 
+    async def list_pods(self, request: web.Request) -> web.Response:
+        assert request.match_info["namespace"] == SANDBOX_NAMESPACE
+        selector = request.query.get("labelSelector", "")
+        return web.json_response(
+            {
+                "apiVersion": "v1",
+                "kind": "PodList",
+                "metadata": {"resourceVersion": str(self._version)},
+                "items": [pod for pod in self.pods.values() if _selected(selector, pod)],
+            }
+        )
+
     watch_available: bool = True
 
     async def list_or_watch(self, request: web.Request) -> web.StreamResponse:
@@ -352,6 +364,7 @@ async def fake_apiserver(namespace_of: dict[str, str] | None = None) -> AsyncIte
     app = web.Application()
     app.router.add_post("/apis/authentication.k8s.io/v1/tokenreviews", fake.token_review)
     app.router.add_get("/api/v1/namespaces/{namespace}/pods/{name}", fake.get_pod)
+    app.router.add_get("/api/v1/namespaces/{namespace}/pods", fake.list_pods)
     app.router.add_get("/api/v1/namespaces/{namespace}/{plural}", fake.list_or_watch)
     app.router.add_get("/apis/{group}/{version}/namespaces/{namespace}/{plural}", fake.list_or_watch)
     app.router.add_get("/apis/{group}/{version}/namespaces/{namespace}/{plural}/{name}", fake.get_object)

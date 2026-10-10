@@ -57,7 +57,7 @@ def _openapi_document(api_client: k8s_client.ApiClient) -> dict[str, Any]:
     database_updates = DatabaseUpdates(engine.url)
     event_logs, content = (
         EventLogStore(engine, history_reader=inventory, history_creator=inventory),
-        ContentStore(engine),
+        ContentStore(engine, history_reader=inventory),
     )
     live = LiveIndex(stale_after_seconds=900, core_v1=CoreV1Api(api_client))
     runners = SandboxSessions(live, inventory)

@@ -23,13 +23,13 @@ spec:
         - env:
             - name: ATT_GATEWAY_URL
               value: http://192.168.1.254
-            - name: ATT_GATEWAY_LISTEN_PORT
-              value: "9173"
             - name: ATT_GATEWAY_ACCESS_CODE
               valueFrom:
                 secretKeyRef:
                   key: access-code
                   name: att-gateway-exporter-access-code
+            - name: ATT_GATEWAY_LISTEN_PORT
+              value: "9173"
           image: git.allegedly.works/ducktape-ci/att-gateway-exporter:unset
           imagePullPolicy: IfNotPresent
           livenessProbe:
@@ -68,6 +68,71 @@ spec:
         seccompProfile:
           type: RuntimeDefault
       terminationGracePeriodSeconds: 10
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  annotations:
+    description: Keeps the AT&T gateway sending its firewall log to alloy-syslog (syslog.ha).
+  name: att-gateway-exporter-syslog
+  namespace: monitoring
+spec:
+  concurrencyPolicy: Forbid
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      activeDeadlineSeconds: 300
+      backoffLimit: 0
+      template:
+        spec:
+          automountServiceAccountToken: false
+          containers:
+            - command:
+                - /att_gateway/syslog_reconciler_image_bin
+              env:
+                - name: ATT_GATEWAY_URL
+                  value: http://192.168.1.254
+                - name: ATT_GATEWAY_ACCESS_CODE
+                  valueFrom:
+                    secretKeyRef:
+                      key: access-code
+                      name: att-gateway-exporter-access-code
+                - name: ATT_GATEWAY_SYSLOG__ENABLED
+                  value: "true"
+                - name: ATT_GATEWAY_SYSLOG__SERVER
+                  value: 192.168.1.10
+                - name: ATT_GATEWAY_SYSLOG__PORT
+                  value: "1514"
+                - name: ATT_GATEWAY_SYSLOG__LEVEL
+                  value: Notice
+              image: git.allegedly.works/ducktape-ci/att-gateway-exporter:unset
+              imagePullPolicy: IfNotPresent
+              name: reconcile
+              resources:
+                limits:
+                  cpu: 200m
+                  memory: 128Mi
+                requests:
+                  cpu: 10m
+                  memory: 64Mi
+              securityContext:
+                allowPrivilegeEscalation: false
+                capabilities:
+                  drop:
+                    - ALL
+          imagePullSecrets:
+            - name: forgejo-images-creds
+          nodeSelector:
+            kubernetes.io/hostname: optiplex
+          restartPolicy: Never
+          securityContext:
+            runAsGroup: 65532
+            runAsNonRoot: true
+            runAsUser: 65532
+            seccompProfile:
+              type: RuntimeDefault
+  schedule: "*/10 * * * *"
+  successfulJobsHistoryLimit: 1
 ---
 apiVersion: v1
 kind: Service

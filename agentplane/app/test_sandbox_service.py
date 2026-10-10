@@ -1,12 +1,9 @@
 """The production app directory/bridge/archive against authenticated Sandbox Service gRPC."""
 
-import asyncio
 import logging
 from collections.abc import AsyncIterator
-from datetime import timedelta
 from pathlib import Path
 
-import grpc
 import pytest
 import pytest_bazel
 from kubernetes_asyncio import client as k8s_client
@@ -14,18 +11,19 @@ from tenacity import AsyncRetrying, retry_if_exception_type, stop_after_delay, w
 
 from agentplane.app.database_updates import DatabaseUpdates
 from agentplane.app.live import LiveIndex
-from agentplane.app.testing import legacy_ingestion
-from agentplane.app.testing.legacy_event_log import LegacyEventLogStore as EventLogStore
-from agentplane.app.testing.legacy_ingestion import Feed, LegacyIngester as Ingester, LegacyIngestion as Ingestion
-from agentplane.app.threads import ingestion as ingestion_module
+from agentplane.app.testing.history import (
+    ProjectedHistory as Ingestion,
+    ProjectedIngester as Ingester,
+    SeededEventLogStore as EventLogStore,
+)
 from agentplane.app.threads.bridge import MalformedMessageError, RunnerBridge
 from agentplane.app.threads.sessions import SandboxSessions
 from agentplane.app.threads.view.content import ContentStore
-from agentplane.protocol import command_pb2, event_log_pb2
+from agentplane.protocol import command_pb2
 from agentplane.runner import protocol_pb2
 from agentplane.runner.testing.fixtures import RunnerHandle
 from agentplane.runner.testing.scripted_model import ScriptedModel, Text
-from agentplane.sandbox_service.client import Attachment, ReconnectRequiredError, ServiceError
+from agentplane.sandbox_service.client import ServiceError
 from agentplane.sandbox_service.testing.kubernetes import SANDBOX, Cluster, authenticated_service, kubernetes
 from agentplane.testing.fake_apiserver import SANDBOX_NAMESPACE
 from util.agent_sandbox import SANDBOXES_PLURAL
@@ -47,8 +45,7 @@ async def discover(cluster: Cluster, live_index: LiveIndex) -> None:
     live_index.pods[SANDBOX] = await k8s_client.CoreV1Api(cluster.api).read_namespaced_pod(SANDBOX, SANDBOX_NAMESPACE)
 
 
-@pytest.mark.parametrize("lost_marker", [False, True])
-async def test_production_bridge_archives_native_evidence_across_service_leases(
+async def test_production_bridge_archives_native_evidence_across_bounded_service_copies(
     cluster: Cluster,
     live_index: LiveIndex,
     tmp_path: Path,
@@ -59,24 +56,15 @@ async def test_production_bridge_archives_native_evidence_across_service_leases(
     runner: RunnerHandle,
     spec: protocol_pb2.SessionSpec,
     model: ScriptedModel,
-    lost_marker: bool,
-    monkeypatch: pytest.MonkeyPatch,
     caplog: pytest.LogCaptureFixture,
+    service_history_db_url: str,
 ) -> None:
-    marker_received = asyncio.Event()
-    next_entry = Attachment.next_entry
-
-    async def receive_marker(attachment: Attachment) -> event_log_pb2.EventEntry:
-        try:
-            return await next_entry(attachment)
-        except ReconnectRequiredError as error:
-            marker_received.set()
-            if lost_marker:
-                raise ConnectionError("lost terminal observation") from error
-            raise
-
-    monkeypatch.setattr(Attachment, "next_entry", receive_marker)
-    async with authenticated_service(cluster, runner.port, tmp_path / "service-token") as remote:
+    async with authenticated_service(
+        cluster, runner.port, tmp_path / "service-token", history_database_url=service_history_db_url
+    ) as remote:
+        event_logs = EventLogStore(event_logs.engine, peer=event_logs.peer, history_reader=remote)
+        ingestion = Ingestion(event_logs.engine, peer=event_logs.peer, history_reader=remote)
+        content = ContentStore(event_logs.engine, history_reader=remote)
         directory = SandboxSessions(live_index, remote)
         ingester = Ingester(runners=directory, event_logs=event_logs, ingestion=ingestion)
         bridge = RunnerBridge(runners=directory, event_logs=event_logs, content=content, ingester=ingester)
@@ -100,9 +88,6 @@ async def test_production_bridge_archives_native_evidence_across_service_leases(
                 with attempt:
                     assert receipt in await event_logs.events(thread, limit=1000)
             await model.reply(await model.request(), Text("FIRST"))
-            # Observe actual renewal (or lost-marker recovery), not just elapsed wall time.
-            async with asyncio.timeout(10):
-                await marker_received.wait()
             snapshot = await event_logs.feed_state(thread)
             assert snapshot is not None
             assert snapshot.end is None
@@ -132,63 +117,6 @@ async def test_production_bridge_archives_native_evidence_across_service_leases(
             ]
         finally:
             await ingester.close()
-            await directory.close()
-
-
-@pytest.mark.parametrize(
-    ("failures", "code", "warns"),
-    [
-        (1, grpc.StatusCode.UNAVAILABLE, False),
-        (5, grpc.StatusCode.UNAVAILABLE, True),
-        (1, grpc.StatusCode.PERMISSION_DENIED, True),
-    ],
-)
-async def test_reconnect_diagnostics(
-    cluster: Cluster,
-    live_index: LiveIndex,
-    tmp_path: Path,
-    event_logs: EventLogStore,
-    ingestion: Ingestion,
-    monkeypatch: pytest.MonkeyPatch,
-    caplog: pytest.LogCaptureFixture,
-    failures: int,
-    code: grpc.StatusCode,
-    warns: bool,
-) -> None:
-    monkeypatch.setattr(ingestion_module, "RECONCILE_S", 0.01)
-    monkeypatch.setattr(legacy_ingestion, "RECONNECT_WARNING_S", 0.025)
-    monkeypatch.setattr(legacy_ingestion, "RECONCILE_S", 0.01)
-    attempts = 0
-
-    async def copy(feed: Feed) -> None:
-        nonlocal attempts
-        attempts += 1
-        if attempts <= failures:
-            raise ServiceError(code)
-
-    monkeypatch.setattr(Feed, "_copy", copy)
-    async with authenticated_service(cluster, 1, tmp_path / "service-token") as remote:
-        directory = SandboxSessions(live_index, remote)
-        lease = await ingestion.acquire(SANDBOX, timedelta(seconds=30))
-        assert lease is not None
-        try:
-            await Feed(
-                session_id="retry",
-                client=directory.client(SANDBOX),
-                event_logs=event_logs,
-                ingestion=ingestion,
-                lease=lease,
-            ).run()
-            assert attempts == failures + 1
-            warnings = [record for record in caplog.records if "ingestion reconnect unsuccessful" in record.message]
-            assert bool(warnings) == warns
-            for record in warnings:
-                assert "retrying for" in record.message
-                assert record.exc_info is not None
-                assert isinstance(record.exc_info[1], ServiceError)
-                assert record.exc_info[1].code == code
-        finally:
-            await ingestion.release(lease)
             await directory.close()
 
 

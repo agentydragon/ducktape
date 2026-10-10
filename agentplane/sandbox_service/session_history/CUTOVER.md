@@ -1,9 +1,13 @@
-# History catch-up and handoff preflight
+# Historical history catch-up and handoff checks
 
-This runbook does not authorize a live change. Keep app ingestion running while importing and
-verifying. No global pause of runner execution is required. Do not start a second importer while
-the current one is running, fill a legacy Sandbox UID from a matching name, or enable service reads
-merely because the first import exits successfully.
+The app-to-service import and live handoff are complete. The one-shot importer, its
+image and publishing target have been retired; do not restart this procedure against
+service-owned history. Accepted bounded evidence is recorded in the
+[read-cutover plan](../../plans/session_history_read_cutover.md#runtime-cleanup-acceptance).
+The remaining read-only verifier is retained for bounded diagnostics while legacy
+app tables still exist. This document records the historical checks, not a new
+cutover authorization. A future repair needs a separately reviewed plan; do not
+recreate an importer, overwrite service history, or scan the entire archive by default.
 
 ## Verification scope
 
@@ -52,19 +56,11 @@ or no current Sandbox. A matching UID still requires runner Session discovery. F
 retain and verify app history; do not depend on replay from a deleted runner. Suspended runners are
 not evidence of completed history. Account separately for live Sandboxes with no app history.
 
-## 2. Finish the first import, then explicitly catch up
+## 2. Importer retired
 
-Record the current Job's successful completion and final log summary. Failures/conflicts are
-blockers; a Running Pod or matching Session counts is not success. Use the existing
-[checkpoint-resuming importer](BACKFILL.md), not a new copy implementation. Prepare a new named,
-one-shot Job from the reviewed backfill manifest/image and the same approved database bindings.
-Inspect its diff and obtain rollout approval before creating it. Do not delete the original Job
-or change its schema/data as a shortcut; preserve its evidence.
-
-A follow-up pass re-enumerates Sessions and copies suffixes after committed service checkpoints.
-It validates boundaries but **does not verify the skipped interior**. Keep a fixed per-Session
-`through` manifest for verification. Writes beyond those watermarks can continue. Do not run an
-unbounded rerun loop hoping to observe two moving databases at equality.
+The checkpoint-resuming importer and its runbook were removed after handoff. Its
+historical implementation remains in Git. No import Job should be running; this
+cleanup does not remove retained app data or service archives.
 
 ## 3. Spot-check bounded handoff ranges
 

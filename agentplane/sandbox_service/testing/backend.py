@@ -31,6 +31,7 @@ from agentplane.sandbox_service.testing.fake_inventory import (
 )
 from agentplane.sandbox_service.testing.fake_rbac import FakeRbac
 from agentplane.sandbox_service.testing.grpc_service import service
+from agentplane.sandbox_service.testing.history import with_history
 from agentplane.subjects import ServiceAccountRef
 from agentplane.workload_auth.principal import POD_NAME_CLAIM, POD_UID_CLAIM, WorkloadPrincipalResolver
 from util.agent_sandbox import SANDBOX_API
@@ -81,6 +82,7 @@ def backend(
     token_file: Path,
     *,
     runner_port: int = 1,
+    history_database_url: str | None = None,
     default_policies: Sequence[str] = (),
     grants: dict[str, KubernetesGrant] | None = None,
     rbac: FakeRbac | None = None,
@@ -109,7 +111,11 @@ def backend(
             bindings,
         ),
     )
-    with start_blocking_portal() as portal, portal.wrap_async_context_manager(service(resources)) as target:
+    with (
+        start_blocking_portal() as portal,
+        portal.wrap_async_context_manager(with_history(resources, history_database_url)) as configured,
+        portal.wrap_async_context_manager(service(configured)) as target,
+    ):
         yield Endpoint(target, token_file, lambda: portal.call(resources.provisioning.reconcile_once))
 
 

@@ -410,7 +410,6 @@ py_library(
     deps = [
         "//agentplane/action_service:settings",
         "//agentplane/app:settings",
-        "//cluster/cdk8s:model_selections",
         "//cluster/cdk8s/providers/cilium:ciliumnetworkpolicy",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",

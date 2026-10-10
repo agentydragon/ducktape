@@ -1,6 +1,7 @@
-"""The AT&T gateway exporter (`cluster/exporters/att_gateway/`): its Deployment on a node on
+"""The AT&T gateway exporter (`att_gateway/`): its Deployment on a node on
 the gateway's LAN, Service, ServiceMonitor and the "Home gateway" dashboard
-(`dashboard.json` beside this module).
+(`dashboard.json` beside this module). Also the CronJob running the image's syslog
+reconciler, which keeps the gateway sending its firewall log to alloy-syslog.
 
 The image tag is a placeholder; the hand-written `PINS_DIR` Component sets it via Flux's
 image-automation marker.
@@ -16,26 +17,29 @@ from prometheus_operator_crds.com.coreos.monitoring import (
     ServiceMonitorSpecEndpointsScheme,
     ServiceMonitorSpecSelector,
 )
+from pydantic_settings import BaseSettings
 
+from att_gateway.settings import Settings, SyslogLevel, SyslogSettings
 from cluster.cdk8s import pod_policy
 from cluster.cdk8s.att_gateway_exporter import access_code
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.forgejo_registry import chart as forgejo_images
 from cluster.cdk8s.grafana_dashboards import DashboardFile
+from cluster.cdk8s.home_lan import HOME_LAN
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT, HAND_WRITTEN_ROOT
+from cluster.cdk8s.monitoring import alloy
 from cluster.cdk8s.node_scheduling import OPTIPLEX
 from cluster.cdk8s.providers.grafana_operator.grafana_dashboard import GrafanaDashboard
 from cluster.cdk8s.providers.prometheus_operator.service_monitor import ServiceMonitor
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
-from cluster.exporters.att_gateway.settings import Settings
 from util.settings_contract import env_name
 
 NAME = "att-gateway-exporter"
 OUTPUT_DIR = f"{GENERATED_ROOT}/{NAME}"
 PINS_DIR = f"{HAND_WRITTEN_ROOT}/{NAME}-image-pins"
 _NAMESPACE = "monitoring"
-# The BGW320's fixed LAN address; only home-LAN nodes reach it.
-_GATEWAY_URL = "http://192.168.1.254"
+# Only home-LAN nodes reach the gateway.
+_GATEWAY_URL = f"http://{HOME_LAN.gateway}"
 _HTTP = Port(name="http", number=9173)
 _SERVICE = ServiceRef(
     name=NAME, port=_HTTP, pods=Pods(namespace=_NAMESPACE, labels=(("app.kubernetes.io/name", NAME),))
@@ -45,6 +49,34 @@ _IMAGE = f"git.allegedly.works/ducktape-ci/{NAME}:unset"
 DASHBOARD = DashboardFile(
     source="cluster/cdk8s/att_gateway_exporter/dashboard.json", config_map=f"{NAME}-dashboard", namespace=_NAMESPACE
 )
+
+
+_RESOURCES = k8s.ResourceRequirements(
+    requests={"cpu": k8s.Quantity.from_string("10m"), "memory": k8s.Quantity.from_string("64Mi")},
+    limits={"cpu": k8s.Quantity.from_string("200m"), "memory": k8s.Quantity.from_string("128Mi")},
+)
+
+
+def _gateway_env(settings: type[BaseSettings]) -> list[k8s.EnvVar]:
+    return [
+        k8s.EnvVar(name=env_name(settings, "url"), value=_GATEWAY_URL),
+        access_code.ACCESS_CODE.env_var(env_name(settings, "access_code")),
+    ]
+
+
+def _pod_spec(
+    container: k8s.Container, *, restart_policy: str | None = None, termination_grace_period_seconds: int | None = None
+) -> k8s.PodSpec:
+    """The exporter's and the reconciler's pods: one container running `_IMAGE`."""
+    return k8s.PodSpec(
+        restart_policy=restart_policy,
+        # The pull secret the github-exporter chart provisions in this namespace.
+        image_pull_secrets=[k8s.LocalObjectReference(name=forgejo_images.SECRET_NAME)],
+        automount_service_account_token=False,
+        termination_grace_period_seconds=termination_grace_period_seconds,
+        security_context=k8s.PodSecurityContext(run_as_non_root=True, run_as_user=65532, run_as_group=65532),
+        containers=[container],
+    )
 
 
 def _deployment(chart: Chart) -> k8s.KubeDeployment:
@@ -65,50 +97,75 @@ def _deployment(chart: Chart) -> k8s.KubeDeployment:
             selector=k8s.LabelSelector(match_labels=labels),
             template=k8s.PodTemplateSpec(
                 metadata=k8s.ObjectMeta(labels=labels),
-                spec=k8s.PodSpec(
-                    # The pull secret the github-exporter chart provisions in this namespace.
-                    image_pull_secrets=[k8s.LocalObjectReference(name=forgejo_images.SECRET_NAME)],
-                    automount_service_account_token=False,
-                    termination_grace_period_seconds=10,
-                    security_context=k8s.PodSecurityContext(
-                        run_as_non_root=True, run_as_user=65532, run_as_group=65532
+                spec=_pod_spec(
+                    k8s.Container(
+                        name="exporter",
+                        image=_IMAGE,
+                        image_pull_policy="IfNotPresent",
+                        # No readOnlyRootFilesystem: the aspect_rules_py launcher
+                        # materialises its venv inside the image at startup.
+                        env=[
+                            *_gateway_env(Settings),
+                            k8s.EnvVar(name=env_name(Settings, "listen_port"), value=str(_HTTP.number)),
+                        ],
+                        ports=[_HTTP.k8s_container_port()],
+                        # /metrics serves the cache, so probing it never reaches the gateway.
+                        liveness_probe=tcp,
+                        readiness_probe=tcp,
+                        resources=_RESOURCES,
                     ),
-                    containers=[
-                        k8s.Container(
-                            name="exporter",
-                            image=_IMAGE,
-                            image_pull_policy="IfNotPresent",
-                            # No readOnlyRootFilesystem: the aspect_rules_py launcher
-                            # materialises its venv inside the image at startup.
-                            env=[
-                                k8s.EnvVar(name=env_name(Settings, "url"), value=_GATEWAY_URL),
-                                k8s.EnvVar(name=env_name(Settings, "listen_port"), value=str(_HTTP.number)),
-                                k8s.EnvVar(
-                                    name=env_name(Settings, "access_code"),
-                                    value_from=k8s.EnvVarSource(
-                                        secret_key_ref=k8s.SecretKeySelector(
-                                            name=access_code.SECRET_NAME, key=access_code.SECRET_KEY
+                    termination_grace_period_seconds=10,
+                ),
+            ),
+        ),
+    )
+
+
+def _syslog_cron_job(chart: Chart) -> k8s.KubeCronJob:
+    return k8s.KubeCronJob(
+        chart,
+        "syslog",
+        metadata=k8s.ObjectMeta(
+            name=f"{NAME}-syslog",
+            namespace=_NAMESPACE,
+            annotations={"description": "Keeps the AT&T gateway sending its firewall log to alloy-syslog (syslog.ha)."},
+        ),
+        spec=k8s.CronJobSpec(
+            schedule="*/10 * * * *",
+            concurrency_policy="Forbid",
+            successful_jobs_history_limit=1,
+            failed_jobs_history_limit=3,
+            job_template=k8s.JobTemplateSpec(
+                spec=k8s.JobSpec(
+                    backoff_limit=0,
+                    active_deadline_seconds=300,
+                    template=k8s.PodTemplateSpec(
+                        spec=_pod_spec(
+                            k8s.Container(
+                                name="reconcile",
+                                image=_IMAGE,
+                                image_pull_policy="IfNotPresent",
+                                # The image's second binary (att_gateway/BUILD.bazel).
+                                command=["/att_gateway/syslog_reconciler_image_bin"],
+                                env=[
+                                    *_gateway_env(SyslogSettings),
+                                    *(
+                                        k8s.EnvVar(name=env_name(SyslogSettings, "syslog", field), value=value)
+                                        for field, value in (
+                                            ("enabled", "true"),
+                                            ("server", str(HOME_LAN.optiplex)),
+                                            ("port", str(alloy.GATEWAY_SYSLOG_HOST_PORT)),
+                                            # The most inclusive level.
+                                            ("level", str(SyslogLevel.NOTICE)),
                                         )
                                     ),
-                                ),
-                            ],
-                            ports=[_HTTP.k8s_container_port()],
-                            # /metrics serves the cache, so probing it never reaches the gateway.
-                            liveness_probe=tcp,
-                            readiness_probe=tcp,
-                            resources=k8s.ResourceRequirements(
-                                requests={
-                                    "cpu": k8s.Quantity.from_string("10m"),
-                                    "memory": k8s.Quantity.from_string("64Mi"),
-                                },
-                                limits={
-                                    "cpu": k8s.Quantity.from_string("200m"),
-                                    "memory": k8s.Quantity.from_string("128Mi"),
-                                },
+                                ],
+                                resources=_RESOURCES,
                             ),
+                            restart_policy="Never",
                         )
-                    ],
-                ),
+                    ),
+                )
             ),
         ),
     )
@@ -116,9 +173,9 @@ def _deployment(chart: Chart) -> k8s.KubeDeployment:
 
 def chart(app: App) -> Chart:
     chart = Chart(app, NAME, disable_resource_name_hashes=True)
-    deployment = _deployment(chart)
-    pod_policy.harden(deployment)
-    pod_policy.place(deployment, OPTIPLEX)
+    for workload in (_deployment(chart), _syslog_cron_job(chart)):
+        pod_policy.harden(workload)
+        pod_policy.place(workload, OPTIPLEX)
     k8s.KubeService(
         chart,
         "service",

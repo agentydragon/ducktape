@@ -11,6 +11,7 @@ py_library(
     srcs = ["kubernetes.py"],
     deps = [
         ":grpc_service",
+        ":history",
         "//agentplane:subjects",
         "//agentplane/sandbox_service:action_policy",
         "//agentplane/sandbox_service:client",
@@ -65,6 +66,7 @@ py_library(
         ":fake_inventory",
         ":fake_rbac",
         ":grpc_service",
+        ":history",
         "//agentplane:subjects",
         "//agentplane/sandbox_service:action_policy",
         "//agentplane/sandbox_service:client",
@@ -80,5 +82,25 @@ py_library(
         "//util:kubernetes",
         "@pypi//anyio",
         "@pypi//kubernetes_asyncio",
+    ],
+)
+
+py_library(
+    name = "history",
+    srcs = ["history.py"],
+    visibility = ["//agentplane/sandbox_service:__subpackages__"],
+    deps = [
+        "//agentplane/runner:client",
+        "//agentplane/sandbox_service:destinations",
+        "//agentplane/sandbox_service:grpc_api",
+        "//agentplane/sandbox_service:models",
+        "//agentplane/sandbox_service:protocol_pb2",
+        "//agentplane/sandbox_service/session_history:db",
+        "//agentplane/sandbox_service/session_history:ingestion",
+        "//agentplane/sandbox_service/session_history:store",
+        "@pypi//asyncpg",
+        "@pypi//grpcio",
+        "@pypi//protobuf",
+        "@pypi//sqlalchemy",
     ],
 )

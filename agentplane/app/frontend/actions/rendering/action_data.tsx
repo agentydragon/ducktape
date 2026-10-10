@@ -9,36 +9,7 @@ import { defineResultPreview, type ResultPreview, type ResultPreviewProps } from
 const objectSchema = z.record(z.string(), z.unknown());
 const resultSchema = z.unknown();
 
-const FIELD_LABELS: Readonly<Record<string, string>> = {
-  apiVersion: "API version",
-  best_before_date: "Best-before date",
-  calendar_id: "Calendar",
-  container: "Container",
-  event_id: "Event",
-  fieldSelector: "Field selector",
-  field_id: "Field",
-  gracePeriodSeconds: "Grace period (seconds)",
-  labelSelector: "Label selector",
-  label_ids: "Labels",
-  location_id: "Location",
-  max_results: "Maximum results",
-  message_id: "Message",
-  namespace: "Namespace",
-  node_id: "Node",
-  product_id: "Product",
-  query: "Search query",
-  repo: "Repository",
-  thread_id: "Thread",
-  thread_ids: "Threads",
-  timeout_seconds: "Timeout (seconds)",
-  time_max: "End time",
-  time_min: "Start time",
-  to: "Recipients",
-};
-
 function fieldLabel(key: string): string {
-  const known = FIELD_LABELS[key];
-  if (known !== undefined) return known;
   const spaced = key
     .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
     .replaceAll("_", " ")

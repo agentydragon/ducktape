@@ -135,7 +135,7 @@ class RunnerBridge:
         if runner_session is None:
             raise ThreadNotFoundError(thread_id)
         sessions = await self.list_sessions(runner_session.sandbox)
-        summary = next((row for row in sessions if row.session_id == runner_session.session_id), None)
+        summary = next((row for row in sessions if row.session_id in (str(thread_id), runner_session.session_id)), None)
         if summary is None:
             raise RunnerError(
                 f"runner has no retained session {runner_session.session_id!r}; this Thread cannot be resumed"

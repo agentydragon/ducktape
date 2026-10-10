@@ -101,9 +101,11 @@ setting, while the account metadata remains 65,535. Changing that policy require
 separate behavioral change; do not replace account metadata with a borrowed Google API
 limit.
 
-The ingress follow-up should consume `Environment.model_routes`, not extract IDs from
-`app_config` and look them back up. It must preserve the distinction between metadata
-availability and the existing, deliberately narrow runner override policy.
+The unused `Environment.model_routes` placeholder has been removed. The ingress
+follow-up (#8899) must introduce any needed typed inputs together with their consumer,
+not extract IDs from `app_config` and look them back up. Preserve the distinction
+between metadata availability and the existing, deliberately narrow runner override
+policy; no ingress or runner behavior changes with this cleanup.
 
 Runtime services own their configuration/API schemas and consume serialized data;
 they do not import generator internals. Diagnostic probes and acceptance tests likewise

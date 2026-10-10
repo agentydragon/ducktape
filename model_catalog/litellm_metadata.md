@@ -322,18 +322,24 @@ model IDs only, so it does not import the backend limits automatically.
 The pinned gateway's embedded catalogue predates the three 5.5 entries. Its
 [updater](https://github.com/router-for-me/CLIProxyAPI/blob/7fac6b15bcfe5ea55c18c9eaec8e5b7e6457d974/internal/registry/model_updater.go)
 can refresh from the upstream catalogue on startup and every three hours; runtime
-configuration and fetch success still matter. TODO(#9574): verify all four exact IDs
-are registered and available on the deployed account. This change is not a live
-availability claim, and does not upgrade the gateway binary or change its updater.
+configuration and fetch success still matter. The roster change did not upgrade the
+gateway binary or change its updater.
 
-TODO(#9574): input boundaries, full output and joint capacity remain untested.
+[Read-only rollout verification, 2026-10-09 07:20–07:23 PDT](https://github.com/agentydragon/ducktape/issues/9574#issuecomment-6082872487)
+confirmed all four exact IDs in the live gateway registration and proxy configuration,
+the applied subscription key selections, and matching positive pricing metadata on
+both LiteLLM replicas. This closes the registration/configuration/pricing-presence
+checks for that dated rollout, not account request success or spend accounting.
+
+TODO(#9574): account request success, beta-dependent input boundaries, full output
+and joint capacity remain untested.
 The executor forwards a requested 1M-context beta rather than enabling it from
 metadata alone; the retained wrapper's `[1m]` convention is unchanged. It fills
 an omitted request `max_tokens` from the registry, but that is not a general clamp
 on caller-supplied values. No beta, request-cap, client-budget, pricing override,
 reasoning-effort policy, inference probe or capacity test is added here.
 
-Rollout also needs a current LiteLLM cost map: the pinned 1.100.1 bundled backup
+The verified rollout used a current LiteLLM cost map: the pinned 1.100.1 bundled backup
 omits these four IDs, while the inspected
 [remote snapshot `63a4f3f2f333`](https://github.com/BerriAI/litellm/blob/63a4f3f2f3334bbd239c4c3e4c3302b63b02f71d/model_prices_and_context_window.json)
 contains them. Pricing ownership remains with that catalogue; do not treat missing

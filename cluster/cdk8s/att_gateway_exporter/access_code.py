@@ -8,12 +8,12 @@ from cdk8s import Chart
 
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
+from cluster.cdk8s.secret_ref import SecretRef
 
 NAME = "att-gateway-exporter-secrets"
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/{NAME}"
 # The Secret `access-code.sops.yaml` defines.
-SECRET_NAME = "att-gateway-exporter-access-code"
-SECRET_KEY = "access-code"
+ACCESS_CODE = SecretRef(namespace="monitoring", name="att-gateway-exporter-access-code").key("access-code")
 
 
 def att_gateway_exporter_secrets(

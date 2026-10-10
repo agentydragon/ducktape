@@ -15,12 +15,23 @@ use std::collections::BTreeSet;
 
 use anyhow::Result;
 use source_match_holes::{
-    ANYTHING_HOLE_KEYWORD, ARGS_HOLE_KEYWORD, CASE_REST_HOLE_KEYWORD, STMT_LIST_HOLE_KEYWORD,
-    hole_keyword, hole_name_for,
+    ANYTHING_HOLE_KEYWORD, ARGS_HOLE_KEYWORD, CASE_REST_HOLE_KEYWORD, SEQ_EXPRS_HOLE_KEYWORD,
+    STMT_LIST_HOLE_KEYWORD, hole_keyword, hole_name_for,
 };
 use swc_common::{DUMMY_SP, Span, Spanned, SyntaxContext};
 use swc_ecma_ast::*;
 use swc_ecma_visit::{Visit, VisitWith};
+
+#[derive(Default)]
+struct RetainedIdentifiers(BTreeSet<String>);
+
+impl Visit for RetainedIdentifiers {
+    fn visit_ident(&mut self, ident: &Ident) {
+        if hole_keyword(&ident.sym).is_none() {
+            self.0.insert(ident.sym.to_string());
+        }
+    }
+}
 
 /// `(lo, hi)` byte offsets of a retained concrete token.
 pub(crate) type AnchorSpan = (u32, u32);
@@ -101,17 +112,43 @@ pub(crate) fn holed_function_body(
     holed
 }
 
-/// Hole a function for selector form: every parameter to an `ANYTHING` pattern
-/// (pinning arity, not names) and the body's statements to `STMT_LIST` runs
-/// around the kept anchors. Used both for top-level function selectors and for
+/// Hole a function for selector form, preserving parameters referenced by the
+/// retained body. Used both for top-level function selectors and for
 /// function-valued subexpressions reached through [`hole_expr`].
 pub(crate) fn hole_function(function: &Function, kept: &BTreeSet<AnchorSpan>) -> Function {
     let mut holed = function.clone();
-    holed.params = function.params.iter().map(|_| anything_param()).collect();
     if let Some(body) = &function.body {
         holed.body = Some(holed_function_body(body, kept));
     }
+    let retained = retained_body_identifiers(holed.body.as_ref());
+    holed.params = function
+        .params
+        .iter()
+        .map(|param| retain_or_hole_param(param, &retained))
+        .collect();
     holed
+}
+
+pub(crate) fn retained_body_identifiers(body: Option<&FunctionBody>) -> BTreeSet<String> {
+    let mut retained = RetainedIdentifiers::default();
+    if let Some(body) = body {
+        body.visit_with(&mut retained);
+    }
+    retained.0
+}
+
+pub(crate) fn retain_or_hole_param(param: &Param, retained: &BTreeSet<String>) -> Param {
+    if pattern_referenced_by_retained_body(&param.pat, retained) {
+        param.clone()
+    } else {
+        anything_param()
+    }
+}
+
+fn pattern_referenced_by_retained_body(pat: &Pat, retained: &BTreeSet<String>) -> bool {
+    let mut identifiers = RetainedIdentifiers::default();
+    pat.visit_with(&mut identifiers);
+    !identifiers.0.is_disjoint(retained)
 }
 
 /// Prune an expression into selector form: keep concrete tokens whose span is in
@@ -123,7 +160,12 @@ pub(crate) fn hole_expr(expr: &Expr, kept: &BTreeSet<AnchorSpan>) -> Expr {
         return anything_expr();
     }
     match expr {
-        Expr::Paren(paren) => hole_expr(&paren.expr, kept),
+        // Preserve grouping around arrow bodies and callees. Stripping these
+        // parentheses can move a comma expression outside the arrow on emit.
+        Expr::Paren(paren) => Expr::Paren(ParenExpr {
+            expr: Box::new(hole_expr(&paren.expr, kept)),
+            ..paren.clone()
+        }),
         Expr::Lit(_) | Expr::Ident(_) | Expr::Tpl(_) => expr.clone(),
         Expr::Member(member) => {
             let mut holed = member.clone();
@@ -144,23 +186,18 @@ pub(crate) fn hole_expr(expr: &Expr, kept: &BTreeSet<AnchorSpan>) -> Expr {
         }
         Expr::Object(object) => Expr::Object(hole_object(object, kept)),
         Expr::Array(array) => Expr::Array(hole_array(array, kept)),
-        // Sequence (comma) expression (`(super(a), this.x = b, this.label = "tok")`):
-        // hole each element the way [`hole_array`] holes array elements — a non-anchor
-        // element collapses to `ANYTHING` through the leading guard, the anchored one
-        // recurses. A discriminating leaf buried in a comma-sequence (e.g. an error
-        // subclass whose entire constructor body is one sequence statement) is holed in
-        // place rather than kept verbatim; keeping it verbatim leaves raw sibling
-        // subtrees the matcher rejects, forcing the read-off all the way to
-        // enclosing-context anchoring. Arity-exact (no run hole), mirroring the array
-        // path — the matcher's `SEQ_EXPRS` sequence run hole absorbs a variable-length
-        // element run, and emitting it here instead is a separate step.
+        // Keep sequence elements carrying an anchor and absorb each run of the
+        // others with `SEQ_EXPRS`. A per-element `ANYTHING` would pin the
+        // sequence length, which can change when unrelated assignments move.
         Expr::Seq(seq) => {
             let mut holed = seq.clone();
-            holed.exprs = seq
-                .exprs
-                .iter()
-                .map(|element| Box::new(hole_expr(element, kept)))
-                .collect();
+            holed.exprs = collapse_omitted_runs(
+                seq.exprs.iter().map(|element| {
+                    node_retains_any(element.span(), kept)
+                        .then(|| Box::new(hole_expr(element, kept)))
+                }),
+                || Box::new(Expr::Ident(ident_node(SEQ_EXPRS_HOLE_KEYWORD))),
+            );
             Expr::Seq(holed)
         }
         Expr::Await(await_expr) => {
@@ -203,8 +240,8 @@ pub(crate) fn hole_expr(expr: &Expr, kept: &BTreeSet<AnchorSpan>) -> Expr {
             Expr::Assign(holed)
         }
         // Function/arrow-valued subexpressions (e.g. a `wrap(function(){…})` or
-        // `useCallback((e) => {…})` initializer) carrying a kept anchor: hole the
-        // params to `ANYTHING` and the body to `STMT_LIST` around the anchor, the
+        // `useCallback((e) => {…})` initializer) carrying a kept anchor: hole
+        // unreferenced params and the body to `STMT_LIST` around the anchor, the
         // same interior holing the top-level function selector does. A callback
         // with no kept anchor never reaches here — the leading `node_retains_any`
         // guard already collapsed it to `ANYTHING`.
@@ -215,7 +252,6 @@ pub(crate) fn hole_expr(expr: &Expr, kept: &BTreeSet<AnchorSpan>) -> Expr {
         }
         Expr::Arrow(arrow) => {
             let mut holed = arrow.clone();
-            holed.params = arrow.params.iter().map(|_| anything_pat()).collect();
             holed.body = Box::new(match arrow.body.as_ref() {
                 ArrowFunctionBody::FunctionBody(body) => {
                     ArrowFunctionBody::FunctionBody(holed_function_body(body, kept))
@@ -224,6 +260,22 @@ pub(crate) fn hole_expr(expr: &Expr, kept: &BTreeSet<AnchorSpan>) -> Expr {
                     ArrowFunctionBody::Expr(Box::new(hole_expr(expr, kept)))
                 }
             });
+            // A retained body reference must still bind to its parameter. A
+            // parameter hole would let `n[(n.KEY = 0)]` match a write through an
+            // unrelated receiver, even though `n` itself matches alpha-renames.
+            let mut retained = RetainedIdentifiers::default();
+            holed.body.visit_with(&mut retained);
+            holed.params = arrow
+                .params
+                .iter()
+                .map(|param| {
+                    if pattern_referenced_by_retained_body(param, &retained.0) {
+                        param.clone()
+                    } else {
+                        anything_pat()
+                    }
+                })
+                .collect();
             Expr::Arrow(holed)
         }
         // Unmodeled shapes carrying a kept anchor: keep verbatim rather than
@@ -273,7 +325,10 @@ fn hole_callee_expr(expr: &Expr, kept: &BTreeSet<AnchorSpan>) -> Expr {
             holed.obj = Box::new(hole_expr(&member.obj, kept));
             Expr::Member(holed)
         }
-        Expr::Paren(paren) => hole_callee_expr(&paren.expr, kept),
+        Expr::Paren(paren) => Expr::Paren(ParenExpr {
+            expr: Box::new(hole_callee_expr(&paren.expr, kept)),
+            ..paren.clone()
+        }),
         // Bare-identifier callee (and any other callee expression): hole through the
         // normal path. A bare-function name is alpha-wildcarded by the matcher and is
         // never a chosen anchor, so `hole_expr` holes it to `ANYTHING`.

@@ -134,12 +134,19 @@ spec:
           value: http://loki-write.loki.svc.cluster.local:3100/loki/api/v1/push
         - name: SYSLOG_LISTEN_ADDRESS
           value: 0.0.0.0:5514
+        - name: GATEWAY_SYSLOG_LISTEN_ADDRESS
+          value: 0.0.0.0:5515
       extraPorts:
         - hostPort: 514
           name: syslog
           port: 514
           protocol: UDP
           targetPort: 5514
+        - hostPort: 1514
+          name: gateway-syslog
+          port: 1514
+          protocol: UDP
+          targetPort: 5515
       resources:
         requests:
           cpu: 10m

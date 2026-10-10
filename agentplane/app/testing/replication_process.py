@@ -10,7 +10,7 @@ import asyncio
 import multiprocessing
 import signal
 import socket
-from collections.abc import AsyncIterator, Sequence
+from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass
@@ -41,19 +41,21 @@ from agentplane.app.identity import CallerIdentity, CallerKind, require_caller
 from agentplane.app.live import LiveIndex
 from agentplane.app.model_catalog import ModelCatalog, ModelOption
 from agentplane.app.operator_sessions import OperatorSessionStore
-from agentplane.app.testing.legacy_event_log import LegacyEventLogStore as EventLogStore
-from agentplane.app.testing.legacy_ingestion import LegacyIngester as Ingester, LegacyIngestion as Ingestion
-from agentplane.app.testing.legacy_thread_store import LegacyThreadStore as ThreadStore
 from agentplane.app.testing.model_test_data import TEST_REASONING_EFFORTS
 from agentplane.app.testing.replication_source import SANDBOX
+from agentplane.app.threads import ingestion as ingestion_module
 from agentplane.app.threads.bridge import RunnerBridge
-from agentplane.app.threads.events.ingestion_lease import IngestionLease
+from agentplane.app.threads.events.event_log import EventLogStore
+from agentplane.app.threads.events.projection_lease import ProjectionLease
+from agentplane.app.threads.history_projector import HistoryProjector, ProjectionProgress
+from agentplane.app.threads.ingestion import Ingester, Ingestion
 from agentplane.app.threads.sessions import SandboxSessions
+from agentplane.app.threads.store import ThreadStore
 from agentplane.app.threads.view.content import ContentStore
-from agentplane.protocol import event_log_pb2
 from agentplane.runner.harness import Harness
+from agentplane.sandbox_service.client import SandboxServiceClient
 from agentplane.sandbox_service.egress_views import EgressReader
-from agentplane.sandbox_service.testing.backend import backend, seed_runner
+from agentplane.sandbox_service.testing.backend import seed_runner
 from agentplane.sandbox_service.testing.fake_inventory import NAMESPACE, FakeCoreV1Api, FakeCustomObjectsApi
 
 # gazelle:include_dep @pypi//protobuf
@@ -187,19 +189,18 @@ class GatedSession(AsyncSession):
         return GatedTransaction(self)
 
 
-class GatedIngestion(Ingestion):
-    def __init__(self, engine: AsyncEngine, gate: Gate, cursor: int) -> None:
-        super().__init__(engine)
+class GatedProjector(HistoryProjector):
+    def __init__(self, engine: AsyncEngine, reader: SandboxServiceClient, gate: Gate, cursor: int) -> None:
+        super().__init__(engine, reader)
         self._sessions = async_sessionmaker(engine, class_=GatedSession, expire_on_commit=False)
         self._gate = gate
         self._cursor = cursor
 
-    async def record(
-        self, thread_id: UUID, entries: Sequence[event_log_pb2.EventEntry], *, lease: IngestionLease
-    ) -> None:
-        token = _record_gate.set(self._gate if any(entry.cursor == self._cursor for entry in entries) else None)
+    async def project_batch(self, thread_id: UUID, *, lease: ProjectionLease) -> ProjectionProgress:
+        page = await self._reader.read_session_events(str(thread_id), limit=1)
+        token = _record_gate.set(self._gate if page.last_cursor >= self._cursor else None)
         try:
-            await super().record(thread_id, entries, lease=lease)
+            return await super().project_batch(thread_id, lease=lease)
         finally:
             _record_gate.reset(token)
 
@@ -253,9 +254,10 @@ async def _serve(
     replay_after: int | None,
     electric_url: str | None,
 ) -> None:
+    ingestion_module.RECONCILE_S = 0.05
     engine = connect(database_url)
-    store, event_logs, content = ThreadStore(engine), EventLogStore(engine), ContentStore(engine)
-    ingestion = Ingestion(engine) if boundary is None else GatedIngestion(engine, Gate(boundary, connection), cursor)
+    store = ThreadStore(engine)
+    ingestion = Ingestion(engine)
     database_updates = DatabaseUpdates(engine.url)
     custom, core = cast(Any, FakeCustomObjectsApi()), cast(Any, FakeCoreV1Api())
     index = LiveIndex(
@@ -265,13 +267,27 @@ async def _serve(
         raw, running = seed_runner(custom, core, SANDBOX)
         index.sandboxes[SANDBOX] = raw
         index.pods[SANDBOX] = running
-    with (
-        TemporaryDirectory() as directory,
-        backend(custom, core, Path(directory) / "token", runner_port=runner_port) as endpoint,
-    ):
-        inventory = endpoint.client()
+    with TemporaryDirectory() as directory:
+        token_file = Path(directory) / "token"
+        await asyncio.to_thread(token_file.write_text, "test-app-history-peer")
+        inventory = SandboxServiceClient(
+            f"127.0.0.1:{runner_port}",
+            namespace=NAMESPACE,
+            token_file=token_file,
+            command_admission_timeout_s=10,
+            request_timeout_s=10,
+            lifecycle_timeout_s=10,
+            follow_timeout_s=10,
+        )
+        event_logs = EventLogStore(engine, history_reader=inventory)
+        content = ContentStore(engine, history_reader=inventory)
+        projector = (
+            GatedProjector(engine, inventory, Gate(boundary, connection), cursor)
+            if boundary is not None
+            else HistoryProjector(engine, inventory)
+        )
         runners = SandboxSessions(index, inventory)
-        ingester = Ingester(runners=runners, event_logs=event_logs, ingestion=ingestion)
+        ingester = Ingester(runners=runners, event_logs=event_logs, ingestion=ingestion, history_projector=projector)
         bridge = RunnerBridge(runners=runners, event_logs=event_logs, content=content, ingester=ingester)
         async with (
             httpx.AsyncClient(base_url="http://test-unused-decisions.invalid") as decisions_http,

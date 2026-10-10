@@ -11,6 +11,7 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager, suppress
 from dataclasses import replace
 from datetime import timedelta
+from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
 from uuid import UUID
 
@@ -31,10 +32,8 @@ from sqlalchemy import select, update
 from agentplane.app.database import connect
 from agentplane.app.testing import thread_view_marks
 from agentplane.app.testing.electric_service import ElectricService, electric_service
+from agentplane.app.testing.history import ProjectedHistory as Ingestion, SeededEventLogStore as EventLogStore
 from agentplane.app.testing.http2_proxy import BrowserCertificate, http2_proxy
-from agentplane.app.testing.legacy_event_log import LegacyEventLogStore as EventLogStore
-from agentplane.app.testing.legacy_ingestion import LegacyIngestion as Ingestion
-from agentplane.app.testing.legacy_thread_store import LegacyThreadStore as ThreadStore
 from agentplane.app.testing.replication_process import app_process
 from agentplane.app.testing.replication_source import SANDBOX, SESSION, ReplicationSource
 from agentplane.app.testing.thread_browser import (
@@ -47,14 +46,15 @@ from agentplane.app.testing.thread_browser import (
     message_composer,
 )
 from agentplane.app.threads.models import (
-    FeedState,
     ThreadCheckpoint,
     ThreadEntity,
     ThreadEvidence,
+    ThreadHistorySummary,
     ThreadNativeLink,
     ThreadPayloadChunk,
     ThreadPayloadManifest,
 )
+from agentplane.app.threads.store import ThreadStore
 from agentplane.app.threads.view.content import ContentStore
 from agentplane.app.threads.view.views import ThreadFeedErrorState, ThreadOperationalState, ThreadViewState
 from agentplane.protocol import command_pb2, event_log_pb2, event_pb2
@@ -100,7 +100,11 @@ async def test_archived_thread_page_survives_deleted_sandbox_and_reload(
     directory = get_required_path("_main/agentplane/app/frontend/dist/index.html").parent
     async with (
         app_process(
-            db_url, runner_port=0, frontend_directory=directory, sandbox_present=False, electric_url=electric.url
+            db_url,
+            runner_port=int(event_logs.reader.target.rsplit(":", 1)[1]),
+            frontend_directory=directory,
+            sandbox_present=False,
+            electric_url=electric.url,
         ) as app,
         http2_proxy(app.url, certificate) as ingress,
     ):
@@ -178,7 +182,11 @@ async def test_switching_threads_starts_at_each_threads_tail(
     directory = get_required_path("_main/agentplane/app/frontend/dist/index.html").parent
     async with (
         app_process(
-            db_url, runner_port=0, frontend_directory=directory, sandbox_present=False, electric_url=electric.url
+            db_url,
+            runner_port=int(event_logs.reader.target.rsplit(":", 1)[1]),
+            frontend_directory=directory,
+            sandbox_present=False,
+            electric_url=electric.url,
         ) as app,
         http2_proxy(app.url, certificate) as ingress,
     ):
@@ -218,7 +226,11 @@ async def test_returning_to_a_thread_lays_its_rows_out_at_the_heights_they_had(
     directory = get_required_path("_main/agentplane/app/frontend/dist/index.html").parent
     async with (
         app_process(
-            db_url, runner_port=0, frontend_directory=directory, sandbox_present=False, electric_url=electric.url
+            db_url,
+            runner_port=int(event_logs.reader.target.rsplit(":", 1)[1]),
+            frontend_directory=directory,
+            sandbox_present=False,
+            electric_url=electric.url,
         ) as app,
         http2_proxy(app.url, certificate) as ingress,
     ):
@@ -271,7 +283,11 @@ async def test_returning_to_a_thread_reads_only_what_changed_while_the_reader_wa
     directory = get_required_path("_main/agentplane/app/frontend/dist/index.html").parent
     async with (
         app_process(
-            db_url, runner_port=0, frontend_directory=directory, sandbox_present=False, electric_url=electric.url
+            db_url,
+            runner_port=int(event_logs.reader.target.rsplit(":", 1)[1]),
+            frontend_directory=directory,
+            sandbox_present=False,
+            electric_url=electric.url,
         ) as app,
         http2_proxy(app.url, certificate) as ingress,
     ):
@@ -316,8 +332,6 @@ async def test_returning_to_a_thread_reads_only_what_changed_while_the_reader_wa
         await open_thread(1)
         await expect(page.get_by_text("Thread 1 message 129", exact=True)).to_be_visible()
         # A message lands in the thread while the reader is elsewhere.
-        lease = await ingestion.acquire(SANDBOX, timedelta(minutes=1))
-        assert lease is not None
         source = sources[0]
         source.append(
             event_pb2.Event(
@@ -333,8 +347,7 @@ async def test_returning_to_a_thread_reads_only_what_changed_while_the_reader_wa
                 )
             )
         )
-        await ingestion.record(threads[0], source.entries[-2:], lease=lease)
-        await ingestion.release(lease)
+        event_logs.peer.publish(threads[0], source.entries[-2:])
 
         mark = len(requests)
         await open_thread(0)
@@ -449,7 +462,7 @@ async def test_projection_epoch_replacement_retires_old_requests_and_preserves_d
 
 
 async def test_projected_browser_streams_runner_events_and_loads_evidence_lazily(
-    page: Page, certificate: BrowserCertificate
+    page: Page, certificate: BrowserCertificate, tmp_path: Path
 ) -> None:
     source = ReplicationSource()
     source.attached.active_turn_id = "test-projected-turn"
@@ -502,9 +515,12 @@ async def test_projected_browser_streams_runner_events_and_loads_evidence_lazily
 
     page.on("request", observe)
     directory = get_required_path("_main/agentplane/app/frontend/dist/index.html").parent
-    async with electric_service() as service:
+    async with electric_service() as service, source.connect(tmp_path / "history-token") as history_client:
         engine = connect(service.database_url)
-        event_logs, content = EventLogStore(engine), ContentStore(engine)
+        event_logs, content = (
+            EventLogStore(engine, peer=source, history_reader=history_client),
+            ContentStore(engine, history_reader=history_client),
+        )
         try:
             thread = await event_logs.open(SANDBOX, SESSION, source.attached.spec)
             await ThreadStore(engine).rename(thread, "Streamed thread")
@@ -1801,7 +1817,7 @@ async def test_reload_redelivers_an_unsaved_command_with_its_original_identity(t
     assert command.submit_input.text == "Test input retained across an unsent request"
     await expect(page.get_by_role("button", name="Retry", exact=True)).to_be_enabled()
     (thread,) = await thread_browser.store.list_threads(sandbox=SANDBOX)
-    assert await thread_browser.event_logs.events(thread.id, limit=100) == source.entries[:4]
+    assert await thread_browser.event_logs.last_cursor(thread.id) == 4
 
     async with page.expect_request(original.url) as redelivered:
         await page.reload()
@@ -2294,7 +2310,7 @@ async def test_rejected_source_suffix_stops_browser_without_replacing_verified_h
     rejected.cursor = 6
     rejected.origin.sequence = 6
 
-    await expect(page.get_by_role("alert")).to_contain_text("expected runner cursor 5, received 6")
+    await expect(page.get_by_role("alert")).to_contain_text("Session history projection stalled")
     await expect(page.get_by_role("alert")).to_contain_text("Showing verified history through event 4")
     await expect(page.get_by_text("Test retained prefix", exact=True)).to_have_count(1)
     await expect(page.get_by_text("INVALID SUFFIX", exact=False)).to_have_count(0)
@@ -2302,7 +2318,7 @@ async def test_rejected_source_suffix_stops_browser_without_replacing_verified_h
     await expect(message_composer(page)).to_be_disabled()
     await expect(page.get_by_role("button", name="Interrupt", exact=True)).to_be_disabled()
     (thread,) = await thread_browser.store.list_threads(sandbox=SANDBOX)
-    assert await thread_browser.event_logs.events(thread.id, limit=100) == source.entries[:4]
+    assert await thread_browser.event_logs.last_cursor(thread.id) == 4
 
 
 async def test_unknown_projection_failure_keeps_verified_history_and_stops_browser(
@@ -2323,7 +2339,7 @@ async def test_unknown_projection_failure_keeps_verified_history_and_stops_brows
         assert checkpoint is not None
         view = await session.get(ThreadEntity, (thread.id, checkpoint.projection_epoch, "view_state", "current"))
         assert view is not None
-        feed = await session.get(FeedState, thread.id)
+        feed = await session.get(ThreadHistorySummary, thread.id)
         assert feed is not None
         state = ThreadViewState.model_validate(view.state)
         view.state = state.model_copy(

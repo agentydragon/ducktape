@@ -15,7 +15,6 @@ from cilium_crds.io.cilium import CiliumNetworkPolicySpecEgress
 
 from agentplane.action_service.settings import ActionServiceDeploymentSettings
 from agentplane.app.settings import AppSettingsConfig
-from cluster.cdk8s.model_selections import HarnessRoutes
 
 
 @dataclass(frozen=True)
@@ -120,8 +119,6 @@ class Environment:
     app_config: AppSettingsConfig
     # Options for Sandbox Service's gRPC channel to the runner, authored into its ConfigMap.
     runner_grpc_channel_options: Mapping[str, int | str]
-    # Shared source for app settings and the follow-up ingress metadata projection.
-    model_routes: HarnessRoutes
     db: DbProps
     llm_ingress: LlmIngressProps
     egress: EgressProps

@@ -61,6 +61,14 @@ describe("Action presentation slots", () => {
     expect(shouldRenderPaneRequestTitle(action, args, "Inspect the running demo pods")).toBe(true);
   });
 
+  it("keeps fallback argument labels generic instead of dispatching on action fields", async () => {
+    const details = await mount(
+      renderDetailsArguments({ group: "grocy_sf", name: "products_list" }, { vendor_field: "fixture" })
+    );
+
+    expect(details.textContent).toContain("Vendor field");
+  });
+
   it("uses SSH's custom pane and full-details argument renderers", async () => {
     const collapsed = await mount(renderPaneCollapsed(SSH_EXEC, SSH_EXEC_ARGUMENTS));
     const opened = await mount(renderPaneOpened(SSH_EXEC, SSH_EXEC_ARGUMENTS));

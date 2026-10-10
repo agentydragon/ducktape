@@ -16,11 +16,12 @@ import pytest_bazel
 
 from agentplane.app.database import connect
 from agentplane.app.testing.electric_service import ElectricService, electric_service
-from agentplane.app.testing.legacy_event_log import LegacyEventLogStore as EventLogStore
-from agentplane.app.testing.legacy_ingestion import LegacyIngestion as Ingestion
+from agentplane.app.testing.history import ProjectedHistory as Ingestion, SeededEventLogStore as EventLogStore
+from agentplane.app.testing.history_service import HistoryService
 from agentplane.app.testing.replication_source import SANDBOX, SESSION, ReplicationSource
-from agentplane.app.threads.events.ingestion_lease import IngestionLease
+from agentplane.app.threads.events.projection_lease import ProjectionLease
 from agentplane.protocol import event_pb2
+from agentplane.sandbox_service.client import SandboxServiceClient
 from util.testing.undeclared_outputs import undeclared_outputs_dir
 
 # gazelle:include_dep @pypi//protobuf
@@ -30,7 +31,9 @@ _WAL_CAP_BYTES = 1024 * 1024
 _BATCH_BYTES = 4 * 1024 * 1024
 
 
-async def test_electric_lagging_slot_forces_client_resnapshot_after_wal_cap() -> None:
+async def test_electric_lagging_slot_forces_client_resnapshot_after_wal_cap(
+    history_peer: HistoryService, history_client: SandboxServiceClient
+) -> None:
     """A stopped Electric service loses its slot and cannot continue an old shape cursor."""
     with tempfile.TemporaryDirectory(prefix="electric-wal-state-") as state_dir:
         async with electric_service(
@@ -38,7 +41,10 @@ async def test_electric_lagging_slot_forces_client_resnapshot_after_wal_cap() ->
             electric_storage_dir=Path(state_dir),
         ) as service:
             engine = connect(service.database_url)
-            event_logs, ingestion = EventLogStore(engine), Ingestion(engine)
+            event_logs, ingestion = (
+                EventLogStore(engine, peer=history_peer, history_reader=history_client),
+                Ingestion(engine, peer=history_peer, history_reader=history_client),
+            )
             try:
                 thread, source, lease = await _project_initial_item(event_logs, ingestion)
                 params = {"table": "thread_entity", "where": f"thread_id = '{thread}'"}
@@ -135,7 +141,7 @@ async def test_electric_lagging_slot_forces_client_resnapshot_after_wal_cap() ->
 
 async def _project_initial_item(
     event_logs: EventLogStore, ingestion: Ingestion
-) -> tuple[UUID, ReplicationSource, IngestionLease]:
+) -> tuple[UUID, ReplicationSource, ProjectionLease]:
     source = ReplicationSource()
     source.append(event_pb2.Event(harness_started=event_pb2.HarnessStarted(pid=123)))
     source.append(event_pb2.Event(turn_started=event_pb2.TurnStarted(turn_id="turn", model="test-model")))

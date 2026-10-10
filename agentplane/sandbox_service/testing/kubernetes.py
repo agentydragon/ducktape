@@ -19,6 +19,7 @@ from agentplane.sandbox_service.kubernetes_bindings import KubernetesBindings
 from agentplane.sandbox_service.kubernetes_views import MANAGED_LABEL
 from agentplane.sandbox_service.provisioning import Provisioning
 from agentplane.sandbox_service.testing.grpc_service import service_client
+from agentplane.sandbox_service.testing.history import with_history
 from agentplane.subjects import ServiceAccountRef
 from agentplane.testing.fake_apiserver import SANDBOX_NAMESPACE, FakeApiServer, TokenVerdict, fake_apiserver, pod_for
 from agentplane.workload_auth.principal import WorkloadPrincipalResolver
@@ -91,6 +92,7 @@ async def authenticated_service(
     runner_port: int,
     token_file: Path,
     *,
+    history_database_url: str | None = None,
     manager: ServiceAccountRef | None = None,
     token: str = "test-app-service-token",
     audience: str = "test-app-sandbox-service",
@@ -117,5 +119,8 @@ async def authenticated_service(
         platform_instructions=platform_instructions,
         follow_lease_s=1,
     )
-    async with service_client(resources, token_file) as client:
+    async with (
+        with_history(resources, history_database_url) as configured,
+        service_client(configured, token_file) as client,
+    ):
         yield client

@@ -303,8 +303,9 @@ _HAIKU = Model("claude-haiku-4-5-20251001", "Haiku 4.5")
 # https://github.com/router-for-me/models/blob/e63af9856bda19828dfe93a6fa0559a5ab32965c/models.json
 # CLIProxyAPI publishes context_length as max_input_tokens and max_completion_tokens
 # as max_tokens. These are gateway declarations, not Max20 account measurements.
-# TODO(#9574): verify live registration/availability, beta-dependent input boundaries
-# and joint input/output capacity. No request caps or client budgets are inferred.
+# Registration/configuration/pricing presence verified 2026-10-09; see litellm_metadata.md.
+# TODO(#9574): account request success, beta-dependent input boundaries and joint
+# input/output capacity remain untested. No request caps or client budgets are inferred.
 _SUBSCRIPTION_OPUS = Model(
     "claude-opus-5-5", "Opus 5.5", TokenLimits(max_input_tokens=1_000_000, max_output_tokens=128_000)
 )

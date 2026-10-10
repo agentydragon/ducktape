@@ -27,13 +27,17 @@ from agentplane.app.identity import TokenReviewer
 from agentplane.app.live import LiveIndex
 from agentplane.app.operator_sessions import BrowserSession, OperatorSession, OperatorSessionStore, SessionRow
 from agentplane.app.testing.egress_proxy import FakeEgressAdmin
-from agentplane.app.testing.legacy_event_log import LegacyEventLogStore as EventLogStore
-from agentplane.app.testing.legacy_ingestion import LegacyIngester as Ingester, LegacyIngestion as Ingestion
-from agentplane.app.testing.legacy_thread_store import LegacyThreadStore as ThreadStore
+from agentplane.app.testing.history import (
+    ProjectedHistory as Ingestion,
+    ProjectedIngester as Ingester,
+    SeededEventLogStore as EventLogStore,
+)
+from agentplane.app.testing.history_service import HistoryService
 from agentplane.app.testing.thread_test_support import SPEC, Replica, event_entry
 from agentplane.app.threads.bridge import RunnerBridge
-from agentplane.app.threads.events.ingestion_lease import IngestionLease
+from agentplane.app.threads.events.projection_lease import ProjectionLease
 from agentplane.app.threads.sessions import SandboxSessions
+from agentplane.app.threads.store import ThreadStore
 from agentplane.app.threads.view.content import ContentStore
 
 # The per-test database is created over psycopg, which SQLAlchemy loads from the URL scheme.
@@ -122,6 +126,24 @@ def db_url(postgres_container: PostgresContainer, request: pytest.FixtureRequest
 
 
 @pytest.fixture
+def service_history_db_url(db_url: str) -> Iterator[str]:
+    """A separate disposable database; its schema belongs to the service fixture."""
+    app_url = make_url(db_url)
+    admin = app_url.set(database="postgres", drivername="postgresql+psycopg").render_as_string(hide_password=False)
+    name = f"{app_url.database}_service"
+    created = create_database_sync(admin, name)
+    try:
+        yield make_url(created).set(drivername="postgresql+asyncpg").render_as_string(hide_password=False)
+    finally:
+        force_drop_database_sync(admin, name)
+
+
+@pytest.fixture
+def integration_history_database_url() -> str | None:
+    return None
+
+
+@pytest.fixture
 async def engine(db_url: str) -> AsyncIterator[AsyncEngine]:
     engine = connect(db_url)
     try:
@@ -136,18 +158,31 @@ def store(engine: AsyncEngine) -> ThreadStore:
 
 
 @pytest.fixture
-def event_logs(engine: AsyncEngine) -> EventLogStore:
-    return EventLogStore(engine)
+def history_peer() -> HistoryService:
+    return HistoryService()
 
 
 @pytest.fixture
-def content(engine: AsyncEngine) -> ContentStore:
-    return ContentStore(engine)
+async def history_client(history_peer: HistoryService, tmp_path: Path) -> AsyncIterator[SandboxServiceClient]:
+    async with history_peer.connect(tmp_path / "history-token") as client:
+        yield client
 
 
 @pytest.fixture
-def ingestion(engine: AsyncEngine) -> Ingestion:
-    return Ingestion(engine)
+def event_logs(
+    engine: AsyncEngine, history_peer: HistoryService, history_client: SandboxServiceClient
+) -> EventLogStore:
+    return EventLogStore(engine, peer=history_peer, history_reader=history_client)
+
+
+@pytest.fixture
+def content(engine: AsyncEngine, history_client: SandboxServiceClient) -> ContentStore:
+    return ContentStore(engine, history_reader=history_client)
+
+
+@pytest.fixture
+def ingestion(engine: AsyncEngine, history_peer: HistoryService, history_client: SandboxServiceClient) -> Ingestion:
+    return Ingestion(engine, peer=history_peer, history_reader=history_client)
 
 
 @pytest.fixture
@@ -158,10 +193,17 @@ async def database_updates(engine: AsyncEngine) -> AsyncIterator[DatabaseUpdates
 
 
 @pytest.fixture
-async def replica(db_url: str) -> AsyncIterator[Replica]:
+async def replica(
+    db_url: str, history_peer: HistoryService, history_client: SandboxServiceClient
+) -> AsyncIterator[Replica]:
     engine = connect(db_url)
     try:
-        yield Replica(ThreadStore(engine), EventLogStore(engine), Ingestion(engine), OperatorSessionStore(engine))
+        yield Replica(
+            ThreadStore(engine),
+            EventLogStore(engine, peer=history_peer, history_reader=history_client),
+            Ingestion(engine, peer=history_peer, history_reader=history_client),
+            OperatorSessionStore(engine),
+        )
     finally:
         await engine.dispose()
 
@@ -187,7 +229,7 @@ async def stored_login(store: OperatorSessionStore, login: OperatorSession) -> S
 
 
 @pytest.fixture
-async def lease(ingestion: Ingestion) -> IngestionLease:
+async def lease(ingestion: Ingestion) -> ProjectionLease:
     lease = await ingestion.acquire("sb-1", timedelta(minutes=1))
     assert lease is not None
     return lease
@@ -255,6 +297,7 @@ def sandbox_endpoint(
     sandbox_rbac: FakeRbac,
     tmp_path: Path,
     sandbox_runner_port: int,
+    integration_history_database_url: str | None,
 ) -> Iterator[Endpoint]:
     with backend(
         custom_objects,
@@ -264,6 +307,7 @@ def sandbox_endpoint(
         grants=sandbox_grants,
         rbac=sandbox_rbac,
         runner_port=sandbox_runner_port,
+        history_database_url=integration_history_database_url,
     ) as endpoint:
         yield endpoint
 

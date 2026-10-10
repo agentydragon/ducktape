@@ -9,11 +9,10 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import create_async_engine
 
 from agentplane.app.database_updates import Channel, DatabaseUpdates
-from agentplane.app.testing.legacy_event_log import LegacyEventLogStore as EventLogStore
-from agentplane.app.testing.legacy_ingestion import LegacyIngestion as Ingestion
-from agentplane.app.testing.legacy_thread_store import LegacyThreadStore as ThreadStore
+from agentplane.app.testing.history import ProjectedHistory as Ingestion, SeededEventLogStore as EventLogStore
 from agentplane.app.testing.thread_test_support import SPEC, Replica, event_entry
-from agentplane.app.threads.events.ingestion_lease import IngestionLease
+from agentplane.app.threads.events.projection_lease import ProjectionLease
+from agentplane.app.threads.store import ThreadStore
 from agentplane.protocol import event_pb2
 
 # The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.
@@ -26,7 +25,7 @@ async def test_commits_wake_another_replica_and_leave_durable_replay(
     ingestion: Ingestion,
     replica: Replica,
     database_updates: DatabaseUpdates,
-    lease: IngestionLease,
+    lease: ProjectionLease,
 ) -> None:
     changed, sessions_changed = asyncio.Event(), asyncio.Event()
     with (
@@ -57,7 +56,7 @@ async def test_listener_reconnect_wakes_every_channel_for_writes_during_the_gap(
     ingestion: Ingestion,
     replica: Replica,
     database_updates: DatabaseUpdates,
-    lease: IngestionLease,
+    lease: ProjectionLease,
     db_url: str,
 ) -> None:
     thread = await event_logs.open("sb-1", "s-1", SPEC)

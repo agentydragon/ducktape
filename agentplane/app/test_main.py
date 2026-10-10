@@ -34,13 +34,13 @@ from agentplane.app.oidc import load_settings
 from agentplane.app.operator_sessions import OperatorSessionStore
 from agentplane.app.settings import Settings
 from agentplane.app.shutdown import drain_of
-from agentplane.app.testing.legacy_event_log import LegacyEventLogStore as EventLogStore
-from agentplane.app.testing.legacy_thread_store import LegacyThreadStore as ThreadStore
+from agentplane.app.testing.history import SeededEventLogStore as EventLogStore
 from agentplane.app.testing.model_test_data import TEST_REASONING_EFFORTS
 from agentplane.app.threads.bridge import RunnerBridge
 from agentplane.app.threads.ingestion import Ingester
-from agentplane.app.threads.models import SandboxIngestion
+from agentplane.app.threads.models import SandboxProjectionLease
 from agentplane.app.threads.sessions import SandboxSessions
+from agentplane.app.threads.store import ThreadStore
 from agentplane.app.threads.view.content import ContentStore
 from agentplane.runner.harness import Harness
 from agentplane.sandbox_service.client import SandboxServiceClient
@@ -207,7 +207,9 @@ async def _leases(database: AsyncEngine) -> int:
     async with database.connect() as connection:
         return (
             await connection.scalar(
-                select(func.count()).select_from(SandboxIngestion).where(SandboxIngestion.sandbox == SANDBOX)
+                select(func.count())
+                .select_from(SandboxProjectionLease)
+                .where(SandboxProjectionLease.sandbox == SANDBOX)
             )
         ) or 0
 

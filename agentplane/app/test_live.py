@@ -50,13 +50,17 @@ from agentplane.app.operator_sessions import (
 )
 from agentplane.app.sandbox_models import sandbox_view
 from agentplane.app.shutdown import Drain
-from agentplane.app.testing.legacy_event_log import LegacyEventLogStore as EventLogStore
-from agentplane.app.testing.legacy_ingestion import LegacyIngester as Ingester, LegacyIngestion as Ingestion
-from agentplane.app.testing.legacy_thread_store import LegacyThreadStore as ThreadStore
+from agentplane.app.testing.history import (
+    ProjectedHistory as Ingestion,
+    ProjectedIngester as Ingester,
+    SeededEventLogStore as EventLogStore,
+)
+from agentplane.app.testing.history_service import HistoryService
 from agentplane.app.testing.model_test_data import TEST_REASONING_EFFORTS
 from agentplane.app.testing.thread_test_support import Replica
 from agentplane.app.threads.bridge import RunnerBridge
 from agentplane.app.threads.sessions import SandboxSessions
+from agentplane.app.threads.store import ThreadStore
 from agentplane.app.threads.view.content import ContentStore
 from agentplane.runner import protocol_pb2
 from agentplane.runner.harness import Harness
@@ -303,18 +307,27 @@ def app(
     live_index: LiveIndex,
     action_policy: ActionPolicyInventory,
     reviewer: TokenReviewer,
+    history_peer: HistoryService,
+    history_client: SandboxServiceClient,
 ) -> FastAPI:
     """Neither test below reaches a database or a runner -- the guard answers before a route body
     runs, and the document comes from the signatures -- so the engine here never connects."""
     engine = connect("postgresql+asyncpg://live-test@127.0.0.1:1/live-test")
-    event_logs, content = EventLogStore(engine), ContentStore(engine)
+    event_logs, content = (
+        EventLogStore(engine, peer=history_peer, history_reader=history_client),
+        ContentStore(engine, history_reader=history_client),
+    )
     database_updates = DatabaseUpdates(engine.url)
     runners = SandboxSessions(live_index, inventory)
     bridge = RunnerBridge(
         runners=runners,
         event_logs=event_logs,
         content=content,
-        ingester=Ingester(runners=runners, event_logs=event_logs, ingestion=Ingestion(engine)),
+        ingester=Ingester(
+            runners=runners,
+            event_logs=event_logs,
+            ingestion=Ingestion(engine, peer=history_peer, history_reader=history_client),
+        ),
     )
     return create_app(
         inventory,

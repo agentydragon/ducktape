@@ -32,6 +32,7 @@ from cluster.cdk8s.cert_manager import cluster_ca
 from cluster.cdk8s.external_secrets.minted_secret import mint_bearer_secret
 from cluster.cdk8s.fleet_rules import add_fleet_rules
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
+from cluster.cdk8s.home_lan import HOME_LAN
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.monitoring import alloy
 from cluster.cdk8s.providers.cert_manager.certificate import Certificate, CertificatePrivateKey
@@ -45,13 +46,6 @@ TOFU_PASSWORD_FILE = "tofu-password.sops.yaml"
 # tf/gitops/home-switch/main.tf and bootstrap.sh read these Secrets and keys by name.
 MONITORING_PASSWORD = SecretRef(namespace=NAMESPACE, name="home-switch-monitoring").key("password")
 TLS_SECRET = "home-switch-tls"
-# The switch's DHCP lease, which its certificate names (tf/gitops/home-switch connects to it).
-_SWITCH_ADDRESS = "192.168.1.100"
-# bootstrap.sh repeats it.
-_LAN_CIDR = "192.168.1.0/24"
-# optiplex's fixed LAN address, `lan_address` in cluster/terraform/main/home-nodes.tf, where
-# alloy-syslog listens.
-_SYSLOG_ADDRESS = "192.168.1.10"
 # The switch is reachable only from the home LAN; OptiPlex is the cluster node on it.
 _HOME_LAN = {"topology.kubernetes.io/zone": "home-lan"}
 # main.tf's provider `ca_certificate` reads the bundle here.
@@ -99,7 +93,8 @@ def chart(app: App, module: ArtifactGeneratorSpecArtifacts) -> Chart:
         issuer_ref=cluster_ca.INTERNAL_ISSUER,
         # main.tf's routeros_system_certificate names the same common name.
         common_name="CRS310",
-        ip_addresses=[_SWITCH_ADDRESS],
+        # The address tf/gitops/home-switch connects to.
+        ip_addresses=[str(HOME_LAN.switch)],
         private_key=CertificatePrivateKey.rsa_2048(),
     )
     terraform.gitops_terraform(
@@ -107,9 +102,10 @@ def chart(app: App, module: ArtifactGeneratorSpecArtifacts) -> Chart:
         "terraform",
         module=module,
         variables=HomeSwitchVars(
-            switch_address=_SWITCH_ADDRESS,
-            lan_cidr=_LAN_CIDR,
-            syslog_address=_SYSLOG_ADDRESS,
+            switch_address=str(HOME_LAN.switch),
+            lan_cidr=str(HOME_LAN.network),
+            # Where alloy-syslog listens.
+            syslog_address=str(HOME_LAN.optiplex),
             syslog_port=alloy.SYSLOG_HOST_PORT,
         ),
         # Plans every interval and reports drift; a person approves each apply (README.md).

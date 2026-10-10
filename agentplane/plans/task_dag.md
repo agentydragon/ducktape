@@ -14,6 +14,18 @@ Session. The live canary's app projection advanced beyond its fixed raw fence. T
 explicitly excluded the six empty Sessions from further verification work. Do not launch
 another backfill, whole-history scan, or competing cutover.
 
+**In flight (migration agent, 2026-10-10 PDT):** #9670's app test/runtime port and
+its split prerequisites #9677–#9679 are merged. Follow-up code cleanup renames the
+app projection lease API; it leaves the deployed schema and retained data unchanged.
+Post-merge deployment verification and explicit schema retirement remain separate.
+The next code-only PR retires app handoff tooling and selects projection work by
+summary metadata, keeping replica lease fencing and checkpoint validation. It does
+not drop raw tables or remove their database triggers.
+
+Schema retirement also includes the [post-cutover schema cleanup](session_history_read_cutover.md#post-cutover-schema-cleanup):
+rename stale archive/ingestion names, route app commands/resume by public Session ID,
+and remove legacy tables, locator copies and fence columns after their callers are retired.
+
 Remaining work: remove temporary flags and legacy paths, verify ordinary new-Session/read
 behavior, remove migration jobs and temporary grants, and check testing before changing its
 runtime defaults. Retained data and runner storage must remain intact. Details and accepted

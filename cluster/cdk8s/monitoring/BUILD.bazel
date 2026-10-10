@@ -119,7 +119,10 @@ py_library(
         "node.alloy",
         "syslog.alloy",
     ],
-    visibility = ["//cluster/cdk8s:__pkg__"],
+    visibility = [
+        "//cluster/cdk8s:__pkg__",
+        "//cluster/cdk8s/att_gateway_exporter:__pkg__",
+    ],
     deps = [
         ":grafana_helmrepository",
         ":loki",
@@ -313,6 +316,7 @@ py_library(
         ":alloy",
         "//cluster/cdk8s:fleet_rules",
         "//cluster/cdk8s:flux",
+        "//cluster/cdk8s:home_lan",
         "//cluster/cdk8s:manifest_roots",
         "//cluster/cdk8s:secret_ref",
         "//cluster/cdk8s:terraform",
@@ -359,6 +363,7 @@ py_library(
         ":home_switch",
         "//cluster/cdk8s:fleet_rules",
         "//cluster/cdk8s:flux",
+        "//cluster/cdk8s:home_lan",
         "//cluster/cdk8s:manifest_roots",
         "//cluster/cdk8s:node_scheduling",
         "//cluster/cdk8s:pod_policy",

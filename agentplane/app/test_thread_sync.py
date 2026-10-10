@@ -12,20 +12,26 @@ import pytest_bazel
 
 from agentplane.app.database import connect
 from agentplane.app.testing.electric_service import ElectricService, electric_service
-from agentplane.app.testing.legacy_event_log import LegacyEventLogStore as EventLogStore
-from agentplane.app.testing.legacy_ingestion import LegacyIngestion as Ingestion
+from agentplane.app.testing.history import ProjectedHistory as Ingestion, SeededEventLogStore as EventLogStore
+from agentplane.app.testing.history_service import HistoryService
 from agentplane.app.testing.replication_process import app_process
 from agentplane.app.testing.replication_source import SANDBOX, SESSION, ReplicationSource
-from agentplane.app.threads.events.ingestion_lease import IngestionLease
+from agentplane.app.threads.events.projection_lease import ProjectionLease
 from agentplane.protocol import command_pb2, event_pb2
+from agentplane.sandbox_service.client import SandboxServiceClient
 
 # gazelle:include_dep @pypi//protobuf
 
 
-async def test_materialized_revisions_replicate_with_restricted_role() -> None:
+async def test_materialized_revisions_replicate_with_restricted_role(
+    history_peer: HistoryService, history_client: SandboxServiceClient
+) -> None:
     async with electric_service() as service:
         engine = connect(service.database_url)
-        event_logs, ingestion = EventLogStore(engine), Ingestion(engine)
+        event_logs, ingestion = (
+            EventLogStore(engine, peer=history_peer, history_reader=history_client),
+            Ingestion(engine, peer=history_peer, history_reader=history_client),
+        )
         try:
             source = ReplicationSource()
             source.append(event_pb2.Event(harness_started=event_pb2.HarnessStarted(pid=123)))
@@ -164,12 +170,22 @@ def _bodies(*references: dict[str, Any]) -> dict[str, object]:
 
 
 async def _cross_replica_sync(
-    service: ElectricService, ingestion: Ingestion, source: ReplicationSource, thread: UUID, lease: IngestionLease
+    service: ElectricService, ingestion: Ingestion, source: ReplicationSource, thread: UUID, lease: ProjectionLease
 ) -> None:
     async with (
         asyncio.timeout(60),
-        app_process(service.database_url, runner_port=0, sandbox_present=False, electric_url=service.url) as first,
-        app_process(service.database_url, runner_port=0, sandbox_present=False, electric_url=service.url) as second,
+        app_process(
+            service.database_url,
+            runner_port=int(ingestion.reader.target.rsplit(":", 1)[1]),
+            sandbox_present=False,
+            electric_url=service.url,
+        ) as first,
+        app_process(
+            service.database_url,
+            runner_port=int(ingestion.reader.target.rsplit(":", 1)[1]),
+            sandbox_present=False,
+            electric_url=service.url,
+        ) as second,
         httpx.AsyncClient(base_url=first.url, timeout=35) as client_one,
         httpx.AsyncClient(base_url=second.url, timeout=35) as client_two,
     ):
@@ -223,7 +239,7 @@ async def _command_outcome(
     ingestion: Ingestion,
     source: ReplicationSource,
     thread: UUID,
-    lease: IngestionLease,
+    lease: ProjectionLease,
 ) -> None:
     entities = await _open(client_one, f"{path}/entities", epoch)
     selected = {
@@ -277,7 +293,7 @@ async def _history_window(
     ingestion: Ingestion,
     source: ReplicationSource,
     thread: UUID,
-    lease: IngestionLease,
+    lease: ProjectionLease,
 ) -> None:
     start = len(source.entries)
     for index in range(95):

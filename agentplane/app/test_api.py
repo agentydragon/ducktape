@@ -29,12 +29,15 @@ from agentplane.app.model_catalog import ModelCatalog, ModelOption
 from agentplane.app.operator_sessions import OperatorSessionStore
 from agentplane.app.presets import PresetCatalog, SandboxPreset, ThreadPreset
 from agentplane.app.testing.egress_proxy import FakeEgressAdmin, decision
-from agentplane.app.testing.legacy_event_log import LegacyEventLogStore as EventLogStore
-from agentplane.app.testing.legacy_ingestion import LegacyIngester as Ingester, LegacyIngestion as Ingestion
-from agentplane.app.testing.legacy_thread_store import LegacyThreadStore as ThreadStore
+from agentplane.app.testing.history import (
+    ProjectedHistory as Ingestion,
+    ProjectedIngester as Ingester,
+    SeededEventLogStore as EventLogStore,
+)
 from agentplane.app.testing.model_test_data import TEST_REASONING_EFFORTS
 from agentplane.app.threads.bridge import RunnerBridge
 from agentplane.app.threads.sessions import SandboxSessions
+from agentplane.app.threads.store import ThreadStore
 from agentplane.app.threads.view.content import ContentStore
 from agentplane.app.threads.view.recording import THREAD_FOLD_EPOCH
 from agentplane.protocol import command_pb2, event_log_pb2, event_pb2
@@ -633,51 +636,57 @@ def test_create_session_uses_service_id_and_preserves_legacy_open(
     )
 
 
-def test_open_lookup_reconciles_only_runner_confirmed_sessions(
+async def test_open_lookup_reconciles_only_runner_confirmed_sessions(
     client: TestClient, bridge: RunnerBridge, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """No reservation/runner confirmation means no Thread; a confirmed one repairs lost app writes."""
-    public_id = str(uuid4())
-    summary = protocol_pb2.SessionSummary(
-        session_id=public_id,
-        spec=protocol_pb2.SessionSpec(harness=protocol_pb2.HARNESS_CLAUDE, cwd="/w", model="m", instructions="secret"),
-    )
-    result = service_pb2.LookupSessionResponse()
-    calls: list[str] = []
+    # Keep DB work on the async fixture's loop, not TestClient's portal thread.
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=client.app), base_url="http://testserver", headers=AGENT_AUTH
+    ) as http:
+        public_id = str(uuid4())
+        summary = protocol_pb2.SessionSummary(
+            session_id=public_id,
+            spec=protocol_pb2.SessionSpec(
+                harness=protocol_pb2.HARNESS_CLAUDE, cwd="/w", model="m", instructions="secret"
+            ),
+        )
+        result = service_pb2.LookupSessionResponse()
+        calls: list[str] = []
 
-    async def lookup(*, idempotency_key: str) -> service_pb2.LookupSessionResponse:
-        calls.append(idempotency_key)
-        return result
+        async def lookup(*, idempotency_key: str) -> service_pb2.LookupSessionResponse:
+            calls.append(idempotency_key)
+            return result
 
-    monkeypatch.setattr(bridge._runners, "client", lambda name: SimpleNamespace(lookup=lookup))
-    path = "/sandboxes/live/sessions/open"
-    absent = client.get(path, params={"idempotency_key": "opaque-key"})
-    assert absent.status_code == 200
-    assert absent.json() == {"status": "absent", "session_id": None}
-    assert client.get("/threads", params={"sandbox": "live", "session_id": public_id}).json() == []
+        monkeypatch.setattr(bridge._runners, "client", lambda name: SimpleNamespace(lookup=lookup))
+        path = "/sandboxes/live/sessions/open"
+        absent = await http.get(path, params={"idempotency_key": "opaque-key"})
+        assert absent.status_code == 200
+        assert absent.json() == {"status": "absent", "session_id": None}
+        assert (await http.get("/threads", params={"sandbox": "live", "session_id": public_id})).json() == []
 
-    result.session_id = public_id
-    unconfirmed = client.get(path, params={"idempotency_key": "opaque-key"})
-    assert unconfirmed.json() == {"status": "unconfirmed", "session_id": public_id}
-    assert client.get("/threads", params={"sandbox": "live", "session_id": public_id}).json() == []
+        result.session_id = public_id
+        unconfirmed = await http.get(path, params={"idempotency_key": "opaque-key"})
+        assert unconfirmed.json() == {"status": "unconfirmed", "session_id": public_id}
+        assert (await http.get("/threads", params={"sandbox": "live", "session_id": public_id})).json() == []
 
-    result.failed = True
-    failed = client.get(path, params={"idempotency_key": "opaque-key"})
-    assert failed.json() == {"status": "failed", "session_id": public_id}
-    assert client.get("/threads", params={"sandbox": "live", "session_id": public_id}).json() == []
+        result.failed = True
+        failed = await http.get(path, params={"idempotency_key": "opaque-key"})
+        assert failed.json() == {"status": "failed", "session_id": public_id}
+        assert (await http.get("/threads", params={"sandbox": "live", "session_id": public_id})).json() == []
 
-    result.failed = False
-    result.summary.CopyFrom(summary)
-    for _ in range(2):  # Reconcile after a lost app mapping, then repeat idempotently.
-        ready = client.get(path, params={"idempotency_key": "opaque-key"})
-        assert ready.status_code == 200, ready.text
-        assert ready.json() == {"status": "ready", "session_id": public_id}
-        assert "secret" not in ready.text
-    threads = client.get("/threads", params={"sandbox": "live", "session_id": public_id}).json()
-    assert len(threads) == 1
-    assert threads[0]["id"] == public_id
-    assert calls == ["opaque-key"] * 5
-    assert client.get(path, params={"idempotency_key": ""}).status_code == 422
+        result.failed = False
+        result.summary.CopyFrom(summary)
+        for _ in range(2):  # Reconcile after a lost app mapping, then repeat idempotently.
+            ready = await http.get(path, params={"idempotency_key": "opaque-key"})
+            assert ready.status_code == 200, ready.text
+            assert ready.json() == {"status": "ready", "session_id": public_id}
+            assert "secret" not in ready.text
+        threads = (await http.get("/threads", params={"sandbox": "live", "session_id": public_id})).json()
+        assert len(threads) == 1
+        assert threads[0]["id"] == public_id
+        assert calls == ["opaque-key"] * 5
+        assert (await http.get(path, params={"idempotency_key": ""})).status_code == 422
 
 
 def test_a_runner_that_does_not_answer_is_a_503(

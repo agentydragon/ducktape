@@ -311,7 +311,6 @@ ENV = Environment(
         min_ready=Duration.seconds(5),
         pdb_min_available=1,
     ),
-    model_routes=STAGING_APP_MODELS,
     app_config=staging_config.config(
         namespace=STAGING_NAMESPACE,
         models=STAGING_APP_MODELS,

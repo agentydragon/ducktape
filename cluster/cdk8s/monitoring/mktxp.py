@@ -35,6 +35,7 @@ from cluster.cdk8s.flux import (
     flux_kustomization,
     flux_kustomization_depends_on_many,
 )
+from cluster.cdk8s.home_lan import HOME_LAN
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.monitoring.home_switch import MONITORING_PASSWORD
 from cluster.cdk8s.node_scheduling import OPTIPLEX
@@ -64,7 +65,7 @@ _USERNAME = "monitoring"
 # Routers to scrape, each a section of `mktxp.conf` overriding its `[default]`.
 _ROUTERS: Mapping[str, Mapping[str, str]] = {
     "CRS310": {
-        "hostname": "192.168.1.100",
+        "hostname": str(HOME_LAN.switch),
         "port": "8729",
         "credentials_file": f"{_CREDENTIALS_DIR}/{_CREDENTIALS_FILE}",
         "use_ssl": "True",

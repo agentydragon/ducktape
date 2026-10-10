@@ -253,6 +253,15 @@ py_test(
 )
 
 py_library(
+    name = "home_lan",
+    srcs = ["home_lan.py"],
+    visibility = ["//cluster/cdk8s:__subpackages__"],
+    deps = [
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
     name = "node_scheduling",
     srcs = ["node_scheduling.py"],
     visibility = ["//cluster/cdk8s:__subpackages__"],

@@ -143,15 +143,15 @@ async def set_operational(
     status: Literal["active", "ended", "failed"],
     error: str | None,
     error_cursor: int | None = None,
-) -> None:
+) -> bool:
     checkpoint = await session.get(ThreadCheckpoint, thread_id)
     if checkpoint is None:
-        return
+        return False
     row = await session.get(ThreadEntity, (thread_id, checkpoint.projection_epoch, EntityKind.VIEW_STATE, "current"))
     if row is None:
         raise ValueError("thread checkpoint has no current controls")
     view = ThreadViewState.model_validate(row.state)
-    row.state = view.model_copy(
+    state = view.model_copy(
         update={
             "operational": ThreadOperationalState(
                 status=status,
@@ -164,6 +164,11 @@ async def set_operational(
             )
         }
     ).model_dump(mode="json")
+
+    if state == row.state:
+        return False
+    row.state = state
+    return True
 
 
 async def _prior_entities(session: AsyncSession, thread_id: UUID, batch: fold.EventBatch) -> fold.PriorEntities:

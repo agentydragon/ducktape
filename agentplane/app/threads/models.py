@@ -19,19 +19,25 @@ from agentplane.runner.harness import Harness
 
 
 class EventLog(Base):
-    """A runner session's Event sequence as the app copies it, minted on first sight.
+    """App-side Thread identity and projected metadata for a service-owned Session."""
 
-    Everything recorded hangs off it; its id is the id the thread is known by.
-    """
+    # TODO(session-schema-cleanup): Rename EventLog/event_log to describe the app's
+    # Session reference, not archive ownership; migrate referencing FKs together.
+    # See plans/session_history_read_cutover.md#post-cutover-schema-cleanup.
 
     __tablename__ = "event_log"
     __table_args__ = (UniqueConstraint("sandbox", "session_id"),)
 
     id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
     sandbox: Mapped[str] = mapped_column(Text)
-    # Durable per-Thread handoff barrier, independent of replaceable sandbox leases.
-    # NULL: runner-backed app ingestion; otherwise the immutable final app raw cursor.
+    # Retired migration state. Runtime projection no longer reads this barrier.
+    # TODO(session-schema-cleanup): Drop with the raw tables and their write-rejection
+    # triggers. New identities retain a zero value until that explicit schema change.
     raw_ingestion_fenced_at_cursor: Mapped[int | None] = mapped_column(BigInteger)
+    # TODO(session-schema-cleanup): Stop routing by this retained runner locator.
+    # Sandbox Service owns that binding. Route by the public Session UUID (id),
+    # then remove this column and (sandbox, session_id) uniqueness after auditing
+    # discovery, lookup, resume, command dispatch, API filters and old-ID consumers.
     session_id: Mapped[str] = mapped_column(Text)
     harness: Mapped[Harness] = mapped_column(
         SqlEnum(
@@ -41,7 +47,10 @@ class EventLog(Base):
             values_callable=lambda values: [item.value for item in values],
         )
     )
-    # The spec's model, rewritten by ingestion as the feed reports a change.
+    # TODO(session-schema-cleanup): Audit sandbox/harness/model/cwd as app display
+    # projections versus redundant launch metadata; retain only actual app needs,
+    # refreshed from service evidence, never as authoritative launch/routing inputs.
+    # The projected model, updated from service history.
     model: Mapped[str] = mapped_column(Text)
     cwd: Mapped[str] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
@@ -64,6 +73,8 @@ class Thread(Base):
 
 
 class Event(Base):
+    # TODO(session-schema-cleanup): Drop the retained raw archive only after deployed
+    # readers/writers and handoff tooling no longer depend on it.
     __tablename__ = "event"
     __table_args__ = (
         Index("ix_event_thread_at", "thread_id", "at"),
@@ -88,7 +99,11 @@ class Event(Base):
     payload: Mapped[dict[str, JsonValue]] = mapped_column(JSON)
 
 
-class SandboxIngestion(Base):
+class SandboxProjectionLease(Base):
+    """Replica ownership of app projection work, not service archive ingestion."""
+
+    # TODO(session-schema-cleanup): Rename the physical table in the explicit schema
+    # cleanup. Keep its current name here until that migration; existing leases stay valid.
     __tablename__ = "sandbox_ingestion"
 
     sandbox: Mapped[str] = mapped_column(Text, primary_key=True)
@@ -97,6 +112,8 @@ class SandboxIngestion(Base):
 
 
 class FeedState(Base):
+    # TODO(session-schema-cleanup): Drop with the retired raw archive after handoff
+    # tooling is removed; current projection metadata lives in ThreadHistorySummary.
     __tablename__ = "feed_state"
 
     thread_id: Mapped[UUID] = mapped_column(

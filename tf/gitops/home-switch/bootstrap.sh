@@ -11,8 +11,9 @@
 set -euo pipefail
 
 admin="${1:-admin}"
+# Keep in sync with HOME_LAN.switch and .network in cluster/cdk8s/home_lan.py.
 switch="${2:-192.168.1.100}"
-lan_cidr="192.168.1.0/24" # keep in sync with _LAN_CIDR in cluster/cdk8s/monitoring/home_switch.py
+lan_cidr="192.168.1.0/24"
 # Secret name: keep in sync with data.kubernetes_secret_v1.tofu in main.tf.
 password_file="$(git rev-parse --show-toplevel)/cluster/k8s/home-switch/tofu-password.sops.yaml"
 

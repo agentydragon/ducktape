@@ -1,7 +1,7 @@
 """Parses pages saved from a live BGW320-500 on firmware 6.35.8 on 2026-10-09
-(`testdata/`; `nattable` and `speed` on 2026-10-10, logged in), with the serial numbers,
-MAC addresses, public and global addresses and SSID replaced by documentation values. The
-expected values are read off the rendered pages."""
+(`testdata/`; `nattable`, `speed` and `syslog` on 2026-10-10, logged in), with the serial
+numbers, MAC addresses, public and global addresses, SSID and form nonce replaced by
+documentation values. The expected values are read off the rendered pages."""
 
 from datetime import datetime
 from pathlib import Path
@@ -9,7 +9,7 @@ from pathlib import Path
 import pytest
 import pytest_bazel
 
-from cluster.exporters.att_gateway.pages import (
+from att_gateway.pages import (
     Bound,
     Direction,
     Level,
@@ -20,7 +20,10 @@ from cluster.exporters.att_gateway.pages import (
     parse_nat,
     parse_speed,
     parse_sysinfo,
+    parse_syslog,
+    syslog_form,
 )
+from att_gateway.settings import Syslog, SyslogLevel
 
 _TESTDATA = Path(__file__).parent / "testdata"
 
@@ -93,6 +96,26 @@ def test_login_page_is_rejected() -> None:
     login = "<html><head><title>Login</title></head><body><form><input name='nonce'></form></body></html>"
     with pytest.raises(ValueError, match="table not found"):
         parse_fiber(login)
+
+
+def test_syslog() -> None:
+    # Saved with syslog off, as the gateway ships.
+    page = parse_syslog(_page("syslog"))
+    assert page.syslog == Syslog(enabled=False, server="", port=514, level=SyslogLevel.ERROR)
+    assert page.nonce == "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+    assert syslog_form(Syslog(enabled=True, server="192.0.2.1", port=1514, level=SyslogLevel.NOTICE), "ab12") == {
+        "nonce": "ab12",
+        "syslog": "on",
+        "location": "192.0.2.1",
+        "port": "1514",
+        "level": "Notice",
+        "Save": "Save",
+    }
+
+
+def test_syslog_rejects_login_page() -> None:
+    with pytest.raises(ValueError, match="syslog form not found"):
+        parse_syslog('<html><body><form><input type="hidden" name="nonce" value="ab12" /></form></body></html>')
 
 
 if __name__ == "__main__":

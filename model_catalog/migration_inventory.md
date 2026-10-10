@@ -125,33 +125,31 @@ provenance; live fallback is not the long-term authority. Legacy schema aliases 
 projected from the same declaration, not independent facts. Fresh probing of every model
 is not required. This does not reopen consumer-budget ownership or authorize route removal.
 
-Source inventory at #9273's base (`3822ce017a`): **90 public entries, 12 with explicit
-input/output overrides**. The first no-patch slice completes those 12 overrides with the
-legacy output alias. GPT-5.4/5.5 on both wires are now retired by operator request,
-leaving 86 public entries. The 33 direct Anthropic/Gemini/Mistral/Groq chat entries
-now also publish sourced pairs; see the [source ledger](litellm_metadata.md#direct-provider-sources-2026-10-05).
-The eight Antigravity Gemini text routes now publish pairs from the recorded
-[Google response](antigravity_limits.md#fresh-google-metadata-2026-10-05-1201-utc),
-including Flash Lite 3.5. Parking the three larger GPT-OSS 20B OpenAI-compatible
-exposures and the three Tana routes leaves **80 public entries**. Adding Claude/GPT-OSS gateway declarations
-and refreshing the four Claude subscription routes brings generative publication to **60 pairs**; the two Gemini
-embedding routes, durable alias and Ollama embedding route now publish input-only
-metadata, making **64 entries with explicit token overrides**. Ollama uses the
-GGUF-reported ceiling with truncation disabled; full-input/boundary behavior is
-explicitly untested ([record](litellm_metadata.md#ollama-embedding-input-metadata-2026-10-09)). The remaining
-migration and the provenance audit of provisional subscription pairs are not complete:
+**Source snapshot, reconciled 2026-10-10:** 64 of 80 public entries publish explicit
+metadata: 60 generative pairs and four embedding input-only declarations. This is
+publication coverage, not a percentage of programme completion or validated capacity.
+The 12 ChatGPT entries below count as published despite their provisional provenance.
 
-| Routes                                             | Source / next decision                                                                                                                                                                                                                         |
-| -------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| ChatGPT GPT-6 and GPT-5.6, both wires (12 entries) | Existing configured numbers remain; complete schema aliases now. Their mixed historical/client provenance still needs the shared-limit semantic cleanup.                                                                                       |
-| Anthropic subscription                             | Opus/Sonnet/Haiku 5.5 and Fable 5.1 publish sourced gateway declarations. Live registration, account availability and beta-dependent/joint capacity remain untested; see the source ledger.                                                    |
-| Antigravity                                        | Gemini text and Claude/GPT-OSS publication is complete from the recorded response and gateway convention. Claude/GPT-OSS input boundaries and joint capacity remain untested. The image model still needs metadata or an explicit disposition. |
-| Ollama chat variants                               | `num_ctx` is allocation, not an input/output pair. GPT-OSS 20B 256K/512K/1M OpenAI exposures are parked; their native variants remain. Establish metadata for retained routes without turning labels or allocations into capacity claims.      |
-| Groq transcription                                 | Declare applicable audio metadata without inventing a generative output ceiling. Embedding input declarations are published; the Ollama declaration still requires the explicitly deferred live verification.                                  |
+Direct-provider chat, Antigravity text, the refreshed Claude subscription roster and
+embedding declarations have landed. The three larger GPT-OSS OpenAI exposures and
+three Tana routes are parked; their restoration constraints below remain in force.
+The tracker retains the PR ledger and dated rollout evidence rather than repeating
+successive implementation/CI states here.
+
+| Family                                                           | Remaining work                                                                                                                                                                                                                                                                                                       |
+| ---------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| ChatGPT GPT-6 and GPT-5.6, both wires (12 published entries)     | Audit the mixed historical/client-derived declarations. Current/legacy aliases are already coherent; they do not validate the numbers. Preserve the active subscription path and consumer budgets.                                                                                                                   |
+| Anthropic subscription                                           | Opus/Sonnet/Haiku 5.5 and Fable 5.1 have sourced gateway declarations. Registration/configuration/pricing presence was verified on 2026-10-09 ([record](litellm_metadata.md#claude-subscription-refresh-2026-10-09)); account request success and beta-dependent/full-output/joint capacity remain untested.         |
+| Antigravity                                                      | Text publication is complete from the recorded response and gateway convention; Claude/GPT-OSS boundaries and joint capacity remain untested. The one image entry still needs applicable metadata or an explicit disposition.                                                                                        |
+| Ollama chat (13 unpublished entries)                             | Installed GGUF context facts are recorded ([audit](litellm_metadata.md#ollama-gguf-context-audit-2026-10-09)). Choose defensible publication semantics: GGUF context and requested `num_ctx` are not an input/output pair. Larger native GPT-OSS variants remain; the audit does not prove their labeled capacities. |
+| Groq transcription (two unpublished entries)                     | Research applicable audio metadata and projection behavior without inventing a generative output ceiling.                                                                                                                                                                                                            |
+| Embeddings (four published entries, including the durable alias) | Declarations are complete. Ollama full-input/boundary verification with truncation disabled remains explicitly deferred; batch/special-token limits may be lower ([record](litellm_metadata.md#ollama-embedding-input-metadata-2026-10-09)). Preserve dimensions and stored indexes.                                 |
 
 These are **remaining data/disposition decisions**, not a second runtime registry.
-The `publish_limits` flag is transitional and should disappear once retained declarations
-are complete. Update this inventory as implementation lands; keep PR status in #9574.
+The `publish_limits` flag remains transitional until retained declarations and
+mode-appropriate publication rules are complete. Metadata research does not block
+behavior-preserving consumer simplification. The tracker owns lane ordering and
+current PR/rollout status; this inventory owns unresolved file/data decisions.
 
 ### Parked GPT-OSS 20B OpenAI exposures
 
@@ -235,8 +233,9 @@ Tana is a reverse-engineered gateway with unknown limits; vendor model names are
 not evidence of equivalent capacity. Temporarily omit its three routes from the
 served roster rather than invent metadata. The Tana key lane/fallback and generated
 Claude wrapper selection are removed together. The dedicated client key and team
-are removed from Terraform, revoking the client key and deleting those records;
-key/team identity and accounting continuity are not preserved. Their encrypted
+are removed from Terraform; the client key revocation and successful reconciliation
+were verified, but this is not a claim that every historical same-alias team was deleted.
+Key/team identity and accounting continuity are not preserved. Their encrypted
 credential files, backend credentials, gateway implementation/registration,
 wrapper renderer and stored application data remain; no deployment is paused or deleted.
 
@@ -245,6 +244,14 @@ fallback, but Terraform failed to converge: the provider rewrites `models = []`
 for a team-associated key to `["all-team-models"]`, contradicting the planned empty
 list. Removing the unused key/team avoids that provider mismatch without unblocking
 or manually editing Terraform state.
+
+[Operator verification after #9592](https://github.com/agentydragon/ducktape/issues/9574#issuecomment-6082223649)
+confirmed successful Terraform apply at `6599c2eb1ecfc1477dea10dc271ac36981dbdaa4`
+and zero `tana-clients` keys. The subsequent operator-provided query showed four
+older same-alias teams with no attached keys or projects, still carrying old
+fallbacks. They remain a separate cleanup decision: these counts do not establish
+all dependencies or authorize deletion by alias. Do not keep the completed key
+revocation open waiting for unrelated historical-row cleanup.
 
 TODO(#9574): before re-enabling, review whether the gateway can support defensible
 metadata (or explicitly accept unknown limits), restore the served routes and

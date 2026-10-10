@@ -8,7 +8,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from uuid import UUID
 
-from google.protobuf.json_format import ParseDict
+from google.protobuf.json_format import MessageToDict
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
@@ -21,20 +21,15 @@ from agentplane.app.threads.events.debug import (
     ThreadScopeChangedError,
 )
 from agentplane.app.threads.events.event_log import ThreadNotFoundError
-from agentplane.app.threads.models import (
-    Event,
-    EventLog,
-    ThreadCheckpoint,
-    ThreadEntity,
-    ThreadEvidence,
-    ThreadNativeLink,
-)
+from agentplane.app.threads.models import EventLog, ThreadCheckpoint, ThreadEntity, ThreadEvidence, ThreadNativeLink
 from agentplane.app.threads.view import fold
 from agentplane.app.threads.view.views import EntityKind, ThreadCommandState
 from agentplane.protocol import command_pb2, event_log_pb2
+from agentplane.sandbox_service.client import SandboxServiceClient
 
 # The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.
 # gazelle:include_dep @pypi//protobuf
+# gazelle:include_dep //agentplane/sandbox_service:protocol_pb2
 
 
 class ThreadScopeResetError(ValueError):
@@ -52,8 +47,9 @@ class ThreadScope:
 
 
 class ContentStore:
-    def __init__(self, engine: AsyncEngine) -> None:
+    def __init__(self, engine: AsyncEngine, *, history_reader: SandboxServiceClient) -> None:
         self._sessions = async_sessionmaker(engine, expire_on_commit=False)
+        self._history_reader = history_reader
 
     async def current_scope(self, thread_id: UUID) -> ThreadScope | None:
         """The sole epoch scope currently materialized for a Thread."""
@@ -121,17 +117,12 @@ class ContentStore:
             )
             if association is None:
                 raise ThreadEvidenceNotFoundError("no evidence association for the selected observation")
-            rows = list(
-                await session.execute(
-                    select(ThreadNativeLink.source_sequence, Event.payload)
-                    .outerjoin(
-                        Event,
-                        (
-                            (Event.thread_id == ThreadNativeLink.thread_id)
-                            & (Event.cursor == ThreadNativeLink.source_sequence)
-                            & (Event.kind == "native")
-                        ),
-                    )
+            checkpoint = await session.get(ThreadCheckpoint, thread_id)
+            assert checkpoint is not None
+            source_id = checkpoint.source_id
+            sequences = list(
+                await session.scalars(
+                    select(ThreadNativeLink.source_sequence)
                     .where(
                         ThreadNativeLink.thread_id == thread_id,
                         ThreadNativeLink.projection_epoch == projection_epoch,
@@ -143,19 +134,38 @@ class ContentStore:
                     .limit(limit + 1)
                 )
             )
-            return NativeFramePage(
-                frames=[
-                    NativeFrame.model_validate(
-                        {
-                            "source_sequence": str(sequence),
-                            "availability": "present" if payload is not None else "unavailable",
-                            "entry": payload,
-                        }
-                    )
-                    for sequence, payload in rows[:limit]
-                ],
-                next_after_sequence=str(rows[limit - 1][0]) if len(rows) > limit else None,
+        frames: list[NativeFrame] = []
+        for sequence in sequences[:limit]:
+            entry = await self._archived_entry(thread_id, sequence, source_id)
+            payload = MessageToDict(entry) if entry is not None and entry.event.HasField("native") else None
+            frames.append(
+                NativeFrame.model_validate(
+                    {
+                        "source_sequence": str(sequence),
+                        "availability": "present" if payload is not None else "unavailable",
+                        "entry": payload,
+                    }
+                )
             )
+        return NativeFramePage(
+            frames=frames, next_after_sequence=str(sequences[limit - 1]) if len(sequences) > limit else None
+        )
+
+    async def _archived_entry(self, thread_id: UUID, cursor: int, source_id: str) -> event_log_pb2.EventEntry | None:
+        # Exact indexed lookup through the history API, never an app raw-table fallback.
+        page = await self._history_reader.read_session_events(str(thread_id), after_cursor=cursor - 1, limit=1)
+        if not page.entries:
+            return None
+        entry = page.entries[0]
+        if (
+            len(page.entries) != 1
+            or entry.cursor != cursor
+            or entry.origin.sequence != cursor
+            or entry.origin.source_id != source_id
+            or page.last_cursor < cursor
+        ):
+            raise ValueError("service history did not return the requested evidence cursor")
+        return entry
 
     async def command_outcomes(
         self, thread_id: UUID, projection_epoch: str, command_ids: Sequence[str]
@@ -197,21 +207,19 @@ class ContentStore:
             )
             if summary is None:
                 return None
-            payload = await session.scalar(
-                select(Event.payload).where(Event.thread_id == thread_id, Event.cursor == summary.cursor)
-            )
-            if payload is None:
-                raise ValueError("command summary has no archived admission")
-            entry = ParseDict(payload, event_log_pb2.EventEntry())
-            if (
-                not entry.event.HasField("command_admitted")
-                or entry.event.command_admitted.command.command_id != command.command_id
-            ):
-                raise ValueError("command summary does not point to its archived admission")
-            admitted = entry.event.command_admitted.command
-            if admitted == command:
-                return entry
-            raise CommandIdConflictError(f"command id {command.command_id!r} was already admitted with different work")
+            cursor = summary.cursor
+            source_id = checkpoint.source_id
+        entry = await self._archived_entry(thread_id, cursor, source_id)
+        if entry is None:
+            raise ValueError("command summary has no archived admission")
+        if (
+            not entry.event.HasField("command_admitted")
+            or entry.event.command_admitted.command.command_id != command.command_id
+        ):
+            raise ValueError("command summary does not point to its archived admission")
+        if entry.event.command_admitted.command == command:
+            return entry
+        raise CommandIdConflictError(f"command id {command.command_id!r} was already admitted with different work")
 
 
 async def _evidence_entity_cursor(
