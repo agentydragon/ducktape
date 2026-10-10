@@ -17,6 +17,7 @@ from prometheus_operator_crds.com.coreos.monitoring import (
     ServiceMonitorSpecEndpointsScheme,
     ServiceMonitorSpecSelector,
 )
+from pydantic_settings import BaseSettings
 
 from cluster.cdk8s import pod_policy
 from cluster.cdk8s.att_gateway_exporter import access_code
@@ -50,6 +51,34 @@ DASHBOARD = DashboardFile(
 )
 
 
+_RESOURCES = k8s.ResourceRequirements(
+    requests={"cpu": k8s.Quantity.from_string("10m"), "memory": k8s.Quantity.from_string("64Mi")},
+    limits={"cpu": k8s.Quantity.from_string("200m"), "memory": k8s.Quantity.from_string("128Mi")},
+)
+
+
+def _gateway_env(settings: type[BaseSettings]) -> list[k8s.EnvVar]:
+    return [
+        k8s.EnvVar(name=env_name(settings, "url"), value=_GATEWAY_URL),
+        access_code.ACCESS_CODE.env_var(env_name(settings, "access_code")),
+    ]
+
+
+def _pod_spec(
+    container: k8s.Container, *, restart_policy: str | None = None, termination_grace_period_seconds: int | None = None
+) -> k8s.PodSpec:
+    """The exporter's and the reconciler's pods: one container running `_IMAGE`."""
+    return k8s.PodSpec(
+        restart_policy=restart_policy,
+        # The pull secret the github-exporter chart provisions in this namespace.
+        image_pull_secrets=[k8s.LocalObjectReference(name=forgejo_images.SECRET_NAME)],
+        automount_service_account_token=False,
+        termination_grace_period_seconds=termination_grace_period_seconds,
+        security_context=k8s.PodSecurityContext(run_as_non_root=True, run_as_user=65532, run_as_group=65532),
+        containers=[container],
+    )
+
+
 def _deployment(chart: Chart) -> k8s.KubeDeployment:
     labels = _SERVICE.pods.selector
     tcp = k8s.Probe(tcp_socket=k8s.TcpSocketAction(port=k8s.IntOrString.from_string(_HTTP.name)), period_seconds=30)
@@ -68,49 +97,24 @@ def _deployment(chart: Chart) -> k8s.KubeDeployment:
             selector=k8s.LabelSelector(match_labels=labels),
             template=k8s.PodTemplateSpec(
                 metadata=k8s.ObjectMeta(labels=labels),
-                spec=k8s.PodSpec(
-                    # The pull secret the github-exporter chart provisions in this namespace.
-                    image_pull_secrets=[k8s.LocalObjectReference(name=forgejo_images.SECRET_NAME)],
-                    automount_service_account_token=False,
-                    termination_grace_period_seconds=10,
-                    security_context=k8s.PodSecurityContext(
-                        run_as_non_root=True, run_as_user=65532, run_as_group=65532
+                spec=_pod_spec(
+                    k8s.Container(
+                        name="exporter",
+                        image=_IMAGE,
+                        image_pull_policy="IfNotPresent",
+                        # No readOnlyRootFilesystem: the aspect_rules_py launcher
+                        # materialises its venv inside the image at startup.
+                        env=[
+                            *_gateway_env(Settings),
+                            k8s.EnvVar(name=env_name(Settings, "listen_port"), value=str(_HTTP.number)),
+                        ],
+                        ports=[_HTTP.k8s_container_port()],
+                        # /metrics serves the cache, so probing it never reaches the gateway.
+                        liveness_probe=tcp,
+                        readiness_probe=tcp,
+                        resources=_RESOURCES,
                     ),
-                    containers=[
-                        k8s.Container(
-                            name="exporter",
-                            image=_IMAGE,
-                            image_pull_policy="IfNotPresent",
-                            # No readOnlyRootFilesystem: the aspect_rules_py launcher
-                            # materialises its venv inside the image at startup.
-                            env=[
-                                k8s.EnvVar(name=env_name(Settings, "url"), value=_GATEWAY_URL),
-                                k8s.EnvVar(name=env_name(Settings, "listen_port"), value=str(_HTTP.number)),
-                                k8s.EnvVar(
-                                    name=env_name(Settings, "access_code"),
-                                    value_from=k8s.EnvVarSource(
-                                        secret_key_ref=k8s.SecretKeySelector(
-                                            name=access_code.SECRET_NAME, key=access_code.SECRET_KEY
-                                        )
-                                    ),
-                                ),
-                            ],
-                            ports=[_HTTP.k8s_container_port()],
-                            # /metrics serves the cache, so probing it never reaches the gateway.
-                            liveness_probe=tcp,
-                            readiness_probe=tcp,
-                            resources=k8s.ResourceRequirements(
-                                requests={
-                                    "cpu": k8s.Quantity.from_string("10m"),
-                                    "memory": k8s.Quantity.from_string("64Mi"),
-                                },
-                                limits={
-                                    "cpu": k8s.Quantity.from_string("200m"),
-                                    "memory": k8s.Quantity.from_string("128Mi"),
-                                },
-                            ),
-                        )
-                    ],
+                    termination_grace_period_seconds=10,
                 ),
             ),
         ),
@@ -136,50 +140,26 @@ def _syslog_cron_job(chart: Chart) -> k8s.KubeCronJob:
                     backoff_limit=0,
                     active_deadline_seconds=300,
                     template=k8s.PodTemplateSpec(
-                        spec=k8s.PodSpec(
-                            restart_policy="Never",
-                            image_pull_secrets=[k8s.LocalObjectReference(name=forgejo_images.SECRET_NAME)],
-                            automount_service_account_token=False,
-                            security_context=k8s.PodSecurityContext(
-                                run_as_non_root=True, run_as_user=65532, run_as_group=65532
-                            ),
-                            containers=[
-                                k8s.Container(
-                                    name="reconcile",
-                                    image=_IMAGE,
-                                    image_pull_policy="IfNotPresent",
-                                    # The image's second binary (cluster/exporters/att_gateway/BUILD.bazel).
-                                    command=["/cluster/exporters/att_gateway/syslog_reconciler_image_bin"],
-                                    env=[
-                                        k8s.EnvVar(name=env_name(SyslogSettings, "url"), value=_GATEWAY_URL),
-                                        k8s.EnvVar(
-                                            name=env_name(SyslogSettings, "syslog_server"), value=str(HOME_LAN.optiplex)
-                                        ),
-                                        k8s.EnvVar(
-                                            name=env_name(SyslogSettings, "syslog_port"),
-                                            value=str(alloy.GATEWAY_SYSLOG_HOST_PORT),
-                                        ),
-                                        k8s.EnvVar(
-                                            name=env_name(SyslogSettings, "access_code"),
-                                            value_from=k8s.EnvVarSource(
-                                                secret_key_ref=k8s.SecretKeySelector(
-                                                    name=access_code.SECRET_NAME, key=access_code.SECRET_KEY
-                                                )
-                                            ),
-                                        ),
-                                    ],
-                                    resources=k8s.ResourceRequirements(
-                                        requests={
-                                            "cpu": k8s.Quantity.from_string("10m"),
-                                            "memory": k8s.Quantity.from_string("64Mi"),
-                                        },
-                                        limits={
-                                            "cpu": k8s.Quantity.from_string("200m"),
-                                            "memory": k8s.Quantity.from_string("128Mi"),
-                                        },
+                        spec=_pod_spec(
+                            k8s.Container(
+                                name="reconcile",
+                                image=_IMAGE,
+                                image_pull_policy="IfNotPresent",
+                                # The image's second binary (cluster/exporters/att_gateway/BUILD.bazel).
+                                command=["/cluster/exporters/att_gateway/syslog_reconciler_image_bin"],
+                                env=[
+                                    *_gateway_env(SyslogSettings),
+                                    k8s.EnvVar(
+                                        name=env_name(SyslogSettings, "syslog_server"), value=str(HOME_LAN.optiplex)
                                     ),
-                                )
-                            ],
+                                    k8s.EnvVar(
+                                        name=env_name(SyslogSettings, "syslog_port"),
+                                        value=str(alloy.GATEWAY_SYSLOG_HOST_PORT),
+                                    ),
+                                ],
+                                resources=_RESOURCES,
+                            ),
+                            restart_policy="Never",
                         )
                     ),
                 )
@@ -190,12 +170,9 @@ def _syslog_cron_job(chart: Chart) -> k8s.KubeCronJob:
 
 def chart(app: App) -> Chart:
     chart = Chart(app, NAME, disable_resource_name_hashes=True)
-    deployment = _deployment(chart)
-    pod_policy.harden(deployment)
-    pod_policy.place(deployment, OPTIPLEX)
-    syslog = _syslog_cron_job(chart)
-    pod_policy.harden(syslog)
-    pod_policy.place(syslog, OPTIPLEX)
+    for workload in (_deployment(chart), _syslog_cron_job(chart)):
+        pod_policy.harden(workload)
+        pod_policy.place(workload, OPTIPLEX)
     k8s.KubeService(
         chart,
         "service",

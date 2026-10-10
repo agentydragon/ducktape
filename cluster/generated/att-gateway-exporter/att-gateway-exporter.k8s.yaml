@@ -23,13 +23,13 @@ spec:
         - env:
             - name: ATT_GATEWAY_URL
               value: http://192.168.1.254
-            - name: ATT_GATEWAY_LISTEN_PORT
-              value: "9173"
             - name: ATT_GATEWAY_ACCESS_CODE
               valueFrom:
                 secretKeyRef:
                   key: access-code
                   name: att-gateway-exporter-access-code
+            - name: ATT_GATEWAY_LISTEN_PORT
+              value: "9173"
           image: git.allegedly.works/ducktape-ci/att-gateway-exporter:unset
           imagePullPolicy: IfNotPresent
           livenessProbe:
@@ -92,15 +92,15 @@ spec:
               env:
                 - name: ATT_GATEWAY_URL
                   value: http://192.168.1.254
-                - name: ATT_GATEWAY_SYSLOG_SERVER
-                  value: 192.168.1.10
-                - name: ATT_GATEWAY_SYSLOG_PORT
-                  value: "1514"
                 - name: ATT_GATEWAY_ACCESS_CODE
                   valueFrom:
                     secretKeyRef:
                       key: access-code
                       name: att-gateway-exporter-access-code
+                - name: ATT_GATEWAY_SYSLOG_SERVER
+                  value: 192.168.1.10
+                - name: ATT_GATEWAY_SYSLOG_PORT
+                  value: "1514"
               image: git.allegedly.works/ducktape-ci/att-gateway-exporter:unset
               imagePullPolicy: IfNotPresent
               name: reconcile
