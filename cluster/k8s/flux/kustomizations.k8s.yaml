@@ -1118,6 +1118,8 @@ metadata:
   namespace: ducktape-flux
 spec:
   dependsOn:
+    - name: external-secrets-operator
+      namespace: ducktape-flux
     - name: monitoring-crds
       namespace: ducktape-flux
     - name: monitoring-home-switch

@@ -1,7 +1,8 @@
 """mktxp, the RouterOS Prometheus exporter, for the home switch (`home_switch.py`).
 
-mktxp rewrites its config files, so an init container copies them into a writable `emptyDir`,
-next to the credentials YAML it builds from the `monitoring` user's password.
+Its config files mount read-only: mktxp writes one only to add a key it is missing, and ours
+list every key (`_render`). ESO renders the credentials file from the `monitoring` user's
+password.
 """
 
 from __future__ import annotations
@@ -12,7 +13,11 @@ from collections.abc import Mapping
 from pathlib import Path
 
 from cdk8s import ApiObjectMetadata, App, Chart
-from cdk8s_plus_34 import k8s
+from cdk8s_plus_34 import ServiceAccount, k8s
+from external_secrets_crds.io.external_secrets import (
+    ExternalSecretSpecTargetCreationPolicy,
+    ExternalSecretSpecTargetTemplate,
+)
 from prometheus_operator_crds.com.coreos.monitoring import (
     ServiceMonitorSpecEndpoints,
     ServiceMonitorSpecEndpointsScheme,
@@ -21,6 +26,7 @@ from prometheus_operator_crds.com.coreos.monitoring import (
 
 from cluster.cdk8s import pod_policy
 from cluster.cdk8s.cert_manager import cluster_ca
+from cluster.cdk8s.external_secrets.single_secret_store import single_secret_store
 from cluster.cdk8s.fleet_rules import add_fleet_rules
 from cluster.cdk8s.flux import (
     ConfigMapArgs,
@@ -32,6 +38,7 @@ from cluster.cdk8s.flux import (
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.monitoring.home_switch import MONITORING_PASSWORD
 from cluster.cdk8s.node_scheduling import OPTIPLEX
+from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, SecretStoreRef, remote_data
 from cluster.cdk8s.providers.prometheus_operator.service_monitor import ServiceMonitor
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 from util.bazel.runfiles import get_required_path
@@ -43,12 +50,14 @@ _CONFIG_MAP = f"{NAME}-config"
 _HTTP = Port(name="http", number=49090)
 _SERVICE = ServiceRef(name=NAME, port=_HTTP, pods=Pods(namespace=NAMESPACE, labels=(("app.kubernetes.io/name", NAME),)))
 _IMAGE = "ghcr.io/akpw/mktxp:2.1.0@sha256:512ebe6c83c374147ac326c57ff9225b09df777883e772d417e5275bc6820e98"
-# The image's own user, which owns its config directory.
+# The image's own user.
 _UID = 1000
 # mktxp.conf names files under these directories.
 _CONFIG_DIR = "/etc/mktxp"
 _CA_BUNDLE_DIR = "/etc/cluster-ca"
-_CONFIG_SOURCE_DIR = "/etc/mktxp-source"
+_CREDENTIALS_DIR = "/etc/mktxp-credentials"
+_CREDENTIALS_SECRET = f"{NAME}-credentials"
+_CREDENTIALS_FILE = "credentials.yaml"
 # The RouterOS user tf/gitops/home-switch/main.tf creates for this exporter.
 _USERNAME = "monitoring"
 
@@ -57,7 +66,7 @@ _ROUTERS: Mapping[str, Mapping[str, str]] = {
     "CRS310": {
         "hostname": "192.168.1.100",
         "port": "8729",
-        "credentials_file": f"{_CONFIG_DIR}/credentials.yaml",
+        "credentials_file": f"{_CREDENTIALS_DIR}/{_CREDENTIALS_FILE}",
         "use_ssl": "True",
         "ssl_certificate_verify": "True",
         "ssl_check_hostname": "True",
@@ -136,7 +145,6 @@ def write_config_maps(root: Path) -> list[ConfigMapArgs]:
 
 def _deployment(chart: Chart) -> k8s.KubeDeployment:
     labels = _SERVICE.pods.selector
-    config = k8s.VolumeMount(name="config", mount_path=_CONFIG_DIR)
     tcp = k8s.Probe(tcp_socket=k8s.TcpSocketAction(port=k8s.IntOrString.from_string(_HTTP.name)), period_seconds=30)
     return k8s.KubeDeployment(
         chart,
@@ -157,40 +165,6 @@ def _deployment(chart: Chart) -> k8s.KubeDeployment:
                     automount_service_account_token=False,
                     termination_grace_period_seconds=10,
                     security_context=k8s.PodSecurityContext(run_as_non_root=True, run_as_user=_UID, run_as_group=_UID),
-                    init_containers=[
-                        k8s.Container(
-                            name="config",
-                            image=_IMAGE,
-                            image_pull_policy="IfNotPresent",
-                            command=[
-                                "sh",
-                                "-c",
-                                f"cp {_CONFIG_SOURCE_DIR}/* {_CONFIG_DIR}/ && printf"
-                                f' "username: {_USERNAME}\\npassword: %s\\n" "$PASSWORD" > {_CONFIG_DIR}/credentials.yaml',
-                            ],
-                            env=[
-                                k8s.EnvVar(
-                                    name="PASSWORD",
-                                    value_from=k8s.EnvVarSource(
-                                        secret_key_ref=k8s.SecretKeySelector(
-                                            name=MONITORING_PASSWORD.secret.name, key=MONITORING_PASSWORD.key
-                                        )
-                                    ),
-                                )
-                            ],
-                            resources=k8s.ResourceRequirements(
-                                requests={
-                                    "cpu": k8s.Quantity.from_string("10m"),
-                                    "memory": k8s.Quantity.from_string("16Mi"),
-                                },
-                                limits={"memory": k8s.Quantity.from_string("32Mi")},
-                            ),
-                            volume_mounts=[
-                                config,
-                                k8s.VolumeMount(name="config-source", mount_path=_CONFIG_SOURCE_DIR, read_only=True),
-                            ],
-                        )
-                    ],
                     containers=[
                         k8s.Container(
                             name="exporter",
@@ -211,15 +185,15 @@ def _deployment(chart: Chart) -> k8s.KubeDeployment:
                                 },
                             ),
                             volume_mounts=[
-                                config,
+                                k8s.VolumeMount(name="config", mount_path=_CONFIG_DIR, read_only=True),
+                                k8s.VolumeMount(name="credentials", mount_path=_CREDENTIALS_DIR, read_only=True),
                                 k8s.VolumeMount(name="cluster-ca", mount_path=_CA_BUNDLE_DIR, read_only=True),
                             ],
                         )
                     ],
                     volumes=[
-                        # Holds the password, so never on disk.
-                        k8s.Volume(name="config", empty_dir=k8s.EmptyDirVolumeSource(medium="Memory")),
-                        k8s.Volume(name="config-source", config_map=k8s.ConfigMapVolumeSource(name=_CONFIG_MAP)),
+                        k8s.Volume(name="config", config_map=k8s.ConfigMapVolumeSource(name=_CONFIG_MAP)),
+                        k8s.Volume(name="credentials", secret=k8s.SecretVolumeSource(secret_name=_CREDENTIALS_SECRET)),
                         k8s.Volume(name="cluster-ca", config_map=k8s.ConfigMapVolumeSource(name=cluster_ca.BUNDLE)),
                     ],
                 ),
@@ -228,8 +202,35 @@ def _deployment(chart: Chart) -> k8s.KubeDeployment:
     )
 
 
+def _credentials(chart: Chart) -> None:
+    reader = ServiceAccount(
+        chart, "credentials-reader", metadata=ApiObjectMetadata(name=f"{NAME}-credentials-reader", namespace=NAMESPACE)
+    )
+    store = single_secret_store(
+        chart,
+        _CREDENTIALS_SECRET,
+        reader=reader,
+        source_namespace=MONITORING_PASSWORD.secret.namespace,
+        source_secret=MONITORING_PASSWORD.secret.name,
+        consumer_namespace=NAMESPACE,
+    )
+    ExternalSecret(
+        chart,
+        "credentials",
+        metadata=ApiObjectMetadata(name=_CREDENTIALS_SECRET, namespace=NAMESPACE),
+        refresh_interval="1h",
+        secret_store_ref=SecretStoreRef.cluster(store),
+        data=[remote_data(MONITORING_PASSWORD.secret.name, MONITORING_PASSWORD.key)],
+        creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
+        template=ExternalSecretSpecTargetTemplate(
+            data={_CREDENTIALS_FILE: f"username: {_USERNAME}\npassword: {{{{ .{MONITORING_PASSWORD.key} }}}}\n"}
+        ),
+    )
+
+
 def chart(app: App) -> Chart:
     chart = Chart(app, NAME, disable_resource_name_hashes=True)
+    _credentials(chart)
     deployment = _deployment(chart)
     pod_policy.harden(deployment)
     # The switch's management services accept only the home LAN.
@@ -261,7 +262,11 @@ def chart(app: App) -> Chart:
 
 
 def mktxp(
-    flux_chart: Chart, directory: RenderedDirectory, monitoring_crds: Kustomization, home_switch: Kustomization
+    flux_chart: Chart,
+    directory: RenderedDirectory,
+    external_secrets_operator: Kustomization,
+    monitoring_crds: Kustomization,
+    home_switch: Kustomization,
 ) -> Kustomization:
     return flux_kustomization(
         flux_chart,
@@ -269,6 +274,8 @@ def mktxp(
         directory,
         timeout="5m",
         depends_on=flux_kustomization_depends_on_many(
+            # ExternalSecret, ClusterSecretStore
+            external_secrets_operator,
             # ServiceMonitor
             monitoring_crds,
             # The `monitoring` user's password

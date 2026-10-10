@@ -621,6 +621,7 @@ def generate_manifests(root: Path) -> None:
             monitoring_mktxp.chart,
             config_map_generator=monitoring_mktxp.write_config_maps(root),
         ),
+        external_secrets_operator_kustomization,
         monitoring_crds_kustomization,
         monitoring_home_switch_kustomization,
     )

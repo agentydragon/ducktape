@@ -1,3 +1,85 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: mktxp-credentials-reader
+  namespace: monitoring
+automountServiceAccountToken: false
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: mktxp-credentials-reader
+  namespace: monitoring
+rules:
+  - apiGroups:
+      - ""
+    resourceNames:
+      - home-switch-monitoring
+    resources:
+      - secrets
+    verbs:
+      - get
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: mktxp-credentials-reader
+  namespace: monitoring
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: mktxp-credentials-reader
+subjects:
+  - apiGroup: ""
+    kind: ServiceAccount
+    name: mktxp-credentials-reader
+    namespace: monitoring
+---
+apiVersion: external-secrets.io/v1
+kind: ClusterSecretStore
+metadata:
+  name: kubernetes-mktxp-credentials-secret-store
+spec:
+  conditions:
+    - namespaces:
+        - monitoring
+  provider:
+    kubernetes:
+      auth:
+        serviceAccount:
+          name: mktxp-credentials-reader
+      remoteNamespace: monitoring
+      server:
+        caProvider:
+          key: ca.crt
+          name: kube-root-ca.crt
+          namespace: default
+          type: ConfigMap
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: mktxp-credentials
+  namespace: monitoring
+spec:
+  data:
+    - remoteRef:
+        key: home-switch-monitoring
+        property: password
+      secretKey: password
+  refreshInterval: 1h
+  secretStoreRef:
+    kind: ClusterSecretStore
+    name: kubernetes-mktxp-credentials-secret-store
+  target:
+    creationPolicy: Owner
+    name: mktxp-credentials
+    template:
+      data:
+        credentials.yaml: |
+          username: monitoring
+          password: {{ .password }}
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -55,39 +137,12 @@ spec:
           volumeMounts:
             - mountPath: /etc/mktxp
               name: config
+              readOnly: true
+            - mountPath: /etc/mktxp-credentials
+              name: credentials
+              readOnly: true
             - mountPath: /etc/cluster-ca
               name: cluster-ca
-              readOnly: true
-      initContainers:
-        - command:
-            - sh
-            - -c
-            - 'cp /etc/mktxp-source/* /etc/mktxp/ && printf "username: monitoring\npassword: %s\n" "$PASSWORD" > /etc/mktxp/credentials.yaml'
-          env:
-            - name: PASSWORD
-              valueFrom:
-                secretKeyRef:
-                  key: password
-                  name: home-switch-monitoring
-          image: ghcr.io/akpw/mktxp:2.1.0@sha256:512ebe6c83c374147ac326c57ff9225b09df777883e772d417e5275bc6820e98
-          imagePullPolicy: IfNotPresent
-          name: config
-          resources:
-            limits:
-              memory: 32Mi
-            requests:
-              cpu: 10m
-              memory: 16Mi
-          securityContext:
-            allowPrivilegeEscalation: false
-            capabilities:
-              drop:
-                - ALL
-          volumeMounts:
-            - mountPath: /etc/mktxp
-              name: config
-            - mountPath: /etc/mktxp-source
-              name: config-source
               readOnly: true
       nodeSelector:
         kubernetes.io/hostname: optiplex
@@ -99,12 +154,12 @@ spec:
           type: RuntimeDefault
       terminationGracePeriodSeconds: 10
       volumes:
-        - emptyDir:
-            medium: Memory
-          name: config
         - configMap:
             name: mktxp-config
-          name: config-source
+          name: config
+        - name: credentials
+          secret:
+            secretName: mktxp-credentials
         - configMap:
             name: cluster-internal-ca-bundle
           name: cluster-ca
