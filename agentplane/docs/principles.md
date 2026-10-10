@@ -19,6 +19,11 @@ agent does not require running approvals; using approvals does not require runni
 - The integration app is a client of the backends, never their dependency
   ([dependency rule](service_boundaries.md)).
 
+Kubernetes is the baseline, not one of the optional pieces: identities are ServiceAccounts,
+policies are custom resources, and workloads authenticate by TokenReview. That integration is deep
+and buys a consistent model of identity and authorization, so composability is among Agentplane's
+services on Kubernetes, not away from it.
+
 The integration app exists to serve people: one frontend over Actions, sandboxes, threads and the
 rest. Its ideal form is a thin facade in front of N small services that serves that frontend and
 owns no backend state. State it holds today, such as the thread archive, is a candidate to move
@@ -43,9 +48,14 @@ is a combination of them:
 A launch preset pre-fills these choices and carries no authority of its own: runtime services
 receive the resolved concrete configuration and never see a preset name ([launch presets](launch_presets.md)).
 
+Bundles are welcome as applications on top of this base. Launching a coder agent with hundreds of
+preconfigured choices in one click is a feature, and so would be named access levels or profiles.
+What the base must not do is make such a bundle the only supported way to configure a session.
+
 **Question for a proposal:** if it introduces a name that stands for several of these at once (a
-"profile", "tier" or "role"), can a user still see and change each part separately, and does
-any authority attach to the name rather than to the parts?
+"profile", "tier" or "role"), is it an application built from the parts, or does the base start
+to require it? Can a user still see and change each part separately, and does any authority attach
+to the name rather than to the parts?
 
 ## Keep options open; avoid hard-to-reverse choices
 
@@ -101,6 +111,8 @@ Restarting or breaking one service affects only the work that actually needs it 
   sandbox's volume; the Action Service resumes dispatches by lease and marks lost work
   `execution_unknown` rather than guessing ([executor liveness](executor_liveness.md)).
 - A running agent keeps working while the app, or a service it is not currently calling, restarts.
+  When the notification service has crashed, agents saw its errors, noted that it was having
+  trouble, and carried on with their work.
 - Backend paths are accepted with the integration app unavailable.
 
 **Question for a proposal:** while this component is down or rolling, what else stops? Anything
@@ -121,6 +133,13 @@ Agents do not hold real credentials. Inside their sandbox they are otherwise unr
   containment. The boundary is the Pod today, with KubeVirt VMs as the stronger option; control is
   at what leaves it: egress policy, Actions, RBAC.
 
+The sandbox also protects the agent from itself. Claude Code and Codex assume the agent runs
+commands on the same machine as the harness; they do not split into "harness in one Pod, commands
+in another". So the harness and the agent's work share a sandbox, and the agent should be free to
+run memory-hungry work without being able to kill its own harness by accident. Constraints that
+keep the harness alive (resource partitioning inside a VM, for example) serve that freedom; they
+are not command policing.
+
 **Question for a proposal:** does it put a real secret where agent code can read it, or does it
 try to police what happens inside the sandbox instead of at its boundary?
 
@@ -133,7 +152,8 @@ that let an agent script MCP tools from code.
 
 - Egress rules, Actions, policies and notification inboxes are HTTP APIs with OpenAPI schemas,
   reached through the egress proxy with the workload placeholder; the platform instructions point
-  agents at them ([`agent_instructions.j2`](../sandbox_service/agent_instructions.j2)).
+  agents at them ([`agent_instructions.j2`](../sandbox_service/agent_instructions.j2)). Plain
+  `curl` against a documented schema is the intended level; agents handle it well.
 - Kubernetes access is the agent's own `kubectl`, not a wrapper tool.
 - MCP is an additional surface, not the only one: the Action Service also serves its operations as
   MCP tools over OAuth.
