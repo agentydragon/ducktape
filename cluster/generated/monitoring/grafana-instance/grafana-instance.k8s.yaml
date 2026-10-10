@@ -274,6 +274,20 @@ spec:
 apiVersion: grafana.integreatly.org/v1beta1
 kind: GrafanaDashboard
 metadata:
+  name: home-network-overview
+  namespace: monitoring
+spec:
+  configMapRef:
+    key: home-network-overview.json
+    name: home-network-overview-dashboard
+  folder: Home network
+  instanceSelector:
+    matchLabels:
+      dashboards: grafana
+---
+apiVersion: grafana.integreatly.org/v1beta1
+kind: GrafanaDashboard
+metadata:
   name: cert-manager
   namespace: monitoring
 spec:

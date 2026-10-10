@@ -19,5 +19,9 @@ configMapGenerator:
     namespace: monitoring
     files:
       - cluster-storage-io.json
+  - name: home-network-overview-dashboard
+    namespace: monitoring
+    files:
+      - home-network-overview.json
 configurations:
   - kustomizeconfig
