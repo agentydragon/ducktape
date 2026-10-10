@@ -45,7 +45,6 @@ class ChannelPeer:
     sandbox_name: str
     sandbox_uid: UUID
     pod_uid: str
-    operations: frozenset[str]
 
 
 @dataclass(frozen=True)
@@ -57,7 +56,7 @@ class ChannelTiming:
 
 
 class ChannelRefusedError(Exception):
-    """The workload is authentic but not a channel-routed Sandbox of this inventory."""
+    """The workload is authentic but not a Sandbox Pod of this inventory."""
 
 
 class _ChannelClosedError(Exception):
@@ -92,18 +91,13 @@ async def resolve_peer(
     owner = controllers[0]
     try:
         sandbox = await inventory.get(owner.name)
-        operations = await inventory.runner_channel(owner.name)
     except SandboxNotFoundError as error:
         raise ChannelRefusedError("Pod's Sandbox is not in this inventory") from error
     if sandbox.uid != owner.uid:
         raise ChannelRefusedError("Pod belongs to another incarnation of its Sandbox")
     if sandbox.service_account.name != principal.service_account_name:
         raise ChannelRefusedError("Sandbox runs as a different ServiceAccount")
-    if ChannelOperation.COMMANDS not in operations:
-        raise ChannelRefusedError("Sandbox is not channel-routed")
-    return ChannelPeer(
-        sandbox_name=sandbox.name, sandbox_uid=UUID(sandbox.uid), pod_uid=principal.pod_uid, operations=operations
-    )
+    return ChannelPeer(sandbox_name=sandbox.name, sandbox_uid=UUID(sandbox.uid), pod_uid=principal.pod_uid)
 
 
 class RunnerChannelService(protocol_pb2_grpc.RunnerChannelServicer):
@@ -151,12 +145,13 @@ class RunnerChannelService(protocol_pb2_grpc.RunnerChannelServicer):
                 hello = protocol_pb2.RunnerFrame()
             if hello.WhichOneof("frame") != "hello" or not hello.hello.runner_boot_id:
                 raise _ChannelClosedError(grpc.StatusCode.INVALID_ARGUMENT, "the first frame must be Hello")
-            capabilities = set(hello.hello.capabilities) & peer.operations & set(ChannelOperation)
+            capabilities = set(hello.hello.capabilities) & set(ChannelOperation)
             epoch = await self.connections.accept(
                 sandbox_uid=peer.sandbox_uid,
                 pod_uid=peer.pod_uid,
                 owner_replica=self.replica,
                 runner_boot_id=hello.hello.runner_boot_id,
+                operations=capabilities,
             )
             async with asyncio.timeout(self.timing.liveness_s):
                 await context.write(
@@ -168,7 +163,7 @@ class RunnerChannelService(protocol_pb2_grpc.RunnerChannelServicer):
         except WorkloadPrincipalRejectedError:
             await context.abort(grpc.StatusCode.UNAUTHENTICATED, "invalid workload bearer")
         except ChannelRefusedError:
-            await context.abort(grpc.StatusCode.PERMISSION_DENIED, "not a channel-routed Sandbox")
+            await context.abort(grpc.StatusCode.PERMISSION_DENIED, "not a Sandbox Pod")
         except _ChannelClosedError as closed:
             await context.abort(closed.code, closed.detail)
         except TimeoutError:

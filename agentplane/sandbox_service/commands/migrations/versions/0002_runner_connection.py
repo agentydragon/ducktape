@@ -2,6 +2,7 @@
 
 import sqlalchemy as sa
 from alembic import op
+from sqlalchemy.dialects import postgresql
 
 revision = "0002_runner_connection"
 down_revision = "0001_command_admission"
@@ -18,6 +19,7 @@ def upgrade() -> None:
         sa.Column("owner_replica", sa.String(), nullable=False),
         sa.Column("runner_boot_id", sa.String(), nullable=False),
         sa.Column("last_seen_at", sa.DateTime(timezone=True), nullable=False),
+        sa.Column("operations", postgresql.ARRAY(sa.String()), nullable=False),
         sa.CheckConstraint("connection_epoch > 0", name="connection_epoch_positive"),
     )
 

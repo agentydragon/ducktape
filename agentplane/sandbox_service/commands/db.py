@@ -8,6 +8,7 @@ from datetime import datetime
 from uuid import UUID
 
 from sqlalchemy import BigInteger, CheckConstraint, DateTime, String, func
+from sqlalchemy.dialects.postgresql import ARRAY
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 from agentplane.protocol import command_pb2, event_log_pb2
@@ -74,3 +75,6 @@ class RunnerConnection(Base):
     owner_replica: Mapped[str] = mapped_column(String)
     runner_boot_id: Mapped[str] = mapped_column(String)
     last_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    # Every channel operation a connection of this Sandbox has agreed in its handshake. It only
+    # grows, so once a runner carries an operation over the channel it never falls back inbound.
+    operations: Mapped[list[str]] = mapped_column(ARRAY(String))
