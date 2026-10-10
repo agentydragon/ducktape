@@ -109,7 +109,7 @@ fn hole_class_member(member: &ClassMember, kept: &BTreeSet<AnchorSpan>) -> Class
                 .iter()
                 .map(|param| match param {
                     ParamOrTsParamProp::Param(param) => {
-                        ParamOrTsParamProp::Param(retain_or_hole_param(param, &retained))
+                        ParamOrTsParamProp::Param(retain_or_hole_param(param, &retained, kept))
                     }
                     // TypeScript parameter properties are not part of the JS
                     // fixtures; keeping them verbatim is safer than severing

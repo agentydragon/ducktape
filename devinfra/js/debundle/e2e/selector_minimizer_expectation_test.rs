@@ -215,6 +215,63 @@ fn assert_selector_shape(
     );
 }
 
+/// The declarations have identical bodies. Their parameter property keys are
+/// the only stable feature that distinguishes them; the local names can change.
+#[test]
+fn minimizes_function_using_a_destructured_parameter_key() {
+    let dir = tempfile::tempdir().unwrap();
+    let case = MinimizedSelectorCase {
+        name: "destructured parameter key",
+        source: "function a({ value: x }) { return x; }\nfunction b({ mode: y }) { return y; }\n",
+        module: "app/functions",
+        bindings: &[BindingCase {
+            export_name: "Selected",
+            runtime_name: "b",
+        }],
+        outputs: &[],
+    };
+    let (modules, source) = write_case(dir.path(), &case);
+    let control = run_match_selector(
+        &source,
+        "function Selected({ mode: ANYTHING }) { STMT_LIST; }",
+        &["--target-binding", "Selected", "--no-slack"],
+    );
+    assert_eq!(control["outcomes"][0]["outcome"]["kind"], "resolved");
+
+    let out = run_synthesize_selectors(
+        &modules,
+        &[
+            "--source-file",
+            source.to_str().unwrap(),
+            "--item",
+            "app/functions:Selected",
+            "--candidates",
+            "10",
+            "--format",
+            "json",
+        ],
+    );
+    let parsed = parse_stdout_json(&out);
+    let selector = parsed["candidates"][0]["match_source"]
+        .as_str()
+        .unwrap_or_else(|| panic!("no selector: {parsed}"));
+    assert!(
+        selector.contains("mode"),
+        "the minimizer should consider the parameter key: {parsed}"
+    );
+    let variant = dir.path().join("renamed.js");
+    write_text_file(
+        &variant,
+        "function c({ value: x }) { return x; }\nfunction d() {}\nfunction e({ mode: z }) { return z; }\n",
+    );
+    let renamed = run_match_selector(
+        &variant,
+        selector,
+        &["--target-binding", "Selected", "--no-slack"],
+    );
+    assert_eq!(renamed["outcomes"][0]["outcome"]["binding"], "e");
+}
+
 macro_rules! minimizer_expectation_case {
     (
         $(#[$attr:meta])*
