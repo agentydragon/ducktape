@@ -13,7 +13,8 @@ depends_on = None
 
 
 def upgrade() -> None:
-    op.execute("ALTER TABLE thread_history_summary ADD COLUMN last_model_activity_at timestamptz")
+    # Earlier-migration replay tests can stamp an older head on an otherwise current schema.
+    op.execute("ALTER TABLE thread_history_summary ADD COLUMN IF NOT EXISTS last_model_activity_at timestamptz")
     op.execute("""
         UPDATE thread_history_summary AS summary
         SET last_model_activity_at = log.last_model_activity_at
