@@ -12,22 +12,6 @@ import { fallbackActionPresentation } from "./action_data";
 import { renderPreview, type ArgumentsPreview } from "./entry";
 import { canApprovePullRequestInline, createPullRequestPane } from "./github/create_pull_request";
 import {
-  calendarEventResult,
-  calendarEventsResult,
-  createEventCollapsed,
-  createEventDetails,
-  createEventLabel,
-  createEventOpened,
-  deleteEventArguments,
-  getEventArguments,
-  listEventInstancesArguments,
-  listEventsArguments,
-  updateEventCollapsed,
-  updateEventDetails,
-  updateEventLabel,
-  updateEventOpened,
-} from "./google_calendar";
-import {
   gmailDraftCollapsed,
   gmailDraftDetails,
   gmailDraftLabel,
@@ -39,17 +23,10 @@ import {
   gmailThreadsResult,
 } from "./gmail";
 import {
-  productsCreateResult,
   productsListArguments,
   productsListResult,
   quantityUnitsListArguments,
   quantityUnitsListResult,
-  shoppingListItemsAddResult,
-  shoppingListItemsRemoveResult,
-  shoppingListResult,
-  stockAddResult,
-  stockEntryEditResult,
-  stockGetResult,
   systemInfoArguments,
   systemInfoResult,
 } from "./grocy";
@@ -161,51 +138,9 @@ const ACTION_RENDERERS: ReadonlyMap<string, ReadonlyMap<string, ActionPresentati
     ]),
   ],
   [
-    "google_calendar",
-    // Calendar renderers show calendar IDs as submitted; resolving a display name would add a lookup.
-    new Map<string, ActionPresentation>([
-      [
-        "create_event",
-        {
-          label: createEventLabel,
-          pane: { collapsed: createEventCollapsed, opened: createEventOpened },
-          details: { arguments: createEventDetails, result: calendarEventResult },
-        },
-      ],
-      [
-        "update_event",
-        {
-          label: updateEventLabel,
-          pane: { collapsed: updateEventCollapsed, opened: updateEventOpened },
-          details: { arguments: updateEventDetails, result: calendarEventResult },
-        },
-      ],
-      [
-        "get_event",
-        { pane: { opened: getEventArguments }, details: { arguments: getEventArguments, result: calendarEventResult } },
-      ],
-      ["delete_event", { pane: { opened: deleteEventArguments }, details: { arguments: deleteEventArguments } }],
-      [
-        "list_events",
-        {
-          pane: { opened: listEventsArguments },
-          details: { arguments: listEventsArguments, result: calendarEventsResult },
-        },
-      ],
-      [
-        "list_event_instances",
-        {
-          pane: { opened: listEventInstancesArguments },
-          details: { arguments: listEventInstancesArguments, result: calendarEventsResult },
-        },
-      ],
-    ]),
-  ],
-  [
     "grocy_sf",
-    // These views format the submitted list options or returned data only. Grocy request views
-    // that resolve IDs to names remain on the host's generic argument renderer until Agentplane
-    // has an explicit lookup surface.
+    // Only actions whose Haku renderers need no lookups are registered here. Lookup-backed Grocy
+    // actions are absent entirely and use Agentplane's unported generic presentation.
     new Map<string, ActionPresentation>([
       [
         "products_list",
@@ -228,13 +163,6 @@ const ACTION_RENDERERS: ReadonlyMap<string, ReadonlyMap<string, ActionPresentati
           details: { arguments: systemInfoArguments, result: systemInfoResult },
         },
       ],
-      ["stock_add", { details: { result: stockAddResult } }],
-      ["stock_entry_edit", { details: { result: stockEntryEditResult } }],
-      ["stock_get", { details: { result: stockGetResult } }],
-      ["products_create", { details: { result: productsCreateResult } }],
-      ["shopping_list_get", { details: { result: shoppingListResult } }],
-      ["shopping_list_items_add", { details: { result: shoppingListItemsAddResult } }],
-      ["shopping_list_items_remove", { details: { result: shoppingListItemsRemoveResult } }],
     ]),
   ],
   [

@@ -23,15 +23,6 @@ function stringField(args: ActionObject, ...names: string[]): string | undefined
   return typeof value === "string" && value.trim() !== "" ? value : undefined;
 }
 
-function count(args: ActionObject, key: string): number {
-  const value = args[key];
-  return Array.isArray(value) ? value.length : 0;
-}
-
-function plural(number: number, singular: string, pluralForm = `${singular}s`): string {
-  return `${number} ${number === 1 ? singular : pluralForm}`;
-}
-
 function kubernetesTarget(kind: string, name: string, namespace: string | undefined): string {
   return `${kind} ${namespace ? `${namespace}/` : ""}${name}`;
 }
@@ -126,7 +117,7 @@ export const ACTION_PRESENTATION_CATALOG: readonly ActionPresentationSpec[] = [
     label: (args) =>
       `List events${stringField(args, "namespace") ? ` in namespace ${stringField(args, "namespace")}` : ""}`,
   },
-  // Gmail renderers present in Haku Console.
+  // No-lookup Gmail renderers present in Haku Console.
   {
     group: "gmail",
     name: "drafts_create",
@@ -135,90 +126,11 @@ export const ACTION_PRESENTATION_CATALOG: readonly ActionPresentationSpec[] = [
   },
   {
     group: "gmail",
-    name: "threads_modify_labels",
-    label: (args) => `Relabel ${plural(count(args, "thread_ids"), "thread")}`,
-  },
-  {
-    group: "gmail",
-    name: "threads_get",
-    label: () => "Get Gmail thread",
-    resultLabel: "Gmail thread",
-  },
-  {
-    group: "gmail",
     name: "threads_list",
     label: () => "Search Gmail threads",
     resultLabel: "Gmail threads",
   },
-  {
-    group: "gmail",
-    name: "messages_get",
-    label: () => "Get Gmail message",
-    resultLabel: "Gmail message",
-  },
-  // Google Calendar renderers present in Haku Console.
-  {
-    group: "google_calendar",
-    name: "create_event",
-    label: (args) => `Create calendar event${stringField(args, "summary") ? `: ${stringField(args, "summary")}` : ""}`,
-    resultLabel: "Created calendar event",
-  },
-  {
-    group: "google_calendar",
-    name: "update_event",
-    label: (args) => {
-      const target = stringField(args, "summary") ?? stringField(args, "event_id");
-      return target ? `Update calendar event: ${target}` : "Update calendar event";
-    },
-    resultLabel: "Updated calendar event",
-  },
-  {
-    group: "google_calendar",
-    name: "get_event",
-    label: () => "Get calendar event",
-    resultLabel: "Calendar event",
-  },
-  {
-    group: "google_calendar",
-    name: "list_events",
-    label: () => "List calendar events",
-    resultLabel: "Calendar events",
-  },
-  {
-    group: "google_calendar",
-    name: "list_event_instances",
-    label: () => "List calendar event instances",
-    resultLabel: "Calendar event instances",
-  },
-  {
-    group: "google_calendar",
-    name: "delete_event",
-    label: () => "Delete calendar event",
-  },
-  // Grocy renderers present in Haku Console. Agentplane calls this group `grocy_sf`.
-  {
-    group: "grocy_sf",
-    name: "stock_add",
-    label: (args) => `Add ${plural(count(args, "items"), "item")} to stock`,
-    resultLabel: "Added to stock",
-  },
-  {
-    group: "grocy_sf",
-    name: "stock_consume",
-    label: (args) => `Remove ${plural(count(args, "items"), "item")} from stock`,
-  },
-  {
-    group: "grocy_sf",
-    name: "stock_entry_edit",
-    label: (args) => `Edit ${plural(count(args, "items"), "stock entry", "stock entries")}`,
-    resultLabel: "Updated stock entries",
-  },
-  {
-    group: "grocy_sf",
-    name: "stock_get",
-    label: () => "View stock",
-    resultLabel: "Stock",
-  },
+  // No-lookup Grocy renderers present in Haku Console. Agentplane calls this group `grocy_sf`.
   {
     group: "grocy_sf",
     name: "products_list",
@@ -237,62 +149,11 @@ export const ACTION_PRESENTATION_CATALOG: readonly ActionPresentationSpec[] = [
     label: () => "View Grocy system information",
     resultLabel: "System information",
   },
-  {
-    group: "grocy_sf",
-    name: "products_create",
-    label: (args) => `Create ${plural(count(args, "items"), "product")}`,
-    resultLabel: "Created products",
-  },
-  {
-    group: "grocy_sf",
-    name: "products_edit",
-    label: (args) => `Edit ${plural(count(args, "items"), "product")}`,
-  },
-  {
-    group: "grocy_sf",
-    name: "shopping_list_get",
-    label: () => "View shopping list",
-    resultLabel: "Shopping list",
-  },
-  {
-    group: "grocy_sf",
-    name: "shopping_list_items_add",
-    label: (args) => `Add ${plural(count(args, "items"), "item")} to shopping list`,
-    resultLabel: "Added shopping-list items",
-  },
-  {
-    group: "grocy_sf",
-    name: "shopping_list_items_remove",
-    label: (args) => `Remove ${plural(count(args, "item_ids"), "shopping-list item")}`,
-    resultLabel: "Removed shopping-list items",
-  },
-  {
-    group: "grocy_sf",
-    name: "shopping_list_item_edit",
-    label: () => "Edit shopping-list item",
-  },
-  // Tana renderers present in Haku Console.
-  {
-    group: "tana",
-    name: "import_tana_paste",
-    label: () => "Import content into Tana",
-  },
+  // No-lookup Tana renderers present in Haku Console.
   {
     group: "tana",
     name: "get_or_create_calendar_node",
     label: () => "Get or create Tana calendar node",
-  },
-  { group: "tana", name: "trash_node", label: () => "Move Tana node to trash" },
-  { group: "tana", name: "edit_node", label: () => "Edit Tana node" },
-  {
-    group: "tana",
-    name: "move_node",
-    label: () => "Move Tana node",
-  },
-  {
-    group: "tana",
-    name: "set_field_option",
-    label: (args) => `Tana ${stringField(args, "mode") === "append" ? "append" : "set"} field option`,
   },
   // Agentplane-native presentations without an equivalent Haku renderer.
   {

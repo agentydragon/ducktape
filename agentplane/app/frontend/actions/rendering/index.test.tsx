@@ -2,7 +2,7 @@
 import { describe, expect, it } from "vitest";
 
 import { type CallToolResult, parseCallToolResult } from "../call_tool_result";
-import { ACTION_PRESENTATION_CATALOG } from "../presentation_catalog";
+import { ACTION_PRESENTATION_CATALOG, actionPresentationSpec } from "../presentation_catalog";
 import { mount, SSH_EXEC_ARGUMENTS, sshExec } from "../testing";
 import {
   canApproveInline,
@@ -156,45 +156,6 @@ describe("Action presentation slots", () => {
     expect(renderedResult.querySelector('a[href="https://mail.google.com/mail/u/0/#all/thread-1"]')).not.toBeNull();
   });
 
-  it("renders static Calendar event data and leaves calendar IDs visible", async () => {
-    const action = { group: "google_calendar", name: "create_event" };
-    const args = {
-      summary: "Planning session",
-      start: { date_time: "2026-10-12T09:00:00-07:00", time_zone: "America/Los_Angeles" },
-      end: { date_time: "2026-10-12T10:00:00-07:00", time_zone: "America/Los_Angeles" },
-      calendar_id: "team@group.calendar.google.com",
-      attendees: ["reader@example.com"],
-    };
-    const label = await mount(renderActionLabel(action, args));
-    const opened = await mount(renderPaneOpened(action, args));
-    const details = await mount(renderDetailsArguments(action, args));
-
-    expect(label.textContent).toContain("Create calendar event: Planning session");
-    expect(opened.textContent).toContain("2026-10-12T09:00:00-07:00");
-    expect(opened.textContent).not.toContain("Planning session");
-    expect(details.textContent).toContain("team@group.calendar.google.com");
-    expect(details.textContent).toContain("reader@example.com");
-    expect(details.textContent).not.toContain("Planning session");
-
-    const result = parseCallToolResult({
-      content: [],
-      structuredContent: {
-        event_id: "event-123",
-        summary: "Planning session",
-        start: args.start,
-        end: args.end,
-        html_link: "https://calendar.google.com/calendar/event?eid=event-123",
-      },
-      isError: false,
-    });
-    if (result === null) throw new Error("the fixture is not a CallToolResult");
-    const renderedResult = await mount(renderDetailsResult(action, result));
-    expect(renderedResult.textContent).toContain("Planning session");
-    expect(
-      renderedResult.querySelector('a[href="https://calendar.google.com/calendar/event?eid=event-123"]')
-    ).not.toBeNull();
-  });
-
   it("renders Grocy list options and results without resolving IDs", async () => {
     for (const [name, args, expected] of [
       ["products_list", { detail: "full" }, "Full Product records"],
@@ -207,30 +168,6 @@ describe("Action presentation slots", () => {
       expect(opened.textContent).toContain(expected);
       expect(details.textContent).toContain(expected);
     }
-
-    const action = { group: "grocy_sf", name: "stock_add" };
-    const result = parseCallToolResult({
-      content: [],
-      structuredContent: [
-        {
-          kind: "ok",
-          product_name: "Tea",
-          amount_delta: 2,
-          new_amount: 4,
-          qu_name: "box",
-          location_name: "Pantry",
-          best_before_date: "2027-01-01",
-        },
-        { kind: "error", error: "Unknown product" },
-      ],
-      isError: false,
-    });
-    if (result === null) throw new Error("the fixture is not a CallToolResult");
-    const rendered = await mount(renderDetailsResult(action, result));
-    expect(rendered.textContent).toContain("1 added");
-    expect(rendered.textContent).toContain("Tea");
-    expect(rendered.textContent).toContain("Unknown product");
-    expect(rendered.textContent).toContain("2027-01-01");
   });
 
   it("renders Tana calendar arguments from submitted data without resolving the workspace", async () => {
@@ -246,20 +183,52 @@ describe("Action presentation slots", () => {
     }
   });
 
-  it("keeps lookup-backed Gmail and Grocy views on the submitted-data fallback", async () => {
-    const gmail = await mount(
-      renderPaneOpened({ group: "gmail", name: "threads_get" }, { id: "opaque-thread", format: "full" })
-    );
-    const grocy = await mount(
-      renderPaneOpened({ group: "grocy_sf", name: "products_create" }, { items: [{ product_id: 42 }] })
-    );
+  it("does not register any action whose Haku renderer depended on lookups", async () => {
+    const excluded = [
+      ["gmail", "threads_modify_labels"],
+      ["gmail", "threads_get"],
+      ["gmail", "messages_get"],
+      ["google_calendar", "create_event"],
+      ["google_calendar", "update_event"],
+      ["google_calendar", "get_event"],
+      ["google_calendar", "list_events"],
+      ["google_calendar", "list_event_instances"],
+      ["google_calendar", "delete_event"],
+      ["grocy_sf", "stock_add"],
+      ["grocy_sf", "stock_consume"],
+      ["grocy_sf", "stock_entry_edit"],
+      ["grocy_sf", "stock_get"],
+      ["grocy_sf", "products_create"],
+      ["grocy_sf", "products_edit"],
+      ["grocy_sf", "shopping_list_get"],
+      ["grocy_sf", "shopping_list_items_add"],
+      ["grocy_sf", "shopping_list_items_remove"],
+      ["grocy_sf", "shopping_list_item_edit"],
+      ["tana", "import_tana_paste"],
+      ["tana", "trash_node"],
+      ["tana", "edit_node"],
+      ["tana", "move_node"],
+      ["tana", "set_field_option"],
+    ] as const;
+    const result = parseCallToolResult({
+      content: [],
+      structuredContent: { lookup_dependent_value: "preserve raw response" },
+      isError: false,
+    });
+    if (result === null) throw new Error("the fixture is not a CallToolResult");
 
-    expect(gmail.textContent).toContain("opaque-thread");
-    expect(gmail.textContent).toContain("Format");
-    expect(gmail.textContent).toContain("full");
-    expect(grocy.textContent).toContain("Product");
-    expect(grocy.textContent).toContain("42");
-    expect(grocy.textContent).not.toContain("Could not load");
+    for (const [group, name] of excluded) {
+      const action = { group, name };
+      expect(actionPresentationSpec(action)).toBeUndefined();
+      expect(renderActionLabel(action, { id: "opaque-id" })).toBeNull();
+      expect(renderPaneCollapsed(action, { id: "opaque-id" })).toBeNull();
+      expect(renderPaneOpened(action, { id: "opaque-id" })).toBeNull();
+      expect(renderDetailsArguments(action, { id: "opaque-id" })).toBeNull();
+
+      const raw = await mount(renderDetailsResult(action, result));
+      expect(raw.textContent).toContain("Structured content");
+      expect(raw.textContent).toContain('"lookup_dependent_value": "preserve raw response"');
+    }
   });
 
   it("registers readable label, pane, and full-details views for every migrated action", async () => {
@@ -296,19 +265,6 @@ describe("Action presentation slots", () => {
         return { to: ["reader@example.com"], subject: "Review", body: "Draft body" };
       }
       if (group === "gmail" && name === "threads_list") return { q: "from:alerts@example.com" };
-      if (group === "google_calendar") {
-        if (name === "create_event") {
-          return {
-            summary: "Planning",
-            start: { date_time: "2026-10-12T09:00:00-07:00", time_zone: "America/Los_Angeles" },
-            end: { date_time: "2026-10-12T10:00:00-07:00", time_zone: "America/Los_Angeles" },
-          };
-        }
-        if (name === "update_event") return { event_id: "event-123", summary: "Planning" };
-        if (name === "get_event" || name === "delete_event") return { event_id: "event-123" };
-        if (name === "list_event_instances") return { recurring_event_id: "series-123" };
-        return {};
-      }
       if (group === "grocy_sf") {
         if (name === "products_list") return { detail: "brief" };
         if (name === "quantity_units_list") return { detail: "full" };
@@ -322,39 +278,9 @@ describe("Action presentation slots", () => {
     };
 
     const grocyResults: Record<string, { value: unknown; expected: string }> = {
-      stock_add: {
-        value: [
-          { kind: "ok", product_name: "Tea", amount_delta: 2, new_amount: 4, qu_name: "box", location_name: "Pantry" },
-        ],
-        expected: "1 added",
-      },
-      stock_entry_edit: {
-        value: [
-          {
-            kind: "ok",
-            entry: { entry_id: 9, product_name: "Tea", amount: 4, qu_name: "box", location_name: "Pantry" },
-            changes: {},
-          },
-        ],
-        expected: "1 edited",
-      },
-      stock_get: {
-        value: [{ product_name: "Tea", amount: 4, qu_name: "box", location_name: "Pantry" }],
-        expected: "1 stock item",
-      },
       products_list: { value: [{ id: 1, name: "Tea" }], expected: "1 found" },
       quantity_units_list: { value: [{ id: 1, name: "box" }], expected: "1 found" },
       get_system_info: { value: { php_version: "8.3" }, expected: "PHP version" },
-      products_create: { value: [{ kind: "ok", created_object_id: 1 }], expected: "1 created" },
-      shopping_list_get: { value: { name: "Groceries", items: [] }, expected: "Groceries" },
-      shopping_list_items_add: {
-        value: [{ kind: "ok", item_id: 2, product_name: "Tea", amount: 1, qu_name: "box" }],
-        expected: "1 added",
-      },
-      shopping_list_items_remove: {
-        value: [{ kind: "ok", item_id: 2, product_name: "Tea", amount: 1, qu_name: "box" }],
-        expected: "1 removed",
-      },
     };
 
     for (const { group, name, resultLabel } of ACTION_PRESENTATION_CATALOG) {
@@ -373,27 +299,14 @@ describe("Action presentation slots", () => {
           ? parseCallToolResult({ content: [], structuredContent: grocyResult.value, isError: false })!
           : group === "ssh" && name === "exec"
             ? stored()
-            : group === "google_calendar"
-              ? parseCallToolResult({
-                  content: [],
-                  structuredContent:
-                    name === "list_events" || name === "list_event_instances"
-                      ? { events: [] }
-                      : { event_id: "event-123", summary: "Planning" },
-                  isError: false,
-                })!
-              : stored({ example: "value" });
+            : stored({ example: "value" });
         const expectedLabel =
           grocyResult?.expected ??
           (group === "ssh" && name === "exec"
             ? "Exit 0"
             : group === "gmail" && name === "threads_list"
               ? "No threads found"
-              : group === "google_calendar"
-                ? name === "list_events" || name === "list_event_instances"
-                  ? "No events."
-                  : "Planning"
-                : resultLabel);
+              : resultLabel);
         expect((await mount(renderDetailsResult(action, result))).textContent).toContain(expectedLabel);
       }
     }
