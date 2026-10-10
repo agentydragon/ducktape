@@ -10,6 +10,7 @@ from kubernetes_asyncio import client as k8s_client
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from agentplane.history_service import protocol_pb2 as history_pb2, protocol_pb2_grpc
+from agentplane.history_service.evidence import EvidenceReader
 from agentplane.history_service.grpc_api import Resources, add_service
 from agentplane.history_service.summaries import SummaryReader
 from agentplane.history_service.thread_reads import ThreadReader
@@ -63,6 +64,7 @@ async def stub(engine: AsyncEngine, history: Store) -> AsyncIterator[protocol_pb
                     history=history,
                     summaries=SummaryReader(engine),
                     threads=ThreadReader(engine),
+                    evidence=EvidenceReader(engine, history),
                     reader_accounts=frozenset({READER}),
                     request_timeout_s=10,
                 ),

@@ -1,6 +1,8 @@
-"""Private Electric sync service for Agentplane's materialized conversation view."""
+"""Private Electric sync services, one per database holding a thread fold."""
 
 from __future__ import annotations
+
+from dataclasses import dataclass
 
 from cdk8s import ApiObjectMetadata, Duration, Size
 from cdk8s_plus_34 import (
@@ -27,31 +29,45 @@ from cluster.cdk8s.providers.cilium.network_policy import EgressRule, IngressRul
 from cluster.cdk8s.secret_ref import SecretRef
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 
-_NAME = "agentplane-electric"
-_LABELS = {"app.kubernetes.io/name": _NAME}
 _IMAGE = "docker.io/electricsql/electric:1.8.1@sha256:9b4cebe2d8f51fb3ebaeb156e443ba09deaa7c9e731f146e81f7e48238bae211"
 _STORAGE_DIR = "/var/lib/electric"
 _RUN_AS = 65534  # The pinned image owns /app as nobody but leaves Config.User empty.
 
 
-def service(namespace: str) -> ServiceRef:
-    """Electric in one environment's namespace."""
+@dataclass(frozen=True)
+class Source:
+    name: str
+    database: str
+    # Names the replication slot and publication: `electric_{slot,publication}_<stream_id>`.
+    stream_id: str
+
+
+APP = Source(name="agentplane-electric", database="app", stream_id="agentplane_conversation")
+# The History Service fold; the app's proxy can reach it before any reader is pointed at it.
+HISTORY = Source(name="agentplane-electric-history", database="sandbox_service", stream_id="agentplane_history")
+
+
+def service(namespace: str, source: Source) -> ServiceRef:
+    """One source's Electric in an environment's namespace."""
     return ServiceRef(
-        name=_NAME, port=Port(name="http", number=3000), pods=Pods(namespace=namespace, labels=tuple(_LABELS.items()))
+        name=source.name,
+        port=Port(name="http", number=3000),
+        pods=Pods(namespace=namespace, labels=(("app.kubernetes.io/name", source.name),)),
     )
 
 
 class Electric(Construct):
-    def __init__(self, scope: Construct, id: str, env: Environment) -> None:
+    def __init__(self, scope: Construct, id: str, env: Environment, source: Source) -> None:
         super().__init__(scope, id)
-        electric = service(env.namespace)
+        electric = service(env.namespace, source)
+        labels = electric.pods.selector
         # The replication role's login, which database.py mints.
         role = SecretRef(namespace=env.namespace, name="postgres-electric")
         deployment = Deployment(
             self,
             "deployment",
-            metadata=ApiObjectMetadata(name=_NAME, namespace=env.namespace, labels=_LABELS),
-            pod_metadata=ApiObjectMetadata(labels=_LABELS),
+            metadata=ApiObjectMetadata(name=source.name, namespace=env.namespace, labels=labels),
+            pod_metadata=ApiObjectMetadata(labels=labels),
             replicas=1,
             strategy=DeploymentStrategy.recreate(),
             termination_grace_period=Duration.seconds(60),
@@ -69,7 +85,8 @@ class Electric(Construct):
                 "POSTGRES_PASSWORD": role.key("password").env_value(self, "postgres-password-ref"),
                 "POSTGRES_HOST": role.key("host").env_value(self, "postgres-host-ref"),
                 "POSTGRES_PORT": role.key("port").env_value(self, "postgres-port-ref"),
-                "POSTGRES_DB": role.key("dbname").env_value(self, "postgres-db-ref"),
+                # The role's Secret names the app database; the login reaches every database.
+                "POSTGRES_DB": EnvValue.from_value(source.database),
                 "DATABASE_URL": EnvValue.from_value(
                     "postgresql://$(POSTGRES_USER):$(POSTGRES_PASSWORD)@$(POSTGRES_HOST):$(POSTGRES_PORT)/$(POSTGRES_DB)"
                 ),
@@ -81,7 +98,7 @@ class Electric(Construct):
                 "ELECTRIC_STORAGE_DIR": EnvValue.from_value(_STORAGE_DIR),
                 "ELECTRIC_PERSISTENT_STATE": EnvValue.from_value("file"),
                 "ELECTRIC_MANUAL_TABLE_PUBLISHING": EnvValue.from_value("true"),
-                "ELECTRIC_REPLICATION_STREAM_ID": EnvValue.from_value("agentplane_conversation"),
+                "ELECTRIC_REPLICATION_STREAM_ID": EnvValue.from_value(source.stream_id),
                 # Window rotation and exact payload reads create finite shapes. Enable Electric's
                 # once-per-minute LRU expiry; the upstream default retains every shape forever.
                 "ELECTRIC_MAX_SHAPES": EnvValue.from_value("1024"),
@@ -114,7 +131,7 @@ class Electric(Construct):
         NetworkPolicy(
             self,
             "networkpolicy",
-            metadata=ApiObjectMetadata(name=_NAME, namespace=env.namespace),
+            metadata=ApiObjectMetadata(name=source.name, namespace=env.namespace),
             endpoint_selector=electric.pods.selector,
             # app.py imports this module, so the app's Pods are named here.
             ingress=[
