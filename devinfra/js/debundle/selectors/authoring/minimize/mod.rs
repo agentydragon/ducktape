@@ -79,11 +79,9 @@ pub(crate) fn relax_exact_declaration(
     decl: &IndexedDeclaration,
     targets: &[SynthesizedTargetBinding],
 ) -> Result<Option<SpecializedSelector>> {
-    let Some(mut exact_item) = exact_declaration_item(item, targets) else {
+    let Some(source) = exact_declaration_source(item, targets)? else {
         return Ok(None);
     };
-    sanitize_exact_identifiers(&mut exact_item);
-    let source = emit_selector(exact_item)?;
     if prove_synthesized_selector(index, decl, targets, &source).is_err() {
         return Ok(None);
     }
@@ -113,6 +111,34 @@ pub(crate) fn relax_exact_declaration(
         rewritten_holes: holes_present(&match_source)?,
         match_source,
     }))
+}
+
+/// Explain why even the fully specific, matcher-supported declaration cannot
+/// select this target. Called only when all minimization paths have failed.
+pub(crate) fn exact_declaration_rejection(
+    index: &ChunkSelectorIndex<'_>,
+    item: &ModuleItem,
+    decl: &IndexedDeclaration,
+    targets: &[SynthesizedTargetBinding],
+) -> Result<String> {
+    let Some(source) = exact_declaration_source(item, targets)? else {
+        return Ok("the declaration cannot be represented as a source_match selector".into());
+    };
+    match prove_synthesized_selector(index, decl, targets, &source) {
+        Ok(()) => Ok("the exact declaration proves, but minimization discarded it".into()),
+        Err(error) => Ok(format!("the exact declaration does not prove: {error:#}")),
+    }
+}
+
+fn exact_declaration_source(
+    item: &ModuleItem,
+    targets: &[SynthesizedTargetBinding],
+) -> Result<Option<String>> {
+    let Some(mut exact_item) = exact_declaration_item(item, targets) else {
+        return Ok(None);
+    };
+    sanitize_exact_identifiers(&mut exact_item);
+    Ok(Some(emit_selector(exact_item)?))
 }
 
 pub(crate) fn collapse_statement_hole_runs(source: &str) -> Result<String> {
@@ -581,15 +607,14 @@ fn finish_minimized_selector(
 /// Enclosing-context anchoring (#2315). The last resort before residual debt:
 /// when a target's own value anchors cannot separate it from same-shape siblings
 /// — alpha-only constructs (`new ()` with no stable args) or near-duplicate
-/// emitted helpers (the `__decorate` family) — pin a **stable adjacent
-/// declaration** as context. Emit a 2-statement window selector pairing the
-/// target's holed `target_scaffold` with an immediate neighbor holed to a
-/// globally-unique value anchor, ordered by their chunk adjacency, with
-/// `target_binding` picking the target out of the window. The matcher's
-/// contiguous member-window path resolves it and the prove-gate confirms
-/// uniqueness.
+/// emitted helpers (the `__decorate` family) — pin a **stable nearby
+/// declaration** as context. Emit a short window pairing the target's holed
+/// `target_scaffold` with a nearby declaration holed to a globally-unique value
+/// anchor. Hole intervening declarations too, preserving their positions without
+/// pinning their incidental bodies. The matcher's contiguous member-window path
+/// resolves it and the prove-gate confirms uniqueness.
 ///
-/// Returns `None` when no adjacent declaration carries a unique value anchor, or
+/// Returns `None` when no nearby declaration carries a unique value anchor, or
 /// none of the windows prove — the target then stays name-pinned as residual
 /// debt if even the exact declaration cannot distinguish it.
 fn render_via_neighbor_context(
@@ -609,17 +634,34 @@ fn render_via_neighbor_context(
         if neighbor_kept.is_empty() {
             continue;
         }
-        let Some(neighbor_source) = render_context_neighbor(neighbor_item, &neighbor_kept)? else {
+        let start = candidate.neighbor_body_idx.min(decl.body_idx);
+        let end = candidate.neighbor_body_idx.max(decl.body_idx);
+        let empty = BTreeSet::new();
+        let mut statements = Vec::with_capacity(end - start + 1);
+        for body_idx in start..=end {
+            if body_idx == decl.body_idx {
+                statements.push(target_scaffold.trim_end().to_string());
+                continue;
+            }
+            let kept = if body_idx == candidate.neighbor_body_idx {
+                &neighbor_kept
+            } else {
+                &empty
+            };
+            let Some(item) = index.module.body.get(body_idx) else {
+                statements.clear();
+                break;
+            };
+            let Some(source) = render_context_neighbor(item, kept)? else {
+                statements.clear();
+                break;
+            };
+            statements.push(source.trim_end().to_string());
+        }
+        if statements.is_empty() {
             continue;
-        };
-        // Compose the window in chunk order so the matcher's contiguous member
-        // window aligns the neighbor and target to their real adjacency.
-        let (first, second) = if candidate.neighbor_body_idx < decl.body_idx {
-            (neighbor_source.as_str(), target_scaffold)
-        } else {
-            (target_scaffold, neighbor_source.as_str())
-        };
-        let window = format!("{}\n{}", first.trim_end(), second.trim_end());
+        }
+        let window = statements.join("\n");
         if let Some(selector) = finish_minimized_selector(index, decl, target, window)? {
             return Ok(Some(selector));
         }

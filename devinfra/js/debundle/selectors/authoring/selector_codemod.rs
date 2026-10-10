@@ -49,7 +49,7 @@ pub mod match_selector;
 pub mod source_input;
 
 use crate::minimize::{
-    collapse_statement_hole_runs, minimize_class_selector_candidates,
+    collapse_statement_hole_runs, exact_declaration_rejection, minimize_class_selector_candidates,
     minimize_function_selector_candidates, minimize_var_group_selector,
     minimize_var_group_selector_candidates, relax_exact_declaration,
 };
@@ -183,10 +183,13 @@ pub fn synthesize_residual_claims_for_modules(
             }
             let mut claims = Vec::new();
             for (decl_idx, members) in groups {
-                let GroupSelectorOutcome::Synthesized(synthesized) =
-                    synthesize_simplest_selector_for_group(&index, decl_idx, &members, 1)?
-                else {
-                    bail!("no uniquely proven structural selector for declaration {decl_idx}");
+                let synthesized = match synthesize_simplest_selector_for_group(
+                    &index, decl_idx, &members, 1,
+                )? {
+                    GroupSelectorOutcome::Synthesized(synthesized) => synthesized,
+                    GroupSelectorOutcome::Skipped(reason) => bail!(
+                        "no uniquely proven structural selector for declaration {decl_idx}: {reason}"
+                    ),
                 };
                 let mut claim_bindings = Vec::new();
                 for target in synthesized.target_bindings {
@@ -1129,9 +1132,9 @@ fn synthesize_simplest_selector_for_group(
         };
     }
     let Some(specialized) = specialized else {
-        return Ok(GroupSelectorOutcome::Skipped(
-            "minimization found no proving own-declaration selector".to_string(),
-        ));
+        return Ok(GroupSelectorOutcome::Skipped(exact_declaration_rejection(
+            index, item, decl, &targets,
+        )?));
     };
     let mut match_source = trim_selector_source_line_suffixes(&specialized.match_source);
     if specialized.rewritten_holes.contains(STMT_LIST_HOLE_KEYWORD) {
@@ -1140,10 +1143,10 @@ fn synthesize_simplest_selector_for_group(
             match_source = collapsed;
         }
     }
-    if prove_synthesized_selector(index, decl, &targets, &match_source).is_err() {
-        return Ok(GroupSelectorOutcome::Skipped(
-            "minimization found no proving own-declaration selector".to_string(),
-        ));
+    if let Err(error) = prove_synthesized_selector(index, decl, &targets, &match_source) {
+        return Ok(GroupSelectorOutcome::Skipped(format!(
+            "the synthesized selector stopped proving after normalization: {error:#}"
+        )));
     };
     let rewritten_holes = specialized.rewritten_holes;
 

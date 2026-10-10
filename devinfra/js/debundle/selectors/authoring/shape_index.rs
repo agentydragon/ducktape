@@ -518,9 +518,9 @@ pub struct AnchorSet {
 
 /// A stable anchor on a top-level *neighbor* of a residual target — the handle
 /// for enclosing-context anchoring (#2315). The `anchor_set` is one of the
-/// neighbor's individually-unique value anchors; pairing the neighbor (holed to
-/// that anchor) with the target's holed scaffold in a 2-statement window singles
-/// the target out even when its own features cannot.
+/// nearby declaration's individually-unique value anchors; pairing it with the
+/// target's holed scaffold in a short statement window can single out a target
+/// whose own features cannot.
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct ContextNeighborAnchor {
     pub neighbor_body_idx: usize,
@@ -842,27 +842,25 @@ impl ShapeIndex {
     }
 
     /// Enclosing-context read-off (#2315): the disambiguating handles on a
-    /// target's **stable neighbors** when its own value features cannot separate
-    /// it from same-shape siblings (alpha-only constructs, near-duplicate emitted
-    /// helpers). For each immediate top-level neighbor (the declaration just
-    /// before and just after `body_idx`) it yields that neighbor's
-    /// individually-unique value anchors, best-first, as [`ContextNeighborAnchor`]s.
+    /// target's **stable nearby declarations** when its own value features cannot
+    /// separate it from same-shape siblings (alpha-only constructs, near-duplicate
+    /// emitted helpers). For each top-level declaration at distance one or two,
+    /// it yields individually-unique value anchors as [`ContextNeighborAnchor`]s.
     ///
     /// A neighbor anchor whose posting list is the singleton `{neighbor}` pins a
-    /// token occurring in exactly one top-level item, so a 2-statement window
-    /// pairing the neighbor (holed to that anchor) with the target's holed
-    /// scaffold matches only where that unique neighbor sits adjacent to a
-    /// target-shaped statement — i.e. uniquely at the target. The renderer
-    /// composes and prove-gates the window; this method only reads the candidate
-    /// anchors off the index. Neighbors are bounded to the immediate ±1
-    /// declarations, so this stays a bounded read-off, never a chunk-wide search.
+    /// token occurring in exactly one top-level item. The renderer composes the
+    /// contiguous window, holes any intervening declaration, and prove-gates the
+    /// result. Distance two covers a class, its factory, and an
+    /// accessor without turning this into a chunk-wide search.
     pub fn context_neighbor_anchor_candidates(
         &self,
         body_idx: usize,
     ) -> Vec<ContextNeighborAnchor> {
         let prev = body_idx.checked_sub(1);
         let next = (body_idx + 1 < self.items.len()).then_some(body_idx + 1);
-        [prev, next]
+        let prev_two = body_idx.checked_sub(2);
+        let next_two = (body_idx + 2 < self.items.len()).then_some(body_idx + 2);
+        [prev, next, prev_two, next_two]
             .into_iter()
             .flatten()
             .flat_map(|neighbor_body_idx| {

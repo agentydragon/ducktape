@@ -391,6 +391,7 @@ debundle_e2e_test(
     name = "modules_apply_cli_test",
     deps = [
         "@crates//:serde_json",
+        "@crates//:serde_yaml",
         "@crates//:tempfile",
     ],
 )
