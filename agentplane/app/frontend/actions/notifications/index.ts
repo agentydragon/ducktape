@@ -1,9 +1,9 @@
 import type { ActionRequestView } from "../types";
 import { podsInNamespaceNotification } from "./kubernetes_admin/pods_list_in_namespace";
 import { sshExecNotification } from "./ssh/exec";
-import type { ActionNotificationContent } from "./types";
+import type { ActionNotificationContent, ActionNotificationParts } from "./types";
 
-type ActionNotificationFormatter = (request: ActionRequestView) => ActionNotificationContent | null;
+type ActionNotificationFormatter = (request: ActionRequestView) => ActionNotificationParts | null;
 
 // This registry intentionally stays parallel to the React presentation registry. The service
 // worker imports this module, so notification formatters must remain React-free.
@@ -15,10 +15,31 @@ const FORMATTERS: ReadonlyMap<string, ReadonlyMap<string, ActionNotificationForm
 /** Format a pending Action for the OS notification surface. Unknown Actions use only their
  * caller-authored summary and description; arbitrary arguments can be large or sensitive. */
 export function formatActionNotification(request: ActionRequestView): ActionNotificationContent {
-  const custom = FORMATTERS.get(request.action.group)?.get(request.action.name)?.(request);
-  if (custom !== null && custom !== undefined) return custom;
+  const parts = FORMATTERS.get(request.action.group)?.get(request.action.name)?.(request) ?? fallbackParts(request);
   return {
-    title: `${request.title} · ${request.action.group} / ${request.action.name}`,
+    title: combineNotificationTitle(request.title, parts.actionTitle),
+    text: parts.text,
+  };
+}
+
+function fallbackParts(request: ActionRequestView): ActionNotificationParts {
+  return {
+    actionTitle: `${request.action.group} / ${request.action.name}`,
     text: request.description ?? "Action requires approval",
   };
+}
+
+function normalizeTitle(title: string): string {
+  return title
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}]+/gu, " ")
+    .trim();
+}
+
+/** Compose caller context and the Action's description once for every notification. */
+function combineNotificationTitle(requestTitle: string, actionTitle: string): string {
+  const request = requestTitle.trim();
+  if (request === "") return actionTitle;
+  if (normalizeTitle(request) === normalizeTitle(actionTitle)) return request;
+  return `${request} · ${actionTitle}`;
 }

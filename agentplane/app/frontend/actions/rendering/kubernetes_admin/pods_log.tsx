@@ -1,8 +1,10 @@
 import type { JSX } from "react";
+import { Code, Text } from "@mantine/core";
 import { z } from "zod";
 
 import { Chip } from "../chips";
 import { definePreview, type ArgumentsPreview } from "../entry";
+import { kubernetesTarget } from "./resource_common";
 
 const podsLogArguments = z.strictObject({
   name: z.string().min(1),
@@ -26,4 +28,13 @@ function Logs({ args }: { args: z.infer<typeof podsLogArguments> }): JSX.Element
   );
 }
 
+function PodsLogLabel({ args }: { args: z.infer<typeof podsLogArguments> }): JSX.Element {
+  return (
+    <Text size="sm" fw={600}>
+      View logs for <Code>{kubernetesTarget("Pod", args.name, args.namespace)}</Code>
+    </Text>
+  );
+}
+
+export const podsLogLabel: ArgumentsPreview = definePreview(podsLogArguments, PodsLogLabel);
 export const podsLogPreview: ArgumentsPreview = definePreview(podsLogArguments, Logs);

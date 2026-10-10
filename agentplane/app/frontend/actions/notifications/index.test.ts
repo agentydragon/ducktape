@@ -49,7 +49,7 @@ describe("action notification formatting", () => {
     expect(formatActionNotification(request)).toMatchInlineSnapshot(`
       {
         "text": "$ df -h · Timeout 30 s",
-        "title": "Check disk space · SSH exec · deploy@build-01",
+        "title": "Check disk space · Run command on deploy@build-01",
       }
     `);
   });
@@ -66,6 +66,17 @@ describe("action notification formatting", () => {
       title: "Check the controller pods · List pods in namespace tofu-controller",
       text: "Confirm the controller is ready.",
     });
+  });
+
+  it("does not duplicate an Action title that already matches the caller title", () => {
+    const request = actionRequest({
+      action: { group: "kubernetes_admin", name: "pods_list_in_namespace" },
+      arguments: { namespace: "tofu-controller" },
+      title: "List pods in namespace tofu-controller",
+      description: "Confirm the controller is ready.",
+    });
+
+    expect(formatActionNotification(request).title).toBe("List pods in namespace tofu-controller");
   });
 
   it("falls back when SSH arguments contain fields the widget cannot show", () => {

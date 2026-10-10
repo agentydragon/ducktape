@@ -1,6 +1,8 @@
 import type { JSX } from "react";
 import { z } from "zod";
 
+import { Text } from "@mantine/core";
+
 import { Chip } from "../chips";
 import { definePreview, type ArgumentsPreview } from "../entry";
 
@@ -45,6 +47,16 @@ function CreatePullRequest({ args }: { args: z.infer<typeof createPullRequest> }
   );
 }
 
+function CreatePullRequestLabel({ args }: { args: z.infer<typeof createPullRequest> }): JSX.Element {
+  void args;
+  return (
+    <Text size="sm" fw={600}>
+      Create pull request
+    </Text>
+  );
+}
+
+export const createPullRequestLabel: ArgumentsPreview = definePreview(createPullRequest, CreatePullRequestLabel);
 export const createPullRequestPane: ArgumentsPreview = definePreview(createPullRequest, CreatePullRequest);
 export function canApprovePullRequestInline(args: unknown): boolean {
   return approvablePullRequest.safeParse(args).success;

@@ -8,8 +8,34 @@ import type { ReactNode } from "react";
 import { type CallToolResult, CallToolResultView, toolValue } from "../call_tool_result";
 import type { ActionRequestView } from "../client";
 import { renderPreview, type ArgumentsPreview } from "./entry";
-import { canApprovePullRequestInline, createPullRequestPane } from "./github/create_pull_request";
-import { canQuickApproveEventsList, eventsListPane } from "./kubernetes_admin/events_list";
+import {
+  canApprovePullRequestInline,
+  createPullRequestLabel,
+  createPullRequestPane,
+} from "./github/create_pull_request";
+import {
+  gmailDraftCollapsed,
+  gmailDraftDetails,
+  gmailDraftLabel,
+  gmailDraftOpened,
+  gmailDraftResult,
+  gmailThreadSearchCollapsed,
+  gmailThreadSearchLabel,
+  gmailThreadSearchOpened,
+  gmailThreadsResult,
+} from "./gmail";
+import {
+  productsListLabel,
+  productsListArguments,
+  productsListResult,
+  quantityUnitsListLabel,
+  quantityUnitsListArguments,
+  quantityUnitsListResult,
+  systemInfoLabel,
+  systemInfoArguments,
+  systemInfoResult,
+} from "./grocy";
+import { canQuickApproveEventsList, eventsListLabel, eventsListPane } from "./kubernetes_admin/events_list";
 import {
   canQuickApprovePodsInNamespace,
   podsInNamespaceCollapsed,
@@ -18,12 +44,29 @@ import {
   podsInNamespacePane,
   podsInNamespaceTitleIsRedundant,
 } from "./kubernetes_admin/pods_list_in_namespace";
-import { canQuickApprovePodsLog, podsLogPreview } from "./kubernetes_admin/pods_log";
-import { canQuickApproveResourcesDelete, resourcesDeletePane } from "./kubernetes_admin/resources_delete";
-import { canQuickApproveResourcesGet, resourcesGetPane } from "./kubernetes_admin/resources_get";
-import { canQuickApproveResourcesList, resourcesListPane } from "./kubernetes_admin/resources_list";
+import {
+  podsDeleteLabel,
+  podsDeletePane,
+  podsExecCollapsed,
+  podsExecLabel,
+  podsExecPane,
+} from "./kubernetes_admin/pods_exec";
+import { canQuickApprovePodsLog, podsLogLabel, podsLogPreview } from "./kubernetes_admin/pods_log";
+import {
+  resourcesApplyCollapsed,
+  resourcesApplyLabel,
+  resourcesApplyManifest,
+} from "./kubernetes_admin/resources_apply";
+import {
+  canQuickApproveResourcesDelete,
+  resourcesDeleteLabel,
+  resourcesDeletePane,
+} from "./kubernetes_admin/resources_delete";
+import { canQuickApproveResourcesGet, resourcesGetLabel, resourcesGetPane } from "./kubernetes_admin/resources_get";
+import { canQuickApproveResourcesList, resourcesListLabel, resourcesListPane } from "./kubernetes_admin/resources_list";
 import { renderResultPreview, type ResultPreview } from "./result_entry";
-import { execArgumentsPreview, execCollapsedPreview, execResultPreview } from "./ssh/exec";
+import { execArgumentsPreview, execCollapsedPreview, execLabel, execResultPreview } from "./ssh/exec";
+import { calendarNodeArgumentsPreview, calendarNodeLabel } from "./tana";
 
 type ActionIdentity = ActionRequestView["action"];
 
@@ -59,11 +102,47 @@ const ACTION_RENDERERS: ReadonlyMap<string, ReadonlyMap<string, ActionPresentati
           details: { arguments: podsInNamespaceDetails },
         },
       ],
-      ["resources_get", { pane: { opened: resourcesGetPane }, details: { arguments: resourcesGetPane } }],
-      ["resources_list", { pane: { opened: resourcesListPane }, details: { arguments: resourcesListPane } }],
-      ["resources_delete", { pane: { opened: resourcesDeletePane }, details: { arguments: resourcesDeletePane } }],
-      ["pods_log", { pane: { opened: podsLogPreview }, details: { arguments: podsLogPreview } }],
-      ["events_list", { pane: { opened: eventsListPane }, details: { arguments: eventsListPane } }],
+      [
+        "resources_create_or_update",
+        {
+          label: resourcesApplyLabel,
+          pane: { collapsed: resourcesApplyCollapsed, opened: resourcesApplyManifest },
+          details: { arguments: resourcesApplyManifest },
+        },
+      ],
+      [
+        "pods_delete",
+        { label: podsDeleteLabel, pane: { opened: podsDeletePane }, details: { arguments: podsDeletePane } },
+      ],
+      [
+        "pods_exec",
+        {
+          label: podsExecLabel,
+          pane: { collapsed: podsExecCollapsed, opened: podsExecPane },
+          details: { arguments: podsExecPane },
+        },
+      ],
+      [
+        "resources_get",
+        { label: resourcesGetLabel, pane: { opened: resourcesGetPane }, details: { arguments: resourcesGetPane } },
+      ],
+      [
+        "resources_list",
+        { label: resourcesListLabel, pane: { opened: resourcesListPane }, details: { arguments: resourcesListPane } },
+      ],
+      [
+        "resources_delete",
+        {
+          label: resourcesDeleteLabel,
+          pane: { opened: resourcesDeletePane },
+          details: { arguments: resourcesDeletePane },
+        },
+      ],
+      ["pods_log", { label: podsLogLabel, pane: { opened: podsLogPreview }, details: { arguments: podsLogPreview } }],
+      [
+        "events_list",
+        { label: eventsListLabel, pane: { opened: eventsListPane }, details: { arguments: eventsListPane } },
+      ],
     ]),
   ],
   [
@@ -71,7 +150,78 @@ const ACTION_RENDERERS: ReadonlyMap<string, ReadonlyMap<string, ActionPresentati
     new Map<string, ActionPresentation>([
       [
         "create_pull_request",
-        { pane: { opened: createPullRequestPane }, details: { arguments: createPullRequestPane } },
+        {
+          label: createPullRequestLabel,
+          pane: { opened: createPullRequestPane },
+          details: { arguments: createPullRequestPane },
+        },
+      ],
+    ]),
+  ],
+  [
+    "gmail",
+    // These static views need no Gmail read lookup. Subject/label resolution for thread and message
+    // actions stays on the submitted-data fallback until Agentplane has an explicit lookup surface.
+    new Map<string, ActionPresentation>([
+      [
+        "drafts_create",
+        {
+          label: gmailDraftLabel,
+          pane: { collapsed: gmailDraftCollapsed, opened: gmailDraftOpened },
+          details: { arguments: gmailDraftDetails, result: gmailDraftResult },
+        },
+      ],
+      [
+        "threads_list",
+        {
+          label: gmailThreadSearchLabel,
+          pane: { collapsed: gmailThreadSearchCollapsed, opened: gmailThreadSearchOpened },
+          details: { arguments: gmailThreadSearchOpened, result: gmailThreadsResult },
+        },
+      ],
+    ]),
+  ],
+  [
+    "grocy_sf",
+    // Only actions whose Haku renderers need no lookups are registered here. Lookup-backed Grocy
+    // actions are absent entirely and use Agentplane's unported generic presentation.
+    new Map<string, ActionPresentation>([
+      [
+        "products_list",
+        {
+          label: productsListLabel,
+          pane: { opened: productsListArguments },
+          details: { arguments: productsListArguments, result: productsListResult },
+        },
+      ],
+      [
+        "quantity_units_list",
+        {
+          label: quantityUnitsListLabel,
+          pane: { opened: quantityUnitsListArguments },
+          details: { arguments: quantityUnitsListArguments, result: quantityUnitsListResult },
+        },
+      ],
+      [
+        "get_system_info",
+        {
+          label: systemInfoLabel,
+          pane: { opened: systemInfoArguments },
+          details: { arguments: systemInfoArguments, result: systemInfoResult },
+        },
+      ],
+    ]),
+  ],
+  [
+    "tana",
+    new Map<string, ActionPresentation>([
+      [
+        "get_or_create_calendar_node",
+        {
+          label: calendarNodeLabel,
+          pane: { opened: calendarNodeArgumentsPreview },
+          details: { arguments: calendarNodeArgumentsPreview },
+        },
       ],
     ]),
   ],
@@ -82,6 +232,7 @@ const ACTION_RENDERERS: ReadonlyMap<string, ReadonlyMap<string, ActionPresentati
       [
         "exec",
         {
+          label: execLabel,
           pane: { collapsed: execCollapsedPreview, opened: execArgumentsPreview },
           details: { arguments: execArgumentsPreview, result: execResultPreview },
         },

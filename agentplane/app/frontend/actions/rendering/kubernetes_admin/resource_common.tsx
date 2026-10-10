@@ -6,3 +6,7 @@ export const resource: Record<"apiVersion" | "kind" | "name" | "namespace", z.Zo
   name: z.string().min(1),
   namespace: z.string().min(1),
 };
+
+export function kubernetesTarget(kind: string, name: string, namespace?: string): string {
+  return `${kind} ${namespace ? `${namespace}/` : ""}${name}`;
+}

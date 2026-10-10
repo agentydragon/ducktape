@@ -43,6 +43,7 @@ describe("Action presentation slots", () => {
     expect(opened.textContent).toContain("label selector app=web");
     expect(opened.textContent).not.toContain("List pods in namespace");
     expect(opened.textContent).not.toContain("namespace prod");
+    expect(details.textContent).toContain("field selector status.phase=Running");
     expect(details.textContent).not.toContain("List pods in namespace");
     expect(details.textContent).not.toContain("namespace prod");
   });
@@ -60,6 +61,48 @@ describe("Action presentation slots", () => {
     expect(shouldRenderPaneRequestTitle(action, args, "Inspect the running demo pods")).toBe(true);
   });
 
+  it.each([
+    ["resources_get", { apiVersion: "v1", kind: "Pod", name: "web-0", namespace: "apps" }, "Get Pod apps/web-0"],
+    ["resources_delete", { apiVersion: "v1", kind: "Pod", name: "web-0", namespace: "apps" }, "Delete Pod apps/web-0"],
+    ["pods_delete", { name: "web-0", namespace: "apps" }, "Delete Pod apps/web-0"],
+    ["pods_exec", { name: "web-0", namespace: "apps", command: ["true"] }, "Run command in Pod apps/web-0"],
+    ["pods_log", { name: "web-0", namespace: "apps" }, "View logs for Pod apps/web-0"],
+  ] as const)("uses the concise Kubernetes identity for %s", async (name, args, expected) => {
+    const label = await mount(renderActionLabel({ group: "kubernetes_admin", name }, args));
+    expect(label.textContent).toContain(expected);
+    expect(label.textContent).not.toContain("in namespace apps");
+  });
+
+  it("keeps a Kubernetes target in its heading and shows only additional details below it", async () => {
+    const action = { group: "kubernetes_admin", name: "resources_get" };
+    const args = { apiVersion: "apps/v1", kind: "Deployment", name: "web", namespace: "apps" };
+    const label = await mount(renderActionLabel(action, args));
+    const opened = await mount(renderPaneOpened(action, args));
+    const details = await mount(renderDetailsArguments(action, args));
+
+    expect(label.textContent).toContain("Get Deployment apps/web");
+    expect(opened.textContent).toContain("API version: apps/v1");
+    expect(details.textContent).toContain("API version: apps/v1");
+    expect(details.textContent).not.toContain("Get Deployment");
+    expect(details.textContent).not.toContain("apps/web");
+  });
+
+  it("puts list scope in Kubernetes action labels and leaves only filters in the pane", async () => {
+    const listArgs = { apiVersion: "v1", kind: "Pod", namespace: "apps", labelSelector: "app=web" };
+    const listLabel = await mount(renderActionLabel({ group: "kubernetes_admin", name: "resources_list" }, listArgs));
+    const listPane = await mount(renderPaneOpened({ group: "kubernetes_admin", name: "resources_list" }, listArgs));
+    expect(listLabel.textContent).toContain("List Pod resources in namespace apps");
+    expect(listPane.textContent).toContain("label selector: app=web");
+    expect(listPane.textContent).not.toContain("apps");
+
+    const eventsArgs = { namespace: "apps", fieldSelector: "type=Warning" };
+    const eventsLabel = await mount(renderActionLabel({ group: "kubernetes_admin", name: "events_list" }, eventsArgs));
+    const eventsPane = await mount(renderPaneOpened({ group: "kubernetes_admin", name: "events_list" }, eventsArgs));
+    expect(eventsLabel.textContent).toContain("List events in namespace apps");
+    expect(eventsPane.textContent).toContain("type=Warning");
+    expect(eventsPane.textContent).not.toContain("apps");
+  });
+
   it("uses SSH's custom pane and full-details argument renderers", async () => {
     const collapsed = await mount(renderPaneCollapsed(SSH_EXEC, SSH_EXEC_ARGUMENTS));
     const opened = await mount(renderPaneOpened(SSH_EXEC, SSH_EXEC_ARGUMENTS));
@@ -68,6 +111,161 @@ describe("Action presentation slots", () => {
     expect(collapsed.textContent).toContain("$ echo test-output");
     expect(opened.textContent).toContain("test-user@test-host.example");
     expect(details.textContent).toContain("test-user@test-host.example");
+  });
+
+  it("renders Gmail drafts from submitted data without repeating their subject", async () => {
+    const action = { group: "gmail", name: "drafts_create" };
+    const args = {
+      to: ["reader@example.com"],
+      cc: ["copy@example.com"],
+      subject: "Release notes",
+      body: "The release is ready.\nPlease review it.",
+      thread_id: "thread-123",
+    };
+    const label = await mount(renderActionLabel(action, args));
+    const collapsed = await mount(renderPaneCollapsed(action, args));
+    const opened = await mount(renderPaneOpened(action, args));
+    const details = await mount(renderDetailsArguments(action, args));
+
+    expect(label.textContent).toContain("Draft email: Release notes");
+    expect(collapsed.textContent).toContain("reader@example.com");
+    expect(opened.textContent).toContain("copy@example.com");
+    expect(opened.textContent).toContain("The release is ready.");
+    expect(details.textContent).toContain("Please review it.");
+    expect(details.textContent).not.toContain("Release notes");
+
+    const result = parseCallToolResult({ content: [], structuredContent: { id: "draft-123" }, isError: false });
+    if (result === null) throw new Error("the fixture is not a CallToolResult");
+    const renderedResult = await mount(renderDetailsResult(action, result));
+    expect(renderedResult.textContent).toContain("Draft created");
+    expect(
+      renderedResult.querySelector('a[href="https://mail.google.com/mail/u/0/#drafts?compose=draft-123"]')
+    ).not.toBeNull();
+  });
+
+  it("renders Gmail search arguments and results without fetching subjects", async () => {
+    const action = { group: "gmail", name: "threads_list" };
+    const args = { q: "from:alerts@example.com", maxResults: 5, includeSpamTrash: false };
+    const label = await mount(renderActionLabel(action, args));
+    const collapsed = await mount(renderPaneCollapsed(action, args));
+    const opened = await mount(renderPaneOpened(action, args));
+
+    expect(label.textContent).toContain("Search Gmail threads");
+    expect(collapsed.textContent).toContain("from:alerts@example.com");
+    expect(opened.textContent).toContain("Maximum results: 5");
+    expect(opened.textContent).toContain("Include spam and trash");
+    expect(opened.textContent).toContain("false");
+
+    const result = parseCallToolResult({
+      content: [],
+      structuredContent: {
+        threads: [{ id: "thread-1", snippet: "Your build completed." }],
+        nextPageToken: "next",
+      },
+      isError: false,
+    });
+    if (result === null) throw new Error("the fixture is not a CallToolResult");
+    const renderedResult = await mount(renderDetailsResult(action, result));
+    expect(renderedResult.textContent).toContain("Your build completed.");
+    expect(renderedResult.textContent).toContain("More threads available");
+    expect(renderedResult.querySelector('a[href="https://mail.google.com/mail/u/0/#all/thread-1"]')).not.toBeNull();
+  });
+
+  it("renders Grocy list options and results without resolving IDs", async () => {
+    for (const [name, args, expected] of [
+      ["products_list", { detail: "full" }, "Full Product records"],
+      ["quantity_units_list", {}, "Quantity unit names"],
+      ["get_system_info", {}, "No arguments."],
+    ] as const) {
+      const action = { group: "grocy_sf", name };
+      const opened = await mount(renderPaneOpened(action, args));
+      const details = await mount(renderDetailsArguments(action, args));
+      expect(opened.textContent).toContain(expected);
+      expect(details.textContent).toContain(expected);
+    }
+
+    const productsLabel = await mount(
+      renderActionLabel({ group: "grocy_sf", name: "products_list" }, { detail: "full" })
+    );
+    const unitsLabel = await mount(renderActionLabel({ group: "grocy_sf", name: "quantity_units_list" }, {}));
+    const systemInfoLabel = await mount(renderActionLabel({ group: "grocy_sf", name: "get_system_info" }, {}));
+    expect(productsLabel.textContent).toContain("List Grocy products");
+    expect(unitsLabel.textContent).toContain("List quantity units");
+    expect(systemInfoLabel.textContent).toContain("Show Grocy system information");
+  });
+
+  it("renders Tana calendar arguments from submitted data without resolving the workspace", async () => {
+    const action = { group: "tana", name: "get_or_create_calendar_node" };
+    const args = { workspaceId: "workspace-123", granularity: "week", date: "2026-10-12" };
+    const opened = await mount(renderPaneOpened(action, args));
+    const details = await mount(renderDetailsArguments(action, args));
+    const label = await mount(renderActionLabel(action, args));
+
+    expect(label.textContent).toContain("Get or create Tana calendar node");
+
+    for (const rendered of [opened, details]) {
+      expect(rendered.textContent).toContain("week");
+      expect(rendered.textContent).toContain("2026-10-12");
+      expect(rendered.textContent).toContain("workspace-123");
+    }
+  });
+
+  it("does not register any action whose Haku renderer depended on lookups", async () => {
+    const excluded = [
+      ["gmail", "threads_modify_labels"],
+      ["gmail", "threads_get"],
+      ["gmail", "messages_get"],
+      ["google_calendar", "create_event"],
+      ["google_calendar", "update_event"],
+      ["google_calendar", "get_event"],
+      ["google_calendar", "list_events"],
+      ["google_calendar", "list_event_instances"],
+      ["google_calendar", "delete_event"],
+      ["grocy_sf", "stock_add"],
+      ["grocy_sf", "stock_consume"],
+      ["grocy_sf", "stock_entry_edit"],
+      ["grocy_sf", "stock_get"],
+      ["grocy_sf", "products_create"],
+      ["grocy_sf", "products_edit"],
+      ["grocy_sf", "shopping_list_get"],
+      ["grocy_sf", "shopping_list_items_add"],
+      ["grocy_sf", "shopping_list_items_remove"],
+      ["grocy_sf", "shopping_list_item_edit"],
+      ["tana", "import_tana_paste"],
+      ["tana", "trash_node"],
+      ["tana", "edit_node"],
+      ["tana", "move_node"],
+      ["tana", "set_field_option"],
+    ] as const;
+    const result = parseCallToolResult({
+      content: [],
+      structuredContent: { lookup_dependent_value: "preserve raw response" },
+      isError: false,
+    });
+    if (result === null) throw new Error("the fixture is not a CallToolResult");
+
+    for (const [group, name] of excluded) {
+      const action = { group, name };
+      expect(renderActionLabel(action, { id: "opaque-id" })).toBeNull();
+      expect(renderPaneCollapsed(action, { id: "opaque-id" })).toBeNull();
+      expect(renderPaneOpened(action, { id: "opaque-id" })).toBeNull();
+      expect(renderDetailsArguments(action, { id: "opaque-id" })).toBeNull();
+
+      const raw = await mount(renderDetailsResult(action, result));
+      expect(raw.textContent).toContain("Structured content");
+      expect(raw.textContent).toContain('"lookup_dependent_value": "preserve raw response"');
+    }
+  });
+
+  it("uses an Action-owned collapsed view instead of synthesizing a summary from fields", async () => {
+    const collapsed = await mount(
+      renderPaneCollapsed(
+        { group: "gmail", name: "drafts_create" },
+        { to: ["user@example.com"], subject: "Deploy", body: "Ready" }
+      )
+    );
+    expect(collapsed.textContent).toContain("To user@example.com");
+    expect(collapsed.textContent).not.toContain("Deploy");
   });
 
   it("leaves a slot to the host when no registered widget accepts it", () => {
@@ -154,7 +352,7 @@ const quickApprovalCases: Array<{ group: string; name: string; args: Record<stri
     group: "kubernetes_admin",
     name: "events_list",
     args: { namespace: "prod", fieldSelector: "type=Warning" },
-    visible: ["field selector: type=Warning"],
+    visible: ["field selector", "type=Warning"],
   },
   {
     group: "github",

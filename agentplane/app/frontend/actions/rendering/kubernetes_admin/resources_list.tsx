@@ -1,4 +1,5 @@
 import type { JSX } from "react";
+import { Code, Text } from "@mantine/core";
 import { z } from "zod";
 
 import { Chip } from "../chips";
@@ -39,4 +40,19 @@ function List({ args }: { args: z.infer<typeof resourcesListArguments> }): JSX.E
   );
 }
 
+function ListLabel({ args }: { args: z.infer<typeof resourcesListArguments> }): JSX.Element {
+  return (
+    <Text size="sm" fw={600}>
+      List <Code>{args.kind}</Code> resources
+      {args.namespace && (
+        <>
+          {" "}
+          in namespace <Code>{args.namespace}</Code>
+        </>
+      )}
+    </Text>
+  );
+}
+
+export const resourcesListLabel: ArgumentsPreview = definePreview(resourcesListArguments, ListLabel);
 export const resourcesListPane: ArgumentsPreview = definePreview(resourcesListArguments, List);

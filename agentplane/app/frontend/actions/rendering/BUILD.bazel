@@ -14,9 +14,12 @@ ts_library(
     deps = [
         ":entry",
         ":github",
+        ":gmail",
+        ":grocy",
         ":kubernetes_admin",
         ":result_entry",
         ":ssh",
+        ":tana",
         "//:node_modules/@types/react",
         "//:node_modules/react",
         "//agentplane/app/frontend/actions:action_client",
@@ -49,12 +52,45 @@ ts_library(
 )
 
 ts_library(
+    name = "gmail",
+    srcs = ["gmail.tsx"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":chips",
+        ":entry",
+        ":result_entry",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+        "//:node_modules/zod",
+        "//agentplane/app/frontend:code_block",
+    ],
+)
+
+ts_library(
+    name = "grocy",
+    srcs = ["grocy.tsx"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":chips",
+        ":entry",
+        ":result_entry",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+        "//:node_modules/zod",
+    ],
+)
+
+ts_library(
     name = "kubernetes_admin",
     srcs = [
         "kubernetes_admin/events_list.tsx",
+        "kubernetes_admin/pods_exec.tsx",
         "kubernetes_admin/pods_list_in_namespace.tsx",
         "kubernetes_admin/pods_log.tsx",
         "kubernetes_admin/resource_common.tsx",
+        "kubernetes_admin/resources_apply.tsx",
         "kubernetes_admin/resources_delete.tsx",
         "kubernetes_admin/resources_get.tsx",
         "kubernetes_admin/resources_list.tsx",
@@ -67,6 +103,7 @@ ts_library(
         "//:node_modules/@types/react",
         "//:node_modules/react",
         "//:node_modules/zod",
+        "//agentplane/app/frontend:code_block",
         "//agentplane/app/frontend/actions:kubernetes_pod_list_schema",
     ],
 )
@@ -107,6 +144,20 @@ ts_library(
         "//agentplane/app/frontend:code_block",
         "//agentplane/app/frontend:command_view",
         "//agentplane/app/frontend/actions:ssh_action_schemas",
+    ],
+)
+
+ts_library(
+    name = "tana",
+    srcs = ["tana.tsx"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":chips",
+        ":entry",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+        "//:node_modules/zod",
     ],
 )
 

@@ -23,6 +23,15 @@ function ExecArguments({ args }: PreviewProps<SshExecArguments>): JSX.Element {
   );
 }
 
+function ExecLabel({ args }: PreviewProps<SshExecArguments>): JSX.Element {
+  void args;
+  return (
+    <Text size="sm" fw={600}>
+      Run SSH command
+    </Text>
+  );
+}
+
 function ExecCollapsed({ args }: PreviewProps<SshExecArguments>): JSX.Element {
   return (
     <Text size="xs" lineClamp={1}>
@@ -66,5 +75,6 @@ function ExecResult({ result }: ResultPreviewProps<SshExecResult>): JSX.Element 
 }
 
 export const execArgumentsPreview: ArgumentsPreview = definePreview(zSshExecArguments, ExecArguments);
+export const execLabel: ArgumentsPreview = definePreview(zSshExecArguments, ExecLabel);
 export const execCollapsedPreview: ArgumentsPreview = definePreview(zSshExecArguments, ExecCollapsed);
 export const execResultPreview: ResultPreview = defineResultPreview(zSshExecResult, ExecResult);

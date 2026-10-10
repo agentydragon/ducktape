@@ -1,10 +1,11 @@
 import type { JSX } from "react";
+import { Code, Text } from "@mantine/core";
 import { z } from "zod";
 
 import { Chip } from "../chips";
 import { definePreview, type ArgumentsPreview } from "../entry";
 
-import { resource } from "./resource_common";
+import { kubernetesTarget, resource } from "./resource_common";
 
 const resourcesDeleteArguments = z.strictObject({
   ...resource,
@@ -27,4 +28,13 @@ function Delete({ args }: { args: z.infer<typeof resourcesDeleteArguments> }): J
   );
 }
 
+function DeleteLabel({ args }: { args: z.infer<typeof resourcesDeleteArguments> }): JSX.Element {
+  return (
+    <Text size="sm" fw={600}>
+      Delete <Code>{kubernetesTarget(args.kind, args.name, args.namespace)}</Code>
+    </Text>
+  );
+}
+
+export const resourcesDeleteLabel: ArgumentsPreview = definePreview(resourcesDeleteArguments, DeleteLabel);
 export const resourcesDeletePane: ArgumentsPreview = definePreview(resourcesDeleteArguments, Delete);
