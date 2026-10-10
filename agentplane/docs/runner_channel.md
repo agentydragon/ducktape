@@ -246,7 +246,7 @@ Sandbox, hence `-control`.
 
 ## Lifecycle operations
 
-Status: **accepted (operator, 2026-10-10 PDT), not built yet.** Not built; until it is, every runner's lifecycle calls use the
+Status: **accepted (operator, 2026-10-10 PDT), not built.** Until it is, every runner's lifecycle calls use the
 inbound API.
 
 A runner that lists `lifecycle` in `Hello` takes every remaining inbound call over `Connect` as a
