@@ -1,3 +1,5 @@
+@README.md
+
 # Agentplane service boundaries
 
 The integration app is a user-facing composition layer, not a backend dependency.

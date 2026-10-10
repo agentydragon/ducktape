@@ -1,0 +1,126 @@
+# Agentplane design principles
+
+These are the commitments new Agentplane design is checked against. Each states the rule, what it
+means in practice, and the question a proposal has to answer. A design that breaks one needs an
+explicit reason recorded in its design doc, not a silent exception.
+
+## Composable services, not a platform you sign up for whole
+
+Agentplane is a set of separately deployable services, each useful without the others. Running an
+agent does not require running approvals; using approvals does not require running an agent.
+
+- The Action Service on its own is an MCP aggregator with operator approvals and auto-approval
+  policies. An external product (Claude.ai today) connects to its `/mcp` endpoint over OAuth and
+  never touches a Sandbox or runner.
+- A runner session reaches Actions only when it asks for one; nothing in the runner requires the
+  Action Service to be deployed.
+- The egress proxy fronts workloads that are not Agentplane sandboxes at all (for example the
+  public coder's OpenClaw).
+- The integration app is a client of the backends, never their dependency
+  ([dependency rule](service_boundaries.md)).
+
+**Question for a proposal:** can someone who wants only this capability deploy it without the
+rest? A new hard dependency between services needs a reason stronger than convenience.
+
+## Separate concepts, mixed and matched; no opaque bundles
+
+Agentplane does not have a monolithic "agent" object that silently decides identity, permissions,
+network reach and approvals together. Each concern is its own visible object, and a configuration
+is a combination of them:
+
+- identity: a Kubernetes ServiceAccount;
+- what may run without a human: `ActionPolicySet`/`ActionPolicyBinding` ([action policies](action_policies.md));
+- network reach and credentials: `EgressPolicy`/`EgressBinding` ([egress](../egress/SPEC.md));
+- cluster permissions: ordinary RBAC bindings;
+- execution environment: `SandboxTemplate`; harness and model per session.
+
+A launch preset pre-fills these choices and carries no authority of its own: runtime services
+receive the resolved concrete configuration and never see a preset name ([launch presets](launch_presets.md)).
+
+**Question for a proposal:** if it introduces a name that stands for several of these at once (a
+"profile", "tier" or "role"), can a user still see and change each part separately, and does
+any authority attach to the name rather than to the parts?
+
+## Keep the information; make dropping it a decision
+
+What crossed a boundary is retained as it crossed, so a later reader can see what actually
+happened rather than a summary of it.
+
+- The runner journals harness frames verbatim in both directions; derived events cite the native
+  frames they came from ([runner spec](../runner/SPEC.md)).
+- The Action Service keeps an append-only event history per request, the policy versions behind
+  each Decision, and the upstream `CallToolResult` as returned.
+- The LLM ingress forwards provider-native request and response bodies untranslated.
+- Projections for display may compact, but only what can be rebuilt from retained evidence.
+
+Dropping data is allowed when it is chosen deliberately: a stated retention or trimming policy, or
+withholding a secret. It is never a side effect of a convenient schema.
+
+Errors follow the same rule. There is no `except: return "something went wrong"`: a failure
+propagates with its cause, or is logged with its detail where a fallback is genuinely correct
+([`STYLE.md`](../../STYLE.md) § Exceptions). A failed Thread, Action or request says what failed and
+why.
+
+**Question for a proposal:** what does it discard or summarize, and who decided that? If it fails,
+what will the operator see?
+
+## Components roll and fail independently
+
+Restarting or breaking one service affects only the work that actually needs it right now.
+
+- Each service owns its durable state and recovers from it: the runner reopens its journal on the
+  sandbox's volume; the Action Service resumes dispatches by lease and marks lost work
+  `execution_unknown` rather than guessing ([executor liveness](executor_liveness.md)).
+- A running agent keeps working while the app, or a service it is not currently calling, restarts.
+- Backend paths are accepted with the integration app unavailable.
+
+**Question for a proposal:** while this component is down or rolling, what else stops? Anything
+that does not need it should not.
+
+## Strong outer sandbox, free agent inside it
+
+Agents do not hold real credentials. Inside their sandbox they are otherwise unrestricted.
+
+- The sandbox receives placeholders (`agentplane-credential-<name>`); the egress proxy authenticates
+  the Pod-bound workload token and substitutes the real credential per request
+  ([ADR](adr_sandbox_proxy_gateway.md), [workload authentication](workload_authentication.md)). The
+  LLM ingress holds the model-provider key.
+- Within the sandbox the harness runs without per-command approval: Claude Code's `can_use_tool`
+  is answered allow, Codex runs with `approval_policy: never`.
+- Agentplane never parses the shell commands an agent runs, and never maintains allowlists of
+  "safe" binaries or flags. Such semi-permeable filters are brittle and give a false sense of
+  containment. The boundary is the Pod today, with KubeVirt VMs as the stronger option; control is
+  at what leaves it: egress policy, Actions, RBAC.
+
+**Question for a proposal:** does it put a real secret where agent code can read it, or does it
+try to police what happens inside the sandbox instead of at its boundary?
+
+## Agent-facing affordances are scriptable APIs
+
+What Agentplane offers an agent is an API the agent can call from its own shell and programs: it
+can query a subfield, pipe results through `jq`, loop, and write scripts against it, instead of
+spending a model turn per tool call. This is the Agentplane-level counterpart of harness modes
+that let an agent script MCP tools from code.
+
+- Egress rules, Actions, policies and notification inboxes are HTTP APIs with OpenAPI schemas,
+  reached through the egress proxy with the workload placeholder; the platform instructions point
+  agents at them ([`agent_instructions.j2`](../sandbox_service/agent_instructions.j2)).
+- Kubernetes access is the agent's own `kubectl`, not a wrapper tool.
+- MCP is an additional surface, not the only one: the Action Service also serves its operations as
+  MCP tools over OAuth.
+
+**Question for a proposal:** can an agent drive this from a script, with a documented schema?
+
+## Any MCP-capable product, no lock-in
+
+Agentplane's approvals and auto-approvals work for any LLM product that can talk to an MCP server,
+whoever makes it. The Action Service's `/mcp` endpoint uses standard MCP with OAuth discovery and
+dynamic client registration; an external Connection gets the same policies and operator review as
+a workload in a sandbox.
+
+For agents Agentplane hosts itself, the runner drives native harnesses (Claude Code and Codex)
+through their own protocols, and model calls go through LiteLLM, so a harness is not tied to its
+vendor's models (Ollama-served models run under both).
+
+**Question for a proposal:** does it work only for one vendor's client, harness or private
+protocol? If so, is that confined to an adapter rather than the contract?
