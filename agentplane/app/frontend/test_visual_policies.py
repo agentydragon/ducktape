@@ -81,13 +81,15 @@ async def test_sidebar_compact_pod_approval(
     if expanded:
         await section.get_by_role("button", name="Expand inspect running demo pods").click()
         await expect(section.get_by_text("List pods in namespace")).to_be_visible()
-        await expect(section.get_by_text("test-apps")).to_be_visible()
+        await expect(section.locator(".agentplane-actions-sidebar-preview").get_by_text("test-apps")).to_be_visible()
         await expect(section.get_by_text("app=demo")).to_be_visible()
         await expect(section.get_by_role("button", name="Approve inspect running demo pods")).to_be_visible()
         await expect(section.get_by_role("button", name="Deny")).to_have_count(0)
     else:
         await expect(section.get_by_text("Get pods")).to_be_visible()
-        await expect(section.get_by_text("test-apps")).to_be_visible()
+        await expect(
+            section.locator(".agentplane-actions-sidebar-collapsed-preview").get_by_text("test-apps")
+        ).to_be_visible()
         await expect(section.get_by_role("button", name="Approve inspect running demo pods")).to_have_count(0)
     await view.capture()
 
@@ -162,7 +164,10 @@ async def test_compact_action_chips(
     section = view.page.locator(".agentplane-actions-sidebar")
     await section.get_by_role("button", name=f"Expand review {name}").click()
     await expect(section.get_by_text(visible)).to_be_visible()
-    await expect(section.get_by_role("link", name=re.compile("View details"))).to_be_visible()
+    if group == "kubernetes_admin" and name == "pods_list_in_namespace":
+        await expect(section.get_by_role("link", name=re.compile("^List pods in namespace"))).to_be_visible()
+    else:
+        await expect(section.get_by_role("link", name=re.compile("View details"))).to_be_visible()
     if group == "kubernetes_admin" and name in {"resources_get", "pods_list_in_namespace", "pods_log"}:
         await expect(section.get_by_role("button", name=f"Approve review {name}")).to_be_visible()
     if group == "kubernetes_admin" and name in {"resources_get", "pods_log"}:
