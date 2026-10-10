@@ -13,6 +13,7 @@ from cdk8s import App, Chart
 from cdk8s_plus_34 import k8s
 from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecHealthChecks
 
+from cluster.cdk8s import node_scheduling
 from cluster.cdk8s.flux import (
     ConfigMapArgs,
     GeneratorOptions,
@@ -82,6 +83,9 @@ def chart(app: App) -> Chart:
                 # replica ingests every event a second time. Scaling this up means scoping
                 # or removing that component first.
                 "replicas": 1,
+                # Every metric in the cluster reaches Mimir through this one pod, so it runs beside
+                # Mimir: on a home node, a home WAN outage would cut off the whole cluster's metrics.
+                "nodeSelector": node_scheduling.HIL_OVH_NODE_SELECTOR,
             },
             "serviceMonitor": {"enabled": True},
         },

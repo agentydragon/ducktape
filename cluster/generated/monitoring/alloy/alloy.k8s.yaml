@@ -37,6 +37,8 @@ spec:
           protocol: TCP
           targetPort: 4318
     controller:
+      nodeSelector:
+        topology.kubernetes.io/zone: hil-ovh
       replicas: 1
       type: deployment
     serviceMonitor:
