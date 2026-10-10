@@ -61,12 +61,14 @@ describe("Action presentation slots", () => {
     expect(shouldRenderPaneRequestTitle(action, args, "Inspect the running demo pods")).toBe(true);
   });
 
-  it("keeps fallback argument labels generic instead of dispatching on action fields", async () => {
-    const details = await mount(
-      renderDetailsArguments({ group: "ssh", name: "list_targets" }, { vendor_field: "fixture" })
-    );
+  it("uses the shared JSON view for fallback arguments", async () => {
+    const action = { group: "ssh", name: "list_targets" };
+    const args = { vendor_field: "fixture" };
+    const opened = await mount(renderPaneOpened(action, args));
+    const details = await mount(renderDetailsArguments(action, args));
 
-    expect(details.textContent).toContain("Vendor field");
+    expect(opened.textContent).toContain('"vendor_field": "fixture"');
+    expect(details.textContent).toBe(opened.textContent);
   });
 
   it("uses SSH's custom pane and full-details argument renderers", async () => {

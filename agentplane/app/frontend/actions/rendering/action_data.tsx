@@ -2,6 +2,7 @@ import { Code, Stack, Text } from "@mantine/core";
 import type { JSX } from "react";
 import { z } from "zod";
 
+import { JsonView } from "../../json_view";
 import type { ActionObject, ActionPresentationSpec } from "../presentation_catalog";
 import { definePreview, type ArgumentsPreview, type PreviewProps } from "./entry";
 import { defineResultPreview, type ResultPreview, type ResultPreviewProps } from "./result_entry";
@@ -90,7 +91,7 @@ function ActionLabel({ args, spec }: PreviewProps<ActionObject> & { spec: Action
 }
 
 function FullArguments({ args }: PreviewProps<ActionObject>): JSX.Element {
-  return <StructuredFields value={args} />;
+  return <JsonView value={args} />;
 }
 
 function ActionResult({ result, title }: ResultPreviewProps<unknown> & { title: string }): JSX.Element {
