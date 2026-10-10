@@ -205,7 +205,7 @@ impl PurityReason {
                     "For a safe opaque call, use the member-level `purity: pure` annotation; for an imported fluent chain, declare `chunk_export_purity.<chunk>.fluent_exports`.".to_string(),
                 ),
                 PurityRule::UnknownNew => Some(
-                    "For a safe opaque constructor, use the member-level `purity: pure_new` annotation.".to_string(),
+                    "For a safe opaque constructor, use the member-level `purity: pure_new` annotation or `chunk_export_purity.<defining chunk>.pure_new_exports` for an import.".to_string(),
                 ),
                 _ => None,
             },

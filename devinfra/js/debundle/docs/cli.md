@@ -410,6 +410,8 @@ records also include each impure initializer owner, its binding name, source
 path and 1-based line/column, plus the `PurityRule`, optional detail, and any
 author guidance. Unknown calls point to the member-level `purity` annotation;
 imported fluent chains point to `chunk_export_purity.<chunk>.fluent_exports`.
+Unknown imported constructors point to
+`chunk_export_purity.<defining chunk>.pure_new_exports`.
 The diagnostic does **not** auto-compute the minimal extra-moves completion
 — it names the owners and destinations so the author can read the
 completion off the printed atom membership.

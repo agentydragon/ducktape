@@ -1113,6 +1113,18 @@ output, the Vite ecosystem, and most React/Vue/Angular SPAs.
   lives instead of at each call site. Same author-trust contract;
   dangling assertions (no such analyzed export) warn and are ignored.
 
+  `chunk_export_purity.<chunk>.pure_new_exports` is the analogous
+  cross-module constructor contract. It projects onto each importing
+  chunk's local binding for the named export, admitting only
+  `new LocalName(...)` when its arguments classify as pure. It does not
+  assert purity for ordinary calls, class definition, or the export's
+  initialization. Like `pure_exports`, it is an author assertion rather
+  than inferred constructor-body purity; a missing or excluded defining
+  chunk stays opaque. Constructor-body inference needs separate proof for
+  `super`, instance field initializers, and writes through `this` (which can
+  invoke a prototype setter); function-call purity does not establish that
+  `new` has no observable effects.
+
   `chunk_export_purity.<chunk>.pure_members` is the member-call form, for
   CJS-interop namespace exports whose factories are reached as member
   calls at the importer (`ns.forwardRef(...)`). Keyed `export name →

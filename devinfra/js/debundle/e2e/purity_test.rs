@@ -928,6 +928,110 @@ export { A, B, C };
 }
 
 #[test]
+fn asserted_pure_new_export_emits_no_s_cycle() {
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            r#"import { Box as Provider } from "./vendorlib.js";
+const a = new Provider(1);
+const b = new Provider(2);
+const c = new Provider(3);
+console.log(a.value, b.value, c.value);
+export { a, b, c };
+"#,
+            vec![
+                logical_module("foo", &[Member::new("a"), Member::new("c")]),
+                logical_module("bar", &[Member::new("b")]),
+            ],
+        )
+        .with_extra_chunks(&[(
+            "static/vendorlib",
+            "export class Box { constructor(value) { this.value = value; } }\n",
+        )])
+        .with_chunk_export_purity(&[ChunkExportPurityBuilder::new("static/vendorlib")
+            .with_pure_new_exports(&["Box"])
+            .build()]),
+    );
+    assert_entry_output(&fixture, "1 2 3\n");
+}
+
+#[test]
+fn impure_imported_constructor_keeps_s_cycle() {
+    // A write through `this` can invoke a class-prototype setter, so a
+    // constructor is not inferred pure merely from its assignment shape.
+    expect_sequenced_cycle_rejection(
+        FixtureOpts::new(
+            r#"import { Box as Provider } from "./vendorlib.js";
+const a = new Provider(1);
+const b = new Provider(2);
+const c = new Provider(3);
+export { a, b, c };
+"#,
+            vec![
+                logical_module("foo", &[Member::new("a"), Member::new("c")]),
+                logical_module("bar", &[Member::new("b")]),
+            ],
+        )
+        .with_extra_chunks(&[(
+            "static/vendorlib",
+            "export class Box { set value(v) { globalThis.seen = v; } constructor(v) { this.value = v; } }\n",
+        )]),
+        &["foo", "bar"],
+    );
+}
+
+#[test]
+fn asserted_pure_new_export_still_classifies_arguments() {
+    expect_sequenced_cycle_rejection(
+        FixtureOpts::new(
+            r#"import { Box as Provider } from "./vendorlib.js";
+const a = new Provider(console.log("a"));
+const b = new Provider(console.log("b"));
+const c = new Provider(console.log("c"));
+export { a, b, c };
+"#,
+            vec![
+                logical_module("foo", &[Member::new("a"), Member::new("c")]),
+                logical_module("bar", &[Member::new("b")]),
+            ],
+        )
+        .with_extra_chunks(&[(
+            "static/vendorlib",
+            "export class Box { constructor(value) { this.value = value; } }\n",
+        )])
+        .with_chunk_export_purity(&[ChunkExportPurityBuilder::new("static/vendorlib")
+            .with_pure_new_exports(&["Box"])
+            .build()]),
+        &["foo", "bar"],
+    );
+}
+
+#[test]
+fn asserted_pure_new_export_does_not_make_plain_calls_pure() {
+    expect_sequenced_cycle_rejection(
+        FixtureOpts::new(
+            r#"import { Box as Provider } from "./vendorlib.js";
+const a = Provider(1);
+const b = Provider(2);
+const c = Provider(3);
+export { a, b, c };
+"#,
+            vec![
+                logical_module("foo", &[Member::new("a"), Member::new("c")]),
+                logical_module("bar", &[Member::new("b")]),
+            ],
+        )
+        .with_extra_chunks(&[(
+            "static/vendorlib",
+            "export class Box { constructor(value) { this.value = value; } }\n",
+        )])
+        .with_chunk_export_purity(&[ChunkExportPurityBuilder::new("static/vendorlib")
+            .with_pure_new_exports(&["Box"])
+            .build()]),
+        &["foo", "bar"],
+    );
+}
+
+#[test]
 fn asserted_pure_namespace_member_calls_emit_no_s_cycle() {
     // CJS-interop shape: the importer binds a namespace-like export of another
     // chunk as `ns` and reaches the factory as a MEMBER call, `ns.make(...)`.

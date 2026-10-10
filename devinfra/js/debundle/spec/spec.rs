@@ -117,6 +117,11 @@ pub struct ChunkExportPurity {
     /// see into.
     #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
     pub pure_exports: BTreeSet<String>,
+    /// Export names whose *construction* the author asserts has no observable
+    /// side effects beyond evaluating constructor arguments. Applies only to
+    /// `new Export(...)`, not ordinary calls of the exported value.
+    #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
+    pub pure_new_exports: BTreeSet<String>,
     /// Member names on an exported namespace-like object whose *calls*
     /// the author asserts have no observable side effects, keyed by the
     /// export name. Covers CJS-interop namespace exports whose factories

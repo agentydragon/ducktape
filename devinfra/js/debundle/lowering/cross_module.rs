@@ -9,7 +9,8 @@ use std::sync::Arc;
 
 use analysis::cross_module_purity::{
     ModulePurityFacts, ResolvedImport, resolve_asserted_fluent_bindings,
-    resolve_asserted_member_purities, resolve_imported_purities,
+    resolve_asserted_member_purities, resolve_asserted_pure_new_bindings,
+    resolve_imported_purities,
 };
 use analysis::purity::Purity;
 use anyhow::{Context, Result};
@@ -61,6 +62,9 @@ pub(super) struct CrossModulePurities {
     /// Per-chunk fluent-trusted import binding names (deep-purity roots),
     /// merged into `AnalysisHints::fluent_bindings`.
     pub(super) fluent: BTreeMap<String, BTreeSet<String>>,
+    /// Per-chunk local names whose imported exports have an asserted pure
+    /// construction contract (`chunk_export_purity.pure_new_exports`).
+    pub(super) constructors: BTreeMap<String, BTreeSet<String>>,
 }
 
 /// Static-import chunk closure for program-level purity analysis.
@@ -306,10 +310,17 @@ pub(super) fn collect_cross_module_imported_purities(
         .filter(|(chunk, _)| modules.contains_key(*chunk))
         .map(|(chunk, assertion)| (chunk.clone(), assertion.fluent_exports.clone()))
         .collect();
+    let asserted_pure_new: BTreeMap<String, BTreeSet<String>> = chunk_export_purity
+        .iter()
+        .filter(|(_, assertion)| !assertion.pure_new_exports.is_empty())
+        .filter(|(chunk, _)| modules.contains_key(*chunk))
+        .map(|(chunk, assertion)| (chunk.clone(), assertion.pure_new_exports.clone()))
+        .collect();
     CrossModulePurities {
         bindings: resolve_imported_purities(&modules, &asserted_pure),
         members: resolve_asserted_member_purities(&modules, &asserted_members),
         fluent: resolve_asserted_fluent_bindings(&modules, &asserted_fluent),
+        constructors: resolve_asserted_pure_new_bindings(&modules, &asserted_pure_new),
     }
 }
 

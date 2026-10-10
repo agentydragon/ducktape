@@ -422,6 +422,9 @@ pub(super) fn finish_logical_chunk(
         if let Some(fluent) = cross_module_purities.fluent.get(chunk_id) {
             hints.fluent_bindings.extend(fluent.iter().cloned());
         }
+        if let Some(constructors) = cross_module_purities.constructors.get(chunk_id) {
+            hints.declared_pure_new.extend(constructors.iter().cloned());
+        }
         if owner_graph_options.local_property_effects {
             hints.local_effect_policy = LocalEffectPolicy::LocalPropertyWrites;
         }

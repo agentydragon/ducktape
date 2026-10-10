@@ -800,6 +800,13 @@ impl ChunkExportPurityBuilder {
         }
     }
 
+    /// Assert construction through the listed exports is pure, while
+    /// constructor argument expressions retain their own effects.
+    pub fn with_pure_new_exports(mut self, exports: &[&str]) -> Self {
+        self.purity.pure_new_exports = exports.iter().map(|s| (*s).to_string()).collect();
+        self
+    }
+
     /// Assert member calls on the named namespace exports are pure
     /// (see `spec::ChunkExportPurity::pure_members`).
     pub fn with_pure_members(mut self, export: &str, members: &[&str]) -> Self {

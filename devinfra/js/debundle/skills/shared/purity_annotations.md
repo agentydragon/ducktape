@@ -32,6 +32,16 @@ evidence that a call is pure.
       pure_exports: [memo]
   ```
 
+- `chunk_export_purity.<defining chunk>.pure_new_exports` asserts purity
+  only for `new` on named imported exports, after their arguments are
+  classified normally:
+
+  ```yaml
+  chunk_export_purity:
+    static/vendor-X:
+      pure_new_exports: [Provider]
+  ```
+
 - `pure_members` covers selected static member calls through an imported
   namespace. `fluent_exports` covers a much broader transitive chain of
   derived values; use it only when the whole fluent surface has the required

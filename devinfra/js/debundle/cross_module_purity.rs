@@ -278,14 +278,32 @@ pub fn resolve_asserted_fluent_bindings(
     modules: &BTreeMap<ModuleKey, ModulePurityFacts<'_>>,
     asserted_fluent: &BTreeMap<ModuleKey, BTreeSet<String>>,
 ) -> BTreeMap<ModuleKey, BTreeSet<String>> {
-    for (module, export_names) in asserted_fluent {
+    resolve_asserted_export_bindings(modules, asserted_fluent, "fluent_exports")
+}
+
+/// Project author-asserted constructor purity onto importing local bindings.
+/// The result feeds `declared_pure_new`, so only `new local(...)` is admitted;
+/// plain calls and argument expressions retain their normal classification.
+pub fn resolve_asserted_pure_new_bindings(
+    modules: &BTreeMap<ModuleKey, ModulePurityFacts<'_>>,
+    asserted_pure_new: &BTreeMap<ModuleKey, BTreeSet<String>>,
+) -> BTreeMap<ModuleKey, BTreeSet<String>> {
+    resolve_asserted_export_bindings(modules, asserted_pure_new, "pure_new_exports")
+}
+
+fn resolve_asserted_export_bindings(
+    modules: &BTreeMap<ModuleKey, ModulePurityFacts<'_>>,
+    asserted: &BTreeMap<ModuleKey, BTreeSet<String>>,
+    field: &str,
+) -> BTreeMap<ModuleKey, BTreeSet<String>> {
+    for (module, export_names) in asserted {
         for export_name in export_names {
             let known_export = modules
                 .get(module)
                 .is_some_and(|facts| facts.exports.contains_key(export_name));
             if !known_export {
                 eprintln!(
-                    "cross_module_purity: dangling fluent_exports assertion \
+                    "cross_module_purity: dangling {field} assertion \
                      {module}:{export_name} — no such analyzed module export; ignoring"
                 );
             }
@@ -294,16 +312,14 @@ pub fn resolve_asserted_fluent_bindings(
     modules
         .iter()
         .map(|(key, facts)| {
-            let fluent: BTreeSet<String> = facts
+            let bindings: BTreeSet<String> = facts
                 .imports
                 .iter()
                 .filter_map(|(local, target)| {
-                    let asserted = asserted_fluent
-                        .get(&target.module)?
-                        .contains(&target.export);
+                    let is_asserted = asserted.get(&target.module)?.contains(&target.export);
                     // Only project assertions whose export actually exists in
                     // the defining module (dangling ones warned above).
-                    (asserted
+                    (is_asserted
                         && modules
                             .get(&target.module)?
                             .exports
@@ -311,7 +327,7 @@ pub fn resolve_asserted_fluent_bindings(
                     .then(|| local.clone())
                 })
                 .collect();
-            (key.clone(), fluent)
+            (key.clone(), bindings)
         })
         .collect()
 }
