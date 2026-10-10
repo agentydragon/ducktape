@@ -1,7 +1,6 @@
-"""The runner-initiated channel listener: authentication, connection ownership and liveness.
+"""The runner-initiated channel listener: authentication, ownership, liveness and command delivery.
 
-Contract: `agentplane/docs/runner_channel.md`. Command delivery over an accepted connection is not
-wired yet, so a runner frame other than a heartbeat after `Hello` is a protocol error.
+Contract: `agentplane/docs/runner_channel.md`.
 """
 
 import asyncio
@@ -18,7 +17,10 @@ from kubernetes_asyncio import client as k8s_client
 from sqlalchemy.exc import SQLAlchemyError
 
 from agentplane.runner_channel import protocol_pb2, protocol_pb2_grpc
+from agentplane.sandbox_service.channel_delivery import ChannelDelivery
 from agentplane.sandbox_service.commands.connections import ConnectionStore, ConnectionSupersededError
+from agentplane.sandbox_service.commands.dispatch import CommandKey, ReceiptMismatchError
+from agentplane.sandbox_service.commands.store import SubmissionConflictError
 from agentplane.sandbox_service.inventory import SandboxInventory
 from agentplane.sandbox_service.models import SandboxNotFoundError
 from agentplane.workload_auth.bearer import parse_bearer, sole_header
@@ -32,6 +34,9 @@ from util.agent_sandbox import SANDBOX_API, SANDBOX_KIND
 # gazelle:include_dep @pypi//protobuf
 
 logger = logging.getLogger(__name__)
+
+# Attempts sent on one stream without a receipt yet; past this, a claim waits for re-notification.
+MAX_UNRECEIPTED = 64
 
 
 class ChannelOperation(StrEnum):
@@ -108,6 +113,7 @@ class RunnerChannelService(protocol_pb2_grpc.RunnerChannelServicer):
         inventory: SandboxInventory,
         core: k8s_client.CoreV1Api,
         connections: ConnectionStore,
+        delivery: ChannelDelivery,
         replica: str,
         timing: ChannelTiming,
     ) -> None:
@@ -115,6 +121,7 @@ class RunnerChannelService(protocol_pb2_grpc.RunnerChannelServicer):
         self.inventory = inventory
         self.core = core
         self.connections = connections
+        self.delivery = delivery
         self.replica = replica
         self.timing = timing
 
@@ -159,7 +166,8 @@ class RunnerChannelService(protocol_pb2_grpc.RunnerChannelServicer):
                         welcome=protocol_pb2.Welcome(connection_epoch=epoch, capabilities=sorted(capabilities))
                     )
                 )
-            await self.serve(principal, peer, epoch, request_iterator, context)
+            with self.delivery.route(peer.sandbox_uid) as attempts:
+                await self.serve(principal, peer, epoch, capabilities, attempts, request_iterator, context)
         except WorkloadPrincipalRejectedError:
             await context.abort(grpc.StatusCode.UNAUTHENTICATED, "invalid workload bearer")
         except ChannelRefusedError:
@@ -177,6 +185,8 @@ class RunnerChannelService(protocol_pb2_grpc.RunnerChannelServicer):
         principal: WorkloadPrincipal,
         peer: ChannelPeer,
         epoch: int,
+        capabilities: set[str],
+        attempts: asyncio.Queue[CommandKey],
         frames: AsyncIterator[protocol_pb2.RunnerFrame],
         context: grpc.aio.ServicerContext,
     ) -> None:
@@ -184,13 +194,51 @@ class RunnerChannelService(protocol_pb2_grpc.RunnerChannelServicer):
         loop = asyncio.get_running_loop()
         started = last_touch = last_frame = loop.time()
         last_frame_at = datetime.now(UTC)
+        writing = asyncio.Lock()
+        unreceipted: dict[tuple[str, str], datetime] = {}  # (runner session, command ID) -> deadline
+        commands = ChannelOperation.COMMANDS in capabilities
+
+        async def send(frame: protocol_pb2.ServiceFrame) -> None:
+            async with writing, asyncio.timeout(self.timing.liveness_s):
+                await context.write(frame)
 
         async def read() -> None:
             nonlocal last_frame, last_frame_at
             async for frame in frames:
                 last_frame, last_frame_at = loop.time(), datetime.now(UTC)
-                if (kind := frame.WhichOneof("frame")) != "heartbeat":
-                    raise _ChannelClosedError(grpc.StatusCode.INVALID_ARGUMENT, f"unexpected {kind} frame")
+                match frame.WhichOneof("frame"):
+                    case "heartbeat":
+                        pass
+                    case "receipt" if commands:
+                        try:
+                            await self.delivery.dispatches.record(peer.sandbox_uid, frame.receipt)
+                        except (ReceiptMismatchError, SubmissionConflictError) as error:
+                            raise _ChannelClosedError(grpc.StatusCode.INVALID_ARGUMENT, str(error)) from error
+                        unreceipted.pop((frame.receipt.session_id, frame.receipt.command_id), None)
+                    case kind:
+                        raise _ChannelClosedError(grpc.StatusCode.INVALID_ARGUMENT, f"unexpected {kind} frame")
+
+        async def deliver() -> None:
+            while True:
+                key = await attempts.get()
+                if not commands:
+                    continue
+                now = datetime.now(UTC)
+                for expired in [attempt for attempt, deadline in unreceipted.items() if deadline <= now]:
+                    del unreceipted[expired]
+                if len(unreceipted) >= MAX_UNRECEIPTED:
+                    continue
+                delivery = await self.delivery.dispatches.claim(key, sandbox_uid=peer.sandbox_uid, epoch=epoch)
+                if delivery is None:
+                    continue
+                unreceipted[delivery.runner_session_id, key.command_id] = delivery.deadline
+                await send(
+                    protocol_pb2.ServiceFrame(
+                        deliver=protocol_pb2.DeliverCommand(
+                            session_id=delivery.runner_session_id, command=delivery.command
+                        )
+                    )
+                )
 
         async def keep_alive() -> None:
             nonlocal last_touch
@@ -212,16 +260,15 @@ class RunnerChannelService(protocol_pb2_grpc.RunnerChannelServicer):
                     if await resolve_peer(principal, inventory=self.inventory, core=self.core) != peer:
                         raise _ChannelClosedError(grpc.StatusCode.PERMISSION_DENIED, "the Sandbox's routing changed")
                     last_touch = now
-                async with asyncio.timeout(self.timing.liveness_s):
-                    await context.write(protocol_pb2.ServiceFrame(heartbeat=protocol_pb2.Heartbeat()))
+                await send(protocol_pb2.ServiceFrame(heartbeat=protocol_pb2.Heartbeat()))
 
-        reader, keeper = asyncio.create_task(read()), asyncio.create_task(keep_alive())
+        tasks = [asyncio.create_task(task()) for task in (read, deliver, keep_alive)]
         try:
-            done, _ = await asyncio.wait([reader, keeper], return_when=asyncio.FIRST_COMPLETED)
+            done, _ = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
         finally:
-            for task in (reader, keeper):
+            for task in tasks:
                 task.cancel()
-            await asyncio.gather(reader, keeper, return_exceptions=True)
-        # The keeper never returns; the reader returning means the runner closed its side cleanly.
+            await asyncio.gather(*tasks, return_exceptions=True)
+        # Only the reader returns, when the runner closed its side cleanly.
         for task in done:
             task.result()

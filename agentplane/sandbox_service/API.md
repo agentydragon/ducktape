@@ -145,7 +145,12 @@ readable but are not polled until their binding is established by a verified han
   reply or from history ingestion; a different command or caller under the same ID is `ALREADY_EXISTS`.
   The service picks the replay cursor itself and ignores `follow`. For a legacy caller-chosen runner ID
   nothing is recorded: specify a native `Follow` cursor before the possible admission when reconciling
-  an uncertain submission.
+  an uncertain submission. Once a Sandbox's runner has agreed `commands` on the
+  [runner channel](../docs/runner_channel.md), the Sandbox receives its commands only over it,
+  through the submission's dispatch attempt. Such a Sandbox takes public Session IDs only, and with no
+  live runner connection the call is `UNAVAILABLE` rather than relayed. A runner refusal returns
+  `FAILED_PRECONDITION` (`ALREADY_EXISTS` for a conflicting command, `INVALID_ARGUMENT` for an
+  invalid one) and leaves the submission pending; an exact retry reopens the attempt.
 
 Read/follow/command RPCs never provision, resume, or wake a Sandbox or harness.
 

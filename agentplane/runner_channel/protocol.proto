@@ -39,15 +39,15 @@ message Welcome {
   repeated string capabilities = 2;  // what the service will use on this connection
 }
 
+// The runner deduplicates on `command.command_id` within a session, so redelivery is safe.
 message DeliverCommand {
-  string attempt_id = 1;
-  string session_id = 2;
-  ducktape.agentplane.protocol.v1.Command command = 3;
+  string session_id = 1;
+  ducktape.agentplane.protocol.v1.Command command = 2;
 }
 
 message CommandReceipt {
-  string attempt_id = 1;
-  string session_id = 2;
+  string session_id = 1;
+  string command_id = 2;
   oneof outcome {
     // The runner journal's CommandAdmitted entry, fresh or already journaled.
     ducktape.agentplane.protocol.v1.EventEntry admitted = 3;
