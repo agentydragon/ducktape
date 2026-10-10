@@ -44,7 +44,6 @@ message ServiceFrame {
 message Hello {
   string runner_boot_id = 1;          // random per runner process start
   repeated string capabilities = 2;   // e.g. "commands"; later "events", "lifecycle"
-  string runner_version = 3;          // image version, for diagnostics only
 }
 
 message Welcome {

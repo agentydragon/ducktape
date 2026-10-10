@@ -31,7 +31,8 @@ message Hello {
   string runner_boot_id = 1;  // random per runner process start
   // A peer uses a frame kind or RPC only after both sides listed it.
   repeated string capabilities = 2;
-  string runner_version = 3;  // diagnostics only
+  reserved 3;
+  reserved "runner_version";
 }
 
 message Welcome {
