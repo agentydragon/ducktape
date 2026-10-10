@@ -40,7 +40,7 @@ from agentplane.sandbox_service.kubernetes_views import (
 from agentplane.sandbox_service.protocol_pb2 import ResolvedGrant, SandboxDestination
 from agentplane.sandbox_service.session_history.ingestion import copy_confirmed_prefix
 from agentplane.sandbox_service.session_history.session_changes import SessionChanges
-from agentplane.sandbox_service.session_history.store import HistoryConflictError, Store
+from agentplane.sandbox_service.session_history.store import HistoryConflictError, HistoryNotFoundError, Store
 from agentplane.sandbox_service.session_registry import SessionRegistry
 from agentplane.sandbox_service.testing.grpc_service import service_client
 from agentplane.sandbox_service.testing.kubernetes import ACCOUNT, SANDBOX, SANDBOX_UID, Cluster
@@ -332,7 +332,8 @@ async def test_public_session_command_survives_a_lost_reply(
         await (await peer.attachments.get()).closed.wait()
         assert (await submissions.read(session_id, "durable")).state == SubmissionState.ADMITTED
         assert await submissions.read_pending_sessions() == set()
-        assert (await store.read(session_id, limit=1))[0] == 0
+        with pytest.raises(HistoryNotFoundError):
+            await store.read(session_id, limit=1)
 
         assert await runner.command(str(session_id), command, after_cursor=0) == receipt
         assert peer.attachments.empty()  # an admitted retry needs no runner
