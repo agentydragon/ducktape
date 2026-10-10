@@ -215,6 +215,97 @@ fn assert_selector_shape(
     );
 }
 
+/// Binary operators are deliberately absent from the read-off feature index.
+/// An exact own-declaration selector still separates these siblings, so the
+/// minimizer must find and relax that witness instead of leaving a name pin.
+#[test]
+fn relaxes_exact_declaration_when_read_off_cannot_see_operator() {
+    for (name, source_text) in [
+        (
+            "function",
+            "function a(x) { return x + 1; }\nfunction b(x) { return x * 1; }\n",
+        ),
+        (
+            "class",
+            "class a { value(x) { return x + 1; } }\nclass b { value(x) { return x * 1; } }\n",
+        ),
+        ("var", "const a = (x) => x + 1;\nconst b = (x) => x * 1;\n"),
+        (
+            "destructured var",
+            "const { value: a } = foo(1 + 2);\nconst { value: b } = foo(1 * 2);\n",
+        ),
+        (
+            "function repeated body",
+            "function a(x) { x = x + 1; x = x + 1; x = x + 1; return x + 1; }\nfunction b(x) { x = x + 1; x = x + 1; x = x + 1; return x * 1; }\n",
+        ),
+        (
+            "source identifier named like a hole",
+            "function a(x) { return x + x; }\nfunction b(x) { return ARGS * x; }\n",
+        ),
+        (
+            "source property named like a hole",
+            "function a(x) { return x.foo + x; }\nfunction b(x) { return x.ARGS * x; }\n",
+        ),
+        (
+            "object key named like a hole",
+            "const a = { foo: 1, value: 1 + 1 };\nconst b = { ARGS: 1, value: 1 * 1 };\n",
+        ),
+        (
+            "pattern key named like a hole",
+            "function a({ foo: x, value: y }) { return y + x; }\nfunction b({ ARGS: x, value: y }) { return y * x; }\n",
+        ),
+    ] {
+        let dir = tempfile::tempdir().unwrap();
+        let case = MinimizedSelectorCase {
+            name,
+            source: source_text,
+            module: "app/target",
+            bindings: &[BindingCase {
+                export_name: "Selected",
+                runtime_name: "b",
+            }],
+            outputs: &[],
+        };
+        let (modules, source) = write_case(dir.path(), &case);
+        let out = run_synthesize_selectors(
+            &modules,
+            &[
+                "--source-file",
+                source.to_str().unwrap(),
+                "--item",
+                "app/target:Selected",
+                "--format",
+                "json",
+            ],
+        );
+        let report = parse_stdout_json(&out);
+        let selector = report["candidates"][0]["match_source"]
+            .as_str()
+            .unwrap_or_else(|| panic!("{name}: exact AST witness was skipped: {report}"));
+        assert!(
+            selector.contains('*'),
+            "{name}: operator was lost: {selector}"
+        );
+        if name == "source identifier named like a hole" {
+            assert!(!selector.contains("ARGS"), "{selector}");
+        } else {
+            assert!(
+                selector.contains("ANYTHING") || selector.contains("STMT_LIST"),
+                "{name}: exact declaration was not relaxed: {selector}"
+            );
+        }
+        if name == "function repeated body" {
+            assert_eq!(selector.matches("STMT_LIST").count(), 1, "{selector}");
+        }
+        let probe = run_match_selector(
+            &source,
+            selector,
+            &["--target-binding", "Selected", "--no-slack"],
+        );
+        assert_eq!(probe["outcomes"][0]["outcome"]["binding"], "b", "{name}");
+    }
+}
+
 /// The declarations have identical bodies. Their parameter property keys are
 /// the only stable feature that distinguishes them; the local names can change.
 #[test]

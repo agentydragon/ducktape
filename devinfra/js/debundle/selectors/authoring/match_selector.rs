@@ -40,13 +40,13 @@ use source_match_holes::{
 use spec::{AnonymousStatementSelector, SourceMatchIdentifierMode};
 use swc_common::DUMMY_SP;
 use swc_ecma_ast::{
-    ArrowExpr, ArrowFunctionBody, AssignPatProp, BindingIdent, BlockStmt, CallExpr, Class,
-    ClassMember, Constructor, Expr, ExprOrSpread, ExprStmt, Function, Module, ModuleItem, NewExpr,
-    ObjectLit, ObjectPat, ObjectPatProp, Pat, Prop, PropName, PropOrSpread, SeqExpr, Stmt,
+    ArrowExpr, ArrowFunctionBody, BlockStmt, CallExpr, Class, ClassMember, Constructor, Expr,
+    ExprOrSpread, ExprStmt, Function, Module, ModuleItem, NewExpr, ObjectLit, ObjectPat,
+    ObjectPatProp, Pat, Prop, PropName, PropOrSpread, SeqExpr, Stmt,
 };
 use swc_ecma_visit::{VisitMut, VisitMutWith};
 
-use crate::render::{anything_expr, class_member_hole, ident_node};
+use crate::render::{anything_expr, class_member_hole, ident_node, object_props_pat_prop};
 
 pub struct MatchSelectorConfig {
     pub source_file: Option<PathBuf>,
@@ -167,15 +167,16 @@ fn compute_slack(
 
     let mut seen = BTreeSet::new();
     let mut slack = Vec::new();
-    for relaxed in enumerate_relaxations(&selector_module, selector_target_binding) {
+    for_each_relaxation(&selector_module, selector_target_binding, |relaxed| {
         let relaxed_match = js_ast::emit_module_source(&relaxed)?;
         if relaxed_match == baseline_emit || !seen.insert(relaxed_match.clone()) {
-            continue;
+            return Ok(false);
         }
         if resolve(relaxed_match.clone())? == *resolved {
             slack.push(SlackRelaxation { relaxed_match });
         }
-    }
+        Ok(false)
+    })?;
     Ok(slack)
 }
 
@@ -207,30 +208,38 @@ enum Relaxation {
 }
 
 const RELAXATIONS: [Relaxation; 8] = [
-    Relaxation::HoleExpr,
+    // Try large removable units first. This matters when the same walk is
+    // repeated after each accepted minimizer edit: discarding a statement or
+    // member before its nested expressions avoids many redundant proof calls.
+    Relaxation::DropStatement,
+    Relaxation::DropClassMember,
     Relaxation::DropObjectProp,
     Relaxation::DropPatternProp,
-    Relaxation::DropClassMember,
-    Relaxation::DropStatement,
-    Relaxation::DropContextStatement,
     Relaxation::DropCallArg,
     Relaxation::DropSequenceElement,
+    Relaxation::HoleExpr,
+    Relaxation::DropContextStatement,
 ];
 
-/// Produce every selector with exactly one element holed, across all relaxation
-/// kinds. Each kind is counted (a dry run with an out-of-range target) and then
-/// applied once per index.
-fn enumerate_relaxations(selector: &Module, target_binding: Option<&str>) -> Vec<Module> {
-    let mut out = Vec::new();
+/// Visit every one-edit relaxation without retaining the whole candidate set.
+/// The callback returns true to stop after a useful edit. Slack and the exact
+/// declaration fallback use the same hole vocabulary and traversal order.
+pub(crate) fn for_each_relaxation(
+    selector: &Module,
+    target_binding: Option<&str>,
+    mut inspect: impl FnMut(Module) -> Result<bool>,
+) -> Result<()> {
     for kind in RELAXATIONS {
         let total = apply_relaxation(&mut selector.clone(), kind, usize::MAX, target_binding);
         for index in 0..total {
             let mut relaxed = selector.clone();
             apply_relaxation(&mut relaxed, kind, index, target_binding);
-            out.push(relaxed);
+            if inspect(relaxed)? {
+                return Ok(());
+            }
         }
     }
-    out
+    Ok(())
 }
 
 /// Apply the `target`-th relaxation of `kind` (pre-order) to `module`, returning
@@ -362,7 +371,7 @@ impl VisitMut for Relaxer<'_> {
         if self.kind == Relaxation::DropPatternProp {
             for prop in pat.props.iter_mut() {
                 if self.take(pat_prop_droppable(prop, self.target_binding)) {
-                    *prop = object_pat_props_hole();
+                    *prop = object_props_pat_prop();
                     break;
                 }
             }
@@ -514,19 +523,6 @@ fn object_pat_prop_binds_name(prop: &ObjectPatProp, name: &str) -> bool {
 
 fn object_props_hole() -> PropOrSpread {
     PropOrSpread::Prop(Box::new(Prop::Shorthand(ident_node(ANYTHING_HOLE_KEYWORD))))
-}
-
-/// The destructure-pattern analogue of [`object_props_hole`]: a shorthand
-/// binding named `ANYTHING` absorbing a run of dropped pattern props.
-fn object_pat_props_hole() -> ObjectPatProp {
-    ObjectPatProp::Assign(AssignPatProp {
-        span: DUMMY_SP,
-        key: BindingIdent {
-            id: ident_node(ANYTHING_HOLE_KEYWORD),
-            type_ann: None,
-        },
-        value: None,
-    })
 }
 
 fn args_hole() -> ExprOrSpread {

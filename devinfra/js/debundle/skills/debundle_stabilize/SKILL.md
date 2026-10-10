@@ -12,8 +12,9 @@ description: >-
 @references/docs/bug_reproductions.md
 
 Turn a debundle spec's fragile selectors into ones likely to keep working across
-future minified rebuilds of the same app. You do exactly one thing: **choose and
-write `source_match` selectors**. You do not rename symbols, move modules, or
+future minified rebuilds of the same app. Choose and write structural selectors,
+including grouped `source_matches[]` entries and `members[].selector` relations
+when those express the entity's purpose. Do not rename symbols, move modules, or
 redraw boundaries.
 
 ## The one judgment this skill exists for
@@ -27,13 +28,13 @@ A `source_match` selector must satisfy two things, and only one is checkable now
    bundle in hand. It is an _educated guess_, and making that guess well is the
    whole job.
 
-The minimizer (`synthesize-selectors`) is a first-class tool in your kit: it makes
-selectors **compact and unique** for you — holing volatile subtrees, collapsing
-declarator runs, and proving uniqueness (see The toolkit below). But it has **no
-semantic intelligence** — it is a mechanical read-off of the AST optimizing a cost
-model, so it finds _a_ unique anchor, not necessarily _the_ anchor that identifies
-the entity, and when both a readable anchor and an accidental token are unique it
-cannot tell which is which. It will
+The minimizer (`synthesize-selectors`) is a first-class tool in your kit: it
+suggests selectors from the target declaration and proves them on the current
+chunk (see The toolkit below). Its exact-AST relaxation fallback can find an
+own-declaration selector when the read-off feature index misses the discriminator,
+but it has **no semantic intelligence** and cannot decide whether a grouped or
+relational selector would survive rebuilds better. It finds _a_ unique anchor,
+not necessarily _the_ anchor that identifies the entity. It will
 happily pin a bare `0`, or a generic `{ name: ANYTHING }` key with the value holed,
 because those are cheap and unique _today_. Your job is to override those with an
 anchor tied to what the code **does** — something a behavior-preserving refactor
@@ -49,8 +50,8 @@ instrument**, not a last resort:
 - **`spec selector-debt`** — the census. Ranks fragile name pins; add
   `--source-file` to also surface the near-ambiguous structural selectors (see the
   worklist).
-- **`spec synthesize-selectors` — the selector minimizer.** Your workhorse for
-  _compact_: it holes volatile subtrees (bodies, args, declarator runs,
+- **`spec synthesize-selectors` — the selector minimizer.** Generate
+  own-declaration candidates: it holes subtrees (bodies, args, declarator runs,
   `ANYTHING;`/`CASE_REST`), collapses multi-declarator runs into grouped
   `source_matches[]` entries,
   and proves uniqueness — so much of the backlog converts to short, unique-today
@@ -127,7 +128,7 @@ grouped `source_matches[]` suggestions. Treat this run as routine, not a footnot
 it is cheap and surfaces a population that is otherwise invisible.
 
 **3. Re-check existing noted debt.** A name pin kept with a "blocked on X"
-`note:` (step 6) may have been unblocked since: tooling that has landed (new hole
+`note:` (step 7) may have been unblocked since: tooling that has landed (new hole
 forms, declarator support, …) can make a previously-impossible selector convert
 cleanly now. The census lists the name pin but not whether its recorded blocker is
 still real, so periodically re-run the minimizer over noted debt and retire the
@@ -155,15 +156,27 @@ wrong anchor, so slack only prioritizes; it never decides.
    discard the anchor and keep looking — the proof that it is unique today says
    nothing about tomorrow. Add `--candidates N` to get a ranked **menu** of
    alternative anchor choices (in `alternatives`) instead of the single pick, then
-   choose the most purpose-bearing one.
+   choose the most purpose-bearing one. A proven fallback may retain substantial
+   exact AST; inspect its pinned syntax as carefully as a hand-written selector.
 
-3. **Choose a purpose anchor** (rubric below) and write it into a
+3. **Check other selector shapes.** When several exports share a declaration,
+   consider one `source_matches[]` entry with several `bindings`. A multi-statement
+   template can describe a stable relationship in a local statement window; a
+   use-site template can claim a referenced binding whose declaration is generic.
+   Also consider `members[].selector` relations such as `cross_ref`,
+   `passed_to_call`, `member_of_module`, `reads_member`, and
+   `makes_decorate_call` (<references/docs/selectors.md> § Relational selectors).
+   The minimizer does not compare all of these with its AST candidates. Prove the
+   chosen relationship with source-only `spec validate` and inspect the reported
+   reference identities.
+
+4. **Choose a purpose anchor** (rubric below) and write it into a
    `source_matches[]` entry — by hand, or by taking `synthesize-selectors --apply`
    output and tightening it onto the anchor you picked. After any `--apply`, run
    the repo formatter **before** reading the diff (<references/docs/selectors.md>
    § Bulk conversion loop).
 
-4. **Prove it.** Test the candidate with
+5. **Prove it.** Test the candidate with
    `debundle spec match-selector --source-file <chunk> --match '<selector>'
 --target-binding <name>`: it reports whether the selector resolves **uniquely** to
    the binding you mean, and its **slack** — the kept things you could still hole
@@ -174,10 +187,10 @@ wrong anchor, so slack only prioritizes; it never decides.
    which should report nothing for it (`resolved_by: own_references` is ok), and
    check that its `templates` entry names the entities you meant.
 
-5. **Group** adjacent or cohesive bindings that share a declaration context into
+6. **Group** adjacent or cohesive bindings that share a declaration context into
    one `source_matches[]` entry rather than emitting N overlapping selectors.
 
-6. **Leave honest debt.** If the entity has no purpose-bearing anchor stable enough
+7. **Leave honest debt.** If the entity has no purpose-bearing anchor stable enough
    to trust, keep the name pin with a `note:` (<references/docs/selectors.md>
    § Selector debt).
 
@@ -286,7 +299,7 @@ literal the body it pins, the more fragile, not less.
 **No good anchor at all → leave honest debt.** If the entity is just
 `class DocumentAccessorFactory extends NodeAccessor {}` — empty body, no self-name,
 no distinctive surviving member — then every unique selector is either
-neighbor-borrowed or shape-only. Keep the name pin with a `note:` (step 6). An
+neighbor-borrowed or shape-only. Keep the name pin with a `note:` (step 7). An
 honest pin beats a photograph that _looks_ structural and durable but isn't.
 
 ## Playbook (common cases)

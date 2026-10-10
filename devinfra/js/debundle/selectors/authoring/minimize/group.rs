@@ -9,7 +9,9 @@ use swc_ecma_ast::*;
 
 use super::object::{object_anchor_ranking, try_object_read_off_candidates};
 use super::var::try_var_read_off_candidates;
-use super::{extend_anchor_cover, render_var_slots, render_via_neighbor_context};
+use super::{
+    extend_anchor_cover, relax_exact_declaration, render_var_slots, render_via_neighbor_context,
+};
 use crate::regex_anchor::{accepted_regex_anchors, collect_regex_anchor_candidates};
 use crate::render::{AnchorSpan, MAX_MINIMIZER_ANCHORS, holes_present, node_holds_anchor};
 use crate::{
@@ -64,7 +66,12 @@ fn slot_minimal_anchors(
     // Preserve the existing slot score; the production proof above checks the
     // actual declaration and the final group proof checks the complete tuple.
     extend_anchor_cover(seed.clone(), ranked, slot_resolves, |trial| {
-        let matches = match_single_member_selector(index, export, &render_slot(trial)?)?;
+        let source = render_slot(trial)?;
+        // Invalid trial selectors are worse than every matching candidate;
+        // they should not abort the own-declaration fallback.
+        let Ok(matches) = match_single_member_selector(index, export, &source) else {
+            return Ok((true, usize::MAX));
+        };
         let target_unresolved = !matches.iter().any(|m| m.binding.binding_name == runtime);
         Ok((target_unresolved, matches.len()))
     })
@@ -173,6 +180,12 @@ fn try_var_group_read_off(
         union.extend(tuple_fallback);
     }
     if !resolves(&union)? {
+        // The tuple read-off has exhausted its indexed anchors. An operator or
+        // other unindexed AST detail may still distinguish the declaration;
+        // relax that exact witness before borrowing an adjacent statement.
+        if let Some(selector) = relax_exact_declaration(index, item, decl, targets)? {
+            return Ok(Some((selector, true)));
+        }
         if let [target] = targets {
             let scaffold = render_with(&BTreeSet::new(), &no_regex)?;
             return Ok(render_via_neighbor_context(index, decl, target, &scaffold)?
