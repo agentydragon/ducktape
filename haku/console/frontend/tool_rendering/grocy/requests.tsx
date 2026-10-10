@@ -16,7 +16,7 @@
 
 import { Group, Stack } from "@mantine/core";
 import { Fragment, type ReactNode, useEffect, useState } from "react";
-import { z } from "zod";
+import type { z } from "zod";
 
 import { Field } from "../../field";
 import { fetchGrocyReferenceData, type GrocyReferenceData } from "../../grocy_client";

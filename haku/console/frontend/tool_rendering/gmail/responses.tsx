@@ -13,9 +13,10 @@ import { GmailIcon, MailIcon } from "../../icons";
 import { ExternalLink } from "../../link";
 import { mcpToolResultSchema, type McpToolResultFor } from "../../mcp_tool_result_schema";
 import { defineResultPreview, type ResultPreviewProps, type ToolResultPreview } from "../result_entry";
-import { firstLines, plural, PreviewBadge, PreviewText } from "../vocabulary";
 import { GMAIL_SERVER_ID } from "../server_ids";
+import { firstLines, plural, PreviewBadge, PreviewText } from "../vocabulary";
 import { gmailThreadUrl } from "./requests";
+
 const zThread: z.ZodType<McpToolResultFor<typeof GMAIL_SERVER_ID, "threads_get">> = mcpToolResultSchema(
   GMAIL_SERVER_ID,
   "threads_get"
