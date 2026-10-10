@@ -12,6 +12,7 @@ from dataclasses import dataclass
 from datetime import timedelta
 from uuid import UUID
 
+from asyncpg import PostgresError
 from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.exc import SQLAlchemyError
@@ -72,7 +73,8 @@ class FoldShadow:
                         backlog.sessions,
                         backlog.events_behind,
                     )
-                except SQLAlchemyError, OSError:
+                # asyncpg raises connect-time server errors (e.g. no free connection slots) unwrapped.
+                except SQLAlchemyError, PostgresError, OSError:
                     logger.warning("fold shadow cycle failed; will retry", exc_info=True)
                 await asyncio.sleep(interval_s)
         finally:
@@ -121,6 +123,7 @@ class FoldShadow:
                 EventReplicationError,
                 ProjectionLeaseLostError,
                 SQLAlchemyError,
+                PostgresError,
                 LookupError,
                 ConnectionError,
                 ValueError,
