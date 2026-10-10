@@ -192,6 +192,7 @@ from cluster.cdk8s.monitoring import (
     home_switch as monitoring_home_switch,
     loki,
     mimir,
+    mktxp as monitoring_mktxp,
     namespace as monitoring_namespace,
     rules as monitoring_rules,
     stack as monitoring_stack,
@@ -599,12 +600,24 @@ def generate_manifests(root: Path) -> None:
         kyverno_kustomization,
     )
     monitoring_home_switch_artifact = artifact("monitoring-home-switch", monitoring_home_switch.OUTPUT_DIR)
-    monitoring_home_switch.home_switch(
+    monitoring_home_switch_kustomization = monitoring_home_switch.home_switch(
         flux_chart,
         write_directory(root, monitoring_home_switch_artifact, monitoring_home_switch.chart),
         cert_manager_kustomization,
         external_secrets_operator_kustomization,
         tofu_controller_kustomization,
+    )
+    monitoring_mktxp_artifact = artifact("monitoring-mktxp", monitoring_mktxp.OUTPUT_DIR)
+    monitoring_mktxp.mktxp(
+        flux_chart,
+        write_directory(
+            root,
+            monitoring_mktxp_artifact,
+            monitoring_mktxp.chart,
+            config_map_generator=monitoring_mktxp.write_config_maps(root),
+        ),
+        monitoring_crds_kustomization,
+        monitoring_home_switch_kustomization,
     )
     volsync_artifact = artifact("volsync", volsync.OUTPUT_DIR)
     volsync_kustomization = volsync.volsync(
@@ -1740,6 +1753,7 @@ def generate_manifests(root: Path) -> None:
             monitoring_home_switch_artifact,
             monitoring_loki_artifact,
             monitoring_mimir_artifact,
+            monitoring_mktxp_artifact,
             monitoring_tempo_artifact,
             node_feature_discovery_artifact,
             oci_cache_artifact,

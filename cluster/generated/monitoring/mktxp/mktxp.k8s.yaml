@@ -1,0 +1,142 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  annotations:
+    description: Prometheus metrics read from the home MikroTik switch's RouterOS API.
+  labels:
+    app.kubernetes.io/name: mktxp
+  name: mktxp
+  namespace: monitoring
+spec:
+  replicas: 1
+  revisionHistoryLimit: 2
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: mktxp
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: mktxp
+    spec:
+      automountServiceAccountToken: false
+      containers:
+        - command:
+            - mktxp
+            - --cfg-dir
+            - /etc/mktxp
+            - export
+          image: ghcr.io/akpw/mktxp:2.1.0@sha256:512ebe6c83c374147ac326c57ff9225b09df777883e772d417e5275bc6820e98
+          imagePullPolicy: IfNotPresent
+          livenessProbe:
+            periodSeconds: 30
+            tcpSocket:
+              port: http
+          name: exporter
+          ports:
+            - containerPort: 49090
+              name: http
+              protocol: TCP
+          readinessProbe:
+            periodSeconds: 30
+            tcpSocket:
+              port: http
+          resources:
+            limits:
+              cpu: 200m
+              memory: 256Mi
+            requests:
+              cpu: 10m
+              memory: 64Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+          volumeMounts:
+            - mountPath: /etc/mktxp
+              name: config
+            - mountPath: /etc/cluster-ca
+              name: cluster-ca
+              readOnly: true
+      initContainers:
+        - command:
+            - sh
+            - -c
+            - 'cp /etc/mktxp-source/* /etc/mktxp/ && printf "username: monitoring\npassword: %s\n" "$PASSWORD" > /etc/mktxp/credentials.yaml'
+          env:
+            - name: PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  key: password
+                  name: home-switch-monitoring
+          image: ghcr.io/akpw/mktxp:2.1.0@sha256:512ebe6c83c374147ac326c57ff9225b09df777883e772d417e5275bc6820e98
+          imagePullPolicy: IfNotPresent
+          name: config
+          resources:
+            limits:
+              memory: 32Mi
+            requests:
+              cpu: 10m
+              memory: 16Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+          volumeMounts:
+            - mountPath: /etc/mktxp
+              name: config
+            - mountPath: /etc/mktxp-source
+              name: config-source
+              readOnly: true
+      nodeSelector:
+        kubernetes.io/hostname: optiplex
+      securityContext:
+        runAsGroup: 1000
+        runAsNonRoot: true
+        runAsUser: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      terminationGracePeriodSeconds: 10
+      volumes:
+        - emptyDir:
+            medium: Memory
+          name: config
+        - configMap:
+            name: mktxp-config
+          name: config-source
+        - configMap:
+            name: cluster-internal-ca-bundle
+          name: cluster-ca
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app.kubernetes.io/name: mktxp
+  name: mktxp
+  namespace: monitoring
+spec:
+  ports:
+    - name: http
+      port: 49090
+      protocol: TCP
+      targetPort: 49090
+  selector:
+    app.kubernetes.io/name: mktxp
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: mktxp
+  namespace: monitoring
+spec:
+  endpoints:
+    - interval: 60s
+      path: /metrics
+      port: http
+      scheme: http
+      scrapeTimeout: 30s
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: mktxp

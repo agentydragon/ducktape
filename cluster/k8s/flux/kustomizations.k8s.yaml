@@ -1108,6 +1108,30 @@ spec:
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
+  annotations:
+    description: "Home MikroTik switch metrics: per-port traffic, errors, link state, health."
+  name: monitoring-mktxp
+  namespace: ducktape-flux
+spec:
+  dependsOn:
+    - name: monitoring-crds
+      namespace: ducktape-flux
+    - name: monitoring-home-switch
+      namespace: ducktape-flux
+  interval: 10m
+  path: ./cluster/generated/monitoring/mktxp
+  prune: true
+  retryInterval: 1m
+  sourceRef:
+    kind: ExternalArtifact
+    name: monitoring-mktxp
+    namespace: ducktape-flux
+  timeout: 5m
+  wait: true
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
   name: volsync
   namespace: ducktape-flux
 spec:

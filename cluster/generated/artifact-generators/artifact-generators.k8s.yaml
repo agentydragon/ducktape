@@ -682,6 +682,11 @@ spec:
       name: monitoring-mimir
       originRevision: "@repo"
     - copy:
+        - from: "@repo/cluster/generated/monitoring/mktxp/**"
+          to: "@artifact/cluster/generated/monitoring/mktxp/"
+      name: monitoring-mktxp
+      originRevision: "@repo"
+    - copy:
         - from: "@repo/cluster/generated/monitoring/tempo/**"
           to: "@artifact/cluster/generated/monitoring/tempo/"
       name: monitoring-tempo

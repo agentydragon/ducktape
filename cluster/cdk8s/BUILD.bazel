@@ -1549,6 +1549,7 @@ py_library(
         "//cluster/cdk8s/monitoring:home_switch",
         "//cluster/cdk8s/monitoring:loki",
         "//cluster/cdk8s/monitoring:mimir",
+        "//cluster/cdk8s/monitoring:mktxp",
         "//cluster/cdk8s/monitoring:namespace",
         "//cluster/cdk8s/monitoring:rules",
         "//cluster/cdk8s/monitoring:stack",
