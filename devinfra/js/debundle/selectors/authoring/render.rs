@@ -6,8 +6,9 @@
 //! span lies inside it; every other position is holed — `ANYTHING` for a bare
 //! expression and for the object-property / class-member run holes (whose
 //! detector predicates carry an `ANYTHING` fallback), and the load-bearing
-//! run holes `STMT_LIST` / `ARGS` / `CASE_REST` for dropped statement / argument
-//! / switch-case runs (where `ANYTHING` would collapse to an arity-exact
+//! run holes `STMT_LIST` / `ARGS` / `ARRAY_ELEMENTS` / `SEQ_EXPRS` / `CASE_REST`
+//! for dropped statement / argument / array / sequence / switch-case runs
+//! (where `ANYTHING` would collapse to an arity-exact
 //! single-node hole, so the keyword stays). These primitives are form-agnostic;
 //! the per-form minimizers (`crate::minimize`) drive them.
 
@@ -15,8 +16,8 @@ use std::collections::BTreeSet;
 
 use anyhow::Result;
 use source_match_holes::{
-    ANYTHING_HOLE_KEYWORD, ARGS_HOLE_KEYWORD, CASE_REST_HOLE_KEYWORD, SEQ_EXPRS_HOLE_KEYWORD,
-    STMT_LIST_HOLE_KEYWORD, hole_keyword, hole_name_for,
+    ANYTHING_HOLE_KEYWORD, ARGS_HOLE_KEYWORD, ARRAY_ELEMENTS_HOLE_KEYWORD, CASE_REST_HOLE_KEYWORD,
+    SEQ_EXPRS_HOLE_KEYWORD, STMT_LIST_HOLE_KEYWORD, hole_keyword, hole_name_for,
 };
 use swc_common::{DUMMY_SP, Span, Spanned, SyntaxContext};
 use swc_ecma_ast::*;
@@ -193,6 +194,9 @@ pub(crate) fn hole_expr(expr: &Expr, kept: &BTreeSet<AnchorSpan>) -> Expr {
         Expr::Member(member) => {
             let mut holed = member.clone();
             holed.obj = Box::new(hole_expr(&member.obj, kept));
+            if let MemberProp::Computed(computed) = &mut holed.prop {
+                *computed.expr = hole_computed_member_key(&computed.expr, kept);
+            }
             Expr::Member(holed)
         }
         Expr::Call(call) => {
@@ -255,7 +259,8 @@ pub(crate) fn hole_expr(expr: &Expr, kept: &BTreeSet<AnchorSpan>) -> Expr {
         // shape in sequential write-block bodies. Hole the LHS target's receiver
         // (`state` → `ANYTHING`) while keeping the stable property name, and recurse
         // into the RHS so a discriminating literal there is kept and everything else
-        // holed. The member property is preserved verbatim, mirroring `Expr::Member`.
+        // holed. Computed member keys are recursively holed too; otherwise an
+        // enum assignment retains an incidental numeric ordinal.
         Expr::Assign(assign) => {
             let mut holed = assign.clone();
             holed.left = hole_assign_target(&assign.left, kept);
@@ -312,10 +317,37 @@ fn hole_assign_target(target: &AssignTarget, kept: &BTreeSet<AnchorSpan>) -> Ass
         AssignTarget::Simple(SimpleAssignTarget::Member(member)) => {
             let mut holed = member.clone();
             holed.obj = Box::new(hole_expr(&member.obj, kept));
+            if let MemberProp::Computed(computed) = &mut holed.prop {
+                *computed.expr = hole_computed_member_key(&computed.expr, kept);
+            }
             AssignTarget::Simple(SimpleAssignTarget::Member(holed))
         }
         _ => target.clone(),
     }
+}
+
+/// Enum emitters commonly write through `receiver[parameter.Label = ordinal]`.
+/// Keep the inner member access so the parameter identity is linked across the
+/// arrow/function body; only the generated ordinal is safe to hole. A general
+/// computed key still uses ordinary retention-set pruning.
+fn hole_computed_member_key(expr: &Expr, kept: &BTreeSet<AnchorSpan>) -> Expr {
+    if let Expr::Paren(paren) = expr {
+        let mut holed = paren.clone();
+        holed.expr = Box::new(hole_computed_member_key(&paren.expr, kept));
+        return Expr::Paren(holed);
+    }
+    if let Expr::Assign(assign) = expr
+        && matches!(
+            &assign.left,
+            AssignTarget::Simple(SimpleAssignTarget::Member(_))
+        )
+        && matches!(assign.right.as_ref(), Expr::Lit(Lit::Num(_)))
+    {
+        let mut holed = assign.clone();
+        holed.right = Box::new(hole_expr(&assign.right, kept));
+        return Expr::Assign(holed);
+    }
+    hole_expr(expr, kept)
 }
 
 /// Hole a call's callee, keeping only an alpha-stable invoked identity. A
@@ -403,28 +435,31 @@ fn hole_args(args: &[ExprOrSpread], kept: &BTreeSet<AnchorSpan>) -> Vec<ExprOrSp
     )
 }
 
-/// Prune the elements of an array literal, holing each non-anchor element to
-/// `ANYTHING` (an arity-exact `EXPR` hole) and recursing into the ones that
-/// carry an anchor. This pass holes element-wise (arity-exact), so the holed
-/// array keeps the same length; elisions and spreads are preserved verbatim.
-/// (The matcher does support an `ARRAY_ELEMENTS` run hole that would absorb a
-/// variable-length element run; emitting it from the minimizer instead of the
-/// arity-exact form is a separate, not-yet-implemented step.)
+/// Keep elements carrying an anchor and absorb each other run with
+/// `ARRAY_ELEMENTS`. Array length and positions of unrelated elements can
+/// change between builds, just as argument and sequence lengths can.
 fn hole_array(array: &ArrayLit, kept: &BTreeSet<AnchorSpan>) -> ArrayLit {
     let mut holed = array.clone();
-    holed.elems = array
-        .elems
-        .iter()
-        .map(|elem| {
-            elem.as_ref().map(|element| {
-                let mut holed_element = element.clone();
-                if element.spread.is_none() {
-                    holed_element.expr = Box::new(hole_expr(&element.expr, kept));
-                }
-                holed_element
+    holed.elems = collapse_omitted_runs(
+        array.elems.iter().map(|elem| {
+            elem.as_ref().and_then(|element| {
+                node_retains_any(element.expr.span(), kept).then(|| {
+                    let mut holed_element = element.clone();
+                    if element.spread.is_none() {
+                        holed_element.expr = Box::new(hole_expr(&element.expr, kept));
+                    }
+                    holed_element
+                })
             })
-        })
-        .collect();
+        }),
+        || ExprOrSpread {
+            spread: None,
+            expr: Box::new(Expr::Ident(ident_node(ARRAY_ELEMENTS_HOLE_KEYWORD))),
+        },
+    )
+    .into_iter()
+    .map(Some)
+    .collect();
     holed
 }
 
@@ -812,20 +847,17 @@ class C { CASE_REST = 1; }"#,
     }
 
     #[test]
-    fn holes_non_anchor_array_elements_to_anything() {
-        // Array elements carrying no anchor hole to ANYTHING (arity-exact, since
-        // the matcher matches array elements element-wise); only the element
-        // holding the anchor is recursed into. The lone-prop object keeps its one
-        // anchor prop with no run-hole padding (nothing was dropped). The bare
-        // `render` callee holes to ANYTHING (a minified name the matcher
-        // alpha-wildcards).
+    fn holes_non_anchor_array_runs() {
+        // Unanchored array runs become ARRAY_ELEMENTS, so inserted elements do
+        // not break the selector. The anchored element is recursed into. The
+        // bare `render` callee holes to ANYTHING.
         let holed = hole_statement_expr(
             r#"render([first(), { mode: "keepMe" }, third()]);"#,
             "keepMe",
         );
         assert_eq!(
             normalize(&holed),
-            normalize(r#"ANYTHING([ANYTHING, { mode: "keepMe" }, ANYTHING]);"#),
+            normalize(r#"ANYTHING([ARRAY_ELEMENTS, { mode: "keepMe" }, ARRAY_ELEMENTS]);"#),
         );
     }
 }

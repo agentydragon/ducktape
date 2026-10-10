@@ -3,17 +3,99 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use anyhow::{Context, Result};
-use readoff_render::kept_spans_for_anchor_set;
-use swc_common::Spanned;
+use readoff_render::kept_spans_for_anchor_sets;
+use source_match_holes::AST_CONTAINS_STRING_PREDICATE;
+use swc_common::{DUMMY_SP, Spanned, SyntaxContext};
 use swc_ecma_ast::*;
+use swc_ecma_visit::{Visit, VisitWith};
 
-use super::render_var_slots;
+use super::{anchor_quality, render_var_slots};
 use crate::regex_anchor::{accepted_regex_anchors, collect_regex_anchor_candidates};
-use crate::render::{AnchorSpan, holes_present, node_holds_anchor};
+use crate::render::{
+    AnchorSpan, declarator_hole, emit_selector, holes_present, ident_node, named_pat,
+    node_holds_anchor, span_key,
+};
 use crate::{
     ChunkSelectorIndex, IndexedDeclaration, SpecializedSelector, SynthesizedTargetBinding,
-    prove_synthesized_selector,
+    declarator_hole_name, prove_synthesized_selector,
 };
+
+/// Find a single retained string literal underneath enough call wrappers that
+/// an ordinary path selector would pin incidental nesting. This is an exact
+/// AST literal lookup, not substring or source-text matching.
+fn deep_string_anchor(init: &Expr, kept: &BTreeSet<AnchorSpan>) -> Option<String> {
+    struct Find<'a> {
+        kept: &'a BTreeSet<AnchorSpan>,
+        call_depth: usize,
+        found: Vec<(String, usize)>,
+    }
+    impl Visit for Find<'_> {
+        fn visit_call_expr(&mut self, call: &CallExpr) {
+            self.call_depth += 1;
+            call.visit_children_with(self);
+            self.call_depth -= 1;
+        }
+
+        fn visit_expr(&mut self, expr: &Expr) {
+            if let Expr::Lit(Lit::Str(value)) = expr
+                && self.kept.contains(&span_key(value.span))
+            {
+                self.found
+                    .push((value.value.to_string_lossy().into_owned(), self.call_depth));
+            } else {
+                expr.visit_children_with(self);
+            }
+        }
+    }
+    let mut find = Find {
+        kept,
+        call_depth: 0,
+        found: Vec::new(),
+    };
+    init.visit_with(&mut find);
+    let [(value, depth)] = find.found.as_slice() else {
+        return None;
+    };
+    (*depth >= 6).then(|| value.clone())
+}
+
+fn descendant_string_selector(
+    var: &VarDecl,
+    target_slot: usize,
+    target: &SynthesizedTargetBinding,
+    value: &str,
+) -> Result<String> {
+    let mut selected = var.decls[target_slot].clone();
+    selected.name = named_pat(&target.selector_local);
+    selected.init = Some(Box::new(Expr::Call(CallExpr {
+        span: DUMMY_SP,
+        ctxt: SyntaxContext::empty(),
+        callee: Callee::Expr(Box::new(Expr::Ident(ident_node(
+            AST_CONTAINS_STRING_PREDICATE,
+        )))),
+        args: vec![ExprOrSpread {
+            spread: None,
+            expr: Box::new(Expr::Lit(Lit::Str(Str {
+                span: DUMMY_SP,
+                value: value.into(),
+                raw: None,
+            }))),
+        }],
+        type_args: None,
+    })));
+    let mut decls = Vec::new();
+    if target_slot > 0 {
+        decls.push(declarator_hole(declarator_hole_name()));
+    }
+    decls.push(selected);
+    if target_slot + 1 < var.decls.len() {
+        decls.push(declarator_hole(declarator_hole_name()));
+    }
+    let mut holed_var = var.clone();
+    holed_var.declare = false;
+    holed_var.decls = decls;
+    emit_selector(ModuleItem::Stmt(Stmt::Decl(Decl::Var(Box::new(holed_var)))))
+}
 
 /// Up to `limit` proven single-target var selectors, using the minimal
 /// chunk-wide anchor set before trying alternative value anchors and slot cover.
@@ -66,7 +148,7 @@ pub(crate) fn try_var_read_off_candidates(
     // Finally the multi-feature interior cover (#2289): when no single value anchor
     // is unique, a greedy cover over value-bearing features keeps the *set* of deep
     // leaves that jointly single the slot out.
-    let anchor_sets = index
+    let anchor_sets: Vec<_> = index
         .shape_index
         .minimal_anchor_set(decl.body_idx)
         .into_iter()
@@ -75,13 +157,20 @@ pub(crate) fn try_var_read_off_candidates(
                 .shape_index
                 .unique_value_anchor_candidates(decl.body_idx),
         )
-        .chain(index.shape_index.unique_value_anchor_cover(decl.body_idx));
+        .chain(index.shape_index.unique_value_anchor_cover(decl.body_idx))
+        .collect();
+    let mut candidates: Vec<BTreeSet<AnchorSpan>> = kept_spans_for_anchor_sets(item, &anchor_sets)
+        .into_iter()
+        .map(|spans| {
+            spans
+                .into_iter()
+                .filter(|span| node_holds_anchor(target_decl_span, *span))
+                .collect()
+        })
+        .collect();
+    candidates.sort_by_key(|kept| (anchor_quality(index, kept), kept.len()));
     let mut out: Vec<SpecializedSelector> = Vec::new();
-    for anchor_set in anchor_sets {
-        let kept: BTreeSet<AnchorSpan> = kept_spans_for_anchor_set(item, &anchor_set)
-            .into_iter()
-            .filter(|span| node_holds_anchor(target_decl_span, *span))
-            .collect();
+    for kept in candidates {
         if kept.is_empty() {
             continue;
         }
@@ -102,7 +191,15 @@ pub(crate) fn try_var_read_off_candidates(
             &kept,
             &render_with,
         )?;
-        let source = render_with(&kept, &regex_anchors)?;
+        let mut source = render_with(&kept, &regex_anchors)?;
+        if regex_anchors.is_empty()
+            && let Some(value) = deep_string_anchor(init, &kept)
+        {
+            let compact = descendant_string_selector(var, target_slot, target, &value)?;
+            if prove_synthesized_selector(index, decl, targets, &compact).is_ok() {
+                source = compact;
+            }
+        }
         if out.iter().any(|kept| kept.match_source == source) {
             continue;
         }

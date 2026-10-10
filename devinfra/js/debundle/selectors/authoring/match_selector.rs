@@ -34,14 +34,14 @@ use selector_resolve::{Member, MemberSelector, SpecModule};
 use serde::Serialize;
 use source_match::ParsedSourceMatchSelector;
 use source_match_holes::{
-    ANYTHING_HOLE_KEYWORD, ARGS_HOLE_KEYWORD, SEQ_EXPRS_HOLE_KEYWORD, STMT_LIST_HOLE_KEYWORD,
-    is_hole_keyword,
+    ANYTHING_HOLE_KEYWORD, ARGS_HOLE_KEYWORD, ARRAY_ELEMENTS_HOLE_KEYWORD, SEQ_EXPRS_HOLE_KEYWORD,
+    STMT_LIST_HOLE_KEYWORD, is_hole_keyword,
 };
 use spec::{AnonymousStatementSelector, SourceMatchIdentifierMode};
 use swc_common::DUMMY_SP;
 use swc_ecma_ast::{
-    ArrowExpr, ArrowFunctionBody, BlockStmt, CallExpr, Class, ClassMember, Constructor, Expr,
-    ExprOrSpread, ExprStmt, Function, Module, ModuleItem, NewExpr, ObjectLit, ObjectPat,
+    ArrayLit, ArrowExpr, ArrowFunctionBody, BlockStmt, CallExpr, Class, ClassMember, Constructor,
+    Expr, ExprOrSpread, ExprStmt, Function, Module, ModuleItem, NewExpr, ObjectLit, ObjectPat,
     ObjectPatProp, Pat, Prop, PropName, PropOrSpread, SeqExpr, Stmt,
 };
 use swc_ecma_visit::{VisitMut, VisitMutWith};
@@ -205,9 +205,11 @@ enum Relaxation {
     DropCallArg,
     /// Drop one element of a comma-sequence expression (absorbed by `SEQ_EXPRS`).
     DropSequenceElement,
+    /// Drop one array element (absorbed by `ARRAY_ELEMENTS`).
+    DropArrayElement,
 }
 
-const RELAXATIONS: [Relaxation; 8] = [
+const RELAXATIONS: [Relaxation; 9] = [
     // Try large removable units first. This matters when the same walk is
     // repeated after each accepted minimizer edit: discarding a statement or
     // member before its nested expressions avoids many redundant proof calls.
@@ -217,6 +219,7 @@ const RELAXATIONS: [Relaxation; 8] = [
     Relaxation::DropPatternProp,
     Relaxation::DropCallArg,
     Relaxation::DropSequenceElement,
+    Relaxation::DropArrayElement,
     Relaxation::HoleExpr,
     Relaxation::DropContextStatement,
 ];
@@ -476,6 +479,21 @@ impl VisitMut for Relaxer<'_> {
             }
         }
         seq.visit_mut_children_with(self);
+    }
+
+    fn visit_mut_array_lit(&mut self, array: &mut ArrayLit) {
+        if self.kind == Relaxation::DropArrayElement {
+            for element in array.elems.iter_mut() {
+                if self.take(element.as_ref().is_some_and(is_droppable_arg)) {
+                    *element = Some(ExprOrSpread {
+                        spread: None,
+                        expr: Box::new(Expr::Ident(ident_node(ARRAY_ELEMENTS_HOLE_KEYWORD))),
+                    });
+                    break;
+                }
+            }
+        }
+        array.visit_mut_children_with(self);
     }
 }
 

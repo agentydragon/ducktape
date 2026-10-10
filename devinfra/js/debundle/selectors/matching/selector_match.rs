@@ -11,7 +11,9 @@
 //! list into maximal fixed segments at the carriers, placed greedy-leftmost with
 //! `Bindings` snapshot/restore. The
 //! `STR_LITERAL_MATCHING_RE("re")` predicate matches a string-literal subject
-//! whose value matches `re`. Fail-closed only on what is genuinely unhandled: a
+//! whose value matches `re`. `AST_CONTAINS_STRING("value")` matches an expression
+//! subtree with an exact string-literal descendant. Fail-closed only on what is
+//! genuinely unhandled: a
 //! **misplaced** run-hole keyword (one reaching the node matcher rather than
 //! being consumed as a list carrier) or a malformed predicate returns
 //! [`Unsupported`] rather than a weaker (under-constraining) match. Match
@@ -29,10 +31,10 @@ use std::rc::Rc;
 use chunk_facts::{ChunkFacts, NodeId, NodeKind};
 use regex::Regex;
 use source_match_holes::{
-    ANYTHING_HOLE_KEYWORD, ARGS_HOLE_KEYWORD, ARRAY_ELEMENTS_HOLE_KEYWORD, CASE_REST_HOLE_KEYWORD,
-    DECLARATORS_HOLE_KEYWORD, EXPR_HOLE_KEYWORD, SEQ_EXPRS_HOLE_KEYWORD, STMT_HOLE_KEYWORD,
-    STMT_LIST_HOLE_KEYWORD, STRING_LITERAL_REGEX_PREDICATE, hole_name_for, is_hole_keyword,
-    labeled_hole_name_for,
+    ANYTHING_HOLE_KEYWORD, ARGS_HOLE_KEYWORD, ARRAY_ELEMENTS_HOLE_KEYWORD,
+    AST_CONTAINS_STRING_PREDICATE, CASE_REST_HOLE_KEYWORD, DECLARATORS_HOLE_KEYWORD,
+    EXPR_HOLE_KEYWORD, SEQ_EXPRS_HOLE_KEYWORD, STMT_HOLE_KEYWORD, STMT_LIST_HOLE_KEYWORD,
+    STRING_LITERAL_REGEX_PREDICATE, hole_name_for, is_hole_keyword, labeled_hole_name_for,
 };
 
 /// A needle construct whose faithful encoding this matcher has not implemented.
@@ -915,6 +917,33 @@ fn regex_predicate_pattern(index: &Index, node: NodeId) -> Option<&str> {
         .flatten()
 }
 
+/// Exact string literal required anywhere below the candidate expression.
+/// Unlike regex matching, this has an invariant token, so the existing token
+/// posting index filters candidates before the subtree walk.
+fn descendant_string_pattern(index: &Index, node: NodeId) -> Option<&str> {
+    if index.kind_of(node) != NodeKind::Call {
+        return None;
+    }
+    let [callee, arg] = index.children_of(node) else {
+        return None;
+    };
+    (index.ident_of(*callee) == Some(AST_CONTAINS_STRING_PREDICATE)
+        && index.kind_of(*arg) == NodeKind::StrLit)
+        .then(|| index.str_lit_of(*arg))
+        .flatten()
+}
+
+fn subtree_contains_string(index: &Index, root: NodeId, expected: &str) -> bool {
+    let mut pending = vec![root];
+    while let Some(node) = pending.pop() {
+        if index.str_lit_of(node) == Some(expected) {
+            return true;
+        }
+        pending.extend_from_slice(index.children_of(node));
+    }
+    false
+}
+
 /// The normalized view of an object/destructure property with an identifier
 /// value. It pins one stable key name plus one (possibly alpha-renamable) value
 /// identifier. Shorthand and explicit forms can then match across node kinds.
@@ -1035,6 +1064,16 @@ fn homo(
         if !matched {
             bindings.fail(nid, sid, TraceCategory::Literal, || {
                 "string does not satisfy the selector regex".into()
+            });
+        }
+        return Ok(matched);
+    }
+
+    if let Some(expected) = descendant_string_pattern(needle, nid) {
+        let matched = subtree_contains_string(subject, sid, expected);
+        if !matched {
+            bindings.fail(nid, sid, TraceCategory::Literal, || {
+                format!("expression does not contain string literal {expected:?}")
             });
         }
         return Ok(matched);
@@ -1670,7 +1709,9 @@ pub fn consumed_nodes(index: &Index) -> HashSet<NodeId> {
         }
     }
     for node in 0..index.kind.len() as NodeId {
-        if regex_predicate_pattern(index, node).is_some() {
+        if regex_predicate_pattern(index, node).is_some()
+            || descendant_string_pattern(index, node).is_some()
+        {
             consumed.extend(index.children_of(node));
         }
     }
@@ -1697,6 +1738,9 @@ fn unsupported_needle_construct(index: &Index) -> Option<&'static str> {
         };
         if name == STRING_LITERAL_REGEX_PREDICATE && !consumed.contains(&node) {
             return Some("malformed STR_LITERAL_MATCHING_RE predicate");
+        }
+        if name == AST_CONTAINS_STRING_PREDICATE && !consumed.contains(&node) {
+            return Some("malformed AST_CONTAINS_STRING predicate");
         }
         if is_run_hole_keyword(name) && !consumed.contains(&node) {
             return Some("run-hole keyword outside a list position");
@@ -1771,7 +1815,10 @@ pub fn matches_prepared(
 pub fn needle_root_kind_prefilter(needle: &ChunkFacts) -> Option<&'static str> {
     let index = Index::build(needle);
     let &root = index.roots.first()?;
-    if is_single_node_hole(&index, root) || regex_predicate_pattern(&index, root).is_some() {
+    if is_single_node_hole(&index, root)
+        || regex_predicate_pattern(&index, root).is_some()
+        || descendant_string_pattern(&index, root).is_some()
+    {
         return None;
     }
     subject_root_kind(needle)
@@ -1815,6 +1862,9 @@ pub fn needle_var_declarator_init_kind_prefilter(needle: &ChunkFacts) -> Option<
     }
     if regex_predicate_pattern(&index, init).is_some() {
         return Some("StrLit");
+    }
+    if descendant_string_pattern(&index, init).is_some() {
+        return None;
     }
     Some(index.kind_of(init).as_tag())
 }

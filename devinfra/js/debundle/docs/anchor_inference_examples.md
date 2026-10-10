@@ -1,19 +1,16 @@
 # Anchor inference examples
 
-These synthetic cases capture selector choices that matter when minified names
-change between builds. The three executable examples are in
-`e2e/selector_anchor_inference_desiderata_test.rs`. They are ignored until the
-minimizer can keep matching after the indicated source edit:
+These synthetic end-to-end examples in
+`e2e/selector_anchor_inference_desiderata_test.rs` capture selectors that keep
+matching when minified names and unrelated source structure change:
 
-| Example             | Distinguishing anchor            | Harmless edit that breaks today's selector      |
+| Example             | Anchor or hole                   | Rebuild edit                                    |
 | ------------------- | -------------------------------- | ----------------------------------------------- |
 | Role versus tooltip | `"data-role": "document-editor"` | Tooltip text changes                            |
 | Array member        | `description: "Review drafts"`   | Other elements are inserted before and after it |
 | Enum member         | The `Share` label                | Numeric values change                           |
-
-Run the current failures with
-`bazel test //devinfra/js/debundle/e2e:selector_anchor_inference_desiderata_test --test_arg=--ignored`.
-The normal test target compiles the examples without making CI red.
+| Registration use    | `register("primary", selected)`  | Declarations and calls move                     |
+| Deep value          | `AST_CONTAINS_STRING`            | Wrapper call path changes                       |
 
 ## A relation is needed when declarations are indistinguishable
 
@@ -29,14 +26,12 @@ register("secondary", b);
 ```
 
 No selector built only from either function declaration can distinguish `a`
-from `b` after renaming. The meaningful anchors are the two `register` calls
-and their references to the functions. A neighboring statement can identify a
-function by current source position, but that relationship can break if the
-statements move. Anchor inference should expose this dependency and offer a
-relational selector where one is supported. This is a capability example, not
-a failing test for a declaration-only AST selector.
+from `b` after renaming. The minimizer can select a direct call use site by its
+literal marker and the argument reference, with `ARGS` holes around both. This
+lets the call and declaration move independently. A dedicated relational
+selector remains useful for use sites that cannot be expressed by this shape.
 
-## A deep value makes a long path selector
+## A deep value without wrapper pins
 
 ```js
 const a = memo(function () {
@@ -47,8 +42,9 @@ const b = memo(function () {
 });
 ```
 
-The leaf string distinguishes the declarations, but today's AST selector must
-retain each enclosing call to reach it. A descendant-style anchor could express
-the intent more compactly if it keeps uniqueness and binding ownership checks.
-This needs selector-language design before it can have an executable desired
-output assertion.
+The leaf string distinguishes the declarations. For a deep literal the
+minimizer can emit `const Selected = AST_CONTAINS_STRING("Open details");`
+instead of retaining every wrapper call. This predicate tests for an exact
+string literal **AST node** below the initializer; it does not search source
+text or perform substring matching. The normal matcher still proves the
+selector resolves to one binding before synthesis offers it.

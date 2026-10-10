@@ -38,16 +38,17 @@ mod var;
 pub(crate) use class::minimize_class_selector_candidates;
 pub(crate) use function::minimize_function_selector_candidates;
 pub(crate) use group::{minimize_var_group_selector, minimize_var_group_selector_candidates};
-pub(crate) use use_site::named_object_use_bindings;
+pub(crate) use use_site::{call_use_bindings, named_object_use_bindings};
 
 use std::collections::{BTreeMap, BTreeSet};
 
 use anyhow::{Context, Result};
 use readoff_render::kept_spans_for_anchor_set;
 use source_match_holes::{
-    ANYTHING_HOLE_KEYWORD, ARGS_HOLE_KEYWORD, ARRAY_ELEMENTS_HOLE_KEYWORD, CASE_REST_HOLE_KEYWORD,
-    DECLARATORS_HOLE_KEYWORD, SEQ_EXPRS_HOLE_KEYWORD, STMT_LIST_HOLE_KEYWORD,
-    STRING_LITERAL_REGEX_PREDICATE, hole_keyword, is_hole_keyword,
+    ANYTHING_HOLE_KEYWORD, ARGS_HOLE_KEYWORD, ARRAY_ELEMENTS_HOLE_KEYWORD,
+    AST_CONTAINS_STRING_PREDICATE, CASE_REST_HOLE_KEYWORD, DECLARATORS_HOLE_KEYWORD,
+    SEQ_EXPRS_HOLE_KEYWORD, STMT_LIST_HOLE_KEYWORD, STRING_LITERAL_REGEX_PREDICATE, hole_keyword,
+    is_hole_keyword,
 };
 use swc_ecma_ast::*;
 use swc_ecma_visit::{Visit, VisitMut, VisitMutWith, VisitWith};
@@ -56,7 +57,7 @@ use crate::match_selector::relax_progressively;
 use crate::regex_anchor::RegexAnchorSubstitution;
 use crate::render::{
     AnchorSpan, declarator_hole, emit_selector, hole_expr, hole_function, hole_object_padded,
-    hole_stmt, holes_present, named_pat, object_props_pat_prop,
+    hole_stmt, holes_present, named_pat, object_props_pat_prop, span_key,
 };
 use crate::{
     ChunkSelectorIndex, IndexedDeclaration, SpecializedSelector, SynthesizedTargetBinding,
@@ -65,6 +66,81 @@ use crate::{
 
 // Keep whole-declaration proof work bounded even when its AST is enormous.
 const MAX_EXACT_RELAXATION_PROBES: usize = 128;
+const MACHINE_VALUE_QUALITY: u8 = 0;
+const ORDINARY_VALUE_QUALITY: u8 = 1;
+const UI_COPY_QUALITY: u8 = 2;
+const ENUM_ORDINAL_QUALITY: u8 = 3;
+
+fn computed_assignment(expr: &Expr) -> Option<&AssignExpr> {
+    match expr {
+        Expr::Assign(assign) => Some(assign),
+        Expr::Paren(paren) => computed_assignment(&paren.expr),
+        _ => None,
+    }
+}
+
+/// Context-sensitive anchor preferences used only among candidates that each
+/// prove uniquely today. A machine-readable object value is usually a better
+/// rebuild anchor than UI copy; an ordinal inside a computed enum assignment
+/// is usually worse than its label. Unmarked tokens retain the shape index's
+/// ordering. Collect these once per chunk to keep target synthesis linear in
+/// the number of considered features rather than rescanning large declarations.
+pub(crate) fn anchor_quality_overrides(module: &Module) -> BTreeMap<AnchorSpan, u8> {
+    struct Qualities(BTreeMap<AnchorSpan, u8>);
+    impl Visit for Qualities {
+        fn visit_key_value_prop(&mut self, prop: &KeyValueProp) {
+            let key = match &prop.key {
+                PropName::Ident(value) => Some(value.sym.to_string()),
+                PropName::Str(value) => Some(value.value.to_string_lossy().into_owned()),
+                _ => None,
+            };
+            if let (Some(key), Expr::Lit(Lit::Str(value))) = (key, prop.value.as_ref()) {
+                let quality = if key.starts_with("data-")
+                    || matches!(key.as_str(), "role" | "kind" | "type")
+                {
+                    Some(MACHINE_VALUE_QUALITY)
+                } else if matches!(
+                    key.as_str(),
+                    "tooltip" | "title" | "placeholder" | "aria-label"
+                ) {
+                    Some(UI_COPY_QUALITY)
+                } else {
+                    None
+                };
+                if let Some(quality) = quality {
+                    self.0.insert(span_key(value.span), quality);
+                }
+            }
+            prop.visit_children_with(self);
+        }
+
+        fn visit_member_expr(&mut self, member: &MemberExpr) {
+            if let MemberProp::Computed(computed) = &member.prop
+                && let Some(assign) = computed_assignment(&computed.expr)
+                && let Expr::Lit(Lit::Num(number)) = assign.right.as_ref()
+            {
+                self.0.insert(span_key(number.span), ENUM_ORDINAL_QUALITY);
+            }
+            member.visit_children_with(self);
+        }
+    }
+    let mut collector = Qualities(BTreeMap::new());
+    module.visit_with(&mut collector);
+    collector.0
+}
+
+fn anchor_quality(index: &ChunkSelectorIndex<'_>, kept: &BTreeSet<AnchorSpan>) -> u8 {
+    kept.iter()
+        .map(|span| {
+            index
+                .anchor_quality
+                .get(span)
+                .copied()
+                .unwrap_or(ORDINARY_VALUE_QUALITY)
+        })
+        .max()
+        .unwrap_or(ORDINARY_VALUE_QUALITY)
+}
 
 /// Last-resort own-declaration search. The exact target is the most specific
 /// member of the supported hole lattice: if a relaxation uniquely identifies
@@ -149,7 +225,9 @@ pub(crate) fn collapse_statement_hole_runs(source: &str) -> Result<String> {
 }
 
 fn selector_keyword_collision(name: &str) -> bool {
-    is_hole_keyword(name) || name == STRING_LITERAL_REGEX_PREDICATE
+    is_hole_keyword(name)
+        || name == STRING_LITERAL_REGEX_PREDICATE
+        || name == AST_CONTAINS_STRING_PREDICATE
 }
 
 fn selector_run_keyword_collision(name: &str) -> bool {
@@ -164,6 +242,7 @@ fn selector_run_keyword_collision(name: &str) -> bool {
         ]
         .contains(&keyword)
     }) || name == STRING_LITERAL_REGEX_PREDICATE
+        || name == AST_CONTAINS_STRING_PREDICATE
 }
 
 fn selector_prop_name_collision(name: &PropName) -> bool {
@@ -483,10 +562,11 @@ fn read_off_candidates(
     // members, so a multi-occurrence single anchor defers to the value-anchor walk
     // below, which prefers a single-occurrence leaf. A genuine multi-feature cover
     // (`!opt_one`) legitimately keeps several spans and is taken here.
-    if let Some(anchor_set) = index.shape_index.minimal_anchor_set(decl.body_idx) {
-        let kept = kept_spans_for_anchor_set(item, &anchor_set);
+    let minimal = index.shape_index.minimal_anchor_set(decl.body_idx);
+    if let Some(anchor_set) = minimal.as_ref() {
+        let kept = kept_spans_for_anchor_set(item, anchor_set);
         if !kept.is_empty()
-            && (!anchor_set.opt_one || kept.len() == 1)
+            && !anchor_set.opt_one
             && let Some(selector) =
                 finish_minimized_selector(index, decl, target, render_with(&kept)?)?
             && collect(selector, &mut out)
@@ -505,14 +585,18 @@ fn read_off_candidates(
     // so this is also where a whole-body class/component drills down to one anchored
     // member (e.g. `applyChange(ANYTHING) { STMT_LIST; ANYTHING.set("running"); }`)
     // instead of `class X { ANYTHING; }`.
-    let mut value_kept: Vec<BTreeSet<AnchorSpan>> = index
-        .shape_index
-        .unique_value_anchor_candidates(decl.body_idx)
+    let mut value_kept: Vec<BTreeSet<AnchorSpan>> = minimal
         .into_iter()
+        .filter(|set| set.opt_one)
+        .chain(
+            index
+                .shape_index
+                .unique_value_anchor_candidates(decl.body_idx),
+        )
         .map(|anchor_set| kept_spans_for_anchor_set(item, &anchor_set))
         .filter(|kept| !kept.is_empty())
         .collect();
-    value_kept.sort_by_key(BTreeSet::len);
+    value_kept.sort_by_key(|kept| (anchor_quality(index, kept), kept.len()));
     for kept in value_kept {
         if let Some(selector) = finish_minimized_selector(index, decl, target, render_with(&kept)?)?
             && collect(selector, &mut out)
@@ -571,6 +655,11 @@ fn read_off_candidates(
     // body is indistinguishable from a sibling. Prefer that relationship over
     // an incidental adjacent declaration.
     if let Some(selector) = use_site::render_via_named_object_use_site(index, decl, target)?
+        && collect(selector, &mut out)
+    {
+        return Ok(out);
+    }
+    if let Some(selector) = use_site::render_via_call_use_site(index, decl, target)?
         && collect(selector, &mut out)
     {
         return Ok(out);

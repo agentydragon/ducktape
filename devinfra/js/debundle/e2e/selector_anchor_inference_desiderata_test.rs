@@ -1,6 +1,5 @@
-//! Small synthetic examples of selector choices that are unique today but
-//! fragile under harmless source edits. These tests are ignored until the
-//! minimizer learns the corresponding anchor preferences.
+//! Small synthetic regressions for selector choices that remain stable under
+//! harmless source edits, including minified-name changes.
 
 use std::path::Path;
 
@@ -55,7 +54,6 @@ fn assert_matches_rebuilt_source(original: &str, rebuilt: &str, expected_binding
 }
 
 #[test]
-#[ignore = "minimizer prefers a tooltip over the stable data-role marker"]
 fn prefers_role_marker_to_mutable_tooltip() {
     let original = r#"
 const a = memo(function (props) {
@@ -75,7 +73,6 @@ const b = memo(function (props) {
 }
 
 #[test]
-#[ignore = "minimizer fixes the count and position of unrelated array elements"]
 fn uses_array_run_holes_around_distinctive_element() {
     let original = r#"
 function a(flag) {
@@ -100,7 +97,6 @@ function b(flag) {
 }
 
 #[test]
-#[ignore = "minimizer pins enum numbers instead of its distinctive label"]
 fn keeps_enum_label_while_holing_numeric_values() {
     let original = r#"
 var a = ((x) => (x[x.Open = 7] = "Open", x[x.Close = 9] = "Close", x[x.Share = 13] = "Share", x))(a || {});
@@ -111,4 +107,44 @@ var c = ((y) => (y[y.Open = 17] = "Open", y[y.Close = 19] = "Close", y[y.Share =
 var d = ((y) => (y[y.Open = 2] = "Open", y[y.Close = 5] = "Close", y[y.Delete = 11] = "Delete", y))(d || {});
 "#;
     assert_matches_rebuilt_source(original, rebuilt, "c");
+}
+
+#[test]
+fn follows_registration_use_instead_of_a_neighbor() {
+    let original = r#"
+function a(x) { return x.trim(); }
+function b(x) { return x.trim(); }
+register("primary", a);
+register("secondary", b);
+"#;
+    let rebuilt = r#"
+register("secondary", d);
+function d(x) { return x.trim(); }
+register("primary", c);
+function c(x) { return x.trim(); }
+"#;
+    assert_matches_rebuilt_source(original, rebuilt, "c");
+}
+
+#[test]
+fn anchors_a_deep_value_without_pinning_its_wrapper_path() {
+    let original = r#"
+const a = memo(function () { return wrap1(wrap2(wrap3(wrap4(wrap5(wrap6(wrap7("Open details"))))))); });
+const b = memo(function () { return wrap1(wrap2(wrap3(wrap4(wrap5(wrap6(wrap7("Open summary"))))))); });
+"#;
+    let rebuilt = r#"
+const c = memo(function () { return different(wrap7("Open details")); });
+const d = memo(function () { return different(wrap7("Open summary")); });
+"#;
+    let dir = tempfile::tempdir().unwrap();
+    let selector = synthesized_match(dir.path(), original);
+    assert!(selector.contains("AST_CONTAINS_STRING"), "{selector}");
+    let rebuilt_file = dir.path().join("rebuilt.js");
+    write_text_file(&rebuilt_file, rebuilt);
+    let result = run_match_selector(
+        &rebuilt_file,
+        &selector,
+        &["--target-binding", "Selected", "--no-slack"],
+    );
+    assert_eq!(result["outcomes"][0]["outcome"]["binding"], "c", "{result}");
 }

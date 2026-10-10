@@ -72,6 +72,11 @@ pub const SEQ_EXPRS_HOLE_KEYWORD: &str = "SEQ_EXPRS";
 /// whose value matches the given pattern instead of an exact spelling.
 pub const STRING_LITERAL_REGEX_PREDICATE: &str = "STR_LITERAL_MATCHING_RE";
 
+/// `AST_CONTAINS_STRING("value")` matches an expression subtree containing that
+/// exact string literal. Used to avoid pinning a long wrapper path around a
+/// distinctive deep value.
+pub const AST_CONTAINS_STRING_PREDICATE: &str = "AST_CONTAINS_STRING";
+
 /// If `name` is the bare `keyword` hole or a suffixed readability label
 /// beginning with `keyword_`, returns `name`; otherwise `None`. A legacy empty
 /// label (`keyword_`) is accepted as cosmetic and behaves like the bare keyword.

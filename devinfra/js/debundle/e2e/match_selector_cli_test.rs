@@ -455,3 +455,26 @@ fn invalid_regex_predicate_is_not_a_no_match() {
         );
     }
 }
+
+#[test]
+fn ast_contains_string_matches_an_exact_descendant_literal() {
+    let dir = tempfile::tempdir().unwrap();
+    let source = dir.path().join("app.js");
+    write_text_file(
+        &source,
+        "const a = wrap(inner(\"key\"));\nconst b = wrap(inner(\"keyish\"));\n",
+    );
+    let report = run_match_selector(
+        &source,
+        "const Selected = AST_CONTAINS_STRING(\"key\");",
+        &["--target-binding", "Selected", "--no-slack"],
+    );
+    assert_eq!(outcome(&report)["binding"], "a", "{report:#}");
+
+    let malformed = run_match_selector(
+        &source,
+        "const Selected = AST_CONTAINS_STRING();",
+        &["--target-binding", "Selected", "--no-slack"],
+    );
+    assert_eq!(outcome(&malformed)["kind"], "invalid", "{malformed:#}");
+}

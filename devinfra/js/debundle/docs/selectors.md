@@ -634,6 +634,18 @@ unanchored unless you write `^` / `$`. Escape the regex as a JavaScript string
 inside the selector source; for example, write `"\\d+"` when the regex should
 see `\d+`.
 
+For a distinctive string literal buried under unstable wrappers, use
+`AST_CONTAINS_STRING("value")` in expression position:
+
+```js
+const selected = AST_CONTAINS_STRING("Open details");
+```
+
+It matches an expression whose AST contains a string literal node with exactly
+that decoded value, at any depth. It does not match a substring of a longer
+literal or search JavaScript source text. As with other selectors, require a
+unique resolved binding before relying on it.
+
 Variable-length **list holes** absorb a contiguous run rather than a single
 node. Their optional suffixes are labels for readability; they do not bind the
 absorbed sequence for cross-occurrence equality.
