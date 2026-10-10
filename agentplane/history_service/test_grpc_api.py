@@ -40,7 +40,7 @@ def history(engine: AsyncEngine) -> Store:
 
 
 @pytest.fixture
-async def stub(history: Store) -> AsyncIterator[protocol_pb2_grpc.HistoryServiceStub]:
+async def stub(history: Store) -> AsyncIterator[protocol_pb2_grpc.HistoryServiceAsyncStub]:
     async with fake_apiserver() as fake:
         for token, name in ((READER_TOKEN, READER.name), (OTHER_TOKEN, "test-other-caller")):
             fake.tokens[token] = TokenVerdict(
@@ -78,7 +78,7 @@ def bearer(token: str) -> tuple[tuple[str, str], ...]:
 
 
 async def test_reader_reads_history_of_a_deleted_sandbox(
-    stub: protocol_pb2_grpc.HistoryServiceStub, history: Store
+    stub: protocol_pb2_grpc.HistoryServiceAsyncStub, history: Store
 ) -> None:
     session_id = uuid4()
     await history.open(
@@ -113,7 +113,10 @@ async def test_reader_reads_history_of_a_deleted_sandbox(
     ],
 )
 async def test_read_refusals(
-    stub: protocol_pb2_grpc.HistoryServiceStub, metadata: tuple[tuple[str, str], ...], limit: int, code: grpc.StatusCode
+    stub: protocol_pb2_grpc.HistoryServiceAsyncStub,
+    metadata: tuple[tuple[str, str], ...],
+    limit: int,
+    code: grpc.StatusCode,
 ) -> None:
     with pytest.raises(grpc.aio.AioRpcError) as refused:
         await stub.ReadSessionEvents(
