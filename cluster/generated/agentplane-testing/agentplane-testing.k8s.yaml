@@ -2535,7 +2535,7 @@ data:
         grpc.max_receive_message_length: 33554432
     ingester:
       enabled: true
-    fold_shadow: false
+    fold_shadow: true
 immutable: false
 ---
 apiVersion: apps/v1
@@ -3048,9 +3048,9 @@ spec:
             - name: AGENTPLANE_DATABASE_URL
               value: postgresql+asyncpg://$(AGENTPLANE_DB_USER):$(AGENTPLANE_DB_PASSWORD)@$(AGENTPLANE_DB_HOST):$(AGENTPLANE_DB_PORT)/$(AGENTPLANE_DB_NAME)
             - name: AGENTPLANE_ELECTRIC_URL
-              value: http://agentplane-electric.agentplane-testing.svc:3000
+              value: http://agentplane-electric-history.agentplane-testing.svc:3000
             - name: AGENTPLANE_THREAD_READS
-              value: app
+              value: history_service
             - name: AGENTPLANE_OIDC_ISSUER
               value: https://agentplane-dex-testing.allegedly.works/dex
             - name: AGENTPLANE_OIDC_PUBLIC_BASE_URL
@@ -3158,9 +3158,9 @@ spec:
             - name: AGENTPLANE_DATABASE_URL
               value: postgresql+asyncpg://$(AGENTPLANE_DB_USER):$(AGENTPLANE_DB_PASSWORD)@$(AGENTPLANE_DB_HOST):$(AGENTPLANE_DB_PORT)/$(AGENTPLANE_DB_NAME)
             - name: AGENTPLANE_ELECTRIC_URL
-              value: http://agentplane-electric.agentplane-testing.svc:3000
+              value: http://agentplane-electric-history.agentplane-testing.svc:3000
             - name: AGENTPLANE_THREAD_READS
-              value: app
+              value: history_service
             - name: AGENTPLANE_OIDC_ISSUER
               value: https://agentplane-dex-testing.allegedly.works/dex
             - name: AGENTPLANE_OIDC_PUBLIC_BASE_URL
