@@ -25,6 +25,9 @@ export function ActionRequestDetail({ requestId }: { requestId: string }): JSX.E
   const liveRequest = actions?.requests.find((item) => item.id === requestId);
   const cachedRequest = actions?.knownRequests.get(requestId);
   const request = liveRequest ?? cachedRequest;
+  const detailRequestId = request?.id;
+  const detailRequestState = request?.state;
+  const detailActionGroup = request?.action.group;
   const stalePendingRequest =
     liveRequest === undefined && cachedRequest?.state === "decision_pending" && actions?.staleRequestIds.has(requestId);
   const loading = actions?.detailLoadingIds.has(requestId) ?? false;
@@ -49,14 +52,14 @@ export function ActionRequestDetail({ requestId }: { requestId: string }): JSX.E
   }, [knownRequests, loadDetail, liveRequest, requestId, staleRequestIds]);
 
   useEffect(() => {
-    if (request === undefined || request.state === "decision_pending") {
+    if (detailRequestId === undefined || detailRequestState === "decision_pending") {
       setExecutorKind(null);
       return;
     }
     let active = true;
     void actionGroupService.list().then(
       (groups) => {
-        if (active) setExecutorKind(groups.find((group) => group.key === request.action.group)?.executor_kind ?? null);
+        if (active) setExecutorKind(groups.find((group) => group.key === detailActionGroup)?.executor_kind ?? null);
       },
       () => {
         if (active) setExecutorKind(null);
@@ -65,7 +68,7 @@ export function ActionRequestDetail({ requestId }: { requestId: string }): JSX.E
     return () => {
       active = false;
     };
-  }, [request?.id, request?.state, request?.action.group]);
+  }, [detailActionGroup, detailRequestId, detailRequestState]);
 
   function goBack(): void {
     if (hasReturnTo) {

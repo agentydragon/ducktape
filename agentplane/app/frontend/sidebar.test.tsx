@@ -502,13 +502,13 @@ function footerButton(label: string): HTMLButtonElement {
   return found;
 }
 
-it("routes the footer icons to Sandboxes, Actions, and Settings", async () => {
+it("routes the footer icons to Sandboxes, All actions, and Settings", async () => {
   const { onOpenSettings } = await render([], {});
 
   await act(async () => footerButton("Sandboxes").click());
   expect(location()).toBe("/sandboxes");
 
-  await act(async () => footerButton("Actions").click());
+  await act(async () => footerButton("All actions").click());
   expect(location()).toBe("/actions");
 
   await act(async () => footerButton("Settings").click());

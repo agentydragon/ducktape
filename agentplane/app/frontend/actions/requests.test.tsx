@@ -6,7 +6,7 @@ import { describe, expect, it, vi } from "vitest";
 import { STALE_AFTER_MS } from "../stream_status";
 import { actionService, type ActionRequestView, type ActionService } from "./client";
 import { ActionRequests, stateLabel } from "./requests";
-import { button, mount, render, request, SSH_EXEC_ARGUMENTS, sshExec, unmountLast } from "./testing";
+import { button, render, request, SSH_EXEC_ARGUMENTS, sshExec, unmountLast } from "./testing";
 
 describe("ActionRequests", () => {
   it("shows structured list errors without an empty-state claim", async () => {

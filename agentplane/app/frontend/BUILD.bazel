@@ -303,7 +303,11 @@ agentplane_vitest_test(
 
 ts_library(
     name = "actions_detail",
-    srcs = ["actions/detail.tsx"],
+    srcs = [
+        "actions/detail.tsx",
+        # Ambient declaration for the @tabler/icons-react per-icon subpath this page imports.
+        "tabler_icons.d.ts",
+    ],
     tsconfig = TSCONFIG,
     deps = [
         ":actions_client",

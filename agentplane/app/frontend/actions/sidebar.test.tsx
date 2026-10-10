@@ -15,7 +15,7 @@ class ActionStream extends EventTarget {
 
   constructor(url: string) {
     super();
-    expect(url).toBe("/actions/stream?state=decision_pending");
+    if (url !== "/actions/stream?state=decision_pending") throw new Error(`unexpected Action stream URL: ${url}`);
     stream.current = this;
   }
 }
@@ -99,7 +99,7 @@ it("expands a compact action preview and only offers inline approval to eligible
   const podDisclosure = container.querySelector<HTMLButtonElement>(`button[aria-label="Expand ${pod.title}"]`);
   if (!podDisclosure) throw new Error("missing pod action disclosure");
   await act(async () => podDisclosure.click());
-  expect(container.textContent).toContain("Get pods · namespace");
+  expect(container.textContent).toContain("List pods in namespace");
   expect(container.textContent).toContain("test-namespace");
   expect(container.querySelector<HTMLButtonElement>(`button[aria-label="Approve ${pod.title}"]`)).not.toBeNull();
   expect(container.textContent).not.toContain("Exact arguments (unredacted)");

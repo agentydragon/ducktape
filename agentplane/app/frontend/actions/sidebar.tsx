@@ -2,7 +2,7 @@ import { Badge, Button, Group, Stack, Text, Tooltip, UnstyledButton } from "@man
 import IconArrowRight from "@tabler/icons-react/dist/esm/icons/IconArrowRight.mjs";
 import IconChevronDown from "@tabler/icons-react/dist/esm/icons/IconChevronDown.mjs";
 import IconChevronRight from "@tabler/icons-react/dist/esm/icons/IconChevronRight.mjs";
-import { type JSX, useContext, useEffect, useRef, useState } from "react";
+import { type JSX, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useLocation } from "react-router";
 
 import { serviceAccountKey } from "../client";
@@ -42,8 +42,11 @@ export function ActionsSidebarSection({ onNavigate }: { onNavigate?: () => void 
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const manuallyClosedRequests = useRef(readManuallyClosedRequests());
   const previousIds = useRef<ReadonlySet<string>>(new Set());
-  const pending = actions?.requests.filter((request) => request.state === "decision_pending") ?? [];
-  const pendingIds = pending.map((request) => request.id);
+  const pending = useMemo(
+    () => actions?.requests.filter((request) => request.state === "decision_pending") ?? [],
+    [actions?.requests]
+  );
+  const pendingIds = useMemo(() => pending.map((request) => request.id), [pending]);
   const actionLoading = actions?.loading ?? true;
   const actionError = actions?.error ?? null;
 
@@ -78,7 +81,7 @@ export function ActionsSidebarSection({ onNavigate }: { onNavigate?: () => void 
     const hasNewRequest = [...currentIds].some((id) => !previousIds.current.has(id));
     if (hasNewRequest && autoOpenAllowed) setOpen(true);
     previousIds.current = currentIds;
-  }, [actionLoading, actionError, pendingIds.join("\u0000")]);
+  }, [actionLoading, actionError, pendingIds]);
 
   if (actions === null) return null;
 
