@@ -1,9 +1,11 @@
 import type { ActionRequestView } from "../../types";
-import { zPodsInNamespaceArguments } from "../../schemas/kubernetes_admin/pods_list_in_namespace";
 import type { ActionNotificationParts } from "../types";
+import { z } from "zod";
+
+const podsInNamespaceNotificationArguments = z.object({ namespace: z.string().min(1) });
 
 export function podsInNamespaceNotification(request: ActionRequestView): ActionNotificationParts | null {
-  const parsed = zPodsInNamespaceArguments.safeParse(request.arguments);
+  const parsed = podsInNamespaceNotificationArguments.safeParse(request.arguments);
   if (!parsed.success) return null;
 
   return {

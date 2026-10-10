@@ -143,6 +143,53 @@ describe("action notification formatting", () => {
     });
   });
 
+  it.each([
+    ["resources_create_or_update", { resource: "apiVersion: v1\nkind: Secret" }, "Apply Kubernetes resource"],
+    ["resources_get", { kind: "Deployment", name: "api", namespace: "apps", unshown: true }, "Get Deployment apps/api"],
+    [
+      "resources_delete",
+      { kind: "Deployment", name: "api", namespace: "apps", unshown: true },
+      "⚠ Delete Deployment apps/api",
+    ],
+    ["pods_delete", { name: "api-0", namespace: "apps" }, "⚠ Delete Pod apps/api-0"],
+    ["pods_list_in_namespace", { namespace: "apps", labelSelector: 123 }, "List pods in namespace apps"],
+    ["pods_exec", { name: "api-0", namespace: "apps", command: ["id"] }, "Run command in Pod apps/api-0"],
+    ["pods_log", { name: "api-0", namespace: "apps", unshown: true }, "View logs for Pod apps/api-0"],
+  ] as const)("formats the Kubernetes notification for %s", (name, args, actionTitle) => {
+    const request = actionRequest({
+      action: { group: "kubernetes_admin", name },
+      arguments: args,
+      title: "Review the cluster operation",
+      description: "The controller is waiting for this change.",
+    });
+
+    expect(formatActionNotification(request)).toEqual({
+      title: `Review the cluster operation · ${actionTitle}`,
+      text: "The controller is waiting for this change.",
+    });
+  });
+
+  it.each([
+    ["resources_get", { name: "api" }],
+    ["resources_delete", { kind: "Deployment" }],
+    ["pods_delete", { namespace: "apps" }],
+    ["pods_list_in_namespace", { namespace: "" }],
+    ["pods_exec", { namespace: "apps" }],
+    ["pods_log", { namespace: "apps" }],
+  ] as const)("uses the generic identity for %s when its displayed target is missing", (name, args) => {
+    const request = actionRequest({
+      action: { group: "kubernetes_admin", name },
+      arguments: args,
+      title: "Review the cluster operation",
+      description: "The controller is waiting for this change.",
+    });
+
+    expect(formatActionNotification(request)).toEqual({
+      title: `Review the cluster operation · kubernetes_admin / ${name}`,
+      text: "The controller is waiting for this change.",
+    });
+  });
+
   it("falls back when SSH arguments contain fields the widget cannot show", () => {
     const request = actionRequest({
       action: { group: "ssh", name: "exec" },

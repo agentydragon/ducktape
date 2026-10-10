@@ -1,8 +1,14 @@
 import type { ActionRequestView } from "../types";
+import { podsDeleteNotification } from "./kubernetes_admin/pods_delete";
+import { podsExecNotification } from "./kubernetes_admin/pods_exec";
+import { podsLogNotification } from "./kubernetes_admin/pods_log";
 import { grocySystemInfoNotification } from "./grocy/get_system_info";
 import { grocyProductsListNotification } from "./grocy/products_list";
 import { grocyQuantityUnitsListNotification } from "./grocy/quantity_units_list";
 import { podsInNamespaceNotification } from "./kubernetes_admin/pods_list_in_namespace";
+import { resourcesCreateOrUpdateNotification } from "./kubernetes_admin/resources_create_or_update";
+import { resourcesDeleteNotification } from "./kubernetes_admin/resources_delete";
+import { resourcesGetNotification } from "./kubernetes_admin/resources_get";
 import { sshExecNotification } from "./ssh/exec";
 import { tanaCalendarNodeNotification } from "./tana/get_or_create_calendar_node";
 import type { ActionNotificationContent, ActionNotificationParts } from "./types";
@@ -19,7 +25,18 @@ function fixedActionNotification(actionTitle: string): ActionNotificationFormatt
 // This registry intentionally stays parallel to the React presentation registry. The service
 // worker imports this module, so notification formatters must remain React-free.
 const FORMATTERS: ReadonlyMap<string, ReadonlyMap<string, ActionNotificationFormatter>> = new Map([
-  ["kubernetes_admin", new Map([["pods_list_in_namespace", podsInNamespaceNotification]])],
+  [
+    "kubernetes_admin",
+    new Map([
+      ["resources_create_or_update", resourcesCreateOrUpdateNotification],
+      ["resources_get", resourcesGetNotification],
+      ["resources_delete", resourcesDeleteNotification],
+      ["pods_delete", podsDeleteNotification],
+      ["pods_list_in_namespace", podsInNamespaceNotification],
+      ["pods_exec", podsExecNotification],
+      ["pods_log", podsLogNotification],
+    ]),
+  ],
   [
     "grocy_sf",
     new Map([
