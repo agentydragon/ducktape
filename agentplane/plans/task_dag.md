@@ -704,14 +704,14 @@ unless the operator reviews a change. Separate Sandbox initialization from per-s
 
 ### `SANDBOX_LIFECYCLE_DURABILITY` — preserve archive before deleting storage
 
-**Blocked on the teardown seal and retention holds.** Quiesce/fence and archive the final prefix before managed storage
+**Blocked on the teardown seal.** Quiesce/fence and archive the final prefix before managed storage
 removal. Explicitly handle an unreachable runner or incomplete state rather than claiming recovery.
 Use existing same-storage suspension tests; a bounded deletion/archive check validates the new
 boundary. No copied-volume portability or simultaneous multi-component crash requirement.
 After `HISTORY_WRITE_HANDOFF`, "archived" means the History Service committed the final prefix.
 Completeness is the seal from `RUNNER_TEARDOWN_SEAL` for every Session in the Sandbox, and every
-retention hold (`RETENTION_HOLDS`) on those Sessions confirmed through its seal cursor; with no
-holds, deletion follows the seal.
+[retention hold](../sandbox_service/API.md#retention-holds) on those Sessions confirmed through its
+seal cursor; with no holds, deletion follows the seal.
 When a runner is unreachable or its volume is broken, stop and ask the operator: delete with the
 last committed cursor recorded as the end, or keep the Sandbox.
 
@@ -754,7 +754,6 @@ flowchart TD
     SANDBOX_HISTORY_READS_RETIRE[Blocked: delete Sandbox Service history reads]
     SESSION_WATCH[Blocked: Sandbox Service Session feed]
     FOLLOW_REPLAY[Blocked: follow from any cursor via the runner]
-    RETENTION_HOLDS[Blocked: retention holds gate Sandbox deletion]
     HISTORY_WRITE_HANDOFF[Blocked: History Service ingester takes over]
     SANDBOX_LOCAL_HISTORY_RETIRE[Blocked: delete Sandbox Service ingester and store]
     FOLD_LIBRARY_EXTRACT[Blocked: fold and projector in a neutral package]
@@ -776,15 +775,12 @@ flowchart TD
     THREAD_READ_POLICY[Scoped archive reads]
     RUNNER_OUTBOUND_SPOOL[Spool on the runner channel]
     RUNNER_INBOUND_RETIRE[Retire inbound runner access]
-    SANDBOX_LIFECYCLE_DURABILITY[Archive before storage deletion]
     SESSION_COMMAND_CONTRACT --> SESSION_FOLLOW_CONTRACT
     HISTORY_READ_CUTOVER --> SANDBOX_HISTORY_READS_RETIRE
     SESSION_FOLLOW_CONTRACT --> SESSION_WATCH
     SESSION_FOLLOW_CONTRACT --> FOLLOW_REPLAY
-    SESSION_FOLLOW_CONTRACT --> RETENTION_HOLDS
     SESSION_WATCH --> HISTORY_WRITE_HANDOFF
     FOLLOW_REPLAY --> HISTORY_WRITE_HANDOFF
-    RETENTION_HOLDS --> HISTORY_WRITE_HANDOFF
     HISTORY_READ_CUTOVER --> HISTORY_WRITE_HANDOFF
     HISTORY_WRITE_HANDOFF --> SANDBOX_LOCAL_HISTORY_RETIRE
     SANDBOX_HISTORY_READS_RETIRE --> SANDBOX_LOCAL_HISTORY_RETIRE
@@ -810,7 +806,6 @@ flowchart TD
     APP_PROJECTION_RETIRE -. smaller baseline, not required .-> APP_ALEMBIC_SQUASH
     HISTORY_SERVICE_OWNERSHIP -. enforce at the final owner .-> THREAD_READ_POLICY
     FOLLOW_REPLAY -. replay moves onto the channel .-> RUNNER_OUTBOUND_SPOOL
-    RETENTION_HOLDS --> SANDBOX_LIFECYCLE_DURABILITY
 ```
 
 ### `SESSION_FOLLOW_CONTRACT` — History Service as an ordinary subscriber
@@ -852,16 +847,9 @@ No callers yet. Test resume after disconnect and that authorization filters the 
 replaying from the runner journal, with no Sandbox Service copy, then continues live, and reports
 the seal. Today's ingester already reads the runner this way; this makes it the public contract.
 
-### `RETENTION_HOLDS` — holds gate Sandbox deletion
-
-**Blocked on the follow contract.** `PlaceHold`, `ConfirmHold` and
-`ReleaseHold`, stored by the Sandbox Service. `DeleteSandbox` waits until every hold on every
-Session has confirmed its seal cursor. Test holds racing teardown, a holder that never confirms
-(deletion waits and reports it), and a Sandbox with no holds.
-
 ### `HISTORY_WRITE_HANDOFF` — the History Service ingester takes over
 
-**Blocked on the Session feed, replay, holds and the read cutover.** Move the Sandbox Service's
+**Blocked on the Session feed, replay and the read cutover.** Move the Sandbox Service's
 ingester into the History Service as a subscriber of those calls, with its per-log claim; one writer
 at a time. Test a History Service outage (it resumes from its cursor; the runner journal is the
 buffer), duplicate and conflicting replays, and claim handover between replicas. Rollback: run the

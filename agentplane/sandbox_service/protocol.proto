@@ -19,6 +19,8 @@ service SandboxService {
   rpc CreateSandbox(CreateSandboxRequest) returns (Sandbox);
   rpc SuspendSandbox(SandboxRequest) returns (google.protobuf.Empty);
   rpc ResumeSandbox(SandboxRequest) returns (google.protobuf.Empty);
+  // Refused while the Sandbox runs, or while a retention hold on it is unsatisfied
+  // (FAILED_PRECONDITION; GetSandbox lists the holds).
   rpc DeleteSandbox(SandboxRequest) returns (google.protobuf.Empty);
   rpc ListTemplates(google.protobuf.Empty) returns (ListTemplatesResponse);
 
@@ -40,6 +42,16 @@ service SandboxService {
   rpc ReadSessionEvents(ReadSessionEventsRequest) returns (ReadSessionEventsResponse);
   // Same reader authorization; chronological metadata without transmitting native payloads.
   rpc ReadSessionObservations(ReadSessionObservationsRequest) returns (ReadSessionObservationsResponse);
+
+  // Retention holds: "do not delete this Sandbox until I have confirmed its Session through the
+  // seal". Idempotent per (Session, holder); placing an existing hold keeps its confirmation.
+  // Refused once the Sandbox's deletion has been committed.
+  rpc PlaceHold(HoldRequest) returns (Hold);
+  // Advances the holder's confirmed cursor; a lower cursor than the stored one changes nothing.
+  rpc ConfirmHold(ConfirmHoldRequest) returns (Hold);
+  // Idempotent. Any permitted caller may release any hold; this is how the operator clears a
+  // stale one, since holds never expire.
+  rpc ReleaseHold(HoldRequest) returns (google.protobuf.Empty);
 }
 
 message ServiceAccount {
@@ -104,6 +116,33 @@ message LookupSessionResponse {
   // The runner has terminal setup/launch failure evidence without a successful native start.
   // A reserved but still in-flight Open leaves both summary and failed unset.
   bool failed = 3;
+}
+
+// Names one Session of one Sandbox incarnation; the hold belongs to that incarnation.
+message HoldRequest {
+  SessionDestination destination = 1;
+  // Stable caller-chosen name, e.g. "history". It and the session ID are at most 128 characters.
+  string holder = 2;
+}
+
+message ConfirmHoldRequest {
+  SessionDestination destination = 1;
+  string holder = 2;
+  // The last cursor the holder has durably committed.
+  uint64 through_cursor = 3;
+}
+
+// A hold is satisfied once seal_cursor is set and confirmed_through >= seal_cursor. Until then it
+// blocks DeleteSandbox. A seal ends the Session's incarnation in this Sandbox, not the Session.
+// Gap: the runner does not seal Sessions at teardown yet, so seal_cursor is never set and every
+// hold blocks deletion until it is released.
+message Hold {
+  string session_id = 1;
+  string holder = 2;
+  // 0 before the holder's first confirmation.
+  uint64 confirmed_through = 3;
+  // The Session's final cursor in this incarnation, once the runner has sealed it.
+  optional uint64 seal_cursor = 4;
 }
 
 message ReadSessionEventsRequest {
@@ -249,6 +288,7 @@ message Sandbox {
   google.protobuf.Struct status = 16;
   bool launch_grants_pending = 17;
   bool initializing = 18;
+  repeated Hold holds = 19;
 }
 message ListSandboxesResponse { repeated Sandbox sandboxes = 1; }
 message ListTemplatesResponse { repeated string templates = 1; }
