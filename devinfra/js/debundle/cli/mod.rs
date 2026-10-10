@@ -3,6 +3,7 @@ pub mod comment;
 pub mod edit_gate;
 pub mod gate;
 pub mod module;
+mod module_apply;
 pub mod outcome;
 pub mod scc_cluster;
 pub mod validate;
@@ -62,7 +63,7 @@ enum DebundleCommand {
     Run(TransformArgs),
     /// Per-binding spec verbs (list, assign, unassign, rename, comment).
     Bindings(BindingsNs),
-    /// Module-level spec verbs (list, merge, delete, propose, comment).
+    /// Module-level spec verbs (list, merge, delete, propose, apply, comment).
     Modules(ModulesNs),
     /// List structural atoms (owner-level SCCs of the constraining-edge
     /// graph; per docs/design.md § "Two classes of atom").

@@ -206,7 +206,7 @@ pub fn find_matches(modules_root: &Path, sym: &str) -> Result<Vec<BindingMatch>>
     Ok(matches_in_docs(&load_module_docs(modules_root)?, sym))
 }
 
-fn matches_in_docs(docs: &ModuleDocs, sym: &str) -> Vec<BindingMatch> {
+pub(crate) fn matches_in_docs(docs: &ModuleDocs, sym: &str) -> Vec<BindingMatch> {
     docs.iter()
         .flat_map(|(module, (file, doc))| binding_matches_in_doc(file, module, doc))
         .filter(|binding| binding.name.matches(sym))
@@ -629,7 +629,9 @@ pub fn run_bindings_assign(
     // dedupe would produce two plan entries for one extraction slot.
     let mut by_identity: BTreeMap<(String, BindingLocation), PlannedMove> = BTreeMap::new();
     for m in moves {
-        let hit = resolve_in_docs(modules_root, &docs, &m.sym)?;
+        let hit = resolve_in_docs(modules_root, &docs, &m.sym).with_context(|| {
+            "bindings assign moves existing YAML claims; for a fresh residual proposal use `debundle modules apply`"
+        })?;
         let dest_module = canonical_module_path(&m.module)?;
         let planned = PlannedMove {
             req: Move {
@@ -887,7 +889,7 @@ impl PulledBinding {
 /// [`ModulePath::parse`] normalization the spec pipeline applies
 /// (lowercasing, traversal rejection), so `UI/Widgets` and
 /// `ui/widgets` cannot fork into two case-variant files.
-fn canonical_module_path(raw: &str) -> Result<String> {
+pub(crate) fn canonical_module_path(raw: &str) -> Result<String> {
     Ok(ModulePath::parse(raw, "")
         .map_err(|err| anyhow!("invalid destination module: {err}"))?
         .as_str()
@@ -960,7 +962,7 @@ fn drained_source_modules(docs: &ModuleDocs, move_sources: &BTreeSet<String>) ->
 /// FIRST, then delete the drained sources — so an interrupted batch
 /// can never lose a member that was not yet spliced into its
 /// destination on disk.
-fn apply_doc_changes(
+pub(crate) fn apply_doc_changes(
     original_docs: &ModuleDocs,
     docs: &ModuleDocs,
     to_delete: &BTreeSet<String>,

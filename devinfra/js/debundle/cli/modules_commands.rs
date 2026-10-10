@@ -3,6 +3,7 @@
 use crate::comment::{ModuleCommentArgs, run_module_comment_cmd};
 use crate::emit_report;
 use crate::module::{DeleteArgs, MergeArgs, run_delete, run_merge};
+use crate::module_apply::{ModulesApplyArgs, run_modules_apply};
 use anyhow::{Context, Result};
 use clap::{Args as ClapArgs, Subcommand};
 use peel::{OutputFormat, PlanWorkArgs, run_plan_work_report};
@@ -50,9 +51,8 @@ enum ModulesNsCommand {
     /// Emit module-assignment proposals derived from the atomic DAG.
     ///
     /// Read-only: surfaces *suggested* binding → module assignments +
-    /// diagnostics; applying them requires `bindings assign` (reviewed
-    /// proposal rows feed `bindings assign --batch` directly — see
-    /// docs/cli.md § "Batch atomicity"). With `--source-root`, JSON rows
+    /// diagnostics; reviewed fresh residual proposals are claimed with
+    /// `modules apply` (see docs/cli.md). With `--source-root`, JSON rows
     /// carry `landable_today`, `unaddressable_anonymous_owner_ids`, and
     /// `landability_notes` from full-JS-AST selector uniqueness.
     /// `landable_today` is `false` both for proposals with unaddressable
@@ -61,6 +61,8 @@ enum ModulesNsCommand {
     /// — the latter need their closure grown or manual co-location
     /// before they can land.
     Propose(PlanWorkArgs),
+    /// Claim reviewed residual proposal bindings using proven structural selectors.
+    Apply(ModulesApplyArgs),
     /// List all modules in the spec with summary stats.
     ///
     /// Per-row: `member_count`, `anonymous_statement_count`, `residual`
@@ -243,6 +245,7 @@ pub(super) fn run(args: ModulesNs) -> Result<()> {
                 "writing propose output",
             )
         }
+        ModulesNsCommand::Apply(args) => run_modules_apply(args),
         ModulesNsCommand::List(args) => run_modules_list(args),
     }
 }

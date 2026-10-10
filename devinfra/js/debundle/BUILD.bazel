@@ -936,6 +936,7 @@ rust_library(
         "cli/inspection_commands.rs",
         "cli/mod.rs",
         "cli/module.rs",
+        "cli/module_apply.rs",
         "cli/modules_commands.rs",
         "cli/outcome.rs",
         "cli/scc_cluster.rs",

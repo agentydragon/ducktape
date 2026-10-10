@@ -61,16 +61,16 @@ full-scan sequence across representative fixtures.
 
 `ModuleProposal` rows distinguish:
 
-- direct member moves, usable by `bindings assign --batch` when the row
-  is landable and contains only addressable bindings;
+- fresh residual owner sets, claimable with `modules apply` when the row
+  is graph-ready and selector synthesis proves the reviewed claims;
 - extension rows, where residual owners can be moved into an existing
   module;
 - `merge_into` rows, where two or more active modules should be merged
   or manually co-located before assignment.
 
 Anonymous-statement addressability and residual dependency status still
-control `landable_today`; `bindings assign --batch` refuses rows that
-require merge/manual work.
+control `landable_today`. It is a graph-readiness signal; applying still
+requires proven selectors and a passing post-edit gate.
 
 ## Where To Look
 
@@ -79,6 +79,6 @@ require merge/manual work.
 - `peel/quotient_integration_test.rs`: seed, greedy, merge-output, and
   lazy-PQ equivalence coverage.
 - `docs/cli.md` and `docs/spec_editing.md`: user-facing `modules propose`
-  and `bindings assign --batch` workflow.
+  and `modules apply` workflow.
 - `perf/proposer.md`: live proposer performance roadmap and profiling
   policy.

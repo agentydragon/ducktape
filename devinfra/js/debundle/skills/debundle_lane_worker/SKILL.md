@@ -45,10 +45,9 @@ The orchestrator or project adapter provides:
 4. Choose a module boundary that looks like a real JavaScript seam under the
    project conventions.
 5. Apply the assignment using the shared guide's CLI workflows. Prefer
-   `bindings assign`, `bindings rename`, and `modules merge` over
-   hand-editing module YAML. Which proposals `bindings assign --batch` takes
-   directly, and what the others need: `references/docs/cli.md` § `--batch` JSON
-   format.
+   `modules apply` for fresh residual binding proposals; use `bindings assign`
+   for existing claims, and `bindings rename` / `modules merge` for their
+   respective edits. See `references/docs/cli.md` § Claiming fresh proposals.
 
    For selector-stabilization assignments, follow `references/docs/selectors.md`
    (the ladder and § "Bulk conversion loop"): confirm the bucket with

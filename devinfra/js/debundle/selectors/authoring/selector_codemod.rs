@@ -23,7 +23,10 @@ use serde::Serialize;
 use serde_yaml::Value;
 use shape_index::ShapeIndex;
 use source_match::{MemberBindingMatch, ParsedSourceMatchSelector};
-use spec::{SourceMatch, SourceMatchIdentifierMode};
+use spec::{
+    SourceMatch, SourceMatchBinding, SourceMatchBindingDetail, SourceMatchClaim,
+    SourceMatchIdentifierMode,
+};
 use spec_modules::{collect_module_files, is_module_yaml, module_path_from_file};
 use swc_common::DUMMY_SP;
 use swc_ecma_ast::*;
@@ -140,6 +143,77 @@ pub struct SelectorCodemodReport {
 
 pub fn run_selector_codemod(config: &SelectorCodemodConfig) -> Result<SelectorCodemodReport> {
     run_selector_codemod_with_module_results(config, &mut |_| Ok(()))
+}
+
+/// Build proven source-backed claims for bindings that have no YAML member yet.
+/// This shares the same indexed declaration lookup and selector proof as the
+/// name-binding codemod, without first creating unstable `binding.name` pins.
+pub fn synthesize_residual_claims_for_modules(
+    source_file: &Path,
+    modules: &BTreeMap<String, BTreeMap<String, String>>,
+) -> Result<BTreeMap<String, Vec<SourceMatchClaim>>> {
+    js_ast::with_swc_globals(|| {
+        let source = fs::read_to_string(source_file)
+            .with_context(|| format!("reading source file {}", source_file.display()))?;
+        let parsed = js_ast::parse_js_module_consuming(&source_file.display().to_string(), source)
+            .with_context(|| format!("parsing source file {}", source_file.display()))?;
+        let index = ChunkSelectorIndex::new(&parsed.module);
+        let mut result = BTreeMap::new();
+        for (module, bindings) in modules {
+            let mut groups: BTreeMap<usize, Vec<NameBindingMember>> = BTreeMap::new();
+            for (runtime_binding, export_name) in bindings {
+                let Some([decl_idx]) = index
+                    .binding_to_decl
+                    .get(runtime_binding)
+                    .map(Vec::as_slice)
+                else {
+                    bail!(
+                        "binding `{runtime_binding}` needs exactly one source declaration for selector synthesis"
+                    );
+                };
+                groups
+                    .entry(*decl_idx)
+                    .or_default()
+                    .push(NameBindingMember {
+                        member_index: 0,
+                        export_name: export_name.clone(),
+                        binding_name: runtime_binding.clone(),
+                        annotation_fields: Vec::new(),
+                    });
+            }
+            let mut claims = Vec::new();
+            for (decl_idx, members) in groups {
+                let GroupSelectorOutcome::Synthesized(synthesized) =
+                    synthesize_simplest_selector_for_group(&index, decl_idx, &members, 1)?
+                else {
+                    bail!("no uniquely proven structural selector for declaration {decl_idx}");
+                };
+                let mut claim_bindings = Vec::new();
+                for target in synthesized.target_bindings {
+                    if target.selector_local == target.runtime_binding
+                        && target.export_name != target.runtime_binding
+                    {
+                        bail!(
+                            "selector for `{}` still pins its source binding name; author a structural selector",
+                            target.runtime_binding
+                        );
+                    }
+                    claim_bindings.push(SourceMatchBinding::Detailed(SourceMatchBindingDetail {
+                        local: target.selector_local,
+                        name: Some(target.export_name),
+                    }));
+                }
+                claims.push(SourceMatchClaim {
+                    identifiers: SourceMatchIdentifierMode::AlphaAll,
+                    match_source: synthesized.match_source,
+                    bindings: claim_bindings,
+                    note: None,
+                });
+            }
+            result.insert(module.clone(), claims);
+        }
+        Ok(result)
+    })
 }
 
 #[derive(Serialize)]

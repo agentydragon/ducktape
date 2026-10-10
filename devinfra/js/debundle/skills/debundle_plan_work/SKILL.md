@@ -49,9 +49,9 @@ bazelisk --output_base=/tmp/debundle-cli-bazel \
 - Use `coverage` and `atoms` when current YAML or atomic-unit closure is
   the question.
 - Use `describe` and `show-source` before recommending any assignment.
-- Treat `modules propose` output as planning evidence. Which reviewed rows
-  `bindings assign --batch` takes, and what the rest need:
-  `references/docs/cli.md` § `--batch` JSON format.
+- Treat `modules propose` output as planning evidence. Fresh binding rows use
+  `modules apply` after semantic naming and selector proof; existing claims
+  use `bindings assign`. See `references/docs/cli.md` § Claiming fresh proposals.
 
 Prefer these commands over grepping generated output. The owner graph is
 the source of truth for cycle gates and residual dependencies; the embedded

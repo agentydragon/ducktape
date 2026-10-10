@@ -347,16 +347,17 @@ omitting `readable` preserves the current readable name):
 
 `--batch` also accepts `modules propose --format json` output, or a
 top-level array of proposal objects selected from `.proposals`, when every
-selected proposal is a direct member move:
+selected binding is already claimed in YAML and each row is a direct move:
 
 - `landable_today: true`
 - non-empty `binding_ids`
 - no `merge_into`
 - no `anonymous_statement_owner_ids`
 
-Fresh proposals move each `binding_ids[]` entry to `proposed_module_id`;
-extension proposals move them to `extends_module_id`. Proposal rows carry no
-`readable`; rename with a move array. The rest are rejected:
+For fresh residual bindings, use `modules apply` below. Existing-claim proposal
+rows move each `binding_ids[]` entry to `proposed_module_id` or
+`extends_module_id`. Proposal rows carry no `readable`; rename with a move
+array. The rest are rejected:
 
 - `merge_into` rows combine existing source modules: use `modules merge` or
   manual YAML.
@@ -366,6 +367,35 @@ extension proposals move them to `extends_module_id`. Proposal rows carry no
   read other residual cells (`other_residual_cells_referenced`), so promoting
   one alone would trip the realizability gate: assign it together with the
   cells it references, or co-locate the owners manually first.
+
+### Claiming fresh proposals (`modules apply`)
+
+`landable_today` means the proposed owner set has no outgoing residual-cell
+dependency and its anonymous owners are addressable. It does not guarantee a
+structural selector can be synthesized or that the final edit passes the gate.
+`modules apply` claims reviewed residual bindings with proven `source_matches:`
+selectors. It requires `--graph`, `--modules`, and `--source-root` (or their
+environment variables), and accepts a JSON batch of this shape:
+
+```json
+[
+  {
+    "proposal_id": "auto_partition_0007",
+    "owner_ids": ["owner-id-from-the-reviewed-row"],
+    "module": "services/provider",
+    "readable_names": { "a": "Provider" }
+  }
+]
+```
+
+Copy `proposal_id` from `proposed_module_id` and `owner_ids` from the same
+current `modules propose --format json` row. Choose the destination and a
+readable name for every residual binding in that row. For extension rows the
+destination must equal `extends_module_id`. Use the same `--size-cap-lines`
+value as `modules propose` if it was overridden. The command rejects stale
+owner sets, merges, anonymous-owner rows, unprovable or name-pinned selectors,
+and failed post-edit gates before writing any YAML. `--dry-run` reports the
+same validation and planned files without writing the spec.
 
 ## Rejection diagnostics
 

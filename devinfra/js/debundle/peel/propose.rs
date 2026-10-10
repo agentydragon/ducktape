@@ -176,10 +176,11 @@ pub struct ModuleProposal {
     /// `residual_entry`, which the cycle gate rejects — the
     /// referenced cells must land first or together).
     pub status: PeelCandidateStatus,
-    /// `true` when the proposal can be applied as a spec edit today:
+    /// `true` when the proposal is graph-ready for a spec edit:
     /// `status` is `PeelableNow` (no outgoing constraining edges into
     /// other residual cells) AND every anonymous owner is addressable.
-    /// `bindings assign --batch` rejects rows where this is `false`;
+    /// Selector synthesis and the post-edit gate can still reject it.
+    /// `modules apply` rejects rows where this is `false`;
     /// blocked-residual proposals need their closure grown (land the
     /// referenced cells together) or manual co-location first.
     pub landable_today: bool,

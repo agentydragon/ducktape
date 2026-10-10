@@ -1800,7 +1800,7 @@ rendering proposal rows.
 anonymous-statement addressability): it is `true` only for
 `peelable_now` proposals whose anonymous owners are all addressable.
 A `blocked_residual_dependency` proposal is never `landable_today` —
-`bindings assign --batch` rejects it; grow the closure so the
+`modules apply` rejects it; grow the closure so the
 referenced cells land together, or co-locate them manually, first.
 
 Classes whose spec-edit size exceeds `--size-cap-lines` are not

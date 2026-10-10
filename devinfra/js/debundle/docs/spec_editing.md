@@ -13,18 +13,14 @@ Use the proposer to surface what's currently extractable:
    explaining why a closed atomic-DAG set could not become a proposal
    (currently `exceeds_size_cap`: the spec edit is larger than
    `--size-cap-lines`).
-3. **Apply reviewed binding-only proposals** with `bindings assign --batch`
-   (see the move workflow below). Which rows it accepts, and what the
-   others need: <cli.md> § `--batch` JSON format.
+3. **Apply reviewed binding-only residual proposals** with `modules apply`
+   after choosing semantic destinations and readable names. See <cli.md> §
+   Claiming fresh proposals.
 
 ```bash
-jq '[.proposals[]
-     | select(.landable_today
-       and (.merge_into | not)
-       and (((.binding_ids // []) | length) > 0)
-       and (((.anonymous_statement_owner_ids // []) | length) == 0))]' \
-  proposals.json > selected-proposals.json
-debundle bindings assign --batch selected-proposals.json --dry-run
+# Author reviewed.json with proposal_id, owner_ids, module, and readable_names.
+debundle modules apply --batch reviewed.json --dry-run
+debundle modules apply --batch reviewed.json
 ```
 
 For aggregate counts before drilling in:

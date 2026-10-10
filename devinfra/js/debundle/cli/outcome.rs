@@ -44,7 +44,7 @@ pub enum GateOutcome {
 #[derive(Debug, Clone, Serialize)]
 pub struct MutationOutcome {
     /// Which mutating verb produced the outcome:
-    /// `assign` | `unassign` | `rename` | `merge` | `delete`.
+    /// `assign` | `unassign` | `rename` | `merge` | `delete` | `apply`.
     pub verb: &'static str,
     /// `applied` | `dry-run` | `noop` | `unchanged`.
     pub action: &'static str,

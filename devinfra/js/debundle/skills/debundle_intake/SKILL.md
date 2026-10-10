@@ -84,10 +84,10 @@ Write `<scratch>/seeds.json`:
 ]
 ```
 
-For workers consuming seeds via `debundle bindings assign --batch`, pass only
-binding-only fresh/extension proposal rows, or re-shape them to
-`{sym, module, readable?}` when adding readable names. The shared guide covers
-the rejected proposal shapes.
+For workers consuming fresh/extension seeds, carry `proposal_id`, `owner_ids`,
+reviewed module path, and readable names into `debundle modules apply --batch`.
+The selector proof and post-edit gate can still reject a graph-ready row;
+workers report that friction. Existing YAML claims use `bindings assign`.
 
 Sort seeds by:
 

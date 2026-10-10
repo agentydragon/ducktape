@@ -66,9 +66,9 @@ dispatch the integrator.
    Ducktape tooling work before asking humans or workers to hand-edit many
    selectors. Do not dispatch work whose expected output is a pile of manually
    maintained exact generated bodies.
-4. Ask intake for dispatchable seeds. Only `landable_today: true` proposals
-   are directly dispatchable; what the others need first:
-   `references/docs/cli.md` § `--batch` JSON format.
+4. Ask intake for dispatchable seeds. `landable_today: true` is graph readiness;
+   workers still prove selectors and run the edit gate through `modules apply`.
+   See `references/docs/cli.md` § Claiming fresh proposals.
 5. Dispatch independent lane workers and any reorg/naming/doc cleanup work.
 6. Integrate green worker branches in batches.
 7. Rerun gate, regen, and adapter smoke tests as required.
