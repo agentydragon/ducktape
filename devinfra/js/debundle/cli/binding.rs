@@ -705,11 +705,11 @@ pub fn run_bindings_assign(
         BTreeMap::new();
     for p in &plan {
         let mut entry = match p.source_location {
-            BindingLocation::Member { member_index } => PulledBinding::Member(
+            BindingLocation::Member { member_index } => PulledBinding::Member(Box::new(
                 extracted_members
                     .remove(&(p.source_module.clone(), member_index))
                     .expect("resolved member is loaded"),
-            ),
+            )),
             BindingLocation::SourceMatch {
                 claim_index,
                 binding_index,
@@ -801,7 +801,7 @@ pub fn run_bindings_assign(
             .expect("pulled annotation missing");
         let (_, doc) = docs.get_mut(&dest_path).expect("dest just created");
         match entry {
-            PulledBinding::Member(member) => doc.members.push(member),
+            PulledBinding::Member(member) => doc.members.push(*member),
             PulledBinding::SourceMatch(mut claim) => {
                 let BindingLocation::SourceMatch { claim_index, .. } = p.source_location else {
                     unreachable!()
@@ -854,7 +854,7 @@ struct PlannedMove {
 }
 
 enum PulledBinding {
-    Member(Member),
+    Member(Box<Member>),
     SourceMatch(SourceMatchClaim),
 }
 
