@@ -12,6 +12,11 @@ locals {
       install_disk = "/dev/disk/by-id/nvme-BC511_NVMe_SK_hynix_256GB_AS9CN54631CA0CT13"
       region       = "home"
       zone         = "home-lan"
+      # A fixed LAN address beside the DHCP lease, below the AT&T BGW320's default DHCP
+      # pool (192.168.1.64-253). The home switch sends its syslog here: keep in sync with
+      # tf/gitops/home-switch and cluster/cdk8s/monitoring/alloy.py.
+      lan_address = "192.168.1.10/24"
+      lan_mac     = "e4:54:e8:85:9f:b2"
     }
   }
 
@@ -33,6 +38,13 @@ locals {
         sysctls = {
           "user.max_user_namespaces" = "1048576"
         }
+        network = merge(local.worker_machine_base.network, {
+          interfaces = [{
+            deviceSelector = { hardwareAddr = node.lan_mac }
+            dhcp           = true
+            addresses      = [node.lan_address]
+          }]
+        })
         nodeLabels = {
           "topology.kubernetes.io/region" = node.region
           "topology.kubernetes.io/zone"   = node.zone
