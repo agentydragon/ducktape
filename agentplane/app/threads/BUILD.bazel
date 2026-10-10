@@ -181,4 +181,3 @@ py_test(
         "@pypi//sqlalchemy",
     ],
 )
-
