@@ -108,7 +108,7 @@ pub(super) fn load_selectors(
                 .source_matches
                 .get(index)
                 .with_context(|| format!("selector address {origin} does not exist"))?;
-            let members = source_match::source_match_claim_member_selectors(&origin, &claim)?;
+            let members = source_match::source_match_claim_member_selectors(&origin, claim)?;
             if let Some(target) = target_binding {
                 ensure!(
                     claim
