@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 from agentplane.history_service import protocol_pb2 as history_pb2, protocol_pb2_grpc
 from agentplane.history_service.grpc_api import Resources, add_service
 from agentplane.history_service.summaries import SummaryReader
+from agentplane.history_service.thread_reads import ThreadReader
 from agentplane.protocol import event_log_pb2, event_pb2
 from agentplane.sandbox_service import protocol_pb2
 from agentplane.sandbox_service.session_history.store import Store
@@ -61,6 +62,7 @@ async def stub(engine: AsyncEngine, history: Store) -> AsyncIterator[protocol_pb
                     ),
                     history=history,
                     summaries=SummaryReader(engine),
+                    threads=ThreadReader(engine),
                     reader_accounts=frozenset({READER}),
                     request_timeout_s=10,
                 ),
@@ -157,6 +159,20 @@ async def test_summary_list_refusals(
     with pytest.raises(grpc.aio.AioRpcError) as refused:
         await stub.ListSessionSummaries(listing, metadata=metadata)
     assert refused.value.code() == code
+
+
+async def test_thread_read_refusals(stub: protocol_pb2_grpc.HistoryServiceAsyncStub) -> None:
+    with pytest.raises(grpc.aio.AioRpcError) as no_window:
+        await stub.ReadThreadEntities(
+            history_pb2.ReadThreadEntitiesRequest(session_id=str(uuid4())), metadata=bearer(READER_TOKEN)
+        )
+    assert no_window.value.code() == grpc.StatusCode.INVALID_ARGUMENT
+    with pytest.raises(grpc.aio.AioRpcError) as unknown:
+        await stub.ReadPayload(
+            history_pb2.ReadPayloadRequest(session_id=str(uuid4()), ref=history_pb2.PayloadRef(), limit=1),
+            metadata=bearer(READER_TOKEN),
+        )
+    assert unknown.value.code() == grpc.StatusCode.NOT_FOUND
 
 
 if __name__ == "__main__":

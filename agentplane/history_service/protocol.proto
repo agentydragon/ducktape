@@ -17,6 +17,9 @@ service HistoryService {
   // Newest first by `first_event_at`, Sessions with nothing folded yet ahead of the rest.
   rpc ListSessionSummaries(ListSessionSummariesRequest) returns (ListSessionSummariesResponse);
   rpc GetSessionSummary(GetSessionSummaryRequest) returns (SessionSummary);
+  // Fails with FAILED_PRECONDITION when the caller's projection epoch is no longer current.
+  rpc ReadThreadEntities(ReadThreadEntitiesRequest) returns (ReadThreadEntitiesResponse);
+  rpc ReadPayload(ReadPayloadRequest) returns (ReadPayloadResponse);
 }
 
 message ListSessionSummariesRequest {
@@ -74,4 +77,70 @@ message SessionSummaryPageToken {
   // The last Session served; absent `first_event_at` means it had nothing folded yet.
   google.protobuf.Timestamp first_event_at = 3;
   string session_id = 4;
+}
+
+message ReadThreadEntitiesRequest {
+  string session_id = 1;
+  // The scope the caller holds rows of. Empty reads whichever scope is current.
+  string projection_epoch = 2;
+  oneof window {
+    EntityRange range = 3;
+    EntityKeys keys = 4;
+  }
+}
+
+// Entity indexes are dense from 0 over every kind, so a range is every row in that stretch.
+message EntityRange {
+  uint64 start_entity_index = 1;
+  // At most 200.
+  uint32 limit = 2;
+}
+
+message EntityKey {
+  string entity_kind = 1;
+  string entity_id = 2;
+}
+
+message EntityKeys {
+  // At most 200.
+  repeated EntityKey keys = 1;
+}
+
+message ReadThreadEntitiesResponse {
+  // Empty, with no entities, before the fold has materialized anything.
+  string projection_epoch = 1;
+  uint64 through_cursor = 2;
+  // A range ascends by entity index; keys return the rows that exist.
+  repeated ThreadEntity entities = 3;
+}
+
+message ThreadEntity {
+  uint64 entity_index = 1;
+  // A `ThreadEntityView` JSON document (`agentplane.thread_fold.views`), the row browsers sync.
+  string view_json = 2;
+}
+
+// One immutable payload revision, as an entity's `*_ref` names it.
+message PayloadRef {
+  string projection_epoch = 1;
+  uint64 owner_cursor = 2;
+  string owner_id = 3;
+  string field = 4;
+  uint64 generation = 5;
+  uint64 revision_cursor = 6;
+}
+
+message ReadPayloadRequest {
+  string session_id = 1;
+  PayloadRef ref = 2;
+  uint64 start_chunk = 3;
+  // At most 64 chunks.
+  uint32 limit = 4;
+}
+
+message ReadPayloadResponse {
+  uint64 chunk_count = 1;
+  uint64 content_bytes = 2;
+  // The revision's chunks from `start_chunk`, which concatenate to its text.
+  repeated string chunks = 3;
 }
