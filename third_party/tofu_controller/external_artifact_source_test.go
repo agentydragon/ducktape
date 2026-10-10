@@ -68,7 +68,8 @@ func TestGetSourceResolvesExternalArtifact(t *testing.T) {
 func TestExternalArtifactRevisionChangeEnqueuesReferencingTerraforms(t *testing.T) {
 	g := NewWithT(t)
 	artifact := moduleArtifact("latest@sha256:bbb")
-	r := newExternalArtifactReconciler(t,
+	r := newExternalArtifactReconciler(
+		t,
 		artifact,
 		externalArtifactTerraform("stale", "module-a", "latest@sha256:aaa"),
 		externalArtifactTerraform("current", "module-a", "latest@sha256:bbb"),

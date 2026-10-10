@@ -44,6 +44,7 @@ go_deps.archive_override(
     strip_prefix = "github.com/flux-iac/tofu-controller/api@v0.0.0-20260806140806-4cb9876f84af",
     urls = ["https://proxy.golang.org/github.com/flux-iac/tofu-controller/api/@v/v0.0.0-20260806140806-4cb9876f84af.zip"],
 )
+
 # Use upstream's checked-in runner.pb.go: a generated go_proto_library would link rules_go's own
 # copy of grpc alongside this module's.
 go_deps.gazelle_override(
