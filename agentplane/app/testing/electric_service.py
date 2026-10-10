@@ -1,4 +1,4 @@
-"""Real Electric and logical PostgreSQL with the deployment's restricted database role."""
+"""Real Electric over a logical PostgreSQL history database, with the deployment's restricted role."""
 
 import asyncio
 import os
@@ -14,7 +14,7 @@ from testcontainers.core.network import Network
 
 # SQLAlchemy loads the driver selected by the URL scheme at runtime.
 # gazelle:include_dep @pypi//psycopg
-from agentplane.app.database_migrate import RUNNER
+from agentplane.history_service.storage.database_migrate import RUNNER
 from agentplane.testing.electric_role import ensure_electric_role
 from third_party.containers import electric_1_8_1, postgres_18, ryuk
 from util.db_url import render_postgresql_url
@@ -67,13 +67,13 @@ def browser_postgres_server() -> Iterator[BrowserPostgres]:
     """Start one logical-WAL PostgreSQL server and migrate its clone template once per shard."""
     _load_postgres_images()
     with Network() as network:
-        postgres = _logical_postgres_container(network, test_name="conversation-postgres")
+        postgres = _logical_postgres_container(network, test_name="history-postgres")
         with postgres:
             address = f"{postgres.get_container_host_ip()}:{postgres.get_exposed_port(5432)}"
             admin_url = f"postgresql+psycopg://postgres:postgres@{address}/postgres"
             ensure_electric_role(admin_url, ready_timeout_s=60)
 
-            with migrated_database_template(admin_url, "agentplane_browser_template", RUNNER) as template:
+            with migrated_database_template(admin_url, "agentplane_browser_history_template", RUNNER) as template:
                 yield BrowserPostgres(network, admin_url, template)
 
 
@@ -81,17 +81,18 @@ def browser_postgres_server() -> Iterator[BrowserPostgres]:
 async def browser_electric_service(postgres: BrowserPostgres, database_name: str) -> AsyncIterator[ElectricService]:
     """Run a fresh Electric process against a fresh clone of the shard's migrated database."""
     with postgres.template.clone(database_name) as database_url:
-        app_url = render_postgresql_url(database_url, "postgresql+asyncpg")
+        history_url = render_postgresql_url(database_url, "postgresql+asyncpg")
         electric_url = f"postgresql://electric:electric@postgres:5432/{database_name}?sslmode=disable"
         with postgres.replication_slot_cleanup(database_name):
             async with _electric_process(
-                postgres.network, app_url, electric_url, test_name=f"conversation-electric-{database_name}"
+                postgres.network, history_url, electric_url, test_name=f"history-electric-{database_name}"
             ) as service:
                 yield service
 
 
 class ElectricService:
     def __init__(self, database_url: str, container: LoggedContainer) -> None:
+        """`database_url` is the history database, whose fold Electric replicates."""
         self.database_url = database_url
         self._container = container
 
@@ -164,7 +165,7 @@ async def _electric_process(
         .with_env("ELECTRIC_STORAGE_DIR", "/var/lib/electric")
         .with_env("ELECTRIC_PERSISTENT_STATE", "file")
         .with_env("ELECTRIC_MANUAL_TABLE_PUBLISHING", "true")
-        .with_env("ELECTRIC_REPLICATION_STREAM_ID", "agentplane_conversation")
+        .with_env("ELECTRIC_REPLICATION_STREAM_ID", "agentplane_history")
     )
     if electric_storage_dir is not None:
         await asyncio.to_thread(electric_storage_dir.mkdir, parents=True, exist_ok=True)
@@ -213,7 +214,7 @@ async def electric_service(
     await asyncio.to_thread(_load_postgres_images)
     with Network() as network:
         postgres = _logical_postgres_container(
-            network, test_name="conversation-postgres", postgres_settings=postgres_settings
+            network, test_name="history-postgres", postgres_settings=postgres_settings
         )
         with postgres:
             address = f"{postgres.get_container_host_ip()}:{postgres.get_exposed_port(5432)}"
@@ -225,7 +226,7 @@ async def electric_service(
                 network,
                 database_url,
                 "postgresql://electric:electric@postgres:5432/postgres?sslmode=disable",
-                test_name="conversation-electric",
+                test_name="history-electric",
                 electric_storage_dir=electric_storage_dir,
             ) as service:
                 yield service

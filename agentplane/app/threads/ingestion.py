@@ -1,78 +1,38 @@
-"""Lease-coordinated UI projection from Sandbox Service history."""
+"""Discover the Sessions running Sandboxes hold and link each to an app Thread.
+
+A Session's history and its fold belong to the History Service; the app only opens the Thread.
+"""
 
 import asyncio
 import contextlib
 import logging
-from datetime import timedelta
-from uuid import UUID
 
 import grpc
 from sqlalchemy.exc import SQLAlchemyError
-from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
 
 from agentplane.app.threads.events.event_log import EventLogStore
 from agentplane.app.threads.sessions import SandboxNotReachableError, SandboxSessions
 from agentplane.sandbox_service.models import SandboxNotFoundError
-from agentplane.thread_fold import projection_lease
-from agentplane.thread_fold.projection_lease import ProjectionLease, ProjectionLeaseLostError
-from agentplane.thread_fold.projector import HistoryProjector
 from agentplane.thread_fold.recording import EventReplicationError
 
 # gazelle:include_dep @pypi//grpcio
 
 logger = logging.getLogger(__name__)
 RECONCILE_S: float = 2
-LEASE_DURATION = timedelta(seconds=30)
-
-
-class Ingestion:
-    """Manage Session leases shared by app projection replicas."""
-
-    def __init__(self, engine: AsyncEngine) -> None:
-        self._sessions = async_sessionmaker(engine, expire_on_commit=False)
-
-    async def acquire(self, session_id: UUID, duration: timedelta) -> ProjectionLease | None:
-        async with self._sessions.begin() as session:
-            return await projection_lease.acquire(session, session_id, duration)
-
-    async def renew(self, lease: ProjectionLease, duration: timedelta) -> bool:
-        async with self._sessions.begin() as session:
-            return await projection_lease.renew(session, lease, duration)
-
-    async def release(self, lease: ProjectionLease) -> None:
-        async with self._sessions.begin() as session:
-            await projection_lease.release(session, lease)
 
 
 class Ingester:
-    """Discover Sessions and project their service-owned history under per-Session leases."""
-
-    def __init__(
-        self,
-        *,
-        runners: SandboxSessions,
-        event_logs: EventLogStore,
-        ingestion: Ingestion,
-        # None while Thread reads come from the History Service: the app then only discovers Sessions.
-        history_projector: HistoryProjector | None,
-    ) -> None:
+    def __init__(self, *, runners: SandboxSessions, event_logs: EventLogStore) -> None:
         self._runners = runners
-        self._history_projector = history_projector
         self._event_logs = event_logs
-        self._ingestion = ingestion
-        self._leases: dict[UUID, ProjectionLease] = {}
         self._changed = asyncio.Event()
         self._reconcile_lock = asyncio.Lock()
         self._coordinator: asyncio.Task[None] | None = None
 
     async def start(self) -> None:
-        """Start the ingestion coordinator, or wake it to reconcile now."""
+        """Start discovery, or wake it to reconcile now."""
         if self._coordinator is None:
             self._coordinator = asyncio.create_task(self._coordinate(), name="sandbox-ingestion")
-        self.wake()
-
-    def wake(self) -> None:
-        """Request an immediate pass over durable history and running Sandboxes."""
         self._changed.set()
 
     async def _coordinate(self) -> None:
@@ -90,34 +50,10 @@ class Ingester:
                 await asyncio.wait_for(self._changed.wait(), timeout=RECONCILE_S)
 
     async def reconcile(self) -> None:
-        """Project registered Sessions independently; discover live Sandbox Sessions separately."""
-        async with self._reconcile_lock:
-            projector = self._history_projector
-            projectable = {} if projector is None else await self._event_logs.projection_sessions()
-            for session_id in set(self._leases) - projectable.keys():
-                await self._release(session_id)
-            async with asyncio.TaskGroup() as tasks:
-                if projector is not None:
-                    for session_id in projectable:
-                        tasks.create_task(self._reconcile_session(projector, session_id))
-                for sandbox in sorted(self._runners.running()):
-                    tasks.create_task(self._discover_sessions(sandbox))
-
-    async def _reconcile_session(self, projector: HistoryProjector, session_id: UUID) -> None:
-        try:
-            async with asyncio.timeout(10):
-                lease = self._leases.get(session_id)
-                if lease is not None and not await self._ingestion.renew(lease, LEASE_DURATION):
-                    await self._release(session_id)
-                    lease = None
-                if lease is None:
-                    lease = await self._ingestion.acquire(session_id, LEASE_DURATION)
-                    if lease is None:
-                        return
-                    self._leases[session_id] = lease
-                await self._project_history(projector, session_id, lease)
-        except SQLAlchemyError, OSError, TimeoutError:
-            logger.warning("Session %s projection reconciliation failed; will retry", session_id, exc_info=True)
+        """Open a Thread for every Session of a running Sandbox that has none yet."""
+        async with self._reconcile_lock, asyncio.TaskGroup() as tasks:
+            for sandbox in sorted(self._runners.running()):
+                tasks.create_task(self._discover_sessions(sandbox))
 
     async def _discover_sessions(self, sandbox: str) -> None:
         try:
@@ -125,8 +61,7 @@ class Ingester:
                 summaries = await self._runners.client(sandbox).list_sessions()
                 for summary in summaries:
                     try:
-                        if await self._event_logs.discover(sandbox, summary.session_id):
-                            self.wake()
+                        await self._event_logs.open(sandbox, summary.session_id)
                     except EventReplicationError:
                         logger.warning(
                             "session %s/%s requires explicit history reconciliation", sandbox, summary.session_id
@@ -141,36 +76,9 @@ class Ingester:
         ):
             logger.warning("sandbox %s Session discovery unavailable", sandbox, exc_info=True)
 
-    async def _project_history(self, projector: HistoryProjector, thread_id: UUID, lease: ProjectionLease) -> None:
-        try:
-            progress = await projector.project_batch(thread_id, lease=lease)
-            if progress.through_cursor < progress.service_cursor:
-                self.wake()
-            logger.debug(
-                "service projection %s: through=%s service=%s",
-                thread_id,
-                progress.through_cursor,
-                progress.service_cursor,
-            )
-        except (
-            EventReplicationError,
-            ProjectionLeaseLostError,
-            SQLAlchemyError,
-            grpc.aio.AioRpcError,
-            ConnectionError,
-            ValueError,
-        ):
-            # One failed UI fold must not stop other Threads or the service archive.
-            logger.warning("service projection stalled for %s; checkpoint retained", thread_id, exc_info=True)
-
-    async def _release(self, session_id: UUID) -> None:
-        await self._ingestion.release(self._leases.pop(session_id))
-
     async def close(self) -> None:
         if self._coordinator is not None:
             self._coordinator.cancel()
             with contextlib.suppress(asyncio.CancelledError):
                 await self._coordinator
             self._coordinator = None
-        for session_id in list(self._leases):
-            await self._release(session_id)

@@ -1,6 +1,5 @@
 """Evidence and raw expansion use scoped, keyset reads over actual projected PostgreSQL rows."""
 
-from datetime import timedelta
 from pathlib import Path
 
 import httpx
@@ -17,12 +16,13 @@ from agentplane.app.identity import TokenReviewer
 from agentplane.app.live import LiveIndex
 from agentplane.app.model_catalog import ModelCatalog, ModelOption
 from agentplane.app.operator_sessions import OperatorSessionStore
-from agentplane.app.testing.history import ProjectedHistory as Ingestion, SeededEventLogStore as EventLogStore
+from agentplane.app.testing.history import SeededEventLogStore as EventLogStore
 from agentplane.app.testing.model_test_data import TEST_REASONING_EFFORTS
 from agentplane.app.testing.replication_source import SANDBOX, SESSION, ReplicationSource
 from agentplane.app.threads.bridge import RunnerBridge
 from agentplane.app.threads.store import ThreadStore
 from agentplane.app.threads.view.content import ContentStore
+from agentplane.history_service.testing.history import History
 from agentplane.proto import command_pb2, event_pb2
 from agentplane.runner.harness import Harness
 from agentplane.sandbox_service.client import SandboxServiceClient
@@ -36,7 +36,7 @@ async def test_lazy_scoped_evidence_and_native_expansion(
     store: ThreadStore,
     event_logs: EventLogStore,
     content: ContentStore,
-    ingestion: Ingestion,
+    history: History,
     database_updates: DatabaseUpdates,
     operator_sessions: OperatorSessionStore,
     egress: EgressAccess,
@@ -72,10 +72,8 @@ async def test_lazy_scoped_evidence_and_native_expansion(
         event_pb2.Event(item_started=event_pb2.ItemStarted(item_id="second", kind=event_pb2.ITEM_KIND_ASSISTANT_TEXT))
     )
     thread = await event_logs.open(SANDBOX, SESSION)
-    lease = await ingestion.acquire(thread, timedelta(minutes=1))
-    assert lease is not None
-    await ingestion.set_attached(thread, source.attached, lease=lease)
-    await ingestion.record(thread, source.entries, lease=lease)
+    await history.set_attached(thread, source.attached)
+    await history.record(thread, source.entries)
     scope = await content.current_scope(thread)
     assert scope is not None
     app = create_app(
@@ -186,7 +184,7 @@ async def test_lazy_scoped_evidence_and_native_expansion(
         stderr = "λ" * (1024 * 1024 + 1)
         source.append(event_pb2.Event(harness_stderr=event_pb2.HarnessStderr(text=stderr)))
         source.append(event_pb2.Event(debug_checkpoint=event_pb2.DebugCheckpoint(name="unlinked checkpoint")))
-        await ingestion.record(thread, source.entries[-3:], lease=lease)
+        await history.record(thread, source.entries[-3:])
         debug_tail = await client.get(chronological, params={"limit": "3"}, headers=AGENT_AUTH)
         rows = debug_tail.json()["observations"]
         assert [row["kind"] for row in rows] == ["native", "harness_stderr", "debug_checkpoint"]
@@ -222,7 +220,7 @@ async def test_lazy_scoped_evidence_and_native_expansion(
                 command_noop=event_pb2.CommandNoop(command_id="noop-debug", reason="unchanged"), source_sequences=[6]
             )
         )
-        await ingestion.record(thread, source.entries[-4:], lease=lease)
+        await history.record(thread, source.entries[-4:])
         for command_id, admission_cursor, outcome_cursor in (("failed-debug", "13", "15"), ("noop-debug", "14", "16")):
             command_scope = params | {"entity_kind": "command", "entity_id": command_id}
             command_evidence = await client.get(path, params=command_scope, headers=AGENT_AUTH)

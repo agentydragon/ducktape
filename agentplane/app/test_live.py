@@ -52,18 +52,15 @@ from agentplane.app.operator_sessions import (
 )
 from agentplane.app.sandbox_models import sandbox_view
 from agentplane.app.shutdown import Drain
-from agentplane.app.testing.history import (
-    ProjectedHistory as Ingestion,
-    ProjectedIngester as Ingester,
-    SeededEventLogStore as EventLogStore,
-)
-from agentplane.app.testing.history_service import HistoryService
+from agentplane.app.testing.history import SeededEventLogStore as EventLogStore
 from agentplane.app.testing.model_test_data import TEST_REASONING_EFFORTS
 from agentplane.app.testing.thread_test_support import Replica
 from agentplane.app.threads.bridge import RunnerBridge
+from agentplane.app.threads.events import event_log
+from agentplane.app.threads.ingestion import Ingester
 from agentplane.app.threads.sessions import SandboxSessions
 from agentplane.app.threads.store import ThreadStore
-from agentplane.app.threads.summaries import AppSummaries
+from agentplane.app.threads.summaries import Summaries
 from agentplane.app.threads.view.content import ContentStore
 from agentplane.history_service.client import HistoryServiceClient
 from agentplane.runner.harness import Harness
@@ -310,18 +307,19 @@ def app(
     live_index: LiveIndex,
     action_policy: ActionPolicyInventory,
     reviewer: TokenReviewer,
-    history_peer: HistoryService,
-    history_client: HistoryServiceClient,
+    tmp_path: Path,
     electric_http: httpx.AsyncClient,
     notifications_http: httpx.AsyncClient,
     notifications_token_file: Path,
 ) -> FastAPI:
-    """Neither test below reaches a database or a runner -- the guard answers before a route body
-    runs, and the document comes from the signatures -- so the engine here never connects."""
+    """Neither test below reaches a database, a runner or the History Service -- the guard answers
+    before a route body runs, and the document comes from the signatures -- so nothing here connects."""
     engine = connect("postgresql+asyncpg://live-test@127.0.0.1:1/live-test")
+    history = HistoryServiceClient("127.0.0.1:1", token_file=tmp_path / "unused-history-token", request_timeout_s=1)
+    summaries = Summaries(engine, history)
     event_logs, content = (
-        EventLogStore(engine, peer=history_peer, history_reader=history_client),
-        ContentStore(engine, history_reader=history_client),
+        event_log.EventLogStore(engine, history_reader=history, summaries=summaries),
+        ContentStore(engine, history_reader=history),
     )
     database_updates = DatabaseUpdates(engine.url)
     runners = SandboxSessions(live_index, inventory)
@@ -329,16 +327,12 @@ def app(
         runners=runners,
         event_logs=event_logs,
         content=content,
-        ingester=Ingester(
-            runners=runners,
-            event_logs=event_logs,
-            ingestion=Ingestion(engine, peer=history_peer, history_reader=history_client),
-        ),
+        ingester=Ingester(runners=runners, event_logs=event_logs),
     )
     return create_app(
         inventory,
         bridge,
-        ThreadStore(engine, AppSummaries(engine)),
+        ThreadStore(engine, summaries),
         MODELS,
         egress,
         decisions,
@@ -454,8 +448,9 @@ async def test_global_thread_stream_reports_listener_loss_then_rereads_after_rec
                 )
             assert not (await _next_threads(stream)).updates_connected
             thread_id = await event_logs.open("runner-1", "test-during-listener-gap")
-            recovered = await _next_threads(stream)
-            assert recovered.updates_connected
+            # A History Service fold notice may send a snapshot before the listener reconnects.
+            while not (recovered := await _next_threads(stream)).updates_connected:
+                pass
             assert [thread.id for thread in recovered.threads] == [thread_id]
     finally:
         drain.begin()

@@ -1,6 +1,7 @@
 """The app's own Thread tables: the Thread → Session link and what an operator sets on a Thread.
 
-The fold's projection tables are `agentplane.thread_fold.models`.
+The app reads a Thread's fold from the History Service. This database still holds the app's
+retired projection in the fold's tables (`agentplane.thread_fold.models`), which nothing reads or writes.
 
 The schema is owned by the Alembic migrations under `migrations/`, applied by `database_migrate.py`
 as a separate deploy step.
@@ -11,7 +12,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from uuid import UUID, uuid4
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Text, text
+from sqlalchemy import BigInteger, Boolean, DateTime, ForeignKey, Text, text
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -33,8 +34,8 @@ class EventLog(Base):
 
 
 class Thread(Base):
-    """What an operator has set on an event log's thread. No row means the defaults: unnamed and
-    not archived, so ingestion never has to create one."""
+    """What an operator has set on an event log's thread, and the app's record of a confirmed resume.
+    No row means the defaults: unnamed, not archived and not resumed, so discovery never has to create one."""
 
     __tablename__ = "thread"
 
@@ -44,3 +45,5 @@ class Thread(Base):
     # NULL while unnamed; never the empty string.
     name: Mapped[str | None] = mapped_column(Text)
     archived: Mapped[bool] = mapped_column(Boolean, default=False, server_default=text("false"))
+    # A runner-confirmed restart: a terminal feed at or before this cursor belongs to the previous incarnation.
+    resumed_after_cursor: Mapped[int | None] = mapped_column(BigInteger)

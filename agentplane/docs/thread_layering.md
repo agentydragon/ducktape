@@ -199,8 +199,8 @@ positions in the same sequence, not additional Event counters.
 
 Only one runner writer may own a log's journal at a time. Local storage ownership
 and replacement handoff must fence the old writer before a successor appends or
-retries commands. The app's ingestion lease only fences PostgreSQL copying; it does
-not fence native execution or two runners writing the same log.
+retries commands. Fencing the copy into PostgreSQL does not fence native execution or
+two runners writing the same log.
 
 A copied high-water mark alone cannot recover lost runner state. The runner might
 have emitted an unreplicated suffix while the app was offline. Starting a replacement

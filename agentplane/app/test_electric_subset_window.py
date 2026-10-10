@@ -8,26 +8,23 @@ that they do, and the request forms that work.
 
 import asyncio
 import json
-from collections.abc import Callable
-from datetime import timedelta
+from collections.abc import AsyncIterator, Callable
+from contextlib import asynccontextmanager
+from dataclasses import dataclass
 from typing import Any
 from uuid import UUID
 
 import httpx
 import pytest_bazel
 from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
 
-from agentplane.app.database import connect
 from agentplane.app.testing.electric_service import electric_service
-from agentplane.app.testing.history import ProjectedHistory as Ingestion, SeededEventLogStore as EventLogStore
-from agentplane.app.testing.history_service import HistoryService
+from agentplane.app.testing.history import fixture_session_id
 from agentplane.app.testing.replication_source import SANDBOX, SESSION, ReplicationSource
-from agentplane.history_service.client import HistoryServiceClient
+from agentplane.history_service.fold_shadow import FOLD_EPOCH
+from agentplane.history_service.testing.history import History
 from agentplane.proto import event_pb2
 from agentplane.thread_fold.models import ThreadEntity
-from agentplane.thread_fold.projection_lease import ProjectionLease
-from agentplane.thread_fold.recording import THREAD_FOLD_EPOCH
 
 # gazelle:include_dep @pypi//protobuf
 
@@ -40,7 +37,7 @@ def _thread_shape(table: str, thread: UUID, **extra: str) -> dict[str, str]:
     where = " AND ".join(
         ["thread_id = $1", "projection_epoch = $2", *(f"{column} = ${index}" for index, column in enumerate(extra, 3))]
     )
-    params = {"params[1]": str(thread), "params[2]": THREAD_FOLD_EPOCH}
+    params = {"params[1]": str(thread), "params[2]": FOLD_EPOCH}
     params.update({f"params[{index}]": value for index, value in enumerate(extra.values(), 3)})
     return {"table": table, "where": where, "log": "changes_only", "replica": "full", **params}
 
@@ -86,227 +83,191 @@ def _visible(txid: int, metadata: dict[str, Any]) -> bool:
     return txid < int(metadata["xmax"]) and txid not in {int(xid) for xid in metadata["xip_list"]}
 
 
-async def _rows(engine: AsyncEngine, thread: UUID) -> list[ThreadEntity]:
-    async with async_sessionmaker(engine)() as session:
-        return list(await session.scalars(select(ThreadEntity).where(ThreadEntity.thread_id == thread)))
-
-
 def _key(row: Row) -> tuple[str, str]:
     return row["entity_kind"], row["entity_id"]
 
 
-async def _record(
-    ingestion: Ingestion, source: ReplicationSource, thread: UUID, lease: ProjectionLease, *events: event_pb2.Event
-) -> None:
-    await ingestion.record(thread, [source.append(event) for event in events], lease=lease)
+@dataclass(frozen=True)
+class _Thread:
+    electric_url: str
+    history: History
+    source: ReplicationSource
+    id: UUID
+
+    async def record(self, *events: event_pb2.Event) -> None:
+        await self.history.record(self.id, [self.source.append(event) for event in events])
+
+    async def rows(self) -> list[ThreadEntity]:
+        async with self.history.sessions() as session:
+            return list(await session.scalars(select(ThreadEntity).where(ThreadEntity.thread_id == self.id)))
 
 
-async def test_one_thread_shape_serves_a_moving_window(
-    history_peer: HistoryService, history_client: HistoryServiceClient
-) -> None:
+@asynccontextmanager
+async def _attached_thread() -> AsyncIterator[_Thread]:
+    """An attached Session with nothing recorded yet, in the history database Electric replicates."""
     async with electric_service() as service:
-        engine = connect(service.database_url)
+        history = History(service.database_url)
         try:
-            event_logs, ingestion = (
-                EventLogStore(engine, peer=history_peer, history_reader=history_client),
-                Ingestion(engine, peer=history_peer, history_reader=history_client),
-            )
-            source = ReplicationSource()
-            thread = await event_logs.open(SANDBOX, SESSION)
-            lease = await ingestion.acquire(thread, timedelta(minutes=2))
-            assert lease is not None
-            await ingestion.set_attached(thread, source.attached, lease=lease)
-            items = [f"item-{index:02}" for index in range(12)]
-            await _record(
-                ingestion,
-                source,
-                thread,
-                lease,
-                event_pb2.Event(harness_started=event_pb2.HarnessStarted(pid=1)),
-                event_pb2.Event(turn_started=event_pb2.TurnStarted(turn_id="turn", model="test-model")),
-                *(
-                    event
-                    for index, item in enumerate(items)
-                    for event in (
-                        event_pb2.Event(
-                            item_started=event_pb2.ItemStarted(item_id=item, kind=event_pb2.ITEM_KIND_ASSISTANT_TEXT)
-                        ),
-                        event_pb2.Event(text_delta=event_pb2.TextDelta(item_id=item, text=f"Body {index}")),
-                    )
-                ),
-            )
-            indexes = sorted((row.entity_index for row in await _rows(engine, thread)), reverse=True)
-            entities = _thread_shape("thread_entity", thread)
-            async with asyncio.timeout(120), httpx.AsyncClient(base_url=service.url, timeout=35) as client:
-                handle, start = await _open(client, entities)
+            source, thread = ReplicationSource(), fixture_session_id(SANDBOX, SESSION)
+            await history.open(thread, sandbox=SANDBOX)
+            await history.set_attached(thread, source.attached)
+            yield _Thread(service.url, history, source, thread)
+        finally:
+            await history.close()
 
-                # Opening on the tail: the newest positions, however many kinds occupy them.
-                tail, _ = await _subset(client, entities, handle, start, {"order_by": "entity_index DESC", "limit": 6})
-                assert sorted((int(row["entity_index"]) for row in tail), reverse=True) == indexes[:6]
 
-                # An edit to a row the reader does not hold yet, committed before it scrolls there.
-                await _record(
-                    ingestion,
-                    source,
-                    thread,
-                    lease,
-                    event_pb2.Event(text_delta=event_pb2.TextDelta(item_id="item-01", text=" edited")),
-                )
-                before_scroll = next(row for row in await _rows(engine, thread) if row.entity_id == "item-01")
-
-                # Scrolling up is a second subset of the same shape: only positions not yet held.
-                older, older_snapshot = await _subset(
-                    client,
-                    entities,
-                    handle,
-                    start,
-                    {
-                        "where": "entity_index < $1",
-                        "params": {"1": str(min(int(row["entity_index"]) for row in tail))},
-                        "order_by": "entity_index DESC",
-                        "limit": 100,
-                    },
-                )
-                assert sorted((int(row["entity_index"]) for row in older), reverse=True) == indexes[6:]
-                assert not {_key(row) for row in older} & {_key(row) for row in tail}
-                item_01 = next(row for row in older if row["entity_id"] == "item-01")
-                assert int(item_01["revision_cursor"]) == before_scroll.revision_cursor
-
-                # An edit to a row the reader loaded by scrolling up, committed after it did.
-                await _record(
-                    ingestion,
-                    source,
-                    thread,
-                    lease,
-                    event_pb2.Event(text_delta=event_pb2.TextDelta(item_id="item-01", text=" again")),
-                )
-                after_scroll = next(row for row in await _rows(engine, thread) if row.entity_id == "item-01")
-                assert after_scroll.revision_cursor > before_scroll.revision_cursor
-
-                # Both edits are on the one live log. The snapshot's metadata says the first is
-                # already in what the scroll loaded, so a client skips it and applies the second.
-                changes = await _follow_until(
-                    client,
-                    entities,
-                    handle,
-                    start,
-                    lambda seen: any(
-                        change["value"]["entity_id"] == "item-01"
-                        and int(change["value"]["revision_cursor"]) == after_scroll.revision_cursor
-                        for change in seen
+async def test_one_thread_shape_serves_a_moving_window() -> None:
+    async with _attached_thread() as thread:
+        items = [f"item-{index:02}" for index in range(12)]
+        await thread.record(
+            event_pb2.Event(harness_started=event_pb2.HarnessStarted(pid=1)),
+            event_pb2.Event(turn_started=event_pb2.TurnStarted(turn_id="turn", model="test-model")),
+            *(
+                event
+                for index, item in enumerate(items)
+                for event in (
+                    event_pb2.Event(
+                        item_started=event_pb2.ItemStarted(item_id=item, kind=event_pb2.ITEM_KIND_ASSISTANT_TEXT)
                     ),
+                    event_pb2.Event(text_delta=event_pb2.TextDelta(item_id=item, text=f"Body {index}")),
                 )
-                edits = {
-                    int(change["value"]["revision_cursor"]): [int(txid) for txid in change["headers"]["txids"]]
-                    for change in changes
-                    if change["value"]["entity_id"] == "item-01"
-                }
-                assert set(edits) == {before_scroll.revision_cursor, after_scroll.revision_cursor}
-                assert all(_visible(txid, older_snapshot) for txid in edits[before_scroll.revision_cursor])
-                assert not any(_visible(txid, older_snapshot) for txid in edits[after_scroll.revision_cursor])
-        finally:
-            await engine.dispose()
+            ),
+        )
+        indexes = sorted((row.entity_index for row in await thread.rows()), reverse=True)
+        entities = _thread_shape("thread_entity", thread.id)
+        async with asyncio.timeout(120), httpx.AsyncClient(base_url=thread.electric_url, timeout=35) as client:
+            handle, start = await _open(client, entities)
 
+            # Opening on the tail: the newest positions, however many kinds occupy them.
+            tail, _ = await _subset(client, entities, handle, start, {"order_by": "entity_index DESC", "limit": 6})
+            assert sorted((int(row["entity_index"]) for row in tail), reverse=True) == indexes[:6]
 
-async def test_bodies_load_as_subsets_of_one_shape_per_field(
-    history_peer: HistoryService, history_client: HistoryServiceClient
-) -> None:
-    async with electric_service() as service:
-        engine = connect(service.database_url)
-        try:
-            event_logs, ingestion = (
-                EventLogStore(engine, peer=history_peer, history_reader=history_client),
-                Ingestion(engine, peer=history_peer, history_reader=history_client),
+            # An edit to a row the reader does not hold yet, committed before it scrolls there.
+            await thread.record(event_pb2.Event(text_delta=event_pb2.TextDelta(item_id="item-01", text=" edited")))
+            before_scroll = next(row for row in await thread.rows() if row.entity_id == "item-01")
+
+            # Scrolling up is a second subset of the same shape: only positions not yet held.
+            older, older_snapshot = await _subset(
+                client,
+                entities,
+                handle,
+                start,
+                {
+                    "where": "entity_index < $1",
+                    "params": {"1": str(min(int(row["entity_index"]) for row in tail))},
+                    "order_by": "entity_index DESC",
+                    "limit": 100,
+                },
             )
-            source = ReplicationSource()
-            thread = await event_logs.open(SANDBOX, SESSION)
-            lease = await ingestion.acquire(thread, timedelta(minutes=2))
-            assert lease is not None
-            await ingestion.set_attached(thread, source.attached, lease=lease)
-            await _record(
-                ingestion,
-                source,
-                thread,
-                lease,
-                event_pb2.Event(harness_started=event_pb2.HarnessStarted(pid=1)),
-                event_pb2.Event(turn_started=event_pb2.TurnStarted(turn_id="turn", model="test-model")),
-                *(
-                    event
-                    for item in ("replaced", "kept", "unrelated")
-                    for event in (
-                        event_pb2.Event(
-                            item_started=event_pb2.ItemStarted(item_id=item, kind=event_pb2.ITEM_KIND_ASSISTANT_TEXT)
-                        ),
-                        event_pb2.Event(text_delta=event_pb2.TextDelta(item_id=item, text=f"First {item}")),
-                    )
+            assert sorted((int(row["entity_index"]) for row in older), reverse=True) == indexes[6:]
+            assert not {_key(row) for row in older} & {_key(row) for row in tail}
+            item_01 = next(row for row in older if row["entity_id"] == "item-01")
+            assert int(item_01["revision_cursor"]) == before_scroll.revision_cursor
+
+            # An edit to a row the reader loaded by scrolling up, committed after it did.
+            await thread.record(event_pb2.Event(text_delta=event_pb2.TextDelta(item_id="item-01", text=" again")))
+            after_scroll = next(row for row in await thread.rows() if row.entity_id == "item-01")
+            assert after_scroll.revision_cursor > before_scroll.revision_cursor
+
+            # Both edits are on the one live log. The snapshot's metadata says the first is
+            # already in what the scroll loaded, so a client skips it and applies the second.
+            changes = await _follow_until(
+                client,
+                entities,
+                handle,
+                start,
+                lambda seen: any(
+                    change["value"]["entity_id"] == "item-01"
+                    and int(change["value"]["revision_cursor"]) == after_scroll.revision_cursor
+                    for change in seen
                 ),
             )
+            edits = {
+                int(change["value"]["revision_cursor"]): [int(txid) for txid in change["headers"]["txids"]]
+                for change in changes
+                if change["value"]["entity_id"] == "item-01"
+            }
+            assert set(edits) == {before_scroll.revision_cursor, after_scroll.revision_cursor}
+            assert all(_visible(txid, older_snapshot) for txid in edits[before_scroll.revision_cursor])
+            assert not any(_visible(txid, older_snapshot) for txid in edits[after_scroll.revision_cursor])
 
-            def reference(rows: list[ThreadEntity], item: str) -> dict[str, Any]:
-                text_ref = next(row for row in rows if row.entity_id == item).text_ref
-                assert text_ref is not None
-                return text_ref
 
-            first_generation = reference(await _rows(engine, thread), "replaced")["generation"]
-            # A completion whose text differs from what streamed replaces the body: a new
-            # generation, with the old one's chunks still in the insert-only table.
-            await _record(
-                ingestion,
-                source,
-                thread,
-                lease,
-                event_pb2.Event(item_completed=event_pb2.ItemCompleted(item_id="replaced", text="Second replaced")),
-            )
-            rows = await _rows(engine, thread)
-            replaced, kept = reference(rows, "replaced"), reference(rows, "kept")
-            assert replaced["generation"] != first_generation
+async def test_bodies_load_as_subsets_of_one_shape_per_field() -> None:
+    async with _attached_thread() as thread:
+        await thread.record(
+            event_pb2.Event(harness_started=event_pb2.HarnessStarted(pid=1)),
+            event_pb2.Event(turn_started=event_pb2.TurnStarted(turn_id="turn", model="test-model")),
+            *(
+                event
+                for item in ("replaced", "kept", "unrelated")
+                for event in (
+                    event_pb2.Event(
+                        item_started=event_pb2.ItemStarted(item_id=item, kind=event_pb2.ITEM_KIND_ASSISTANT_TEXT)
+                    ),
+                    event_pb2.Event(text_delta=event_pb2.TextDelta(item_id=item, text=f"First {item}")),
+                )
+            ),
+        )
 
-            chunks = _thread_shape("thread_payload_chunk", thread, field="text")
-            async with asyncio.timeout(120), httpx.AsyncClient(base_url=service.url, timeout=35) as client:
-                handle, start = await _open(client, chunks)
+        def reference(rows: list[ThreadEntity], item: str) -> dict[str, Any]:
+            text_ref = next(row for row in rows if row.entity_id == item).text_ref
+            assert text_ref is not None
+            return text_ref
 
-                def body(rows: list[Row], owner: str) -> str:
-                    ordered = sorted(
-                        (row for row in rows if row["owner_id"] == owner), key=lambda row: int(row["chunk_index"])
-                    )
-                    return "".join(json.loads(row["text"]) for row in ordered)
+        first_generation = reference(await thread.rows(), "replaced")["generation"]
+        # A completion whose text differs from what streamed replaces the body: a new
+        # generation, with the old one's chunks still in the insert-only table.
+        await thread.record(
+            event_pb2.Event(item_completed=event_pb2.ItemCompleted(item_id="replaced", text="Second replaced"))
+        )
+        rows = await thread.rows()
+        replaced, kept = reference(rows, "replaced"), reference(rows, "kept")
+        assert replaced["generation"] != first_generation
 
-                # The bodies of the rows in view, in one request: each owner at the generation its
-                # reference names, so a replaced body's old chunks stay behind.
-                current, _ = await _subset(
-                    client,
-                    chunks,
-                    handle,
-                    start,
-                    {
-                        "where": "(owner_id = $1 AND generation = $2) OR (owner_id = $3 AND generation = $4)",
-                        "params": {
-                            "1": replaced["owner_id"],
-                            "2": str(replaced["generation"]),
-                            "3": kept["owner_id"],
-                            "4": str(kept["generation"]),
-                        },
+        chunks = _thread_shape("thread_payload_chunk", thread.id, field="text")
+        async with asyncio.timeout(120), httpx.AsyncClient(base_url=thread.electric_url, timeout=35) as client:
+            handle, start = await _open(client, chunks)
+
+            def body(rows: list[Row], owner: str) -> str:
+                ordered = sorted(
+                    (row for row in rows if row["owner_id"] == owner), key=lambda row: int(row["chunk_index"])
+                )
+                return "".join(json.loads(row["text"]) for row in ordered)
+
+            # The bodies of the rows in view, in one request: each owner at the generation its
+            # reference names, so a replaced body's old chunks stay behind.
+            current, _ = await _subset(
+                client,
+                chunks,
+                handle,
+                start,
+                {
+                    "where": "(owner_id = $1 AND generation = $2) OR (owner_id = $3 AND generation = $4)",
+                    "params": {
+                        "1": replaced["owner_id"],
+                        "2": str(replaced["generation"]),
+                        "3": kept["owner_id"],
+                        "4": str(kept["generation"]),
                     },
-                )
-                assert {row["owner_id"] for row in current} == {replaced["owner_id"], kept["owner_id"]}
-                assert body(current, replaced["owner_id"]) == "Second replaced"
-                assert body(current, kept["owner_id"]) == "First kept"
+                },
+            )
+            assert {row["owner_id"] for row in current} == {replaced["owner_id"], kept["owner_id"]}
+            assert body(current, replaced["owner_id"]) == "Second replaced"
+            assert body(current, kept["owner_id"]) == "First kept"
 
-                # An array parameter selects by owner alone — and so brings every generation.
-                by_owner, _ = await _subset(
-                    client,
-                    chunks,
-                    handle,
-                    start,
-                    {"where": "owner_id = ANY($1)", "params": {"1": f"{{{replaced['owner_id']},{kept['owner_id']}}}"}},
-                )
-                assert {row["owner_id"] for row in by_owner} == {replaced["owner_id"], kept["owner_id"]}
-                assert {int(row["generation"]) for row in by_owner if row["owner_id"] == replaced["owner_id"]} == {
-                    int(first_generation),
-                    int(replaced["generation"]),
-                }
-        finally:
-            await engine.dispose()
+            # An array parameter selects by owner alone — and so brings every generation.
+            by_owner, _ = await _subset(
+                client,
+                chunks,
+                handle,
+                start,
+                {"where": "owner_id = ANY($1)", "params": {"1": f"{{{replaced['owner_id']},{kept['owner_id']}}}"}},
+            )
+            assert {row["owner_id"] for row in by_owner} == {replaced["owner_id"], kept["owner_id"]}
+            assert {int(row["generation"]) for row in by_owner if row["owner_id"] == replaced["owner_id"]} == {
+                int(first_generation),
+                int(replaced["generation"]),
+            }
 
 
 if __name__ == "__main__":

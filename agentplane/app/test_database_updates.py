@@ -9,10 +9,10 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import create_async_engine
 
 from agentplane.app.database_updates import Channel, DatabaseUpdates
-from agentplane.app.testing.history import ProjectedHistory as Ingestion, SeededEventLogStore as EventLogStore
-from agentplane.app.testing.projection_lease import LeaseFactory
+from agentplane.app.testing.history import SeededEventLogStore as EventLogStore
 from agentplane.app.testing.thread_test_support import Replica, event_entry
 from agentplane.app.threads.store import ThreadStore
+from agentplane.history_service.testing.history import History
 from agentplane.proto import event_pb2
 
 # The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.
@@ -20,12 +20,7 @@ from agentplane.proto import event_pb2
 
 
 async def test_commits_wake_another_replica_and_leave_durable_replay(
-    store: ThreadStore,
-    event_logs: EventLogStore,
-    ingestion: Ingestion,
-    replica: Replica,
-    database_updates: DatabaseUpdates,
-    lease_for: LeaseFactory,
+    store: ThreadStore, event_logs: EventLogStore, history: History, replica: Replica, database_updates: DatabaseUpdates
 ) -> None:
     changed, sessions_changed = asyncio.Event(), asyncio.Event()
     with (
@@ -33,7 +28,6 @@ async def test_commits_wake_another_replica_and_leave_durable_replay(
         database_updates.changes[Channel.OPERATOR_SESSIONS].subscribe(sessions_changed),
     ):
         thread = await event_logs.open("sb-1", "s-1")
-        lease = await lease_for(thread)
         await asyncio.wait_for(changed.wait(), timeout=5)
         assert (await replica.store.list_threads())[0].id == thread
         changed.clear()
@@ -43,7 +37,8 @@ async def test_commits_wake_another_replica_and_leave_durable_replay(
         assert view is not None
         assert view.name == "cross-replica rename"
         changed.clear()
-        await ingestion.record(thread, [event_entry(1, harness_lost=event_pb2.HarnessLost())], lease=lease)
+        # The History Service's fold commit wakes the readers through the summary watch.
+        await history.record(thread, [event_entry(1, harness_lost=event_pb2.HarnessLost())])
         await asyncio.wait_for(changed.wait(), timeout=5)
         assert [entry.cursor for entry in await replica.event_logs.events(thread, limit=10)] == [1]
         # Each notification was dispatched to its own channel's readers only, in the callback that
@@ -52,16 +47,9 @@ async def test_commits_wake_another_replica_and_leave_durable_replay(
 
 
 async def test_listener_reconnect_wakes_every_channel_for_writes_during_the_gap(
-    store: ThreadStore,
-    event_logs: EventLogStore,
-    ingestion: Ingestion,
-    replica: Replica,
-    database_updates: DatabaseUpdates,
-    lease_for: LeaseFactory,
-    db_url: str,
+    store: ThreadStore, event_logs: EventLogStore, replica: Replica, database_updates: DatabaseUpdates, db_url: str
 ) -> None:
     thread = await event_logs.open("sb-1", "s-1")
-    lease = await lease_for(thread)
     engine = create_async_engine(db_url)
     changed, sessions_changed = asyncio.Event(), asyncio.Event()
     try:
@@ -82,10 +70,12 @@ async def test_listener_reconnect_wakes_every_channel_for_writes_during_the_gap(
             assert not database_updates.listener.connected
             changed.clear()
             sessions_changed.clear()
-            await ingestion.record(thread, [event_entry(1, harness_lost=event_pb2.HarnessLost())], lease=lease)
+            await replica.store.rename(thread, "during the gap")
             await asyncio.wait_for(changed.wait(), timeout=5)
             assert database_updates.listener.connected
-            assert [entry.cursor for entry in await replica.event_logs.events(thread, limit=10)] == [1]
+            view = await replica.store.get_thread(thread)
+            assert view is not None
+            assert view.name == "during the gap"
             # Nothing announced a session change: only the reconnect itself wakes that channel's readers.
             await asyncio.wait_for(sessions_changed.wait(), timeout=5)
             # Establish another live write still wakes this replica after it reconnects.

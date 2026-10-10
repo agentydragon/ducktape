@@ -23,7 +23,7 @@ class ProjectionLease:
 
 
 class ProjectionLeaseLostError(Exception):
-    """The app replica no longer owns authority to commit projections for this Session."""
+    """This replica no longer owns authority to commit projections for this Session."""
 
 
 async def acquire(session: AsyncSession, session_id: UUID, duration: timedelta) -> ProjectionLease | None:

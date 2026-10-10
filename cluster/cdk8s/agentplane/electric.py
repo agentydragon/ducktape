@@ -1,4 +1,4 @@
-"""Private Electric sync services, one per database holding a thread fold."""
+"""The private Electric sync service over the History Service's thread fold."""
 
 from __future__ import annotations
 
@@ -42,8 +42,7 @@ class Source:
     stream_id: str
 
 
-APP = Source(name="agentplane-electric", database="app", stream_id="agentplane_conversation")
-# The History Service fold; an environment whose `thread_reads` is `HISTORY_SERVICE` points the app at it.
+# The History Service fold, which the app's proxy forwards browsers' shape reads to.
 HISTORY = Source(name="agentplane-electric-history", database="sandbox_service", stream_id="agentplane_history")
 
 

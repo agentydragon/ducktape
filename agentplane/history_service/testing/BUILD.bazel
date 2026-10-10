@@ -31,3 +31,23 @@ py_library(
         "@pypi//sqlalchemy",
     ],
 )
+
+py_library(
+    name = "history",
+    testonly = True,
+    srcs = ["history.py"],
+    deps = [
+        "//agentplane/history_service:fold_shadow",
+        "//agentplane/history_service:protocol_pb2",
+        "//agentplane/history_service:summary_changes",
+        "//agentplane/proto:event_log_pb2",
+        "//agentplane/proto:runner_pb2",
+        "//agentplane/sandbox_service/session_history:database_migrate",
+        "//agentplane/sandbox_service/session_history:db",
+        "//agentplane/sandbox_service/session_history:store",
+        "//agentplane/thread_fold:recording",
+        "@pypi//asyncpg",
+        "@pypi//protobuf",
+        "@pypi//sqlalchemy",
+    ],
+)

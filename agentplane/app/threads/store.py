@@ -19,7 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 from agentplane.app.database_updates import Channel, notify
 from agentplane.app.threads.events.event_log import ThreadNotFoundError
 from agentplane.app.threads.models import EventLog, Thread
-from agentplane.app.threads.summaries import AppSummaries, FeedError, FoldSummary, HistorySummaries
+from agentplane.app.threads.summaries import FeedError, FoldSummary, Summaries
 from agentplane.app.threads.thread_view import ThreadView
 from agentplane.proto import event_pb2, runner_pb2
 from agentplane.runner.harness import Harness
@@ -76,7 +76,7 @@ class ThreadPage(BaseModel):
 
 
 class ThreadStore:
-    def __init__(self, engine: AsyncEngine, summaries: AppSummaries | HistorySummaries) -> None:
+    def __init__(self, engine: AsyncEngine, summaries: Summaries) -> None:
         self._sessions = async_sessionmaker(engine, expire_on_commit=False)
         self._summaries = summaries
 
@@ -123,7 +123,7 @@ class ThreadStore:
         summaries = await self._summaries.many({log.id for log, _ in page})
         last = page[-1][0] if len(rows) > limit else None
         return ThreadPage(
-            threads=[_view(log, thread, summaries.get(log.id)) for log, thread in page],
+            threads=[_view(log, thread, summaries[log.id]) for log, thread in page],
             next_page_token=None
             if last is None
             else PageToken(listing=listing, created_at=last.created_at, id=last.id).encode(),
@@ -196,9 +196,7 @@ async def _set_thread(session: AsyncSession, thread_id: UUID, **values: object) 
     return log, thread
 
 
-def _view(log: EventLog, thread: Thread | None, summary: FoldSummary | None) -> ThreadView:
-    if summary is None:
-        raise ValueError("missing service projection metadata")
+def _view(log: EventLog, thread: Thread | None, summary: FoldSummary) -> ThreadView:
     last_turn_status = None if summary.last_turn_status is None else event_pb2.TurnStatus.Name(summary.last_turn_status)
     attachment = summary.feed.attached if summary.feed is not None else None
     end = summary.feed.end if summary.feed is not None else None

@@ -14,7 +14,6 @@ import signal
 from collections.abc import AsyncIterator, Callable
 from contextlib import aclosing
 from dataclasses import dataclass
-from datetime import timedelta
 from pathlib import Path
 from typing import Any
 from unittest.mock import AsyncMock
@@ -31,7 +30,7 @@ from tenacity import AsyncRetrying, retry_if_exception_type, stop_after_delay, w
 from agentplane.app.action_policy import ActionPolicyInventory
 from agentplane.app.api import create_app
 from agentplane.app.changes import Changes
-from agentplane.app.conftest import AGENT_AUTH
+from agentplane.app.conftest import AGENT_AUTH, listening
 from agentplane.app.database import connect
 from agentplane.app.database_updates import Channel, DatabaseUpdates
 from agentplane.app.decisions import DecisionsClient
@@ -41,20 +40,18 @@ from agentplane.app.identity import TokenReviewer
 from agentplane.app.live import LiveIndex
 from agentplane.app.model_catalog import ModelCatalog, ModelOption
 from agentplane.app.operator_sessions import OperatorSessionStore
-from agentplane.app.testing.history import (
-    ProjectedHistory as Ingestion,
-    ProjectedIngester as Ingester,
-    SeededEventLogStore as EventLogStore,
-)
-from agentplane.app.testing.history_service import HistoryService
+from agentplane.app.testing.history import SeededEventLogStore as EventLogStore
 from agentplane.app.testing.model_test_data import TEST_REASONING_EFFORTS
 from agentplane.app.threads.bridge import RunnerAdmissionTimeoutError, RunnerBridge
 from agentplane.app.threads.events.stream import follow
+from agentplane.app.threads.ingestion import Ingester
 from agentplane.app.threads.sessions import SandboxSessions
 from agentplane.app.threads.store import ThreadStore
+from agentplane.app.threads.summaries import Summaries
 from agentplane.app.threads.view.content import ContentStore
 from agentplane.history_service.client import HistoryServiceClient
 from agentplane.history_service.testing.backend import history_service, ingest
+from agentplane.history_service.testing.history import History
 from agentplane.proto import command_pb2, event_log_pb2, event_pb2, runner_pb2
 from agentplane.runner import service
 from agentplane.runner.harness import Harness
@@ -161,27 +158,15 @@ def sandbox_runner_port(runner: RunnerHandle) -> int:
 
 @pytest.fixture
 async def history_client(
-    request: pytest.FixtureRequest,
-    inventory: SandboxServiceClient,
-    service_history_db_url: str,
-    history_peer: HistoryService,
-    tmp_path: Path,
+    inventory: SandboxServiceClient, service_history_db_url: str, history_token_file: Path
 ) -> AsyncIterator[HistoryServiceClient]:
-    # Native cross-service cases read, through a real History Service whose ingester follows
-    # `sandbox_endpoint`, the separate service DB it creates. Pure command/projection cases keep the
-    # controlled RPC peer.
-    native = "local_runners" in request.fixturenames or request.node.name.startswith(
-        "test_inventory_change_discovers_existing_runner_session"
-    )
-    if native:
-        async with (
-            ingest(service_history_db_url, inventory),
-            history_service(service_history_db_url, tmp_path / "history-service-token") as client,
-        ):
-            yield client
-    else:
-        async with history_peer.connect(tmp_path / "history-token") as client:
-            yield client
+    # The app registers no Session here: the History Service ingester copies every runner Session
+    # the Sandbox Service fixture reports, as deployed.
+    async with (
+        ingest(service_history_db_url, inventory),
+        history_service(service_history_db_url, history_token_file) as client,
+    ):
+        yield client
 
 
 @pytest.fixture
@@ -208,7 +193,7 @@ async def app_url(
     reviewer: TokenReviewer,
     event_logs: EventLogStore,
     content: ContentStore,
-    ingestion: Ingestion,
+    history: History,
     electric_proxy: ElectricProxy,
     notifications_http: httpx.AsyncClient,
     notifications_token_file: Path,
@@ -216,7 +201,7 @@ async def app_url(
     """The app served by uvicorn, with the one test sandbox resolving to the local runner. The
     server is real because SSE needs a response that streams, which an in-process ASGI transport
     would buffer."""
-    ingester = Ingester(runners=local_runners, event_logs=event_logs, ingestion=ingestion)
+    ingester = Ingester(runners=local_runners, event_logs=event_logs)
     bridge = RunnerBridge(runners=local_runners, event_logs=event_logs, content=content, ingester=ingester)
     app = create_app(
         inventory,
@@ -428,9 +413,9 @@ async def _stored_events(
     return entries
 
 
-async def _folded_items(store: ThreadStore, thread_id: str) -> tuple[dict[str, ThreadEntity], list[ThreadPayloadChunk]]:
-    """The current item rows and payload chunks from the app's materialized thread fold."""
-    async with store._sessions() as session:
+async def _folded_items(history: History, thread_id: str) -> tuple[dict[str, ThreadEntity], list[ThreadPayloadChunk]]:
+    """The current item rows and payload chunks from the History Service's thread fold."""
+    async with history.sessions() as session:
         checkpoint = await session.get(ThreadCheckpoint, UUID(thread_id))
         if checkpoint is None:
             return {}, []
@@ -466,13 +451,13 @@ def _folded_body(chunks: list[ThreadPayloadChunk], reference: dict[str, Any] | N
 
 
 async def _wait_for_folded_items(
-    store: ThreadStore, thread_id: str, matches: Callable[[dict[str, ThreadEntity], list[ThreadPayloadChunk]], bool]
+    history: History, thread_id: str, matches: Callable[[dict[str, ThreadEntity], list[ThreadPayloadChunk]], bool]
 ) -> tuple[dict[str, ThreadEntity], list[ThreadPayloadChunk]]:
     async for attempt in AsyncRetrying(
         stop=stop_after_delay(10), wait=wait_fixed(0.2), retry=retry_if_exception_type(AssertionError)
     ):
         with attempt:
-            items, chunks = await _folded_items(store, thread_id)
+            items, chunks = await _folded_items(history, thread_id)
             details = {
                 item_id: {
                     "state": item.state,
@@ -587,7 +572,7 @@ async def test_stream_recovery_reports_the_content_the_model_receives(
     app_url: str,
     model: ScriptedModel,
     runner: RunnerHandle,
-    store: ThreadStore,
+    history: History,
     spec: runner_pb2.SessionSpec,
     failed_native_journal: None,
     stop_mode: str,
@@ -603,7 +588,7 @@ async def test_stream_recovery_reports_the_content_the_model_receives(
         request = await _next_model_request(model)
         await model.hold_after_first_delta(request, Text(partial))
         items, chunks = await _wait_for_folded_items(
-            store,
+            history,
             thread_id,
             lambda rows, payloads: any(_folded_body(payloads, row.text_ref) == partial for row in rows.values()),
         )
@@ -611,7 +596,7 @@ async def test_stream_recovery_reports_the_content_the_model_receives(
         assert items[item_id].state["completion"] is None
         recovery_cursor = await _interrupt_and_recover(http, runner, thread_id, stop_mode)
         items, chunks = await _wait_for_folded_items(
-            store,
+            history,
             thread_id,
             lambda rows, payloads: (
                 rows[item_id].revision_cursor >= recovery_cursor
@@ -711,7 +696,7 @@ async def test_tool_recovery_reports_context_without_repeating_side_effects(
     app_url: str,
     model: ScriptedModel,
     runner: RunnerHandle,
-    store: ThreadStore,
+    history: History,
     spec: runner_pb2.SessionSpec,
     workspace: Path,
     failed_native_journal: None,
@@ -743,7 +728,7 @@ async def test_tool_recovery_reports_context_without_repeating_side_effects(
                 assert ready.exists(), "the shell tool did not reach its controlled blocking point"
         assert marker.read_text().splitlines() == [token]
         items, chunks = await _wait_for_folded_items(
-            store,
+            history,
             thread_id,
             lambda rows, payloads: any(
                 row.state["completion"] is None and token in _folded_body(payloads, row.arguments_ref)
@@ -761,7 +746,7 @@ async def test_tool_recovery_reports_context_without_repeating_side_effects(
         item_id = incomplete_tools[0].entity_id
         recovery_cursor = await _interrupt_and_recover(http, runner, thread_id, stop_mode)
         items, chunks = await _wait_for_folded_items(
-            store,
+            history,
             thread_id,
             lambda rows, payloads: (
                 rows[item_id].revision_cursor >= recovery_cursor
@@ -807,7 +792,7 @@ async def test_resume_after_tool_completion_preserves_the_result_and_does_not_re
     app_url: str,
     model: ScriptedModel,
     runner: RunnerHandle,
-    store: ThreadStore,
+    history: History,
     spec: runner_pb2.SessionSpec,
     workspace: Path,
     failed_native_journal: None,
@@ -844,7 +829,7 @@ async def test_resume_after_tool_completion_preserves_the_result_and_does_not_re
             ),
         )
         await _wait_for_folded_items(
-            store,
+            history,
             thread_id,
             lambda rows, payloads: (
                 any(
@@ -861,7 +846,7 @@ async def test_resume_after_tool_completion_preserves_the_result_and_does_not_re
         )
 
         recovery_cursor = await _interrupt_and_recover(http, runner, thread_id, stop_mode)
-        items, chunks = await _folded_items(store, thread_id)
+        items, chunks = await _folded_items(history, thread_id)
         completed_tools = [
             row
             for row in items.values()
@@ -879,7 +864,7 @@ async def test_resume_after_tool_completion_preserves_the_result_and_does_not_re
             assert seed_prompt in request.user_texts
             assert seed_answer in request.assistant_texts
             items, chunks = await _wait_for_folded_items(
-                store,
+                history,
                 thread_id,
                 lambda rows, payloads: (
                     rows[completed_tools[0].entity_id].revision_cursor >= recovery_cursor
@@ -1115,10 +1100,11 @@ async def test_command_returns_runner_receipt_before_app_archive_catches_up(
     bridge: RunnerBridge,
     event_logs: EventLogStore,
     content: ContentStore,
-    ingestion: Ingestion,
+    history: History,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     thread = await event_logs.open(SANDBOX, SESSION)
+    await history.open(thread, sandbox=SANDBOX)
     command = command_pb2.Command(
         command_id="ahead-of-archive", interrupt_turn=command_pb2.InterruptTurn(turn_id="target")
     )
@@ -1131,9 +1117,6 @@ async def test_command_returns_runner_receipt_before_app_archive_catches_up(
     )
     called = 0
 
-    async def no_archive_yet() -> None:
-        return None
-
     class Runner:
         async def command(
             self, session_id: str, candidate: command_pb2.Command, *, after_cursor: int
@@ -1145,15 +1128,12 @@ async def test_command_returns_runner_receipt_before_app_archive_catches_up(
             assert after_cursor == 0
             return receipt
 
-    monkeypatch.setattr(bridge._ingester, "start", no_archive_yet)
     monkeypatch.setattr(bridge._runners, "client", lambda _sandbox: Runner())
     assert await bridge.command(thread, command) == receipt
     assert await content.admitted_command(thread, command) is None
     assert await event_logs.events(thread, limit=10) == []
 
-    lease = await ingestion.acquire(thread, timedelta(minutes=1))
-    assert lease is not None
-    await ingestion.record(thread, [receipt], lease=lease)
+    await history.record(thread, [receipt])
     assert await content.admitted_command(thread, command) == receipt
     # The archive, not the runner, answers exact retries once it has caught up.
     assert await bridge.command(thread, command) == receipt
@@ -1181,28 +1161,30 @@ async def replicas(
     db_url: str,
     event_logs: EventLogStore,
     content: ContentStore,
-    ingestion: Ingestion,
+    history: History,
+    history_client: HistoryServiceClient,
+    history_token_file: Path,
 ) -> AsyncIterator[Replicas]:
     replica_engine = connect(db_url)
-    replica_updates = DatabaseUpdates(replica_engine.url)
     survivor_service = sandbox_endpoint.client()
     survivor_runners = SandboxSessions(live_index, survivor_service)
-    survivor_event_logs = EventLogStore(replica_engine, peer=event_logs.peer, history_reader=event_logs.reader)
-    owner_ingester = Ingester(runners=local_runners, event_logs=event_logs, ingestion=ingestion)
-    survivor_ingester = Ingester(
-        runners=survivor_runners,
-        event_logs=survivor_event_logs,
-        ingestion=Ingestion(replica_engine, peer=event_logs.peer, history_reader=event_logs.reader),
+    survivor_event_logs = EventLogStore(
+        replica_engine,
+        history=event_logs.history,
+        history_reader=history_client,
+        summaries=Summaries(replica_engine, history_client),
     )
+    owner_ingester = Ingester(runners=local_runners, event_logs=event_logs)
+    survivor_ingester = Ingester(runners=survivor_runners, event_logs=survivor_event_logs)
     owner = RunnerBridge(runners=local_runners, event_logs=event_logs, content=content, ingester=owner_ingester)
     survivor = RunnerBridge(
         runners=survivor_runners,
         event_logs=survivor_event_logs,
-        content=ContentStore(replica_engine, history_reader=event_logs.reader),
+        content=ContentStore(replica_engine, history_reader=history_client),
         ingester=survivor_ingester,
     )
     try:
-        async with survivor_service, replica_updates.listener.listen():
+        async with survivor_service, listening(replica_engine, history_client, history_token_file) as replica_updates:
             await owner_ingester.start()
             await owner_ingester.reconcile()
             try:
@@ -1284,7 +1266,7 @@ async def test_inventory_change_discovers_existing_runner_session_without_browse
     model: ScriptedModel,
     spec: runner_pb2.SessionSpec,
     monkeypatch: pytest.MonkeyPatch,
-    ingestion: Ingestion,
+    history: History,
     live_index: LiveIndex,
     runner_client_factory: RunnerClientFactory,
 ) -> None:
@@ -1300,7 +1282,7 @@ async def test_inventory_change_discovers_existing_runner_session_without_browse
         return running()
 
     monkeypatch.setattr(runners, "running", observed_running)
-    ingester = Ingester(runners=runners, event_logs=event_logs, ingestion=ingestion)
+    ingester = Ingester(runners=runners, event_logs=event_logs)
     async with service, runner_client_factory(runner.target, capture_history=True) as client:
         try:
             async with await client.attach(SESSION, spec=spec):
@@ -1387,7 +1369,7 @@ async def test_stored_thread_stream_does_not_require_reachable_runner(
     database_updates: DatabaseUpdates,
     spec: runner_pb2.SessionSpec,
     content: ContentStore,
-    ingestion: Ingestion,
+    history: History,
 ) -> None:
     thread = UUID((await replicas.owner.create_session(SANDBOX, uuid4(), MessageToDict(spec))).session_id)
     stop = command_pb2.Command(command_id="stop-for-offline", stop_runner_session=command_pb2.StopRunnerSession())
@@ -1404,7 +1386,7 @@ async def test_stored_thread_stream_does_not_require_reachable_runner(
     await replicas.survivor_ingester.close()
 
     del live_index.sandboxes[SANDBOX], live_index.pods[SANDBOX]
-    offline_ingester = Ingester(runners=local_runners, event_logs=event_logs, ingestion=ingestion)
+    offline_ingester = Ingester(runners=local_runners, event_logs=event_logs)
     offline = RunnerBridge(runners=local_runners, event_logs=event_logs, content=content, ingester=offline_ingester)
     try:
         # A lost HTTP response is retryable from the committed Thread prefix even after the
@@ -1427,15 +1409,14 @@ async def test_open_and_resume_reply_before_archive_catches_up(
     local_runners: SandboxSessions,
     event_logs: EventLogStore,
     content: ContentStore,
-    ingestion: Ingestion,
     model: ScriptedModel,
     spec: runner_pb2.SessionSpec,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Runner receipts and a committed Thread mapping suffice; copying the feed is independent."""
-    ingester = Ingester(runners=local_runners, event_logs=event_logs, ingestion=ingestion)
-    # Simulate stalled ingestion without delaying the runner itself.
-    monkeypatch.setattr(ingester, "start", AsyncMock())
+    # Stall the Sandbox Service's history copy without delaying the runner itself.
+    monkeypatch.setattr("agentplane.sandbox_service.session_history.ingestion.HistoryIngester.copy_one", AsyncMock())
+    ingester = Ingester(runners=local_runners, event_logs=event_logs)
     bridge = RunnerBridge(runners=local_runners, event_logs=event_logs, content=content, ingester=ingester)
     opened = await asyncio.wait_for(bridge.create_session(SANDBOX, uuid4(), MessageToDict(spec)), timeout=10)
     thread_id = UUID(opened.session_id)

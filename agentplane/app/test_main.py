@@ -16,7 +16,7 @@ import uvicorn
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from pydantic import ValidationError
-from sqlalchemy import func, select, text
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 from tenacity import AsyncRetrying, retry_if_exception_type, stop_after_delay, wait_fixed
 
@@ -45,7 +45,6 @@ from agentplane.runner.harness import Harness
 from agentplane.sandbox_service.client import SandboxServiceClient
 from agentplane.sandbox_service.testing.backend import seed_runner
 from agentplane.sandbox_service.testing.fake_inventory import FakeCoreV1Api, FakeCustomObjectsApi
-from agentplane.thread_fold.models import SessionProjectionLease
 from util.net import pick_free_port
 
 APP_ENVIRONMENT = {
@@ -186,17 +185,12 @@ def database_updates(engine: AsyncEngine) -> DatabaseUpdates:
 
 @pytest.fixture
 async def database(db_url: str) -> AsyncIterator[AsyncEngine]:
-    """The database as another replica sees it: the lease table, and who is connected."""
+    """The database as another replica sees it: who is connected."""
     engine = create_async_engine(db_url)
     try:
         yield engine
     finally:
         await engine.dispose()
-
-
-async def _leases(database: AsyncEngine) -> int:
-    async with database.connect() as connection:
-        return (await connection.scalar(select(func.count()).select_from(SessionProjectionLease))) or 0
 
 
 async def _other_connections(database: AsyncEngine) -> int:
@@ -235,8 +229,7 @@ async def test_sigterm_ends_open_streams_fails_readiness_and_closes_the_ingester
 ) -> None:
     """A tab holding `/live/sandboxes` open used to hold Uvicorn's shutdown open with it. The stream
     now ends at the signal -- cleanly, which a stream cancelled at the budget would not -- readiness
-    fails while the drain is on, and the unwind then releases the ingestion lease and every
-    connection the app held."""
+    fails while the drain is on, and the unwind then closes every connection the app held."""
     raw, running = seed_runner(custom_objects, core_v1, SANDBOX)
     live_index.sandboxes[SANDBOX] = raw
     live_index.pods[SANDBOX] = running
@@ -268,8 +261,7 @@ async def test_sigterm_ends_open_streams_fails_readiness_and_closes_the_ingester
     serving = asyncio.create_task(
         serve_then_close(server, ingester=ingester, database_updates=database_updates, engine=engine)
     )
-    # The registered Session gets its own lease even when Sandbox discovery cannot dial.
-    while not server.started or await _leases(database) == 0:
+    while not server.started:
         if serving.done():
             serving.result()
             raise RuntimeError("uvicorn exited before starting")
@@ -294,7 +286,6 @@ async def test_sigterm_ends_open_streams_fails_readiness_and_closes_the_ingester
 
     await serving
 
-    assert await _leases(database) == 0
     # A closed connection's backend leaves pg_stat_activity a moment after the client let go of it.
     async for attempt in AsyncRetrying(
         stop=stop_after_delay(10), wait=wait_fixed(0.02), retry=retry_if_exception_type(AssertionError), reraise=True

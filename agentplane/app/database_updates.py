@@ -16,7 +16,8 @@ class Channel(StrEnum):
     """What a replica listens for. A notification carries no payload -- no thread and no identity --
     so its readers re-read what they follow."""
 
-    # A thread, its copied event log or its feed state was written.
+    # A thread or its recorded resume was written. The History Service's fold commits wake the same
+    # readers through `HistoryWatch`, which notifies this channel's `Changes` without a NOTIFY.
     THREADS = "agentplane_thread_updates"
     # A browser session row was deleted: logout, the rotation a login makes, or expiry cleanup.
     OPERATOR_SESSIONS = "agentplane_operator_sessions"
@@ -46,7 +47,3 @@ class DatabaseUpdates:
 async def notify(session: AsyncSession, channel: Channel) -> None:
     # PostgreSQL delivers NOTIFY only on commit, to every replica listening.
     await session.execute(select(func.pg_notify(channel, "")))
-
-
-async def notify_threads(session: AsyncSession) -> None:
-    await notify(session, Channel.THREADS)

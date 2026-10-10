@@ -3,35 +3,36 @@
 import asyncio
 import json
 from collections.abc import Callable
-from datetime import timedelta
+from pathlib import Path
 from typing import Any
 from uuid import UUID
 
 import httpx
 import pytest_bazel
+from sqlalchemy.ext.asyncio import AsyncEngine
 
-from agentplane.app.database import connect
 from agentplane.app.testing.electric_service import ElectricService, electric_service
-from agentplane.app.testing.history import ProjectedHistory as Ingestion, SeededEventLogStore as EventLogStore
-from agentplane.app.testing.history_service import HistoryService
+from agentplane.app.testing.history import SeededEventLogStore as EventLogStore
 from agentplane.app.testing.replication_process import app_process
 from agentplane.app.testing.replication_source import SANDBOX, SESSION, ReplicationSource
+from agentplane.app.threads.summaries import Summaries
 from agentplane.history_service.client import HistoryServiceClient
+from agentplane.history_service.testing.backend import history_service
+from agentplane.history_service.testing.history import History
 from agentplane.proto import command_pb2, event_pb2
-from agentplane.thread_fold.projection_lease import ProjectionLease
 
 # gazelle:include_dep @pypi//protobuf
 
 
 async def test_materialized_revisions_replicate_with_restricted_role(
-    history_peer: HistoryService, history_client: HistoryServiceClient
+    db_url: str, engine: AsyncEngine, tmp_path: Path
 ) -> None:
-    async with electric_service() as service:
-        engine = connect(service.database_url)
-        event_logs, ingestion = (
-            EventLogStore(engine, peer=history_peer, history_reader=history_client),
-            Ingestion(engine, peer=history_peer, history_reader=history_client),
-        )
+    async with (
+        electric_service() as service,
+        history_service(service.database_url, tmp_path / "history-token") as reader,
+    ):
+        history = History(service.database_url)
+        event_logs = EventLogStore(engine, history=history, history_reader=reader, summaries=Summaries(engine, reader))
         try:
             source = ReplicationSource()
             source.append(event_pb2.Event(harness_started=event_pb2.HarnessStarted(pid=123)))
@@ -43,10 +44,8 @@ async def test_materialized_revisions_replicate_with_restricted_role(
             )
             source.append(event_pb2.Event(text_delta=event_pb2.TextDelta(item_id="first", text="Hello")))
             thread = await event_logs.open(SANDBOX, SESSION)
-            lease = await ingestion.acquire(thread, timedelta(minutes=2))
-            assert lease is not None
-            await ingestion.set_attached(thread, source.attached, lease=lease)
-            await ingestion.record(thread, source.entries, lease=lease)
+            await history.set_attached(thread, source.attached)
+            await history.record(thread, source.entries)
             async with asyncio.timeout(45), httpx.AsyncClient(base_url=service.url, timeout=35) as client:
                 params = {"table": "thread_entity", "where": f"thread_id = '{thread}'", "offset": "-1"}
                 initial = await client.get("/v1/shape", params=params)
@@ -63,7 +62,7 @@ async def test_materialized_revisions_replicate_with_restricted_role(
                     )
                 )
                 source.append(event_pb2.Event(text_delta=event_pb2.TextDelta(item_id="first", text=" world")))
-                await ingestion.record(thread, source.entries[4:], lease=lease)
+                await history.record(thread, source.entries[4:])
                 seen_revision = False
                 while not seen_revision:
                     delta = await client.get(
@@ -88,9 +87,9 @@ async def test_materialized_revisions_replicate_with_restricted_role(
                 values = [message["value"] for message in chunks.json() if "value" in message]
                 ordered = sorted(values, key=lambda row: int(row["chunk_index"]))
                 assert "".join(json.loads(row["text"]) for row in ordered) == "Hello world"
-            await _cross_replica_sync(service, ingestion, source, thread, lease)
+            await _cross_replica_sync(service, db_url, reader, history, source, thread)
         finally:
-            await engine.dispose()
+            await history.close()
 
 
 Row = dict[str, Any]
@@ -170,19 +169,26 @@ def _bodies(*references: dict[str, Any]) -> dict[str, object]:
 
 
 async def _cross_replica_sync(
-    service: ElectricService, ingestion: Ingestion, source: ReplicationSource, thread: UUID, lease: ProjectionLease
+    service: ElectricService,
+    db_url: str,
+    reader: HistoryServiceClient,
+    history: History,
+    source: ReplicationSource,
+    thread: UUID,
 ) -> None:
     async with (
         asyncio.timeout(60),
         app_process(
-            service.database_url,
-            runner_port=int(ingestion.reader.target.rsplit(":", 1)[1]),
+            db_url,
+            runner_port=int(reader.target.rsplit(":", 1)[1]),
+            history=reader,
             sandbox_present=False,
             electric_url=service.url,
         ) as first,
         app_process(
-            service.database_url,
-            runner_port=int(ingestion.reader.target.rsplit(":", 1)[1]),
+            db_url,
+            runner_port=int(reader.target.rsplit(":", 1)[1]),
+            history=reader,
             sandbox_present=False,
             electric_url=service.url,
         ) as second,
@@ -204,7 +210,7 @@ async def _cross_replica_sync(
         assert _body(before, reference) == "Hello world"
 
         entry = source.append(event_pb2.Event(text_delta=event_pb2.TextDelta(item_id="first", text="!")))
-        await ingestion.record(thread, [entry], lease=lease)
+        await history.record(thread, [entry])
         # Both shapes resume at their handle and offset through a different application process.
         revised, _ = await _follow(
             client_two,
@@ -227,8 +233,8 @@ async def _cross_replica_sync(
 
         stale = await client_two.get(f"{path}/chunks/text", params={"projection_epoch": "stale", "offset": "now"})
         assert stale.status_code == 410
-        await _history_window(client_one, client_two, path, epoch, ingestion, source, thread, lease)
-        await _command_outcome(client_one, client_two, path, epoch, ingestion, source, thread, lease)
+        await _history_window(client_one, client_two, path, epoch, history, source, thread)
+        await _command_outcome(client_one, client_two, path, epoch, history, source, thread)
 
 
 async def _command_outcome(
@@ -236,10 +242,9 @@ async def _command_outcome(
     client_two: httpx.AsyncClient,
     path: str,
     epoch: str,
-    ingestion: Ingestion,
+    history: History,
     source: ReplicationSource,
     thread: UUID,
-    lease: ProjectionLease,
 ) -> None:
     entities = await _open(client_one, f"{path}/entities", epoch)
     selected = {
@@ -267,7 +272,7 @@ async def _command_outcome(
             )
         )
     # Admission and failure may coalesce before the browser observes any pending row.
-    await ingestion.record(thread, source.entries[start:], lease=lease)
+    await history.record(thread, source.entries[start:])
 
     def failed(rows: list[Row]) -> bool:
         return any(
@@ -290,10 +295,9 @@ async def _history_window(
     client_two: httpx.AsyncClient,
     path: str,
     epoch: str,
-    ingestion: Ingestion,
+    history: History,
     source: ReplicationSource,
     thread: UUID,
-    lease: ProjectionLease,
 ) -> None:
     start = len(source.entries)
     for index in range(95):
@@ -307,7 +311,7 @@ async def _history_window(
         source.append(
             event_pb2.Event(text_delta=event_pb2.TextDelta(item_id=f"history-{index:03}", text=f"Body {index}"))
         )
-    await ingestion.record(thread, source.entries[start:], lease=lease)
+    await history.record(thread, source.entries[start:])
 
     # A reader arriving now loads the tail, however long the thread has grown.
     entities = await _open(client_two, f"{path}/entities", epoch)
@@ -338,8 +342,8 @@ async def _history_window(
     entry = source.append(event_pb2.Event(text_delta=event_pb2.TextDelta(item_id="history-010", text=" revised")))
     hidden_text = "A whole selected tool-sized body.\n" * 65536
     hidden = source.append(event_pb2.Event(text_delta=event_pb2.TextDelta(item_id="history-040", text=hidden_text)))
-    await ingestion.record(thread, [entry], lease=lease)
-    await ingestion.record(thread, [hidden], lease=lease)
+    await history.record(thread, [entry])
+    await history.record(thread, [hidden])
 
     def revised(seen: list[Row], entity_id: str, cursor: int) -> Row | None:
         return next(

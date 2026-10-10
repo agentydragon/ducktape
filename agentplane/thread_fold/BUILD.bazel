@@ -76,7 +76,6 @@ py_library(
         ":models",
         ":projection_lease",
         ":recording",
-        "//agentplane/history_service:client",
         "//agentplane/history_service:protocol_pb2",
         "//agentplane/sandbox_service:settled_cursors",
         "@pypi//grpcio",

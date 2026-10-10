@@ -69,13 +69,13 @@ from agentplane.app.model_catalog import ModelCatalog, ModelOption
 from agentplane.app.oidc import INSECURE_COOKIE, OIDCSettings
 from agentplane.app.operator_sessions import BrowserSession, OperatorSession, OperatorSessionStore
 from agentplane.app.testing.history import SeededEventLogStore as EventLogStore
-from agentplane.app.testing.history_service import HistoryService
 from agentplane.app.testing.model_test_data import TEST_REASONING_EFFORTS
 from agentplane.app.threads.bridge import RunnerBridge
 from agentplane.app.threads.store import ThreadStore
-from agentplane.app.threads.summaries import AppSummaries
+from agentplane.app.threads.summaries import Summaries
 from agentplane.app.threads.view.content import ContentStore
 from agentplane.history_service.client import HistoryServiceClient
+from agentplane.history_service.testing.history import History
 from agentplane.runner.harness import Harness
 from agentplane.sandbox_service.action_policy_views import MANAGED_BY_APP, MANAGED_BY_LABEL
 from agentplane.sandbox_service.client import SandboxServiceClient
@@ -167,7 +167,7 @@ async def review(
     direct_federation: bool,
     event_logs: EventLogStore,
     content: ContentStore,
-    history_peer: HistoryService,
+    history: History,
     history_client: HistoryServiceClient,
     electric_proxy: ElectricProxy,
     notifications_http: httpx.AsyncClient,
@@ -380,10 +380,11 @@ async def review(
         # A distinct app/store/connection pool, sharing only PostgreSQL and cookie configuration.
         replica_engine = connect(db_url)
         stack.push_async_callback(replica_engine.dispose)
+        replica_summaries = Summaries(replica_engine, history_client)
         replica = create_app(
             inventory,
             bridge,
-            ThreadStore(replica_engine, AppSummaries(replica_engine)),
+            ThreadStore(replica_engine, replica_summaries),
             ModelCatalog(
                 models=[
                     ModelOption(
@@ -401,7 +402,9 @@ async def review(
             operator_actions=None
             if operator_connection == "disabled"
             else FederatedOperatorActions(federation, oidc, downstream_http),
-            event_logs=EventLogStore(replica_engine, peer=history_peer, history_reader=history_client),
+            event_logs=EventLogStore(
+                replica_engine, history=history, history_reader=history_client, summaries=replica_summaries
+            ),
             content=ContentStore(replica_engine, history_reader=history_client),
             # Never started: nothing served here listens; the replica shares only the operator sessions.
             database_updates=DatabaseUpdates(replica_engine.url),
