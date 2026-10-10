@@ -2,13 +2,6 @@
 # runner pinned to the home LAN (cluster/cdk8s/monitoring/home_switch.py). Bootstrap after a
 # factory reset: README.md.
 
-locals {
-  # The switch's DHCP lease. bootstrap.sh takes the same address.
-  switch_address = "192.168.1.100"
-  # The only network management services and the monitoring user accept connections from.
-  lan_cidr = "192.168.1.0/24"
-}
-
 # The tofu password is written by bootstrap.sh (SOPS), the monitoring password minted by ESO, and
 # the certificate issued by cert-manager from the cluster CA: cluster/cdk8s/monitoring/home_switch.py.
 data "kubernetes_secret_v1" "tofu" {
@@ -33,7 +26,7 @@ data "kubernetes_secret_v1" "tls" {
 }
 
 provider "routeros" {
-  hosturl  = "apis://${local.switch_address}:8729"
+  hosturl  = "apis://${var.switch_address}:8729"
   username = "tofu"
   password = data.kubernetes_secret_v1.tofu.data["password"]
   # The cluster CA bundle, mounted into the runner pod.
@@ -62,7 +55,7 @@ resource "routeros_ip_service" "tls" {
   for_each    = toset(["api-ssl", "www-ssl"])
   numbers     = each.key
   port        = each.key == "api-ssl" ? 8729 : 443
-  address     = local.lan_cidr
+  address     = var.lan_cidr
   certificate = routeros_system_certificate.tls.name
   tls_version = "only-1.2"
   disabled    = false
@@ -72,7 +65,7 @@ resource "routeros_ip_service" "lan_only" {
   for_each = { ssh = 22, winbox = 8291 }
   numbers  = each.key
   port     = each.value
-  address  = local.lan_cidr
+  address  = var.lan_cidr
   disabled = false
 }
 
@@ -92,7 +85,7 @@ resource "routeros_system_user_group" "monitoring" {
 resource "routeros_system_user" "monitoring" {
   name     = "monitoring"
   group    = routeros_system_user_group.monitoring.name
-  address  = local.lan_cidr
+  address  = var.lan_cidr
   password = data.kubernetes_secret_v1.monitoring.data["password"]
   comment  = "Read-only RouterOS exporter; password minted by ESO, see tf/gitops/home-switch."
 }

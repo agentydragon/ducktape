@@ -110,3 +110,8 @@ spec:
     name: ducktape
     namespace: ducktape-flux
   storeReadablePlan: human
+  vars:
+    - name: switch_address
+      value: 192.168.1.100
+    - name: lan_cidr
+      value: 192.168.1.0/24

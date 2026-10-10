@@ -19,6 +19,7 @@ from __future__ import annotations
 
 from cdk8s import ApiObjectMetadata, App, Chart
 from external_secrets_crds.io.external_secrets import ExternalSecretSpecTargetCreationPolicy
+from pydantic import BaseModel, ConfigDict, Field
 from tofu_controller.io.fluxcd.contrib.infra import (
     TerraformV1Alpha2SpecRunnerPodTemplateSpecVolumeMounts,
     TerraformV1Alpha2SpecRunnerPodTemplateSpecVolumes,
@@ -46,10 +47,23 @@ TLS_SECRET = "home-switch-tls"
 BOOTSTRAP_TLS_SECRET = "home-switch-bootstrap-tls"
 # The switch's DHCP lease, which its certificates name (tf/gitops/home-switch connects to it).
 _SWITCH_ADDRESS = "192.168.1.100"
+# bootstrap.sh repeats it.
+_LAN_CIDR = "192.168.1.0/24"
 # The switch is reachable only from the home LAN; OptiPlex is the cluster node on it.
 _HOME_LAN = {"topology.kubernetes.io/zone": "home-lan"}
 # main.tf's provider `ca_certificate` reads the bundle here.
 _CA_BUNDLE_DIR = "/etc/cluster-ca"
+
+
+class HomeSwitchVars(BaseModel):
+    """The inputs of tf/gitops/home-switch."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    switch_address: str = Field(description="The switch's management address, which its certificates name.")
+    lan_cidr: str = Field(
+        description="The only network management services and the monitoring user accept connections from."
+    )
 
 
 def _mint(chart: Chart, id: str, key: SecretKey, description: str) -> None:
@@ -88,7 +102,7 @@ def chart(app: App) -> Chart:
         chart,
         "terraform",
         name=NAME,
-        variables=None,
+        variables=HomeSwitchVars(switch_address=_SWITCH_ADDRESS, lan_cidr=_LAN_CIDR),
         # Plans every interval and reports drift; a person approves each apply (README.md).
         auto_apply=False,
         # Secret-bearing attributes come from Secrets, so the plan masks them.
