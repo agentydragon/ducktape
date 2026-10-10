@@ -116,8 +116,8 @@ Alternatives for the transport itself:
 2. **RemoteIO's shape: SSE down, HTTP `POST` up.** Works through any HTTP proxy, and every upload
    re-authenticates, which makes revocation immediate. It costs a request per upload batch and
    pairs a stream with separate requests that can land on different replicas, so receipts need
-   the same cross-replica routing as commands. Not chosen; it remains the fallback if a proxy on
-   the path ever cannot carry WebSockets.
+   the same cross-replica routing as commands. Not chosen: every hop on the path carries
+   WebSockets.
 3. **Codex's envelope wholesale, with a transport-level acknowledgement buffer.** Its unacked
    buffer exists because the relay is not durable. Here the runner journal and the service
    database already are, so command delivery relies on idempotent re-delivery instead of a second
