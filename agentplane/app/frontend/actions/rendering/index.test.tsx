@@ -173,11 +173,17 @@ describe("Action presentation slots", () => {
       expect(opened).not.toBeNull();
       expect(details).not.toBeNull();
       expect((await mount(label)).textContent).not.toBe("");
-      if (resultLabel !== undefined) {
-        const result = group === "ssh" && name === "exec" ? stored() : stored({ example: "value" });
-        const expectedLabel = group === "ssh" && name === "exec" ? "Exit 0" : resultLabel;
-        expect((await mount(renderDetailsResult(action, result))).textContent).toContain(expectedLabel);
-      }
+    }
+
+    const resultSpecs = ACTION_PRESENTATION_CATALOG.filter(
+      (spec): spec is (typeof ACTION_PRESENTATION_CATALOG)[number] & { resultLabel: string } =>
+        spec.resultLabel !== undefined
+    );
+    for (const { group, name, resultLabel } of resultSpecs) {
+      const action = { group, name };
+      const result = group === "ssh" && name === "exec" ? stored() : stored({ example: "value" });
+      const expectedLabel = group === "ssh" && name === "exec" ? "Exit 0" : resultLabel;
+      expect((await mount(renderDetailsResult(action, result))).textContent).toContain(expectedLabel);
     }
   });
 
