@@ -333,12 +333,12 @@ py_test(
 py_test(
     name = "test_bridge",
     size = "large",
-    shard_count = 2,
     srcs = ["test_bridge.py"],
     data = [
         "@agentplane_codex_cli_linux_x64//:files",  # keep: the pinned native harnesses the runner drives
         "@claude_code_cli_linux_x64//:claude",  # keep: the pinned native harnesses the runner drives
     ],
+    shard_count = 2,
     target_compatible_with = [
         # keep: the pinned native harnesses are Linux/x86_64 only.
         "@platforms//cpu:x86_64",
