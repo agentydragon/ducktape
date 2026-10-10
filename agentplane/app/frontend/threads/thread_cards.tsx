@@ -161,7 +161,7 @@ export function UserInputBubble({
       data-command-id={commandId ?? entity?.entityId}
     >
       {(progress || action) && (
-        <Stack className="agentplane-user-message-aside" gap={2} align="flex-start">
+        <Stack className="agentplane-user-message-aside" gap={2} align="flex-end">
           {progress}
           {action && (
             <Button size="xs" variant="subtle" onClick={action.onClick} aria-label={action.label}>

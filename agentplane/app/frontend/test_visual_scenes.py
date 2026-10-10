@@ -388,6 +388,7 @@ async def test_session_pending(view: VisualPage, app: AgentplaneFixture) -> None
     await view.capture()
 
 
+@pytest.mark.parametrize("viewport", [DESKTOP, MOBILE], ids=["desktop", "mobile"])
 async def test_session_pending_failed(view: VisualPage, app: AgentplaneFixture) -> None:
     await app.time_out_command_admission()
     await app.pending_commands()
@@ -396,6 +397,7 @@ async def test_session_pending_failed(view: VisualPage, app: AgentplaneFixture) 
     await view.page.wait_for_selector('[data-stage="unconfirmed"]', state="attached")
     await view.page.wait_for_selector('[data-thread-anchor="16"]', state="attached")
     await view.page.wait_for_selector('.agentplane-user-bubble[data-message-phase="local"]', state="attached")
+    await view.page.locator(".agentplane-user-message-aside").get_by_role("button", name="Retry").wait_for()
     await view.check(context="fixture ready")
     await view.capture()
 
