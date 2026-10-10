@@ -1,4 +1,7 @@
+load("@aspect_rules_py//py:defs.bzl", "py_image_layer", aspect_py_binary = "py_binary")
+load("@rules_oci//oci:defs.bzl", "oci_image")
 load("//devinfra/python:defs.bzl", "py_library", "py_test")
+load("//props:oci.bzl", "py_image_entrypoint", "py_image_env")
 
 package(default_visibility = ["//agentplane/sandbox_service:__subpackages__"])
 
@@ -73,4 +76,38 @@ py_test(
         "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
     ],
+)
+
+# This image runs as a Sandbox Service migration init container.
+py_library(
+    name = "migrate",
+    srcs = ["migrate.py"],
+    deps = [
+        ":database_migrate",
+        "@pypi//pydantic_settings",
+    ],
+)
+
+aspect_py_binary(
+    name = "migration_image_bin",
+    main = "migrate.py",
+    deps = [":migrate"],
+)
+
+py_image_layer(
+    name = "migration_layers",
+    binary = ":migration_image_bin",
+    group = "1000",
+    owner = "1000",
+)
+
+oci_image(
+    name = "migration_image",
+    base = "@debian_trixie_slim_linux_amd64",
+    entrypoint = py_image_entrypoint("migration_image_bin"),
+    env = py_image_env(binary_name = "migration_image_bin"),
+    labels = {"org.opencontainers.image.source": "https://github.com/agentydragon/ducktape"},
+    tars = [":migration_layers"],
+    user = "1000:1000",
+    visibility = ["//visibility:public"],
 )

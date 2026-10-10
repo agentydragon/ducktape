@@ -266,7 +266,9 @@ class Actions(Construct):
             automount_service_account_token=True,
             docker_registry_auth=forgejo_images_creds_secret_ref(self, "forgejo-images-creds-ref"),
             security_context=PodSecurityContextProps(ensure_non_root=True, user=1000, group=1000, fs_group=1000),
-            init_containers=[migrate_init_container(f"{_MIGRATE_IMAGE}:{_PLACEHOLDER_TAG}", env_variables=env)],
+            init_containers=[
+                migrate_init_container(f"{_MIGRATE_IMAGE}:{_PLACEHOLDER_TAG}", name="migrate", env_variables=env)
+            ],
         )
         deployment.add_container(
             name="actions",

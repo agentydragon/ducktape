@@ -1,4 +1,4 @@
-"""Sandbox lifecycle gateway; history schema migrates before Pod startup."""
+"""Sandbox lifecycle gateway; history and command admission schemas migrate before Pod startup."""
 
 from pathlib import Path
 from typing import cast
@@ -116,6 +116,13 @@ class SandboxService(Construct):
             .key("uri")
             .env_value(self, "database")
         }
+        commands_migration_env = {
+            "AGENTPLANE_SANDBOX_SERVICE_COMMANDS_DATABASE_URL": SecretRef(
+                namespace=env.namespace, name="postgres-sandbox-commands"
+            )
+            .key("uri")
+            .env_value(self, "commands-database")
+        }
         deployment = Deployment(
             self,
             "deployment",
@@ -132,14 +139,21 @@ class SandboxService(Construct):
             init_containers=[
                 migrate_init_container(
                     "git.allegedly.works/ducktape-ci/agentplane-sandbox-service-history-migrate:unset",
+                    name="migrate",
                     env_variables=migration_env,
-                )
+                ),
+                migrate_init_container(
+                    "git.allegedly.works/ducktape-ci/agentplane-sandbox-commands-migrate:unset",
+                    name="migrate-commands",
+                    env_variables=commands_migration_env,
+                ),
             ],
         )
         container = deployment.add_container(
             name="sandbox-service",
             image=f"{_IMAGE}:unset",
-            env_variables=migration_env,
+            # The commands URL is staged for the server's admission store, which lands next.
+            env_variables=migration_env | commands_migration_env,
             image_pull_policy=ImagePullPolicy.IF_NOT_PRESENT,
             ports=[endpoint.port.container_port(), Port(name="health", number=settings.health_port).container_port()],
             readiness=http_probe("/healthz", port=settings.health_port, initial_delay_seconds=3, period_seconds=10),
