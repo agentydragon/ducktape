@@ -16,7 +16,7 @@
 
 import { Group, Stack } from "@mantine/core";
 import { Fragment, type ReactNode, useEffect, useState } from "react";
-import { z } from "zod";
+import type { z } from "zod";
 
 import { Field } from "../../field";
 import { fetchGrocyReferenceData, type GrocyReferenceData } from "../../grocy_client";
@@ -53,13 +53,6 @@ const zStockGetArgs: z.ZodType<McpToolArgumentsFor<typeof GROCY_SERVER_ID, "stoc
   GROCY_SERVER_ID,
   "stock_get"
 );
-const zProductsListArgs: z.ZodType<McpToolArgumentsFor<typeof GROCY_SERVER_ID, "products_list">> = mcpToolSchema(
-  GROCY_SERVER_ID,
-  "products_list"
-);
-const zQuantityUnitsListArgs: z.ZodType<McpToolArgumentsFor<typeof GROCY_SERVER_ID, "quantity_units_list">> =
-  mcpToolSchema(GROCY_SERVER_ID, "quantity_units_list");
-const zGetSystemInfoArgs: z.ZodType<Record<string, never>> = z.strictObject({});
 const zProductsCreateArgs: z.ZodType<McpToolArgumentsFor<typeof GROCY_SERVER_ID, "products_create">> = mcpToolSchema(
   GROCY_SERVER_ID,
   "products_create"
@@ -84,9 +77,6 @@ type StockAddArgs = z.infer<typeof zStockAddArgs>;
 type StockConsumeArgs = z.infer<typeof zStockConsumeArgs>;
 type StockEntryEditArgs = z.infer<typeof zStockEntryEditArgs>;
 type StockGetArgs = z.infer<typeof zStockGetArgs>;
-type ProductsListArgs = z.infer<typeof zProductsListArgs>;
-type QuantityUnitsListArgs = z.infer<typeof zQuantityUnitsListArgs>;
-type GetSystemInfoArgs = z.infer<typeof zGetSystemInfoArgs>;
 type ProductsCreateArgs = z.infer<typeof zProductsCreateArgs>;
 type ProductsEditArgs = z.infer<typeof zProductsEditArgs>;
 type ShoppingListGetArgs = z.infer<typeof zShoppingListGetArgs>;
@@ -448,26 +438,6 @@ function StockGetPreview({ args }: PreviewProps<StockGetArgs>) {
   );
 }
 
-function DetailPreview({ detail, noun }: { detail: "brief" | "full"; noun: string }) {
-  return (
-    <PreviewText>
-      {detail === "full" ? `Full ${noun} records` : `${noun[0].toUpperCase()}${noun.slice(1)} names`}
-    </PreviewText>
-  );
-}
-
-function ProductsListPreview({ args }: PreviewProps<ProductsListArgs>) {
-  return <DetailPreview detail={args.detail ?? "brief"} noun="product" />;
-}
-
-function QuantityUnitsListPreview({ args }: PreviewProps<QuantityUnitsListArgs>) {
-  return <DetailPreview detail={args.detail ?? "brief"} noun="quantity unit" />;
-}
-
-function GetSystemInfoPreview(_: PreviewProps<GetSystemInfoArgs>) {
-  return <PreviewText>Grocy server version and system details</PreviewText>;
-}
-
 function ShoppingListItemsRemoveRow({ itemId, reference }: { itemId: number; reference: GrocyReferenceData | null }) {
   const item = resolveShoppingItem(reference?.shopping_list_items, itemId);
   return (
@@ -771,9 +741,6 @@ export const grocyPreviews: {
   stock_consume: ToolPreview<typeof zStockConsumeArgs>;
   stock_entry_edit: ToolPreview<typeof zStockEntryEditArgs>;
   stock_get: ToolPreview<typeof zStockGetArgs>;
-  products_list: ToolPreview<typeof zProductsListArgs>;
-  quantity_units_list: ToolPreview<typeof zQuantityUnitsListArgs>;
-  get_system_info: ToolPreview<typeof zGetSystemInfoArgs>;
   products_create: ToolPreview<typeof zProductsCreateArgs>;
   products_edit: ToolPreview<typeof zProductsEditArgs>;
   shopping_list_get: ToolPreview<typeof zShoppingListGetArgs>;
@@ -785,9 +752,6 @@ export const grocyPreviews: {
   stock_consume: definePreview(zStockConsumeArgs, StockConsumePreview),
   stock_entry_edit: definePreview(zStockEntryEditArgs, StockEntryEditPreview),
   stock_get: definePreview(zStockGetArgs, StockGetPreview),
-  products_list: definePreview(zProductsListArgs, ProductsListPreview),
-  quantity_units_list: definePreview(zQuantityUnitsListArgs, QuantityUnitsListPreview),
-  get_system_info: definePreview(zGetSystemInfoArgs, GetSystemInfoPreview),
   products_create: definePreview(zProductsCreateArgs, ProductsCreatePreview),
   products_edit: definePreview(zProductsEditArgs, ProductsEditPreview),
   shopping_list_get: definePreview(zShoppingListGetArgs, ShoppingListGetPreview),

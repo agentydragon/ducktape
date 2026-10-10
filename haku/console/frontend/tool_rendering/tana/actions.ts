@@ -6,7 +6,6 @@ import { zSetFieldOptionArgs } from "./schemas";
 
 export const tanaActions: Record<string, ActionEntry> = {
   import_tana_paste: fixed("Tana: Import content"),
-  get_or_create_calendar_node: fixed("Tana: Get or create calendar node"),
   trash_node: fixed("Tana: Trash node", true),
   edit_node: fixed("Tana: Edit node"),
   move_node: fixed("Tana: Move node"),

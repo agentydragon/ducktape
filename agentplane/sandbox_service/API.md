@@ -141,14 +141,22 @@ There is no separate inspection or bootstrap RPC added for tests. Bootstrap runs
 exact retries use the runner's stored bootstrap result.
 
 `FollowSession` is server-streaming. Its request selects an explicit session and a native `Follow`
-cursor. It emits:
+cursor, which may be any cursor of the current Sandbox incarnation's runner journal up to its end.
+Entries after it are replayed from the runner journal, then the same stream continues live; the
+Sandbox Service serves them from no copy of its own. A cursor beyond the journal's end fails with
+`FAILED_PRECONDITION` instead of an `Attached` snapshot. It emits:
 
-1. One native `Attached` snapshot.
-2. Original `EventEntry` messages, preserving serving-log cursor, source origin, and command correlation.
+1. One native `Attached` snapshot. Entries through its `last_cursor` are replayed, later ones live.
+2. Original `EventEntry` messages, preserving serving-log cursor, source origin, and command
+   correlation. Replayed and live entries have the same shape and consecutive cursors.
 3. An `ended` observation only when the native runner attachment reaches successful EOF. This is a
    transport observation, not a synthesized execution Event or deletion of retained history.
 4. Alternatively, a terminal `reconnect_required` observation followed by successful stream closure
-   when the follow lease expires. This is planned transport renewal, not native closure.
+   when the follow lease expires, during replay as well as live. This is planned transport renewal,
+   not native closure.
+5. Alternatively, a terminal `sealed` observation carrying the incarnation's final cursor, after
+   every entry through it. It is defined for the runner's teardown seal and not sent yet: no runner
+   journals a seal.
 
 Reconnect from the last durably committed cursor; each reconnect rereads the projected token and
 checks identity and destination again. The app flushes its buffered batch before planned renewal,
@@ -165,11 +173,28 @@ is separately bounded by `admission_timeout_s`, so a stalled consumer cannot pin
 15 minutes. Every exit cancels the runner attachment and closes its channel. There is no unbounded
 fan-out queue.
 
-The service now has independent Session Event history storage for durable identity and future replay.
+The service now has independent Session Event history storage for durable identity.
 `CreateSession` reserves a row but does **not** ingest runner Events yet. Runner logs remain on the
 state volume; the app currently retains its own Session Event copy and checkpoints. Backfilling
 existing Session Event history and moving Event ingestion/read authority into Sandbox Service are
 subsequent cutover work, not part of this Open RPC.
+
+## Session feed
+
+`WatchSessions` is server-streaming and open to every `caller_accounts` caller; unlike
+`ReadSessionEvents` it needs no history-reader grant, since it carries no transcript. It sends every recorded Session, including those of deleted Sandboxes and
+reservations whose runner Open never succeeded, in `position` order, then each later change as it
+commits on any replica. A `SessionChange` is the Session's current record: public ID, Sandbox name
+and current incarnation UID (empty for imported Sessions without one). A Session that changes again
+reappears at a larger position, so a lagging reader sees only its latest record. The feed carries no
+harness lifecycle; the Sandbox Service records none, and `FollowSession` reports it.
+
+Positions come from one PostgreSQL sequence allocated under a transaction-scoped lock, so they
+become visible in commit order: resuming with `after_position` set to the last processed position
+misses nothing. Gaps are normal. Commits wake streams on every replica through PostgreSQL
+`LISTEN`/`NOTIFY`; the table stays the authority, and streams re-read after the listener reconnects.
+The service does not start without its `LISTEN` connection. Renewal and write bounds are those of
+`FollowSession`: `reconnect_required` after `follow_lease_s`, each write within `admission_timeout_s`.
 
 ## Errors and uncertain outcomes
 

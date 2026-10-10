@@ -15,7 +15,6 @@ import { clampBlock, PreviewBadge, PreviewText, type PreviewProps } from "../voc
 import {
   type zEditOperation,
   zEditNodeArgs,
-  zGetOrCreateCalendarNodeArgs,
   zImportTanaPasteArgs,
   zMoveNodeArgs,
   zSetFieldOptionArgs,
@@ -23,7 +22,6 @@ import {
 } from "./schemas";
 
 type ImportTanaPasteArgs = z.infer<typeof zImportTanaPasteArgs>;
-type GetOrCreateCalendarNodeArgs = z.infer<typeof zGetOrCreateCalendarNodeArgs>;
 type TrashNodeArgs = z.infer<typeof zTrashNodeArgs>;
 type EditNodeArgs = z.infer<typeof zEditNodeArgs>;
 type MoveNodeArgs = z.infer<typeof zMoveNodeArgs>;
@@ -79,18 +77,6 @@ function ImportTanaPastePreview({ args, variant }: PreviewProps<ImportTanaPasteA
       </Field>
       <CodeBlock value={content} />
     </Stack>
-  );
-}
-
-function GetOrCreateCalendarNodePreview({ args }: PreviewProps<GetOrCreateCalendarNodeArgs>) {
-  return (
-    <Group gap={6}>
-      <PreviewBadge variant="outline">{args.granularity}</PreviewBadge>
-      {args.date && <PreviewText>{args.date}</PreviewText>}
-      <PreviewText c="dimmed" className="haku-shell-mono">
-        {args.workspaceId}
-      </PreviewText>
-    </Group>
   );
 }
 
@@ -179,14 +165,12 @@ function SetFieldOptionPreview({ args }: PreviewProps<SetFieldOptionArgs>) {
 
 export const tanaPreviews: {
   import_tana_paste: ToolPreview<typeof zImportTanaPasteArgs>;
-  get_or_create_calendar_node: ToolPreview<typeof zGetOrCreateCalendarNodeArgs>;
   trash_node: ToolPreview<typeof zTrashNodeArgs>;
   edit_node: ToolPreview<typeof zEditNodeArgs>;
   move_node: ToolPreview<typeof zMoveNodeArgs>;
   set_field_option: ToolPreview<typeof zSetFieldOptionArgs>;
 } = {
   import_tana_paste: definePreview(zImportTanaPasteArgs, ImportTanaPastePreview),
-  get_or_create_calendar_node: definePreview(zGetOrCreateCalendarNodeArgs, GetOrCreateCalendarNodePreview),
   trash_node: definePreview(zTrashNodeArgs, TrashNodePreview),
   edit_node: definePreview(zEditNodeArgs, EditNodePreview),
   move_node: definePreview(zMoveNodeArgs, MoveNodePreview),

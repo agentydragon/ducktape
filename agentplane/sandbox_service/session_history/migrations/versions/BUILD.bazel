@@ -4,8 +4,9 @@ exports_files([
     "0001_session_history.py",
     "0002_session_open_reservations.py",
     "0003_history_feed_state.py",
-    "0004_thread_fold_projection.py",
-    "0005_summary_first_event.py",
+    "0004_session_change_position.py",
+    "0005_thread_fold_projection.py",
+    "0006_summary_first_event.py",
 ])
 
 py_library(
@@ -36,13 +37,22 @@ py_library(
 )
 
 py_library(
-    name = "0004_thread_fold_projection",
-    srcs = ["0004_thread_fold_projection.py"],
+    name = "0004_session_change_position",
+    srcs = ["0004_session_change_position.py"],
+    deps = [
+        "@pypi//alembic",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
+    name = "0005_thread_fold_projection",
+    srcs = ["0005_thread_fold_projection.py"],
     deps = ["@pypi//alembic"],
 )
 
 py_library(
-    name = "0005_summary_first_event",
-    srcs = ["0005_summary_first_event.py"],
+    name = "0006_summary_first_event",
+    srcs = ["0006_summary_first_event.py"],
     deps = ["@pypi//alembic"],
 )

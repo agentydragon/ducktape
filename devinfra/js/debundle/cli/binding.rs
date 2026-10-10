@@ -24,7 +24,7 @@ use serde::Deserialize;
 
 use spec::{
     BindingAnnotation, LogicalModule, Member, ModulePath, SourceMatchBinding,
-    SourceMatchBindingDetail, is_residual_module_path,
+    SourceMatchBindingDetail, SourceMatchClaim, is_residual_module_path,
 };
 use spec_modules::{collect_module_files, module_path_from_file};
 use yaml_edit::{read_yaml, write_yaml_atomic};
@@ -91,7 +91,7 @@ pub struct BindingMatch {
     pub name: BindingName,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum BindingLocation {
     Member {
         member_index: usize,
@@ -582,10 +582,10 @@ fn proposal_to_moves(proposal: BatchProposal) -> std::result::Result<Vec<Move>, 
 /// Remaining semantic content prevents source deletion (see below).
 ///
 /// Contract:
-///   * Moves are deduplicated on **resolved member identity** (the
-///     member's source file + index): a batch carrying both the
-///     minified and readable spelling of one member collapses to a
-///     single move. Two moves for the same member with contradictory
+///   * Moves are deduplicated on **resolved binding identity** (the
+///     binding's source file + location): a batch carrying both the
+///     local and readable spelling of one binding collapses to a
+///     single move. Two moves for the same binding with contradictory
 ///     destinations or readable names are rejected.
 ///   * Destination module paths are canonicalized via
 ///     [`spec::ModulePath::parse`] (lowercased), so `UI/Widgets` and
@@ -623,20 +623,13 @@ pub fn run_bindings_assign(
     // Preserve the planning snapshot for semantic no-op detection at apply time.
     let original_docs = load_module_docs(modules_root)?;
     let mut docs = original_docs.clone();
-    // Step 1: locate each move's member and canonicalize its
-    // destination. Identity is the resolved (source module, member
-    // index) slot: `<sym>` accepts both the minified and readable
-    // spelling, so a raw-string dedupe would let both spellings of
-    // one member produce two plan entries for a single extraction slot.
-    let mut by_identity: BTreeMap<(String, usize), PlannedMove> = BTreeMap::new();
+    // Step 1: locate each move's binding and canonicalize its
+    // destination. Identity is its resolved member or source-match slot:
+    // `<sym>` accepts both local and readable spellings, so a raw-string
+    // dedupe would produce two plan entries for one extraction slot.
+    let mut by_identity: BTreeMap<(String, BindingLocation), PlannedMove> = BTreeMap::new();
     for m in moves {
         let hit = resolve_in_docs(modules_root, &docs, &m.sym)?;
-        let source_index = match &hit.location {
-            BindingLocation::Member { member_index } => *member_index,
-            BindingLocation::SourceMatch { .. } => {
-                bail_source_match_split("bindings assign", &hit)?
-            }
-        };
         let dest_module = canonical_module_path(&m.module)?;
         let planned = PlannedMove {
             req: Move {
@@ -645,9 +638,10 @@ pub fn run_bindings_assign(
                 readable: m.readable,
             },
             source_module: hit.module_path.clone(),
-            source_index,
+            source_location: hit.location,
+            source_effective_name: binding_effective_name(&hit.name).to_string(),
         };
-        match by_identity.entry((hit.module_path, source_index)) {
+        match by_identity.entry((hit.module_path, hit.location)) {
             std::collections::btree_map::Entry::Vacant(slot) => {
                 slot.insert(planned);
             }
@@ -684,33 +678,59 @@ pub fn run_bindings_assign(
         }
     }
     let plan: Vec<PlannedMove> = by_identity.into_values().collect();
-    // Step 3: extract each source module's selected members in one pass,
-    // preserving original indices until every identity has been resolved.
-    let mut extracted = take_members(
+    // Step 3: extract from the planning snapshot, preserving original indices.
+    // A source-match claim may be split by selecting only some bindings; each
+    // extracted binding keeps the shape and note of its original claim.
+    let mut extracted_members = take_members(
         &mut docs,
-        plan.iter()
-            .map(|p| (p.source_module.clone(), p.source_index)),
+        plan.iter().filter_map(|p| match p.source_location {
+            BindingLocation::Member { member_index } => {
+                Some((p.source_module.clone(), member_index))
+            }
+            BindingLocation::SourceMatch { .. } => None,
+        }),
     );
-    let mut pulled: BTreeMap<String, Member> = BTreeMap::new();
+    let mut extracted_claims = take_source_match_bindings(
+        &mut docs,
+        plan.iter().filter_map(|p| match p.source_location {
+            BindingLocation::SourceMatch {
+                claim_index,
+                binding_index,
+            } => Some((p.source_module.clone(), claim_index, binding_index)),
+            BindingLocation::Member { .. } => None,
+        }),
+    );
+    let mut pulled: BTreeMap<(String, BindingLocation), PulledBinding> = BTreeMap::new();
     let mut pulled_annotations: BTreeMap<String, (String, Option<BindingAnnotation>)> =
         BTreeMap::new();
     for p in &plan {
-        let mut member = extracted
-            .remove(&(p.source_module.clone(), p.source_index))
-            .expect("resolved member is loaded");
-        let old_effective = member_effective_name(&member)
-            .with_context(|| format!("member {:?} has no effective binding name", p.req.sym))?;
+        let mut entry = match p.source_location {
+            BindingLocation::Member { member_index } => PulledBinding::Member(Box::new(
+                extracted_members
+                    .remove(&(p.source_module.clone(), member_index))
+                    .expect("resolved member is loaded"),
+            )),
+            BindingLocation::SourceMatch {
+                claim_index,
+                binding_index,
+            } => PulledBinding::SourceMatch(
+                extracted_claims
+                    .remove(&(p.source_module.clone(), claim_index, binding_index))
+                    .expect("resolved source-match binding is loaded"),
+            ),
+        };
         let (_, doc) = docs
             .get_mut(&p.source_module)
             .expect("resolved module is loaded");
-        let annotation = doc.annotations.remove(&old_effective);
+        let annotation = doc.annotations.remove(&p.source_effective_name);
         if let Some(new_readable) = &p.req.readable {
-            member.name = Some(new_readable.clone());
+            entry.set_readable(new_readable);
         }
-        let new_effective = member_effective_name(&member)
-            .with_context(|| format!("member {:?} has no effective binding name", p.req.sym))?;
+        let new_effective = entry
+            .effective_name()
+            .with_context(|| format!("binding {:?} has no effective binding name", p.req.sym))?;
         pulled_annotations.insert(p.req.sym.clone(), (new_effective, annotation));
-        pulled.insert(p.req.sym.clone(), member);
+        pulled.insert((p.source_module.clone(), p.source_location), entry);
     }
 
     // Step 4: collision detection for renames, sharing the same
@@ -747,10 +767,10 @@ pub fn run_bindings_assign(
             // same effective name to a different destination.
             let pulled_hits = pulled
                 .iter()
-                .filter(|(other_sym, _)| *other_sym != &p.req.sym)
-                .filter(|(_, member)| {
-                    member_effective_name(member).as_deref() == Some(new_readable)
+                .filter(|((module, location), _)| {
+                    module != &p.source_module || location != &p.source_location
                 })
+                .filter(|(_, entry)| entry.effective_name().as_deref() == Some(new_readable))
                 .count();
             if !hits.is_empty() || pulled_hits > 0 {
                 bail!(
@@ -766,18 +786,38 @@ pub fn run_bindings_assign(
     }
 
     // Step 5: splice into destinations (auto-create missing).
+    let mut destination_claims: BTreeMap<(String, String, usize), usize> = BTreeMap::new();
     for p in &plan {
         let dest_path = p.req.module.clone();
         if !docs.contains_key(&dest_path) {
             let dest_file = modules_root.join(format!("{dest_path}.yaml"));
             docs.insert(dest_path.clone(), (dest_file, LogicalModule::default()));
         }
-        let member = pulled.remove(&p.req.sym).expect("pulled member missing");
+        let entry = pulled
+            .remove(&(p.source_module.clone(), p.source_location))
+            .expect("pulled binding missing");
         let (export_name, annotation) = pulled_annotations
             .remove(&p.req.sym)
             .expect("pulled annotation missing");
         let (_, doc) = docs.get_mut(&dest_path).expect("dest just created");
-        doc.members.push(member);
+        match entry {
+            PulledBinding::Member(member) => doc.members.push(*member),
+            PulledBinding::SourceMatch(mut claim) => {
+                let BindingLocation::SourceMatch { claim_index, .. } = p.source_location else {
+                    unreachable!()
+                };
+                let key = (dest_path.clone(), p.source_module.clone(), claim_index);
+                if let Some(index) = destination_claims.get(&key) {
+                    doc.source_matches[*index]
+                        .bindings
+                        .append(&mut claim.bindings);
+                } else {
+                    let index = doc.source_matches.len();
+                    doc.source_matches.push(claim);
+                    destination_claims.insert(key, index);
+                }
+            }
+        }
         insert_annotation(doc, &export_name, annotation)?;
     }
 
@@ -809,7 +849,38 @@ pub fn run_bindings_assign(
 struct PlannedMove {
     req: Move,
     source_module: String,
-    source_index: usize,
+    source_location: BindingLocation,
+    source_effective_name: String,
+}
+
+enum PulledBinding {
+    Member(Box<Member>),
+    SourceMatch(SourceMatchClaim),
+}
+
+impl PulledBinding {
+    fn effective_name(&self) -> Option<String> {
+        match self {
+            Self::Member(member) => member_effective_name(member),
+            Self::SourceMatch(claim) => claim
+                .bindings
+                .first()
+                .map(|binding| binding.name().to_string()),
+        }
+    }
+
+    fn set_readable(&mut self, readable: &str) {
+        match self {
+            Self::Member(member) => member.name = Some(readable.to_string()),
+            Self::SourceMatch(claim) => {
+                let binding = &mut claim.bindings[0];
+                *binding = SourceMatchBinding::Detailed(SourceMatchBindingDetail {
+                    local: binding.local().to_string(),
+                    name: Some(readable.to_string()),
+                });
+            }
+        }
+    }
 }
 
 /// Canonicalize a destination module path through the same
@@ -940,11 +1011,58 @@ fn take_members(
     taken
 }
 
-fn bail_source_match_split<T>(verb: &str, hit: &BindingMatch) -> Result<T> {
+/// Split selected bindings from source-backed claims using their original
+/// indices. The unselected bindings remain in the source claim. A fully moved
+/// claim disappears, while each selected binding carries its original template
+/// and claim-level note for destination grouping.
+fn take_source_match_bindings(
+    docs: &mut ModuleDocs,
+    identities: impl IntoIterator<Item = (String, usize, usize)>,
+) -> BTreeMap<(String, usize, usize), SourceMatchClaim> {
+    let mut by_module: BTreeMap<String, BTreeMap<usize, BTreeSet<usize>>> = BTreeMap::new();
+    for (module, claim_index, binding_index) in identities {
+        by_module
+            .entry(module)
+            .or_default()
+            .entry(claim_index)
+            .or_default()
+            .insert(binding_index);
+    }
+    let mut taken = BTreeMap::new();
+    for (module, claims) in by_module {
+        let (_, doc) = docs.get_mut(&module).expect("resolved module is loaded");
+        for (claim_index, mut claim) in std::mem::take(&mut doc.source_matches)
+            .into_iter()
+            .enumerate()
+        {
+            if let Some(indices) = claims.get(&claim_index) {
+                let mut remaining = Vec::new();
+                for (binding_index, binding) in
+                    std::mem::take(&mut claim.bindings).into_iter().enumerate()
+                {
+                    if indices.contains(&binding_index) {
+                        let mut selected = claim.clone();
+                        selected.bindings.push(binding);
+                        taken.insert((module.clone(), claim_index, binding_index), selected);
+                    } else {
+                        remaining.push(binding);
+                    }
+                }
+                claim.bindings = remaining;
+            }
+            if !claim.bindings.is_empty() {
+                doc.source_matches.push(claim);
+            }
+        }
+    }
+    taken
+}
+
+fn bail_source_match_unassign<T>(hit: &BindingMatch) -> Result<T> {
     bail!(
-        "{verb} does not yet support canonical source_matches[] bindings; `{}` resolved to \
-         {}#{}. Rename can edit the binding alias, but moving or unassigning one binding out of a \
-         source_match claim needs a dedicated split operation.",
+        "bindings unassign does not yet support canonical source_matches[] bindings; `{}` resolved to \
+         {}#{}. Use bindings assign to move this binding; removing its claim requires \
+         source-match unassign support.",
         hit.name.minified(),
         hit.file.display(),
         hit.location.describe()
@@ -1015,9 +1133,7 @@ pub fn run_bindings_unassign(
         let hit = resolve_in_docs(modules_root, &docs, &s)?;
         let member_index = match &hit.location {
             BindingLocation::Member { member_index } => *member_index,
-            BindingLocation::SourceMatch { .. } => {
-                bail_source_match_split("bindings unassign", &hit)?
-            }
+            BindingLocation::SourceMatch { .. } => bail_source_match_unassign(&hit)?,
         };
         if let Some(prev) = plan.insert((hit.module_path, member_index), s.clone()) {
             eprintln!(

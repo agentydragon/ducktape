@@ -1,0 +1,23 @@
+load("//devinfra/python:defs.bzl", "py_library")
+
+package(
+    default_testonly = True,
+    default_visibility = ["//agentplane:__subpackages__"],
+)
+
+py_library(
+    name = "backend",
+    testonly = True,
+    srcs = ["backend.py"],
+    deps = [
+        "//agentplane:subjects",
+        "//agentplane/history_service:client",
+        "//agentplane/history_service:grpc_api",
+        "//agentplane/sandbox_service/session_history:store",
+        "//agentplane/workload_auth:principal",
+        "@pypi//asyncpg",
+        "@pypi//grpcio",
+        "@pypi//kubernetes_asyncio",
+        "@pypi//sqlalchemy",
+    ],
+)
