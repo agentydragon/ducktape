@@ -765,7 +765,8 @@ leases. The data is derived and rebuildable from the raw log.
 **Blocked on the fold read cutover; decided by the operator, 2026-10-10 PDT.** The app reads
 harness and cwd from the Sandbox Service's session record and the current model and last model
 activity from the History Service summary, then an explicit schema PR drops those `event_log`
-columns, leaving it the Thread → Session link. `APP_SESSION_SCHEMA_RENAME` renames the same
+columns, leaving it the Thread → Session link. `event_log.last_model_activity_at` is already
+neither written nor read (its CLEANUP tombstone) and drops in the same migration. `APP_SESSION_SCHEMA_RENAME` renames the same
 table; either may land first, and the second rebases its migration.
 
 ### `HISTORY_SERVICE_OWNERSHIP` — capstone
@@ -977,7 +978,10 @@ ingester's `WatchSessions` resumes without losing a change.
 **Blocked on the registry move.** Each ingester creates its Session's history row on first append,
 from the `SessionChange` it follows, so the Sandbox Service no longer writes the history database on
 Create or Open and the startup copy is deleted. The History Service keeps the Sandbox locator it
-reads by (`ListSessionSummaries` filters by Sandbox).
+reads by (`ListSessionSummaries` filters by Sandbox). The history-side registration code, already
+unused in production since the registry move, goes with it: `session_history` `Store.open` and its
+`next_change_position` allocation. The CLEANUP on the startup copy cites this node's name; code
+comments must not cite plan nodes, so state the condition instead.
 
 ### `HISTORY_SESSION_COLUMNS_DROP` — history keeps only history
 
@@ -992,6 +996,8 @@ runner session ID and the change position. Per-Session ingestion state (`source_
 Alembic migrations from `sandbox_service/session_history` into `history_service`, rename the
 `agentplane-sandbox-service-history-migrate` image, and run the migration init container in the
 History Service Deployment. The Sandbox Service then has no credential for the history database.
+`session_history/session_changes.py`, which listens on `sandbox_commands`, moves next to the
+Session registry rather than with the store.
 
 ### `HISTORY_WRITER_SWITCH_RETIRE` — one ingester, no switch
 
@@ -1041,6 +1047,122 @@ inside one implementing package. Candidates: `sandbox_service/protocol.proto`,
 the shared `protocol/` messages already outside any service. Decide the location and Bazel
 package layout, then move each file with its generated-code imports in one change. Wait until the
 runner channel and History Service proto churn lands so moves do not conflict with open lanes.
+
+## 10. Legacy burn-down
+
+Dead code, finished gates, compatibility shims and stale names found by the 2026-10-10 PDT audit of
+devel. A gate counts as legacy once its rollout is finished on both testing and staging or nothing
+reads it; mid-rollout gates (shadow fold, read cutover, the Sandbox Service's `Recreate`,
+`history_writer`, delta settlement) stay with their own nodes above. Lane named per node; leftovers
+of in-flight work belong to the lane already changing that code. Upstream-gated tombstones with a
+verifiable condition in code (`keepingOffset` in `thread_store.tsx`, the jsdom pragma in
+`markdown.test.tsx`) need no node.
+
+```mermaid
+flowchart TD
+    OPEN_SESSION_RETIRE[Candidate: delete the caller-chosen OpenSession path]
+    SANDBOX_SERVICE_RESOURCES_REQUIRED[Candidate: Sandbox Service wiring stops being optional]
+    APP_SETTINGS_REQUIRED[Candidate: app integrations required, carrier settings moved]
+    ACTION_CONNECTION_REBIND_SHIMS[Candidate: drop pre-rebind connection fallbacks]
+    RUNNER_CLIENT_TEST_HELPERS[Candidate: runner client test helpers into test support]
+    RUNNER_LAUNCH_SETTINGS[Decision: runner launch settings separate from capture probes]
+    WORKLOAD_AUDIENCE_DEFAULTS[Candidate: workload token audience has no code default]
+    WORKLOAD_AUDIENCE_RENAME[Decision: rename the agentplane-egress audience]
+    APP_THREAD_VIEW_CLEANUP[Blocked: app Thread view and event_log shims]
+    RUNNER_INBOUND_RETIRE[Retire inbound runner access]
+    FOLD_READ_CUTOVER[Read the History Service fold]
+    OPEN_SESSION_RETIRE --> RUNNER_INBOUND_RETIRE
+    RUNNER_LAUNCH_SETTINGS_SPLIT[Blocked: give the runner its own launch settings]
+    RUNNER_LAUNCH_SETTINGS --> RUNNER_LAUNCH_SETTINGS_SPLIT
+    WORKLOAD_AUDIENCE_DEFAULTS -. same constant .-> WORKLOAD_AUDIENCE_RENAME
+    FOLD_READ_CUTOVER --> APP_THREAD_VIEW_CLEANUP
+```
+
+### `OPEN_SESSION_RETIRE` — delete the caller-chosen OpenSession path
+
+**Candidate; Legacy burn-down lane, coordinating the Sandbox Service edit with Runner dial-out.**
+The browser creates Sessions only by `idempotency_key`. The `session_id` branch of the app's
+`POST /sessions` (`NewSession.session_id`, `RunnerBridge.open_session`), the client's
+`open_session`/`open_bound_session` and the Sandbox Service `OpenSession` RPC are reached only by the
+manual acceptance suite, which passes non-UUID IDs that `EventLogStore.open` then rejects, so the
+path cannot work end to end. Move the acceptance clients to Create, then delete the app branch, the
+RPC, `Runner.open` in the service client and `SessionRegistry.open` with its `uuid5` test fallback.
+Existing Sessions with caller-chosen runner IDs keep their relay-only `SubmitCommand` route; that
+route goes with `RUNNER_INBOUND_RETIRE` once no such Session remains.
+
+### `SANDBOX_SERVICE_RESOURCES_REQUIRED` — Sandbox Service wiring stops being optional
+
+**Candidate; Runner dial-out lane, which is changing `grpc_api.py`.** `Resources.history` is set and
+never read. `sessions`, `submissions`, `delivery` and `session_changes` are `| None` only for test
+convenience, which leaves "not configured" branches production never takes. `database_url` and
+`commands_database_url` are optional settings that `main.py` then requires; pass them as
+`supplied=` from the cdk8s settings file, as the History Service does. Code and fixtures only.
+
+### `APP_SETTINGS_REQUIRED` — app integrations required, carrier settings moved
+
+**Candidate; Legacy burn-down lane.** `electric_url`, `notifications_url`/`notifications_token_file`
+and `action_federation` are optional although both environments set them and the Thread view does
+not work without Electric; their `None` branches (`http://disabled.invalid` placeholders, 503s) serve
+only tests. `kubernetes_binding_cleanup_namespaces`, `kubernetes_cluster_binding_cleanup` and
+`default_egress_policies` on `AppSettingsConfig` are never read by the app; the cdk8s code carries
+them to the Sandbox Service's settings through the app's ConfigMap. Move them to the Sandbox Service
+configuration and make the integrations required. Also fix `app_settings.py`'s comment claiming the
+egress admin Deployment has not landed. Code and generated config only.
+
+### `ACTION_CONNECTION_REBIND_SHIMS` — drop pre-rebind connection fallbacks
+
+**Candidate; Legacy burn-down lane.** `action_service/connections.py` still falls back to
+`grant.caller` for `binding_version == 0`, refuses rebinds while a grant is pending for a "legacy
+replica", mirrors `grant.caller` and reads `original_caller or caller`. No replica predating
+`0021_connection_rebind` runs on either environment. A new migration backfills `original_caller`
+(and `bound_caller` for unrevoked connections) and makes `original_caller` NOT NULL; then the
+fallbacks and their legacy-replica tests go. No data is deleted.
+
+### `RUNNER_CLIENT_TEST_HELPERS` — runner client test helpers into test support
+
+**Candidate; Legacy burn-down lane.** `Attachment.send`, `interrupt`, `switch_model`,
+`switch_reasoning_effort` and `stop_runner_session` in `runner/client.py` have no production
+caller (`send` only the KubeVirt probe). Move them to `runner/testing/` as functions over
+`Attachment.command`. Rebase onto the runner channel client if it lands first.
+
+### `RUNNER_LAUNCH_SETTINGS` — runner launch settings separate from capture probes
+
+**Decision for the operator.** The runner builds its harness launch from the native capture
+scenarios, so every Claude Session runs with `--system-prompt "You are a concise test assistant..."`
+(Session instructions are added at initialize), `--tools Bash,Edit,Read`, `--name
+agentplane-capture` and two upstream retries; every Codex thread gets the same test base
+instructions and `clientInfo` `agentplane-capture`. Decide the production values: Claude Code's
+default system prompt or a platform one, the full or a chosen tool set, a Session name, a retry
+budget.
+
+### `RUNNER_LAUNCH_SETTINGS_SPLIT` — give the runner its own launch settings
+
+**Blocked on the decision; Legacy burn-down lane.** The runner gets its own launch settings with the
+decided values; the scenario values stay with capture and `harness_tests`. Model-visible change, new
+Sandboxes only.
+
+### `WORKLOAD_AUDIENCE_DEFAULTS` — workload token audience has no code default
+
+**Candidate; Legacy burn-down lane.** `llm_ingress`, `action_service` and `egress` settings default
+the workload token audience to `agentplane-egress` although every deployment sets it, and the
+shared constant lives in `cluster/cdk8s/agentplane/llm_ingress.py`. Make the field required and
+give the constant a shared home.
+
+### `WORKLOAD_AUDIENCE_RENAME` — rename the `agentplane-egress` audience
+
+**Decision for the operator.** `workload_auth/README.md` calls `agentplane-egress` a compatibility
+audience that may become `agentplane-workload`. Renaming needs every verifier to accept both until
+running Sandbox Pods carry the new projected token, or a Sandbox restart. Recommended: rename with an
+accept-both release, then drop the old audience once `LEGACY_SANDBOX_RETIRE` has replaced old Pods.
+
+### `APP_THREAD_VIEW_CLEANUP` — app Thread view and event_log shims
+
+**Blocked on the fold read cutover; Thread fold move lane.** `ThreadView.session_id` always equals
+`id` (and `GET /threads?session_id=` filters on it). `EventLogStore` takes `history_creator` as a
+second, nullable copy of `history_reader` for test support, and `has_projection_metadata` is read
+only by tests. The frontend reads `requested_value` with a `.default(null)` for Command rows written
+before the field existed; a fold rebuilt in a new epoch has none. The fold's page size is `128` in
+both `fold_shadow.PAGE_SIZE` (read only by tests) and `projector.py`; keep one. Code only.
 
 ## Scope and retirement of stale gates
 
