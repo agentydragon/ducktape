@@ -10,6 +10,8 @@ from agentplane.history_service.thread_reads import ThreadScopeResetError
 from agentplane.sandbox_service.session_history.store import Store
 from agentplane.thread_fold.models import ThreadCheckpoint, ThreadEntity, ThreadEvidence, ThreadNativeLink
 
+# gazelle:include_dep @pypi//protobuf
+
 MAX_PAGE = 200
 
 
