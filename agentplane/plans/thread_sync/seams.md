@@ -24,7 +24,7 @@ Electric sits behind one module on each side:
 - **Shared, below the seam:** the fold tables; `ContentStore`;
   `ThreadStore`; `DatabaseUpdates.changes[Channel.THREADS]`, the replica-local signal that a thread was written — what
   a long poll or a push waits on. The `/threads` routes for thread metadata and commands
-  (`POST /threads/{thread_id}/commands`, `/commands/reconcile`) stay shared: commands are writes,
+  (`POST /threads/{thread_id}/commands`) stay shared: commands are writes,
   not sync.
 - **One new shared read**, which every non-Electric option needs: rows by `entity_index` range, and
   the delta — rows in a range with `revision_cursor > since`. It is a read of the fold rather than a

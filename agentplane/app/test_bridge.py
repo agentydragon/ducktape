@@ -406,17 +406,16 @@ async def _stored_events(
     until: str,
     matches: Callable[[list[dict[str, Any]]], bool] | None = None,
 ) -> list[dict[str, Any]]:
-    """The thread's stored entries once one carrying `until` has landed; the feed writes them as
-    they arrive, a moment after the runner emitted them."""
-    async for attempt in AsyncRetrying(
-        stop=stop_after_delay(30), wait=wait_fixed(0.2), retry=retry_if_exception_type(AssertionError)
-    ):
-        with attempt:
-            response = await http.get(f"/threads/{thread_id}/events")
-            assert response.status_code == 200, response.text
-            entries: list[dict[str, Any]] = response.json()
-            assert any(until in entry["event"] for entry in entries), f"no {until} stored yet"
-            assert matches is None or matches(entries), f"stored events have not reached the expected state: {entries=}"
+    """The thread's archived entries, replayed from the start up to the first one carrying `until`
+    after which `matches` holds; the feed archives them a moment after the runner emitted them."""
+    entries: list[dict[str, Any]] = []
+    async with asyncio.timeout(30), http.stream("GET", f"/threads/{thread_id}/events/stream") as response:
+        assert response.status_code == 200
+        lines = response.aiter_lines()
+        while not (any(until in entry["event"] for entry in entries) and (matches is None or matches(entries))):
+            message = await next_message(lines)
+            if message.event == "event":
+                entries.append(message.data)
     return entries
 
 
@@ -548,7 +547,15 @@ async def test_http_error_is_archived_as_failed_turn_and_follow_up_succeeds(
             with attempt:
                 assert (await http.get(f"/threads/{thread_id}")).json()["last_turn_status"] == "TURN_STATUS_FAILED"
         # Re-reading the archive, as on a UI reload, retains the same terminal evidence.
-        assert (await http.get(f"/threads/{thread_id}/events")).json() == failed
+        assert (
+            await _stored_events(
+                http,
+                thread_id,
+                until="turnCompleted",
+                matches=lambda entries: _has_turn_status(entries, "TURN_STATUS_FAILED"),
+            )
+            == failed
+        )
         accepted = await http.post(
             _commands(thread_id),
             json={"commandId": "http-follow-up", "submitInput": {"text": "Reply with exactly: AFTER_HTTP_ERROR_OK"}},
@@ -940,7 +947,7 @@ async def test_the_feed_records_a_turn_nobody_is_watching(
         assert (
             await http.post(_commands(thread_id), json={"commandId": "stop-unwatched", "stopRunnerSession": {}})
         ).status_code == 200
-        assert (await http.get("/threads/00000000-0000-0000-0000-000000000000/events")).status_code == 404
+        assert (await http.get("/threads/00000000-0000-0000-0000-000000000000/events/stream")).status_code == 404
 
 
 async def test_the_bridge_reports_what_the_runner_refuses(app_url: str) -> None:

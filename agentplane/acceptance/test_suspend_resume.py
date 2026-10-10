@@ -9,8 +9,8 @@ import pytest_bazel
 from tenacity import AsyncRetrying, retry_if_exception_type, stop_after_delay, wait_fixed
 
 from agentplane.acceptance.agent import Agent
-from agentplane.app.client import Client, has_ready_pod
-from agentplane.app.sandbox_models import SandboxView
+from agentplane.app.client import Client
+from agentplane.app.sandbox_models import SandboxView, sandbox_has_ready_pod
 from agentplane.runner import protocol_pb2
 from agentplane.runner.harness import Harness
 from util.agent_sandbox import OperatingMode
@@ -61,7 +61,7 @@ async def test_two_harness_threads_keep_their_context_after_sandbox_suspend_resu
     async for attempt in AsyncRetrying(stop=stop_after_delay(POD_TRANSITION_SECONDS), wait=wait_fixed(2), reraise=True):
         with attempt:
             resumed = await client.sandbox(view.name)
-            if not has_ready_pod(resumed):
+            if not sandbox_has_ready_pod(resumed):
                 raise AssertionError(f"{view.name} has no ready, authorized Pod: {resumed.pod}")
 
     for harness, agent in agents.items():

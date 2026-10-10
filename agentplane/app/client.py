@@ -22,7 +22,7 @@ from agentplane.app.api import EgressGrant
 from agentplane.app.decisions import Decision
 from agentplane.app.model_catalog import ModelCatalog
 from agentplane.app.presets import SandboxPresetView
-from agentplane.app.sandbox_models import NewSandbox, SandboxView, sandbox_has_ready_pod
+from agentplane.app.sandbox_models import NewSandbox, SandboxView
 from agentplane.app.threads.bridge import NewSession
 from agentplane.app.threads.thread_view import ThreadView
 from agentplane.protocol import command_pb2, event_log_pb2
@@ -188,8 +188,3 @@ def _event(payload: str) -> event_log_pb2.EventEntry:
         return ParseDict(json.loads(payload), event_log_pb2.EventEntry())
     except (ValueError, ParseError) as error:
         raise SessionStreamError(f"not an EventEntry: {error}: {payload[:400]!r}") from error
-
-
-def has_ready_pod(view: SandboxView) -> bool:
-    """Whether inventory identity, grants, and kubelet status permit a session attempt."""
-    return sandbox_has_ready_pod(view)

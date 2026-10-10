@@ -93,7 +93,7 @@ def test_kubernetes_access_is_part_of_what_every_sandbox_is_granted(
     """Every agent talks to the API server, so the rule admitting it is in `basic`.
 
     `basic` is the policy every launch is granted before the caller picks anything
-    (`default_egress_policies` and `launch_policies`, agentplane/app/egress.py), which is what makes
+    (`launch_policies`, agentplane/sandbox_service/egress.py), which is what makes
     Kubernetes access a property of a sandbox rather than a choice one. It was its own policy
     while every SandboxTemplate already mounted the kubeconfig naming this credential
     (sandbox_pod.py): a box whose preset or caller did not name it held a working-looking config

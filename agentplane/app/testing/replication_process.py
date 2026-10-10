@@ -123,7 +123,7 @@ class GatedConversationDelivery:
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         path = scope.get("path", "")
-        selected = scope["type"] == "http" and path.endswith(("/sync/entities", "/commands/reconcile"))
+        selected = scope["type"] == "http" and path.endswith("/sync/entities")
         if not selected:
             await self._app(scope, receive, send)
             return

@@ -64,10 +64,6 @@ async def test_command_lookup_and_touched_projection_preload_stay_indexed_with_l
     assert scope is not None
     # Warm the driver, typed codec, and Python caches before taking its allocation profile.
     assert await content.admitted_command(thread, command) == admitted
-    assert await content.command_outcomes(thread, scope.projection_epoch, ["admission", "absent"]) == {
-        "admission": "pending",
-        "absent": None,
-    }
     captured: list[tuple[str, Any]] = []
 
     def capture_select(_: object, __: object, statement: str, parameters: Any, ___: object, ____: bool) -> None:
@@ -85,10 +81,6 @@ async def test_command_lookup_and_touched_projection_preload_stay_indexed_with_l
             lease=lease,
         )
         assert await content.admitted_command(thread, command) == admitted
-        assert await content.command_outcomes(thread, scope.projection_epoch, ["admission", "absent"]) == {
-            "admission": "pending",
-            "absent": None,
-        }
         current, peak = tracemalloc.get_traced_memory()
         after = tracemalloc.take_snapshot()
     finally:

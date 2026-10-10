@@ -1,10 +1,11 @@
 """What a browser is told without asking: one watch over the objects every view reads, fanned out
 to the open tabs as SSE.
 
-`inventory.py` and `egress.py` answer a request by listing against the API server and hold nothing
-in between; this keeps the same objects between requests instead, so a change reaches a tab when it
-happens rather than at the next poll, and one watch serves every tab. The projections are theirs --
-`sandbox_views`, `matching_bindings` -- so a pushed row and a fetched one cannot drift. The action
+The Sandbox Service's `kubernetes_views.py` and `egress_views.py` answer a request by listing
+against the API server and hold nothing in between; this keeps the same objects between requests
+instead, so a change reaches a tab when it happens rather than at the next poll, and one watch
+serves every tab. The projections are theirs -- `sandbox_views`, `matching_bindings` -- so a pushed
+row and a fetched one cannot drift. The action
 policy is the Action Service's answer, not a projection of anything held here: the two policy kinds
 are watched only so that an event on either re-asks the service.
 

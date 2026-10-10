@@ -6,7 +6,6 @@ import asyncio
 import socket
 from collections.abc import AsyncIterator, Iterator
 from contextlib import asynccontextmanager
-from datetime import timedelta
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, cast
@@ -41,7 +40,7 @@ from agentplane.app.threads.bridge import RunnerBridge
 from agentplane.app.threads.sessions import SandboxSessions
 from agentplane.app.threads.store import ThreadStore
 from agentplane.app.threads.view.content import ContentStore
-from agentplane.protocol import command_pb2, event_log_pb2, event_pb2
+from agentplane.protocol import event_log_pb2
 from agentplane.runner import protocol_pb2
 from agentplane.runner.harness import Harness
 from agentplane.sandbox_service import protocol_pb2 as service_pb2
@@ -60,7 +59,6 @@ from agentplane.sandbox_service.testing.fake_inventory import (
     sandbox,
 )
 from agentplane.sandbox_service.testing.fake_rbac import FakeRbac
-from agentplane.thread_fold.recording import THREAD_FOLD_EPOCH
 
 # TestClient drives the app over httpx, imported inside starlette; gazelle cannot see it.
 # gazelle:include_dep @pypi//httpx
@@ -1061,90 +1059,6 @@ async def test_a_thread_is_found_by_its_session_and_renamed_in_place(
         assert missing.status_code == 404
 
 
-async def test_command_reconciliation_recovers_saved_outcomes_after_a_lost_reply_and_reload(
-    inventory: SandboxServiceClient,
-    bridge: RunnerBridge,
-    store: ThreadStore,
-    event_logs: EventLogStore,
-    ingestion: Ingestion,
-    database_updates: DatabaseUpdates,
-    operator_sessions: OperatorSessionStore,
-    egress: EgressAccess,
-    decisions: DecisionsClient,
-    live_index: LiveIndex,
-    action_policy: ActionPolicyInventory,
-    reviewer: TokenReviewer,
-    content: ContentStore,
-) -> None:
-    """A reload asks the authoritative scope about browser-held ids without resending commands."""
-    spec = protocol_pb2.SessionSpec(harness=protocol_pb2.HARNESS_CLAUDE, cwd="/w", model="test-model")
-    thread = await event_logs.open("live", "command-reconcile", spec)
-    lease = await ingestion.acquire(thread, timedelta(minutes=1))
-    assert lease is not None
-    failed = command_pb2.Command(
-        command_id="failed", submit_input=command_pb2.SubmitInput(text="persisted before the reply was lost")
-    )
-    pending = command_pb2.Command(
-        command_id="pending", submit_input=command_pb2.SubmitInput(text="still awaiting the runner")
-    )
-
-    def entry(cursor: int, **observation: object) -> event_log_pb2.EventEntry:
-        return event_log_pb2.EventEntry(
-            cursor=cursor,
-            origin=event_log_pb2.EventOrigin(source_id="test-runner", sequence=cursor),
-            event=event_pb2.Event(**observation),  # type: ignore[arg-type]
-        )
-
-    await ingestion.record(
-        thread,
-        [
-            entry(1, command_admitted=event_pb2.CommandAdmitted(command=failed)),
-            entry(2, command_failed=event_pb2.CommandFailed(command_id="failed", reason="runner rejected it")),
-            entry(3, command_admitted=event_pb2.CommandAdmitted(command=pending)),
-        ],
-        lease=lease,
-    )
-    app = create_app(
-        inventory,
-        bridge,
-        store,
-        CODEX_ONLY,
-        egress,
-        decisions,
-        live_index,
-        action_policy,
-        reviewer=reviewer,
-        event_logs=event_logs,
-        content=content,
-        database_updates=database_updates,
-        operator_sessions=operator_sessions,
-    )
-    body = {"projection_epoch": THREAD_FOLD_EPOCH, "command_ids": ["failed", "pending", "absent", "failed"]}
-    async with httpx.AsyncClient(
-        transport=httpx.ASGITransport(app=app), base_url="http://test", headers=AGENT_AUTH
-    ) as http:
-        first = await http.post(f"/threads/{thread}/commands/reconcile", json=body)
-        assert first.status_code == 200, first.text
-        assert first.json() == {
-            "projection_epoch": THREAD_FOLD_EPOCH,
-            "commands": [
-                {"command_id": "failed", "outcome": "failed"},
-                {"command_id": "pending", "outcome": "pending"},
-                {"command_id": "absent", "outcome": None},
-            ],
-        }
-        # This is the reload path after a committed admission's HTTP response was lost.
-        reloaded = await http.post(f"/threads/{thread}/commands/reconcile", json=body)
-        assert reloaded.json() == first.json()
-
-        stale = await http.post(
-            f"/threads/{thread}/commands/reconcile", json={**body, "projection_epoch": "old-projection"}
-        )
-        assert stale.status_code == 410
-        invalid = await http.post(f"/threads/{thread}/commands/reconcile", json={**body, "command_ids": ["id"] * 129})
-        assert invalid.status_code == 422
-
-
 async def test_a_thread_archives_and_unarchives_and_hides_from_the_default_listing(
     inventory: SandboxServiceClient,
     bridge: RunnerBridge,
@@ -1253,75 +1167,12 @@ async def test_a_running_thread_cannot_be_archived(
     assert thread.archived is False
 
 
-async def test_threads_with_sandboxes_pairs_each_thread_with_its_sandbox_or_none(
-    inventory: SandboxServiceClient,
-    bridge: RunnerBridge,
-    store: ThreadStore,
-    event_logs: EventLogStore,
-    database_updates: DatabaseUpdates,
-    operator_sessions: OperatorSessionStore,
-    egress: EgressAccess,
-    decisions: DecisionsClient,
-    live_index: LiveIndex,
-    action_policy: ActionPolicyInventory,
-    reviewer: TokenReviewer,
-    custom_objects: FakeCustomObjectsApi,
-    core_v1: FakeCoreV1Api,
-    content: ContentStore,
-) -> None:
-    """The cross-sandbox listing: a Thread survives its Sandbox's deletion, and a Sandbox with
-    several Threads is not duplicated once per Thread."""
-    custom_objects.objects[("sandboxes", "live")] = sandbox("live")
-    custom_objects.objects[("sandboxes", "test-provisioning")] = sandbox("test-provisioning")
-    core_v1.pods["live"] = pod("live", phase="Running", ready=True, ip="10.0.0.7")
-    spec = protocol_pb2.SessionSpec(harness=protocol_pb2.HARNESS_CLAUDE, cwd="/w", model="test-model")
-    live_thread = await event_logs.open("live", "s-1", spec)
-    other_live_thread = await event_logs.open("live", "s-2", spec)
-    gone_thread = await event_logs.open("gone", "s-3", spec)
-    await store.archive(gone_thread)
-    app = create_app(
-        inventory,
-        bridge,
-        store,
-        TEST_MODELS,
-        egress,
-        decisions,
-        live_index,
-        action_policy,
-        reviewer=reviewer,
-        event_logs=event_logs,
-        content=content,
-        database_updates=database_updates,
-        operator_sessions=operator_sessions,
-    )
-    async with httpx.AsyncClient(
-        transport=httpx.ASGITransport(app=app), base_url="http://test", headers=AGENT_AUTH
-    ) as http:
-        default_body = (await http.get("/threads/with-sandboxes")).json()
-        default_thread_ids = {row["id"] for row in default_body["threads"]}
-        assert default_thread_ids == {str(live_thread), str(other_live_thread)}
-        # Neither thread's feed has attached; the sidebar's per-thread status dot reads this as gray.
-        assert {row["harness_state"] for row in default_body["threads"]} == {"HARNESS_STATE_UNSPECIFIED"}
-        assert set(default_body["sandboxes"]) == {"live", "test-provisioning"}
-        assert default_body["sandboxes"]["test-provisioning"]["operating_mode"] == "Running"
-        assert default_body["sandboxes"]["test-provisioning"]["pod"] is None
-        live_sandbox = default_body["sandboxes"]["live"]
-        assert live_sandbox["name"] == "live"
-        assert live_sandbox["operating_mode"] == "Running"
-        assert live_sandbox["pod"]["status"]["phase"] == "Running"
-
-        all_body = (await http.get("/threads/with-sandboxes", params={"include_archived": "true"})).json()
-        all_thread_ids = {row["id"] for row in all_body["threads"]}
-        assert all_thread_ids == {str(live_thread), str(other_live_thread), str(gone_thread)}
-        assert set(all_body["sandboxes"]) == {"live", "test-provisioning"}, "the deleted 'gone' sandbox must not appear"
-
-
 if __name__ == "__main__":
     pytest_bazel.main()
 
 
 def test_notification_diagnostics_require_operator_login(client: TestClient) -> None:
     # Workload authentication of the app is not operator authorization to inspect another inbox.
-    response = client.get("/sandboxes/ready-sandbox/notifications")
+    response = client.get("/sandboxes/ready-sandbox/notifications/stream")
     assert response.status_code == 403
     assert response.json() == {"detail": "operator login required"}

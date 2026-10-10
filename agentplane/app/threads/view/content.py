@@ -1,5 +1,5 @@
 """Reads of a thread's content as the fold assembled it: the scope it has materialized, the
-evidence behind an entity, and command outcomes.
+evidence behind an entity, and command admissions.
 """
 
 from __future__ import annotations
@@ -27,17 +27,12 @@ from agentplane.app.threads.models import EventLog
 from agentplane.history_service import protocol_pb2 as history_pb2
 from agentplane.history_service.client import HistoryServiceClient, HistoryServiceError
 from agentplane.protocol import command_pb2, event_log_pb2
-from agentplane.thread_fold import fold
 from agentplane.thread_fold.models import ThreadCheckpoint, ThreadEntity, ThreadEvidence, ThreadNativeLink
-from agentplane.thread_fold.views import EntityKind, ThreadCommandEntityView, ThreadCommandState
+from agentplane.thread_fold.views import EntityKind, ThreadCommandEntityView
 
 # The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.
 # gazelle:include_dep @pypi//protobuf
 # gazelle:include_dep //agentplane/sandbox_service:protocol_pb2
-
-
-class ThreadScopeResetError(ValueError):
-    """A browser's retained projection source or epoch is no longer current."""
 
 
 class CommandIdConflictError(ValueError):
@@ -172,28 +167,6 @@ class ContentStore:
             raise ValueError("service history did not return the requested evidence cursor")
         return entry
 
-    async def command_outcomes(
-        self, thread_id: UUID, projection_epoch: str, command_ids: Sequence[str]
-    ) -> dict[str, fold.CommandOutcome | None]:
-        """Current outcomes for a finite browser-held command-id set, keyed by entity primary key."""
-        requested = tuple(dict.fromkeys(command_ids))
-        async with self._sessions() as session:
-            if await session.get(EventLog, thread_id) is None:
-                raise ThreadNotFoundError(thread_id)
-            checkpoint = await session.get(ThreadCheckpoint, thread_id)
-            if checkpoint is None or checkpoint.projection_epoch != projection_epoch:
-                raise ThreadScopeResetError("thread fold scope was reset")
-            rows = await session.scalars(
-                select(ThreadEntity).where(
-                    ThreadEntity.thread_id == thread_id,
-                    ThreadEntity.projection_epoch == projection_epoch,
-                    ThreadEntity.entity_kind == EntityKind.COMMAND,
-                    ThreadEntity.entity_id.in_(requested),
-                )
-            )
-            outcomes = {row.entity_id: ThreadCommandState.model_validate(row.state).outcome for row in rows}
-            return {command_id: outcomes.get(command_id) for command_id in requested}
-
     async def admitted_command(self, thread_id: UUID, command: command_pb2.Command) -> event_log_pb2.EventEntry | None:
         """The archived admission of this immutable command, if the Thread has one.
 
@@ -320,25 +293,9 @@ class HistoryContentStore(ContentStore):
             next_after_sequence=str(page.next_after_sequence) if page.HasField("next_after_sequence") else None,
         )
 
-    async def command_outcomes(
-        self, thread_id: UUID, projection_epoch: str, command_ids: Sequence[str]
-    ) -> dict[str, fold.CommandOutcome | None]:
-        requested = tuple(dict.fromkeys(command_ids))
-        await self._require_thread(thread_id)
-        if not requested:
-            scope = await self.current_scope(thread_id)
-            if scope is None or scope.projection_epoch != projection_epoch:
-                raise ThreadScopeResetError("thread fold scope was reset")
-            return {}
-        commands = await self._commands(thread_id, projection_epoch, requested)
-        if commands is None:
-            raise ThreadScopeResetError("thread fold scope was reset")
-        outcomes = {command.entity_id: command.state.outcome for command in commands}
-        return {command_id: outcomes.get(command_id) for command_id in requested}
-
     async def admitted_command(self, thread_id: UUID, command: command_pb2.Command) -> event_log_pb2.EventEntry | None:
         await self._require_thread(thread_id)
-        commands = await self._commands(thread_id, "", [command.command_id])
+        commands = await self._commands(thread_id, [command.command_id])
         if not commands:
             return None
         entry = await self._archived_entry(thread_id, commands[0].cursor)
@@ -351,15 +308,12 @@ class HistoryContentStore(ContentStore):
             if await session.get(EventLog, thread_id) is None:
                 raise ThreadNotFoundError(thread_id)
 
-    async def _commands(
-        self, thread_id: UUID, projection_epoch: str, command_ids: Sequence[str]
-    ) -> list[ThreadCommandEntityView] | None:
-        """The commands' entities in `projection_epoch` (empty: the current one); None once it is gone."""
+    async def _commands(self, thread_id: UUID, command_ids: Sequence[str]) -> list[ThreadCommandEntityView] | None:
+        """The commands' entities in the current projection epoch; None when there is none."""
         try:
             page = await self._history_reader.read_thread_entities(
                 history_pb2.ReadThreadEntitiesRequest(
                     session_id=str(thread_id),
-                    projection_epoch=projection_epoch,
                     keys=history_pb2.EntityKeys(
                         keys=[
                             history_pb2.EntityKey(entity_kind=EntityKind.COMMAND, entity_id=command_id)
@@ -371,8 +325,6 @@ class HistoryContentStore(ContentStore):
         except HistoryServiceError as error:
             if error.code not in {grpc.StatusCode.FAILED_PRECONDITION, grpc.StatusCode.NOT_FOUND}:
                 raise
-            return None
-        if projection_epoch and page.projection_epoch != projection_epoch:
             return None
         return [ThreadCommandEntityView.model_validate_json(entity.view_json) for entity in page.entities]
 

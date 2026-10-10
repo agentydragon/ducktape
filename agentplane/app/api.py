@@ -86,9 +86,8 @@ from agentplane.app.threads.events.event_log import EventLogStore, ThreadNotFoun
 from agentplane.app.threads.sessions import SandboxNotReachableError
 from agentplane.app.threads.store import ThreadStore
 from agentplane.app.threads.thread_view import ThreadView
-from agentplane.app.threads.view.content import CommandIdConflictError, ContentStore, ThreadScopeResetError
+from agentplane.app.threads.view.content import CommandIdConflictError, ContentStore
 from agentplane.history_service.client import HistoryServiceError
-from agentplane.notification_service.models import SandboxNotificationStatus
 from agentplane.runner import protocol_pb2
 from agentplane.runner.errors import OpenTimeoutError, RunnerError
 from agentplane.runner.harness import Harness
@@ -109,7 +108,6 @@ from agentplane.sandbox_service.kubernetes_grants import (
 )
 from agentplane.sandbox_service.models import SandboxNotFoundError, SandboxRunningError
 from agentplane.subjects import ServiceAccountRef
-from agentplane.thread_fold.fold import CommandOutcome
 
 # The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.
 # gazelle:include_dep @pypi//protobuf
@@ -227,29 +225,6 @@ async def create_sandbox(
 @router.get("/{name}")
 async def get_sandbox(inventory: Inventory, name: str) -> SandboxView:
     return sandbox_view(await inventory.get(name))
-
-
-@router.get("/{name}/notifications")
-async def sandbox_notifications(inventory: Inventory, request: Request, name: str) -> SandboxNotificationStatus:
-    """Operator-authenticated BFF; never return provider payloads or workload inbox authority."""
-    if request.app.state.oidc is None or request_session(request).login is None:
-        raise HTTPException(403, "operator login required")
-    client = request.app.state.notifications_http
-    token_file = request.app.state.notifications_token_file
-    if client is None or token_file is None:
-        raise HTTPException(503, "notification diagnostics unavailable")
-    sandbox = sandbox_view(await inventory.get(name))
-    try:
-        response = await client.get(
-            f"/operator/v1/sandboxes/{sandbox.namespace}/{sandbox.name}/notifications",
-            params={"uid": sandbox.uid},
-            headers={"Authorization": f"Bearer {token_file.read_text().strip()}"},
-        )
-        response.raise_for_status()
-    except (httpx.HTTPError, OSError) as error:
-        logger.warning("notification diagnostics unavailable: %s", type(error).__name__)
-        raise HTTPException(503, "notification diagnostics unavailable") from error
-    return SandboxNotificationStatus.model_validate(response.json())
 
 
 @router.get("/{name}/notifications/stream")
@@ -771,27 +746,6 @@ class ThreadRename(BaseModel):
         return value
 
 
-class CommandReconciliationRequest(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    projection_epoch: str
-    command_ids: list[str] = Field(max_length=128)
-
-
-class CommandReconciliationEntry(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    command_id: str
-    outcome: CommandOutcome | None
-
-
-class CommandReconciliationResponse(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    projection_epoch: str
-    commands: list[CommandReconciliationEntry]
-
-
 @threads.get("")
 async def list_threads(
     store: Store,
@@ -804,28 +758,6 @@ async def list_threads(
     """Every persisted thread, newest first; a thread outlives its sandbox. Both filters together
     name at most one thread: a session's."""
     return await store.list_threads(sandbox=sandbox, session_id=session_id, include_archived=include_archived)
-
-
-class ThreadsWithSandboxes(BaseModel):
-    """All visible Threads and every existing Sandbox, including those without Threads. A Thread's
-    `sandbox` name absent from `sandboxes` means that Sandbox row is gone."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    threads: list[ThreadView]
-    sandboxes: dict[str, SandboxView]
-
-
-@threads.get("/with-sandboxes")
-async def list_threads_with_sandboxes(
-    store: Store,
-    inventory: Inventory,
-    include_archived: Annotated[bool, Query(description="Also list archived threads.")] = False,
-) -> ThreadsWithSandboxes:
-    """Visible Threads newest first, joined with the complete Sandbox inventory."""
-    thread_views = await store.list_threads(include_archived=include_archived)
-    sandboxes = {view.name: sandbox_view(view) for view in await inventory.list_sandboxes()}
-    return ThreadsWithSandboxes(threads=thread_views, sandboxes=sandboxes)
 
 
 @threads.get("/{thread_id}")
@@ -845,23 +777,6 @@ async def resume_thread(store: Store, bridge: runner_bridge.Bridge, thread_id: U
         raise HTTPException(status.HTTP_409_CONFLICT, "an archived Thread cannot be resumed")
     return MessageToDict(
         await bridge.resume_thread(thread_id, expected_harness=thread.harness.value, expected_cwd=thread.cwd)
-    )
-
-
-@threads.post("/{thread_id}/commands/reconcile")
-async def reconcile_commands(
-    content: Content, thread_id: UUID, body: CommandReconciliationRequest
-) -> CommandReconciliationResponse:
-    try:
-        outcomes = await content.command_outcomes(thread_id, body.projection_epoch, body.command_ids)
-    except ThreadScopeResetError as error:
-        raise HTTPException(status_code=status.HTTP_410_GONE, detail=str(error)) from error
-    return CommandReconciliationResponse(
-        projection_epoch=body.projection_epoch,
-        commands=[
-            CommandReconciliationEntry(command_id=command_id, outcome=outcome)
-            for command_id, outcome in outcomes.items()
-        ],
     )
 
 
@@ -1031,20 +946,6 @@ async def thread_observations(
         after_cursor=None if after_cursor is None else int(after_cursor),
         limit=limit,
     )
-
-
-@threads.get("/{thread_id}/events")
-async def thread_events(
-    store: Store,
-    event_logs: EventLogs,
-    thread_id: UUID,
-    after: Annotated[int, Query(ge=0, description="EventEntries with a greater cursor.")] = 0,
-    limit: Annotated[int, Query(ge=1, le=10_000)] = 10_000,
-) -> list[dict[str, object]]:
-    """The stored EventEntries as proto-JSON, in cursor order."""
-    if await store.get_thread(thread_id) is None:
-        raise ThreadNotFoundError(thread_id)
-    return [MessageToDict(entry) for entry in await event_logs.events(thread_id, after_cursor=after, limit=limit)]
 
 
 @threads.get("/{thread_id}/events/stream")

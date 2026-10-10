@@ -17,10 +17,11 @@ from agentplane.app.testing.history import (
     SeededEventLogStore as EventLogStore,
 )
 from agentplane.app.threads.bridge import MalformedMessageError, RunnerBridge
+from agentplane.app.threads.events.debug import ThreadScopeChangedError
 from agentplane.app.threads.sessions import SandboxSessions
 from agentplane.app.threads.store import ThreadStore
 from agentplane.app.threads.summaries import AppSummaries, HistorySummaries
-from agentplane.app.threads.view.content import ContentStore, HistoryContentStore, ThreadScopeResetError
+from agentplane.app.threads.view.content import ContentStore, HistoryContentStore
 from agentplane.history_service.testing.backend import fold_history, history_service
 from agentplane.protocol import command_pb2
 from agentplane.runner import protocol_pb2
@@ -189,10 +190,6 @@ async def test_history_service_reads_match_the_app_projection(
         assert app_scope is not None
         assert folded_scope is not None
         assert folded_scope.through_cursor == app_scope.through_cursor
-        commands = ["parity-first", "parity-stop", "parity-never-sent"]
-        assert await folded_content.command_outcomes(
-            thread, folded_scope.projection_epoch, commands
-        ) == await content.command_outcomes(thread, app_scope.projection_epoch, commands)
         assert await folded_content.admitted_command(thread, command) == await content.admitted_command(thread, command)
         assert await folded_content.evidence(
             thread,
@@ -210,8 +207,15 @@ async def test_history_service_reads_match_the_app_projection(
             limit=200,
         )
         # A browser holding the app projection's rows sees a reset, not the other fold's rows.
-        with pytest.raises(ThreadScopeResetError):
-            await folded_content.command_outcomes(thread, app_scope.projection_epoch, commands)
+        with pytest.raises(ThreadScopeChangedError):
+            await folded_content.evidence(
+                thread,
+                projection_epoch=app_scope.projection_epoch,
+                entity_kind=EntityKind.COMMAND,
+                entity_id="parity-first",
+                after_cursor=0,
+                limit=200,
+            )
         # A confirmed restart leaves the two feed states equal, whether or not the feed had ended.
         await folded_logs.resume_pending(thread)
         await event_logs.resume_pending(thread)

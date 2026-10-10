@@ -14,7 +14,6 @@ py_library(
         "//agentplane/protocol:command_pb2",
         "//agentplane/protocol:event_log_pb2",
         "//agentplane/sandbox_service:protocol_pb2",
-        "//agentplane/thread_fold:fold",
         "//agentplane/thread_fold:models",
         "//agentplane/thread_fold:views",
         "@pypi//grpcio",
