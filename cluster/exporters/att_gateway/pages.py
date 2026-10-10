@@ -23,6 +23,8 @@ class Page(StrEnum):
     # Behind the device access code.
     NAT = "nattable"
     SPEED = "speed"
+    # TODO: consider shipping `logs.ha` to Loki: the firewall drop log, about 20 minutes of
+    # rows with local-time stamps, mostly internet scanners. Left out for now (Rai, 2026-10-10).
 
     @property
     def needs_login(self) -> bool:
