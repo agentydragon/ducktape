@@ -682,8 +682,8 @@ last committed cursor recorded as the end, or keep the Sandbox.
 **In progress (design approved by the operator, 2026-10-10 PDT).** The runner side is built:
 `Seal` in the [runner protocol](../runner/SPEC.md#teardown-seal). Remaining: at Sandbox teardown the
 Sandbox Service fences the Sandbox (no new Sessions, only stop commands), stops every harness, calls
-`Seal` and keeps each Session's final cursor, and `FollowSession` relays the runner's `sealed` frame,
-so a subscriber can tell a finished Session from a lagging one. Runners on images without `Seal`
+`Seal` and keeps each Session's final cursor. `FollowSession` already relays the runner's `sealed`
+frame. Runners on images without `Seal`
 (`LEGACY_SANDBOX_RETIRE`) are compared instead against the journal head read over the old route
 after the harness stops.
 

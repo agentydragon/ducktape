@@ -17,7 +17,7 @@ from agentplane.grpc_options import grpc_channel_option_kvps
 from agentplane.protocol import command_pb2, event_log_pb2
 from agentplane.runner import protocol_pb2 as runner_pb2
 from agentplane.runner.client import RunnerClient
-from agentplane.runner.errors import OpenTimeoutError, RunnerError, StreamClosedError
+from agentplane.runner.errors import OpenTimeoutError, RunnerError, SessionSealedError, StreamClosedError
 from agentplane.sandbox_service import protocol_pb2, protocol_pb2_grpc, session_lifecycle, wire
 from agentplane.sandbox_service.action_policy_views import UnknownPolicySetError
 from agentplane.sandbox_service.command_relay import admit_running_command
@@ -633,6 +633,11 @@ class SandboxService(protocol_pb2_grpc.SandboxServiceServicer):
                             if not lease.expired():
                                 raise
                             terminal = protocol_pb2.FollowSessionResponse(reconnect_required=Empty())
+                            break
+                        except SessionSealedError as sealed:
+                            terminal = protocol_pb2.FollowSessionResponse(
+                                sealed=protocol_pb2.Sealed(cursor=sealed.cursor)
+                            )
                             break
                         except StreamClosedError:
                             terminal = protocol_pb2.FollowSessionResponse(ended=Empty())

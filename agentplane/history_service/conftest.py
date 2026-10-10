@@ -1,7 +1,7 @@
 """A scripted Sandbox Service serving WatchSessions and FollowSession over in-memory journals.
 
 It owns no Store: it plays the runner journals and the Session feed the ingester under test
-subscribes to, including frames no runner sends yet (`sealed`).
+subscribes to, including the `sealed` frame that ends a Session's incarnation.
 """
 
 import asyncio
