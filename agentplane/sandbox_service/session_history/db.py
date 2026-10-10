@@ -5,12 +5,16 @@ The migration is owned by Sandbox Service. No app tables or app-issued identitie
 
 from uuid import UUID
 
-from sqlalchemy import BigInteger, CheckConstraint, ForeignKey, Index, LargeBinary, String, text
+from sqlalchemy import BigInteger, CheckConstraint, ForeignKey, Index, LargeBinary, Sequence, String, text
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 
 class Base(DeclarativeBase):
     pass
+
+
+# Allocated only by `Store`, under a lock that orders positions by commit (WatchSessions resumes after one).
+CHANGE_POSITION = Sequence("session_change_position", metadata=Base.metadata)
 
 
 class SessionHistory(Base):
@@ -40,6 +44,7 @@ class SessionHistory(Base):
             unique=True,
             postgresql_where=text("open_key IS NOT NULL"),
         ),
+        Index("ux_history_change_position", "change_position", unique=True),
     )
 
     id: Mapped[UUID] = mapped_column(primary_key=True)
@@ -60,6 +65,9 @@ class SessionHistory(Base):
     last_cursor: Mapped[int] = mapped_column(BigInteger)
     # Complete SessionFeedState protobuf, absent until a runner prefix is observed.
     feed_state: Mapped[bytes | None] = mapped_column(LargeBinary)
+    # Position of this Session's latest change in the WatchSessions feed. Every write
+    # that changes the Session's identity or binding takes a new one.
+    change_position: Mapped[int] = mapped_column(BigInteger)
 
 
 class SessionEvent(Base):
