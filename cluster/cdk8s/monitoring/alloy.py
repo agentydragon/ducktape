@@ -1,6 +1,6 @@
 """Grafana Alloy, as three HelmReleases: the central `alloy` Deployment for cluster-wide work, the
 `alloy-node` DaemonSet scraping each node's own targets into a WAL on that node's disk, and the
-`alloy-syslog` Deployment receiving the home switch's syslog on optiplex. Also the NetworkPolicy
+`alloy-syslog` Deployment receiving the home switch's and the AT&T gateway's syslog on optiplex. Also the NetworkPolicy
 admitting OTLP from Authentik's outpost to the central one, and the ConfigMaps.
 
 Their configs are `config.alloy`, `node.alloy` and `syslog.alloy` beside this module. They read the addresses other
@@ -45,10 +45,14 @@ _NODE_STORAGE_PATH = "/var/lib/alloy-node"
 _SYSLOG_NAME = "alloy-syslog"
 _SYSLOG_CONFIG_MAP = "alloy-syslog-config"
 _SYSLOG_CONFIG_KEY = "syslog.alloy"
-# Bound on optiplex's addresses, its fixed LAN address among them (`lan_address` in
-# cluster/terraform/main/home-nodes.tf), which the home switch sends to (`home_switch.py`).
+# Bound on all of optiplex's addresses, its fixed LAN address (`HOME_LAN.optiplex`) among them.
+# The home switch sends here (`home_switch.py`).
 SYSLOG_HOST_PORT = 514
 _SYSLOG_LISTEN_PORT = 5514
+# The AT&T gateway sends its firewall log here (`cluster/cdk8s/att_gateway_exporter`); its own
+# port, so its lines get their own job.
+GATEWAY_SYSLOG_HOST_PORT = 1514
+_GATEWAY_SYSLOG_LISTEN_PORT = 5515
 # What config.alloy's `sys.env` calls read.
 _CONFIG_ENV = {
     "MIMIR_PUSH_URL": mimir.PUSH_URL,
@@ -181,6 +185,7 @@ def chart(app: App) -> Chart:
                 "extraEnv": [
                     {"name": "LOKI_PUSH_URL", "value": loki.PUSH_URL},
                     {"name": "SYSLOG_LISTEN_ADDRESS", "value": f"0.0.0.0:{_SYSLOG_LISTEN_PORT}"},
+                    {"name": "GATEWAY_SYSLOG_LISTEN_ADDRESS", "value": f"0.0.0.0:{_GATEWAY_SYSLOG_LISTEN_PORT}"},
                 ],
                 "extraPorts": [
                     {
@@ -189,7 +194,14 @@ def chart(app: App) -> Chart:
                         "targetPort": _SYSLOG_LISTEN_PORT,
                         "hostPort": SYSLOG_HOST_PORT,
                         "protocol": "UDP",
-                    }
+                    },
+                    {
+                        "name": "gateway-syslog",
+                        "port": GATEWAY_SYSLOG_HOST_PORT,
+                        "targetPort": _GATEWAY_SYSLOG_LISTEN_PORT,
+                        "hostPort": GATEWAY_SYSLOG_HOST_PORT,
+                        "protocol": "UDP",
+                    },
                 ],
                 "resources": {"requests": {"cpu": "10m", "memory": "128Mi"}},
             },

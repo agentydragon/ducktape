@@ -119,7 +119,10 @@ py_library(
         "node.alloy",
         "syslog.alloy",
     ],
-    visibility = ["//cluster/cdk8s:__pkg__"],
+    visibility = [
+        "//cluster/cdk8s:__pkg__",
+        "//cluster/cdk8s/att_gateway_exporter:__pkg__",
+    ],
     deps = [
         ":grafana_helmrepository",
         ":loki",
