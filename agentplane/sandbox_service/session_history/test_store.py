@@ -10,7 +10,13 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 from agentplane.protocol import event_log_pb2
 from agentplane.runner import protocol_pb2 as runner_pb2
 from agentplane.sandbox_service import protocol_pb2
-from agentplane.sandbox_service.session_history.store import HistoryConflictError, HistoryNotFoundError, Store
+from agentplane.sandbox_service.session_history.store import (
+    HistoryConflictError,
+    HistoryNotFoundError,
+    ObservationPage,
+    Store,
+)
+from agentplane.sandbox_service.testing.delta_spans import claude_text
 
 # gazelle:include_dep @pypi//protobuf
 
@@ -114,22 +120,22 @@ async def test_observation_pages_seek_retained_prefix_without_returning_payloads
     store = Store(engine)
     session_id = uuid4()
     await opened(store, session_id)
-    assert await store.read_observations(session_id) == (0, [])
+    assert await store.read_observations(session_id) == ObservationPage(0, [], [])
     native = entry(3)
     native.event.ClearField("harness_started")
     native.event.native.line = "retained\0native"
     await store.append(session_id, [entry(1), entry(2), native, entry(4), entry(5)])
-    assert await store.read_observations(session_id, limit=2) == (5, [(4, "harness_started"), (5, "harness_started")])
-    assert await store.read_observations(session_id, before_cursor=4, limit=2) == (
-        5,
-        [(2, "harness_started"), (3, "native")],
+    assert await store.read_observations(session_id, limit=2) == ObservationPage(
+        5, [(4, "harness_started"), (5, "harness_started")], []
     )
-    assert await store.read_observations(session_id, after_cursor=2, limit=2) == (
-        5,
-        [(3, "native"), (4, "harness_started")],
+    assert await store.read_observations(session_id, before_cursor=4, limit=2) == ObservationPage(
+        5, [(2, "harness_started"), (3, "native")], []
     )
-    assert await store.read_observations(session_id, before_cursor=0) == (5, [])
-    assert await store.read_observations(session_id, after_cursor=9) == (5, [])
+    assert await store.read_observations(session_id, after_cursor=2, limit=2) == ObservationPage(
+        5, [(3, "native"), (4, "harness_started")], []
+    )
+    assert await store.read_observations(session_id, before_cursor=0) == ObservationPage(5, [], [])
+    assert await store.read_observations(session_id, after_cursor=9) == ObservationPage(5, [], [])
     with pytest.raises(ValueError, match="invalid observation"):
         await store.read_observations(session_id, before_cursor=3, after_cursor=1)
     with pytest.raises(ValueError, match="invalid observation"):
@@ -203,6 +209,51 @@ async def test_followed_snapshot_is_stored_under_runner_id_and_seal_is_sticky(en
         await store.record_feed_state(
             session_id, protocol_pb2.SessionFeedState(attached=direct.attached, sealed=protocol_pb2.Sealed(cursor=3))
         )
+
+
+def settled(page: protocol_pb2.ReadSessionEventsResponse) -> list[tuple[int, int]]:
+    return [(cursor_range.first, cursor_range.last) for item in page.settlements for cursor_range in item.ranges]
+
+
+@pytest.mark.asyncio
+async def test_settling_store_drops_matched_chunks_once_their_item_completes(engine: AsyncEngine) -> None:
+    store = Store(engine, settle_deltas=True)
+    session_id = uuid4()
+    await opened(store, session_id)
+    # 1-2 start, 3-6 two chunk pairs, 7-8 completion; the completion arrives in a later batch.
+    span = claude_text(["Hel", "lo"]).entries
+    assert await store.append(session_id, span[:6]) == 6
+    assert [entry.cursor for entry in (await store.read_page(session_id)).entries] == [1, 2, 3, 4, 5, 6]
+    assert await store.append(session_id, span[6:]) == 8
+    page = await store.read_page(session_id)
+    assert ([entry.cursor for entry in page.entries], settled(page)) == ([1, 2, 7, 8], [(3, 6)])
+    assert page.settlements[0].completion_cursor == 8
+    # A runner replaying the whole span, settled chunks included, is still an exact duplicate.
+    assert await store.append(session_id, span) == 8
+    with pytest.raises(HistoryConflictError):
+        await store.append(session_id, [span[0], *span[1:6], entry(7)])
+    # A page whose window holds the gap or the completion reports the settlement.
+    for after, expected in ((2, [7]), (7, [8])):
+        page = await store.read_page(session_id, after_cursor=after, limit=1)
+        assert ([entry.cursor for entry in page.entries], settled(page)) == (expected, [(3, 6)])
+    assert settled(await store.read_page(session_id, limit=2)) == []
+    assert await store.read_observations(session_id, after_cursor=0) == ObservationPage(
+        8, [(1, "native"), (2, "item_started"), (7, "native"), (8, "item_completed")], [(3, 6)]
+    )
+    assert await store.read_observations(session_id, limit=2) == ObservationPage(
+        8, [(7, "native"), (8, "item_completed")], []
+    )
+    assert (await store.read_observations(session_id, limit=3)).settled == [(3, 6)]
+
+
+@pytest.mark.asyncio
+async def test_default_store_keeps_every_entry(engine: AsyncEngine) -> None:
+    store = Store(engine)
+    session_id = uuid4()
+    await opened(store, session_id)
+    await store.append(session_id, claude_text(["Hel", "lo"]).entries)
+    page = await store.read_page(session_id)
+    assert (len(page.entries), settled(page)) == (8, [])
 
 
 if __name__ == "__main__":

@@ -3,17 +3,25 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
+from dataclasses import dataclass
 from uuid import UUID
 
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 from agentplane.protocol import event_log_pb2
 from agentplane.sandbox_service import protocol_pb2
 from agentplane.sandbox_service.commands.db import Session
-from agentplane.sandbox_service.session_history.db import CHANGE_POSITION, SessionEvent, SessionHistory
+from agentplane.sandbox_service.session_history.db import (
+    CHANGE_POSITION,
+    SessionEvent,
+    SessionEventSettledRange,
+    SessionEventSettlement,
+    SessionHistory,
+)
 from agentplane.sandbox_service.session_history.session_changes import CHANNEL
+from agentplane.sandbox_service.session_history.settlement import completion_target, settle, started_item
 
 # The generated protobuf stubs need the protobuf runtime as a direct mypy dependency.
 # gazelle:include_dep @pypi//protobuf
@@ -60,9 +68,24 @@ class HistoryNotFoundError(LookupError):
     pass
 
 
+# An item whose start lies further back than this is kept whole rather than read in one transaction.
+_SETTLEMENT_SPAN_LIMIT = 20_000
+
+
+@dataclass(frozen=True)
+class ObservationPage:
+    last_cursor: int
+    observations: list[tuple[int, str]]
+    # Settled cursor ranges intersecting the page's window.
+    settled: list[tuple[int, int]]
+
+
 class Store:
-    def __init__(self, engine: AsyncEngine) -> None:
+    def __init__(self, engine: AsyncEngine, *, settle_deltas: bool = False) -> None:
+        """`settle_deltas`: `append` removes an item's streamed delta entries once its completion provably
+        holds their concatenation. Only the History Service ingester sets it."""
         self._sessions = async_sessionmaker(engine, expire_on_commit=False)
+        self._settle_deltas = settle_deltas
 
     async def open(
         self,
@@ -127,13 +150,15 @@ class Store:
     async def append(self, session_id: UUID, entries: Sequence[event_log_pb2.EventEntry]) -> int:
         """Replay exact duplicates or extend the prefix; serialize concurrent writers by Session ID.
 
-        Validation and the new checkpoint commit together. On any error the entire batch rolls
-        back. An empty batch is a checkpoint read, not an inferred runner high-water mark.
+        Validation, settlement of the items the batch completes, and the new checkpoint commit
+        together. On any error the entire batch rolls back. An empty batch is a checkpoint read,
+        not an inferred runner high-water mark.
         """
         async with self._sessions.begin() as session:
             row = await session.scalar(select(SessionHistory).where(SessionHistory.id == session_id).with_for_update())
             if row is None:
                 raise HistoryNotFoundError(session_id)
+            appended: list[event_log_pb2.EventEntry] = []
             for entry in entries:
                 cursor = entry.cursor
                 if cursor == 0 or not entry.origin.source_id or entry.origin.sequence != cursor:
@@ -143,6 +168,8 @@ class Store:
                 payload = entry.SerializeToString(deterministic=True)
                 if cursor <= row.last_cursor:
                     existing = await session.get(SessionEvent, (session_id, cursor))
+                    if existing is None and await _settled_range(session, session_id, cursor) is not None:
+                        continue  # a settled delta; its exact payload is no longer stored to compare
                     if existing is None or existing.payload != payload:
                         raise HistoryConflictError(f"conflicting entry at {cursor}")
                     continue
@@ -151,6 +178,11 @@ class Store:
                 session.add(SessionEvent(session_id=session_id, cursor=cursor, payload=payload))
                 row.source_id = entry.origin.source_id
                 row.last_cursor = cursor
+                appended.append(entry)
+            if self._settle_deltas:
+                for entry in appended:
+                    if completion_target(entry) is not None:
+                        await _settle(session, session_id, entry)
             return row.last_cursor
 
     async def record_feed_state(self, session_id: UUID, feed: protocol_pb2.SessionFeedState) -> None:
@@ -210,19 +242,45 @@ class Store:
                 raise HistoryNotFoundError(session_id)
             if after_cursor > history.last_cursor:
                 raise ValueError("cursor beyond stored prefix")
-            rows = await session.scalars(
-                select(SessionEvent)
-                .where(
-                    SessionEvent.session_id == session_id,
-                    SessionEvent.cursor > after_cursor,
-                    SessionEvent.cursor <= history.last_cursor,
+            rows = (
+                await session.scalars(
+                    select(SessionEvent)
+                    .where(
+                        SessionEvent.session_id == session_id,
+                        SessionEvent.cursor > after_cursor,
+                        SessionEvent.cursor <= history.last_cursor,
+                    )
+                    .order_by(SessionEvent.cursor)
+                    .limit(limit)
                 )
-                .order_by(SessionEvent.cursor)
-                .limit(limit)
+            ).all()
+            through = rows[-1].cursor if rows else after_cursor
+            covering = await session.scalars(
+                select(SessionEventSettledRange.completion_cursor).where(
+                    SessionEventSettledRange.session_id == session_id,
+                    SessionEventSettledRange.first_cursor <= through,
+                    SessionEventSettledRange.last_cursor > after_cursor,
+                )
+            )
+            completing = await session.scalars(
+                select(SessionEventSettlement.completion_cursor).where(
+                    SessionEventSettlement.session_id == session_id,
+                    SessionEventSettlement.completion_cursor > after_cursor,
+                    SessionEventSettlement.completion_cursor <= through,
+                )
+            )
+            settlements = await session.scalars(
+                select(SessionEventSettlement.payload)
+                .where(
+                    SessionEventSettlement.session_id == session_id,
+                    SessionEventSettlement.completion_cursor.in_({*covering, *completing}),
+                )
+                .order_by(SessionEventSettlement.completion_cursor)
             )
             page = protocol_pb2.ReadSessionEventsResponse(
                 last_cursor=history.last_cursor,
                 entries=[event_log_pb2.EventEntry.FromString(row.payload) for row in rows],
+                settlements=[protocol_pb2.SettledDeltas.FromString(payload) for payload in settlements],
             )
             if history.feed_state is not None:
                 page.feed_state.ParseFromString(history.feed_state)
@@ -230,7 +288,7 @@ class Store:
 
     async def read_observations(
         self, session_id: UUID, *, before_cursor: int | None = None, after_cursor: int | None = None, limit: int = 30
-    ) -> tuple[int, list[tuple[int, str]]]:
+    ) -> ObservationPage:
         """Seek a bounded metadata window in the retained prefix, including deleted Sandboxes."""
         if (
             not 1 <= limit <= 200
@@ -260,4 +318,84 @@ class Store:
             ]
             if after_cursor is None:
                 observations.reverse()
-            return history.last_cursor, observations
+            # The window runs from the requested bound to the far end of what was returned.
+            if after_cursor is not None:
+                low, high = after_cursor + 1, observations[-1][0] if observations else after_cursor
+            else:
+                high = history.last_cursor if before_cursor is None else min(history.last_cursor, before_cursor - 1)
+                low = observations[0][0] if observations else high + 1
+            ranges = await session.execute(
+                select(SessionEventSettledRange.first_cursor, SessionEventSettledRange.last_cursor)
+                .where(
+                    SessionEventSettledRange.session_id == session_id,
+                    SessionEventSettledRange.first_cursor <= high,
+                    SessionEventSettledRange.last_cursor >= low,
+                )
+                .order_by(SessionEventSettledRange.first_cursor)
+            )
+            return ObservationPage(history.last_cursor, observations, [(first, last) for first, last in ranges])
+
+
+async def _settled_range(session: AsyncSession, session_id: UUID, cursor: int) -> SessionEventSettledRange | None:
+    candidate = await session.scalar(
+        select(SessionEventSettledRange)
+        .where(SessionEventSettledRange.session_id == session_id, SessionEventSettledRange.first_cursor <= cursor)
+        .order_by(SessionEventSettledRange.first_cursor.desc())
+        .limit(1)
+    )
+    return candidate if candidate is not None and candidate.last_cursor >= cursor else None
+
+
+async def _settle(session: AsyncSession, session_id: UUID, completion: event_log_pb2.EventEntry) -> None:
+    """Settle the field `completion` completes, if its span qualifies; otherwise store nothing."""
+    target = completion_target(completion)
+    assert target is not None
+    span = [completion]
+    floor: int | None = None
+    upper = completion.cursor
+    while floor is None or upper > floor:
+        rows = (
+            await session.execute(
+                select(SessionEvent.cursor, SessionEvent.payload)
+                .where(SessionEvent.session_id == session_id, SessionEvent.cursor < upper)
+                .order_by(SessionEvent.cursor.desc())
+                .limit(256)
+            )
+        ).all()
+        if not rows or len(span) + len(rows) > _SETTLEMENT_SPAN_LIMIT:
+            return
+        for cursor, payload in rows:
+            if floor is not None and cursor < floor:
+                break
+            entry = event_log_pb2.EventEntry.FromString(payload)
+            span.append(entry)
+            if floor is None and started_item(entry) == target.item_id:
+                # The item's native start frame precedes its derived ItemStarted.
+                floor = min(cursor, *entry.event.source_sequences)
+        upper = rows[-1].cursor
+    span.reverse()
+    settled = settle(span)
+    if settled is None:
+        return
+    session.add(
+        SessionEventSettlement(
+            session_id=session_id, completion_cursor=completion.cursor, payload=settled.SerializeToString()
+        )
+    )
+    await session.flush()
+    for cursor_range in settled.ranges:
+        session.add(
+            SessionEventSettledRange(
+                session_id=session_id,
+                first_cursor=cursor_range.first,
+                last_cursor=cursor_range.last,
+                completion_cursor=completion.cursor,
+            )
+        )
+        await session.execute(
+            delete(SessionEvent).where(
+                SessionEvent.session_id == session_id,
+                SessionEvent.cursor >= cursor_range.first,
+                SessionEvent.cursor <= cursor_range.last,
+            )
+        )

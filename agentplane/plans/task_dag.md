@@ -661,8 +661,7 @@ flowchart TD
     APP_PROJECTION_RETIRE[Blocked: drop app projection tables]
     APP_EVENT_LOG_COPIES_RETIRE[Blocked: drop event_log launch copies]
     HISTORY_SERVICE_OWNERSHIP[Capstone: History Service owns log and fold]
-    SESSION_EVENT_RETENTION[Blocked: settle streamed deltas at ingestion, flag off]
-    SESSION_EVENT_RETENTION_ENABLE[Blocked: enable on staging and re-measure]
+    SESSION_EVENT_RETENTION_ENABLE[Blocked: enable delta settlement and re-measure]
     SESSION_EVENT_COMPACTION_PLAN[Decision: approve compaction of stored history]
     SESSION_EVENT_COMPACTION[Blocked: settle stored history]
     HISTORY_REPACK[Blocked: return freed space to the volume]
@@ -681,8 +680,7 @@ flowchart TD
     APP_EVENT_LOG_COPIES_RETIRE --> HISTORY_SERVICE_OWNERSHIP
     APP_PROJECTION_RETIRE --> HISTORY_SERVICE_OWNERSHIP
     SANDBOX_LOCAL_HISTORY_RETIRE --> HISTORY_SERVICE_OWNERSHIP
-    FOLD_READ_CUTOVER --> SESSION_EVENT_RETENTION
-    SESSION_EVENT_RETENTION --> SESSION_EVENT_RETENTION_ENABLE
+    FOLD_READ_CUTOVER --> SESSION_EVENT_RETENTION_ENABLE
     SESSION_EVENT_RETENTION_ENABLE --> SESSION_EVENT_COMPACTION_PLAN
     SESSION_EVENT_COMPACTION_PLAN --> SESSION_EVENT_COMPACTION
     SESSION_EVENT_COMPACTION --> HISTORY_REPACK
@@ -757,21 +755,14 @@ table; either may land first, and the second rebases its migration.
 the only owner of the raw log and fold; the app is a facade over it. Each service's README states
 what unrelated agents can still do while it is down or rolling.
 
-### `SESSION_EVENT_RETENTION` — settle streamed deltas
-
-**Blocked on the fold read cutover.** The policy was approved 2026-10-10 PDT: behind a default plus
-per-Session override (off by default), drop an item's delta frames and derived deltas only when
-every frame matches an exact versioned template and the retained completion holds exactly their
-concatenation. Lift the templates, pure settler and settlement tables from draft
-[#9713](https://github.com/agentydragon/ducktape/pull/9713) into the History Service ingester's
-batch transaction, deleting fold evidence for
-the settled cursors in the same transaction; the app-side gap handling is not carried over. #9713
-stays parked as the fallback if disk pressure arrives first.
-
 ### `SESSION_EVENT_RETENTION_ENABLE` — turn it on and measure
 
-**Blocked on settlement.** Enable on testing, then staging, and re-measure `session_event` and
-evidence growth against the 2026-10-10 sample.
+**Blocked on the fold read cutover and the operator's go-ahead.** Settlement is built behind the
+History Service's `ingester.settle_deltas` ([History Service](../history_service/README.md#delta-settlement)),
+and its fold skips settled ranges. The app's raw-history readers (`EventLogStore` entry and
+observation pages, `ContentStore` native frames) still require contiguous cursors and must treat
+settled ranges as covered first. Then enable on testing, then staging, and re-measure
+`session_event` and evidence growth against the 2026-10-10 sample.
 
 ### `SESSION_EVENT_COMPACTION_PLAN` — approve settling stored history
 

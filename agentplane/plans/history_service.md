@@ -41,10 +41,10 @@ Properties the target keeps:
 - **History Service outage:** runners keep running and commands keep flowing. The runner journal
   is the buffer for every subscriber, so an outage is cursor lag; a hold keeps the Sandbox from
   being deleted until the History Service catches up through the seal.
-- **Settlement and fold in one transaction:** the log, settlement and fold evidence live in one
-  database, so dropping a settled item's chunks and their evidence rows is one commit and readers
-  never see a cursor gap across a service boundary. That removes the app-side half of
-  [#9713](https://github.com/agentydragon/ducktape/pull/9713).
+- **Settlement beside the fold:** the log, settlement and fold evidence live in one database,
+  and a settlement commits with the completion it settles, so every page carrying that completion
+  carries the settlement and the fold drops the chunks' evidence when it reaches it. Readers outside
+  the History Service see settled ranges only through its read API.
 - **Sessions can outlive a Sandbox later:** the History Service keys by Session and records each
   Sandbox as an incarnation, and a teardown seal ends an incarnation, not the Session, so reviving a
   Session in a new Sandbox ([task DAG section 8](task_dag.md#8-sessions-that-outlive-their-sandbox))
@@ -125,8 +125,9 @@ service HistoryService {
 Live browser updates are not an RPC: Electric replicates the projection tables behind the app's
 authorization proxy. The History Service ingester loops: `WatchSessions`; per Session under its
 claim, `PlaceHold`, then `FollowSession` from its committed cursor; per batch, one transaction that
-stores entries, settles, folds, deletes settled evidence and advances the checkpoint; then
-`ConfirmHold`. On `sealed` it records the incarnation's end and keeps the hold until the Sandbox is
+stores entries, settles and advances the checkpoint; then `ConfirmHold`. The fold reads the
+settlement with the completion that triggered it and drops the settled cursors' evidence in its
+own transaction. On `sealed` it records the incarnation's end and keeps the hold until the Sandbox is
 gone.
 
 | Caller               | Sandbox Service                                    | History Service                    |

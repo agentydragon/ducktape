@@ -7,12 +7,20 @@ import pytest
 import pytest_bazel
 from google.protobuf.timestamp_pb2 import Timestamp
 from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
+from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 from agentplane.history_service.fold_shadow import FOLD_EPOCH, PAGE_SIZE, FoldBacklog, FoldShadow
 from agentplane.protocol import event_log_pb2, event_pb2
 from agentplane.sandbox_service.session_history.store import Store
-from agentplane.thread_fold.models import ThreadCheckpoint, ThreadEntity, ThreadHistorySummary
+from agentplane.sandbox_service.testing.delta_spans import claude_text
+from agentplane.thread_fold.models import (
+    ThreadCheckpoint,
+    ThreadEntity,
+    ThreadEvidence,
+    ThreadHistorySummary,
+    ThreadNativeLink,
+    ThreadPayloadChunk,
+)
 from agentplane.thread_fold.views import EntityKind
 
 # gazelle:include_dep //agentplane/sandbox_service/session_history:conftest
@@ -107,6 +115,95 @@ async def test_replicas_split_sessions_by_lease(engine: AsyncEngine, history: St
             )
             == PAGE_SIZE
         )
+
+
+async def folded_rows(session: AsyncSession, session_id: UUID) -> list[tuple[object, ...]]:
+    """Each entity with its body text. A body's generation is the cursor that last wrote it, which
+    a settled item's chunks no longer are."""
+    rows = []
+    for entity in await session.scalars(
+        select(ThreadEntity)
+        .where(ThreadEntity.thread_id == session_id, ThreadEntity.projection_epoch == FOLD_EPOCH)
+        .order_by(ThreadEntity.entity_index)
+    ):
+        body = None
+        if entity.text_ref is not None:
+            chunks = await session.scalars(
+                select(ThreadPayloadChunk.text)
+                .where(
+                    ThreadPayloadChunk.thread_id == session_id,
+                    ThreadPayloadChunk.projection_epoch == FOLD_EPOCH,
+                    ThreadPayloadChunk.owner_id == entity.text_ref["owner_id"],
+                    ThreadPayloadChunk.field == entity.text_ref["field"],
+                    ThreadPayloadChunk.generation == int(str(entity.text_ref["generation"])),
+                )
+                .order_by(ThreadPayloadChunk.chunk_index)
+            )
+            body = "".join(chunks)
+        rows.append(
+            (
+                entity.entity_kind,
+                entity.entity_id,
+                entity.cursor,
+                entity.revision_cursor,
+                entity.pending,
+                entity.state,
+                body,
+            )
+        )
+    return rows
+
+
+async def observed_cursors(session: AsyncSession, session_id: UUID) -> tuple[set[int], set[int]]:
+    """The derived Event cursors a fold cites as evidence, and the native frame cursors it links."""
+    evidence = await session.scalars(
+        select(ThreadEvidence.observation_cursor).where(ThreadEvidence.thread_id == session_id)
+    )
+    native = await session.scalars(
+        select(ThreadNativeLink.source_sequence).where(ThreadNativeLink.thread_id == session_id)
+    )
+    return set(evidence), set(native)
+
+
+async def test_settled_history_folds_to_the_rows_of_the_full_log(engine: AsyncEngine, history: Store) -> None:
+    # 1-2 start, 3-6 two chunk pairs, 7-8 completion.
+    span = claude_text(["Hel", "lo"]).entries
+    full = await retained_session(history, span)
+    settled = await retained_session(Store(engine, settle_deltas=True), span)
+    shadow = FoldShadow(engine=engine, history=history, concurrency=2)
+
+    assert await shadow.cycle() == FoldBacklog(sessions=2, behind=0, events_behind=0)
+
+    async with async_sessionmaker(engine)() as session:
+        assert await folded_rows(session, settled) == await folded_rows(session, full)
+        for session_id in (full, settled):
+            assert await session.scalar(
+                select(ThreadCheckpoint.through_cursor).where(ThreadCheckpoint.thread_id == session_id)
+            ) == len(span)
+        evidence, native = await observed_cursors(session, settled)
+        assert not (evidence | native) & set(range(3, 7))
+
+
+async def test_settlement_after_a_live_fold_drops_the_chunks_evidence(engine: AsyncEngine) -> None:
+    settling = Store(engine, settle_deltas=True)
+    span = claude_text(["Hel", "lo"]).entries
+    session_id = await retained_session(settling, span[:6])
+    shadow = FoldShadow(engine=engine, history=settling, concurrency=1)
+
+    await shadow.cycle()
+    async with async_sessionmaker(engine)() as session:
+        evidence, native = await observed_cursors(session, session_id)
+        assert ({4, 6} <= evidence, {3, 5} <= native) == (True, True)
+
+    await settling.append(session_id, span[6:])
+    await shadow.cycle()
+    async with async_sessionmaker(engine)() as session:
+        evidence, native = await observed_cursors(session, session_id)
+        assert not (evidence | native) & set(range(3, 7))
+        assert 8 in evidence
+        reply = await session.get(ThreadEntity, (session_id, FOLD_EPOCH, EntityKind.ITEM, "msg_test#0"))
+        assert reply is not None
+        assert not reply.pending
 
 
 if __name__ == "__main__":

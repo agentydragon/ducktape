@@ -11,6 +11,7 @@ filegroup(
         "//agentplane/sandbox_service/session_history/migrations/versions:0005_thread_fold_projection.py",
         "//agentplane/sandbox_service/session_history/migrations/versions:0006_summary_first_event.py",
         "//agentplane/sandbox_service/session_history/migrations/versions:0007_electric_publication.py",
+        "//agentplane/sandbox_service/session_history/migrations/versions:0008_delta_settlement.py",
     ],
     visibility = ["//agentplane/sandbox_service/session_history:__pkg__"],
 )

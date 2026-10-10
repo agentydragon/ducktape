@@ -30,13 +30,24 @@ One ingester writes the tables per environment: the cdk8s `Environment.history_w
 one's `ingester.enabled` on and the Sandbox Service's `ingest_history` off, or the reverse. It places
 no retention holds yet.
 
+## Delta settlement
+
+With `ingester.settle_deltas` set, each `Store.append` batch that completes an item drops that
+item's streamed delta entries (native frames and their derived deltas) from `session_event`, in
+the same transaction, when every frame matches an exact versioned template
+(`agentplane/native/delta_templates.py`) and the retained completion holds exactly their
+concatenation. Anything else in the span keeps every entry. The dropped cursors are recorded as a
+`SettledDeltas` with its ranges, and read pages report the settlements that cover or complete in
+them. The runner journal keeps every entry. Off by default.
+
 ## Thread fold
 
 With `fold_shadow` set, it folds every retained Session into its own copy of the thread
 projection (`agentplane.thread_fold`; `thread_*` tables, since a Thread is the projection of a
 Session: [layering](../docs/thread_layering.md#authorities-and-representations)), in epoch `history-v1`, from cursor 0: a page per Session per
 cycle under the per-Session projection leases, so replicas share the work. The fold writes only those
-tables. Each cycle logs how many Sessions and events the fold is behind.
+tables. Each cycle logs how many Sessions and events the fold is behind. A page that carries an item's completion carries its settlement, so the fold skips the settled
+cursors and drops evidence it recorded for them before they settled.
 
 Session summaries (`ListSessionSummaries`, `GetSessionSummary`) read that fold. They list newest
 first by the time of a Session's first event, with not-yet-folded Sessions ahead, and report the

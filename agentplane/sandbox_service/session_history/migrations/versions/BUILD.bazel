@@ -8,6 +8,7 @@ exports_files([
     "0005_thread_fold_projection.py",
     "0006_summary_first_event.py",
     "0007_electric_publication.py",
+    "0008_delta_settlement.py",
 ])
 
 py_library(
@@ -62,4 +63,13 @@ py_library(
     name = "0007_electric_publication",
     srcs = ["0007_electric_publication.py"],
     deps = ["@pypi//alembic"],
+)
+
+py_library(
+    name = "0008_delta_settlement",
+    srcs = ["0008_delta_settlement.py"],
+    deps = [
+        "@pypi//alembic",
+        "@pypi//sqlalchemy",
+    ],
 )

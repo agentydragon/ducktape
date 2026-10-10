@@ -20,6 +20,7 @@ py_library(
         "//agentplane/protocol:command_pb2",
         "//agentplane/protocol:event_log_pb2",
         "//agentplane/protocol:event_pb2",
+        "//agentplane/sandbox_service:settled_cursors",
         "@pypi//protobuf",  # keep: mypy follows generated protobuf interfaces
         "@pypi//types_protobuf",  # keep: mypy follows generated protobuf interfaces
     ],
@@ -82,6 +83,7 @@ py_library(
         ":recording",
         "//agentplane/history_service:client",
         "//agentplane/sandbox_service:protocol_pb2",
+        "//agentplane/sandbox_service:settled_cursors",
         "@pypi//grpcio",
         "@pypi//protobuf",
         "@pypi//sqlalchemy",
@@ -98,6 +100,8 @@ py_library(
         ":rows",
         ":views",
         "//agentplane/protocol:event_log_pb2",
+        "//agentplane/sandbox_service:protocol_pb2",
+        "//agentplane/sandbox_service:settled_cursors",
         "@pypi//protobuf",
         "@pypi//sqlalchemy",
     ],

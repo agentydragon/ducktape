@@ -32,6 +32,7 @@ py_library(
     deps = [
         ":db",
         ":session_changes",
+        ":settlement",
         "//agentplane/protocol:event_log_pb2",
         "//agentplane/sandbox_service:protocol_pb2",
         "//agentplane/sandbox_service/commands:db",
@@ -101,6 +102,7 @@ py_test(
         "//agentplane/runner:protocol_pb2",
         "//agentplane/sandbox_service:conftest",
         "//agentplane/sandbox_service:protocol_pb2",
+        "//agentplane/sandbox_service/testing:delta_spans",
         "@pypi//protobuf",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
@@ -140,4 +142,35 @@ oci_image(
     tars = [":migration_layers"],
     user = "1000:1000",
     visibility = ["//visibility:public"],
+)
+
+py_library(
+    name = "settlement",
+    srcs = ["settlement.py"],
+    deps = [
+        "//agentplane/native:delta_templates",
+        "//agentplane/protocol:event_log_pb2",
+        "//agentplane/protocol:event_pb2",
+        "//agentplane/sandbox_service:protocol_pb2",
+        "@pypi//protobuf",
+    ],
+)
+
+py_test(
+    name = "test_settlement",
+    srcs = ["test_settlement.py"],
+    deps = [
+        ":conftest",
+        ":settlement",
+        "//:conftest",
+        "//agentplane/native:delta_templates",
+        "//agentplane/protocol:event_log_pb2",
+        "//agentplane/protocol:event_pb2",
+        "//agentplane/sandbox_service:conftest",
+        "//agentplane/sandbox_service:protocol_pb2",
+        "//agentplane/sandbox_service/testing:delta_spans",
+        "@pypi//protobuf",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
 )

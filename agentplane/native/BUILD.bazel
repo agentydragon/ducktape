@@ -57,3 +57,19 @@ py_library(
     srcs = ["omit_none.py"],
     deps = ["@pypi//pydantic"],
 )
+
+py_library(
+    name = "delta_templates",
+    srcs = ["delta_templates.py"],
+)
+
+py_test(
+    name = "test_delta_templates",
+    srcs = ["test_delta_templates.py"],
+    deps = [
+        ":delta_templates",
+        "//:conftest",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)

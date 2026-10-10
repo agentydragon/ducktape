@@ -129,7 +129,7 @@ async def ingest(settings: Settings, url: URL) -> None:
     )
     try:
         await HistoryIngester(
-            Store(engine),
+            Store(engine, settle_deltas=settings.ingester.settle_deltas),
             engine,
             sandboxes,
             concurrency=settings.ingester.concurrency,

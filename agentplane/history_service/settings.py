@@ -50,6 +50,11 @@ class IngesterSettings(BaseModel):
         allow_inf_nan=False,
         description="Delay before following again a Session that ended, failed or is claimed by another replica.",
     )
+    settle_deltas: bool = Field(
+        default=False,
+        description="Remove an item's streamed delta entries from stored history once its retained "
+        "completion provably holds their concatenation.",
+    )
 
 
 class Settings(BaseSettings):

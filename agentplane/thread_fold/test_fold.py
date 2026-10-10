@@ -70,7 +70,7 @@ class Store:
     evidence: list[EvidenceAssociation] = field(default_factory=list)
 
     def apply(self, entries: list[event_log_pb2.EventEntry]) -> ProjectionBatch:
-        batch = EventBatch(SOURCE, self.state.position.through_cursor, tuple(entries))
+        batch = EventBatch(SOURCE, self.state.position.through_cursor, tuple(entries), ())
         keys = touched_keys(batch)
         items = {item_id: self.items.get(item_id) for item_id in keys.item_ids}
         result = advance(
@@ -326,15 +326,17 @@ def test_commands_settle_coalesced_input_and_observed_model_effect(script: list[
 def test_missing_lookup_is_not_absence_and_preloaded_rows_cannot_be_from_this_batch() -> None:
     observed = entry(1, event_pb2.Event(text_delta=event_pb2.TextDelta(item_id="item", text="x")))
     with pytest.raises(FoldContractError):
-        advance(initial(SOURCE, EPOCH), EventBatch(SOURCE, 0, (observed,)), PriorEntities({}, {}, {}))
+        advance(initial(SOURCE, EPOCH), EventBatch(SOURCE, 0, (observed,), ()), PriorEntities({}, {}, {}))
     future = Item(EPOCH, "item", 1, 2)
     with pytest.raises(FoldContractError):
-        advance(initial(SOURCE, EPOCH), EventBatch(SOURCE, 0, (observed,)), PriorEntities({"item": future}, {}, {}))
+        advance(initial(SOURCE, EPOCH), EventBatch(SOURCE, 0, (observed,), ()), PriorEntities({"item": future}, {}, {}))
     store = Store()
     store.apply([observed])
     completion = authoritative(2, PayloadField.TEXT, "x")
     with pytest.raises(FoldContractError):
-        advance(store.state, EventBatch(SOURCE, 1, (completion,)), PriorEntities({"item": store.items["item"]}, {}, {}))
+        advance(
+            store.state, EventBatch(SOURCE, 1, (completion,), ()), PriorEntities({"item": store.items["item"]}, {}, {})
+        )
 
 
 def test_rejects_wrong_field_ref_unknown_kind_and_does_not_mutate_inputs_on_failure() -> None:
@@ -346,11 +348,11 @@ def test_rejects_wrong_field_ref_unknown_kind_and_does_not_mutate_inputs_on_fail
     )
     next_entry = entry(2, event_pb2.Event(text_delta=event_pb2.TextDelta(item_id="item", text="y")))
     with pytest.raises(FoldContractError):
-        advance(store.state, EventBatch(SOURCE, 1, (next_entry,)), PriorEntities({"item": invalid}, {}, {}))
+        advance(store.state, EventBatch(SOURCE, 1, (next_entry,), ()), PriorEntities({"item": invalid}, {}, {}))
     unknown = entry(2, json_format.ParseDict({"itemStarted": {"itemId": "other", "kind": 99}}, event_pb2.Event()))
     before = unknown.SerializeToString(), store.state
     with pytest.raises(ObservationNotUnderstoodError):
-        advance(store.state, EventBatch(SOURCE, 1, (unknown,)), PriorEntities({"other": None}, {}, {}))
+        advance(store.state, EventBatch(SOURCE, 1, (unknown,), ()), PriorEntities({"other": None}, {}, {}))
     assert unknown.SerializeToString() == before[0]
     assert store.state == before[1]
 

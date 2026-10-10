@@ -105,17 +105,18 @@ class HistoryService(protocol_pb2_grpc.HistoryServiceServicer):
         self, request: protocol_pb2.ReadSessionObservationsRequest, context: grpc.aio.ServicerContext
     ) -> protocol_pb2.ReadSessionObservationsResponse:
         async with self.reader(context):
-            last_cursor, observations = await self.resources.history.read_observations(
+            page = await self.resources.history.read_observations(
                 UUID(request.session_id),
                 before_cursor=request.before_cursor if request.HasField("before_cursor") else None,
                 after_cursor=request.after_cursor if request.HasField("after_cursor") else None,
                 limit=request.limit,
             )
             return protocol_pb2.ReadSessionObservationsResponse(
-                last_cursor=last_cursor,
+                last_cursor=page.last_cursor,
                 observations=[
-                    protocol_pb2.SessionObservation(cursor=cursor, kind=kind) for cursor, kind in observations
+                    protocol_pb2.SessionObservation(cursor=cursor, kind=kind) for cursor, kind in page.observations
                 ],
+                settled=[protocol_pb2.CursorRange(first=first, last=last) for first, last in page.settled],
             )
 
     @override

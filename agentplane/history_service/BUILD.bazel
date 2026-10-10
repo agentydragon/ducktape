@@ -159,6 +159,7 @@ py_test(
         "//agentplane/protocol:event_pb2",
         "//agentplane/sandbox_service/session_history:conftest",
         "//agentplane/sandbox_service/session_history:store",
+        "//agentplane/sandbox_service/testing:delta_spans",
         "//agentplane/thread_fold:models",
         "//agentplane/thread_fold:views",
         "@pypi//protobuf",
