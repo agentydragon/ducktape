@@ -467,7 +467,10 @@ rule for runner volumes; archived history and public Session identities are kept
 
 **Blocked on legacy Sandbox retirement.** Remove
 `Attach` command submission, the pull ingester, the runner control port and its network policy.
-The [runner-auth TODO](runner_discovery.md#todo-proper-runner-authentication-and-transport-security)
+With no inbound route left, also remove the inbound fallback in routing: `runner_connection.operations`
+and the routing check on it in `SubmitCommand` go (a migration), leaving `Hello`/`Welcome`
+capabilities to negotiate only what a connection carries. The legacy caller-chosen runner Session ID
+path goes too. The [runner-auth TODO](runner_discovery.md#todo-proper-runner-authentication-and-transport-security)
 goes with them.
 
 ### `VM_CONTROL_NETWORKING` — integrate the reviewed connection direction
