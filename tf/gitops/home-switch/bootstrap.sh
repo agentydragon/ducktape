@@ -27,6 +27,24 @@ done
 
 # Hex, so it needs no quoting inside the RouterOS script.
 password=$(openssl rand -hex 24)
+
+scp -q "${ssh_opts[@]}" "$tmp/home-switch-bootstrap.crt" "$tmp/home-switch-bootstrap.key" "$admin@$switch:"
+# RouterOS runs each line of an SSH command on its own, so every block stays on one line. It also
+# exits 0 when a command fails, hence the read-back check below.
+ssh "${ssh_opts[@]}" "$admin@$switch" "
+:if ([:len [/certificate find name=bootstrap]] = 0) do={ /certificate import file-name=home-switch-bootstrap.crt name=bootstrap passphrase=\"\"; /certificate import file-name=home-switch-bootstrap.key name=bootstrap passphrase=\"\" }
+/file remove [find name~\"home-switch-bootstrap\"]
+/ip service set api-ssl certificate=bootstrap address=$lan_cidr disabled=no
+:if ([:len [/user find name=tofu]] = 0) do={ /user add name=tofu group=full address=$lan_cidr password=$password comment=\"tf/gitops/home-switch\" } else={ /user set tofu group=full address=$lan_cidr password=$password }
+"
+ssh "${ssh_opts[@]}" "$admin@$switch" \
+  ':if ([/ip service get api-ssl certificate] = "bootstrap" && ![/ip service get api-ssl disabled] && [/user get tofu group] = "full" && [/certificate get bootstrap private-key]) do={ :put "bootstrap-ok" }' \
+  | grep bootstrap-ok >/dev/null || {
+  echo "The switch did not end up with api-ssl on the bootstrap certificate and a full-access tofu user." >&2
+  exit 1
+}
+
+# Only now, so a failed run leaves the committed password alone.
 cat >"$password_file" <<EOF
 apiVersion: v1
 kind: Secret
@@ -38,22 +56,8 @@ stringData:
 EOF
 sops --encrypt --in-place "$password_file" || {
   git checkout -- "$password_file"
+  echo "Encryption failed; the switch has a password nothing records, so re-run once sops works." >&2
   exit 1
 }
-
-scp -q "${ssh_opts[@]}" "$tmp/home-switch-bootstrap.crt" "$tmp/home-switch-bootstrap.key" "$admin@$switch:"
-ssh "${ssh_opts[@]}" "$admin@$switch" "
-:if ([:len [/certificate find name=bootstrap]] = 0) do={
-  /certificate import file-name=home-switch-bootstrap.crt name=bootstrap passphrase=\"\"
-  /certificate import file-name=home-switch-bootstrap.key name=bootstrap passphrase=\"\"
-}
-/file remove [find name~\"home-switch-bootstrap\"]
-/ip service set api-ssl certificate=bootstrap address=$lan_cidr disabled=no
-:if ([:len [/user find name=tofu]] = 0) do={
-  /user add name=tofu group=full address=$lan_cidr password=$password comment=\"tf/gitops/home-switch\"
-} else={
-  /user set tofu group=full address=$lan_cidr password=$password
-}
-"
 
 echo "The switch has the new tofu password. Commit and merge ${password_file#"$(git rev-parse --show-toplevel)/"}."
