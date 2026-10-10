@@ -1,7 +1,8 @@
-// Per-node Alloy (DaemonSet): scrapes only targets on its own node, `NODE_NAME`, and buffers them
-// in a WAL on that node's disk. When the node loses its link to Mimir (a home WAN outage), it
-// keeps scraping and replays the backlog once the link returns, within `max_keepalive_time` and
-// Mimir's `out_of_order_time_window`. Cluster-wide work stays on the central Alloy (config.alloy).
+// Per-node Alloy (DaemonSet): scrapes only targets on its own node, `NODE_NAME` (its kubelet and
+// every ServiceMonitor/PodMonitor target backed by a pod there), and buffers them in a WAL on that
+// node's disk. When the node loses its link to Mimir (a home WAN outage), it keeps scraping and
+// replays the backlog once the link returns, within `max_keepalive_time` and Mimir's
+// `out_of_order_time_window`. Cluster-wide work stays on the central Alloy (config.alloy).
 
 prometheus.remote_write "mimir" {
   endpoint {
@@ -13,6 +14,39 @@ prometheus.remote_write "mimir" {
   wal {
     max_keepalive_time = "720h"
   }
+}
+
+// --- ServiceMonitors and PodMonitors ---
+
+// Every monitor is discovered cluster-wide and narrowed to targets backed by a pod on this node.
+// The central Alloy drops those same targets, so each is scraped exactly once. Its comment on
+// `prometheus.operator.servicemonitors` covers which ServiceMonitors Alloy rejects.
+prometheus.operator.servicemonitors "node" {
+  kubernetes_role = "endpointslice"
+
+  rule {
+    source_labels = ["__meta_kubernetes_pod_node_name"]
+    regex         = sys.env("NODE_NAME")
+    action        = "keep"
+  }
+
+  scrape {
+    default_scrape_interval = "60s"
+  }
+  forward_to = [prometheus.remote_write.mimir.receiver]
+}
+
+prometheus.operator.podmonitors "node" {
+  rule {
+    source_labels = ["__meta_kubernetes_pod_node_name"]
+    regex         = sys.env("NODE_NAME")
+    action        = "keep"
+  }
+
+  scrape {
+    default_scrape_interval = "60s"
+  }
+  forward_to = [prometheus.remote_write.mimir.receiver]
 }
 
 // --- kubelet ---

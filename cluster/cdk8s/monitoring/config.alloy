@@ -1,6 +1,7 @@
 // --- Metrics scraping (replaces Prometheus) ---
 
-// Discover and scrape all ServiceMonitor targets cluster-wide.
+// Discover ServiceMonitor targets cluster-wide; scrape those not backed by a pod.
+// PodMonitors are scraped entirely by the per-node Alloys (node.alloy).
 prometheus.operator.servicemonitors "cluster" {
   kubernetes_role = "endpointslice"
 
@@ -19,14 +20,14 @@ prometheus.operator.servicemonitors "cluster" {
   // ServiceMonitors arrive only through Flux. Authenticated targets must use
   // Secret-backed credentials; unauthenticated targets must clear auth fields.
 
-  scrape {
-    default_scrape_interval = "60s"
+  // A target backed by a pod is scraped by the Alloy on that pod's node (node.alloy); this
+  // one keeps the rest, such as Services with hand-set endpoints.
+  rule {
+    source_labels = ["__meta_kubernetes_pod_node_name"]
+    regex         = ".+"
+    action        = "drop"
   }
-  forward_to = [prometheus.remote_write.mimir.receiver]
-}
 
-// Discover and scrape all PodMonitor targets cluster-wide.
-prometheus.operator.podmonitors "cluster" {
   scrape {
     default_scrape_interval = "60s"
   }
