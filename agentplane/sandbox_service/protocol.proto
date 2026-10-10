@@ -42,6 +42,9 @@ service SandboxService {
   rpc ReadSessionEvents(ReadSessionEventsRequest) returns (ReadSessionEventsResponse);
   // Same reader authorization; chronological metadata without transmitting native payloads.
   rpc ReadSessionObservations(ReadSessionObservationsRequest) returns (ReadSessionObservationsResponse);
+  // Any allowed service caller. Every Session, including those of deleted Sandboxes, in the
+  // order of each one's latest change, then each later change as it commits.
+  rpc WatchSessions(WatchSessionsRequest) returns (stream WatchSessionsResponse);
 }
 
 message ServiceAccount {
@@ -144,6 +147,33 @@ message SessionObservation {
 message ReadSessionObservationsResponse {
   uint64 last_cursor = 1;
   repeated SessionObservation observations = 2;
+}
+
+message WatchSessionsRequest {
+  // The last position the caller has processed; 0 starts from the first Session.
+  uint64 after_position = 1;
+}
+
+// A Session's current record. A Session reappears, at a larger position, whenever it changes.
+message SessionChange {
+  // Public Session ID (UUID).
+  string session_id = 1;
+  // Sandbox name and current incarnation. The UID is empty for imported Sessions whose
+  // Sandbox UID was not retained.
+  string sandbox = 2;
+  string sandbox_uid = 3;
+  // Durable and commit-ordered across replicas: resuming after it misses no later change.
+  uint64 position = 4;
+}
+
+message WatchSessionsResponse {
+  oneof observation {
+    SessionChange change = 1;
+    // Planned renewal, as in FollowSession: reconnect with fresh authorization after the
+    // last position received.
+    google.protobuf.Empty reconnect_required = 2;
+  }
+  // A successful stream ends with reconnect_required; bare EOF is a failure.
 }
 
 // Internal frozen launch snapshot, committed before contacting the runner.

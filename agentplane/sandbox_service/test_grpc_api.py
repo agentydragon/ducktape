@@ -14,6 +14,7 @@ import pytest_bazel
 from google.protobuf.empty_pb2 import Empty
 from google.protobuf.json_format import MessageToDict, ParseDict
 from kubernetes_asyncio import client as k8s_client
+from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from agentplane.protocol import command_pb2, event_log_pb2, event_pb2
@@ -32,6 +33,7 @@ from agentplane.sandbox_service.kubernetes_views import (
 )
 from agentplane.sandbox_service.protocol_pb2 import ResolvedGrant, SandboxDestination
 from agentplane.sandbox_service.session_history.ingestion import copy_confirmed_prefix
+from agentplane.sandbox_service.session_history.session_changes import SessionChanges
 from agentplane.sandbox_service.session_history.store import HistoryConflictError, Store
 from agentplane.sandbox_service.testing.grpc_service import service_client
 from agentplane.sandbox_service.testing.kubernetes import ACCOUNT, SANDBOX, SANDBOX_UID, Cluster
@@ -1045,6 +1047,93 @@ async def test_history_read_requires_explicit_reader_even_after_sandbox_deletion
 
         with pytest.raises(ValueError, match="invalid session history page"):
             await remote.read_session_events(str(public_id), limit=1001)
+
+
+@pytest.fixture
+async def session_changes(db_url: str) -> AsyncIterator[SessionChanges]:
+    changes = SessionChanges(make_url(db_url))
+    async with changes.listener.listen():
+        yield changes
+
+
+async def test_watch_sessions_resumes_after_disconnect_and_wakes_on_other_writers(
+    resources: Resources, token_file: Path, engine: AsyncEngine, session_changes: SessionChanges
+) -> None:
+    store = Store(engine)
+    legacy_id, current_id = uuid4(), uuid4()
+    await store.open(
+        legacy_id,
+        sandbox_namespace=SANDBOX_NAMESPACE,
+        sandbox_name="deleted-sandbox",
+        sandbox_uid=None,
+        runner_session_id="legacy-runner",
+    )
+    await store.open(
+        current_id,
+        sandbox_namespace=SANDBOX_NAMESPACE,
+        sandbox_name=SANDBOX,
+        sandbox_uid=UUID(SANDBOX_UID),
+        runner_session_id=f"r-{current_id}",
+    )
+    configured = replace(resources, history=store, session_changes=session_changes, follow_lease_s=2)
+    async with service_client(configured, token_file) as remote:
+        first_call = remote.stub.WatchSessions(
+            protocol_pb2.WatchSessionsRequest(), metadata=await remote.metadata(), timeout=10
+        )
+        legacy = (await first_call.read()).change
+        assert (legacy.session_id, legacy.sandbox, legacy.sandbox_uid) == (str(legacy_id), "deleted-sandbox", "")
+        first_call.cancel()  # disconnect before acknowledging the second Session
+
+        resumed = remote.stub.WatchSessions(
+            protocol_pb2.WatchSessionsRequest(after_position=legacy.position),
+            metadata=await remote.metadata(),
+            timeout=10,
+        )
+        current = (await resumed.read()).change
+        assert (current.session_id, current.sandbox, current.sandbox_uid) == (str(current_id), SANDBOX, SANDBOX_UID)
+        assert current.position > legacy.position
+
+        # Another replica's commit reaches this stream through NOTIFY, not this replica's Store.
+        reserved = await Store(engine).reserve(
+            caller_namespace=OWNER.namespace,
+            caller_name=OWNER.name,
+            sandbox_namespace=SANDBOX_NAMESPACE,
+            sandbox_name=SANDBOX,
+            sandbox_uid=UUID(SANDBOX_UID),
+            open_key="watched-key",
+            open_request=b"watched inputs",
+            launch_spec=lambda _: b"watched launch",
+        )
+        created = (await resumed.read()).change
+        assert created.session_id == str(reserved.session_id)
+        assert created.position > current.position
+        assert (await resumed.read()).HasField("reconnect_required")
+        assert await resumed.read() is grpc.aio.EOF
+        assert await resumed.code() == grpc.StatusCode.OK
+
+
+async def test_watch_sessions_requires_allowed_caller(
+    resources: Resources, token_file: Path, engine: AsyncEngine, session_changes: SessionChanges
+) -> None:
+    await Store(engine).open(
+        uuid4(),
+        sandbox_namespace=SANDBOX_NAMESPACE,
+        sandbox_name=SANDBOX,
+        sandbox_uid=UUID(SANDBOX_UID),
+        runner_session_id="unwatchable-runner",
+    )
+    # The token authenticates OWNER, which this configuration does not allow as a service caller.
+    configured = replace(
+        resources,
+        history=Store(engine),
+        session_changes=session_changes,
+        caller_accounts=frozenset({ServiceAccountRef(namespace=SANDBOX_NAMESPACE, name="allowed-service")}),
+    )
+    async with service_client(configured, token_file) as remote:
+        call = remote.stub.WatchSessions(protocol_pb2.WatchSessionsRequest(), metadata=await remote.metadata())
+        with pytest.raises(grpc.aio.AioRpcError) as denied:
+            await call.read()
+        assert denied.value.code() == grpc.StatusCode.PERMISSION_DENIED
 
 
 @pytest.mark.parametrize("outcome", ["eof", "timeout", "transport_error", "new_event"])

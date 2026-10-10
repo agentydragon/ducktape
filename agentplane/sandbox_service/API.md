@@ -179,6 +179,23 @@ state volume; the app currently retains its own Session Event copy and checkpoin
 existing Session Event history and moving Event ingestion/read authority into Sandbox Service are
 subsequent cutover work, not part of this Open RPC.
 
+## Session feed
+
+`WatchSessions` is server-streaming and open to every `caller_accounts` caller; unlike
+`ReadSessionEvents` it needs no history-reader grant, since it carries no transcript. It sends every recorded Session, including those of deleted Sandboxes and
+reservations whose runner Open never succeeded, in `position` order, then each later change as it
+commits on any replica. A `SessionChange` is the Session's current record: public ID, Sandbox name
+and current incarnation UID (empty for imported Sessions without one). A Session that changes again
+reappears at a larger position, so a lagging reader sees only its latest record. The feed carries no
+harness lifecycle; the Sandbox Service records none, and `FollowSession` reports it.
+
+Positions come from one PostgreSQL sequence allocated under a transaction-scoped lock, so they
+become visible in commit order: resuming with `after_position` set to the last processed position
+misses nothing. Gaps are normal. Commits wake streams on every replica through PostgreSQL
+`LISTEN`/`NOTIFY`; the table stays the authority, and streams re-read after the listener reconnects.
+The service does not start without its `LISTEN` connection. Renewal and write bounds are those of
+`FollowSession`: `reconnect_required` after `follow_lease_s`, each write within `admission_timeout_s`.
+
 ## Errors and uncertain outcomes
 
 - `UNAUTHENTICATED`: invalid workload bearer.
