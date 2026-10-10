@@ -2994,32 +2994,6 @@ apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
   annotations:
-    description: "AT&T gateway metrics: WAN, fiber optics, LAN ports."
-  name: att-gateway-exporter
-  namespace: ducktape-flux
-spec:
-  dependsOn:
-    - name: monitoring-namespace
-      namespace: ducktape-flux
-    - name: monitoring-crds
-      namespace: ducktape-flux
-    - name: grafana-operator
-      namespace: ducktape-flux
-  interval: 10m
-  path: ./cluster/generated/att-gateway-exporter
-  prune: true
-  retryInterval: 1m
-  sourceRef:
-    kind: ExternalArtifact
-    name: att-gateway-exporter
-    namespace: ducktape-flux
-  timeout: 5m
-  wait: true
----
-apiVersion: kustomize.toolkit.fluxcd.io/v1
-kind: Kustomization
-metadata:
-  annotations:
     description: AT&T gateway device access code, for the exporter's login-only pages.
   name: att-gateway-exporter-secrets
   namespace: ducktape-flux
@@ -3038,6 +3012,34 @@ spec:
   sourceRef:
     kind: ExternalArtifact
     name: att-gateway-exporter-secrets
+    namespace: ducktape-flux
+  timeout: 5m
+  wait: true
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  annotations:
+    description: "AT&T gateway metrics: WAN, fiber optics, LAN ports, NAT sessions, speed tests."
+  name: att-gateway-exporter
+  namespace: ducktape-flux
+spec:
+  dependsOn:
+    - name: monitoring-namespace
+      namespace: ducktape-flux
+    - name: att-gateway-exporter-secrets
+      namespace: ducktape-flux
+    - name: monitoring-crds
+      namespace: ducktape-flux
+    - name: grafana-operator
+      namespace: ducktape-flux
+  interval: 10m
+  path: ./cluster/generated/att-gateway-exporter
+  prune: true
+  retryInterval: 1m
+  sourceRef:
+    kind: ExternalArtifact
+    name: att-gateway-exporter
     namespace: ducktape-flux
   timeout: 5m
   wait: true

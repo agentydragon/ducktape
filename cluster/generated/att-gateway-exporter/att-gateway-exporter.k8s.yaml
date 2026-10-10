@@ -25,6 +25,11 @@ spec:
               value: http://192.168.1.254
             - name: ATT_GATEWAY_LISTEN_PORT
               value: "9173"
+            - name: ATT_GATEWAY_ACCESS_CODE
+              valueFrom:
+                secretKeyRef:
+                  key: access-code
+                  name: att-gateway-exporter-access-code
           image: git.allegedly.works/ducktape-ci/att-gateway-exporter:unset
           imagePullPolicy: IfNotPresent
           livenessProbe:
