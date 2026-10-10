@@ -23,13 +23,7 @@ import { ExternalLink } from "../../link";
 import { mcpToolSchema, type McpToolArgumentsFor } from "../../mcp_tool_schema";
 import { definePreview, type ToolPreview } from "../entry";
 import { GMAIL_SERVER_ID } from "../server_ids";
-import {
-  COMPACT_ITEM_LIMIT,
-  MoreLine,
-  PreviewBadge,
-  PreviewText,
-  type PreviewProps,
-} from "../vocabulary";
+import { COMPACT_ITEM_LIMIT, MoreLine, PreviewBadge, PreviewText, type PreviewProps } from "../vocabulary";
 
 const zModifyGmailThreadLabelsArgs: z.ZodType<McpToolArgumentsFor<typeof GMAIL_SERVER_ID, "threads_modify_labels">> =
   mcpToolSchema(GMAIL_SERVER_ID, "threads_modify_labels");
