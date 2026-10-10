@@ -64,6 +64,14 @@ async def test_desktop_shell_docks_the_existing_browsers(
     ).to_be_visible()
     await view.check(context="action decision returns to compact queue")
 
+    await (
+        page.locator("[data-mosaic-pane-kind='threads'] .agentplane-sidebar-row")
+        .filter(has_text="Running thread")
+        .click()
+    )
+    await expect(page.locator("[data-mosaic-pane-kind='thread']")).to_have_count(2)
+    await view.capture(name="mosaic-desktop-two-open-threads", target=page.locator("#app"))
+
 
 @pytest.mark.parametrize("viewport", [DESKTOP], ids=["desktop"])
 async def test_desktop_layout_resizes_and_persists(
