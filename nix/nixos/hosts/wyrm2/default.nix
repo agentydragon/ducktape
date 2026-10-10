@@ -400,7 +400,7 @@ in
   # Separate data disks (Proxmox virtio disks).
   # autoFormat creates ext4 on first boot; autoResize grows to full disk size.
   # virtio0=/dev/vda, virtio1=/dev/vdb, virtio2=/dev/vdc, virtio3=/dev/vdd,
-  # virtio4=/dev/vde, virtio5=/dev/vdf, virtio7=/dev/vdh, virtio8=/dev/vdi
+  # virtio4=/dev/vde, virtio5=/dev/vdf, virtio7=/dev/vdh, virtio8=/dev/vdi, virtio9=/dev/vdj
   fileSystems."/var/local-path-provisioner" = {
     device = "/dev/vda";
     fsType = "ext4";
@@ -438,6 +438,21 @@ in
   };
   fileSystems."/tmp" = {
     device = "/dev/vdh"; # 1T HDD (tank-hdd) — scratch space
+    fsType = "ext4";
+    autoFormat = true;
+    autoResize = true;
+    options = [
+      "nodev"
+      "nosuid"
+      "nofail"
+      "x-systemd.device-timeout=10s"
+    ];
+  };
+  # /dev/vdj (virtio9): 16G HDD (tank-hdd) — WAL of the alloy-node DaemonSet's hostPath
+  # (cluster/cdk8s/monitoring/alloy.py). Its own disk so a full /tmp can't stop the WAL
+  # buffering through a home outage (30-day window, ~0.15 GB/day measured).
+  fileSystems."/var/lib/alloy-node" = {
+    device = "/dev/vdj";
     fsType = "ext4";
     autoFormat = true;
     autoResize = true;
@@ -538,14 +553,6 @@ in
     "d /home/agentydragon/.cache/bazel/_bazel_agentydragon/cache/repos 0755 agentydragon users -"
     # Keep the dedicated scratch filesystem bounded without disrupting active files.
     "q /tmp 1777 root root 14d"
-    # For the alloy-node DaemonSet's hostPath WAL (cluster/cdk8s/monitoring/alloy.py, landing
-    # next in agentydragon/ducktape#9612), on the HDD scratch disk rather than the SSD root.
-    # A path with its own line is skipped by the /tmp age cleanup above.
-    # TODO: give the WAL its own tank-hdd virtio disk and mount it at /var/lib/alloy-node,
-    # replacing this symlink. Blocked on wyrm2's `ignore_changes = [disk]` CLEANUP in
-    # cluster/terraform/main/proxmox-vms.tf, which keeps tofu from adding a disk.
-    "d /tmp/alloy-node 0700 root root -"
-    "L+ /var/lib/alloy-node - - - - /tmp/alloy-node"
     # Steam library mount (/dev/vdb) must be user-writable; the fresh ext4 root
     # is created root:root, so chown it after the mount lands.
     "d /games 0755 agentydragon users -"

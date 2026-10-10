@@ -154,7 +154,7 @@ resource "proxmox_virtual_environment_vm" "wyrm2" {
   }
 
   # Data disks — all on NVMe (local-zfs) unless noted.
-  # virtio0=/dev/vda, virtio1=/dev/vdb, ..., virtio8=/dev/vdi
+  # virtio0=/dev/vda, virtio1=/dev/vdb, ..., virtio9=/dev/vdj
   disk {
     datastore_id = var.storage
     interface    = "virtio0"
@@ -235,6 +235,19 @@ resource "proxmox_virtual_environment_vm" "wyrm2" {
     replicate    = false
     file_format  = "raw"
   } # SSD model storage (/var/lib/llm-models-ssd)
+  # Hotplugged imperatively via `qm set 110 --virtio9 ...` on atlas (tofu can't add disks
+  # under the ignore_changes below); this keeps the TF source in sync.
+  # backup/replicate off — the WAL only buffers metrics not yet shipped to Mimir.
+  disk {
+    datastore_id = "tank-hdd"
+    interface    = "virtio9"
+    iothread     = true
+    discard      = "on"
+    size         = 16
+    backup       = false
+    replicate    = false
+    file_format  = "raw"
+  } # alloy-node WAL (/var/lib/alloy-node) — HDD
 
   network_device {
     bridge = "vmbr0"
