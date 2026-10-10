@@ -84,6 +84,7 @@ def tofu_state_terraform(
     depends_on: Sequence[TerraformV1Alpha2SpecDependsOn] | None = None,
     env: Sequence[TerraformV1Alpha2SpecRunnerPodTemplateSpecEnv] = (),
     env_from: Sequence[TerraformV1Alpha2SpecRunnerPodTemplateSpecEnvFrom] = (),
+    node_selector: Mapping[str, str] | None = None,
 ) -> Terraform:
     """A `Terraform` in flux-system, run by `tf-runner`, with its state under `schema` in the
     tofu-state Postgres; the runner reads that database's password as `PGPASSWORD`, ahead of `env`.
@@ -113,6 +114,7 @@ def tofu_state_terraform(
             spec=TerraformV1Alpha2SpecRunnerPodTemplateSpec(
                 env_from=list(env_from) or None,
                 env=[secret_env("PGPASSWORD", _STATE_DB_PASSWORD), *env],
+                node_selector=node_selector,
                 resources=_RUNNER_RESOURCES,
             )
         ),
@@ -131,6 +133,7 @@ def gitops_terraform(
     env_from: Sequence[TerraformV1Alpha2SpecRunnerPodTemplateSpecEnvFrom] = (),
     schema: str | None = None,
     store_readable_plan: TerraformV1Alpha2SpecStoreReadablePlan | None = None,
+    node_selector: Mapping[str, str] | None = None,
 ) -> Terraform:
     """The `tf/gitops/<name>` module, run from the `ducktape` GitRepository and auto-approved.
     `name` is the module directory and, underscored, its state schema unless `schema` names the
@@ -146,6 +149,9 @@ def gitops_terraform(
     ConfigMap, readable by anyone who can read ConfigMaps in flux-system. Enable it only
     for modules whose providers mark every secret-bearing attribute `Sensitive`, which
     the plan masks.
+
+    `node_selector` pins the runner pod, for a module whose provider reaches something only
+    some nodes can (a device on the home LAN).
     """
     return tofu_state_terraform(
         scope,
@@ -169,4 +175,5 @@ def gitops_terraform(
         depends_on=[TerraformV1Alpha2SpecDependsOn(name=dependency.name) for dependency in depends_on] or None,
         env=env,
         env_from=env_from,
+        node_selector=node_selector,
     )

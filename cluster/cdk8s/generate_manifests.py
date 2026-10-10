@@ -559,12 +559,6 @@ def generate_manifests(root: Path) -> None:
         external_secrets_crds_kustomization,
         cert_manager_kustomization,
     )
-    monitoring_home_switch_artifact = artifact("monitoring-home-switch", monitoring_home_switch.OUTPUT_DIR)
-    monitoring_home_switch.home_switch(
-        flux_chart,
-        write_directory(root, monitoring_home_switch_artifact, monitoring_home_switch.chart),
-        external_secrets_operator_kustomization,
-    )
     clickhouse_artifact = artifact("clickhouse", clickhouse_installation.OUTPUT_DIR)
     clickhouse_kustomization = clickhouse_installation.clickhouse(
         flux_chart,
@@ -602,6 +596,13 @@ def generate_manifests(root: Path) -> None:
         flux_chart,
         write_directory(root, tofu_controller_artifact, tofu_controller_release.chart),
         kyverno_kustomization,
+    )
+    monitoring_home_switch_artifact = artifact("monitoring-home-switch", monitoring_home_switch.OUTPUT_DIR)
+    monitoring_home_switch.home_switch(
+        flux_chart,
+        write_directory(root, monitoring_home_switch_artifact, monitoring_home_switch.chart),
+        external_secrets_operator_kustomization,
+        tofu_controller_kustomization,
     )
     volsync_artifact = artifact("volsync", volsync.OUTPUT_DIR)
     volsync_kustomization = volsync.volsync(

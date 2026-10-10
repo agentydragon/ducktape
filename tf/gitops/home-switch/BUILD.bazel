@@ -5,7 +5,6 @@ tf_providers_versions(
     providers = {
         "kubernetes": "hashicorp/kubernetes:~>3.2.0",
         "routeros": "terraform-routeros/routeros:~>1.99.0",
-        "sops": "carlpett/sops:~>1.4.0",
     },
     tf_version = "1.12.6",
 )
@@ -15,7 +14,6 @@ tf_module(
     providers = [
         "kubernetes",
         "routeros",
-        "sops",
     ],
     providers_versions = ":providers",
 )
