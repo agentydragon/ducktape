@@ -115,7 +115,8 @@ def _render(template: str, overrides: Mapping[str, Mapping[str, str]], drop: str
     config.read_dict(overrides)
     out = io.StringIO()
     config.write(out)
-    return out.getvalue()
+    # `write` ends each section with a blank line, which end-of-file-fixer strips.
+    return out.getvalue().rstrip("\n") + "\n"
 
 
 def write_config_maps(root: Path) -> list[ConfigMapArgs]:
