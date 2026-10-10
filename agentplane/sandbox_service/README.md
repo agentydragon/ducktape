@@ -1,7 +1,8 @@
 # Sandbox Service
 
 Independent backend owner for sandbox lifecycle and runner session access.
-The [plan](../plans/sandbox_service.md) describes the intended service; the
+It does not own notification payloads or inboxes, Action Decisions or execution, native harness
+scheduling, browser sessions, or UI-only Thread projections. The
 [service dependency rule](../docs/service_boundaries.md) applies to this package.
 
 ## Implemented foundation
@@ -35,7 +36,7 @@ ServiceAccount creation, PVC policy, and provisioning behavior are unchanged.
 
 `provisioning.py` owns recoverable grant orchestration and policy binding, with pending launch
 intent stored on the Sandbox. The production app now uses the remote client, not an in-process provisioner or reconciler.
-The deployment source transfers these authorities to the service; live handoff remains gated below.
+The deployment source transfers these authorities to the service.
 
 ## Session API
 
@@ -51,7 +52,7 @@ a Sandbox. Read/follow availability is limited to the surviving runner log.
 
 The production app requires `sandbox_service_target` and a projected workload token. Its directory,
 bridge, and ingester use the service client with no direct-runner fallback. UI preset selection,
-read-only Kubernetes projections, UI folds remain app-owned; PostgreSQL raw history and its ingestion are in the separate migration below.
+read-only Kubernetes projections, UI folds remain app-owned; PostgreSQL raw history is described below.
 App tests use the service-owned gRPC fixtures; there is no alternate direct-runner app directory.
 App/service integration acceptance uses native harnesses and the existing app database archive.
 
@@ -61,11 +62,6 @@ only Sandbox Service can reach the runner control port. Cross-namespace delegati
 existing Role/RoleBinding identities and changes the grantee. Runner template/volume identities
 and archive schema are unchanged. Service-native acceptance tests exercise authenticated gRPC,
 including launch defaults, bootstrap/setup, delivery evidence, and recovery after service restart.
-
-**Source changes are not evidence of a live cutover.** Image publication/pinning, generated-manifest
-validation, and the staging preservation/rollback gate must complete before rollout. Do not let
-Flux independently switch RBAC/network policies while an old app image is still running. See the
-[handoff checklist](../plans/sandbox_service.md#production-handoff-checklist).
 
 Runner journals remain on their state volume as execution evidence, and the runner journal still
 authors execution Events. Retained history lives in service-owned PostgreSQL

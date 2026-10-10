@@ -9,7 +9,7 @@ operator decisions and proportional acceptance from the [low-priority freezer](t
 
 **Dependency rule:** the integration app is a user-facing client. Other services must not depend on
 its APIs, private tables, implementation, process, or bootstrap, including in v1. The accepted
-[service boundary constraint](../docs/service_boundaries.md) and [Sandbox Service extraction](sandbox_service.md)
+[service boundary constraint](../docs/service_boundaries.md) and the [Sandbox Service](../sandbox_service/README.md)
 set the direction: app → independent backends; notifications → Sandbox Service/Action Service.
 
 Transcript search/lookup (`T3`) is deliberately deferred product work and is not in the current
@@ -30,8 +30,8 @@ execution sequence. This is a priority decision, not a technical dependency.
 - [KubeVirt execution environments](kubevirt_environments.md) — selectable VM environments, guest runner,
   launcher proxy, resource isolation, persistent state and implementation gates
 - [User stories](user_stories.md) — north-star product context, not an implementation queue
-- [Sandbox Service](sandbox_service.md) — independent sandbox lifecycle/session access;
-  [input metadata](notification_presentation.md) is a sequenced follow-up; [discovery/access notes](runner_discovery.md) retain network-policy access and the runner-auth TODO
+- [Input metadata](notification_presentation.md) — a sequenced follow-up to command admission
+- [Runner discovery and access](runner_discovery.md) — network-policy access and the runner-auth TODO
 - [History Service](history_service.md) — target split (runner, Sandbox Service, History Service,
   app facade) and the gated sequence for moving the raw log and thread fold, runner dial-out and
   delta settlement

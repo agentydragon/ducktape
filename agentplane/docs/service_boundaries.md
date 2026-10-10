@@ -57,7 +57,7 @@ connect to runners. Thread identities never enter the Sandbox Service API.
 
 ## Extraction before notification v1
 
-Build the minimum independently usable [Sandbox Service](../plans/sandbox_service.md) before wiring
+Build the minimum independently usable [Sandbox Service](../sandbox_service/README.md) before wiring
 notifications. It must resolve explicit session destinations, expose authorized command delivery and
 receipt/event following, and distinguish available, unavailable, and permanently removed destinations
 without querying the app. Migrate the app to be a client of those extracted operations.
@@ -67,9 +67,9 @@ extracted. Notification-triggered wake and durable acceptance of commands for of
 remain separate, deferred product features. A service boundary is not permission to silently create
 a second runner-command queue.
 
-Runner journals remain durable on runner state volumes. Sandbox Service ingests them into its
-Session Event archive, which outlives the runner volume; the app reads history from that archive
-through the History Service and keeps its UI projections; its legacy raw tables await retirement.
+Runner journals remain durable on runner state volumes. They are ingested into a Session Event
+archive that outlives the runner volume; the app reads history from that archive through the
+History Service and keeps its UI projections.
 
 Sandbox Service uses a protobuf/gRPC service API; the app retains its browser-facing HTTP API.
 After cutover, Sandbox Service is the sole normal production client of runner control/event RPCs.
@@ -81,7 +81,7 @@ exceptions must be explicit; there is no production direct-runner fallback in th
 Backend independence is not a reason to discard the current staging instance. For this extraction,
 default to preserving existing data and identities, with an inventory, tested migration/restore path,
 and controlled ownership handoff. One-time migration of app-owned records is distinct from a
-steady-state dependency on app tables. See [staging data preservation](../plans/sandbox_service.md#staging-data-preservation).
+steady-state dependency on app tables. See [staging data preservation](staging_data_preservation.md).
 Any necessary loss/reset must be described and explicitly approved before execution; the general
 staging-disposability rule in [`../AGENTS.md`](../AGENTS.md) is not permission to bypass this task-specific requirement.
 

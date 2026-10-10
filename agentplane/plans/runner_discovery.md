@@ -1,7 +1,6 @@
 # Runner discovery and control-plane access implementation notes
 
-Status: **implementation notes for [Sandbox Service](sandbox_service.md); source extraction is
-implemented, live authority handoff remains gated.** Kubernetes already describes hosted sandboxes and their runner Pod
+Status: **implementation notes for the [Sandbox Service](../sandbox_service/README.md).** Kubernetes already describes hosted sandboxes and their runner Pod
 incarnations. Discovery belongs inside that backend; neither a separate directory service nor an
 integration-app lookup API is required. The [dependency rule](../docs/service_boundaries.md) applies
 from v1: notifications and other backends must operate without the integration app.

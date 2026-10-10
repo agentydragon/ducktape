@@ -4,9 +4,8 @@ The service uses [protobuf/gRPC](protocol.proto). Its standalone entry point ser
 HTTP is limited to a health probe. The integration app retains its browser-facing HTTP API.
 There is no transparent runner `Attach` tunnel or caller-supplied runner URL.
 
-**Status:** gRPC server/client implementation and acceptance tests are being added in #8744.
-Production app callers and deployment source use this API; live rollout is not yet verified.
-Service acceptance tests use this same gRPC interface; there is no separate HTTP service adapter.
+Production callers and service acceptance tests use this same gRPC interface; there is no separate
+HTTP service adapter.
 
 ## Authentication and destinations
 

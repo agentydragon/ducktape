@@ -3,7 +3,7 @@
 # Agentplane service boundaries
 
 The integration app is a user-facing composition layer, not a backend dependency.
-See [the dependency rule](docs/service_boundaries.md) and [Sandbox Service plan](plans/sandbox_service.md).
+See [the dependency rule](docs/service_boundaries.md).
 
 - Do not add backend-service imports of `agentplane.app`, calls to its APIs, reads of its private
   tables, or requirements for its process, browser session, or app-issued identity to be available.
@@ -39,7 +39,7 @@ above. Inventory existing state, retain identities/history and runner
 storage where feasible, and validate backup/restore and the cutover before changing staging.
 Do not drop/recreate staging databases, sandboxes, volumes, or session state as a shortcut. If
 preservation cannot be achieved, explain the exact loss/disruption and obtain operator approval
-before proceeding. See the [migration plan](plans/sandbox_service.md#staging-data-preservation).
+before proceeding. Procedure: [staging data preservation](docs/staging_data_preservation.md).
 
 ## Task DAG maintenance
 
