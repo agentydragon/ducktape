@@ -64,6 +64,15 @@ class HistoryServiceClient:
         token = (await asyncio.to_thread(self.token_file.read_text)).strip()
         return (("authorization", f"Bearer {token}"),)
 
+    def new_client(self) -> HistoryServiceClient:
+        """Create an independent channel with this client's endpoint and credentials."""
+        return HistoryServiceClient(
+            self.target,
+            token_file=self.token_file,
+            request_timeout_s=self.request_timeout_s,
+            channel_options=self._channel_options,
+        )
+
     async def read_session_events(
         self, session_id: str, *, after_cursor: int = 0, limit: int = 128
     ) -> history_pb2.ReadSessionEventsResponse:
@@ -165,6 +174,26 @@ class HistoryServiceClient:
                 if message is grpc.aio.EOF:
                     raise ConnectionError("History Service ended the summary watch without planned renewal")
                 assert isinstance(message, history_pb2.WatchSessionSummariesResponse)
+                if message.HasField("reconnect_required"):
+                    return
+                yield
+        finally:
+            call.cancel()
+
+    async def watch_session_history(self, *, timeout_s: float) -> AsyncIterator[None]:
+        """Yield once per committed-history invalidation until planned renewal, which returns; anything else raises."""
+        call = self.stub.WatchSessionHistory(
+            history_pb2.WatchSessionHistoryRequest(), metadata=await self.metadata(), timeout=timeout_s
+        )
+        try:
+            while True:
+                try:
+                    message = await call.read()
+                except grpc.aio.AioRpcError as error:
+                    _raise(error)
+                if message is grpc.aio.EOF:
+                    raise ConnectionError("History Service ended the history watch without planned renewal")
+                assert isinstance(message, history_pb2.WatchSessionHistoryResponse)
                 if message.HasField("reconnect_required"):
                     return
                 yield

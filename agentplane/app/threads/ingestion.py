@@ -69,6 +69,10 @@ class Ingester:
         """Start the ingestion coordinator, or wake it to reconcile now."""
         if self._coordinator is None:
             self._coordinator = asyncio.create_task(self._coordinate(), name="sandbox-ingestion")
+        self.wake()
+
+    def wake(self) -> None:
+        """Request an immediate pass over durable history and running Sandboxes."""
         self._changed.set()
 
     async def _coordinate(self) -> None:
@@ -121,7 +125,8 @@ class Ingester:
                 summaries = await self._runners.client(sandbox).list_sessions()
                 for summary in summaries:
                     try:
-                        await self._event_logs.open(sandbox, summary.session_id)
+                        if await self._event_logs.discover(sandbox, summary.session_id):
+                            self.wake()
                     except EventReplicationError:
                         logger.warning(
                             "session %s/%s requires explicit history reconciliation", sandbox, summary.session_id
@@ -139,6 +144,8 @@ class Ingester:
     async def _project_history(self, projector: HistoryProjector, thread_id: UUID, lease: ProjectionLease) -> None:
         try:
             progress = await projector.project_batch(thread_id, lease=lease)
+            if progress.through_cursor < progress.service_cursor:
+                self.wake()
             logger.debug(
                 "service projection %s: through=%s service=%s",
                 thread_id,

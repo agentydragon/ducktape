@@ -22,6 +22,8 @@ service HistoryService {
   // The observations an entity was folded from, and the native harness frames behind each.
   rpc ReadEntityEvidence(ReadEntityEvidenceRequest) returns (ReadEntityEvidenceResponse);
   rpc ReadNativeFrames(ReadNativeFramesRequest) returns (ReadNativeFramesResponse);
+  // Tells the caller when committed raw Session history changed. It names nothing: re-read what you hold.
+  rpc WatchSessionHistory(WatchSessionHistoryRequest) returns (stream WatchSessionHistoryResponse);
   // Tells the caller when fold state it may hold changed. It names nothing: re-read what you hold.
   rpc WatchSessionSummaries(WatchSessionSummariesRequest) returns (stream WatchSessionSummariesResponse);
 }
@@ -252,6 +254,18 @@ message ReadNativeFramesRequest {
 }
 
 message WatchSessionSummariesRequest {}
+
+message WatchSessionHistoryRequest {}
+
+message WatchSessionHistoryResponse {
+  oneof observation {
+    // Raw history or feed state changed. Every stream opens with one, for whatever changed while the caller was away.
+    google.protobuf.Empty changed = 1;
+    // Planned renewal: reconnect with fresh authorization.
+    google.protobuf.Empty reconnect_required = 2;
+  }
+  // A successful stream ends with reconnect_required; bare EOF is a failure.
+}
 
 message WatchSessionSummariesResponse {
   oneof observation {

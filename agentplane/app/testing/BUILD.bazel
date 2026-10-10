@@ -185,6 +185,7 @@ py_library(
     deps = [
         ":history_service",
         "//agentplane/app:database_updates",
+        "//agentplane/app/threads:history_watch",
         "//agentplane/app/threads:ingestion",
         "//agentplane/app/threads:models",
         "//agentplane/app/threads:sessions",

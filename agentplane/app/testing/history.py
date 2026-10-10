@@ -1,5 +1,7 @@
 """Seed app identities and project evidence supplied by a controlled gRPC peer."""
 
+import asyncio
+import contextlib
 from collections.abc import Sequence
 from uuid import NAMESPACE_URL, UUID, uuid5
 
@@ -10,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 from agentplane.app.database_updates import Channel, notify, notify_threads
 from agentplane.app.testing.history_service import HistoryService
 from agentplane.app.threads.events.event_log import EventLogStore
+from agentplane.app.threads.history_watch import HistoryWatch
 from agentplane.app.threads.ingestion import Ingester, Ingestion
 from agentplane.app.threads.models import EventLog
 from agentplane.app.threads.sessions import SandboxSessions
@@ -44,7 +47,7 @@ class SeededEventLogStore(EventLogStore):
             engine, history_reader=self.reader, summaries=AppSummaries(engine) if summaries is None else summaries
         )
 
-    async def open(self, sandbox: str, session_id: str) -> UUID:
+    async def _materialize(self, sandbox: str, session_id: str) -> tuple[UUID, bool]:
         # Fixture aliases are deterministic public IDs, not production locator lookups.
         try:
             public_id = UUID(session_id)
@@ -55,13 +58,16 @@ class SeededEventLogStore(EventLogStore):
                 await session.scalar(select(EventLog.id).where(EventLog.sandbox == sandbox, EventLog.id == public_id))
                 is not None
             ):
-                return public_id
+                return public_id, False
         self.peer.open(public_id)
         async with self._sessions.begin() as session:
-            await session.execute(insert(EventLog).values(id=public_id, sandbox=sandbox).on_conflict_do_nothing())
+            created = await session.scalar(
+                insert(EventLog).values(id=public_id, sandbox=sandbox).on_conflict_do_nothing().returning(EventLog.id)
+            )
             await session.execute(insert(ThreadHistorySummary).values(thread_id=public_id).on_conflict_do_nothing())
-            await notify(session, Channel.THREADS)
-        return public_id
+            if created is not None:
+                await notify(session, Channel.THREADS)
+        return public_id, created is not None
 
 
 class ProjectedHistory(Ingestion):
@@ -143,3 +149,25 @@ class ProjectedIngester(Ingester):
             ingestion=ingestion,
             history_projector=history_projector if history_projector is not None else ingestion.projector,
         )
+        self._history_watch_client = ingestion.reader.new_client()
+        self._history_watch = HistoryWatch(
+            self._history_watch_client,
+            lambda: self._history_watch_client.watch_session_history(timeout_s=300),
+            self.wake,
+            retry_interval_s=1,
+        )
+        self._history_watch_task: asyncio.Task[None] | None = None
+
+    async def start(self) -> None:
+        if self._history_watch_task is None:
+            self._history_watch_task = asyncio.create_task(self._history_watch.run(), name="test-history-watch")
+        await super().start()
+
+    async def close(self) -> None:
+        if self._history_watch_task is not None:
+            self._history_watch_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await self._history_watch_task
+            self._history_watch_task = None
+        await self._history_watch.close()
+        await super().close()

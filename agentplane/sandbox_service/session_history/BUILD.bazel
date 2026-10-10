@@ -31,6 +31,7 @@ py_library(
     srcs = ["store.py"],
     deps = [
         ":db",
+        ":history_changes",
         ":settlement",
         "//agentplane/history_service:protocol_pb2",
         "//agentplane/protocol:event_log_pb2",
@@ -94,6 +95,7 @@ py_test(
     srcs = ["test_store.py"],
     deps = [
         ":conftest",
+        ":history_changes",
         ":store",
         "//:conftest",
         "//agentplane/history_service:protocol_pb2",
@@ -171,5 +173,14 @@ py_test(
         "@pypi//protobuf",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
+    name = "history_changes",
+    srcs = ["history_changes.py"],
+    deps = [
+        "//agentplane/postgres:listener",
+        "@pypi//sqlalchemy",
     ],
 )

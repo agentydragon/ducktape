@@ -46,6 +46,15 @@ class EventLogStore:
         self._summaries = summaries
 
     async def open(self, sandbox: str, session_id: str) -> UUID:
+        thread_id, _ = await self._materialize(sandbox, session_id)
+        return thread_id
+
+    async def discover(self, sandbox: str, session_id: str) -> bool:
+        """Materialize an inventory Session and report whether this call created its app identity."""
+        _, created = await self._materialize(sandbox, session_id)
+        return created
+
+    async def _materialize(self, sandbox: str, session_id: str) -> tuple[UUID, bool]:
         """Materialize a public service Session without consulting private runner locators."""
         try:
             thread_id = UUID(session_id)
@@ -61,7 +70,7 @@ class EventLogStore:
             if existing is not None:
                 # Discovery does not reconstruct missing projection metadata from raw rows.
                 # Existing app identities and summaries remain authoritative for the UI.
-                return existing.id
+                return existing.id, False
         # Confirm durable service registration before admitting an app projection.
         # Do not hold an app DB transaction over this RPC or copy its event payload.
         await self._history_reader.read_session_observations(session_id, limit=1)
@@ -72,13 +81,13 @@ class EventLogStore:
             if created is not None:
                 session.add(ThreadHistorySummary(thread_id=created))
                 await notify(session, Channel.THREADS)
-                return created
+                return created, True
             existing = (await session.scalars(existing_query)).one_or_none()
             if existing is None:
                 raise EventReplicationError("public Session ID belongs to another sandbox")
             # Another replica may win this insert race. Preserve its mapping and
             # projection state rather than reinitializing an existing Thread.
-            return existing.id
+            return existing.id, False
 
     async def resume_pending(self, thread_id: UUID) -> None:
         """A runner-confirmed restart supersedes a normal terminal feed, not a replay error."""

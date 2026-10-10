@@ -20,6 +20,7 @@ from agentplane.history_service.summaries import SummaryReader
 from agentplane.history_service.summary_changes import SummaryChanges
 from agentplane.history_service.thread_reads import ThreadReader
 from agentplane.sandbox_service.client import SandboxServiceClient
+from agentplane.sandbox_service.session_history.history_changes import HistoryChanges
 from agentplane.sandbox_service.session_history.store import Store
 from agentplane.workload_auth.principal import WorkloadPrincipalResolver
 
@@ -45,15 +46,20 @@ async def serve(settings: Settings) -> None:
     )
     # The fold writes only its own tables.
     fold_engine = create_async_engine(url, pool_size=2, max_overflow=2)
+    history_changes = HistoryChanges(url)
     summary_changes = SummaryChanges(url)
     try:
-        async with k8s_client.ApiClient(configuration) as api, summary_changes.listener.listen():
+        async with (
+            k8s_client.ApiClient(configuration) as api,
+            history_changes.listener.listen(),
+            summary_changes.listener.listen(),
+        ):
             history = Store(engine)
             # A failed fold stops folding, not the raw reads this process serves.
             shadow = (
                 asyncio.create_task(
                     FoldShadow(engine=fold_engine, history=history, concurrency=settings.fold_concurrency).run(
-                        interval_s=settings.fold_interval_s
+                        interval_s=settings.fold_interval_s, changes=history_changes
                     ),
                     name="fold-shadow",
                 )
@@ -74,6 +80,7 @@ async def serve(settings: Settings) -> None:
                 evidence=EvidenceReader(engine, history),
                 reader_accounts=settings.reader_accounts,
                 request_timeout_s=settings.request_timeout_s,
+                history_changes=history_changes,
                 summary_changes=summary_changes,
                 watch_lease_s=settings.watch_lease_s,
             )

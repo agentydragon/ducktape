@@ -7,6 +7,7 @@ A Session's progress is its `thread_checkpoint` row.
 """
 
 import asyncio
+import contextlib
 import logging
 from dataclasses import dataclass
 from datetime import timedelta
@@ -21,6 +22,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
 from agentplane.history_service import protocol_pb2 as history_pb2
 from agentplane.history_service.summary_changes import notify_summaries
 from agentplane.sandbox_service.session_history.db import SessionHistory
+from agentplane.sandbox_service.session_history.history_changes import HistoryChanges
 from agentplane.sandbox_service.session_history.store import Store
 from agentplane.thread_fold import projection_lease
 from agentplane.thread_fold.models import ThreadHistorySummary
@@ -62,25 +64,28 @@ class FoldShadow:
         self._slots = asyncio.Semaphore(concurrency)
         self._leases: dict[UUID, ProjectionLease] = {}
 
-    async def run(self, *, interval_s: float) -> None:
-        """Cycle back to back while any Session is behind; wait `interval_s` once caught up or after a failure."""
+    async def run(self, *, interval_s: float, changes: HistoryChanges) -> None:
+        """Catch up immediately while behind; wait for commits or `interval_s` to retry."""
         try:
-            while True:
-                try:
-                    backlog = await self.cycle()
-                    logger.info(
-                        "fold shadow: %d of %d Sessions behind, %d events behind",
-                        backlog.behind,
-                        backlog.sessions,
-                        backlog.events_behind,
-                    )
-                # asyncpg raises connect-time server errors (e.g. no free connection slots) unwrapped.
-                except SQLAlchemyError, PostgresError, OSError:
-                    logger.warning("fold shadow cycle failed; will retry", exc_info=True)
-                else:
-                    if backlog.behind:
-                        continue
-                await asyncio.sleep(interval_s)
+            with changes.subscribe() as changed:
+                while True:
+                    changed.clear()
+                    try:
+                        backlog = await self.cycle()
+                        logger.info(
+                            "fold shadow: %d of %d Sessions behind, %d events behind",
+                            backlog.behind,
+                            backlog.sessions,
+                            backlog.events_behind,
+                        )
+                    # asyncpg raises connect-time server errors (e.g. no free connection slots) unwrapped.
+                    except SQLAlchemyError, PostgresError, OSError:
+                        logger.warning("fold shadow cycle failed; will retry", exc_info=True)
+                    else:
+                        if backlog.behind:
+                            continue
+                    with contextlib.suppress(TimeoutError):
+                        await asyncio.wait_for(changed.wait(), timeout=interval_s)
         finally:
             await self.release()
 

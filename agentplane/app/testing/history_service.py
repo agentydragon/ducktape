@@ -12,6 +12,7 @@ from pathlib import Path
 from uuid import UUID
 
 import grpc
+from google.protobuf.empty_pb2 import Empty
 
 from agentplane.history_service import protocol_pb2 as history_pb2
 from agentplane.history_service.client import HistoryServiceClient
@@ -33,21 +34,37 @@ class HistoryService:
         self.histories: dict[str, History] = {}
         self.requests: list[history_pb2.ReadSessionEventsRequest] = []
         self.failure: grpc.StatusCode | None = None
+        self._history_waiters: set[asyncio.Event] = set()
+        self.history_watch_opened = asyncio.Event()
 
     def open(self, session_id: UUID) -> None:
-        self.histories.setdefault(str(session_id), History())
+        if str(session_id) not in self.histories:
+            self.histories[str(session_id)] = History()
+            self._wake_history()
 
     def publish(self, session_id: UUID, entries: Sequence[event_log_pb2.EventEntry]) -> None:
         history = self.histories[str(session_id)]
+        changed = False
         # Test inputs are immutable snapshots, not shared mutable protobufs.
         for entry in entries:
             if entry.cursor <= len(history.entries):
                 assert history.entries[entry.cursor - 1] == entry, "conflicting scripted evidence"
                 continue
             history.entries.append(event_log_pb2.EventEntry.FromString(entry.SerializeToString()))
+            changed = True
+        if changed:
+            self._wake_history()
 
     def set_feed(self, session_id: UUID, feed: history_pb2.SessionFeedState) -> None:
-        self.histories[str(session_id)].feed = history_pb2.SessionFeedState.FromString(feed.SerializeToString())
+        snapshot = history_pb2.SessionFeedState.FromString(feed.SerializeToString())
+        history = self.histories[str(session_id)]
+        if history.feed is None or history.feed != snapshot:
+            history.feed = snapshot
+            self._wake_history()
+
+    def _wake_history(self) -> None:
+        for changed in self._history_waiters:
+            changed.set()
 
     async def read_events(
         self, request: history_pb2.ReadSessionEventsRequest, context: grpc.aio.ServicerContext
@@ -88,6 +105,20 @@ class HistoryService:
             ],
         )
 
+    async def watch_history(
+        self, request: history_pb2.WatchSessionHistoryRequest, _context: grpc.aio.ServicerContext
+    ) -> AsyncIterator[history_pb2.WatchSessionHistoryResponse]:
+        changed = asyncio.Event()
+        self._history_waiters.add(changed)
+        try:
+            self.history_watch_opened.set()
+            while True:
+                changed.clear()
+                yield history_pb2.WatchSessionHistoryResponse(changed=Empty())
+                await changed.wait()
+        finally:
+            self._history_waiters.discard(changed)
+
     def handler(self) -> grpc.GenericRpcHandler:
         # Register only the public methods this fixture controls. Unscripted RPCs
         # fail UNIMPLEMENTED rather than silently reaching a real backend.
@@ -103,6 +134,11 @@ class HistoryService:
                     self.read_observations,
                     request_deserializer=history_pb2.ReadSessionObservationsRequest.FromString,
                     response_serializer=history_pb2.ReadSessionObservationsResponse.SerializeToString,
+                ),
+                "WatchSessionHistory": grpc.unary_stream_rpc_method_handler(
+                    self.watch_history,
+                    request_deserializer=history_pb2.WatchSessionHistoryRequest.FromString,
+                    response_serializer=history_pb2.WatchSessionHistoryResponse.SerializeToString,
                 ),
             },
         )

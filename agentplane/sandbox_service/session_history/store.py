@@ -18,6 +18,7 @@ from agentplane.sandbox_service.session_history.db import (
     SessionEventSettlement,
     SessionHistory,
 )
+from agentplane.sandbox_service.session_history.history_changes import notify_history
 from agentplane.sandbox_service.session_history.settlement import completion_target, settle, started_item
 
 # The generated protobuf stubs need the protobuf runtime as a direct mypy dependency.
@@ -66,7 +67,7 @@ class Store:
         History Service ingester follows by public ID and never learns the runner session ID.
         """
         async with self._sessions.begin() as session:
-            await session.execute(
+            created = await session.scalar(
                 insert(SessionHistory)
                 .values(
                     id=session_id,
@@ -78,6 +79,7 @@ class Store:
                     last_cursor=0,
                 )
                 .on_conflict_do_nothing()
+                .returning(SessionHistory.id)
             )
             row = await session.get(SessionHistory, session_id)
             if row is None:
@@ -88,6 +90,8 @@ class Store:
                 sandbox_uid,
             ) or runner_session_id not in (None, row.runner_session_id):
                 raise HistoryConflictError(f"session {session_id} has a different locator")
+            if created is not None:
+                await notify_history(session)
 
     async def append(self, session_id: UUID, entries: Sequence[event_log_pb2.EventEntry]) -> int:
         """Replay exact duplicates or extend the prefix; serialize concurrent writers by Session ID.
@@ -125,6 +129,8 @@ class Store:
                 for entry in appended:
                     if completion_target(entry) is not None:
                         await _settle(session, session_id, entry)
+            if appended:
+                await notify_history(session)
             return row.last_cursor
 
     async def record_feed_state(self, session_id: UUID, feed: history_pb2.SessionFeedState) -> None:
@@ -164,7 +170,10 @@ class Store:
                     if snapshot.attached != prior.attached:
                         raise HistoryConflictError("conflicting attachment snapshots at one cursor")
                     snapshot.ended = snapshot.ended or prior.ended
-            row.feed_state = snapshot.SerializeToString()
+            serialized = snapshot.SerializeToString(deterministic=True)
+            if row.feed_state != serialized:
+                row.feed_state = serialized
+                await notify_history(session)
 
     async def read(
         self, session_id: UUID, *, after_cursor: int = 0, limit: int = 128

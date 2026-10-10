@@ -22,6 +22,7 @@ from agentplane.history_service.grpc_api import Resources, add_service
 from agentplane.history_service.summaries import SummaryReader
 from agentplane.history_service.summary_changes import SummaryChanges, notify_summaries
 from agentplane.history_service.thread_reads import ThreadReader
+from agentplane.sandbox_service.session_history.history_changes import HistoryChanges, notify_history
 from agentplane.sandbox_service.session_history.store import Store
 from agentplane.subjects import ServiceAccountRef
 from agentplane.thread_fold.models import Base
@@ -59,6 +60,7 @@ async def history_service(
         connect_args={"server_settings": {"default_transaction_read_only": "on"}},
     )
     history = Store(engine)
+    history_changes = HistoryChanges(make_url(database_url))
     summary_changes = SummaryChanges(make_url(database_url))
     server = grpc.aio.server()
     add_service(
@@ -74,6 +76,7 @@ async def history_service(
             evidence=EvidenceReader(engine, history),
             reader_accounts=frozenset({READER}),
             request_timeout_s=10,
+            history_changes=history_changes,
             summary_changes=summary_changes,
             watch_lease_s=watch_lease_s,
         ),
@@ -84,7 +87,7 @@ async def history_service(
     client = HistoryServiceClient(f"127.0.0.1:{port}", token_file=token_file, request_timeout_s=20)
     await server.start()
     try:
-        async with summary_changes.listener.listen():
+        async with history_changes.listener.listen(), summary_changes.listener.listen():
             yield client
     finally:
         await client.close()
@@ -117,5 +120,15 @@ async def announce_fold_commit(database_url: str) -> None:
     try:
         async with engine.begin() as connection, AsyncSession(bind=connection) as session:
             await notify_summaries(session)
+    finally:
+        await engine.dispose()
+
+
+async def announce_history_change(database_url: str) -> None:
+    """Commit a raw-history invalidation for app watch tests."""
+    engine = create_async_engine(make_url(database_url).set(drivername="postgresql+asyncpg"))
+    try:
+        async with engine.begin() as connection, AsyncSession(bind=connection) as session:
+            await notify_history(session)
     finally:
         await engine.dispose()

@@ -11,6 +11,7 @@ from agentplane.history_service import protocol_pb2 as history_pb2
 from agentplane.protocol import event_log_pb2
 from agentplane.runner import protocol_pb2 as runner_pb2
 from agentplane.sandbox_service import protocol_pb2
+from agentplane.sandbox_service.session_history.history_changes import HistoryChanges
 from agentplane.sandbox_service.session_history.store import (
     HistoryConflictError,
     HistoryNotFoundError,
@@ -114,6 +115,46 @@ async def test_recorded_session_keeps_its_id_and_fences_duplicate_locator(engine
     await opened(store, uuid4())
     with pytest.raises(HistoryConflictError, match="belongs to another"):
         await opened(store, uuid4())
+
+
+async def test_history_notifies_after_commit_and_not_after_rollback(engine: AsyncEngine) -> None:
+    store = Store(engine)
+    changes = HistoryChanges(engine.url)
+    session_id = uuid4()
+
+    async def wait_for_change(changed: asyncio.Event) -> None:
+        await asyncio.wait_for(changed.wait(), 5)
+
+    async def assert_quiet(changed: asyncio.Event) -> None:
+        with pytest.raises(TimeoutError):
+            await asyncio.wait_for(changed.wait(), 0.05)
+
+    async with changes.listener.listen():
+        with changes.subscribe() as changed:
+            await opened(store, session_id)
+            await wait_for_change(changed)
+            changed.clear()
+
+            with pytest.raises(HistoryConflictError):
+                await store.append(session_id, [entry(1), entry(3)])
+            await assert_quiet(changed)
+
+            await store.append(session_id, [entry(1)])
+            await wait_for_change(changed)
+            changed.clear()
+            await store.append(session_id, [entry(1)])
+            await assert_quiet(changed)
+
+            feed = history_pb2.SessionFeedState(
+                attached=runner_pb2.Attached(
+                    session_id="original-native-path", last_cursor=1, harness_state=runner_pb2.HARNESS_STATE_STOPPED
+                )
+            )
+            await store.record_feed_state(session_id, feed)
+            await wait_for_change(changed)
+            changed.clear()
+            await store.record_feed_state(session_id, feed)
+            await assert_quiet(changed)
 
 
 @pytest.mark.asyncio

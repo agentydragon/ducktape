@@ -16,6 +16,7 @@ from agentplane.history_service.summaries import SummaryReader
 from agentplane.history_service.summary_changes import SummaryChanges, notify_summaries
 from agentplane.history_service.thread_reads import ThreadReader
 from agentplane.protocol import event_log_pb2, event_pb2
+from agentplane.sandbox_service.session_history.history_changes import HistoryChanges
 from agentplane.sandbox_service.session_history.store import Store
 from agentplane.subjects import ServiceAccountRef
 from agentplane.testing.fake_apiserver import SANDBOX_NAMESPACE, TokenVerdict, fake_apiserver
@@ -53,9 +54,11 @@ async def stub(engine: AsyncEngine, history: Store) -> AsyncIterator[protocol_pb
                 pod_uid=f"{name}-pod-uid",
                 audiences=(AUDIENCE,),
             )
+        history_changes = HistoryChanges(engine.url)
         summary_changes = SummaryChanges(engine.url)
         async with (
             k8s_client.ApiClient(k8s_client.Configuration(host=f"http://127.0.0.1:{fake.port}")) as api,
+            history_changes.listener.listen(),
             summary_changes.listener.listen(),
         ):
             server = grpc.aio.server()
@@ -72,6 +75,7 @@ async def stub(engine: AsyncEngine, history: Store) -> AsyncIterator[protocol_pb
                     evidence=EvidenceReader(engine, history),
                     reader_accounts=frozenset({READER}),
                     request_timeout_s=10,
+                    history_changes=history_changes,
                     summary_changes=summary_changes,
                     watch_lease_s=WATCH_LEASE_S,
                 ),
@@ -207,6 +211,38 @@ async def test_summary_watch_requires_a_reader(stub: protocol_pb2_grpc.HistorySe
     with pytest.raises(grpc.aio.AioRpcError) as raised:
         await call.read()
     assert raised.value.code() == grpc.StatusCode.PERMISSION_DENIED
+
+
+async def test_history_watch_announces_commits_until_planned_renewal(
+    stub: protocol_pb2_grpc.HistoryServiceAsyncStub, history: Store
+) -> None:
+    session_id = uuid4()
+    await history.record_session(
+        session_id,
+        sandbox_namespace=SANDBOX_NAMESPACE,
+        sandbox_name="test-history-watch",
+        sandbox_uid=None,
+        runner_session_id="test-history-watch-runner",
+    )
+    call = stub.WatchSessionHistory(history_pb2.WatchSessionHistoryRequest(), metadata=bearer(READER_TOKEN))
+    opening = await call.read()
+    assert isinstance(opening, history_pb2.WatchSessionHistoryResponse)
+    assert opening.HasField("changed")
+    await history.append(session_id, [EVENT])
+    committed = await call.read()
+    assert isinstance(committed, history_pb2.WatchSessionHistoryResponse)
+    assert committed.HasField("changed")
+    renewal = await call.read()
+    assert isinstance(renewal, history_pb2.WatchSessionHistoryResponse)
+    assert renewal.HasField("reconnect_required")
+    assert await call.read() is grpc.aio.EOF
+
+
+async def test_history_watch_requires_a_reader(stub: protocol_pb2_grpc.HistoryServiceAsyncStub) -> None:
+    call = stub.WatchSessionHistory(history_pb2.WatchSessionHistoryRequest(), metadata=bearer(OTHER_TOKEN))
+    with pytest.raises(grpc.aio.AioRpcError) as refused:
+        await call.read()
+    assert refused.value.code() == grpc.StatusCode.PERMISSION_DENIED
 
 
 if __name__ == "__main__":

@@ -1,5 +1,6 @@
 """Service-history projection without app raw copies or runner contact."""
 
+import asyncio
 from datetime import UTC, timedelta
 from typing import cast
 from unittest.mock import AsyncMock, Mock, patch
@@ -10,13 +11,15 @@ import pytest_bazel
 from sqlalchemy import event, select
 from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
 
-from agentplane.app.database_updates import notify_threads
+from agentplane.app.database_updates import Channel, DatabaseUpdates, notify_threads
 from agentplane.app.testing.history import ProjectedHistory as Ingestion, SeededEventLogStore as EventLogStore
 from agentplane.app.testing.projection_lease import LeaseFactory
 from agentplane.app.testing.retained_history import seed_retained_session
 from agentplane.app.testing.thread_test_support import SPEC, event_entry
+from agentplane.app.threads import ingestion as ingestion_module
 from agentplane.app.threads.bridge import RunnerBridge
 from agentplane.app.threads.events.event_log import EventLogStore as ServiceEventLogStore, ServiceSessionReference
+from agentplane.app.threads.history_watch import HistoryWatch
 from agentplane.app.threads.ingestion import Ingester
 from agentplane.app.threads.sessions import SandboxSessions
 from agentplane.app.threads.store import ThreadStore
@@ -187,6 +190,78 @@ async def test_supervisor_resumes_deleted_sandbox_without_runner_contact(
     assert await event_logs.last_cursor(thread) == 1
     async with async_sessionmaker(engine)() as session:
         assert await session.scalar(select(ThreadCheckpoint.through_cursor)) == 1
+
+
+async def test_raw_history_watch_wakes_multi_page_projection_without_polling(
+    engine: AsyncEngine,
+    event_logs: EventLogStore,
+    ingestion: Ingestion,
+    runners: SandboxSessions,
+    database_updates: DatabaseUpdates,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(ingestion_module, "RECONCILE_S", 3600)
+    thread = await event_logs.open("sb-1", "watch-wakeup")
+
+    class ObservedIngester(Ingester):
+        def __init__(self) -> None:
+            super().__init__(
+                runners=runners, event_logs=event_logs, ingestion=ingestion, history_projector=ingestion.projector
+            )
+            self.reconciled = asyncio.Event()
+
+        async def reconcile(self) -> None:
+            await super().reconcile()
+            self.reconciled.set()
+
+    coordinator = ObservedIngester()
+    watch_client = event_logs.reader.new_client()
+    history_watch = HistoryWatch(
+        watch_client, lambda: watch_client.watch_session_history(timeout_s=300), coordinator.wake, retry_interval_s=1
+    )
+    watch_task = asyncio.create_task(history_watch.run())
+    try:
+        await coordinator.start()
+        await asyncio.wait_for(coordinator.reconciled.wait(), 10)
+        await asyncio.wait_for(event_logs.peer.history_watch_opened.wait(), 10)
+        entries = [
+            event_entry(cursor, harness_stderr=event_pb2.HarnessStderr(text=f"line {cursor}"))
+            for cursor in range(1, 257)
+        ]
+        event_logs.peer.publish(thread, entries)
+
+        changed = asyncio.Event()
+        changes = database_updates.changes[Channel.THREADS]
+        with changes.subscribe(changed):
+            while True:
+                changed.clear()
+                async with async_sessionmaker(engine)() as session:
+                    through = await session.scalar(
+                        select(ThreadCheckpoint.through_cursor).where(ThreadCheckpoint.thread_id == thread)
+                    )
+                if through == len(entries):
+                    break
+                await asyncio.wait_for(changed.wait(), 10)
+
+            # The initial stream invalidation and 256-entry backlog have been consumed. A new
+            # commit must wake an idle coordinator without relying on the normal interval.
+            event_logs.peer.publish(
+                thread, [event_entry(257, harness_stderr=event_pb2.HarnessStderr(text="after backlog"))]
+            )
+            while True:
+                changed.clear()
+                async with async_sessionmaker(engine)() as session:
+                    through = await session.scalar(
+                        select(ThreadCheckpoint.through_cursor).where(ThreadCheckpoint.thread_id == thread)
+                    )
+                if through == 257:
+                    break
+                await asyncio.wait_for(changed.wait(), 10)
+    finally:
+        watch_task.cancel()
+        await asyncio.gather(watch_task, return_exceptions=True)
+        await history_watch.close()
+        await coordinator.close()
 
 
 async def test_projection_updates_activity_atomically_and_ignores_tool_output(
