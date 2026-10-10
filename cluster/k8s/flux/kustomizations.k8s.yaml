@@ -1070,6 +1070,8 @@ spec:
   dependsOn:
     - name: kyverno
       namespace: ducktape-flux
+    - name: flux-image-automation-ghcr
+      namespace: ducktape-flux
   interval: 10m0s
   path: ./cluster/generated/tofu-controller
   prune: true

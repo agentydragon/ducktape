@@ -604,6 +604,7 @@ def generate_manifests(root: Path) -> None:
             components=[posixpath.relpath(tofu_controller_release.PINS_DIR, tofu_controller_release.OUTPUT_DIR)],
         ),
         kyverno_kustomization,
+        flux_image_automation_ghcr_kustomization,
     )
     monitoring_home_switch_artifact = artifact("monitoring-home-switch", monitoring_home_switch.OUTPUT_DIR)
     monitoring_home_switch.home_switch(
