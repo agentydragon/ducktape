@@ -102,7 +102,9 @@ def chart(app: App) -> Chart:
             # main.tf's routeros_system_certificate names the same common name.
             common_name="CRS310",
             ip_addresses=[_SWITCH_ADDRESS],
-            private_key=CertificatePrivateKey.ecdsa_p256(),
+            # RSA: RouterOS 7.24 signed TLS handshakes with a provider-imported ECDSA P-256 key that
+            # clients reject ("bad signature"), though the key matched the certificate.
+            private_key=CertificatePrivateKey.rsa_2048(),
         )
     terraform.gitops_terraform(
         chart,

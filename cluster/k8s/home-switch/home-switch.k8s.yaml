@@ -46,8 +46,8 @@ spec:
     kind: ClusterIssuer
     name: cluster-internal-ca
   privateKey:
-    algorithm: ECDSA
-    size: 256
+    algorithm: RSA
+    size: 2048
   secretName: home-switch-tls
 ---
 apiVersion: cert-manager.io/v1
@@ -63,8 +63,8 @@ spec:
     kind: ClusterIssuer
     name: cluster-internal-ca
   privateKey:
-    algorithm: ECDSA
-    size: 256
+    algorithm: RSA
+    size: 2048
   secretName: home-switch-bootstrap-tls
 ---
 apiVersion: infra.contrib.fluxcd.io/v1alpha2

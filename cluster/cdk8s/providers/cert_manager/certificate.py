@@ -79,3 +79,9 @@ class CertificatePrivateKey:
         return CertificateSpecPrivateKey(
             algorithm=CertificateSpecPrivateKeyAlgorithm.ECDSA, size=256, rotation_policy=rotation_policy
         )
+
+    @staticmethod
+    def rsa_2048(rotation_policy: CertificateSpecPrivateKeyRotationPolicy | None = None) -> CertificateSpecPrivateKey:
+        return CertificateSpecPrivateKey(
+            algorithm=CertificateSpecPrivateKeyAlgorithm.RSA, size=2048, rotation_policy=rotation_policy
+        )
