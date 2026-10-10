@@ -15,8 +15,8 @@ use std::collections::BTreeSet;
 
 use anyhow::Result;
 use source_match_holes::{
-    ANYTHING_HOLE_KEYWORD, ARGS_HOLE_KEYWORD, CASE_REST_HOLE_KEYWORD, STMT_LIST_HOLE_KEYWORD,
-    hole_keyword, hole_name_for,
+    ANYTHING_HOLE_KEYWORD, ARGS_HOLE_KEYWORD, CASE_REST_HOLE_KEYWORD, SEQ_EXPRS_HOLE_KEYWORD,
+    STMT_LIST_HOLE_KEYWORD, hole_keyword, hole_name_for,
 };
 use swc_common::{DUMMY_SP, Span, Spanned, SyntaxContext};
 use swc_ecma_ast::*;
@@ -123,7 +123,12 @@ pub(crate) fn hole_expr(expr: &Expr, kept: &BTreeSet<AnchorSpan>) -> Expr {
         return anything_expr();
     }
     match expr {
-        Expr::Paren(paren) => hole_expr(&paren.expr, kept),
+        // Preserve grouping around arrow bodies and callees. Stripping these
+        // parentheses can move a comma expression outside the arrow on emit.
+        Expr::Paren(paren) => Expr::Paren(ParenExpr {
+            expr: Box::new(hole_expr(&paren.expr, kept)),
+            ..paren.clone()
+        }),
         Expr::Lit(_) | Expr::Ident(_) | Expr::Tpl(_) => expr.clone(),
         Expr::Member(member) => {
             let mut holed = member.clone();
@@ -144,23 +149,18 @@ pub(crate) fn hole_expr(expr: &Expr, kept: &BTreeSet<AnchorSpan>) -> Expr {
         }
         Expr::Object(object) => Expr::Object(hole_object(object, kept)),
         Expr::Array(array) => Expr::Array(hole_array(array, kept)),
-        // Sequence (comma) expression (`(super(a), this.x = b, this.label = "tok")`):
-        // hole each element the way [`hole_array`] holes array elements — a non-anchor
-        // element collapses to `ANYTHING` through the leading guard, the anchored one
-        // recurses. A discriminating leaf buried in a comma-sequence (e.g. an error
-        // subclass whose entire constructor body is one sequence statement) is holed in
-        // place rather than kept verbatim; keeping it verbatim leaves raw sibling
-        // subtrees the matcher rejects, forcing the read-off all the way to
-        // enclosing-context anchoring. Arity-exact (no run hole), mirroring the array
-        // path — the matcher's `SEQ_EXPRS` sequence run hole absorbs a variable-length
-        // element run, and emitting it here instead is a separate step.
+        // Keep sequence elements carrying an anchor and absorb each run of the
+        // others with `SEQ_EXPRS`. A per-element `ANYTHING` would pin the
+        // sequence length, which can change when unrelated assignments move.
         Expr::Seq(seq) => {
             let mut holed = seq.clone();
-            holed.exprs = seq
-                .exprs
-                .iter()
-                .map(|element| Box::new(hole_expr(element, kept)))
-                .collect();
+            holed.exprs = collapse_omitted_runs(
+                seq.exprs.iter().map(|element| {
+                    node_retains_any(element.span(), kept)
+                        .then(|| Box::new(hole_expr(element, kept)))
+                }),
+                || Box::new(Expr::Ident(ident_node(SEQ_EXPRS_HOLE_KEYWORD))),
+            );
             Expr::Seq(holed)
         }
         Expr::Await(await_expr) => {
@@ -273,7 +273,10 @@ fn hole_callee_expr(expr: &Expr, kept: &BTreeSet<AnchorSpan>) -> Expr {
             holed.obj = Box::new(hole_expr(&member.obj, kept));
             Expr::Member(holed)
         }
-        Expr::Paren(paren) => hole_callee_expr(&paren.expr, kept),
+        Expr::Paren(paren) => Expr::Paren(ParenExpr {
+            expr: Box::new(hole_callee_expr(&paren.expr, kept)),
+            ..paren.clone()
+        }),
         // Bare-identifier callee (and any other callee expression): hole through the
         // normal path. A bare-function name is alpha-wildcarded by the matcher and is
         // never a chosen anchor, so `hole_expr` holes it to `ANYTHING`.

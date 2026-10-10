@@ -1,5 +1,5 @@
 class SelectedError extends ANYTHING {
   constructor(ANYTHING, ANYTHING, ANYTHING) {
-    (ANYTHING, ANYTHING, ANYTHING, (ANYTHING.label = "selected-error-token"));
+    (SEQ_EXPRS, (ANYTHING.label = "selected-error-token"));
   }
 }

@@ -73,7 +73,7 @@ fn run_case(case: &MinimizedSelectorCase) {
         let Some(source) = candidate["match_source"].as_str() else {
             continue;
         };
-        for keyword in ["ARGS", "CASE_REST"] {
+        for keyword in ["ARGS", "CASE_REST", "SEQ_EXPRS"] {
             if source.contains(keyword) {
                 assert!(
                     candidate["rewritten_holes"]
@@ -405,6 +405,15 @@ minimizer_expectation_case!(
     name = "grouped enum objects keep only the target declarator's discriminating key",
     module = "app/palettes",
     bindings = [("SelectedPalette", "selectedPalette")],
+    expected = "expected_match.js",
+);
+
+minimizer_expectation_case!(
+    minimizes_grouped_sequence_enum,
+    fixture = "grouped_sequence_enum",
+    name = "grouped enum initializers use sequence run holes around stable assignments",
+    module = "app/enums",
+    bindings = [("First", "first"), ("Second", "second")],
     expected = "expected_match.js",
 );
 
