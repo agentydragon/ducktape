@@ -22,6 +22,17 @@ use swc_common::{DUMMY_SP, Span, Spanned, SyntaxContext};
 use swc_ecma_ast::*;
 use swc_ecma_visit::{Visit, VisitWith};
 
+#[derive(Default)]
+struct RetainedIdentifiers(BTreeSet<String>);
+
+impl Visit for RetainedIdentifiers {
+    fn visit_ident(&mut self, ident: &Ident) {
+        if hole_keyword(&ident.sym).is_none() {
+            self.0.insert(ident.sym.to_string());
+        }
+    }
+}
+
 /// `(lo, hi)` byte offsets of a retained concrete token.
 pub(crate) type AnchorSpan = (u32, u32);
 
@@ -215,7 +226,6 @@ pub(crate) fn hole_expr(expr: &Expr, kept: &BTreeSet<AnchorSpan>) -> Expr {
         }
         Expr::Arrow(arrow) => {
             let mut holed = arrow.clone();
-            holed.params = arrow.params.iter().map(|_| anything_pat()).collect();
             holed.body = Box::new(match arrow.body.as_ref() {
                 ArrowFunctionBody::FunctionBody(body) => {
                     ArrowFunctionBody::FunctionBody(holed_function_body(body, kept))
@@ -224,6 +234,21 @@ pub(crate) fn hole_expr(expr: &Expr, kept: &BTreeSet<AnchorSpan>) -> Expr {
                     ArrowFunctionBody::Expr(Box::new(hole_expr(expr, kept)))
                 }
             });
+            // A retained body reference must still bind to its parameter. A
+            // parameter hole would let `n[(n.KEY = 0)]` match a write through an
+            // unrelated receiver, even though `n` itself matches alpha-renames.
+            let mut retained = RetainedIdentifiers::default();
+            holed.body.visit_with(&mut retained);
+            holed.params = arrow
+                .params
+                .iter()
+                .map(|param| match param {
+                    Pat::Ident(binding) if retained.0.contains(binding.id.sym.as_ref()) => {
+                        param.clone()
+                    }
+                    _ => anything_pat(),
+                })
+                .collect();
             Expr::Arrow(holed)
         }
         // Unmodeled shapes carrying a kept anchor: keep verbatim rather than

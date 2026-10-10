@@ -5,7 +5,9 @@ use std::collections::BTreeSet;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use debundle_e2e_support::{parse_stdout_json, run_synthesize_selectors, write_text_file};
+use debundle_e2e_support::{
+    parse_stdout_json, run_match_selector, run_synthesize_selectors, write_text_file,
+};
 
 struct MinimizedSelectorCase {
     name: &'static str,
@@ -416,6 +418,73 @@ minimizer_expectation_case!(
     bindings = [("First", "first"), ("Second", "second")],
     expected = "expected_match.js",
 );
+
+minimizer_expectation_case!(
+    minimizes_grouped_computed_enum,
+    fixture = "grouped_computed_enum",
+    name = "computed enum assignments retain their arrow parameter binding",
+    module = "app/enums",
+    bindings = [("Left", "left"), ("Right", "right")],
+    expected = "expected_match.js",
+);
+
+#[test]
+fn computed_enum_selector_preserves_parameter_identity_across_renames() {
+    let dir = tempfile::tempdir().unwrap();
+    let source = dir.path().join("source.js");
+    write_text_file(
+        &source,
+        include_str!("testdata/selector_minimizer_expectations/grouped_computed_enum/source.js"),
+    );
+    let modules = dir.path().join("modules");
+    write_text_file(
+        &modules.join("app/enums.yaml"),
+        "members:\n  - name: Left\n    selector:\n      binding: { name: left }\n  - name: Right\n    selector:\n      binding: { name: right }\n",
+    );
+    let out = run_synthesize_selectors(
+        &modules,
+        &[
+            "--source-file",
+            source.to_str().unwrap(),
+            "--item",
+            "app/enums:Left",
+            "--item",
+            "app/enums:Right",
+            "--format",
+            "json",
+        ],
+    );
+    let parsed = parse_stdout_json(&out);
+    let selector = parsed["candidates"][0]["match_source"]
+        .as_str()
+        .expect("grouped computed enum has a selector");
+    for (fixture, expected) in [
+        ("renamed.js", "resolved"),
+        ("different_receiver.js", "no_match"),
+    ] {
+        let variant = dir.path().join(fixture);
+        write_text_file(
+            &variant,
+            match fixture {
+                "renamed.js" => include_str!(
+                    "testdata/selector_minimizer_expectations/grouped_computed_enum/renamed.js"
+                ),
+                _ => include_str!(
+                    "testdata/selector_minimizer_expectations/grouped_computed_enum/different_receiver.js"
+                ),
+            },
+        );
+        let result = run_match_selector(
+            &variant,
+            selector,
+            &["--target-binding", "Right", "--no-slack"],
+        );
+        assert_eq!(
+            result["outcomes"][0]["outcome"]["kind"], expected,
+            "{fixture}: {selector}"
+        );
+    }
+}
 
 minimizer_expectation_case!(
     minimizes_object_key_set_group,
