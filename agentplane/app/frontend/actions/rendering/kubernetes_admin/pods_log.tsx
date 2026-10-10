@@ -25,4 +25,4 @@ function Logs({ args }: { args: z.infer<typeof logs> }): JSX.Element {
 }
 
 export const podsLogPreview: ArgumentsPreview = definePreview(logs, Logs);
-export const podsLogCompact = podsLogPreview;
+export const podsLogCompact: ArgumentsPreview = podsLogPreview;

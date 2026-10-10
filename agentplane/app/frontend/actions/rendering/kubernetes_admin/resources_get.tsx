@@ -16,4 +16,4 @@ function Get({ args }: { args: z.infer<typeof get> }): JSX.Element {
 }
 
 export const resourcesGetPreview: ArgumentsPreview = definePreview(get, Get);
-export const resourcesGetCompact = resourcesGetPreview;
+export const resourcesGetCompact: ArgumentsPreview = resourcesGetPreview;
