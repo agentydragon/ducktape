@@ -4,8 +4,12 @@ load("//devinfra/python:defs.bzl", "py_library", "py_test")
 load("//props:oci.bzl", "py_image_entrypoint", "py_image_env")
 
 # Archive storage and runner ingestion are service internals. App tests must use
-# the Sandbox Service client/protobuf boundary, not widen this visibility.
-package(default_visibility = ["//agentplane/sandbox_service:__subpackages__"])
+# the Sandbox Service client/protobuf boundary, not widen this visibility. The
+# History Service reads through the store until the package moves to it.
+package(default_visibility = [
+    "//agentplane/history_service:__subpackages__",
+    "//agentplane/sandbox_service:__subpackages__",
+])
 
 py_library(
     name = "db",

@@ -266,6 +266,11 @@
       "test": "//agentplane/action_service/testing/...",
       "registry": "forgejo"
     },
+    "agentplane-history-service": {
+      "target": "//agentplane/history_service:image",
+      "test": "//agentplane/history_service/...",
+      "registry": "forgejo"
+    },
     "agentplane-sandbox-service-history-migrate": {
       "target": "//agentplane/sandbox_service/session_history:migration_image",
       "test": "//agentplane/sandbox_service/session_history/...",
