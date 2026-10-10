@@ -28,6 +28,8 @@ from agentplane.workload_auth.principal import WorkloadPrincipalResolver
 from util.agent_sandbox import SANDBOX_API, SANDBOXES_PLURAL
 from util.kubernetes import CustomObjectsClient
 
+# gazelle:include_dep @pypi//protobuf
+
 SANDBOX = "test-runner"
 SANDBOX_UID = "40e373bd-2742-43de-8d1c-1ef97c4d4801"
 ACCOUNT = "test-runner-account"
