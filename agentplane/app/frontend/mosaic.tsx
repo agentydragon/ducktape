@@ -1,7 +1,7 @@
 import { ActionIcon, Badge, Box, Button, Group, Menu, Paper, Select, Stack, Text, Title } from "@mantine/core";
 import IconPlus from "@tabler/icons-react/dist/esm/icons/IconPlus.mjs";
 import IconX from "@tabler/icons-react/dist/esm/icons/IconX.mjs";
-import { type JSX, useContext, useEffect, useMemo, useRef, useState } from "react";
+import { type JSX, useContext, useEffect, useRef, useState } from "react";
 
 import type { ActionRequestView } from "./actions/client";
 import { ActionRequestDetail } from "./actions/detail";
@@ -94,24 +94,16 @@ export function MosaicView(): JSX.Element {
     seeded.current = true;
   }, [actions, threadsLive.snapshot]);
 
-  const threadPanes = useMemo(
-    () =>
-      threads
-        .filter((thread) => !thread.archived)
-        .map((thread) => ({
-          pane: { kind: "thread", id: `thread:${thread.id}`, threadId: thread.id } as const,
-          label: threadLabel(thread),
-        })),
-    [threads]
-  );
-  const actionPanes = useMemo(
-    () =>
-      requests.map((request) => ({
-        pane: { kind: "action", id: `action:${request.id}`, requestId: request.id } as const,
-        label: requestLabel(request),
-      })),
-    [requests]
-  );
+  const threadPanes = threads
+    .filter((thread) => !thread.archived)
+    .map((thread) => ({
+      pane: { kind: "thread", id: `thread:${thread.id}`, threadId: thread.id } as const,
+      label: threadLabel(thread),
+    }));
+  const actionPanes = requests.map((request) => ({
+    pane: { kind: "action", id: `action:${request.id}`, requestId: request.id } as const,
+    label: requestLabel(request),
+  }));
   const paneLabel = (pane: MosaicPane): string =>
     pane.kind === "thread"
       ? threadLabel(threads.find((thread) => thread.id === pane.threadId) ?? { id: pane.threadId, name: null })
