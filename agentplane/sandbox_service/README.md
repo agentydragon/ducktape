@@ -68,5 +68,6 @@ The Session registry (public Session IDs, runner locators, Open reservations and
 positions) lives in the service's own `sandbox_commands` database beside command admission; each
 registry write also inserts the Session's history row, which the ingesters append to.
 
-TODO: proper runner RPC authentication/TLS. V1 uses network isolation for service-to-runner traffic,
-not runner command RBAC. App-to-service calls already require a Pod-bound workload TokenReview.
+Service-to-runner calls over the inbound control port are unauthenticated plaintext, fenced only by
+that network policy; the [runner channel](../docs/runner_channel.md) replaces the route rather than
+securing it. App-to-service calls already require a Pod-bound workload TokenReview.

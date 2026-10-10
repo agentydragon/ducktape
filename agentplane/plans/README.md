@@ -31,7 +31,6 @@ execution sequence. This is a priority decision, not a technical dependency.
   launcher proxy, resource isolation, persistent state and implementation gates
 - [User stories](user_stories.md) — north-star product context, not an implementation queue
 - [Input metadata](notification_presentation.md) — a sequenced follow-up to command admission
-- [Runner discovery and access](runner_discovery.md) — network-policy access and the runner-auth TODO
 - [History Service](history_service.md) — target split (runner, Sandbox Service, History Service,
   app facade) and the gated sequence for moving the raw log and thread fold, runner dial-out and
   delta settlement

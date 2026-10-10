@@ -402,7 +402,8 @@ cursor-based replay/live Events, acknowledged once the Sandbox Service commits i
 reconciliation ([decided](history_service.md#decided-operator-2026-10-10-pdt)); the journal stays the buffer for every subscriber. Preserve existing
 archive identities, duplicate/conflict checks and direct/spooled admission reconciliation. Bound
 buffers and keep controls/receipts responsive during catch-up; test reconnect, checkpoint rollback
-and slow readers. Switch the canary's ingester explicitly, then expand this capability in bounded
+and slow readers. Acknowledge only what is committed, never Events held in a lost owner's memory, and
+never read a transport cancellation as harness cancellation. Switch the canary's ingester explicitly, then expand this capability in bounded
 steps. This changes event transport, not archive storage or admission authority. Replay through
 the channel then serves `FollowSession` from any cursor; this and
 `HISTORY_WRITE_HANDOFF` change opposite ends of ingestion, so either may land first.
@@ -437,15 +438,16 @@ rule for runner volumes; archived history and public Session identities are kept
 With no inbound route left, also remove the inbound fallback in routing: `runner_connection.operations`
 and the routing check on it in `SubmitCommand` go (a migration), leaving `Hello`/`Welcome`
 capabilities to negotiate only what a connection carries. The legacy caller-chosen runner Session ID
-path goes too. The [runner-auth TODO](runner_discovery.md#todo-proper-runner-authentication-and-transport-security)
-goes with them.
+path goes too, as do the runner SPEC's and Sandbox Service README's notes on the unauthenticated
+inbound listener.
 
 ### `VM_CONTROL_NETWORKING` — integrate the reviewed connection direction
 
 **Blocked on the reviewed outbound command, spool and lifecycle capabilities and VM provider.** Wire
 VM control reachability/authentication to the chosen path. An outbound channel may remove guest
 control-port exposure and endpoint discovery; retain the independently needed outbound API/credential
-proxy path. Image packaging and process-isolation work need not wait for this decision. Verify the
+proxy path. State which guest ports, endpoint discovery and network policies the chosen path
+replaces. Image packaging and process-isolation work need not wait for this decision. Verify the
 selected path on the actual VM network, not just a host-loopback transport test.
 
 ### `VM_IMAGE` — packaged guest and state storage

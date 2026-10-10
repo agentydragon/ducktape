@@ -25,9 +25,8 @@ Listed services can operate across owners, but must still supply the verified de
 Resolution checks the stored Sandbox account, UID, operating mode, provisioning/grant facts, and current
 ready Pod's identity and controller ownership before selecting its endpoint. Name reuse with a new UID
 is refused. A successor Pod under the same Sandbox may replace the endpoint. These are Kubernetes
-association checks, not cryptographic runner authentication. **TODO:** proper runner RPC
-authentication/TLS; v1 requires network isolation. Service API authentication is implemented
-independently of that deferred runner-authentication work.
+association checks, not cryptographic runner authentication: the inbound runner RPC relies on
+network isolation until the [runner channel](../docs/runner_channel.md) replaces it.
 
 ## Inventory and explicit sandbox lifecycle
 

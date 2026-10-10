@@ -83,7 +83,7 @@ runner calls. Ingestion keeps its own prefix lock without unnecessarily blocking
 
 ## Sequencing and acceptance
 
-See [outbound-channel design and rollout](runner_discovery.md#outbound-control-channel-design) and
+See the [runner channel](../docs/runner_channel.md) and
 [DAG](task_dag.md#2-service-owned-command-admission-and-later-notification-presentation):
 
 1. Review admission identity, authorization, retry/refusal and reconciliation semantics. Draft the
