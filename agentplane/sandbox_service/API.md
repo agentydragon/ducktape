@@ -170,6 +170,14 @@ readable but are not polled until their binding is established by a verified han
   invalid one) and leaves the submission pending; an exact retry reopens the attempt. A recorded
   admission or rejection never changes, and submissions are kept forever: nothing expires or deletes
   them.
+- `GetCommand`, `ListCommands`: what the service retained for a public Session's submissions, for any
+  allowed caller, without contacting the runner: the command, its state (`PENDING_ADMISSION`,
+  `ADMITTED` with the same receipt `SubmitCommand` returns, or `REJECTED` with the runner's refusal),
+  and when it was accepted. This is how a caller whose `SubmitCommand` response was lost, or that
+  reconnects, learns the outcome; a pending command may yet be admitted by an exact retry or by
+  admission reconciliation. Admission is the runner journaling the command, not the harness acting on
+  it. The Session must belong to the named Sandbox incarnation, whose owner is checked while it
+  exists; the submissions outlive it. `ListCommands` pages in acceptance order and filters by state.
 
 Read/follow/command RPCs never provision, resume, or wake a Sandbox or harness.
 

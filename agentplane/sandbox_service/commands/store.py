@@ -6,14 +6,15 @@ authenticate the caller and authorize the Session destination first.
 
 from __future__ import annotations
 
-from collections.abc import Awaitable, Callable, Sequence
+from collections.abc import Awaitable, Callable, Sequence, Set
 from dataclasses import dataclass
+from datetime import datetime
 from enum import StrEnum
 from typing import Self
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, model_validator
-from sqlalchemy import select
+from sqlalchemy import select, tuple_
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
@@ -71,13 +72,15 @@ class SubmissionState(StrEnum):
 
 @dataclass(frozen=True)
 class Submission:
+    command: command_pb2.Command
+    accepted_at: datetime
     state: SubmissionState
     admission: event_log_pb2.EventEntry | None
     rejection: str | None
 
     @classmethod
     def from_row(cls, row: db.CommandSubmission) -> Submission:
-        return cls(SubmissionState(row.state), row.admission, row.rejection)
+        return cls(row.runner_command, row.accepted_at, SubmissionState(row.state), row.admission, row.rejection)
 
     def get_receipt(self) -> event_log_pb2.EventEntry:
         if self.admission is None:
@@ -170,6 +173,20 @@ class SubmissionStore:
             if row is None:
                 raise SubmissionNotFoundError(command_id)
             return Submission.from_row(row)
+
+    async def list(
+        self, session_id: UUID, *, states: Set[SubmissionState], after: tuple[datetime, str] | None, limit: int
+    ) -> list[Submission]:
+        """The Session's submissions in states (any, if empty) in acceptance order, after a
+        (accepted_at, command_id) position. Internal lookup only, like `read`."""
+        query = select(db.CommandSubmission).where(db.CommandSubmission.session_id == session_id)
+        if states:
+            query = query.where(db.CommandSubmission.state.in_(states))
+        if after is not None:
+            query = query.where(tuple_(db.CommandSubmission.accepted_at, db.CommandSubmission.command_id) > after)
+        query = query.order_by(db.CommandSubmission.accepted_at, db.CommandSubmission.command_id).limit(limit)
+        async with self._sessions() as session:
+            return [Submission.from_row(row) for row in await session.scalars(query)]
 
     async def record_admission(self, session_id: UUID, entry: event_log_pb2.EventEntry) -> Submission:
         """Record a direct receipt. It is not a contiguous journal prefix, so the cursor stays put."""

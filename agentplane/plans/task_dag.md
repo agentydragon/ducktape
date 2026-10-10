@@ -44,13 +44,11 @@ Retain the data-preserving rollback procedure. No Action Service or other databa
 
 ```mermaid
 flowchart LR
-    SESSION_COMMAND_STATUS_READ[Authorized admission status]
-    SESSION_COMMAND_STATUS_UI[Blocked: show service-retained command status]
+    SESSION_COMMAND_STATUS_UI[Candidate: show service-retained command status]
     SESSION_INPUT_METADATA[Typed input annotations and provenance]
     SESSION_INPUT_METADATA_READ[Blocked: metadata reads and message correlation]
     NOTIFICATION_NOTICE_METADATA[Blocked: attach notice metadata to submissions]
     NOTIFICATION_PRESENTATION[Blocked: compact frontend presentation]
-    SESSION_COMMAND_STATUS_READ --> SESSION_COMMAND_STATUS_UI
     SESSION_INPUT_METADATA --> SESSION_INPUT_METADATA_READ
     SESSION_INPUT_METADATA --> NOTIFICATION_NOTICE_METADATA
     SESSION_INPUT_METADATA_READ --> NOTIFICATION_PRESENTATION
@@ -60,17 +58,10 @@ flowchart LR
 Details: [Command admission](command_admission.md); later
 [notification presentation and input metadata](notification_presentation.md).
 
-### `SESSION_COMMAND_STATUS_READ` — authorized submission status
-
-Read pending/admitted/rejected state and retained receipts through
-Session authorization, including reconnect and lost responses. Keep runner admission distinct from
-harness effects. The service-retained UI indicator is a later client integration, not part of the
-initial persistence/routing PR.
-
 ### `SESSION_COMMAND_STATUS_UI` — distinguish service retention from runner admission
 
-**Blocked on submission status reads.** Add a command-state dot for service-retained commands whose
-runner admission is unconfirmed. Reconcile after reload/lost responses; do not claim definitely
+**Candidate.** Add a command-state dot for service-retained commands whose runner admission is
+unconfirmed, read through the Sandbox Service's `GetCommand`/`ListCommands`. Reconcile after reload/lost responses; do not claim definitely
 unsent, safe cancellation, or guaranteed eventual execution. Keep browser recovery and harness
 confirmation distinct. Independent of compact notice rendering and outside the initial command
 persistence/routing PR; include focused state/visual tests.

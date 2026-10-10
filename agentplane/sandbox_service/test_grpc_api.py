@@ -28,7 +28,7 @@ from agentplane.sandbox_service.client import ReconnectRequiredError, SandboxSer
 from agentplane.sandbox_service.commands import db as commands_db
 from agentplane.sandbox_service.commands.connections import ConnectionStore
 from agentplane.sandbox_service.commands.dispatch import DispatchStore
-from agentplane.sandbox_service.commands.store import SubmissionState, SubmissionStore
+from agentplane.sandbox_service.commands.store import CommandSubmission, SubmissionState, SubmissionStore
 from agentplane.sandbox_service.destinations import DestinationResolver
 from agentplane.sandbox_service.grpc_api import Resources
 from agentplane.sandbox_service.kubernetes_grants import RoleBindingGrant, RoleRef
@@ -343,6 +343,82 @@ async def test_public_session_command_survives_a_lost_reply(
         with pytest.raises(ServiceError) as conflict:
             await runner.command(str(session_id), changed, after_cursor=0)
         assert conflict.value.code == grpc.StatusCode.ALREADY_EXISTS
+
+
+async def test_command_status_reads_retained_submissions_without_the_runner(
+    resources: Resources, token_file: Path, peer: Peer, sessions: SessionRegistry, submissions: SubmissionStore
+) -> None:
+    session_id = uuid4()
+    await sessions.open(
+        session_id,
+        sandbox_namespace=SANDBOX_NAMESPACE,
+        sandbox_name=SANDBOX,
+        sandbox_uid=UUID(SANDBOX_UID),
+        runner_session_id=f"r-{session_id}",
+    )
+    commands = {
+        name: command_pb2.Command(command_id=name, submit_input=command_pb2.SubmitInput(text=name))
+        for name in ("admitted", "pending", "rejected")
+    }
+    for command in commands.values():
+        await submissions.accept(session_id, CommandSubmission(command=command), caller=OWNER)
+    receipt = admission(commands["admitted"], 1)
+    await submissions.record_admission(session_id, receipt)
+    await submissions.record_rejection(session_id, "rejected", "test refusal")
+    destination = protocol_pb2.SessionDestination(sandbox=DESTINATION, session_id=str(session_id))
+    async with service_client(replace(resources, sessions=sessions, submissions=submissions), token_file) as remote:
+
+        async def get(command_id: str, at: protocol_pb2.SessionDestination = destination) -> protocol_pb2.CommandStatus:
+            return await remote.unary(
+                remote.stub.GetCommand, protocol_pb2.GetCommandRequest(destination=at, command_id=command_id)
+            )
+
+        async def page(
+            token: str = "", *, page_size: int = 0, states: tuple[protocol_pb2.CommandState.ValueType, ...] = ()
+        ) -> protocol_pb2.ListCommandsResponse:
+            return await remote.unary(
+                remote.stub.ListCommands,
+                protocol_pb2.ListCommandsRequest(
+                    destination=destination, page_token=token, page_size=page_size, states=states
+                ),
+            )
+
+        admitted = await get("admitted")
+        assert (admitted.command, admitted.state, admitted.admission) == (
+            commands["admitted"],
+            protocol_pb2.COMMAND_STATE_ADMITTED,
+            receipt,
+        )
+        pending = await get("pending")
+        assert pending.state == protocol_pb2.COMMAND_STATE_PENDING_ADMISSION
+        assert not pending.HasField("admission")
+        rejected = await get("rejected")
+        assert (rejected.state, rejected.rejection) == (protocol_pb2.COMMAND_STATE_REJECTED, "test refusal")
+
+        listed: list[protocol_pb2.CommandStatus] = []
+        token = ""
+        while True:
+            response = await page(token, page_size=2)
+            listed.extend(response.commands)
+            if not (token := response.next_page_token):
+                break
+        assert listed == [admitted, pending, rejected]
+        only_pending = await page(states=(protocol_pb2.COMMAND_STATE_PENDING_ADMISSION,))
+        assert list(only_pending.commands) == [pending]
+
+        other_incarnation = protocol_pb2.SessionDestination()
+        other_incarnation.CopyFrom(destination)
+        other_incarnation.sandbox.sandbox_uid = str(uuid4())
+        legacy = protocol_pb2.SessionDestination(sandbox=DESTINATION, session_id="legacy-runner-session")
+        for command_id, at, code in (
+            ("unknown", destination, grpc.StatusCode.NOT_FOUND),
+            ("pending", other_incarnation, grpc.StatusCode.NOT_FOUND),
+            ("pending", legacy, grpc.StatusCode.INVALID_ARGUMENT),
+        ):
+            with pytest.raises(ServiceError) as refused:
+                await get(command_id, at)
+            assert refused.value.code == code
+    assert peer.attachments.empty()
 
 
 async def test_channel_routed_command_never_falls_back_to_the_relay(

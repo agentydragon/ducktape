@@ -127,8 +127,8 @@ rendering and must not give the app dispatch ownership.
 
 The [DAG](task_dag.md#2-service-owned-command-admission-and-later-notification-presentation) owns status and edges:
 
-1. `SESSION_COMMAND_STATUS_READ` and `SESSION_COMMAND_STATUS_UI`: expose authorized admission status
-   and the service-retained state dot, independently of notification rendering.
+1. `SESSION_COMMAND_STATUS_UI`: show the service-retained state dot, independently of notification
+   rendering.
 2. `SESSION_INPUT_METADATA`: add typed annotations and producer
    authorization. This is not part of the initial command-admission PR.
 3. `SESSION_INPUT_METADATA_READ` and `NOTIFICATION_NOTICE_METADATA`: authorized annotation reads and

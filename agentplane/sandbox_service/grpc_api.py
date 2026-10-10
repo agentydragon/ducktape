@@ -1,9 +1,12 @@
 """Authenticated gRPC boundary. Runners remain the command and execution-event authority."""
 
 import asyncio
+import json
+from base64 import urlsafe_b64decode, urlsafe_b64encode
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
+from datetime import datetime
 from typing import override
 from uuid import UUID
 
@@ -25,7 +28,10 @@ from agentplane.sandbox_service.channel_delivery import ChannelDelivery, Command
 from agentplane.sandbox_service.command_relay import admit_running_command
 from agentplane.sandbox_service.commands.store import (
     CommandSubmission,
+    Submission,
     SubmissionConflictError,
+    SubmissionNotFoundError,
+    SubmissionState,
     SubmissionStore,
     submit_command,
 )
@@ -112,6 +118,8 @@ async def errors(context: grpc.aio.ServicerContext) -> AsyncIterator[None]:
         await context.abort(grpc.StatusCode.NOT_FOUND, "retention hold not found")
     except SandboxConflictError:
         await context.abort(grpc.StatusCode.ALREADY_EXISTS, "sandbox name or initialization conflicts")
+    except SubmissionNotFoundError:
+        await context.abort(grpc.StatusCode.NOT_FOUND, "command not found")
     except SubmissionConflictError:
         await context.abort(grpc.StatusCode.ALREADY_EXISTS, "command ID already belongs to a different submission")
     except CommandRefusedError as refused:
@@ -146,6 +154,37 @@ def public_session_id(session_id: str) -> UUID | None:
     except ValueError:
         return None
     return parsed if str(parsed) == session_id else None
+
+
+SUBMISSION_STATES = {
+    protocol_pb2.COMMAND_STATE_PENDING_ADMISSION: SubmissionState.PENDING_ADMISSION,
+    protocol_pb2.COMMAND_STATE_ADMITTED: SubmissionState.ADMITTED,
+    protocol_pb2.COMMAND_STATE_REJECTED: SubmissionState.REJECTED,
+}
+COMMAND_STATES = {value: key for key, value in SUBMISSION_STATES.items()}
+
+
+def command_status(submission: Submission) -> protocol_pb2.CommandStatus:
+    result = protocol_pb2.CommandStatus(command=submission.command, state=COMMAND_STATES[submission.state])
+    result.accepted_at.FromDatetime(submission.accepted_at)
+    if submission.admission is not None:
+        result.admission.CopyFrom(submission.admission)
+    if submission.rejection is not None:
+        result.rejection = submission.rejection
+    return result
+
+
+def write_page_token(accepted_at: datetime, command_id: str) -> str:
+    """An opaque position in a Session's acceptance order."""
+    return urlsafe_b64encode(json.dumps([accepted_at.isoformat(), command_id]).encode()).decode()
+
+
+def read_page_token(token: str) -> tuple[datetime, str]:
+    match json.loads(urlsafe_b64decode(token.encode())):
+        case [str() as accepted_at, str() as command_id]:
+            return datetime.fromisoformat(accepted_at), command_id
+        case _:
+            raise ValueError("invalid page token")
 
 
 class SandboxService(protocol_pb2_grpc.SandboxServiceServicer):
@@ -562,6 +601,53 @@ class SandboxService(protocol_pb2_grpc.SandboxServiceServicer):
                         )
 
             return await submit_command(submissions, public_id, submission, caller=caller, dispatch=dispatch)
+
+    async def checked_public_session(self, destination: protocol_pb2.SessionDestination) -> UUID:
+        """The public Session ID of this Sandbox incarnation. Its submissions outlive the Sandbox, so
+        the owner is checked only while the incarnation exists."""
+        sandbox = destination.sandbox
+        if not all((sandbox.sandbox, sandbox.sandbox_uid, sandbox.owner.namespace, sandbox.owner.name)):
+            raise ValueError("Sandbox name, UID, and owner are required")
+        if (session_id := public_session_id(destination.session_id)) is None:
+            raise ValueError("a public Session ID is required")
+        await self.runner_session_id(destination)
+        try:
+            view = await self.resources.provisioning.inventory.get(sandbox.sandbox)
+        except SandboxNotFoundError:
+            return session_id
+        if view.uid == sandbox.sandbox_uid and view.service_account != sandbox.owner:
+            raise SandboxNotFoundError(sandbox.sandbox)
+        return session_id
+
+    @override
+    async def GetCommand(
+        self, request: protocol_pb2.GetCommandRequest, context: grpc.aio.ServicerContext
+    ) -> protocol_pb2.CommandStatus:
+        async with self.request(context):
+            session_id = await self.checked_public_session(request.destination)
+            if not 1 <= len(request.command_id) <= 128:
+                raise ValueError("command ID must contain 1 to 128 characters")
+            return command_status(await self.submissions().read(session_id, request.command_id))
+
+    @override
+    async def ListCommands(
+        self, request: protocol_pb2.ListCommandsRequest, context: grpc.aio.ServicerContext
+    ) -> protocol_pb2.ListCommandsResponse:
+        async with self.request(context):
+            session_id = await self.checked_public_session(request.destination)
+            if request.page_size > 1000:
+                raise ValueError("page size must not exceed 1000")
+            limit = request.page_size or 100
+            if not set(request.states) <= SUBMISSION_STATES.keys():
+                raise ValueError("unknown command state")
+            states = {SUBMISSION_STATES[state] for state in request.states}
+            after = read_page_token(request.page_token) if request.page_token else None
+            page = await self.submissions().list(session_id, states=states, after=after, limit=limit)
+            result = protocol_pb2.ListCommandsResponse(commands=[command_status(row) for row in page])
+            if len(page) == limit:
+                last = page[-1]
+                result.next_page_token = write_page_token(last.accepted_at, last.command.command_id)
+            return result
 
     # mypy-protobuf omits aio's supported writer-style streaming handlers. Explicit writes are
     # intentional: flow-control stalls must stay inside the deadline and cleanup scope.

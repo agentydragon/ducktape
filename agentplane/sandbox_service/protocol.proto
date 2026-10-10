@@ -36,6 +36,10 @@ service SandboxService {
   rpc ResumeSession(SessionRequest) returns (ducktape.agentplane.runner.v1.Attached);
   // Returns the original matching CommandAdmitted entry, not command completion.
   rpc SubmitCommand(SubmitCommandRequest) returns (ducktape.agentplane.protocol.v1.EventEntry);
+  // A command submitted to a public Session ID, as retained: never contacts the runner.
+  rpc GetCommand(GetCommandRequest) returns (CommandStatus);
+  // The Session's submitted commands in acceptance order, as retained: never contacts the runner.
+  rpc ListCommands(ListCommandsRequest) returns (ListCommandsResponse);
   // Replays the runner journal after the caller's cursor, then continues live on the same stream.
   // The Sandbox Service keeps no copy of these entries.
   rpc FollowSession(FollowSessionRequest) returns (stream FollowSessionResponse);
@@ -178,6 +182,49 @@ message SubmitCommandRequest {
   SessionDestination destination = 1;
   ducktape.agentplane.protocol.v1.Command command = 2;
   ducktape.agentplane.protocol.v1.Follow follow = 3;
+}
+
+// Runner admission only: whether the runner journaled the command, never what the harness did.
+enum CommandState {
+  COMMAND_STATE_UNSPECIFIED = 0;
+  // Retained with no admission or rejection recorded. It may or may not have reached the runner;
+  // this promises neither eventual delivery nor safe cancellation.
+  COMMAND_STATE_PENDING_ADMISSION = 1;
+  COMMAND_STATE_ADMITTED = 2;
+  COMMAND_STATE_REJECTED = 3;
+}
+
+message CommandStatus {
+  // The command as submitted.
+  ducktape.agentplane.protocol.v1.Command command = 1;
+  CommandState state = 2;
+  google.protobuf.Timestamp accepted_at = 3;
+  // Set when admitted: the runner's journal entry with the CommandAdmitted, as SubmitCommand returns it.
+  ducktape.agentplane.protocol.v1.EventEntry admission = 4;
+  // Set when rejected: the runner's refusal.
+  optional string rejection = 5;
+}
+
+message GetCommandRequest {
+  // A public Session ID; legacy caller-chosen runner IDs retain no submissions.
+  SessionDestination destination = 1;
+  string command_id = 2;
+}
+
+message ListCommandsRequest {
+  SessionDestination destination = 1;
+  // Only commands in these states; empty means every state.
+  repeated CommandState states = 2;
+  // At most this many commands; 0 means 100, and more than 1000 is refused.
+  uint32 page_size = 3;
+  // A previous response's next_page_token.
+  string page_token = 4;
+}
+
+message ListCommandsResponse {
+  repeated CommandStatus commands = 1;
+  // Empty on the last page.
+  string next_page_token = 2;
 }
 
 message FollowSessionRequest {
