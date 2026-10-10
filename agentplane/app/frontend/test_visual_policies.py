@@ -39,6 +39,31 @@ async def test_actions_sidebar_queue(view: VisualPage, app: AgentplaneFixture, v
     await view.capture()
 
 
+async def test_actions_sidebar_resize(view: VisualPage, app: AgentplaneFixture) -> None:
+    await app.show_pending_actions()
+    await app.mount_thread(IDLE_THREAD)
+    page = view.page
+    section = page.locator(".agentplane-actions-sidebar")
+    await expect(section.locator(".agentplane-actions-sidebar-toggle")).to_have_attribute("aria-expanded", "true")
+    handle = section.get_by_role("separator", name="Resize Actions area")
+    box = await handle.bounding_box()
+    if box is None:
+        raise AssertionError("Actions resize handle has no layout box")
+
+    initial_height = await section.evaluate("element => element.getBoundingClientRect().height")
+    start_x = box["x"] + box["width"] / 2
+    start_y = box["y"] + box["height"] / 2
+    await page.mouse.move(start_x, start_y)
+    await page.mouse.down()
+    await page.mouse.move(start_x, start_y - 96, steps=6)
+    await page.mouse.up()
+
+    resized_height = await section.evaluate("element => element.getBoundingClientRect().height")
+    assert resized_height >= initial_height + 90
+    await view.check(context="Actions area resized")
+    await view.capture(target=page.locator("#app"))
+
+
 @pytest.mark.parametrize("viewport", [DESKTOP, MOBILE], ids=["desktop", "mobile"])
 @pytest.mark.parametrize("expanded", [False, True], ids=["collapsed", "expanded"])
 async def test_sidebar_compact_pod_approval(

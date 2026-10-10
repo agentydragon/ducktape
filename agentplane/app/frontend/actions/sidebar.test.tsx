@@ -34,8 +34,32 @@ async function send(rows: ReturnType<typeof request>[]): Promise<void> {
 afterEach(async () => {
   await unmountLast();
   sessionStorage.clear();
+  localStorage.removeItem("agentplane-actions-sidebar-height");
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
+});
+
+it("resizes the open Actions area with the keyboard and remembers its height", async () => {
+  vi.stubGlobal("EventSource", ActionStream);
+  const container = await mount(
+    <MemoryRouter initialEntries={["/threads/test-thread"]}>
+      <ActionRequestsProvider>
+        <CurrentPath />
+        <ActionsSidebarSection />
+      </ActionRequestsProvider>
+    </MemoryRouter>
+  );
+  await send([request("decision_pending", 1)]);
+
+  const separator = container.querySelector<HTMLElement>('[role="separator"][aria-label="Resize Actions area"]');
+  if (!separator) throw new Error("missing Actions area resize separator");
+  const originalHeight = Number(separator.getAttribute("aria-valuenow"));
+  await act(async () => {
+    separator.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowUp", bubbles: true }));
+  });
+
+  expect(Number(separator.getAttribute("aria-valuenow"))).toBe(originalHeight + 16);
+  expect(localStorage.getItem("agentplane-actions-sidebar-height")).toBe(String(originalHeight + 16));
 });
 
 it("keeps the Actions section available and suppresses auto-open until the pending queue clears", async () => {
