@@ -15,6 +15,8 @@ import grpc
 from sqlalchemy.ext.asyncio import create_async_engine
 
 from agentplane.runner.client import RunnerClient
+from agentplane.sandbox_service.commands import db as commands_db
+from agentplane.sandbox_service.commands.store import SubmissionStore
 from agentplane.sandbox_service.destinations import DestinationUnavailableError
 from agentplane.sandbox_service.grpc_api import Resources
 from agentplane.sandbox_service.models import SandboxNotFoundError
@@ -35,8 +37,13 @@ async def with_history(resources: Resources, database_url: str | None) -> AsyncI
     engine = create_async_engine(database_url)
     async with engine.begin() as connection:
         await connection.run_sync(Base.metadata.create_all)
+        # Production keeps admission in its own database; one test database serves both here.
+        await connection.run_sync(commands_db.Base.metadata.create_all)
     store = Store(engine)
-    ingester = HistoryIngester(store, resources.destinations, runner_grpc_channel_options={}, interval_s=0.05)
+    submissions = SubmissionStore(engine)
+    ingester = HistoryIngester(
+        store, submissions, resources.destinations, runner_grpc_channel_options={}, interval_s=0.05
+    )
 
     async def discover_and_copy() -> None:
         while True:
@@ -70,7 +77,9 @@ async def with_history(resources: Resources, database_url: str | None) -> AsyncI
 
     task = asyncio.create_task(discover_and_copy())
     try:
-        yield replace(resources, history=store, history_reader_accounts=resources.caller_accounts)
+        yield replace(
+            resources, history=store, submissions=submissions, history_reader_accounts=resources.caller_accounts
+        )
     finally:
         task.cancel()
         with suppress(asyncio.CancelledError):

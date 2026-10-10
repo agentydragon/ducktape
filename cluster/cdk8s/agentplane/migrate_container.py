@@ -18,9 +18,9 @@ from cdk8s_plus_34 import (
 )
 
 
-def migrate_init_container(image: str, *, env_variables: dict[str, EnvValue]) -> ContainerProps:
+def migrate_init_container(image: str, *, name: str, env_variables: dict[str, EnvValue]) -> ContainerProps:
     return ContainerProps(
-        name="migrate",
+        name=name,
         image=image,
         image_pull_policy=ImagePullPolicy.ALWAYS,
         env_variables=env_variables,

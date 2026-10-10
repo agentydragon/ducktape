@@ -138,8 +138,14 @@ readable but are not polled until their binding is established by a verified han
 - `ResumeSession`: uses exactly the runner-retained spec, without applying today's defaults/instructions
   or rerunning setup. Missing sessions and failed/interrupted setup are refused.
 - `SubmitCommand`: forwards an unchanged common-protocol `Command` only to a running harness and returns
-  the original `EventEntry` containing its exact matching `CommandAdmitted`. Specify a native `Follow`
-  cursor before the possible admission when reconciling an uncertain submission.
+  the original `EventEntry` containing its exact matching `CommandAdmitted`. For a public Session ID the
+  submission is recorded in the `sandbox_commands` database before the runner is contacted, keyed by
+  Session and command ID with the caller's identity. An exact retry by the same caller returns the
+  retained receipt without contacting the runner once the admission is known, whether from a direct
+  reply or from history ingestion; a different command or caller under the same ID is `ALREADY_EXISTS`.
+  The service picks the replay cursor itself and ignores `follow`. For a legacy caller-chosen runner ID
+  nothing is recorded: specify a native `Follow` cursor before the possible admission when reconciling
+  an uncertain submission.
 
 Read/follow/command RPCs never provision, resume, or wake a Sandbox or harness.
 
@@ -238,13 +244,14 @@ The service does not start without its `LISTEN` connection. Renewal and write bo
 - `INVALID_ARGUMENT`: malformed request or invalid concrete grant selection.
 - `FAILED_PRECONDITION`: runner or Sandbox state refuses the operation, including deletion blocked
   by a retention hold.
+- `ALREADY_EXISTS`: a `SubmitCommand` command ID already belongs to a different submission.
 - `UNAVAILABLE`: destination/backend unavailable; no offline admission.
 - `DEADLINE_EXCEEDED`: operation or transport safety deadline expired (not planned follow renewal).
 
 Neither a successful write nor a timeout proves admission/rejection. A mutation may commit before
 its response is lost. Reconcile commands with the unchanged ID/payload and runner evidence; admission
-is neither harness consumption nor command completion nor inbox acknowledgement. No service command
-queue, new receipt authority, or exactly-once guarantee is introduced.
+is neither harness consumption nor command completion nor inbox acknowledgement. A recorded submission
+is not a queue: nothing delivers it later, and the runner journal stays the receipt authority.
 
 ## Server configuration and cutover
 

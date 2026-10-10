@@ -154,17 +154,16 @@ message mappings separately. A replay cursor is not part of command submission i
 The [admission plan](command_admission.md) owns persistence/retry semantics. The sequence intentionally
 separates persistence, command transport and event transport rather than making one large migration:
 
-1. `SESSION_COMMAND_CORE` / `SESSION_COMMAND_SUBMISSION`: ship durable admission behind a transport
-   interface using the existing `Attach`-based relay and existing service-owned spool reader. The
-   adapter can internally use replay to find the receipt; the public durable submission contract
-   does not expose that cursor. Reuse is not a new inbound `InsertCommand`/`ListenSpool` rollout.
-2. `RUNNER_OUTBOUND_CHANNEL` / `RUNNER_OUTBOUND_CANARY`: implement both command-channel peers. Deploy
+Durable submission already runs over the existing `Attach`-based relay and service-owned spool
+reader; the relay picks its replay cursor itself.
+
+1. `RUNNER_OUTBOUND_CHANNEL` / `RUNNER_OUTBOUND_CANARY`: implement both command-channel peers. Deploy
    compatible service support first with old routes unchanged, then a compatible runner image in a
    fresh canary. Switch its command adapter to the channel and validate the actual proxy path, cross-replica
    routing, reconnect/fencing and receipts. Keep spool transport unchanged in this stage.
-3. `RUNNER_OUTBOUND_SPOOL`: review and add replay/live Events, committed-prefix acknowledgements and
+2. `RUNNER_OUTBOUND_SPOOL`: review and add replay/live Events, committed-prefix acknowledgements and
    backpressure; switch the canary reader. Preserve archive identities and duplicate/conflict rules.
-4. `RUNNER_OUTBOUND_LIFECYCLE`: migrate remaining lifecycle/inbound consumers. Inventory these early;
+3. `RUNNER_OUTBOUND_LIFECYCLE`: migrate remaining lifecycle/inbound consumers. Inventory these early;
    their full wire design need not block the first command canary. Then `RUNNER_OUTBOUND_ROLLOUT`
    makes outbound the default for new Sandboxes; old Sandboxes are archived and deleted rather
    than upgraded, after which inbound access is retired.

@@ -50,17 +50,23 @@ def test_app_uses_independent_service(namespace: str, agentplane_manifests: dict
     service_pod = resource("Deployment", sandbox_service.NAME)["spec"]["template"]["spec"]
     assert service_pod["serviceAccountName"] == sandbox_service.NAME
     assert all("persistentVolumeClaim" not in volume for volume in service_pod.get("volumes", []))
-    # The migration blocks startup; the service also needs the URL for explicit Open.
-    (migration,) = service_pod["initContainers"]
-    assert migration["name"] == "migrate"
-    assert migration["env"] == [
+    # The migrations block startup; the service also needs each URL for explicit Open.
+    history_migration, commands_migration = service_pod["initContainers"]
+    assert history_migration["env"] == [
         {
             "name": "AGENTPLANE_SANDBOX_SERVICE_DATABASE_URL",
             "valueFrom": {"secretKeyRef": {"name": "postgres-sandbox-service", "key": "uri"}},
         }
     ]
+    assert commands_migration["env"] == [
+        {
+            "name": "AGENTPLANE_SANDBOX_SERVICE_COMMANDS_DATABASE_URL",
+            "valueFrom": {"secretKeyRef": {"name": "postgres-sandbox-commands", "key": "uri"}},
+        }
+    ]
     service_container = one(item for item in service_pod["containers"] if item["name"] == "sandbox-service")
-    assert migration["env"][0] in service_container["env"]
+    assert history_migration["env"][0] in service_container["env"]
+    assert commands_migration["env"][0] in service_container["env"]
     for rule in resource("Role", app.NAME)["rules"]:
         assert set(rule["verbs"]) <= {"get", "list", "watch"}
     backend_config = yaml.safe_load(resource("ConfigMap", f"{sandbox_service.NAME}-config")["data"]["config.yaml"])

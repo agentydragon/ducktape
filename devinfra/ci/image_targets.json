@@ -271,6 +271,11 @@
       "test": "//agentplane/history_service/...",
       "registry": "forgejo"
     },
+    "agentplane-sandbox-commands-migrate": {
+      "target": "//agentplane/sandbox_service/commands:migration_image",
+      "test": "//agentplane/sandbox_service/commands/...",
+      "registry": "forgejo"
+    },
     "agentplane-sandbox-service-history-migrate": {
       "target": "//agentplane/sandbox_service/session_history:migration_image",
       "test": "//agentplane/sandbox_service/session_history/...",

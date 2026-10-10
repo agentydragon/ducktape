@@ -14,13 +14,19 @@ from kubernetes_asyncio import client as k8s_client
 from sqlalchemy.exc import SQLAlchemyError
 
 from agentplane.grpc_options import grpc_channel_option_kvps
-from agentplane.protocol import event_log_pb2
+from agentplane.protocol import command_pb2, event_log_pb2
 from agentplane.runner import protocol_pb2 as runner_pb2
 from agentplane.runner.client import RunnerClient
 from agentplane.runner.errors import OpenTimeoutError, RunnerError, StreamClosedError
 from agentplane.sandbox_service import protocol_pb2, protocol_pb2_grpc, session_lifecycle, wire
 from agentplane.sandbox_service.action_policy_views import UnknownPolicySetError
 from agentplane.sandbox_service.command_relay import admit_running_command
+from agentplane.sandbox_service.commands.store import (
+    CommandSubmission,
+    SubmissionConflictError,
+    SubmissionStore,
+    submit_command,
+)
 from agentplane.sandbox_service.destinations import DestinationResolver, DestinationUnavailableError, RunnerEndpoint
 from agentplane.sandbox_service.egress_views import BindingNotFoundError, UnknownPolicyError
 from agentplane.sandbox_service.models import (
@@ -54,6 +60,7 @@ class Resources:
     platform_instructions: str
     runner_admission_ack_timeout_s: float
     history: Store | None = None
+    submissions: SubmissionStore | None = None
     session_changes: SessionChanges | None = None
     history_reader_accounts: frozenset[ServiceAccountRef] = frozenset()
     admission_timeout_s: float = 15
@@ -112,6 +119,8 @@ async def errors(context: grpc.aio.ServicerContext) -> AsyncIterator[None]:
         await context.abort(grpc.StatusCode.FAILED_PRECONDITION, "retention holds block deletion; ListHolds names them")
     except SandboxConflictError:
         await context.abort(grpc.StatusCode.ALREADY_EXISTS, "sandbox name or initialization conflicts")
+    except SubmissionConflictError:
+        await context.abort(grpc.StatusCode.ALREADY_EXISTS, "command ID already belongs to a different submission")
     except ValueError, ParseError, UnknownPolicyError, UnknownPolicySetError:
         await context.abort(grpc.StatusCode.INVALID_ARGUMENT, "invalid service request or grant selection")
     except TimeoutError, OpenTimeoutError:
@@ -129,6 +138,15 @@ async def errors(context: grpc.aio.ServicerContext) -> AsyncIterator[None]:
             if error.code() in (grpc.StatusCode.FAILED_PRECONDITION, grpc.StatusCode.NOT_FOUND):
                 await context.abort(grpc.StatusCode.FAILED_PRECONDITION, "runner rejected session or bootstrap state")
         await context.abort(grpc.StatusCode.UNAVAILABLE, "runner unavailable; mutation outcome may be uncertain")
+
+
+def public_session_id(session_id: str) -> UUID | None:
+    """The service-owned Session ID, or None for a legacy caller-chosen runner ID."""
+    try:
+        parsed = UUID(session_id)
+    except ValueError:
+        return None
+    return parsed if str(parsed) == session_id else None
 
 
 class SandboxService(protocol_pb2_grpc.SandboxServiceServicer):
@@ -387,14 +405,15 @@ class SandboxService(protocol_pb2_grpc.SandboxServiceServicer):
             raise DestinationUnavailableError("Session history database not configured")
         return self.resources.history
 
+    def submissions(self) -> SubmissionStore:
+        if self.resources.submissions is None:
+            raise DestinationUnavailableError("command admission database not configured")
+        return self.resources.submissions
+
     async def runner_session_id(self, destination: protocol_pb2.SessionDestination) -> str:
         """Keep physical runner identifiers behind this service, including on follow."""
-        try:
-            session_id = UUID(destination.session_id)
-        except ValueError:
+        if (session_id := public_session_id(destination.session_id)) is None:
             return destination.session_id  # legacy caller-chosen runner ID
-        if str(session_id) != destination.session_id:
-            return destination.session_id
         return await self.history().runner_id(
             session_id,
             sandbox_namespace=self.resources.destinations.inventory.namespace,
@@ -538,22 +557,43 @@ class SandboxService(protocol_pb2_grpc.SandboxServiceServicer):
     async def SubmitCommand(
         self, request: protocol_pb2.SubmitCommandRequest, context: grpc.aio.ServicerContext
     ) -> event_log_pb2.EventEntry:
-        async with self.request(context, timeout_s=self.resources.runner_admission_ack_timeout_s):
+        async with errors(context), asyncio.timeout(self.resources.runner_admission_ack_timeout_s):
+            caller = await self.resources.authenticate(context)
             destination = request.destination
-            if (
-                not destination.session_id
-                or not request.command.command_id
-                or request.command.WhichOneof("operation") is None
-            ):
-                raise ValueError("command ID and operation are required")
-            async with self.runner(destination.sandbox) as (client, _):
-                return await admit_running_command(
-                    client,
-                    await self.runner_session_id(destination),
-                    request.command,
-                    after_cursor=request.follow.after_cursor,
-                    timeout_s=self.resources.runner_admission_ack_timeout_s,
-                )
+            if not destination.session_id:
+                raise ValueError("session ID is required")
+            submission = CommandSubmission(command=request.command)
+            # Resolving the public ID binds the Session to this Sandbox incarnation before anything
+            # is persisted for it.
+            runner_session_id = await self.runner_session_id(destination)
+            public_id = public_session_id(destination.session_id)
+            if public_id is None:
+                # CLEANUP(added 2026-10-10): Remove the relay-only path once OpenSession, the only
+                # producer of caller-chosen runner IDs, is gone and no such Session remains.
+                async with self.runner(destination.sandbox) as (client, _):
+                    return await admit_running_command(
+                        client,
+                        runner_session_id,
+                        submission.copy_command(),
+                        after_cursor=request.follow.after_cursor,
+                        timeout_s=self.resources.runner_admission_ack_timeout_s,
+                    )
+            submissions = self.submissions()
+
+            async def dispatch(command: command_pb2.Command) -> event_log_pb2.EventEntry:
+                # A reconciled admission would already have settled the submission, so its receipt,
+                # if any, lies after the reconciled cursor. The caller's follow cursor is ignored.
+                after_cursor = await submissions.read_reconciled_through(public_id)
+                async with self.runner(destination.sandbox) as (client, _):
+                    return await admit_running_command(
+                        client,
+                        runner_session_id,
+                        command,
+                        after_cursor=after_cursor,
+                        timeout_s=self.resources.runner_admission_ack_timeout_s,
+                    )
+
+            return await submit_command(submissions, public_id, submission, caller=caller, dispatch=dispatch)
 
     # mypy-protobuf omits aio's supported writer-style streaming handlers. Explicit writes are
     # intentional: flow-control stalls must stay inside the deadline and cleanup scope.

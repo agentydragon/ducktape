@@ -284,7 +284,9 @@ class App(Construct):
             security_context=PodSecurityContextProps(ensure_non_root=True, user=1000, group=1000, fs_group=1000),
             # The app's Alembic history. The app itself creates no tables; it verifies
             # the migrated schema at startup and fails if this hasn't run.
-            init_containers=[migrate_init_container(f"{_MIGRATE_IMAGE}:{_PLACEHOLDER_TAG}", env_variables=env)],
+            init_containers=[
+                migrate_init_container(f"{_MIGRATE_IMAGE}:{_PLACEHOLDER_TAG}", name="migrate", env_variables=env)
+            ],
         )
         deployment.add_container(
             name="app",

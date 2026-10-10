@@ -1,0 +1,19 @@
+load("//devinfra/python:defs.bzl", "py_library")
+
+filegroup(
+    name = "files",
+    srcs = [
+        "env.py",
+        "//agentplane/sandbox_service/commands/migrations/versions:0001_command_admission.py",
+    ],
+    visibility = ["//agentplane/sandbox_service/commands:__pkg__"],
+)
+
+py_library(
+    name = "env",
+    srcs = ["env.py"],
+    deps = [
+        "//agentplane/sandbox_service/commands:db",
+        "@pypi//alembic",
+    ],
+)

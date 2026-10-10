@@ -23,6 +23,8 @@ from agentplane.runner.client import RunnerClient
 from agentplane.runner.errors import RunnerError, StreamClosedError
 from agentplane.sandbox_service import protocol_pb2, wire
 from agentplane.sandbox_service.client import ReconnectRequiredError, SandboxServiceClient, ServiceError
+from agentplane.sandbox_service.commands import db as commands_db
+from agentplane.sandbox_service.commands.store import SubmissionState, SubmissionStore
 from agentplane.sandbox_service.destinations import DestinationResolver
 from agentplane.sandbox_service.grpc_api import Resources
 from agentplane.sandbox_service.kubernetes_grants import RoleBindingGrant, RoleRef
@@ -195,6 +197,14 @@ def resources(cluster: Cluster, peer: Peer) -> Resources:
 
 
 @pytest.fixture
+async def submissions(engine: AsyncEngine) -> SubmissionStore:
+    # The admission tables share the history test database; production keeps them apart.
+    async with engine.begin() as connection:
+        await connection.run_sync(commands_db.Base.metadata.create_all)
+    return SubmissionStore(engine)
+
+
+@pytest.fixture
 def token_file(tmp_path: Path) -> Path:
     path = tmp_path / "token"
     path.write_text(TOKEN)
@@ -208,10 +218,10 @@ async def remote(resources: Resources, token_file: Path) -> AsyncIterator[Sandbo
 
 
 async def test_managed_open_keeps_runner_id_internal_and_retries_frozen_launch(
-    resources: Resources, token_file: Path, peer: Peer, engine: AsyncEngine
+    resources: Resources, token_file: Path, peer: Peer, engine: AsyncEngine, submissions: SubmissionStore
 ) -> None:
     store = Store(engine)
-    async with service_client(replace(resources, history=store), token_file) as remote:
+    async with service_client(replace(resources, history=store, submissions=submissions), token_file) as remote:
         runner = remote.runner(DESTINATION)
         overrides: dict[str, object] = {"harness": "HARNESS_CODEX", "model": "test-model", "cwd": "/state/{session_id}"}
         created = await runner.create(idempotency_key="first-attempt", spec=overrides)
@@ -263,6 +273,49 @@ async def test_managed_open_keeps_runner_id_internal_and_retries_frozen_launch(
         resumed = await peer.attachments.get()
         assert resumed.opened.session_id == f"r-{public}"
         await resumed.closed.wait()
+
+
+async def test_public_session_command_survives_a_lost_reply(
+    resources: Resources, token_file: Path, peer: Peer, engine: AsyncEngine, submissions: SubmissionStore
+) -> None:
+    store = Store(engine)
+    session_id = uuid4()
+    physical = f"r-{session_id}"
+    await store.open(
+        session_id,
+        sandbox_namespace=SANDBOX_NAMESPACE,
+        sandbox_name=SANDBOX,
+        sandbox_uid=UUID(SANDBOX_UID),
+        runner_session_id=physical,
+    )
+    peer.opened_ids[physical] = runner_pb2.Open(session_id=physical)
+    command = command_pb2.Command(command_id="durable", submit_input=command_pb2.SubmitInput(text="hi"))
+    async with (
+        asyncio.timeout(10),
+        service_client(replace(resources, history=store, submissions=submissions), token_file) as remote,
+    ):
+        runner = remote.runner(DESTINATION)
+        with pytest.raises(TimeoutError):
+            await runner.command(str(session_id), command, after_cursor=0)
+        lost = await peer.attachments.get()
+        assert (await lost.commands.get()).command == command
+        await lost.closed.wait()
+        assert (await submissions.read(session_id, "durable")).state == SubmissionState.PENDING_ADMISSION
+
+        # The runner did journal it; ingestion finds the admission and settles the submission.
+        receipt = admission(command, 1)
+        peer.history[physical] = [receipt]
+        [locator] = await store.runnable_locators(SANDBOX_NAMESPACE, [SANDBOX])
+        async with grpc.aio.insecure_channel(f"127.0.0.1:{peer.port}") as channel:
+            assert await copy_confirmed_prefix(store, submissions, locator, RunnerClient(channel)) == 1
+        await (await peer.attachments.get()).closed.wait()
+
+        assert await runner.command(str(session_id), command, after_cursor=0) == receipt
+        assert peer.attachments.empty()  # an admitted retry needs no runner
+        changed = command_pb2.Command(command_id="durable", submit_input=command_pb2.SubmitInput(text="changed"))
+        with pytest.raises(ServiceError) as conflict:
+            await runner.command(str(session_id), changed, after_cursor=0)
+        assert conflict.value.code == grpc.StatusCode.ALREADY_EXISTS
 
 
 async def test_lookup_open_scopes_reservation_and_waits_for_runner_confirmation(
@@ -365,7 +418,7 @@ async def test_lookup_rejects_failed_native_open_but_recovers_an_earlier_success
 
 
 async def test_history_copy_replays_only_published_prefix_and_detects_regression(
-    peer: Peer, engine: AsyncEngine
+    peer: Peer, engine: AsyncEngine, submissions: SubmissionStore
 ) -> None:
     store = Store(engine)
     session_id = uuid4()
@@ -392,20 +445,20 @@ async def test_history_copy_replays_only_published_prefix_and_detects_regression
     peer.history[physical] = [entry(1), entry(2)]
     async with grpc.aio.insecure_channel(f"127.0.0.1:{peer.port}") as channel:
         runner = RunnerClient(channel)
-        assert await copy_confirmed_prefix(store, locator, runner, batch_size=1) == 2
+        assert await copy_confirmed_prefix(store, submissions, locator, runner, batch_size=1) == 2
         await (await peer.attachments.get()).closed.wait()
         assert (await store.read_page(session_id)).feed_state.attached.session_id == physical
         assert not (await store.read_page(session_id)).feed_state.ended
         assert (await store.read(session_id))[1] == peer.history[physical]
-        assert await copy_confirmed_prefix(store, locator, runner) == 2  # exact replay is idempotent
+        assert await copy_confirmed_prefix(store, submissions, locator, runner) == 2  # exact replay is idempotent
         await (await peer.attachments.get()).closed.wait()
         peer.history[physical].append(entry(3))
-        assert await copy_confirmed_prefix(Store(engine), locator, runner) == 3
+        assert await copy_confirmed_prefix(Store(engine), submissions, locator, runner) == 3
         await (await peer.attachments.get()).closed.wait()
         assert (await store.read(session_id))[1] == peer.history[physical]
         peer.history[physical] = [entry(1)]  # a replacement lost the runner's journal
         with pytest.raises(HistoryConflictError, match="regressed"):
-            await copy_confirmed_prefix(store, locator, runner)
+            await copy_confirmed_prefix(store, submissions, locator, runner)
         await (await peer.attachments.get()).closed.wait()
         assert (await store.read(session_id))[0] == 3
     assert await store.runnable_locators("different-namespace", [SANDBOX]) == []
@@ -1143,7 +1196,9 @@ async def test_watch_sessions_requires_allowed_caller(
 
 
 @pytest.mark.parametrize("outcome", ["eof", "timeout", "transport_error", "new_event"])
-async def test_history_copy_records_only_explicit_eof(peer: Peer, engine: AsyncEngine, outcome: str) -> None:
+async def test_history_copy_records_only_explicit_eof(
+    peer: Peer, engine: AsyncEngine, submissions: SubmissionStore, outcome: str
+) -> None:
     store = Store(engine)
     session_id = uuid4()
     physical = f"r-{session_id}"
@@ -1158,7 +1213,7 @@ async def test_history_copy_records_only_explicit_eof(peer: Peer, engine: AsyncE
     peer.state = runner_pb2.HARNESS_STATE_STOPPED
     async with grpc.aio.insecure_channel(f"127.0.0.1:{peer.port}") as channel:
         runner = RunnerClient(channel)
-        copying = asyncio.create_task(copy_confirmed_prefix(store, locator, runner))
+        copying = asyncio.create_task(copy_confirmed_prefix(store, submissions, locator, runner))
         try:
             connection = await asyncio.wait_for(peer.attachments.get(), timeout=5)
             if outcome == "eof":

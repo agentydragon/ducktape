@@ -3,6 +3,8 @@
 Disabled by default until existing histories are imported and their prefixes checked.
 Every replica can replay the same prefix: Store.append locks the Session row and
 accepts exact duplicates but refuses gaps, divergent payloads and source changes.
+The same pass reconciles command admissions, whose cursor lives in the separate
+`sandbox_commands` database: a replay starts from the lower of the two cursors.
 """
 
 import asyncio
@@ -17,6 +19,7 @@ from agentplane.protocol import event_log_pb2
 from agentplane.runner import protocol_pb2 as runner_pb2
 from agentplane.runner.client import RunnerClient
 from agentplane.runner.errors import RunnerError, StreamClosedError
+from agentplane.sandbox_service.commands.store import SubmissionConflictError, SubmissionStore
 from agentplane.sandbox_service.destinations import DestinationResolver, DestinationUnavailableError
 from agentplane.sandbox_service.models import SandboxNotFoundError
 from agentplane.sandbox_service.protocol_pb2 import SandboxDestination, SessionFeedState
@@ -30,7 +33,7 @@ logger = logging.getLogger(__name__)
 
 
 async def copy_confirmed_prefix(
-    store: Store, locator: HistoryLocator, runner: RunnerClient, *, batch_size: int = 128
+    store: Store, submissions: SubmissionStore, locator: HistoryLocator, runner: RunnerClient, *, batch_size: int = 128
 ) -> int:
     """Copy the prefix published at attach time; never start or resume a native harness.
 
@@ -39,12 +42,14 @@ async def copy_confirmed_prefix(
     """
     if batch_size < 1:
         raise ValueError("batch size must be positive")
-    cursor, _ = await store.read(locator.session_id, limit=1)
+    copied, _ = await store.read(locator.session_id, limit=1)
+    # The two databases commit separately, so either may be ahead after an interruption.
+    cursor = min(copied, await submissions.read_reconciled_through(locator.session_id))
     attachment = await runner.attach(locator.runner_session_id, after_cursor=cursor)
     try:
         through = attachment.attached.last_cursor
-        if through < cursor:
-            raise HistoryConflictError(f"runner history regressed below copied cursor {cursor}")
+        if through < copied:
+            raise HistoryConflictError(f"runner history regressed below copied cursor {copied}")
         while cursor < through:
             batch: list[event_log_pb2.EventEntry] = []
             while len(batch) < batch_size and cursor < through:
@@ -57,6 +62,7 @@ async def copy_confirmed_prefix(
                 batch.append(entry)
                 cursor = entry.cursor
             await store.append(locator.session_id, batch)
+            await submissions.reconcile(locator.session_id, batch)
         feed = SessionFeedState(attached=attachment.attached)
         await store.record_feed_state(locator.session_id, feed)
         if (
@@ -89,6 +95,7 @@ class HistoryIngester:
     def __init__(
         self,
         store: Store,
+        submissions: SubmissionStore,
         destinations: DestinationResolver,
         *,
         runner_grpc_channel_options: dict[str, int | str],
@@ -96,6 +103,7 @@ class HistoryIngester:
         concurrency: int = 4,
     ) -> None:
         self.store = store
+        self.submissions = submissions
         self.destinations = destinations
         self.runner_grpc_channel_options = runner_grpc_channel_options
         if interval_s <= 0 or concurrency < 1:
@@ -122,7 +130,7 @@ class HistoryIngester:
             # Bound each runner read and DB batch without imposing a lifetime on the
             # runner stream. A timeout can leave a committed prefix for the next cycle.
             async with asyncio.timeout(60):
-                await copy_confirmed_prefix(self.store, locator, client)
+                await copy_confirmed_prefix(self.store, self.submissions, locator, client)
         finally:
             await client.close()
 
@@ -142,6 +150,7 @@ class HistoryIngester:
                     raise
                 except (
                     HistoryConflictError,
+                    SubmissionConflictError,
                     RunnerError,
                     SQLAlchemyError,
                     grpc.RpcError,

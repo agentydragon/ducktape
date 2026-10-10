@@ -58,7 +58,7 @@ Properties the target keeps:
 - **The `sandbox_service` database holds only Session history today** (`session_history` and
   `session_event`, `sandbox_service/session_history/db.py`; the package has its own migrations).
   Handing that database to the History Service moves the raw log with no copy. The Sandbox Service
-  then needs a fresh database for command admission ([#9573](https://github.com/agentydragon/ducktape/pull/9573)),
+  then needs a fresh database for command admission (`sandbox_commands`),
   which would otherwise be the first non-history table in the one being handed over.
 - **The fold's tables live in the `app` database** (`thread_entity`, `thread_evidence`,
   `thread_native_link`, `thread_payload_chunk`/`_manifest`, `thread_checkpoint`,

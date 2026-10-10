@@ -127,9 +127,8 @@ rendering and must not give the app dispatch ownership.
 
 The [DAG](task_dag.md#2-service-owned-command-admission-and-later-notification-presentation) owns status and edges:
 
-1. `SESSION_COMMAND_CONTRACT`, `SESSION_COMMAND_CORE` and `SESSION_COMMAND_SUBMISSION`: review and
-   implement generic durable command admission using the existing relay, independently of inversion.
-   Draft code is permitted; merge/deployment remain gated on archive ownership.
+1. `SESSION_COMMAND_CONTRACT`: review the generic durable command admission contract, which already
+   runs over the existing relay.
 2. `SESSION_COMMAND_STATUS_READ` and `SESSION_COMMAND_STATUS_UI`: expose authorized admission status
    and the service-retained state dot, independently of notification rendering.
 3. `SESSION_INPUT_METADATA`: after generic admission settles, add typed annotations and producer

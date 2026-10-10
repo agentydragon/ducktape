@@ -52,6 +52,7 @@ IMAGES = (
     "agentplane-oauth-fixture",
     "agentplane-sandbox",
     "agentplane-sandbox-build",
+    "agentplane-sandbox-commands-migrate",
     "agentplane-sandbox-service",
     "agentplane-sandbox-service-history-migrate",
     "aiquota-api",

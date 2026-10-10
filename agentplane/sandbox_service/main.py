@@ -13,6 +13,7 @@ from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 
 from agentplane.sandbox_service.action_policy import ActionPolicyBindings
+from agentplane.sandbox_service.commands.store import SubmissionStore
 from agentplane.sandbox_service.controller import SandboxController
 from agentplane.sandbox_service.destinations import DestinationResolver
 from agentplane.sandbox_service.egress import EgressInventory
@@ -38,18 +39,24 @@ async def serve(settings: Settings) -> None:
         k8s_config.load_incluster_config(client_configuration=configuration)
     else:
         await k8s_config.load_kube_config(config_file=str(settings.kubeconfig), client_configuration=configuration)
-    if settings.database_url is None:
-        raise ValueError("Sandbox Service database URL is required at runtime")
+    if settings.database_url is None or settings.commands_database_url is None:
+        raise ValueError("Sandbox Service history and commands database URLs are required at runtime")
     engine = create_async_engine(
         make_url(settings.database_url).set(drivername="postgresql+asyncpg"), pool_size=4, max_overflow=2
     )
+    commands_engine = create_async_engine(
+        make_url(settings.commands_database_url).set(drivername="postgresql+asyncpg"), pool_size=4, max_overflow=2
+    )
     try:
-        await serve_with_engine(settings, configuration, engine)
+        await serve_with_engines(settings, configuration, engine, commands_engine)
     finally:
         await engine.dispose()
+        await commands_engine.dispose()
 
 
-async def serve_with_engine(settings: Settings, configuration: k8s_client.Configuration, engine: AsyncEngine) -> None:
+async def serve_with_engines(
+    settings: Settings, configuration: k8s_client.Configuration, engine: AsyncEngine, commands_engine: AsyncEngine
+) -> None:
     session_changes = SessionChanges(engine.url)
     async with k8s_client.ApiClient(configuration) as api, session_changes.listener.listen():
         core = k8s_client.CoreV1Api(api)
@@ -90,9 +97,11 @@ async def serve_with_engine(settings: Settings, configuration: k8s_client.Config
             ),
         )
         history_store = Store(engine)
+        submissions = SubmissionStore(commands_engine)
         resources = Resources(
             principals=principals,
             history=history_store,
+            submissions=submissions,
             session_changes=session_changes,
             destinations=DestinationResolver(inventory, core, settings.runner_port),
             admission_timeout_s=settings.admission_timeout_s,
@@ -122,6 +131,7 @@ async def serve_with_engine(settings: Settings, configuration: k8s_client.Config
             asyncio.create_task(
                 HistoryIngester(
                     history_store,
+                    submissions,
                     resources.destinations,
                     runner_grpc_channel_options=settings.runner_grpc_channel_options,
                 ).run(),
