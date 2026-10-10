@@ -17,8 +17,9 @@ fence enforces. The target (or the fence) enforces every call; no human is on th
 - Least privilege is bounded by the target's RBAC granularity. Kubernetes and GitHub scope well;
   Gmail offers OAuth scopes only.
 - Denial is final at the target. Escalation needs a separate path.
-- The scoped credential may sit in the Sandbox or be held by a credential-substitution proxy.
-  Credential custody is separate from whose authority the target enforces.
+- The scoped credential is held by a credential-substitution proxy, never in the Sandbox
+  ([principles](../docs/principles.md#strong-outer-sandbox-free-agent-inside-it)). Credential
+  custody is separate from whose authority the target enforces.
 - Audit lives in the target's logs and the fence's logs, not in a ledger of named operations.
 
 **Brokered credential.** Haku holds the operator's privileged credential. The agent calls a Haku
@@ -116,8 +117,8 @@ gRPC clients can present `agentplane-credential-<name>` as the whole
 bidirectional HTTP/2 calls with trailers intact. Under the current header-only contract, `bb remote`
 still sends the placeholder in the Bazel command run on BuildBuddy's hosted runner. A narrow rewrite
 of the unary `runner.RunRequest.steps[].run` protobuf field can keep the real key out of the local
-Sandbox, but it delivers the key to agent-controlled code on the hosted runner; that is a weaker
-boundary, not full credentiallessness. The implemented transport contract is canonical in the
+Sandbox, but it delivers the key to agent-controlled code on the hosted runner, which breaks the
+rule that agents never hold real credentials; adopting it needs an explicit, recorded exception. The implemented transport contract is canonical in the
 [egress SPEC](../egress/SPEC.md); the candidate rewrite and its required evidence are in
 [`buildbuddy_remote_auth.md`](../docs/buildbuddy_remote_auth.md).
 

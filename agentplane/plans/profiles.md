@@ -39,13 +39,15 @@ Kubernetes objects with per-object ownership; no blanket Kubernetes exclusion ap
 ## What this leaves open
 
 The launch-presets design says where the app-owned defaults live and how the current Sandbox and
-Thread consumers use them. A broader capability profile still waits for a design that says how
-future consumers — egress, approvals, MCP reachability, and other tool permissions — share one
-authority. Do not widen the launch-presets slice to settle that question.
+Thread consumers use them. A broader capability profile still waits for a design that says how one
+selection fills in egress, approvals, MCP reachability, and other tool permissions. Do not widen the
+launch-presets slice to settle that question.
 
-A future broad profile must reuse the existing Action-policy authority rather than duplicate
-its rules; the profile should coordinate egress, approvals, MCP reachability, and other tool
-permissions without taking ownership away from their current enforcement services.
+A broad profile is an application on top of the separate parts, not a new authority they share
+([principles](../docs/principles.md#separate-concepts-mixed-and-matched-no-opaque-bundles)). It
+pre-selects existing egress, Action-policy and other grants without duplicating their rules or
+taking ownership away from their enforcement services, and a session configured part by part,
+with no profile at all, stays fully supported.
 
 ## Meanwhile
 
