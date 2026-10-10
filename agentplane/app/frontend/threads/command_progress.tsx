@@ -3,14 +3,7 @@ import { type JSX, useState } from "react";
 
 /** Only durable evidence advances the lights; a lost reply is not a runner refusal. */
 export type CommandStage =
-  | "local"
-  | "unconfirmed"
-  | "retained"
-  | "admitted"
-  | "effected"
-  | "failed"
-  | "noop"
-  | "refused";
+  "local" | "unconfirmed" | "retained" | "admitted" | "effected" | "failed" | "noop" | "refused";
 export type CommandSubject = "input" | "model" | "effort" | "other";
 
 type LightState = "done" | "waiting" | "uncertain" | "retained" | "failed" | "future";
