@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <title>{{ title }} · {{ commit_sha }}</title>
     <link rel="stylesheet" href="{{ gallery_stylesheet }}">
+    <link rel="stylesheet" href="{{ gallery_slider_stylesheet }}">
   </head>
   <body class="gallery-test">
     <header>
@@ -23,13 +24,25 @@
           <figcaption>{{ asset.label }}<span class="badge modified">modified</span>
             {% if asset.dimension_changed %}<span class="badge modified">dims {{ asset.candidate_dimensions[0] }}×{{ asset.candidate_dimensions[1] }} ← {{ asset.baseline_dimensions[0] }}×{{ asset.baseline_dimensions[1] }}</span>{% endif %}
             <span class="metric">{{ "%.2f"|format(asset.changed_fraction * 100) }}% · {{ asset.changed_pixels }} px</span></figcaption>
+          {% if asset.dimension_changed %}
           <div class="pair">
             <div><div>Before</div><a class="sample-frame" href="{{ asset.baseline_url }}"><img src="{{ asset.baseline_url }}" alt="{{ asset.label }} before" loading="lazy"></a></div>
             <div><div>After</div><a class="sample-frame" href="{{ asset.candidate_url }}"><img src="{{ asset.candidate_url }}" alt="{{ asset.label }} after" loading="lazy"></a></div>
           </div>
-          {% if asset.dimension_changed %}
           <div class="sample-frame sample-frame--empty" role="note">Difference overlay unavailable because the screenshot dimensions changed.</div>
           {% else %}
+          <div class="label-line comparison-labels"><span>Before</span><span>After</span></div>
+          <img-comparison-slider class="comparison-slider" tabindex="0" keyboard="enabled" aria-label="{{ asset.label }} before and after">
+            <img slot="first" width="100%" src="{{ asset.baseline_url }}" alt="{{ asset.label }} before">
+            <img slot="second" width="100%" src="{{ asset.candidate_url }}" alt="{{ asset.label }} after">
+          </img-comparison-slider>
+          <details class="source-pair">
+            <summary>View before and after separately</summary>
+            <div class="pair">
+              <div><div>Before</div><a class="sample-frame" href="{{ asset.baseline_url }}"><img src="{{ asset.baseline_url }}" alt="{{ asset.label }} before" loading="lazy"></a></div>
+              <div><div>After</div><a class="sample-frame" href="{{ asset.candidate_url }}"><img src="{{ asset.candidate_url }}" alt="{{ asset.label }} after" loading="lazy"></a></div>
+            </div>
+          </details>
           <div class="label-line">Diff</div>
           <a class="sample-frame" href="{{ asset.diff_url }}"><img src="{{ asset.diff_url }}" alt="{{ asset.label }} diff" loading="lazy"></a>
           {% endif %}
@@ -66,5 +79,6 @@
         {% endfor %}
       {% endif %}
     </main>
+    <script src="{{ gallery_slider_script }}" defer></script>
   </body>
 </html>

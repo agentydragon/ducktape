@@ -141,6 +141,32 @@ body.gallery-test .pair > div {
   font-size: 12px;
 }
 
+body.gallery-test .comparison-labels {
+  display: flex;
+  justify-content: space-between;
+}
+
+body.gallery-test .comparison-slider {
+  display: block;
+  width: 100%;
+  overflow: hidden;
+  border-radius: 6px;
+  background: white;
+}
+
+body.gallery-test .comparison-slider img {
+  width: 100%;
+}
+
+body.gallery-test .source-pair {
+  margin-top: 8px;
+}
+
+body.gallery-test .source-pair summary {
+  color: #666;
+  font-size: 13px;
+}
+
 body.gallery-test .badge {
   display: inline-block;
   margin-left: 6px;

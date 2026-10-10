@@ -1,3 +1,5 @@
+load("@aspect_rules_esbuild//esbuild:defs.bzl", "esbuild")
+load("@aspect_rules_js//js:defs.bzl", "js_library")
 load("@rules_python//python:packaging.bzl", "py_package", "py_wheel")
 load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
 load("//util/testing/frontend_visual:py_visual_test.bzl", "py_visual_test")
@@ -65,6 +67,33 @@ py_test(
     ],
 )
 
+js_library(
+    name = "gallery_slider_lib",
+    srcs = ["gallery_slider_entry.js"],
+    deps = ["//:node_modules/img-comparison-slider"],
+)
+
+esbuild(
+    name = "gallery_slider_bundle",
+    entry_point = "gallery_slider_entry.js",
+    format = "iife",
+    minify = True,
+    output = "gallery_slider.js",
+    output_css = "gallery_slider.css",
+    platform = "browser",
+    sourcemap = "external",
+    target = ["es2022"],
+    deps = [":gallery_slider_lib"],
+)
+
+filegroup(
+    name = "gallery_slider_assets",
+    srcs = [
+        "gallery_slider.css",
+        "gallery_slider.js",
+    ],
+)
+
 py_library(
     name = "publisher",
     srcs = ["publisher.py"],
@@ -73,6 +102,7 @@ py_library(
         "gallery_sort.js",
         "pr_visual_test.html.j2",
         "pr_visuals.html.j2",
+        ":gallery_slider_assets",
     ],
     visibility = ["//:__subpackages__"],
     deps = [
