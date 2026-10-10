@@ -1130,6 +1130,7 @@ data:
     projected_token_audiences:
       - https://localhost:7445
       - agentplane-notifications
+      - agentplane-runner-channel
 immutable: false
 ---
 apiVersion: apps/v1
@@ -2230,6 +2231,7 @@ data:
     default_egress_policies:
       - basic
       - inference-experiments
+      - runner-channel
     kubernetes_grants: {}
     kubernetes_binding_cleanup_namespaces: []
     kubernetes_cluster_binding_cleanup: false
@@ -2299,6 +2301,9 @@ spec:
           ports:
             - containerPort: 8080
               name: grpc
+              protocol: TCP
+            - containerPort: 8082
+              name: runner-channel
               protocol: TCP
             - containerPort: 8081
               name: health
@@ -2414,6 +2419,10 @@ spec:
       port: 8080
       protocol: TCP
       targetPort: 8080
+    - name: runner-channel
+      port: 8082
+      protocol: TCP
+      targetPort: 8082
   selector:
     cdk8s.io/metadata.addr: agentplane-sandbox-service-deployment-c8b904d8
   type: ClusterIP
@@ -2481,6 +2490,65 @@ spec:
         - ports:
             - port: "8080"
               protocol: TCP
+    - fromEndpoints:
+        - matchLabels:
+            app.kubernetes.io/name: agentplane-egress
+            k8s:io.kubernetes.pod.namespace: agentplane-testing
+      toPorts:
+        - ports:
+            - port: "8082"
+              protocol: TCP
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: EgressCredential
+metadata:
+  name: agentplane-runner-channel
+  namespace: agentplane-testing
+spec:
+  description: The calling Sandbox Pod's short-lived, Pod-bound identity minted only for its runner's channel to the Sandbox Service. It conveys no other authority.
+  source:
+    projectedWorkloadToken:
+      audience: agentplane-runner-channel
+  targets:
+    - header: Authorization
+      method: schemeToken
+      scheme: Bearer
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: EgressPolicy
+metadata:
+  name: runner-channel
+  namespace: agentplane-testing
+spec:
+  rules:
+    - hosts:
+        - agentplane-sandbox-service.agentplane-testing.svc.cluster.local
+      methods:
+        - POST
+      paths:
+        - /ducktape.agentplane.runner_channel.v1.RunnerChannel/Connect
+      clusterInternal: true
+      credentialRef:
+        name: agentplane-runner-channel
+---
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: agentplane-sandbox-service-runner-channel-proxy
+  namespace: agentplane-testing
+spec:
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            app.kubernetes.io/name: agentplane-sandbox-service
+            k8s:io.kubernetes.pod.namespace: agentplane-testing
+      toPorts:
+        - ports:
+            - port: "8082"
+              protocol: TCP
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/name: agentplane-egress
 ---
 apiVersion: v1
 kind: ServiceAccount
@@ -3563,7 +3631,7 @@ spec:
             - name: AGENTPLANE_EGRESS_SIDECAR_TOKEN_FILE
               value: /var/run/agentplane-egress/token
             - name: AGENTPLANE_EGRESS_SIDECAR_AUDIENCE_TOKEN_FILES
-              value: '{"https://localhost:7445": "/var/run/agentplane-egress/kubernetes-token", "agentplane-notifications": "/var/run/agentplane-egress/notifications-token"}'
+              value: '{"https://localhost:7445": "/var/run/agentplane-egress/kubernetes-token", "agentplane-notifications": "/var/run/agentplane-egress/notifications-token", "agentplane-runner-channel": "/var/run/agentplane-egress/runner-channel-token"}'
           image: git.allegedly.works/ducktape-ci/agentplane-egress-sidecar:unset
           name: egress-sidecar
           readinessProbe:
@@ -3622,6 +3690,10 @@ spec:
                   audience: agentplane-notifications
                   expirationSeconds: 600
                   path: notifications-token
+              - serviceAccountToken:
+                  audience: agentplane-runner-channel
+                  expirationSeconds: 600
+                  path: runner-channel-token
   volumeClaimTemplates:
     - metadata:
         name: state
