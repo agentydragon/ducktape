@@ -11,9 +11,25 @@ from agentplane.notification_service.settings import (
     CONFIG_FILE_ENV,
     GitHubSettings,
     NoticeDebounceSettings,
+    QuotaSettings,
     SandboxServiceSettings,
     Settings,
 )
+
+
+def test_quota_defaults() -> None:
+    assert QuotaSettings().model_dump() == {
+        "inboxes_per_account": 64,
+        "active_subscriptions_per_inbox": 64,
+        "entries_per_inbox": 10_000,
+    }
+
+
+@pytest.mark.parametrize("field", ["inboxes_per_account", "active_subscriptions_per_inbox", "entries_per_inbox"])
+@pytest.mark.parametrize("value", [0, -1])
+def test_quotas_must_be_positive(field: str, value: int) -> None:
+    with pytest.raises(ValidationError):
+        QuotaSettings.model_validate({field: value})
 
 
 def test_yaml_settings_and_nested_environment_overrides(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -22,6 +38,10 @@ def test_yaml_settings_and_nested_environment_overrides(tmp_path: Path, monkeypa
 actions:
   url: http://actions
   token_file: /tokens/actions
+quotas:
+  inboxes_per_account: 12
+  active_subscriptions_per_inbox: 24
+  entries_per_inbox: 500
 notice_debounce:
   quiet_seconds: 3
   max_wait_seconds: 15
@@ -32,6 +52,9 @@ sandbox_service:
     monkeypatch.setenv(CONFIG_FILE_ENV, str(config))
     monkeypatch.setenv("AGENTPLANE_NOTIFICATIONS_DATABASE_URL", "postgresql://unused")
     settings = Settings(_cli_parse_args=False)
+    assert settings.quotas == QuotaSettings(
+        inboxes_per_account=12, active_subscriptions_per_inbox=24, entries_per_inbox=500
+    )
     assert settings.notice_debounce == NoticeDebounceSettings(quiet_seconds=3, max_wait_seconds=15)
     assert str(settings.actions.url) == "http://actions/"
     assert settings.actions.token_file == Path("/tokens/actions")
@@ -42,12 +65,18 @@ sandbox_service:
     assert settings.stale_inbox_confirmation_s == 30
     assert settings.sandbox_service.lifecycle_timeout_s == 310
     assert settings.sandbox_service.follow_timeout_s == 960
+    monkeypatch.setenv("AGENTPLANE_NOTIFICATIONS_QUOTAS__INBOXES_PER_ACCOUNT", "18")
+    monkeypatch.setenv("AGENTPLANE_NOTIFICATIONS_QUOTAS__ACTIVE_SUBSCRIPTIONS_PER_INBOX", "36")
+    monkeypatch.setenv("AGENTPLANE_NOTIFICATIONS_QUOTAS__ENTRIES_PER_INBOX", "750")
     monkeypatch.setenv("AGENTPLANE_NOTIFICATIONS_ACTIONS__URL", "http://overridden-actions")
     monkeypatch.setenv("AGENTPLANE_NOTIFICATIONS_SANDBOX_SERVICE__TARGET", "overridden-sandboxes:8080")
     monkeypatch.setenv("AGENTPLANE_NOTIFICATIONS_NOTICE_DEBOUNCE__QUIET_SECONDS", "0")
     monkeypatch.setenv("AGENTPLANE_NOTIFICATIONS_SANDBOX_SERVICE__COMMAND_ADMISSION_TIMEOUT_S", "22")
     monkeypatch.setenv("AGENTPLANE_NOTIFICATIONS_SANDBOX_SERVICE__REQUEST_TIMEOUT_S", "7")
     settings = Settings(_cli_parse_args=False)
+    assert settings.quotas == QuotaSettings(
+        inboxes_per_account=18, active_subscriptions_per_inbox=36, entries_per_inbox=750
+    )
     assert settings.notice_debounce == NoticeDebounceSettings(quiet_seconds=0, max_wait_seconds=15)
     assert str(settings.actions.url) == "http://overridden-actions/"
     assert settings.sandbox_service.target == "overridden-sandboxes:8080"

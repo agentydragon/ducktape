@@ -59,6 +59,7 @@ from agentplane.notification_service.models import (
     SubscriptionUpdate,
     SubscriptionView,
 )
+from agentplane.notification_service.settings import QuotaSettings
 from agentplane.notification_service.sources.github_models import GitHubBinding, GitHubEvent, GitHubSource, subject_key
 from agentplane.notification_service.updates import Wakeups, notify
 from agentplane.protocol import event_log_pb2
@@ -164,8 +165,20 @@ async def subscription_view(session: AsyncSession, row: Subscription) -> Subscri
     )
 
 
+async def check_active_subscription_quota(session: AsyncSession, inbox_id: UUID, *, now: datetime, limit: int) -> None:
+    """Check capacity while the caller holds the inbox row lock, including on renewal."""
+    count = await session.scalar(
+        select(func.count())
+        .select_from(Subscription)
+        .where(Subscription.inbox_id == inbox_id, ~Subscription.cancelled, Subscription.expires_at > now)
+    )
+    if count is not None and count >= limit:
+        raise QuotaError(f"{limit} active subscriptions per inbox")
+
+
 class Store:
-    def __init__(self, engine: AsyncEngine) -> None:
+    def __init__(self, engine: AsyncEngine, *, quotas: QuotaSettings | None = None) -> None:
+        self.quotas = quotas if quotas is not None else QuotaSettings()
         self.wakeups = Wakeups(engine.url)
         self.sessions = async_sessionmaker(engine, expire_on_commit=False)
 
@@ -210,8 +223,8 @@ class Store:
                     .select_from(Inbox)
                     .where(Inbox.owner_namespace == owner.namespace, Inbox.owner_name == owner.name)
                 )
-                if count is not None and count >= 64:
-                    raise QuotaError("64 inboxes per owning ServiceAccount")
+                if count is not None and count >= self.quotas.inboxes_per_account:
+                    raise QuotaError(f"{self.quotas.inboxes_per_account} inboxes per owning ServiceAccount")
             await session.execute(
                 insert(Inbox)
                 .values(
@@ -253,11 +266,10 @@ class Store:
                 if Subscribe.model_validate(row.creation) != body:
                     raise ConflictError("idempotency key already names another subscription")
                 return await subscription_view(session, row)
-            count = await session.scalar(
-                select(func.count()).select_from(Subscription).where(Subscription.inbox_id == inbox.id)
+            now = datetime.now(UTC)
+            await check_active_subscription_quota(
+                session, inbox.id, now=now, limit=self.quotas.active_subscriptions_per_inbox
             )
-            if count is not None and count >= 64:
-                raise QuotaError("64 subscriptions per inbox, including cancelled subscriptions")
             actions_after_sequence: int | None
             github_start_position: int | None
             if isinstance(body.source, ActionsSource):
@@ -374,8 +386,13 @@ class Store:
             else:
                 if row.version != update.version or row.cancelled:
                     raise ConflictError("subscription version changed or subscription cancelled")
-                row.expires_at = datetime.now(UTC) + timedelta(days=update.lifetime_days)
-                row.next_attempt = datetime.now(UTC)
+                now = datetime.now(UTC)
+                if row.expires_at <= now:
+                    await check_active_subscription_quota(
+                        session, inbox.id, now=now, limit=self.quotas.active_subscriptions_per_inbox
+                    )
+                row.expires_at = now + timedelta(days=update.lifetime_days)
+                row.next_attempt = now
             row.version += 1
             inbox.next_attempt = datetime.now(UTC)
             await notify(session)
@@ -729,8 +746,10 @@ class Store:
         event = identity.model_dump(mode="json")
         existing = await session.scalar(select(Entry).where(Entry.inbox_id == inbox.id, Entry.event == event))
         if existing is None:
-            if inbox.last_cursor >= 10_000:
-                raise QuotaError("inbox has reached its 10000-entry lifetime limit; retire it explicitly")
+            if inbox.last_cursor >= self.quotas.entries_per_inbox:
+                raise QuotaError(
+                    f"inbox has reached its {self.quotas.entries_per_inbox}-entry lifetime limit; retire it explicitly"
+                )
             inbox.last_cursor += 1
             existing = Entry(
                 inbox_id=inbox.id, cursor=inbox.last_cursor, event=event, payload=payload, created_at=datetime.now(UTC)

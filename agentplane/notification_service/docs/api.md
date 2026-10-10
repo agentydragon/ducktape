@@ -112,13 +112,36 @@ There is no exactly-once native execution claim. Coverage is independent of ackn
 reminders for unacknowledged entries, including after a worker restart. Only a running harness can receive
 input; this service never calls OpenSession, ResumeSession, or sandbox provisioning APIs.
 
-V1 limits: 64 inboxes per account; 64 subscriptions per inbox including cancelled records; 10000
+Default V1 limits: 64 inboxes per account; 64 active (not cancelled and not expired) subscriptions per inbox; 10000
 source-event identities per inbox lifetime; 128 entries per read/poll/replay step; subscriptions last
 7 days by default and can be renewed up to 30 days at a time. A full inbox stops source progress with
 an observable error rather than dropping events. Provider payloads expire after 30 days, preserving
 identity tombstones to prevent replay duplicates. `expired_through` reports the resulting prefix gap
 without advancing acknowledgement. Explicitly retired inboxes are purged after 30 days. After purge,
 a new explicit subscription can establish a fresh inbox epoch; there is no implicit successor routing.
+
+## Resource quotas
+
+The Notifications Service Pydantic settings accept these deployment-configurable defaults:
+
+```yaml
+quotas:
+  inboxes_per_account: 64
+  active_subscriptions_per_inbox: 64
+  entries_per_inbox: 10000
+```
+
+Each value must be positive. Environment overrides use the nested settings delimiter, for example
+`AGENTPLANE_NOTIFICATIONS_QUOTAS__ACTIVE_SUBSCRIPTIONS_PER_INBOX=128`. Configure the same
+quotas on all replicas. Lowering a quota does not delete retained data; it blocks new allocations
+when capacity is exhausted. The inbox quota counts retained inboxes, and the entry quota counts
+distinct event identities over an inbox's lifetime, including payload-expiry tombstones.
+
+Cancelled and expired subscription records do not consume active capacity; they remain
+available for history and idempotent replay. Renewing an expired subscription consumes
+an active slot and is subject to the same limit as creating one. Renewing an already
+active subscription does not consume another slot. Replaying a creation idempotency
+key returns the retained subscription without reactivating it, even at the limit.
 
 ## Authorization
 

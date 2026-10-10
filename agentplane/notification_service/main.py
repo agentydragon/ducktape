@@ -55,7 +55,7 @@ async def serve(settings: Settings) -> None:
                 github = GitHub(client)
             app = create_app(
                 Service(
-                    Store(engine),
+                    Store(engine, quotas=settings.quotas),
                     Actions(http, settings.actions.token_file),
                     sandboxes,
                     github,

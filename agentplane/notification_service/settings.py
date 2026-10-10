@@ -94,6 +94,20 @@ class NoticeDebounceSettings(BaseModel):
     )
 
 
+class QuotaSettings(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    inboxes_per_account: int = Field(
+        default=64, ge=1, description="Maximum retained inboxes per owning ServiceAccount."
+    )
+    active_subscriptions_per_inbox: int = Field(
+        default=64, ge=1, description="Maximum non-cancelled, unexpired subscriptions per inbox."
+    )
+    entries_per_inbox: int = Field(
+        default=10_000, ge=1, description="Maximum distinct source-event identities over an inbox's lifetime."
+    )
+
+
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
         env_prefix="AGENTPLANE_NOTIFICATIONS_",
@@ -114,6 +128,7 @@ class Settings(BaseSettings):
         default=None,
         description="ServiceAccount name allowed to read UID-pinned operator diagnostics, not inbox payloads.",
     )
+    quotas: QuotaSettings = Field(default_factory=QuotaSettings)
     notice_debounce: NoticeDebounceSettings = Field(default_factory=NoticeDebounceSettings)
     stale_inbox_confirmation_s: float = Field(
         default=30,
