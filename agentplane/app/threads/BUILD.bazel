@@ -132,6 +132,30 @@ py_library(
 )
 
 py_library(
+    name = "summary_watch",
+    srcs = ["summary_watch.py"],
+    deps = [
+        "//agentplane/app:changes",
+        "//agentplane/history_service:client",
+    ],
+)
+
+py_test(
+    name = "test_summary_watch",
+    size = "medium",
+    srcs = ["test_summary_watch.py"],
+    requires_docker = True,
+    deps = [
+        ":summary_watch",
+        "//:conftest",
+        "//agentplane/app:changes",
+        "//agentplane/app:conftest",
+        "//agentplane/history_service/testing:backend",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
     name = "sessions",
     srcs = ["sessions.py"],
     deps = [

@@ -41,6 +41,11 @@ Session summaries (`ListSessionSummaries`, `GetSessionSummary`) read that fold. 
 first by the time of a Session's first event, with not-yet-folded Sessions ahead, and report the
 committed cursor beside the folded one. A page token continues only the filter it was issued for.
 
+`WatchSessionSummaries` tells a reader when to re-read: each fold commit NOTIFYs the history
+database, and every replica forwards that to its watchers as a payload-free `changed`. A stream opens
+with one `changed` to cover whatever the caller missed, and ends with `reconnect_required` after
+`watch_lease_s`.
+
 `ReadThreadEntities` serves a window of a Session's fold rows, by entity index or by key, each as
 the `ThreadEntityView` JSON browsers sync, and `ReadPayload` the chunks of a payload revision an
 entity references. A caller holding rows of a replaced epoch gets `FAILED_PRECONDITION`.

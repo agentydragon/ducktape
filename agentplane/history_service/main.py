@@ -17,6 +17,7 @@ from agentplane.history_service.grpc_api import Resources, add_service
 from agentplane.history_service.ingester import HistoryIngester
 from agentplane.history_service.settings import Settings
 from agentplane.history_service.summaries import SummaryReader
+from agentplane.history_service.summary_changes import SummaryChanges
 from agentplane.history_service.thread_reads import ThreadReader
 from agentplane.sandbox_service.client import SandboxServiceClient
 from agentplane.sandbox_service.session_history.store import Store
@@ -44,8 +45,9 @@ async def serve(settings: Settings) -> None:
     )
     # The fold writes only its own tables.
     fold_engine = create_async_engine(url, pool_size=2, max_overflow=2)
+    summary_changes = SummaryChanges(url)
     try:
-        async with k8s_client.ApiClient(configuration) as api:
+        async with k8s_client.ApiClient(configuration) as api, summary_changes.listener.listen():
             history = Store(engine)
             # A failed fold stops folding, not the raw reads this process serves.
             shadow = (
@@ -72,6 +74,8 @@ async def serve(settings: Settings) -> None:
                 evidence=EvidenceReader(engine, history),
                 reader_accounts=settings.reader_accounts,
                 request_timeout_s=settings.request_timeout_s,
+                summary_changes=summary_changes,
+                watch_lease_s=settings.watch_lease_s,
             )
             server = grpc.aio.server()
             add_service(resources, server)

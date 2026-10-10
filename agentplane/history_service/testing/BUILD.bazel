@@ -16,6 +16,7 @@ py_library(
         "//agentplane/history_service:fold_shadow",
         "//agentplane/history_service:grpc_api",
         "//agentplane/history_service:summaries",
+        "//agentplane/history_service:summary_changes",
         "//agentplane/history_service:thread_reads",
         "//agentplane/sandbox_service/session_history:store",
         "//agentplane/workload_auth:principal",

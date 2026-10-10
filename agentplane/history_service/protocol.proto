@@ -7,6 +7,7 @@ import "agentplane/protocol/event.proto";
 import "agentplane/protocol/event_log.proto";
 import "agentplane/runner/protocol.proto";
 import "agentplane/sandbox_service/protocol.proto";
+import "google/protobuf/empty.proto";
 import "google/protobuf/timestamp.proto";
 
 service HistoryService {
@@ -24,6 +25,8 @@ service HistoryService {
   // The observations an entity was folded from, and the native harness frames behind each.
   rpc ReadEntityEvidence(ReadEntityEvidenceRequest) returns (ReadEntityEvidenceResponse);
   rpc ReadNativeFrames(ReadNativeFramesRequest) returns (ReadNativeFramesResponse);
+  // Tells the caller when fold state it may hold changed. It names nothing: re-read what you hold.
+  rpc WatchSessionSummaries(WatchSessionSummariesRequest) returns (stream WatchSessionSummariesResponse);
 }
 
 message ListSessionSummariesRequest {
@@ -179,6 +182,19 @@ message ReadNativeFramesRequest {
   uint64 after_sequence = 5;
   // At most 200.
   uint32 limit = 6;
+}
+
+message WatchSessionSummariesRequest {}
+
+message WatchSessionSummariesResponse {
+  oneof observation {
+    // Some Session's summary or entities changed. Every stream opens with one, for whatever
+    // changed while the caller was not watching.
+    google.protobuf.Empty changed = 1;
+    // Planned renewal: reconnect with fresh authorization.
+    google.protobuf.Empty reconnect_required = 2;
+  }
+  // A successful stream ends with reconnect_required; bare EOF is a failure.
 }
 
 message NativeFrame {

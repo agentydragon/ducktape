@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Mapping
+from collections.abc import AsyncIterator, Mapping
 from pathlib import Path
 from typing import Never
 
@@ -51,8 +51,11 @@ class HistoryServiceClient:
     @property
     def stub(self) -> protocol_pb2_grpc.HistoryServiceAsyncStub:
         if self._stub is None:
+            # A local subchannel pool makes a channel after `close()` dial anew; from the process-wide
+            # pool it would inherit the closed channel's connection.
             self._channel = grpc.aio.insecure_channel(
-                self.target, options=grpc_channel_option_kvps(self._channel_options)
+                self.target,
+                options=grpc_channel_option_kvps(self._channel_options, required={"grpc.use_local_subchannel_pool": 1}),
             )
             self._stub = protocol_pb2_grpc.HistoryServiceStub(self._channel)
         return self._stub
@@ -148,6 +151,26 @@ class HistoryServiceClient:
             )
         except grpc.aio.AioRpcError as error:
             _raise(error)
+
+    async def watch_session_summaries(self, *, timeout_s: float) -> AsyncIterator[None]:
+        """Yield once per change notice until planned renewal, which returns; anything else raises."""
+        call = self.stub.WatchSessionSummaries(
+            history_pb2.WatchSessionSummariesRequest(), metadata=await self.metadata(), timeout=timeout_s
+        )
+        try:
+            while True:
+                try:
+                    message = await call.read()
+                except grpc.aio.AioRpcError as error:
+                    _raise(error)
+                if message is grpc.aio.EOF:
+                    raise ConnectionError("History Service ended the summary watch without planned renewal")
+                assert isinstance(message, history_pb2.WatchSessionSummariesResponse)
+                if message.HasField("reconnect_required"):
+                    return
+                yield
+        finally:
+            call.cancel()
 
     async def close(self) -> None:
         if self._channel is not None:

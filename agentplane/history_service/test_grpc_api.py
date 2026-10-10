@@ -7,12 +7,13 @@ import grpc
 import pytest
 import pytest_bazel
 from kubernetes_asyncio import client as k8s_client
-from sqlalchemy.ext.asyncio import AsyncEngine
+from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession
 
 from agentplane.history_service import protocol_pb2 as history_pb2, protocol_pb2_grpc
 from agentplane.history_service.evidence import EvidenceReader
 from agentplane.history_service.grpc_api import Resources, add_service
 from agentplane.history_service.summaries import SummaryReader
+from agentplane.history_service.summary_changes import SummaryChanges, notify_summaries
 from agentplane.history_service.thread_reads import ThreadReader
 from agentplane.protocol import event_log_pb2, event_pb2
 from agentplane.sandbox_service import protocol_pb2
@@ -30,6 +31,7 @@ AUDIENCE = "test-history-service"
 READER = ServiceAccountRef(namespace=SANDBOX_NAMESPACE, name="test-history-reader")
 READER_TOKEN = "test-history-reader-token"
 OTHER_TOKEN = "test-history-other-caller-token"
+WATCH_LEASE_S = 2
 EVENT = event_log_pb2.EventEntry(
     cursor=1,
     origin=event_log_pb2.EventOrigin(source_id="test-runner", sequence=1),
@@ -52,7 +54,11 @@ async def stub(engine: AsyncEngine, history: Store) -> AsyncIterator[protocol_pb
                 pod_uid=f"{name}-pod-uid",
                 audiences=(AUDIENCE,),
             )
-        async with k8s_client.ApiClient(k8s_client.Configuration(host=f"http://127.0.0.1:{fake.port}")) as api:
+        summary_changes = SummaryChanges(engine.url)
+        async with (
+            k8s_client.ApiClient(k8s_client.Configuration(host=f"http://127.0.0.1:{fake.port}")) as api,
+            summary_changes.listener.listen(),
+        ):
             server = grpc.aio.server()
             add_service(
                 Resources(
@@ -67,6 +73,8 @@ async def stub(engine: AsyncEngine, history: Store) -> AsyncIterator[protocol_pb
                     evidence=EvidenceReader(engine, history),
                     reader_accounts=frozenset({READER}),
                     request_timeout_s=10,
+                    summary_changes=summary_changes,
+                    watch_lease_s=WATCH_LEASE_S,
                 ),
                 server,
             )
@@ -175,6 +183,31 @@ async def test_thread_read_refusals(stub: protocol_pb2_grpc.HistoryServiceAsyncS
             metadata=bearer(READER_TOKEN),
         )
     assert unknown.value.code() == grpc.StatusCode.NOT_FOUND
+
+
+async def test_summary_watch_announces_each_fold_commit_until_planned_renewal(
+    stub: protocol_pb2_grpc.HistoryServiceAsyncStub, engine: AsyncEngine
+) -> None:
+    call = stub.WatchSessionSummaries(history_pb2.WatchSessionSummariesRequest(), metadata=bearer(READER_TOKEN))
+    opening = await call.read()
+    assert isinstance(opening, history_pb2.WatchSessionSummariesResponse)
+    assert opening.HasField("changed")  # whatever changed before the caller watched
+    async with engine.begin() as connection, AsyncSession(bind=connection) as session:
+        await notify_summaries(session)
+    committed = await call.read()
+    assert isinstance(committed, history_pb2.WatchSessionSummariesResponse)
+    assert committed.HasField("changed")
+    renewal = await call.read()
+    assert isinstance(renewal, history_pb2.WatchSessionSummariesResponse)
+    assert renewal.HasField("reconnect_required")
+    assert await call.read() is grpc.aio.EOF
+
+
+async def test_summary_watch_requires_a_reader(stub: protocol_pb2_grpc.HistoryServiceAsyncStub) -> None:
+    call = stub.WatchSessionSummaries(history_pb2.WatchSessionSummariesRequest(), metadata=bearer(OTHER_TOKEN))
+    with pytest.raises(grpc.aio.AioRpcError) as raised:
+        await call.read()
+    assert raised.value.code() == grpc.StatusCode.PERMISSION_DENIED
 
 
 if __name__ == "__main__":

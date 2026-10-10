@@ -71,6 +71,9 @@ class Settings(BaseSettings):
     fold_shadow: bool = False
     fold_concurrency: int = Field(default=4, ge=1, le=64)
     fold_interval_s: float = Field(default=2, gt=0)
+    watch_lease_s: float = Field(
+        default=300, gt=0, description="Seconds a WatchSessionSummaries stream lasts before planned renewal."
+    )
 
     def __init__(self, **values: Any) -> None:
         super().__init__(**values)

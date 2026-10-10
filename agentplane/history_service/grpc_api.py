@@ -9,6 +9,7 @@ from typing import override
 from uuid import UUID
 
 import grpc
+from google.protobuf.empty_pb2 import Empty
 from kubernetes_asyncio import client as k8s_client
 from pydantic import ValidationError
 from sqlalchemy.exc import SQLAlchemyError
@@ -16,6 +17,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from agentplane.history_service import protocol_pb2 as history_pb2, protocol_pb2_grpc
 from agentplane.history_service.evidence import EvidenceNotFoundError, EvidenceReader
 from agentplane.history_service.summaries import SummaryReader
+from agentplane.history_service.summary_changes import SummaryChanges
 from agentplane.history_service.thread_reads import PayloadNotFoundError, ThreadReader, ThreadScopeResetError
 from agentplane.sandbox_service import protocol_pb2
 from agentplane.sandbox_service.session_history.store import HistoryNotFoundError, Store
@@ -39,10 +41,13 @@ class Resources:
     # A public Session UUID is not itself authority: only these accounts read transcripts.
     reader_accounts: frozenset[ServiceAccountRef]
     request_timeout_s: float
+    summary_changes: SummaryChanges
+    # How long one WatchSessionSummaries stream lasts before it asks the caller to reconnect.
+    watch_lease_s: float
 
     def __post_init__(self) -> None:
-        if self.request_timeout_s <= 0:
-            raise ValueError("request timeout must be positive")
+        if self.request_timeout_s <= 0 or self.watch_lease_s <= 0:
+            raise ValueError("request timeout and watch lease must be positive")
         if not self.reader_accounts:
             raise ValueError("at least one history reader is required")
 
@@ -154,6 +159,31 @@ class HistoryService(protocol_pb2_grpc.HistoryServiceServicer):
     ) -> history_pb2.ReadNativeFramesResponse:
         async with self.reader(context):
             return await self.resources.evidence.native_frames(request)
+
+    @override
+    async def WatchSessionSummaries(  # type: ignore[override]
+        self, request: history_pb2.WatchSessionSummariesRequest, context: grpc.aio.ServicerContext
+    ) -> None:
+        async with self.reader(context):
+            pass
+        loop = asyncio.get_running_loop()
+        deadline = loop.time() + self.resources.watch_lease_s
+        # Subscribed before the opening notice, so nothing committed after it goes unannounced.
+        with self.resources.summary_changes.subscribe() as changed:
+            while True:
+                changed.clear()
+                async with asyncio.timeout(self.resources.request_timeout_s):
+                    await context.write(history_pb2.WatchSessionSummariesResponse(changed=Empty()))
+                lease = asyncio.timeout_at(deadline)
+                try:
+                    async with lease:
+                        await changed.wait()
+                except TimeoutError:
+                    if not lease.expired():
+                        raise
+                    break
+        async with asyncio.timeout(self.resources.request_timeout_s):
+            await context.write(history_pb2.WatchSessionSummariesResponse(reconnect_required=Empty()))
 
 
 def add_service(resources: Resources, server: grpc.aio.Server) -> None:

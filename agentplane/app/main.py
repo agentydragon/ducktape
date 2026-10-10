@@ -40,6 +40,7 @@ from agentplane.app.threads.ingestion import Ingester, Ingestion
 from agentplane.app.threads.sessions import SandboxSessions
 from agentplane.app.threads.store import ThreadStore
 from agentplane.app.threads.summaries import AppSummaries, HistorySummaries
+from agentplane.app.threads.summary_watch import SummaryWatch
 from agentplane.app.threads.view.content import ContentStore, HistoryContentStore
 from agentplane.history_service.client import HistoryServiceClient
 from agentplane.kubernetes_watch import STALE_AFTER_CYCLES
@@ -173,10 +174,22 @@ async def async_main(settings: Settings) -> None:
                 projector: HistoryProjector | None = HistoryProjector(
                     engine, service_pages(history), projection_epoch=THREAD_FOLD_EPOCH, notify=notify_threads
                 )
+                summary_watch: SummaryWatch | None = None
             case ThreadReads.HISTORY_SERVICE:
                 summaries = HistorySummaries(engine, history)
                 content = HistoryContentStore(engine, history_reader=history)
                 projector = None
+                summary_watch = SummaryWatch(
+                    HistoryServiceClient(
+                        settings.history_service_target,
+                        token_file=settings.history_service_token_file,
+                        request_timeout_s=settings.history_service_request_timeout_s,
+                        channel_options=settings.history_service_grpc_channel_options,
+                    ),
+                    database_updates.changes[Channel.THREADS],
+                    timeout_s=settings.history_service_watch_timeout_s,
+                    retry_interval_s=1,
+                )
         store = ThreadStore(engine, summaries)
         event_logs = EventLogStore(engine, history_reader=history, summaries=summaries, history_creator=history)
         runners = SandboxSessions(live, inventory)
@@ -230,7 +243,9 @@ async def async_main(settings: Settings) -> None:
 
         # The SPA, mounted last so the API routes above it win; index.html answers the rest.
         app.mount("/", SpaFiles(directory=get_required_path(FRONTEND_INDEX).parent, html=True), name="frontend")
-        watch_task = asyncio.create_task(watch.run(), name="live-watch")
+        watch_tasks = [asyncio.create_task(watch.run(), name="live-watch")]
+        if summary_watch is not None:
+            watch_tasks.append(asyncio.create_task(summary_watch.run(), name="history-summary-watch"))
         try:
             await serve_then_close(
                 AppServer(
@@ -249,8 +264,11 @@ async def async_main(settings: Settings) -> None:
                 engine=engine,
             )
         finally:
-            watch_task.cancel()
-            await asyncio.gather(watch_task, return_exceptions=True)
+            for task in watch_tasks:
+                task.cancel()
+            await asyncio.gather(*watch_tasks, return_exceptions=True)
+            if summary_watch is not None:
+                await summary_watch.close()
             await history.close()
 
 

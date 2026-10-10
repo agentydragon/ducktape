@@ -144,6 +144,7 @@ py_library(
         "//agentplane/app/threads:sessions",
         "//agentplane/app/threads:store",
         "//agentplane/app/threads:summaries",
+        "//agentplane/app/threads:summary_watch",
         "//agentplane/app/threads/events:event_log",
         "//agentplane/app/threads/view:content",
         "//agentplane/history_service:client",

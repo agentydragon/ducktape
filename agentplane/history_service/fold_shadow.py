@@ -15,8 +15,9 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.exc import SQLAlchemyError
-from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
+from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
 
+from agentplane.history_service.summary_changes import notify_summaries
 from agentplane.sandbox_service import protocol_pb2
 from agentplane.sandbox_service.session_history.db import SessionHistory
 from agentplane.sandbox_service.session_history.store import Store
@@ -43,10 +44,6 @@ def history_pages(history: Store) -> PageReader:
     return read
 
 
-async def _unobserved(_session: AsyncSession) -> None:
-    """Nothing reads the History Service fold yet, so a commit has no one to tell."""
-
-
 @dataclass(frozen=True)
 class FoldBacklog:
     sessions: int
@@ -59,7 +56,7 @@ class FoldShadow:
         """`engine` writes the fold tables; `history` reads the raw log, which this never writes."""
         self._sessions = async_sessionmaker(engine, expire_on_commit=False)
         self._projector = HistoryProjector(
-            engine, history_pages(history), projection_epoch=FOLD_EPOCH, notify=_unobserved
+            engine, history_pages(history), projection_epoch=FOLD_EPOCH, notify=notify_summaries
         )
         self._slots = asyncio.Semaphore(concurrency)
         self._leases: dict[UUID, ProjectionLease] = {}

@@ -24,6 +24,7 @@ proto_library(
         "//agentplane/protocol:event_proto",
         "//agentplane/runner:protocol_proto",
         "//agentplane/sandbox_service:protocol_proto",
+        "@protobuf//:empty_proto",
         "@protobuf//:timestamp_proto",
     ],
 )
@@ -47,6 +48,7 @@ py_library(
     deps = [
         ":evidence",
         ":summaries",
+        ":summary_changes",
         ":thread_reads",
         "//agentplane:subjects",
         "//agentplane/history_service:protocol_pb2",
@@ -119,9 +121,19 @@ py_test(
 )
 
 py_library(
+    name = "summary_changes",
+    srcs = ["summary_changes.py"],
+    deps = [
+        "//agentplane/postgres:listener",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
     name = "fold_shadow",
     srcs = ["fold_shadow.py"],
     deps = [
+        ":summary_changes",
         "//agentplane/sandbox_service:protocol_pb2",
         "//agentplane/sandbox_service/session_history:db",
         "//agentplane/sandbox_service/session_history:store",
@@ -306,6 +318,7 @@ py_library(
         ":ingester",
         ":settings",
         ":summaries",
+        ":summary_changes",
         ":thread_reads",
         "//agentplane/sandbox_service:client",
         "//agentplane/sandbox_service/session_history:store",
@@ -328,6 +341,7 @@ py_test(
         ":evidence",
         ":grpc_api",
         ":summaries",
+        ":summary_changes",
         ":thread_reads",
         "//:conftest",
         "//agentplane:subjects",
