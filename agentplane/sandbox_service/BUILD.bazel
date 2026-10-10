@@ -841,6 +841,7 @@ py_library(
         "//agentplane/runner_channel:protocol_pb2",
         "//agentplane/sandbox_service/commands:connections",
         "//agentplane/sandbox_service/commands:dispatch",
+        "@pypi//protobuf",
         "@pypi//sqlalchemy",
     ],
 )
