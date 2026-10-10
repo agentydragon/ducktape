@@ -13,6 +13,7 @@ package(default_visibility = ["//agentplane/history_service:__subpackages__"])
 # gazelle:resolve py agentplane.sandbox_service.protocol_pb2 //agentplane/sandbox_service:protocol_pb2
 # gazelle:resolve py agentplane.protocol.event_pb2 //agentplane/protocol:event_pb2
 # gazelle:resolve py agentplane.protocol.event_log_pb2 //agentplane/protocol:event_log_pb2
+# gazelle:resolve py agentplane.runner.protocol_pb2 //agentplane/runner:protocol_pb2
 
 proto_library(
     name = "protocol_proto",
@@ -68,6 +69,56 @@ py_library(
 )
 
 py_library(
+    name = "ingester",
+    srcs = ["ingester.py"],
+    deps = [
+        "//agentplane/protocol:event_log_pb2",
+        "//agentplane/runner:errors",
+        "//agentplane/sandbox_service:client",
+        "//agentplane/sandbox_service:protocol_pb2",
+        "//agentplane/sandbox_service/session_history:store",
+        "@pypi//grpcio",
+        "@pypi//protobuf",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
+    name = "conftest",
+    testonly = True,
+    srcs = ["conftest.py"],
+    deps = [
+        "//agentplane/protocol:event_log_pb2",
+        "//agentplane/runner:protocol_pb2",
+        "//agentplane/sandbox_service:client",
+        "//agentplane/sandbox_service:protocol_pb2",
+        "@pypi//grpcio",
+        "@pypi//protobuf",
+        "@pypi//pytest",
+    ],
+)
+
+py_test(
+    name = "test_ingester",
+    size = "medium",
+    srcs = ["test_ingester.py"],
+    deps = [
+        ":conftest",
+        ":ingester",
+        "//:conftest",
+        "//agentplane/protocol:event_log_pb2",
+        "//agentplane/protocol:event_pb2",
+        "//agentplane/sandbox_service:protocol_pb2",
+        "//agentplane/sandbox_service/session_history:conftest",
+        "//agentplane/sandbox_service/session_history:store",
+        "@pypi//protobuf",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
     name = "settings",
     srcs = ["settings.py"],
     visibility = [
@@ -87,7 +138,9 @@ py_library(
     srcs = ["main.py"],
     deps = [
         ":grpc_api",
+        ":ingester",
         ":settings",
+        "//agentplane/sandbox_service:client",
         "//agentplane/sandbox_service/session_history:store",
         "//agentplane/workload_auth:principal",
         "@pypi//asyncpg",
@@ -104,6 +157,7 @@ py_test(
     size = "medium",
     srcs = ["test_grpc_api.py"],
     deps = [
+        ":conftest",
         ":grpc_api",
         "//:conftest",
         "//agentplane:subjects",

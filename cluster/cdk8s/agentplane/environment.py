@@ -121,6 +121,9 @@ class Environment:
     app_config: AppSettingsConfig
     # Options for Sandbox Service's gRPC channel to the runner, authored into its ConfigMap.
     runner_grpc_channel_options: Mapping[str, int | str]
+    # Whether the History Service ingester writes Session history. One writer at a time: the
+    # Sandbox Service ingester still runs, so this stays off until it stops.
+    history_ingester: bool
     db: DbProps
     llm_ingress: LlmIngressProps
     egress: EgressProps

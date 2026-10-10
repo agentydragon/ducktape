@@ -29,7 +29,7 @@ from agentplane.sandbox_service.kubernetes_grants import ClusterRoleBindingGrant
 from agentplane.sandbox_service.settings import CONFIG_FILE_ENV, Settings
 from agentplane.subjects import ServiceAccountRef
 from cluster.cdk8s import cilium, node_scheduling, pod_policy
-from cluster.cdk8s.agentplane import actions, database, egress, notifications
+from cluster.cdk8s.agentplane import actions, database, egress, history_service, notifications
 from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.agentplane.migrate_container import migrate_init_container
 from cluster.cdk8s.agentplane.pod_disruption_budget import add_pod_disruption_budget
@@ -72,7 +72,14 @@ class SandboxService(Construct):
         settings = Settings(
             _cli_parse_args=False,
             sandbox_namespace=env.namespace,
-            caller_accounts=frozenset({manager, ServiceAccountRef(namespace=env.namespace, name=notifications.NAME)}),
+            caller_accounts=frozenset(
+                {
+                    manager,
+                    ServiceAccountRef(namespace=env.namespace, name=notifications.NAME),
+                    # Subscribes to Sessions (WatchSessions, FollowSession) for its ingester.
+                    ServiceAccountRef(namespace=env.namespace, name=history_service.NAME),
+                }
+            ),
             token_audience=TOKEN_AUDIENCE,
             history_reader_accounts=frozenset({manager}),
             platform_instructions=combine_instructions(
@@ -168,6 +175,7 @@ class SandboxService(Construct):
             ingress=[
                 caller.pods.admit(endpoint.pod_port),
                 notifications.service(env.namespace).pods.admit(endpoint.pod_port),
+                history_service.service(env.namespace).pods.admit(endpoint.pod_port),
             ],
             egress=[
                 cilium.dns_egress(),

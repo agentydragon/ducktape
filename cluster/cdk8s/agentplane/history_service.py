@@ -1,7 +1,7 @@
 """Serves retained Session history from the `sandbox_service` database, whose schema the
-Sandbox Service's migrate init container still owns."""
+Sandbox Service's migrate init container still owns, and can ingest it from the Sandbox Service."""
 
-from cdk8s import ApiObjectMetadata, Duration, Size
+from cdk8s import ApiObject, ApiObjectMetadata, Duration, JsonPatch, Size
 from cdk8s_plus_34 import (
     ContainerResources,
     ContainerSecurityContextProps,
@@ -13,6 +13,7 @@ from cdk8s_plus_34 import (
     PodSecurityContextProps,
     Service,
     ServiceAccount,
+    k8s,
 )
 from constructs import Construct
 
@@ -36,6 +37,7 @@ TOKEN_AUDIENCE = "agentplane-history-service"
 _LABELS = {"app.kubernetes.io/name": NAME}
 _IMAGE = "git.allegedly.works/ducktape-ci/agentplane-history-service"
 _HEALTH = Port(name="health", number=8081)
+_SANDBOX_SERVICE_TOKEN_DIR = "/var/run/secrets/agentplane-sandbox-service"
 
 
 def service(namespace: str) -> ServiceRef:
@@ -46,7 +48,15 @@ def service(namespace: str) -> ServiceRef:
 
 class HistoryService(Construct):
     def __init__(
-        self, scope: Construct, id: str, env: Environment, *, reader: ServiceAccountRef, caller: ServiceRef
+        self,
+        scope: Construct,
+        id: str,
+        env: Environment,
+        *,
+        reader: ServiceAccountRef,
+        caller: ServiceRef,
+        sandboxes: ServiceRef,
+        sandboxes_audience: str,
     ) -> None:
         super().__init__(scope, id)
         endpoint = service(env.namespace)
@@ -71,6 +81,12 @@ class HistoryService(Construct):
                 "token_audience": TOKEN_AUDIENCE,
                 "port": endpoint.port.number,
                 "health_port": _HEALTH.number,
+                "sandbox_service": {
+                    "target": f"{sandboxes.fqdn}:{sandboxes.pod_port}",
+                    "token_file": f"{_SANDBOX_SERVICE_TOKEN_DIR}/token",
+                    "grpc_channel_options": env.app_config.sandbox_service_grpc_channel_options,
+                },
+                "ingester": {"enabled": env.history_ingester},
             },
             path="/etc/agentplane-history-service/config.yaml",
             supplied=[("database_url",)],
@@ -110,6 +126,30 @@ class HistoryService(Construct):
             security_context=ContainerSecurityContextProps(read_only_root_filesystem=False),
         )
         config.mount_into(container, env=CONFIG_FILE_ENV)
+        # A rotating, audience-scoped workload token for the ingester's Sandbox Service calls.
+        ApiObject.of(deployment).add_json_patch(
+            JsonPatch.add(
+                "/spec/template/spec/volumes/-",
+                k8s.Volume(
+                    name="sandbox-service-token",
+                    projected=k8s.ProjectedVolumeSource(
+                        sources=[
+                            k8s.VolumeProjection(
+                                service_account_token=k8s.ServiceAccountTokenProjection(
+                                    audience=sandboxes_audience, expiration_seconds=3600, path="token"
+                                )
+                            )
+                        ]
+                    ),
+                ),
+            )
+        )
+        ApiObject.of(deployment).add_json_patch(
+            JsonPatch.add(
+                "/spec/template/spec/containers/0/volumeMounts/-",
+                k8s.VolumeMount(name="sandbox-service-token", mount_path=_SANDBOX_SERVICE_TOKEN_DIR, read_only=True),
+            )
+        )
         pod_policy.place(deployment, node_scheduling.HIL_OVH)
         pod_policy.harden(deployment)
         Service(
@@ -128,6 +168,7 @@ class HistoryService(Construct):
             egress=[
                 cilium.dns_egress(),
                 EgressRule.to_entities(Entity.KUBE_APISERVER),
+                sandboxes.egress(),
                 EgressRule.to_endpoints(
                     {"k8s:io.kubernetes.pod.namespace": env.namespace, "k8s:cnpg.io/cluster": "postgres"},
                     database.POSTGRES_PORT,

@@ -1831,6 +1831,8 @@ data:
       - namespace: agentplane-testing
         name: agentplane-app
       - namespace: agentplane-testing
+        name: agentplane-history-service
+      - namespace: agentplane-testing
         name: agentplane-notifications
     history_reader_accounts:
       - namespace: agentplane-testing
@@ -2261,6 +2263,14 @@ spec:
         - ports:
             - port: "8080"
               protocol: TCP
+    - fromEndpoints:
+        - matchLabels:
+            app.kubernetes.io/name: agentplane-history-service
+            k8s:io.kubernetes.pod.namespace: agentplane-testing
+      toPorts:
+        - ports:
+            - port: "8080"
+              protocol: TCP
 ---
 apiVersion: v1
 kind: ServiceAccount
@@ -2308,6 +2318,13 @@ data:
     token_audience: agentplane-history-service
     port: 8080
     health_port: 8081
+    sandbox_service:
+      target: agentplane-sandbox-service.agentplane-testing.svc.cluster.local:8080
+      token_file: /var/run/secrets/agentplane-sandbox-service/token
+      grpc_channel_options:
+        grpc.max_receive_message_length: 33554432
+    ingester:
+      enabled: false
 immutable: false
 ---
 apiVersion: apps/v1
@@ -2387,6 +2404,9 @@ spec:
             - mountPath: /etc/agentplane-history-service
               name: configmap-agentplane-history-service-config
               readOnly: true
+            - mountPath: /var/run/secrets/agentplane-sandbox-service
+              name: sandbox-service-token
+              readOnly: true
       dnsPolicy: ClusterFirst
       hostNetwork: false
       imagePullSecrets:
@@ -2410,6 +2430,13 @@ spec:
         - configMap:
             name: agentplane-history-service-config
           name: configmap-agentplane-history-service-config
+        - name: sandbox-service-token
+          projected:
+            sources:
+              - serviceAccountToken:
+                  audience: agentplane-sandbox-service
+                  expirationSeconds: 3600
+                  path: token
 ---
 apiVersion: v1
 kind: Service
@@ -2448,6 +2475,14 @@ spec:
               protocol: TCP
     - toEntities:
         - kube-apiserver
+    - toEndpoints:
+        - matchLabels:
+            app.kubernetes.io/name: agentplane-sandbox-service
+            k8s:io.kubernetes.pod.namespace: agentplane-testing
+      toPorts:
+        - ports:
+            - port: "8080"
+              protocol: TCP
     - toEndpoints:
         - matchLabels:
             k8s:cnpg.io/cluster: postgres

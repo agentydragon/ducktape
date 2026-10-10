@@ -771,6 +771,7 @@ py_library(
         ":database",
         ":egress",
         ":environment",
+        ":history_service",
         ":migrate_container",
         ":notifications",
         ":pod_disruption_budget",

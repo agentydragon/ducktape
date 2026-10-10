@@ -72,6 +72,8 @@ def environment_chart(app: App, env: Environment) -> Chart:
         env,
         reader=ServiceAccountRef(namespace=env.namespace, name=app_component.NAME),
         caller=app_component.service(env.namespace),
+        sandboxes=sandbox_service.service(env.namespace),
+        sandboxes_audience=sandbox_service.TOKEN_AUDIENCE,
     )
     app_component.App(chart, "app", env)
     actions.Actions(chart, "actions", env)

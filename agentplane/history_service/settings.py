@@ -6,7 +6,7 @@ import os
 from pathlib import Path
 from typing import Any
 
-from pydantic import Field
+from pydantic import BaseModel, ConfigDict, Field
 from pydantic_settings import BaseSettings, PydanticBaseSettingsSource, SettingsConfigDict, YamlConfigSettingsSource
 
 # YamlConfigSettingsSource loads yaml lazily inside pydantic-settings; gazelle cannot see the dependency.
@@ -14,6 +14,42 @@ from pydantic_settings import BaseSettings, PydanticBaseSettingsSource, Settings
 from agentplane.subjects import ServiceAccountRef
 
 CONFIG_FILE_ENV = "AGENTPLANE_HISTORY_SERVICE_CONFIG_FILE"
+
+
+class SandboxServiceSettings(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    target: str = Field(min_length=1, description="Sandbox Service gRPC host:port the ingester follows Sessions from.")
+    token_file: Path = Field(
+        description="Rotating projected ServiceAccount token for the Sandbox Service audience, reread on every call."
+    )
+    request_timeout_s: float = Field(default=15, gt=0, allow_inf_nan=False)
+    follow_timeout_s: float = Field(
+        default=960,
+        gt=0,
+        allow_inf_nan=False,
+        description="Whole-stream safety deadline; keep above the Sandbox Service's follow_lease_s.",
+    )
+    grpc_channel_options: dict[str, int | str] = Field(
+        default_factory=dict,
+        description="gRPC options for this connection; receives replayed journal entries up to the configured limit.",
+    )
+
+
+class IngesterSettings(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    enabled: bool = Field(
+        default=False,
+        description="Copy runner journals into the history tables. Off while the Sandbox Service ingester writes them.",
+    )
+    concurrency: int = Field(
+        default=16, ge=1, le=64, description="Sessions followed at once per replica; the rest wait for a free slot."
+    )
+    retry_interval_s: float = Field(
+        default=15,
+        gt=0,
+        allow_inf_nan=False,
+        description="Delay before following again a Session that ended, failed or is claimed by another replica.",
+    )
 
 
 class Settings(BaseSettings):
@@ -29,6 +65,8 @@ class Settings(BaseSettings):
     port: int = Field(default=8080, ge=1, le=65535)
     health_port: int = Field(default=8081, ge=1, le=65535)
     kubeconfig: Path | None = None
+    sandbox_service: SandboxServiceSettings
+    ingester: IngesterSettings = Field(default_factory=IngesterSettings)
 
     def __init__(self, **values: Any) -> None:
         super().__init__(**values)

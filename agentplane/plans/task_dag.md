@@ -821,11 +821,11 @@ Remove the Sandbox Service history read RPCs and their client code.
 
 ### `HISTORY_WRITE_HANDOFF` — the History Service ingester takes over
 
-**Candidate.** Move the Sandbox Service's
-ingester into the History Service as a subscriber of those calls, with its per-log claim; one writer
-at a time. Test a History Service outage (it resumes from its cursor; the runner journal is the
-buffer), duplicate and conflicting replays, and claim handover between replicas. Rollback: run the
-old ingester again; the tables are the same.
+**Candidate.** The History Service ingester exists, deployed with `ingester.enabled` off in both
+environments ([History Service](../history_service/README.md#ingester)). What remains is the flip:
+enable it and stop the Sandbox Service ingester, testing first and then staging, verifying on each
+that new entries are committed by the History Service alone. Rollback: run the old ingester again;
+the tables are the same.
 
 ### `SANDBOX_LOCAL_HISTORY_RETIRE` — remove the local store
 

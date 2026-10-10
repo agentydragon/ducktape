@@ -75,6 +75,7 @@ def test_app_uses_independent_service(namespace: str, agentplane_manifests: dict
     )
     assert backend_config["caller_accounts"] == [
         {"namespace": namespace, "name": app.NAME},
+        {"namespace": namespace, "name": history_service.NAME},
         {"namespace": namespace, "name": notifications.NAME},
     ]
     runner_policy = resource("CiliumNetworkPolicy", "agentplane-runner")["spec"]
