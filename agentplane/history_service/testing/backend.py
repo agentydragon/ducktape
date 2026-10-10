@@ -96,8 +96,11 @@ async def fold_history(database_url: str) -> None:
     engine = create_async_engine(make_url(database_url).set(drivername="postgresql+asyncpg"))
     try:
         shadow = FoldShadow(engine=engine, history=Store(engine), concurrency=1)
-        while (await shadow.cycle()).behind:
-            pass
+        try:
+            while (await shadow.cycle()).behind:
+                pass
+        finally:
+            await shadow.release()
     finally:
         await engine.dispose()
 

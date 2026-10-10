@@ -76,8 +76,12 @@ class FoldShadow:
                     logger.warning("fold shadow cycle failed; will retry", exc_info=True)
                 await asyncio.sleep(interval_s)
         finally:
-            for session_id in list(self._leases):
-                await self._release(session_id)
+            await self.release()
+
+    async def release(self) -> None:
+        """Hand every held lease back, so another folder need not wait out `LEASE_DURATION`."""
+        for session_id in list(self._leases):
+            await self._release(session_id)
 
     async def cycle(self) -> FoldBacklog:
         """Advance every retained Session by at most one page."""
