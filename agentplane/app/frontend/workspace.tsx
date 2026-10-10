@@ -354,7 +354,7 @@ export function WorkspaceRoute(): JSX.Element {
   const [launcherQuery, setLauncherQuery] = useState("");
   const [phone, setPhone] = useState(isPhoneWidth);
   const previousPhone = useRef(phone);
-  const threads = live.snapshot?.threads ?? [];
+  const threads = useMemo(() => live.snapshot?.threads ?? [], [live.snapshot?.threads]);
   const threadNames = useMemo(
     () => new Map(threads.map((thread) => [thread.id, thread.name ?? thread.session_id])),
     [threads]

@@ -1030,7 +1030,6 @@ function ProjectedSessionBody({
   thread,
   history,
   available,
-  manageGlobalChrome,
   onStatusChange,
 }: {
   threadId: string;
@@ -1038,7 +1037,6 @@ function ProjectedSessionBody({
   thread: ThreadView;
   history: Pick<ThreadWindow, "olderAvailable" | "loadingOlder" | "loadOlder">;
   available: boolean;
-  manageGlobalChrome: boolean;
   onStatusChange: (status: ThreadTabTitleStatus) => void;
 }): JSX.Element {
   const [draft, setDraft] = useState("");
@@ -1417,7 +1415,6 @@ function SyncedThread({
         thread={thread}
         history={shown}
         available={available}
-        manageGlobalChrome={manageGlobalChrome}
         onStatusChange={onStatusChange}
       />
     </>
