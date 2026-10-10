@@ -20,7 +20,7 @@ from agentplane.app.threads.events.event_log import (
     FeedEnd,
 )
 from agentplane.app.threads.events.projection_lease import ProjectionLeaseLostError
-from agentplane.app.threads.history_projector import HistoryProjector
+from agentplane.app.threads.history_projector import HistoryProjector, ProjectionProgress
 from agentplane.app.threads.ingestion import Ingester
 from agentplane.app.threads.models import (
     Event,
@@ -28,6 +28,7 @@ from agentplane.app.threads.models import (
     FeedState,
     ThreadCheckpoint,
     ThreadEntity,
+    ThreadEvidence,
     ThreadHistorySummary,
 )
 from agentplane.app.threads.sessions import SandboxSessions
@@ -37,6 +38,7 @@ from agentplane.protocol import event_pb2
 from agentplane.runner import protocol_pb2 as runner_pb2
 from agentplane.sandbox_service import protocol_pb2
 from agentplane.sandbox_service.client import SandboxServiceClient
+from agentplane.sandbox_service.testing.delta_spans import claude_text
 
 # gazelle:include_dep @pypi//protobuf
 
@@ -112,6 +114,71 @@ async def test_invalid_history_does_not_advance_projection(
     reader = AsyncMock(spec=SandboxServiceClient)
     reader.read_session_events.return_value = protocol_pb2.ReadSessionEventsResponse(
         last_cursor=0 if case == "beyond_watermark" else 1, entries=[] if case == "gap" else [entry]
+    )
+    with pytest.raises(EventReplicationError):
+        await HistoryProjector(engine, cast(SandboxServiceClient, reader)).project_batch(thread, lease=lease)
+    assert await event_logs.last_cursor(thread) == 0
+
+
+def text_settlement() -> protocol_pb2.SettledDeltas:
+    # `claude_text(["Hel", "lo"])`: 1-2 start, 3-6 two chunk pairs, 7-8 completion.
+    return protocol_pb2.SettledDeltas(
+        item_id="msg_test#0", completion_cursor=8, ranges=[protocol_pb2.CursorRange(first=3, last=6)], chunk_count=2
+    )
+
+
+async def evidence_cursors(engine: AsyncEngine) -> list[int]:
+    async with async_sessionmaker(engine)() as session:
+        return list(
+            await session.scalars(select(ThreadEvidence.observation_cursor).order_by(ThreadEvidence.observation_cursor))
+        )
+
+
+async def test_projection_skips_settled_ranges(
+    engine: AsyncEngine, event_logs: EventLogStore, lease_for: LeaseFactory
+) -> None:
+    thread = await event_logs.open("sb-1", "s-1", SPEC)
+    lease = await lease_for(thread)
+    span = claude_text(["Hel", "lo"]).entries
+    reader = AsyncMock(spec=SandboxServiceClient)
+    reader.read_session_events.return_value = protocol_pb2.ReadSessionEventsResponse(
+        last_cursor=8, entries=[*span[:2], *span[6:]], settlements=[text_settlement()]
+    )
+    assert (await HistoryProjector(engine, cast(SandboxServiceClient, reader)).project_batch(thread, lease=lease)) == (
+        ProjectionProgress(8, 8)
+    )
+    assert await evidence_cursors(engine) == [2, 8]
+
+
+async def test_settlement_after_live_projection_drops_chunk_evidence(
+    engine: AsyncEngine, event_logs: EventLogStore, lease_for: LeaseFactory
+) -> None:
+    thread = await event_logs.open("sb-1", "s-1", SPEC)
+    lease = await lease_for(thread)
+    span = claude_text(["Hel", "lo"]).entries
+    reader = AsyncMock(spec=SandboxServiceClient)
+    reader.read_session_events.side_effect = [
+        protocol_pb2.ReadSessionEventsResponse(last_cursor=6, entries=span[:6]),
+        protocol_pb2.ReadSessionEventsResponse(last_cursor=8, entries=span[6:], settlements=[text_settlement()]),
+    ]
+    projector = HistoryProjector(engine, cast(SandboxServiceClient, reader))
+    await projector.project_batch(thread, lease=lease)
+    assert await evidence_cursors(engine) == [2, 4, 6]
+    await projector.project_batch(thread, lease=lease)
+    assert await evidence_cursors(engine) == [2, 8]
+
+
+async def test_gap_outside_settled_ranges_is_rejected(
+    engine: AsyncEngine, event_logs: EventLogStore, lease_for: LeaseFactory
+) -> None:
+    thread = await event_logs.open("sb-1", "s-1", SPEC)
+    lease = await lease_for(thread)
+    span = claude_text(["Hel", "lo"]).entries
+    settlement = text_settlement()
+    settlement.ranges[0].last = 5
+    reader = AsyncMock(spec=SandboxServiceClient)
+    reader.read_session_events.return_value = protocol_pb2.ReadSessionEventsResponse(
+        last_cursor=8, entries=[*span[:2], *span[6:]], settlements=[settlement]
     )
     with pytest.raises(EventReplicationError):
         await HistoryProjector(engine, cast(SandboxServiceClient, reader)).project_batch(thread, lease=lease)

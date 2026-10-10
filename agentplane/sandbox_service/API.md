@@ -78,6 +78,15 @@ runs when the Service starts; there is no runtime feature gate. The app's projec
 consumes this archive independently. Legacy rows without a known Sandbox UID remain
 readable but are not polled until their binding is established by a verified handoff.
 
+Delta settlement, off unless the service's `settle_deltas` setting or a Session's
+`CreateSessionRequest.settle_deltas` turns it on, removes an item's streamed delta entries
+(native frame plus derived delta) from the stored copy once the retained completion entry
+provably holds their concatenation; the runner journal keeps every frame. What is lost is
+only how the content was chunked, per-chunk timestamps and ids, and frame serialization.
+History reads report each removal (`SettledDeltas`, `CursorRange`), so the stored prefix
+is complete except for the named settled ranges. Re-copying a settled cursor is accepted
+as a duplicate.
+
 - `ListSessions`: Sandbox destination; maps Service-created runner IDs to public Session IDs in
   the returned summaries. Legacy runner-owned sessions retain their existing IDs.
 - `OpenSession`: legacy caller-chosen runner ID; retained for deployed app sessions until cutover.

@@ -203,7 +203,7 @@ async def remote(resources: Resources, token_file: Path) -> AsyncIterator[Sandbo
 async def test_managed_open_keeps_runner_id_internal_and_retries_frozen_launch(
     resources: Resources, token_file: Path, peer: Peer, engine: AsyncEngine
 ) -> None:
-    store = Store(engine)
+    store = Store(engine, settle_deltas=False)
     async with service_client(replace(resources, history=store), token_file) as remote:
         runner = remote.runner(DESTINATION)
         overrides: dict[str, object] = {"harness": "HARNESS_CODEX", "model": "test-model", "cwd": "/state/{session_id}"}
@@ -221,7 +221,8 @@ async def test_managed_open_keeps_runner_id_internal_and_retries_frozen_launch(
 
         # Simulate changed defaults/platform instructions after the original reply was lost.
         async with service_client(
-            replace(resources, history=Store(engine), platform_instructions="Changed guidance"), token_file
+            replace(resources, history=Store(engine, settle_deltas=False), platform_instructions="Changed guidance"),
+            token_file,
         ) as retry:
             again = await retry.runner(DESTINATION).create(idempotency_key="first-attempt", spec=overrides)
         second = await peer.attachments.get()
@@ -261,7 +262,7 @@ async def test_managed_open_keeps_runner_id_internal_and_retries_frozen_launch(
 async def test_lookup_open_scopes_reservation_and_waits_for_runner_confirmation(
     resources: Resources, token_file: Path, peer: Peer, engine: AsyncEngine
 ) -> None:
-    store = Store(engine)
+    store = Store(engine, settle_deltas=False)
     async with service_client(replace(resources, history=store), token_file) as remote:
         runner = remote.runner(DESTINATION)
         assert not (await runner.lookup(idempotency_key="lookup-key")).session_id
@@ -274,6 +275,7 @@ async def test_lookup_open_scopes_reservation_and_waits_for_runner_confirmation(
             open_key="lookup-key",
             open_request=b"original inputs remain private",
             launch_spec=lambda _: b"private launch",
+            settle_deltas=None,
         )
         pending = await runner.lookup(idempotency_key="lookup-key")
         assert pending.session_id == str(reserved.session_id)
@@ -304,7 +306,7 @@ async def test_lookup_rejects_failed_native_open_but_recovers_an_earlier_success
     resources: Resources, token_file: Path, peer: Peer, engine: AsyncEngine
 ) -> None:
     """Inventory also retains a spec after a native handshake fails; never project it as a Thread."""
-    async with service_client(replace(resources, history=Store(engine)), token_file) as remote:
+    async with service_client(replace(resources, history=Store(engine, settle_deltas=False)), token_file) as remote:
         runner = remote.runner(DESTINATION)
         created = await runner.create(
             idempotency_key="failed-handshake", spec={"harness": "HARNESS_CODEX", "model": "m", "cwd": "/state"}
@@ -360,7 +362,7 @@ async def test_lookup_rejects_failed_native_open_but_recovers_an_earlier_success
 async def test_history_copy_replays_only_published_prefix_and_detects_regression(
     peer: Peer, engine: AsyncEngine
 ) -> None:
-    store = Store(engine)
+    store = Store(engine, settle_deltas=False)
     session_id = uuid4()
     physical = f"r-{session_id}"
     await store.open(
@@ -393,7 +395,7 @@ async def test_history_copy_replays_only_published_prefix_and_detects_regression
         assert await copy_confirmed_prefix(store, locator, runner) == 2  # exact replay is idempotent
         await (await peer.attachments.get()).closed.wait()
         peer.history[physical].append(entry(3))
-        assert await copy_confirmed_prefix(Store(engine), locator, runner) == 3
+        assert await copy_confirmed_prefix(Store(engine, settle_deltas=False), locator, runner) == 3
         await (await peer.attachments.get()).closed.wait()
         assert (await store.read(session_id))[1] == peer.history[physical]
         peer.history[physical] = [entry(1)]  # a replacement lost the runner's journal
@@ -408,7 +410,7 @@ async def test_managed_open_lost_response_uses_same_reservation(
     resources: Resources, token_file: Path, peer: Peer, engine: AsyncEngine
 ) -> None:
     peer.answer_open = False
-    store = Store(engine)
+    store = Store(engine, settle_deltas=False)
     request = protocol_pb2.CreateSessionRequest(
         sandbox=DESTINATION,
         idempotency_key="lost-response",
@@ -942,7 +944,7 @@ async def test_successor_pod_same_sandbox_and_account_keeps_destination(resource
 async def test_history_read_requires_explicit_reader_even_after_sandbox_deletion(
     resources: Resources, token_file: Path, engine: AsyncEngine
 ) -> None:
-    store = Store(engine)
+    store = Store(engine, settle_deltas=False)
     public_id = uuid4()
     await store.open(
         public_id,
@@ -983,7 +985,7 @@ async def test_history_read_requires_explicit_reader_even_after_sandbox_deletion
 
 @pytest.mark.parametrize("outcome", ["eof", "timeout", "transport_error", "new_event"])
 async def test_history_copy_records_only_explicit_eof(peer: Peer, engine: AsyncEngine, outcome: str) -> None:
-    store = Store(engine)
+    store = Store(engine, settle_deltas=False)
     session_id = uuid4()
     physical = f"r-{session_id}"
     await store.open(

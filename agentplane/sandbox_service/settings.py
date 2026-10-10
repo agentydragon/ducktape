@@ -26,6 +26,11 @@ class Settings(BaseSettings):
     database_url: str | None = Field(default=None, min_length=1)
     caller_accounts: frozenset[ServiceAccountRef] = Field(min_length=1)
     history_reader_accounts: frozenset[ServiceAccountRef] = frozenset()
+    settle_deltas: bool = Field(
+        default=False,
+        description="Default for sessions without an override: remove an item's streamed delta entries "
+        "from stored history once its retained completion provably holds their concatenation.",
+    )
     platform_instructions: str = Field(min_length=1)
     lifecycle_timeout_s: float = Field(default=300, gt=0)
     default_egress_policies: list[str] = Field(default_factory=list)

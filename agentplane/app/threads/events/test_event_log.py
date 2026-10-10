@@ -19,6 +19,7 @@ from agentplane.app.threads.models import EventLog, ThreadCheckpoint, ThreadHist
 from agentplane.protocol import event_pb2
 from agentplane.sandbox_service import protocol_pb2
 from agentplane.sandbox_service.client import SandboxServiceClient
+from agentplane.sandbox_service.testing.delta_spans import claude_text
 
 # The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.
 # gazelle:include_dep @pypi//protobuf
@@ -146,6 +147,37 @@ async def test_service_observation_pages_do_not_require_app_raw_rows(
     reader.read_session_observations.assert_awaited_once_with(
         str(thread), before_cursor=before, after_cursor=after, limit=2
     )
+
+
+@pytest.mark.parametrize(("before", "after", "cursors"), [(None, 2, [7, 8]), (7, None, [1, 2]), (8, None, [2, 7])])
+async def test_service_observation_pages_skip_settled_ranges(
+    engine: AsyncEngine, before: int | None, after: int | None, cursors: list[int]
+) -> None:
+    reader = AsyncMock(spec=SandboxServiceClient)
+    reader.read_session_observations.return_value = protocol_pb2.ReadSessionObservationsResponse(
+        last_cursor=8,
+        observations=[protocol_pb2.SessionObservation(cursor=cursor, kind="native") for cursor in cursors],
+        settled=[protocol_pb2.CursorRange(first=3, last=6)],
+    )
+    remote = EventLogStore(engine, history_reader=cast(SandboxServiceClient, reader))
+    page = await remote.observations(
+        UUID("00000000-0000-0000-0000-000000000001"), before_cursor=before, after_cursor=after, limit=2
+    )
+    assert [row.cursor for row in page.observations] == [str(cursor) for cursor in cursors]
+
+
+async def test_settled_observation_has_no_entry(engine: AsyncEngine) -> None:
+    span = claude_text(["Hel", "lo"]).entries
+    reader = AsyncMock(spec=SandboxServiceClient)
+    reader.read_session_events.return_value = protocol_pb2.ReadSessionEventsResponse(
+        last_cursor=8,
+        entries=[span[6]],
+        settlements=[
+            protocol_pb2.SettledDeltas(completion_cursor=8, ranges=[protocol_pb2.CursorRange(first=3, last=6)])
+        ],
+    )
+    remote = EventLogStore(engine, history_reader=cast(SandboxServiceClient, reader))
+    assert await remote.observation_entry(UUID("00000000-0000-0000-0000-000000000001"), 4) is None
 
 
 async def test_service_observation_page_rejects_missing_entries(engine: AsyncEngine) -> None:

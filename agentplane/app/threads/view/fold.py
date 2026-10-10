@@ -10,6 +10,7 @@ from dataclasses import dataclass, replace
 from enum import StrEnum
 
 from agentplane.protocol import command_pb2, event_log_pb2, event_pb2
+from agentplane.sandbox_service.settled_cursors import next_stored
 
 
 class ObservationNotUnderstoodError(ValueError):
@@ -196,6 +197,8 @@ class EventBatch:
     source_id: str
     after_cursor: int
     entries: tuple[event_log_pb2.EventEntry, ...]
+    # Cursor ranges whose settled deltas the service no longer stores; the entries skip them.
+    settled: tuple[tuple[int, int], ...]
 
 
 @dataclass(frozen=True)
@@ -671,7 +674,8 @@ class _Fold:
 
 
 def advance(state: ViewState, batch: EventBatch, prior: PriorEntities) -> ProjectionBatch:
-    """Fold a contiguous original-source prefix without mutating caller-owned values."""
+    """Fold an original-source prefix, contiguous but for settled ranges, without mutating
+    caller-owned values."""
 
     position = state.position
     if not position.source_id or not position.projection_epoch:
@@ -684,7 +688,7 @@ def advance(state: ViewState, batch: EventBatch, prior: PriorEntities) -> Projec
     for supplied in batch.entries:
         entry = event_log_pb2.EventEntry.FromString(supplied.SerializeToString())
         try:
-            if entry.cursor != fold.state.position.through_cursor + 1:
+            if entry.cursor != next_stored(fold.state.position.through_cursor, batch.settled):
                 raise ValueError(f"noncontiguous source cursor: {entry.cursor}")
             if entry.origin.source_id != batch.source_id or entry.origin.sequence != entry.cursor:
                 raise ValueError("entry does not belong to the original source archive")

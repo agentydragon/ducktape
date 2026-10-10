@@ -35,7 +35,7 @@ async def with_history(resources: Resources, database_url: str | None) -> AsyncI
     engine = create_async_engine(database_url)
     async with engine.begin() as connection:
         await connection.run_sync(Base.metadata.create_all)
-    store = Store(engine)
+    store = Store(engine, settle_deltas=False)
     ingester = HistoryIngester(store, resources.destinations, runner_grpc_channel_options={}, interval_s=0.05)
 
     async def discover_and_copy() -> None:

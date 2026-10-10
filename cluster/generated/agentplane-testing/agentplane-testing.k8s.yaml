@@ -1778,6 +1778,7 @@ data:
     history_reader_accounts:
       - namespace: agentplane-testing
         name: agentplane-app
+    settle_deltas: false
     platform_instructions: |-
       You are running in a Kubernetes sandbox managed by Agentplane. Agentplane governs outbound network
       access and sensitive operations. Instead of real service tokens you receive credential placeholders:

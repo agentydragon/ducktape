@@ -104,3 +104,13 @@ py_library(
         "@pypi//sqlalchemy",
     ],
 )
+
+py_library(
+    name = "delta_spans",
+    srcs = ["delta_spans.py"],
+    deps = [
+        "//agentplane/protocol:event_log_pb2",
+        "//agentplane/protocol:event_pb2",
+        "@pypi//protobuf",
+    ],
+)

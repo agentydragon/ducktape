@@ -87,7 +87,7 @@ async def serve_with_engine(settings: Settings, configuration: k8s_client.Config
                 or any(isinstance(grant, ClusterRoleBindingGrant) for grant in settings.kubernetes_grants.values()),
             ),
         )
-        history_store = Store(engine)
+        history_store = Store(engine, settle_deltas=settings.settle_deltas)
         resources = Resources(
             principals=principals,
             history=history_store,

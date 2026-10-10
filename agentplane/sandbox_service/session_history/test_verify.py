@@ -23,7 +23,7 @@ pytestmark = pytest.mark.asyncio
 
 async def seed(engine: AsyncEngine) -> Settings:
     session_id = uuid4()
-    store = Store(engine)
+    store = Store(engine, settle_deltas=False)
     await store.open(
         session_id, sandbox_namespace="testing", sandbox_name="sb", sandbox_uid=None, runner_session_id="s-old"
     )
@@ -69,7 +69,7 @@ async def test_bounded_resume_and_growth_beyond_watermark(
     assert reports[-1]["verified_through"] == 2
     settings.after = 2
     assert await verify(settings, engine, engine) == 3
-    assert (await Store(engine).read(settings.session_id))[0] == 4
+    assert (await Store(engine, settle_deltas=False).read(settings.session_id))[0] == 4
 
 
 async def test_tail_sample_does_not_read_unselected_prefix(engine: AsyncEngine) -> None:
@@ -124,7 +124,7 @@ async def test_runner_overlap_uses_only_existing_session_and_never_writes_bindin
     settings.mode = "runner"
     settings.runner_target = "unused:7000"
     settings.max_batches = 4
-    _, entries = await Store(engine).read(settings.session_id)
+    _, entries = await Store(engine, settle_deltas=False).read(settings.session_id)
     attachment = Mock()
     attachment.attached = protocol_pb2.Attached(last_cursor=2 if case == "behind" else 4)
     if case == "conflict":
