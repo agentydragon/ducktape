@@ -14,3 +14,6 @@ Addresses outside the pool and not listed here are free for fixed assignments. D
 (`atlas`, `wyrm2`, `optiplex`'s own lease) are not listed: their addresses can change.
 
 The switch's syslog goes to `192.168.1.10:514/udp` (`alloy-syslog`, `cluster/cdk8s/monitoring/alloy.py`).
+
+TODO: give `atlas` (DHCP `.71` today) and `wyrm2` fixed addresses too, declared in their host
+configs and listed here.
