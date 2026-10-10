@@ -9,9 +9,8 @@ hardening live in the [freezer](task_freezer.md), not the execution graph.
 
 Session Event archive backfill and full-history verification are done; do not repeat them. The six
 empty staging Sessions stay excluded from extra checks. Audit metadata consumers (`sandbox`,
-`harness`, `model`, `cwd`, summary/activity fields) before deleting useful UI projections, and
-inventory remaining migration-only tools and grants before removing them. Squash Alembic only once
-the app schema settles.
+`harness`, `model`, `cwd`, summary/activity fields) before deleting useful UI projections. Squash
+Alembic only once the app schema settles.
 
 States: **in flight** means reported work is underway; **decision** needs a reviewed outcome;
 **blocked** names prerequisites; **candidate** is dispatchable when selected, not a priority claim.
@@ -971,6 +970,124 @@ replayed into the next one; it stays unknown and is shown as such. Moved from th
 
 **Blocked on revival and History Service ownership.** The app lists Sessions whose Sandbox is gone,
 reads their history from the History Service, and offers an explicit revive. Moved from the freezer.
+
+## 9. Ownership and naming cleanup
+
+Cleanups that leave one database per service and names that say what things are. Each node is one
+deployment; edges are the known order. Staging data follows
+[staging data preservation](../docs/staging_data_preservation.md): Session identities and history
+are irreplaceable, and a node that deletes a column or row stops for the operator.
+
+```mermaid
+flowchart TD
+    SESSION_REGISTRY_PLACEMENT[Decision: where the Sandbox Service keeps Session records]
+    SESSION_REGISTRY_MOVE[Blocked: Sandbox Service Session records in its own database]
+    HISTORY_SESSION_COLUMNS_DROP[Blocked: drop registry columns from the history database]
+    HISTORY_STORE_MOVE[Blocked: history store and migrations move to the History Service]
+    HISTORY_WRITER_SWITCH_RETIRE[Blocked: delete the history_writer switch]
+    HISTORY_DATABASE_RENAME[Blocked: rename the sandbox_service database and role]
+    HISTORY_PROTO_OWNERSHIP[Blocked: History Service owns its request messages]
+    HISTORY_PROJECTION_NAMING[Decision: names of the History Service projection tables]
+    APP_ELECTRIC_RETIRE[Blocked: remove Electric's access to the app database]
+    SANDBOX_BINDING_ANNOTATION_RENAME[Candidate: write session_defaults, not thread_defaults]
+    MIGRATION_TOOLING_RETIRE[Candidate: delete archive-migration tools and grants]
+    HISTORY_WRITE_HANDOFF[History Service ingester takes over]
+    SANDBOX_HISTORY_READS_RETIRE[Delete Sandbox Service history reads]
+    SANDBOX_LOCAL_HISTORY_RETIRE[Delete Sandbox Service ingester and store]
+    FOLD_SHADOW[History Service folds in shadow]
+    APP_PROJECTOR_RETIRE[Delete app projector]
+    HISTORY_SERVICE_OWNERSHIP[History Service ownership]
+    SESSION_REGISTRY_PLACEMENT --> SESSION_REGISTRY_MOVE
+    SESSION_REGISTRY_MOVE --> SANDBOX_LOCAL_HISTORY_RETIRE
+    SESSION_REGISTRY_MOVE --> HISTORY_SESSION_COLUMNS_DROP
+    HISTORY_WRITE_HANDOFF --> HISTORY_SESSION_COLUMNS_DROP
+    SANDBOX_LOCAL_HISTORY_RETIRE --> HISTORY_STORE_MOVE
+    SANDBOX_LOCAL_HISTORY_RETIRE --> HISTORY_WRITER_SWITCH_RETIRE
+    HISTORY_STORE_MOVE --> HISTORY_SERVICE_OWNERSHIP
+    HISTORY_STORE_MOVE --> HISTORY_DATABASE_RENAME
+    HISTORY_SESSION_COLUMNS_DROP --> HISTORY_DATABASE_RENAME
+    SANDBOX_HISTORY_READS_RETIRE --> HISTORY_PROTO_OWNERSHIP
+    HISTORY_PROJECTION_NAMING -. cheapest before the tables exist .-> FOLD_SHADOW
+    APP_PROJECTOR_RETIRE --> APP_ELECTRIC_RETIRE
+```
+
+### `SESSION_REGISTRY_PLACEMENT` — where the Sandbox Service keeps Session records
+
+**Decision.** The `sandbox_service` database is not history only: its `session_history` table is
+also the Sandbox Service's Session registry (`sandbox_service/session_history/db.py`): public
+Session ID, runner locator and Sandbox incarnation, Open reservation (`open_key`, `open_request`,
+`launch_spec`) and the `WatchSessions` change position. `CreateSession`, `OpenSession`,
+`LookupSession` and `WatchSessions` need it, so the History Service cannot own that database
+outright while the Sandbox Service writes it. Recommendation: the registry moves into the Sandbox
+Service's own database next to command admission, as a table named for what it holds (`session`),
+and that database is then named for the service rather than `sandbox_commands`. Alternative: keep
+the registry in the history database and give the Sandbox Service a second database role there,
+which is two services on one database.
+
+### `SESSION_REGISTRY_MOVE` — Session records in the Sandbox Service's database
+
+**Blocked on the placement decision.** Create the registry table and its position sequence in the
+Sandbox Service's database, copy existing rows once with their public IDs, locators and positions,
+and switch the Session RPCs and `WatchSessions` to it. The history tables keep the Session ID with
+no foreign key into the registry. Verify every public Session ID resolves to the same locator
+before and after, and that a `WatchSessions` reader resumes without losing a change.
+
+### `HISTORY_SESSION_COLUMNS_DROP` — history keeps only history
+
+**Blocked on the registry move and the write handoff; stops for the operator.** Drop the registry
+columns from the history database's `session_history`, leaving per-Session ingestion state
+(`source_id`, `last_cursor`, `feed_state`) beside `session_event`. The table name is then accurate.
+
+### `HISTORY_STORE_MOVE` — the history store belongs to the History Service
+
+**Blocked on Sandbox Service local-history retirement.** Move the remaining store, models and
+Alembic migrations from `sandbox_service/session_history` into `history_service`, rename the
+`agentplane-sandbox-service-history-migrate` image, and run the migration init container in the
+History Service Deployment. The Sandbox Service then has no credential for the history database.
+
+### `HISTORY_WRITER_SWITCH_RETIRE` — one ingester, no switch
+
+**Blocked on Sandbox Service local-history retirement.** Delete `Environment.history_writer`, the
+History Service's `ingester.enabled` and the Sandbox Service's `ingest_history`.
+
+### `HISTORY_DATABASE_RENAME` — name the database for its owner
+
+**Blocked on the store move and the column drop.** Rename the `sandbox_service` database and role
+(and the `postgres-sandbox-service` Secret) for the History Service, resolving the `TODO` in
+`cluster/cdk8s/agentplane/database.py`. Rename in place (`ALTER DATABASE`/`ALTER ROLE ... RENAME`)
+and have the CNPG `Database` and managed role adopt the new names; recreating the database under a
+new name would copy the log. Verify the History Service and Electric reconnect with no data movement.
+
+### `HISTORY_PROTO_OWNERSHIP` — History Service request messages
+
+**Blocked on Sandbox Service history-read retirement.** `history_service/protocol.proto` reuses
+`ducktape.agentplane.sandbox.v1` request and response messages for `ReadSessionEvents` and
+`ReadSessionObservations`. Move them into the History Service's own package with its callers.
+
+### `HISTORY_PROJECTION_NAMING` — name the History Service projection tables
+
+**Decision.** The fold's tables are `thread_*` because the app owned Threads. In the History
+Service they are keyed by public Session ID and hold no Thread metadata. Decide whether the shadow
+tables keep the app's names (no rename later, matching `session_event` keeping its name) or take
+Session names while they are created, which costs nothing then and a migration afterwards.
+
+### `APP_ELECTRIC_RETIRE` — Electric no longer reads the app database
+
+**Blocked on app projector retirement.** Drop the publication and replication slot on the `app`
+database and the `electric` role's grants there, and give the remaining Electric deployment the
+plain name if it carries a history-specific one.
+
+### `SANDBOX_BINDING_ANNOTATION_RENAME` — write the current field name
+
+**Candidate.** `sandbox_service/binding_storage.py` still writes the Sandbox binding annotation
+with the pre-cutover `thread_defaults` key so an old app could roll back. Write `session_defaults`
+and keep reading both for one release, then delete the translation.
+
+### `MIGRATION_TOOLING_RETIRE` — delete archive-migration leftovers
+
+**Candidate.** Inventory tools and grants that only served the archive cutover and delete them,
+starting with the operator-run preflight `sandbox_service/session_history/verify.py`
+(`:verify_bin`) and its test.
 
 ## Scope and retirement of stale gates
 
