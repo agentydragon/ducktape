@@ -86,16 +86,9 @@ runner calls. Ingestion keeps its own prefix lock without unnecessarily blocking
 See the [runner channel](../docs/runner_channel.md) and
 [DAG](task_dag.md#2-service-owned-command-admission-and-later-notification-presentation):
 
-1. Review admission identity, authorization, retry/refusal and reconciliation semantics. Draft the
-   transport-independent foundation and isolated tests; wire the public handler using the existing
-   relay adapter and existing service-owned ingestion. No outbound design dependency or new inbound
-   unary API. Merge/schema/deployment gates on archive ownership remain unchanged.
-2. Review minimal command-channel framing, authentication/fencing and Postgres notification routing,
-   including active dispatch-attempt lifetime; implement both peers. Deploy service support first,
-   then a fresh runner canary and switch only its command adapter. Keep spool transport unchanged.
-3. Review and implement outbound spool replay, committed-prefix acknowledgements and backpressure;
+1. Review and implement outbound spool replay, committed-prefix acknowledgements and backpressure;
    switch the canary reader without changing archive storage or identity.
-4. Move remaining lifecycle/inbound consumers, then expand full outbound support to selected existing
+2. Move remaining lifecycle/inbound consumers, then expand full outbound support to selected existing
    environments and retire old access. Preserve command IDs, pending outcomes and history on rollback;
    never silently fall back between command routes after an ambiguous send.
 

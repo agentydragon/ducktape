@@ -324,9 +324,8 @@ journal.
 
 ```mermaid
 flowchart LR
-    RUNNER_OUTBOUND_CANARY[Fresh runner canary]
-    RUNNER_OUTBOUND_SPOOL[Blocked: move spool delivery onto channel]
-    RUNNER_OUTBOUND_LIFECYCLE[Blocked: migrate remaining lifecycle consumers]
+    RUNNER_OUTBOUND_SPOOL[Candidate: move spool delivery onto channel]
+    RUNNER_OUTBOUND_LIFECYCLE[Candidate: migrate remaining lifecycle consumers]
     RUNNER_OUTBOUND_ROLLOUT[Blocked: outbound by default for new Sandboxes]
     VM_CONTROL_NETWORKING[Blocked: integrate selected VM control path]
     VM_IMAGE[Candidate: packaged guest and storage]
@@ -336,8 +335,6 @@ flowchart LR
     VM_LIFECYCLE[Blocked: integrated lifecycle]
     RUNNER_OUTBOUND_LIFECYCLE --> VM_CONTROL_NETWORKING
     RUNNER_OUTBOUND_SPOOL --> VM_CONTROL_NETWORKING
-    RUNNER_OUTBOUND_CANARY --> RUNNER_OUTBOUND_SPOOL
-    RUNNER_OUTBOUND_CANARY --> RUNNER_OUTBOUND_LIFECYCLE
     RUNNER_OUTBOUND_SPOOL --> RUNNER_OUTBOUND_ROLLOUT
     RUNNER_OUTBOUND_LIFECYCLE --> RUNNER_OUTBOUND_ROLLOUT
     RUNNER_OUTBOUND_ROLLOUT --> RUNNER_INBOUND_RETIRE[Blocked: retire inbound runner access]
@@ -355,30 +352,21 @@ flowchart LR
     SANDBOX_VM_ISOLATION --> LOCAL_BAZEL[Blocked: bounded local Bazel client in VM]
 ```
 
-### `RUNNER_OUTBOUND_CANARY` — switch command delivery on a fresh runner
-
-**Startable once a runner image carrying the channel peer is published.** The Sandbox Service's
-listener and the channel's egress path are deployed with old routes unchanged; start a fresh canary
-on that image with `--channel-target` and `--channel-bearer`. Select one explicit command route per incarnation and switch its submission adapter to the channel;
-keep the existing spool reader. Verify the real proxy path, cross-replica routing, owner loss and
-reconnect, receipt persistence and exact retries. No silent fallback after an ambiguous send. This
-proves command delivery independently of moving spool traffic or migrating existing environments.
-
 ### `RUNNER_OUTBOUND_SPOOL` — move spool delivery onto the channel
 
-**Blocked on the command canary; review replay/acknowledgement and backpressure here.** Add independent
+**Candidate; review replay/acknowledgement and backpressure here.** Add independent
 cursor-based replay/live Events, acknowledged once the Sandbox Service commits its own admission
 reconciliation ([decided](history_service.md#decided-operator-2026-10-10-pdt)); the journal stays the buffer for every subscriber. Preserve existing
 archive identities, duplicate/conflict checks and direct/spooled admission reconciliation. Bound
 buffers and keep controls/receipts responsive during catch-up; test reconnect, checkpoint rollback
 and slow readers. Acknowledge only what is committed, never Events held in a lost owner's memory, and
-never read a transport cancellation as harness cancellation. Switch the canary's ingester explicitly, then expand this capability in bounded
+never read a transport cancellation as harness cancellation. Switch the staging `runner-channel-canary` Sandboxes' ingester explicitly, then expand this capability in bounded
 steps. This changes event transport, not archive storage or admission authority. Replay through
 the channel then serves `FollowSession` from any cursor.
 
 ### `RUNNER_OUTBOUND_LIFECYCLE` — migrate remaining inbound control consumers
 
-**Blocked on the command canary; inventory and design may proceed earlier.** Map remaining lifecycle
+**Candidate.** Map remaining lifecycle
 and other inbound/`Attach` consumers onto the channel without accidental startup/resume semantics.
 Verify each consumer's auth and retry behavior before retiring its old route. Completion establishes
 that selected environments no longer require inbound controls; no automatic fleet migration.
