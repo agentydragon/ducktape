@@ -88,7 +88,7 @@ spec:
           automountServiceAccountToken: false
           containers:
             - command:
-                - /cluster/exporters/att_gateway/syslog_reconciler_image_bin
+                - /att_gateway/syslog_reconciler_image_bin
               env:
                 - name: ATT_GATEWAY_URL
                   value: http://192.168.1.254

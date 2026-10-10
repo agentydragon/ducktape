@@ -6,9 +6,9 @@ import pytest
 import pytest_bazel
 from pydantic import SecretStr
 
-from cluster.exporters.att_gateway.pages import parse_syslog
-from cluster.exporters.att_gateway.settings import Syslog, SyslogLevel
-from cluster.exporters.att_gateway.syslog_reconciler import reconcile
+from att_gateway.pages import parse_syslog
+from att_gateway.settings import Syslog, SyslogLevel
+from att_gateway.syslog_reconciler import reconcile
 
 _TESTDATA = Path(__file__).parent / "testdata"
 _BASE_URL = "http://gateway.test"

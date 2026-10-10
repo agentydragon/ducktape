@@ -23,8 +23,8 @@ from prometheus_client.core import CounterMetricFamily, GaugeMetricFamily, Metri
 from prometheus_client.registry import Collector
 from pydantic import SecretStr
 
-from cluster.exporters.att_gateway.login import log_in
-from cluster.exporters.att_gateway.pages import (
+from att_gateway.login import log_in
+from att_gateway.pages import (
     Broadband,
     Direction,
     Fiber,
@@ -41,7 +41,7 @@ from cluster.exporters.att_gateway.pages import (
     parse_speed,
     parse_sysinfo,
 )
-from cluster.exporters.att_gateway.settings import Settings
+from att_gateway.settings import Settings
 
 logger = logging.getLogger(__name__)
 

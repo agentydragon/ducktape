@@ -4,8 +4,8 @@ load("//devinfra/python:defs.bzl", "py_library", "py_test")
 load("//props:oci.bzl", "py_image_entrypoint", "py_image_env")
 
 py_library(
-    name = "main",
-    srcs = ["main.py"],
+    name = "exporter",
+    srcs = ["exporter.py"],
     deps = [
         ":login",
         ":pages",
@@ -57,11 +57,11 @@ py_library(
 )
 
 py_test(
-    name = "test_main",
-    srcs = ["test_main.py"],
+    name = "test_exporter",
+    srcs = ["test_exporter.py"],
     data = glob(["testdata/*.html"]),
     deps = [
-        ":main",
+        ":exporter",
         ":pages",
         "//:conftest",
         "@pypi//httpx",
@@ -85,14 +85,14 @@ py_test(
 )
 
 aspect_py_binary(
-    name = "main_image_bin",
-    main = "main.py",
-    deps = [":main"],
+    name = "exporter_image_bin",
+    main = "exporter.py",
+    deps = [":exporter"],
 )
 
 py_image_layer(
     name = "layers",
-    binary = ":main_image_bin",
+    binary = ":exporter_image_bin",
     group = "65532",
     owner = "65532",
 )
@@ -115,8 +115,8 @@ py_image_layer(
 oci_image(
     name = "image",
     base = "@debian_trixie_slim_linux_amd64",
-    entrypoint = py_image_entrypoint("main_image_bin"),
-    env = py_image_env(binary_name = "main_image_bin"),
+    entrypoint = py_image_entrypoint("exporter_image_bin"),
+    env = py_image_env(binary_name = "exporter_image_bin"),
     labels = {
         "org.opencontainers.image.source": "https://github.com/agentydragon/ducktape",
         "org.opencontainers.image.title": "att-gateway-exporter",
