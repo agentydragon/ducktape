@@ -65,7 +65,7 @@ describe("toolResultPreview registry", () => {
   });
 
   it("returns null for a tool that's a combined widget (call registry) instead", () => {
-    expect(toolResultPreview("gmail", "drafts_create", { id: "d1" }, "compact")).toBeNull();
+    expect(toolResultPreview("google_calendar", "create_event", { id: "evt1" }, "compact")).toBeNull();
   });
 });
 

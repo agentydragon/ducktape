@@ -76,7 +76,7 @@ function parsePush(event: PushEvent): PushMessage | null {
 }
 
 /** The same one-line description the approvals card shows, from the same registry — so a
- * notification reads "Gmail: Draft email", not "gmail.drafts_create". Falls back to the bare
+ * notification reads "Grocy: Add 5 items to stock", not "grocy-sf.stock_add". Falls back to the bare
  * identity when a tool has no entry or its (not-yet-validated) arguments do not parse. */
 function notificationTitle(message: PushShow): string {
   const action = toolActionDescription(message.server_id, message.tool_name, message.arguments);

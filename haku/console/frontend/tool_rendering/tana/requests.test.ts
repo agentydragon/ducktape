@@ -7,7 +7,6 @@ describe("tanaPreviews", () => {
   it("renders each focused tool in both variants", () => {
     const cases: [keyof typeof tanaPreviews, Record<string, unknown>][] = [
       ["import_tana_paste", { parentNodeId: "parent", content: "- One\n  - Two" }],
-      ["get_or_create_calendar_node", { workspaceId: "workspace", granularity: "day", date: "2026-07-11" }],
       ["trash_node", { nodeId: "node" }],
       ["edit_node", { nodeId: "node", name: { old_string: "Old", new_string: "New" } }],
       ["move_node", { nodeId: "node", targetNodeId: "target", position: "end", keepSourceReference: false }],

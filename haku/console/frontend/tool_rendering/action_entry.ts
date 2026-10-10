@@ -1,5 +1,5 @@
-// One registry entry: a tool's one-line action description ("Gmail: Draft email", "kubectl: Delete
-// Pod"), optionally computed from its parsed arguments. The per-server maps live beside their
+// One registry entry: a tool's one-line action description ("Grocy: Add 5 items to stock", "Tana:
+// Trash node"), optionally computed from its parsed arguments. The per-server maps live beside their
 // widgets in `<server>/actions.ts`; `actions.ts` composes them.
 //
 // Leaf module, and **React-free** like everything on this side of the split: the service worker

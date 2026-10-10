@@ -117,9 +117,10 @@ with the rarely-useful parts folded away:
 **Consistent vocabulary.**
 
 - The **action** is a one-line description on the card's identity line (`tool_call_card.tsx`),
-  not a badge in the body: a registered tool supplies its own via `definePreview`'s third arg
-  (`"Gmail: Draft email"`, `"Grocy: Add 5 items to stock"`; destructive ones flagged red), and a
-  tool with no widget falls back to `serverId.toolName`. The widget body must not restate it.
+  not a badge in the body: a registered tool supplies its own through the React-free action map in
+  `tool_rendering/<server>/actions.ts` (for example, `"Grocy: Add 5 items to stock"`; destructive
+  ones are flagged red), and a tool with no action entry falls back to `serverId.toolName`. The
+  widget body must not restate it.
 - **Identity / target** is bold; secondary attributes are dimmed inline text or small outline
   badges.
 - **Icons** replace labels only where the glyph is unambiguous (🕐 time, 📍 place, 👥 people);

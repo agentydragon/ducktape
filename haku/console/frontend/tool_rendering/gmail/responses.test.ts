@@ -4,7 +4,7 @@ import { renderResultPreview } from "../result_entry";
 import { gmailResultPreviews } from "./responses";
 
 describe("gmailResultPreviews", () => {
-  it("has no entry for drafts_create — it's a combined widget (calls.tsx) instead", () => {
+  it("leaves drafts_create on Haku's generic result rendering", () => {
     expect("drafts_create" in gmailResultPreviews).toBe(false);
   });
 
@@ -29,20 +29,6 @@ describe("gmailResultPreviews", () => {
 
   it("renders threads_get for a thread with no messages (minimal/metadata format)", () => {
     expect(renderResultPreview(gmailResultPreviews.threads_get, { id: "t1", snippet: "hi" }, "compact")).not.toBeNull();
-  });
-
-  it("renders threads_list, including an empty page, in both variants", () => {
-    const page = {
-      threads: [
-        { id: "t1", snippet: "hello" },
-        { id: "t2", snippet: "world" },
-      ],
-      nextPageToken: "np",
-    };
-    for (const variant of ["compact", "detailed"] as const) {
-      expect(renderResultPreview(gmailResultPreviews.threads_list, page, variant)).not.toBeNull();
-    }
-    expect(renderResultPreview(gmailResultPreviews.threads_list, { threads: [] }, "compact")).not.toBeNull();
   });
 
   it("renders messages_get for a full message, in both variants", () => {

@@ -25,7 +25,7 @@ const KUBECTL_HISTORY_FIXTURE = {
   serverId: "kubectl-passthrough-mcp",
   toolName: "pods_delete",
   args: { namespace: "haku-sandbox", name: "worker-6f9c2" },
-} satisfies RegisteredToolPreviewFixture;
+};
 
 const STOCK_ADD_PENDING_FIXTURE = {
   serverId: "grocy-sf",
