@@ -18,6 +18,7 @@ from agentplane.subjects import ServiceAccountRef
 from agentplane.testing.fake_apiserver import SANDBOX_NAMESPACE, TokenVerdict, fake_apiserver
 from agentplane.workload_auth.principal import WorkloadPrincipalResolver
 
+# gazelle:include_dep @pypi//protobuf
 # gazelle:include_dep //agentplane/sandbox_service/session_history:conftest
 
 pytest_plugins = ("agentplane.sandbox_service.session_history.conftest",)
