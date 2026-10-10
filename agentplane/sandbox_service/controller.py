@@ -1,4 +1,4 @@
-"""Event-driven reconciliation of Agentplane-owned Sandbox initialization and grants.
+"""Event-driven reconciliation of Agentplane-owned Sandbox initialization, grants and teardown.
 
 Kubernetes owns the Sandbox CR status; this controller owns only its Agentplane annotations,
 ServiceAccount, and bindings. A full sweep still repairs missed watch events and orphaned
@@ -13,7 +13,9 @@ from typing import Any
 
 from agentplane.sandbox_service.kubernetes_views import MANAGED_LABEL
 from agentplane.sandbox_service.models import SandboxNotFoundError
+from agentplane.sandbox_service.protocol_pb2 import TeardownPhase
 from agentplane.sandbox_service.provisioning import Provisioning
+from agentplane.sandbox_service.teardown import Teardown
 from util.agent_sandbox import SANDBOX_API, SANDBOXES_PLURAL
 from util.kubernetes_watch import ListWatch, WatchedKind
 
@@ -24,8 +26,9 @@ _SWEEP = ""  # Kubernetes Sandbox names cannot be empty.
 
 
 class SandboxController:
-    def __init__(self, provisioning: Provisioning, *, resync_seconds: int = 300) -> None:
+    def __init__(self, provisioning: Provisioning, teardown: Teardown, *, resync_seconds: int = 300) -> None:
         self._provisioning = provisioning
+        self._teardown = teardown
         self._resync_seconds = resync_seconds
         self._queue: asyncio.Queue[str] = asyncio.Queue()
         self._queued: set[str] = set()
@@ -101,6 +104,9 @@ class SandboxController:
             # Repair existing bindings, then complete any persisted Create intent.
             await self._provisioning.bindings.ensure(sandbox)
             await self._provisioning.ensure(sandbox)
+            if sandbox.teardown != TeardownPhase.TEARDOWN_PHASE_UNSPECIFIED:
+                # Nothing watches the runner Pod: until it is ready, the backoff retries this.
+                await self._teardown.advance(sandbox)
 
     async def _retry(self, name: str, delay: float) -> None:
         try:

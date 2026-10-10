@@ -33,6 +33,7 @@ from agentplane.sandbox_service.session_history.session_changes import SessionCh
 from agentplane.sandbox_service.session_history.store import Store
 from agentplane.sandbox_service.session_registry import SessionRegistry
 from agentplane.sandbox_service.settings import Settings
+from agentplane.sandbox_service.teardown import Teardown
 from agentplane.workload_auth.principal import WorkloadPrincipalResolver
 from util.kubernetes import CustomObjectsClient
 
@@ -171,7 +172,12 @@ async def serve_with_engines(
             async def healthz() -> dict[str, str]:
                 return {"status": "ok"}
 
-            reconcile = asyncio.create_task(SandboxController(provisioning).run(), name="sandbox-provisioning")
+            teardown = Teardown(
+                resources.destinations, sessions, runner_grpc_channel_options=settings.runner_grpc_channel_options
+            )
+            reconcile = asyncio.create_task(
+                SandboxController(provisioning, teardown).run(), name="sandbox-provisioning"
+            )
             history = (
                 asyncio.create_task(
                     HistoryIngester(

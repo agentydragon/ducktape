@@ -1,7 +1,6 @@
-"""Retention holds over the authenticated gRPC boundary: deletion waits for every hold, and a hold
-racing deletion either refuses it or is refused, never both lost."""
+"""Retention holds over the authenticated gRPC boundary: a sealed Sandbox is deleted only once every
+hold is satisfied, and a hold racing deletion either keeps the Sandbox or is refused, never both lost."""
 
-import json
 from collections.abc import AsyncIterator, Awaitable, Callable
 from pathlib import Path
 from typing import cast
@@ -11,7 +10,6 @@ import pytest
 import pytest_bazel
 from kubernetes_asyncio import client as k8s_client
 
-from agentplane.runner.errors import RunnerError
 from agentplane.sandbox_service import protocol_pb2
 from agentplane.sandbox_service.action_policy import ActionPolicyBindings
 from agentplane.sandbox_service.client import SandboxServiceClient, ServiceError
@@ -20,7 +18,6 @@ from agentplane.sandbox_service.egress import EgressInventory
 from agentplane.sandbox_service.grpc_api import Resources
 from agentplane.sandbox_service.inventory import SandboxInventory
 from agentplane.sandbox_service.kubernetes_bindings import KubernetesBindings
-from agentplane.sandbox_service.kubernetes_views import RETENTION_HOLDS_ANNOTATION
 from agentplane.sandbox_service.models import SandboxNotFoundError
 from agentplane.sandbox_service.protocol_pb2 import Hold
 from agentplane.sandbox_service.provisioning import Provisioning
@@ -149,52 +146,97 @@ async def holds(api: SandboxServiceClient, destination: protocol_pb2.SessionDest
     return list(listed.holds)
 
 
-async def test_sandbox_without_holds_deletes(api: SandboxServiceClient, custom_objects: RacingObjects) -> None:
+async def seal(
+    api: SandboxServiceClient,
+    inventory: SandboxInventory,
+    destination: protocol_pb2.SessionDestination,
+    cursors: dict[str, int],
+) -> None:
+    """DeleteSandbox, then the seal the teardown driver records from the runner."""
     await api.delete(NAME)
+    await inventory.record_seal(NAME, uid=destination.sandbox.sandbox_uid, cursors=cursors)
+
+
+async def delete(inventory: SandboxInventory, destination: protocol_pb2.SessionDestination) -> bool:
+    return await inventory.delete_if_released(NAME, uid=destination.sandbox.sandbox_uid)
+
+
+async def test_sealed_sandbox_without_holds_deletes(
+    api: SandboxServiceClient,
+    inventory: SandboxInventory,
+    destination: protocol_pb2.SessionDestination,
+    custom_objects: RacingObjects,
+) -> None:
+    await seal(api, inventory, destination, {SESSION: 3})
+    assert await delete(inventory, destination)
     assert (SANDBOXES_PLURAL, NAME) not in custom_objects.objects
 
 
 async def test_unconfirmed_hold_keeps_the_sandbox_and_is_listed_until_released(
-    api: SandboxServiceClient, destination: protocol_pb2.SessionDestination, custom_objects: RacingObjects
+    api: SandboxServiceClient,
+    inventory: SandboxInventory,
+    destination: protocol_pb2.SessionDestination,
+    custom_objects: RacingObjects,
 ) -> None:
     await place(api, destination)
     await confirm(api, destination, 7)
+    await seal(api, inventory, destination, {SESSION: 10})
     # Holds never expire: the deletion stays refused however often it is retried.
     for _ in range(2):
-        with pytest.raises(RunnerError):
-            await api.delete(NAME)
+        assert not await delete(inventory, destination)
     assert custom_objects.deleted == []
-    assert await holds(api, destination) == [Hold(session_id=SESSION, holder="history", confirmed_through=7)]
+    assert await holds(api, destination) == [
+        Hold(session_id=SESSION, holder="history", confirmed_through=7, seal_cursor=10)
+    ]
 
     await release(api, destination)
-    await api.delete(NAME)
+    assert await delete(inventory, destination)
     assert (SANDBOXES_PLURAL, NAME) not in custom_objects.objects
 
 
+async def test_hold_on_a_session_the_runner_did_not_report_waits_for_its_release(
+    api: SandboxServiceClient,
+    inventory: SandboxInventory,
+    destination: protocol_pb2.SessionDestination,
+    custom_objects: RacingObjects,
+) -> None:
+    await place(api, destination)
+    await seal(api, inventory, destination, {"test-other-session": 4})
+    assert not await delete(inventory, destination)
+    assert await holds(api, destination) == [Hold(session_id=SESSION, holder="history")]
+    # Once sealed, a new hold could never be satisfied on a Session without a seal.
+    unsealed = protocol_pb2.SessionDestination()
+    unsealed.CopyFrom(destination)
+    unsealed.session_id = "test-unsealed-session"
+    with pytest.raises(ServiceError) as refused:
+        await place(api, unsealed)
+    assert refused.value.code == grpc.StatusCode.INVALID_ARGUMENT
+    await release(api, destination)
+    assert await delete(inventory, destination)
+
+
 async def test_deletion_waits_for_every_holder_to_confirm_through_the_seal(
-    api: SandboxServiceClient, destination: protocol_pb2.SessionDestination, custom_objects: RacingObjects
+    api: SandboxServiceClient,
+    inventory: SandboxInventory,
+    destination: protocol_pb2.SessionDestination,
+    custom_objects: RacingObjects,
 ) -> None:
     await place(api, destination, "history")
     await place(api, destination, "archiver")
-    # Written as the runner's teardown seal will record it, which nothing does yet.
-    annotations = custom_objects.objects[(SANDBOXES_PLURAL, NAME)]["metadata"]["annotations"]
-    stored = json.loads(annotations[RETENTION_HOLDS_ANNOTATION])
-    stored["sessions"][SESSION]["seal_cursor"] = 10
-    annotations[RETENTION_HOLDS_ANNOTATION] = json.dumps(stored)
+    await seal(api, inventory, destination, {SESSION: 10})
 
     await confirm(api, destination, 10, "history")
     assert await confirm(api, destination, 9, "archiver") == Hold(
         session_id=SESSION, holder="archiver", confirmed_through=9, seal_cursor=10
     )
-    with pytest.raises(RunnerError):
-        await api.delete(NAME)
+    assert not await delete(inventory, destination)
     assert await holds(api, destination) == [
         Hold(session_id=SESSION, holder="archiver", confirmed_through=9, seal_cursor=10),
         Hold(session_id=SESSION, holder="history", confirmed_through=10, seal_cursor=10),
     ]
 
     await confirm(api, destination, 12, "archiver")
-    await api.delete(NAME)
+    assert await delete(inventory, destination)
     assert (SANDBOXES_PLURAL, NAME) not in custom_objects.objects
 
 
@@ -219,19 +261,19 @@ async def test_hold_is_idempotent_per_holder_and_confirmation_never_regresses(
     assert not await holds(api, destination)
 
 
-async def test_hold_placed_while_deletion_is_in_flight_refuses_it(
+async def test_hold_placed_while_deletion_is_in_flight_keeps_the_sandbox(
     api: SandboxServiceClient,
     destination: protocol_pb2.SessionDestination,
     inventory: SandboxInventory,
     custom_objects: RacingObjects,
 ) -> None:
+    await seal(api, inventory, destination, {SESSION: 5})
     custom_objects.concurrently = lambda: inventory.place_hold(
         NAME, uid=destination.sandbox.sandbox_uid, session_id=SESSION, holder="history"
     )
-    with pytest.raises(RunnerError):
-        await api.delete(NAME)
+    assert not await delete(inventory, destination)
     assert custom_objects.deleted == []
-    assert await holds(api, destination) == [Hold(session_id=SESSION, holder="history")]
+    assert await holds(api, destination) == [Hold(session_id=SESSION, holder="history", seal_cursor=5)]
 
 
 @pytest.mark.parametrize("finalizers", [[], ["test.agentplane/cleanup"]])
@@ -243,7 +285,8 @@ async def test_hold_racing_a_committed_deletion_is_refused(
     finalizers: list[str],
 ) -> None:
     custom_objects.objects[(SANDBOXES_PLURAL, NAME)]["metadata"]["finalizers"] = finalizers
-    custom_objects.concurrently = lambda: inventory.delete(NAME, uid=destination.sandbox.sandbox_uid)
+    await seal(api, inventory, destination, {SESSION: 5})
+    custom_objects.concurrently = lambda: delete(inventory, destination)
     with pytest.raises(ServiceError) as refused:
         await place(api, destination)
     assert refused.value.code == grpc.StatusCode.NOT_FOUND

@@ -153,13 +153,18 @@ class SandboxView(BaseModel):
     kubernetes_grant_error: str | None
     launch_grants_pending: bool
     initializing: bool = False
-    deleting: bool = False
+    deleting: bool = Field(
+        default=False, description="Deletion was asked for: it seals, waits on retention holds, or is being removed."
+    )
     pod: PodView | None = None
 
 
 def sandbox_view(value: protocol_pb2.Sandbox) -> SandboxView:
     data = MessageToDict(value, preserving_proto_field_name=True, always_print_fields_with_no_presence=True)
     data.setdefault("kubernetes_grant_error", None)
+    # Shown as deleting from DeleteSandbox on: during teardown it takes no new work either.
+    del data["teardown"]
+    data["deleting"] = value.deleting or value.teardown != protocol_pb2.TEARDOWN_PHASE_UNSPECIFIED
     return SandboxView.model_validate(data)
 
 

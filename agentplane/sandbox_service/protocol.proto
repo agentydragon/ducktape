@@ -19,8 +19,9 @@ service SandboxService {
   rpc CreateSandbox(CreateSandboxRequest) returns (Sandbox);
   rpc SuspendSandbox(SandboxRequest) returns (google.protobuf.Empty);
   rpc ResumeSandbox(SandboxRequest) returns (google.protobuf.Empty);
-  // Refused while the Sandbox runs, or while a retention hold on it is unsatisfied
-  // (FAILED_PRECONDITION; ListHolds names them).
+  // Starts teardown of a suspended Sandbox and returns; refused while it runs (FAILED_PRECONDITION).
+  // The service seals every Session, then deletes the Sandbox once every retention hold is
+  // satisfied. GetSandbox reports the teardown phase; ListHolds names the holds it waits on.
   rpc DeleteSandbox(SandboxRequest) returns (google.protobuf.Empty);
   rpc ListTemplates(google.protobuf.Empty) returns (ListTemplatesResponse);
 
@@ -137,8 +138,6 @@ message ConfirmHoldRequest {
 
 // A hold is satisfied once seal_cursor is set and confirmed_through >= seal_cursor. Until then it
 // blocks DeleteSandbox. A seal ends the Session's incarnation in this Sandbox, not the Session.
-// Gap: the runner does not seal Sessions at teardown yet, so seal_cursor is never set and every
-// hold blocks deletion until it is released.
 message Hold {
   string session_id = 1;
   string holder = 2;
@@ -336,6 +335,18 @@ message Sandbox {
   google.protobuf.Struct status = 16;
   bool launch_grants_pending = 17;
   bool initializing = 18;
+  TeardownPhase teardown = 19;
+}
+
+// How far DeleteSandbox has got. A Sandbox being torn down takes no new Sessions or commands and
+// cannot be suspended or resumed; its Sessions can still be followed and read.
+enum TeardownPhase {
+  TEARDOWN_PHASE_UNSPECIFIED = 0;
+  // Running again so that its runner can seal every Session. Stays here while the runner is
+  // unreachable, for the operator to decide.
+  TEARDOWN_PHASE_SEALING = 1;
+  // Sealed and suspended. Deleted once every retention hold has confirmed through its seal.
+  TEARDOWN_PHASE_SEALED = 2;
 }
 message ListSandboxesResponse { repeated Sandbox sandboxes = 1; }
 message ListTemplatesResponse { repeated string templates = 1; }

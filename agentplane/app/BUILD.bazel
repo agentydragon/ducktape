@@ -1420,3 +1420,17 @@ py_test(
         "@pypi//pytest_bazel",
     ],
 )
+
+py_test(
+    name = "test_sandbox_models",
+    srcs = ["test_sandbox_models.py"],
+    deps = [
+        ":conftest",
+        ":sandbox_models",
+        "//:conftest",
+        "//agentplane/sandbox_service:protocol_pb2",
+        "@pypi//protobuf",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)

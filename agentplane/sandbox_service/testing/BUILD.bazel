@@ -110,3 +110,9 @@ py_library(
         "@pypi//sqlalchemy",
     ],
 )
+
+py_library(
+    name = "teardown",
+    srcs = ["teardown.py"],
+    deps = ["//agentplane/sandbox_service:inventory"],
+)

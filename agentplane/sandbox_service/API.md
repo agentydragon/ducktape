@@ -50,8 +50,8 @@ The same service-caller allowlist gates every RPC. Provisioning is always enable
   `RevokeEgress`: binding name; retains the refusal to delete Git-owned bindings. Both require the
   same service-caller authorization as other operations.
 - `SuspendSandbox`, `ResumeSandbox`, `DeleteSandbox`: explicit owner/name/UID-pinned mutations.
-  Resume refuses incomplete provisioning; deletion requires suspension and no unsatisfied
-  [retention hold](#retention-holds).
+  Resume refuses incomplete provisioning. `DeleteSandbox` requires suspension and starts
+  [teardown](#teardown).
 
 Create retries by exact caller, name, and request while the CR exists; after deletion no
 name-only receipt can prove whether a past Create succeeded. The client disables automatic gRPC
@@ -66,6 +66,25 @@ same name: mutations use UID/resourceVersion guards and are safe to replay. The 
 controller owns `status` and Pod lifecycle; Agentplane's Create intent and progress live in its
 namespaced annotations, not competing Sandbox status conditions.
 
+## Teardown
+
+`DeleteSandbox` on a suspended Sandbox returns once teardown has started; `GetSandbox` reports its
+`teardown` phase, and repeating the call changes nothing. The controller then:
+
+1. Runs the Sandbox again (`TEARDOWN_PHASE_SEALING`). From now on it refuses new Sessions and
+   commands, and suspend and resume; its Sessions can still be listed and followed.
+2. Calls the runner's [`Seal`](../runner/SPEC.md#teardown-seal), which stops every harness and returns
+   each Session's final cursor. A runner image without `Seal` has every running harness stopped
+   instead, and each journal's head is taken as its final cursor; only this service's fence keeps
+   new work out of it.
+3. Records the cursors as the [retention holds'](#retention-holds) seal cursors and suspends the
+   Sandbox again, in one write (`TEARDOWN_PHASE_SEALED`). A Session is keyed by its public ID, or by
+   the runner's ID for one opened with a caller-chosen ID.
+4. Deletes the Sandbox, and its volume, once every hold is satisfied.
+
+While the runner is unreachable the Sandbox stays in `TEARDOWN_PHASE_SEALING`, retried with backoff,
+for the operator to decide: nothing deletes an unsealed Sandbox.
+
 ## Retention holds
 
 A hold says "do not delete this Sandbox until I have its Session through the seal". `PlaceHold`,
@@ -74,24 +93,22 @@ hold belongs to one Session in one Sandbox incarnation; a later incarnation star
 Any allowed service caller may place, confirm or release any hold, and holds never expire.
 
 - `PlaceHold` is idempotent per Session and holder and keeps an existing confirmation. It is refused
-  (`NOT_FOUND`) once the Sandbox's deletion is committed.
+  (`NOT_FOUND`) once the Sandbox's deletion is committed, and (`INVALID_ARGUMENT`) for a Session
+  without a seal once the Sandbox is sealed, since it could never be satisfied.
 - `ConfirmHold` records the last cursor the holder has durably committed. It never moves backwards,
   so an out-of-order retry is harmless. A missing hold is `NOT_FOUND`.
 - `ReleaseHold` is idempotent. An operator clears a stale hold with it.
 - A hold is satisfied once its Session has a seal cursor and `confirmed_through >= seal_cursor`.
-  `DeleteSandbox` refuses with `FAILED_PRECONDITION` while any hold is unsatisfied; the caller
-  retries after the holders catch up. `ListHolds` takes a `SandboxDestination` and lists every hold
-  on that incarnation with its confirmed and seal cursors, so it shows which one blocks deletion.
-  With no holds, deletion proceeds as before.
+  Teardown deletes the sealed Sandbox only once every hold is satisfied; a hold on a Session the
+  runner did not report keeps it until released. `ListHolds` takes a `SandboxDestination` and lists
+  every hold on that incarnation with its confirmed and seal cursors, so it shows which one blocks
+  deletion. With no holds, deletion follows the seal.
 - A seal ends the Session's incarnation in this Sandbox, not the Session.
 
-**Gap:** the runner does not seal Sessions at teardown yet, so no seal cursor is ever recorded and
-every hold blocks deletion until it is released.
-
 The holds are one annotation on the Sandbox CR (`agentplane.allegedly.works/retention-holds`), so
-they are deleted with the incarnation they hold. Hold writes and `DeleteSandbox` are both
+they are deleted with the incarnation they hold. Hold writes and the deletion are both
 conditional on the `resourceVersion` they read: a hold placed while a deletion is in flight either
-lands first and the deletion is refused, or finds the deletion committed and is refused itself.
+lands first and keeps the Sandbox, or finds the deletion committed and is refused itself.
 Each advancing confirmation is a Kubernetes write that the controller and UI informers observe;
 only a confirmation at or past the seal changes the deletion gate, so holders need not confirm
 every batch.

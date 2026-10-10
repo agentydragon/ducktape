@@ -205,7 +205,6 @@ class RunnerClient:
         return list(response.sessions)
 
     async def seal(self) -> list[protocol_pb2.SessionSeal]:
-        # Staged for the Sandbox Service's teardown, which seals before deleting the Sandbox.
         response = await self._stub.Seal(protocol_pb2.SealRequest())
         return list(response.sessions)
 

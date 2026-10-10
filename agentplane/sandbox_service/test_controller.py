@@ -10,8 +10,9 @@ from kubernetes_asyncio import watch as k8s_watch
 
 from agentplane.sandbox_service.controller import SandboxController
 from agentplane.sandbox_service.models import SandboxNotFoundError
-from agentplane.sandbox_service.protocol_pb2 import Sandbox
+from agentplane.sandbox_service.protocol_pb2 import Sandbox, TeardownPhase
 from agentplane.sandbox_service.provisioning import Provisioning
+from agentplane.sandbox_service.teardown import Teardown
 from util.agent_sandbox import SANDBOX_API, SANDBOXES_PLURAL
 
 # gazelle:include_dep @pypi//protobuf
@@ -45,7 +46,16 @@ class Bindings:
 
 
 @dataclass
+class Teardowns:
+    advanced: list[str] = field(default_factory=list)
+
+    async def advance(self, sandbox: Sandbox) -> None:
+        self.advanced.append(sandbox.name)
+
+
+@dataclass
 class Provisioner:
+    teardown: Teardowns = field(default_factory=Teardowns)
     inventory: Inventory = field(default_factory=Inventory)
     bindings: Bindings = field(default_factory=Bindings)
     ensured: list[str] = field(default_factory=list)
@@ -66,7 +76,9 @@ class Provisioner:
 
 
 def controller(provisioner: Provisioner, *, resync_seconds: int = 300) -> SandboxController:
-    return SandboxController(cast(Provisioning, provisioner), resync_seconds=resync_seconds)
+    return SandboxController(
+        cast(Provisioning, provisioner), cast(Teardown, provisioner.teardown), resync_seconds=resync_seconds
+    )
 
 
 async def _until(predicate: Any) -> None:
@@ -114,15 +126,20 @@ async def test_worker_reconciles_current_uid_and_deletion() -> None:
     result = controller(provisioner)
     provisioner.inventory.sandboxes["a"] = Sandbox(name="a", uid="new")
     provisioner.inventory.sandboxes["b"] = Sandbox(name="b", uid="old", deleting=True)
+    provisioner.inventory.sandboxes["c"] = Sandbox(
+        name="c", uid="torn-down", teardown=TeardownPhase.TEARDOWN_PHASE_SEALING
+    )
     result._apply("a", {"metadata": {"name": "a"}})
     result._apply("b", {"metadata": {"name": "b"}})
+    result._apply("c", {"metadata": {"name": "c"}})
     result._apply("gone", {"metadata": {"name": "gone"}})
     worker = asyncio.create_task(result._worker())
     try:
         await asyncio.wait_for(result._queue.join(), 2)
-        assert provisioner.bindings.ensured == ["a"]
-        assert provisioner.ensured == ["a"]
+        assert provisioner.bindings.ensured == ["a", "c"]
+        assert provisioner.ensured == ["a", "c"]
         assert provisioner.bindings.cleaned == ["b"]
+        assert provisioner.teardown.advanced == ["c"]
     finally:
         worker.cancel()
         with pytest.raises(asyncio.CancelledError):

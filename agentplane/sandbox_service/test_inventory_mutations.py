@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from typing import Any
+from unittest.mock import ANY
 from uuid import uuid4
 
 import pytest
@@ -14,8 +15,13 @@ from kubernetes_asyncio import client as k8s_client
 from agentplane.action_service.policies.resources import CALLER_LABEL
 from agentplane.sandbox_service.inventory import INITIALIZING, SandboxInventory
 from agentplane.sandbox_service.kubernetes_views import MANAGED_LABEL
-from agentplane.sandbox_service.models import SandboxConflictError, SandboxNotFoundError
-from agentplane.sandbox_service.protocol_pb2 import CreateSandboxRequest
+from agentplane.sandbox_service.models import (
+    SandboxConflictError,
+    SandboxNotFoundError,
+    SandboxRunningError,
+    SandboxTearingDownError,
+)
+from agentplane.sandbox_service.protocol_pb2 import CreateSandboxRequest, TeardownPhase
 from agentplane.sandbox_service.testing.fake_inventory import (
     NAMESPACE,
     POD_TEMPLATE,
@@ -25,6 +31,7 @@ from agentplane.sandbox_service.testing.fake_inventory import (
     pod,
     sandbox,
 )
+from agentplane.sandbox_service.testing.teardown import seal_and_delete
 from agentplane.subjects import ServiceAccountRef
 from util.agent_sandbox import OperatingMode
 
@@ -187,12 +194,44 @@ async def test_suspend_and_resume_patch_the_operating_mode(
     resumed = await inventory.get("live")
 
     assert custom_objects.patches == [
-        ("sandboxes", "live", {"metadata": {"uid": str(suspended.uid)}, "spec": {"operatingMode": "Suspended"}}),
-        ("sandboxes", "live", {"metadata": {"uid": str(resumed.uid)}, "spec": {"operatingMode": "Running"}}),
+        (
+            "sandboxes",
+            "live",
+            {"metadata": {"uid": suspended.uid, "resourceVersion": ANY}, "spec": {"operatingMode": "Suspended"}},
+        ),
+        (
+            "sandboxes",
+            "live",
+            {"metadata": {"uid": resumed.uid, "resourceVersion": ANY}, "spec": {"operatingMode": "Running"}},
+        ),
     ]
     assert (suspended.operating_mode, resumed.operating_mode) == (OperatingMode.SUSPENDED, OperatingMode.RUNNING)
     with pytest.raises(SandboxNotFoundError):
         await inventory.suspend("foreign")
+
+
+async def test_teardown_runs_a_suspended_sandbox_fenced_until_sealed(
+    inventory: SandboxInventory, custom_objects: FakeCustomObjectsApi, core_v1: FakeCoreV1Api
+) -> None:
+    _populate_one_of_each_state(custom_objects, core_v1)
+    live, paused = await inventory.get("live"), await inventory.get("paused")
+    with pytest.raises(SandboxRunningError):
+        await inventory.begin_teardown("live", uid=live.uid)
+    for _ in range(2):
+        await inventory.begin_teardown("paused", uid=paused.uid)
+        view = await inventory.get("paused")
+        assert (view.teardown, view.operating_mode) == (TeardownPhase.TEARDOWN_PHASE_SEALING, OperatingMode.RUNNING)
+    for operation in (inventory.suspend, inventory.resume):
+        with pytest.raises(SandboxTearingDownError):
+            await operation("paused")
+    # Nothing deletes an unsealed Sandbox.
+    with pytest.raises(SandboxConflictError):
+        await inventory.delete_if_released("paused", uid=paused.uid)
+    await inventory.record_seal("paused", uid=paused.uid, cursors={"test-session": 3})
+    view = await inventory.get("paused")
+    assert (view.teardown, view.operating_mode) == (TeardownPhase.TEARDOWN_PHASE_SEALED, OperatingMode.SUSPENDED)
+    assert await inventory.list_holds("paused", uid=paused.uid) == []
+    assert await inventory.delete_if_released("paused", uid=paused.uid)
 
 
 async def test_create_intent_conflicts_and_caller_cannot_adopt_name(inventory: SandboxInventory) -> None:
@@ -267,7 +306,7 @@ async def test_deleted_name_is_reusable_but_not_the_old_uid(
     await inventory.ensure_service_account(previous)
     await inventory.complete_initialization(previous)
     await inventory.suspend(previous.name, uid=previous.uid)
-    await inventory.delete(previous.name, uid=previous.uid)
+    await seal_and_delete(inventory, previous.name)
     # The real API server garbage-collects the ServiceAccount by the old CR UID.
     await core_v1.delete_namespaced_service_account(previous.name, NAMESPACE)
     next_view = await inventory.create(spec, caller=CALLER)

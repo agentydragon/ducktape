@@ -8,6 +8,8 @@ resourceVersion, the same guard deletion uses.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
+
 from pydantic import BaseModel, ConfigDict, Field
 
 from agentplane.sandbox_service.protocol_pb2 import Hold
@@ -26,7 +28,7 @@ class SessionHolds(BaseModel):
     )
     seal_cursor: int | None = Field(
         description="The Session's final cursor in this incarnation, recorded when the runner seals it at "
-        "Sandbox teardown. Nothing records a seal yet, so no hold is satisfied before it is released."
+        "Sandbox teardown."
     )
 
 
@@ -77,6 +79,20 @@ class RetentionHolds(BaseModel):
         return self._with(
             session_id,
             session.model_copy(update={"confirmed_through": {**session.confirmed_through, holder: through_cursor}}),
+        )
+
+    def seal(self, cursors: Mapping[str, int]) -> RetentionHolds:
+        """Record each sealed Session's final cursor. A held Session the runner did not report has no
+        seal, so its holds keep the Sandbox until they are released."""
+        empty = SessionHolds(confirmed_through={}, seal_cursor=None)
+        return RetentionHolds(
+            sessions={
+                **self.sessions,
+                **{
+                    session_id: self.sessions.get(session_id, empty).model_copy(update={"seal_cursor": cursor})
+                    for session_id, cursor in cursors.items()
+                },
+            }
         )
 
     def release(self, session_id: str, holder: str) -> RetentionHolds:

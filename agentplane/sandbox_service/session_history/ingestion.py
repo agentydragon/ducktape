@@ -121,7 +121,7 @@ class HistoryIngester:
         destination = SandboxDestination(
             sandbox=locator.sandbox_name, sandbox_uid=str(locator.sandbox_uid), owner=view.service_account
         )
-        endpoint = await self.destinations.resolve(destination)
+        endpoint = await self.destinations.resolve(destination, writes=False)
         channel = grpc.aio.insecure_channel(
             endpoint.target, options=grpc_channel_option_kvps(self.runner_grpc_channel_options)
         )

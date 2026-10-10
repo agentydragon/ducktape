@@ -554,9 +554,8 @@ flowchart LR
     KUBERNETES_RBAC_POLICIES[Decision: reusable groups and update semantics] --> KUBERNETES_RBAC_POLICY_BINDINGS[Blocked: apply groups and one-SA changes]
     KUBERNETES_RBAC_POLICY_BINDINGS --> MANAGED_SA_RBAC
     BOOTSTRAP_ATTEMPT_RECEIPT[Candidate: one durable bootstrap attempt] --> BOOTSTRAP_PROGRESS_CONTRACT[Blocked: asynchronous progress API]
-    SANDBOX_LIFECYCLE_DURABILITY[Blocked: archive before managed storage deletion]
+    SANDBOX_LIFECYCLE_DURABILITY[Candidate: archive before managed storage deletion]
     SANDBOX_LIFECYCLE_DURABILITY --> SANDBOX_IDLE_EXPIRY[Blocked: delete idle Sandboxes]
-    RUNNER_TEARDOWN_SEAL[In progress: runner seals Sessions at teardown] --> SANDBOX_LIFECYCLE_DURABILITY
 ```
 
 ### `PC_EGRESS_CREDENTIALS` — label public-coder's Action Service caller
@@ -643,26 +642,16 @@ unless the operator reviews a change. Separate Sandbox initialization from per-s
 
 ### `SANDBOX_LIFECYCLE_DURABILITY` — preserve archive before deleting storage
 
-**Blocked on the teardown seal.** Quiesce/fence and archive the final prefix before managed storage
+**Candidate.** Quiesce/fence and archive the final prefix before managed storage
 removal. Explicitly handle an unreachable runner or incomplete state rather than claiming recovery.
 Use existing same-storage suspension tests; a bounded deletion/archive check validates the new
 boundary. No copied-volume portability or simultaneous multi-component crash requirement.
 After `HISTORY_WRITE_HANDOFF`, "archived" means the History Service committed the final prefix.
-Completeness is the seal from `RUNNER_TEARDOWN_SEAL` for every Session in the Sandbox, and every
-[retention hold](../sandbox_service/API.md#retention-holds) on those Sessions confirmed through its
+Completeness is the [teardown seal](../sandbox_service/API.md#teardown) for every Session in the
+Sandbox, and every [retention hold](../sandbox_service/API.md#retention-holds) on those Sessions confirmed through its
 seal cursor; with no holds, deletion follows the seal.
 When a runner is unreachable or its volume is broken, stop and ask the operator: delete with the
 last committed cursor recorded as the end, or keep the Sandbox.
-
-### `RUNNER_TEARDOWN_SEAL` — prove a Session's history is final
-
-**In progress (design approved by the operator, 2026-10-10 PDT).** The runner side is built:
-`Seal` in the [runner protocol](../runner/SPEC.md#teardown-seal). Remaining: at Sandbox teardown the
-Sandbox Service fences the Sandbox (no new Sessions, only stop commands), stops every harness, calls
-`Seal` and keeps each Session's final cursor. `FollowSession` already relays the runner's `sealed`
-frame. Runners on images without `Seal`
-(`LEGACY_SANDBOX_RETIRE`) are compared instead against the journal head read over the old route
-after the harness stops.
 
 ### `SANDBOX_IDLE_EXPIRY` — delete Sandboxes nobody uses
 
@@ -705,7 +694,6 @@ flowchart TD
     THREAD_READ_POLICY[Scoped archive reads]
     RUNNER_INBOUND_RETIRE[Retire inbound runner access]
     SESSION_COMMAND_CONTRACT --> HISTORY_WRITE_HANDOFF
-    RUNNER_TEARDOWN_SEAL[Runner seals Sessions at teardown] -. holds clear .-> HISTORY_WRITE_HANDOFF
     HISTORY_WRITE_HANDOFF --> SANDBOX_LOCAL_HISTORY_RETIRE
     HISTORY_WRITE_HANDOFF --> FOLD_SHADOW
     FOLD_SHADOW --> ELECTRIC_HISTORY_SOURCE
@@ -729,11 +717,11 @@ flowchart TD
 
 ### `HISTORY_WRITE_HANDOFF` — the History Service ingester takes over
 
-**Blocked on retention holds clearing (`RUNNER_TEARDOWN_SEAL`) and on command admission
+**Blocked on the History Service placing retention holds and on command admission
 reconciling without the Sandbox Service ingester.** The History Service ingester writes testing's
 history ([History Service](../history_service/README.md#ingester)). What remains is staging: set
-`history_writer` to the History Service and verify new entries are committed by it alone. Until
-holds clear, nothing keeps a Sandbox from being deleted before the History Service has copied its
+`history_writer` to the History Service and verify new entries are committed by it alone. Until it
+holds every Session, nothing keeps a Sandbox from being deleted before the History Service has copied its
 journal, unless the operator accepts that. Pending command submissions are settled from the runner
 journal only by the Sandbox Service ingester; with it off (testing today) only the runner's direct
 reply records them, so a lost reply leaves the submission pending. The runner dial-out lane owns
@@ -851,14 +839,12 @@ flowchart TD
     THREAD_SUCCESSOR_DELIVERY[Blocked: commands unsettled across incarnations]
     HOSTED_THREAD_SURFACES[Blocked: show and revive Sessions without a Sandbox]
     HISTORY_SERVICE_OWNERSHIP[History Service ownership]
-    RUNNER_TEARDOWN_SEAL[Teardown seal]
     LEGACY_SANDBOX_RETIRE[Retire pre-dial-out Sandboxes]
     DURABLE_SESSION_LIFECYCLE --> SESSION_STATE_VOLUME_DESIGN
     DURABLE_SESSION_LIFECYCLE --> SESSION_INCARNATIONS
     SESSION_STATE_VOLUME_DESIGN --> CLAUDE_PORTABLE_STATE
     SESSION_STATE_VOLUME_DESIGN --> CODEX_PORTABLE_STATE
     SESSION_STATE_VOLUME_DESIGN --> STATE_VOLUME_RETENTION
-    RUNNER_TEARDOWN_SEAL --> STATE_VOLUME_RETENTION
     SESSION_INCARNATIONS --> SESSION_REVIVE
     STATE_VOLUME_RETENTION --> SESSION_REVIVE
     CLAUDE_PORTABLE_STATE -. per harness .-> SESSION_REVIVE
@@ -911,7 +897,7 @@ cursors simply continue; the next incarnation journals that it resumed after a s
 
 ### `STATE_VOLUME_RETENTION` — keep the state volume at teardown
 
-**Blocked on the volume design and the teardown seal.** Provision the state volume separately from
+**Blocked on the volume design.** Provision the state volume separately from
 the Sandbox's other storage; at teardown, after the seal commits, delete the Sandbox and keep the
 volume, bound to the deleted Sandbox's identity so that its successor receives it. Test that a Sandbox
 deletion never deletes a retained volume and that an explicit Session deletion does.

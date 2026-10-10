@@ -34,7 +34,6 @@ from agentplane.sandbox_service.egress_views import BindingNotFoundError, Unknow
 from agentplane.sandbox_service.models import (
     HoldNotFoundError,
     InventoryError,
-    RetentionHeldError,
     SandboxConflictError,
     SandboxNotFoundError,
 )
@@ -112,8 +111,6 @@ async def errors(context: grpc.aio.ServicerContext) -> AsyncIterator[None]:
         await context.abort(grpc.StatusCode.NOT_FOUND, "sandbox incarnation not found")
     except HoldNotFoundError:
         await context.abort(grpc.StatusCode.NOT_FOUND, "retention hold not found")
-    except RetentionHeldError:
-        await context.abort(grpc.StatusCode.FAILED_PRECONDITION, "retention holds block deletion; ListHolds names them")
     except SandboxConflictError:
         await context.abort(grpc.StatusCode.ALREADY_EXISTS, "sandbox name or initialization conflicts")
     except SubmissionConflictError:
@@ -171,8 +168,10 @@ class SandboxService(protocol_pb2_grpc.SandboxServiceServicer):
             yield
 
     @asynccontextmanager
-    async def runner(self, destination: SandboxDestination) -> AsyncIterator[tuple[RunnerClient, RunnerEndpoint]]:
-        endpoint = await self.resources.destinations.resolve(destination)
+    async def runner(
+        self, destination: SandboxDestination, *, writes: bool
+    ) -> AsyncIterator[tuple[RunnerClient, RunnerEndpoint]]:
+        endpoint = await self.resources.destinations.resolve(destination, writes=writes)
         # TODO: runner RPC authentication/TLS. V1 relies on the deployment network boundary.
         client = self._runner_client(endpoint.target)
         try:
@@ -237,7 +236,7 @@ class SandboxService(protocol_pb2_grpc.SandboxServiceServicer):
     async def DeleteSandbox(self, request: protocol_pb2.SandboxRequest, context: grpc.aio.ServicerContext) -> Empty:
         async with self.request(context):
             provisioning, view = await self.checked_sandbox(request)
-            await provisioning.inventory.delete(view.name, uid=view.uid)
+            await provisioning.inventory.begin_teardown(view.name, uid=view.uid)
             return Empty()
 
     async def checked_hold_sandbox(
@@ -327,7 +326,7 @@ class SandboxService(protocol_pb2_grpc.SandboxServiceServicer):
     async def ListSessions(
         self, request: protocol_pb2.SandboxRequest, context: grpc.aio.ServicerContext
     ) -> runner_pb2.ListSessionsResponse:
-        async with self.request(context), self.runner(request.destination) as (client, _):
+        async with self.request(context), self.runner(request.destination, writes=False) as (client, _):
             sessions = await client.list_sessions()
             if self.resources.sessions is not None:
                 for summary in sessions:
@@ -349,7 +348,7 @@ class SandboxService(protocol_pb2_grpc.SandboxServiceServicer):
             destination = request.destination
             if not destination.session_id:
                 raise ValueError("session ID is required")
-            async with self.runner(destination.sandbox) as (client, endpoint):
+            async with self.runner(destination.sandbox, writes=True) as (client, endpoint):
                 if len(request.setup_script) > 65_536:
                     raise ValueError("setup script is too long")
                 spec = session_lifecycle.launch_spec(
@@ -402,7 +401,7 @@ class SandboxService(protocol_pb2_grpc.SandboxServiceServicer):
             if len(request.idempotency_key) > 128 or len(request.setup_script) > 65_536:
                 raise ValueError("Open key or setup script is too long")
             overrides = wire.launch_overrides(request)
-            async with self.runner(request.sandbox) as (client, endpoint):
+            async with self.runner(request.sandbox, writes=True) as (client, endpoint):
                 sandbox_uid = UUID(request.sandbox.sandbox_uid)
 
                 def freeze(session_id: UUID) -> bytes:
@@ -478,7 +477,7 @@ class SandboxService(protocol_pb2_grpc.SandboxServiceServicer):
             result = protocol_pb2.LookupSessionResponse(session_id=str(public_id))
             # DB reservation precedes runner Open. Inventory includes sessions whose
             # native handshake failed: a retained spec is not proof of a successful Open.
-            async with self.runner(request.sandbox) as (client, _):
+            async with self.runner(request.sandbox, writes=False) as (client, _):
                 for summary in await client.list_sessions():
                     if summary.session_id != f"r-{public_id}":
                         continue
@@ -520,7 +519,7 @@ class SandboxService(protocol_pb2_grpc.SandboxServiceServicer):
             destination = request.destination
             if not destination.session_id:
                 raise ValueError("session ID is required")
-            async with self.runner(destination.sandbox) as (client, _):
+            async with self.runner(destination.sandbox, writes=True) as (client, _):
                 result = await session_lifecycle.resume_session(client, await self.runner_session_id(destination))
                 result.session_id = destination.session_id
                 return result
@@ -549,7 +548,7 @@ class SandboxService(protocol_pb2_grpc.SandboxServiceServicer):
                     raise DestinationUnavailableError("a channel-routed Sandbox takes public Session IDs only")
                 # CLEANUP(added 2026-10-10): Remove the relay-only path once OpenSession, the only
                 # producer of caller-chosen runner IDs, is gone and no such Session remains.
-                async with self.runner(destination.sandbox) as (client, _):
+                async with self.runner(destination.sandbox, writes=True) as (client, _):
                     return await admit_running_command(
                         client,
                         runner_session_id,
@@ -562,7 +561,7 @@ class SandboxService(protocol_pb2_grpc.SandboxServiceServicer):
             if channel_routed:
                 delivery = self.delivery()
                 # Verifies the incarnation and its owner, as the relay's runner lookup does.
-                await self.resources.destinations.resolve(destination.sandbox)
+                await self.resources.destinations.resolve(destination.sandbox, writes=True)
 
                 async def dispatch(command: command_pb2.Command) -> event_log_pb2.EventEntry:
                     return await delivery.deliver(
@@ -580,7 +579,7 @@ class SandboxService(protocol_pb2_grpc.SandboxServiceServicer):
                     # receipt, if any, lies after the reconciled cursor. The caller's follow cursor
                     # is ignored.
                     after_cursor = await submissions.read_reconciled_through(public_id)
-                    async with self.runner(destination.sandbox) as (client, _):
+                    async with self.runner(destination.sandbox, writes=True) as (client, _):
                         return await admit_running_command(
                             client,
                             runner_session_id,
@@ -604,7 +603,7 @@ class SandboxService(protocol_pb2_grpc.SandboxServiceServicer):
                 destination = request.destination
                 if not destination.session_id:
                     raise ValueError("session ID is required")
-                endpoint = await self.resources.destinations.resolve(destination.sandbox)
+                endpoint = await self.resources.destinations.resolve(destination.sandbox, writes=False)
             client = self._runner_client(endpoint.target)
             try:
                 async with asyncio.timeout(self.resources.admission_timeout_s):

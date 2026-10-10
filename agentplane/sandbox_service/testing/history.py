@@ -54,7 +54,7 @@ async def with_history(resources: Resources, database_url: str | None) -> AsyncI
                     destination = SandboxDestination(
                         sandbox=view.name, sandbox_uid=view.uid, owner=view.service_account
                     )
-                    endpoint = await resources.destinations.resolve(destination)
+                    endpoint = await resources.destinations.resolve(destination, writes=False)
                     runner = RunnerClient(grpc.aio.insecure_channel(endpoint.target))
                     try:
                         summaries = await runner.list_sessions()

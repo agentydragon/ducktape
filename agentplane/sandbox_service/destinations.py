@@ -6,8 +6,8 @@ from ipaddress import ip_address
 from kubernetes_asyncio import client as k8s_client
 
 from agentplane.sandbox_service.inventory import SandboxInventory
-from agentplane.sandbox_service.models import SandboxNotFoundError
-from agentplane.sandbox_service.protocol_pb2 import SandboxBinding, SandboxDestination
+from agentplane.sandbox_service.models import SandboxNotFoundError, SandboxTearingDownError
+from agentplane.sandbox_service.protocol_pb2 import SandboxBinding, SandboxDestination, TeardownPhase
 from util.agent_sandbox import SANDBOX_API, OperatingMode
 
 
@@ -27,12 +27,16 @@ class DestinationResolver:
     core: k8s_client.CoreV1Api
     runner_port: int
 
-    async def resolve(self, destination: SandboxDestination) -> RunnerEndpoint:
+    async def resolve(self, destination: SandboxDestination, *, writes: bool) -> RunnerEndpoint:
+        """`writes`: the caller may create, resume or command a Session, which a Sandbox being torn
+        down refuses. Following and listing its Sessions stays possible until it is deleted."""
         if not all((destination.sandbox, destination.sandbox_uid, destination.owner.namespace, destination.owner.name)):
             raise ValueError("Sandbox name, UID, and owner are required")
         view = await self.inventory.get(destination.sandbox)
         if view.uid != destination.sandbox_uid or view.service_account != destination.owner:
             raise SandboxNotFoundError(destination.sandbox)
+        if writes and view.teardown != TeardownPhase.TEARDOWN_PHASE_UNSPECIFIED:
+            raise SandboxTearingDownError(destination.sandbox)
         if (
             view.deleting
             or view.operating_mode != OperatingMode.RUNNING

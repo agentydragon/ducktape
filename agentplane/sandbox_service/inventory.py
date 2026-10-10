@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import asyncio
 import json
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Mapping
 from typing import Any, cast
 
 from google.protobuf.json_format import MessageToDict
@@ -32,18 +32,19 @@ from agentplane.sandbox_service.kubernetes_views import (
     PROVISIONING_ANNOTATION,
     RETENTION_HOLDS_ANNOTATION,
     SANDBOX_BINDING_ANNOTATION,
+    TEARDOWN_ANNOTATION,
     SandboxResource,
     sandbox_view,
     sandbox_views,
 )
 from agentplane.sandbox_service.models import (
     HoldNotFoundError,
-    RetentionHeldError,
     SandboxConflictError,
     SandboxNotFoundError,
     SandboxRunningError,
+    SandboxTearingDownError,
 )
-from agentplane.sandbox_service.protocol_pb2 import CreateSandboxRequest, Hold, Sandbox, SandboxBinding
+from agentplane.sandbox_service.protocol_pb2 import CreateSandboxRequest, Hold, Sandbox, SandboxBinding, TeardownPhase
 from agentplane.sandbox_service.retention_holds import RetentionHolds, read_holds
 from agentplane.sandbox_service.session_config import LaunchGrants
 from agentplane.subjects import ServiceAccountRef
@@ -358,37 +359,88 @@ class SandboxInventory:
         await self._set_operating_mode(name, OperatingMode.RUNNING, uid=uid)
 
     @_retry_on_conflict
-    async def delete(self, name: str, *, uid: str | None = None) -> None:
-        """Delete a suspended Sandbox; the controller removes its Pod and PVC, and with them
-        everything on the volume. A running one is refused, so the irreversible step is a
-        deliberate second one for a browser and for an agent calling the API alike.
+    async def begin_teardown(self, name: str, *, uid: str) -> None:
+        """Start deleting a suspended Sandbox, which deletes its volume and everything on it. A running
+        one is refused, so the irreversible step is a deliberate second one for a browser and for an
+        agent calling the API alike.
 
-        So is one with an unsatisfied retention hold. The delete is conditional on the
-        resourceVersion the holds were read at, so a hold placed concurrently either lands first
-        and refuses the deletion, or finds the deletion committed and is refused itself."""
+        The Sandbox runs again, fenced, so that its runner can seal every Session; the controller
+        drives the rest. Asking again changes nothing."""
         sandbox = await self._mutable_sandbox(name, uid=uid)
+        if sandbox.teardown != TeardownPhase.TEARDOWN_PHASE_UNSPECIFIED:
+            return
         if sandbox.spec.operating_mode != OperatingMode.SUSPENDED:
             raise SandboxRunningError(name)
+        await self._patch(
+            name,
+            {
+                "metadata": {
+                    "uid": uid,
+                    "resourceVersion": sandbox.metadata.resource_version,
+                    "annotations": {TEARDOWN_ANNOTATION: TeardownPhase.Name(TeardownPhase.TEARDOWN_PHASE_SEALING)},
+                },
+                "spec": {"operatingMode": OperatingMode.RUNNING},
+            },
+        )
+
+    @_retry_on_conflict
+    async def record_seal(self, name: str, *, uid: str, cursors: Mapping[str, int]) -> None:
+        """Record each Session's final cursor and suspend the sealed Sandbox, in one write."""
+        sandbox = await self._incarnation(name, uid=uid)
+        match sandbox.teardown:
+            case TeardownPhase.TEARDOWN_PHASE_SEALED:
+                return  # Another replica recorded it first; Seal returns the same cursors.
+            case TeardownPhase.TEARDOWN_PHASE_UNSPECIFIED:
+                raise SandboxConflictError(name)
+        await self._patch(
+            name,
+            {
+                "metadata": {
+                    "uid": uid,
+                    "resourceVersion": sandbox.metadata.resource_version,
+                    "annotations": {
+                        TEARDOWN_ANNOTATION: TeardownPhase.Name(TeardownPhase.TEARDOWN_PHASE_SEALED),
+                        RETENTION_HOLDS_ANNOTATION: self._holds(sandbox).seal(cursors).model_dump_json(),
+                    },
+                },
+                "spec": {"operatingMode": OperatingMode.SUSPENDED},
+            },
+        )
+
+    @_retry_on_conflict
+    async def delete_if_released(self, name: str, *, uid: str) -> bool:
+        """Delete a sealed Sandbox unless a retention hold is unsatisfied; the controller removes its
+        Pod and PVC. Whether it was deleted.
+
+        The delete is conditional on the resourceVersion the holds were read at, so a hold placed
+        concurrently either lands first and keeps the Sandbox, or finds the deletion committed and is
+        refused itself."""
+        sandbox = await self._incarnation(name, uid=uid)
+        if sandbox.teardown != TeardownPhase.TEARDOWN_PHASE_SEALED:
+            raise SandboxConflictError(name)
         if self._holds(sandbox).blocking():
-            raise RetentionHeldError(name)
+            return False
         await self._custom_objects.delete_namespaced_custom_object(
             *SANDBOX_API,
             self._namespace,
             SANDBOXES_PLURAL,
             name,
             body=k8s_client.V1DeleteOptions(
-                preconditions=k8s_client.V1Preconditions(
-                    uid=str(sandbox.metadata.uid), resource_version=sandbox.metadata.resource_version
-                )
+                preconditions=k8s_client.V1Preconditions(uid=uid, resource_version=sandbox.metadata.resource_version)
             ),
         )
+        return True
 
     @_retry_on_conflict
     async def place_hold(self, name: str, *, uid: str, session_id: str, holder: str) -> Hold:
         sandbox = await self._incarnation(name, uid=uid)
         if sandbox.metadata.deletion_timestamp is not None:
             raise SandboxNotFoundError(name)  # Deletion is committed; nothing can hold it back now.
-        held = await self._write_holds(sandbox, self._holds(sandbox).place(session_id, holder))
+        holds = self._holds(sandbox)
+        if sandbox.teardown == TeardownPhase.TEARDOWN_PHASE_SEALED and session_id not in holds.sessions:
+            # It would never be satisfied: the runner reported no such Session when it sealed.
+            raise ValueError("the Sandbox is sealed and this Session has no seal in it")
+        held = await self._write_holds(sandbox, holds.place(session_id, holder))
         return self._held(held, session_id, holder)
 
     @_retry_on_conflict
@@ -442,9 +494,19 @@ class SandboxInventory:
             raise
         return holds
 
+    @_retry_on_conflict
     async def _set_operating_mode(self, name: str, mode: OperatingMode, *, uid: str | None = None) -> None:
         sandbox = await self._mutable_sandbox(name, uid=uid)
-        await self._patch(name, {"metadata": {"uid": str(sandbox.metadata.uid)}, "spec": {"operatingMode": mode}})
+        if sandbox.teardown != TeardownPhase.TEARDOWN_PHASE_UNSPECIFIED:
+            raise SandboxTearingDownError(name)
+        # Guarded, so that it cannot undo the mode a concurrent teardown set.
+        await self._patch(
+            name,
+            {
+                "metadata": {"uid": sandbox.metadata.uid, "resourceVersion": sandbox.metadata.resource_version},
+                "spec": {"operatingMode": mode},
+            },
+        )
 
     async def _mutable_sandbox(self, name: str, *, uid: str | None) -> SandboxResource:
         """Require the named incarnation to have finished initialization before lifecycle changes."""

@@ -20,6 +20,7 @@ from agentplane.sandbox_service.protocol_pb2 import (
     SandboxBinding,
     SandboxPod,
     ServiceAccount,
+    TeardownPhase,
 )
 from util.agent_sandbox import OperatingMode
 
@@ -32,6 +33,8 @@ KUBERNETES_GRANTS_ANNOTATION = "agentplane.allegedly.works/kubernetes-grants"
 KUBERNETES_GRANTS_READY_ANNOTATION = "agentplane.allegedly.works/kubernetes-grants-ready"
 KUBERNETES_GRANTS_ERROR_ANNOTATION = "agentplane.allegedly.works/kubernetes-grants-error"
 RETENTION_HOLDS_ANNOTATION = "agentplane.allegedly.works/retention-holds"
+# A `TeardownPhase` name, set by DeleteSandbox.
+TEARDOWN_ANNOTATION = "agentplane.allegedly.works/teardown"
 
 
 class _KubernetesModel(BaseModel):
@@ -72,6 +75,11 @@ class SandboxResource(_KubernetesModel):
     spec: _SandboxSpec
     status: dict[str, object] | None = None
 
+    @property
+    def teardown(self) -> TeardownPhase.ValueType:
+        raw = self.metadata.annotations.get(TEARDOWN_ANNOTATION)
+        return TeardownPhase.TEARDOWN_PHASE_UNSPECIFIED if raw is None else TeardownPhase.Value(raw)
+
 
 def sandbox_views(
     sandboxes: Iterable[object], pods: Iterable[k8s_client.V1Pod], *, api_client: k8s_client.ApiClient
@@ -111,6 +119,7 @@ def _view(sandbox: SandboxResource, pod: k8s_client.V1Pod | None, *, api_client:
         or sandbox.metadata.annotations.get(KUBERNETES_GRANTS_READY_ANNOTATION) == "true",
         kubernetes_grant_error=sandbox.metadata.annotations.get(KUBERNETES_GRANTS_ERROR_ANNOTATION),
         deleting=sandbox.metadata.deletion_timestamp is not None,
+        teardown=sandbox.teardown,
         pod=_pod(pod, api_client=api_client) if pod is not None else None,
     )
 

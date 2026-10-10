@@ -41,6 +41,7 @@ from agentplane.sandbox_service.testing.fake_inventory import (
     sandbox,
 )
 from agentplane.sandbox_service.testing.fake_rbac import FakeRbac
+from agentplane.sandbox_service.testing.teardown import seal_and_delete
 from agentplane.subjects import ServiceAccountRef
 
 
@@ -223,7 +224,7 @@ async def test_external_scopes_recover_and_clean_up_after_deletion() -> None:
     assert rbac.creates == 3
     assert cross.role_ref.name == "logs-configmaps-reader"
     await inventory.suspend(name)
-    await inventory.delete(name)
+    await seal_and_delete(inventory, name)
     assert (await inventory.get(name)).deleting
     rbac.fail_on_delete = 2
     await bindings.reconcile_once()
@@ -255,7 +256,7 @@ async def test_external_name_collision_is_not_deleted() -> None:
     )
     rbac.cluster_bindings[binding_name(view, selected[0])] = binding
     await inventory.suspend(name)
-    await inventory.delete(name)
+    await seal_and_delete(inventory, name)
     await KubernetesBindings(inventory, cast(Any, rbac)).reconcile_once()
     assert rbac.cluster_bindings[binding_name(view, selected[0])] is binding
     assert (await inventory.get(name)).kubernetes_grant_error == "BindingConflictError"
@@ -281,7 +282,7 @@ async def test_partial_launch_deletion_and_name_reuse_leave_no_old_binding() -> 
     old_view = await inventory.get(name)
     old_binding = rbac.bindings[("another-namespace", binding_name(old_view, selected[0]))]
     await inventory.suspend(name)
-    await inventory.delete(name)
+    await seal_and_delete(inventory, name)
     await bindings.reconcile_once()
     assert ("sandboxes", name) not in custom.objects
     assert not rbac.bindings
