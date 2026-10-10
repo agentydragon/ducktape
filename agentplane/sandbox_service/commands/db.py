@@ -1,13 +1,24 @@
-"""The Sandbox Service's command admission schema, in the `sandbox_commands` database.
+"""The Sandbox Service's own schema, in the `sandbox_commands` database: its Session registry,
+command admission and runner connections.
 
-Sessions are referenced by public Session ID only: their history lives in another database, so
-there is no foreign key, and destination authorization happens before a row is written.
+Session history lives in another database, keyed by the same public Session ID with no foreign key.
 """
 
 from datetime import datetime
 from uuid import UUID
 
-from sqlalchemy import BigInteger, CheckConstraint, DateTime, String, UniqueConstraint, func
+from sqlalchemy import (
+    BigInteger,
+    CheckConstraint,
+    DateTime,
+    Index,
+    LargeBinary,
+    Sequence,
+    String,
+    UniqueConstraint,
+    func,
+    text,
+)
 from sqlalchemy.dialects.postgresql import ARRAY
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
@@ -20,6 +31,59 @@ from util.sqlalchemy_protobuf import ProtobufColumn
 
 class Base(DeclarativeBase):
     pass
+
+
+# Allocated only by `SessionRegistry`, under a lock that orders positions by commit (WatchSessions resumes after one).
+CHANGE_POSITION = Sequence("session_change_position", metadata=Base.metadata)
+
+
+class Session(Base):
+    """A public Session: its runner locator in one Sandbox incarnation, Open reservation and feed position."""
+
+    __tablename__ = "session"
+    __table_args__ = (
+        # A runner locator is a physical binding, not a durable identity. Imported locators with
+        # no Sandbox UID still cannot be claimed twice.
+        Index(
+            "ux_session_runner_locator",
+            "sandbox_namespace",
+            "sandbox_name",
+            "sandbox_uid",
+            "runner_session_id",
+            unique=True,
+            postgresql_nulls_not_distinct=True,
+            postgresql_where=text("runner_session_id IS NOT NULL"),
+        ),
+        Index(
+            "ux_session_open_key",
+            "caller_namespace",
+            "caller_name",
+            "sandbox_namespace",
+            "sandbox_name",
+            "sandbox_uid",
+            "open_key",
+            unique=True,
+            postgresql_where=text("open_key IS NOT NULL"),
+        ),
+        Index("ux_session_change_position", "change_position", unique=True),
+    )
+
+    id: Mapped[UUID] = mapped_column(primary_key=True)
+    sandbox_namespace: Mapped[str] = mapped_column(String)
+    sandbox_name: Mapped[str] = mapped_column(String)
+    # Absent for imported Sessions whose original Sandbox UID was not retained in app history.
+    sandbox_uid: Mapped[UUID | None]
+    runner_session_id: Mapped[str | None] = mapped_column(String)
+    # The caller provides an opaque key, never a runner session ID. Absent for imported Sessions.
+    caller_namespace: Mapped[str | None] = mapped_column(String)
+    caller_name: Mapped[str | None] = mapped_column(String)
+    open_key: Mapped[str | None] = mapped_column(String)
+    # Original Open inputs identify a retry; the effective launch spec is frozen
+    # before runner contact, so a changed default cannot alter the retried launch.
+    open_request: Mapped[bytes | None] = mapped_column(LargeBinary)
+    launch_spec: Mapped[bytes | None] = mapped_column(LargeBinary)
+    # Position of this Session's latest change in the WatchSessions feed.
+    change_position: Mapped[int] = mapped_column(BigInteger)
 
 
 class CommandSubmission(Base):

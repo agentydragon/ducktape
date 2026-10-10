@@ -11,6 +11,7 @@ from cdk8s_plus_34 import (
     Cpu,
     CpuResources,
     Deployment,
+    DeploymentStrategy,
     IApiResource,
     ImagePullPolicy,
     MemoryResources,
@@ -137,7 +138,11 @@ class SandboxService(Construct):
             metadata=ApiObjectMetadata(name=NAME, namespace=env.namespace, labels=_LABELS),
             pod_metadata=ApiObjectMetadata(labels=_LABELS),
             replicas=env.replicas.count,
-            strategy=env.replicas.strategy,
+            # CLEANUP(added 2026-10-10): Back to env.replicas.strategy once every environment runs the
+            #   release that serves the Session registry from sandbox_commands. Until then a replica
+            #   allocating WatchSessions positions from the history database must not run beside one
+            #   allocating from sandbox_commands.
+            strategy=DeploymentStrategy.recreate(),
             min_ready=env.replicas.min_ready,
             termination_grace_period=Duration.seconds(60),
             service_account=account,

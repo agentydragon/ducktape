@@ -24,6 +24,7 @@ from agentplane.sandbox_service.protocol_pb2 import SandboxDestination
 from agentplane.sandbox_service.session_history.db import Base
 from agentplane.sandbox_service.session_history.ingestion import HistoryIngester
 from agentplane.sandbox_service.session_history.store import Store
+from agentplane.sandbox_service.session_registry import SessionRegistry
 
 # gazelle:include_dep @pypi//asyncpg
 # gazelle:include_dep @pypi//protobuf
@@ -40,9 +41,10 @@ async def with_history(resources: Resources, database_url: str | None) -> AsyncI
         # Production keeps admission in its own database; one test database serves both here.
         await connection.run_sync(commands_db.Base.metadata.create_all)
     store = Store(engine)
+    sessions = SessionRegistry(engine, store)
     submissions = SubmissionStore(engine)
     ingester = HistoryIngester(
-        store, submissions, resources.destinations, runner_grpc_channel_options={}, interval_s=0.05
+        store, sessions, submissions, resources.destinations, runner_grpc_channel_options={}, interval_s=0.05
     )
 
     async def discover_and_copy() -> None:
@@ -63,7 +65,7 @@ async def with_history(resources: Resources, database_url: str | None) -> AsyncI
                             session_id = UUID(summary.session_id)
                         except ValueError:
                             session_id = uuid5(NAMESPACE_URL, view.name + "/" + summary.session_id)
-                        await store.open(
+                        await sessions.open(
                             session_id,
                             sandbox_namespace=resources.destinations.inventory.namespace,
                             sandbox_name=view.name,
@@ -78,7 +80,11 @@ async def with_history(resources: Resources, database_url: str | None) -> AsyncI
     task = asyncio.create_task(discover_and_copy())
     try:
         yield replace(
-            resources, history=store, submissions=submissions, history_reader_accounts=resources.caller_accounts
+            resources,
+            history=store,
+            sessions=sessions,
+            submissions=submissions,
+            history_reader_accounts=resources.caller_accounts,
         )
     finally:
         task.cancel()

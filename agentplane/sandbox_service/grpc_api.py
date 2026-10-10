@@ -44,6 +44,7 @@ from agentplane.sandbox_service.retention_holds import MAX_HOLD_KEY_LENGTH
 from agentplane.sandbox_service.runner_channel import ChannelOperation
 from agentplane.sandbox_service.session_history.session_changes import SessionChanges
 from agentplane.sandbox_service.session_history.store import HistoryNotFoundError, Store
+from agentplane.sandbox_service.session_registry import SessionRegistry
 from agentplane.subjects import ServiceAccountRef
 from agentplane.workload_auth.bearer import parse_bearer, sole_header
 from agentplane.workload_auth.principal import WorkloadPrincipalRejectedError, WorkloadPrincipalResolver
@@ -63,6 +64,7 @@ class Resources:
     platform_instructions: str
     runner_admission_ack_timeout_s: float
     history: Store | None = None
+    sessions: SessionRegistry | None = None
     submissions: SubmissionStore | None = None
     delivery: ChannelDelivery | None = None
     session_changes: SessionChanges | None = None
@@ -372,9 +374,9 @@ class SandboxService(protocol_pb2_grpc.SandboxServiceServicer):
     ) -> runner_pb2.ListSessionsResponse:
         async with self.request(context), self.runner(request.destination) as (client, _):
             sessions = await client.list_sessions()
-            if self.resources.history is not None:
+            if self.resources.sessions is not None:
                 for summary in sessions:
-                    public_id = await self.resources.history.session_id(
+                    public_id = await self.resources.sessions.session_id(
                         sandbox_namespace=self.resources.destinations.inventory.namespace,
                         sandbox_name=request.destination.sandbox,
                         sandbox_uid=UUID(request.destination.sandbox_uid),
@@ -410,10 +412,10 @@ class SandboxService(protocol_pb2_grpc.SandboxServiceServicer):
                     setup_script=request.setup_script if request.HasField("setup_script") else None,
                 )
 
-    def history(self) -> Store:
-        if self.resources.history is None:
-            raise DestinationUnavailableError("Session history database not configured")
-        return self.resources.history
+    def sessions(self) -> SessionRegistry:
+        if self.resources.sessions is None:
+            raise DestinationUnavailableError("Session registry database not configured")
+        return self.resources.sessions
 
     def submissions(self) -> SubmissionStore:
         if self.resources.submissions is None:
@@ -429,7 +431,7 @@ class SandboxService(protocol_pb2_grpc.SandboxServiceServicer):
         """Keep physical runner identifiers behind this service, including on follow."""
         if (session_id := public_session_id(destination.session_id)) is None:
             return destination.session_id  # legacy caller-chosen runner ID
-        return await self.history().runner_id(
+        return await self.sessions().runner_id(
             session_id,
             sandbox_namespace=self.resources.destinations.inventory.namespace,
             sandbox_name=destination.sandbox.sandbox,
@@ -477,7 +479,7 @@ class SandboxService(protocol_pb2_grpc.SandboxServiceServicer):
                         launch.open.setup_script = setup_script
                     return launch.SerializeToString(deterministic=True)
 
-                reservation = await self.history().reserve(
+                reservation = await self.sessions().reserve(
                     caller_namespace=caller.namespace,
                     caller_name=caller.name,
                     sandbox_namespace=self.resources.destinations.inventory.namespace,
@@ -508,7 +510,7 @@ class SandboxService(protocol_pb2_grpc.SandboxServiceServicer):
             if not request.idempotency_key or len(request.idempotency_key) > 128:
                 raise ValueError("Open key is required and must not exceed 128 characters")
             await self.checked_sandbox(protocol_pb2.SandboxRequest(destination=request.sandbox))
-            public_id = await self.history().lookup_open(
+            public_id = await self.sessions().lookup_open(
                 caller_namespace=caller.namespace,
                 caller_name=caller.name,
                 sandbox_namespace=self.resources.destinations.inventory.namespace,
@@ -695,7 +697,7 @@ class SandboxService(protocol_pb2_grpc.SandboxServiceServicer):
                 await self.resources.authenticate(context)
                 if self.resources.session_changes is None:
                     raise DestinationUnavailableError("Session change notifications not configured")
-                history, changes = self.history(), self.resources.session_changes
+                sessions, changes = self.sessions(), self.resources.session_changes
             loop = asyncio.get_running_loop()
             deadline = loop.time() + self.resources.follow_lease_s
             position = request.after_position
@@ -703,7 +705,7 @@ class SandboxService(protocol_pb2_grpc.SandboxServiceServicer):
                 while loop.time() < deadline:
                     changed.clear()
                     async with asyncio.timeout(self.resources.admission_timeout_s):
-                        page = await history.read_changes(after_position=position, limit=WATCH_PAGE)
+                        page = await sessions.read_changes(after_position=position, limit=WATCH_PAGE)
                         sandboxes = await self.resources.destinations.inventory.list_sandboxes() if page else []
                     owners = {(sandbox.name, sandbox.uid): sandbox.service_account for sandbox in sandboxes}
                     for change in page:

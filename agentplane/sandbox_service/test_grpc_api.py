@@ -40,6 +40,7 @@ from agentplane.sandbox_service.protocol_pb2 import ResolvedGrant, SandboxDestin
 from agentplane.sandbox_service.session_history.ingestion import copy_confirmed_prefix
 from agentplane.sandbox_service.session_history.session_changes import SessionChanges
 from agentplane.sandbox_service.session_history.store import HistoryConflictError, Store
+from agentplane.sandbox_service.session_registry import SessionRegistry
 from agentplane.sandbox_service.testing.grpc_service import service_client
 from agentplane.sandbox_service.testing.kubernetes import ACCOUNT, SANDBOX, SANDBOX_UID, Cluster
 from agentplane.subjects import ServiceAccountRef
@@ -208,6 +209,14 @@ async def submissions(engine: AsyncEngine) -> SubmissionStore:
 
 
 @pytest.fixture
+async def sessions(engine: AsyncEngine) -> SessionRegistry:
+    # The registry tables share the history test database; production keeps them apart.
+    async with engine.begin() as connection:
+        await connection.run_sync(commands_db.Base.metadata.create_all)
+    return SessionRegistry(engine, Store(engine))
+
+
+@pytest.fixture
 def token_file(tmp_path: Path) -> Path:
     path = tmp_path / "token"
     path.write_text(TOKEN)
@@ -221,10 +230,17 @@ async def remote(resources: Resources, token_file: Path) -> AsyncIterator[Sandbo
 
 
 async def test_managed_open_keeps_runner_id_internal_and_retries_frozen_launch(
-    resources: Resources, token_file: Path, peer: Peer, engine: AsyncEngine, submissions: SubmissionStore
+    resources: Resources,
+    token_file: Path,
+    peer: Peer,
+    engine: AsyncEngine,
+    sessions: SessionRegistry,
+    submissions: SubmissionStore,
 ) -> None:
     store = Store(engine)
-    async with service_client(replace(resources, history=store, submissions=submissions), token_file) as remote:
+    async with service_client(
+        replace(resources, history=store, sessions=sessions, submissions=submissions), token_file
+    ) as remote:
         runner = remote.runner(DESTINATION)
         overrides: dict[str, object] = {"harness": "HARNESS_CODEX", "model": "test-model", "cwd": "/state/{session_id}"}
         created = await runner.create(idempotency_key="first-attempt", spec=overrides)
@@ -241,7 +257,8 @@ async def test_managed_open_keeps_runner_id_internal_and_retries_frozen_launch(
 
         # Simulate changed defaults/platform instructions after the original reply was lost.
         async with service_client(
-            replace(resources, history=Store(engine), platform_instructions="Changed guidance"), token_file
+            replace(resources, history=Store(engine), sessions=sessions, platform_instructions="Changed guidance"),
+            token_file,
         ) as retry:
             again = await retry.runner(DESTINATION).create(idempotency_key="first-attempt", spec=overrides)
         second = await peer.attachments.get()
@@ -279,12 +296,17 @@ async def test_managed_open_keeps_runner_id_internal_and_retries_frozen_launch(
 
 
 async def test_public_session_command_survives_a_lost_reply(
-    resources: Resources, token_file: Path, peer: Peer, engine: AsyncEngine, submissions: SubmissionStore
+    resources: Resources,
+    token_file: Path,
+    peer: Peer,
+    engine: AsyncEngine,
+    sessions: SessionRegistry,
+    submissions: SubmissionStore,
 ) -> None:
     store = Store(engine)
     session_id = uuid4()
     physical = f"r-{session_id}"
-    await store.open(
+    await sessions.open(
         session_id,
         sandbox_namespace=SANDBOX_NAMESPACE,
         sandbox_name=SANDBOX,
@@ -295,7 +317,9 @@ async def test_public_session_command_survives_a_lost_reply(
     command = command_pb2.Command(command_id="durable", submit_input=command_pb2.SubmitInput(text="hi"))
     async with (
         asyncio.timeout(10),
-        service_client(replace(resources, history=store, submissions=submissions), token_file) as remote,
+        service_client(
+            replace(resources, history=store, sessions=sessions, submissions=submissions), token_file
+        ) as remote,
     ):
         runner = remote.runner(DESTINATION)
         with pytest.raises(TimeoutError):
@@ -308,7 +332,7 @@ async def test_public_session_command_survives_a_lost_reply(
         # The runner did journal it; ingestion finds the admission and settles the submission.
         receipt = admission(command, 1)
         peer.history[physical] = [receipt]
-        [locator] = await store.runnable_locators(SANDBOX_NAMESPACE, [SANDBOX])
+        [locator] = await sessions.runnable_locators(SANDBOX_NAMESPACE, [SANDBOX])
         async with grpc.aio.insecure_channel(f"127.0.0.1:{peer.port}") as channel:
             assert await copy_confirmed_prefix(store, submissions, locator, RunnerClient(channel)) == 1
         await (await peer.attachments.get()).closed.wait()
@@ -322,7 +346,12 @@ async def test_public_session_command_survives_a_lost_reply(
 
 
 async def test_channel_routed_command_never_falls_back_to_the_relay(
-    resources: Resources, token_file: Path, peer: Peer, engine: AsyncEngine, submissions: SubmissionStore
+    resources: Resources,
+    token_file: Path,
+    peer: Peer,
+    engine: AsyncEngine,
+    sessions: SessionRegistry,
+    submissions: SubmissionStore,
 ) -> None:
     # A runner agreed commands once, and nothing has been heard from it since.
     await ConnectionStore(engine).accept(
@@ -334,7 +363,7 @@ async def test_channel_routed_command_never_falls_back_to_the_relay(
     )
     store = Store(engine)
     session_id = uuid4()
-    await store.open(
+    await sessions.open(
         session_id,
         sandbox_namespace=SANDBOX_NAMESPACE,
         sandbox_name=SANDBOX,
@@ -346,7 +375,7 @@ async def test_channel_routed_command_never_falls_back_to_the_relay(
     )
     command = command_pb2.Command(command_id="channel", submit_input=command_pb2.SubmitInput(text="hi"))
     async with service_client(
-        replace(resources, history=store, submissions=submissions, delivery=delivery), token_file
+        replace(resources, history=store, sessions=sessions, submissions=submissions, delivery=delivery), token_file
     ) as remote:
         runner = remote.runner(DESTINATION)
         for session in (str(session_id), "legacy-runner-session"):
@@ -358,13 +387,13 @@ async def test_channel_routed_command_never_falls_back_to_the_relay(
 
 
 async def test_lookup_open_scopes_reservation_and_waits_for_runner_confirmation(
-    resources: Resources, token_file: Path, peer: Peer, engine: AsyncEngine
+    resources: Resources, token_file: Path, peer: Peer, engine: AsyncEngine, sessions: SessionRegistry
 ) -> None:
     store = Store(engine)
-    async with service_client(replace(resources, history=store), token_file) as remote:
+    async with service_client(replace(resources, history=store, sessions=sessions), token_file) as remote:
         runner = remote.runner(DESTINATION)
         assert not (await runner.lookup(idempotency_key="lookup-key")).session_id
-        reserved = await store.reserve(
+        reserved = await sessions.reserve(
             caller_namespace=OWNER.namespace,
             caller_name=OWNER.name,
             sandbox_namespace=SANDBOX_NAMESPACE,
@@ -400,10 +429,10 @@ async def test_lookup_open_scopes_reservation_and_waits_for_runner_confirmation(
 
 
 async def test_lookup_rejects_failed_native_open_but_recovers_an_earlier_success(
-    resources: Resources, token_file: Path, peer: Peer, engine: AsyncEngine
+    resources: Resources, token_file: Path, peer: Peer, engine: AsyncEngine, sessions: SessionRegistry
 ) -> None:
     """Inventory also retains a spec after a native handshake fails; never project it as a Thread."""
-    async with service_client(replace(resources, history=Store(engine)), token_file) as remote:
+    async with service_client(replace(resources, history=Store(engine), sessions=sessions), token_file) as remote:
         runner = remote.runner(DESTINATION)
         created = await runner.create(
             idempotency_key="failed-handshake", spec={"harness": "HARNESS_CODEX", "model": "m", "cwd": "/state"}
@@ -457,19 +486,19 @@ async def test_lookup_rejects_failed_native_open_but_recovers_an_earlier_success
 
 
 async def test_history_copy_replays_only_published_prefix_and_detects_regression(
-    peer: Peer, engine: AsyncEngine, submissions: SubmissionStore
+    peer: Peer, engine: AsyncEngine, sessions: SessionRegistry, submissions: SubmissionStore
 ) -> None:
     store = Store(engine)
     session_id = uuid4()
     physical = f"r-{session_id}"
-    await store.open(
+    await sessions.open(
         session_id,
         sandbox_namespace=SANDBOX_NAMESPACE,
         sandbox_name=SANDBOX,
         sandbox_uid=UUID(SANDBOX_UID),
         runner_session_id=physical,
     )
-    [locator] = await store.runnable_locators(SANDBOX_NAMESPACE, [SANDBOX])
+    [locator] = await sessions.runnable_locators(SANDBOX_NAMESPACE, [SANDBOX])
     assert locator.session_id == session_id
     assert locator.runner_session_id == physical
     peer.opened_ids[physical] = runner_pb2.Open(session_id=physical)
@@ -500,11 +529,11 @@ async def test_history_copy_replays_only_published_prefix_and_detects_regression
             await copy_confirmed_prefix(store, submissions, locator, runner)
         await (await peer.attachments.get()).closed.wait()
         assert (await store.read(session_id))[0] == 3
-    assert await store.runnable_locators("different-namespace", [SANDBOX]) == []
+    assert await sessions.runnable_locators("different-namespace", [SANDBOX]) == []
 
 
 async def test_managed_open_lost_response_uses_same_reservation(
-    resources: Resources, token_file: Path, peer: Peer, engine: AsyncEngine
+    resources: Resources, token_file: Path, peer: Peer, engine: AsyncEngine, sessions: SessionRegistry
 ) -> None:
     peer.answer_open = False
     store = Store(engine)
@@ -514,7 +543,7 @@ async def test_managed_open_lost_response_uses_same_reservation(
         spec=runner_pb2.SessionSpec(harness=runner_pb2.HARNESS_CODEX, cwd="/state", model="test-model"),
     )
     request.override_mask.paths.extend(["harness", "cwd", "model"])
-    async with service_client(replace(resources, history=store), token_file) as remote:
+    async with service_client(replace(resources, history=store, sessions=sessions), token_file) as remote:
         call = remote.stub.CreateSession(request, metadata=await remote.metadata(), timeout=10)
         async with asyncio.timeout(5):
             first = await peer.attachments.get()
@@ -1152,25 +1181,29 @@ async def session_changes(db_url: str) -> AsyncIterator[SessionChanges]:
 
 
 async def test_watch_sessions_resumes_after_disconnect_and_wakes_on_other_writers(
-    resources: Resources, token_file: Path, engine: AsyncEngine, session_changes: SessionChanges
+    resources: Resources,
+    token_file: Path,
+    engine: AsyncEngine,
+    sessions: SessionRegistry,
+    session_changes: SessionChanges,
 ) -> None:
     store = Store(engine)
     legacy_id, current_id = uuid4(), uuid4()
-    await store.open(
+    await sessions.open(
         legacy_id,
         sandbox_namespace=SANDBOX_NAMESPACE,
         sandbox_name="deleted-sandbox",
         sandbox_uid=None,
         runner_session_id="legacy-runner",
     )
-    await store.open(
+    await sessions.open(
         current_id,
         sandbox_namespace=SANDBOX_NAMESPACE,
         sandbox_name=SANDBOX,
         sandbox_uid=UUID(SANDBOX_UID),
         runner_session_id=f"r-{current_id}",
     )
-    configured = replace(resources, history=store, session_changes=session_changes, follow_lease_s=2)
+    configured = replace(resources, history=store, sessions=sessions, session_changes=session_changes, follow_lease_s=2)
     async with service_client(configured, token_file) as remote:
         first_call = remote.stub.WatchSessions(
             protocol_pb2.WatchSessionsRequest(), metadata=await remote.metadata(), timeout=10
@@ -1192,7 +1225,7 @@ async def test_watch_sessions_resumes_after_disconnect_and_wakes_on_other_writer
         assert current.position > legacy.position
 
         # Another replica's commit reaches this stream through NOTIFY, not this replica's Store.
-        reserved = await Store(engine).reserve(
+        reserved = await sessions.reserve(
             caller_namespace=OWNER.namespace,
             caller_name=OWNER.name,
             sandbox_namespace=SANDBOX_NAMESPACE,
@@ -1211,9 +1244,13 @@ async def test_watch_sessions_resumes_after_disconnect_and_wakes_on_other_writer
 
 
 async def test_watch_sessions_requires_allowed_caller(
-    resources: Resources, token_file: Path, engine: AsyncEngine, session_changes: SessionChanges
+    resources: Resources,
+    token_file: Path,
+    engine: AsyncEngine,
+    sessions: SessionRegistry,
+    session_changes: SessionChanges,
 ) -> None:
-    await Store(engine).open(
+    await sessions.open(
         uuid4(),
         sandbox_namespace=SANDBOX_NAMESPACE,
         sandbox_name=SANDBOX,
@@ -1224,6 +1261,7 @@ async def test_watch_sessions_requires_allowed_caller(
     configured = replace(
         resources,
         history=Store(engine),
+        sessions=sessions,
         session_changes=session_changes,
         caller_accounts=frozenset({ServiceAccountRef(namespace=SANDBOX_NAMESPACE, name="allowed-service")}),
     )
@@ -1236,19 +1274,19 @@ async def test_watch_sessions_requires_allowed_caller(
 
 @pytest.mark.parametrize("outcome", ["eof", "timeout", "transport_error", "new_event"])
 async def test_history_copy_records_only_explicit_eof(
-    peer: Peer, engine: AsyncEngine, submissions: SubmissionStore, outcome: str
+    peer: Peer, engine: AsyncEngine, sessions: SessionRegistry, submissions: SubmissionStore, outcome: str
 ) -> None:
     store = Store(engine)
     session_id = uuid4()
     physical = f"r-{session_id}"
-    await store.open(
+    await sessions.open(
         session_id,
         sandbox_namespace=SANDBOX_NAMESPACE,
         sandbox_name=SANDBOX,
         sandbox_uid=UUID(SANDBOX_UID),
         runner_session_id=physical,
     )
-    [locator] = await store.runnable_locators(SANDBOX_NAMESPACE, [SANDBOX])
+    [locator] = await sessions.runnable_locators(SANDBOX_NAMESPACE, [SANDBOX])
     peer.state = runner_pb2.HARNESS_STATE_STOPPED
     async with grpc.aio.insecure_channel(f"127.0.0.1:{peer.port}") as channel:
         runner = RunnerClient(channel)

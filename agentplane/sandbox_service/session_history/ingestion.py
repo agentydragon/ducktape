@@ -23,7 +23,8 @@ from agentplane.sandbox_service.commands.store import SubmissionConflictError, S
 from agentplane.sandbox_service.destinations import DestinationResolver, DestinationUnavailableError
 from agentplane.sandbox_service.models import SandboxNotFoundError
 from agentplane.sandbox_service.protocol_pb2 import SandboxDestination, SessionFeedState
-from agentplane.sandbox_service.session_history.store import HistoryConflictError, HistoryLocator, Store
+from agentplane.sandbox_service.session_history.store import HistoryConflictError, Store
+from agentplane.sandbox_service.session_registry import HistoryLocator, SessionRegistry
 from util.agent_sandbox import OperatingMode
 
 # Generated stubs require the protobuf runtime as a direct mypy dependency.
@@ -95,6 +96,7 @@ class HistoryIngester:
     def __init__(
         self,
         store: Store,
+        sessions: SessionRegistry,
         submissions: SubmissionStore,
         destinations: DestinationResolver,
         *,
@@ -103,6 +105,7 @@ class HistoryIngester:
         concurrency: int = 4,
     ) -> None:
         self.store = store
+        self.sessions = sessions
         self.submissions = submissions
         self.destinations = destinations
         self.runner_grpc_channel_options = runner_grpc_channel_options
@@ -137,7 +140,7 @@ class HistoryIngester:
     async def cycle(self) -> None:
         sandboxes = await self.destinations.inventory.list_sandboxes()
         names = [row.name for row in sandboxes if row.operating_mode == OperatingMode.RUNNING and not row.deleting]
-        locators = await self.store.runnable_locators(self.destinations.inventory.namespace, names)
+        locators = await self.sessions.runnable_locators(self.destinations.inventory.namespace, names)
         limit = asyncio.Semaphore(self.concurrency)
 
         async def guarded(locator: HistoryLocator) -> None:

@@ -66,6 +66,9 @@ including launch defaults, bootstrap/setup, delivery evidence, and recovery afte
 Runner journals remain on their state volume as execution evidence, and the runner journal still
 authors execution Events. Retained history lives in service-owned PostgreSQL
 ([cutover record](session_history/CUTOVER.md)), read through the [History Service](../history_service/README.md).
+The Session registry (public Session IDs, runner locators, Open reservations and `WatchSessions`
+positions) lives in the service's own `sandbox_commands` database beside command admission; each
+registry write also inserts the Session's history row, which the ingesters append to.
 
 TODO: proper runner RPC authentication/TLS. V1 uses network isolation for service-to-runner traffic,
 not runner command RBAC. App-to-service calls already require a Pod-bound workload TokenReview.

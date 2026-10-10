@@ -31,6 +31,7 @@ from agentplane.sandbox_service.runner_channel import ChannelTiming, RunnerChann
 from agentplane.sandbox_service.session_history.ingestion import HistoryIngester
 from agentplane.sandbox_service.session_history.session_changes import SessionChanges
 from agentplane.sandbox_service.session_history.store import Store
+from agentplane.sandbox_service.session_registry import SessionRegistry
 from agentplane.sandbox_service.settings import Settings
 from agentplane.workload_auth.principal import WorkloadPrincipalResolver
 from util.kubernetes import CustomObjectsClient
@@ -40,6 +41,8 @@ from util.kubernetes import CustomObjectsClient
 # The channel servicer stub names its messages; mypy reads stubs only from direct deps.
 # gazelle:include_dep //agentplane/runner_channel:protocol_pb2
 # gazelle:include_dep @pypi//protobuf
+
+logger = logging.getLogger(__name__)
 
 
 async def serve(settings: Settings) -> None:
@@ -66,7 +69,7 @@ async def serve(settings: Settings) -> None:
 async def serve_with_engines(
     settings: Settings, configuration: k8s_client.Configuration, engine: AsyncEngine, commands_engine: AsyncEngine
 ) -> None:
-    session_changes = SessionChanges(engine.url)
+    session_changes = SessionChanges(commands_engine.url)
     async with k8s_client.ApiClient(configuration) as api, session_changes.listener.listen():
         core = k8s_client.CoreV1Api(api)
         inventory = SandboxInventory(
@@ -106,6 +109,9 @@ async def serve_with_engines(
             ),
         )
         history_store = Store(engine)
+        sessions = SessionRegistry(commands_engine, history_store)
+        imported = await sessions.import_history()
+        logger.info("Imported %d Sessions from the history database's registry", imported)
         submissions = SubmissionStore(commands_engine)
         connections = ConnectionStore(commands_engine)
         timing = ChannelTiming()
@@ -118,6 +124,7 @@ async def serve_with_engines(
         resources = Resources(
             principals=principals,
             history=history_store,
+            sessions=sessions,
             submissions=submissions,
             delivery=delivery,
             session_changes=session_changes,
@@ -170,6 +177,7 @@ async def serve_with_engines(
                 asyncio.create_task(
                     HistoryIngester(
                         history_store,
+                        sessions,
                         submissions,
                         resources.destinations,
                         runner_grpc_channel_options=settings.runner_grpc_channel_options,

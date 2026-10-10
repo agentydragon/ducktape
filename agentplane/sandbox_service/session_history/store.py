@@ -2,10 +2,8 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Sequence
-from dataclasses import dataclass
-from typing import cast
-from uuid import UUID, uuid4
+from collections.abc import Sequence
+from uuid import UUID
 
 from sqlalchemy import func, select
 from sqlalchemy.dialects.postgresql import insert
@@ -13,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 from agentplane.protocol import event_log_pb2
 from agentplane.sandbox_service import protocol_pb2
+from agentplane.sandbox_service.commands.db import Session
 from agentplane.sandbox_service.session_history.db import CHANGE_POSITION, SessionEvent, SessionHistory
 from agentplane.sandbox_service.session_history.session_changes import CHANNEL
 
@@ -22,6 +21,21 @@ from agentplane.sandbox_service.session_history.session_changes import CHANNEL
 
 # The service's own database; no other advisory lock uses this key.
 CHANGE_POSITION_LOCK = 0x53455343
+
+# The Sandbox Service registry's columns this table still repeats.
+REGISTRY_COLUMNS = (
+    "id",
+    "sandbox_namespace",
+    "sandbox_name",
+    "sandbox_uid",
+    "runner_session_id",
+    "caller_namespace",
+    "caller_name",
+    "open_key",
+    "open_request",
+    "launch_spec",
+    "change_position",
+)
 
 
 async def next_change_position(session: AsyncSession) -> int:
@@ -46,44 +60,9 @@ class HistoryNotFoundError(LookupError):
     pass
 
 
-@dataclass(frozen=True)
-class OpenReservation:
-    session_id: UUID
-    launch_spec: bytes
-
-
-@dataclass(frozen=True)
-class HistoryLocator:
-    session_id: UUID
-    sandbox_name: str
-    sandbox_uid: UUID
-    runner_session_id: str
-
-
 class Store:
     def __init__(self, engine: AsyncEngine) -> None:
         self._sessions = async_sessionmaker(engine, expire_on_commit=False)
-
-    async def runnable_locators(self, namespace: str, sandbox_names: list[str]) -> list[HistoryLocator]:
-        """Only current-Sandbox locators; deleted/Suspended histories remain retained."""
-        if not sandbox_names:
-            return []
-        async with self._sessions() as session:
-            rows = (
-                await session.scalars(
-                    select(SessionHistory).where(
-                        SessionHistory.sandbox_namespace == namespace,
-                        SessionHistory.sandbox_name.in_(sandbox_names),
-                        SessionHistory.sandbox_uid.is_not(None),
-                        SessionHistory.runner_session_id.is_not(None),
-                    )
-                )
-            ).all()
-            return [
-                HistoryLocator(row.id, row.sandbox_name, row.sandbox_uid, row.runner_session_id)
-                for row in rows
-                if row.sandbox_uid is not None and row.runner_session_id is not None
-            ]
 
     async def open(
         self,
@@ -125,157 +104,25 @@ class Store:
             ):
                 raise HistoryConflictError(f"session {session_id} has a different runner locator")
 
-    async def reserve(
-        self,
-        *,
-        caller_namespace: str,
-        caller_name: str,
-        sandbox_namespace: str,
-        sandbox_name: str,
-        sandbox_uid: UUID,
-        open_key: str,
-        open_request: bytes,
-        launch_spec: Callable[[UUID], bytes],
-    ) -> OpenReservation:
-        """Reserve a durable Session ID *before* runner attach, or recover a lost reply.
+    async def registry_records(self) -> list[SessionHistory]:
+        """Every row, for the Sandbox Service's registry import."""
+        async with self._sessions() as session:
+            return list(await session.scalars(select(SessionHistory)))
 
-        The key is opaque to the Service and scoped to the authenticated caller and
-        Sandbox incarnation. The request bytes identify the caller's original inputs;
-        the launch factory freezes effective runner setup for the candidate ID.
-        Committing before runner contact lets a retry recover the same setup.
-        Imported histories use `open` to keep their existing public IDs.
+    async def mirror(self, record: Session) -> None:
+        """Insert the history row of a registered Session with the registry's values, or confirm it.
+
+        The ingesters append to this row; it repeats the Sandbox Service registry until they
+        create their own.
         """
-        if not all((caller_namespace, caller_name, sandbox_namespace, sandbox_name, open_key)):
-            raise ValueError("caller, sandbox, and Open idempotency key are required")
+        values = {column: getattr(record, column) for column in REGISTRY_COLUMNS}
         async with self._sessions.begin() as session:
-            # Do not recompute today's defaults for an already reserved Open.
-            query = select(SessionHistory).where(
-                SessionHistory.caller_namespace == caller_namespace,
-                SessionHistory.caller_name == caller_name,
-                SessionHistory.sandbox_namespace == sandbox_namespace,
-                SessionHistory.sandbox_name == sandbox_name,
-                SessionHistory.sandbox_uid == sandbox_uid,
-                SessionHistory.open_key == open_key,
+            await session.execute(
+                insert(SessionHistory).values(**values, source_id=None, last_cursor=0).on_conflict_do_nothing()
             )
-            existing = await session.scalar(query)
-            if existing is not None:
-                if existing.open_request != open_request:
-                    raise HistoryConflictError("Open idempotency key reused with different inputs")
-                assert existing.launch_spec is not None
-                return OpenReservation(existing.id, existing.launch_spec)
-            candidate = uuid4()
-            frozen = launch_spec(candidate)
-            created = await session.scalar(
-                insert(SessionHistory)
-                .values(
-                    id=candidate,
-                    caller_namespace=caller_namespace,
-                    caller_name=caller_name,
-                    sandbox_namespace=sandbox_namespace,
-                    sandbox_name=sandbox_name,
-                    sandbox_uid=sandbox_uid,
-                    open_key=open_key,
-                    open_request=open_request,
-                    launch_spec=frozen,
-                    runner_session_id=f"r-{candidate}",
-                    source_id=None,
-                    last_cursor=0,
-                    change_position=await next_change_position(session),
-                )
-                .on_conflict_do_nothing()
-                .returning(SessionHistory.id)
-            )
-            if created is not None:
-                return OpenReservation(created, frozen)
-            existing = await session.scalar(query)
-            if existing is None:
-                raise HistoryConflictError("Open identity could not be reserved")
-            if existing.open_request != open_request:
-                raise HistoryConflictError("Open idempotency key reused with different inputs")
-            assert existing.launch_spec is not None
-            return OpenReservation(existing.id, existing.launch_spec)
-
-    async def lookup_open(
-        self,
-        *,
-        caller_namespace: str,
-        caller_name: str,
-        sandbox_namespace: str,
-        sandbox_name: str,
-        sandbox_uid: UUID,
-        open_key: str,
-    ) -> UUID | None:
-        """Return only the public ID, scoped identically to a reservation; never return stored specs."""
-        if not all((caller_namespace, caller_name, sandbox_namespace, sandbox_name, open_key)):
-            raise ValueError("caller, sandbox, and Open idempotency key are required")
-        async with self._sessions() as session:
-            return cast(
-                UUID | None,
-                await session.scalar(
-                    select(SessionHistory.id).where(
-                        SessionHistory.caller_namespace == caller_namespace,
-                        SessionHistory.caller_name == caller_name,
-                        SessionHistory.sandbox_namespace == sandbox_namespace,
-                        SessionHistory.sandbox_name == sandbox_name,
-                        SessionHistory.sandbox_uid == sandbox_uid,
-                        SessionHistory.open_key == open_key,
-                    )
-                ),
-            )
-
-    async def read_changes(self, *, after_position: int, limit: int) -> list[protocol_pb2.SessionChange]:
-        """Every Session whose latest change is after the position, oldest change first."""
-        if after_position < 0 or not 1 <= limit <= 1000:
-            raise ValueError("invalid Session change page")
-        async with self._sessions() as session:
-            rows = await session.execute(
-                select(
-                    SessionHistory.id,
-                    SessionHistory.sandbox_name,
-                    SessionHistory.sandbox_uid,
-                    SessionHistory.change_position,
-                )
-                .where(SessionHistory.change_position > after_position)
-                .order_by(SessionHistory.change_position)
-                .limit(limit)
-            )
-            return [
-                protocol_pb2.SessionChange(
-                    session_id=str(row.id),
-                    sandbox=row.sandbox_name,
-                    sandbox_uid=str(row.sandbox_uid) if row.sandbox_uid is not None else "",
-                    position=row.change_position,
-                )
-                for row in rows
-            ]
-
-    async def runner_id(self, session_id: UUID, *, sandbox_namespace: str, sandbox_name: str, sandbox_uid: UUID) -> str:
-        """Resolve a public Session ID only in its original Sandbox incarnation."""
-        async with self._sessions() as session:
-            row = await session.get(SessionHistory, session_id)
-            if (
-                row is None
-                or (row.sandbox_namespace, row.sandbox_name, row.sandbox_uid)
-                != (sandbox_namespace, sandbox_name, sandbox_uid)
-                or row.runner_session_id is None
-            ):
-                raise HistoryNotFoundError(session_id)
-            return row.runner_session_id
-
-    async def session_id(
-        self, *, sandbox_namespace: str, sandbox_name: str, sandbox_uid: UUID, runner_session_id: str
-    ) -> UUID | None:
-        """Map an inventoried runner ID to a public Session ID, if managed."""
-        async with self._sessions() as session:
-            result = await session.scalar(
-                select(SessionHistory.id).where(
-                    SessionHistory.sandbox_namespace == sandbox_namespace,
-                    SessionHistory.sandbox_name == sandbox_name,
-                    SessionHistory.sandbox_uid == sandbox_uid,
-                    SessionHistory.runner_session_id == runner_session_id,
-                )
-            )
-            return cast(UUID | None, result)
+            row = await session.get(SessionHistory, record.id)
+            if row is None or any(getattr(row, column) != value for column, value in values.items()):
+                raise HistoryConflictError(f"session {record.id} history row differs from its registry record")
 
     async def append(self, session_id: UUID, entries: Sequence[event_log_pb2.EventEntry]) -> int:
         """Replay exact duplicates or extend the prefix; serialize concurrent writers by Session ID.
