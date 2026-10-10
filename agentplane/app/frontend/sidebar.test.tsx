@@ -6,7 +6,7 @@ import { MemoryRouter, Route, Routes, useLocation } from "react-router";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
 import type { SandboxView, ThreadView } from "./client";
-import { type ThreadsSnapshot, ThreadsLiveProvider } from "./live";
+import { RoutedThreadsLiveProvider, type ThreadsSnapshot } from "./live";
 import { Sidebar } from "./sidebar";
 import { scrollCapture } from "./threads/scroll_diagnostics";
 import { DEGRADED_AFTER_MS } from "./stream_status";
@@ -80,9 +80,27 @@ function LocationProbe(): JSX.Element {
   return <div data-testid="location">{location.pathname}</div>;
 }
 
-function snapshot(threads: ThreadView[], sandboxes: Record<string, SandboxView>): ThreadsSnapshot {
+/** What the server would push for this listing: the newest `limit` of the threads it matches, then
+ * the open thread if it is not among them. */
+function snapshot(
+  threads: ThreadView[],
+  sandboxes: Record<string, SandboxView>,
+  url = "/live/threads"
+): ThreadsSnapshot {
+  const query = new URL(url, "http://test").searchParams;
+  const search = query.get("search")?.toLowerCase();
+  const limit = Number(query.get("limit") ?? threads.length);
+  const matching = threads.filter(
+    (candidate) =>
+      (query.get("include_archived") === "true" || !candidate.archived) &&
+      (search === undefined || (candidate.name ?? "").toLowerCase().includes(search))
+  );
+  const listed = matching.slice(0, limit);
+  const open = threads.find((candidate) => candidate.id === query.get("open_thread"));
   return {
-    threads,
+    threads: open === undefined || listed.includes(open) ? listed : [...listed, open],
+    more: matching.length > limit,
+    archived_count: threads.filter((candidate) => candidate.archived).length,
     sandboxes: Object.values(sandboxes),
     updates_connected: true,
     watch: { fresh: true, stale_after_seconds: 90, refreshed_seconds_ago: { sandboxes: 0 } },
@@ -106,10 +124,10 @@ async function render(
       readyState = 0;
       constructor(url: string) {
         super();
-        expect(url).toBe("/live/threads");
+        expect(new URL(url, "http://test").pathname).toBe("/live/threads");
         streams.push(this);
         queueMicrotask(() =>
-          this.dispatchEvent(new MessageEvent("snapshot", { data: JSON.stringify(snapshot(threads, sandboxes)) }))
+          this.dispatchEvent(new MessageEvent("snapshot", { data: JSON.stringify(snapshot(threads, sandboxes, url)) }))
         );
       }
       close(): void {}
@@ -133,8 +151,8 @@ async function render(
   await act(async () =>
     root.render(
       <MantineProvider env="test">
-        <ThreadsLiveProvider>
-          <MemoryRouter initialEntries={[options.initialPath ?? "/"]}>
+        <MemoryRouter initialEntries={[options.initialPath ?? "/"]}>
+          <RoutedThreadsLiveProvider>
             <Sidebar
               settingsOpen={options.settingsOpen ?? false}
               onOpenSettings={onOpenSettings}
@@ -144,8 +162,8 @@ async function render(
             <Routes>
               <Route path="*" element={<LocationProbe />} />
             </Routes>
-          </MemoryRouter>
-        </ThreadsLiveProvider>
+          </RoutedThreadsLiveProvider>
+        </MemoryRouter>
       </MantineProvider>
     )
   );
@@ -432,6 +450,31 @@ it("hides archived threads until the switch is toggled, and archives a thread fr
   );
   expect(archiveCall).toBeDefined();
   expect((archiveCall?.[0] as Request).method).toBe("POST");
+});
+
+it("grows the window a page at a time and narrows it to a search", async () => {
+  const threads = Array.from({ length: 51 }, (_, index) =>
+    thread({ id: `t-${index}`, sandbox: "demo", name: `Listed thread ${index}` })
+  );
+  await render(threads, { demo: sandbox("demo") });
+  expect(container.textContent).not.toContain("Listed thread 50");
+
+  const more = [...container.querySelectorAll("button")].find((button) => button.textContent === "Show more threads");
+  if (!more) throw new Error("missing show-more button");
+  await act(async () => more.click());
+  expect(container.textContent).toContain("Listed thread 50");
+  expect(container.textContent).not.toContain("Show more threads");
+
+  vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+  const search = container.querySelector('input[aria-label="Search threads"]');
+  if (!(search instanceof HTMLInputElement)) throw new Error("missing search box");
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set?.call(search, "thread 50");
+    search.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  await act(async () => vi.runAllTimers());
+  expect(container.textContent).toContain("Listed thread 50");
+  expect(container.textContent).not.toContain("Listed thread 49");
 });
 
 it("keeps the open Thread in the list while it is archived and the archived switch is off", async () => {

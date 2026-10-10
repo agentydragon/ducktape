@@ -380,7 +380,9 @@ async def test_global_thread_stream_combines_replica_commits_and_sandbox_watch_c
     database_updates: DatabaseUpdates,
 ) -> None:
     drain = Drain()
-    response = await live_threads(index=seeded, store=replica.store, updates=database_updates, shutdown=drain)
+    response = await live_threads(
+        index=seeded, store=replica.store, updates=database_updates, shutdown=drain, include_archived=True
+    )
     stream = aiter(response.body_iterator)
     try:
         async with asyncio.timeout(10):
@@ -394,7 +396,8 @@ async def test_global_thread_stream_combines_replica_commits_and_sandbox_watch_c
             await store.rename(thread_id, "Renamed in another app replica")
             assert (await _next_threads(stream)).threads[0].name == "Renamed in another app replica"
             await store.archive(thread_id)
-            assert (await _next_threads(stream)).threads[0].archived
+            archived = await _next_threads(stream)
+            assert (archived.threads[0].archived, archived.archived_count) == (True, 1)
 
             seeded.sandboxes["runner-1"] = sandbox("runner-1", operating_mode="Suspended")
             seeded.changes.notify()
@@ -407,6 +410,25 @@ async def test_global_thread_stream_combines_replica_commits_and_sandbox_watch_c
             deleted = await _next_threads(stream)
             assert [view.name for view in deleted.sandboxes] == ["shelved"]
             assert [thread.id for thread in deleted.threads] == [thread_id]
+    finally:
+        drain.begin()
+        async for _ in stream:
+            pass
+
+
+async def test_global_thread_stream_carries_its_window_and_the_open_thread(
+    seeded: LiveIndex, event_logs: EventLogStore, replica: Replica, database_updates: DatabaseUpdates
+) -> None:
+    oldest, _, newest = [await event_logs.open("runner-1", f"test-window-thread-{n}") for n in range(3)]
+    drain = Drain()
+    response = await live_threads(
+        index=seeded, store=replica.store, updates=database_updates, shutdown=drain, limit=1, open_thread=oldest
+    )
+    stream = aiter(response.body_iterator)
+    try:
+        async with asyncio.timeout(10):
+            window = await _next_threads(stream)
+            assert ([thread.id for thread in window.threads], window.more) == ([newest, oldest], True)
     finally:
         drain.begin()
         async for _ in stream:

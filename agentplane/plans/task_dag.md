@@ -452,12 +452,6 @@ queued, delivered and acknowledged states. Reconnect against backend state; any 
 estimate. Independent of compact delivered-message rendering. Never acknowledge from viewing the
 sidebar.
 
-### `THREAD_BROWSE_PAGINATE` — bounded history browsing
-
-**Candidate.** Paginate/search the Thread listing with authorized
-stable cursors, independent of deferred transcript full-text search. Verify ordering, navigation and
-permissions rather than making the frontend load every Thread. The paging cursors come from the History Service's
-list API (`ListSessionSummaries`).
 
 ## 6. Existing access and lifecycle follow-ups
 

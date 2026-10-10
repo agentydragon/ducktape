@@ -2,13 +2,14 @@
  * The persistent left sidebar: Threads grouped by their Sandbox, including threadless Sandboxes
  * and retained Threads whose Sandbox no longer exists.
  */
-import { ActionIcon, Alert, Switch, Text, Tooltip } from "@mantine/core";
+import { ActionIcon, Alert, Button, Switch, Text, TextInput, Tooltip } from "@mantine/core";
 // Per-icon subpaths, never the barrel: see tabler_icons.d.ts.
 import IconArchive from "@tabler/icons-react/dist/esm/icons/IconArchive.mjs";
 import IconArchiveOff from "@tabler/icons-react/dist/esm/icons/IconArchiveOff.mjs";
 import IconBox from "@tabler/icons-react/dist/esm/icons/IconBox.mjs";
 import IconListCheck from "@tabler/icons-react/dist/esm/icons/IconListCheck.mjs";
 import IconPlus from "@tabler/icons-react/dist/esm/icons/IconPlus.mjs";
+import IconSearch from "@tabler/icons-react/dist/esm/icons/IconSearch.mjs";
 import IconSettings from "@tabler/icons-react/dist/esm/icons/IconSettings.mjs";
 import IconX from "@tabler/icons-react/dist/esm/icons/IconX.mjs";
 import { type JSX, useEffect, useRef, useState, type PointerEvent } from "react";
@@ -16,13 +17,20 @@ import { Link, useLocation, useMatch, useNavigate } from "react-router";
 
 import { archiveThread, displayableError, type SandboxView, type ThreadView } from "./client";
 import { ActionsSidebarSection } from "./actions/sidebar";
-import { LiveStatus, useRequiredThreadsLive, type Live, type ThreadsSnapshot } from "./live";
+import {
+  LiveStatus,
+  THREAD_PAGE,
+  useRequiredThreadsLive,
+  useThreadListing,
+  type Live,
+  type ThreadsSnapshot,
+} from "./live";
 import { MarkGlyph } from "./mark_glyph";
 import { sandboxStatusDetail, sandboxSummary } from "./sandbox_status";
 import { SANDBOX_STATUS_MARKS } from "./status_mark";
 import "./sidebar.css";
 import { ConnectionIndicator } from "./stream_status";
-import { archivedCount, groupThreads, type ThreadGroup } from "./thread_groups";
+import { groupThreads, type ThreadGroup } from "./thread_groups";
 import { ThreadStatusIndicator } from "./thread_status_indicator";
 import { ScrollDebugTools } from "./threads/scroll_debug_tools";
 import { snapshotFresh, threadStatusFromSnapshot } from "./thread_status";
@@ -32,6 +40,7 @@ const SIDEBAR_DEFAULT_WIDTH = 240;
 const SIDEBAR_MIN_WIDTH = 180;
 const SIDEBAR_MAX_WIDTH = 480;
 const SIDEBAR_KEYBOARD_STEP = 16;
+const SEARCH_PAUSE_MS = 300;
 
 function clampSidebarWidth(width: number): number {
   return Math.min(SIDEBAR_MAX_WIDTH, Math.max(SIDEBAR_MIN_WIDTH, width));
@@ -331,7 +340,8 @@ function SidebarView({
   const location = useLocation();
   const threadRoute = useMatch("/threads/:threadId");
   const sandboxRoute = useMatch("/sandboxes/:name");
-  const [includeArchived, setIncludeArchived] = useState(false);
+  const { listing, setListing } = useThreadListing();
+  const [search, setSearch] = useState(listing.search ?? "");
   const { width, setWidth, resizeBy } = useSidebarWidth();
   const data = live.snapshot;
   const fresh = snapshotFresh(live);
@@ -355,10 +365,21 @@ function SidebarView({
   const groups = groupThreads(
     threads,
     Object.fromEntries((data?.sandboxes ?? []).map((sandbox) => [sandbox.name, sandbox])),
-    includeArchived,
+    listing.includeArchived,
     current
   );
-  const archived = archivedCount(threads);
+  const archived = data?.archived_count ?? 0;
+
+  useEffect(() => {
+    // Each listing is its own stream, so typing waits for a pause before asking for one.
+    const wanted = search.trim() || null;
+    if (wanted === listing.search) return;
+    const timer = window.setTimeout(
+      () => setListing({ ...listing, search: wanted, limit: THREAD_PAGE }),
+      SEARCH_PAUSE_MS
+    );
+    return () => window.clearTimeout(timer);
+  }, [search, listing, setListing]);
 
   async function toggleArchived(thread: ThreadView): Promise<void> {
     setError(null);
@@ -420,6 +441,14 @@ function SidebarView({
       </div>
       <div className="agentplane-sidebar-body">
         <div className="agentplane-sidebar-thread-list">
+          <TextInput
+            size="xs"
+            placeholder="Search threads"
+            aria-label="Search threads"
+            leftSection={<IconSearch size={12} />}
+            value={search}
+            onChange={(event) => setSearch(event.currentTarget.value)}
+          />
           <LiveStatus live={live} />
           {data?.updates_connected === false && (
             <Alert color="orange" p="xs">
@@ -438,7 +467,7 @@ function SidebarView({
           )}
           {data !== null && groups.length === 0 && (
             <Text c="dimmed" size="xs" px={4}>
-              No threads yet.
+              {listing.search === null ? "No threads yet." : "No matching threads."}
             </Text>
           )}
           {groups.map((group) => (
@@ -453,13 +482,24 @@ function SidebarView({
               onToggleArchived={(thread) => void toggleArchived(thread)}
             />
           ))}
-          {threads.length > 0 && (
+          {data?.more && (
+            <Button
+              variant="subtle"
+              size="compact-xs"
+              onClick={() => setListing({ ...listing, limit: listing.limit + THREAD_PAGE })}
+            >
+              Show more threads
+            </Button>
+          )}
+          {(archived > 0 || listing.includeArchived) && (
             <div className="agentplane-sidebar-archived-toggle">
               <Text size="xs">Show archived ({archived})</Text>
               <Switch
                 size="xs"
-                checked={includeArchived}
-                onChange={(event) => setIncludeArchived(event.currentTarget.checked)}
+                checked={listing.includeArchived}
+                onChange={(event) =>
+                  setListing({ ...listing, includeArchived: event.currentTarget.checked, limit: THREAD_PAGE })
+                }
                 aria-label="Show archived threads"
               />
             </div>

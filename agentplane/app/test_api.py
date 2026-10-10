@@ -1046,7 +1046,7 @@ async def test_a_thread_is_found_by_its_session_and_renamed_in_place(
     ) as http:
         found = (await http.get(f"/threads/{thread_id}")).json()
         assert (found["id"], found["name"]) == (thread_id, None)
-        assert (await http.get("/threads", params={"sandbox": "other"})).json() == []
+        assert (await http.get("/threads", params={"sandbox": "other"})).json()["threads"] == []
 
         renamed = await http.patch(f"/threads/{thread_id}", json={"name": "  list the files  "})
         assert renamed.status_code == 200, renamed.text
@@ -1098,13 +1098,15 @@ async def test_a_thread_archives_and_unarchives_and_hides_from_the_default_listi
         transport=httpx.ASGITransport(app=app), base_url="http://test", headers=AGENT_AUTH
     ) as http:
         assert (await http.post(f"/threads/{thread_id}/archive")).status_code == 204
-        assert (await http.get("/threads", params={"sandbox": "live"})).json() == []
-        [archived] = (await http.get("/threads", params={"sandbox": "live", "include_archived": "true"})).json()
+        assert (await http.get("/threads", params={"sandbox": "live"})).json()["threads"] == []
+        [archived] = (await http.get("/threads", params={"sandbox": "live", "include_archived": "true"})).json()[
+            "threads"
+        ]
         assert archived["archived"] is True
         assert (await http.get(f"/threads/{thread_id}")).json()["archived"] is True
 
         assert (await http.post(f"/threads/{thread_id}/unarchive")).status_code == 204
-        [unarchived] = (await http.get("/threads", params={"sandbox": "live"})).json()
+        [unarchived] = (await http.get("/threads", params={"sandbox": "live"})).json()["threads"]
         assert unarchived["archived"] is False
 
         assert (await http.post("/threads/00000000-0000-0000-0000-000000000000/archive")).status_code == 404

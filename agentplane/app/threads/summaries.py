@@ -25,8 +25,6 @@ from agentplane.thread_fold.models import ThreadCheckpoint, ThreadHistorySummary
 # The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.
 # gazelle:include_dep @pypi//protobuf
 
-SUMMARY_PAGE = 200
-
 
 @dataclass(frozen=True)
 class FeedEnd:
@@ -122,16 +120,11 @@ class HistorySummaries:
         return _history_summary(summary, (await self._resumes({thread_id})).get(thread_id))
 
     async def many(self, thread_ids: Collection[UUID]) -> dict[UUID, FoldSummary]:
-        # Pages every Session's summary: there is no batch read yet, and Thread lists are unpaged.
-        request = history_pb2.ListSessionSummariesRequest(limit=SUMMARY_PAGE)
-        listed: dict[UUID, history_pb2.SessionSummary] = {}
-        while True:
-            page = await self._history.list_session_summaries(request)
-            # A Session whose history begins while paging can be listed twice; the later copy is newer.
-            listed.update((UUID(summary.session_id), summary) for summary in page.summaries)
-            if not page.next_page_token:
-                break
-            request.page_token = page.next_page_token
+        """At most one History Service read's worth of Threads."""
+        listed = {
+            UUID(summary.session_id): summary
+            for summary in await self._history.batch_get_session_summaries([str(thread_id) for thread_id in thread_ids])
+        }
         resumes = await self._resumes(thread_ids)
         return {
             thread_id: _history_summary(listed[thread_id], resumes.get(thread_id))

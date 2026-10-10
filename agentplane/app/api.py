@@ -84,7 +84,7 @@ from agentplane.app.threads.events.debug import (
 )
 from agentplane.app.threads.events.event_log import EventLogStore, ThreadNotFoundError
 from agentplane.app.threads.sessions import SandboxNotReachableError
-from agentplane.app.threads.store import ThreadStore
+from agentplane.app.threads.store import MAX_PAGE, InvalidPageTokenError, ThreadPage, ThreadStore
 from agentplane.app.threads.thread_view import ThreadView
 from agentplane.app.threads.view.content import CommandIdConflictError, ContentStore
 from agentplane.history_service.client import HistoryServiceError
@@ -749,9 +749,21 @@ async def list_threads(
     store: Store,
     sandbox: Annotated[str | None, Query(description="Only threads of this sandbox.")] = None,
     include_archived: Annotated[bool, Query(description="Also list archived threads.")] = False,
-) -> list[ThreadView]:
-    """Every persisted thread, newest first; a thread outlives its sandbox."""
-    return await store.list_threads(sandbox=sandbox, include_archived=include_archived)
+    search: Annotated[
+        str | None,
+        Query(
+            min_length=1, description="Only threads whose name or sandbox contains this, or whose ID starts with it."
+        ),
+    ] = None,
+    limit: Annotated[int, Query(ge=1, le=MAX_PAGE, description="At most this many threads.")] = 50,
+    page_token: Annotated[
+        str | None, Query(description="A previous page's `next_page_token`, with the same filters.")
+    ] = None,
+) -> ThreadPage:
+    """Persisted threads, newest first; a thread outlives its sandbox."""
+    return await store.list_page(
+        limit=limit, page_token=page_token, sandbox=sandbox, search=search, include_archived=include_archived
+    )
 
 
 @threads.get("/{thread_id}")
@@ -1118,6 +1130,10 @@ def create_app(
     @app.exception_handler(ThreadEvidenceNotFoundError)
     async def _evidence_missing(_request: Request, error: ThreadEvidenceNotFoundError) -> JSONResponse:
         return JSONResponse({"detail": str(error)}, status_code=status.HTTP_404_NOT_FOUND)
+
+    @app.exception_handler(InvalidPageTokenError)
+    async def _invalid_page_token(_request: Request, error: InvalidPageTokenError) -> JSONResponse:
+        return JSONResponse(status_code=status.HTTP_400_BAD_REQUEST, content={"detail": str(error)})
 
     @app.exception_handler(ThreadNotFoundError)
     async def _thread_not_found(_request: Request, error: ThreadNotFoundError) -> JSONResponse:

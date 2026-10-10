@@ -9,7 +9,7 @@ import { ActionHistory } from "./actions/history";
 import { ActionRequests, ActionRequestsProvider } from "./actions/requests";
 import { ConnectionConsent } from "./consent";
 import { SandboxPage } from "./sandbox_page";
-import { SandboxesLiveProvider, ThreadsLiveProvider } from "./live";
+import { RoutedThreadsLiveProvider, SandboxesLiveProvider } from "./live";
 import { SandboxList } from "./sandboxes";
 import { ProjectedSession } from "./threads/projected_session";
 import { Settings, type SettingsTab } from "./settings/dialog";
@@ -191,9 +191,9 @@ export default function App(): JSX.Element {
   return (
     <ThreadSyncContext.Provider value={electricThreadSync}>
       <HashRouter>
-        <ThreadsLiveProvider>
+        <RoutedThreadsLiveProvider>
           <AppRoutes />
-        </ThreadsLiveProvider>
+        </RoutedThreadsLiveProvider>
       </HashRouter>
     </ThreadSyncContext.Provider>
   );

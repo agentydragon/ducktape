@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
 
 from agentplane.app.testing.retained_history import seed_retained_session
 from agentplane.app.threads.models import EventLog
-from agentplane.app.threads.store import ThreadStore
+from agentplane.app.threads.store import InvalidPageTokenError, ThreadStore
 from agentplane.app.threads.summaries import AppSummaries
 from agentplane.proto import event_pb2, runner_pb2
 from agentplane.runner.harness import Harness
@@ -105,6 +105,48 @@ async def test_missing_projection_metadata_does_not_read_retained_raw_history(en
         await store.get_thread(thread)
     with pytest.raises(ValueError, match="missing service projection metadata"):
         await store.list_threads()
+
+
+async def all_pages(
+    store: ThreadStore, *, search: str | None = None, include_archived: bool = False
+) -> list[list[UUID]]:
+    pages: list[list[UUID]] = []
+    page_token = None
+    while True:
+        page = await store.list_page(limit=2, page_token=page_token, search=search, include_archived=include_archived)
+        pages.append([view.id for view in page.threads])
+        if page.next_page_token is None:
+            return pages
+        page_token = page.next_page_token
+
+
+async def test_pages_follow_creation_order_under_each_filter(engine: AsyncEngine) -> None:
+    oldest, middle, newest = [await seed_projection(engine, sandbox=f"test-sandbox-{n}", cursor=1) for n in range(3)]
+    newest_other = await seed_projection(engine, sandbox="test-other", cursor=1)
+    store = ThreadStore(engine, AppSummaries(engine))
+    await store.rename(middle, "Searched thread")
+    await store.archive(newest)
+
+    assert await all_pages(store) == [[newest_other, middle], [oldest]]
+    assert await all_pages(store, include_archived=True) == [[newest_other, newest], [middle, oldest]]
+    assert await all_pages(store, search="SEARCHED") == [[middle]]
+    assert await all_pages(store, search="test-sandbox", include_archived=True) == [[newest, middle], [oldest]]
+    assert await all_pages(store, search=str(oldest)[:8]) == [[oldest]]
+    assert await all_pages(store, search="%") == [[]]
+    assert await store.archived_count() == 1
+
+
+async def test_a_page_token_continues_only_its_own_listing(engine: AsyncEngine) -> None:
+    for n in range(3):
+        await seed_projection(engine, sandbox=f"test-sandbox-{n}", cursor=1)
+    store = ThreadStore(engine, AppSummaries(engine))
+    first = await store.list_page(limit=1)
+    assert first.next_page_token is not None
+
+    with pytest.raises(InvalidPageTokenError, match="another listing"):
+        await store.list_page(limit=1, page_token=first.next_page_token, include_archived=True)
+    with pytest.raises(InvalidPageTokenError, match="malformed"):
+        await store.list_page(limit=1, page_token="test-not-a-token")
 
 
 if __name__ == "__main__":

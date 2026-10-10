@@ -12,6 +12,7 @@
  */
 import { Alert } from "@mantine/core";
 import { createContext, type JSX, type ReactNode, useContext, useEffect, useState } from "react";
+import { useMatch } from "react-router";
 
 import type { components } from "./api/schema";
 import { followStream, type StreamConnection } from "./live_stream";
@@ -34,8 +35,24 @@ export function liveSandboxesUrl(): string {
   return "/live/sandboxes";
 }
 
-export function liveThreadsUrl(): string {
-  return "/live/threads";
+/** What the sidebar asks of the thread list: a window of its newest threads, which grows a page at
+ * a time, and the filters it is read under. */
+export interface ThreadListing {
+  limit: number;
+  search: string | null;
+  includeArchived: boolean;
+}
+
+export const THREAD_PAGE = 50;
+
+export function liveThreadsUrl(listing: ThreadListing, openThreadId: string | null): string {
+  const query = new URLSearchParams({
+    limit: String(listing.limit),
+    include_archived: String(listing.includeArchived),
+  });
+  if (listing.search !== null) query.set("search", listing.search);
+  if (openThreadId !== null) query.set("open_thread", openThreadId);
+  return `/live/threads?${query}`;
 }
 
 export function liveSandboxUrl(name: string, includeArchived: boolean): string {
@@ -72,12 +89,40 @@ export function useLive<T extends { watch: WatchHealth }>(url: string, name: str
 }
 
 const ThreadsLiveContext = createContext<Live<ThreadsSnapshot> | null>(null);
+const ThreadListingContext = createContext<{
+  listing: ThreadListing;
+  setListing: (listing: ThreadListing) => void;
+} | null>(null);
 const SandboxesLiveContext = createContext<Live<SandboxesSnapshot> | null>(null);
 
-/** One /live/threads connection for the shell, shared by navigation and the open composer. */
-export function ThreadsLiveProvider({ children }: { children: ReactNode }): JSX.Element {
-  const live = useLive<ThreadsSnapshot>(liveThreadsUrl(), "Threads");
-  return <ThreadsLiveContext.Provider value={live}>{children}</ThreadsLiveContext.Provider>;
+/** One /live/threads connection for the shell, shared by navigation and the open composer. It always
+ * carries the open Thread, so that Thread's page stays current however far down the list it is. */
+export function ThreadsLiveProvider({
+  openThreadId,
+  children,
+}: {
+  openThreadId: string | null;
+  children: ReactNode;
+}): JSX.Element {
+  const [listing, setListing] = useState<ThreadListing>({ limit: THREAD_PAGE, search: null, includeArchived: false });
+  const live = useLive<ThreadsSnapshot>(liveThreadsUrl(listing, openThreadId), "Threads");
+  return (
+    <ThreadListingContext.Provider value={{ listing, setListing }}>
+      <ThreadsLiveContext.Provider value={live}>{children}</ThreadsLiveContext.Provider>
+    </ThreadListingContext.Provider>
+  );
+}
+
+/** `ThreadsLiveProvider` for the Thread a `/threads/:threadId` route has open. */
+export function RoutedThreadsLiveProvider({ children }: { children: ReactNode }): JSX.Element {
+  const threadRoute = useMatch("/threads/:threadId");
+  return <ThreadsLiveProvider openThreadId={threadRoute?.params.threadId ?? null}>{children}</ThreadsLiveProvider>;
+}
+
+export function useThreadListing(): { listing: ThreadListing; setListing: (listing: ThreadListing) => void } {
+  const listing = useContext(ThreadListingContext);
+  if (!listing) throw new Error("The thread listing requires ThreadsLiveProvider");
+  return listing;
 }
 
 export function useRequiredThreadsLive(): Live<ThreadsSnapshot> {

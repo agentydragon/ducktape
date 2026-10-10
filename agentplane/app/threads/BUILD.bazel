@@ -93,6 +93,7 @@ py_library(
         "//agentplane/proto:runner_pb2",
         "//agentplane/runner:harness",
         "@pypi//protobuf",
+        "@pypi//pydantic",
         "@pypi//sqlalchemy",
     ],
 )

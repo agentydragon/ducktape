@@ -1,7 +1,7 @@
 import { expect, it } from "vitest";
 
 import type { SandboxView, ThreadView } from "./client";
-import { archivedCount, groupThreads } from "./thread_groups";
+import { groupThreads } from "./thread_groups";
 
 function sandboxView(name: string, overrides: Partial<SandboxView> = {}): SandboxView {
   return {
@@ -71,14 +71,4 @@ it("keeps the open Thread in its group even when it is archived and archived Thr
   const groups = groupThreads([open, other, kept], { "sb-a": sandboxView("sb-a") }, false, "t-1");
 
   expect(groups.map((group) => group.threads)).toEqual([[open, kept]]);
-});
-
-it("counts archived threads across every sandbox regardless of visibility", () => {
-  const threads = [
-    threadView({ id: "t-1", sandbox: "sb-a", archived: true }),
-    threadView({ id: "t-2", sandbox: "sb-b", archived: true }),
-    threadView({ id: "t-3", sandbox: "sb-a" }),
-  ];
-
-  expect(archivedCount(threads)).toBe(2);
 });

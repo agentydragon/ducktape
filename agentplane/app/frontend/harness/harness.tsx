@@ -2351,7 +2351,13 @@ routes.push(
   [
     "GET",
     /^\/threads$/,
-    (_match, query) => THREADS.filter((thread) => !query.has("sandbox") || thread.sandbox === query.get("sandbox")),
+    (_match, query) => ({
+      threads: THREADS.filter(
+        (thread) =>
+!query.has("sandbox") || thread.sandbox === query.get("sandbox")
+      ),
+      next_page_token: null,
+    }),
   ],
   [
     "GET",
@@ -2677,9 +2683,24 @@ class HarnessEventSource extends EventTarget {
   private serve(url: URL): void {
     this.readyState = HarnessEventSource.OPEN;
     if (url.pathname === "/live/threads") {
+      // The listing the server would push: the newest `limit` matches, then the open thread.
+      const all = THREADS_WITH_SANDBOXES.map(mapThread);
+      const search = url.searchParams.get("search")?.toLowerCase();
+      const limit = Number(url.searchParams.get("limit"));
+      const matching = all.filter(
+        (thread) =>
+          (url.searchParams.get("include_archived") === "true" || !thread.archived) &&
+          (search === undefined ||
+            (thread.name ?? "").toLowerCase().includes(search) ||
+            thread.sandbox.toLowerCase().includes(search))
+      );
+      const listed = matching.slice(0, limit);
+      const open = all.find((thread) => thread.id === url.searchParams.get("open_thread"));
       const snapshot: ThreadsSnapshot = {
         sandboxes: SANDBOXES,
-        threads: THREADS_WITH_SANDBOXES.map(mapThread),
+        threads: open === undefined || listed.includes(open) ? listed : [...listed, open],
+        more: matching.length > limit,
+        archived_count: all.filter((thread) => thread.archived).length,
         updates_connected: threadDatabaseConnected,
         watch: watch(),
       };

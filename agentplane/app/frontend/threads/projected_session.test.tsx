@@ -141,11 +141,13 @@ beforeEach(() => {
             new MessageEvent("snapshot", {
               data: JSON.stringify({
                 sandboxes,
-                ...(url === "/live/threads"
+                ...(new URL(url, "http://test").pathname === "/live/threads"
                   ? {
                       threads: threadRows ?? [
                         { ...THREAD, harness_state: "HARNESS_STATE_RUNNING", feed_status: sharedFeed, ...sharedThread },
                       ],
+                      more: false,
+                      archived_count: 0,
                       updates_connected: true,
                     }
                   : {}),
@@ -198,7 +200,7 @@ async function render(state: ThreadState = threadState()): Promise<HTMLDivElemen
 
 function TestLiveProviders({ children }: { children: JSX.Element }): JSX.Element {
   return (
-    <ThreadsLiveProvider>
+    <ThreadsLiveProvider openThreadId={null}>
       <SandboxesLiveProvider>{children}</SandboxesLiveProvider>
     </ThreadsLiveProvider>
   );

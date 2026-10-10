@@ -40,7 +40,3 @@ export function groupThreads(
   }
   return [...groups.values()];
 }
-
-export function archivedCount(threads: ThreadView[]): number {
-  return threads.filter((thread) => thread.archived).length;
-}

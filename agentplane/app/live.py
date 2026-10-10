@@ -29,6 +29,7 @@ from contextlib import ExitStack
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Annotated, Any
+from uuid import UUID
 
 import httpx
 import httpx2
@@ -46,7 +47,7 @@ from agentplane.app.database_updates import Channel, DatabaseUpdates
 from agentplane.app.identity import CallerIdentity, require_caller
 from agentplane.app.sandbox_models import SandboxView, sandbox_view as http_sandbox_view
 from agentplane.app.shutdown import Shutdown
-from agentplane.app.threads.store import ThreadStore
+from agentplane.app.threads.store import MAX_PAGE, ThreadStore
 from agentplane.app.threads.thread_view import ThreadView
 from agentplane.sandbox_service.action_policy_views import ACTION_POLICY_API
 from agentplane.sandbox_service.egress_views import (
@@ -92,7 +93,11 @@ class SandboxesSnapshot(BaseModel):
 
 
 class ThreadsSnapshot(SandboxesSnapshot):
-    threads: list[ThreadView]
+    threads: list[ThreadView] = Field(
+        description="The newest threads of the listing, newest first, then the open thread if it is not among them."
+    )
+    more: bool = Field(description="Whether the listing has threads past these.")
+    archived_count: int = Field(description="Archived threads in all, whether or not the listing carries them.")
     updates_connected: bool = Field(description="Whether this replica is listening for PostgreSQL Thread changes.")
 
 
@@ -416,11 +421,37 @@ async def live_sandboxes(index: Index, shutdown: Shutdown) -> StreamingResponse:
 
 
 @router.get("/threads", responses=_THREADS_FRAMES)
-async def live_threads(index: Index, store: Store, updates: Updates, shutdown: Shutdown) -> StreamingResponse:
+async def live_threads(
+    index: Index,
+    store: Store,
+    updates: Updates,
+    shutdown: Shutdown,
+    limit: Annotated[int, Query(ge=1, le=MAX_PAGE, description="Carry at most this many of the listing.")] = 50,
+    search: Annotated[
+        str | None,
+        Query(
+            min_length=1, description="Only threads whose name or sandbox contains this, or whose ID starts with it."
+        ),
+    ] = None,
+    include_archived: Annotated[bool, Query(description="Also list archived threads.")] = False,
+    open_thread: Annotated[
+        UUID | None, Query(description="Also carry this thread, whether or not the listing reaches it.")
+    ] = None,
+) -> StreamingResponse:
+    """The sidebar's window onto the thread list, pushed: a reader who wants more asks again with a
+    larger `limit`, so every thread it shows stays current."""
+
     async def snapshot() -> ThreadsSnapshot:
+        page = await store.list_page(limit=limit, search=search, include_archived=include_archived)
+        threads = page.threads
+        if open_thread is not None and all(thread.id != open_thread for thread in threads):
+            opened = await store.get_thread(open_thread)
+            threads = threads if opened is None else [*threads, opened]
         return ThreadsSnapshot(
             sandboxes=index.sandbox_views(),
-            threads=await store.list_threads(include_archived=True),
+            threads=threads,
+            more=page.next_page_token is not None,
+            archived_count=await store.archived_count(),
             updates_connected=updates.listener.connected,
             watch=_health(index),
         )

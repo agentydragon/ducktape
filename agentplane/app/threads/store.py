@@ -6,9 +6,13 @@ has set on the thread, its name and archive state, which is written here.
 
 from __future__ import annotations
 
+from base64 import urlsafe_b64decode, urlsafe_b64encode
+from binascii import Error as Base64Error
+from datetime import datetime
 from uuid import UUID
 
-from sqlalchemy import select
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from sqlalchemy import String, cast, func, or_, select, tuple_
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
@@ -23,26 +27,131 @@ from agentplane.runner.harness import Harness
 # The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.
 # gazelle:include_dep @pypi//protobuf
 
+# The History Service's bound on one summary read.
+MAX_PAGE = 200
+
+
+class InvalidPageTokenError(ValueError):
+    pass
+
+
+class Listing(BaseModel):
+    """The filters a page token was issued for."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    sandbox: str | None
+    search: str | None
+    include_archived: bool
+
+
+class PageToken(BaseModel):
+    """The last Thread served, in the listing's order."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    listing: Listing
+    created_at: datetime
+    id: UUID
+
+    def encode(self) -> str:
+        return urlsafe_b64encode(self.model_dump_json().encode()).decode()
+
+    @classmethod
+    def decode(cls, token: str, listing: Listing) -> PageToken:
+        try:
+            decoded = cls.model_validate_json(urlsafe_b64decode(token.encode()))
+        except (Base64Error, ValidationError) as error:
+            raise InvalidPageTokenError("malformed Thread page token") from error
+        if decoded.listing != listing:
+            raise InvalidPageTokenError("Thread page token was issued for another listing")
+        return decoded
+
+
+class ThreadPage(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    threads: list[ThreadView]
+    next_page_token: str | None = Field(description="Continues this listing; None on its last page.")
+
 
 class ThreadStore:
     def __init__(self, engine: AsyncEngine, summaries: AppSummaries | HistorySummaries) -> None:
         self._sessions = async_sessionmaker(engine, expire_on_commit=False)
         self._summaries = summaries
 
-    async def list_threads(self, *, sandbox: str | None = None, include_archived: bool = False) -> list[ThreadView]:
-        """Newest first, narrowed to `sandbox` when given. Archived threads are excluded unless asked
-        for, mirroring the Sandbox inventory's own default."""
+    async def list_page(
+        self,
+        *,
+        limit: int,
+        page_token: str | None = None,
+        sandbox: str | None = None,
+        search: str | None = None,
+        include_archived: bool = False,
+    ) -> ThreadPage:
+        """Up to `limit` Threads, newest first; each filter given narrows the list to Threads matching
+        it, and archived Threads are excluded unless asked for. `search` matches a Thread's name or
+        Sandbox, case-insensitively, or the start of its ID. A page token continues only the listing
+        it was issued for."""
+        if not 1 <= limit <= MAX_PAGE:
+            raise ValueError(f"page size must be between 1 and {MAX_PAGE}: {limit=}")
+        listing = Listing(sandbox=sandbox, search=search, include_archived=include_archived)
         query = (
-            select(EventLog, Thread).outerjoin(Thread, Thread.id == EventLog.id).order_by(EventLog.created_at.desc())
+            select(EventLog, Thread)
+            .outerjoin(Thread, Thread.id == EventLog.id)
+            .order_by(EventLog.created_at.desc(), EventLog.id.desc())
+            .limit(limit + 1)
         )
         if sandbox is not None:
             query = query.where(EventLog.sandbox == sandbox)
+        if search is not None:
+            query = query.where(
+                or_(
+                    Thread.name.icontains(search, autoescape=True),
+                    EventLog.sandbox.icontains(search, autoescape=True),
+                    cast(EventLog.id, String).startswith(search.lower(), autoescape=True),
+                )
+            )
         if not include_archived:
             query = query.where(Thread.archived.is_not(True))
+        if page_token is not None:
+            after = PageToken.decode(page_token, listing)
+            query = query.where(tuple_(EventLog.created_at, EventLog.id) < (after.created_at, after.id))
         async with self._sessions() as session:
             rows = list(await session.execute(query))
-        summaries = await self._summaries.many({log.id for log, _ in rows})
-        return [_view(log, thread, summaries.get(log.id)) for log, thread in rows]
+        page = rows[:limit]
+        summaries = await self._summaries.many({log.id for log, _ in page})
+        last = page[-1][0] if len(rows) > limit else None
+        return ThreadPage(
+            threads=[_view(log, thread, summaries.get(log.id)) for log, thread in page],
+            next_page_token=None
+            if last is None
+            else PageToken(listing=listing, created_at=last.created_at, id=last.id).encode(),
+        )
+
+    async def list_threads(self, *, sandbox: str | None = None, include_archived: bool = False) -> list[ThreadView]:
+        """Every Thread `list_page` would list, page by page."""
+        threads: list[ThreadView] = []
+        page_token = None
+        while True:
+            page = await self.list_page(
+                limit=MAX_PAGE, page_token=page_token, sandbox=sandbox, include_archived=include_archived
+            )
+            threads.extend(page.threads)
+            if page.next_page_token is None:
+                return threads
+            page_token = page.next_page_token
+
+    async def archived_count(self) -> int:
+        async with self._sessions() as session:
+            return (
+                await session.scalar(
+                    select(func.count())
+                    .select_from(Thread)
+                    .join(EventLog, EventLog.id == Thread.id)
+                    .where(Thread.archived)
+                )
+            ) or 0
 
     async def get_thread(self, thread_id: UUID) -> ThreadView | None:
         async with self._sessions() as session:

@@ -266,8 +266,12 @@ writer implements no `Flush()`.
 
 ## Sidebar inventory updates
 
-The sidebar subscribes to `/live/threads`: whole operational snapshots of all Sandboxes and
-Threads, including archived Threads and threadless Sandboxes. Kubernetes watch invalidations and
+The sidebar subscribes to `/live/threads`: whole operational snapshots of all Sandboxes and a
+window of the Thread list, newest first. The window holds a page of Threads and grows a page at a
+time on request; a search (name, Sandbox, or the start of the ID) and the archived switch narrow it
+on the server, and the Thread a page has open rides along wherever it falls, so every Thread on
+screen stays current without the browser holding the whole list. `GET /threads` pages the same list
+under opaque tokens bound to their filters. Kubernetes watch invalidations and
 the existing PostgreSQL thread notifications both refresh that snapshot. A listener reconnect
 rereads PostgreSQL, including writes whose notifications were missed while disconnected. There
 is no sidebar polling loop or new notification service.
