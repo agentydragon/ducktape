@@ -33,6 +33,7 @@ from cluster.cdk8s.external_secrets.minted_secret import mint_bearer_secret
 from cluster.cdk8s.fleet_rules import add_fleet_rules
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
+from cluster.cdk8s.monitoring import alloy
 from cluster.cdk8s.providers.cert_manager.certificate import Certificate, CertificatePrivateKey
 from cluster.cdk8s.secret_ref import SecretKey, SecretRef
 
@@ -49,6 +50,9 @@ BOOTSTRAP_TLS_SECRET = "home-switch-bootstrap-tls"
 _SWITCH_ADDRESS = "192.168.1.100"
 # bootstrap.sh repeats it.
 _LAN_CIDR = "192.168.1.0/24"
+# optiplex's fixed LAN address, `lan_address` in cluster/terraform/main/home-nodes.tf, where
+# alloy-syslog listens.
+_SYSLOG_ADDRESS = "192.168.1.10"
 # The switch is reachable only from the home LAN; OptiPlex is the cluster node on it.
 _HOME_LAN = {"topology.kubernetes.io/zone": "home-lan"}
 # main.tf's provider `ca_certificate` reads the bundle here.
@@ -64,6 +68,8 @@ class HomeSwitchVars(BaseModel):
     lan_cidr: str = Field(
         description="The only network management services and the monitoring user accept connections from."
     )
+    syslog_address: str = Field(description="Where the switch sends its log as BSD syslog over UDP.")
+    syslog_port: int = Field(description="The UDP port at `syslog_address`.")
 
 
 def _mint(chart: Chart, id: str, key: SecretKey, description: str) -> None:
@@ -102,7 +108,12 @@ def chart(app: App) -> Chart:
         chart,
         "terraform",
         name=NAME,
-        variables=HomeSwitchVars(switch_address=_SWITCH_ADDRESS, lan_cidr=_LAN_CIDR),
+        variables=HomeSwitchVars(
+            switch_address=_SWITCH_ADDRESS,
+            lan_cidr=_LAN_CIDR,
+            syslog_address=_SYSLOG_ADDRESS,
+            syslog_port=alloy.SYSLOG_HOST_PORT,
+        ),
         # Plans every interval and reports drift; a person approves each apply (README.md).
         auto_apply=False,
         # Secret-bearing attributes come from Secrets, so the plan masks them.

@@ -46,8 +46,8 @@ _SYSLOG_NAME = "alloy-syslog"
 _SYSLOG_CONFIG_MAP = "alloy-syslog-config"
 _SYSLOG_CONFIG_KEY = "syslog.alloy"
 # Bound on optiplex's addresses, its fixed LAN address among them (`lan_address` in
-# cluster/terraform/main/home-nodes.tf), which the home switch sends to (tf/gitops/home-switch).
-_SYSLOG_HOST_PORT = 514
+# cluster/terraform/main/home-nodes.tf), which the home switch sends to (`home_switch.py`).
+SYSLOG_HOST_PORT = 514
 _SYSLOG_LISTEN_PORT = 5514
 # What config.alloy's `sys.env` calls read.
 _CONFIG_ENV = {
@@ -185,9 +185,9 @@ def chart(app: App) -> Chart:
                 "extraPorts": [
                     {
                         "name": "syslog",
-                        "port": _SYSLOG_HOST_PORT,
+                        "port": SYSLOG_HOST_PORT,
                         "targetPort": _SYSLOG_LISTEN_PORT,
-                        "hostPort": _SYSLOG_HOST_PORT,
+                        "hostPort": SYSLOG_HOST_PORT,
                         "protocol": "UDP",
                     }
                 ],

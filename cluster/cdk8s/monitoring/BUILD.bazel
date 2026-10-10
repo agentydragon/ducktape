@@ -309,6 +309,7 @@ py_library(
     srcs = ["home_switch.py"],
     visibility = ["//cluster/cdk8s:__pkg__"],
     deps = [
+        ":alloy",
         "//cluster/cdk8s:fleet_rules",
         "//cluster/cdk8s:flux",
         "//cluster/cdk8s:manifest_roots",

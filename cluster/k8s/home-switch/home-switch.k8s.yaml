@@ -115,3 +115,7 @@ spec:
       value: 192.168.1.100
     - name: lan_cidr
       value: 192.168.1.0/24
+    - name: syslog_address
+      value: 192.168.1.10
+    - name: syslog_port
+      value: 514

@@ -114,3 +114,20 @@ resource "routeros_system_logging" "disk" {
   action   = routeros_system_logging_action.disk.name
   topics   = [each.key]
 }
+
+# The same severities to the cluster's syslog receiver (alloy-syslog), which ships them to Loki.
+resource "routeros_system_logging_action" "syslog" {
+  name               = "syslog"
+  target             = "remote"
+  remote             = var.syslog_address
+  remote_port        = var.syslog_port
+  remote_protocol    = "udp"
+  remote_log_format  = "syslog"
+  syslog_time_format = "bsd-syslog"
+}
+
+resource "routeros_system_logging" "syslog" {
+  for_each = toset(["critical", "error", "warning", "info"])
+  action   = routeros_system_logging_action.syslog.name
+  topics   = [each.key]
+}

@@ -3,7 +3,8 @@
 Terraform for the home MikroTik CRS310-8G+2S+ switch (RouterOS 7, `192.168.1.100`): identity,
 LAN-only management services with plaintext `api`, `ftp`, `telnet` and `www` disabled, a
 read-only `monitoring` user for the RouterOS exporter, and bounded log history on the switch
-(10k lines in RAM, 5 x 10k lines rotating on flash) for backfill after an outage.
+(10k lines in RAM, 5 x 10k lines rotating on flash) for backfill after an outage, also
+forwarded as BSD syslog over UDP to `alloy-syslog` on optiplex (`192.168.1.10:514`).
 
 tofu-controller plans it every 15 minutes, from a runner pod pinned to the home LAN node
 (`topology.kubernetes.io/zone: home-lan`), but unlike the other `tf/gitops` modules applies only a
