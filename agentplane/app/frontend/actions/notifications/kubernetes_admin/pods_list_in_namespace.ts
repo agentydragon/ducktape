@@ -1,6 +1,7 @@
+import { z } from "zod";
+
 import type { ActionRequestView } from "../../types";
 import type { ActionNotificationParts } from "../types";
-import { z } from "zod";
 
 const podsInNamespaceNotificationArguments = z.object({ namespace: z.string().min(1) });
 
