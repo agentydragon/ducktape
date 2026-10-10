@@ -1,5 +1,5 @@
 // Registry mapping each MCP server id to its per-tool action descriptions — the one-line summary
-// the approvals card's identity line shows ("Gmail: Draft email", "kubectl: Delete Pod") and the
+// the approvals card's identity line shows ("Grocy: Add 5 items to stock", "Tana: Trash node") and the
 // title a push notification is rendered with.
 //
 // Composes the per-server maps in `<server>/actions.ts`, as `index.tsx` composes the per-server
@@ -17,14 +17,12 @@ import { googleCalendarActions } from "./google_calendar/actions";
 import { grantsActions } from "./grants/actions";
 import { grocyActions } from "./grocy/actions";
 import { hakuRoutineActions } from "./haku_routine/actions";
-import { kubectlActions } from "./kubectl/actions";
 import {
   GMAIL_SERVER_ID,
   GOOGLE_CALENDAR_SERVER_ID,
   GRANTS_SERVER_ID,
   GROCY_SERVER_ID,
   HAKU_ROUTINE_SERVER_ID,
-  KUBECTL_SERVER_ID,
   TANA_SERVER_ID,
 } from "./server_ids";
 import { tanaActions } from "./tana/actions";
@@ -34,7 +32,6 @@ const ACTIONS: Record<string, Record<string, ActionEntry>> = {
   [GOOGLE_CALENDAR_SERVER_ID]: googleCalendarActions,
   [GROCY_SERVER_ID]: grocyActions,
   [HAKU_ROUTINE_SERVER_ID]: hakuRoutineActions,
-  [KUBECTL_SERVER_ID]: kubectlActions,
   [GRANTS_SERVER_ID]: grantsActions,
   [TANA_SERVER_ID]: tanaActions,
 };

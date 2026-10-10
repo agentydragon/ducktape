@@ -92,7 +92,7 @@ pub(crate) fn relax_exact_declaration(
     let mut seen = BTreeSet::from([js_ast::emit_module_source(&current)?]);
     current = relax_progressively(
         current,
-        targets.first().map(|target| target.export_name.as_str()),
+        targets.first().map(|target| target.selector_local.as_str()),
         MAX_EXACT_RELAXATION_PROBES,
         |candidate| {
             let source = js_ast::emit_module_source(candidate)?;
@@ -349,7 +349,7 @@ fn rename_pattern_targets(
                 .find(|target| binding.id.sym.as_ref() == target.runtime_binding.as_str())
             {
                 found.insert(target.runtime_binding.clone());
-                binding.id = crate::render::ident_node(&target.export_name);
+                binding.id = crate::render::ident_node(&target.selector_local);
             }
         }
         Pat::Array(array) => {
@@ -373,7 +373,7 @@ fn rename_pattern_targets(
                                 assign.key.id.span,
                             ));
                             let binding = Pat::Ident(BindingIdent {
-                                id: crate::render::ident_node(&target.export_name),
+                                id: crate::render::ident_node(&target.selector_local),
                                 type_ann: None,
                             });
                             let value = match assign.value.take() {
@@ -522,7 +522,7 @@ fn read_off_candidates(
     // `limit`.
     let empty = BTreeSet::new();
     let scaffold = render_with(&empty)?;
-    if matched_body_indices(index, &target.export_name, &scaffold)
+    if matched_body_indices(index, &target.selector_local, &scaffold)
         .is_ok_and(|matched| matched == BTreeSet::from([decl.body_idx]))
     {
         if let Some(selector) = finish_minimized_selector(index, decl, target, scaffold)? {
