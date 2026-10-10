@@ -2352,6 +2352,10 @@ spec:
       kind: HelmRelease
       name: alloy-node
       namespace: monitoring
+    - apiVersion: helm.toolkit.fluxcd.io/v2
+      kind: HelmRelease
+      name: alloy-syslog
+      namespace: monitoring
   interval: 10m
   path: ./cluster/generated/monitoring/alloy
   prune: true

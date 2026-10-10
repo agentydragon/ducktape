@@ -475,6 +475,9 @@ spec:
         - matchLabels:
             app.kubernetes.io/name: alloy-node
             k8s:io.kubernetes.pod.namespace: monitoring
+        - matchLabels:
+            app.kubernetes.io/name: alloy-syslog
+            k8s:io.kubernetes.pod.namespace: monitoring
       toPorts:
         - ports:
             - port: "3100"

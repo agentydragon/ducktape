@@ -1,0 +1,35 @@
+// Syslog receiver (Deployment on optiplex): the home switch sends RouterOS's BSD syslog over UDP
+// to optiplex's fixed LAN address, which the hostPort forwards here. Entries carry the time they
+// arrive: RFC 3164 timestamps have no year or zone, and the switch is one LAN hop away.
+
+loki.source.syslog "lan" {
+  listener {
+    address       = sys.env("SYSLOG_LISTEN_ADDRESS")
+    protocol      = "udp"
+    syslog_format = "rfc3164"
+    labels        = { job = "home-switch" }
+  }
+  relabel_rules = loki.relabel.syslog.rules
+  forward_to    = [loki.write.loki.receiver]
+}
+
+loki.relabel "syslog" {
+  rule {
+    source_labels = ["__syslog_message_hostname"]
+    target_label  = "host"
+  }
+  rule {
+    source_labels = ["__syslog_message_severity"]
+    target_label  = "level"
+  }
+  forward_to = []
+}
+
+loki.write "loki" {
+  endpoint {
+    url = sys.env("LOKI_PUSH_URL")
+    // Retry forever rather than drop after 10 tries: a home WAN outage cuts optiplex off from
+    // Loki, and the in-memory queue holds hours of switch logs. A pod restart still loses it.
+    max_backoff_retries = 0
+  }
+}

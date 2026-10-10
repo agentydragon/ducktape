@@ -116,6 +116,7 @@ py_library(
     data = [
         "config.alloy",
         "node.alloy",
+        "syslog.alloy",
     ],
     visibility = ["//cluster/cdk8s:__pkg__"],
     deps = [
