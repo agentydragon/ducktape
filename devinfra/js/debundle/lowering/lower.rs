@@ -730,6 +730,17 @@ fn split_entry_body(
         }
         if let Some(module_index) = anonymous_ordinal_assignment.get(&ordinal).copied() {
             selected_by_module[module_index].push(item.clone());
+            // Local named exports define the source chunk's public surface.
+            // An anonymous claim may move their source directive alongside
+            // the binding, but entry still needs a facade for outside chunks
+            // and dynamic importers. Its planned import of the moved binding
+            // supplies the local name used by this unchanged export clause.
+            if matches!(
+                item,
+                ModuleItem::ModuleDecl(ModuleDecl::ExportNamed(named)) if named.src.is_none()
+            ) {
+                entry_body.push(item.clone());
+            }
             continue;
         }
         entry_body.extend(remaining_item_after_selection(

@@ -2278,6 +2278,15 @@ invariants:
    imports (binding, phantom side-effect, residual-entry) form one
    merged list in module-import order.
 
+Local named exports (`export { binding as public }`) are also part of the
+source chunk's public interface. If such a directive is assigned to a
+logical module as an anonymous statement, the entry retains a facade
+export of the same binding and public name. The entry's planned import
+provides the binding; the logical module keeps its source directive and
+does not synthesize the identical local-to-public export a second time.
+Only an identical pair is redundant: another binding using the same
+public name remains a duplicate-export error.
+
 Treat those stages as a functional data flow. Analysis produces
 immutable facts; assignment is explicit input; quotienting derives a
 validated schedule; emission consumes that schedule. Avoid designs

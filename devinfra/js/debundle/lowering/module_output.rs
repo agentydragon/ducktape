@@ -9,7 +9,7 @@ use super::imports::import_emit::relative_source;
 use super::imports::imports_runtime::source_chunk_import_for_target;
 use super::scope_names::collect_local_binding_names;
 
-use crate::exports::export_named_for_bindings;
+use crate::exports::{export_named_for_bindings, omit_existing_local_exports};
 use crate::imports::{
     ArtifactSourceImportResolutionCache, EntryExport, ImportLocalRenameSink, ModuleReferenceNeeds,
     PlannedVendorReimports, RuntimeImportFacts, RuntimeImportLookup, VendorReimportOracle,
@@ -407,7 +407,10 @@ pub(super) fn emit_module(inputs: ModuleEmissionInputs<'_>) -> Result<LoweredMod
                 .iter()
                 .map(|(k, v)| (k.clone(), v.clone())),
         );
-        body.push(export_named_for_bindings(&exports));
+        omit_existing_local_exports(&body, &mut exports);
+        if !exports.is_empty() {
+            body.push(export_named_for_bindings(&exports));
+        }
     } else if !import_member_exports.is_empty() {
         body.push(export_named_for_bindings(&import_member_exports));
     }

@@ -286,6 +286,42 @@ pub(super) fn export_named_for_bindings(bindings: &BTreeMap<String, String>) -> 
     )
 }
 
+/// A source `export { local as public }` may travel with an anonymous
+/// statement into a logical module. The module's owned-binding export plan
+/// can ask for that same pair again. Keep the source directive and emit only
+/// pairs it does not already provide; a public-name collision involving a
+/// different local remains for `validate_emitted_exports` to reject.
+pub(super) fn omit_existing_local_exports(
+    body: &[ModuleItem],
+    exports: &mut BTreeMap<String, String>,
+) {
+    let existing: BTreeSet<(String, String)> = body
+        .iter()
+        .filter_map(|item| match item {
+            ModuleItem::ModuleDecl(ModuleDecl::ExportNamed(named)) if named.src.is_none() => {
+                Some(&named.specifiers)
+            }
+            _ => None,
+        })
+        .flat_map(|specifiers| specifiers.iter())
+        .filter_map(|specifier| match specifier {
+            ExportSpecifier::Named(named) => {
+                let ModuleExportName::Ident(local) = &named.orig else {
+                    return None;
+                };
+                let public = named
+                    .exported
+                    .as_ref()
+                    .map(binding_targets::module_export_name)
+                    .unwrap_or_else(|| local.sym.to_string());
+                Some((local.sym.to_string(), public))
+            }
+            _ => None,
+        })
+        .collect();
+    exports.retain(|local, public| !existing.contains(&(local.clone(), public.clone())));
+}
+
 pub(super) fn entry_exports_for_moved_bindings(
     declarations: &[TopLevelDecl],
     binding_assignment: &HashMap<Id, usize>,

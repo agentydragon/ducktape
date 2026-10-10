@@ -245,11 +245,11 @@ pub(super) fn record_pre_existing_named_exports(
             continue;
         };
         local_out.insert(orig_ident.to_id());
-        let public_name = match &specifier.exported {
-            Some(ModuleExportName::Ident(ident)) => ident.sym.to_string(),
-            Some(ModuleExportName::Str(_)) => continue,
-            None => orig_ident.sym.to_string(),
-        };
+        let public_name = specifier
+            .exported
+            .as_ref()
+            .map(binding_targets::module_export_name)
+            .unwrap_or_else(|| orig_ident.sym.to_string());
         public_out.insert(public_name);
     }
 }
