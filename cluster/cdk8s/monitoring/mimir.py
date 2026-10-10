@@ -127,8 +127,10 @@ def _values() -> dict[str, object]:
                     "compactor_blocks_retention_period": "365d",
                     # How late a sample may arrive and still be accepted. Home-node Alloys buffer
                     # scrapes on disk through a home WAN outage and replay them afterwards; this
-                    # matches their WAL `max_keepalive_time`, so up to 48h of outage backfills.
-                    "out_of_order_time_window": "48h",
+                    # matches their WAL `max_keepalive_time`, so up to 30 days of outage backfills.
+                    # Replayed samples older than the queriers' ingester lookback (13h) show up
+                    # only once the ingester ships them in a block, within a few hours.
+                    "out_of_order_time_window": "720h",
                     "max_global_series_per_user": 0,
                     "ingestion_rate": 100000,
                     "ingestion_burst_size": 500000,

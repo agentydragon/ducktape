@@ -233,7 +233,7 @@ spec:
           ingestion_burst_size: 500000
           ingestion_rate: 100000
           max_global_series_per_user: 0
-          out_of_order_time_window: 48h
+          out_of_order_time_window: 720h
           ruler_max_rules_per_rule_group: 60
         multitenancy_enabled: false
         ruler:
