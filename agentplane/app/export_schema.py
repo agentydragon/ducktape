@@ -20,7 +20,7 @@ from pydantic import TypeAdapter
 from agentplane.app.action_policy import ActionPolicyInventory
 from agentplane.app.api import create_app
 from agentplane.app.database import connect
-from agentplane.app.database_updates import Channel, DatabaseUpdates, notify_threads
+from agentplane.app.database_updates import Channel, DatabaseUpdates
 from agentplane.app.decisions import DecisionsClient
 from agentplane.app.egress_access import EgressAccess
 from agentplane.app.electric import ElectricProxy
@@ -29,17 +29,15 @@ from agentplane.app.model_catalog import ModelCatalog, ModelOption
 from agentplane.app.operator_sessions import OperatorSessionStore
 from agentplane.app.threads.bridge import RunnerBridge
 from agentplane.app.threads.events.event_log import EventLogStore
-from agentplane.app.threads.ingestion import Ingester, Ingestion
+from agentplane.app.threads.ingestion import Ingester
 from agentplane.app.threads.sessions import SandboxSessions
 from agentplane.app.threads.store import ThreadStore
-from agentplane.app.threads.summaries import AppSummaries
+from agentplane.app.threads.summaries import Summaries
 from agentplane.app.threads.view.content import ContentStore
 from agentplane.history_service.client import HistoryServiceClient
 from agentplane.runner.harness import Harness
 from agentplane.sandbox_service.client import SandboxServiceClient
 from agentplane.sandbox_service.egress_views import EgressReader
-from agentplane.thread_fold.projector import HistoryProjector, service_pages
-from agentplane.thread_fold.recording import THREAD_FOLD_EPOCH, THREAD_FOLD_PAGE_SIZE
 from agentplane.thread_fold.views import ThreadEntityView
 
 
@@ -60,8 +58,9 @@ def _openapi_document(api_client: k8s_client.ApiClient) -> dict[str, Any]:
     # An engine connects lazily, so a URL nothing listens on is fine for a document.
     engine = connect("postgresql+asyncpg://schema@localhost/schema")
     database_updates = DatabaseUpdates(engine.url)
+    summaries = Summaries(engine, history)
     event_logs, content = (
-        EventLogStore(engine, summaries=AppSummaries(engine), history_reader=history),
+        EventLogStore(engine, summaries=summaries, history_reader=history),
         ContentStore(engine, history_reader=history),
     )
     live = LiveIndex(stale_after_seconds=900, core_v1=CoreV1Api(api_client))
@@ -72,20 +71,9 @@ def _openapi_document(api_client: k8s_client.ApiClient) -> dict[str, Any]:
             runners=runners,
             event_logs=event_logs,
             content=content,
-            ingester=Ingester(
-                runners=runners,
-                event_logs=event_logs,
-                ingestion=Ingestion(engine),
-                history_projector=HistoryProjector(
-                    engine,
-                    service_pages(history),
-                    projection_epoch=THREAD_FOLD_EPOCH,
-                    page_size=THREAD_FOLD_PAGE_SIZE,
-                    notify=notify_threads,
-                ),
-            ),
+            ingester=Ingester(runners=runners, event_logs=event_logs),
         ),
-        ThreadStore(engine, AppSummaries(engine)),
+        ThreadStore(engine, summaries),
         ModelCatalog(
             models=[
                 ModelOption(

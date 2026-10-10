@@ -248,17 +248,18 @@ should select an engine before proposing a custom REST/SSE fallback.
 
 ```mermaid
 flowchart LR
-    runner[Runner event stream] --> app[Python integration app projector]
-    app --> pg[(Postgres conversation state)]
+    runner[Runner event stream] --> sandbox[Sandbox Service archive]
+    sandbox --> history[History Service fold]
+    history --> pg[(History DB conversation state)]
     pg --> electric[Electric sync service]
     electric --> proxy[Python app authorization proxy]
     proxy --> client[Electric client and thread store in the browser]
     client --> react[React conversation view]
 ```
 
-The Python app folds runner events and writes ordinary PostgreSQL transactions. Electric
-runs as a separate service, consumes committed changes through logical replication, and
-serves selected data over HTTP. Its TypeScript client feeds the browser's thread store,
+The Sandbox Service archives runner events in the history DB; the History Service folds
+them there in ordinary PostgreSQL transactions. Electric runs as a separate service,
+consumes committed changes through logical replication, and serves selected data over HTTP. Its TypeScript client feeds the browser's thread store,
 which renders projected records without folding raw harness events again.
 
 The app proxy authenticates callers and fixes the permitted conversation predicates,
@@ -274,13 +275,13 @@ The full durable conversation belongs in storage; no integration-app replica nee
 in-memory copy of it. Updating an old item requires indexed reads of that item and the
 batch's other affected entities, independent of the size of the preceding history.
 
-| Component                 | Resident state target                                                                                                 |
-| ------------------------- | --------------------------------------------------------------------------------------------------------------------- |
-| Integration app/projector | Current batch, touched entity metadata, checkpoint and bounded queues; release after commit.                          |
-| Read/auth proxy           | Requested window or selected content and bounded transport buffers; no per-listener conversation copy.                |
-| Runner                    | Required active execution state, recovery checkpoint and bounded journal buffers; page historical entries from disk.  |
-| Electric                  | Bounded replication buffers and caches for active shapes; persisted shape history must not require full residency.    |
-| Postgres                  | Durable records and indexes with configured buffer/query memory; conversation size does not mandate loading all rows. |
+| Component            | Resident state target                                                                                                 |
+| -------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| History Service fold | Current batch, touched entity metadata, checkpoint and bounded queues; release after commit.                          |
+| Read/auth proxy      | Requested window or selected content and bounded transport buffers; no per-listener conversation copy.                |
+| Runner               | Required active execution state, recovery checkpoint and bounded journal buffers; page historical entries from disk.  |
+| Electric             | Bounded replication buffers and caches for active shapes; persisted shape history must not require full residency.    |
+| Postgres             | Durable records and indexes with configured buffer/query memory; conversation size does not mandate loading all rows. |
 
 Electric's server memory behavior is an adoption gate, not an established property of the
 spike. Measure its resident memory as stored history grows with fixed active subscriptions,

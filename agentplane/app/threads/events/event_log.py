@@ -1,4 +1,4 @@
-"""Service-backed archive reads and app-owned Session projection metadata."""
+"""Service-backed archive reads and the app's Thread → Session link."""
 
 from __future__ import annotations
 
@@ -14,11 +14,10 @@ from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
 from agentplane.app.database_updates import Channel, notify
 from agentplane.app.threads.events.debug import ArchivedObservation, ArchivedObservationEntry, ObservationPage
 from agentplane.app.threads.models import EventLog
-from agentplane.app.threads.summaries import AppSummaries, FeedSnapshot, HistorySummaries
+from agentplane.app.threads.summaries import FeedSnapshot, Summaries
 from agentplane.history_service.client import HistoryServiceClient
 from agentplane.proto import event_log_pb2
 from agentplane.sandbox_service.settled_cursors import next_stored, settled_ranges
-from agentplane.thread_fold.models import ThreadHistorySummary
 from agentplane.thread_fold.recording import EventReplicationError
 
 # The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.
@@ -40,40 +39,25 @@ class ServiceSessionReference:
 
 
 class EventLogStore:
-    def __init__(
-        self, engine: AsyncEngine, *, history_reader: HistoryServiceClient, summaries: AppSummaries | HistorySummaries
-    ) -> None:
+    def __init__(self, engine: AsyncEngine, *, history_reader: HistoryServiceClient, summaries: Summaries) -> None:
         self._sessions = async_sessionmaker(engine, expire_on_commit=False)
         self._history_reader = history_reader
         self._summaries = summaries
 
     async def open(self, sandbox: str, session_id: str) -> UUID:
-        thread_id, _ = await self._materialize(sandbox, session_id)
-        return thread_id
-
-    async def discover(self, sandbox: str, session_id: str) -> bool:
-        """Materialize an inventory Session and report whether this call created its app identity."""
-        _, created = await self._materialize(sandbox, session_id)
-        return created
-
-    async def _materialize(self, sandbox: str, session_id: str) -> tuple[UUID, bool]:
         """Materialize a public service Session without consulting private runner locators."""
         try:
             thread_id = UUID(session_id)
         except ValueError as error:
-            raise EventReplicationError(
-                "new service-projected Thread requires a canonical public Session ID"
-            ) from error
+            raise EventReplicationError("a new Thread requires a canonical public Session ID") from error
         if str(thread_id) != session_id:
-            raise EventReplicationError("new service-projected Thread requires a canonical public Session ID")
+            raise EventReplicationError("a new Thread requires a canonical public Session ID")
         existing_query = select(EventLog).where(EventLog.sandbox == sandbox, EventLog.id == thread_id)
         async with self._sessions() as session:
             existing = await session.scalar(existing_query)
             if existing is not None:
-                # Discovery does not reconstruct missing projection metadata from raw rows.
-                # Existing app identities and summaries remain authoritative for the UI.
-                return existing.id, False
-        # Confirm durable service registration before admitting an app projection.
+                return existing.id
+        # Confirm durable service registration before admitting a Thread.
         # Do not hold an app DB transaction over this RPC or copy its event payload.
         await self._history_reader.read_session_observations(session_id, limit=1)
         async with self._sessions.begin() as session:
@@ -81,15 +65,14 @@ class EventLogStore:
                 insert(EventLog).values(id=thread_id, sandbox=sandbox).on_conflict_do_nothing().returning(EventLog.id)
             )
             if created is not None:
-                session.add(ThreadHistorySummary(thread_id=created))
                 await notify(session, Channel.THREADS)
-                return created, True
+                return created
             existing = (await session.scalars(existing_query)).one_or_none()
             if existing is None:
                 raise EventReplicationError("public Session ID belongs to another sandbox")
-            # Another replica may win this insert race. Preserve its mapping and
-            # projection state rather than reinitializing an existing Thread.
-            return existing.id, False
+            # Another replica may win this insert race. Preserve its mapping rather than
+            # reinitializing an existing Thread.
+            return existing.id
 
     async def resume_pending(self, thread_id: UUID) -> None:
         """A runner-confirmed restart supersedes a normal terminal feed, not a replay error."""
@@ -106,20 +89,10 @@ class EventLogStore:
         """The committed fold cursor, independent of archive progress."""
         return await self._summaries.folded_through(thread_id)
 
-    async def projection_sessions(self) -> dict[UUID, ServiceSessionReference]:
-        """Sessions with app projection metadata, including deleted Sandboxes."""
-        async with self._sessions() as session:
-            rows = await session.execute(
-                select(EventLog.id, EventLog.sandbox).join(
-                    ThreadHistorySummary, ThreadHistorySummary.thread_id == EventLog.id
-                )
-            )
-            return {row.id: ServiceSessionReference(row.sandbox, str(row.id)) for row in rows}
-
     async def read_watermark(self, thread_id: UUID) -> int:
-        """Return the selected archive's committed cursor, not the UI projection's cursor."""
-        # Do not use the independently advancing app cursor as a service resume
-        # position. Metadata avoids downloading an arbitrary native payload.
+        """Return the archive's committed cursor, not the fold's."""
+        # The fold advances independently and is no service resume position.
+        # Metadata avoids downloading an arbitrary native payload.
         page = await self._history_reader.read_session_observations(str(thread_id), limit=1)
         return page.last_cursor
 
@@ -205,21 +178,19 @@ class EventLogStore:
         """One raw archive entry, read only when a reader expands that observation."""
         if cursor < 1:
             return None
+        # The History Service refuses a read past its committed prefix, which only grows.
+        if cursor > await self.read_watermark(thread_id):
+            if cursor <= await self.last_cursor(thread_id):
+                raise ConnectionError("Requested observation is not committed in History Service yet")
+            return None
         page = await self._history_reader.read_session_events(str(thread_id), after_cursor=cursor - 1, limit=1)
-        if page.last_cursor < cursor <= await self.last_cursor(thread_id):
-            raise ConnectionError("Requested observation is not committed in History Service yet")
         settled = settled_ranges(span for settlement in page.settlements for span in settlement.ranges)
         if next_stored(cursor - 1, settled) != cursor:
             return None  # a settled delta, no longer stored
-        if not page.entries:
-            if cursor <= page.last_cursor:
-                raise ConnectionError("History Service omitted a published entry")
-            return None
-        entry = page.entries[0]
-        if len(page.entries) != 1 or entry.cursor != cursor or entry.cursor > page.last_cursor:
+        if len(page.entries) != 1 or page.entries[0].cursor != cursor:
             raise ConnectionError("History Service returned an entry outside the requested committed position")
+        entry = page.entries[0]
         return ArchivedObservationEntry(cursor=str(cursor), entry=MessageToDict(entry))
 
     async def feed_state(self, thread_id: UUID) -> FeedSnapshot | None:
-        summary = await self._summaries.get(thread_id)
-        return None if summary is None else summary.feed
+        return (await self._summaries.get(thread_id)).feed

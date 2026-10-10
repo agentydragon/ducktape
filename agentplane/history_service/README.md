@@ -69,14 +69,16 @@ default and writes only with `--apply`; settled items are skipped, so it resumes
 
 ## Thread fold
 
-With `fold_shadow` set, it folds every retained Session into its own copy of the thread
-projection (`agentplane.thread_fold`; `thread_*` tables, since a Thread is the projection of a
+With `fold_shadow` set, it folds every retained Session into the thread projection
+(`agentplane.thread_fold`; `thread_*` tables, since a Thread is the projection of a
 Session: [layering](../docs/thread_layering.md#authorities-and-representations)), in epoch `history-v1`, from cursor 0: a page per Session per
 cycle under the per-Session projection leases, so replicas share the work. The fold writes only those
 tables. Cycles run back to back while any Session is behind, and committed history changes wake a
 caught-up fold. `fold_interval_s` remains the retry interval after failures and while another replica
 holds a Session lease. Each cycle logs how many of its leased Sessions and events it is behind. A page that carries an item's completion carries its settlement, so the fold skips the settled
-cursors and drops evidence it recorded for them before they settled.
+cursors and drops evidence it recorded for them before they settled. This fold is the only one:
+the app reads every Thread from it, and Electric replicates its tables to browsers, so with
+`fold_shadow` off Thread reads stop advancing.
 
 Session summaries (`ListSessionSummaries`, `GetSessionSummary`) read that fold. They list newest
 first by the time of a Session's first event, with not-yet-folded Sessions ahead, and report the

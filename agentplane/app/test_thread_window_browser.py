@@ -30,7 +30,7 @@ pytest_plugins = ("agentplane.app.testing.thread_browser",)
 
 
 @pytest.fixture
-async def db_url(electric: ElectricService) -> str:
+async def service_history_db_url(electric: ElectricService) -> str:
     return electric.database_url
 
 

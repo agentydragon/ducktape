@@ -15,7 +15,6 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 from agentplane.history_service import protocol_pb2 as history_pb2
-from agentplane.history_service.client import HistoryServiceClient
 from agentplane.sandbox_service.settled_cursors import next_stored, settled_ranges
 from agentplane.thread_fold import projection_lease
 from agentplane.thread_fold.lifecycle import project_lifecycle
@@ -38,13 +37,6 @@ class ProjectionProgress:
 
 # Up to `limit` entries of a Session's committed prefix after a cursor, with its watermark and lifecycle.
 PageReader = Callable[[UUID, int, int], Awaitable[history_pb2.ReadSessionEventsResponse]]
-
-
-def service_pages(client: HistoryServiceClient) -> PageReader:
-    async def read(session_id: UUID, after_cursor: int, limit: int) -> history_pb2.ReadSessionEventsResponse:
-        return await client.read_session_events(str(session_id), after_cursor=after_cursor, limit=limit)
-
-    return read
 
 
 class HistoryProjector:

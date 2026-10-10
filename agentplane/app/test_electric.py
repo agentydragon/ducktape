@@ -12,7 +12,6 @@ import json
 from collections.abc import AsyncIterator, Callable, Iterator
 from contextlib import suppress
 from dataclasses import dataclass
-from datetime import timedelta
 from typing import Any
 from uuid import UUID, uuid4
 
@@ -26,12 +25,12 @@ from starlette.types import Message
 
 from agentplane.app.database_updates import Channel, DatabaseUpdates
 from agentplane.app.electric import SUBSET_BODY_LIMIT, SUBSET_ROW_LIMIT, ElectricProxy, router
-from agentplane.app.testing.history import ProjectedHistory as Ingestion, SeededEventLogStore as EventLogStore
+from agentplane.app.testing.history import SeededEventLogStore as EventLogStore
 from agentplane.app.testing.replication_source import SANDBOX, SESSION, ReplicationSource
 from agentplane.app.threads.view.content import ContentStore, ThreadScope
 from agentplane.history_service.client import HistoryServiceClient
+from agentplane.history_service.testing.history import History
 from agentplane.proto import event_pb2
-from agentplane.thread_fold.projection_lease import ProjectionLease
 from util.db_url import render_postgresql_url
 from util.testing.postgres import PostgresDatabaseTemplate, database_name_for_test
 
@@ -48,7 +47,7 @@ class Seeded:
 # The proxy only reads: it builds a request and forwards or refuses it. The expensive part of a
 # per-test database is creating and migrating it, and that helper is synchronous, so the module can
 # share one without a module-scoped event loop the async fixtures would then need. Each case seeds
-# its own sandbox, so they share no thread and no lease.
+# its own sandbox, so they share no thread.
 @pytest.fixture(scope="module")
 def db_url(app_database_template: PostgresDatabaseTemplate) -> Iterator[str]:
     with app_database_template.clone(database_name_for_test("agentplane.app.test_electric")) as url:
@@ -61,11 +60,10 @@ class Unfolded:
 
     thread: UUID
     source: ReplicationSource
-    lease: ProjectionLease
 
 
 @pytest.fixture
-async def unfolded(event_logs: EventLogStore, ingestion: Ingestion) -> Unfolded:
+async def unfolded(event_logs: EventLogStore, history: History) -> Unfolded:
     sandbox = f"{SANDBOX}-{uuid4().hex[:8]}"
     source = ReplicationSource()
     for index in range(3):
@@ -77,15 +75,13 @@ async def unfolded(event_logs: EventLogStore, ingestion: Ingestion) -> Unfolded:
         )
         source.append(event_pb2.Event(text_delta=event_pb2.TextDelta(item_id=item_id, text=f"body {index}")))
     thread = await event_logs.open(sandbox, SESSION)
-    lease = await ingestion.acquire(thread, timedelta(minutes=2))
-    assert lease is not None
-    await ingestion.set_attached(thread, source.attached, lease=lease)
-    return Unfolded(thread, source, lease)
+    await history.set_attached(thread, source.attached)
+    return Unfolded(thread, source)
 
 
 @pytest.fixture
-async def seeded(unfolded: Unfolded, content: ContentStore, ingestion: Ingestion) -> Seeded:
-    await ingestion.record(unfolded.thread, unfolded.source.entries, lease=unfolded.lease)
+async def seeded(unfolded: Unfolded, content: ContentStore, history: History) -> Seeded:
+    await history.record(unfolded.thread, unfolded.source.entries)
     scope = await content.current_scope(unfolded.thread)
     assert scope is not None
     return Seeded(unfolded.thread, scope)
@@ -156,7 +152,7 @@ async def test_a_scope_read_before_the_first_fold_answers_once_it_is_recorded(
     unfolded: Unfolded,
     engine: AsyncEngine,
     event_logs: EventLogStore,
-    ingestion: Ingestion,
+    history: History,
     database_updates: DatabaseUpdates,
 ) -> None:
     content = ScopeReads(engine, event_logs.reader)
@@ -169,8 +165,8 @@ async def test_a_scope_read_before_the_first_fold_answers_once_it_is_recorded(
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://app") as client:
         read = asyncio.create_task(client.get(f"/threads/{unfolded.thread}/sync/scope"))
         await content.unfolded.wait()
-        # What wakes the read is the commit's notification, through the listener every replica runs.
-        await ingestion.record(unfolded.thread, unfolded.source.entries, lease=unfolded.lease)
+        # What wakes the read is the fold's commit notice, through the summary watch every replica runs.
+        await history.record(unfolded.thread, unfolded.source.entries)
         response = await read
     await electric.aclose()
 

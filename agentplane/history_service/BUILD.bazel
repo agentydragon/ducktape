@@ -66,7 +66,6 @@ py_library(
         "//agentplane/app:__subpackages__",
         "//agentplane/history_service:__subpackages__",
         "//agentplane/notification_service:__pkg__",
-        "//agentplane/thread_fold:__subpackages__",
     ],
     deps = [
         "//agentplane:grpc_options",
@@ -178,9 +177,31 @@ py_test(
     ],
 )
 
+py_test(
+    name = "test_projection_lease",
+    size = "medium",
+    srcs = ["test_projection_lease.py"],
+    requires_docker = True,
+    deps = [
+        ":conftest",
+        "//:conftest",
+        "//agentplane/sandbox_service/session_history:conftest",
+        "//agentplane/thread_fold:models",
+        "//agentplane/thread_fold:projection_lease",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//sqlalchemy",
+    ],
+)
+
 py_library(
     name = "summary_changes",
     srcs = ["summary_changes.py"],
+    # The app tests fold seeded history into the tables the app reads.
+    visibility = [
+        "//agentplane/app:__subpackages__",
+        "//agentplane/history_service:__subpackages__",
+    ],
     deps = [
         "//agentplane/postgres:listener",
         "@pypi//sqlalchemy",
@@ -190,6 +211,11 @@ py_library(
 py_library(
     name = "fold_shadow",
     srcs = ["fold_shadow.py"],
+    # The app tests fold seeded history into the tables the app reads.
+    visibility = [
+        "//agentplane/app:__subpackages__",
+        "//agentplane/history_service:__subpackages__",
+    ],
     deps = [
         ":summary_changes",
         "//agentplane/history_service:protocol_pb2",

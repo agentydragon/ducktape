@@ -10,8 +10,6 @@ import re
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager, suppress
 from dataclasses import replace
-from datetime import timedelta
-from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
 from uuid import UUID
 
@@ -30,10 +28,9 @@ from playwright.async_api import (
 )
 from sqlalchemy import select, update
 
-from agentplane.app.database import connect
 from agentplane.app.testing import thread_view_marks
-from agentplane.app.testing.electric_service import BrowserPostgres, ElectricService, browser_electric_service
-from agentplane.app.testing.history import ProjectedHistory as Ingestion, SeededEventLogStore as EventLogStore
+from agentplane.app.testing.electric_service import ElectricService
+from agentplane.app.testing.history import SeededEventLogStore as EventLogStore
 from agentplane.app.testing.http2_proxy import BrowserCertificate, http2_proxy
 from agentplane.app.testing.replication_process import app_process
 from agentplane.app.testing.replication_source import SANDBOX, SESSION, ReplicationSource, add_replication_source
@@ -47,9 +44,11 @@ from agentplane.app.testing.thread_browser import (
     message_composer,
 )
 from agentplane.app.threads.store import ThreadStore
-from agentplane.app.threads.summaries import AppSummaries
 from agentplane.app.threads.view.content import ContentStore
 from agentplane.grpc_serving import serving
+from agentplane.history_service.client import HistoryServiceClient
+from agentplane.history_service.summary_changes import notify_summaries
+from agentplane.history_service.testing.history import History
 from agentplane.proto import command_pb2, event_log_pb2, event_pb2
 from agentplane.thread_fold.models import (
     ThreadCheckpoint,
@@ -62,7 +61,6 @@ from agentplane.thread_fold.models import (
 )
 from agentplane.thread_fold.views import ThreadFeedErrorState, ThreadOperationalState, ThreadViewState
 from util.bazel.runfiles import get_required_path
-from util.testing.postgres import DatabaseNames
 from util.testing.undeclared_outputs import undeclared_outputs_dir
 from util.testing.viewports import DESKTOP, MOBILE, SMALL_MOBILE, Viewport
 from util.testing.visual_review import upsert_review_asset
@@ -80,7 +78,7 @@ async def _review_screenshot(page: Page, name: str, label: str) -> None:
 
 
 @pytest.fixture
-async def db_url(electric: ElectricService) -> str:
+async def service_history_db_url(electric: ElectricService) -> str:
     return electric.database_url
 
 
@@ -89,23 +87,21 @@ async def test_archived_thread_page_survives_deleted_sandbox_and_reload(
     db_url: str,
     store: ThreadStore,
     event_logs: EventLogStore,
-    ingestion: Ingestion,
+    history: History,
     thread_source: ReplicationSource,
     electric: ElectricService,
     certificate: BrowserCertificate,
 ) -> None:
     thread_id = await event_logs.open(SANDBOX, SESSION)
-    lease = await ingestion.acquire(thread_id, timedelta(minutes=1))
-    assert lease is not None
-    await ingestion.set_attached(thread_id, thread_source.attached, lease=lease)
-    await ingestion.record(thread_id, thread_source.entries, lease=lease)
+    await history.set_attached(thread_id, thread_source.attached)
+    await history.record(thread_id, thread_source.entries)
     await store.rename(thread_id, "Test archived thread")
-    await ingestion.release(lease)
     directory = get_required_path("_main/agentplane/app/frontend/dist/index.html").parent
     async with (
         app_process(
             db_url,
             runner_port=int(event_logs.reader.target.rsplit(":", 1)[1]),
+            history=event_logs.reader,
             frontend_directory=directory,
             sandbox_present=False,
             electric_url=electric.url,
@@ -139,7 +135,7 @@ async def test_archived_thread_page_survives_deleted_sandbox_and_reload(
 
 
 async def _seed_navigation_threads(
-    event_logs: EventLogStore, ingestion: Ingestion, store: ThreadStore
+    event_logs: EventLogStore, history: History, store: ThreadStore
 ) -> tuple[list[UUID], list[ReplicationSource]]:
     """Two threads of 130 messages, "Thread N message M", named "Test navigation thread N"."""
     threads: list[UUID] = []
@@ -162,14 +158,11 @@ async def _seed_navigation_threads(
                 )
             )
         thread = await event_logs.open(SANDBOX, source.attached.session_id)
-        lease = await ingestion.acquire(thread, timedelta(minutes=1))
-        assert lease is not None
-        await ingestion.set_attached(thread, source.attached, lease=lease)
-        await ingestion.record(thread, source.entries, lease=lease)
+        await history.set_attached(thread, source.attached)
+        await history.record(thread, source.entries)
         await store.rename(thread, f"Test navigation thread {number}")
         threads.append(thread)
         sources.append(source)
-        await ingestion.release(lease)
     return threads, sources
 
 
@@ -178,16 +171,17 @@ async def test_switching_threads_starts_at_each_threads_tail(
     db_url: str,
     store: ThreadStore,
     event_logs: EventLogStore,
-    ingestion: Ingestion,
+    history: History,
     electric: ElectricService,
     certificate: BrowserCertificate,
 ) -> None:
-    threads, _ = await _seed_navigation_threads(event_logs, ingestion, store)
+    threads, _ = await _seed_navigation_threads(event_logs, history, store)
     directory = get_required_path("_main/agentplane/app/frontend/dist/index.html").parent
     async with (
         app_process(
             db_url,
             runner_port=int(event_logs.reader.target.rsplit(":", 1)[1]),
+            history=event_logs.reader,
             frontend_directory=directory,
             sandbox_present=False,
             electric_url=electric.url,
@@ -220,18 +214,19 @@ async def test_returning_to_a_thread_lays_its_rows_out_at_the_heights_they_had(
     db_url: str,
     store: ThreadStore,
     event_logs: EventLogStore,
-    ingestion: Ingestion,
+    history: History,
     electric: ElectricService,
     certificate: BrowserCertificate,
 ) -> None:
     """The history lays an unmeasured row out at a flat guess; one it has read before, at the height
     it read. Rows read on a thread's first visit are laid out at those heights on the return."""
-    threads, _ = await _seed_navigation_threads(event_logs, ingestion, store)
+    threads, _ = await _seed_navigation_threads(event_logs, history, store)
     directory = get_required_path("_main/agentplane/app/frontend/dist/index.html").parent
     async with (
         app_process(
             db_url,
             runner_port=int(event_logs.reader.target.rsplit(":", 1)[1]),
+            history=event_logs.reader,
             frontend_directory=directory,
             sandbox_present=False,
             electric_url=electric.url,
@@ -279,16 +274,17 @@ async def test_returning_to_a_thread_reads_only_what_changed_while_the_reader_wa
     db_url: str,
     store: ThreadStore,
     event_logs: EventLogStore,
-    ingestion: Ingestion,
+    history: History,
     electric: ElectricService,
     certificate: BrowserCertificate,
 ) -> None:
-    threads, sources = await _seed_navigation_threads(event_logs, ingestion, store)
+    threads, sources = await _seed_navigation_threads(event_logs, history, store)
     directory = get_required_path("_main/agentplane/app/frontend/dist/index.html").parent
     async with (
         app_process(
             db_url,
             runner_port=int(event_logs.reader.target.rsplit(":", 1)[1]),
+            history=event_logs.reader,
             frontend_directory=directory,
             sandbox_present=False,
             electric_url=electric.url,
@@ -313,7 +309,7 @@ async def test_returning_to_a_thread_reads_only_what_changed_while_the_reader_wa
             async with page.expect_request(f"**/threads/{threads[number]}/sync/scope"):
                 await page.locator(".agentplane-sidebar-row-name", has_text=f"Test navigation thread {number}").click()
 
-        history = page.get_by_role("region", name="Thread history", exact=True)
+        region = page.get_by_role("region", name="Thread history", exact=True)
         # A short viewport mounts few of the window's rows, whose bodies a reader's view reads on mounting.
         await page.set_viewport_size({**DESKTOP.size, "height": 300})
         await page.goto(f"{ingress.url}/#/threads/{threads[0]}")
@@ -325,7 +321,7 @@ async def test_returning_to_a_thread_reads_only_what_changed_while_the_reader_wa
                 await chunks_read.wait()
                 chunks_read.clear()
         await page.set_viewport_size(DESKTOP.size)
-        await history.hover()
+        await region.hover()
         async with page.expect_request(lambda request: _older_page_bound(request) is not None):
             await page.mouse.wheel(0, -10_000)
         await expect(page.get_by_text("Thread 0 message 40", exact=True)).to_be_visible()
@@ -351,7 +347,7 @@ async def test_returning_to_a_thread_reads_only_what_changed_while_the_reader_wa
                 )
             )
         )
-        event_logs.peer.publish(threads[0], source.entries[-2:])
+        await history.record(threads[0], source.entries[-2:])
 
         mark = len(requests)
         await open_thread(0)
@@ -367,7 +363,7 @@ async def test_returning_to_a_thread_reads_only_what_changed_while_the_reader_wa
         assert _bodies_read(returned) <= 1
 
         # The pages loaded before the reader left are still held: the next one is the page before them.
-        await history.hover()
+        await region.hover()
         async with page.expect_request(lambda request: _older_page_bound(request) is not None) as older:
             await page.mouse.wheel(0, -10_000)
         next_page = _older_page_bound(await older.value)
@@ -378,7 +374,7 @@ async def test_returning_to_a_thread_reads_only_what_changed_while_the_reader_wa
 async def test_projection_epoch_replacement_retires_old_requests_and_preserves_draft(
     thread_browser: ThreadBrowser,
 ) -> None:
-    page, store = thread_browser.page, thread_browser.store
+    page = thread_browser.page
     thread = await thread_browser.event_logs.open(SANDBOX, SESSION)
     await thread_browser.start_replay()
     await expect(page.get_by_text("Test retained prefix", exact=True)).to_be_visible()
@@ -413,7 +409,7 @@ async def test_projection_epoch_replacement_retires_old_requests_and_preserves_d
         # Stand in for an explicit background rebuild's atomic epoch publication.
         # This touches only the disposable test database; the live app and Electric
         # must detect replacement without a page reload or a custom client reset.
-        async with store._sessions() as session, session.begin():
+        async with thread_browser.history.sessions() as session, session.begin():
             rows = list(await session.scalars(select(ThreadEntity).where(ThreadEntity.thread_id == thread)))
             for row in rows:
                 row.projection_epoch = "test-rebuilt-epoch"
@@ -468,9 +464,13 @@ async def test_projection_epoch_replacement_retires_old_requests_and_preserves_d
 async def test_projected_browser_streams_runner_events_and_loads_evidence_lazily(
     page: Page,
     certificate: BrowserCertificate,
-    tmp_path: Path,
-    database_names: DatabaseNames,
-    thread_browser_postgres: BrowserPostgres,
+    db_url: str,
+    store: ThreadStore,
+    event_logs: EventLogStore,
+    content: ContentStore,
+    history: History,
+    history_client: HistoryServiceClient,
+    electric: ElectricService,
 ) -> None:
     source = ReplicationSource()
     source.attached.active_turn_id = "test-projected-turn"
@@ -523,146 +523,121 @@ async def test_projected_browser_streams_runner_events_and_loads_evidence_lazily
 
     page.on("request", observe)
     directory = get_required_path("_main/agentplane/app/frontend/dist/index.html").parent
+    thread = await event_logs.open(SANDBOX, SESSION)
+    await store.rename(thread, "Streamed thread")
+    server = grpc.aio.server()
+    add_replication_source(source, server)
     async with (
-        browser_electric_service(thread_browser_postgres, database_names()) as service,
-        source.connect(tmp_path / "history-token") as history_client,
+        serving(server, "127.0.0.1:0", grace_s=0) as runner_port,
+        source.ingesting(history),
+        app_process(
+            db_url, runner_port, history_client, frontend_directory=directory, electric_url=electric.url
+        ) as app,
+        http2_proxy(app.url, certificate) as ingress,
+        asyncio.timeout(60),
     ):
-        engine = connect(service.database_url)
-        event_logs, content = (
-            EventLogStore(engine, peer=source, history_reader=history_client),
-            ContentStore(engine, history_reader=history_client),
+        opened = await source.opened.get()
+        opened.replay.set()
+        await page.goto(f"{ingress.url}/#/threads/{thread}")
+        await expect_projected_cursor(page, source.entries[-1].cursor)
+        await expect(page.get_by_text("Projected browser prefix", exact=True)).to_be_visible()
+        await expect(page.get_by_text("A newer browser item", exact=True)).to_be_visible()
+        # The window reads the bodies of closed disclosures ahead of any opening, and shows none.
+        await closed_disclosures_read.wait()
+        await expect(page.locator(f'[data-thread-anchor="{reasoning.cursor}"] .agentplane-step-details')).to_have_count(
+            0
         )
-        try:
-            thread = await event_logs.open(SANDBOX, SESSION)
-            await ThreadStore(engine, AppSummaries(engine)).rename(thread, "Streamed thread")
-            server = grpc.aio.server()
-            add_replication_source(source, server)
-            async with (
-                serving(server, "127.0.0.1:0", grace_s=0) as runner_port,
-                app_process(
-                    service.database_url, runner_port, frontend_directory=directory, electric_url=service.url
-                ) as app,
-                http2_proxy(app.url, certificate) as ingress,
-                asyncio.timeout(60),
-            ):
-                opened = await source.opened.get()
-                opened.replay.set()
-                await page.goto(f"{ingress.url}/#/threads/{thread}")
-                await expect_projected_cursor(page, source.entries[-1].cursor)
-                await expect(page.get_by_text("Projected browser prefix", exact=True)).to_be_visible()
-                await expect(page.get_by_text("A newer browser item", exact=True)).to_be_visible()
-                # The window reads the bodies of closed disclosures ahead of any opening, and shows none.
-                await closed_disclosures_read.wait()
-                await expect(
-                    page.locator(f'[data-thread-anchor="{reasoning.cursor}"] .agentplane-step-details')
-                ).to_have_count(0)
-                await expect(page.get_by_text("On-demand tool output", exact=True)).to_have_count(0)
+        await expect(page.get_by_text("On-demand tool output", exact=True)).to_have_count(0)
 
-                source.append(
-                    event_pb2.Event(text_delta=event_pb2.TextDelta(item_id="first", text=" and streamed suffix"))
+        source.append(event_pb2.Event(text_delta=event_pb2.TextDelta(item_id="first", text=" and streamed suffix")))
+        await expect(page.get_by_text("Projected browser prefix and streamed suffix", exact=True)).to_be_visible()
+        assert not any("/evidence" in url for url in requests)
+        first_card = page.locator(f'[data-thread-anchor="{first.cursor}"]')
+        await click_evidence(first_card)
+        frame_summary = first_card.locator(
+            ".agentplane-disclosure-summary", has_text=f"Observation {observed.cursor} raw frames"
+        )
+        await expect(frame_summary).to_be_visible()
+        # The label shares the disclosure marker's line instead of starting below it.
+        summary_box = await frame_summary.bounding_box()
+        label_box = await frame_summary.locator(".agentplane-disclosure-summary-content").bounding_box()
+        assert summary_box is not None
+        assert label_box is not None
+        assert summary_box["y"] <= label_box["y"] <= summary_box["y"] + summary_box["height"] - label_box["height"]
+        assert not any("/frames?" in url for url in requests)
+        await frame_summary.click()
+        frame = first_card.locator(".agentplane-code-block")
+        await expect(frame).to_contain_text("test-text-delta")
+        assert json_format.Parse(await frame.inner_text(), event_log_pb2.EventEntry()) == native
+        await click_evidence(first_card)
+        await expect(frame).to_have_count(0)
+        await click_evidence(first_card)
+        await expect(frame).to_contain_text("test-text-delta")
+        assert json_format.Parse(await frame.inner_text(), event_log_pb2.EventEntry()) == native
+        await page.screenshot(path=undeclared_outputs_dir() / "projected-evidence-reopened.png")
+        await click_evidence(first_card)
+        # The reasoning step and the tool call after it are one folded run, anchored at its first step.
+        run = page.locator(f'[data-thread-anchor="{reasoning.cursor}"]')
+        await expect(page.locator(f'[data-thread-anchor="{tool.cursor}"]')).to_have_count(0)
+        await run.get_by_text("1 tool call, 1 reasoning step", exact=True).click()
+        # A tool call is one line of its arguments; opened, it shows them as they stream in.
+        tool_line = run.locator(".agentplane-step-details", has_text="test-tool")
+        await tool_line.locator(".agentplane-disclosure-summary").click()
+        arguments = tool_line.locator(".agentplane-code-block")
+        await expect(arguments.get_by_text("{", exact=True)).to_be_visible()
+        source.append(
+            event_pb2.Event(tool_arguments_delta=event_pb2.ToolArgumentsDelta(item_id="tool", partial_json='"path":'))
+        )
+        await expect(arguments.get_by_text('{"path":', exact=True)).to_be_visible()
+        source.append(
+            event_pb2.Event(tool_arguments_delta=event_pb2.ToolArgumentsDelta(item_id="tool", partial_json='"value"}'))
+        )
+        await expect(arguments.get_by_text('{"path":"value"}', exact=True)).to_be_visible()
+        source.append(
+            event_pb2.Event(
+                item_completed=event_pb2.ItemCompleted(
+                    item_id="tool", tool=event_pb2.ToolResult(output="On-demand tool output", succeeded=True)
                 )
-                await expect(
-                    page.get_by_text("Projected browser prefix and streamed suffix", exact=True)
-                ).to_be_visible()
-                assert not any("/evidence" in url for url in requests)
-                first_card = page.locator(f'[data-thread-anchor="{first.cursor}"]')
-                await click_evidence(first_card)
-                frame_summary = first_card.locator(
-                    ".agentplane-disclosure-summary", has_text=f"Observation {observed.cursor} raw frames"
-                )
-                await expect(frame_summary).to_be_visible()
-                # The label shares the disclosure marker's line instead of starting below it.
-                summary_box = await frame_summary.bounding_box()
-                label_box = await frame_summary.locator(".agentplane-disclosure-summary-content").bounding_box()
-                assert summary_box is not None
-                assert label_box is not None
-                assert (
-                    summary_box["y"] <= label_box["y"] <= summary_box["y"] + summary_box["height"] - label_box["height"]
-                )
-                assert not any("/frames?" in url for url in requests)
-                await frame_summary.click()
-                frame = first_card.locator(".agentplane-code-block")
-                await expect(frame).to_contain_text("test-text-delta")
-                assert json_format.Parse(await frame.inner_text(), event_log_pb2.EventEntry()) == native
-                await click_evidence(first_card)
-                await expect(frame).to_have_count(0)
-                await click_evidence(first_card)
-                await expect(frame).to_contain_text("test-text-delta")
-                assert json_format.Parse(await frame.inner_text(), event_log_pb2.EventEntry()) == native
-                await page.screenshot(path=undeclared_outputs_dir() / "projected-evidence-reopened.png")
-                await click_evidence(first_card)
-                # The reasoning step and the tool call after it are one folded run, anchored at its first step.
-                run = page.locator(f'[data-thread-anchor="{reasoning.cursor}"]')
-                await expect(page.locator(f'[data-thread-anchor="{tool.cursor}"]')).to_have_count(0)
-                await run.get_by_text("1 tool call, 1 reasoning step", exact=True).click()
-                # A tool call is one line of its arguments; opened, it shows them as they stream in.
-                tool_line = run.locator(".agentplane-step-details", has_text="test-tool")
-                await tool_line.locator(".agentplane-disclosure-summary").click()
-                arguments = tool_line.locator(".agentplane-code-block")
-                await expect(arguments.get_by_text("{", exact=True)).to_be_visible()
-                source.append(
-                    event_pb2.Event(
-                        tool_arguments_delta=event_pb2.ToolArgumentsDelta(item_id="tool", partial_json='"path":')
-                    )
-                )
-                await expect(arguments.get_by_text('{"path":', exact=True)).to_be_visible()
-                source.append(
-                    event_pb2.Event(
-                        tool_arguments_delta=event_pb2.ToolArgumentsDelta(item_id="tool", partial_json='"value"}')
-                    )
-                )
-                await expect(arguments.get_by_text('{"path":"value"}', exact=True)).to_be_visible()
-                source.append(
-                    event_pb2.Event(
-                        item_completed=event_pb2.ItemCompleted(
-                            item_id="tool", tool=event_pb2.ToolResult(output="On-demand tool output", succeeded=True)
-                        )
-                    )
-                )
-                await expect(tool_line.get_by_text("On-demand tool output", exact=True)).to_be_visible()
-                reasoning_details = run.locator(".agentplane-step-details", has_text="Reasoning")
-                await expect(reasoning_details).to_be_visible()
-                await reasoning_details.locator(".agentplane-disclosure-summary").click()
-                expanded_reasoning = reasoning_details.locator(".agentplane-disclosure-panel .agentplane-markdown")
-                await expect(expanded_reasoning).to_contain_text("On-demand reasoning reaches past one line.")
-                await expect(expanded_reasoning.locator("strong").first).to_have_text("reaches")
-                await _review_screenshot(
-                    page, "thread-streamed-expanded.png", "Streamed Thread with tool call and reasoning open"
-                )
+            )
+        )
+        await expect(tool_line.get_by_text("On-demand tool output", exact=True)).to_be_visible()
+        reasoning_details = run.locator(".agentplane-step-details", has_text="Reasoning")
+        await expect(reasoning_details).to_be_visible()
+        await reasoning_details.locator(".agentplane-disclosure-summary").click()
+        expanded_reasoning = reasoning_details.locator(".agentplane-disclosure-panel .agentplane-markdown")
+        await expect(expanded_reasoning).to_contain_text("On-demand reasoning reaches past one line.")
+        await expect(expanded_reasoning.locator("strong").first).to_have_text("reaches")
+        await _review_screenshot(
+            page, "thread-streamed-expanded.png", "Streamed Thread with tool call and reasoning open"
+        )
 
-                await page.reload()
-                await expect(
-                    page.get_by_text("Projected browser prefix and streamed suffix", exact=True)
-                ).to_have_count(1)
-                assert not any(urlsplit(url).path.startswith(f"/threads/{thread}/events") for url in requests)
-                assert await page.evaluate(
-                    """() => performance.getEntriesByType('resource').some(
-                        entry => entry.name.includes('/sync/entities?') && entry.nextHopProtocol === 'h2')"""
-                )
-                await page.screenshot(path=undeclared_outputs_dir() / "projected-thread-reloaded.png")
-                reads_before_disconnect = len(body_reads)
-                await page.context.set_offline(True)
-                await ingress.drop_connections()
-                source.append(event_pb2.Event(text_delta=event_pb2.TextDelta(item_id="first", text=" after reconnect")))
-                async with asyncio.timeout(10):
-                    while True:
-                        scope = await content.current_scope(thread)
-                        if scope is not None and scope.through_cursor >= source.entries[-1].cursor:
-                            break
-                        await asyncio.sleep(0.01)
-                # Whether or not the delta beat the drop, nothing shown is withdrawn.
-                await expect(
-                    page.get_by_text("Projected browser prefix and streamed suffix", exact=False)
-                ).to_have_count(1)
-                await page.context.set_offline(False)
-                await expect(
-                    page.get_by_text("Projected browser prefix and streamed suffix after reconnect", exact=True)
-                ).to_have_count(1)
-                # The delta arrives on the live log; the body is not read again.
-                assert len(body_reads) == reads_before_disconnect
-                await page.screenshot(path=undeclared_outputs_dir() / "projected-thread-reconnected.png")
-        finally:
-            await engine.dispose()
+        await page.reload()
+        await expect(page.get_by_text("Projected browser prefix and streamed suffix", exact=True)).to_have_count(1)
+        assert not any(urlsplit(url).path.startswith(f"/threads/{thread}/events") for url in requests)
+        assert await page.evaluate(
+            """() => performance.getEntriesByType('resource').some(
+                entry => entry.name.includes('/sync/entities?') && entry.nextHopProtocol === 'h2')"""
+        )
+        await page.screenshot(path=undeclared_outputs_dir() / "projected-thread-reloaded.png")
+        reads_before_disconnect = len(body_reads)
+        await page.context.set_offline(True)
+        await ingress.drop_connections()
+        source.append(event_pb2.Event(text_delta=event_pb2.TextDelta(item_id="first", text=" after reconnect")))
+        async with asyncio.timeout(10):
+            while True:
+                scope = await content.current_scope(thread)
+                if scope is not None and scope.through_cursor >= source.entries[-1].cursor:
+                    break
+                await asyncio.sleep(0.01)
+        # Whether or not the delta beat the drop, nothing shown is withdrawn.
+        await expect(page.get_by_text("Projected browser prefix and streamed suffix", exact=False)).to_have_count(1)
+        await page.context.set_offline(False)
+        await expect(
+            page.get_by_text("Projected browser prefix and streamed suffix after reconnect", exact=True)
+        ).to_have_count(1)
+        # The delta arrives on the live log; the body is not read again.
+        assert len(body_reads) == reads_before_disconnect
+        await page.screenshot(path=undeclared_outputs_dir() / "projected-thread-reconnected.png")
 
 
 @pytest.mark.parametrize(
@@ -2317,7 +2292,7 @@ async def test_ahead_snapshot_is_not_a_thread_or_effective_model(thread_browser:
     assert await thread_browser.event_logs.events(thread.id, limit=100) == thread_browser.source.entries
 
 
-async def test_rejected_source_suffix_stops_browser_without_replacing_verified_history(
+async def test_an_unfoldable_suffix_stops_browser_without_replacing_verified_history(
     thread_browser: ThreadBrowser,
 ) -> None:
     page, source = thread_browser.page, thread_browser.source
@@ -2325,17 +2300,12 @@ async def test_rejected_source_suffix_stops_browser_without_replacing_verified_h
     await expect(page.get_by_text("Test retained prefix", exact=True)).to_be_visible()
     await expect(page.get_by_role("button", name="Interrupt", exact=True)).to_be_enabled()
 
-    # Corrupt the controlled upstream entry before the next event-loop yield can publish it.
-    rejected = source.append(
-        event_pb2.Event(text_delta=event_pb2.TextDelta(item_id="test-browser-item", text=" INVALID SUFFIX"))
-    )
-    rejected.cursor = 6
-    rejected.origin.sequence = 6
+    # An observation the fold does not model: retained, but the fold stops before it.
+    source.append(event_pb2.Event())
 
     await expect(page.get_by_role("alert")).to_contain_text("Session history projection stalled")
     await expect(page.get_by_role("alert")).to_contain_text("Showing verified history through event 4")
     await expect(page.get_by_text("Test retained prefix", exact=True)).to_have_count(1)
-    await expect(page.get_by_text("INVALID SUFFIX", exact=False)).to_have_count(0)
     await expect(page.get_by_role("combobox", name="Model", exact=True)).to_be_disabled()
     await expect(message_composer(page)).to_be_disabled()
     await expect(page.get_by_role("button", name="Interrupt", exact=True)).to_be_disabled()
@@ -2356,7 +2326,7 @@ async def test_unknown_projection_failure_keeps_verified_history_and_stops_brows
     # This models only the persisted result of a batch-wide projection failure. The real
     # PostgreSQL/Electric/Chromium path must render it; no malformed native event is simulated.
     (thread,) = await store.list_threads(sandbox=SANDBOX)
-    async with store._sessions() as session, session.begin():
+    async with thread_browser.history.sessions() as session, session.begin():
         checkpoint = await session.get(ThreadCheckpoint, thread.id)
         assert checkpoint is not None
         view = await session.get(ThreadEntity, (thread.id, checkpoint.projection_epoch, "view_state", "current"))
@@ -2374,6 +2344,7 @@ async def test_unknown_projection_failure_keeps_verified_history_and_stops_brows
             }
         ).model_dump(mode="json")
         feed.end = {"message": "batch-wide projection invariant failed"}
+        await notify_summaries(session)
 
     failure = page.get_by_role("alert")
     await expect(failure).to_contain_text("Projection failed: batch-wide projection invariant failed.")

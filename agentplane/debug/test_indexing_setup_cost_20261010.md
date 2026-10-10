@@ -3,10 +3,11 @@
 `//agentplane/app/threads:test_indexing` spent most of its time projecting unrelated historical
 items through the app projector in repeated 100-event batches. The test is about indexed reads and
 a real old-item update after a large projected prefix, so its filler prefix now stays fully
-published in the History Service fixture and is projected with `fold.advance` plus the production
+archived in the history database and is projected with `fold.advance` plus the production
 `ordered_entity_rows` serializer before bulk insertion. This retains the same item, payload,
 evidence, entity-index, summary, epoch and checkpoint shape. The initial admission and `old-item`
-events and the final `old-item` update still run through `ingestion.record` and the app projector.
+events and the final `old-item` update still run through the History Service fold; the app no
+longer has a projector of its own.
 
 | Run                                                                                                        | Pytest time | Bazel test action |
 | ---------------------------------------------------------------------------------------------------------- | ----------: | ----------------: |

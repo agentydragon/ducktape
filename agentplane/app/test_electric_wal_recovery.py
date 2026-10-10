@@ -6,7 +6,6 @@ import asyncio
 import json
 import os
 import tempfile
-from datetime import timedelta
 from pathlib import Path
 from uuid import UUID
 
@@ -14,40 +13,31 @@ import asyncpg
 import httpx
 import pytest_bazel
 
-from agentplane.app.database import connect
 from agentplane.app.testing.electric_service import ElectricService, electric_service
-from agentplane.app.testing.history import ProjectedHistory as Ingestion, SeededEventLogStore as EventLogStore
-from agentplane.app.testing.history_service import HistoryService
+from agentplane.app.testing.history import fixture_session_id
 from agentplane.app.testing.replication_source import SANDBOX, SESSION, ReplicationSource
-from agentplane.history_service.client import HistoryServiceClient
+from agentplane.history_service.testing.history import History
 from agentplane.proto import event_pb2
-from agentplane.thread_fold.projection_lease import ProjectionLease
 from util.db_url import render_postgresql_url
 from util.testing.undeclared_outputs import undeclared_outputs_dir
 
 # gazelle:include_dep @pypi//protobuf
 
-_SLOT = "electric_slot_agentplane_conversation"
+_SLOT = "electric_slot_agentplane_history"
 _WAL_CAP_BYTES = 1024 * 1024
 _BATCH_BYTES = 4 * 1024 * 1024
 
 
-async def test_electric_lagging_slot_forces_client_resnapshot_after_wal_cap(
-    history_peer: HistoryService, history_client: HistoryServiceClient
-) -> None:
+async def test_electric_lagging_slot_forces_client_resnapshot_after_wal_cap() -> None:
     """A stopped Electric service loses its slot and cannot continue an old shape cursor."""
     with tempfile.TemporaryDirectory(prefix="electric-wal-state-") as state_dir:
         async with electric_service(
             postgres_settings=("max_slot_wal_keep_size=1MB", "max_wal_size=32MB", "min_wal_size=32MB"),
             electric_storage_dir=Path(state_dir),
         ) as service:
-            engine = connect(service.database_url)
-            event_logs, ingestion = (
-                EventLogStore(engine, peer=history_peer, history_reader=history_client),
-                Ingestion(engine, peer=history_peer, history_reader=history_client),
-            )
+            history = History(service.database_url)
             try:
-                thread, source, lease = await _project_initial_item(event_logs, ingestion)
+                thread, source = await _project_initial_item(history)
                 params = {"table": "thread_entity", "where": f"thread_id = '{thread}'"}
                 # Do not retain this client across service.stop()/start(): Docker can assign a
                 # different host port when it recreates the published listener.
@@ -100,7 +90,7 @@ async def test_electric_lagging_slot_forces_client_resnapshot_after_wal_cap(
                     source.append(
                         event_pb2.Event(text_delta=event_pb2.TextDelta(item_id="during-outage", text="fresh"))
                     )
-                    await ingestion.record(thread, source.entries[-2:], lease=lease)
+                    await history.record(thread, source.entries[-2:])
                 finally:
                     await connection.close()
 
@@ -137,12 +127,10 @@ async def test_electric_lagging_slot_forces_client_resnapshot_after_wal_cap(
                     resnapshot.raise_for_status()
                     assert {row["entity_id"] for row in _values(resnapshot)} >= {"first", "during-outage"}
             finally:
-                await engine.dispose()
+                await history.close()
 
 
-async def _project_initial_item(
-    event_logs: EventLogStore, ingestion: Ingestion
-) -> tuple[UUID, ReplicationSource, ProjectionLease]:
+async def _project_initial_item(history: History) -> tuple[UUID, ReplicationSource]:
     source = ReplicationSource()
     source.append(event_pb2.Event(harness_started=event_pb2.HarnessStarted(pid=123)))
     source.append(event_pb2.Event(turn_started=event_pb2.TurnStarted(turn_id="turn", model="test-model")))
@@ -150,12 +138,11 @@ async def _project_initial_item(
         event_pb2.Event(item_started=event_pb2.ItemStarted(item_id="first", kind=event_pb2.ITEM_KIND_ASSISTANT_TEXT))
     )
     source.append(event_pb2.Event(text_delta=event_pb2.TextDelta(item_id="first", text="before outage")))
-    thread = await event_logs.open(SANDBOX, SESSION)
-    lease = await ingestion.acquire(thread, timedelta(minutes=2))
-    assert lease is not None
-    await ingestion.set_attached(thread, source.attached, lease=lease)
-    await ingestion.record(thread, source.entries, lease=lease)
-    return thread, source, lease
+    thread = fixture_session_id(SANDBOX, SESSION)
+    await history.open(thread, sandbox=SANDBOX)
+    await history.set_attached(thread, source.attached)
+    await history.record(thread, source.entries)
+    return thread, source
 
 
 async def _connect(service: ElectricService) -> asyncpg.Connection:
