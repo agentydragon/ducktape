@@ -6,7 +6,8 @@
 #   main   — every target: all cache-eligible ducktape package outputs (including
 #            the full shared Python lockfile closure any of them pulls in — see
 #            #3298/#7078) + all remaining NixOS toplevels + home activation
-#            packages + bootstrap packages. Parked Haku managed-agent,
+#            packages + bootstrap packages + the Bazel contract test image.
+#            Parked Haku managed-agent,
 #            agent-box, and gecko NixOS systems are excluded from this CI cache.
 #            Flake-specific image outputs are not part of `ducktapePkgs`, the
 #            package set passed to these targets.
@@ -90,8 +91,8 @@ let
       devShell = self.devShells.${system}.default;
     };
 
-  # Flake-specific image packages are not part of ducktapePkgs and therefore
-  # are not inputs to the broad Attic build target.
+  # Flake-specific images require explicit inclusion below; ducktapePkgs
+  # contains only the shared package set.
   atticPackages = ducktapePkgs;
   # Keep parked guest system closures out of automatic Attic builds while
   # retaining their NixOS configurations and image outputs for manual builds.
@@ -108,7 +109,12 @@ in
     prefix "pkg" atticPackages
     // prefix "nixos" (lib.genAttrs (builtins.attrNames atticNixosConfigurations) nixosToplevel)
     // prefix "home" (lib.genAttrs (builtins.attrNames self.homeConfigurations) homeActivation)
-    // prefix "bootstrap" bootstrap;
+    // prefix "bootstrap" bootstrap
+    // {
+      # Cache the final tarball too: caching the NixOS toplevel alone still
+      # leaves each contract run repackaging and compressing the same image.
+      image-bazel-test-docker = self.packages.${system}.bazel-test-docker;
+    };
 
   public = prefix "bootstrap" bootstrap;
 }
