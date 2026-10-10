@@ -21,6 +21,7 @@ from agentplane.sandbox_service.protocol_pb2 import (
     SandboxPod,
     ServiceAccount,
 )
+from agentplane.sandbox_service.retention_holds import read_holds
 from util.agent_sandbox import OperatingMode
 
 MANAGED_LABEL = "agentplane.allegedly.works/managed"
@@ -31,6 +32,7 @@ PROVISIONING_ANNOTATION = "agentplane.allegedly.works/pending-launch-grants"
 KUBERNETES_GRANTS_ANNOTATION = "agentplane.allegedly.works/kubernetes-grants"
 KUBERNETES_GRANTS_READY_ANNOTATION = "agentplane.allegedly.works/kubernetes-grants-ready"
 KUBERNETES_GRANTS_ERROR_ANNOTATION = "agentplane.allegedly.works/kubernetes-grants-error"
+RETENTION_HOLDS_ANNOTATION = "agentplane.allegedly.works/retention-holds"
 
 
 class _KubernetesModel(BaseModel):
@@ -111,6 +113,7 @@ def _view(sandbox: SandboxResource, pod: k8s_client.V1Pod | None, *, api_client:
         kubernetes_grant_error=sandbox.metadata.annotations.get(KUBERNETES_GRANTS_ERROR_ANNOTATION),
         deleting=sandbox.metadata.deletion_timestamp is not None,
         pod=_pod(pod, api_client=api_client) if pod is not None else None,
+        holds=read_holds(sandbox.metadata.annotations.get(RETENTION_HOLDS_ANNOTATION)).holds(),
     )
 
 
