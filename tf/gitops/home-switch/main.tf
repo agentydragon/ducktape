@@ -38,7 +38,14 @@ resource "routeros_system_identity" "this" {
 }
 
 # Importing is create-only, so each renewal by cert-manager imports a new certificate under a new
-# name, moves the services onto it, then deletes the old one.
+# name, moves the services onto it, then deletes the old one. bootstrap.sh imports under this same
+# name.
+#
+# Gotcha: the switch must hold one certificate for its address. RouterOS 7.24 serves the first
+# certificate whose SAN matches the address a client connected to, whichever one a service names,
+# but signs the handshake with the named certificate's key, so clients fail with "bad signature"
+# (ECDSA) or "wrong certificate type" (RSA). A renewal passes through that state within one apply;
+# if an apply stops there, bootstrap.sh restores a single certificate.
 resource "routeros_system_certificate" "tls" {
   name        = "home-switch-${substr(nonsensitive(sha1(data.kubernetes_secret_v1.tls.data["tls.crt"])), 0, 8)}"
   common_name = "CRS310"

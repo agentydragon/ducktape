@@ -9,10 +9,9 @@ Two RouterOS passwords, held nowhere but here and on the switch:
 - `monitoring`: the read-only user the Terraform manages, which a RouterOS exporter will log in as.
   ESO mints it.
 
-cert-manager issues the switch's api-ssl/www-ssl certificate from the cluster CA, so clients
-verify it against the CA bundle: the Terraform installs and renews `home-switch-tls`, and
-`bootstrap.sh` installs `home-switch-bootstrap-tls`, which is good enough for the Terraform's
-first connection.
+cert-manager issues the switch's api-ssl/www-ssl certificate, `home-switch-tls`, from the cluster CA,
+so clients verify it against the CA bundle: `bootstrap.sh` installs it for the Terraform's first
+connection, under the name the Terraform gives it, and the Terraform installs each renewal.
 """
 
 from __future__ import annotations
@@ -45,8 +44,7 @@ TOFU_PASSWORD_FILE = "tofu-password.sops.yaml"
 # tf/gitops/home-switch/main.tf and bootstrap.sh read these Secrets and keys by name.
 MONITORING_PASSWORD = SecretRef(namespace=NAMESPACE, name="home-switch-monitoring").key("password")
 TLS_SECRET = "home-switch-tls"
-BOOTSTRAP_TLS_SECRET = "home-switch-bootstrap-tls"
-# The switch's DHCP lease, which its certificates name (tf/gitops/home-switch connects to it).
+# The switch's DHCP lease, which its certificate names (tf/gitops/home-switch connects to it).
 _SWITCH_ADDRESS = "192.168.1.100"
 # bootstrap.sh repeats it.
 _LAN_CIDR = "192.168.1.0/24"
@@ -64,7 +62,7 @@ class HomeSwitchVars(BaseModel):
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    switch_address: str = Field(description="The switch's management address, which its certificates name.")
+    switch_address: str = Field(description="The switch's management address, which its certificate names.")
     lan_cidr: str = Field(
         description="The only network management services and the monitoring user accept connections from."
     )
@@ -92,20 +90,17 @@ def chart(app: App) -> Chart:
         MONITORING_PASSWORD,
         "Password of the home switch's read-only RouterOS user; tf/gitops/home-switch sets it on the switch.",
     )
-    for id, secret_name in (("tls", TLS_SECRET), ("bootstrap-tls", BOOTSTRAP_TLS_SECRET)):
-        Certificate(
-            chart,
-            id,
-            metadata=ApiObjectMetadata(name=secret_name, namespace=NAMESPACE),
-            secret_name=secret_name,
-            issuer_ref=cluster_ca.INTERNAL_ISSUER,
-            # main.tf's routeros_system_certificate names the same common name.
-            common_name="CRS310",
-            ip_addresses=[_SWITCH_ADDRESS],
-            # RSA: RouterOS 7.24 signed TLS handshakes with a provider-imported ECDSA P-256 key that
-            # clients reject ("bad signature"), though the key matched the certificate.
-            private_key=CertificatePrivateKey.rsa_2048(),
-        )
+    Certificate(
+        chart,
+        "tls",
+        metadata=ApiObjectMetadata(name=TLS_SECRET, namespace=NAMESPACE),
+        secret_name=TLS_SECRET,
+        issuer_ref=cluster_ca.INTERNAL_ISSUER,
+        # main.tf's routeros_system_certificate names the same common name.
+        common_name="CRS310",
+        ip_addresses=[_SWITCH_ADDRESS],
+        private_key=CertificatePrivateKey.rsa_2048(),
+    )
     terraform.gitops_terraform(
         chart,
         "terraform",

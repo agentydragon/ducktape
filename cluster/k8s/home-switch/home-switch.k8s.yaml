@@ -50,23 +50,6 @@ spec:
     size: 2048
   secretName: home-switch-tls
 ---
-apiVersion: cert-manager.io/v1
-kind: Certificate
-metadata:
-  name: home-switch-bootstrap-tls
-  namespace: monitoring
-spec:
-  commonName: CRS310
-  ipAddresses:
-    - 192.168.1.100
-  issuerRef:
-    kind: ClusterIssuer
-    name: cluster-internal-ca
-  privateKey:
-    algorithm: RSA
-    size: 2048
-  secretName: home-switch-bootstrap-tls
----
 apiVersion: infra.contrib.fluxcd.io/v1alpha2
 kind: Terraform
 metadata:

@@ -17,14 +17,13 @@ and the switch:
 - `monitoring/home-switch-monitoring`: the read-only `monitoring` user this module manages, minted
   by ESO.
 
-cert-manager issues the switch's TLS certificates from the cluster CA (`cluster-internal-ca`), for
-`IP:192.168.1.100`, so the Terraform verifies `api-ssl` against the CA bundle mounted into its runner:
-
-- `monitoring/home-switch-tls`: this module imports it for `api-ssl` and `www-ssl`, and imports
-  each renewal under a new name before deleting the old one. cert-manager renews it 30 days
-  before it expires, so approve the plan that installs a renewal within that window.
-- `monitoring/home-switch-bootstrap-tls`: `bootstrap.sh` installs it, so the first reconcile can
-  verify the switch.
+cert-manager issues the switch's TLS certificate, `monitoring/home-switch-tls`, from the cluster CA
+(`cluster-internal-ca`) for `IP:192.168.1.100`, so the Terraform verifies `api-ssl` against the CA
+bundle mounted into its runner. `bootstrap.sh` installs it for the first reconcile; this module
+serves it on `api-ssl` and `www-ssl`, and imports each renewal under a new name before deleting
+the old one. cert-manager renews it 30 days before it expires, so approve the plan that installs a
+renewal within that window. The switch must hold only that one certificate for its address
+(`main.tf` says why); `bootstrap.sh` removes older ones.
 
 ## Bootstrap (new switch, or after a factory reset)
 
