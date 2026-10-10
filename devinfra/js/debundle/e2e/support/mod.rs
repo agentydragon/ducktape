@@ -690,12 +690,17 @@ fn prepare_fixture(opts: &FixtureOpts<'_>) -> PreparedFixture {
     // `extra_chunks` are listed in js-files.txt so they are parsed and
     // analyzed (their exports feed the cross-module oracle), unlike
     // `extra_files` which are runtime-only siblings.
-    let mut js_list = format!("{entry_file}\n");
+    let list_entry =
+        |chunk_id: &str, file: &str| match opts.source_paths.iter().find(|(id, _)| *id == chunk_id)
+        {
+            Some((_, source_path)) => format!("{file}\t{source_path}\n"),
+            None => format!("{file}\n"),
+        };
+    let mut js_list = list_entry(opts.chunk_id, &entry_file);
     for (chunk_id, source) in opts.extra_chunks {
         let chunk_file = format!("{chunk_id}.js");
         write_text_file(&snapshot_root.join(&chunk_file), source);
-        js_list.push_str(&chunk_file);
-        js_list.push('\n');
+        js_list.push_str(&list_entry(chunk_id, &chunk_file));
     }
     let js_list_path = extracted_root.join("js-files.txt");
     write_text_file(&js_list_path, &js_list);

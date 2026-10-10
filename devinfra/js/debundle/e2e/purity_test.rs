@@ -955,6 +955,86 @@ export { a, b, c };
 }
 
 #[test]
+fn asserted_pure_new_export_resolves_aliased_source_path() {
+    const ENTRY: &str = r#"import { Provider as Factory } from "/$bunfs/root/provider.js";
+const a = new Factory(1);
+const b = new Factory(2);
+const c = new Factory(3);
+console.log(a.value, b.value, c.value);
+export { a, b, c };
+"#;
+    const PROVIDER: &str = "export class Provider { constructor(value) { this.value = value; } }\n";
+    let modules = || {
+        vec![
+            logical_module("foo", &[Member::new("a"), Member::new("c")]),
+            logical_module("bar", &[Member::new("b")]),
+        ]
+    };
+    let purity = || {
+        [ChunkExportPurityBuilder::new("static/provider")
+            .with_pure_new_exports(&["Provider"])
+            .build()]
+    };
+    // Listing the physical file and its copy as independent chunks makes
+    // the assertion miss the actual import target, reproducing the reported
+    // unknown_new cycle without any private source.
+    expect_sequenced_cycle_rejection(
+        FixtureOpts::new(ENTRY, modules())
+            .with_extra_chunks(&[
+                ("$bunfs/root/provider", PROVIDER),
+                ("static/provider", PROVIDER),
+            ])
+            .with_chunk_export_purity(&purity()),
+        &["foo", "bar"],
+    );
+    let fixture = run_fixture(
+        FixtureOpts::new(ENTRY, modules())
+            .with_extra_chunks(&[("static/provider", PROVIDER)])
+            .with_source_paths(&[
+                ("static/app", "$bunfs/root/app.js"),
+                ("static/provider", "$bunfs/root/provider.js"),
+            ])
+            .with_chunk_export_purity(&purity()),
+    );
+    assert_entry_output(&fixture, "1 2 3\n");
+}
+
+#[test]
+fn source_selected_constructor_purity_reaches_importer() {
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            r#"import { A as Factory } from "./provider.js";
+const a = new Factory(1);
+const b = new Factory(2);
+const c = new Factory(3);
+console.log(a.value, b.value, c.value);
+export { a, b, c };
+"#,
+            vec![
+                logical_module("foo", &[Member::new("a"), Member::new("c")]),
+                logical_module("bar", &[Member::new("b")]),
+            ],
+        )
+        .with_extra_chunks(&[(
+            "static/provider",
+            "export class A { #value; constructor(value) { this.#value = value; } get value() { return this.#value; } }\n",
+        )])
+        .with_extra_chunk_logical_modules(&[(
+            "static/provider",
+            vec![logical_module(
+                "provider",
+                &[Member::source_alpha(
+                    "Provider",
+                    "export class Provider { #value; constructor(value) { this.#value = value; } get value() { return this.#value; } }",
+                )
+                .with_purity(MemberPurity::PureNew)],
+            )],
+        )]),
+    );
+    assert_entry_output(&fixture, "1 2 3\n");
+}
+
+#[test]
 fn impure_imported_constructor_keeps_s_cycle() {
     // A write through `this` can invoke a class-prototype setter, so a
     // constructor is not inferred pure merely from its assignment shape.

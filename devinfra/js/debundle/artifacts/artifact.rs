@@ -1053,14 +1053,14 @@ pub fn load_js_chunks(input_root: &Path, js_list_path: &Path) -> Result<LoadedJs
     )?;
     let mut chunk_table = ChunkTable::default();
     let mut chunks = Vec::new();
-    for source_path in &js_files {
-        let absolute_path = input_root.join(source_path);
-        let entry_file = Path::new(source_path)
+    for entry in &js_files {
+        let absolute_path = input_root.join(&entry.path);
+        let entry_file = Path::new(&entry.path)
             .file_name()
             .and_then(|value| value.to_str())
             .context("source path missing file name")?
             .to_string();
-        let chunk_name = chunk_id_for_js_path(source_path)?;
+        let chunk_name = chunk_id_for_js_path(&entry.path)?;
         chunk_table.intern(chunk_name.clone());
         let content = fs::read_to_string(&absolute_path)
             .with_context(|| format!("reading {}", absolute_path.display()))?;
@@ -1074,14 +1074,14 @@ pub fn load_js_chunks(input_root: &Path, js_list_path: &Path) -> Result<LoadedJs
                 chunk_id: chunk_name,
                 chunk_file: entry_file.clone(),
                 role: FileRole::Entry,
-                source_path: source_path.clone(),
+                source_path: entry.source_path.clone(),
             },
         }];
         chunks.push(JsChunk {
             entry_file,
             files,
             metadata: ChunkMetadata {
-                source_path: source_path.clone(),
+                source_path: entry.source_path.clone(),
             },
         });
     }
@@ -1821,19 +1821,37 @@ fn normalize_asset_path(path: &str) -> Result<String> {
     Ok(normalized)
 }
 
-pub fn parse_js_list(text: &str) -> Result<Vec<String>> {
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct JsListEntry {
+    /// Path of the file to load; also determines the stable chunk ID.
+    pub path: String,
+    /// Original path used by imports inside the extracted source.
+    pub source_path: String,
+}
+
+pub fn parse_js_list(text: &str) -> Result<Vec<JsListEntry>> {
     let mut out = Vec::new();
-    let mut seen = HashSet::new();
+    let mut seen_paths = HashSet::new();
+    let mut seen_source_paths = HashSet::new();
     for line in text.lines() {
         let trimmed = line.trim();
         if trimmed.is_empty() || trimmed.starts_with('#') {
             continue;
         }
-        let normalized = normalize_asset_path(trimmed)?;
-        if !seen.insert(normalized.clone()) {
-            bail!("JS list contains duplicate paths");
+        let (path, source_path) = match trimmed.split_once('\t') {
+            Some((path, source_path)) if !source_path.contains('\t') => (path, source_path),
+            Some(_) => bail!("JS list entry must have at most two tab-separated paths"),
+            None => (trimmed, trimmed),
+        };
+        let path = normalize_asset_path(path)?;
+        let source_path = normalize_asset_path(source_path)?;
+        if !seen_paths.insert(path.clone()) {
+            bail!("JS list contains duplicate paths: {path}");
         }
-        out.push(normalized);
+        if !seen_source_paths.insert(source_path.clone()) {
+            bail!("JS list contains duplicate source paths: {source_path}");
+        }
+        out.push(JsListEntry { path, source_path });
     }
     Ok(out)
 }
@@ -2001,6 +2019,33 @@ mod tests {
     #[test]
     fn parse_js_list_ignores_comments_and_blank_lines() {
         let parsed = parse_js_list("\n# comment\nfoo.js\nbar.js\n").expect("parse list");
-        assert_eq!(parsed, vec!["foo.js", "bar.js"]);
+        assert_eq!(
+            parsed,
+            vec![
+                JsListEntry {
+                    path: "foo.js".into(),
+                    source_path: "foo.js".into(),
+                },
+                JsListEntry {
+                    path: "bar.js".into(),
+                    source_path: "bar.js".into(),
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn parse_js_list_preserves_aliased_source_path() {
+        let parsed = parse_js_list("provider.js\t$bunfs/root/chunk.js\n").expect("parse alias");
+        assert_eq!(
+            parsed,
+            vec![JsListEntry {
+                path: "provider.js".into(),
+                source_path: "$bunfs/root/chunk.js".into(),
+            }]
+        );
+        let err = parse_js_list("provider.js\toriginal.js\noriginal.js\n")
+            .expect_err("source path must have one canonical chunk");
+        assert!(err.to_string().contains("duplicate source paths"));
     }
 }

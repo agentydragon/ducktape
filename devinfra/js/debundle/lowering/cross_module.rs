@@ -138,6 +138,7 @@ pub(super) fn collect_cross_module_imported_purities(
     artifact: &ChunkBundle,
     indexes: &ArtifactIndexes,
     chunk_export_purity: &BTreeMap<String, ChunkExportPurity>,
+    declared_pure_new_bindings: &BTreeMap<String, BTreeSet<String>>,
     excluded_chunks: &BTreeSet<ChunkId>,
     chunk_filter: Option<&BTreeSet<ChunkId>>,
 ) -> CrossModulePurities {
@@ -310,12 +311,28 @@ pub(super) fn collect_cross_module_imported_purities(
         .filter(|(chunk, _)| modules.contains_key(*chunk))
         .map(|(chunk, assertion)| (chunk.clone(), assertion.fluent_exports.clone()))
         .collect();
-    let asserted_pure_new: BTreeMap<String, BTreeSet<String>> = chunk_export_purity
+    let mut asserted_pure_new: BTreeMap<String, BTreeSet<String>> = chunk_export_purity
         .iter()
         .filter(|(_, assertion)| !assertion.pure_new_exports.is_empty())
         .filter(|(chunk, _)| modules.contains_key(*chunk))
         .map(|(chunk, assertion)| (chunk.clone(), assertion.pure_new_exports.clone()))
         .collect();
+    // A structurally selected member's trusted constructor contract follows
+    // every export of that resolved binding. The importer sees its local
+    // binding name; neither spec nor analysis needs the minified export name.
+    for (chunk, bindings) in declared_pure_new_bindings {
+        let Some(facts) = modules.get(chunk) else {
+            continue;
+        };
+        for (export, local) in &facts.exports {
+            if bindings.contains(local) {
+                asserted_pure_new
+                    .entry(chunk.clone())
+                    .or_default()
+                    .insert(export.clone());
+            }
+        }
+    }
     CrossModulePurities {
         bindings: resolve_imported_purities(&modules, &asserted_pure),
         members: resolve_asserted_member_purities(&modules, &asserted_members),

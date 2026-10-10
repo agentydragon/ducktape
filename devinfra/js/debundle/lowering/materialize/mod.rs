@@ -50,7 +50,7 @@ use output_layout::{
     ATOMIC_UNIT_CONFLICTS_REPORT, CYCLES_REPORT, OWNER_GRAPH_REPORT, SELECTOR_DIAGNOSTICS_REPORT,
 };
 use spec::{ChunkRenames, LogicalModule, MemberPurity, UnassignedMode};
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use swc_ecma_ast::*;
 
 const DEBUNDLE_PROGRESS_ENV: &str = "DUCKTAPE_DEBUNDLE_PROGRESS";
@@ -85,9 +85,6 @@ pub(super) struct ChunkContext<'a> {
     pub(super) keep_going: bool,
     pub(super) list_template_identifiers: bool,
     pub(super) report_emission: &'a ReportEmission,
-    /// Program-level cross-module purity output; this chunk's entries land
-    /// in `AnalysisHints::imported_purities` / `declared_pure_members`.
-    pub(super) cross_module_purities: &'a super::cross_module::CrossModulePurities,
     /// Vendor-plan consultation for runtime re-import construction;
     /// `None` when no vendor mark could
     /// affect construction.
@@ -150,6 +147,7 @@ pub(super) struct PreparedLogicalChunk<'a> {
     builder: ChunkPlanBuilder,
     selectors: selector_resolve::Chunk<'a>,
     selector_modules: SelectorModules,
+    declared_hints: AnalysisHints,
 }
 
 /// Plans `inputs`' chunk up to the selector resolve and projects its
@@ -290,6 +288,7 @@ pub(super) fn prepare_logical_chunk(
             builder,
             selectors,
             selector_modules,
+            declared_hints: AnalysisHints::default(),
         },
         projection,
     ))
@@ -316,11 +315,50 @@ pub(super) fn resolve_prepared_chunks(
     )
 }
 
-/// Claims what the selector resolve resolved in `prepared`'s chunk, then
-/// analyses, plans and lowers the chunk.
+/// Resolve source-selected bindings before the cross-chunk purity oracle runs.
+/// The same resolved hints are later used by this chunk's owner analysis.
+pub(super) fn claim_prepared_chunk(
+    mut prepared: PreparedLogicalChunk<'_>,
+    resolution: Resolution,
+) -> Result<PreparedLogicalChunk<'_>> {
+    let chunk_top_level_mark = prepared.runtime_ast.top_level_mark;
+    prepared.builder.claim_resolution(
+        &prepared.explicit_requests,
+        &prepared.selector_modules,
+        resolution,
+        chunk_top_level_mark,
+        prepared.context.chunk_id,
+        &prepared.runtime_ast.module.body,
+        &prepared.ast_analysis.declaration_by_name,
+    )?;
+    prepared.builder.pull_destructure_siblings(
+        &prepared.ast_analysis.destructure_siblings,
+        chunk_top_level_mark,
+    )?;
+    prepared
+        .builder
+        .adopt_bindings_of_claimed_anonymous_statements(&prepared.ast_analysis.declarations);
+    prepared.declared_hints = collect_analysis_hints(
+        &prepared.explicit_requests,
+        &prepared.builder,
+        prepared.spec.chunk_renames.get(prepared.context.chunk_id),
+    )?;
+    Ok(prepared)
+}
+
+impl PreparedLogicalChunk<'_> {
+    pub(super) fn declared_pure_new(&self) -> (&str, &BTreeSet<String>) {
+        (
+            self.context.chunk_id,
+            &self.declared_hints.declared_pure_new,
+        )
+    }
+}
+
+/// Analyze, plan and lower a chunk whose selector claims are already resolved.
 pub(super) fn finish_logical_chunk(
     prepared: PreparedLogicalChunk<'_>,
-    resolution: Resolution,
+    cross_module_purities: &super::cross_module::CrossModulePurities,
 ) -> Result<MaterializedLogicalChunk> {
     let PreparedLogicalChunk {
         context,
@@ -333,10 +371,10 @@ pub(super) fn finish_logical_chunk(
         source_path,
         ast_analysis,
         requests,
-        explicit_requests,
         mut builder,
         selectors,
-        selector_modules,
+        declared_hints,
+        ..
     } = prepared;
     let ChunkContext {
         artifact,
@@ -344,7 +382,6 @@ pub(super) fn finish_logical_chunk(
         chunk_id,
         target_dir,
         report_emission,
-        cross_module_purities,
         vendor_import_oracle,
         ..
     } = context;
@@ -357,23 +394,12 @@ pub(super) fn finish_logical_chunk(
         runtime_import_facts,
         declarations,
         declaration_by_name,
-        destructure_siblings,
         pre_existing_entry_exports,
         pre_existing_public_export_names,
+        ..
     } = ast_analysis;
-    let chunk_top_level_mark = runtime_ast.top_level_mark;
-    builder.claim_resolution(
-        &explicit_requests,
-        &selector_modules,
-        resolution,
-        chunk_top_level_mark,
-        chunk_id,
-        &runtime_ast.module.body,
-        &declaration_by_name,
-    )?;
     let structural_analysis = selectors.into_structural();
-    builder.pull_destructure_siblings(&destructure_siblings, chunk_top_level_mark)?;
-    builder.adopt_bindings_of_claimed_anonymous_statements(&declarations);
+    let chunk_top_level_mark = runtime_ast.top_level_mark;
     // Fetched before hints assembly: `local_property_effects` selects
     // the facts pass's local-effect policy, which travels in the hints.
     let owner_graph_options = chunk_analysis_options
@@ -398,8 +424,7 @@ pub(super) fn finish_logical_chunk(
         None => DynamicImportTarget::External,
     };
     let analysis_hints: AnalysisHints = {
-        let mut hints =
-            collect_analysis_hints(&explicit_requests, &builder, chunk_renames.get(chunk_id))?;
+        let mut hints = declared_hints;
         hints.imported_purities = cross_module_purities
             .bindings
             .get(chunk_id)

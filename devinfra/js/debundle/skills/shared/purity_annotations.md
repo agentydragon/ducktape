@@ -22,7 +22,9 @@ evidence that a call is pure.
 - `purity: pure` asserts that calls to one local bound function have no
   observable side effects.
 - `purity: pure_new` applies only to `new BoundClass(...)`; it does not make
-  ordinary calls to that binding pure.
+  ordinary calls to that binding pure. On a selected class in the defining
+  chunk, the contract follows its exports to importing chunks. Prefer a
+  structural `source_match` for a minified class.
 - `chunk_export_purity.<defining chunk>.pure_exports` asserts call purity for
   named exports imported from another chunk:
 

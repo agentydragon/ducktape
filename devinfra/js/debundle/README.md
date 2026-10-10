@@ -132,6 +132,14 @@ unassigned_mode:
   structuredIO: { kind: inline_in_entry }
 ```
 
+Each line of `js-files.txt` normally names one `.js` file below `inputs.root`.
+For an extracted file given a stable alias, write `alias.js<TAB>original/path.js`
+instead. Debundle loads `alias.js` as the chunk named `alias`, while resolving
+imports of `original/path.js` to that same chunk. List the original path only
+once: an aliased file must not also have its own line. This keeps hashed source
+paths out of specs without treating identical file contents as identical
+modules.
+
 The roots must be normalized relative paths and may not overlap. Several trees
 may scope to one chunk: their modules share the chunk, so no two may define the
 same module path, and their selectors resolve jointly (no two entities claim one

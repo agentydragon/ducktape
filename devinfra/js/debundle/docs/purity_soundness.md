@@ -120,6 +120,11 @@ covers the function value, not its arguments. `pure_new` is separate from
 `pure`: it covers only `new X(...)`, does not make `X(...)` pure, and still
 evaluates constructor arguments normally.
 
+When the annotated binding is selected in an analyzed defining chunk and
+exported, the same author-trusted `pure_new` contract applies to each
+importer's local binding. The export mapping is resolved after structural
+selectors; source-matched classes need no minified export-name assertion.
+
 `pure_members: [<prop>, …]` is a third trust contract on the same member,
 extending "calls of the bound Ident are pure" to "calls of
 `<binding>.<prop>(args)` for each listed property are pure when args

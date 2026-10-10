@@ -45,8 +45,8 @@ use io::{prepare_output_dir, prune_artifact_to_chunk_ids, write_chunk_report_jso
 
 use materialize::{
     ChunkContext, ChunkSpec, EmissionChunkOutputs, MaterializeLogicalChunkInputs,
-    collect_materialized_logical_chunks, finish_logical_chunk, prepare_logical_chunk,
-    resolve_prepared_chunks,
+    claim_prepared_chunk, collect_materialized_logical_chunks, finish_logical_chunk,
+    prepare_logical_chunk, resolve_prepared_chunks,
 };
 
 use util::normalize_optional_relative_dir;
@@ -241,14 +241,6 @@ pub fn materialize_logical_modules(
         &selected_chunk_ids,
         &full_swap_chunk_ids,
     )?;
-    let cross_module_purities = cross_module::collect_cross_module_imported_purities(
-        &artifact,
-        &artifact_indexes,
-        chunk_export_purity,
-        &full_swap_chunk_ids,
-        Some(&cross_module_chunk_closure),
-    );
-
     let artifact_ref: &ChunkBundle = &artifact;
     // Vendor consultation for lowering's import construction: runtime re-imports whose source
     // directive targets a partially / bundled-partially swapped chunk
@@ -283,7 +275,6 @@ pub fn materialize_logical_modules(
                                 keep_going: options.keep_going,
                                 list_template_identifiers: options.list_template_identifiers,
                                 report_emission: &options.report_emission,
-                                cross_module_purities: &cross_module_purities,
                                 vendor_import_oracle: vendor_import_oracle.as_ref(),
                             },
                             spec: ChunkSpec {
@@ -301,13 +292,41 @@ pub fn materialize_logical_modules(
         .collect::<Result<Vec<_>>>()?;
     let (prepared, projections): (Vec<_>, Vec<_>) = prepared.into_iter().unzip();
     let resolutions = resolve_prepared_chunks(&prepared, projections)?;
-    let chunk_results = GLOBALS
+    let claimed = GLOBALS
         .with(|globals| {
             prepared
                 .into_par_iter()
                 .zip(resolutions)
                 .map(|(chunk, resolution)| {
-                    GLOBALS.set(globals, || finish_logical_chunk(chunk, resolution))
+                    GLOBALS.set(globals, || claim_prepared_chunk(chunk, resolution))
+                })
+                .collect::<Vec<_>>()
+        })
+        .into_iter()
+        .collect::<Result<Vec<_>>>()?;
+    let declared_pure_new = claimed
+        .iter()
+        .map(|chunk| {
+            let (chunk_id, bindings) = chunk.declared_pure_new();
+            (chunk_id.to_string(), bindings.clone())
+        })
+        .collect();
+    let cross_module_purities = cross_module::collect_cross_module_imported_purities(
+        &artifact,
+        &artifact_indexes,
+        chunk_export_purity,
+        &declared_pure_new,
+        &full_swap_chunk_ids,
+        Some(&cross_module_chunk_closure),
+    );
+    let chunk_results = GLOBALS
+        .with(|globals| {
+            claimed
+                .into_par_iter()
+                .map(|chunk| {
+                    GLOBALS.set(globals, || {
+                        finish_logical_chunk(chunk, &cross_module_purities)
+                    })
                 })
                 .collect::<Vec<_>>()
         })

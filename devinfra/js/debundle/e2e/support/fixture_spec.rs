@@ -663,6 +663,8 @@ pub struct FixtureOpts<'a> {
     /// (post-run runtime siblings), these are debundled artifact chunks the
     /// transform analyzes — e.g. an import target for cross-chunk tests.
     pub extra_chunks: &'a [(&'a str, &'a str)],
+    /// Stable chunk ID to original source path, for aliased extraction inputs.
+    pub source_paths: &'a [(&'a str, &'a str)],
     /// Extra chunks to process, as `(chunk_id, logical modules)`. They must
     /// also appear in `extra_chunks`; used for cross-chunk emission tests.
     pub extra_chunk_logical_modules: &'a [(&'a str, Vec<LogicalModuleEntry>)],
@@ -691,6 +693,7 @@ impl<'a> FixtureOpts<'a> {
             local_property_effects: false,
             extra_files: &[],
             extra_chunks: &[],
+            source_paths: &[],
             extra_chunk_logical_modules: &[],
             chunk_export_purity: &[],
         }
@@ -700,6 +703,19 @@ impl<'a> FixtureOpts<'a> {
     /// e.g. an import target whose exports feed the cross-module purity oracle.
     pub fn with_extra_chunks(mut self, extra_chunks: &'a [(&'a str, &'a str)]) -> Self {
         self.extra_chunks = extra_chunks;
+        self
+    }
+
+    pub fn with_extra_chunk_logical_modules(
+        mut self,
+        modules: &'a [(&'a str, Vec<LogicalModuleEntry>)],
+    ) -> Self {
+        self.extra_chunk_logical_modules = modules;
+        self
+    }
+
+    pub fn with_source_paths(mut self, source_paths: &'a [(&'a str, &'a str)]) -> Self {
+        self.source_paths = source_paths;
         self
     }
 

@@ -1125,6 +1125,12 @@ output, the Vite ecosystem, and most React/Vue/Angular SPAs.
   invoke a prototype setter); function-call purity does not establish that
   `new` has no observable effects.
 
+  A `purity: "pure_new"` annotation on a defining chunk's selected class
+  member also follows that binding through its exports to importers. A
+  `source_match` can select the class by structure, so this form does not
+  require the minified export name in the spec. Selector resolution runs
+  before the cross-module purity oracle for this reason.
+
   `chunk_export_purity.<chunk>.pure_members` is the member-call form, for
   CJS-interop namespace exports whose factories are reached as member
   calls at the importer (`ns.forwardRef(...)`). Keyed `export name →
