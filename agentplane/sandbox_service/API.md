@@ -158,7 +158,9 @@ readable but are not polled until their binding is established by a verified han
   submission is recorded in the `sandbox_commands` database before the runner is contacted, keyed by
   Session and command ID with the caller's identity. An exact retry by the same caller returns the
   retained receipt without contacting the runner once the admission is known, whether from a direct
-  reply or from history ingestion; a different command or caller under the same ID is `ALREADY_EXISTS`.
+  reply or from admission reconciliation; a different command or caller under the same ID is `ALREADY_EXISTS`.
+  Admission reconciliation reads the journal of each running Session with a pending submission, from
+  that Session's own cursor, every 15 seconds; it copies no history and runs without `ingest_history`.
   The service picks the replay cursor itself and ignores `follow`. For a legacy caller-chosen runner ID
   nothing is recorded: specify a native `Follow` cursor before the possible admission when reconciling
   an uncertain submission. Once a Sandbox's runner has agreed `commands` on the

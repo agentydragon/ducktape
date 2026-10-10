@@ -45,11 +45,11 @@ py_library(
     srcs = ["ingestion.py"],
     deps = [
         ":store",
-        "//agentplane:grpc_options",
         "//agentplane/protocol:event_log_pb2",
         "//agentplane/runner:client",
         "//agentplane/runner:errors",
         "//agentplane/runner:protocol_pb2",
+        "//agentplane/sandbox_service:admission_reconciliation",
         "//agentplane/sandbox_service:destinations",
         "//agentplane/sandbox_service:models",
         "//agentplane/sandbox_service:protocol_pb2",

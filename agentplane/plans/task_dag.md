@@ -717,15 +717,11 @@ flowchart TD
 
 ### `HISTORY_WRITE_HANDOFF` — the History Service ingester takes over
 
-**Blocked on the History Service placing retention holds and on command admission
-reconciling without the Sandbox Service ingester.** The History Service ingester writes testing's
+**Blocked on the History Service placing retention holds.** The History Service ingester writes testing's
 history ([History Service](../history_service/README.md#ingester)). What remains is staging: set
 `history_writer` to the History Service and verify new entries are committed by it alone. Until it
 holds every Session, nothing keeps a Sandbox from being deleted before the History Service has copied its
-journal, unless the operator accepts that. Pending command submissions are settled from the runner
-journal only by the Sandbox Service ingester; with it off (testing today) only the runner's direct
-reply records them, so a lost reply leaves the submission pending. The runner dial-out lane owns
-moving that reconciliation off ingestion. Rollback: set it back; the tables are the same.
+journal, unless the operator accepts that. Rollback: set it back; the tables are the same.
 
 ### `SANDBOX_LOCAL_HISTORY_RETIRE` — remove the local store
 

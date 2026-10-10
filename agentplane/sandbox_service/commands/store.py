@@ -201,6 +201,16 @@ class SubmissionStore:
                 row.rejection = reason
             return Submission.from_row(row)
 
+    async def read_pending_sessions(self) -> set[UUID]:
+        """Sessions with a submission still awaiting admission evidence."""
+        async with self._sessions() as session:
+            rows = await session.scalars(
+                select(db.CommandSubmission.session_id)
+                .where(db.CommandSubmission.state == SubmissionState.PENDING_ADMISSION)
+                .distinct()
+            )
+            return set(rows)
+
     async def read_reconciled_through(self, session_id: UUID) -> int:
         """The last journal cursor reconciled; zero before the first."""
         async with self._sessions() as session:

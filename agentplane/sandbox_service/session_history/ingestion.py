@@ -14,15 +14,15 @@ import grpc
 from kubernetes_asyncio import client as k8s_client
 from sqlalchemy.exc import SQLAlchemyError
 
-from agentplane.grpc_options import grpc_channel_option_kvps
 from agentplane.protocol import event_log_pb2
 from agentplane.runner import protocol_pb2 as runner_pb2
 from agentplane.runner.client import RunnerClient
 from agentplane.runner.errors import RunnerError, StreamClosedError
+from agentplane.sandbox_service.admission_reconciliation import journal_reader
 from agentplane.sandbox_service.commands.store import SubmissionConflictError, SubmissionStore
 from agentplane.sandbox_service.destinations import DestinationResolver, DestinationUnavailableError
 from agentplane.sandbox_service.models import SandboxNotFoundError
-from agentplane.sandbox_service.protocol_pb2 import SandboxDestination, SessionFeedState
+from agentplane.sandbox_service.protocol_pb2 import SessionFeedState
 from agentplane.sandbox_service.session_history.store import HistoryConflictError, Store
 from agentplane.sandbox_service.session_registry import HistoryLocator, SessionRegistry
 from util.agent_sandbox import OperatingMode
@@ -115,27 +115,15 @@ class HistoryIngester:
         self.concurrency = concurrency
 
     async def copy_one(self, locator: HistoryLocator) -> None:
-        view = await self.destinations.inventory.get(locator.sandbox_name)
-        if view.uid != str(locator.sandbox_uid):
-            return  # old incarnation; never bind its journal to a replacement Pod
-        destination = SandboxDestination(
-            sandbox=locator.sandbox_name, sandbox_uid=str(locator.sandbox_uid), owner=view.service_account
-        )
-        endpoint = await self.destinations.resolve(destination, writes=False)
-        channel = grpc.aio.insecure_channel(
-            endpoint.target, options=grpc_channel_option_kvps(self.runner_grpc_channel_options)
-        )
-        client = RunnerClient(channel)
-        try:
-            sessions = await asyncio.wait_for(client.list_sessions(), timeout=15)
-            if not any(row.session_id == locator.runner_session_id for row in sessions):
-                return  # reservation without a runner Open; no retry or false failure
+        async with journal_reader(
+            self.destinations, locator, runner_grpc_channel_options=self.runner_grpc_channel_options
+        ) as client:
+            if client is None:
+                return
             # Bound each runner read and DB batch without imposing a lifetime on the
             # runner stream. A timeout can leave a committed prefix for the next cycle.
             async with asyncio.timeout(60):
                 await copy_confirmed_prefix(self.store, self.submissions, locator, client)
-        finally:
-            await client.close()
 
     async def cycle(self) -> None:
         sandboxes = await self.destinations.inventory.list_sandboxes()

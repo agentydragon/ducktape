@@ -15,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 
 from agentplane.runner_channel import protocol_pb2_grpc
 from agentplane.sandbox_service.action_policy import ActionPolicyBindings
+from agentplane.sandbox_service.admission_reconciliation import AdmissionReconciler
 from agentplane.sandbox_service.channel_delivery import ChannelDelivery
 from agentplane.sandbox_service.commands.connections import ConnectionStore
 from agentplane.sandbox_service.commands.dispatch import DispatchStore
@@ -178,6 +179,15 @@ async def serve_with_engines(
             reconcile = asyncio.create_task(
                 SandboxController(provisioning, teardown).run(), name="sandbox-provisioning"
             )
+            admissions = asyncio.create_task(
+                AdmissionReconciler(
+                    submissions,
+                    sessions,
+                    resources.destinations,
+                    runner_grpc_channel_options=settings.runner_grpc_channel_options,
+                ).run(),
+                name="sandbox-admission-reconciliation",
+            )
             history = (
                 asyncio.create_task(
                     HistoryIngester(
@@ -199,9 +209,10 @@ async def serve_with_engines(
             finally:
                 await server.stop(grace=5)
                 await channel_server.stop(grace=5)
-                reconcile.cancel()
-                with suppress(asyncio.CancelledError):
-                    await reconcile
+                for task in (reconcile, admissions):
+                    task.cancel()
+                    with suppress(asyncio.CancelledError):
+                        await task
                 if history is not None:
                     history.cancel()
                     with suppress(asyncio.CancelledError):

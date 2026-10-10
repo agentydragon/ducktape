@@ -22,6 +22,7 @@ from agentplane.runner import protocol_pb2 as runner_pb2
 from agentplane.runner.client import RunnerClient
 from agentplane.runner.errors import RunnerError, StreamClosedError
 from agentplane.sandbox_service import protocol_pb2, wire
+from agentplane.sandbox_service.admission_reconciliation import AdmissionReconciler
 from agentplane.sandbox_service.channel_delivery import ChannelDelivery
 from agentplane.sandbox_service.client import ReconnectRequiredError, SandboxServiceClient, SealedError, ServiceError
 from agentplane.sandbox_service.commands import db as commands_db
@@ -329,13 +330,15 @@ async def test_public_session_command_survives_a_lost_reply(
         await lost.closed.wait()
         assert (await submissions.read(session_id, "durable")).state == SubmissionState.PENDING_ADMISSION
 
-        # The runner did journal it; ingestion finds the admission and settles the submission.
+        # The runner did journal it. Reconciliation finds the admission and settles the submission
+        # without copying the journal into history.
         receipt = admission(command, 1)
         peer.history[physical] = [receipt]
-        [locator] = await sessions.runnable_locators(SANDBOX_NAMESPACE, [SANDBOX])
-        async with grpc.aio.insecure_channel(f"127.0.0.1:{peer.port}") as channel:
-            assert await copy_confirmed_prefix(store, submissions, locator, RunnerClient(channel)) == 1
+        await AdmissionReconciler(submissions, sessions, resources.destinations, runner_grpc_channel_options={}).cycle()
         await (await peer.attachments.get()).closed.wait()
+        assert (await submissions.read(session_id, "durable")).state == SubmissionState.ADMITTED
+        assert await submissions.read_pending_sessions() == set()
+        assert (await store.read(session_id, limit=1))[0] == 0
 
         assert await runner.command(str(session_id), command, after_cursor=0) == receipt
         assert peer.attachments.empty()  # an admitted retry needs no runner

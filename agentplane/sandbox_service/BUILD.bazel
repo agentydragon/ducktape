@@ -171,6 +171,7 @@ py_library(
     ],
     deps = [
         ":action_policy",
+        ":admission_reconciliation",
         ":channel_delivery",
         ":controller",
         ":destinations",
@@ -510,6 +511,7 @@ py_test(
     size = "medium",
     srcs = ["test_grpc_api.py"],
     deps = [
+        ":admission_reconciliation",
         ":channel_delivery",
         ":client",
         ":conftest",
@@ -924,6 +926,27 @@ py_test(
         "@pypi//protobuf",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
+    name = "admission_reconciliation",
+    srcs = ["admission_reconciliation.py"],
+    deps = [
+        ":destinations",
+        ":models",
+        ":session_registry",
+        "//agentplane:grpc_options",
+        "//agentplane/protocol:event_log_pb2",
+        "//agentplane/runner:client",
+        "//agentplane/runner:errors",
+        "//agentplane/sandbox_service:protocol_pb2",
+        "//agentplane/sandbox_service/commands:store",
+        "//util:agent_sandbox",
+        "@pypi//grpcio",
+        "@pypi//kubernetes_asyncio",
+        "@pypi//protobuf",
         "@pypi//sqlalchemy",
     ],
 )

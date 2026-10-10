@@ -110,6 +110,8 @@ class CommandSubmission(Base):
         UniqueConstraint(
             "attempt_sandbox_uid", "attempt_runner_session_id", "command_id", name="submission_attempt_destination"
         ),
+        # Admission reconciliation polls for these; settled submissions accumulate.
+        Index("ix_command_submission_pending", "session_id", postgresql_where=text("state = 'pending_admission'")),
     )
 
     session_id: Mapped[UUID] = mapped_column(primary_key=True)
