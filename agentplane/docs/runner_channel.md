@@ -106,6 +106,82 @@ message Heartbeat {}
   connection's maximum age). The runner logs the status and reconnects, except that
   `PERMISSION_DENIED` backs off to its maximum interval.
 
+## Event following
+
+Status: **proposed, under review.** Not built; until it is, every runner's Events are read through
+`Attach`.
+
+A runner that lists `events` in `Hello` serves its journal over the channel, and the Sandbox Service
+then reads that Sandbox's journals only that way: `FollowSession` for every subscriber, and its own
+admission reconciliation. The journal stays the buffer for every subscriber. Nothing is
+acknowledged to the runner and the runner deletes nothing on a read; a subscriber's progress is the
+cursor it committed, and it resumes from there.
+
+```protobuf
+service RunnerChannel {
+  rpc Connect(stream RunnerFrame) returns (stream ServiceFrame);
+  // Opened by the runner when asked by `OpenFollow`; carries epoch and follow ID in metadata.
+  rpc Follow(stream FollowFrame) returns (google.protobuf.Empty);
+}
+
+message ServiceFrame {
+  oneof frame {
+    // ...
+    OpenFollow open_follow = 4;
+    CloseFollow close_follow = 5;
+  }
+}
+
+message OpenFollow {
+  string follow_id = 1;               // chosen by the service, unique per connection epoch
+  string session_id = 2;              // the runner's Session ID
+  uint64 after_cursor = 3;
+}
+
+message CloseFollow {
+  string follow_id = 1;
+}
+
+message FollowFrame {
+  oneof frame {
+    ducktape.agentplane.runner.v1.Attached attached = 1;  // first frame: snapshot and last cursor
+    ducktape.agentplane.protocol.v1.EventEntry entry = 2; // cursors strictly increasing by one
+    uint64 sealed = 3;                // terminal: journal sealed at this cursor
+    FollowRefused refused = 4;        // terminal: unknown Session or cursor beyond the journal
+  }
+}
+```
+
+1. **Opening.** The replica that owns the connection sends `OpenFollow`; the runner opens one
+   `Follow` RPC on the same HTTP/2 connection and streams the journal after `after_cursor`, then
+   live entries. Each follow is its own HTTP/2 stream, so gRPC's per-stream flow control bounds
+   what is in flight: a slow reader stalls its own follow, never `Connect` or another follow. The
+   runner reads the journal in pages as the stream drains and holds no unbounded queue. A
+   connection carries at most 64 follows; past that, `OpenFollow` is refused and the caller gets
+   `UNAVAILABLE`.
+2. **Ending.** `CloseFollow`, the subscriber going away, the follow's lease (`follow_lease_s`,
+   unchanged) or a superseded epoch ends the follow, and the subscriber resumes from its committed
+   cursor. Ending a follow is a transport event only: it never interrupts a turn or stops a harness,
+   and a runner never reads a cancelled `Follow` as a command.
+3. **Cross-replica.** A `FollowSession` call can reach a replica that does not own the connection.
+   That replica reads the owner from `runner_connection`, opens an internal `RelayFollow` RPC on
+   the owner's Pod address, and passes the stream through unchanged; the owner checks the epoch
+   the relay names and refuses a superseded one. Replicas authenticate each other with their own
+   ServiceAccount token, and a network policy admits the internal port only from Sandbox Service
+   Pods. The relay adds one hop and no buffering of its own.
+4. **Admission reconciliation.** The `AdmissionReconciler` follows a channel-routed Session's journal
+   through the same path, from its reconciled cursor, and advances that cursor after committing
+   each batch. Positive admission evidence still never regresses.
+5. **Errors.** Entries arrive with consecutive cursors; a gap, a regression below the requested
+   cursor or a frame after a terminal one fails the follow, and the subscriber's `Store.append`
+   refuses a conflicting replay. `sealed` and `refused` map to `FollowSessionResponse.sealed` and a
+   `DestinationUnavailable` status.
+
+Rejected for cross-replica follows: making the runner open a second connection to the requesting
+replica, which the Service's load balancing cannot address; redirecting the subscriber to the
+owner, which puts replica routing into every client; and passing entries through Postgres, which
+would make the Sandbox Service store history.
+
 ## Prior art and alternatives
 
 Two harnesses already ship a dial-out control channel, and the choices above borrow from both:
