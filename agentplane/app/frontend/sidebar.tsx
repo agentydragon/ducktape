@@ -15,6 +15,7 @@ import { type JSX, useEffect, useRef, useState, type PointerEvent } from "react"
 import { Link, useLocation, useMatch, useNavigate } from "react-router";
 
 import { archiveThread, displayableError, type SandboxView, type ThreadView } from "./client";
+import { ActionsSidebarSection } from "./actions/affordance";
 import { LiveStatus, useRequiredThreadsLive, type Live, type ThreadsSnapshot } from "./live";
 import { MarkGlyph } from "./mark_glyph";
 import { sandboxStatusDetail, sandboxSummary } from "./sandbox_status";
@@ -418,50 +419,53 @@ function SidebarView({
         </div>
       </div>
       <div className="agentplane-sidebar-body">
-        <LiveStatus live={live} />
-        {data?.updates_connected === false && (
-          <Alert color="orange" p="xs">
-            Thread updates disconnected; showing the last snapshot.
-          </Alert>
-        )}
-        {error && (
-          <Text c="red" size="xs" px={4}>
-            {error}
-          </Text>
-        )}
-        {data === null && !error && (
-          <Text c="dimmed" size="xs" px={4}>
-            Loading threads…
-          </Text>
-        )}
-        {data !== null && groups.length === 0 && (
-          <Text c="dimmed" size="xs" px={4}>
-            No threads yet.
-          </Text>
-        )}
-        {groups.map((group) => (
-          <ThreadGroupSection
-            key={group.sandboxName}
-            group={group}
-            fresh={fresh}
-            current={current}
-            currentSandbox={sandboxRoute?.params.name === group.sandboxName}
-            onNavigate={closeIfPhone}
-            onOpen={openThread}
-            onToggleArchived={(thread) => void toggleArchived(thread)}
-          />
-        ))}
-        {threads.length > 0 && (
-          <div className="agentplane-sidebar-archived-toggle">
-            <Text size="xs">Show archived ({archived})</Text>
-            <Switch
-              size="xs"
-              checked={includeArchived}
-              onChange={(event) => setIncludeArchived(event.currentTarget.checked)}
-              aria-label="Show archived threads"
+        <div className="agentplane-sidebar-thread-list">
+          <LiveStatus live={live} />
+          {data?.updates_connected === false && (
+            <Alert color="orange" p="xs">
+              Thread updates disconnected; showing the last snapshot.
+            </Alert>
+          )}
+          {error && (
+            <Text c="red" size="xs" px={4}>
+              {error}
+            </Text>
+          )}
+          {data === null && !error && (
+            <Text c="dimmed" size="xs" px={4}>
+              Loading threads…
+            </Text>
+          )}
+          {data !== null && groups.length === 0 && (
+            <Text c="dimmed" size="xs" px={4}>
+              No threads yet.
+            </Text>
+          )}
+          {groups.map((group) => (
+            <ThreadGroupSection
+              key={group.sandboxName}
+              group={group}
+              fresh={fresh}
+              current={current}
+              currentSandbox={sandboxRoute?.params.name === group.sandboxName}
+              onNavigate={closeIfPhone}
+              onOpen={openThread}
+              onToggleArchived={(thread) => void toggleArchived(thread)}
             />
-          </div>
-        )}
+          ))}
+          {threads.length > 0 && (
+            <div className="agentplane-sidebar-archived-toggle">
+              <Text size="xs">Show archived ({archived})</Text>
+              <Switch
+                size="xs"
+                checked={includeArchived}
+                onChange={(event) => setIncludeArchived(event.currentTarget.checked)}
+                aria-label="Show archived threads"
+              />
+            </div>
+          )}
+        </div>
+        <ActionsSidebarSection onNavigate={closeIfPhone} />
       </div>
       <div className="agentplane-sidebar-footer">
         <div className="agentplane-sidebar-debug">
@@ -477,10 +481,10 @@ function SidebarView({
             <IconBox size={15} />
           </ActionIcon>
         </Tooltip>
-        <Tooltip label="Actions" withArrow>
+        <Tooltip label="All actions" withArrow>
           <ActionIcon
-            variant={location.pathname === "/actions" ? "light" : "subtle"}
-            aria-label="Actions"
+            variant={location.pathname.startsWith("/actions") ? "light" : "subtle"}
+            aria-label="All actions"
             onClick={() => goTo("/actions")}
           >
             <IconListCheck size={15} />

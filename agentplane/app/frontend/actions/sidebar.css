@@ -1,0 +1,112 @@
+.agentplane-actions-sidebar {
+  flex: 0 0 auto;
+  max-height: min(42dvh, 28rem);
+  border-top: 1px solid var(--mantine-color-default-border);
+  background: var(--mantine-color-body);
+}
+
+.agentplane-actions-sidebar-toggle {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  min-height: 38px;
+  padding: 8px 12px;
+  color: var(--mantine-color-dimmed);
+  text-align: left;
+}
+
+.agentplane-actions-sidebar-toggle:hover,
+.agentplane-actions-sidebar-toggle:focus-visible {
+  background: var(--mantine-color-default-hover);
+  color: var(--mantine-color-text);
+  outline: none;
+}
+
+.agentplane-actions-sidebar-content {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: calc(min(42dvh, 28rem) - 38px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 0 8px 8px;
+}
+
+.agentplane-actions-sidebar-request {
+  border: 1px solid var(--mantine-color-default-border);
+  border-radius: var(--mantine-radius-sm);
+  background: var(--mantine-color-body);
+}
+
+.agentplane-actions-sidebar-request-heading {
+  display: flex;
+  align-items: flex-start;
+  gap: 4px;
+  padding: 6px;
+}
+
+.agentplane-actions-sidebar-expand {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  margin-top: 1px;
+  border-radius: var(--mantine-radius-sm);
+  color: var(--mantine-color-dimmed);
+}
+
+.agentplane-actions-sidebar-expand:hover,
+.agentplane-actions-sidebar-expand:focus-visible {
+  background: var(--mantine-color-default-hover);
+  color: var(--mantine-color-text);
+  outline: none;
+}
+
+.agentplane-actions-sidebar-request-label {
+  flex: 1;
+  min-width: 0;
+}
+
+.agentplane-actions-sidebar-name,
+.agentplane-actions-sidebar-details {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--mantine-primary-color-filled);
+  text-decoration: none;
+}
+
+.agentplane-actions-sidebar-name {
+  max-width: 100%;
+  font-family: var(--mantine-font-family-monospace);
+  font-size: var(--mantine-font-size-xs);
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.agentplane-actions-sidebar-name:hover,
+.agentplane-actions-sidebar-details:hover {
+  text-decoration: underline;
+}
+
+.agentplane-actions-sidebar-preview {
+  max-height: min(32dvh, 20rem);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  border-top: 1px solid var(--mantine-color-default-border);
+  padding: 8px;
+}
+
+.agentplane-actions-sidebar-preview .agentplane-command-call,
+.agentplane-actions-sidebar-preview .agentplane-command-call-command {
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+
+.agentplane-actions-sidebar-details {
+  flex: 0 0 auto;
+  font-size: var(--mantine-font-size-xs);
+  font-weight: 600;
+}

@@ -75,20 +75,6 @@
   flex: 0 0 auto;
 }
 
-.action-affordance-notice {
-  flex: 0 0 auto;
-  border-color: var(--mantine-color-yellow-5);
-}
-
-/* Keep a long SSH command (or several approvals) inside the composer instead of letting it
-   grow beyond the full-height thread shell. The heading and Review/Hide control stay visible. */
-.action-affordance-details:not([hidden]) {
-  max-height: min(45dvh, 30rem);
-  overflow-y: auto;
-  overscroll-behavior: contain;
-  scrollbar-gutter: stable;
-}
-
 @media (min-width: 48em) {
   .action-decision-button {
     min-width: 7rem;

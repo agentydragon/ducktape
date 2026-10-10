@@ -165,7 +165,6 @@ ts_library(
         "//:node_modules/@types/react",
         "//:node_modules/date-fns",
         "//:node_modules/react",
-        "//agentplane/app/frontend:actions_affordance",
         "//agentplane/app/frontend:client",
         "//agentplane/app/frontend:disclosure",
         "//agentplane/app/frontend:live",

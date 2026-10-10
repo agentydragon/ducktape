@@ -4,8 +4,8 @@ import IconMenu2 from "@tabler/icons-react/dist/esm/icons/IconMenu2.mjs";
 import { type JSX, useCallback, useEffect, useMemo, useState } from "react";
 import { HashRouter, Route, Routes, useLocation, useMatch, useNavigate, useParams } from "react-router";
 
-import { ActionRequests } from "./actions/requests";
 import { ActionAffordance } from "./actions/affordance";
+import { ActionRequestDetail } from "./actions/detail";
 import { ActionHistory } from "./actions/history";
 import { ConnectionConsent } from "./consent";
 import { SandboxPage } from "./sandbox_page";
@@ -87,6 +87,10 @@ function ActionsPage(): JSX.Element {
   );
 }
 
+function ActionRequestRoute(): JSX.Element {
+  return <ActionRequestDetail requestId={required(useParams().requestId, "requestId")} />;
+}
+
 function ThreadRoute({ settingsOpen }: { settingsOpen: boolean }): JSX.Element {
   const threadId = required(useParams().threadId, "threadId");
   return <ProjectedSession key={threadId} threadId={threadId} settingsOpen={settingsOpen} />;
@@ -138,7 +142,7 @@ function AppRoutes(): JSX.Element {
       <Route path="/" element={<ThreadsLanding />} />
       <Route path="/sandboxes" element={<SandboxListRoute />} />
       <Route path="/actions" element={<ActionsPage />} />
-      <Route path="/actions/:requestId" element={<ActionRequests />} />
+      <Route path="/actions/:requestId" element={<ActionRequestRoute />} />
       <Route path="/connection-enrollments/:handle" element={<ConsentRoute />} />
       <Route path="/sandboxes/:name" element={<SandboxRoute />} />
       <Route path="/threads/:threadId" element={<ThreadRoute settingsOpen={settingsTab !== null} />} />
@@ -146,36 +150,40 @@ function AppRoutes(): JSX.Element {
     </Routes>
   );
   return (
-    <div className="agentplane-shell">
-      <Sidebar
-        settingsOpen={settingsTab !== null}
-        onOpenSettings={() => setSettingsTab("oauth-clients")}
-        open={sidebarOpen}
-        onClose={() => setSidebarOpen(false)}
-      />
-      <div className={`agentplane-shell-main${fullBleed ? " agentplane-shell-fullbleed" : ""}`}>
-        <div className="agentplane-topbar">
-          <ActionIcon variant="subtle" aria-label="Toggle navigation" onClick={() => setSidebarOpen((open) => !open)}>
-            <IconMenu2 size={18} />
-          </ActionIcon>
-          <div className="agentplane-topbar-title" ref={titleRef} />
-          <div className="agentplane-topbar-actions" ref={actionsRef} />
-        </div>
-        <div className={`agentplane-shell-main-content${fullBleed ? " agentplane-shell-fullbleed" : ""}`}>
-          <TopbarContext.Provider value={topbarSlots}>
-            <ActionAffordance>
+    <TopbarContext.Provider value={topbarSlots}>
+      <ActionAffordance>
+        <div className="agentplane-shell">
+          <Sidebar
+            settingsOpen={settingsTab !== null}
+            onOpenSettings={() => setSettingsTab("oauth-clients")}
+            open={sidebarOpen}
+            onClose={() => setSidebarOpen(false)}
+          />
+          <div className={`agentplane-shell-main${fullBleed ? " agentplane-shell-fullbleed" : ""}`}>
+            <div className="agentplane-topbar">
+              <ActionIcon
+                variant="subtle"
+                aria-label="Toggle navigation"
+                onClick={() => setSidebarOpen((open) => !open)}
+              >
+                <IconMenu2 size={18} />
+              </ActionIcon>
+              <div className="agentplane-topbar-title" ref={titleRef} />
+              <div className="agentplane-topbar-actions" ref={actionsRef} />
+            </div>
+            <div className={`agentplane-shell-main-content${fullBleed ? " agentplane-shell-fullbleed" : ""}`}>
               {threadRoute !== null ? <SandboxesLiveProvider>{routes}</SandboxesLiveProvider> : routes}
-            </ActionAffordance>
-          </TopbarContext.Provider>
+            </div>
+          </div>
+          <Settings
+            opened={settingsTab !== null}
+            tab={settingsTab ?? "oauth-clients"}
+            onTabChange={setSettingsTab}
+            onClose={() => setSettingsTab(null)}
+          />
         </div>
-      </div>
-      <Settings
-        opened={settingsTab !== null}
-        tab={settingsTab ?? "oauth-clients"}
-        onTabChange={setSettingsTab}
-        onClose={() => setSettingsTab(null)}
-      />
-    </div>
+      </ActionAffordance>
+    </TopbarContext.Provider>
   );
 }
 

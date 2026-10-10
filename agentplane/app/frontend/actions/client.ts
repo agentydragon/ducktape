@@ -30,6 +30,7 @@ export const actionGroupService: ActionGroupService = {
 
 export interface ActionService {
   list(): Promise<ActionRequestView[]>;
+  get?(requestId: string): Promise<ActionRequestView>;
   history?(cursor?: string): Promise<ActionHistoryPage>;
   decide(request: ActionRequestView, verdict: Verdict): Promise<ActionRequestView>;
 }
@@ -37,6 +38,14 @@ export interface ActionService {
 export const actionService: ActionService = {
   async list(): Promise<ActionRequestView[]> {
     const { data, error, response } = await api.GET("/actions");
+    if (error) throw new Error(httpError(response, error));
+    return data;
+  },
+
+  async get(requestId: string): Promise<ActionRequestView> {
+    const { data, error, response } = await api.GET("/actions/{request_id}", {
+      params: { path: { request_id: requestId } },
+    });
     if (error) throw new Error(httpError(response, error));
     return data;
   },

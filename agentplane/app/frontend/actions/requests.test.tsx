@@ -1,20 +1,12 @@
 // @vitest-environment happy-dom
 
-import { act, type JSX } from "react";
-import { MemoryRouter, useLocation } from "react-router";
+import { act } from "react";
 import { describe, expect, it, vi } from "vitest";
 
 import { STALE_AFTER_MS } from "../stream_status";
-import { TopbarContext } from "../topbar";
 import { actionService, type ActionRequestView, type ActionService } from "./client";
 import { ActionRequests, stateLabel } from "./requests";
-import { ActionAffordance, ComposerPendingActions } from "./affordance";
 import { button, mount, render, request, SSH_EXEC_ARGUMENTS, sshExec, unmountLast } from "./testing";
-
-function CurrentRoute(): JSX.Element {
-  const location = useLocation();
-  return <div data-current-path={location.pathname} />;
-}
 
 describe("ActionRequests", () => {
   it("shows structured list errors without an empty-state claim", async () => {
@@ -233,128 +225,6 @@ describe("ActionRequests", () => {
       expect(container.textContent).toContain("Pending (1)");
     } finally {
       vi.useRealTimers();
-      vi.unstubAllGlobals();
-    }
-  });
-});
-
-describe("global Action affordance", () => {
-  it("keeps incoming approvals modeless and collapsed, and shares decisions with the top bar", async () => {
-    const stream: { current?: EventTarget } = {};
-    const close = vi.fn();
-    class Stream extends EventTarget {
-      close = close;
-      constructor(url: string) {
-        super();
-        expect(url).toBe("/actions/stream?state=decision_pending");
-        stream.current = this;
-      }
-    }
-    vi.stubGlobal("EventSource", Stream);
-    const decide = vi.spyOn(actionService, "decide").mockImplementation(async (row, verdict) => ({
-      ...row,
-      state: verdict === "allow" ? "allowed" : "denied",
-      version: row.version + 1,
-    }));
-    const send = async (rows: ActionRequestView[]): Promise<void> => {
-      await act(async () =>
-        stream.current?.dispatchEvent(new MessageEvent("snapshot", { data: JSON.stringify(rows) }))
-      );
-    };
-    const topbar = document.createElement("div");
-    document.body.append(topbar);
-    try {
-      const container = await mount(
-        <MemoryRouter initialEntries={["/threads/test-thread"]}>
-          <TopbarContext.Provider value={{ title: null, actions: topbar }}>
-            <ActionAffordance>
-              <CurrentRoute />
-              <textarea aria-label="Composer" />
-              <ComposerPendingActions />
-            </ActionAffordance>
-          </TopbarContext.Provider>
-        </MemoryRouter>
-      );
-      const first = request("decision_pending", 1);
-      const second = request("decision_pending", 2);
-      const composer = container.querySelector<HTMLTextAreaElement>('textarea[aria-label="Composer"]');
-      if (!composer) throw new Error("missing composer");
-      composer.focus();
-      await send([first]);
-      expect(document.activeElement).toBe(composer);
-      expect(container.querySelector(".action-affordance-notice")?.textContent).toContain(
-        "1 action waiting for review"
-      );
-      expect(container.querySelector('.action-affordance-notice button[aria-expanded="false"]')).not.toBeNull();
-      expect(container.querySelector(".action-affordance-notice .agentplane-code-block")).toBeNull();
-      expect(document.querySelector('[aria-modal="true"]')).toBeNull();
-      expect(document.querySelector(".mantine-Drawer-root")).toBeNull();
-      expect(close).not.toHaveBeenCalled();
-
-      // Only a registered, losslessly rendered call can be approved from the strip.
-      const pod = {
-        ...first,
-        action: { group: "kubernetes_admin", name: "pods_list_in_namespace" },
-        arguments: { namespace: "test-namespace", labelSelector: "app=example" },
-      };
-      await send([pod]);
-      const notice = container.querySelector<HTMLElement>(".action-affordance-notice")!;
-      expect(notice.textContent).toContain("Get pods · namespace");
-      expect(notice.textContent).not.toContain("List pods in namespace");
-      expect(notice.textContent).toContain("test-namespace");
-      expect(notice.textContent).toContain("app=example");
-      expect(notice.textContent).toContain(pod.description);
-      expect(notice.querySelector('button[aria-expanded="false"]')).not.toBeNull();
-      await act(async () => button(notice, "Review").click());
-      expect(notice.textContent).toContain("List pods in namespace");
-      await act(async () => button(notice, "Hide details").click());
-      await act(async () => button(notice, "Approve").click());
-      expect(decide).toHaveBeenCalledWith(pod, "allow");
-      await send([{ ...pod, arguments: { namespace: "test-namespace", hidden: "danger" } }]);
-      expect(container.querySelector('.action-affordance-notice button[aria-label="Approve"]')).toBeNull();
-      const pr = {
-        ...first,
-        action: { group: "github", name: "create_pull_request" },
-        arguments: {
-          owner: "example",
-          repo: "repo",
-          title: "Update docs",
-          head: "feature",
-          base: "devel",
-          body: "Important description",
-        },
-      };
-      await send([pr]);
-      expect(container.querySelector(".action-affordance-notice")?.textContent).toContain("description: open Review");
-      expect(container.querySelector('.action-affordance-notice button[aria-label="Approve"]')).toBeNull();
-      await act(async () => button(container, "Review").click());
-      expect(container.textContent).toContain("Important description");
-      await act(async () => button(container, "Hide details").click());
-      await send([pod, second]);
-      expect(container.querySelector('.action-affordance-notice button[aria-label="Approve"]')).toBeNull();
-      await send([first]);
-
-      const topbarButton = topbar.querySelector<HTMLButtonElement>('button[aria-label="Actions, 1 pending"]');
-      if (!topbarButton) throw new Error("missing top bar Actions count");
-      await act(async () => topbarButton.click());
-      expect(container.querySelector("[data-current-path]")?.getAttribute("data-current-path")).toBe("/actions");
-
-      await act(async () => button(container, "Review").click());
-      expect(container.querySelector(".action-affordance-notice .agentplane-code-block")).not.toBeNull();
-      expect(container.textContent).toContain("Exact arguments (unredacted)");
-      await send([first, second]);
-      expect(container.querySelector(".action-affordance-notice")?.textContent).toContain(second.title);
-      await act(async () => button(container, "Deny").click());
-      expect(decide).toHaveBeenCalledWith(first, "deny");
-      await send([second]);
-      expect(container.querySelector(".action-affordance-notice")?.textContent).toContain(second.title);
-      await act(async () => button(container, "Approve").click());
-      expect(container.querySelector(".action-affordance-notice")).toBeNull();
-      await unmountLast();
-      expect(close).toHaveBeenCalledOnce();
-    } finally {
-      topbar.remove();
-      decide.mockRestore();
       vi.unstubAllGlobals();
     }
   });

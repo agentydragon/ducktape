@@ -32,7 +32,6 @@ import {
   type SandboxView,
   type ThreadView,
 } from "../client";
-import { ComposerPendingActions } from "../actions/affordance";
 import { decimalBigInt, useThreadSync, type ThreadEntity, type ThreadWindow } from "./thread_sync";
 import {
   historyRows,
@@ -1194,7 +1193,6 @@ function ProjectedSessionBody({
             Could not resume harness: {resumeError}
           </Text>
         )}
-        <ComposerPendingActions />
         <Textarea
           value={draft}
           onChange={(event) => setDraft(event.currentTarget.value)}

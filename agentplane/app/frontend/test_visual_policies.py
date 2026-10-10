@@ -8,7 +8,6 @@ from playwright.async_api import expect
 
 from agentplane.app.frontend.visual_app import IDLE_THREAD, AgentplaneFixture
 from agentplane.app.frontend.visual_assertions import (
-    _assert_phone_composer_layout,
     _focus,
     _in_viewport,
     _open_raw_switches,
@@ -26,41 +25,41 @@ pytestmark = pytest.mark.asyncio(loop_scope="session")
 
 
 @pytest.mark.parametrize("viewport", [DESKTOP, MOBILE], ids=["desktop", "mobile"])
-async def test_inline_action_review(view: VisualPage, app: AgentplaneFixture) -> None:
+async def test_actions_sidebar_queue(view: VisualPage, app: AgentplaneFixture, viewport: Viewport) -> None:
     await app.show_pending_actions()
     await app.mount_thread(IDLE_THREAD)
     await view.check(context="fixture ready")
     page = view.page
-    await page.get_by_role("button", name="Review pending actions").click()
-    await expect(page.get_by_role("button", name="Hide pending action details")).to_be_visible()
-    await expect(page.locator(".action-affordance-notice .agentplane-code-block").first).to_be_visible()
+    if viewport == MOBILE:
+        await page.get_by_role("button", name="Toggle navigation").click()
+    section = page.locator(".agentplane-actions-sidebar")
+    await expect(section.locator(".agentplane-actions-sidebar-toggle")).to_have_attribute("aria-expanded", "true")
+    await expect(section.get_by_text("restart the test backup service")).to_be_visible()
+    await expect(page.get_by_label("Message")).to_have_count(1)
     await view.capture()
 
 
 @pytest.mark.parametrize("viewport", [DESKTOP, MOBILE], ids=["desktop", "mobile"])
 @pytest.mark.parametrize("expanded", [False, True], ids=["collapsed", "expanded"])
-async def test_compact_pod_approval(view: VisualPage, app: AgentplaneFixture, expanded: bool) -> None:
+async def test_sidebar_compact_pod_approval(
+    view: VisualPage, app: AgentplaneFixture, viewport: Viewport, expanded: bool
+) -> None:
     await app.show_compact_pod_action()
     await app.mount_thread(IDLE_THREAD)
     page = view.page
-    notice = page.get_by_role("region", name="Pending action approvals")
-    context = notice.locator(".action-affordance-context")
-    await expect(context).to_contain_text(
-        "kubernetes_admin / pods_list_in_namespace · inspect running demo pods"
-        " · Read-only inspection of the demo workload. · requested by agentplane-visual/ready-sandbox"
-    )
-    await expect(notice.get_by_text("Get pods · namespace")).to_be_visible()
-    await expect(notice.get_by_text("test-apps")).to_be_visible()
-    await expect(notice.get_by_text("app=demo")).to_be_visible()
-    await expect(notice.get_by_text("status.phase=Running")).to_be_visible()
+    if viewport == MOBILE:
+        await page.get_by_role("button", name="Toggle navigation").click()
+    section = page.locator(".agentplane-actions-sidebar")
+    await expect(section.get_by_text("inspect running demo pods")).to_be_visible()
     if expanded:
-        await notice.get_by_role("button", name="Review pending actions").click()
-        await expect(notice.get_by_text("List pods in namespace")).to_be_visible()
-        await expect(notice.get_by_text("Exact arguments (unredacted)")).to_be_visible()
-        await expect(notice.get_by_role("button", name="Deny")).to_be_visible()
+        await section.get_by_role("button", name="Expand inspect running demo pods").click()
+        await expect(section.get_by_text("List pods in namespace")).to_be_visible()
+        await expect(section.get_by_text("test-apps")).to_be_visible()
+        await expect(section.get_by_text("app=demo")).to_be_visible()
+        await expect(section.get_by_role("button", name="Approve inspect running demo pods")).to_be_visible()
+        await expect(section.get_by_role("button", name="Deny")).to_have_count(0)
     else:
-        await expect(notice.get_by_role("button", name="Approve")).to_be_visible()
-        await expect(notice.get_by_role("button", name="Deny")).to_have_count(0)
+        await expect(section.get_by_role("button", name="Approve inspect running demo pods")).to_have_count(0)
     await view.capture()
 
 
@@ -110,17 +109,29 @@ async def test_compact_pod_approval(view: VisualPage, app: AgentplaneFixture, ex
     ids=["resource-get", "resource-list", "pod-log", "resource-delete", "events-list", "github-pr"],
 )
 async def test_compact_action_chips(
-    view: VisualPage, app: AgentplaneFixture, group: str, name: str, arguments: dict[str, object], visible: str
+    view: VisualPage,
+    app: AgentplaneFixture,
+    viewport: Viewport,
+    group: str,
+    name: str,
+    arguments: dict[str, object],
+    visible: str,
 ) -> None:
     await app.show_action_preview(group, name, arguments)
     await app.mount_thread(IDLE_THREAD)
-    notice = view.page.get_by_role("region", name="Pending action approvals")
-    await expect(notice.get_by_text(visible)).to_be_visible()
-    await expect(notice.get_by_role("button", name="Approve")).to_be_visible()
-    await view.capture(target=notice)
+    if viewport == MOBILE:
+        await view.page.get_by_role("button", name="Toggle navigation").click()
+    section = view.page.locator(".agentplane-actions-sidebar")
+    await section.get_by_role("button", name=f"Expand review {name}").click()
+    await expect(section.get_by_text(visible)).to_be_visible()
+    await expect(section.get_by_role("link", name=re.compile("View details"))).to_be_visible()
+    await view.capture(target=section)
 
 
-async def test_compact_pr_with_description_requires_review(view: VisualPage, app: AgentplaneFixture) -> None:
+@pytest.mark.parametrize("viewport", [DESKTOP, MOBILE], ids=["desktop", "mobile"])
+async def test_compact_pr_with_description_requires_review(
+    view: VisualPage, app: AgentplaneFixture, viewport: Viewport
+) -> None:
     await app.show_action_preview(
         "github",
         "create_pull_request",
@@ -134,12 +145,16 @@ async def test_compact_pr_with_description_requires_review(view: VisualPage, app
         },
     )
     await app.mount_thread(IDLE_THREAD)
-    notice = view.page.get_by_role("region", name="Pending action approvals")
-    await expect(notice.get_by_text("description: open Review")).to_be_visible()
-    await expect(notice.get_by_role("button", name="Approve")).to_have_count(0)
-    await notice.get_by_role("button", name="Review pending actions").click()
-    await expect(notice.get_by_text("Important PR description that must be read before approval.")).to_be_visible()
-    await view.capture(target=notice)
+    section = view.page.locator(".agentplane-actions-sidebar")
+    if viewport == MOBILE:
+        await view.page.get_by_role("button", name="Toggle navigation").click()
+    await section.get_by_role("button", name="Expand review create_pull_request").click()
+    await expect(section.get_by_text("description: open Review")).to_be_visible()
+    await expect(section.get_by_role("button", name="Approve review create_pull_request")).to_have_count(0)
+    await expect(
+        section.get_by_role("link", name="View details for github / create_pull_request: review create_pull_request")
+    ).to_be_visible()
+    await view.capture(target=section)
 
 
 @pytest.mark.parametrize("viewport", [DESKTOP, MOBILE], ids=["desktop", "mobile"])
@@ -157,42 +172,70 @@ async def test_wide_action_decisions(view: VisualPage, app: AgentplaneFixture, v
     await view.capture(target=page.locator("#app"))
 
 
-async def test_inline_action_review_scrolls_to_decisions_actions_attention_composer_long_desktop(
-    view: VisualPage, app: AgentplaneFixture
-) -> None:
+@pytest.mark.parametrize("viewport", [DESKTOP, MOBILE], ids=["desktop", "mobile"])
+async def test_action_detail_ssh_raw_view(view: VisualPage, app: AgentplaneFixture, viewport: Viewport) -> None:
+    await app.show_pending_actions()
+    await app.mount_app("/actions/70000000-0000-4000-8000-000000000006")
+    await view.check(context="fixture ready")
+    page = view.page
+    await expect(page.get_by_text("restart the test backup service")).to_be_visible()
+    await expect(page.get_by_role("button", name="Approve")).to_be_visible()
+    await expect(page.get_by_role("button", name="Deny")).to_be_visible()
+    await view.capture(target=page.locator("#app"), name=f"action_detail_ssh_pretty_{viewport.width}")
+    await page.get_by_role("switch", name="Raw").check()
+    await expect(page.get_by_text('"command": "systemctl --user restart test-backup.service')).to_be_visible()
+    await view.capture(target=page.locator("#app"), name=f"action_detail_ssh_raw_{viewport.width}")
+
+
+@pytest.mark.parametrize("viewport", [DESKTOP, MOBILE], ids=["desktop", "mobile"])
+async def test_action_detail_external_grant_audit(view: VisualPage, app: AgentplaneFixture, viewport: Viewport) -> None:
+    await app.show_pending_actions()
+    await app.mount_app("/actions/70000000-0000-4000-8000-000000000001")
+    await view.check(context="fixture ready")
+    page = view.page
+    audit = page.get_by_text("Request & grant audit details")
+    await expect(audit).to_be_visible()
+    await audit.click()
+    await expect(page.get_by_text("test-external-client")).to_be_visible()
+    await view.capture(target=page.locator("#app"))
+
+
+async def test_sidebar_long_ssh_preview_is_bounded_desktop(view: VisualPage, app: AgentplaneFixture) -> None:
     await app.show_pending_actions()
     await app.long_pending_action()
     await app.mount_thread(IDLE_THREAD)
     await view.check(context="fixture ready")
     page = view.page
-    await page.get_by_role("button", name="Review pending actions").click()
-    details = page.locator(".action-affordance-details:not([hidden])")
-    await expect(details.get_by_role("button", name="Approve").first).to_be_attached()
-    await details.evaluate("element => { element.scrollTop = element.scrollHeight; }")
+    section = page.locator(".agentplane-actions-sidebar")
+    await section.get_by_role("button", name="Expand restart the test backup service").click()
+    preview = section.locator(".agentplane-actions-sidebar-preview").last
+    await expect(preview.get_by_role("button", name="Show all 55 lines")).to_be_visible()
+    await preview.get_by_role("button", name="Show all 55 lines").click()
+    await preview.evaluate("element => { element.scrollTop = element.scrollHeight; }")
     await wait_for_stable(page)
-    assert await details.evaluate("element => element.scrollTop") > 0
-    await _in_viewport(details.get_by_role("button", name="Approve").last)
-    await view.capture()
+    assert await preview.evaluate("element => element.scrollTop") > 0
+    await view.capture(target=section)
 
 
 @pytest.mark.parametrize("viewport", [MOBILE], ids=["mobile"])
-async def test_inline_action_review_scrolls_to_decisions_actions_attention_composer_long_phone(
-    view: VisualPage, app: AgentplaneFixture
+async def test_sidebar_long_ssh_preview_is_bounded_phone(
+    view: VisualPage, app: AgentplaneFixture, viewport: Viewport
 ) -> None:
     await app.show_pending_actions()
     await app.long_pending_action()
     await app.mount_thread(IDLE_THREAD)
     await view.check(context="fixture ready")
     page = view.page
-    await page.get_by_role("button", name="Review pending actions").click()
-    details = page.locator(".action-affordance-details:not([hidden])")
-    await expect(details.get_by_role("button", name="Approve").first).to_be_attached()
-    await details.evaluate("element => { element.scrollTop = element.scrollHeight; }")
+    await page.get_by_role("button", name="Toggle navigation").click()
+    section = page.locator(".agentplane-actions-sidebar")
+    await section.get_by_role("button", name="Expand restart the test backup service").click()
+    preview = section.locator(".agentplane-actions-sidebar-preview").last
+    await expect(preview.get_by_role("button", name="Show all 55 lines")).to_be_visible()
+    await preview.get_by_role("button", name="Show all 55 lines").click()
+    await preview.evaluate("element => { element.scrollTop = element.scrollHeight; }")
     await wait_for_stable(page)
-    assert await details.evaluate("element => element.scrollTop") > 0
-    await _in_viewport(details.get_by_role("button", name="Approve").last)
-    await _assert_phone_composer_layout(page)
-    await view.capture()
+    assert await preview.evaluate("element => element.scrollTop") > 0
+    await view.capture(target=section)
 
 
 async def test_actions_raw_switches(view: VisualPage, app: AgentplaneFixture) -> None:

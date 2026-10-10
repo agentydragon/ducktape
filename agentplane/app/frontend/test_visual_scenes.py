@@ -11,7 +11,7 @@ from agentplane.app.frontend.visual_app import (
     UNNAMED_THREAD,
     AgentplaneFixture,
 )
-from util.testing.viewports import DESKTOP, MOBILE
+from util.testing.viewports import DESKTOP, MOBILE, Viewport
 from util.testing.visual_capture import VisualPage
 
 # gazelle:include_dep //util/testing:visual_fixtures
@@ -149,13 +149,14 @@ async def test_sandboxes_stale(view: VisualPage, app: AgentplaneFixture) -> None
 
 
 @pytest.mark.parametrize("viewport", [DESKTOP, MOBILE], ids=["desktop", "mobile"])
-async def test_actions_attention_composer_desktop(view: VisualPage, app: AgentplaneFixture) -> None:
+async def test_actions_sidebar_under_threads(view: VisualPage, app: AgentplaneFixture, viewport: Viewport) -> None:
     await app.show_pending_actions()
     await app.mount_thread(IDLE_THREAD)
-    await view.page.wait_for_selector('button[aria-label="Actions, 2 pending"]', state="attached")
-    await view.page.wait_for_selector(".action-affordance-notice", state="attached")
+    if viewport == MOBILE:
+        await view.page.get_by_role("button", name="Toggle navigation").click()
+    await view.page.wait_for_selector('.agentplane-actions-sidebar-toggle[aria-expanded="true"]', state="attached")
     await view.check(context="fixture ready")
-    await view.capture()
+    await view.capture(target=view.page.locator("#app"))
 
 
 @pytest.mark.parametrize("viewport", [DESKTOP, MOBILE], ids=["desktop", "mobile"])

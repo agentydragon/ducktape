@@ -254,6 +254,7 @@ ts_library(
     name = "actions_affordance",
     srcs = [
         "actions/affordance.tsx",
+        "css.d.ts",
         "tabler_icons.d.ts",
     ],
     tsconfig = TSCONFIG,
@@ -261,9 +262,9 @@ ts_library(
         ":actions_client",
         ":actions_rendering",
         ":actions_requests",
+        ":actions_sidebar_css",
         ":client",
         ":stream_status",
-        ":topbar",
         "//:node_modules/@mantine/core",
         "//:node_modules/@tabler/icons-react",
         "//:node_modules/@types/react",
@@ -276,12 +277,56 @@ agentplane_vitest_test(
     name = "actions_requests_test",
     srcs = ["actions/requests.test.tsx"],
     deps = [
-        ":actions_affordance",
         ":actions_client",
         ":actions_requests",
         ":actions_testing",
         ":stream_status",
-        ":topbar",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+        "//:node_modules/react-router",
+        "//:node_modules/vitest",
+    ],
+)
+
+agentplane_vitest_test(
+    name = "actions_sidebar_test",
+    srcs = ["actions/sidebar.test.tsx"],
+    deps = [
+        ":actions_affordance",
+        ":actions_testing",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+        "//:node_modules/react-router",
+        "//:node_modules/vitest",
+    ],
+)
+
+ts_library(
+    name = "actions_detail",
+    srcs = ["actions/detail.tsx"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":actions_client",
+        ":actions_history",
+        ":actions_requests",
+        ":client",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@tabler/icons-react",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+        "//:node_modules/react-router",
+    ],
+)
+
+agentplane_vitest_test(
+    name = "actions_detail_test",
+    srcs = ["actions/detail.test.tsx"],
+    deps = [
+        ":actions_affordance",
+        ":actions_client",
+        ":actions_detail",
+        ":actions_requests",
+        ":actions_testing",
         "//:node_modules/@types/react",
         "//:node_modules/react",
         "//:node_modules/react-router",
@@ -899,6 +944,11 @@ js_library(
     srcs = ["sidebar.css"],
 )
 
+js_library(
+    name = "actions_sidebar_css",
+    srcs = ["actions/sidebar.css"],
+)
+
 # app.tsx imports this stylesheet for the bundler.
 js_library(
     name = "shell_css",
@@ -918,6 +968,7 @@ ts_library(
     ],
     tsconfig = TSCONFIG,
     deps = [
+        ":actions_affordance",
         ":client",
         ":live",
         ":mark_glyph",
@@ -1245,6 +1296,7 @@ ts_library(
     tsconfig = TSCONFIG,
     deps = [
         ":actions_affordance",
+        ":actions_detail",
         ":actions_history",
         ":actions_requests",
         ":consent",

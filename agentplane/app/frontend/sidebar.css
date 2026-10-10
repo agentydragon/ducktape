@@ -85,6 +85,15 @@
 
 .agentplane-sidebar-body {
   flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.agentplane-sidebar-thread-list {
+  flex: 1;
+  min-height: 0;
   overflow-y: auto;
   padding: 8px;
   display: flex;

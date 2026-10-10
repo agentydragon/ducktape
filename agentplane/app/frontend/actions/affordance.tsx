@@ -1,145 +1,246 @@
-import { Badge, Button, Group, Paper, Stack, Text } from "@mantine/core";
-import IconBell from "@tabler/icons-react/dist/esm/icons/IconBell.mjs";
-import { type JSX, type ReactNode, useContext, useEffect, useId, useState } from "react";
-import { useNavigate } from "react-router";
+import { Badge, Button, Group, Stack, Text, Tooltip, UnstyledButton } from "@mantine/core";
+import IconArrowRight from "@tabler/icons-react/dist/esm/icons/IconArrowRight.mjs";
+import IconChevronDown from "@tabler/icons-react/dist/esm/icons/IconChevronDown.mjs";
+import IconChevronRight from "@tabler/icons-react/dist/esm/icons/IconChevronRight.mjs";
+import { type JSX, type ReactNode, useContext, useEffect, useRef, useState } from "react";
+import { Link, useLocation } from "react-router";
 
 import { serviceAccountKey } from "../client";
 import { StaleNotice } from "../stream_status";
-import { TopbarActions } from "../topbar";
 import { actionService } from "./client";
-import { canApproveInline, compactActionArguments } from "./rendering/index";
-import { ActionRequestsContext, PendingActionCard, useActionRequests } from "./requests";
+import { canApproveInline, compactActionArguments, renderArguments } from "./rendering/index";
+import { ActionRequestsContext, useActionRequests } from "./requests";
+import "./sidebar.css";
 
-/** One stream and decision state for the shell, the Actions page, and the thread composer. */
-export function ActionAffordance({ children }: { children: ReactNode }): JSX.Element {
-  const actions = useActionRequests(actionService);
-  const pending = actions.requests.filter((request) => request.state === "decision_pending");
-  const navigate = useNavigate();
+const MANUAL_CLOSE_KEY = "agentplane-actions-sidebar-manually-closed";
 
-  return (
-    <ActionRequestsContext.Provider value={actions}>
-      {children}
-      {pending.length > 0 && (
-        <TopbarActions>
-          <Button
-            variant="subtle"
-            size="xs"
-            leftSection={<IconBell size={16} />}
-            onClick={() => void navigate("/actions")}
-            aria-label={`Actions, ${pending.length} pending`}
-          >
-            <Group gap="xs" wrap="nowrap">
-              Actions
-              <Badge color="yellow" circle>
-                {pending.length}
-              </Badge>
-            </Group>
-          </Button>
-        </TopbarActions>
-      )}
-    </ActionRequestsContext.Provider>
-  );
+function readManuallyClosedRequests(): Set<string> {
+  try {
+    if (typeof window === "undefined") return new Set();
+    const stored = window.sessionStorage.getItem(MANUAL_CLOSE_KEY);
+    const parsed: unknown = stored === null ? [] : JSON.parse(stored);
+    return Array.isArray(parsed) && parsed.every((item) => typeof item === "string") ? new Set(parsed) : new Set();
+  } catch {
+    return new Set();
+  }
 }
 
-/** Compact, collapsed-by-default review prompt beside the thread composer. */
-export function ComposerPendingActions(): JSX.Element | null {
+function writeManuallyClosedRequests(requestIds: readonly string[]): void {
+  try {
+    if (typeof window === "undefined") return;
+    if (requestIds.length > 0) window.sessionStorage.setItem(MANUAL_CLOSE_KEY, JSON.stringify(requestIds));
+    else window.sessionStorage.removeItem(MANUAL_CLOSE_KEY);
+  } catch {
+    // The choice only affects whether the sidebar expands automatically; blocked storage is harmless.
+  }
+}
+
+/** One action stream shared by the sidebar and the full Actions page. */
+export function ActionAffordance({ children }: { children: ReactNode }): JSX.Element {
+  const actions = useActionRequests(actionService);
+  return <ActionRequestsContext.Provider value={actions}>{children}</ActionRequestsContext.Provider>;
+}
+
+/** Pending-only queue embedded below the thread list in the persistent navigation sidebar. */
+export function ActionsSidebarSection({ onNavigate }: { onNavigate?: () => void }): JSX.Element | null {
   const actions = useContext(ActionRequestsContext);
-  const [expanded, setExpanded] = useState(false);
-  const detailsId = useId();
+  const location = useLocation();
+  const [open, setOpen] = useState(false);
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+  const manuallyClosedRequests = useRef(readManuallyClosedRequests());
+  const previousIds = useRef<ReadonlySet<string>>(new Set());
   const pending = actions?.requests.filter((request) => request.state === "decision_pending") ?? [];
+  const pendingIds = pending.map((request) => request.id);
+  const actionLoading = actions?.loading ?? true;
+  const actionError = actions?.error ?? null;
 
   useEffect(() => {
-    if (pending.length === 0) setExpanded(false);
-  }, [pending.length]);
+    if (actionLoading || actionError !== null) return;
+    const currentIds = new Set(pendingIds);
+    if (currentIds.size === 0) {
+      // A new queue is a fresh reason to expand the panel. Clearing the queue also clears a prior
+      // manual-close suppression, including across reloads in this tab.
+      manuallyClosedRequests.current = new Set();
+      writeManuallyClosedRequests([]);
+      previousIds.current = currentIds;
+      setExpandedId(null);
+      setOpen(false);
+      return;
+    }
 
-  if (actions === null || pending.length === 0) return null;
+    let autoOpenAllowed = manuallyClosedRequests.current.size === 0;
+    if (!autoOpenAllowed) {
+      const oldQueueStillPending = [...currentIds].some((id) => manuallyClosedRequests.current.has(id));
+      if (oldQueueStillPending) {
+        // Requests arriving while the old queue is still pending belong to the same queue batch.
+        manuallyClosedRequests.current = new Set([...manuallyClosedRequests.current, ...currentIds]);
+        writeManuallyClosedRequests([...manuallyClosedRequests.current]);
+      } else {
+        // The previous queue cleared while the app was closed; this is a fresh batch.
+        manuallyClosedRequests.current = new Set();
+        writeManuallyClosedRequests([]);
+        autoOpenAllowed = true;
+      }
+    }
+    const hasNewRequest = [...currentIds].some((id) => !previousIds.current.has(id));
+    if (hasNewRequest && autoOpenAllowed) setOpen(true);
+    previousIds.current = currentIds;
+  }, [actionLoading, actionError, pendingIds.join("\u0000")]);
 
-  // Never truncate the exact operation when offering an inline decision. Multiple requests
-  // stay review-only so the decision cannot be mistaken for a different request.
-  const compact =
-    pending.length === 1 && !pending[0].external_grant
-      ? compactActionArguments(pending[0].action, pending[0].arguments)
-      : null;
-  const inlineApproval = compact !== null && canApproveInline(pending[0].action, pending[0].arguments);
-  const summary = pending
-    .slice(0, 2)
-    .map((request) => `${request.action.group} / ${request.action.name} · ${request.title}`)
-    .join(" · ");
-  const extraCount = pending.length - 2;
+  if (actions === null) return null;
+
+  function toggleOpen(): void {
+    setOpen((wasOpen) => {
+      const nextOpen = !wasOpen;
+      if (!nextOpen && pending.length > 0) {
+        manuallyClosedRequests.current = new Set(pendingIds);
+        writeManuallyClosedRequests(pendingIds);
+      } else if (nextOpen) {
+        manuallyClosedRequests.current = new Set();
+        writeManuallyClosedRequests([]);
+      }
+      return nextOpen;
+    });
+  }
 
   return (
-    <Paper className="action-affordance-notice" withBorder p="xs" role="region" aria-label="Pending action approvals">
-      <Stack gap="xs">
-        <Group justify="space-between" align="center" wrap="nowrap">
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <Text size="sm" fw={600}>
-              {pending.length} action{pending.length === 1 ? "" : "s"} waiting for review
-            </Text>
-            {compact ? (
-              <Stack gap={2}>
-                <Text className="action-affordance-context" size="xs" style={{ overflowWrap: "anywhere" }}>
-                  {pending[0].action.group} / {pending[0].action.name} · {pending[0].title}
-                  {pending[0].description ? ` · ${pending[0].description}` : ""}
-                  {pending[0].caller ? ` · requested by ${serviceAccountKey(pending[0].caller)}` : ""}
-                </Text>
-                {compact}
-              </Stack>
-            ) : (
-              <Text size="xs" c="dimmed" lineClamp={1}>
-                {summary}
-                {extraCount > 0 ? ` · +${extraCount} more` : ""}
-              </Text>
-            )}
-          </div>
-          {inlineApproval && !expanded && (
-            <Button
-              size="sm"
-              aria-label="Approve"
-              loading={actions.deciding === pending[0].id}
-              onClick={() => actions.decide(pending[0], "allow")}
-            >
-              Approve
-            </Button>
+    <section className="agentplane-actions-sidebar" aria-label="Actions awaiting review">
+      <UnstyledButton
+        className="agentplane-actions-sidebar-toggle"
+        onClick={toggleOpen}
+        aria-expanded={open}
+        aria-controls={open ? "agentplane-actions-sidebar-content" : undefined}
+      >
+        <Group gap="xs" wrap="nowrap">
+          {open ? <IconChevronDown size={14} /> : <IconChevronRight size={14} />}
+          <Text size="xs" fw={700} tt="uppercase">
+            Actions
+          </Text>
+          {pending.length > 0 && (
+            <Badge color="yellow" size="sm" circle aria-label={`${pending.length} pending actions`}>
+              {pending.length}
+            </Badge>
           )}
-          <Button
-            variant="subtle"
-            size="xs"
-            aria-label={expanded ? "Hide pending action details" : "Review pending actions"}
-            aria-expanded={expanded}
-            aria-controls={detailsId}
-            onClick={() => setExpanded((current) => !current)}
-          >
-            {expanded ? "Hide details" : "Review"}
-          </Button>
         </Group>
-        <div
-          id={detailsId}
-          className="action-affordance-details"
-          role="region"
-          aria-label="Action request details"
-          tabIndex={expanded ? 0 : -1}
-          hidden={!expanded}
-        >
-          {expanded && (
-            <Stack gap="sm">
-              <StaleNotice streams={[actions.stream]} />
-              {actions.error && (
-                <Text role="alert" c="red">
-                  {actions.error}
-                </Text>
-              )}
-              {pending.map((request) => (
-                <PendingActionCard
-                  key={request.id}
-                  request={request}
-                  deciding={actions.deciding === request.id}
-                  onDecide={actions.decide}
-                />
-              ))}
-            </Stack>
+      </UnstyledButton>
+      {open && (
+        <div id="agentplane-actions-sidebar-content" className="agentplane-actions-sidebar-content">
+          <StaleNotice streams={[actions.stream]} />
+          {actions.error !== null && (
+            <Text size="xs" c="red" role="alert">
+              {actions.error}
+            </Text>
           )}
+          {actions.loading && (
+            <Text size="xs" c="dimmed" role="status">
+              Loading pending actions…
+            </Text>
+          )}
+          {!actions.loading && actions.error === null && pending.length === 0 && (
+            <Text size="xs" c="dimmed">
+              No pending actions.
+            </Text>
+          )}
+          {pending.map((request) => {
+            const expanded = expandedId === request.id;
+            const preview = compactActionArguments(request.action, request.arguments);
+            const canQuickApprove =
+              request.external_grant === null &&
+              preview !== null &&
+              canApproveInline(request.action, request.arguments);
+            const detailsPath = `/actions/${encodeURIComponent(request.id)}`;
+            const navigationState = {
+              returnTo: {
+                pathname: location.pathname,
+                search: location.search,
+                hash: location.hash,
+              },
+            };
+
+            return (
+              <div className="agentplane-actions-sidebar-request" key={request.id}>
+                <div className="agentplane-actions-sidebar-request-heading">
+                  <UnstyledButton
+                    className="agentplane-actions-sidebar-expand"
+                    aria-label={`${expanded ? "Collapse" : "Expand"} ${request.title}`}
+                    aria-expanded={expanded}
+                    onClick={() => setExpandedId(expanded ? null : request.id)}
+                  >
+                    {expanded ? <IconChevronDown size={12} /> : <IconChevronRight size={12} />}
+                  </UnstyledButton>
+                  <div className="agentplane-actions-sidebar-request-label">
+                    <Link
+                      className="agentplane-actions-sidebar-name"
+                      to={detailsPath}
+                      state={navigationState}
+                      onClick={onNavigate}
+                      aria-label={`View details for ${request.action.group} / ${request.action.name}: ${request.title}`}
+                    >
+                      <span>
+                        {request.action.group} / {request.action.name}
+                      </span>
+                      <IconArrowRight size={13} aria-hidden="true" />
+                    </Link>
+                    <Text size="xs" lineClamp={1} title={request.title}>
+                      {request.title}
+                    </Text>
+                  </div>
+                </div>
+                {expanded && (
+                  <Stack className="agentplane-actions-sidebar-preview" gap="xs">
+                    {request.description && (
+                      <Text size="xs" c="dimmed">
+                        {request.description}
+                      </Text>
+                    )}
+                    {request.caller && (
+                      <Text size="xs" c="dimmed">
+                        Requested by {serviceAccountKey(request.caller)}
+                      </Text>
+                    )}
+                    {request.external_grant && (
+                      <Text size="xs" fw={600}>
+                        Authenticated external caller
+                      </Text>
+                    )}
+                    {renderArguments(request.action, request.arguments) ?? preview ?? (
+                      <Text size="xs" c="dimmed">
+                        Open full details to inspect the action arguments.
+                      </Text>
+                    )}
+                    <Group justify="space-between" wrap="nowrap" gap="xs">
+                      {canQuickApprove ? (
+                        <Button
+                          size="xs"
+                          loading={actions.deciding === request.id}
+                          onClick={() => actions.decide(request, "allow")}
+                          aria-label={`Approve ${request.title}`}
+                        >
+                          Approve
+                        </Button>
+                      ) : (
+                        <Text size="xs" c="dimmed">
+                          Decisions require full review.
+                        </Text>
+                      )}
+                      <Tooltip label="View full details" withArrow>
+                        <Link
+                          className="agentplane-actions-sidebar-details"
+                          to={detailsPath}
+                          state={navigationState}
+                          onClick={onNavigate}
+                        >
+                          Details <IconArrowRight size={13} aria-hidden="true" />
+                        </Link>
+                      </Tooltip>
+                    </Group>
+                  </Stack>
+                )}
+              </div>
+            );
+          })}
         </div>
-      </Stack>
-    </Paper>
+      )}
+    </section>
   );
 }

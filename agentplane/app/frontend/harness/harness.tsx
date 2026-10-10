@@ -2182,6 +2182,14 @@ routes.push(
   ],
   [
     "GET",
+    /^\/actions\/([^/]+)$/,
+    (match) => {
+      const request = ACTIONS.find((item) => item.id === match[1]);
+      return request ?? Response.json({ detail: "Action request not found" }, { status: 404 });
+    },
+  ],
+  [
+    "GET",
     /^\/connections$/,
     () => [
       sampleConnection(),

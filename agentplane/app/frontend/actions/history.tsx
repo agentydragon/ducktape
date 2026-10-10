@@ -40,7 +40,7 @@ function ExecutionResult({
 
 /** A decided/terminal ActionRequest, kept as a durable receipt: the call as the operator saw it
  * when deciding, then the decision it is a record of and what came of it. */
-function HistoryCard({ request, mcp }: { request: ActionRequestView; mcp: boolean }): JSX.Element {
+export function ActionHistoryCard({ request, mcp }: { request: ActionRequestView; mcp: boolean }): JSX.Element {
   const decision = request.decision;
   const policySet = decision?.policy_evidence?.matched.policy_set;
   const [raw, setRaw] = useState(false);
@@ -221,7 +221,11 @@ export function ActionHistory({
       {loading && <Text role="status">Loading actions…</Text>}
       {!loading && !error && decided.length === 0 && <Text c="dimmed">No decided requests yet.</Text>}
       {decided.map((request) => (
-        <HistoryCard key={request.id} request={request} mcp={executors.kinds?.get(request.action.group) === "mcp"} />
+        <ActionHistoryCard
+          key={request.id}
+          request={request}
+          mcp={executors.kinds?.get(request.action.group) === "mcp"}
+        />
       ))}
       {cursor && (
         <Button data-testid="action-history-load-more" loading={loadingMore} onClick={() => void loadMore()}>
