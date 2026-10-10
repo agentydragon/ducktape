@@ -53,12 +53,14 @@ class SessionHistory(Base):
     # The Sandbox Service registry's former columns: an Open reservation and a WatchSessions
     # position, kept on rows from before the registry moved to its own database. Nothing reads them;
     # rows the ingesters create leave them empty.
-    caller_namespace: Mapped[str | None] = mapped_column(String)
-    caller_name: Mapped[str | None] = mapped_column(String)
-    open_key: Mapped[str | None] = mapped_column(String)
-    open_request: Mapped[bytes | None] = mapped_column(LargeBinary)
-    launch_spec: Mapped[bytes | None] = mapped_column(LargeBinary)
-    change_position: Mapped[int | None] = mapped_column(BigInteger)
+    # CLEANUP(added 2026-10-10): Deferred so that no query of this release names them, letting the
+    #   migration that drops them run while it still serves; delete them with that migration.
+    caller_namespace: Mapped[str | None] = mapped_column(String, deferred=True)
+    caller_name: Mapped[str | None] = mapped_column(String, deferred=True)
+    open_key: Mapped[str | None] = mapped_column(String, deferred=True)
+    open_request: Mapped[bytes | None] = mapped_column(LargeBinary, deferred=True)
+    launch_spec: Mapped[bytes | None] = mapped_column(LargeBinary, deferred=True)
+    change_position: Mapped[int | None] = mapped_column(BigInteger, deferred=True)
     source_id: Mapped[str | None] = mapped_column(String)
     last_cursor: Mapped[int] = mapped_column(BigInteger)
     # Complete SessionFeedState protobuf, absent until a runner prefix is observed.

@@ -779,7 +779,8 @@ are irreplaceable, and a node that deletes a column or row stops for the operato
 
 ```mermaid
 flowchart TD
-    HISTORY_SESSION_COLUMNS_DROP[Blocked: drop registry columns from the history database]
+    HISTORY_SESSION_COLUMNS_DROP[Candidate, stops for the operator: drop registry columns from the history database]
+    HISTORY_RUNNER_SESSION_ID_DROP[Blocked: drop the runner session ID from the history database]
     HISTORY_STORE_MOVE[Blocked: history store and migrations move to the History Service]
     HISTORY_WRITER_SWITCH_RETIRE[Blocked: delete the history_writer switch]
     HISTORY_DATABASE_RENAME[Blocked: rename the sandbox_service database and role]
@@ -794,18 +795,28 @@ flowchart TD
     HISTORY_STORE_MOVE --> HISTORY_SERVICE_OWNERSHIP
     HISTORY_STORE_MOVE --> HISTORY_DATABASE_RENAME
     HISTORY_SESSION_COLUMNS_DROP --> HISTORY_DATABASE_RENAME
+    SANDBOX_LOCAL_HISTORY_RETIRE --> HISTORY_RUNNER_SESSION_ID_DROP
+    HISTORY_RUNNER_SESSION_ID_DROP --> HISTORY_DATABASE_RENAME
     HISTORY_DATABASE_RENAME --> SANDBOX_DATABASE_RENAME
     APP_PROJECTOR_RETIRE --> APP_ELECTRIC_RETIRE
 ```
 
 ### `HISTORY_SESSION_COLUMNS_DROP` — history keeps only history
 
-**Candidate; stops for the operator.** Ingesters create
-history rows from the feed; in the history database's `session_history` nothing reads the Open
-reservation or the change position, and the runner session ID only names stored feed snapshots.
-Drop all three, with their indexes and the `session_change_position` sequence, once feed snapshots
-are stored under the public ID. Per-Session ingestion state (`source_id`, `last_cursor`,
-`feed_state`) and the Sandbox locator stay beside `session_event`.
+**Candidate; stops for the operator.** In the history database's `session_history` nothing reads
+the Open reservation (`caller_namespace`, `caller_name`, `open_key`, `open_request`, `launch_spec`) or
+the change position, and the model defers them so no query names them. Once the release deferring
+them serves on both environments, drop them with `ux_history_open_key`, `ux_history_change_position`
+and the history database's `session_change_position` sequence, and remove them from the model.
+Per-Session ingestion state (`source_id`, `last_cursor`, `feed_state`) and the Sandbox locator stay
+beside `session_event`.
+
+### `HISTORY_RUNNER_SESSION_ID_DROP` — rows carry only the public ID
+
+**Blocked on Sandbox Service local-history retirement**, whose ingester follows imported rows by
+`runner_session_id`. Then the column only names feed snapshots stored before ingesters wrote them
+under the public ID: rewrite those snapshots under the public ID, then drop the column with
+`ux_history_runner_locator`. Stops for the operator.
 
 ### `HISTORY_STORE_MOVE` — the history store belongs to the History Service
 
