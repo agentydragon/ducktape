@@ -35,7 +35,7 @@
 //! path and the cover path render through identical code, so they cannot diverge
 //! on hole placement, codegen, or the matcher gate.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 use selector_candidate_index::SelectorFeature;
 use shape_index::{AnchorSet, ShapeFeature};
@@ -94,19 +94,14 @@ impl ValueAnchor {
         }
     }
 
-    /// Whether `lit` exhibits one of the value anchors, mapping each concrete
-    /// literal kind to the feature taxonomy the read-off scored.
-    fn matches_lit(anchors: &BTreeSet<ValueAnchor>, lit: &Lit) -> bool {
+    /// The value anchor exhibited by a literal, if its kind is indexed.
+    fn from_lit(lit: &Lit) -> Option<Self> {
         match lit {
-            Lit::Str(str_) => anchors.contains(&ValueAnchor::StringLiteral(
-                str_.value.to_string_lossy().into(),
-            )),
-            Lit::Num(num) => anchors.contains(&ValueAnchor::NumberLiteral(num.value.to_string())),
-            Lit::BigInt(bigint) => {
-                anchors.contains(&ValueAnchor::NumberLiteral(bigint.value.to_string()))
-            }
-            Lit::Bool(bool_) => anchors.contains(&ValueAnchor::BoolLiteral(bool_.value)),
-            Lit::Null(_) | Lit::Regex(_) | Lit::JSXText(_) => false,
+            Lit::Str(str_) => Some(Self::StringLiteral(str_.value.to_string_lossy().into())),
+            Lit::Num(num) => Some(Self::NumberLiteral(num.value.to_string())),
+            Lit::BigInt(bigint) => Some(Self::NumberLiteral(bigint.value.to_string())),
+            Lit::Bool(bool_) => Some(Self::BoolLiteral(bool_.value)),
+            Lit::Null(_) | Lit::Regex(_) | Lit::JSXText(_) => None,
         }
     }
 }
@@ -123,8 +118,29 @@ pub fn kept_spans_for_anchor_set(
 ) -> BTreeSet<AnchorSpan> {
     let anchors = ValueAnchor::from_anchor_set(anchor_set);
     let mut collector = SpanCollector {
-        anchors: &anchors,
-        kept: BTreeSet::new(),
+        anchors: AnchorLookup::Single(&anchors),
+        kept: vec![BTreeSet::new()],
+    };
+    item.visit_with(&mut collector);
+    collector.kept.pop().expect("one anchor set has one result")
+}
+
+/// Collect spans for several anchor sets in one AST walk. Group read-off asks
+/// for each feature separately; walking a large declaration once per feature
+/// makes its ranking cost quadratic in the declaration's size.
+pub fn kept_spans_for_anchor_sets(
+    item: &ModuleItem,
+    anchor_sets: &[AnchorSet],
+) -> Vec<BTreeSet<AnchorSpan>> {
+    let mut anchors: BTreeMap<ValueAnchor, Vec<usize>> = BTreeMap::new();
+    for (index, anchor_set) in anchor_sets.iter().enumerate() {
+        for anchor in ValueAnchor::from_anchor_set(anchor_set) {
+            anchors.entry(anchor).or_default().push(index);
+        }
+    }
+    let mut collector = SpanCollector {
+        anchors: AnchorLookup::Batch(&anchors),
+        kept: vec![BTreeSet::new(); anchor_sets.len()],
     };
     item.visit_with(&mut collector);
     collector.kept
@@ -159,23 +175,41 @@ pub fn unindexed_literal_spans(item: &ModuleItem) -> BTreeSet<AnchorSpan> {
 /// Walks the target item collecting the byte span of every token that exhibits
 /// a chosen [`ValueAnchor`], mirroring the `SelectorFeature` taxonomy so the
 /// span-level pin matches the feature the read-off scored.
+enum AnchorLookup<'a> {
+    Single(&'a BTreeSet<ValueAnchor>),
+    Batch(&'a BTreeMap<ValueAnchor, Vec<usize>>),
+}
+
 struct SpanCollector<'a> {
-    anchors: &'a BTreeSet<ValueAnchor>,
-    kept: BTreeSet<AnchorSpan>,
+    anchors: AnchorLookup<'a>,
+    kept: Vec<BTreeSet<AnchorSpan>>,
 }
 
 impl SpanCollector<'_> {
-    fn keep(&mut self, span: Span) {
-        self.kept.insert((span.lo.0, span.hi.0));
+    fn keep_matching(&mut self, anchor: ValueAnchor, span: Span) {
+        match &self.anchors {
+            AnchorLookup::Single(anchors) => {
+                if anchors.contains(&anchor) {
+                    self.kept[0].insert((span.lo.0, span.hi.0));
+                }
+            }
+            AnchorLookup::Batch(anchors) => {
+                if let Some(indices) = anchors.get(&anchor) {
+                    for &index in indices {
+                        self.kept[index].insert((span.lo.0, span.hi.0));
+                    }
+                }
+            }
+        }
     }
 }
 
 impl Visit for SpanCollector<'_> {
     fn visit_expr(&mut self, expr: &Expr) {
         if let Expr::Lit(lit) = expr {
-            if ValueAnchor::matches_lit(self.anchors, lit) {
+            if let Some(anchor) = ValueAnchor::from_lit(lit) {
                 // Pin the literal node; the prune keeps it verbatim.
-                self.keep(lit.span());
+                self.keep_matching(anchor, lit.span());
             }
             return;
         }
@@ -185,30 +219,25 @@ impl Visit for SpanCollector<'_> {
     fn visit_call_expr(&mut self, call: &CallExpr) {
         if let Callee::Expr(callee) = &call.callee
             && let Some(label) = member_callee_label(callee)
-            && self.anchors.contains(&ValueAnchor::CallCallee(label))
         {
             // Pin the callee member access; the prune keeps the property name
             // and holes the receiver, yielding `ANYTHING.foo(...)`.
-            self.keep(callee.span());
+            self.keep_matching(ValueAnchor::CallCallee(label), callee.span());
         }
         call.visit_children_with(self);
     }
 
     fn visit_member_prop(&mut self, prop: &MemberProp) {
-        if let Some(label) = member_prop_label(prop)
-            && self.anchors.contains(&ValueAnchor::MemberProperty(label))
-        {
-            self.keep(prop.span());
+        if let Some(label) = member_prop_label(prop) {
+            self.keep_matching(ValueAnchor::MemberProperty(label), prop.span());
         }
         prop.visit_children_with(self);
     }
 
     fn visit_object_lit(&mut self, object: &ObjectLit) {
         for prop in &object.props {
-            if let Some((label, key_span)) = object_key_label_span(prop)
-                && self.anchors.contains(&ValueAnchor::ObjectKey(label))
-            {
-                self.keep(key_span);
+            if let Some((label, key_span)) = object_key_label_span(prop) {
+                self.keep_matching(ValueAnchor::ObjectKey(label), key_span);
             }
             prop.visit_with(self);
         }
@@ -221,20 +250,16 @@ impl Visit for SpanCollector<'_> {
         // the object-property run hole), exactly as `visit_object_lit` does for
         // literals.
         for prop in &pat.props {
-            if let Some((label, key_span)) = object_pat_key_label_span(prop)
-                && self.anchors.contains(&ValueAnchor::ObjectKey(label))
-            {
-                self.keep(key_span);
+            if let Some((label, key_span)) = object_pat_key_label_span(prop) {
+                self.keep_matching(ValueAnchor::ObjectKey(label), key_span);
             }
             prop.visit_with(self);
         }
     }
 
     fn visit_class_member(&mut self, member: &ClassMember) {
-        if let Some((label, key_span)) = class_member_label_span(member)
-            && self.anchors.contains(&ValueAnchor::ClassMember(label))
-        {
-            self.keep(key_span);
+        if let Some((label, key_span)) = class_member_label_span(member) {
+            self.keep_matching(ValueAnchor::ClassMember(label), key_span);
         }
         member.visit_children_with(self);
     }

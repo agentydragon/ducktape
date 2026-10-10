@@ -967,6 +967,61 @@ minimizer_expectation_case!(
     expected = "expected_match.js",
 );
 
+#[test]
+fn falls_back_to_single_declarators_when_group_references_a_member() {
+    let case = MinimizedSelectorCase {
+        name: "group with a reference to another member",
+        source: "const noise = buildMenu(),\n  empty = values => Object.values(values).every(value => value === void 0),\n  spacer = 2,\n  entry = node => ({ id: node.id, direction: \"ASC\" }),\n  entries = node => (node?.children.map(entry) || []).sort(),\n  tail = 3;\nexport { empty, entry, entries };\n",
+        module: "app/helpers",
+        bindings: &[
+            BindingCase {
+                export_name: "Empty",
+                runtime_name: "empty",
+            },
+            BindingCase {
+                export_name: "Entry",
+                runtime_name: "entry",
+            },
+            BindingCase {
+                export_name: "Entries",
+                runtime_name: "entries",
+            },
+        ],
+        outputs: &[],
+    };
+    let dir = tempfile::tempdir().unwrap();
+    let (modules, source) = write_case(dir.path(), &case);
+    let out = run_synthesize_selectors(
+        &modules,
+        &[
+            "--source-file",
+            source.to_str().unwrap(),
+            "--module",
+            "app/helpers",
+            "--apply",
+            "--format",
+            "json",
+        ],
+    );
+    let parsed = parse_stdout_json(&out);
+    assert_eq!(parsed["summary"]["changed_candidates"], 3, "{parsed}");
+    assert_eq!(parsed["summary"]["skipped_candidates"], 0, "{parsed}");
+    let rewritten = fs::read_to_string(modules.join("app/helpers.yaml")).unwrap();
+    let doc: serde_yaml::Value = serde_yaml::from_str(&rewritten).unwrap();
+    let outputs = collect_selector_outputs(&doc);
+    assert_eq!(outputs.len(), 3, "{outputs:?}");
+    assert_eq!(
+        outputs
+            .into_iter()
+            .map(|output| output.exports)
+            .collect::<BTreeSet<_>>(),
+        ["Empty", "Entry", "Entries"]
+            .into_iter()
+            .map(|name| BTreeSet::from([name.to_string()]))
+            .collect()
+    );
+}
+
 minimizer_expectation_case!(
     minimizes_neighbor_class_context,
     fixture = "neighbor_class_context",

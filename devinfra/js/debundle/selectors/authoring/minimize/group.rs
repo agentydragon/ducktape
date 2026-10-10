@@ -3,21 +3,98 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use anyhow::{Context, Result};
-use readoff_render::{kept_spans_for_anchor_set, unindexed_literal_spans};
+use readoff_render::{
+    kept_spans_for_anchor_set, kept_spans_for_anchor_sets, unindexed_literal_spans,
+};
 use swc_common::Spanned;
 use swc_ecma_ast::*;
 
 use super::object::{object_anchor_ranking, try_object_read_off_candidates};
 use super::var::try_var_read_off_candidates;
-use super::{
-    extend_anchor_cover, relax_exact_declaration, render_var_slots, render_via_neighbor_context,
-};
+use super::{relax_exact_declaration, render_var_slots, render_via_neighbor_context};
 use crate::regex_anchor::{accepted_regex_anchors, collect_regex_anchor_candidates};
 use crate::render::{AnchorSpan, MAX_MINIMIZER_ANCHORS, holes_present, node_holds_anchor};
 use crate::{
     ChunkSelectorIndex, IndexedDeclaration, SpecializedSelector, SynthesizedTargetBinding,
-    match_single_member_selector, prove_synthesized_selector, single_ident_pat_name,
+    prove_synthesized_selector, single_ident_pat_name,
 };
+
+/// Probe prefixes of the shape index's ranking in exponentially growing
+/// batches, find the shortest proving prefix, then remove redundant blocks.
+/// The bounded pruning pass keeps the selector sparse without scoring every
+/// possible next anchor at every step. Callers may keep a small prefix after a
+/// failed search as a tuple seed.
+fn extend_ranked_prefix(
+    seed: &BTreeSet<AnchorSpan>,
+    ranked: &[AnchorSpan],
+    limit: usize,
+    proves: impl Fn(&BTreeSet<AnchorSpan>) -> Result<bool>,
+) -> Result<(BTreeSet<AnchorSpan>, bool)> {
+    if proves(seed)? {
+        return Ok((seed.clone(), true));
+    }
+    let mut seen = seed.clone();
+    let additions: Vec<_> = ranked
+        .iter()
+        .copied()
+        .filter(|span| seen.insert(*span))
+        .take(limit)
+        .collect();
+    let mut kept = seed.clone();
+    let mut previous_end = 0;
+    let mut end = 1;
+    while previous_end < additions.len() {
+        end = end.min(additions.len());
+        kept.extend(additions[previous_end..end].iter().copied());
+        if proves(&kept)? {
+            let mut low = previous_end + 1;
+            let mut high = end;
+            while low < high {
+                let mid = (low + high) / 2;
+                let trial = seed
+                    .iter()
+                    .copied()
+                    .chain(additions[..mid].iter().copied())
+                    .collect();
+                if proves(&trial)? {
+                    high = mid;
+                } else {
+                    low = mid + 1;
+                }
+            }
+            let mut minimal: BTreeSet<_> = seed
+                .iter()
+                .copied()
+                .chain(additions[..low].iter().copied())
+                .collect();
+            let mut width = (low.next_power_of_two() / 2).max(1);
+            let mut pruned = 0;
+            while width > 0 && pruned < 24 {
+                for block in additions[..low].chunks(width) {
+                    if pruned == 24 {
+                        break;
+                    }
+                    let mut trial = minimal.clone();
+                    for anchor in block {
+                        trial.remove(anchor);
+                    }
+                    if trial.len() == minimal.len() {
+                        continue;
+                    }
+                    pruned += 1;
+                    if proves(&trial)? {
+                        minimal = trial;
+                    }
+                }
+                width /= 2;
+            }
+            return Ok((minimal, true));
+        }
+        previous_end = end;
+        end = end.saturating_mul(2);
+    }
+    Ok((kept, false))
+}
 
 /// Non-object slots reuse the shape index's ranked features instead of a second
 /// expression walk. Object slots keep the shared value-before-key policy.
@@ -32,8 +109,8 @@ fn slot_anchor_ranking(declarator: &VarDeclarator, ranked_spans: &[AnchorSpan]) 
         .collect()
 }
 
-/// Prefer anchors that resolve each slot independently, but retain partial
-/// progress when only the complete tuple can disambiguate the binding group.
+/// Prefer anchors that resolve each slot independently, but retain a small
+/// prefix when only the complete tuple can disambiguate the binding group.
 fn slot_minimal_anchors(
     index: &ChunkSelectorIndex<'_>,
     var: &VarDecl,
@@ -43,12 +120,11 @@ fn slot_minimal_anchors(
     seed: &BTreeSet<AnchorSpan>,
     ranked: &[AnchorSpan],
 ) -> Result<BTreeSet<AnchorSpan>> {
-    let export = target.export_name.as_str();
     let runtime = target.runtime_binding.as_str();
     // Single-target view of this slot: the slot is the lone target, every other
     // declarator holes to a `DECLARATORS_*` run.
     let only_this = BTreeSet::from([slot]);
-    let export_for = |name: &str| (name == runtime).then(|| export.to_string());
+    let export_for = |name: &str| (name == runtime).then(|| target.export_name.clone());
     let no_regex = BTreeMap::new();
     let render_slot = |kept: &BTreeSet<AnchorSpan>| -> Result<String> {
         render_var_slots(var, &only_this, &export_for, kept, &no_regex)
@@ -63,18 +139,18 @@ fn slot_minimal_anchors(
         )
         .is_ok())
     };
-    // Preserve the existing slot score; the production proof above checks the
-    // actual declaration and the final group proof checks the complete tuple.
-    extend_anchor_cover(seed.clone(), ranked, slot_resolves, |trial| {
-        let source = render_slot(trial)?;
-        // Invalid trial selectors are worse than every matching candidate;
-        // they should not abort the own-declaration fallback.
-        let Ok(matches) = match_single_member_selector(index, export, &source) else {
-            return Ok((true, usize::MAX));
-        };
-        let target_unresolved = !matches.iter().any(|m| m.binding.binding_name == runtime);
-        Ok((target_unresolved, matches.len()))
-    })
+    let (kept, resolved) =
+        extend_ranked_prefix(seed, ranked, MAX_MINIMIZER_ANCHORS, slot_resolves)?;
+    if resolved {
+        return Ok(kept);
+    }
+    let mut partial = seed.clone();
+    for &span in ranked {
+        if kept.contains(&span) && partial.insert(span) && partial.len() == seed.len() + 2 {
+            break;
+        }
+    }
+    Ok(partial)
 }
 
 /// Resolve the complete declarator tuple: independently useful slot anchors
@@ -100,20 +176,30 @@ fn try_var_group_read_off(
         .body
         .get(decl.body_idx)
         .context("read-off body index no longer in module")?;
-    let mut ranked_spans = Vec::new();
-    for feature in index.shape_index.scored_features(decl.body_idx) {
-        let set = shape_index::AnchorSet {
+    let ranked_anchor_sets: Vec<_> = index
+        .shape_index
+        .scored_features(decl.body_idx)
+        .into_iter()
+        .map(|feature| shape_index::AnchorSet {
             body_idx: decl.body_idx,
             anchors: vec![feature],
             opt_one: false,
-        };
-        for span in kept_spans_for_anchor_set(item, &set) {
-            if !ranked_spans.contains(&span) {
+        })
+        .collect();
+    let mut ranked_spans = Vec::new();
+    let mut seen_spans = BTreeSet::new();
+    for spans in kept_spans_for_anchor_sets(item, &ranked_anchor_sets) {
+        for span in spans {
+            if seen_spans.insert(span) {
                 ranked_spans.push(span);
             }
         }
     }
-    ranked_spans.extend(unindexed_literal_spans(item));
+    for span in unindexed_literal_spans(item) {
+        if seen_spans.insert(span) {
+            ranked_spans.push(span);
+        }
+    }
     let chunk_kept = index
         .shape_index
         .minimal_anchor_set(decl.body_idx)
@@ -168,15 +254,9 @@ fn try_var_group_read_off(
                 .is_ok(),
         )
     };
-    let mut resolved = resolves(&union)?;
-    for anchor in tuple_ranked {
-        if resolved {
-            break;
-        }
-        if union.insert(anchor) {
-            resolved = resolves(&union)?;
-        }
-    }
+    let (extended, mut resolved) =
+        extend_ranked_prefix(&union, &tuple_ranked, tuple_ranked.len(), resolves)?;
+    union = extended;
     if !resolved {
         // Bound greedy search, not completeness: one full-anchor proof handles
         // a discriminator beyond the search budget without a second renderer.
@@ -310,4 +390,26 @@ pub(crate) fn minimize_var_group_selector(
             .into_iter()
             .next(),
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use std::cell::Cell;
+
+    use super::*;
+
+    #[test]
+    fn ranked_prefix_finds_earliest_proving_anchor_with_logarithmic_probes() {
+        let ranked: Vec<AnchorSpan> = (0..64).map(|n| (n, n + 1)).collect();
+        let probes = Cell::new(0);
+        let (kept, resolved) =
+            extend_ranked_prefix(&BTreeSet::new(), &ranked, ranked.len(), |trial| {
+                probes.set(probes.get() + 1);
+                Ok(trial.contains(&(31, 32)))
+            })
+            .unwrap();
+        assert!(resolved);
+        assert_eq!(kept, BTreeSet::from([(31, 32)]));
+        assert!(probes.get() <= 36, "{} proofs", probes.get());
+    }
 }

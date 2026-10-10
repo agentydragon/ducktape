@@ -430,12 +430,53 @@ fn rewrite_name_bindings_to_source_match(
     // group).
     let mut synthesized_groups = Vec::new();
     for (decl_idx, group_members) in grouped {
-        match synthesize_simplest_selector_for_group(
+        let outcome = synthesize_simplest_selector_for_group(
             index,
             decl_idx,
             &group_members,
             options.candidates,
-        ) {
+        );
+        // A use of one target binding from another target's initializer can
+        // prevent the joint source_match from proving even when each member's
+        // own declarator proves. Salvage the members as separate claims.
+        if group_members.len() > 1 && !matches!(&outcome, Ok(GroupSelectorOutcome::Synthesized(_)))
+        {
+            for member in group_members {
+                let only_member = vec![member];
+                match synthesize_simplest_selector_for_group(
+                    index,
+                    decl_idx,
+                    &only_member,
+                    options.candidates,
+                ) {
+                    Ok(GroupSelectorOutcome::Synthesized(synthesized)) => {
+                        synthesized_groups.push(SynthesizedDeclGroup {
+                            decl_idx,
+                            members: only_member,
+                            synthesized,
+                        });
+                    }
+                    Ok(GroupSelectorOutcome::Skipped(reason)) => {
+                        candidates.push(skipped_candidate(
+                            module,
+                            file,
+                            only_member[0].member_index,
+                            Some(only_member[0].export_name.clone()),
+                            reason,
+                        ))
+                    }
+                    Err(err) => candidates.push(skipped_candidate(
+                        module,
+                        file,
+                        only_member[0].member_index,
+                        Some(only_member[0].export_name.clone()),
+                        format!("{err:#}"),
+                    )),
+                }
+            }
+            continue;
+        }
+        match outcome {
             Ok(GroupSelectorOutcome::Synthesized(synthesized)) => {
                 synthesized_groups.push(SynthesizedDeclGroup {
                     decl_idx,

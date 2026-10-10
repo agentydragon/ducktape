@@ -21,7 +21,7 @@
 //!
 //! Multi-target var binding groups read off per slot (`try_var_group_read_off`):
 //! each target declarator slot reads its minimal anchor off the shape index
-//! (restricted to the slot) plus a slot-aware greedy (`slot_minimal_anchors`),
+//! (restricted to the slot) plus a bounded ranked-prefix search (`slot_minimal_anchors`),
 //! the per-slot kept spans union, and the binding-group matcher proves the tuple.
 //! Slots need not resolve independently: partial slot covers feed the tuple
 //! proof, which adds ranked anchors if needed. All var paths share padded
