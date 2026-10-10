@@ -30,7 +30,10 @@ cdk8s_import(
     name = "prometheus",
     crd = "@prometheus_operator_prometheus_crd//file",
     crd_name = "prometheuses.monitoring.coreos.com",
-    crd_remove_paths = [_THANOS + "getConfigInterval", _THANOS + "getConfigTimeout"],
+    crd_remove_paths = [
+        _THANOS + "getConfigInterval",
+        _THANOS + "getConfigTimeout",
+    ],
     module_name = "prometheus_operator_prometheus_crds",
     module_path = "com/coreos/monitoring",
     visibility = ["//cluster/cdk8s:__subpackages__"],
