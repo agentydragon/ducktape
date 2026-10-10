@@ -1,36 +1,44 @@
 name: Bazel execution contract
 
+# The smoke workspace has its own MODULE.bazel and assembles its .bazelrc from
+# devinfra/bazel/rbe.bazelrc; the root .bazelrc and MODULE.bazel do not configure it.
 on:
   pull_request:
     paths:
       # keep-sorted start
-      - ".bazelrc"
+      - ".github/actions/setup-bazel/action.yml"
+      - ".github/actions/setup-ci-secrets/action.yml"
       - ".github/actions/setup-nix-attic/action.yml"
       - ".github/workflows/nixos-bazel-rbe.yml"
-      - "MODULE.bazel"
       - "devinfra/bazel/**"
       - "devinfra/nixos_bazel_test/**"
+      - "devinfra/secrets/_common.sh"
+      - "devinfra/secrets/ci_env.sh"
+      - "devinfra/setup_buildbuddy.sh"
+      - "flake.lock"
       - "flake.nix"
+      - "nix/attic-pubkeys.json"
       - "nix/flake/packages.nix"
-      - "nix/home/modules/bazel-cache.nix"
       - "nix/nixos/modules/bazel/**"
-      - "openai_utils/testing/testing.bzl"
       # keep-sorted end
   push:
     branches: [devel]
     paths:
       # keep-sorted start
-      - ".bazelrc"
+      - ".github/actions/setup-bazel/action.yml"
+      - ".github/actions/setup-ci-secrets/action.yml"
       - ".github/actions/setup-nix-attic/action.yml"
       - ".github/workflows/nixos-bazel-rbe.yml"
-      - "MODULE.bazel"
       - "devinfra/bazel/**"
       - "devinfra/nixos_bazel_test/**"
+      - "devinfra/secrets/_common.sh"
+      - "devinfra/secrets/ci_env.sh"
+      - "devinfra/setup_buildbuddy.sh"
+      - "flake.lock"
       - "flake.nix"
+      - "nix/attic-pubkeys.json"
       - "nix/flake/packages.nix"
-      - "nix/home/modules/bazel-cache.nix"
       - "nix/nixos/modules/bazel/**"
-      - "openai_utils/testing/testing.bzl"
       # keep-sorted end
   workflow_dispatch:
 
