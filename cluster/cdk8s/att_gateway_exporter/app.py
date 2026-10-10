@@ -18,6 +18,7 @@ from prometheus_operator_crds.com.coreos.monitoring import (
 )
 
 from cluster.cdk8s import pod_policy
+from cluster.cdk8s.att_gateway_exporter import access_code
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.forgejo_registry import chart as forgejo_images
 from cluster.cdk8s.grafana_dashboards import DashboardFile
@@ -82,6 +83,14 @@ def _deployment(chart: Chart) -> k8s.KubeDeployment:
                             env=[
                                 k8s.EnvVar(name=env_name(Settings, "url"), value=_GATEWAY_URL),
                                 k8s.EnvVar(name=env_name(Settings, "listen_port"), value=str(_HTTP.number)),
+                                k8s.EnvVar(
+                                    name=env_name(Settings, "access_code"),
+                                    value_from=k8s.EnvVarSource(
+                                        secret_key_ref=k8s.SecretKeySelector(
+                                            name=access_code.SECRET_NAME, key=access_code.SECRET_KEY
+                                        )
+                                    ),
+                                ),
                             ],
                             ports=[_HTTP.k8s_container_port()],
                             # /metrics serves the cache, so probing it never reaches the gateway.
@@ -147,6 +156,7 @@ def att_gateway_exporter(
     flux_chart: Chart,
     directory: RenderedDirectory,
     monitoring_namespace: Kustomization,
+    access_code_secret: Kustomization,
     monitoring_crds: Kustomization,
     grafana_operator: Kustomization,
 ) -> Kustomization:
@@ -157,10 +167,11 @@ def att_gateway_exporter(
         timeout="5m",
         depends_on=flux_kustomization_depends_on_many(
             monitoring_namespace,
+            access_code_secret,
             # ServiceMonitor
             monitoring_crds,
             # GrafanaDashboard
             grafana_operator,
         ),
-        description="AT&T gateway metrics: WAN, fiber optics, LAN ports.",
+        description="AT&T gateway metrics: WAN, fiber optics, LAN ports, NAT sessions, speed tests.",
     )

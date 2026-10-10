@@ -1,0 +1,221 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html lang="en" xml:lang="en" xmlns="http://www.w3.org/1999/xhtml" >
+    <head>
+        <title>Speed Test</title>
+        <meta http-equiv="Content-Type" content="text/html; charset=windows-1252" />
+        <meta http-equiv="Content-Style-Type" content="text/css" />
+        <meta http-equiv="Content-Script-Type" content="type" />
+        <link rel="icon" type="image/ico" href="/favicon.ico" />
+        <link rel="stylesheet" type="text/css" href="/baseINID.css" />
+        <link rel="stylesheet" type="text/css" href="/INID.css" />
+<script type="text/css"><!--
+<style id="antiClickjack" type="text/css">body{display:none;}</style>
+//-->
+</script>
+    <script language="javascript" type="text/javascript"><!--
+  adImages=new Array('/images/Block1.gif','/images/Block3.gif','/images/Block5.gif','/images/Block7.gif','/images/Block9.gif','/images/Block11.gif','/images/Block14.gif')
+  thisAd=0
+  imgCt=adImages.length
+if (self == top) {
+    var antiClickjack = document.getElementById("antiClickjack");
+    antiClickjack.parentNode.removeChild(antiClickjack);
+} else {
+    top.location = self.location;
+}
+function rotate(){
+    if (document.images) {
+        thisAd++
+            if (thisAd==imgCt){
+                thisAd=0
+            }
+        document.adBanner.src=adImages[thisAd]
+            setTimeout('rotate()',200)
+    }
+}
+function reloadPage()
+{
+    if (document.forms[0].hidden.value == "update_refresh") {
+      rotate()
+    }
+    else if (document.forms[0].hidden.value == "freshen") {
+      setTimeout("self.location.reload(true)", 10000)
+      rotate()
+    }
+}
+
+
+//-->
+</script>
+    </head>
+           <body>
+  <div id="wrapper">
+    <div id="whole-page">
+      <div id="main-content">
+        <div id="header">
+          <div id="tab-container">
+            <div id="logo-div">
+	      <img id="main-logo" src="/images/att_logo.png" alt="" style="height:42px;" />
+            </div>
+            <div style="clear: both;"></div>
+<div id="skip"><a href="#content-sub">Skip to Main Content</a></div>
+            <div id="top-navigation">
+              <div id="top-navigation-buttons">
+<a class="topnav" href="/cgi-bin/home.ha"><span>Device</span></a>
+<a class="topnav" href="/cgi-bin/broadbandstatistics.ha"><span>Broadband</span></a>
+<a class="topnav" href="/cgi-bin/lanstatistics.ha"><span>
+Home Network
+</span></a>
+
+<a class="topnav" href="/cgi-bin/voice.ha"><span>Voice</span></a>
+<a class="topnav" href="/cgi-bin/firewall.ha"><span>Firewall</span></a>
+<a class="topnav topnavselected" href="/cgi-bin/diag.ha"><span>Diagnostics</span></a>
+              <div style="clear: both;"></div>
+            </div>
+          </div>
+          <div id="secondary-nav">
+            <div id="secondary-nav-buttons">
+<a class="secondary-link" href="/cgi-bin/diag.ha">Troubleshoot</a>
+<a class="secondary-link sec-selected" href="/cgi-bin/speed.ha">Speed Test</a>
+<a class="secondary-link" href="/cgi-bin/logs.ha">Logs</a>
+<a class="secondary-link" href="/cgi-bin/update.ha">Update</a>
+<a class="secondary-link" href="/cgi-bin/reset.ha">Resets</a>
+<a class="secondary-link" href="/cgi-bin/syslog.ha">Syslog</a>
+<a class="secondary-link" href="/cgi-bin/events.ha">Event Notifications</a>
+<a class="secondary-link" href="/cgi-bin/nattable.ha">NAT Table</a>
+                  </div></div></div>
+                <div style="clear: both;"></div>
+              </div>
+        <div style="clear: both;"></div>
+      <div id="mid-section">
+          <div id="content-padding"><!-- CONTENT -->
+            <div id="content"
+><div id="content-sub">
+                <div class="first-section-header">
+                 <h1>Speed Test</h1>
+                 </div>
+                 <div class="section-content">
+<form method="post" action="/cgi-bin/speed.ha">
+<input type="hidden" name="nonce" value="548ba5911037d73277c4255930ce8abacd5425e3b781f3a742ebb3147913adf1" />
+              <div class="col1">
+              <input type="hidden" name="hidden" value="" />
+              <p class="resfail">WARNING: During this Speed Test, services that are using the network (e.g., web browsers, voice calls,
+ video) may have their performance impacted. In addition, the results of this Speed Test will be lower when these services are in use during the test.</p>
+              <input type="submit" name="run" class="cssbtn largebtn" value="Run Speed Test" onclick="rotate();this.form.submit();"  />
+              </div>
+                             <br />
+                             <img src="/images/spacer.gif"  name="adBanner" alt="" />
+                             <div class="hide">
+                               <img src="/images/Block1.gif" width="1" height="1" alt="" />
+                               <img src="/images/Block3.gif" width="1" height="1" alt="" />
+                               <img src="/images/Block5.gif" width="1" height="1" alt="" />
+                               <img src="/images/Block7.gif" width="1" height="1" alt="" />
+                               <img src="/images/Block9.gif" width="1" height="1" alt="" />
+                               <img src="/images/Block11.gif" width="1" height="1" alt="" />
+                               <img src="/images/Block14.gif" width="1" height="1" alt="" />
+                             </div>
+                       </form>
+                 <div class="section-header"><h2>Test History</h2></div>
+                 <div>
+                 <table class="grid table100" summary="Table of Speed Test Result History">
+                    <thead>
+                        <th scope="col">Test Completion Time</th>
+                        <th scope="col">Direction</th>
+                        <th scope="col">Throughput(Mbps)</th>
+                        <th scope="col">Overhead</th>
+                        <th scope="col">Average Latency(ms)</th>
+                        <th scope="col">Status</th>
+                    </thead>
+
+                    <tbody>
+                                                <tr class="b"><td scope="row" class="heading" width="47%">
+                        10/09/2026 06:12:33</td>
+                        <td>upstream</td>
+                        <td> 1275.960000</td>
+                        <td> 28</td>
+                        <td> 13.000000</td>
+                        <td> Success</td></tr>
+                                                <tr class="a"><td scope="row" class="heading" width="47%">
+                        10/09/2026 06:12:25</td>
+                        <td>downstream</td>
+                        <td> 1184.490000</td>
+                        <td> 28</td>
+                        <td> 14.000000</td>
+                        <td> Success</td></tr>
+                                                <tr class="b"><td scope="row" class="heading" width="47%">
+                        10/03/2026 15:49:46</td>
+                        <td>upstream</td>
+                        <td> 1272.560000</td>
+                        <td> 28</td>
+                        <td> 12.000000</td>
+                        <td> Success</td></tr>
+                                                <tr class="a"><td scope="row" class="heading" width="47%">
+                        10/03/2026 15:49:38</td>
+                        <td>downstream</td>
+                        <td> 1287.710000</td>
+                        <td> 28</td>
+                        <td> 20.000000</td>
+                        <td> Success</td></tr>
+                                                <tr class="b"><td scope="row" class="heading" width="47%">
+                        09/25/2026 10:16:22</td>
+                        <td>upstream</td>
+                        <td> 1280.290000</td>
+                        <td> 28</td>
+                        <td> 13.000000</td>
+                        <td> Success</td></tr>
+                                                <tr class="a"><td scope="row" class="heading" width="47%">
+                        09/25/2026 10:16:14</td>
+                        <td>downstream</td>
+                        <td> 1293.570000</td>
+                        <td> 28</td>
+                        <td> 21.000000</td>
+                        <td> Success</td></tr>
+                                                <tr class="b"><td scope="row" class="heading" width="47%">
+                        09/21/2026 05:44:52</td>
+                        <td>upstream</td>
+                        <td> 1278.880000</td>
+                        <td> 28</td>
+                        <td> 30.000000</td>
+                        <td> Success</td></tr>
+                                                <tr class="a"><td scope="row" class="heading" width="47%">
+                        09/21/2026 05:44:44</td>
+                        <td>downstream</td>
+                        <td> 1288.500000</td>
+                        <td> 28</td>
+                        <td> 39.000000</td>
+                        <td> Success</td></tr>
+                                        </tbody>
+                </table>
+                </div>
+                      </div>
+                </div>
+              </div>
+            </div>
+ <!-- isWANUP -->
+            <div id="help">
+              <div id="help-sub">
+              <h2>Help</h2><br />
+<p>This Speed Test measures the speed between the AT&amp;T network and your BGW320-500 device. It does NOT measure the speed between your BGW320-500 and your home devices (e.g., PC, laptop, tablet, smartphone).
+</p>
+<strong>Upstream:</strong> Direction of travel from BGW320-500 to Speed Test Server.<br /><br />
+<strong>Downstream:</strong> Direction of travel from Speed Test Server to BGW320-500.<br /><br />
+<strong>Test Completion Time:</strong> Run time of each Speed Test.<br /><br />
+<strong>Throughput:</strong> Maximum physical throughput at almost zero packet loss . It includes protocol overhead. As such, the results indicate the maximum capacity of the link between the device and the Speed Test server.<br /><br />
+<strong>Average Latency:</strong> The round-trip delay of the packets sent (in milliseconds).<br /><br />
+<strong>Overhead:</strong> The Overhead transmitted in addition to the payload (in kbps).<br /><br />
+<strong>Status:</strong> Completion status of each Speed Test.
+              </div> <!-- help-sub -->
+            </div> <!-- help -->
+            <div style="clear: both;"></div>
+          </div>
+        </div>
+        <div style="clear: both;"></div>
+      </div>
+      <div id="footer">
+      <div><br>
+   <span class="inner">&copy; 2016-2025 AT&T Intellectual Property. All rights reserved. AT&T and Globe logo are registered trademarks of AT&T Intellectual Property.</span>
+   <span class="sitemap"><a href="/cgi-bin/sitemap.ha">Site Map</a></span></br></div>
+   <div><span class="inner">&copy; 2016 ARRIS Enterprises LLC. All rights reserved. ARRIS is a registered trademark of ARRIS Enterprises LLC.</span></div>
+   </div>
+      </div>
+</body>
+</html>

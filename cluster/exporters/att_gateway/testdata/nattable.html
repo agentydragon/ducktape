@@ -1,0 +1,309 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html lang="en" xml:lang="en" xmlns="http://www.w3.org/1999/xhtml" >
+    <head>
+        <title>NAT Table</title>
+        <meta http-equiv="Content-Type" content="text/html; charset=windows-1252" />
+        <meta http-equiv="Content-Style-Type" content="text/css" />
+        <meta http-equiv="Content-Script-Type" content="type" />
+        <link rel="icon" type="image/ico" href="/favicon.ico" />
+        <link rel="stylesheet" type="text/css" href="/baseINID.css" />
+        <link rel="stylesheet" type="text/css" href="/INID.css" />
+<script type="text/css"><!--
+<style id="antiClickjack" type="text/css">body{display:none;}</style>
+//-->
+</script>
+    <script language="javascript" type="text/javascript"><!--
+  adImages=new Array('/images/Block1.gif','/images/Block3.gif','/images/Block5.gif','/images/Block7.gif','/images/Block9.gif','/images/Block11.gif','/images/Block14.gif')
+  thisAd=0
+  imgCt=adImages.length
+if (self == top) {
+    var antiClickjack = document.getElementById("antiClickjack");
+    antiClickjack.parentNode.removeChild(antiClickjack);
+} else {
+    top.location = self.location;
+}
+function rotate(){
+    if (document.images) {
+        thisAd++
+            if (thisAd==imgCt){
+                thisAd=0
+            }
+        document.adBanner.src=adImages[thisAd]
+            setTimeout('rotate()',200)
+    }
+}
+function reloadPage()
+{
+    if (document.forms[0].hidden.value == "update_refresh") {
+      rotate()
+    }
+    else if (document.forms[0].hidden.value == "freshen") {
+      setTimeout("self.location.reload(true)", 10000)
+      rotate()
+    }
+}
+
+
+//-->
+</script>
+    </head>
+           <body>
+  <div id="wrapper">
+    <div id="whole-page">
+      <div id="main-content">
+        <div id="header">
+          <div id="tab-container">
+            <div id="logo-div">
+	      <img id="main-logo" src="/images/att_logo.png" alt="" style="height:42px;" />
+            </div>
+            <div style="clear: both;"></div>
+<div id="skip"><a href="#content-sub">Skip to Main Content</a></div>
+            <div id="top-navigation">
+              <div id="top-navigation-buttons">
+<a class="topnav" href="/cgi-bin/home.ha"><span>Device</span></a>
+<a class="topnav" href="/cgi-bin/broadbandstatistics.ha"><span>Broadband</span></a>
+<a class="topnav" href="/cgi-bin/lanstatistics.ha"><span>
+Home Network
+</span></a>
+
+<a class="topnav" href="/cgi-bin/voice.ha"><span>Voice</span></a>
+<a class="topnav" href="/cgi-bin/firewall.ha"><span>Firewall</span></a>
+<a class="topnav topnavselected" href="/cgi-bin/diag.ha"><span>Diagnostics</span></a>
+              <div style="clear: both;"></div>
+            </div>
+          </div>
+          <div id="secondary-nav">
+            <div id="secondary-nav-buttons">
+<a class="secondary-link" href="/cgi-bin/diag.ha">Troubleshoot</a>
+<a class="secondary-link" href="/cgi-bin/speed.ha">Speed Test</a>
+<a class="secondary-link" href="/cgi-bin/logs.ha">Logs</a>
+<a class="secondary-link" href="/cgi-bin/update.ha">Update</a>
+<a class="secondary-link" href="/cgi-bin/reset.ha">Resets</a>
+<a class="secondary-link" href="/cgi-bin/syslog.ha">Syslog</a>
+<a class="secondary-link" href="/cgi-bin/events.ha">Event Notifications</a>
+<a class="secondary-link sec-selected" href="/cgi-bin/nattable.ha">NAT Table</a>
+                  </div></div></div>
+                <div style="clear: both;"></div>
+              </div>
+        <div style="clear: both;"></div>
+      <div id="mid-section">
+          <div id="content-padding"><!-- CONTENT -->
+            <div id="content"
+><div id="content-sub">
+                <div class="first-section-header">
+                 <h1>NAT Table</h1>
+                 </div>
+                 <div class="section-content">
+                     <div class="example">Making a change to some pulldowns on this page will automatically change the context below it, enabling you to fill only the appropriate fields for the change you have made.
+                     </div>
+<form method="post" action="/cgi-bin/nattable.ha">
+<input type="hidden" name="nonce" value="5ee717834113aee2ee50598fe9fb7a4a29cbc586926693ee9ba385098c7fd5b8" />
+                   <div class="nojavamsg">
+                     <noscript>
+                       You have disabled JavaScript(TM) in your browser. When you change an item that has an Update button to the right of it, make your change, then click the Update button. This will transform the page according to the change you have made and you may then proceed.
+                     </noscript>
+                  </div>
+                   <div>
+                   <input type="submit" name="Reset" class="cssbtn" value="Reset All Sessions" />
+                   </div>
+                 <div>
+                 <table class="table60" summary="This table displays a summary of session information.">
+                   <tr>
+                     <th scope="row" nowrap="nowrap">Total sessions available</th>
+                     <td>32767
+</td></tr>
+                   <tr>
+                      <th scope="row">Total sessions in use</th>
+                      <td>116
+</td></tr>
+                   <tr>
+                     <th scope="row"><label for="nattablesource">Select display option</label></th>
+                     <td><select id="nattablesource" name="client" onchange="this.form.submit()">
+<option value="all"
+ selected="selected">All</option>
+<option value="192.168.1.254"
+>192.168.1.254</option>
+<option value="192.168.1.100">192.168.1.100/MikroTik</option>
+<option value="192.168.1.102">192.168.1.102/airthings-hub</option>
+<option value="192.168.1.66">192.168.1.66/Rai-PX6</option>
+<option value="192.168.1.67">192.168.1.67/Living Room TV</option>
+<option value="192.168.1.71">192.168.1.71/atlas</option>
+<option value="192.168.1.72">192.168.1.72/wyrm2</option>
+<option value="192.168.1.90">192.168.1.90/optiplex</option>
+<option value="192.168.1.91">192.168.1.91/wlan0</option>
+<option value="192.168.1.97">192.168.1.97/wlan0</option>
+                     </select>
+                         &nbsp;
+                         <noscript>
+                           <input type="submit" name="Update" class="buttonclass buttonclasssmall" value="Update" />
+                         </noscript>
+                 </td></tr>
+                 </table>
+                 </div>
+                 <div class="scroller">
+                 <table class="grid table100" summary="Summary of nattable connections">
+                   <thead>
+                   <tr>
+                     <th scope="col">IP Family</th>
+                     <th scope="col">Protocol</th>
+                     <th scope="col">Protocol Number</th>
+                     <th scope="col">Lifetime</th>
+                     <th scope="col">TCP State</th>
+                     <th scope="col">Source Address</th>
+                     <th scope="col">Source Port</th>
+                     <th scope="col">Destination Address</th>
+                     <th scope="col">Destination Port</th>
+                     <th scope="col">NAT Source Address</th>
+                     <th scope="col">NAT Source Port</th>
+                     <th scope="col">NAT Destination Address</th>
+                     <th scope="col">NAT Destination Port</th>
+                     <th scope="col">Bidirectional</th>
+                   </tr>
+                   </thead>
+                   <tbody>
+<tr class="a"><td>ipv4</td><td>udp</td><td>17</td><td>96</td><td>&nbsp;</td><td>192.168.1.72</td><td>4242</td><td>198.51.100.1</td><td>4242</td><td>203.0.113.35</td><td>48137</td><td>198.51.100.1</td><td>4242</td><td>*</td></tr>
+<tr class="b"><td>ipv4</td><td>tcp</td><td>6</td><td>86</td><td>ESTABLISHED</td><td>192.168.1.72</td><td>51012</td><td>198.51.100.2</td><td>443</td><td>203.0.113.35</td><td>51012</td><td>198.51.100.2</td><td>443</td><td>*</td></tr>
+<tr class="a"><td>ipv6</td><td>tcp</td><td>6</td><td>2384</td><td>ESTABLISHED</td><td>2001:db8:0:1::1</td><td>43754</td><td>2001:db8:ffff::2</td><td>443</td><td>2001:db8:0:1::1</td><td>43754</td><td>2001:db8:ffff::2</td><td>443</td><td>*</td></tr>
+<tr class="b"><td>ipv4</td><td>udp</td><td>17</td><td>96</td><td>&nbsp;</td><td>192.168.1.72</td><td>4242</td><td>198.51.100.3</td><td>14794</td><td>203.0.113.35</td><td>48137</td><td>198.51.100.3</td><td>14794</td><td>*</td></tr>
+<tr class="a"><td>ipv4</td><td>tcp</td><td>6</td><td>28797</td><td>ESTABLISHED</td><td>192.168.1.72</td><td>50034</td><td>198.51.100.4</td><td>443</td><td>203.0.113.35</td><td>50034</td><td>198.51.100.4</td><td>443</td><td>*</td></tr>
+<tr class="b"><td>ipv4</td><td>udp</td><td>17</td><td>91</td><td>&nbsp;</td><td>192.168.1.71</td><td>4242</td><td>198.51.100.5</td><td>4242</td><td>203.0.113.35</td><td>49586</td><td>198.51.100.5</td><td>4242</td><td>*</td></tr>
+<tr class="a"><td>ipv4</td><td>tcp</td><td>6</td><td>0</td><td>TIME_WAIT</td><td>192.168.1.90</td><td>41728</td><td>192.168.1.254</td><td>80</td><td>192.168.1.90</td><td>41728</td><td>192.168.1.254</td><td>80</td><td>*</td></tr>
+<tr class="b"><td>ipv6</td><td>tcp</td><td>6</td><td>16706</td><td>ESTABLISHED</td><td>2001:db8:0:1::1</td><td>48474</td><td>2001:db8:ffff::3</td><td>443</td><td>2001:db8:0:1::1</td><td>48474</td><td>2001:db8:ffff::3</td><td>443</td><td>*</td></tr>
+<tr class="a"><td>ipv4</td><td>udp</td><td>17</td><td>69</td><td>&nbsp;</td><td>192.168.1.90</td><td>4242</td><td>198.51.100.6</td><td>4242</td><td>203.0.113.35</td><td>20061</td><td>198.51.100.6</td><td>4242</td><td>*</td></tr>
+<tr class="b"><td>ipv6</td><td>udp</td><td>17</td><td>5</td><td>&nbsp;</td><td>2001:db8:0:1::4</td><td>57639</td><td>2001:db8:ffff::5</td><td>443</td><td>2001:db8:0:1::4</td><td>57639</td><td>2001:db8:ffff::5</td><td>443</td><td>*</td></tr>
+<tr class="a"><td>ipv4</td><td>tcp</td><td>6</td><td>27481</td><td>ESTABLISHED</td><td>192.168.1.72</td><td>55230</td><td>198.51.100.7</td><td>443</td><td>203.0.113.35</td><td>55230</td><td>198.51.100.7</td><td>443</td><td>*</td></tr>
+<tr class="b"><td>ipv6</td><td>udp</td><td>17</td><td>16</td><td>&nbsp;</td><td>2001:db8:0:1::4</td><td>45852</td><td>2001:db8:ffff::6</td><td>443</td><td>2001:db8:0:1::4</td><td>45852</td><td>2001:db8:ffff::6</td><td>443</td><td>*</td></tr>
+<tr class="a"><td>ipv4</td><td>tcp</td><td>6</td><td>8</td><td>CLOSE</td><td>192.168.1.72</td><td>38920</td><td>198.51.100.8</td><td>443</td><td>203.0.113.35</td><td>38920</td><td>198.51.100.8</td><td>443</td><td>*</td></tr>
+<tr class="b"><td>ipv4</td><td>udp</td><td>17</td><td>91</td><td>&nbsp;</td><td>192.168.1.71</td><td>4242</td><td>198.51.100.7</td><td>4242</td><td>203.0.113.35</td><td>49586</td><td>198.51.100.7</td><td>4242</td><td>*</td></tr>
+<tr class="a"><td>ipv4</td><td>tcp</td><td>6</td><td>8</td><td>TIME_WAIT</td><td>192.168.1.72</td><td>48496</td><td>198.51.100.4</td><td>443</td><td>203.0.113.35</td><td>48496</td><td>198.51.100.4</td><td>443</td><td>*</td></tr>
+<tr class="b"><td>ipv6</td><td>udp</td><td>17</td><td>28</td><td>&nbsp;</td><td>fe80:0000:0000:0000:0000:0000:0000:0001</td><td>5353</td><td>2001:db8:ffff::7</td><td>5353</td><td>fe80:0000:0000:0000:0000:0000:0000:0001</td><td>5353</td><td>2001:db8:ffff::7</td><td>5353</td><td></td></tr>
+<tr class="a"><td>ipv4</td><td>tcp</td><td>6</td><td>17</td><td>TIME_WAIT</td><td>192.168.1.72</td><td>50048</td><td>198.51.100.4</td><td>443</td><td>203.0.113.35</td><td>50048</td><td>198.51.100.4</td><td>443</td><td>*</td></tr>
+<tr class="b"><td>ipv4</td><td>tcp</td><td>6</td><td>17</td><td>TIME_WAIT</td><td>192.168.1.72</td><td>50016</td><td>198.51.100.4</td><td>443</td><td>203.0.113.35</td><td>50016</td><td>198.51.100.4</td><td>443</td><td>*</td></tr>
+<tr class="a"><td>ipv4</td><td>tcp</td><td>6</td><td>27685</td><td>ESTABLISHED</td><td>192.168.1.72</td><td>57402</td><td>198.51.100.7</td><td>443</td><td>203.0.113.35</td><td>57402</td><td>198.51.100.7</td><td>443</td><td>*</td></tr>
+<tr class="b"><td>ipv4</td><td>tcp</td><td>6</td><td>27455</td><td>ESTABLISHED</td><td>192.168.1.72</td><td>47140</td><td>198.51.100.1</td><td>443</td><td>203.0.113.35</td><td>47140</td><td>198.51.100.1</td><td>443</td><td>*</td></tr>
+<tr class="a"><td>ipv6</td><td>tcp</td><td>6</td><td>27460</td><td>ESTABLISHED</td><td>2001:db8:0:1::4</td><td>34262</td><td>2001:db8:ffff::8</td><td>443</td><td>2001:db8:0:1::4</td><td>34262</td><td>2001:db8:ffff::8</td><td>443</td><td>*</td></tr>
+<tr class="b"><td>ipv6</td><td>tcp</td><td>6</td><td>27464</td><td>ESTABLISHED</td><td>2001:db8:0:1::4</td><td>37422</td><td>2001:db8:ffff::9</td><td>443</td><td>2001:db8:0:1::4</td><td>37422</td><td>2001:db8:ffff::9</td><td>443</td><td>*</td></tr>
+<tr class="a"><td>ipv6</td><td>tcp</td><td>6</td><td>28716</td><td>ESTABLISHED</td><td>2001:db8:0:1::4</td><td>43818</td><td>2001:db8:ffff::a</td><td>443</td><td>2001:db8:0:1::4</td><td>43818</td><td>2001:db8:ffff::a</td><td>443</td><td>*</td></tr>
+<tr class="b"><td>ipv4</td><td>tcp</td><td>6</td><td>3</td><td>TIME_WAIT</td><td>192.168.1.72</td><td>51744</td><td>198.51.100.9</td><td>443</td><td>203.0.113.35</td><td>51744</td><td>198.51.100.9</td><td>443</td><td>*</td></tr>
+<tr class="a"><td>ipv6</td><td>udp</td><td>17</td><td>16</td><td>&nbsp;</td><td>2001:db8:0:1::4</td><td>52582</td><td>2001:db8:0:1::b</td><td>53</td><td>2001:db8:0:1::4</td><td>52582</td><td>2001:db8:0:1::b</td><td>53</td><td>*</td></tr>
+<tr class="b"><td>ipv4</td><td>udp</td><td>17</td><td>75</td><td>&nbsp;</td><td>192.168.1.90</td><td>4242</td><td>198.51.100.10</td><td>4242</td><td>203.0.113.35</td><td>20061</td><td>198.51.100.10</td><td>4242</td><td>*</td></tr>
+<tr class="a"><td>ipv6</td><td>tcp</td><td>6</td><td>15433</td><td>ESTABLISHED</td><td>2001:db8:0:1::c</td><td>37038</td><td>2001:db8:ffff::d</td><td>443</td><td>2001:db8:0:1::c</td><td>37038</td><td>2001:db8:ffff::d</td><td>443</td><td>*</td></tr>
+<tr class="b"><td>ipv6</td><td>tcp</td><td>6</td><td>28552</td><td>ESTABLISHED</td><td>2001:db8:0:1::e</td><td>34418</td><td>2001:db8:ffff::f</td><td>443</td><td>2001:db8:0:1::e</td><td>34418</td><td>2001:db8:ffff::f</td><td>443</td><td>*</td></tr>
+<tr class="a"><td>ipv4</td><td>udp</td><td>17</td><td>96</td><td>&nbsp;</td><td>192.168.1.72</td><td>4242</td><td>198.51.100.11</td><td>4242</td><td>203.0.113.35</td><td>48137</td><td>198.51.100.11</td><td>4242</td><td>*</td></tr>
+<tr class="b"><td>ipv4</td><td>tcp</td><td>6</td><td>28792</td><td>ESTABLISHED</td><td>192.168.1.90</td><td>56916</td><td>192.168.1.254</td><td>80</td><td>192.168.1.90</td><td>56916</td><td>192.168.1.254</td><td>80</td><td>*</td></tr>
+<tr class="a"><td>ipv4</td><td>tcp</td><td>6</td><td>16046</td><td>ESTABLISHED</td><td>192.168.1.66</td><td>42224</td><td>198.51.100.6</td><td>443</td><td>203.0.113.35</td><td>42224</td><td>198.51.100.6</td><td>443</td><td>*</td></tr>
+<tr class="b"><td>ipv6</td><td>tcp</td><td>6</td><td>2180</td><td>ESTABLISHED</td><td>2001:db8:0:1::1</td><td>46586</td><td>2001:db8:ffff::10</td><td>443</td><td>2001:db8:0:1::1</td><td>46586</td><td>2001:db8:ffff::10</td><td>443</td><td>*</td></tr>
+<tr class="a"><td>ipv4</td><td>tcp</td><td>6</td><td>16650</td><td>ESTABLISHED</td><td>192.168.1.72</td><td>41204</td><td>198.51.100.12</td><td>5228</td><td>203.0.113.35</td><td>41204</td><td>198.51.100.12</td><td>5228</td><td>*</td></tr>
+<tr class="b"><td>ipv4</td><td>tcp</td><td>6</td><td>8</td><td>TIME_WAIT</td><td>192.168.1.72</td><td>48528</td><td>198.51.100.4</td><td>443</td><td>203.0.113.35</td><td>48528</td><td>198.51.100.4</td><td>443</td><td>*</td></tr>
+<tr class="a"><td>ipv6</td><td>tcp</td><td>6</td><td>17878</td><td>ESTABLISHED</td><td>2001:db8:0:1::4</td><td>56630</td><td>2001:db8:ffff::11</td><td>5228</td><td>2001:db8:0:1::4</td><td>56630</td><td>2001:db8:ffff::11</td><td>5228</td><td>*</td></tr>
+<tr class="b"><td>ipv4</td><td>tcp</td><td>6</td><td>28587</td><td>ESTABLISHED</td><td>192.168.1.72</td><td>43326</td><td>198.51.100.13</td><td>443</td><td>203.0.113.35</td><td>43326</td><td>198.51.100.13</td><td>443</td><td>*</td></tr>
+<tr class="a"><td>ipv4</td><td>udp</td><td>17</td><td>96</td><td>&nbsp;</td><td>192.168.1.72</td><td>4242</td><td>198.51.100.5</td><td>4242</td><td>203.0.113.35</td><td>48137</td><td>198.51.100.5</td><td>4242</td><td>*</td></tr>
+<tr class="b"><td>ipv4</td><td>udp</td><td>17</td><td>28</td><td>&nbsp;</td><td>192.168.1.90</td><td>5353</td><td>192.168.1.254</td><td>5353</td><td>192.168.1.90</td><td>5353</td><td>192.168.1.254</td><td>5353</td><td></td></tr>
+<tr class="a"><td>ipv4</td><td>udp</td><td>17</td><td>16</td><td>&nbsp;</td><td>203.0.113.35</td><td>30509</td><td>198.51.100.14</td><td>53</td><td>203.0.113.35</td><td>30509</td><td>198.51.100.14</td><td>53</td><td>*</td></tr>
+<tr class="b"><td>ipv4</td><td>udp</td><td>17</td><td>96</td><td>&nbsp;</td><td>192.168.1.72</td><td>4242</td><td>198.51.100.7</td><td>4242</td><td>203.0.113.35</td><td>48137</td><td>198.51.100.7</td><td>4242</td><td>*</td></tr>
+<tr class="a"><td>ipv4</td><td>tcp</td><td>6</td><td>20565</td><td>ESTABLISHED</td><td>192.168.1.72</td><td>51006</td><td>198.51.100.15</td><td>443</td><td>203.0.113.35</td><td>51006</td><td>198.51.100.15</td><td>443</td><td>*</td></tr>
+<tr class="b"><td>ipv4</td><td>tcp</td><td>6</td><td>13</td><td>TIME_WAIT</td><td>192.168.1.90</td><td>39330</td><td>192.168.1.254</td><td>80</td><td>192.168.1.90</td><td>39330</td><td>192.168.1.254</td><td>80</td><td>*</td></tr>
+<tr class="a"><td>ipv4</td><td>tcp</td><td>6</td><td>28562</td><td>ESTABLISHED</td><td>192.168.1.97</td><td>54275</td><td>198.51.100.16</td><td>8883</td><td>203.0.113.35</td><td>54275</td><td>198.51.100.16</td><td>8883</td><td>*</td></tr>
+<tr class="b"><td>ipv6</td><td>tcp</td><td>6</td><td>10303</td><td>ESTABLISHED</td><td>2001:db8:0:1::4</td><td>59932</td><td>2001:db8:ffff::12</td><td>5228</td><td>2001:db8:0:1::4</td><td>59932</td><td>2001:db8:ffff::12</td><td>5228</td><td>*</td></tr>
+<tr class="a"><td>ipv6</td><td>tcp</td><td>6</td><td>28743</td><td>ESTABLISHED</td><td>2001:db8:0:1::4</td><td>55134</td><td>2001:db8:ffff::a</td><td>443</td><td>2001:db8:0:1::4</td><td>55134</td><td>2001:db8:ffff::a</td><td>443</td><td>*</td></tr>
+<tr class="b"><td>ipv4</td><td>tcp</td><td>6</td><td>27475</td><td>ESTABLISHED</td><td>192.168.1.72</td><td>46480</td><td>198.51.100.17</td><td>5228</td><td>203.0.113.35</td><td>46480</td><td>198.51.100.17</td><td>5228</td><td>*</td></tr>
+<tr class="a"><td>ipv4</td><td>tcp</td><td>6</td><td>25403</td><td>ESTABLISHED</td><td>192.168.1.72</td><td>51014</td><td>198.51.100.8</td><td>443</td><td>203.0.113.35</td><td>51014</td><td>198.51.100.8</td><td>443</td><td>*</td></tr>
+<tr class="b"><td>ipv4</td><td>tcp</td><td>6</td><td>8</td><td>TIME_WAIT</td><td>192.168.1.72</td><td>48516</td><td>198.51.100.4</td><td>443</td><td>203.0.113.35</td><td>48516</td><td>198.51.100.4</td><td>443</td><td>*</td></tr>
+<tr class="a"><td>ipv4</td><td>tcp</td><td>6</td><td>13</td><td>TIME_WAIT</td><td>192.168.1.90</td><td>37146</td><td>198.51.100.10</td><td>6443</td><td>203.0.113.35</td><td>37146</td><td>198.51.100.10</td><td>6443</td><td>*</td></tr>
+<tr class="b"><td>ipv4</td><td>udp</td><td>17</td><td>69</td><td>&nbsp;</td><td>192.168.1.90</td><td>4242</td><td>198.51.100.5</td><td>4242</td><td>203.0.113.35</td><td>20061</td><td>198.51.100.5</td><td>4242</td><td>*</td></tr>
+<tr class="a"><td>ipv4</td><td>tcp</td><td>6</td><td>17319</td><td>ESTABLISHED</td><td>192.168.1.72</td><td>36920</td><td>198.51.100.18</td><td>5228</td><td>203.0.113.35</td><td>36920</td><td>198.51.100.18</td><td>5228</td><td>*</td></tr>
+<tr class="b"><td>ipv4</td><td>tcp</td><td>6</td><td>8</td><td>TIME_WAIT</td><td>192.168.1.72</td><td>48498</td><td>198.51.100.4</td><td>443</td><td>203.0.113.35</td><td>48498</td><td>198.51.100.4</td><td>443</td><td>*</td></tr>
+<tr class="a"><td>ipv6</td><td>udp</td><td>17</td><td>121</td><td>&nbsp;</td><td>2001:db8:0:1::4</td><td>32905</td><td>2001:db8:ffff::5</td><td>443</td><td>2001:db8:0:1::4</td><td>32905</td><td>2001:db8:ffff::5</td><td>443</td><td>*</td></tr>
+<tr class="b"><td>ipv4</td><td>tcp</td><td>6</td><td>28799</td><td>ESTABLISHED</td><td>192.168.1.90</td><td>45146</td><td>192.168.1.254</td><td>80</td><td>192.168.1.90</td><td>45146</td><td>192.168.1.254</td><td>80</td><td>*</td></tr>
+<tr class="a"><td>ipv4</td><td>udp</td><td>17</td><td>69</td><td>&nbsp;</td><td>192.168.1.90</td><td>4242</td><td>198.51.100.1</td><td>4242</td><td>203.0.113.35</td><td>20061</td><td>198.51.100.1</td><td>4242</td><td>*</td></tr>
+<tr class="b"><td>ipv4</td><td>tcp</td><td>6</td><td>28788</td><td>ESTABLISHED</td><td>192.168.1.72</td><td>48512</td><td>198.51.100.4</td><td>443</td><td>203.0.113.35</td><td>48512</td><td>198.51.100.4</td><td>443</td><td>*</td></tr>
+<tr class="a"><td>ipv4</td><td>tcp</td><td>6</td><td>15307</td><td>ESTABLISHED</td><td>192.168.1.66</td><td>45332</td><td>198.51.100.6</td><td>443</td><td>203.0.113.35</td><td>45332</td><td>198.51.100.6</td><td>443</td><td>*</td></tr>
+<tr class="b"><td>ipv6</td><td>tcp</td><td>6</td><td>27456</td><td>ESTABLISHED</td><td>2001:db8:0:1::4</td><td>50842</td><td>2001:db8:ffff::5</td><td>443</td><td>2001:db8:0:1::4</td><td>50842</td><td>2001:db8:ffff::5</td><td>443</td><td>*</td></tr>
+<tr class="a"><td>ipv6</td><td>tcp</td><td>6</td><td>18351</td><td>ESTABLISHED</td><td>2001:db8:0:1::4</td><td>52346</td><td>2001:db8:ffff::13</td><td>5228</td><td>2001:db8:0:1::4</td><td>52346</td><td>2001:db8:ffff::13</td><td>5228</td><td>*</td></tr>
+<tr class="b"><td>ipv4</td><td>tcp</td><td>6</td><td>28177</td><td>ESTABLISHED</td><td>192.168.1.72</td><td>46848</td><td>198.51.100.2</td><td>443</td><td>203.0.113.35</td><td>46848</td><td>198.51.100.2</td><td>443</td><td>*</td></tr>
+<tr class="a"><td>ipv4</td><td>tcp</td><td>6</td><td>28511</td><td>ESTABLISHED</td><td>192.168.1.90</td><td>40876</td><td>198.51.100.10</td><td>6443</td><td>203.0.113.35</td><td>40876</td><td>198.51.100.10</td><td>6443</td><td>*</td></tr>
+<tr class="b"><td>ipv6</td><td>udp</td><td>17</td><td>16</td><td>&nbsp;</td><td>2001:db8:0:1::4</td><td>41103</td><td>2001:db8:0:1::b</td><td>53</td><td>2001:db8:0:1::4</td><td>41103</td><td>2001:db8:0:1::b</td><td>53</td><td>*</td></tr>
+<tr class="a"><td>ipv4</td><td>tcp</td><td>6</td><td>28798</td><td>ESTABLISHED</td><td>192.168.1.72</td><td>38918</td><td>198.51.100.8</td><td>443</td><td>203.0.113.35</td><td>38918</td><td>198.51.100.8</td><td>443</td><td>*</td></tr>
+<tr class="b"><td>ipv4</td><td>tcp</td><td>6</td><td>28799</td><td>ESTABLISHED</td><td>192.168.1.72</td><td>50462</td><td>198.51.100.19</td><td>443</td><td>203.0.113.35</td><td>50462</td><td>198.51.100.19</td><td>443</td><td>*</td></tr>
+<tr class="a"><td>ipv6</td><td>udp</td><td>17</td><td>91</td><td>&nbsp;</td><td>2001:db8:0:1::4</td><td>38760</td><td>2001:db8:ffff::14</td><td>443</td><td>2001:db8:0:1::4</td><td>38760</td><td>2001:db8:ffff::14</td><td>443</td><td>*</td></tr>
+<tr class="b"><td>ipv6</td><td>tcp</td><td>6</td><td>16938</td><td>ESTABLISHED</td><td>2001:db8:0:1::1</td><td>45450</td><td>2001:db8:ffff::15</td><td>5228</td><td>2001:db8:0:1::1</td><td>45450</td><td>2001:db8:ffff::15</td><td>5228</td><td>*</td></tr>
+<tr class="a"><td>ipv4</td><td>udp</td><td>17</td><td>81</td><td>&nbsp;</td><td>192.168.1.90</td><td>4242</td><td>198.51.100.3</td><td>14794</td><td>203.0.113.35</td><td>20061</td><td>198.51.100.3</td><td>14794</td><td>*</td></tr>
+<tr class="b"><td>ipv6</td><td>tcp</td><td>6</td><td>28712</td><td>ESTABLISHED</td><td>2001:db8:0:1::4</td><td>36064</td><td>2001:db8:ffff::16</td><td>443</td><td>2001:db8:0:1::4</td><td>36064</td><td>2001:db8:ffff::16</td><td>443</td><td>*</td></tr>
+<tr class="a"><td>ipv4</td><td>udp</td><td>17</td><td>16</td><td>&nbsp;</td><td>203.0.113.35</td><td>43325</td><td>198.51.100.14</td><td>53</td><td>203.0.113.35</td><td>43325</td><td>198.51.100.14</td><td>53</td><td>*</td></tr>
+<tr class="b"><td>ipv6</td><td>tcp</td><td>6</td><td>41</td><td>CLOSE_WAIT</td><td>2001:db8:0:1::b</td><td>45468</td><td>2001:db8:ffff::17</td><td>443</td><td>2001:db8:0:1::b</td><td>45468</td><td>2001:db8:ffff::17</td><td>443</td><td>*</td></tr>
+<tr class="a"><td>ipv4</td><td>tcp</td><td>6</td><td>17</td><td>TIME_WAIT</td><td>192.168.1.72</td><td>50032</td><td>198.51.100.4</td><td>443</td><td>203.0.113.35</td><td>50032</td><td>198.51.100.4</td><td>443</td><td>*</td></tr>
+<tr class="b"><td>ipv4</td><td>udp</td><td>17</td><td>16</td><td>&nbsp;</td><td>203.0.113.35</td><td>12033</td><td>198.51.100.14</td><td>53</td><td>203.0.113.35</td><td>12033</td><td>198.51.100.14</td><td>53</td><td>*</td></tr>
+<tr class="a"><td>ipv4</td><td>tcp</td><td>6</td><td>27447</td><td>ESTABLISHED</td><td>192.168.1.72</td><td>38738</td><td>198.51.100.20</td><td>443</td><td>203.0.113.35</td><td>38738</td><td>198.51.100.20</td><td>443</td><td>*</td></tr>
+<tr class="b"><td>ipv4</td><td>tcp</td><td>6</td><td>12</td><td>TIME_WAIT</td><td>192.168.1.90</td><td>56906</td><td>192.168.1.254</td><td>80</td><td>192.168.1.90</td><td>56906</td><td>192.168.1.254</td><td>80</td><td>*</td></tr>
+<tr class="a"><td>ipv4</td><td>udp</td><td>17</td><td>75</td><td>&nbsp;</td><td>192.168.1.90</td><td>4242</td><td>198.51.100.11</td><td>4242</td><td>203.0.113.35</td><td>20061</td><td>198.51.100.11</td><td>4242</td><td>*</td></tr>
+<tr class="b"><td>ipv4</td><td>udp</td><td>17</td><td>96</td><td>&nbsp;</td><td>192.168.1.72</td><td>4242</td><td>198.51.100.10</td><td>4242</td><td>203.0.113.35</td><td>48137</td><td>198.51.100.10</td><td>4242</td><td>*</td></tr>
+<tr class="a"><td>ipv4</td><td>tcp</td><td>6</td><td>0</td><td>TIME_WAIT</td><td>192.168.1.90</td><td>48666</td><td>198.51.100.7</td><td>6443</td><td>203.0.113.35</td><td>48666</td><td>198.51.100.7</td><td>6443</td><td>*</td></tr>
+<tr class="b"><td>ipv4</td><td>tcp</td><td>6</td><td>17</td><td>TIME_WAIT</td><td>192.168.1.72</td><td>50058</td><td>198.51.100.4</td><td>443</td><td>203.0.113.35</td><td>50058</td><td>198.51.100.4</td><td>443</td><td>*</td></tr>
+<tr class="a"><td>ipv4</td><td>udp</td><td>17</td><td>69</td><td>&nbsp;</td><td>192.168.1.90</td><td>4242</td><td>198.51.100.7</td><td>4242</td><td>203.0.113.35</td><td>20061</td><td>198.51.100.7</td><td>4242</td><td>*</td></tr>
+<tr class="b"><td>ipv4</td><td>tcp</td><td>6</td><td>12</td><td>TIME_WAIT</td><td>192.168.1.90</td><td>41486</td><td>198.51.100.7</td><td>6443</td><td>203.0.113.35</td><td>41486</td><td>198.51.100.7</td><td>6443</td><td>*</td></tr>
+<tr class="a"><td>ipv4</td><td>udp</td><td>17</td><td>96</td><td>&nbsp;</td><td>192.168.1.72</td><td>4242</td><td>198.51.100.6</td><td>4242</td><td>203.0.113.35</td><td>48137</td><td>198.51.100.6</td><td>4242</td><td>*</td></tr>
+<tr class="b"><td>ipv4</td><td>tcp</td><td>6</td><td>28797</td><td>ESTABLISHED</td><td>192.168.1.72</td><td>50062</td><td>198.51.100.4</td><td>443</td><td>203.0.113.35</td><td>50062</td><td>198.51.100.4</td><td>443</td><td>*</td></tr>
+<tr class="a"><td>ipv4</td><td>tcp</td><td>6</td><td>9</td><td>TIME_WAIT</td><td>192.168.1.90</td><td>39326</td><td>192.168.1.254</td><td>80</td><td>192.168.1.90</td><td>39326</td><td>192.168.1.254</td><td>80</td><td>*</td></tr>
+<tr class="b"><td>ipv6</td><td>udp</td><td>17</td><td>24</td><td>&nbsp;</td><td>2001:db8:0:1::4</td><td>54906</td><td>2001:db8:ffff::18</td><td>443</td><td>2001:db8:0:1::4</td><td>54906</td><td>2001:db8:ffff::18</td><td>443</td><td>*</td></tr>
+<tr class="a"><td>ipv4</td><td>tcp</td><td>6</td><td>27802</td><td>ESTABLISHED</td><td>192.168.1.72</td><td>36622</td><td>198.51.100.13</td><td>443</td><td>203.0.113.35</td><td>36622</td><td>198.51.100.13</td><td>443</td><td>*</td></tr>
+<tr class="b"><td>ipv6</td><td>tcp</td><td>6</td><td>2274</td><td>ESTABLISHED</td><td>2001:db8:0:1::1</td><td>46258</td><td>2001:db8:ffff::12</td><td>5228</td><td>2001:db8:0:1::1</td><td>46258</td><td>2001:db8:ffff::12</td><td>5228</td><td>*</td></tr>
+<tr class="a"><td>ipv4</td><td>tcp</td><td>6</td><td>1</td><td>CLOSE</td><td>192.168.1.90</td><td>36380</td><td>198.51.100.21</td><td>443</td><td>203.0.113.35</td><td>36380</td><td>198.51.100.21</td><td>443</td><td>*</td></tr>
+<tr class="b"><td>ipv6</td><td>tcp</td><td>6</td><td>27877</td><td>ESTABLISHED</td><td>2001:db8:0:1::4</td><td>60946</td><td>2001:db8:ffff::8</td><td>443</td><td>2001:db8:0:1::4</td><td>60946</td><td>2001:db8:ffff::8</td><td>443</td><td>*</td></tr>
+<tr class="a"><td>ipv4</td><td>tcp</td><td>6</td><td>8</td><td>CLOSE</td><td>192.168.1.72</td><td>38910</td><td>198.51.100.8</td><td>443</td><td>203.0.113.35</td><td>38910</td><td>198.51.100.8</td><td>443</td><td>*</td></tr>
+<tr class="b"><td>ipv4</td><td>tcp</td><td>6</td><td>9</td><td>CLOSE</td><td>192.168.1.72</td><td>50478</td><td>198.51.100.19</td><td>443</td><td>203.0.113.35</td><td>50478</td><td>198.51.100.19</td><td>443</td><td>*</td></tr>
+<tr class="a"><td>ipv4</td><td>tcp</td><td>6</td><td>28766</td><td>ESTABLISHED</td><td>192.168.1.72</td><td>40738</td><td>198.51.100.11</td><td>443</td><td>203.0.113.35</td><td>40738</td><td>198.51.100.11</td><td>443</td><td>*</td></tr>
+<tr class="b"><td>ipv4</td><td>tcp</td><td>6</td><td>28534</td><td>ESTABLISHED</td><td>192.168.1.71</td><td>39568</td><td>198.51.100.6</td><td>443</td><td>203.0.113.35</td><td>39568</td><td>198.51.100.6</td><td>443</td><td>*</td></tr>
+<tr class="a"><td>ipv6</td><td>udp</td><td>17</td><td>96</td><td>&nbsp;</td><td>2001:db8:0:1::4</td><td>36268</td><td>2001:db8:ffff::5</td><td>443</td><td>2001:db8:0:1::4</td><td>36268</td><td>2001:db8:ffff::5</td><td>443</td><td>*</td></tr>
+<tr class="b"><td>ipv6</td><td>tcp</td><td>6</td><td>28242</td><td>ESTABLISHED</td><td>2001:db8:0:1::4</td><td>53192</td><td>2001:db8:ffff::8</td><td>443</td><td>2001:db8:0:1::4</td><td>53192</td><td>2001:db8:ffff::8</td><td>443</td><td>*</td></tr>
+<tr class="a"><td>ipv4</td><td>udp</td><td>17</td><td>91</td><td>&nbsp;</td><td>192.168.1.71</td><td>4242</td><td>198.51.100.11</td><td>4242</td><td>203.0.113.35</td><td>49586</td><td>198.51.100.11</td><td>4242</td><td>*</td></tr>
+<tr class="b"><td>ipv4</td><td>tcp</td><td>6</td><td>9</td><td>CLOSE</td><td>192.168.1.72</td><td>50490</td><td>198.51.100.19</td><td>443</td><td>203.0.113.35</td><td>50490</td><td>198.51.100.19</td><td>443</td><td>*</td></tr>
+<tr class="a"><td>ipv4</td><td>tcp</td><td>6</td><td>6</td><td>TIME_WAIT</td><td>192.168.1.90</td><td>41744</td><td>192.168.1.254</td><td>80</td><td>192.168.1.90</td><td>41744</td><td>192.168.1.254</td><td>80</td><td>*</td></tr>
+<tr class="b"><td>ipv4</td><td>udp</td><td>17</td><td>2</td><td>&nbsp;</td><td>192.168.1.90</td><td>4242</td><td>203.0.113.35</td><td>48137</td><td>192.168.1.90</td><td>4242</td><td>203.0.113.35</td><td>48137</td><td></td></tr>
+<tr class="a"><td>ipv6</td><td>tcp</td><td>6</td><td>16729</td><td>ESTABLISHED</td><td>2001:db8:0:1::1</td><td>46178</td><td>2001:db8:ffff::19</td><td>443</td><td>2001:db8:0:1::1</td><td>46178</td><td>2001:db8:ffff::19</td><td>443</td><td>*</td></tr>
+<tr class="b"><td>ipv4</td><td>tcp</td><td>6</td><td>28788</td><td>ESTABLISHED</td><td>192.168.1.72</td><td>48502</td><td>198.51.100.4</td><td>443</td><td>203.0.113.35</td><td>48502</td><td>198.51.100.4</td><td>443</td><td>*</td></tr>
+<tr class="a"><td>ipv4</td><td>tcp</td><td>6</td><td>0</td><td>TIME_WAIT</td><td>192.168.1.90</td><td>34856</td><td>192.168.1.254</td><td>80</td><td>192.168.1.90</td><td>34856</td><td>192.168.1.254</td><td>80</td><td>*</td></tr>
+<tr class="b"><td>ipv4</td><td>udp</td><td>17</td><td>91</td><td>&nbsp;</td><td>192.168.1.71</td><td>4242</td><td>198.51.100.10</td><td>4242</td><td>203.0.113.35</td><td>49586</td><td>198.51.100.10</td><td>4242</td><td>*</td></tr>
+<tr class="a"><td>ipv4</td><td>tcp</td><td>6</td><td>6</td><td>TIME_WAIT</td><td>192.168.1.90</td><td>41846</td><td>192.168.1.254</td><td>80</td><td>192.168.1.90</td><td>41846</td><td>192.168.1.254</td><td>80</td><td>*</td></tr>
+<tr class="b"><td>ipv4</td><td>udp</td><td>17</td><td>91</td><td>&nbsp;</td><td>192.168.1.71</td><td>4242</td><td>198.51.100.1</td><td>4242</td><td>203.0.113.35</td><td>49586</td><td>198.51.100.1</td><td>4242</td><td>*</td></tr>
+<tr class="a"><td>ipv4</td><td>tcp</td><td>6</td><td>16</td><td>TIME_WAIT</td><td>192.168.1.90</td><td>39334</td><td>192.168.1.254</td><td>80</td><td>192.168.1.90</td><td>39334</td><td>192.168.1.254</td><td>80</td><td>*</td></tr>
+<tr class="b"><td>ipv4</td><td>udp</td><td>17</td><td>16</td><td>&nbsp;</td><td>203.0.113.35</td><td>22652</td><td>198.51.100.14</td><td>53</td><td>203.0.113.35</td><td>22652</td><td>198.51.100.14</td><td>53</td><td>*</td></tr>
+<tr class="a"><td>ipv4</td><td>tcp</td><td>6</td><td>28752</td><td>ESTABLISHED</td><td>203.0.113.35</td><td>39076</td><td>198.51.100.22</td><td>443</td><td>203.0.113.35</td><td>39076</td><td>198.51.100.22</td><td>443</td><td>*</td></tr>
+<tr class="b"><td>ipv4</td><td>tcp</td><td>6</td><td>28263</td><td>ESTABLISHED</td><td>192.168.1.72</td><td>48820</td><td>198.51.100.13</td><td>443</td><td>203.0.113.35</td><td>48820</td><td>198.51.100.13</td><td>443</td><td>*</td></tr>
+<tr class="a"><td>ipv4</td><td>tcp</td><td>6</td><td>27456</td><td>ESTABLISHED</td><td>192.168.1.72</td><td>45846</td><td>198.51.100.5</td><td>443</td><td>203.0.113.35</td><td>45846</td><td>198.51.100.5</td><td>443</td><td>*</td></tr>
+<tr class="b"><td>ipv4</td><td>tcp</td><td>6</td><td>28760</td><td>ESTABLISHED</td><td>192.168.1.72</td><td>44436</td><td>198.51.100.23</td><td>443</td><td>203.0.113.35</td><td>44436</td><td>198.51.100.23</td><td>443</td><td>*</td></tr>
+<tr class="a"><td>ipv4</td><td>udp</td><td>17</td><td>91</td><td>&nbsp;</td><td>192.168.1.71</td><td>4242</td><td>198.51.100.6</td><td>4242</td><td>203.0.113.35</td><td>49586</td><td>198.51.100.6</td><td>4242</td><td>*</td></tr>
+<tr class="b"><td>ipv4</td><td>tcp</td><td>6</td><td>13</td><td>TIME_WAIT</td><td>192.168.1.90</td><td>35450</td><td>198.51.100.11</td><td>6443</td><td>203.0.113.35</td><td>35450</td><td>198.51.100.11</td><td>6443</td><td>*</td></tr>
+<tr class="a"><td>ipv6</td><td>tcp</td><td>6</td><td>27470</td><td>ESTABLISHED</td><td>2001:db8:0:1::4</td><td>50524</td><td>2001:db8:ffff::8</td><td>443</td><td>2001:db8:0:1::4</td><td>50524</td><td>2001:db8:ffff::8</td><td>443</td><td>*</td></tr>
+<tr class="b"><td>ipv6</td><td>tcp</td><td>6</td><td>27444</td><td>ESTABLISHED</td><td>2001:db8:0:1::4</td><td>38972</td><td>2001:db8:ffff::8</td><td>443</td><td>2001:db8:0:1::4</td><td>38972</td><td>2001:db8:ffff::8</td><td>443</td><td>*</td></tr>
+<tr class="a"><td>ipv4</td><td>tcp</td><td>6</td><td>9817</td><td>ESTABLISHED</td><td>192.168.1.72</td><td>36258</td><td>198.51.100.17</td><td>5228</td><td>203.0.113.35</td><td>36258</td><td>198.51.100.17</td><td>5228</td><td>*</td></tr>
+<tr class="b"><td>ipv4</td><td>tcp</td><td>6</td><td>15299</td><td>ESTABLISHED</td><td>192.168.1.66</td><td>57822</td><td>198.51.100.24</td><td>443</td><td>203.0.113.35</td><td>57822</td><td>198.51.100.24</td><td>443</td><td>*</td></tr>
+                 </tbody>
+                 </table>
+                 </div>
+                 </form>
+               </div>
+                </div>
+              </div>
+            </div>
+ <!-- isWANUP -->
+            <div id="help">
+              <div id="help-sub">
+              <h2>Help</h2><br />
+      <p>This page shows the NAT and other sessions that are in use by the device. You can use the pull down to limit the display of sessions to the selected IP addresses.</p>
+      <p><strong>Reset All Sessions</strong> This button will flush all sessions regardless of protocol (TCP, UDP, ICMP or otherwise). After the reset, the page is redisplayed which may trigger new sessions to appear.</p>
+              </div> <!-- help-sub -->
+            </div> <!-- help -->
+            <div style="clear: both;"></div>
+          </div>
+        </div>
+        <div style="clear: both;"></div>
+      </div>
+      <div id="footer">
+      <div><br>
+   <span class="inner">&copy; 2016-2025 AT&T Intellectual Property. All rights reserved. AT&T and Globe logo are registered trademarks of AT&T Intellectual Property.</span>
+   <span class="sitemap"><a href="/cgi-bin/sitemap.ha">Site Map</a></span></br></div>
+   <div><span class="inner">&copy; 2016 ARRIS Enterprises LLC. All rights reserved. ARRIS is a registered trademark of ARRIS Enterprises LLC.</span></div>
+   </div>
+      </div>
+</body>
+</html>

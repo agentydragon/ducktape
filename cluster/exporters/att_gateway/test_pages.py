@@ -1,7 +1,9 @@
 """Parses pages saved from a live BGW320-500 on firmware 6.35.8 on 2026-10-09
-(`testdata/`), with the serial numbers, MAC addresses, public addresses and SSID replaced
-by documentation values. The expected values are read off the rendered pages."""
+(`testdata/`; `nattable` and `speed` on 2026-10-10, logged in), with the serial numbers,
+MAC addresses, public and global addresses and SSID replaced by documentation values. The
+expected values are read off the rendered pages."""
 
+from datetime import datetime
 from pathlib import Path
 
 import pytest
@@ -9,11 +11,14 @@ import pytest_bazel
 
 from cluster.exporters.att_gateway.pages import (
     Bound,
+    Direction,
     Level,
     Limit,
     parse_broadband,
     parse_fiber,
     parse_lan,
+    parse_nat,
+    parse_speed,
     parse_sysinfo,
 )
 
@@ -55,6 +60,32 @@ def test_lan_ports() -> None:
     assert [port.port for port in others] == [2, 3, 4]
     assert not any(port.up for port in others)
     assert (lan.dhcp_leases_allocated, lan.dhcp_leases_available) == (8, 182)
+
+
+def test_nat_counts_ipv4_sessions_per_source() -> None:
+    nat = parse_nat(_page("nattable"))
+    assert (nat.sessions_available, nat.sessions_in_use) == (32767, 116)
+    # IPv6 rows are left out; the gateway's own WAN address counts like a LAN host.
+    assert nat.ipv4_sessions_by_source == {
+        "192.168.1.66": 3,
+        "192.168.1.71": 7,
+        "192.168.1.72": 44,
+        "192.168.1.90": 25,
+        "192.168.1.97": 1,
+        "203.0.113.35": 5,
+    }
+
+
+def test_speed_history() -> None:
+    newest, *older = parse_speed(_page("speed")).tests
+    assert newest.completed == datetime(2026, 10, 9, 6, 12, 33)
+    assert (newest.direction, newest.throughput_bps, newest.latency_seconds, newest.status) == (
+        Direction.UPSTREAM,
+        1275.96e6,
+        0.013,
+        "Success",
+    )
+    assert len(older) == 7
 
 
 def test_login_page_is_rejected() -> None:

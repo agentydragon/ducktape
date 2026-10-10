@@ -19,6 +19,7 @@ py_library(
     data = ["dashboard.json"],
     visibility = ["//cluster/cdk8s:__pkg__"],
     deps = [
+        ":access_code",
         "//cluster/cdk8s:flux",
         "//cluster/cdk8s:grafana_dashboards",
         "//cluster/cdk8s:manifest_roots",
