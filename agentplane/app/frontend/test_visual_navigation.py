@@ -55,7 +55,9 @@ async def test_workspace_docked_thread_panes(view: VisualPage, app: AgentplaneFi
         await page.get_by_role("button", name="Close Threads").click()
 
     await page.get_by_role("button", name="Add pane").click()
-    running_choice = page.locator(".agentplane-workspace-launcher").get_by_role("button", name=re.compile("Running thread"))
+    running_choice = page.locator(".agentplane-workspace-launcher").get_by_role(
+        "button", name=re.compile("Running thread")
+    )
     await running_choice.click()
     await expect(page.locator('[aria-label="Thread history"]')).to_have_count(2)
     if viewport == MOBILE:
@@ -68,7 +70,9 @@ async def test_workspace_docked_thread_panes(view: VisualPage, app: AgentplaneFi
     await view.capture(target=page.locator("#app"))
     await page.get_by_role("button", name="Add pane").click()
     await expect(page.locator(".agentplane-workspace-launcher")).to_be_visible()
-    await expect(page.locator(".agentplane-workspace-launcher").get_by_role("textbox", name="Find a pane or thread")).to_be_focused()
+    await expect(
+        page.locator(".agentplane-workspace-launcher").get_by_role("textbox", name="Find a pane or thread")
+    ).to_be_focused()
     launcher_capture = "pane-launcher-open-mobile" if viewport == MOBILE else "pane-launcher-open-desktop"
     await view.capture(launcher_capture, target=page.locator("#app"))
 
