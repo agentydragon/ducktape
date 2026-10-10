@@ -7,6 +7,7 @@ import IconHistory from "@tabler/icons-react/dist/esm/icons/IconHistory.mjs";
 import IconPlayerStop from "@tabler/icons-react/dist/esm/icons/IconPlayerStop.mjs";
 import IconPower from "@tabler/icons-react/dist/esm/icons/IconPower.mjs";
 import IconSend from "@tabler/icons-react/dist/esm/icons/IconSend.mjs";
+import IconX from "@tabler/icons-react/dist/esm/icons/IconX.mjs";
 import { intlFormatDistance } from "date-fns";
 import {
   type JSX,
@@ -1446,9 +1447,14 @@ function harnessLabel(harness: ThreadView["harness"]): string {
 export function ProjectedSession({
   threadId,
   settingsOpen = false,
+  embedded = false,
+  onClose,
 }: {
   threadId: string;
   settingsOpen?: boolean;
+  /** Render inside a pane, with a local title and no global tab title or topbar portal. */
+  embedded?: boolean;
+  onClose?: () => void;
 }): JSX.Element {
   const sync = useThreadSync();
   const threadsLive = useRequiredThreadsLive();
@@ -1486,26 +1492,38 @@ export function ProjectedSession({
     };
   }, [snapshotThread, threadId]);
   useEffect(() => {
+    if (embedded) return;
     document.title = settingsOpen
       ? appDocumentTitle("/", true)
       : threadDocumentTitle(thread?.name, threadId, tabStatus);
-  }, [thread?.name, tabStatus, threadId, settingsOpen]);
+  }, [embedded, thread?.name, tabStatus, threadId, settingsOpen]);
+  const title = (
+    <Group gap="xs" wrap="nowrap" style={{ minWidth: 0 }}>
+      {thread && <ThreadStatusIndicator kind={topbarStatus.kind} label={topbarStatus.label} />}
+      <Box style={{ flex: 1, minWidth: 0 }}>
+        <ThreadTitle threadId={threadId} thread={thread} onRenamed={setThread} onError={setError} />
+      </Box>
+      {thread && (
+        <Text size="xs" c="dimmed" style={{ flexShrink: 0 }}>
+          {thread.sandbox} · {harnessLabel(thread.harness)}
+        </Text>
+      )}
+    </Group>
+  );
   return (
     <ChronologicalDebugProvider key={threadId} threadId={threadId}>
-      <TopbarTitle>
-        <Group gap="xs" wrap="nowrap" style={{ minWidth: 0 }}>
-          {thread && <ThreadStatusIndicator kind={topbarStatus.kind} label={topbarStatus.label} />}
-          <Box style={{ flex: 1, minWidth: 0 }}>
-            <ThreadTitle threadId={threadId} thread={thread} onRenamed={setThread} onError={setError} />
-          </Box>
-          {thread && (
-            <Text size="xs" c="dimmed" style={{ flexShrink: 0 }}>
-              {thread.sandbox} · {harnessLabel(thread.harness)}
-            </Text>
-          )}
-        </Group>
-      </TopbarTitle>
-      <Stack style={{ flex: 1, minHeight: 0 }}>
+      {!embedded && <TopbarTitle>{title}</TopbarTitle>}
+      <Stack style={{ flex: 1, minHeight: 0, minWidth: 0 }}>
+        {embedded && (
+          <Group className="agentplane-mosaic-thread-header" gap="xs" wrap="nowrap">
+            <Box style={{ flex: 1, minWidth: 0 }}>{title}</Box>
+            {onClose && (
+              <ActionIcon variant="subtle" aria-label="Close thread pane" onClick={onClose}>
+                <IconX size={16} />
+              </ActionIcon>
+            )}
+          </Group>
+        )}
         {/* The controls wait on this stream's word that the sandbox runs, so one down past a blip, or
             whose watch has stalled, disables them as surely as a stopped sandbox. The sidebar's
             connection indicator says the first; this says the second. */}

@@ -30,7 +30,13 @@ function inAppReturnTo(value: unknown): InAppReturnTo | null {
 }
 
 /** Full review page for one pending request or its durable terminal receipt. */
-export function ActionRequestDetail({ requestId }: { requestId: string }): JSX.Element {
+export function ActionRequestDetail({
+  requestId,
+  embedded = false,
+}: {
+  requestId: string;
+  embedded?: boolean;
+}): JSX.Element {
   const navigate = useNavigate();
   const location = useLocation();
   const actions = useContext(ActionRequestsContext);
@@ -108,15 +114,17 @@ export function ActionRequestDetail({ requestId }: { requestId: string }): JSX.E
   }
 
   return (
-    <Stack>
-      <Group align="center" gap="sm">
-        <Button variant="subtle" size="sm" leftSection={<IconArrowLeft size={15} />} onClick={goBack}>
-          Back
-        </Button>
-        <Title order={1} size="h4">
-          Action details
-        </Title>
-      </Group>
+    <Stack style={embedded ? { minWidth: 0 } : undefined}>
+      {!embedded && (
+        <Group align="center" gap="sm">
+          <Button variant="subtle" size="sm" leftSection={<IconArrowLeft size={15} />} onClick={goBack}>
+            Back
+          </Button>
+          <Title order={1} size="h4">
+            Action details
+          </Title>
+        </Group>
+      )}
       {error !== null && (
         <Alert color="red" title="Could not load this action">
           {error}
