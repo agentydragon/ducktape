@@ -8,8 +8,12 @@ import pytest_bazel
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from agentplane.sandbox_service.session_history.store import HistoryConflictError, HistoryNotFoundError
-from agentplane.sandbox_service.session_registry import OpenReservation, SessionRegistry
+from agentplane.sandbox_service.session_registry import (
+    OpenConflictError,
+    OpenReservation,
+    SessionNotFoundError,
+    SessionRegistry,
+)
 from agentplane.sandbox_service.testing.sessions import register_session
 
 # gazelle:include_dep //agentplane/sandbox_service/commands:conftest
@@ -65,14 +69,14 @@ async def test_reservation_is_stable_across_retries_and_replicas(
         )
         == first.session_id
     )
-    with pytest.raises(HistoryNotFoundError):
+    with pytest.raises(SessionNotFoundError):
         await registry.runner_id(
             first.session_id, sandbox_namespace="testing", sandbox_name="worker", sandbox_uid=uuid4()
         )
     assert await reserve(registry, key="open-2") != first
     assert await reserve(registry, caller_name="other") != first
     assert await reserve(registry, sandbox_uid=uuid4()) != first
-    with pytest.raises(HistoryConflictError, match="different inputs"):
+    with pytest.raises(OpenConflictError, match="different inputs"):
         await reserve(registry, payload=b"different caller request")
     assert await reserve(replica) == first  # a bad retry does not change the reservation
     with pytest.raises(ValueError, match="required"):

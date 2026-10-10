@@ -13,12 +13,19 @@ from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 from agentplane.sandbox_service import protocol_pb2
 from agentplane.sandbox_service.commands.db import CHANGE_POSITION, Session
 from agentplane.sandbox_service.session_history.session_changes import CHANNEL
-from agentplane.sandbox_service.session_history.store import HistoryConflictError, HistoryNotFoundError
 
 # gazelle:include_dep @pypi//protobuf
 
 # The service's own database; no other advisory lock uses this key.
 CHANGE_POSITION_LOCK = 0x5345_5350  # "SESP"
+
+
+class SessionNotFoundError(LookupError):
+    pass
+
+
+class OpenConflictError(ValueError):
+    """An Open idempotency key was reused with different inputs, or its identity was taken."""
 
 
 @dataclass(frozen=True)
@@ -107,9 +114,9 @@ class SessionRegistry:
                 )
                 row = await session.scalar(query)
                 if row is None:
-                    raise HistoryConflictError("Open identity could not be reserved")
+                    raise OpenConflictError("Open identity could not be reserved")
         if row.open_request != open_request:
-            raise HistoryConflictError("Open idempotency key reused with different inputs")
+            raise OpenConflictError("Open idempotency key reused with different inputs")
         assert row.launch_spec is not None
         return OpenReservation(row.id, row.launch_spec)
 
@@ -172,7 +179,7 @@ class SessionRegistry:
                 != (sandbox_namespace, sandbox_name, sandbox_uid)
                 or row.runner_session_id is None
             ):
-                raise HistoryNotFoundError(session_id)
+                raise SessionNotFoundError(session_id)
             return row.runner_session_id
 
     async def session_id(

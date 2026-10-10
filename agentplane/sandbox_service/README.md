@@ -63,10 +63,10 @@ and archive schema are unchanged. Service-native acceptance tests exercise authe
 including launch defaults, bootstrap/setup, delivery evidence, and recovery after service restart.
 
 Runner journals remain on their state volume as execution evidence, and the runner journal still
-authors execution Events. Retained history lives in service-owned PostgreSQL, read through the [History Service](../history_service/README.md).
+authors execution Events. Retained history lives in the [History Service](../history_service/README.md)'s PostgreSQL.
 The Session registry (public Session IDs, runner locators, Open reservations and `WatchSessions`
-positions) lives in the service's own `sandbox_commands` database beside command admission. An
-ingester creates a Session's history row from the registry's feed before its first append.
+positions) lives in the service's own `sandbox_commands` database beside command admission. The
+History Service's ingester creates a Session's history row from the registry's feed before its first append.
 
 Service-to-runner calls over the inbound control port are unauthenticated plaintext, fenced only by
 that network policy; the [runner channel](../docs/runner_channel.md) replaces the route rather than

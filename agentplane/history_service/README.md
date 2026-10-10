@@ -32,8 +32,8 @@ Service's planned renewal, so waiting Sessions rotate in. The feed position is k
 restarted replica rereads the feed and each Session resumes from its cursor. After four consecutive
 feed failures the ingester dials a fresh Sandbox Service channel.
 
-One ingester writes the tables per environment: the cdk8s `Environment.history_writer` turns this
-one's `ingester.enabled` on and the Sandbox Service's `ingest_history` off, or the reverse.
+The cdk8s `Environment.history_writer` turns `ingester.enabled` on; the Sandbox Service no longer
+writes history either way.
 
 ## Delta settlement
 

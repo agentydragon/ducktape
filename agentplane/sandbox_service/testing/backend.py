@@ -40,7 +40,7 @@ from agentplane.sandbox_service.testing.fake_inventory import (
 )
 from agentplane.sandbox_service.testing.fake_rbac import FakeRbac
 from agentplane.sandbox_service.testing.grpc_service import service
-from agentplane.sandbox_service.testing.history import service_database, with_history
+from agentplane.sandbox_service.testing.history import register_attached_sessions, service_database
 from agentplane.subjects import ServiceAccountRef
 from agentplane.workload_auth.principal import POD_NAME_CLAIM, POD_UID_CLAIM, WorkloadPrincipalResolver
 from util.agent_sandbox import SANDBOX_API
@@ -91,7 +91,7 @@ def backend(
     token_file: Path,
     *,
     database_url: str,
-    ingest_history: bool = False,
+    register_attached: bool = False,
     runner_port: int = 1,
     default_policies: Sequence[str] = (),
     grants: dict[str, KubernetesGrant] | None = None,
@@ -135,7 +135,12 @@ def backend(
             session_changes=SessionChanges(engine.url),
         )
         with (
-            portal.wrap_async_context_manager(with_history(resources, engine)) if ingest_history else nullcontext(),
+            (
+                portal.wrap_async_context_manager(register_attached_sessions(resources, engine))
+                if register_attached
+                else nullcontext()
+            ),
+            portal.wrap_async_context_manager(resources.session_changes.listener.listen()),
             portal.wrap_async_context_manager(service(resources)) as target,
         ):
             yield Endpoint(target, token_file, lambda: portal.call(resources.provisioning.reconcile_once))

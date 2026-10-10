@@ -121,16 +121,9 @@ every batch.
 
 ## Sessions and commands
 
-The Sandbox Service raw-history ingester copies only the runner's published,
-contiguous Event prefix into the Service database under the existing canonical Session
-ID. It verifies the current Sandbox UID/owner before connecting and never sends an Open
-spec or starts a harness. Copies from concurrent service replicas may overlap: the
-shared store serializes them, accepts exact duplicate bytes and refuses conflicts.
-Stopped or deleted Sandboxes retain their already-copied prefix. The ingester runs when
-`ingest_history` is set, which is off wherever the History Service ingester writes the
-tables instead. The app's projection
-consumes this archive independently. Legacy rows without a known Sandbox UID remain
-readable but are not polled until their binding is established by a verified handoff.
+The Sandbox Service keeps no Session history; the [History Service](../history_service/README.md)
+copies each runner's Events and serves reads. Legacy rows without a known Sandbox UID stay
+registered but are not followed until their binding is established by a verified handoff.
 
 - `ListSessions`: Sandbox destination; maps every registered runner ID, `r-<uuid>` or an imported
   legacy one, to its public Session ID in the returned summaries. Unregistered runner sessions keep
@@ -166,7 +159,7 @@ readable but are not polled until their binding is established by a verified han
   retained receipt without contacting the runner once the admission is known, whether from a direct
   reply or from admission reconciliation; a different command or caller under the same ID is `ALREADY_EXISTS`.
   Admission reconciliation reads the journal of each running Session with a pending submission, from
-  that Session's own cursor, every 15 seconds; it copies no history and runs without `ingest_history`.
+  that Session's own cursor, every 15 seconds; it copies no history.
   The service picks the replay cursor itself and ignores `follow`. For a legacy caller-chosen runner ID
   nothing is recorded: specify a native `Follow` cursor before the possible admission when reconciling
   an uncertain submission. Once a Sandbox's runner has agreed `commands` on the

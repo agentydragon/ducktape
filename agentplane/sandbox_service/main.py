@@ -32,9 +32,7 @@ from agentplane.sandbox_service.kubernetes_grants import ClusterRoleBindingGrant
 from agentplane.sandbox_service.provisioning import Provisioning
 from agentplane.sandbox_service.runner_channel import ChannelTiming, RunnerChannelService
 from agentplane.sandbox_service.runner_endpoints import RunnerEndpoints
-from agentplane.sandbox_service.session_history.ingestion import HistoryIngester
 from agentplane.sandbox_service.session_history.session_changes import SessionChanges
-from agentplane.sandbox_service.session_history.store import Store
 from agentplane.sandbox_service.session_registry import SessionRegistry
 from agentplane.sandbox_service.settings import Settings
 from agentplane.sandbox_service.teardown import Teardown
@@ -54,21 +52,17 @@ async def serve(settings: Settings) -> None:
         k8s_config.load_incluster_config(client_configuration=configuration)
     else:
         await k8s_config.load_kube_config(config_file=str(settings.kubeconfig), client_configuration=configuration)
-    engine = create_async_engine(
-        make_url(settings.database_url).set(drivername="postgresql+asyncpg"), pool_size=4, max_overflow=2
-    )
     commands_engine = create_async_engine(
         make_url(settings.commands_database_url).set(drivername="postgresql+asyncpg"), pool_size=4, max_overflow=2
     )
     try:
-        await serve_with_engines(settings, configuration, engine, commands_engine)
+        await serve_with_engine(settings, configuration, commands_engine)
     finally:
-        await engine.dispose()
         await commands_engine.dispose()
 
 
-async def serve_with_engines(
-    settings: Settings, configuration: k8s_client.Configuration, engine: AsyncEngine, commands_engine: AsyncEngine
+async def serve_with_engine(
+    settings: Settings, configuration: k8s_client.Configuration, commands_engine: AsyncEngine
 ) -> None:
     session_changes = SessionChanges(commands_engine.url)
     async with k8s_client.ApiClient(configuration) as api, session_changes.listener.listen():
@@ -110,7 +104,6 @@ async def serve_with_engines(
             ),
             RunnerEndpoints(control=settings.runner_control, ingress=settings.runner_ingress),
         )
-        history_store = Store(engine)
         sessions = SessionRegistry(commands_engine)
         submissions = SubmissionStore(commands_engine)
         connections = ConnectionStore(commands_engine)
@@ -204,20 +197,6 @@ async def serve_with_engines(
                 ).run(),
                 name="sandbox-admission-reconciliation",
             )
-            history = (
-                asyncio.create_task(
-                    HistoryIngester(
-                        history_store,
-                        sessions,
-                        submissions,
-                        resources.destinations,
-                        runner_grpc_channel_options=settings.runner_grpc_channel_options,
-                    ).run(),
-                    name="sandbox-session-history-ingestion",
-                )
-                if settings.ingest_history
-                else None
-            )
             try:
                 await uvicorn.Server(
                     uvicorn.Config(health, host=settings.host, port=settings.health_port, access_log=False)
@@ -229,10 +208,6 @@ async def serve_with_engines(
                     task.cancel()
                     with suppress(asyncio.CancelledError):
                         await task
-                if history is not None:
-                    history.cancel()
-                    with suppress(asyncio.CancelledError):
-                        await history
 
 
 def main() -> None:

@@ -579,7 +579,7 @@ node switches which service reads or writes it. Only the fold double-runs.
 
 ```mermaid
 flowchart TD
-    SANDBOX_LOCAL_HISTORY_RETIRE[Candidate: delete Sandbox Service ingester and store]
+    SANDBOX_LOCAL_HISTORY_RETIRE[Blocked: drop the Sandbox Service's history database access]
     APP_PROJECTOR_RETIRE[Candidate: delete app projector code]
     APP_PROJECTION_RETIRE[Blocked: drop app projection tables]
     APP_EVENT_LOG_COPIES_RETIRE[Candidate: drop event_log launch copies]
@@ -602,14 +602,13 @@ flowchart TD
     HISTORY_SERVICE_OWNERSHIP -. enforce at the final owner .-> THREAD_READ_POLICY
 ```
 
-### `SANDBOX_LOCAL_HISTORY_RETIRE` — remove the local store
+### `SANDBOX_LOCAL_HISTORY_RETIRE` — revoke the Sandbox Service's history access
 
-**Candidate; staging's History Service ingester took over writes (#9842), and the split does not
-change this node.** Delete the Sandbox Service's ingester and `session_history` store code and
-revoke its grants on history tables. Test that the Sandbox Service provisions, drives and
-reconciles commands with no history consumer at all, so the tests do not depend on the History
-Service's follower ingester, which `FOLLOW_PATH_RETIRE` deletes later (closed #9855 built on it).
-Update `sandbox_service/API.md`.
+**Blocked until the release that deleted the Sandbox Service's ingester serves on staging and
+testing.** That release reads neither `database_url` nor `ingest_history`. Drop both manifest keys
+with their settings fields (the CLEANUP tombstone in `sandbox_service/settings.py`), drop the
+Sandbox Service's history database credentials, and move the history `migrate` init container to
+the History Service Deployment, so the Sandbox Service can no longer reach history tables.
 
 ### `APP_PROJECTOR_RETIRE` — delete the app projector
 
@@ -782,7 +781,7 @@ flowchart TD
     SANDBOX_DATABASE_RENAME[Blocked: name the sandbox_commands database for the Sandbox Service]
     APP_ELECTRIC_RETIRE[Blocked: remove Electric's access to the app database]
     PROTO_DIRECTORY[Candidate: protos under agentplane/proto, packages named by path]
-    SANDBOX_LOCAL_HISTORY_RETIRE[Delete Sandbox Service ingester and store]
+    SANDBOX_LOCAL_HISTORY_RETIRE[Drop Sandbox Service history database access]
     APP_PROJECTOR_RETIRE[Delete app projector]
     HISTORY_SERVICE_OWNERSHIP[History Service ownership]
     SANDBOX_LOCAL_HISTORY_RETIRE --> HISTORY_STORE_MOVE

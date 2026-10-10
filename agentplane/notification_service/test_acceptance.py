@@ -116,7 +116,6 @@ async def test_listen_deliver_read_ack_and_recover_lost_response_without_app(
                     runner.port,
                     token_file,
                     database_url=sandbox_service_db_url,
-                    ingest_history=True,
                     manager=delegate,
                     token="delegate-token",
                     audience="test-notifications",
