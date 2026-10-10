@@ -51,7 +51,8 @@ The same service-caller allowlist gates every RPC. Provisioning is always enable
   `RevokeEgress`: binding name; retains the refusal to delete Git-owned bindings. Both require the
   same service-caller authorization as other operations.
 - `SuspendSandbox`, `ResumeSandbox`, `DeleteSandbox`: explicit owner/name/UID-pinned mutations.
-  Resume refuses incomplete provisioning; deletion requires suspension.
+  Resume refuses incomplete provisioning; deletion requires suspension and no unsatisfied
+  [retention hold](#retention-holds).
 
 Create retries by exact caller, name, and request while the CR exists; after deletion no
 name-only receipt can prove whether a past Create succeeded. The client disables automatic gRPC
@@ -65,6 +66,36 @@ orphaned external grants even while the watch is unavailable. Multiple replicas 
 same name: mutations use UID/resourceVersion guards and are safe to replay. The upstream Sandbox
 controller owns `status` and Pod lifecycle; Agentplane's Create intent and progress live in its
 namespaced annotations, not competing Sandbox status conditions.
+
+## Retention holds
+
+A hold says "do not delete this Sandbox until I have its Session through the seal". `PlaceHold`,
+`ConfirmHold` and `ReleaseHold` take a `SessionDestination` and a caller-chosen `holder` name, so a
+hold belongs to one Session in one Sandbox incarnation; a later incarnation starts without holds.
+Any allowed service caller may place, confirm or release any hold, and holds never expire.
+
+- `PlaceHold` is idempotent per Session and holder and keeps an existing confirmation. It is refused
+  (`NOT_FOUND`) once the Sandbox's deletion is committed.
+- `ConfirmHold` records the last cursor the holder has durably committed. It never moves backwards,
+  so an out-of-order retry is harmless. A missing hold is `NOT_FOUND`.
+- `ReleaseHold` is idempotent. An operator clears a stale hold with it.
+- A hold is satisfied once its Session has a seal cursor and `confirmed_through >= seal_cursor`.
+  `DeleteSandbox` refuses with `FAILED_PRECONDITION` while any hold is unsatisfied; the caller
+  retries after the holders catch up. `ListHolds` takes a `SandboxDestination` and lists every hold
+  on that incarnation with its confirmed and seal cursors, so it shows which one blocks deletion.
+  With no holds, deletion proceeds as before.
+- A seal ends the Session's incarnation in this Sandbox, not the Session.
+
+**Gap:** the runner does not seal Sessions at teardown yet, so no seal cursor is ever recorded and
+every hold blocks deletion until it is released.
+
+The holds are one annotation on the Sandbox CR (`agentplane.allegedly.works/retention-holds`), so
+they are deleted with the incarnation they hold. Hold writes and `DeleteSandbox` are both
+conditional on the `resourceVersion` they read: a hold placed while a deletion is in flight either
+lands first and the deletion is refused, or finds the deletion committed and is refused itself.
+Each advancing confirmation is a Kubernetes write that the controller and UI informers observe;
+only a confirmation at or past the seal changes the deletion gate, so holders need not confirm
+every batch.
 
 ## Sessions and commands
 
@@ -200,9 +231,10 @@ The service does not start without its `LISTEN` connection. Renewal and write bo
 
 - `UNAUTHENTICATED`: invalid workload bearer.
 - `PERMISSION_DENIED`: authenticated but unlisted service caller.
-- `NOT_FOUND`: missing/stale Sandbox incarnation.
+- `NOT_FOUND`: missing/stale Sandbox incarnation, or a missing retention hold.
 - `INVALID_ARGUMENT`: malformed request or invalid concrete grant selection.
-- `FAILED_PRECONDITION`: runner or Sandbox state refuses the operation.
+- `FAILED_PRECONDITION`: runner or Sandbox state refuses the operation, including deletion blocked
+  by a retention hold.
 - `UNAVAILABLE`: destination/backend unavailable; no offline admission.
 - `DEADLINE_EXCEEDED`: operation or transport safety deadline expired (not planned follow renewal).
 

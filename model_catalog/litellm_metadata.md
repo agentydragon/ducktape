@@ -41,7 +41,11 @@ is therefore insufficient evidence that null suppression works.
 
 ## Publication ownership
 
-**Agreed direction:** legacy and current fields may coexist. The requirement is that
+**Prior agreed direction, under reconsideration as of 2026-10-10:** see the
+[routing review](routing_review.md). Existing publication remains unchanged; do not
+treat completion of this target as a prerequisite for that review.
+
+Legacy and current fields may coexist. The requirement is that
 related token values come from one consistent source, not that legacy keys disappear.
 **Every served route's token metadata will be declared by Ducktape.** It is acceptable
 to copy values from a specific LiteLLM catalogue entry, with revision/source comments
@@ -245,11 +249,14 @@ from LiteLLM's publication behavior.
   pre-call checks. No deployment I/O limits were found in the inspected generated
   config/key declarations; that is not an audit of every live DB/key setting.
   These guards do not establish that no other adapter or callback reads the map.
+  **The later audit below found an unguarded Anthropic output-default reader.**
 
 - OpenClaw's audited discovery reads `/v1/models` or `/models`, not `/model/info`.
   Its configured budgets come from our OpenClaw projection.
 - Our Agentplane launch adapters do not obtain their context overrides from
-  `/model/info`. They read runner-owned configuration.
+  `/model/info`. Runners read `/agentplane/model-config` from Agentplane ingress,
+  populated from `RUNNER_CONTEXT_OVERRIDES`, not `Model.limits`. The result is
+  explicit client policy, not a LiteLLM catalogue lookup.
 - Claude and Codex have their own model recognition/catalogues. Removing a LiteLLM
   metadata key does not remove a harness's built-in assumption.
 
@@ -401,3 +408,87 @@ context into client-facing limits. Full-input, output and joint-capacity boundar
 remain **untested**. No inference, model loading, allocation/provisioning changes or
 capacity probes were performed. `/api/ps` before and after showed only the already
 loaded Qwen 256K model; the shared service was not idle.
+
+## Catalogue fallback and request defaults, 2026-10-10
+
+Scope: source/catalogue inspection of the 74 served entries in the current roster,
+not an isolated runtime test with overrides removed. No inference, deployment changes
+or new account access occurred. The production map can differ due to fetch timing,
+runtime registrations, cache state and adapter discovery.
+
+Inspected LiteLLM **v1.100.1** lookup/registration code and its
+[bundled catalogue](https://github.com/BerriAI/litellm/blob/v1.100.1/litellm/model_prices_and_context_window_backup.json),
+plus remote catalogue snapshot
+[`16fcbffa7fd344c611c627ef720961b4cdd1c211`](https://github.com/BerriAI/litellm/blob/16fcbffa7fd344c611c627ef720961b4cdd1c211/model_prices_and_context_window.json).
+The public route slug does not isolate a route from catalogue lookup: the underlying
+`litellm_params.model` supplies provider-prefixed and stripped-name candidates.
+
+### Static matches and dynamic discovery without our overrides
+
+These are fallback declarations, **not verified serving limits**. Values are input / output.
+
+| Served family                                    | Remote snapshot fallback                                                                         | Bundled fallback / caveat                                                      |
+| ------------------------------------------------ | ------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------ |
+| ChatGPT GPT-6 Responses, all three models        | `openai/gpt-6-*` matches 922000 / 128000                                                         | No GPT-6 entries                                                               |
+| ChatGPT GPT-6 Messages                           | `anthropic/gpt-6-*` fails the provider-aware OpenAI entry match                                  | No GPT-6 entries; separate `get_max_tokens` lookup is not provider-equivalent  |
+| Claude subscription, all four current models     | Exact entries: 1000000 / 128000                                                                  | Generic Claude rule: 200000 / 64000                                            |
+| Direct Claude Opus/Sonnet/Fable 5; Haiku 4.5     | 1000000 / 128000; Haiku 200000 / 64000                                                           | Same pairs                                                                     |
+| Antigravity Claude Sonnet 4.6; Opus 4.6 thinking | Exact Sonnet 1000000 / 128000; regex Opus 200000 / 64000                                         | Same; not account-specific evidence                                            |
+| Antigravity Gemini/GPT-OSS names                 | No compatible static token-limit match; some capability rules have no token fields               | No compatible static token-limit match                                         |
+| Direct Gemini chat                               | 1048576 / 65536                                                                                  | Same                                                                           |
+| Gemini embeddings, including bare alias          | 8192 or 2048 input; legacy `max_tokens` repeats input                                            | Same; no output ceiling                                                        |
+| Mistral, all 25 routes                           | Exact matches; mostly 262144 / 262144, Codestral/code 128000, Ministral 3B 131072, Voxtral 32768 | Magistral instead 40000 / 40000; `mistral-medium` 32000 / 8191                 |
+| Groq Llama chat                                  | No exact current matches                                                                         | Llama 3.3: 131072 / 32768; Llama 3.1: 131072 / 131072                          |
+| Groq Whisper                                     | Entries have no token-limit fields                                                               | Same                                                                           |
+| Native Ollama chat/embedding                     | Adapter may query `/api/show`, copying `context_length` to input, output and legacy token fields | Not disabled by selecting the bundled map; not necessarily effective `num_ctx` |
+| OpenAI-compatible Ollama custom tags             | No compatible static token-limit matches found                                                   | Same                                                                           |
+
+See [`_get_model_info_helper`](https://github.com/BerriAI/litellm/blob/v1.100.1/litellm/utils.py#L5594-L5803)
+and [native Ollama discovery](https://github.com/BerriAI/litellm/blob/v1.100.1/litellm/llms/ollama/common_utils.py#L162-L231).
+Exact matching, provider checks, regex rules, runtime registration and dynamic lookup
+are distinct paths; this table is not a promise of identical final endpoint responses.
+
+### Request-affecting behavior: correction to the descriptive-only interpretation
+
+The [Anthropic chat adapter](https://github.com/BerriAI/litellm/blob/v1.100.1/litellm/llms/anthropic/chat/transformation.py#L300-L323)
+sets an omitted `max_tokens` using `get_max_tokens(model)`, falling back to
+`DEFAULT_ANTHROPIC_CHAT_MAX_TOKENS` (4096 unless configured). Its
+[request transformation](https://github.com/BerriAI/litellm/blob/v1.100.1/litellm/llms/anthropic/chat/transformation.py#L1939-L1946)
+inserts those defaults only for parameters absent from `optional_params`.
+**This path does not require `modify_params=True`.** An explicit caller output cap
+wins over this default. This finding covers chat-completions-to-Anthropic translation;
+do not automatically generalize it to native Messages or Responses passthrough.
+
+[`get_max_tokens`](https://github.com/BerriAI/litellm/blob/v1.100.1/litellm/utils.py#L5149-L5215)
+can use a bare model entry after provider-prefix removal and is not the same as the
+provider-aware metadata lookup. Thus failure to match `anthropic/gpt-6-*` metadata
+is not proof against a catalogue-derived output default. Registration order can also
+influence which map entry a later reader sees.
+
+The backend normally enforces a forwarded output budget: it may finish naturally,
+terminate at that budget with a length/max-tokens finish reason, or reject an invalid
+budget/context combination. This is not automatic input truncation. Separately,
+router prechecks can exclude deployments before dispatch; supported `modify_params`
+paths can reduce output allowances. Our generated config enables neither mechanism,
+but that does not disable the adapter default above. On our subscription Responses
+path, CLIProxyAPI strips output caps altogether, so a requested cap is not a reliable
+bound there ([pinned source and measurements](client_budgets.md#luna-subscription-path-probes-2026-10-10)).
+
+### Configuration implications and open decision
+
+Removing Ducktape's token projection restores fallback; YAML null is not reliable
+suppression. `LITELLM_LOCAL_MODEL_COST_MAP=True` selects the bundled catalogue, not an
+empty map. The [loader](https://github.com/BerriAI/litellm/blob/v1.100.1/litellm/litellm_core_utils/get_model_cost_map.py)
+rejects an empty remote map and falls back to the bundle. The same catalogue carries
+pricing, capabilities and provider information, so removing it wholesale is not a
+safe token-only change.
+
+No production Ducktape client reading LiteLLM token metadata to set its context
+budget was found in the repository audit. Agentplane's ingress policy, Nix wrapper
+budgets and OpenClaw configuration are separate readers/settings. This does **not**
+make LiteLLM token fields inert: the adapter default above is a concrete counterexample.
+
+No suitable token-only disable switch was established in the inspected paths; we have
+**not proved universal catalogue disablement impossible**. Keep existing runtime behavior
+while evaluating the [routing contract and alternatives](routing_review.md), rather than
+expanding metadata ownership or deleting the catalogue on that assumption.
