@@ -107,7 +107,8 @@ cannot retract a command already sent; persist and reconcile late admission rece
 
 The admission store (`sandbox_service/commands/`) persists submissions in the `sandbox_commands`
 database with its own per-Session reconciliation cursor, since history lives in another database
-with no shared transaction. No public handler uses it yet. New inbound RPC prototypes are not a
+with no shared transaction. `SubmitCommand` records public-Session commands there and history
+ingestion reconciles their admissions. New inbound RPC prototypes are not a
 selected rollout prerequisite. This plans-only change neither applies schema nor changes traffic.
 
 Acceptance covers authenticated destination/retry authorization, immutable/concurrent retries,
