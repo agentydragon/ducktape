@@ -123,11 +123,12 @@ export function MosaicView(): JSX.Element {
   return (
     <>
       <TopbarTitle>
-        <Group gap="xs" wrap="nowrap">
+        <Group className="agentplane-mosaic-topbar-title" gap="xs" wrap="nowrap">
           <Title order={1} size="h4">
-            Mosaic preview
+            <span className="agentplane-mosaic-title-desktop">Mosaic preview</span>
+            <span className="agentplane-mosaic-title-mobile">Mosaic</span>
           </Title>
-          <Badge size="xs" variant="light" color="gray">
+          <Badge className="agentplane-mosaic-experimental-badge" size="xs" variant="light" color="gray">
             Experimental
           </Badge>
         </Group>

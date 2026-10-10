@@ -10,6 +10,10 @@
   overflow: auto;
 }
 
+.agentplane-mosaic-title-mobile {
+  display: none;
+}
+
 .agentplane-mosaic-pane {
   min-width: 0;
   min-height: 0;
@@ -45,6 +49,15 @@
 }
 
 @media (max-width: 560px) {
+  .agentplane-mosaic-title-desktop,
+  .agentplane-mosaic-experimental-badge {
+    display: none;
+  }
+
+  .agentplane-mosaic-title-mobile {
+    display: inline;
+  }
+
   .agentplane-mosaic {
     display: block;
     position: relative;

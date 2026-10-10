@@ -30,6 +30,7 @@ async def test_desktop_shows_two_threads_and_an_action(
     panes = view.page.locator("[data-mosaic-pane]")
     for index in range(await panes.count()):
         await expect(panes.nth(index)).to_be_visible()
+    await expect(view.page.locator(".agentplane-topbar-actions [aria-label='More']")).to_have_count(0)
     await view.capture(name="mosaic-desktop-two-threads-and-action", target=view.page.locator("#app"))
 
 
