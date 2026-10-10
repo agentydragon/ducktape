@@ -28,6 +28,9 @@ class Settings(BaseSettings):
     history_reader_accounts: frozenset[ServiceAccountRef] = frozenset()
     platform_instructions: str = Field(min_length=1)
     lifecycle_timeout_s: float = Field(default=300, gt=0)
+    ingest_history: bool = Field(
+        description="Copy runner journals into the history tables. Off once the History Service ingester writes them."
+    )
     default_egress_policies: list[str] = Field(default_factory=list)
     kubernetes_grants: dict[str, KubernetesGrant] = Field(default_factory=dict)
     kubernetes_binding_cleanup_namespaces: set[str] = Field(default_factory=set)

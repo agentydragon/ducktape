@@ -48,6 +48,7 @@ from cluster.cdk8s.agentplane.environment import (
     EgressProps,
     Environment,
     GitHubAppProps,
+    HistoryWriter,
     LlmIngressProps,
     ReplicaProfile,
 )
@@ -320,7 +321,7 @@ ENV = Environment(
         history_service_grpc_channel_options=LARGE_EVENT_GRPC_CHANNEL_OPTIONS,
     ),
     runner_grpc_channel_options=LARGE_EVENT_GRPC_CHANNEL_OPTIONS,
-    history_ingester=False,
+    history_writer=HistoryWriter.SANDBOX_SERVICE,
     notifications_github=GitHubAppProps(app_id=5188971, secret_name="agentplane-github-app"),
     db=DbProps(instances=2),
     llm_ingress=LlmIngressProps(

@@ -6,6 +6,7 @@ written once.
 
 from __future__ import annotations
 
+import enum
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 
@@ -16,6 +17,11 @@ from cilium_crds.io.cilium import CiliumNetworkPolicySpecEgress
 from agentplane.action_service.settings import ActionServiceDeploymentSettings
 from agentplane.app.settings import AppSettingsConfig
 from agentplane.llm_ingress.models import ModelConfig
+
+
+class HistoryWriter(enum.Enum):
+    SANDBOX_SERVICE = enum.auto()
+    HISTORY_SERVICE = enum.auto()
 
 
 @dataclass(frozen=True)
@@ -121,9 +127,8 @@ class Environment:
     app_config: AppSettingsConfig
     # Options for Sandbox Service's gRPC channel to the runner, authored into its ConfigMap.
     runner_grpc_channel_options: Mapping[str, int | str]
-    # Whether the History Service ingester writes Session history. One writer at a time: the
-    # Sandbox Service ingester still runs, so this stays off until it stops.
-    history_ingester: bool
+    # Which service copies runner journals into the history tables; the other's ingester is off.
+    history_writer: HistoryWriter
     db: DbProps
     llm_ingress: LlmIngressProps
     egress: EgressProps
