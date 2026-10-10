@@ -16,7 +16,6 @@ from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from agentplane.action_service.api import create_app
-from agentplane.action_service.auth import ConfiguredOperatorBearerAuthenticator
 from agentplane.action_service.catalog import ActionCatalog
 from agentplane.action_service.connections import (
     ConnectionAuthority,
@@ -43,6 +42,7 @@ from agentplane.action_service.enrollments import (
 from agentplane.action_service.models import OperatorPrincipal, Verdict
 from agentplane.action_service.service import ActionService
 from agentplane.action_service.testing.callers import OTHER, PERSONAL, UNLABELED, admitted_callers
+from agentplane.action_service.testing.credentials import StaticOperatorAuthenticator
 from agentplane.action_service.updates import ActionUpdates
 from agentplane.subjects import ServiceAccountRef
 from agentplane.workload_auth.principal import WorkloadPrincipalResolver
@@ -74,7 +74,7 @@ async def consent(engine: AsyncEngine) -> Consent:
     )
     created = await authority.create(request)
     browser = EnrollmentPreviewInput(browser_binding="test-browser-" + "a" * 32)
-    operator = OperatorPrincipal(issuer="configured-operator", subject="test-operator")
+    operator = OperatorPrincipal(issuer="test-operator-issuer", subject="test-operator")
     preview = await authority.preview(created.handle, browser, operator)
     allow = EnrollmentAllow(
         browser_binding=browser.browser_binding,
@@ -246,9 +246,7 @@ async def test_operator_routes_require_auth_and_reject_redirect_injection(
     app = create_app(
         actions,
         Mock(spec=WorkloadPrincipalResolver),
-        ConfiguredOperatorBearerAuthenticator(
-            token_digest=hashlib.sha256(token.encode()).digest(), subject="test-operator"
-        ),
+        StaticOperatorAuthenticator(token, consent.operator),
         catalog,
         callers=admitted_callers(),
         updates=ActionUpdates(db_url),

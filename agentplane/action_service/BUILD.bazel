@@ -69,10 +69,7 @@ py_library(
 py_library(
     name = "auth",
     srcs = ["auth.py"],
-    deps = [
-        ":models",
-        "//agentplane/workload_auth:principal",
-    ],
+    deps = [":models"],
 )
 
 py_library(
@@ -373,7 +370,6 @@ py_test(
         ":api",
         ":auth",
         ":catalog",
-        ":client",
         ":conftest",
         ":models",
         ":service",
@@ -382,6 +378,7 @@ py_test(
         "//agentplane:subjects",
         "//agentplane/action_service/policies:resources",
         "//agentplane/action_service/testing:callers",
+        "//agentplane/action_service/testing:credentials",
         "//agentplane/workload_auth:principal",
         "@pypi//httpx",
         "@pypi//kubernetes_asyncio",
@@ -709,7 +706,6 @@ py_test(
     requires_docker = True,
     deps = [
         ":api",
-        ":auth",
         ":catalog",
         ":conftest",
         ":connections",
@@ -722,6 +718,7 @@ py_test(
         "//agentplane:kubernetes_watch",
         "//agentplane:subjects",
         "//agentplane/action_service/testing:callers",
+        "//agentplane/action_service/testing:credentials",
         "//agentplane/workload_auth:principal",
         "@pypi//httpx",
         "@pypi//pytest",
@@ -767,7 +764,6 @@ py_test(
         ":api",
         ":auth",
         ":catalog",
-        ":client",
         ":conftest",
         ":db",
         ":mcp_frontend",
@@ -782,6 +778,7 @@ py_test(
         "//agentplane/action_service/sandbox:binding",
         "//agentplane/action_service/sandbox:models",
         "//agentplane/action_service/testing:callers",
+        "//agentplane/action_service/testing:credentials",
         "//agentplane/action_service/testing:fixtures",
         "//agentplane/workload_auth:principal",
         "//util/exec:models",
@@ -806,7 +803,6 @@ py_test(
     requires_docker = True,
     deps = [
         ":api",
-        ":auth",
         ":catalog",
         ":conftest",
         ":connections",
@@ -818,6 +814,7 @@ py_test(
         "//:conftest",
         "//agentplane:subjects",
         "//agentplane/action_service/testing:callers",
+        "//agentplane/action_service/testing:credentials",
         "//agentplane/workload_auth:principal",
         "@pypi//httpx",
         "@pypi//pytest",

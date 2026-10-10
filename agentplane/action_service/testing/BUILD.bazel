@@ -130,3 +130,9 @@ py_library(
         "//agentplane/action_service:policy_informer",
     ],
 )
+
+py_library(
+    name = "credentials",
+    srcs = ["credentials.py"],
+    deps = ["//agentplane/action_service:models"],
+)

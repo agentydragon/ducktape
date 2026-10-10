@@ -194,7 +194,6 @@ class ReconciliationSource(StrEnum):
     """Who authenticated a terminal outcome for an Execution that was `execution_unknown`."""
 
     LATE_COMPLETION = "late_completion"
-    AUTHORITATIVE_STATUS = "authoritative_status"
 
 
 class ActionRequestInput(BaseModel):

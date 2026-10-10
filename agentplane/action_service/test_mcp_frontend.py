@@ -27,7 +27,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 from starlette.types import Message, Scope
 
 from agentplane.action_service.api import create_app
-from agentplane.action_service.auth import DisabledOperatorAuthenticator, workload_principal
+from agentplane.action_service.auth import DisabledOperatorAuthenticator
 from agentplane.action_service.catalog import (
     ActionCatalog,
     ActionDefinition,
@@ -36,7 +36,6 @@ from agentplane.action_service.catalog import (
     ExecutorBinding,
     McpExecutorBinding,
 )
-from agentplane.action_service.client import WORKLOAD_CREDENTIAL_PLACEHOLDER
 from agentplane.action_service.db import ActionStore, make_sessionmaker
 from agentplane.action_service.mcp_frontend import CancellationView, PolicyField, Receipt, RequestField
 from agentplane.action_service.models import (
@@ -60,6 +59,7 @@ from agentplane.action_service.sandbox.binding import SandboxExecutorBinding
 from agentplane.action_service.sandbox.models import ExecResult
 from agentplane.action_service.service import ActionService
 from agentplane.action_service.testing.callers import in_sync_index
+from agentplane.action_service.testing.credentials import WORKLOAD_CREDENTIAL_PLACEHOLDER
 from agentplane.action_service.testing.fixtures import ScriptedExecutor, lifespan_in_own_task
 from agentplane.action_service.updates import ActionSubscription, ActionUpdates
 from agentplane.subjects import ServiceAccountRef
@@ -482,7 +482,7 @@ async def test_submission_wait_receipts_events_and_owner_scope(frontend: Fronten
         assert second.structured_content["events"][0]["state"] == "denied"
         assert "next_after_sequence" not in second.structured_content
         assert (
-            await frontend.store.get(request_id, workload_principal(frontend.tokens["test-token-a"]))
+            await frontend.store.get(request_id, CallerPrincipal(account=frontend.tokens["test-token-a"].account))
         ).id == request_id
 
 
@@ -509,7 +509,7 @@ async def test_a_caller_reads_the_effective_policy_of_itself_or_a_named_target(f
             (await caller.call_tool("get_action_policy", {"include_fields": ALL_POLICY_FIELDS})).structured_content
         )
         assert isinstance(own.subject, ServiceAccountRef)
-        assert own.subject == workload_principal(frontend.tokens["test-token-a"]).account
+        assert own.subject == CallerPrincipal(account=frontend.tokens["test-token-a"].account).account
         assert own.synced is True
         assert [(binding.name, binding.policy_sets) for binding in own.bindings] == [("test-a-reads", ["test-reads"])]
         assert [(p.binding, p.policy_set, p.index, p.policy.actions) for p in own.auto_approve_if] == [
@@ -522,7 +522,7 @@ async def test_a_caller_reads_the_effective_policy_of_itself_or_a_named_target(f
         nothing = CallerActionPolicyView.model_validate(
             (await other.call_tool("get_action_policy", {"include_fields": ALL_POLICY_FIELDS})).structured_content
         )
-        assert nothing.subject == workload_principal(frontend.tokens["test-token-b"]).account
+        assert nothing.subject == CallerPrincipal(account=frontend.tokens["test-token-b"].account).account
         assert (nothing.synced, nothing.bindings, nothing.auto_approve_if) == (True, [], [])
         # A named target gets the same view its own caller would; one the service does not watch has nothing.
         about_a = await other.call_tool(
@@ -615,7 +615,7 @@ async def test_tools_act_as_the_identity_the_transport_verified(frontend: Fronte
             request_ids[token] = UUID(result.structured_content["id"])
     for token, request_id in request_ids.items():
         stored = await frontend.store.get(request_id, OPERATOR)
-        assert stored.caller == workload_principal(frontend.tokens[token]).account
+        assert stored.caller == CallerPrincipal(account=frontend.tokens[token].account).account
         assert stored.external_grant is None
 
 

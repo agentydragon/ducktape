@@ -201,42 +201,6 @@ async def test_late_completion_with_a_different_lease_token_is_rejected(engine: 
     assert (await store.get(request_id, CALLER)).state is ActionState.EXECUTION_UNKNOWN
 
 
-async def test_authoritative_reconciliation_never_preempts_a_still_running_execution(engine: AsyncEngine) -> None:
-    store = ActionStore(make_sessionmaker(engine))
-    request_id = await _allowed_execution(store, idempotency_key="authoritative-reconcile-live")
-    claim = await store.claim_execution(request_id, executor_id="worker-1", lease_duration=timedelta(seconds=30))
-    assert claim is not None
-    await store.mark_running(request_id)
-
-    try:
-        await store.reconcile_from_authority(
-            request_id, ExecutionResult(state=ExecutionState.FAILED, error={"kind": "test"}), authority="status-api"
-        )
-        raise AssertionError("expected ActionConflictError")
-    except ActionConflictError:
-        pass
-    assert (await store.get(request_id, CALLER)).state is ActionState.RUNNING
-
-
-async def test_authoritative_reconciliation_applies_once_the_execution_is_unknown(engine: AsyncEngine) -> None:
-    store = ActionStore(make_sessionmaker(engine))
-    request_id = await _allowed_execution(store, idempotency_key="authoritative-reconcile-unknown")
-    claim = await store.claim_execution(request_id, executor_id="worker-1", lease_duration=ALREADY_EXPIRED)
-    assert claim is not None
-    await store.mark_running(request_id)
-    assert await store.expire_stale_leases(executor_health_timeout=timedelta(seconds=30)) == [request_id]
-
-    await store.reconcile_from_authority(
-        request_id,
-        ExecutionResult(state=ExecutionState.FAILED, error={"kind": "provider_reported_failure"}),
-        authority="status-api",
-    )
-    view = await store.get(request_id, CALLER)
-    assert view.state is ActionState.FAILED
-    assert view.execution is not None
-    assert view.execution.reconciled_at is not None
-
-
 async def test_action_service_restarts_and_worker_liveness_never_double_dispatches(
     engine: AsyncEngine, echo_catalog: ActionCatalog
 ) -> None:

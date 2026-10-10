@@ -839,37 +839,6 @@ class ActionStore:
             row.updated_at = now
             _record_event(session, row, now)
 
-    async def reconcile_from_authority(self, request_id: UUID, result: ExecutionResult, *, authority: str) -> None:
-        """Apply an authoritative backend status lookup to an execution already `execution_unknown`.
-
-        Never touches a still-dispatching/running execution: reconciliation observes the
-        one attempt already made, it does not race or preempt it.
-        """
-        if result.state not in _TERMINAL_ACTION_STATE:
-            raise ValueError(f"authority reported non-terminal state {result.state}")
-        async with self._sessions.begin() as session:
-            row = await session.scalar(
-                select(ActionRequestRow).where(ActionRequestRow.id == request_id).with_for_update()
-            )
-            execution = await session.scalar(
-                select(ExecutionRow).where(ExecutionRow.request_id == request_id).with_for_update()
-            )
-            if row is None or execution is None:
-                raise ActionNotFoundError(str(request_id))
-            if execution.state != ExecutionState.EXECUTION_UNKNOWN.value:
-                raise ActionConflictError(f"cannot reconcile execution in {execution.state}")
-            now = datetime.now(UTC)
-            execution.state = result.state.value
-            execution.result = result.result
-            execution.error = result.error
-            execution.reconciled_at = now
-            execution.reconciliation_source = ReconciliationSource.AUTHORITATIVE_STATUS
-            execution.reconciled_by = authority
-            row.state = _TERMINAL_ACTION_STATE[result.state].value
-            row.version += 1
-            row.updated_at = now
-            _record_event(session, row, now)
-
     async def expire_stale_leases(self, *, executor_health_timeout: timedelta) -> list[UUID]:
         """Mark executions whose lease lapsed unknown; never replay them.
 

@@ -16,7 +16,7 @@ import pytest
 import pytest_bazel
 from fastapi import HTTPException
 
-from agentplane.action_service.client import CredentialPlaceholder, OperatorActionServiceClient
+from agentplane.action_service.client import OperatorActionServiceClient
 from agentplane.action_service.connections import NewConnection
 from agentplane.app.action_federation import OperatorFederationError
 from agentplane.app.conftest import stored_login
@@ -38,10 +38,15 @@ def _preview() -> dict[str, Any]:
     }
 
 
+class Tokens:
+    async def token(self) -> str:
+        return "test-only-token"
+
+
 @asynccontextmanager
 async def _client(downstream: httpx.MockTransport) -> AsyncIterator[OperatorActionServiceClient]:
     async with httpx.AsyncClient(transport=downstream, base_url="https://actions.test") as http:
-        yield OperatorActionServiceClient(http, CredentialPlaceholder("test-only-token"))
+        yield OperatorActionServiceClient(http, Tokens())
 
 
 async def _stored(row: SessionRow) -> dict[str, Any]:

@@ -13,7 +13,7 @@ import pytest_bazel
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from agentplane.action_service.api import _mcp_group_snapshot, create_app
-from agentplane.action_service.auth import OperatorAuthenticator, workload_principal
+from agentplane.action_service.auth import OperatorAuthenticator
 from agentplane.action_service.catalog import (
     ActionCatalog,
     ActionDefinition,
@@ -27,6 +27,7 @@ from agentplane.action_service.db import ActionStore, make_sessionmaker
 from agentplane.action_service.models import (
     ActionRequestInput,
     ActionState,
+    CallerPrincipal,
     CancellationOutcome,
     CancellationResult,
     DecisionInput,
@@ -77,8 +78,8 @@ READER = WorkloadPrincipal(
 ACCOUNT_A = ServiceAccountRef(namespace=NAMESPACE, name=SANDBOX_A.service_account_name)
 ACCOUNT_B = ServiceAccountRef(namespace=NAMESPACE, name=SANDBOX_B.service_account_name)
 ACCOUNT_READER = ServiceAccountRef(namespace=NAMESPACE, name=READER.service_account_name)
-CALLER_A = workload_principal(SANDBOX_A)
-CALLER_B = workload_principal(SANDBOX_B)
+CALLER_A = CallerPrincipal(account=SANDBOX_A.account)
+CALLER_B = CallerPrincipal(account=SANDBOX_B.account)
 OPERATOR = OperatorPrincipal(issuer="test-bff", subject="operator")
 WORKLOAD_TOKENS = {"workload-a": SANDBOX_A, "workload-b": SANDBOX_B, "workload-reader": READER}
 

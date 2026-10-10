@@ -14,11 +14,7 @@ from kubernetes_asyncio import client as k8s_client, config as k8s_config
 from kubernetes_asyncio.client import ApiClient, AuthenticationV1Api, CoreV1Api, CustomObjectsApi
 
 from agentplane.action_service.api import create_app
-from agentplane.action_service.auth import (
-    ConfiguredOperatorBearerAuthenticator,
-    DisabledOperatorAuthenticator,
-    OperatorAuthenticator,
-)
+from agentplane.action_service.auth import DisabledOperatorAuthenticator, OperatorAuthenticator
 from agentplane.action_service.catalog import ActionCatalog
 from agentplane.action_service.connections import ConnectionAuthority
 from agentplane.action_service.db import ActionStore, make_engine, make_sessionmaker, verify_schema
@@ -142,13 +138,9 @@ async def async_main(settings: Settings) -> None:
         operator_authenticator: OperatorAuthenticator
         if settings.operator_oidc is not None:
             operator_authenticator = OidcOperatorAuthenticator(settings.operator_oidc)
-        elif settings.operator_bearer_file is None:
+        else:
             operator_authenticator = DisabledOperatorAuthenticator()
             logger.info("operator/BFF API is disabled because no operator authenticator is configured")
-        else:
-            operator_authenticator = ConfiguredOperatorBearerAuthenticator.from_file(
-                settings.operator_bearer_file, subject=settings.operator_subject
-            )
         oauth = (
             await stack.enter_async_context(
                 running_oauth(settings.oauth, settings.database_url, enrollments, connections)

@@ -139,10 +139,8 @@ class Settings(BaseSettings):
         description="Maximum caller-requested wait on an Action receipt or result.",
     )
     github_visibility: GitHubVisibilitySettings = Field(default_factory=GitHubVisibilitySettings)
-    operator_bearer_file: Path | None = None
     operator_oidc: OperatorOidcSettings | None = None
     oauth: OAuthSettings | None = None
-    operator_subject: str = "configured-bff"
     action_groups: dict[Key, ActionGroup] = Field(
         default_factory=dict, description="Reviewed ActionGroup catalog, keyed by stable namespaced group key."
     )
@@ -151,9 +149,7 @@ class Settings(BaseSettings):
     web_push: WebPushSettings | None = Field(default=None, description="Optional Web Push delivery identity.")
 
     @model_validator(mode="after")
-    def one_operator_authority(self) -> Settings:
-        if self.operator_oidc is not None and self.operator_bearer_file is not None:
-            raise ValueError("configure operator_oidc or legacy operator_bearer_file, never both")
+    def shared_mcp_client_metadata(self) -> Settings:
         _validate_shared_mcp_client_metadata(self.mcp_servers, self.mcp_client_metadata)
         return self
 

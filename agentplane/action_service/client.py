@@ -1,10 +1,9 @@
-"""Small, separate clients for Sandbox workload and operator/BFF API surfaces."""
+"""Client for the Action Service's operator/BFF API surface."""
 
 from __future__ import annotations
 
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from dataclasses import dataclass
 from typing import Protocol, cast
 from uuid import UUID
 
@@ -23,33 +22,21 @@ from agentplane.action_service.mcp_linkage import McpLinkageStart, McpLinkageSta
 from agentplane.action_service.models import (
     ActionEventView,
     ActionHistoryPage,
-    ActionRequestInput,
     ActionRequestView,
     ActionState,
-    CancellationResult,
     DecisionInput,
 )
-from agentplane.action_service.policy_view import CallerActionPolicyView, SubjectActionPolicyView
+from agentplane.action_service.policy_view import SubjectActionPolicyView
 from agentplane.subjects import ServiceAccountRef
-
-WORKLOAD_CREDENTIAL_PLACEHOLDER = "agentplane-credential-agentplane-workload"
 
 
 class AccessTokenProvider(Protocol):
     async def token(self) -> str: ...
 
 
-@dataclass(frozen=True)
-class CredentialPlaceholder:
-    """Non-secret runner input selected for central authenticatedWorkloadToken substitution."""
+class OperatorActionServiceClient:
+    """BFF-facing client; its authenticator and paths are distinct from Sandbox workload auth."""
 
-    value: str = WORKLOAD_CREDENTIAL_PLACEHOLDER
-
-    async def token(self) -> str:
-        return self.value
-
-
-class _BearerClient:
     def __init__(self, http: httpx.AsyncClient, tokens: AccessTokenProvider) -> None:
         self._http = http
         self._tokens = tokens
@@ -61,38 +48,6 @@ class _BearerClient:
         response = await self._http.request(method, url, headers=headers, **kwargs)
         response.raise_for_status()
         return response
-
-
-class ActionServiceClient(_BearerClient):
-    """Sandbox-facing client; normally presents only the public central-proxy placeholder."""
-
-    async def submit(self, body: ActionRequestInput) -> ActionRequestView:
-        response = await self._request("POST", "/v1/action-requests", json=body.model_dump(mode="json"))
-        return ActionRequestView.model_validate(response.json())
-
-    async def get(self, request_id: UUID) -> ActionRequestView:
-        response = await self._request("GET", f"/v1/action-requests/{request_id}")
-        return ActionRequestView.model_validate(response.json())
-
-    async def cancel(self, request_id: UUID) -> CancellationResult:
-        response = await self._request("POST", f"/v1/action-requests/{request_id}/cancel")
-        return CancellationResult.model_validate(response.json())
-
-    async def events(self, request_id: UUID, *, after_sequence: int = 0) -> list[ActionEventView]:
-        """The durable, ordered transition log; `after_sequence` makes repeated polling a no-op."""
-        response = await self._request(
-            "GET", f"/v1/action-requests/{request_id}/events", params={"after_sequence": after_sequence}
-        )
-        return [ActionEventView.model_validate(event) for event in response.json()]
-
-    async def action_policy(self) -> CallerActionPolicyView:
-        """What this caller's own bindings auto-decide, as admission would resolve them now."""
-        response = await self._request("GET", "/v1/action-policy")
-        return CallerActionPolicyView.model_validate(response.json())
-
-
-class OperatorActionServiceClient(_BearerClient):
-    """BFF-facing client; its authenticator and paths are distinct from Sandbox workload auth."""
 
     async def service_account_action_policy(self, account: ServiceAccountRef) -> SubjectActionPolicyView:
         response = await self._request(

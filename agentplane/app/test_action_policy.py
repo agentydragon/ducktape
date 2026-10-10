@@ -9,7 +9,7 @@ import httpx
 import pytest
 import pytest_bazel
 
-from agentplane.action_service.client import CredentialPlaceholder, OperatorActionServiceClient
+from agentplane.action_service.client import OperatorActionServiceClient
 from agentplane.action_service.models import PolicyKind
 from agentplane.action_service.policy_view import (
     ActionPolicySetView,
@@ -71,6 +71,11 @@ ANSWER = SubjectActionPolicyView(
 )
 
 
+class Tokens:
+    async def token(self) -> str:
+        return "test-operator-token"
+
+
 async def test_for_subject_asks_the_service_and_adds_only_who_wrote_each_binding(
     inventory: ActionPolicyInventory,
 ) -> None:
@@ -83,8 +88,7 @@ async def test_for_subject_asks_the_service_and_adds_only_who_wrote_each_binding
         return httpx.Response(200, json=ANSWER.model_dump(mode="json"))
 
     client = OperatorActionServiceClient(
-        httpx.AsyncClient(transport=httpx.MockTransport(service), base_url="http://test-actions.invalid"),
-        CredentialPlaceholder("test-operator-token"),
+        httpx.AsyncClient(transport=httpx.MockTransport(service), base_url="http://test-actions.invalid"), Tokens()
     )
 
     view = await inventory.for_subject(client, LIVE)

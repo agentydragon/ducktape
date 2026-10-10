@@ -85,7 +85,7 @@ The v0 executable seam is deliberately small:
 - owner-only cancellation before the atomic dispatch claim, with no expected-version requirement;
 - restart recovery: pending dispatches resume immediately; dispatching/running work is left alone
   until its own bounded lease expires, then becomes `execution_unknown` and may later be reconciled
-  by an authenticated late completion or an authoritative status lookup — see
+  by an authenticated late completion — see
   [`../docs/executor_liveness.md`](../docs/executor_liveness.md);
 - MCP adapters to reviewed upstream servers, with test-only injected executors in unit tests; and
 - a durable, restart-surviving Action event sequence as the result-delivery surface: a caller polls
@@ -140,10 +140,10 @@ from these optional votes.
 ## Cancellation
 
 `POST /v1/action-requests/{id}/cancel` takes no body or expected version and returns
-`CancellationResult`: an `outcome` and the current caller-safe `request` receipt.
-`ActionServiceClient.cancel(id)` uses this same route. Only the authenticated owning principal may
-cancel; operator-all read/decision authority grants no override. Workload ownership is the Sandbox
-principal, not a Thread or caller-supplied provenance. Unknown and non-owned requests both return 404.
+`CancellationResult`: an `outcome` and the current caller-safe `request` receipt. Only the
+authenticated owning principal may cancel; operator-all read/decision authority grants no override.
+Workload ownership is the Sandbox principal, not a Thread or caller-supplied provenance. Unknown and
+non-owned requests both return 404.
 
 | Request state                                 | Outcome             | Effect                                                         |
 | --------------------------------------------- | ------------------- | -------------------------------------------------------------- |

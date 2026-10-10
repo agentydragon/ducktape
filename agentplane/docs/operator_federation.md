@@ -150,8 +150,7 @@ deployable defaults:
 Set the Action Service's `operator_oidc` YAML key (or `AGENTPLANE_ACTIONS_OPERATOR_OIDC` JSON) to
 the same `issuer`, `audience`, `jwks_uri`, and `token_profile` pins as the app's `target`. Authentik's target
 application policy decides who can obtain the target token; the Action Service does not maintain a
-second subject list. Its legacy
-`operator_bearer_file` adapter is mutually exclusive and is **not** a fallback for federation.
+second subject list.
 Partial/invalid configuration fails startup. A configured app federation without OIDC login also
 fails startup. Changing Authentik's target policy changes who can exchange without a configuration
 rollout; existing short-lived target tokens remain valid until their normal expiry.

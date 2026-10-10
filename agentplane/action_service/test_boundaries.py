@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
-from pathlib import Path
 from typing import Any, cast
 from uuid import UUID
 
@@ -14,24 +13,13 @@ from kubernetes_asyncio import client as k8s_client
 from kubernetes_asyncio.client import AuthenticationV1Api
 
 from agentplane.action_service.api import create_app
-from agentplane.action_service.auth import (
-    ConfiguredOperatorBearerAuthenticator,
-    DisabledOperatorAuthenticator,
-    OperatorAuthenticator,
-    workload_principal,
-)
+from agentplane.action_service.auth import DisabledOperatorAuthenticator, OperatorAuthenticator
 from agentplane.action_service.catalog import ActionCatalog, ActionIdentity
-from agentplane.action_service.client import WORKLOAD_CREDENTIAL_PLACEHOLDER, ActionServiceClient, CredentialPlaceholder
-from agentplane.action_service.models import (
-    ActionRequestInput,
-    ActionRequestView,
-    ActionState,
-    CallerPrincipal,
-    OperatorPrincipal,
-)
+from agentplane.action_service.models import ActionRequestInput, ActionRequestView, ActionState, CallerPrincipal
 from agentplane.action_service.policies.resources import CALLER_LABEL
 from agentplane.action_service.service import ActionService
 from agentplane.action_service.testing.callers import admitted_callers
+from agentplane.action_service.testing.credentials import WORKLOAD_CREDENTIAL_PLACEHOLDER
 from agentplane.action_service.updates import ActionUpdates
 from agentplane.subjects import ServiceAccountRef
 from agentplane.workload_auth.principal import (
@@ -183,10 +171,15 @@ async def test_central_placeholder_replay_is_required_before_action_service_auth
 
     proxy = FakeCentralProxy(app, TOKEN_A)
     async with httpx.AsyncClient(transport=proxy, base_url="http://agentplane-actions") as proxied_http:
-        response = await ActionServiceClient(proxied_http, CredentialPlaceholder()).submit(body)
+        submitted = await proxied_http.post(
+            "/v1/action-requests",
+            headers={"Authorization": f"Bearer {WORKLOAD_CREDENTIAL_PLACEHOLDER}"},
+            json=body.model_dump(mode="json"),
+        )
+    response = ActionRequestView.model_validate(submitted.raise_for_status().json())
     assert response.state is ActionState.DECISION_PENDING
     assert proxy.placeholders_seen == 1
-    assert service.principals == [workload_principal(PRINCIPAL_A)]
+    assert service.principals == [CallerPrincipal(account=PRINCIPAL_A.account)]
     assert service.bodies == [body]
 
     # Bypassing central leaves only a public placeholder, while missing/wrong identities also fail.
@@ -258,20 +251,6 @@ async def test_an_unlabelled_account_authenticates_and_reaches_no_route(caplog: 
     rendered = "\n".join(record.getMessage() for record in caplog.records)
     assert PRINCIPAL_A.service_account_name in rendered
     assert CALLER_LABEL in rendered
-
-
-async def test_operator_adapter_is_distinct_digest_only_and_file_configured(tmp_path: Path) -> None:
-    path = tmp_path / "operator-bearer"
-    path.write_text("opaque-bff-bearer\n")
-    authenticator = ConfiguredOperatorBearerAuthenticator.from_file(path, subject="haku-bff")
-
-    accepted = await authenticator.authenticate("opaque-bff-bearer")
-
-    assert accepted is not None
-    assert accepted == OperatorPrincipal(issuer="configured-operator", subject="haku-bff")
-    assert await authenticator.authenticate("wrong") is None
-    assert "opaque-bff-bearer" not in repr(authenticator.__dict__)
-    await DisabledOperatorAuthenticator().authenticate("anything")
 
 
 if __name__ == "__main__":

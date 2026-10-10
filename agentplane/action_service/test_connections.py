@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import hashlib
 from datetime import UTC, datetime, timedelta
 from unittest.mock import Mock
 from uuid import uuid4
@@ -15,7 +14,6 @@ from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from agentplane.action_service.api import create_app
-from agentplane.action_service.auth import ConfiguredOperatorBearerAuthenticator
 from agentplane.action_service.catalog import ActionCatalog, ActionIdentity
 from agentplane.action_service.connections import (
     ConnectionAuthority,
@@ -39,6 +37,7 @@ from agentplane.action_service.models import ActionRequestInput, OperatorPrincip
 from agentplane.action_service.policy_informer import PolicyIndex
 from agentplane.action_service.service import ActionService
 from agentplane.action_service.testing.callers import OTHER, PERSONAL, UNLABELED, admitted_callers
+from agentplane.action_service.testing.credentials import StaticOperatorAuthenticator
 from agentplane.action_service.updates import ActionUpdates
 from agentplane.kubernetes_watch import Freshness
 from agentplane.subjects import ServiceAccountRef
@@ -378,7 +377,7 @@ async def test_operator_routes_do_not_expose_binding_or_accept_workload_credenti
     app = create_app(
         actions,
         Mock(spec=WorkloadPrincipalResolver),
-        ConfiguredOperatorBearerAuthenticator(token_digest=hashlib.sha256(token.encode()).digest(), subject="operator"),
+        StaticOperatorAuthenticator(token, OperatorPrincipal(issuer="test-operator-issuer", subject="test-operator")),
         catalog,
         connections=service,
         callers=admitted_callers(),

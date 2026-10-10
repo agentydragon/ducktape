@@ -51,16 +51,10 @@ diagnosis only, whether the owning executor's own health heartbeat is also stale
 renewing (`lease_expired`); both are equally final.
 
 Because a lapsed lease does not prove the external effect stopped, the terminal `execution_unknown`
-row can still be **reconciled** later — never replayed — by whichever of two authenticated paths
-learns the truth first:
-
-- **Late completion**: the _same_ `executor_id`/`lease_token` issued at claim time finally reports
-  a result. Authenticated by presenting that lease; this is the identical call an on-time
-  completion would have made, so no new coordinator logic decides "was this late."
-- **Authoritative reconciliation**: a separate, adapter-specific authoritative status lookup
-  reports the true outcome. This path only ever applies to an Execution already
-  `execution_unknown` — it never touches a still-dispatching/running row, so it cannot race or
-  preempt a live attempt and cannot start a second effect.
+row can still be **reconciled** later — never replayed — by a **late completion**: the _same_
+`executor_id`/`lease_token` issued at claim time finally reports a result. Authenticated by
+presenting that lease; this is the identical call an on-time completion would have made, so no new
+coordinator logic decides "was this late."
 
 ## State transitions
 
@@ -83,8 +77,6 @@ stateDiagram-v2
 
     execution_unknown --> succeeded : finish_execution, same lease\n(reconciled: late_completion)
     execution_unknown --> failed : finish_execution, same lease\n(reconciled: late_completion)
-    execution_unknown --> succeeded : reconcile_from_authority\n(reconciled: authoritative_status)
-    execution_unknown --> failed : reconcile_from_authority\n(reconciled: authoritative_status)
 
     succeeded --> [*]
     failed --> [*]
@@ -109,10 +101,9 @@ has not yet been invoked. See [the cancellation API](../action_service/README.md
 `ReconciliationSource` (`reconciliation_source` on a reconciled Execution, operator/audit-only —
 not projected to callers):
 
-| Code                   | Meaning                                                               |
-| ---------------------- | --------------------------------------------------------------------- |
-| `late_completion`      | The original lease-holding attempt finally reported in.               |
-| `authoritative_status` | A separate authoritative status lookup reconciled an unknown outcome. |
+| Code              | Meaning                                                 |
+| ----------------- | ------------------------------------------------------- |
+| `late_completion` | The original lease-holding attempt finally reported in. |
 
 None of these carry adapter/provider text; `FAILED` executions still classify by
 `type(error).__name__` as before, unrelated to this liveness mechanism.
@@ -122,8 +113,7 @@ None of these carry adapter/provider text; `FAILED` executions still classify by
 - Transport for a real out-of-process worker (still in-process; `ExecutionLease` is the contract a
   network call would eventually carry).
 - Which credential a worker process may hold, or its Kubernetes ServiceAccount boundary.
-- Any concrete authoritative status lookup — `reconcile_from_authority` exists as a store primitive;
-  no adapter calls it yet.
+- Any authoritative status lookup that reconciles an `execution_unknown` outcome.
 - Executor identity lifecycle: `executor_id` is a fresh random value per coordinator process
   lifetime, so `action_executor_heartbeat` accumulates one stale row per past restart. Acceptable at
   this scale; a stable pod-derived identity or a row-expiry sweep is future work if it isn't.
