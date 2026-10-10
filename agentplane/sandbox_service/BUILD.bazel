@@ -192,6 +192,7 @@ py_library(
         "@pypi//fastapi",
         "@pypi//grpcio",
         "@pypi//kubernetes_asyncio",
+        "@pypi//protobuf",
         "@pypi//sqlalchemy",
         "@pypi//uvicorn",
     ],
