@@ -5,6 +5,7 @@ import { type CallToolResult, parseCallToolResult } from "../call_tool_result";
 import { mount, SSH_EXEC_ARGUMENTS, sshExec } from "../testing";
 import {
   canApproveInline,
+  renderActionLabel,
   renderDetailsArguments,
   renderDetailsResult,
   renderPaneCollapsed,
@@ -38,6 +39,16 @@ describe("Action presentation slots", () => {
     expect(collapsed.textContent).toContain("Get pods");
     expect(opened.textContent).toContain("List pods in namespace");
     expect(details.textContent).toContain("List pods in namespace");
+  });
+
+  it("uses a human-facing Action label in place of the technical identity", async () => {
+    const action = { group: "kubernetes_admin", name: "pods_list_in_namespace" };
+    const label = await mount(renderActionLabel(action, { namespace: "tofu-controller" }));
+
+    expect(label.textContent).toContain("List pods in namespace tofu-controller");
+    expect(label.textContent).not.toContain("kubernetes_admin");
+    expect(label.textContent).not.toContain("pods_list_in_namespace");
+    expect(renderActionLabel(action, { namespace: "tofu-controller", hidden: true })).toBeNull();
   });
 
   it("uses SSH's custom pane and full-details argument renderers", async () => {

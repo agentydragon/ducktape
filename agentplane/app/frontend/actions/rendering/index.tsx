@@ -1,5 +1,5 @@
-// React presentation registry for Actions. Each Action can choose a different widget for the
-// collapsed and opened Actions pane, and for full-detail arguments and results. The parallel,
+// React presentation registry for Actions. Each Action can choose a human-facing label, a different
+// widget for the collapsed and opened Actions pane, and full-detail arguments and results. The parallel,
 // React-free notification registry lives in ../notifications because the service worker imports it.
 // The group is the name the Action Service configures a backend under. Unknown identities or
 // payloads fall back to the host's generic view.
@@ -13,6 +13,7 @@ import { canQuickApproveEventsList, eventsListPane } from "./kubernetes_admin/ev
 import {
   canQuickApprovePodsInNamespace,
   podsInNamespaceCollapsed,
+  podsInNamespaceLabel,
   podsInNamespacePreview,
 } from "./kubernetes_admin/pods_list_in_namespace";
 import { canQuickApprovePodsLog, podsLogPreview } from "./kubernetes_admin/pods_log";
@@ -25,6 +26,8 @@ import { execArgumentsPreview, execCollapsedPreview, execResultPreview } from ".
 type ActionIdentity = ActionRequestView["action"];
 
 interface ActionPresentation {
+  /** Replaces the host's technical group/name label in the pane and full details header. */
+  label?: ArgumentsPreview;
   pane?: {
     collapsed?: ArgumentsPreview;
     opened?: ArgumentsPreview;
@@ -43,6 +46,7 @@ const PRESENTATIONS: ReadonlyMap<string, ReadonlyMap<string, ActionPresentation>
       [
         "pods_list_in_namespace",
         {
+          label: podsInNamespaceLabel,
           pane: { collapsed: podsInNamespaceCollapsed, opened: podsInNamespacePreview },
           details: { arguments: podsInNamespacePreview },
         },
@@ -92,6 +96,12 @@ const QUICK_APPROVALS: ReadonlyMap<string, ReadonlyMap<string, (args: unknown) =
 
 function presentation(action: ActionIdentity): ActionPresentation | undefined {
   return PRESENTATIONS.get(action.group)?.get(action.name);
+}
+
+/** An Action's human-facing name; `null` keeps the host's group/name label. */
+export function renderActionLabel(action: ActionIdentity, args: unknown): ReactNode | null {
+  const label = presentation(action)?.label;
+  return label ? renderPreview(label, args) : null;
 }
 
 /** An Action's collapsed-pane summary; `null` leaves the shared caller title in place. */

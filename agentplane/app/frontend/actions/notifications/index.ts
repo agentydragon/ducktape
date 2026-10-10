@@ -1,4 +1,5 @@
 import type { ActionRequestView } from "../types";
+import { podsInNamespaceNotification } from "./kubernetes_admin/pods_list_in_namespace";
 import { sshExecNotification } from "./ssh/exec";
 import type { ActionNotificationContent } from "./types";
 
@@ -7,6 +8,7 @@ type ActionNotificationFormatter = (request: ActionRequestView) => ActionNotific
 // This registry intentionally stays parallel to the React presentation registry. The service
 // worker imports this module, so notification formatters must remain React-free.
 const FORMATTERS: ReadonlyMap<string, ReadonlyMap<string, ActionNotificationFormatter>> = new Map([
+  ["kubernetes_admin", new Map([["pods_list_in_namespace", podsInNamespaceNotification]])],
   ["ssh", new Map([["exec", sshExecNotification]])],
 ]);
 

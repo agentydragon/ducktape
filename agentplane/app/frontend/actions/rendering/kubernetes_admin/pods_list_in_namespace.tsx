@@ -1,21 +1,15 @@
 import { Code, Text } from "@mantine/core";
 import type { JSX } from "react";
-import { z } from "zod";
+import type { z } from "zod";
 
 import { definePreview, type ArgumentsPreview } from "../entry";
-
-// Unknown arguments fail closed rather than making an unshown parameter actionable.
-const podsInNamespaceArguments = z.strictObject({
-  namespace: z.string().min(1),
-  fieldSelector: z.string().min(1).optional(),
-  labelSelector: z.string().min(1).optional(),
-});
+import { zPodsInNamespaceArguments } from "../../schemas/kubernetes_admin/pods_list_in_namespace";
 
 export function canQuickApprovePodsInNamespace(args: unknown): boolean {
-  return podsInNamespaceArguments.safeParse(args).success;
+  return zPodsInNamespaceArguments.safeParse(args).success;
 }
 
-function PodsInNamespace({ args }: { args: z.infer<typeof podsInNamespaceArguments> }): JSX.Element {
+function PodsInNamespace({ args }: { args: z.infer<typeof zPodsInNamespaceArguments> }): JSX.Element {
   return (
     <Text size="sm" style={{ overflowWrap: "anywhere" }}>
       List pods in namespace <Code>{args.namespace}</Code>
@@ -35,11 +29,26 @@ function PodsInNamespace({ args }: { args: z.infer<typeof podsInNamespaceArgumen
   );
 }
 
-export const podsInNamespacePreview: ArgumentsPreview = definePreview(podsInNamespaceArguments, PodsInNamespace);
+export const podsInNamespacePreview: ArgumentsPreview = definePreview(zPodsInNamespaceArguments, PodsInNamespace);
+
+function PodsInNamespaceLabel({ args }: { args: z.infer<typeof zPodsInNamespaceArguments> }): JSX.Element {
+  return (
+    <Text
+      component="span"
+      size="sm"
+      fw={600}
+      style={{ fontFamily: "var(--mantine-font-family)", overflowWrap: "anywhere" }}
+    >
+      List pods in namespace <Code>{args.namespace}</Code>
+    </Text>
+  );
+}
+
+export const podsInNamespaceLabel: ArgumentsPreview = definePreview(zPodsInNamespaceArguments, PodsInNamespaceLabel);
 
 // This is intentionally a separate widget from the opened pane: each Action owns both
 // representations. Quick-approval eligibility lives in a separate capability registry.
-function PodsInNamespaceCollapsed({ args }: { args: z.infer<typeof podsInNamespaceArguments> }): JSX.Element {
+function PodsInNamespaceCollapsed({ args }: { args: z.infer<typeof zPodsInNamespaceArguments> }): JSX.Element {
   return (
     <Text size="sm" style={{ overflowWrap: "anywhere" }}>
       Get pods · namespace <Code>{args.namespace}</Code>
@@ -60,6 +69,6 @@ function PodsInNamespaceCollapsed({ args }: { args: z.infer<typeof podsInNamespa
 }
 
 export const podsInNamespaceCollapsed: ArgumentsPreview = definePreview(
-  podsInNamespaceArguments,
+  zPodsInNamespaceArguments,
   PodsInNamespaceCollapsed
 );

@@ -8,7 +8,7 @@ import { Link, useLocation } from "react-router";
 import { serviceAccountKey } from "../client";
 import { JsonView } from "../json_view";
 import { StaleNotice } from "../stream_status";
-import { canApproveInline, renderPaneCollapsed, renderPaneOpened } from "./rendering/index";
+import { canApproveInline, renderActionLabel, renderPaneCollapsed, renderPaneOpened } from "./rendering/index";
 import { ActionRequestsContext } from "./requests";
 import "./sidebar.css";
 
@@ -245,6 +245,7 @@ export function ActionsSidebarSection({ onNavigate }: { onNavigate?: () => void 
           )}
           {pending.map((request) => {
             const expanded = expandedId === request.id;
+            const actionLabel = renderActionLabel(request.action, request.arguments);
             const collapsedPreview = renderPaneCollapsed(request.action, request.arguments);
             const openedPreview = renderPaneOpened(request.action, request.arguments);
             const canQuickApprove =
@@ -276,11 +277,17 @@ export function ActionsSidebarSection({ onNavigate }: { onNavigate?: () => void 
                       to={detailsPath}
                       state={navigationState}
                       onClick={onNavigate}
-                      aria-label={`View details for ${request.action.group} / ${request.action.name}: ${request.title}`}
+                      aria-label={
+                        actionLabel === null
+                          ? `View details for ${request.action.group} / ${request.action.name}: ${request.title}`
+                          : undefined
+                      }
                     >
-                      <span>
-                        {request.action.group} / {request.action.name}
-                      </span>
+                      {actionLabel ?? (
+                        <span>
+                          {request.action.group} / {request.action.name}
+                        </span>
+                      )}
                       <IconArrowRight size={13} aria-hidden="true" />
                     </Link>
                     <Text size="xs" lineClamp={1} title={request.title}>

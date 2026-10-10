@@ -54,6 +54,20 @@ describe("action notification formatting", () => {
     `);
   });
 
+  it("uses the human-facing Action label instead of the technical identity", () => {
+    const request = actionRequest({
+      action: { group: "kubernetes_admin", name: "pods_list_in_namespace" },
+      arguments: { namespace: "tofu-controller" },
+      title: "Check the controller pods",
+      description: "Confirm the controller is ready.",
+    });
+
+    expect(formatActionNotification(request)).toEqual({
+      title: "Check the controller pods · List pods in namespace tofu-controller",
+      text: "Confirm the controller is ready.",
+    });
+  });
+
   it("falls back when SSH arguments contain fields the widget cannot show", () => {
     const request = actionRequest({
       action: { group: "ssh", name: "exec" },

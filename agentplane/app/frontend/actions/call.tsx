@@ -6,7 +6,7 @@ import { Disclosure } from "../disclosure";
 import { JsonView } from "../json_view";
 import { RawSwitch } from "../raw_switch";
 import type { ActionRequestView } from "./client";
-import { renderDetailsArguments } from "./rendering/index";
+import { renderActionLabel, renderDetailsArguments } from "./rendering/index";
 
 /** The grant fields, folded inside `RequestAuditDetails`' disclosure rather than shown
  * unconditionally: verbose per-request provenance an operator deciding needs occasionally, not on
@@ -81,14 +81,17 @@ export function ActionCall({
   /** Whether the card's result renders other than as its stored JSON. */
   prettyResult: boolean;
 }): JSX.Element {
+  const actionLabel = renderActionLabel(request.action, request.arguments);
   const prettyArguments = renderDetailsArguments(request.action, request.arguments);
   return (
     <Stack gap="sm">
       <Stack gap={2}>
         <Group justify="space-between" align="flex-start" gap="xs">
-          <Text fw={600} ff="monospace" style={{ overflowWrap: "anywhere" }}>
-            {request.action.group} / {request.action.name}
-          </Text>
+          {actionLabel ?? (
+            <Text fw={600} ff="monospace" style={{ overflowWrap: "anywhere" }}>
+              {request.action.group} / {request.action.name}
+            </Text>
+          )}
           <Group gap="xs" justify="flex-end" wrap="wrap">
             {status}
             {(prettyArguments !== null || prettyResult) && <RawSwitch raw={raw} onChange={onRawChange} />}

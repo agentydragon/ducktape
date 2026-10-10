@@ -450,6 +450,15 @@ ts_library(
     ],
 )
 
+# Strict request argument schemas shared by Action renderers and React-free service-worker
+# notification formatters.
+ts_library(
+    name = "actions_kubernetes_pod_list_schema",
+    srcs = ["actions/schemas/kubernetes_admin/pods_list_in_namespace.ts"],
+    tsconfig = TSCONFIG,
+    deps = ["//:node_modules/zod"],
+)
+
 # Widgets for particular Actions' requests and responses, registered by the Action's identity:
 # actions/rendering/index.tsx dispatches; each Action widget lives under its group.
 ts_library(
@@ -506,6 +515,7 @@ ts_library(
     ],
     tsconfig = TSCONFIG,
     deps = [
+        ":actions_kubernetes_pod_list_schema",
         ":actions_rendering_chips",
         ":actions_rendering_entry",
         "//:node_modules/@mantine/core",
@@ -1267,11 +1277,13 @@ ts_library(
     name = "actions_notifications",
     srcs = [
         "actions/notifications/index.ts",
+        "actions/notifications/kubernetes_admin/pods_list_in_namespace.ts",
         "actions/notifications/ssh/exec.ts",
         "actions/notifications/types.ts",
     ],
     tsconfig = TSCONFIG,
     deps = [
+        ":actions_kubernetes_pod_list_schema",
         ":actions_types",
         ":ssh_action_schemas",
     ],

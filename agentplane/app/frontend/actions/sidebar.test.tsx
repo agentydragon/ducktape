@@ -120,6 +120,12 @@ it("expands a compact action preview and only offers inline approval to eligible
   };
 
   await send([pod, ssh]);
+  const podLabelLink = [...container.querySelectorAll("a")].find((link) =>
+    link.textContent?.includes("List pods in namespace test-namespace")
+  );
+  expect(podLabelLink).toBeDefined();
+  expect(podLabelLink?.getAttribute("aria-label")).toBeNull();
+  expect(podLabelLink?.textContent).not.toContain("kubernetes_admin / pods_list_in_namespace");
   expect(container.textContent).toContain("Get pods");
   expect(container.textContent).toContain("$ systemctl restart backup");
   const podDisclosure = container.querySelector<HTMLButtonElement>(`button[aria-label="Expand ${pod.title}"]`);

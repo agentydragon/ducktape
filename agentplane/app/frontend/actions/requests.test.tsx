@@ -96,6 +96,18 @@ describe("ActionRequests", () => {
     expect(container.textContent).not.toContain("test-user@test-host.example");
   });
 
+  it("uses a human-facing Action label instead of the technical group and name", async () => {
+    const row = {
+      ...request("decision_pending", 1),
+      action: { group: "kubernetes_admin", name: "pods_list_in_namespace" },
+      arguments: { namespace: "tofu-controller" },
+    };
+    const container = await render({ list: async () => [row], decide: vi.fn() }, ActionRequests);
+
+    expect(container.textContent).toContain("List pods in namespace tofu-controller");
+    expect(container.textContent).not.toContain("kubernetes_admin / pods_list_in_namespace");
+  });
+
   it("offers no Raw switch where the arguments show only as their JSON", async () => {
     // Arguments no widget is registered for, and ones the registered widget does not take.
     const unfit = {

@@ -90,6 +90,19 @@ it("opens cached stream details without a reload and Back returns to the origina
   expect(container.textContent).toContain("Thread contents remain open");
 });
 
+it("renders an Action's human-facing label on the full details page", async () => {
+  const row = {
+    ...ROW,
+    action: { group: "kubernetes_admin", name: "pods_list_in_namespace" },
+    arguments: { namespace: "tofu-controller" },
+  };
+  vi.spyOn(actionService, "get").mockResolvedValue(row);
+  const container = await mount(<App initialPath={`/actions/${row.id}`} />);
+
+  await vi.waitFor(() => expect(container.textContent).toContain("List pods in namespace tofu-controller"));
+  expect(container.textContent).not.toContain("kubernetes_admin / pods_list_in_namespace");
+});
+
 it.each([
   { verdict: "allow" as const, resultState: "allowed" as const, buttonName: "Approve" },
   { verdict: "deny" as const, resultState: "denied" as const, buttonName: "Deny" },
