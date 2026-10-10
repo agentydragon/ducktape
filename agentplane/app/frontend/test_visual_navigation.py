@@ -31,6 +31,49 @@ async def test_archived_thread_toggle(view: VisualPage, app: AgentplaneFixture) 
 
 
 @pytest.mark.parametrize("viewport", [DESKTOP, MOBILE], ids=["desktop", "mobile"])
+async def test_workspace_docked_thread_panes(view: VisualPage, app: AgentplaneFixture, viewport: Viewport) -> None:
+    await app.mount_app("/")
+    await view.check(context="classic route ready")
+    page = view.page
+    if viewport == MOBILE:
+        await page.get_by_role("button", name="Toggle navigation").click()
+    await page.get_by_role("button", name="Workspace preview").click()
+    await expect(page.get_by_role("heading", name="Workspace")).to_be_visible()
+    await expect(page.locator(".agentplane-workspace-canvas")).to_be_visible()
+    await expect(page.locator('.mosaic-window-title[title="Threads"]')).to_be_visible()
+
+    await page.get_by_role("button", name="Add pane").click()
+    thread_choice = page.locator(".agentplane-workspace-launcher").get_by_role("button", name=re.compile("Idle thread"))
+    await thread_choice.click()
+    await expect(page.locator('[aria-label="Thread history"]')).to_be_attached()
+
+    if viewport == MOBILE:
+        active_pane = page.get_by_label("Active pane", exact=True)
+        await active_pane.select_option(label="Threads")
+        await page.get_by_role("button", name="Close active pane").click()
+    else:
+        await page.get_by_role("button", name="Close Threads").click()
+
+    await page.get_by_role("button", name="Add pane").click()
+    running_choice = page.locator(".agentplane-workspace-launcher").get_by_role("button", name=re.compile("Running thread"))
+    await running_choice.click()
+    await expect(page.locator('[aria-label="Thread history"]')).to_have_count(2)
+    if viewport == MOBILE:
+        await expect(active_pane).to_have_value(f"thread:{RUNNING_THREAD}")
+        await expect(active_pane.locator("option")).to_have_text(["Idle thread", "Running thread"])
+        await expect(page.locator(".agentplane-workspace-phone-switcher")).to_be_visible()
+    else:
+        await expect(page.locator('.mosaic-window-title[title="Idle thread"]')).to_be_visible()
+        await expect(page.locator('.mosaic-window-title[title="Running thread"]')).to_be_visible()
+    await view.capture(target=page.locator("#app"))
+    await page.get_by_role("button", name="Add pane").click()
+    await expect(page.locator(".agentplane-workspace-launcher")).to_be_visible()
+    await expect(page.locator(".agentplane-workspace-launcher").get_by_role("textbox", name="Find a pane or thread")).to_be_focused()
+    launcher_capture = "pane-launcher-open-mobile" if viewport == MOBILE else "pane-launcher-open-desktop"
+    await view.capture(launcher_capture, target=page.locator("#app"))
+
+
+@pytest.mark.parametrize("viewport", [DESKTOP, MOBILE], ids=["desktop", "mobile"])
 async def test_current_sandbox_highlight(view: VisualPage, app: AgentplaneFixture, viewport: Viewport) -> None:
     await app.mount_app("/sandboxes/ready-sandbox?tab=status")
     await view.check(context="fixture ready")

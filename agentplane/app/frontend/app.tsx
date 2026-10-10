@@ -1,7 +1,7 @@
 import { ActionIcon, Anchor, Stack, Text, Title } from "@mantine/core";
 // Per-icon subpaths, never the barrel: see tabler_icons.d.ts.
 import IconMenu2 from "@tabler/icons-react/dist/esm/icons/IconMenu2.mjs";
-import { type JSX, useCallback, useEffect, useMemo, useState } from "react";
+import { type JSX, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { HashRouter, Route, Routes, useLocation, useMatch, useNavigate, useParams } from "react-router";
 
 import { ActionRequestDetail } from "./actions/detail";
@@ -18,6 +18,7 @@ import { electricThreadSync } from "./threads/thread_store";
 import { ThreadSyncContext } from "./threads/thread_sync";
 import { TopbarContext, TopbarTitle, type TopbarSlots } from "./topbar";
 import { appDocumentTitle } from "./tab_metadata";
+import { WorkspaceRoute } from "./workspace";
 import "./shell.css";
 
 // Hash routing: the API serves the bundle at "/" only, so no path has to reach the server.
@@ -102,6 +103,7 @@ const DESKTOP_SIDEBAR_QUERY = "(min-width: 561px)";
 function AppRoutes(): JSX.Element {
   const location = useLocation();
   const threadRoute = useMatch("/threads/:threadId");
+  const workspaceRoute = useMatch("/workspace") !== null;
   // Not legacy-path compatibility: api.py's MCP-linkage OAuth callback redirects the browser here
   // on completion, and it needs to land showing the result rather than the Sandboxes list.
   const [settingsTab, setSettingsTab] = useState<SettingsTab | null>(() =>
@@ -121,6 +123,20 @@ function AppRoutes(): JSX.Element {
   // breakpoint resets to that side's default -- an "open" docked column left over from a resize
   // would otherwise render, at phone width, as a full-screen overlay intercepting the whole page.
   const [sidebarOpen, setSidebarOpen] = useState(() => window.matchMedia(DESKTOP_SIDEBAR_QUERY).matches);
+  const sidebarOpenRef = useRef(sidebarOpen);
+  const sidebarBeforeWorkspace = useRef<boolean | null>(null);
+  useEffect(() => {
+    sidebarOpenRef.current = sidebarOpen;
+  }, [sidebarOpen]);
+  useEffect(() => {
+    if (workspaceRoute) {
+      if (sidebarBeforeWorkspace.current === null) sidebarBeforeWorkspace.current = sidebarOpenRef.current;
+      setSidebarOpen(false);
+    } else if (sidebarBeforeWorkspace.current !== null) {
+      setSidebarOpen(sidebarBeforeWorkspace.current);
+      sidebarBeforeWorkspace.current = null;
+    }
+  }, [workspaceRoute]);
   useEffect(() => {
     const query = window.matchMedia(DESKTOP_SIDEBAR_QUERY);
     const onChange = (event: MediaQueryListEvent): void => setSidebarOpen(event.matches);
@@ -136,13 +152,14 @@ function AppRoutes(): JSX.Element {
     () => ({ title: titleNode, actions: actionsNode }),
     [titleNode, actionsNode]
   );
-  const fullBleed = threadRoute !== null;
+  const fullBleed = threadRoute !== null || workspaceRoute;
   const routes = (
     <Routes>
       <Route path="/" element={<ThreadsLanding />} />
       <Route path="/sandboxes" element={<SandboxListRoute />} />
       <Route path="/actions" element={<ActionsPage />} />
       <Route path="/actions/:requestId" element={<ActionRequestRoute />} />
+      <Route path="/workspace" element={<WorkspaceRoute />} />
       <Route path="/connection-enrollments/:handle" element={<ConsentRoute />} />
       <Route path="/sandboxes/:name" element={<SandboxRoute />} />
       <Route path="/threads/:threadId" element={<ThreadRoute settingsOpen={settingsTab !== null} />} />
@@ -172,7 +189,7 @@ function AppRoutes(): JSX.Element {
               <div className="agentplane-topbar-actions" ref={actionsRef} />
             </div>
             <div className={`agentplane-shell-main-content${fullBleed ? " agentplane-shell-fullbleed" : ""}`}>
-              {threadRoute !== null ? <SandboxesLiveProvider>{routes}</SandboxesLiveProvider> : routes}
+              {threadRoute !== null || workspaceRoute ? <SandboxesLiveProvider>{routes}</SandboxesLiveProvider> : routes}
             </div>
           </div>
           <Settings

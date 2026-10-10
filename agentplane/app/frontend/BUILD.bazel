@@ -589,6 +589,39 @@ js_library(
     srcs = ["shell.css"],
 )
 
+js_library(
+    name = "workspace_css",
+    srcs = ["workspace.css"],
+)
+
+ts_library(
+    name = "workspace",
+    srcs = [
+        "workspace.tsx",
+        "css.d.ts",
+        "tabler_icons.d.ts",
+    ],
+    tsconfig = TSCONFIG,
+    deps = [
+        "//agentplane/app/frontend/actions:detail",
+        "//agentplane/app/frontend/actions:history",
+        "//agentplane/app/frontend/actions:requests",
+        ":client",
+        ":live",
+        ":thread_status",
+        ":thread_status_indicator",
+        ":topbar",
+        ":workspace_css",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@tabler/icons-react",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+        "//:node_modules/react-mosaic-component",
+        "//:node_modules/react-router",
+        "//agentplane/app/frontend/threads:projected_session",
+    ],
+)
+
 ts_library(
     name = "sidebar",
     srcs = [
@@ -885,6 +918,7 @@ ts_library(
         ":sidebar",
         ":tab_metadata",
         ":topbar",
+        ":workspace",
         "//:node_modules/@mantine/core",
         "//:node_modules/@tabler/icons-react",
         "//:node_modules/@types/react",

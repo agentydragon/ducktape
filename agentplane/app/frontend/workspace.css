@@ -1,0 +1,172 @@
+.agentplane-workspace {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  width: 100%;
+  overflow: hidden;
+  background: var(--mantine-color-body);
+}
+
+.agentplane-workspace-heading {
+  white-space: nowrap;
+}
+
+.agentplane-workspace-canvas {
+  position: relative;
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.agentplane-mosaic.mosaic {
+  position: absolute;
+  inset: 0;
+  background: var(--mantine-color-body);
+}
+
+.agentplane-mosaic .mosaic-window {
+  border: 1px solid var(--mantine-color-default-border);
+  border-radius: var(--mantine-radius-md);
+  background: var(--mantine-color-body);
+  box-shadow: var(--mantine-shadow-xs);
+}
+
+.agentplane-mosaic .mosaic-window.agentplane-mosaic-pane-active {
+  border-color: var(--mantine-primary-color-filled);
+}
+
+.agentplane-mosaic .mosaic-window-toolbar {
+  min-height: 36px;
+  padding: 2px 4px 2px 10px;
+  border-bottom: 1px solid var(--mantine-color-default-border);
+  background: var(--mantine-color-body);
+}
+
+.agentplane-mosaic .mosaic-window-title {
+  overflow: hidden;
+  color: var(--mantine-color-text);
+  font-size: var(--mantine-font-size-sm);
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.agentplane-mosaic .mosaic-window-controls {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.agentplane-workspace-thread-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.agentplane-mosaic .mosaic-window-body {
+  min-height: 0;
+  overflow: hidden;
+  background: var(--mantine-color-body);
+}
+
+.agentplane-workspace-pane {
+  display: flex;
+  height: 100%;
+  min-height: 0;
+  width: 100%;
+  overflow: hidden;
+  flex-direction: column;
+  color: var(--mantine-color-text);
+}
+
+.agentplane-workspace-pane-content {
+  display: flex;
+  height: 100%;
+  min-height: 0;
+  flex-direction: column;
+  overflow: hidden;
+  padding: 12px;
+}
+
+.agentplane-workspace-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.agentplane-workspace-thread-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.agentplane-workspace-launcher {
+  max-width: calc(100vw - 24px);
+}
+
+.agentplane-workspace-phone-switcher {
+  display: flex;
+  align-items: center;
+  flex: 0 0 auto;
+  gap: 8px;
+  padding: 5px 10px;
+  border-bottom: 1px solid var(--mantine-color-default-border);
+  background: var(--mantine-color-body);
+}
+
+.agentplane-workspace-phone-switcher select {
+  flex: 1;
+  min-width: 0;
+  border: 1px solid var(--mantine-color-default-border);
+  border-radius: var(--mantine-radius-sm);
+  padding: 5px 8px;
+  color: var(--mantine-color-text);
+  background: var(--mantine-color-body);
+  font: inherit;
+}
+
+.agentplane-workspace-empty {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  gap: 10px;
+  color: var(--mantine-color-dimmed);
+  text-align: center;
+  pointer-events: none;
+}
+
+.agentplane-workspace-empty button {
+  pointer-events: auto;
+}
+
+.agentplane-mosaic-zero {
+  position: absolute;
+  inset: 0;
+}
+
+@media (max-width: 560px) {
+  .agentplane-workspace-heading {
+    font-size: var(--mantine-font-size-md);
+  }
+
+  .agentplane-workspace-classic-link {
+    padding-inline: 6px;
+  }
+
+  .agentplane-workspace-classic-link .mantine-Button-label {
+    display: none;
+  }
+
+  .agentplane-workspace-classic-link .mantine-Button-section {
+    margin: 0;
+  }
+
+  .agentplane-mosaic .mosaic-split {
+    display: none;
+  }
+}

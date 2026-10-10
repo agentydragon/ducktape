@@ -30,7 +30,15 @@ function inAppReturnTo(value: unknown): InAppReturnTo | null {
 }
 
 /** Full review page for one pending request or its durable terminal receipt. */
-export function ActionRequestDetail({ requestId }: { requestId: string }): JSX.Element {
+export function ActionRequestDetail({
+  requestId,
+  onBack,
+  onResolved,
+}: {
+  requestId: string;
+  onBack?: () => void;
+  onResolved?: () => void;
+}): JSX.Element {
   const navigate = useNavigate();
   const location = useLocation();
   const actions = useContext(ActionRequestsContext);
@@ -68,7 +76,7 @@ export function ActionRequestDetail({ requestId }: { requestId: string }): JSX.E
   }, [knownRequests, loadDetail, liveRequest, requestId, staleRequestIds]);
 
   useEffect(() => {
-    if (returnAfterDecision === null || returnTo === null) return;
+    if (returnAfterDecision === null) return;
     const decided = actions?.knownRequests.get(returnAfterDecision.requestId);
     if (
       decided === undefined ||
@@ -77,8 +85,14 @@ export function ActionRequestDetail({ requestId }: { requestId: string }): JSX.E
     ) {
       return;
     }
-    void navigate(returnTo, { replace: true });
-  }, [actions?.knownRequests, navigate, returnAfterDecision, returnTo]);
+    if (onResolved !== undefined) {
+      setReturnAfterDecision(null);
+      onResolved();
+    } else if (returnTo !== null) {
+      setReturnAfterDecision(null);
+      void navigate(returnTo, { replace: true });
+    }
+  }, [actions?.knownRequests, navigate, onResolved, returnAfterDecision, returnTo]);
 
   useEffect(() => {
     if (detailRequestId === undefined || detailRequestState === "decision_pending") {
@@ -100,7 +114,9 @@ export function ActionRequestDetail({ requestId }: { requestId: string }): JSX.E
   }, [detailActionGroup, detailRequestId, detailRequestState]);
 
   function goBack(): void {
-    if (returnTo !== null) {
+    if (onBack !== undefined) {
+      onBack();
+    } else if (returnTo !== null) {
       void navigate(-1);
     } else {
       void navigate("/actions", { replace: true });

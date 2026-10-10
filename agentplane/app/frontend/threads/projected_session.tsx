@@ -1030,6 +1030,7 @@ function ProjectedSessionBody({
   thread,
   history,
   available,
+  manageGlobalChrome,
   onStatusChange,
 }: {
   threadId: string;
@@ -1037,6 +1038,7 @@ function ProjectedSessionBody({
   thread: ThreadView;
   history: Pick<ThreadWindow, "olderAvailable" | "loadingOlder" | "loadOlder">;
   available: boolean;
+  manageGlobalChrome: boolean;
   onStatusChange: (status: ThreadTabTitleStatus) => void;
 }): JSX.Element {
   const [draft, setDraft] = useState("");
@@ -1377,6 +1379,7 @@ function SyncedThread({
   thread,
   available,
   inventory,
+  manageGlobalChrome,
   onStatusChange,
 }: {
   threadId: string;
@@ -1384,6 +1387,7 @@ function SyncedThread({
   available: boolean;
   /** The sandbox inventory's stream, which the page's one stale notice covers too. */
   inventory: StreamStatus;
+  manageGlobalChrome: boolean;
   onStatusChange: (status: ThreadTabTitleStatus) => void;
 }): JSX.Element {
   const { window: shown, error } = useThreadSync().useThread();
@@ -1413,6 +1417,7 @@ function SyncedThread({
         thread={thread}
         history={shown}
         available={available}
+        manageGlobalChrome={manageGlobalChrome}
         onStatusChange={onStatusChange}
       />
     </>
@@ -1446,9 +1451,12 @@ function harnessLabel(harness: ThreadView["harness"]): string {
 export function ProjectedSession({
   threadId,
   settingsOpen = false,
+  manageGlobalChrome = true,
 }: {
   threadId: string;
   settingsOpen?: boolean;
+  /** A docked pane owns its title locally and must not take over the app or browser title. */
+  manageGlobalChrome?: boolean;
 }): JSX.Element {
   const sync = useThreadSync();
   const threadsLive = useRequiredThreadsLive();
@@ -1486,25 +1494,28 @@ export function ProjectedSession({
     };
   }, [snapshotThread, threadId]);
   useEffect(() => {
+    if (!manageGlobalChrome) return;
     document.title = settingsOpen
       ? appDocumentTitle("/", true)
       : threadDocumentTitle(thread?.name, threadId, tabStatus);
-  }, [thread?.name, tabStatus, threadId, settingsOpen]);
+  }, [manageGlobalChrome, thread?.name, tabStatus, threadId, settingsOpen]);
   return (
     <ChronologicalDebugProvider key={threadId} threadId={threadId}>
-      <TopbarTitle>
-        <Group gap="xs" wrap="nowrap" style={{ minWidth: 0 }}>
-          {thread && <ThreadStatusIndicator kind={topbarStatus.kind} label={topbarStatus.label} />}
-          <Box style={{ flex: 1, minWidth: 0 }}>
-            <ThreadTitle threadId={threadId} thread={thread} onRenamed={setThread} onError={setError} />
-          </Box>
-          {thread && (
-            <Text size="xs" c="dimmed" style={{ flexShrink: 0 }}>
-              {thread.sandbox} · {harnessLabel(thread.harness)}
-            </Text>
-          )}
-        </Group>
-      </TopbarTitle>
+      {manageGlobalChrome && (
+        <TopbarTitle>
+          <Group gap="xs" wrap="nowrap" style={{ minWidth: 0 }}>
+            {thread && <ThreadStatusIndicator kind={topbarStatus.kind} label={topbarStatus.label} />}
+            <Box style={{ flex: 1, minWidth: 0 }}>
+              <ThreadTitle threadId={threadId} thread={thread} onRenamed={setThread} onError={setError} />
+            </Box>
+            {thread && (
+              <Text size="xs" c="dimmed" style={{ flexShrink: 0 }}>
+                {thread.sandbox} · {harnessLabel(thread.harness)}
+              </Text>
+            )}
+          </Group>
+        </TopbarTitle>
+      )}
       <Stack style={{ flex: 1, minHeight: 0 }}>
         {/* The controls wait on this stream's word that the sandbox runs, so one down past a blip, or
             whose watch has stalled, disables them as surely as a stopped sandbox. The sidebar's
@@ -1533,6 +1544,7 @@ export function ProjectedSession({
               thread={thread}
               available={inventoryFresh && sandboxReady(sandbox)}
               inventory={environment.stream}
+              manageGlobalChrome={manageGlobalChrome}
               onStatusChange={setTabStatus}
             />
           </sync.Thread>
