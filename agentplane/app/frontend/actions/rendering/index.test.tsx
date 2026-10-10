@@ -148,7 +148,10 @@ describe("compact rendering and inline approval", () => {
   });
 
   it("requires expanded review for PR descriptions or unknown Action identities", () => {
-    const pr = compactCases[5]!;
+    const pr = compactCases.find(
+      (candidate) => candidate.group === "github" && candidate.name === "create_pull_request"
+    );
+    if (pr === undefined) throw new Error("missing pull request compact fixture");
     expect(canApproveInline({ group: pr.group, name: pr.name }, { ...pr.args, body: "important text" })).toBe(false);
     expect(
       compactActionArguments({ group: pr.group, name: pr.name }, { ...pr.args, body: "important text" })
