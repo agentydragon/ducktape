@@ -3,7 +3,10 @@ syntax = "proto3";
 
 package ducktape.agentplane.history.v1;
 
+import "agentplane/protocol/event.proto";
+import "agentplane/runner/protocol.proto";
 import "agentplane/sandbox_service/protocol.proto";
+import "google/protobuf/timestamp.proto";
 
 service HistoryService {
   // The messages stay in the Sandbox Service package while its own history reads exist.
@@ -11,4 +14,133 @@ service HistoryService {
       returns (ducktape.agentplane.sandbox.v1.ReadSessionEventsResponse);
   rpc ReadSessionObservations(ducktape.agentplane.sandbox.v1.ReadSessionObservationsRequest)
       returns (ducktape.agentplane.sandbox.v1.ReadSessionObservationsResponse);
+  // Newest first by `first_event_at`, Sessions with nothing folded yet ahead of the rest.
+  rpc ListSessionSummaries(ListSessionSummariesRequest) returns (ListSessionSummariesResponse);
+  rpc GetSessionSummary(GetSessionSummaryRequest) returns (SessionSummary);
+  // Fails with FAILED_PRECONDITION when the caller's projection epoch is no longer current.
+  rpc ReadThreadEntities(ReadThreadEntitiesRequest) returns (ReadThreadEntitiesResponse);
+  rpc ReadPayload(ReadPayloadRequest) returns (ReadPayloadResponse);
+}
+
+message ListSessionSummariesRequest {
+  // Both or neither: the Sessions of one Sandbox name, across its incarnations.
+  optional string sandbox_namespace = 1;
+  optional string sandbox_name = 2;
+  // At most 200.
+  uint32 limit = 3;
+  // Opaque; valid only with the filter it was issued for.
+  bytes page_token = 4;
+}
+
+message ListSessionSummariesResponse {
+  repeated SessionSummary summaries = 1;
+  // Empty on the last page. Paging never skips a Session; one whose history begins while
+  // paging moves from the not-yet-folded head to the newest, so it can be served twice.
+  bytes next_page_token = 2;
+}
+
+message GetSessionSummaryRequest {
+  string session_id = 1;
+}
+
+enum FeedStatus {
+  // No runner attachment observed yet.
+  FEED_STATUS_UNSPECIFIED = 0;
+  FEED_STATUS_ACTIVE = 1;
+  FEED_STATUS_ENDED = 2;
+  FEED_STATUS_FAILED = 3;
+}
+
+message SessionSummary {
+  string session_id = 1;
+  string sandbox_namespace = 2;
+  string sandbox_name = 3;
+  // Committed raw history; the fold lags by `committed_cursor - folded_through`.
+  uint64 committed_cursor = 4;
+  // Absent until the fold has materialized an entry. A stalled fold reports its error in the
+  // Thread's view state.
+  optional string projection_epoch = 5;
+  uint64 folded_through = 6;
+  google.protobuf.Timestamp first_event_at = 7;
+  google.protobuf.Timestamp last_event_at = 8;
+  // Inferred from model-originated events, not an observed provider request.
+  google.protobuf.Timestamp last_model_activity_at = 9;
+  optional ducktape.agentplane.protocol.v1.TurnStatus last_turn_status = 10;
+  ducktape.agentplane.runner.v1.Attached attached = 11;
+  FeedStatus feed_status = 12;
+}
+
+// Internal to the History Service: the serialized form of a page token.
+message SessionSummaryPageToken {
+  optional string sandbox_namespace = 1;
+  optional string sandbox_name = 2;
+  // The last Session served; absent `first_event_at` means it had nothing folded yet.
+  google.protobuf.Timestamp first_event_at = 3;
+  string session_id = 4;
+}
+
+message ReadThreadEntitiesRequest {
+  string session_id = 1;
+  // The scope the caller holds rows of. Empty reads whichever scope is current.
+  string projection_epoch = 2;
+  oneof window {
+    EntityRange range = 3;
+    EntityKeys keys = 4;
+  }
+}
+
+// Entity indexes are dense from 0 over every kind, so a range is every row in that stretch.
+message EntityRange {
+  uint64 start_entity_index = 1;
+  // At most 200.
+  uint32 limit = 2;
+}
+
+message EntityKey {
+  string entity_kind = 1;
+  string entity_id = 2;
+}
+
+message EntityKeys {
+  // At most 200.
+  repeated EntityKey keys = 1;
+}
+
+message ReadThreadEntitiesResponse {
+  // Empty, with no entities, before the fold has materialized anything.
+  string projection_epoch = 1;
+  uint64 through_cursor = 2;
+  // A range ascends by entity index; keys return the rows that exist.
+  repeated ThreadEntity entities = 3;
+}
+
+message ThreadEntity {
+  uint64 entity_index = 1;
+  // A `ThreadEntityView` JSON document (`agentplane.thread_fold.views`), the row browsers sync.
+  string view_json = 2;
+}
+
+// One immutable payload revision, as an entity's `*_ref` names it.
+message PayloadRef {
+  string projection_epoch = 1;
+  uint64 owner_cursor = 2;
+  string owner_id = 3;
+  string field = 4;
+  uint64 generation = 5;
+  uint64 revision_cursor = 6;
+}
+
+message ReadPayloadRequest {
+  string session_id = 1;
+  PayloadRef ref = 2;
+  uint64 start_chunk = 3;
+  // At most 64 chunks.
+  uint32 limit = 4;
+}
+
+message ReadPayloadResponse {
+  uint64 chunk_count = 1;
+  uint64 content_bytes = 2;
+  // The revision's chunks from `start_chunk`, which concatenate to its text.
+  repeated string chunks = 3;
 }

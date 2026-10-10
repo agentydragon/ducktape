@@ -15,6 +15,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 from agentplane.history_service.client import HistoryServiceClient
+from agentplane.sandbox_service import protocol_pb2
 from agentplane.thread_fold import projection_lease
 from agentplane.thread_fold.lifecycle import project_lifecycle
 from agentplane.thread_fold.model_activity import record_model_activity
@@ -23,7 +24,6 @@ from agentplane.thread_fold.projection_lease import ProjectionLease, ProjectionL
 from agentplane.thread_fold.recording import EventReplicationError, record_thread_fold, set_operational
 
 # gazelle:include_dep @pypi//protobuf
-# gazelle:include_dep //agentplane/sandbox_service:protocol_pb2
 
 
 logger = logging.getLogger(__name__)
@@ -35,13 +35,30 @@ class ProjectionProgress:
     service_cursor: int
 
 
+# Up to `limit` entries of a Session's committed prefix after a cursor, with its watermark and lifecycle.
+PageReader = Callable[[UUID, int, int], Awaitable[protocol_pb2.ReadSessionEventsResponse]]
+
+
+def service_pages(client: HistoryServiceClient) -> PageReader:
+    async def read(session_id: UUID, after_cursor: int, limit: int) -> protocol_pb2.ReadSessionEventsResponse:
+        return await client.read_session_events(str(session_id), after_cursor=after_cursor, limit=limit)
+
+    return read
+
+
 class HistoryProjector:
     def __init__(
-        self, engine: AsyncEngine, reader: HistoryServiceClient, *, notify: Callable[[AsyncSession], Awaitable[None]]
+        self,
+        engine: AsyncEngine,
+        read_page: PageReader,
+        *,
+        projection_epoch: str,
+        notify: Callable[[AsyncSession], Awaitable[None]],
     ) -> None:
         """`notify` runs inside each transaction that changes what a Thread's readers see."""
         self._sessions = async_sessionmaker(engine, expire_on_commit=False)
-        self._reader = reader
+        self._read_page = read_page
+        self._projection_epoch = projection_epoch
         self._notify = notify
 
     async def project_batch(self, thread_id: UUID, *, lease: ProjectionLease) -> ProjectionProgress:
@@ -79,7 +96,7 @@ class HistoryProjector:
             await self._notify(session)
 
     async def _project_prefix(self, thread_id: UUID, *, lease: ProjectionLease, after: int) -> ProjectionProgress:
-        page = await self._reader.read_session_events(str(thread_id), after_cursor=after, limit=128)
+        page = await self._read_page(thread_id, after, 128)
         if page.last_cursor < after:
             raise ConnectionError("History Service has not covered the app projection checkpoint")
         if len(page.entries) > 128 or any(
@@ -114,10 +131,14 @@ class HistoryProjector:
             source_id = page.entries[0].origin.source_id
             if any(entry.origin.source_id != source_id for entry in page.entries):
                 raise EventReplicationError("mixed source identities in projection page")
-            await record_thread_fold(session, thread_id, source_id, page.entries)
+            await record_thread_fold(
+                session, thread_id, source_id, page.entries, projection_epoch=self._projection_epoch
+            )
             await record_model_activity(session, thread_id, page.entries)
             for entry in page.entries:
                 at = entry.event.at.ToDatetime(tzinfo=UTC)
+                if entry.cursor == 1:
+                    summary.first_event_at = at
                 if summary.last_event_at is None or at > summary.last_event_at:
                     summary.last_event_at = at
                 if entry.event.HasField("turn_completed"):

@@ -29,6 +29,10 @@ class Settings(BaseSettings):
     port: int = Field(default=8080, ge=1, le=65535)
     health_port: int = Field(default=8081, ge=1, le=65535)
     kubeconfig: Path | None = None
+    # Folds every retained Session from its raw log; off until the operator starts the rebuild.
+    fold_shadow: bool = False
+    fold_concurrency: int = Field(default=4, ge=1, le=64)
+    fold_interval_s: float = Field(default=2, gt=0)
 
     def __init__(self, **values: Any) -> None:
         super().__init__(**values)

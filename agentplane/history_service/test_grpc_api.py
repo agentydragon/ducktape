@@ -9,8 +9,10 @@ import pytest_bazel
 from kubernetes_asyncio import client as k8s_client
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from agentplane.history_service import protocol_pb2_grpc
+from agentplane.history_service import protocol_pb2 as history_pb2, protocol_pb2_grpc
 from agentplane.history_service.grpc_api import Resources, add_service
+from agentplane.history_service.summaries import SummaryReader
+from agentplane.history_service.thread_reads import ThreadReader
 from agentplane.protocol import event_log_pb2, event_pb2
 from agentplane.sandbox_service import protocol_pb2
 from agentplane.sandbox_service.session_history.store import Store
@@ -40,7 +42,7 @@ def history(engine: AsyncEngine) -> Store:
 
 
 @pytest.fixture
-async def stub(history: Store) -> AsyncIterator[protocol_pb2_grpc.HistoryServiceAsyncStub]:
+async def stub(engine: AsyncEngine, history: Store) -> AsyncIterator[protocol_pb2_grpc.HistoryServiceAsyncStub]:
     async with fake_apiserver() as fake:
         for token, name in ((READER_TOKEN, READER.name), (OTHER_TOKEN, "test-other-caller")):
             fake.tokens[token] = TokenVerdict(
@@ -59,6 +61,8 @@ async def stub(history: Store) -> AsyncIterator[protocol_pb2_grpc.HistoryService
                         allowed_service_account_namespaces={SANDBOX_NAMESPACE},
                     ),
                     history=history,
+                    summaries=SummaryReader(engine),
+                    threads=ThreadReader(engine),
                     reader_accounts=frozenset({READER}),
                     request_timeout_s=10,
                 ),
@@ -100,6 +104,15 @@ async def test_reader_reads_history_of_a_deleted_sandbox(
     )
     assert observations.last_cursor == 1
     assert [(row.cursor, row.kind) for row in observations.observations] == [(1, "harness_stderr")]
+    summary = await stub.GetSessionSummary(
+        history_pb2.GetSessionSummaryRequest(session_id=str(session_id)), metadata=bearer(READER_TOKEN)
+    )
+    # Not folded yet: the lag is the whole committed prefix.
+    assert (summary.sandbox_name, summary.committed_cursor, summary.HasField("projection_epoch")) == (
+        "test-deleted-sandbox",
+        1,
+        False,
+    )
 
 
 @pytest.mark.parametrize(
@@ -123,6 +136,43 @@ async def test_read_refusals(
             protocol_pb2.ReadSessionEventsRequest(session_id=str(uuid4()), limit=limit), metadata=metadata
         )
     assert refused.value.code() == code
+
+
+@pytest.mark.parametrize(
+    ("metadata", "listing", "code"),
+    [
+        (bearer(OTHER_TOKEN), history_pb2.ListSessionSummariesRequest(limit=10), grpc.StatusCode.PERMISSION_DENIED),
+        (bearer(READER_TOKEN), history_pb2.ListSessionSummariesRequest(limit=0), grpc.StatusCode.INVALID_ARGUMENT),
+        (
+            bearer(READER_TOKEN),
+            history_pb2.ListSessionSummariesRequest(limit=10, page_token=b"\xff"),
+            grpc.StatusCode.INVALID_ARGUMENT,
+        ),
+    ],
+)
+async def test_summary_list_refusals(
+    stub: protocol_pb2_grpc.HistoryServiceAsyncStub,
+    metadata: tuple[tuple[str, str], ...],
+    listing: history_pb2.ListSessionSummariesRequest,
+    code: grpc.StatusCode,
+) -> None:
+    with pytest.raises(grpc.aio.AioRpcError) as refused:
+        await stub.ListSessionSummaries(listing, metadata=metadata)
+    assert refused.value.code() == code
+
+
+async def test_thread_read_refusals(stub: protocol_pb2_grpc.HistoryServiceAsyncStub) -> None:
+    with pytest.raises(grpc.aio.AioRpcError) as no_window:
+        await stub.ReadThreadEntities(
+            history_pb2.ReadThreadEntitiesRequest(session_id=str(uuid4())), metadata=bearer(READER_TOKEN)
+        )
+    assert no_window.value.code() == grpc.StatusCode.INVALID_ARGUMENT
+    with pytest.raises(grpc.aio.AioRpcError) as unknown:
+        await stub.ReadPayload(
+            history_pb2.ReadPayloadRequest(session_id=str(uuid4()), ref=history_pb2.PayloadRef(), limit=1),
+            metadata=bearer(READER_TOKEN),
+        )
+    assert unknown.value.code() == grpc.StatusCode.NOT_FOUND
 
 
 if __name__ == "__main__":

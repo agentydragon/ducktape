@@ -8,6 +8,8 @@ filegroup(
         "//agentplane/sandbox_service/session_history/migrations/versions:0002_session_open_reservations.py",
         "//agentplane/sandbox_service/session_history/migrations/versions:0003_history_feed_state.py",
         "//agentplane/sandbox_service/session_history/migrations/versions:0004_session_change_position.py",
+        "//agentplane/sandbox_service/session_history/migrations/versions:0005_thread_fold_projection.py",
+        "//agentplane/sandbox_service/session_history/migrations/versions:0006_summary_first_event.py",
     ],
     visibility = ["//agentplane/sandbox_service/session_history:__pkg__"],
 )
@@ -16,7 +18,7 @@ py_library(
     name = "env",
     srcs = ["env.py"],
     deps = [
-        "//agentplane/sandbox_service/session_history:db",
+        "//agentplane/sandbox_service/session_history:database_migrate",
         "@pypi//alembic",
     ],
 )
