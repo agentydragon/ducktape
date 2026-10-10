@@ -921,27 +921,12 @@ verifiable condition in code (`keepingOffset` in `thread_store.tsx`, the jsdom p
 
 ```mermaid
 flowchart TD
-    OPEN_SESSION_RETIRE[Candidate: delete the caller-chosen OpenSession path]
     SANDBOX_SERVICE_RESOURCES_REQUIRED[Candidate: Sandbox Service wiring stops being optional]
     APP_THREAD_VIEW_CLEANUP[Candidate: app Thread view and event_log shims]
-    RUNNER_INBOUND_RETIRE[Retire inbound runner access]
-    OPEN_SESSION_RETIRE --> RUNNER_INBOUND_RETIRE
     RUNNER_SESSION_RECORD_SHIMS[Blocked: drop runner session record compatibility]
     LEGACY_SANDBOX_RETIRE[Retire pre-dial-out Sandboxes]
     LEGACY_SANDBOX_RETIRE --> RUNNER_SESSION_RECORD_SHIMS
 ```
-
-### `OPEN_SESSION_RETIRE` — delete the caller-chosen OpenSession path
-
-**Candidate; Legacy burn-down lane, coordinating the Sandbox Service edit with Runner dial-out.**
-The browser creates Sessions only by `idempotency_key`. The `session_id` branch of the app's
-`POST /sessions` (`NewSession.session_id`, `RunnerBridge.open_session`), the client's
-`open_session`/`open_bound_session` and the Sandbox Service `OpenSession` RPC are reached only by the
-manual acceptance suite, which passes non-UUID IDs that `EventLogStore.open` then rejects, so the
-path cannot work end to end. Move the acceptance clients to Create, then delete the app branch, the
-RPC, `Runner.open` in the service client and `SessionRegistry.open` with its `uuid5` test fallback.
-Existing Sessions with caller-chosen runner IDs keep their relay-only `SubmitCommand` route; that
-route goes with `RUNNER_INBOUND_RETIRE` once no such Session remains.
 
 ### `SANDBOX_SERVICE_RESOURCES_REQUIRED` — Sandbox Service wiring stops being optional
 

@@ -271,15 +271,10 @@ async def test_public_session_open_preserves_retained_identity(engine: AsyncEngi
         assert await session.scalar(select(func.count()).select_from(EventLog)) == 1
 
 
-async def test_lookup_uses_only_public_identity(engine: AsyncEngine) -> None:
-    private_id = uuid4()
-    public_id = await seed_retained_session(engine)
+async def test_open_refuses_a_runner_session_id(engine: AsyncEngine) -> None:
+    await seed_retained_session(engine)
     reader = AsyncMock(spec=HistoryServiceClient)
     current = EventLogStore(engine, summaries=AppSummaries(engine), history_reader=cast(HistoryServiceClient, reader))
-    assert await current.find("sb-1", str(public_id)) == public_id
-    assert await current.find("sb-1", str(private_id)) is None
-    assert await current.find("sb-2", str(public_id)) is None
-    assert await current.find("sb-1", "s-retained") is None
     with pytest.raises(EventReplicationError, match="canonical"):
         await current.open("sb-1", "s-retained", SPEC)
 

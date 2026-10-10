@@ -107,16 +107,6 @@ class EventLogStore:
         """A runner-confirmed restart supersedes a normal terminal feed, not a replay error."""
         await self._summaries.resume_pending(thread_id)
 
-    async def find(self, sandbox: str, session_id: str) -> UUID | None:
-        try:
-            public_id = UUID(session_id)
-        except ValueError:
-            return None
-        async with self._sessions() as session:
-            return (
-                await session.scalars(select(EventLog.id).where(EventLog.sandbox == sandbox, EventLog.id == public_id))
-            ).one_or_none()
-
     async def service_session(self, thread_id: UUID) -> ServiceSessionReference | None:
         async with self._sessions() as session:
             log = (

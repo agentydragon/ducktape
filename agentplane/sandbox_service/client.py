@@ -255,17 +255,6 @@ class Runner:
             protocol_pb2.LookupSessionRequest(sandbox=self.destination, idempotency_key=idempotency_key),
         )
 
-    async def open(
-        self, session_id: str, spec: dict[str, object], setup_script: str | None = None
-    ) -> runner_pb2.Attached:
-        return await self.service.unary(
-            self.service.stub.OpenSession,
-            wire.open_proto(
-                protocol_pb2.SessionDestination(sandbox=self.destination, session_id=session_id), spec, setup_script
-            ),
-            timeout_s=self.service.lifecycle_timeout_s,
-        )
-
     async def place_hold(self, session_id: str, *, holder: str) -> protocol_pb2.Hold:
         destination = protocol_pb2.SessionDestination(sandbox=self.destination, session_id=session_id)
         return await self.service.unary(

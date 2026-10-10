@@ -3,6 +3,7 @@
 from collections.abc import Sequence
 from uuid import NAMESPACE_URL, UUID, uuid5
 
+from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncEngine
 
@@ -48,24 +49,20 @@ class SeededEventLogStore(EventLogStore):
             history_creator=history_creator,
         )
 
-    async def find(self, sandbox: str, session_id: str) -> UUID | None:
+    async def open(self, sandbox: str, session_id: str, spec: runner_pb2.SessionSpec) -> UUID:
+        if self._history_creator is not None:
+            return await super().open(sandbox, session_id, spec)
         # Fixture aliases are deterministic public IDs, not production locator lookups.
         try:
             public_id = UUID(session_id)
         except ValueError:
             public_id = uuid5(NAMESPACE_URL, sandbox + "/" + session_id)
-        return await super().find(sandbox, str(public_id))
-
-    async def open(self, sandbox: str, session_id: str, spec: runner_pb2.SessionSpec) -> UUID:
-        if self._history_creator is not None:
-            return await super().open(sandbox, session_id, spec)
-        existing = await self.find(sandbox, session_id)
-        if existing is not None:
-            return existing
-        try:
-            public_id = UUID(session_id)
-        except ValueError:
-            public_id = uuid5(NAMESPACE_URL, sandbox + "/" + session_id)
+        async with self._sessions() as session:
+            if (
+                await session.scalar(select(EventLog.id).where(EventLog.sandbox == sandbox, EventLog.id == public_id))
+                is not None
+            ):
+                return public_id
         self.peer.open(public_id)
         async with self._sessions.begin() as session:
             await session.execute(

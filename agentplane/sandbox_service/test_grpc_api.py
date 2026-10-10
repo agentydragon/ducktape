@@ -44,6 +44,7 @@ from agentplane.sandbox_service.session_history.store import HistoryConflictErro
 from agentplane.sandbox_service.session_registry import SessionRegistry
 from agentplane.sandbox_service.testing.grpc_service import service_client
 from agentplane.sandbox_service.testing.kubernetes import ACCOUNT, SANDBOX, SANDBOX_UID, Cluster
+from agentplane.sandbox_service.testing.sessions import register_session
 from agentplane.subjects import ServiceAccountRef
 from agentplane.testing.fake_apiserver import SANDBOX_NAMESPACE, TokenVerdict
 from agentplane.workload_auth.principal import WorkloadPrincipalResolver
@@ -303,7 +304,8 @@ async def test_public_session_command_survives_a_lost_reply(
     store = Store(engine)
     session_id = uuid4()
     physical = f"r-{session_id}"
-    await sessions.open(
+    await register_session(
+        engine,
         session_id,
         sandbox_namespace=SANDBOX_NAMESPACE,
         sandbox_name=SANDBOX,
@@ -360,7 +362,8 @@ async def test_channel_routed_command_never_falls_back_to_the_relay(
         operations={"commands"},
     )
     session_id = uuid4()
-    await sessions.open(
+    await register_session(
+        engine,
         session_id,
         sandbox_namespace=SANDBOX_NAMESPACE,
         sandbox_name=SANDBOX,
@@ -487,7 +490,8 @@ async def test_history_copy_replays_only_published_prefix_and_detects_regression
     store = Store(engine)
     session_id = uuid4()
     physical = f"r-{session_id}"
-    await sessions.open(
+    await register_session(
+        engine,
         session_id,
         sandbox_namespace=SANDBOX_NAMESPACE,
         sandbox_name=SANDBOX,
@@ -936,7 +940,6 @@ async def test_unlisted_callers_rejected_before_lookup(
             (remote.stub.GrantEgress, protocol_pb2.GrantEgressRequest(destination=DESTINATION)),
             (remote.stub.RevokeEgress, protocol_pb2.RevokeEgressRequest()),
             (remote.stub.ListSessions, protocol_pb2.SandboxRequest(destination=DESTINATION)),
-            (remote.stub.OpenSession, protocol_pb2.OpenSessionRequest(destination=destination)),
             (remote.stub.ResumeSession, protocol_pb2.SessionRequest(destination=destination)),
             (remote.stub.SubmitCommand, protocol_pb2.SubmitCommandRequest(destination=destination)),
             (remote.stub.PlaceHold, protocol_pb2.HoldRequest(destination=destination, holder="test-holder")),
@@ -955,7 +958,12 @@ async def test_unlisted_callers_rejected_before_lookup(
 
 @pytest.mark.parametrize("pending_launch", [False, True])
 async def test_open_and_resume_refuse_unready_grants_without_app(
-    resources: Resources, token_file: Path, cluster: Cluster, peer: Peer, pending_launch: bool
+    resources: Resources,
+    token_file: Path,
+    cluster: Cluster,
+    peer: Peer,
+    sessions: SessionRegistry,
+    pending_launch: bool,
 ) -> None:
     annotations = cluster.fake.objects[SANDBOXES_PLURAL][SANDBOX]["metadata"].setdefault("annotations", {})
     if pending_launch:
@@ -977,11 +985,15 @@ async def test_open_and_resume_refuse_unready_grants_without_app(
         assert view.launch_grants_pending
     else:
         assert not view.kubernetes_grants_ready
-    configured = replace(resources, caller_accounts=frozenset({OWNER}), platform_instructions="Test guidance")
+    configured = replace(
+        resources, sessions=sessions, caller_accounts=frozenset({OWNER}), platform_instructions="Test guidance"
+    )
     async with service_client(configured, token_file) as caller:
         runner = caller.runner(DESTINATION)
         with pytest.raises(ServiceError) as opened:
-            await runner.open("session", {"harness": "HARNESS_CODEX", "cwd": "/w", "model": "test"})
+            await runner.create(
+                idempotency_key="unready", spec={"harness": "HARNESS_CODEX", "cwd": "/w", "model": "test"}
+            )
         assert opened.value.code == grpc.StatusCode.UNAVAILABLE
         with pytest.raises(ServiceError) as resumed:
             await runner.resume("session")
@@ -1008,10 +1020,8 @@ async def test_invalid_command_is_not_submitted(
 
 
 def test_wire_preserves_explicit_empty_overrides() -> None:
-    request = wire.open_proto(
-        protocol_pb2.SessionDestination(sandbox=DESTINATION, session_id="session"),
-        {"model": "test-model", "instructions": "", "reasoningEffort": ""},
-        "",
+    request = wire.create_proto(
+        DESTINATION, "explicit-empty", {"model": "test-model", "instructions": "", "reasoningEffort": ""}, ""
     )
     assert wire.launch_overrides(request) == {"model": "test-model", "instructions": "", "reasoningEffort": ""}
     assert request.HasField("setup_script")
@@ -1076,11 +1086,7 @@ async def test_bare_service_eof_is_not_native_closure(tmp_path: Path) -> None:
 
 def test_duplicate_spec_aliases_are_refused() -> None:
     with pytest.raises(ValueError, match="both proto and JSON"):
-        wire.open_proto(
-            protocol_pb2.SessionDestination(sandbox=DESTINATION, session_id="session"),
-            {"reasoning_effort": "low", "reasoningEffort": "high"},
-            None,
-        )
+        wire.create_proto(DESTINATION, "aliased", {"reasoning_effort": "low", "reasoningEffort": "high"}, None)
 
 
 async def test_command_cancellation_closes_native_attachment(remote: SandboxServiceClient, peer: Peer) -> None:
@@ -1171,14 +1177,16 @@ async def test_watch_sessions_resumes_after_disconnect_and_wakes_on_other_writer
     session_changes: SessionChanges,
 ) -> None:
     legacy_id, current_id = uuid4(), uuid4()
-    await sessions.open(
+    await register_session(
+        engine,
         legacy_id,
         sandbox_namespace=SANDBOX_NAMESPACE,
         sandbox_name="deleted-sandbox",
         sandbox_uid=None,
         runner_session_id="legacy-runner",
     )
-    await sessions.open(
+    await register_session(
+        engine,
         current_id,
         sandbox_namespace=SANDBOX_NAMESPACE,
         sandbox_name=SANDBOX,
@@ -1232,7 +1240,8 @@ async def test_watch_sessions_requires_allowed_caller(
     sessions: SessionRegistry,
     session_changes: SessionChanges,
 ) -> None:
-    await sessions.open(
+    await register_session(
+        engine,
         uuid4(),
         sandbox_namespace=SANDBOX_NAMESPACE,
         sandbox_name=SANDBOX,
@@ -1260,7 +1269,8 @@ async def test_history_copy_records_only_explicit_eof(
     store = Store(engine)
     session_id = uuid4()
     physical = f"r-{session_id}"
-    await sessions.open(
+    await register_session(
+        engine,
         session_id,
         sandbox_namespace=SANDBOX_NAMESPACE,
         sandbox_name=SANDBOX,

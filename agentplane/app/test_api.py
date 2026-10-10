@@ -512,25 +512,25 @@ def test_bound_thread_forwards_overrides_without_app_bootstrap_or_default_assemb
     calls: list[tuple[str, object]] = []
     setup_scripts: list[str | None] = []
 
-    async def open_session(
-        name: str, session_id: str, spec: dict[str, object], setup_script: str | None = None
+    async def create_session(
+        name: str, idempotency_key: str, spec: dict[str, object], setup_script: str | None = None
     ) -> protocol_pb2.Attached:
-        calls.append(("open", spec))
+        calls.append(("create", spec))
         setup_scripts.append(setup_script)
-        return protocol_pb2.Attached(session_id=session_id)
+        return protocol_pb2.Attached(session_id=str(uuid4()))
 
-    monkeypatch.setattr(bridge, "open_session", open_session)
+    monkeypatch.setattr(bridge, "create_session", create_session)
 
     response = client.post(
         f"/sandboxes/{created['name']}/sessions",
-        json={"session_id": "thread-1", "spec": {"model": "thread-model", "instructions": "thread instructions"}},
+        json={"idempotency_key": "thread-1", "spec": {"model": "thread-model", "instructions": "thread instructions"}},
     )
 
     assert response.status_code == 201, response.text
-    assert calls == [("open", {"model": "thread-model", "instructions": "thread instructions"})]
+    assert calls == [("create", {"model": "thread-model", "instructions": "thread instructions"})]
     assert setup_scripts == [None]
     cleared = client.post(
-        f"/sandboxes/{created['name']}/sessions", json={"session_id": "thread-2", "spec": {}, "setup_script": ""}
+        f"/sandboxes/{created['name']}/sessions", json={"idempotency_key": "thread-2", "spec": {}, "setup_script": ""}
     )
     assert cleared.status_code == 201, cleared.text
     assert setup_scripts == [None, ""]
@@ -566,16 +566,16 @@ def test_direct_session_launch_leaves_platform_instructions_to_service(
 ) -> None:
     captured: list[dict[str, object]] = []
 
-    async def open_session(
-        name: str, session_id: str, spec: dict[str, object], setup_script: str | None = None
+    async def create_session(
+        name: str, idempotency_key: str, spec: dict[str, object], setup_script: str | None = None
     ) -> protocol_pb2.Attached:
         captured.append(spec)
-        return protocol_pb2.Attached(session_id=session_id)
+        return protocol_pb2.Attached(session_id=str(uuid4()))
 
-    monkeypatch.setattr(bridge, "open_session", open_session)
+    monkeypatch.setattr(bridge, "create_session", create_session)
     response = client.post(
         "/sandboxes/live/sessions",
-        json={"session_id": "plain-1", "spec": {"harness": "HARNESS_CLAUDE", "cwd": "/w", "model": "plain-model"}},
+        json={"idempotency_key": "plain-1", "spec": {"harness": "HARNESS_CLAUDE", "cwd": "/w", "model": "plain-model"}},
     )
 
     assert response.status_code == 201, response.text
@@ -590,20 +590,20 @@ def test_service_launch_failure_preserves_uncertainty(
     error_type: type[Exception],
     status_code: int,
 ) -> None:
-    async def failed_open(
-        name: str, session_id: str, spec: dict[str, object], setup_script: str | None = None
+    async def failed_create(
+        name: str, idempotency_key: str, spec: dict[str, object], setup_script: str | None = None
     ) -> protocol_pb2.Attached:
         raise error_type("test upstream failure")
 
-    monkeypatch.setattr(bridge, "open_session", failed_open)
+    monkeypatch.setattr(bridge, "create_session", failed_create)
     response = client.post(
         "/sandboxes/live/sessions",
-        json={"session_id": "uncertain", "spec": {"harness": "HARNESS_CLAUDE", "cwd": "/w", "model": "m"}},
+        json={"idempotency_key": "uncertain", "spec": {"harness": "HARNESS_CLAUDE", "cwd": "/w", "model": "m"}},
     )
     assert response.status_code == status_code
 
 
-def test_create_session_uses_service_id_and_preserves_legacy_open(
+def test_create_session_uses_service_id(
     client: TestClient, bridge: RunnerBridge, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     public_id = str(uuid4())
@@ -623,9 +623,6 @@ def test_create_session_uses_service_id_and_preserves_legacy_open(
     assert created.status_code == 201, created.text
     assert created.json()["sessionId"] == public_id
     assert received == [("live", "open-key", {"cwd": "/w/{session_id}"}, "bootstrap")]
-    assert (
-        client.post(path, json={"idempotency_key": "open-key", "session_id": "legacy", "spec": {}}).status_code == 422
-    )
 
 
 async def test_open_lookup_reconciles_only_runner_confirmed_sessions(

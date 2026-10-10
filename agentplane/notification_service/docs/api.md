@@ -110,7 +110,7 @@ confirmation, including coalesced inputs. Failed/no-op/unconfirmed commands are 
 Invalid runner history quarantines delivery until explicit retirement, rather than retargeting history.
 There is no exactly-once native execution claim. Coverage is independent of acknowledgement: no repeated
 reminders for unacknowledged entries, including after a worker restart. Only a running harness can receive
-input; this service never calls OpenSession, ResumeSession, or sandbox provisioning APIs.
+input; this service never calls CreateSession, ResumeSession, or sandbox provisioning APIs.
 
 Default V1 limits: 64 inboxes per account; 64 active (not cancelled and not expired) subscriptions per inbox; 10000
 source-event identities per inbox lifetime; 128 entries per read/poll/replay step; subscriptions last

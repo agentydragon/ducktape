@@ -93,6 +93,7 @@ py_library(
     srcs = ["history.py"],
     visibility = ["//agentplane/sandbox_service:__subpackages__"],
     deps = [
+        ":sessions",
         "//agentplane/runner:client",
         "//agentplane/sandbox_service:destinations",
         "//agentplane/sandbox_service:grpc_api",
@@ -107,6 +108,16 @@ py_library(
         "@pypi//asyncpg",
         "@pypi//grpcio",
         "@pypi//protobuf",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
+    name = "sessions",
+    srcs = ["sessions.py"],
+    deps = [
+        "//agentplane/sandbox_service:session_registry",
+        "//agentplane/sandbox_service/commands:db",
         "@pypi//sqlalchemy",
     ],
 )

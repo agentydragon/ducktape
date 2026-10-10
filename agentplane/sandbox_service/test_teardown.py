@@ -22,6 +22,7 @@ from agentplane.sandbox_service.session_registry import SessionRegistry
 from agentplane.sandbox_service.teardown import Teardown
 from agentplane.sandbox_service.testing.backend import seed_runner
 from agentplane.sandbox_service.testing.fake_inventory import NAMESPACE, FakeCoreV1Api, FakeCustomObjectsApi
+from agentplane.sandbox_service.testing.sessions import register_session
 from util.agent_sandbox import SANDBOXES_PLURAL, OperatingMode
 
 # gazelle:include_dep //agentplane/sandbox_service/session_history:conftest
@@ -146,9 +147,11 @@ async def test_sealed_sessions_hold_the_deletion_until_confirmed(
     teardown: Teardown,
     runner: ScriptedRunner,
     custom_objects: FakeCustomObjectsApi,
+    engine: AsyncEngine,
 ) -> None:
     public = uuid4()
-    await teardown.sessions.open(
+    await register_session(
+        engine,
         public,
         sandbox_namespace=NAMESPACE,
         sandbox_name=NAME,

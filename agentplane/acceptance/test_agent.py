@@ -22,7 +22,7 @@ async def test_agent_open_retries_unavailable_without_creating_another_session()
         "runner is not listening", request=request, response=httpx.Response(503, request=request)
     )
     client = create_autospec(Client, instance=True)
-    client.open_session.side_effect = [
+    client.create_session.side_effect = [
         unavailable,
         Attachment(protocol_pb2.Attached(session_id="test-session", last_cursor=7)),
     ]
@@ -30,11 +30,11 @@ async def test_agent_open_retries_unavailable_without_creating_another_session()
 
     await Agent.open(client, sandbox="test-sandbox", harness=protocol_pb2.HARNESS_CODEX, model="test-model")
 
-    first, retry = client.open_session.call_args_list
+    first, retry = client.create_session.call_args_list
     assert first == retry
     assert first.args[0] == "test-sandbox"
     assert first.args[1].startswith("acceptance-")
-    assert first.args[2].model == "test-model"
+    assert first.kwargs["overrides"]["model"] == "test-model"
     client.thread.assert_awaited_once_with("test-sandbox", "test-session")
 
 
@@ -43,11 +43,11 @@ async def test_startup_refusals_and_other_server_failures_are_not_retried(status
     request = httpx.Request("POST", "https://app.test.invalid/sandboxes/test-sandbox/sessions")
     response = httpx.Response(status, request=request)
     client = create_autospec(Client, instance=True)
-    client.open_session.side_effect = httpx.HTTPStatusError("open refused", request=request, response=response)
+    client.create_session.side_effect = httpx.HTTPStatusError("open refused", request=request, response=response)
     with pytest.raises(httpx.HTTPStatusError) as caught:
         await Agent.open(client, sandbox="test-sandbox", harness=protocol_pb2.HARNESS_CODEX, model="test-model")
     assert caught.value.response is response
-    client.open_session.assert_awaited_once()
+    client.create_session.assert_awaited_once()
     client.thread.assert_not_awaited()
 
 

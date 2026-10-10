@@ -128,8 +128,7 @@ readable but are not polled until their binding is established by a verified han
 - `ListSessions`: Sandbox destination; maps every registered runner ID, `r-<uuid>` or an imported
   legacy one, to its public Session ID in the returned summaries. Unregistered runner sessions keep
   their runner IDs.
-- `OpenSession`: legacy caller-chosen runner ID; retained for deployed app sessions until cutover.
-- `CreateSession`: new explicit Open with Sandbox destination, caller-scoped idempotency key,
+- `CreateSession`: explicit Open with Sandbox destination, caller-scoped idempotency key,
   and selected overrides (no runner ID). A durable public Session UUID and effective launch
   settings are committed before runner contact; the Service returns the UUID and an attachment
   snapshot with that public ID. A `{session_id}` placeholder in a selected `cwd` override
@@ -148,7 +147,7 @@ readable but are not polled until their binding is established by a verified han
   the frozen spec and is intended for the trusted app, **not** for browsers. Lookup
   observes the runner journal without supplying a spec, restarting a harness, or
   rerunning bootstrap.
-- Both Open paths: bootstrap
+- `CreateSession`'s bootstrap
   and setup use the runner's existing idempotence; the response is the native attachment snapshot, not
   a claim that all setup or a model turn has completed.
 - `ResumeSession`: uses exactly the runner-retained spec, without applying today's defaults/instructions
@@ -176,7 +175,7 @@ Read/follow/command RPCs never provision, resume, or wake a Sandbox or harness.
 
 ### Launch overrides and field presence
 
-`OpenSessionRequest.spec` and `CreateSessionRequest.spec` use the runner `SessionSpec`. Their
+`CreateSessionRequest.spec` uses the runner `SessionSpec`. Its
 `override_mask` names the exact proto fields to replace in stored defaults, including fields
 explicitly set to empty/default values.
 For example, `paths: ["model", "instructions"]` selects `spec.model` and `spec.instructions`; an empty
@@ -186,12 +185,11 @@ refused. An empty mask means no overrides. Optional `setup_script` distinguishes
 
 `platform_instructions` in deployment configuration is the complete deployment-wide platform instruction
 block; deployment construction supplies service URLs and assembles all shared guidance into this value.
-The Sandbox Service passes it through unchanged. On `OpenSession`, the backend prepends the explicit
+The Sandbox Service passes it through unchanged. On `CreateSession`, the backend prepends the explicit
 Sandbox/session destination (and notification destination when configured), then appends the effective
 session `instructions`, stored or overridden. A non-empty `platform_instructions` value is required; there is
-no runtime default. Stored specs are never rewritten. For legacy `OpenSession`, changed defaults may make a retry conflict: inspect retained state and
-explicitly resume. `CreateSession` instead persists the original effective settings under the caller's
-key, so changed defaults cannot change a response-lost retry.
+no runtime default. Stored specs are never rewritten. `CreateSession` persists the original effective
+settings under the caller's key, so changed defaults cannot change a response-lost retry.
 
 Resume also needs the native harness's retained conversation. The pinned Claude harness can refuse
 resuming an empty conversation that never persisted a turn. The service surfaces that refusal; it does
@@ -200,7 +198,7 @@ not fabricate native history or claim runner admission proves native persistence
 ## Event following
 
 To inspect a session, read the initial `FollowSession` attachment snapshot and cancel the stream.
-There is no separate inspection or bootstrap RPC added for tests. Bootstrap runs through `OpenSession`;
+There is no separate inspection or bootstrap RPC added for tests. Bootstrap runs through `CreateSession`;
 exact retries use the runner's stored bootstrap result.
 
 `FollowSession` is server-streaming. Its request selects an explicit session and a native `Follow`

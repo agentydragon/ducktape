@@ -1,15 +1,15 @@
 """Real service history for cross-service/native integration tests only.
 
 Consumer tests see a gRPC endpoint, not the Store or a service database session.
-Imported test runners predate service-owned Open, so this fixture registers their
-locators; the production HistoryIngester owns copying and lifecycle evidence.
+A runner Session a test attaches directly, bypassing CreateSession, is registered here under its
+own UUID; the production HistoryIngester owns copying and lifecycle evidence.
 """
 
 import asyncio
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager, suppress
 from dataclasses import replace
-from uuid import NAMESPACE_URL, UUID, uuid5
+from uuid import UUID
 
 import grpc
 from sqlalchemy.ext.asyncio import create_async_engine
@@ -25,6 +25,7 @@ from agentplane.sandbox_service.session_history.db import Base
 from agentplane.sandbox_service.session_history.ingestion import HistoryIngester
 from agentplane.sandbox_service.session_history.store import Store
 from agentplane.sandbox_service.session_registry import SessionRegistry
+from agentplane.sandbox_service.testing.sessions import register_session
 
 # gazelle:include_dep @pypi//asyncpg
 # gazelle:include_dep @pypi//protobuf
@@ -60,18 +61,27 @@ async def with_history(resources: Resources, database_url: str | None) -> AsyncI
                         summaries = await runner.list_sessions()
                     finally:
                         await runner.close()
+                    namespace = resources.destinations.inventory.namespace
                     for summary in summaries:
-                        try:
-                            session_id = UUID(summary.session_id)
-                        except ValueError:
-                            session_id = uuid5(NAMESPACE_URL, view.name + "/" + summary.session_id)
-                        await sessions.open(
-                            session_id,
-                            sandbox_namespace=resources.destinations.inventory.namespace,
-                            sandbox_name=view.name,
-                            sandbox_uid=UUID(view.uid),
-                            runner_session_id=summary.session_id,
-                        )
+                        # CreateSession registered its own; a runner Session a test attached directly
+                        # is named by its UUID.
+                        if (
+                            await sessions.session_id(
+                                sandbox_namespace=namespace,
+                                sandbox_name=view.name,
+                                sandbox_uid=UUID(view.uid),
+                                runner_session_id=summary.session_id,
+                            )
+                            is None
+                        ):
+                            await register_session(
+                                engine,
+                                UUID(summary.session_id),
+                                sandbox_namespace=namespace,
+                                sandbox_name=view.name,
+                                sandbox_uid=UUID(view.uid),
+                                runner_session_id=summary.session_id,
+                            )
                 except SandboxNotFoundError, DestinationUnavailableError, grpc.RpcError:
                     continue
             await ingester.cycle()

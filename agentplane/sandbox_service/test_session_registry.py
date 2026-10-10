@@ -5,10 +5,12 @@ from uuid import UUID, uuid4
 
 import pytest
 import pytest_bazel
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from agentplane.sandbox_service.session_history.store import HistoryConflictError, HistoryNotFoundError
 from agentplane.sandbox_service.session_registry import OpenReservation, SessionRegistry
+from agentplane.sandbox_service.testing.sessions import register_session
 
 # gazelle:include_dep //agentplane/sandbox_service/commands:conftest
 
@@ -92,23 +94,32 @@ async def test_reservation_is_stable_across_retries_and_replicas(
     assert await lookup(key="absent") is None
 
 
-async def test_open_keeps_imported_id_and_fences_duplicate_locator(registry: SessionRegistry) -> None:
-    session_id, uid = uuid4(), uuid4()
-    for _ in range(2):
-        await registry.open(
-            session_id, sandbox_namespace="testing", sandbox_name="worker", sandbox_uid=uid, runner_session_id="s-1"
-        )
-    with pytest.raises(HistoryConflictError, match="belongs to another"):
-        await registry.open(
-            uuid4(), sandbox_namespace="testing", sandbox_name="worker", sandbox_uid=uid, runner_session_id="s-1"
+async def test_a_runner_locator_belongs_to_one_session(engine: AsyncEngine) -> None:
+    uid = uuid4()
+    await register_session(
+        engine, uuid4(), sandbox_namespace="testing", sandbox_name="worker", sandbox_uid=uid, runner_session_id="s-1"
+    )
+    with pytest.raises(IntegrityError):
+        await register_session(
+            engine,
+            uuid4(),
+            sandbox_namespace="testing",
+            sandbox_name="worker",
+            sandbox_uid=uid,
+            runner_session_id="s-1",
         )
     # A nullable legacy UID must not permit another ID for the same legacy locator.
-    await registry.open(
-        uuid4(), sandbox_namespace="testing", sandbox_name="gone", sandbox_uid=None, runner_session_id="legacy"
+    await register_session(
+        engine, uuid4(), sandbox_namespace="testing", sandbox_name="gone", sandbox_uid=None, runner_session_id="legacy"
     )
-    with pytest.raises(HistoryConflictError, match="belongs to another"):
-        await registry.open(
-            uuid4(), sandbox_namespace="testing", sandbox_name="gone", sandbox_uid=None, runner_session_id="legacy"
+    with pytest.raises(IntegrityError):
+        await register_session(
+            engine,
+            uuid4(),
+            sandbox_namespace="testing",
+            sandbox_name="gone",
+            sandbox_uid=None,
+            runner_session_id="legacy",
         )
 
 

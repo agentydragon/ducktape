@@ -339,32 +339,6 @@ class SandboxService(protocol_pb2_grpc.SandboxServiceServicer):
                         summary.session_id = str(public_id)
             return runner_pb2.ListSessionsResponse(sessions=sessions)
 
-    @override
-    async def OpenSession(
-        self, request: protocol_pb2.OpenSessionRequest, context: grpc.aio.ServicerContext
-    ) -> runner_pb2.Attached:
-        async with self.request(context, timeout_s=self.resources.lifecycle_timeout_s):
-            destination = request.destination
-            if not destination.session_id:
-                raise ValueError("session ID is required")
-            async with self.runner(destination.sandbox, writes=True) as (client, endpoint):
-                if len(request.setup_script) > 65_536:
-                    raise ValueError("setup script is too long")
-                spec = session_lifecycle.launch_spec(
-                    destination,
-                    wire.launch_overrides(request),
-                    binding=endpoint.binding,
-                    platform_instructions=self.resources.platform_instructions,
-                    sandbox_namespace=self.resources.destinations.inventory.namespace,
-                )
-                return await session_lifecycle.open_session(
-                    client,
-                    destination,
-                    spec,
-                    binding=endpoint.binding,
-                    setup_script=request.setup_script if request.HasField("setup_script") else None,
-                )
-
     def sessions(self) -> SessionRegistry:
         if self.resources.sessions is None:
             raise DestinationUnavailableError("Session registry database not configured")
@@ -446,9 +420,9 @@ class SandboxService(protocol_pb2_grpc.SandboxServiceServicer):
                 public_id = str(reservation.session_id)
                 attachment = await session_lifecycle.open_session(
                     client,
-                    protocol_pb2.SessionDestination(sandbox=request.sandbox, session_id=launch.open.session_id),
+                    launch.open.session_id,
                     launch.open.spec,
-                    binding=protocol_pb2.SandboxBinding(bootstrap=launch.bootstrap),
+                    bootstrap=launch.bootstrap,
                     setup_script=launch.open.setup_script if launch.open.HasField("setup_script") else None,
                 )
                 attachment.session_id = public_id
@@ -545,8 +519,8 @@ class SandboxService(protocol_pb2_grpc.SandboxServiceServicer):
             if public_id is None:
                 if channel_routed:
                     raise DestinationUnavailableError("a channel-routed Sandbox takes public Session IDs only")
-                # CLEANUP(added 2026-10-10): Remove the relay-only path once OpenSession, the only
-                # producer of caller-chosen runner IDs, is gone and no such Session remains.
+                # CLEANUP(added 2026-10-10): Remove the relay-only path once no Session opened with a
+                # caller-chosen runner ID remains on staging.
                 async with self.runner(destination.sandbox, writes=True) as (client, _):
                     return await admit_running_command(
                         client,

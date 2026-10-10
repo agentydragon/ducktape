@@ -20,15 +20,13 @@ from typing import TypeVar
 from uuid import UUID, uuid4
 
 import httpx
+from google.protobuf.json_format import MessageToDict
 from pydantic import BaseModel
 from tenacity import AsyncRetrying, retry_if_exception, stop_after_delay, wait_fixed
 
 from agentplane.app.client import Client
 from agentplane.protocol import command_pb2, event_pb2
 from agentplane.runner import protocol_pb2
-
-# The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.
-# gazelle:include_dep @pypi//protobuf
 
 # A turn on the cheap model with a few tool calls. A harness that stops making progress should fail
 # its scenario rather than hold the suite until Bazel's clock runs out.
@@ -124,7 +122,7 @@ class Agent:
         """Open a session, waiting out a runner that is up but not yet listening.
 
         A Running Sandbox's runner may not answer yet. Retry that `503` with the same
-        session id; other HTTP errors fail immediately.
+        idempotency key; other HTTP errors fail immediately.
 
         `instructions` are the session's standing orders, in front of the model on every turn; empty
         is the proto's own default and opens the session the runner would open without the field.
@@ -133,10 +131,10 @@ class Agent:
             harness=harness, cwd=WORKING_DIRECTORY, model=model, reasoning_effort="low", instructions=instructions
         )
         # Retry the same desired session even if an earlier Open reached the runner.
-        session_id = f"acceptance-{uuid4().hex[:8]}"
+        key = f"acceptance-{uuid4().hex[:8]}"
         async for attempt in runner_startup_retries():
             with attempt:
-                attachment = await client.open_session(sandbox, session_id, spec)
+                attachment = await client.create_session(sandbox, key, overrides=MessageToDict(spec))
                 thread = await client.thread(sandbox, attachment.attached.session_id)
                 return cls(client, thread_id=thread.id, cursor=attachment.last_cursor)
         raise AssertionError("unreachable: reraise=True either returns an agent or raises")

@@ -16,7 +16,7 @@ from agentplane.app.testing.projection_lease import LeaseFactory
 from agentplane.app.testing.retained_history import seed_retained_session
 from agentplane.app.testing.thread_test_support import SPEC, event_entry
 from agentplane.app.threads.bridge import RunnerBridge
-from agentplane.app.threads.events.event_log import EventLogStore as ServiceEventLogStore
+from agentplane.app.threads.events.event_log import EventLogStore as ServiceEventLogStore, ServiceSessionReference
 from agentplane.app.threads.ingestion import Ingester
 from agentplane.app.threads.sessions import SandboxSessions
 from agentplane.app.threads.store import ThreadStore
@@ -579,10 +579,10 @@ async def test_discovery_racing_open_agrees_on_the_service_id(engine: AsyncEngin
     )
     try:
         await coordinator.reconcile()
-        assert await logs.find("sb-1", str(public_id)) == public_id
+        assert await logs.service_session(public_id) == ServiceSessionReference("sb-1", str(public_id))
         attached = await bridge.create_session("sb-1", "open-key", {})
         assert attached.session_id == str(public_id)
-        assert await logs.find("sb-1", str(public_id)) == public_id
+        assert await logs.service_session(public_id) == ServiceSessionReference("sb-1", str(public_id))
     finally:
         await coordinator.close()
 

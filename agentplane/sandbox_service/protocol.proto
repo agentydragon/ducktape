@@ -29,8 +29,6 @@ service SandboxService {
   rpc RevokeEgress(RevokeEgressRequest) returns (google.protobuf.Empty);
 
   rpc ListSessions(SandboxRequest) returns (ducktape.agentplane.runner.v1.ListSessionsResponse);
-  // Legacy caller-chosen runner identifier; retained until app cutover.
-  rpc OpenSession(OpenSessionRequest) returns (ducktape.agentplane.runner.v1.Attached);
   // Service-owned Session identity. The key is only for an explicit Open retry.
   rpc CreateSession(CreateSessionRequest) returns (CreateSessionResponse);
   // Read-only reconciliation by the original caller, sandbox incarnation and Open key.
@@ -77,15 +75,6 @@ message SessionDestination {
 message SandboxRequest { SandboxDestination destination = 1; }
 message SessionRequest { SessionDestination destination = 1; }
 message GetSandboxRequest { string name = 1; }
-
-message OpenSessionRequest {
-  SessionDestination destination = 1;
-  ducktape.agentplane.runner.v1.SessionSpec spec = 2;
-  // Exact fields overriding stored defaults. Required even for an explicitly empty value.
-  // Paths use SessionSpec's proto field names; nested paths and '*' are not accepted.
-  google.protobuf.FieldMask override_mask = 3;
-  optional string setup_script = 4;
-}
 
 message CreateSessionRequest {
   SandboxDestination sandbox = 1;

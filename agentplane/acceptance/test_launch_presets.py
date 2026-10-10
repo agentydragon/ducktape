@@ -46,10 +46,10 @@ async def test_public_coder_preset_launches_an_initialized_editable_codex_thread
         policy.name for binding in await client.bindings(view.name) for policy in binding.policies
     }
 
-    first_id = f"preset-{uuid4().hex[:8]}"
+    first_key = f"preset-{uuid4().hex[:8]}"
     async for attempt in runner_startup_retries():
         with attempt:
-            first = await client.open_bound_session(view.name, first_id)
+            first = await client.create_session(view.name, first_key)
     assert (first.attached.spec.harness, first.attached.spec.model, first.attached.spec.reasoning_effort) == (
         protocol_pb2.HARNESS_CODEX,
         preset.session_defaults.model,
@@ -67,9 +67,9 @@ async def test_public_coder_preset_launches_an_initialized_editable_codex_thread
     assert "public-coder workspace initialized" in turn.transcript
     assert "PRESET-INSTRUCTIONS-OK" in turn.answer
 
-    inherited = await client.open_bound_session(view.name, f"preset-{uuid4().hex[:8]}")
+    inherited = await client.create_session(view.name, f"preset-{uuid4().hex[:8]}")
     local_model = "acceptance-local-model-override"
-    local = await client.open_bound_session(view.name, f"preset-{uuid4().hex[:8]}", overrides={"model": local_model})
+    local = await client.create_session(view.name, f"preset-{uuid4().hex[:8]}", overrides={"model": local_model})
     assert inherited.attached.spec.model == preset.session_defaults.model
     assert local.attached.spec.model == local_model
 

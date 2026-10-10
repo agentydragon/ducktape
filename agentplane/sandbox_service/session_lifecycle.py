@@ -58,20 +58,17 @@ def validate_spec(spec: protocol_pb2.SessionSpec) -> None:
 
 async def open_session(
     client: RunnerClient,
-    destination: SessionDestination,
+    runner_session_id: str,
     spec: protocol_pb2.SessionSpec,
     *,
-    binding: SandboxBinding | None,
+    bootstrap: str,
     setup_script: str | None,
 ) -> protocol_pb2.Attached:
-    if binding is not None:
-        if binding.bootstrap:
-            result = await client.initialize(binding.bootstrap)
-            if result.exit_code != 0:
-                raise RunnerError("Sandbox bootstrap failed; no session was opened")
-        if setup_script is None and binding.session_defaults.HasField("setup_script"):
-            setup_script = binding.session_defaults.setup_script
-    attachment = await client.attach(destination.session_id, spec=spec, setup_script=setup_script)
+    if bootstrap:
+        result = await client.initialize(bootstrap)
+        if result.exit_code != 0:
+            raise RunnerError("Sandbox bootstrap failed; no session was opened")
+    attachment = await client.attach(runner_session_id, spec=spec, setup_script=setup_script)
     try:
         return attachment.attached
     finally:

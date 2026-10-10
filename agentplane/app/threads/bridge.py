@@ -38,8 +38,7 @@ class NewSession(BaseModel):
     spec: dict[str, object] = Field(
         description="Explicit proto-JSON SessionSpec fields; Sandbox-bound defaults fill omitted fields."
     )
-    session_id: str | None = None  # legacy Open callers; not accepted with an idempotency key
-    idempotency_key: str | None = None
+    idempotency_key: str = Field(min_length=1)
     setup_script: str | None = Field(default=None, max_length=65_536)
 
 
@@ -59,31 +58,6 @@ class RunnerBridge:
 
     async def list_sessions(self, sandbox: str) -> list[protocol_pb2.SessionSummary]:
         return await self._runners.client(sandbox).list_sessions()
-
-    async def open_session(
-        self,
-        sandbox: str,
-        session_id: str,
-        spec: protocol_pb2.SessionSpec | dict[str, object],
-        setup_script: str | None = None,
-    ) -> protocol_pb2.Attached:
-        existing = await self._event_logs.find(sandbox, session_id)
-        if existing is not None:
-            snapshot = await self._event_logs.feed_state(existing)
-            if snapshot is not None and isinstance(snapshot.end, FeedError):
-                raise RunnerError(f"runner history is rejected: {snapshot.end.message}")
-        try:
-            attached = await self._runners.client(sandbox).open(
-                session_id, MessageToDict(spec) if isinstance(spec, protocol_pb2.SessionSpec) else spec, setup_script
-            )
-        except (ValueError, ParseError) as error:
-            raise MalformedMessageError(f"invalid session overrides: {error}") from error
-        # The app mapping is durable before we answer. Runner history copies independently;
-        # an archive lag is not an Open failure.
-        thread_id = await self._event_logs.open(sandbox, session_id, attached.spec)
-        await self._event_logs.resume_pending(thread_id)
-        await self._ingester.start()
-        return attached
 
     async def create_session(
         self, sandbox: str, idempotency_key: str, spec: dict[str, object], setup_script: str | None = None
@@ -222,16 +196,9 @@ async def list_sessions(bridge: Bridge, name: str) -> list[dict[str, object]]:
 
 
 @router.post("", status_code=status.HTTP_201_CREATED)
-async def open_session(bridge: Bridge, name: str, body: NewSession) -> dict[str, object]:
+async def create_session(bridge: Bridge, name: str, body: NewSession) -> dict[str, object]:
     _parse(protocol_pb2.SessionSpec(), body.spec)  # Validate without losing explicit empty overrides.
-    if bool(body.idempotency_key) == bool(body.session_id):
-        raise MalformedMessageError("exactly one of idempotency_key or legacy session_id is required")
-    if body.idempotency_key is not None:
-        attached = await bridge.create_session(name, body.idempotency_key, body.spec, body.setup_script)
-    else:
-        assert body.session_id is not None
-        attached = await bridge.open_session(name, body.session_id, body.spec, body.setup_script)
-    return MessageToDict(attached)
+    return MessageToDict(await bridge.create_session(name, body.idempotency_key, body.spec, body.setup_script))
 
 
 @router.get("/open", response_model=OpenStatus)

@@ -54,44 +54,6 @@ class SessionRegistry:
     def __init__(self, engine: AsyncEngine) -> None:
         self._sessions = async_sessionmaker(engine, expire_on_commit=False)
 
-    async def open(
-        self,
-        session_id: UUID,
-        *,
-        sandbox_namespace: str,
-        sandbox_name: str,
-        sandbox_uid: UUID | None,
-        runner_session_id: str,
-    ) -> None:
-        """Register a durable ID and its immutable physical locator, including legacy IDs.
-
-        The ID belongs to the Session (and remains usable after the Sandbox is deleted).
-        Re-opening the same ID with another runner is an error, not a history overwrite.
-        """
-        async with self._sessions.begin() as session:
-            await session.execute(
-                insert(Session)
-                .values(
-                    id=session_id,
-                    sandbox_namespace=sandbox_namespace,
-                    sandbox_name=sandbox_name,
-                    sandbox_uid=sandbox_uid,
-                    runner_session_id=runner_session_id,
-                    change_position=await next_change_position(session),
-                )
-                .on_conflict_do_nothing()
-            )
-            row = await session.get(Session, session_id)
-            if row is None:
-                raise HistoryConflictError(f"runner locator already belongs to another session, not {session_id}")
-            if (row.sandbox_namespace, row.sandbox_name, row.sandbox_uid, row.runner_session_id) != (
-                sandbox_namespace,
-                sandbox_name,
-                sandbox_uid,
-                runner_session_id,
-            ):
-                raise HistoryConflictError(f"session {session_id} has a different runner locator")
-
     async def reserve(
         self,
         *,
