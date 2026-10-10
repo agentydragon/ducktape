@@ -1546,6 +1546,7 @@ py_library(
         "//cluster/cdk8s/monitoring:grafana_helmrepository",
         "//cluster/cdk8s/monitoring:grafana_instance",
         "//cluster/cdk8s/monitoring:grafana_operator",
+        "//cluster/cdk8s/monitoring:home_switch",
         "//cluster/cdk8s/monitoring:loki",
         "//cluster/cdk8s/monitoring:mimir",
         "//cluster/cdk8s/monitoring:namespace",

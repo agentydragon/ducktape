@@ -667,6 +667,11 @@ spec:
       name: monitoring-gateway-probe
       originRevision: "@repo"
     - copy:
+        - from: "@repo/cluster/generated/monitoring/home-switch/**"
+          to: "@artifact/cluster/generated/monitoring/home-switch/"
+      name: monitoring-home-switch
+      originRevision: "@repo"
+    - copy:
         - from: "@repo/cluster/generated/monitoring/loki/**"
           to: "@artifact/cluster/generated/monitoring/loki/"
       name: monitoring-loki

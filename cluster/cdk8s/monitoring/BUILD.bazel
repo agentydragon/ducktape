@@ -303,6 +303,20 @@ py_test(
 )
 
 py_library(
+    name = "home_switch",
+    srcs = ["home_switch.py"],
+    visibility = ["//cluster/cdk8s:__pkg__"],
+    deps = [
+        "//cluster/cdk8s:fleet_rules",
+        "//cluster/cdk8s:flux",
+        "//cluster/cdk8s:manifest_roots",
+        "//cluster/cdk8s/cert_manager:cluster_ca",
+        "//cluster/cdk8s/providers/cert_manager:cert_manager_certificate",
+        "@pypi//cdk8s",
+    ],
+)
+
+py_library(
     name = "gateway_probe",
     srcs = ["gateway_probe.py"],
     visibility = ["//cluster/cdk8s:__pkg__"],
