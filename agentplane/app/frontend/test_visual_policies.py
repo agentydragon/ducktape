@@ -184,9 +184,8 @@ async def test_action_detail_ssh_raw_view(view: VisualPage, app: AgentplaneFixtu
     await expect(page.get_by_role("button", name="Approve")).to_be_visible()
     await expect(page.get_by_role("button", name="Deny")).to_be_visible()
     await view.capture(target=page.locator("#app"), name=f"action_detail_ssh_pretty_{viewport.width}")
-    raw_switch = page.get_by_role("switch", name="Raw")
-    await page.get_by_text("Raw", exact=True).click()
-    await expect(raw_switch).to_be_checked()
+    await _open_raw_switches(page)
+    await expect(page.get_by_role("switch", name="Raw")).to_be_checked()
     await expect(page.get_by_text('"command": "systemctl --user restart test-backup.service')).to_be_visible()
     await view.capture(target=page.locator("#app"), name=f"action_detail_ssh_raw_{viewport.width}")
 
