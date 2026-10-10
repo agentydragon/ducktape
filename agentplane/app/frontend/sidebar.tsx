@@ -17,7 +17,7 @@ import { Link, useLocation, useMatch, useNavigate } from "react-router";
 
 import { archiveThread, displayableError, type SandboxView, type ThreadView } from "./client";
 import { ActionsSidebarSection } from "./actions/sidebar";
-import { LiveStatus, useRequiredThreadsLive, type Live, type ThreadsSnapshot } from "./live";
+import { LiveStatus, useRequiredThreadsLive } from "./live";
 import { MarkGlyph } from "./mark_glyph";
 import { sandboxStatusDetail, sandboxSummary } from "./sandbox_status";
 import { SANDBOX_STATUS_MARKS } from "./status_mark";
@@ -252,6 +252,7 @@ function ThreadGroupSection({
   group,
   fresh,
   current,
+  openThreadIds,
   currentSandbox,
   onNavigate,
   onOpen,
@@ -260,6 +261,7 @@ function ThreadGroupSection({
   group: ThreadGroup;
   fresh: boolean;
   current: string | null;
+  openThreadIds?: ReadonlySet<string>;
   currentSandbox: boolean;
   onNavigate: () => void;
   onOpen: (thread: ThreadView) => void;
@@ -300,7 +302,7 @@ function ThreadGroupSection({
           thread={thread}
           sandbox={group.sandbox}
           fresh={fresh}
-          current={current === thread.id}
+          current={current === thread.id || openThreadIds?.has(thread.id) === true}
           onOpen={onOpen}
           onToggleArchived={onToggleArchived}
         />
@@ -317,26 +319,106 @@ type SidebarProps = {
   onClose: () => void;
 };
 
-export function Sidebar(props: SidebarProps): JSX.Element {
-  return <SidebarView {...props} live={useRequiredThreadsLive()} />;
+/** The grouped live thread browser used by both the classic sidebar and Mosaic. */
+export function ThreadsBrowserContent({
+  currentThreadId,
+  openThreadIds,
+  onOpenThread,
+  onNavigate,
+}: {
+  currentThreadId: string | null;
+  openThreadIds?: ReadonlySet<string>;
+  onOpenThread: (thread: ThreadView) => void;
+  onNavigate: () => void;
+}): JSX.Element {
+  const live = useRequiredThreadsLive();
+  const sandboxRoute = useMatch("/sandboxes/:name");
+  const [includeArchived, setIncludeArchived] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const data = live.snapshot;
+  const fresh = snapshotFresh(live);
+  const threads = data?.threads ?? [];
+  const groups = groupThreads(
+    threads.filter(
+      (thread) =>
+        includeArchived || !thread.archived || thread.id === currentThreadId || openThreadIds?.has(thread.id) === true
+    ),
+    Object.fromEntries((data?.sandboxes ?? []).map((sandbox) => [sandbox.name, sandbox])),
+    true,
+    currentThreadId
+  );
+  const archived = archivedCount(threads);
+
+  async function toggleArchived(thread: ThreadView): Promise<void> {
+    setError(null);
+    try {
+      await archiveThread(thread.id, !thread.archived);
+    } catch (reason: unknown) {
+      setError(displayableError(reason));
+    }
+  }
+
+  return (
+    <div className="agentplane-sidebar-thread-list">
+      <LiveStatus live={live} />
+      {data?.updates_connected === false && (
+        <Alert color="orange" p="xs">
+          Thread updates disconnected; showing the last snapshot.
+        </Alert>
+      )}
+      {error && (
+        <Text c="red" size="xs" px={4}>
+          {error}
+        </Text>
+      )}
+      {data === null && !error && (
+        <Text c="dimmed" size="xs" px={4}>
+          Loading threads…
+        </Text>
+      )}
+      {data !== null && groups.length === 0 && (
+        <Text c="dimmed" size="xs" px={4}>
+          No threads yet.
+        </Text>
+      )}
+      {groups.map((group) => (
+        <ThreadGroupSection
+          key={group.sandboxName}
+          group={group}
+          fresh={fresh}
+          current={currentThreadId}
+          openThreadIds={openThreadIds}
+          currentSandbox={sandboxRoute?.params.name === group.sandboxName}
+          onNavigate={onNavigate}
+          onOpen={onOpenThread}
+          onToggleArchived={(thread) => void toggleArchived(thread)}
+        />
+      ))}
+      {threads.length > 0 && (
+        <div className="agentplane-sidebar-archived-toggle">
+          <Text size="xs">Show archived ({archived})</Text>
+          <Switch
+            size="xs"
+            checked={includeArchived}
+            onChange={(event) => setIncludeArchived(event.currentTarget.checked)}
+            aria-label="Show archived threads"
+          />
+        </div>
+      )}
+    </div>
+  );
 }
 
-function SidebarView({
-  settingsOpen,
-  onOpenSettings,
-  open,
-  onClose,
-  live,
-}: SidebarProps & { live: Live<ThreadsSnapshot> }): JSX.Element {
+export function Sidebar(props: SidebarProps): JSX.Element {
+  return <SidebarView {...props} />;
+}
+
+function SidebarView({ settingsOpen, onOpenSettings, open, onClose }: SidebarProps): JSX.Element {
   const navigate = useNavigate();
   const location = useLocation();
   const threadRoute = useMatch("/threads/:threadId");
-  const sandboxRoute = useMatch("/sandboxes/:name");
-  const [includeArchived, setIncludeArchived] = useState(false);
+  const actionRoute = useMatch("/actions/:requestId");
   const { width, setWidth, resizeBy } = useSidebarWidth();
-  const data = live.snapshot;
-  const fresh = snapshotFresh(live);
-  const [error, setError] = useState<string | null>(null);
   const phone = usePhoneWidth();
 
   useEffect(() => {
@@ -351,24 +433,7 @@ function SidebarView({
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [open, phone, onClose]);
 
-  const threads = data?.threads ?? [];
   const current = threadRoute?.params.threadId ?? null;
-  const groups = groupThreads(
-    threads,
-    Object.fromEntries((data?.sandboxes ?? []).map((sandbox) => [sandbox.name, sandbox])),
-    includeArchived,
-    current
-  );
-  const archived = archivedCount(threads);
-
-  async function toggleArchived(thread: ThreadView): Promise<void> {
-    setError(null);
-    try {
-      await archiveThread(thread.id, !thread.archived);
-    } catch (reason: unknown) {
-      setError(displayableError(reason));
-    }
-  }
 
   /** Every navigation out of the sidebar also closes it, but only at phone width, where it's a
    * full-screen overlay standing in the way of the page it just navigated to. At desktop width
@@ -420,52 +485,7 @@ function SidebarView({
         </div>
       </div>
       <div className="agentplane-sidebar-body">
-        <div className="agentplane-sidebar-thread-list">
-          <LiveStatus live={live} />
-          {data?.updates_connected === false && (
-            <Alert color="orange" p="xs">
-              Thread updates disconnected; showing the last snapshot.
-            </Alert>
-          )}
-          {error && (
-            <Text c="red" size="xs" px={4}>
-              {error}
-            </Text>
-          )}
-          {data === null && !error && (
-            <Text c="dimmed" size="xs" px={4}>
-              Loading threads…
-            </Text>
-          )}
-          {data !== null && groups.length === 0 && (
-            <Text c="dimmed" size="xs" px={4}>
-              No threads yet.
-            </Text>
-          )}
-          {groups.map((group) => (
-            <ThreadGroupSection
-              key={group.sandboxName}
-              group={group}
-              fresh={fresh}
-              current={current}
-              currentSandbox={sandboxRoute?.params.name === group.sandboxName}
-              onNavigate={closeIfPhone}
-              onOpen={openThread}
-              onToggleArchived={(thread) => void toggleArchived(thread)}
-            />
-          ))}
-          {threads.length > 0 && (
-            <div className="agentplane-sidebar-archived-toggle">
-              <Text size="xs">Show archived ({archived})</Text>
-              <Switch
-                size="xs"
-                checked={includeArchived}
-                onChange={(event) => setIncludeArchived(event.currentTarget.checked)}
-                aria-label="Show archived threads"
-              />
-            </div>
-          )}
-        </div>
+        <ThreadsBrowserContent currentThreadId={current} onOpenThread={openThread} onNavigate={closeIfPhone} />
         <ActionsSidebarSection onNavigate={closeIfPhone} />
       </div>
       <div className="agentplane-sidebar-footer">
@@ -495,7 +515,15 @@ function SidebarView({
           <ActionIcon
             variant={location.pathname === "/mosaic" ? "light" : "subtle"}
             aria-label="Mosaic preview"
-            onClick={() => goTo("/mosaic")}
+            onClick={() => {
+              closeIfPhone();
+              void navigate("/mosaic", {
+                state: {
+                  openThreadId: threadRoute?.params.threadId,
+                  openActionId: actionRoute?.params.requestId,
+                },
+              });
+            }}
           >
             <IconLayoutDashboard size={15} />
           </ActionIcon>

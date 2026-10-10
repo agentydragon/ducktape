@@ -15,6 +15,7 @@ import {
   shouldRenderPaneRequestTitle,
 } from "./rendering/index";
 import { ActionDecisionButtons, ActionRequestsContext } from "./requests";
+import type { ActionRequestView } from "./client";
 import "./sidebar.css";
 
 const MANUAL_CLOSE_KEY = "agentplane-actions-sidebar-manually-closed";
@@ -120,9 +121,7 @@ function writeManuallyClosedRequests(requestIds: readonly string[]): void {
 /** Pending-only queue embedded below the thread list in the persistent navigation sidebar. */
 export function ActionsSidebarSection({ onNavigate }: { onNavigate?: () => void }): JSX.Element | null {
   const actions = useContext(ActionRequestsContext);
-  const location = useLocation();
   const [open, setOpen] = useState(false);
-  const [expandedId, setExpandedId] = useState<string | null>(null);
   const [actionsHeight, setActionsHeight] = useState(readActionsHeight);
   const manuallyClosedRequests = useRef(readManuallyClosedRequests());
   const previousIds = useRef<ReadonlySet<string>>(new Set());
@@ -165,7 +164,6 @@ export function ActionsSidebarSection({ onNavigate }: { onNavigate?: () => void 
       manuallyClosedRequests.current = new Set();
       writeManuallyClosedRequests([]);
       previousIds.current = currentIds;
-      setExpandedId(null);
       setOpen(false);
       return;
     }
@@ -230,8 +228,27 @@ export function ActionsSidebarSection({ onNavigate }: { onNavigate?: () => void 
           )}
         </Group>
       </UnstyledButton>
-      {open && (
-        <div id="agentplane-actions-sidebar-content" className="agentplane-actions-sidebar-content">
+      {open && <PendingActionsList onNavigate={onNavigate} />}
+    </section>
+  );
+}
+
+/** The compact queue shared by the classic sidebar and the movable Mosaic Actions tile. */
+export function PendingActionsList({
+  onNavigate,
+  onOpenDetails,
+}: {
+  onNavigate?: () => void;
+  onOpenDetails?: (request: ActionRequestView) => void;
+}): JSX.Element {
+  const actions = useContext(ActionRequestsContext);
+  const location = useLocation();
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+  const pending = actions?.requests.filter((request) => request.state === "decision_pending") ?? [];
+  return (
+    <div id="agentplane-actions-sidebar-content" className="agentplane-actions-sidebar-content">
+      {actions !== null && (
+        <>
           <StaleNotice streams={[actions.stream]} />
           {actions.error !== null && (
             <Text size="xs" c="red" role="alert">
@@ -291,15 +308,25 @@ export function ActionsSidebarSection({ onNavigate }: { onNavigate?: () => void 
                     </div>
                   </UnstyledButton>
                   <Tooltip label="View full details" withArrow>
-                    <Link
-                      className="agentplane-actions-sidebar-details"
-                      to={detailsPath}
-                      state={navigationState}
-                      onClick={onNavigate}
-                      aria-label={`View details for ${request.title}`}
-                    >
-                      <IconArrowRight size={15} aria-hidden="true" />
-                    </Link>
+                    {onOpenDetails ? (
+                      <UnstyledButton
+                        className="agentplane-actions-sidebar-details"
+                        onClick={() => onOpenDetails(request)}
+                        aria-label={`View details for ${request.title}`}
+                      >
+                        <IconArrowRight size={15} aria-hidden="true" />
+                      </UnstyledButton>
+                    ) : (
+                      <Link
+                        className="agentplane-actions-sidebar-details"
+                        to={detailsPath}
+                        state={navigationState}
+                        onClick={onNavigate}
+                        aria-label={`View details for ${request.title}`}
+                      >
+                        <IconArrowRight size={15} aria-hidden="true" />
+                      </Link>
+                    )}
                   </Tooltip>
                 </div>
                 {expanded && (
@@ -324,14 +351,23 @@ export function ActionsSidebarSection({ onNavigate }: { onNavigate?: () => void 
                         </Text>
                       )}
                       <Tooltip label="View full details" withArrow>
-                        <Link
-                          className="agentplane-actions-sidebar-details"
-                          to={detailsPath}
-                          state={navigationState}
-                          onClick={onNavigate}
-                        >
-                          Details <IconArrowRight size={13} aria-hidden="true" />
-                        </Link>
+                        {onOpenDetails ? (
+                          <UnstyledButton
+                            className="agentplane-actions-sidebar-details"
+                            onClick={() => onOpenDetails(request)}
+                          >
+                            Details <IconArrowRight size={13} aria-hidden="true" />
+                          </UnstyledButton>
+                        ) : (
+                          <Link
+                            className="agentplane-actions-sidebar-details"
+                            to={detailsPath}
+                            state={navigationState}
+                            onClick={onNavigate}
+                          >
+                            Details <IconArrowRight size={13} aria-hidden="true" />
+                          </Link>
+                        )}
                       </Tooltip>
                     </Group>
                   </Stack>
@@ -339,8 +375,8 @@ export function ActionsSidebarSection({ onNavigate }: { onNavigate?: () => void 
               </div>
             );
           })}
-        </div>
+        </>
       )}
-    </section>
+    </div>
   );
 }

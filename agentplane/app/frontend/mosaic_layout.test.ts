@@ -1,111 +1,86 @@
 import { expect, it } from "vitest";
 
 import {
-  createDefaultLayout,
-  dockPane,
+  createDefaultWorkspace,
+  insertPane,
   paneIds,
+  parseSplitLayout,
   parseStoredWorkspace,
   parseWorkspaceJson,
-  resizeSplit,
+  removePane,
   serializeWorkspace,
   type MosaicWorkspace,
 } from "./mosaic_layout";
 
-const initial: MosaicWorkspace = {
-  panes: [
-    { kind: "thread", id: "thread:t1", threadId: "t1" },
-    { kind: "thread", id: "thread:t2", threadId: "t2" },
-    { kind: "action", id: "action:a1", requestId: "a1" },
-  ],
-  layout: createDefaultLayout(["thread:t1", "thread:t2", "action:a1"]),
-  activePaneId: "thread:t1",
-};
-
-it("starts with the first thread beside a stack of the second thread and action", () => {
-  expect(initial.layout).toEqual({
+it("starts with both browser panes and one content thread", () => {
+  const workspace = createDefaultWorkspace("newest-thread");
+  expect(paneIds(workspace.layout)).toEqual(["threads", "actions", "thread:newest-thread"]);
+  expect(workspace.activePaneId).toBe("thread:newest-thread");
+  expect(workspace.layout).toMatchObject({
     type: "split",
-    id: "mosaic-split-1",
-    direction: "horizontal",
-    ratio: 0.5,
-    first: { type: "pane", paneId: "thread:t1" },
-    second: {
-      type: "split",
-      id: "mosaic-split-2",
-      direction: "vertical",
-      ratio: 0.5,
-      first: { type: "pane", paneId: "thread:t2" },
-      second: { type: "pane", paneId: "action:a1" },
-    },
+    direction: "row",
+    splitPercentages: [35, 65],
+    children: [{ type: "split", direction: "column", splitPercentages: [65, 35] }, "thread:newest-thread"],
   });
+  expect(paneIds(createDefaultWorkspace(null).layout)).toEqual(["threads", "actions"]);
 });
 
-it("docks an existing pane by removing its old leaf and collapsing empty splits", () => {
-  const layout = dockPane(initial.layout, "action:a1", "thread:t1", "top");
-
-  expect(layout).toEqual({
-    type: "split",
-    id: "mosaic-split-1",
-    direction: "horizontal",
-    ratio: 0.5,
-    first: {
-      type: "split",
-      id: "mosaic-split-2",
-      direction: "vertical",
-      ratio: 0.5,
-      first: { type: "pane", paneId: "action:a1" },
-      second: { type: "pane", paneId: "thread:t1" },
-    },
-    second: { type: "pane", paneId: "thread:t2" },
-  });
-  expect(paneIds(layout)).toEqual(["action:a1", "thread:t1", "thread:t2"]);
+it("inserts beside the active tile and collapses splits when a tile closes", () => {
+  const layout = insertPane(createDefaultWorkspace("one").layout, "thread:one", "thread:two");
+  expect(paneIds(layout)).toEqual(["threads", "actions", "thread:one", "thread:two"]);
+  expect(paneIds(removePane(layout, "thread:two"))).toEqual(["threads", "actions", "thread:one"]);
+  expect(paneIds(removePane(removePane(layout, "thread:one"), "thread:two"))).toEqual(["threads", "actions"]);
 });
 
-it("adds a new pane beside an existing leaf and clamps split resizing", () => {
-  const added = dockPane(initial.layout, "thread:t3", "thread:t1", "right");
-  expect(paneIds(added)).toContain("thread:t3");
-  expect(resizeSplit(added, "mosaic-split-3", 0.99)).toMatchObject({
-    first: { ratio: 0.85 },
-  });
-});
-
-it("round trips saved workspaces and rejects inconsistent pane trees", () => {
-  expect(parseWorkspaceJson(serializeWorkspace(initial))).toEqual(initial);
-  const docked = dockPane(initial.layout, "action:a1", "thread:t1", "top");
-  const resized = resizeSplit(docked, "mosaic-split-1", 0.6);
-  expect(parseWorkspaceJson(serializeWorkspace({ ...initial, layout: resized, activePaneId: "action:a1" }))).toEqual({
-    ...initial,
-    layout: resized,
-    activePaneId: "action:a1",
-  });
-  expect(parseWorkspaceJson("not json")).toBeNull();
-  expect(
-    parseStoredWorkspace({ version: 1, panes: initial.panes, layout: null, activePaneId: "thread:missing" })
-  ).toBeNull();
-  expect(
-    parseStoredWorkspace({
-      version: 1,
-      panes: initial.panes,
-      layout: { type: "pane", paneId: "thread:t1" },
-      activePaneId: "thread:t1",
-    })
-  ).toBeNull();
-});
-
-it("preserves an intentionally empty workspace", () => {
-  const empty: MosaicWorkspace = { panes: [], layout: null, activePaneId: null };
-  expect(parseWorkspaceJson(serializeWorkspace(empty))).toEqual(empty);
-});
-
-it("round trips the threads, pending actions, and action history panes", () => {
-  const workspace: MosaicWorkspace = {
+it("migrates the hand-rolled layout without losing its pane positions", () => {
+  const old = {
+    version: 1,
     panes: [
       { kind: "threads", id: "threads" },
       { kind: "actions", id: "actions" },
-      { kind: "history", id: "history" },
+      { kind: "thread", id: "thread:one", threadId: "one" },
     ],
-    layout: createDefaultLayout(["threads", "actions", "history"]),
-    activePaneId: "history",
+    layout: {
+      type: "split",
+      id: "mosaic-split-1",
+      direction: "horizontal",
+      ratio: 0.4,
+      first: { type: "pane", paneId: "threads" },
+      second: {
+        type: "split",
+        id: "mosaic-split-2",
+        direction: "vertical",
+        ratio: 0.3,
+        first: { type: "pane", paneId: "actions" },
+        second: { type: "pane", paneId: "thread:one" },
+      },
+    },
+    activePaneId: "thread:one",
   };
+  const migrated = parseStoredWorkspace(old);
+  expect(migrated?.layout).toEqual({
+    type: "split",
+    direction: "row",
+    splitPercentages: [40, 60],
+    children: [
+      "threads",
+      { type: "split", direction: "column", splitPercentages: [30, 70], children: ["actions", "thread:one"] },
+    ],
+  });
+  expect(parseWorkspaceJson(serializeWorkspace(migrated as MosaicWorkspace))).toEqual(migrated);
+});
 
-  expect(parseWorkspaceJson(serializeWorkspace(workspace))).toEqual(workspace);
+it("rejects tabs, duplicate tiles, and missing active tiles in saved data", () => {
+  const valid = createDefaultWorkspace("one");
+  expect(parseWorkspaceJson(serializeWorkspace(valid))).toEqual(valid);
+  expect(parseSplitLayout({ type: "tabs", tabs: ["threads", "actions"], activeTabIndex: 0 })).toBeNull();
+  expect(parseStoredWorkspace({ version: 2, ...valid, layout: "threads" })).toBeNull();
+  expect(parseStoredWorkspace({ version: 2, ...valid, activePaneId: "thread:missing" })).toBeNull();
+  expect(parseStoredWorkspace({ version: 2, ...valid, panes: [...valid.panes, valid.panes[0]] })).toBeNull();
+  expect(parseWorkspaceJson("not json")).toBeNull();
+});
+
+it("preserves an intentionally empty workspace", () => {
+  const empty: MosaicWorkspace = { panes: [], layout: null, activePaneId: null, actionOrigins: {} };
+  expect(parseWorkspaceJson(serializeWorkspace(empty))).toEqual(empty);
 });

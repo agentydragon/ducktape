@@ -905,6 +905,7 @@ ts_library(
     name = "mosaic_layout",
     srcs = ["mosaic_layout.ts"],
     tsconfig = TSCONFIG,
+    deps = ["//:node_modules/react-mosaic-component"],
 )
 
 agentplane_vitest_test(
@@ -928,18 +929,21 @@ ts_library(
         ":live",
         ":mosaic_css",
         ":mosaic_layout",
-        ":thread_status",
-        ":thread_status_indicator",
+        ":sidebar",
+        ":stream_status",
         ":topbar",
         "//:node_modules/@mantine/core",
         "//:node_modules/@tabler/icons-react",
         "//:node_modules/@types/react",
         "//:node_modules/react",
+        "//:node_modules/react-mosaic-component",
+        "//:node_modules/react-router",
         "//agentplane/app/frontend:client",
         "//agentplane/app/frontend/actions:action_client",
         "//agentplane/app/frontend/actions:detail",
         "//agentplane/app/frontend/actions:history",
         "//agentplane/app/frontend/actions:requests",
+        "//agentplane/app/frontend/actions:sidebar",
         "//agentplane/app/frontend/threads:projected_session",
     ],
 )

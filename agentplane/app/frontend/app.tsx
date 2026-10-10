@@ -145,7 +145,7 @@ function AppRoutes(): JSX.Element {
       <Route path="/sandboxes" element={<SandboxListRoute />} />
       <Route path="/actions" element={<ActionsPage />} />
       <Route path="/actions/:requestId" element={<ActionRequestRoute />} />
-      <Route path="/mosaic" element={<MosaicView />} />
+      <Route path="/mosaic" element={<MosaicView onOpenSettings={() => setSettingsTab("oauth-clients")} />} />
       <Route path="/connection-enrollments/:handle" element={<ConsentRoute />} />
       <Route path="/sandboxes/:name" element={<SandboxRoute />} />
       <Route path="/threads/:threadId" element={<ThreadRoute settingsOpen={settingsTab !== null} />} />
@@ -156,21 +156,25 @@ function AppRoutes(): JSX.Element {
     <TopbarContext.Provider value={topbarSlots}>
       <ActionRequestsProvider>
         <div className="agentplane-shell">
-          <Sidebar
-            settingsOpen={settingsTab !== null}
-            onOpenSettings={() => setSettingsTab("oauth-clients")}
-            open={sidebarOpen}
-            onClose={() => setSidebarOpen(false)}
-          />
+          {mosaicRoute === null && (
+            <Sidebar
+              settingsOpen={settingsTab !== null}
+              onOpenSettings={() => setSettingsTab("oauth-clients")}
+              open={sidebarOpen}
+              onClose={() => setSidebarOpen(false)}
+            />
+          )}
           <div className={`agentplane-shell-main${fullBleed ? " agentplane-shell-fullbleed" : ""}`}>
             <div className="agentplane-topbar">
-              <ActionIcon
-                variant="subtle"
-                aria-label="Toggle navigation"
-                onClick={() => setSidebarOpen((open) => !open)}
-              >
-                <IconMenu2 size={18} />
-              </ActionIcon>
+              {mosaicRoute === null && (
+                <ActionIcon
+                  variant="subtle"
+                  aria-label="Toggle navigation"
+                  onClick={() => setSidebarOpen((open) => !open)}
+                >
+                  <IconMenu2 size={18} />
+                </ActionIcon>
+              )}
               <div className="agentplane-topbar-title" ref={titleRef} />
               <div className="agentplane-topbar-actions" ref={actionsRef} />
             </div>

@@ -75,8 +75,6 @@ import "./projected_session.css";
 
 type ReadingAnchor = { key: string; offset: number; target?: HTMLElement };
 
-const NO_TOPBAR_SLOTS: TopbarSlots = { title: null, actions: null };
-
 /** A run of tool calls and reasoning steps, folded behind its summary until opened. */
 function CollapsibleRows({
   id,
@@ -1466,6 +1464,8 @@ export function ProjectedSession({
   const snapshotThread = threadsLive.snapshot?.threads.find((candidate) => candidate.id === threadId);
   const [thread, setThread] = useState<ThreadView | null>(snapshotThread ?? null);
   const [tabStatus, setTabStatus] = useState(CONNECTING_TAB_STATUS);
+  const [embeddedActionsNode, setEmbeddedActionsNode] = useState<HTMLDivElement | null>(null);
+  const embeddedTopbarSlots: TopbarSlots = { title: null, actions: embeddedActionsNode };
   const topbarStatus = threadStatusFromSnapshot(
     snapshotThread,
     threadsLive.snapshot?.sandboxes.find((candidate) => candidate.name === thread?.sandbox),
@@ -1529,6 +1529,7 @@ export function ProjectedSession({
           <Group className="agentplane-mosaic-thread-header" gap="xs" wrap="nowrap">
             {embeddedHeaderActions}
             <Box style={{ flex: 1, minWidth: 0 }}>{title}</Box>
+            <div className="agentplane-mosaic-thread-actions" ref={setEmbeddedActionsNode} />
             {onClose && (
               <ActionIcon variant="subtle" aria-label="Close thread pane" onClick={onClose}>
                 <IconX size={16} />
@@ -1559,7 +1560,7 @@ export function ProjectedSession({
         {thread && (
           <sync.Thread key={threadId} threadId={threadId}>
             {embedded ? (
-              <TopbarContext.Provider value={NO_TOPBAR_SLOTS}>
+              <TopbarContext.Provider value={embeddedTopbarSlots}>
                 <SyncedThread
                   threadId={threadId}
                   thread={thread}

@@ -1,4 +1,4 @@
-"""Visual acceptance for the experimental docked-pane route."""
+"""Visual acceptance for the experimental Mosaic shell."""
 
 import pytest
 import pytest_bazel
@@ -14,136 +14,137 @@ pytest_plugins = ("util.testing.visual_fixtures", "agentplane.app.frontend.visua
 pytestmark = pytest.mark.asyncio(loop_scope="session")
 
 
-async def _mount_mosaic(view: VisualPage, app: AgentplaneFixture) -> None:
+async def _mount(view: VisualPage, app: AgentplaneFixture) -> None:
     await app.show_pending_actions()
+    await app.show_compact_pod_action()
     await app.mount_app("/mosaic")
-    await expect(view.page.locator("[data-mosaic-pane-kind='action'] button[aria-label^='Approve']")).to_be_attached()
-    await expect(view.page.locator("[data-mosaic-pane]")).to_have_count(3)
+    await expect(view.page.locator("[data-mosaic-pane]:visible").first).to_be_visible()
     await expect(view.page.get_by_role("heading", name="Mosaic")).to_be_visible()
-    await view.check(context="mosaic fixture ready")
+    await expect(view.page.locator(".agentplane-sidebar")).to_have_count(0)
+    await view.check(context="mosaic shell ready")
 
 
 async def _add_pane(page: Page, label: str, kind: str) -> None:
     await page.get_by_role("button", name="Add pane").click()
     await page.get_by_role("textbox", name="Find a pane or thread").fill(label)
     await page.get_by_role("menuitem", name=label, exact=True).click()
-    await expect(page.locator(f"[data-mosaic-pane-kind='{kind}']")).to_be_attached()
+    await expect(page.locator(f"[data-mosaic-pane-kind='{kind}']")).to_be_visible()
 
 
 @pytest.mark.parametrize("viewport", [DESKTOP], ids=["desktop"])
-async def test_desktop_shows_two_threads_and_an_action(
+async def test_desktop_shell_docks_the_existing_browsers(
     view: VisualPage, app: AgentplaneFixture, viewport: Viewport
 ) -> None:
-    await _mount_mosaic(view, app)
-    panes = view.page.locator("[data-mosaic-pane]")
-    for index in range(await panes.count()):
-        await expect(panes.nth(index)).to_be_visible()
-    await expect(view.page.locator(".agentplane-topbar-actions [aria-label='More']")).to_have_count(0)
-    await view.capture(name="mosaic-desktop-two-threads-and-action", target=view.page.locator("#app"))
-
+    await _mount(view, app)
     page = view.page
-    source_grip = page.locator(".agentplane-mosaic-pane-grip").nth(2)
-    target_pane = page.locator("[data-mosaic-pane-kind='thread']").first
-    source_box = await source_grip.bounding_box()
-    target_box = await target_pane.bounding_box()
-    assert source_box is not None
-    assert target_box is not None
-    await page.mouse.move(source_box["x"] + source_box["width"] / 2, source_box["y"] + source_box["height"] / 2)
-    await page.mouse.down()
-    await page.mouse.move(target_box["x"] + target_box["width"] / 2, target_box["y"] + 2, steps=8)
-    await page.mouse.up()
-
-    action_pane = page.locator("[data-mosaic-pane-kind='action']")
-    await expect(action_pane).to_be_visible()
-    action_box = await action_pane.bounding_box()
-    target_box = await target_pane.bounding_box()
-    assert action_box is not None
-    assert target_box is not None
-    assert action_box["x"] == pytest.approx(target_box["x"], abs=2)
-    assert action_box["y"] < target_box["y"]
-
-    horizontal_splitter = page.locator("[data-mosaic-resize='horizontal']").first
-    initial_ratio = int(await horizontal_splitter.get_attribute("aria-valuenow") or "0")
-    splitter_box = await horizontal_splitter.bounding_box()
-    assert splitter_box is not None
-    await page.mouse.move(splitter_box["x"] + splitter_box["width"] / 2, splitter_box["y"] + 5)
-    await page.mouse.down()
-    await page.mouse.move(splitter_box["x"] + splitter_box["width"] / 2 + 48, splitter_box["y"] + 5, steps=5)
-    await page.mouse.up()
-    await expect(horizontal_splitter).not_to_have_attribute("aria-valuenow", str(initial_ratio))
-    await horizontal_splitter.focus()
-    current_ratio = int(await horizontal_splitter.get_attribute("aria-valuenow") or "0")
-    await page.keyboard.press("ArrowRight")
-    await expect(horizontal_splitter).to_have_attribute("aria-valuenow", str(min(85, current_ratio + 5)))
-
-    saved_layout = await page.evaluate("() => localStorage.getItem('agentplane-mosaic-workspace-v1')")
-    assert saved_layout is not None
-    # The visual harness clears localStorage at page startup. Navigate away and back to remount
-    # MosaicView without that test-harness reset, then confirm its browser-local saved tree returns.
-    await page.evaluate("() => { window.location.hash = '/sandboxes'; }")
-    await expect(page.locator(".agentplane-mosaic")).to_have_count(0)
-    await page.evaluate("() => { window.location.hash = '/mosaic'; }")
     await expect(page.locator("[data-mosaic-pane]")).to_have_count(3)
-    await expect(page.locator("[data-mosaic-pane-kind='action']")).to_be_visible()
-    restored_layout = await page.evaluate("() => localStorage.getItem('agentplane-mosaic-workspace-v1')")
-    assert restored_layout == saved_layout
-    await view.check(context="mosaic dock and resize persisted after route remount")
-    await view.capture(name="mosaic-desktop-docked-resized-persisted", target=page.locator("#app"))
+    await expect(page.locator("[data-mosaic-pane-kind='actions'] .agentplane-actions-sidebar-request")).to_have_count(3)
+    await expect(
+        page.locator("[data-mosaic-pane-kind='threads'] .agentplane-sidebar-group-label").first
+    ).to_be_visible()
+    await expect(page.locator("[data-mosaic-pane-kind='thread'] .agentplane-mosaic-thread-header")).to_be_visible()
+    await view.capture(name="mosaic-desktop-integrated-shell", target=page.locator("#app"))
+
+    actions = page.locator("[data-mosaic-pane-kind='actions']")
+    await actions.get_by_role("button", name="Expand inspect running demo pods").click()
+    await expect(actions.get_by_role("button", name="Approve inspect running demo pods")).to_be_visible()
+    await expect(actions.get_by_role("button", name="Deny inspect running demo pods")).to_be_visible()
+    await view.capture(name="mosaic-desktop-compact-quick-review", target=page.locator("#app"))
+
+    await actions.get_by_role("button", name="View details for echo the test repository handle back").click()
+    detail = page.locator("[data-mosaic-pane-kind='action']")
+    await expect(detail).to_be_visible()
+    await expect(page.locator("[data-mosaic-pane]")).to_have_count(4)
+    await page.mouse.move(0, 0)
+    await view.capture(name="mosaic-desktop-action-detail", target=page.locator("#app"))
+    await detail.get_by_role("button", name="Approve").click()
+    await expect(detail).to_have_count(0)
+    await expect(
+        page.locator(".mosaic-window.agentplane-mosaic-active [data-mosaic-pane-kind='actions']")
+    ).to_be_visible()
+    await view.check(context="action decision returns to compact queue")
 
 
 @pytest.mark.parametrize("viewport", [DESKTOP], ids=["desktop"])
-async def test_desktop_browses_threads_actions_and_history(
+async def test_desktop_layout_resizes_and_persists(
     view: VisualPage, app: AgentplaneFixture, viewport: Viewport
 ) -> None:
-    await _mount_mosaic(view, app)
+    await _mount(view, app)
     page = view.page
-    panes = page.locator("[data-mosaic-pane]")
-    while await panes.count() > 0:
-        await panes.first.locator("button[aria-label^='Close']").click()
-    await expect(panes).to_have_count(0)
+    splitter = page.locator(".agentplane-mosaic .mosaic-split").first
+    await expect(splitter).to_be_visible()
+    before = await page.evaluate("() => localStorage.getItem('agentplane-mosaic-workspace-v1')")
+    box = await splitter.bounding_box()
+    assert box is not None
+    center_x = box["x"] + box["width"] / 2
+    center_y = box["y"] + box["height"] / 2
+    dx, dy = (60, 0) if box["height"] > box["width"] else (0, 60)
+    await page.mouse.move(center_x, center_y)
+    await page.mouse.down()
+    await page.mouse.move(center_x + dx, center_y + dy, steps=8)
+    await page.mouse.up()
+    await page.wait_for_function(
+        "before => localStorage.getItem('agentplane-mosaic-workspace-v1') !== before", arg=before
+    )
+    resized = await page.evaluate("() => localStorage.getItem('agentplane-mosaic-workspace-v1')")
+    assert resized is not None
+    assert resized != before
 
-    await _add_pane(page, "Threads", "threads")
-    await _add_pane(page, "Actions", "actions")
+    actions_title = page.locator(
+        ".agentplane-mosaic .mosaic-window:has([data-mosaic-pane-kind='actions']) > .mosaic-window-toolbar .mosaic-window-title"
+    )
+    thread_body = page.locator(
+        ".agentplane-mosaic .mosaic-window:has([data-mosaic-pane-kind='thread']) > .mosaic-window-body"
+    )
+    thread_box = await thread_body.bounding_box()
+    assert thread_box is not None
+    await actions_title.drag_to(
+        thread_body, target_position={"x": thread_box["width"] - 12, "y": thread_box["height"] / 2}
+    )
+    await page.wait_for_function(
+        "before => localStorage.getItem('agentplane-mosaic-workspace-v1') !== before", arg=resized
+    )
+    await view.capture(name="mosaic-desktop-docked-actions", target=page.locator("#app"))
+
     await _add_pane(page, "Action history", "history")
-    await expect(page.locator("[data-mosaic-pane-kind='threads'] [aria-label='Filter threads']")).to_be_visible()
-    await expect(page.locator("[data-mosaic-pane-kind='actions']")).to_contain_text("Pending (2)")
-    await expect(
-        page.locator("[data-mosaic-pane-kind='history'] [aria-label^='Open details for']").first
-    ).to_be_visible()
-    await view.check(context="thread browser, pending actions and action history panes ready")
-    await view.capture(name="mosaic-desktop-thread-browser-actions-history", target=page.locator("#app"))
+    saved = await page.evaluate("() => localStorage.getItem('agentplane-mosaic-workspace-v1')")
+    assert saved is not None
+    await view.capture(name="mosaic-desktop-resized-with-history", target=page.locator("#app"))
 
-    actions_pane = page.locator("[data-mosaic-pane-kind='actions']")
-    await actions_pane.get_by_role("button", name="Open details for echo the test repository handle back").click()
-    detail_pane = page.locator("[data-mosaic-pane-kind='action']")
-    await expect(detail_pane).to_be_attached()
-    await detail_pane.get_by_role("button", name="Approve").click()
-    await expect(detail_pane).to_have_count(0)
-    await expect(page.get_by_role("combobox", name="Active pane")).to_have_value("Actions")
-    await view.check(context="resolved action returned to its originating pane")
-    await view.capture(name="mosaic-desktop-action-decision-returns-to-actions", target=page.locator("#app"))
+    await page.evaluate("() => { window.location.hash = '/sandboxes'; }")
+    await expect(page.locator(".agentplane-sidebar")).to_be_attached()
+    await page.evaluate("() => { window.location.hash = '/mosaic'; }")
+    await expect(page.locator("[data-mosaic-pane-kind='history']")).to_be_visible()
+    restored = await page.evaluate("() => localStorage.getItem('agentplane-mosaic-workspace-v1')")
+    assert restored == saved
+    await view.check(context="mosaic layout restored after route remount")
+    await view.capture(name="mosaic-desktop-restored-layout", target=page.locator("#app"))
 
 
 @pytest.mark.parametrize("viewport", [MOBILE], ids=["mobile"])
-async def test_mobile_switches_one_active_pane(view: VisualPage, app: AgentplaneFixture, viewport: Viewport) -> None:
-    await _mount_mosaic(view, app)
+async def test_mobile_shows_one_selected_pane(view: VisualPage, app: AgentplaneFixture, viewport: Viewport) -> None:
+    await _mount(view, app)
     page = view.page
-    await expect(page.locator(".agentplane-mosaic-pane-grip").first).to_be_hidden()
-    await expect(page.locator(".agentplane-mosaic-resize-handle").first).to_be_hidden()
-    active_selector = page.get_by_role("combobox", name="Active pane")
-    await active_selector.click()
-    await page.get_by_role("option", name="echo the test repository handle back").click()
-    action_pane = page.locator("[data-mosaic-pane-kind='action'].is-active")
-    await expect(action_pane).to_be_visible()
     await expect(page.locator("[data-mosaic-pane]:visible")).to_have_count(1)
-    await view.capture(name="mosaic-mobile-action-details", target=page.locator("#app"))
-
-    await active_selector.click()
-    await page.get_by_role("option").first.click()
-    await expect(page.locator("[data-mosaic-pane-kind='thread'].is-active")).to_be_visible()
-    await expect(page.locator("[data-mosaic-pane]:visible")).to_have_count(1)
-    await expect(page.locator(".agentplane-topbar-title").get_by_role("heading", name="Mosaic")).to_be_visible()
+    await expect(page.locator("[data-mosaic-pane-kind='thread']")).to_be_visible()
     await view.capture(name="mosaic-mobile-thread", target=page.locator("#app"))
+
+    selector = page.get_by_role("combobox", name="Active pane")
+    await selector.click()
+    await page.get_by_role("option", name="Actions", exact=True).click()
+    await expect(page.locator("[data-mosaic-pane-kind='actions']")).to_be_visible()
+    await expect(page.locator("[data-mosaic-pane]:visible")).to_have_count(1)
+    await view.capture(name="mosaic-mobile-compact-actions", target=page.locator("#app"))
+
+    await (
+        page.locator("[data-mosaic-pane-kind='actions']")
+        .get_by_role("button", name="View details for echo the test repository handle back")
+        .click()
+    )
+    await expect(page.locator("[data-mosaic-pane-kind='action']")).to_be_visible()
+    await view.capture(name="mosaic-mobile-action-detail", target=page.locator("#app"))
+    await page.get_by_role("button", name="Back to previous pane").click()
+    await expect(page.locator("[data-mosaic-pane-kind='actions']")).to_be_visible()
 
 
 if __name__ == "__main__":

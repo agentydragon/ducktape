@@ -2767,11 +2767,10 @@ class HarnessEventSource extends EventTarget {
       const pending =
         previewAction !== null
           ? [previewAction]
-          : includeCompactPodAction
-            ? [COMPACT_POD_ACTION]
-            : includePendingActions
-              ? ACTIONS.filter((request) => request.state === "decision_pending")
-              : [];
+          : [
+              ...(includePendingActions ? ACTIONS.filter((request) => request.state === "decision_pending") : []),
+              ...(includeCompactPodAction ? [COMPACT_POD_ACTION] : []),
+            ];
       this.dispatchEvent(new MessageEvent("snapshot", { data: JSON.stringify(pending) }));
       return;
     }
