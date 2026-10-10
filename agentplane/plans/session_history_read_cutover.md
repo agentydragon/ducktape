@@ -92,3 +92,18 @@ configuration plumbing, legacy writer/read branches, backfill/catch-up Job decla
 rollout gates. Remove temporary preflight RBAC after final checks. Retain useful regression tests,
 schema migration history and a concise completion record. Keep old raw data, spools and PVCs;
 flag/code cleanup is not authority to delete retained history.
+
+## Service feed lifecycle prerequisite
+
+Service history retains a protobuf attachment snapshot only after its published prefix is
+committed. A bounded probe of a stopped runner records EOF only on the runner's successful
+stream end; timeout, transport error, missing Sandbox, or a newer Event is not EOF. Newer
+snapshot cursors supersede older ones; delayed writers cannot rewind them, and conflicting
+snapshots at one cursor fail closed. An EOF bit means confirmed closure at the attached cursor,
+not a claim about later runner connectivity. Imported histories without a snapshot remain
+explicitly unknown. `ReadSessionEvents` returns this optional metadata with its captured
+watermark under the existing app reader authorization.
+
+This schema/RPC addition is a prerequisite, not the app lifecycle switch. The app still needs
+to adopt service snapshots at covered projection cursors, fold later lifecycle Events, preserve
+retained legacy terminal evidence, and expose projection lag/failure independently of runner EOF.

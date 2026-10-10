@@ -314,6 +314,8 @@ spec:
       fullnameOverride: kube-state-metrics
       metricLabelsAllowlist:
         - nodes=[storage.allegedly.works/tier]
+      nodeSelector:
+        topology.kubernetes.io/zone: hil-ovh
       rbac:
         extraRules:
           - apiGroups:

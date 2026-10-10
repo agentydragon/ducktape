@@ -6,6 +6,7 @@ filegroup(
         "env.py",
         "//agentplane/sandbox_service/session_history/migrations/versions:0001_session_history.py",
         "//agentplane/sandbox_service/session_history/migrations/versions:0002_session_open_reservations.py",
+        "//agentplane/sandbox_service/session_history/migrations/versions:0003_history_feed_state.py",
     ],
     visibility = ["//agentplane/sandbox_service/session_history:__pkg__"],
 )

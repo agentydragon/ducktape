@@ -14,11 +14,12 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from agentplane.grpc_options import grpc_channel_option_kvps
 from agentplane.protocol import event_log_pb2
+from agentplane.runner import protocol_pb2 as runner_pb2
 from agentplane.runner.client import RunnerClient
 from agentplane.runner.errors import RunnerError, StreamClosedError
 from agentplane.sandbox_service.destinations import DestinationResolver, DestinationUnavailableError
 from agentplane.sandbox_service.models import SandboxNotFoundError
-from agentplane.sandbox_service.protocol_pb2 import SandboxDestination
+from agentplane.sandbox_service.protocol_pb2 import SandboxDestination, SessionFeedState
 from agentplane.sandbox_service.session_history.store import HistoryConflictError, HistoryLocator, Store
 from util.agent_sandbox import OperatingMode
 
@@ -56,6 +57,22 @@ async def copy_confirmed_prefix(
                 batch.append(entry)
                 cursor = entry.cursor
             await store.append(locator.session_id, batch)
+        feed = SessionFeedState(attached=attachment.attached)
+        await store.record_feed_state(locator.session_id, feed)
+        if (
+            feed.attached.harness_state == runner_pb2.HARNESS_STATE_STOPPED
+            and feed.attached.setup_state != runner_pb2.SETUP_STATE_RUNNING
+        ):
+            # A stopped snapshot alone is not EOF. A racing new event is replayed
+            # on the next cycle; never advance a cursor merely by observing it.
+            try:
+                async with asyncio.timeout(1):
+                    await attachment.next_entry()
+            except StreamClosedError:
+                feed.ended = True
+                await store.record_feed_state(locator.session_id, feed)
+            except TimeoutError:
+                pass  # bounded probe, not terminal lifecycle evidence
         return through
     finally:
         attachment.cancel()
