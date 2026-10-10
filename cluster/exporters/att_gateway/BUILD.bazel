@@ -23,6 +23,7 @@ py_library(
 py_library(
     name = "settings",
     srcs = ["settings.py"],
+    visibility = ["//cluster/cdk8s/att_gateway_exporter:__pkg__"],
     deps = [
         "@pypi//pydantic",
         "@pypi//pydantic_settings",

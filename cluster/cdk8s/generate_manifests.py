@@ -77,6 +77,7 @@ from cluster.cdk8s.artifact_generators import (
     artifact_generators as artifact_generators_factory,
     write_artifact_generators,
 )
+from cluster.cdk8s.att_gateway_exporter import app as att_gateway_exporter_app
 from cluster.cdk8s.atuin import server as atuin_server, user_provisioner as atuin_user_provisioner
 from cluster.cdk8s.authentik import (
     app as authentik_app,
@@ -1227,6 +1228,25 @@ def generate_manifests(root: Path) -> None:
         external_secrets_operator_kustomization,
         grafana_operator_kustomization,
     )
+    att_gateway_exporter_artifact = artifact(
+        "att-gateway-exporter", att_gateway_exporter_app.OUTPUT_DIR, att_gateway_exporter_app.PINS_DIR
+    )
+    att_gateway_exporter_app.att_gateway_exporter(
+        flux_chart,
+        write_directory(
+            root,
+            att_gateway_exporter_artifact,
+            att_gateway_exporter_app.chart,
+            components=[posixpath.relpath(att_gateway_exporter_app.PINS_DIR, att_gateway_exporter_app.OUTPUT_DIR)],
+            config_map_generator=grafana_dashboards.config_map_generator(
+                root, att_gateway_exporter_app.OUTPUT_DIR, [att_gateway_exporter_app.DASHBOARD]
+            ),
+            configurations=[grafana_dashboards.write_kustomize_config(root, att_gateway_exporter_app.OUTPUT_DIR)],
+        ),
+        monitoring_namespace_kustomization,
+        monitoring_crds_kustomization,
+        grafana_operator_kustomization,
+    )
     grocy_sf_artifact = artifact("grocy-sf", grocy_app.output_dir("sf"), grocy_mcp.output_dir("sf"), grocy_mcp.PINS_DIR)
     grocy_sf_kustomization = grocy_flux_kustomizations.grocy_sf(
         flux_chart,
@@ -1675,6 +1695,7 @@ def generate_manifests(root: Path) -> None:
             github_api_proxy_artifact,
             github_tf_artifact,
             github_exporter_artifact,
+            att_gateway_exporter_artifact,
             goldilocks_artifact,
             google_mcp_artifact,
             grocy_sf_user_perms_artifact,

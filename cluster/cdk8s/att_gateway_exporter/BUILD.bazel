@@ -1,0 +1,27 @@
+# gazelle:ignore
+
+load("//devinfra/python:defs.bzl", "py_library")
+
+py_library(
+    name = "app",
+    srcs = ["app.py"],
+    data = ["dashboard.json"],
+    visibility = ["//cluster/cdk8s:__pkg__"],
+    deps = [
+        "//cluster/cdk8s:flux",
+        "//cluster/cdk8s:grafana_dashboards",
+        "//cluster/cdk8s:manifest_roots",
+        "//cluster/cdk8s:node_scheduling",
+        "//cluster/cdk8s:pod_policy",
+        "//cluster/cdk8s:service_ref",
+        "//cluster/cdk8s/forgejo_registry:chart",
+        "//cluster/cdk8s/providers/grafana_operator:grafana_dashboard",
+        "//cluster/cdk8s/providers/grafana_operator:grafanadashboard",
+        "//cluster/cdk8s/providers/prometheus_operator:service_monitor",
+        "//cluster/cdk8s/providers/prometheus_operator:servicemonitor",
+        "//cluster/exporters/att_gateway:settings",
+        "//util:settings_contract",
+        "@pypi//cdk8s",
+        "@pypi//cdk8s_plus_34",
+    ],
+)
