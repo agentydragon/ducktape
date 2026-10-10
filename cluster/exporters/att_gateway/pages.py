@@ -211,7 +211,9 @@ def parse_sysinfo(html: str) -> SysInfo:
         hardware=_field(fields, "Hardware Version"),
         uptime_seconds=int(_field(fields, "Time Since Last Reboot")),
         # A trailing Z means the gateway has no time zone set and runs on UTC, as do its logs.
-        clock=datetime.fromisoformat(clock.removesuffix("Z")) if (clock := _field(fields, "Current Date/Time")) else None,
+        clock=datetime.fromisoformat(clock.removesuffix("Z"))
+        if (clock := _field(fields, "Current Date/Time"))
+        else None,
     )
 
 

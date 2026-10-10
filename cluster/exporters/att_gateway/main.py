@@ -20,15 +20,15 @@ from dataclasses import dataclass
 from datetime import UTC
 
 import httpx
-from pydantic import SecretStr
 from prometheus_client import REGISTRY, start_http_server
 from prometheus_client.core import CounterMetricFamily, GaugeMetricFamily, Metric
 from prometheus_client.registry import Collector
+from pydantic import SecretStr
 
 from cluster.exporters.att_gateway.pages import (
     Broadband,
-    Fiber,
     Direction,
+    Fiber,
     Lan,
     Nat,
     Page,

@@ -65,9 +65,7 @@ async def test_exports_every_page() -> None:
     assert registry.get_sample_value("att_gateway_lan_port_receive_errors_total", {"port": "1"}) == 18474
     assert registry.get_sample_value("att_gateway_nat_sessions_in_use") == 116
     assert registry.get_sample_value("att_gateway_nat_ipv4_sessions", {"source": "192.168.1.72"}) == 44
-    assert (
-        registry.get_sample_value("att_gateway_speedtest_throughput_bps", {"direction": "downstream"}) == 1184.49e6
-    )
+    assert registry.get_sample_value("att_gateway_speedtest_throughput_bps", {"direction": "downstream"}) == 1184.49e6
 
 
 async def test_without_access_code_skips_pages_behind_it() -> None:
