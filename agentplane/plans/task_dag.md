@@ -843,7 +843,6 @@ are irreplaceable, and a node that deletes a column or row stops for the operato
 
 ```mermaid
 flowchart TD
-    SESSION_REGISTRY_MOVE[Candidate: Sandbox Service Session records in its own database]
     HISTORY_SESSION_COLUMNS_DROP[Blocked: drop registry columns from the history database]
     HISTORY_STORE_MOVE[Blocked: history store and migrations move to the History Service]
     HISTORY_WRITER_SWITCH_RETIRE[Blocked: delete the history_writer switch]
@@ -855,8 +854,6 @@ flowchart TD
     SANDBOX_LOCAL_HISTORY_RETIRE[Delete Sandbox Service ingester and store]
     APP_PROJECTOR_RETIRE[Delete app projector]
     HISTORY_SERVICE_OWNERSHIP[History Service ownership]
-    SESSION_REGISTRY_MOVE --> SANDBOX_LOCAL_HISTORY_RETIRE
-    SESSION_REGISTRY_MOVE --> HISTORY_SESSION_COLUMNS_DROP
     HISTORY_WRITE_HANDOFF --> HISTORY_SESSION_COLUMNS_DROP
     SANDBOX_LOCAL_HISTORY_RETIRE --> HISTORY_STORE_MOVE
     SANDBOX_LOCAL_HISTORY_RETIRE --> HISTORY_WRITER_SWITCH_RETIRE
@@ -867,32 +864,9 @@ flowchart TD
     APP_PROJECTOR_RETIRE --> APP_ELECTRIC_RETIRE
 ```
 
-### `SESSION_REGISTRY_MOVE` — Session records in the Sandbox Service's database
-
-**Candidate; migrations follow the runner channel's `0003_submission_attempt`.** The history
-database's `session_history` is also the Sandbox Service's Session registry: public Session ID,
-runner locator and Sandbox incarnation, Open reservation (`open_key`, `open_request`,
-`launch_spec`) and the `WatchSessions` change position. `CreateSession`, `OpenSession`,
-`LookupSession`, `WatchSessions` and inventory read it. Move it into `sandbox_commands` as
-`session` with its own `session_change_position` sequence (`0004_session`):
-
-- At startup, under an advisory lock, the Sandbox Service copies every registry row missing from
-  `session`, with its public ID, locator, reservation and position, refuses a row that differs from
-  the one already copied, and sets the sequence past the largest position. Only then does it serve.
-- The registry RPCs, `WatchSessions` and its `NOTIFY` move to `session`. Create and Open commit the
-  registry row first, then insert the history row with the same values, so both ingesters still
-  find the row they append to; an Open retry repeats the history insert.
-- This release deploys with `Recreate`: a replica allocating positions from the history sequence
-  must never run beside one allocating from the new sequence, or a `WatchSessions` reader could skip
-  a change. Rolling deploys return in the next release.
-
-The history tables keep the Session ID with no foreign key into the registry. Verify on staging that
-every public Session ID resolves to the same locator before and after, and that the History Service
-ingester's `WatchSessions` resumes without losing a change.
-
 ### `HISTORY_SESSION_COLUMNS_DROP` — history keeps only history
 
-**Blocked on the registry move and the write handoff; stops for the operator.** Ingesters create
+**Blocked on the write handoff; stops for the operator.** Ingesters create
 history rows from the feed; in the history database's `session_history` nothing reads the Open
 reservation or the change position, and the runner session ID only names stored feed snapshots.
 Drop all three, with their indexes and the `session_change_position` sequence, once feed snapshots
