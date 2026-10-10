@@ -155,7 +155,7 @@ describe("service worker notifications", () => {
     expect({ title: notice.title, body: notice.body }).toMatchInlineSnapshot(`
       {
         "body": "$ df -h · Timeout 30 s",
-        "title": "Check disk space · SSH exec · deploy@build-01",
+        "title": "Check disk space · Run command on deploy@build-01",
       }
     `);
   });
