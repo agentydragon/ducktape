@@ -102,12 +102,7 @@ class SandboxService(Construct):
             "config",
             metadata=ApiObjectMetadata(name=f"{NAME}-config", namespace=env.namespace),
             model=Settings,
-            # CLEANUP(added 2026-10-10): Render runner_channel_audience/runner_channel_port again (drop this
-            #   exclude) once staging and testing pin a sandbox-service image built from 0390dd06542f or later;
-            #   older images reject them as unknown fields. The values are the Settings defaults.
-            content=settings.model_dump(
-                mode="json", exclude_none=True, exclude={"runner_channel_audience", "runner_channel_port"}
-            )
+            content=settings.model_dump(mode="json", exclude_none=True)
             | {
                 "kubernetes_binding_cleanup_namespaces": sorted(settings.kubernetes_binding_cleanup_namespaces),
                 "caller_accounts": [
