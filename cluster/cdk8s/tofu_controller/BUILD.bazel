@@ -5,13 +5,17 @@ load("//devinfra/python:defs.bzl", "py_library")
 py_library(
     name = "release",
     srcs = ["release.py"],
+    data = ["@ducktape_tofu_controller//:terraform_crd"],
     visibility = ["//cluster/cdk8s:__pkg__"],
     deps = [
         "//cluster/cdk8s:flux",
         "//cluster/cdk8s:helm",
+        "//cluster/cdk8s:image_automation",
         "//cluster/cdk8s:manifest_roots",
         "//cluster/cdk8s:terraform",
         "//cluster/cdk8s/providers/flux:helmrelease",
+        "//cluster/cdk8s/providers/flux:image_repository",
+        "//util/bazel:runfiles",
         "@pypi//cdk8s",
     ],
 )

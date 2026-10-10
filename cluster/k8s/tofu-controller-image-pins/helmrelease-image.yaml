@@ -1,0 +1,14 @@
+# The controller image is a Helm value, not a container field, so the pin is a HelmRelease
+# patch rather than an `images:` entry. Both fields carry a marker: until CI has pushed the
+# patched image they name upstream's, and the first image-policy write switches the repository
+# too (cluster/cdk8s/AGENTS.md § image-pins on the `:tag` marker form).
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: tofu-controller
+  namespace: flux-system
+spec:
+  values:
+    image:
+      repository: ghcr.io/flux-iac/tofu-controller # {"$imagepolicy": "flux-system:tofu-controller:name"}
+      tag: v0.16.5 # {"$imagepolicy": "flux-system:tofu-controller:tag"}

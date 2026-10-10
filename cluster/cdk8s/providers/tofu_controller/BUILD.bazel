@@ -6,7 +6,7 @@ load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
 cdk8s_import(
     name = "terraform",
-    crd = "@tofu_controller_terraform_crd//file",
+    crd = "@ducktape_tofu_controller//:terraform_crd",
     module_name = "tofu_controller",
     module_path = "io/fluxcd/contrib/infra",
     visibility = ["//cluster/cdk8s:__subpackages__"],

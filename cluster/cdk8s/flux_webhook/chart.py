@@ -86,6 +86,7 @@ def chart(app: App) -> Chart:
             # Public Flux control objects retain a dedicated sparse checkout. Reconcile
             # it immediately on a Ducktape push rather than waiting for its poll.
             ReceiverResource.git_repository("ducktape", namespace="ducktape-flux"),
+            ReceiverResource.image_repository("tofu-controller", namespace="flux-system"),
         ],
     )
     grafana = Provider(

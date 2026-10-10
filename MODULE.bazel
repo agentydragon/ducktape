@@ -60,6 +60,7 @@ bazel_dep(name = "package_metadata", version = "0.0.13")  # Required by image_pi
 
 bazel_dep(name = "ducktape_activitywatch", version = "0.1.0", dev_dependency = True)
 bazel_dep(name = "ducktape_cli_proxy_api", version = "0.1.0", dev_dependency = True)
+bazel_dep(name = "ducktape_tofu_controller", version = "0.1.0", dev_dependency = True)
 
 bazel_dep(name = "ducktape_haku", version = "0.1.0")
 
@@ -135,6 +136,11 @@ local_path_override(
 local_path_override(
     module_name = "ducktape_cli_proxy_api",
     path = "third_party/cli_proxy_api",
+)
+
+local_path_override(
+    module_name = "ducktape_tofu_controller",
+    path = "third_party/tofu_controller",
 )
 
 local_path_override(
@@ -950,14 +956,6 @@ http_file(
     downloaded_file_path = "notification.toolkit.fluxcd.io_alerts.yaml",
     sha256 = "2b8f79249b39881bd23c49868f114c44c6e632dfcda451da576adfa16c64226f",
     urls = ["https://raw.githubusercontent.com/fluxcd/notification-controller/v1.9.4/config/crd/bases/notification.toolkit.fluxcd.io_alerts.yaml"],
-)
-
-# Match the deployed version in cluster/cdk8s/tofu_controller/release.py.
-http_file(
-    name = "tofu_controller_terraform_crd",
-    downloaded_file_path = "infra.contrib.fluxcd.io_terraforms.yaml",
-    sha256 = "8562f1a62ab932dd34e84baa0a5163da92751cf9fabaf25d60308df500d97fe4",
-    urls = ["https://raw.githubusercontent.com/flux-iac/tofu-controller/v0.16.5/config/crd/bases/infra.contrib.fluxcd.io_terraforms.yaml"],
 )
 
 # Match kube-prometheus-stack's operator version tracked by

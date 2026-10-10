@@ -35,6 +35,10 @@
       "test": "//cluster/proxies/loki_read_proxy/...",
       "registry": "forgejo"
     },
+    "tofu-controller": {
+      "target": "@ducktape_tofu_controller//:image",
+      "test": "@ducktape_tofu_controller//:tests"
+    },
     "exec-backend": {
       "target": "//mcp_infra/exec:direct_image",
       "test": "//mcp_infra/exec/..."

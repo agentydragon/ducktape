@@ -1,0 +1,6 @@
+diff --git a/config/crd/bases/BUILD.bazel b/config/crd/bases/BUILD.bazel
+new file mode 100644
+--- /dev/null
++++ b/config/crd/bases/BUILD.bazel
+@@ -0,0 +1 @@
++exports_files(["infra.contrib.fluxcd.io_terraforms.yaml"])

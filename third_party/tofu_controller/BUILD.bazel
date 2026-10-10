@@ -1,0 +1,67 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_test")
+load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load")
+load("@rules_pkg//pkg:mappings.bzl", "pkg_attributes", "pkg_files", "strip_prefix")
+load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
+
+go_test(
+    name = "external_artifact_source_test",
+    srcs = ["external_artifact_source_test.go"],
+    embed = ["@com_github_flux_iac_tofu_controller//controllers"],
+    deps = [
+        "@com_github_flux_iac_tofu_controller_api//v1alpha2",
+        "@com_github_fluxcd_pkg_apis_meta//:meta",
+        "@com_github_fluxcd_source_controller_api//v1:api",
+        "@com_github_onsi_gomega//:gomega",
+        "@io_k8s_apimachinery//pkg/apis/meta/v1:meta",
+        "@io_k8s_apimachinery//pkg/runtime",
+        "@io_k8s_apimachinery//pkg/types",
+        "@io_k8s_sigs_controller_runtime//pkg/client/fake",
+        "@io_k8s_sigs_controller_runtime//pkg/reconcile",
+    ],
+)
+
+test_suite(
+    name = "tests",
+    tests = [":external_artifact_source_test"],
+    visibility = ["//visibility:public"],
+)
+
+# The patched Terraform CRD; the cluster installs this instead of the Helm chart's copy. Copied
+# into this package so a dependent reaches it at a runfiles path under this module's name.
+genrule(
+    name = "terraform_crd",
+    srcs = ["@com_github_flux_iac_tofu_controller//config/crd/bases:infra.contrib.fluxcd.io_terraforms.yaml"],
+    outs = ["infra.contrib.fluxcd.io_terraforms.yaml"],
+    cmd = "cp $< $@",
+    visibility = ["//visibility:public"],
+)
+
+pkg_files(
+    name = "manager_files",
+    srcs = ["@com_github_flux_iac_tofu_controller//cmd/manager"],
+    attributes = pkg_attributes(mode = "0755"),
+    renames = {"@com_github_flux_iac_tofu_controller//cmd/manager": "tofu-controller"},
+    strip_prefix = strip_prefix.files_only(),
+)
+
+pkg_tar(
+    name = "app_layer",
+    srcs = [":manager_files"],
+)
+
+# distroless/cc, not static: rules_go's default pure="auto" links the binary dynamically
+# (upstream's Dockerfile builds CGO_ENABLED=0 onto scratch), as third_party/osmmcp found.
+oci_image(
+    name = "image",
+    base = "@tofu_controller_distroless_cc_linux_amd64",
+    entrypoint = ["/tofu-controller"],
+    labels = {"org.opencontainers.image.source": "https://github.com/agentydragon/ducktape"},
+    tars = [":app_layer"],
+    visibility = ["//visibility:public"],
+)
+
+oci_load(
+    name = "load",
+    image = ":image",
+    repo_tags = ["tofu-controller:local"],
+)

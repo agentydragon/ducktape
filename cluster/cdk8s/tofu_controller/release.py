@@ -1,16 +1,26 @@
-"""tofu-controller: its HelmRepository and the HelmRelease, which also installs the
-`Terraform` CRD.
+"""tofu-controller: its HelmRepository and the HelmRelease, the `Terraform` CRD, and the Flux
+image automation that rolls the controller image.
+
+The controller image is ours: `third_party/tofu_controller` patches upstream to accept a Flux
+`ExternalArtifact` as a `Terraform` source. So the CRD installed here is that module's patched
+copy, not the chart's (the HelmRelease skips CRDs), and a post-renderer grants the chart's
+manager ClusterRole read access to ExternalArtifacts. `PINS_DIR` sets the HelmRelease's
+controller image from the image policy below.
 
 `values` is an untyped dict: Helm values carry no schema for `cdk8s_import` to ingest.
 """
 
 from __future__ import annotations
 
-from cdk8s import App, Chart
+from cdk8s import ApiObjectMetadata, App, Chart, Include
 from flux_helm.io.fluxcd.toolkit.helm import (
     HelmReleaseSpecInstall,
     HelmReleaseSpecInstallCrds,
     HelmReleaseSpecInstallRemediation,
+    HelmReleaseSpecPostRenderers,
+    HelmReleaseSpecPostRenderersKustomize,
+    HelmReleaseSpecPostRenderersKustomizePatches,
+    HelmReleaseSpecPostRenderersKustomizePatchesTarget,
     HelmReleaseSpecUpgrade,
     HelmReleaseSpecUpgradeCrds,
 )
@@ -18,15 +28,43 @@ from flux_helm.io.fluxcd.toolkit.helm import (
 from cluster.cdk8s import flux, terraform
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.helm import helm_release, https_helm_repository
-from cluster.cdk8s.manifest_roots import GENERATED_ROOT
+from cluster.cdk8s.image_automation import newest_ci_tag_policy
+from cluster.cdk8s.manifest_roots import GENERATED_ROOT, HAND_WRITTEN_ROOT
+from cluster.cdk8s.providers.flux.image_repository import ImageRepository
+from util.bazel.runfiles import get_required_path
 
 NAME = "tofu-controller"
 NAMESPACE = "flux-system"
 OUTPUT_DIR = f"{GENERATED_ROOT}/tofu-controller"
+PINS_DIR = f"{HAND_WRITTEN_ROOT}/{NAME}-image-pins"
+# GHCR, not the Forgejo registry: the Forgejo pull credential's user is created by a Terraform
+# this controller applies, so a Forgejo-hosted controller could never start on a fresh cluster.
+IMAGE = "ghcr.io/agentydragon/tofu-controller"
+_CRD = "ducktape_tofu_controller/infra.contrib.fluxcd.io_terraforms.yaml"
+# The chart's `tofu-manager-role` lists the source kinds upstream supports; the patched
+# controller also reads (and watches) ExternalArtifacts.
+_EXTERNAL_ARTIFACT_RBAC_PATCH = """\
+- op: add
+  path: /rules/-
+  value:
+    apiGroups: [source.toolkit.fluxcd.io]
+    resources: [externalartifacts]
+    verbs: [get, list, watch]
+- op: add
+  path: /rules/-
+  value:
+    apiGroups: [source.toolkit.fluxcd.io]
+    resources: [externalartifacts/status]
+    verbs: [get]
+"""
 
 
 def chart(app: App) -> Chart:
     chart = Chart(app, NAME, disable_resource_name_hashes=True)
+    crd = Include(chart, "terraform-crd", url=str(get_required_path(_CRD)))
+    for obj in crd.api_objects:
+        # Pruning the CRD would delete every Terraform with it.
+        obj.metadata.add_annotation("kustomize.toolkit.fluxcd.io/prune", "disabled")
     helm_release(
         chart,
         NAME,
@@ -36,9 +74,23 @@ def chart(app: App) -> Chart:
         version="0.16.5",
         interval="15m",
         install=HelmReleaseSpecInstall(
-            crds=HelmReleaseSpecInstallCrds.CREATE, remediation=HelmReleaseSpecInstallRemediation(retries=3)
+            crds=HelmReleaseSpecInstallCrds.SKIP, remediation=HelmReleaseSpecInstallRemediation(retries=3)
         ),
-        upgrade=HelmReleaseSpecUpgrade(crds=HelmReleaseSpecUpgradeCrds.CREATE_REPLACE),
+        upgrade=HelmReleaseSpecUpgrade(crds=HelmReleaseSpecUpgradeCrds.SKIP),
+        post_renderers=[
+            HelmReleaseSpecPostRenderers(
+                kustomize=HelmReleaseSpecPostRenderersKustomize(
+                    patches=[
+                        HelmReleaseSpecPostRenderersKustomizePatches(
+                            target=HelmReleaseSpecPostRenderersKustomizePatchesTarget(
+                                kind="ClusterRole", name="tofu-manager-role"
+                            ),
+                            patch=_EXTERNAL_ARTIFACT_RBAC_PATCH,
+                        )
+                    ]
+                )
+            )
+        ],
         values={
             # Gitops Terraform CRs read the ducktape GitRepository in the Flux namespace.
             "allowCrossNamespaceRefs": terraform.NAMESPACE != flux.NAMESPACE,
@@ -52,6 +104,16 @@ def chart(app: App) -> Chart:
             "resources": {"limits": {"cpu": "1000m", "memory": "1Gi"}, "requests": {"cpu": "100m", "memory": "128Mi"}},
             "logLevel": "info",
         },
+    )
+    newest_ci_tag_policy(
+        chart,
+        ImageRepository(
+            chart,
+            "image-repository",
+            metadata=ApiObjectMetadata(name=NAME, namespace=NAMESPACE),
+            image=IMAGE,
+            interval="5m",
+        ),
     )
     return chart
 

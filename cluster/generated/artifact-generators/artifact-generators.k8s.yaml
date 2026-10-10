@@ -115,6 +115,8 @@ spec:
     - copy:
         - from: "@repo/cluster/generated/tofu-controller/**"
           to: "@artifact/cluster/generated/tofu-controller/"
+        - from: "@repo/cluster/k8s/tofu-controller-image-pins/**"
+          to: "@artifact/cluster/k8s/tofu-controller-image-pins/"
       name: tofu-controller
       originRevision: "@repo"
     - copy:

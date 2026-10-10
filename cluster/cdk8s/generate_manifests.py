@@ -592,10 +592,17 @@ def generate_manifests(root: Path) -> None:
         write_directory(root, gateway_artifact, functools.partial(gateway.chart, mesh=mesh)),
         kyverno_kustomization,
     )
-    tofu_controller_artifact = artifact("tofu-controller", tofu_controller_release.OUTPUT_DIR)
+    tofu_controller_artifact = artifact(
+        "tofu-controller", tofu_controller_release.OUTPUT_DIR, tofu_controller_release.PINS_DIR
+    )
     tofu_controller_kustomization = tofu_controller_release.tofu_controller(
         flux_chart,
-        write_directory(root, tofu_controller_artifact, tofu_controller_release.chart),
+        write_directory(
+            root,
+            tofu_controller_artifact,
+            tofu_controller_release.chart,
+            components=[posixpath.relpath(tofu_controller_release.PINS_DIR, tofu_controller_release.OUTPUT_DIR)],
+        ),
         kyverno_kustomization,
     )
     monitoring_home_switch_artifact = artifact("monitoring-home-switch", monitoring_home_switch.OUTPUT_DIR)

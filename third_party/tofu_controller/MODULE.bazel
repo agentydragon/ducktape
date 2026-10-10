@@ -1,0 +1,72 @@
+module(
+    name = "ducktape_tofu_controller",
+    version = "0.1.0",
+)
+
+bazel_dep(name = "gazelle", version = "0.54.0", repo_name = "bazel_gazelle")
+bazel_dep(name = "rules_go", version = "0.63.0", repo_name = "io_bazel_rules_go")
+bazel_dep(name = "rules_oci", version = "2.3.0")
+bazel_dep(name = "rules_pkg", version = "1.3.0")
+
+oci = use_extension("@rules_oci//oci:extensions.bzl", "oci")
+oci.pull(
+    name = "tofu_controller_distroless_cc",
+    digest = "sha256:9b615fff20e1a4fad29c2b30562580b212c7dd5e2225236735cca0070ed11c78",
+    image = "gcr.io/distroless/cc-debian13",
+    platforms = ["linux/amd64"],
+)
+use_repo(oci, "tofu_controller_distroless_cc_linux_amd64")
+
+go_sdk = use_extension("@io_bazel_rules_go//go:extensions.bzl", "go_sdk")
+go_sdk.download(version = "1.26.4")
+
+go_deps = use_extension("@bazel_gazelle//:extensions.bzl", "go_deps", isolate = True)
+go_deps.from_file(go_mod = "//:go.mod")
+
+# Upstream's api/ is a nested Go module, so it is a separate archive with its own patch.
+# Both archives are the Go module proxy's zips of the v0.16.5 tag commit (4cb9876f84af).
+go_deps.archive_override(
+    patch_strip = 1,
+    patches = [
+        "//patches:external-artifact-source.patch",
+        "//patches:bazel.patch",
+    ],
+    path = "github.com/flux-iac/tofu-controller",
+    sha256 = "6a806e983e1c08c9e95efaadfdb748b74a32afc85c2112ce9f0ee6ccf136be83",
+    strip_prefix = "github.com/flux-iac/tofu-controller@v0.16.5",
+    urls = ["https://proxy.golang.org/github.com/flux-iac/tofu-controller/@v/v0.16.5.zip"],
+)
+go_deps.archive_override(
+    patch_strip = 1,
+    patches = ["//patches:api-external-artifact.patch"],
+    path = "github.com/flux-iac/tofu-controller/api",
+    sha256 = "c89b20ae42e84aa228cda8cc671cd7366d8010d68071352b1a9b3a3e8bfd2ccb",
+    strip_prefix = "github.com/flux-iac/tofu-controller/api@v0.0.0-20260806140806-4cb9876f84af",
+    urls = ["https://proxy.golang.org/github.com/flux-iac/tofu-controller/api/@v/v0.0.0-20260806140806-4cb9876f84af.zip"],
+)
+# Use upstream's checked-in runner.pb.go: a generated go_proto_library would link rules_go's own
+# copy of grpc alongside this module's.
+go_deps.gazelle_override(
+    build_file_generation = "on",
+    directives = ["gazelle:proto disable"],
+    path = "github.com/flux-iac/tofu-controller",
+)
+
+# Bazel resolves a repo-relative `//conditions` label to the main repository's `conditions`
+# package, so the generated `//conditions` dependencies of fluxcd/pkg/runtime fail to load.
+# Spell them with the repository's own name. sed rather than a patch: it rewrites Gazelle's
+# output, whose line layout is not pinned.
+go_deps.module_override(
+    patch_cmds = ["""grep -rl --include=BUILD.bazel '"//conditions' . | xargs sed -i 's#"//conditions#"@com_github_fluxcd_pkg_runtime//conditions#g'"""],
+    path = "github.com/fluxcd/pkg/runtime",
+)
+use_repo(
+    go_deps,
+    "com_github_flux_iac_tofu_controller",
+    "com_github_flux_iac_tofu_controller_api",
+    "com_github_fluxcd_pkg_apis_meta",
+    "com_github_fluxcd_source_controller_api",
+    "com_github_onsi_gomega",
+    "io_k8s_apimachinery",
+    "io_k8s_sigs_controller_runtime",
+)

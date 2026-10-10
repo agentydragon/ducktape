@@ -1,0 +1,89 @@
+diff --git a/config/crd/bases/infra.contrib.fluxcd.io_terraforms.yaml b/config/crd/bases/infra.contrib.fluxcd.io_terraforms.yaml
+index ca05c05..3820c5d 100644
+--- a/config/crd/bases/infra.contrib.fluxcd.io_terraforms.yaml
++++ b/config/crd/bases/infra.contrib.fluxcd.io_terraforms.yaml
+@@ -10920,6 +10920,7 @@ spec:
+                     - GitRepository
+                     - Bucket
+                     - OCIRepository
++                    - ExternalArtifact
+                     type: string
+                   name:
+                     description: Name of the referent.
+diff --git a/config/rbac/role.yaml b/config/rbac/role.yaml
+index f8b15f2..f7f3c93 100644
+--- a/config/rbac/role.yaml
++++ b/config/rbac/role.yaml
+@@ -55,6 +55,7 @@ rules:
+   - source.toolkit.fluxcd.io
+   resources:
+   - buckets
++  - externalartifacts
+   - gitrepositories
+   - ocirepositories
+   verbs:
+@@ -65,6 +66,7 @@ rules:
+   - source.toolkit.fluxcd.io
+   resources:
+   - buckets/status
++  - externalartifacts/status
+   - gitrepositories/status
+   - ocirepositories/status
+   verbs:
+diff --git a/controllers/tf_controller.go b/controllers/tf_controller.go
+index 934c42f..da93752 100644
+--- a/controllers/tf_controller.go
++++ b/controllers/tf_controller.go
+@@ -103,8 +103,8 @@ type TerraformReconciler struct {
+ //+kubebuilder:rbac:groups=infra.contrib.fluxcd.io,resources=terraforms,verbs=get;list;watch;create;update;patch;delete
+ //+kubebuilder:rbac:groups=infra.contrib.fluxcd.io,resources=terraforms/status,verbs=get;update;patch
+ //+kubebuilder:rbac:groups=infra.contrib.fluxcd.io,resources=terraforms/finalizers,verbs=get;create;update;patch;delete
+-//+kubebuilder:rbac:groups=source.toolkit.fluxcd.io,resources=buckets;gitrepositories;ocirepositories,verbs=get;list;watch
+-//+kubebuilder:rbac:groups=source.toolkit.fluxcd.io,resources=buckets/status;gitrepositories/status;ocirepositories/status,verbs=get
++//+kubebuilder:rbac:groups=source.toolkit.fluxcd.io,resources=buckets;gitrepositories;ocirepositories;externalartifacts,verbs=get;list;watch
++//+kubebuilder:rbac:groups=source.toolkit.fluxcd.io,resources=buckets/status;gitrepositories/status;ocirepositories/status;externalartifacts/status,verbs=get
+ //+kubebuilder:rbac:groups="",resources=configmaps;secrets;serviceaccounts,verbs=get;list;watch
+ //+kubebuilder:rbac:groups="",resources=events,verbs=create;patch
+ 
+@@ -719,6 +719,12 @@ func (r *TerraformReconciler) SetupWithManager(mgr ctrl.Manager, maxConcurrentRe
+ 		return fmt.Errorf("failed setting index fields: %w", err)
+ 	}
+ 
++	// Index the Terraforms by the ExternalArtifact references they (may) point at.
++	if err := mgr.GetCache().IndexField(context.TODO(), &infrav1.Terraform{}, infrav1.ExternalArtifactIndexKey,
++		r.IndexBy(sourcev1.ExternalArtifactKind)); err != nil {
++		return fmt.Errorf("failed setting index fields: %w", err)
++	}
++
+ 	// Configure the retryable http client used for fetching artifacts.
+ 	// By default, it retries 10 times within a 3.5 minutes window.
+ 	httpClient := retryablehttp.NewClient()
+@@ -750,6 +756,11 @@ func (r *TerraformReconciler) SetupWithManager(mgr ctrl.Manager, maxConcurrentRe
+ 			handler.EnqueueRequestsFromMapFunc(r.requestsForRevisionChangeOf(infrav1.OCIRepositoryIndexKey)),
+ 			builder.WithPredicates(SourceRevisionChangePredicate{}),
+ 		).
++		Watches(
++			&sourcev1.ExternalArtifact{},
++			handler.EnqueueRequestsFromMapFunc(r.requestsForRevisionChangeOf(infrav1.ExternalArtifactIndexKey)),
++			builder.WithPredicates(SourceRevisionChangePredicate{}),
++		).
+ 		Watches(
+ 			&corev1.Secret{},
+ 			handler.EnqueueRequestForOwner(mgr.GetScheme(), mgr.GetRESTMapper(), &infrav1.Terraform{}, handler.OnlyControllerOwner()),
+@@ -924,6 +935,16 @@ func (r *TerraformReconciler) getSource(ctx context.Context, terraform *infrav1.
+ 			return sourceObj, fmt.Errorf("unable to get source '%s': %w", sourceReference, err)
+ 		}
+ 		sourceObj = &repository
++	case sourcev1.ExternalArtifactKind:
++		var artifact sourcev1.ExternalArtifact
++		err := r.Get(ctx, sourceReference, &artifact)
++		if err != nil {
++			if apierrors.IsNotFound(err) {
++				return sourceObj, err
++			}
++			return sourceObj, fmt.Errorf("unable to get source '%s': %w", sourceReference, err)
++		}
++		sourceObj = &artifact
+ 	default:
+ 		return sourceObj, fmt.Errorf("source `%s` kind '%s' not supported",
+ 			terraform.Spec.SourceRef.Name, terraform.Spec.SourceRef.Kind)

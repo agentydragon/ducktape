@@ -1,0 +1,27 @@
+diff --git a/v1alpha2/reference_types.go b/v1alpha2/reference_types.go
+index cd78e8f..d12c7e0 100644
+--- a/v1alpha2/reference_types.go
++++ b/v1alpha2/reference_types.go
+@@ -18,7 +18,7 @@ type CrossNamespaceSourceReference struct {
+ 	APIVersion string `json:"apiVersion,omitempty"`
+ 
+ 	// Kind of the referent.
+-	// +kubebuilder:validation:Enum=GitRepository;Bucket;OCIRepository
++	// +kubebuilder:validation:Enum=GitRepository;Bucket;OCIRepository;ExternalArtifact
+ 	// +required
+ 	Kind string `json:"kind"`
+ 
+diff --git a/v1alpha2/terraform_types.go b/v1alpha2/terraform_types.go
+index a9827f6..b10018b 100644
+--- a/v1alpha2/terraform_types.go
++++ b/v1alpha2/terraform_types.go
+@@ -49,6 +49,9 @@ const (
+ 	BreakTheGlassAnnotation = "break-the-glass.tf-controller/requestedAt"
+ )
+ 
++// ExternalArtifactIndexKey indexes Terraforms by the Flux ExternalArtifact they reference.
++const ExternalArtifactIndexKey = ".metadata.externalArtifact"
++
+ type ReadInputsFromSecretSpec struct {
+ 	// +required
+ 	Name string `json:"name"`

@@ -16,6 +16,10 @@ spec:
       kind: GitRepository
       name: ducktape
       namespace: ducktape-flux
+    - apiVersion: image.toolkit.fluxcd.io/v1
+      kind: ImageRepository
+      name: tofu-controller
+      namespace: flux-system
   secretRef:
     name: github-webhook-token
   type: github
