@@ -973,7 +973,6 @@ flowchart TD
     HISTORY_PROJECTION_NAMING[Decision: names of the History Service projection tables]
     APP_ELECTRIC_RETIRE[Blocked: remove Electric's access to the app database]
     SANDBOX_BINDING_ANNOTATION_RENAME[Candidate: write session_defaults, not thread_defaults]
-    MIGRATION_TOOLING_RETIRE[Candidate: delete archive-migration tools and grants]
     PROTO_DIRECTORY[Unscheduled: cross-component protos under one proto directory]
     RUNNER_OUTBOUND_CHANNEL[Outbound command delivery peers]
     HISTORY_WRITE_HANDOFF[History Service ingester takes over]
@@ -1087,12 +1086,6 @@ plain name if it carries a history-specific one.
 **Candidate.** `sandbox_service/binding_storage.py` still writes the Sandbox binding annotation
 with the pre-cutover `thread_defaults` key so an old app could roll back. Write `session_defaults`
 and keep reading both for one release, then delete the translation.
-
-### `MIGRATION_TOOLING_RETIRE` — delete archive-migration leftovers
-
-**Candidate.** Inventory tools and grants that only served the archive cutover and delete them,
-starting with the operator-run preflight `sandbox_service/session_history/verify.py`
-(`:verify_bin`) and its test.
 
 ### `PROTO_DIRECTORY` — protocols in one place
 
