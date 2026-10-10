@@ -117,6 +117,17 @@ async def reconcile_admission(session: AsyncSession, session_id: UUID, entry: ev
     row.rejection = None
 
 
+async def record_receipt(session: AsyncSession, session_id: UUID, receipt: event_log_pb2.EventEntry) -> None:
+    """Record a receipt from the runner directly rather than from the contiguous journal.
+
+    It must come from the journal already being reconciled; the reconciliation cursor stays put.
+    """
+    progress = await session.get(db.AdmissionReconciliation, session_id)
+    if progress is not None and progress.source_id != receipt.origin.source_id:
+        raise SubmissionConflictError("admission source differs from the reconciled journal")
+    await reconcile_admission(session, session_id, receipt)
+
+
 class SubmissionStore:
     def __init__(self, engine: AsyncEngine) -> None:
         self._sessions = async_sessionmaker(engine, expire_on_commit=False)
@@ -168,10 +179,7 @@ class SubmissionStore:
             raise SubmissionConflictError("expected a command admission receipt")
         command_id = receipt.event.command_admitted.command.command_id
         async with self._sessions.begin() as session:
-            progress = await session.get(db.AdmissionReconciliation, session_id)
-            if progress is not None and progress.source_id != receipt.origin.source_id:
-                raise SubmissionConflictError("admission source differs from the reconciled journal")
-            await reconcile_admission(session, session_id, receipt)
+            await record_receipt(session, session_id, receipt)
             row = await session.get(db.CommandSubmission, (session_id, command_id))
             if row is None:
                 raise SubmissionNotFoundError(command_id)

@@ -7,11 +7,12 @@ there is no foreign key, and destination authorization happens before a row is w
 from datetime import datetime
 from uuid import UUID
 
-from sqlalchemy import BigInteger, CheckConstraint, DateTime, String, func
+from sqlalchemy import BigInteger, CheckConstraint, DateTime, String, UniqueConstraint, func
 from sqlalchemy.dialects.postgresql import ARRAY
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 from agentplane.protocol import command_pb2, event_log_pb2
+from agentplane.runner_channel import protocol_pb2 as channel_pb2
 from util.sqlalchemy_protobuf import ProtobufColumn
 
 # gazelle:include_dep @pypi//protobuf
@@ -33,6 +34,18 @@ class CommandSubmission(Base):
             "(state = 'rejected' AND admission IS NULL AND rejection IS NOT NULL)",
             name="submission_evidence",
         ),
+        CheckConstraint(
+            "(attempt_sandbox_uid IS NULL AND attempt_runner_session_id IS NULL AND attempt_deadline IS NULL "
+            "AND attempt_sent_epoch IS NULL AND attempt_refusal IS NULL) OR "
+            "(attempt_sandbox_uid IS NOT NULL AND attempt_runner_session_id IS NOT NULL "
+            "AND attempt_deadline IS NOT NULL)",
+            name="submission_attempt",
+        ),
+        CheckConstraint("attempt_sent_epoch IS NULL OR attempt_sent_epoch > 0", name="attempt_sent_epoch_positive"),
+        # A receipt names its command by the runner's Session and the command ID.
+        UniqueConstraint(
+            "attempt_sandbox_uid", "attempt_runner_session_id", "command_id", name="submission_attempt_destination"
+        ),
     )
 
     session_id: Mapped[UUID] = mapped_column(primary_key=True)
@@ -44,6 +57,20 @@ class CommandSubmission(Base):
     state: Mapped[str] = mapped_column(String)
     admission: Mapped[event_log_pb2.EventEntry | None] = mapped_column(ProtobufColumn(event_log_pb2.EventEntry))
     rejection: Mapped[str | None] = mapped_column(String(512))
+    # Delivery over the runner channel (`agentplane/docs/runner_channel.md` § Dispatch attempts), absent
+    # until the first channel submit. A pending submission is sent only while its attempt is open,
+    # before `attempt_deadline`, so a reconnecting runner is never sent stale work. Each submit
+    # reopens the same attempt.
+    attempt_sandbox_uid: Mapped[UUID | None] = mapped_column()
+    # The runner's own Session identifier, which `DeliverCommand` carries.
+    attempt_runner_session_id: Mapped[str | None] = mapped_column(String)
+    attempt_deadline: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # The connection epoch the open attempt was sent on; it is sent at most once per epoch.
+    attempt_sent_epoch: Mapped[int | None] = mapped_column(BigInteger)
+    # The runner's refusal of the open attempt. The submission stays pending.
+    attempt_refusal: Mapped[channel_pb2.CommandRefused | None] = mapped_column(
+        ProtobufColumn(channel_pb2.CommandRefused)
+    )
 
 
 class AdmissionReconciliation(Base):

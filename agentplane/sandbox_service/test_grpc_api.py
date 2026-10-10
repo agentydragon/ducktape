@@ -22,8 +22,11 @@ from agentplane.runner import protocol_pb2 as runner_pb2
 from agentplane.runner.client import RunnerClient
 from agentplane.runner.errors import RunnerError, StreamClosedError
 from agentplane.sandbox_service import protocol_pb2, wire
+from agentplane.sandbox_service.channel_delivery import ChannelDelivery
 from agentplane.sandbox_service.client import ReconnectRequiredError, SandboxServiceClient, ServiceError
 from agentplane.sandbox_service.commands import db as commands_db
+from agentplane.sandbox_service.commands.connections import ConnectionStore
+from agentplane.sandbox_service.commands.dispatch import DispatchStore
 from agentplane.sandbox_service.commands.store import SubmissionState, SubmissionStore
 from agentplane.sandbox_service.destinations import DestinationResolver
 from agentplane.sandbox_service.grpc_api import Resources
@@ -316,6 +319,42 @@ async def test_public_session_command_survives_a_lost_reply(
         with pytest.raises(ServiceError) as conflict:
             await runner.command(str(session_id), changed, after_cursor=0)
         assert conflict.value.code == grpc.StatusCode.ALREADY_EXISTS
+
+
+async def test_channel_routed_command_never_falls_back_to_the_relay(
+    resources: Resources, token_file: Path, peer: Peer, engine: AsyncEngine, submissions: SubmissionStore
+) -> None:
+    # A runner agreed commands once, and nothing has been heard from it since.
+    await ConnectionStore(engine).accept(
+        sandbox_uid=UUID(SANDBOX_UID),
+        pod_uid="test-pod-uid",
+        owner_replica="test-replica",
+        runner_boot_id="test-boot",
+        operations={"commands"},
+    )
+    store = Store(engine)
+    session_id = uuid4()
+    await store.open(
+        session_id,
+        sandbox_namespace=SANDBOX_NAMESPACE,
+        sandbox_name=SANDBOX,
+        sandbox_uid=UUID(SANDBOX_UID),
+        runner_session_id=f"r-{session_id}",
+    )
+    delivery = ChannelDelivery(
+        engine.url, dispatches=DispatchStore(engine), connections=ConnectionStore(engine), liveness_s=0
+    )
+    command = command_pb2.Command(command_id="channel", submit_input=command_pb2.SubmitInput(text="hi"))
+    async with service_client(
+        replace(resources, history=store, submissions=submissions, delivery=delivery), token_file
+    ) as remote:
+        runner = remote.runner(DESTINATION)
+        for session in (str(session_id), "legacy-runner-session"):
+            with pytest.raises(ServiceError) as unavailable:
+                await runner.command(session, command, after_cursor=0)
+            assert unavailable.value.code == grpc.StatusCode.UNAVAILABLE
+    assert peer.attachments.empty()
+    assert (await submissions.read(session_id, "channel")).state == SubmissionState.PENDING_ADMISSION
 
 
 async def test_lookup_open_scopes_reservation_and_waits_for_runner_confirmation(
