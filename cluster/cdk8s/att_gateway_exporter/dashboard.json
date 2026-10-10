@@ -992,6 +992,44 @@
           "sort": "none"
         }
       }
+    },
+    {
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "description": "The gateway's firewall log, sent by syslog and set by the att-gateway-exporter-syslog CronJob.",
+      "gridPos": {
+        "h": 10,
+        "w": 24,
+        "x": 0,
+        "y": 42
+      },
+      "id": 16,
+      "options": {
+        "dedupStrategy": "none",
+        "enableLogDetails": true,
+        "prettifyLogMessage": false,
+        "showCommonLabels": false,
+        "showLabels": false,
+        "showTime": true,
+        "sortOrder": "Descending",
+        "wrapLogMessage": true
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "editorMode": "code",
+          "expr": "{job=\"home-gateway\"}",
+          "queryType": "range",
+          "refId": "A"
+        }
+      ],
+      "title": "Firewall log",
+      "type": "logs"
     }
   ],
   "refresh": "1m",
