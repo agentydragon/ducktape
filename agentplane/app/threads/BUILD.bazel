@@ -83,7 +83,6 @@ py_test(
     size = "medium",
     srcs = ["test_store.py"],
     deps = [
-        ":models",
         ":store",
         "//:conftest",
         "//agentplane/app:conftest",
