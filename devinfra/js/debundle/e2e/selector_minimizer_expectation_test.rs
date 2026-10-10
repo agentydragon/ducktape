@@ -510,8 +510,8 @@ fn function_and_method_selectors_preserve_parameter_identity() {
         (
             "destructured function",
             "var left = function({n}) { return n[(n.A = 0)] = 'A'; };\nvar right = function({n}) { return n[(n.B = 0)] = 'B'; };\n",
-            "var left = function({n}) { return n[(n.A = 0)] = 'A'; };\nvar right = function({q}) { return q[(q.B = 0)] = 'B'; };\n",
-            "const z = {};\nvar left = function({n}) { return n[(n.A = 0)] = 'A'; };\nvar right = function({q}) { return z[(z.B = 0)] = 'B'; };\n",
+            "var left = function({n}) { return n[(n.A = 0)] = 'A'; };\nvar right = function({n:q}) { return q[(q.B = 0)] = 'B'; };\n",
+            "const z = {};\nvar left = function({n}) { return n[(n.A = 0)] = 'A'; };\nvar right = function({n:q}) { return z[(z.B = 0)] = 'B'; };\n",
         ),
     ] {
         let dir = tempfile::tempdir().unwrap();
@@ -549,14 +549,9 @@ fn function_and_method_selectors_preserve_parameter_identity() {
         } else {
             assert!(selector.contains("(n)"), "{kind}: {selector}");
         }
-        // The source matcher does not alpha-rename identifiers bound inside a
-        // destructuring pattern yet; preserving that pattern is conservative.
-        let renamed_outcome = if kind == "destructured function" {
-            "no_match"
-        } else {
-            "resolved"
-        };
-        for (variant, expected) in [(renamed, renamed_outcome), (different_receiver, "no_match")] {
+        // A renamed destructure local keeps its property key (`{n:q}`), while
+        // changing that key (`{q}`) changes the selector's meaning.
+        for (variant, expected) in [(renamed, "resolved"), (different_receiver, "no_match")] {
             let variant_file = dir.path().join("variant.js");
             write_text_file(&variant_file, variant);
             let result = run_match_selector(

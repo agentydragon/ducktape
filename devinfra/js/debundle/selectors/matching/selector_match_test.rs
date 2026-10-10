@@ -671,6 +671,33 @@ fn key_value_hole_value_matches_any() {
     });
 }
 
+#[test]
+fn defaulted_destructure_binding_can_be_aliased_without_changing_its_key() {
+    js_ast::with_swc_globals(|| {
+        let needle = "const f = function({ n = 0 }) { return n.value; };";
+        for (subject, expected) in [
+            (
+                "const g = function({ n: q = 0 }) { return q.value; };",
+                true,
+            ),
+            ("const g = function({ q = 0 }) { return q.value; };", false),
+            (
+                "const g = function({ n: q = 1 }) { return q.value; };",
+                false,
+            ),
+        ] {
+            let actual = selector_match::matches(
+                &facts(needle),
+                &facts(subject),
+                Mode::AlphaAll,
+                &free(needle),
+            )
+            .expect("supported");
+            assert_eq!(actual, expected, "subject: {subject}");
+        }
+    });
+}
+
 // A concise arrow whose body is a parenthesized object literal (`() => ({ … })`)
 // is the idiomatic component/factory shape — the returned object is the
 // re-minify-stable anchor. The fact extractor sees through the body paren

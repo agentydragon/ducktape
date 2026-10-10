@@ -90,6 +90,23 @@ fn no_match_is_not_unique() {
 }
 
 #[test]
+fn defaulted_destructure_local_can_be_renamed() {
+    let dir = tempfile::tempdir().unwrap();
+    let source = dir.path().join("app.js");
+    write_text_file(
+        &source,
+        "const actual = function({ key: local = 0 }) { return local.value; };\n",
+    );
+    let report = run_match_selector(
+        &source,
+        "const selected = function({ key = 0 }) { return key.value; };",
+        &["--target-binding", "selected", "--no-slack"],
+    );
+    assert_eq!(outcome(&report)["kind"], "resolved", "{report:#}");
+    assert_eq!(outcome(&report)["binding"], "actual", "{report:#}");
+}
+
+#[test]
 fn ambiguous_match_lists_candidates_in_body_order() {
     let (_dir, source) = fixture();
     let report = run_match_selector(

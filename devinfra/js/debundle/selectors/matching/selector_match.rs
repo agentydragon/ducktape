@@ -915,11 +915,9 @@ fn regex_predicate_pattern(index: &Index, node: NodeId) -> Option<&str> {
         .flatten()
 }
 
-/// The normalized view of a same-name object/destructure property — a property
-/// whose source value is exactly its key identifier (`{ k }` or `{ k: k }`). Such
-/// a property pins one stable key name plus one (possibly alpha-renamable) value
-/// identifier, and the two surface forms (shorthand vs explicit) are equivalent,
-/// so [`homo`] compares them through this view rather than by node kind.
+/// The normalized view of an object/destructure property with an identifier
+/// value. It pins one stable key name plus one (possibly alpha-renamable) value
+/// identifier. Shorthand and explicit forms can then match across node kinds.
 struct ShorthandProperty<'a> {
     /// The property key — a stable source name, compared **exactly** even in alpha
     /// mode (a destructure shorthand key is a real property name, not a binding).
@@ -931,17 +929,21 @@ struct ShorthandProperty<'a> {
     /// **binding** → `match_binding`); false for an object-literal property (the
     /// value is a **reference** → `match_ref`).
     is_binding: bool,
+    /// Default value of a destructured binding, if present. It must match
+    /// structurally even when the local binding is alpha-renamed.
+    default: Option<NodeId>,
 }
 
-/// View `node` as a same-name property (`{ k }` / `{ k: k }`) if it is one, for the
-/// shorthand⟷explicit equivalence in [`homo`]. Covers the four fact node kinds the
-/// two surface forms project to — object literal `Shorthand(k)` and
-/// `KeyValue(PropName(k), Ident(k))`, destructure pattern `PatAssign(k)` (no
-/// default) and `PatKeyValue(PropName(k), BindingIdent(k))`.
+/// View `node` as an identifier-valued property, for the shorthand⟷explicit
+/// equivalence in [`homo`]. Covers the four fact node kinds the two surface
+/// forms project to — object literal `Shorthand(k)` and
+/// `KeyValue(PropName(k), Ident(k))`, destructure pattern `PatAssign(k)` and
+/// `PatKeyValue(PropName(k), BindingIdent(k))`. Defaulted destructure bindings
+/// also normalize across `{ k = value }` and `{ k: renamed = value }`.
 ///
-/// A `KeyValue`/`PatKeyValue` whose value is not a bare identifier (e.g.
-/// `{ k: f() }`, `{ k: renamed }`) is *not* a same-name property and returns
-/// `None`, falling through to structural matching. Hole carriers (`ANYTHING`
+/// A `KeyValue` whose value is not a bare identifier (e.g. `{ k: f() }`), or a
+/// `PatKeyValue` whose value is not a bare binding or defaulted bare binding,
+/// returns `None` and falls through to structural matching. Hole carriers (`ANYTHING`
 /// shorthands) are excluded — they are consumed by list placement and must keep
 /// their run-hole identity.
 fn shorthand_property_view(index: &Index, node: NodeId) -> Option<ShorthandProperty<'_>> {
@@ -950,17 +952,29 @@ fn shorthand_property_view(index: &Index, node: NodeId) -> Option<ShorthandPrope
             return None;
         };
         let key = index.prop_name_of(*key)?;
+        let (value, default) = if is_binding && index.kind_of(*value) == NodeKind::AssignPat {
+            let [binding, default] = index.children_of(*value) else {
+                return None;
+            };
+            if index.kind_of(*binding) != NodeKind::BindingIdent {
+                return None;
+            }
+            (*binding, Some(*default))
+        } else {
+            (*value, None)
+        };
         // A hole-keyword value (`{ k: ANYTHING }`) is not a same-name property: it
         // must keep its single-node-hole identity and fall through to structural
         // matching (where `homo` treats it as match-any), not be alpha-bound as a
         // real identifier. Mirrors the `Shorthand`/`PatAssign` hole exclusion.
         let value_ident = index
-            .ident_of(*value)
+            .ident_of(value)
             .filter(|name| !is_hole_keyword(name))?;
         Some(ShorthandProperty {
             key,
             value_ident,
             is_binding,
+            default,
         })
     };
     match index.kind_of(node) {
@@ -970,15 +984,16 @@ fn shorthand_property_view(index: &Index, node: NodeId) -> Option<ShorthandPrope
                 key: name,
                 value_ident: name,
                 is_binding: false,
+                default: None,
             })
         }
-        // A shorthand destructure property (`PatAssign`) with no default child.
-        NodeKind::PatAssign if index.children_of(node).is_empty() => {
+        NodeKind::PatAssign if index.children_of(node).len() <= 1 => {
             let name = index.ident_of(node).filter(|name| !is_hole_keyword(name))?;
             Some(ShorthandProperty {
                 key: name,
                 value_ident: name,
                 is_binding: true,
+                default: index.children_of(node).first().copied(),
             })
         }
         NodeKind::KeyValue => same_name_key_value(false),
@@ -1025,9 +1040,10 @@ fn homo(
         return Ok(matched);
     }
 
-    // Shorthand ⟷ explicit same-name property equivalence (object literals and
-    // destructuring patterns): `{ k }` is equivalent to `{ k: k }`, in either
-    // direction. The two forms project to *different* fact node kinds
+    // Shorthand ⟷ explicit property equivalence (object literals and
+    // destructuring patterns): `{ k }` matches `{ k: k }`, and a destructured
+    // binding can alpha-rename through `{ k: renamed }`. The forms project to
+    // *different* fact node kinds
     // (`Shorthand`/`KeyValue`, `PatAssign`/`PatKeyValue`), so this is matched
     // before the structural kind comparison would reject the cross-pair. The key
     // name is invariant (exact); the value identifier alpha-binds — as a reference
@@ -1046,6 +1062,12 @@ fn homo(
             });
             return Ok(false);
         }
+        if n_prop.default.is_some() != s_prop.default.is_some() {
+            bindings.fail(nid, sid, TraceCategory::Shape, || {
+                "destructure defaults differ".into()
+            });
+            return Ok(false);
+        }
         let matched = if n_prop.is_binding {
             bindings.match_binding(n_prop.value_ident, s_prop.value_ident, mode)
         } else {
@@ -1059,7 +1081,15 @@ fn homo(
                 )
             });
         }
-        return Ok(matched);
+        if !matched {
+            return Ok(false);
+        }
+        return match (n_prop.default, s_prop.default) {
+            (Some(n_default), Some(s_default)) => {
+                homo(needle, n_default, subject, s_default, mode, bindings)
+            }
+            _ => Ok(true),
+        };
     }
 
     // Structural equality: kind, then non-identifier labels (always exact),
