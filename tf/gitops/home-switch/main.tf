@@ -96,3 +96,28 @@ resource "routeros_system_user" "monitoring" {
   password = data.kubernetes_secret_v1.monitoring.data["password"]
   comment  = "Read-only RouterOS exporter; password minted by ESO, see tf/gitops/home-switch."
 }
+
+# Log history on the switch, so a log puller can backfill what happened while it couldn't reach
+# the switch. RouterOS keeps only 1000 lines in RAM by default, lost on reboot: keep 10k in RAM
+# and a rotating 5 x 10k-line copy on flash (about 5 MB). Severities only, never `debug`, which
+# would wear the flash. The built-in rules keep sending info, warning and error to memory.
+resource "routeros_system_logging_action" "memory" {
+  name         = "memory"
+  target       = "memory"
+  memory_lines = 10000
+}
+
+resource "routeros_system_logging_action" "disk" {
+  name                = "disk"
+  target              = "disk"
+  disk_file_count     = 5
+  disk_lines_per_file = 10000
+  disk_stop_on_full   = false
+}
+
+# A rule's topics must all match, so each severity is its own rule.
+resource "routeros_system_logging" "disk" {
+  for_each = toset(["critical", "error", "warning", "info"])
+  action   = routeros_system_logging_action.disk.name
+  topics   = [each.key]
+}
