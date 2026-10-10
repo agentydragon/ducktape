@@ -36,12 +36,12 @@ async def test_read_retained_sandbox_without_mutation(cluster: Cluster) -> None:
 @pytest.mark.parametrize(
     "raw",
     [
-        '{"thread_defaults":{"harness":"HARNESS_CODEX","model":"retained-model","cwd":"/state/{session_id}",'
+        '{"session_defaults":{"harness":"HARNESS_CODEX","model":"retained-model","cwd":"/state/{session_id}",'
         '"instructions":"","setup_script":"printf setup"},"bootstrap":"printf boot"}',
         '{"bootstrap":"printf boot"}',
     ],
 )
-async def test_legacy_binding_spelling_reads_as_session_defaults(cluster: Cluster, raw: str) -> None:
+async def test_stored_binding_is_read_without_mutation(cluster: Cluster, raw: str) -> None:
     sandbox = cluster.fake.objects[SANDBOXES_PLURAL][SANDBOX]
     sandbox["metadata"].setdefault("annotations", {})[SANDBOX_BINDING_ANNOTATION] = raw
     before = deepcopy(cluster.fake.objects)
@@ -49,7 +49,7 @@ async def test_legacy_binding_spelling_reads_as_session_defaults(cluster: Cluste
     binding = await cluster.inventory.binding(SANDBOX)
     assert binding is not None
     assert view.binding == binding
-    assert json.loads(write_binding(binding)) == json.loads(raw.replace("thread_defaults", "session_defaults"))
+    assert json.loads(write_binding(binding)) == json.loads(raw)
     if binding.HasField("session_defaults"):
         spec = launch_spec(
             SessionDestination(

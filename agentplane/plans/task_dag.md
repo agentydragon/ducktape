@@ -910,7 +910,6 @@ flowchart TD
     SANDBOX_DATABASE_RENAME[Blocked: name the sandbox_commands database for the Sandbox Service]
     HISTORY_PROTO_OWNERSHIP[Candidate: History Service owns its request messages]
     APP_ELECTRIC_RETIRE[Blocked: remove Electric's access to the app database]
-    SANDBOX_BINDING_ANNOTATION_RENAME[Candidate: stop reading thread_defaults]
     PROTO_DIRECTORY[Unscheduled: cross-component protos under one proto directory]
     RUNNER_OUTBOUND_CHANNEL[Outbound command delivery peers]
     HISTORY_WRITE_HANDOFF[History Service ingester takes over]
@@ -1012,12 +1011,6 @@ Service no longer serves. Move them into the History Service's own package with 
 **Blocked on app projector retirement.** Drop the publication and replication slot on the `app`
 database and the `electric` role's grants there, and give the remaining Electric deployment the
 plain name if it carries a history-specific one.
-
-### `SANDBOX_BINDING_ANNOTATION_RENAME` — write the current field name
-
-**Candidate.** `sandbox_service/binding_storage.py` writes `session_defaults`, still reads the
-pre-cutover `thread_defaults` key, and reconcile rewrites stored legacy annotations. Once no Sandbox
-on testing or staging carries `thread_defaults`, delete the translation and the rewrite.
 
 ### `PROTO_DIRECTORY` — protocols in one place
 

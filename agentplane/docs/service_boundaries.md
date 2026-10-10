@@ -123,6 +123,5 @@ error types live separately so importing an error does not grant a transport
 dependency. Use concrete service clients, not protocols introduced solely to allow alternate
 in-process implementations in consumer tests.
 
-Session defaults are named `SessionDefaults` / `session_defaults` in the API. The annotation codec
-alone retains the legacy `thread_defaults` storage key, preserving staging data and old-app rollback;
-it is not an API alias. No database schema, identities, or retained logs change with package renames.
+Session defaults are named `SessionDefaults` / `session_defaults` in the API and in the Sandbox
+binding annotation. No database schema, identities, or retained logs change with package renames.

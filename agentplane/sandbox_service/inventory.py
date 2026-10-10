@@ -22,7 +22,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from tenacity import retry, retry_if_exception, stop_after_attempt
 
 from agentplane.action_service.policies.resources import CALLER_LABEL
-from agentplane.sandbox_service.binding_storage import is_legacy_binding, read_binding, write_binding
+from agentplane.sandbox_service.binding_storage import read_binding
 from agentplane.sandbox_service.kubernetes_views import (
     CREATE_INTENT,
     INITIALIZING,
@@ -313,23 +313,6 @@ class SandboxInventory:
         if raw is None:
             return None
         return read_binding(raw)
-
-    async def rewrite_legacy_binding(self, name: str) -> None:
-        """Re-store a binding annotation written with the pre-rename `thread_defaults` key."""
-        sandbox = await self._sandbox(name)
-        raw = sandbox.metadata.annotations.get(SANDBOX_BINDING_ANNOTATION)
-        if raw is None or not is_legacy_binding(raw):
-            return
-        await self._patch(
-            name,
-            {
-                "metadata": {
-                    "uid": sandbox.metadata.uid,
-                    "resourceVersion": sandbox.metadata.resource_version,
-                    "annotations": {SANDBOX_BINDING_ANNOTATION: write_binding(read_binding(raw))},
-                }
-            },
-        )
 
     async def set_kubernetes_grants_status(self, name: str, *, ready: bool, error: str | None = None) -> None:
         """Record provisioning so a runner cannot start before requested bindings exist."""
