@@ -1,0 +1,140 @@
+load("@aspect_rules_py//py:defs.bzl", "py_image_layer", aspect_py_binary = "py_binary")
+load("@protobuf//bazel:proto_library.bzl", "proto_library")
+load("@rules_oci//oci:defs.bzl", "oci_image")
+load("//devinfra/python:defs.bzl", "py_library", "py_test")
+load("//devinfra/python:grpc.bzl", "py_grpc_service_library")
+load("//devinfra/python:proto.bzl", "py_proto_library_with_mypy_stubs")
+load("//props:oci.bzl", "py_image_entrypoint", "py_image_env")
+
+package(default_visibility = ["//agentplane/history_service:__subpackages__"])
+
+# gazelle:resolve py agentplane.history_service.protocol_pb2 //agentplane/history_service:protocol_pb2
+# gazelle:resolve py agentplane.history_service.protocol_pb2_grpc //agentplane/history_service:protocol_pb2_grpc
+# gazelle:resolve py agentplane.sandbox_service.protocol_pb2 //agentplane/sandbox_service:protocol_pb2
+# gazelle:resolve py agentplane.protocol.event_pb2 //agentplane/protocol:event_pb2
+# gazelle:resolve py agentplane.protocol.event_log_pb2 //agentplane/protocol:event_log_pb2
+
+proto_library(
+    name = "protocol_proto",
+    srcs = ["protocol.proto"],
+    visibility = ["//agentplane:__subpackages__"],
+    deps = ["//agentplane/sandbox_service:protocol_proto"],
+)
+
+py_proto_library_with_mypy_stubs(
+    name = "protocol_pb2",
+    visibility = ["//agentplane:__subpackages__"],
+    deps = [":protocol_proto"],
+)
+
+py_grpc_service_library(
+    name = "protocol_pb2_grpc",
+    proto = ":protocol_proto",
+    py_proto = ":protocol_pb2",
+    visibility = ["//agentplane:__subpackages__"],
+)
+
+py_library(
+    name = "grpc_api",
+    srcs = ["grpc_api.py"],
+    deps = [
+        "//agentplane:subjects",
+        "//agentplane/history_service:protocol_pb2_grpc",
+        "//agentplane/sandbox_service:protocol_pb2",
+        "//agentplane/sandbox_service/session_history:store",
+        "//agentplane/workload_auth:bearer",
+        "//agentplane/workload_auth:principal",
+        "@pypi//grpcio",
+        "@pypi//kubernetes_asyncio",
+        "@pypi//protobuf",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
+    name = "settings",
+    srcs = ["settings.py"],
+    visibility = [
+        "//agentplane/history_service:__subpackages__",
+        "//cluster/cdk8s/agentplane:__pkg__",
+    ],
+    deps = [
+        "//agentplane:subjects",
+        "@pypi//pydantic",
+        "@pypi//pydantic_settings",
+        "@pypi//pyyaml",
+    ],
+)
+
+py_library(
+    name = "main",
+    srcs = ["main.py"],
+    deps = [
+        ":grpc_api",
+        ":settings",
+        "//agentplane/sandbox_service/session_history:store",
+        "//agentplane/workload_auth:principal",
+        "@pypi//asyncpg",
+        "@pypi//fastapi",
+        "@pypi//grpcio",
+        "@pypi//kubernetes_asyncio",
+        "@pypi//sqlalchemy",
+        "@pypi//uvicorn",
+    ],
+)
+
+py_test(
+    name = "test_grpc_api",
+    size = "medium",
+    srcs = ["test_grpc_api.py"],
+    deps = [
+        ":grpc_api",
+        "//:conftest",
+        "//agentplane:subjects",
+        "//agentplane/history_service:protocol_pb2_grpc",
+        "//agentplane/protocol:event_log_pb2",
+        "//agentplane/protocol:event_pb2",
+        "//agentplane/sandbox_service:protocol_pb2",
+        "//agentplane/sandbox_service/session_history:conftest",
+        "//agentplane/sandbox_service/session_history:store",
+        "//agentplane/testing:fake_apiserver",
+        "//agentplane/workload_auth:principal",
+        "@pypi//grpcio",
+        "@pypi//kubernetes_asyncio",
+        "@pypi//protobuf",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+aspect_py_binary(
+    name = "server_image_bin",
+    main = "main.py",
+    deps = [":main"],
+)
+
+py_image_layer(
+    name = "server_layers",
+    binary = ":server_image_bin",
+    group = "1000",
+    owner = "1000",
+)
+
+oci_image(
+    name = "image",
+    base = "@debian_trixie_slim_linux_amd64",
+    entrypoint = py_image_entrypoint("server_image_bin"),
+    # Kubernetes TLS verification uses the system trust store.
+    env = py_image_env(
+        binary_name = "server_image_bin",
+        extra_env = {"SSL_CERT_FILE": "/etc/ssl/certs/ca-certificates.crt"},
+    ),
+    labels = {"org.opencontainers.image.source": "https://github.com/agentydragon/ducktape"},
+    tars = [
+        ":server_layers",
+        "//third_party/debian_slim:cacerts",
+    ],
+    user = "1000:1000",
+    visibility = ["//visibility:public"],
+)

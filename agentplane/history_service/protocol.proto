@@ -1,0 +1,14 @@
+// The History Service's read boundary over retained Session history.
+syntax = "proto3";
+
+package ducktape.agentplane.history.v1;
+
+import "agentplane/sandbox_service/protocol.proto";
+
+service HistoryService {
+  // The messages stay in the Sandbox Service package while its own history reads exist.
+  rpc ReadSessionEvents(ducktape.agentplane.sandbox.v1.ReadSessionEventsRequest)
+      returns (ducktape.agentplane.sandbox.v1.ReadSessionEventsResponse);
+  rpc ReadSessionObservations(ducktape.agentplane.sandbox.v1.ReadSessionObservationsRequest)
+      returns (ducktape.agentplane.sandbox.v1.ReadSessionObservationsResponse);
+}
