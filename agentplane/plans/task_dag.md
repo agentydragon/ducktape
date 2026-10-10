@@ -1044,7 +1044,6 @@ verifiable condition in code (`keepingOffset` in `thread_store.tsx`, the jsdom p
 flowchart TD
     OPEN_SESSION_RETIRE[Candidate: delete the caller-chosen OpenSession path]
     SANDBOX_SERVICE_RESOURCES_REQUIRED[Candidate: Sandbox Service wiring stops being optional]
-    APP_SETTINGS_REQUIRED[Candidate: app integrations required, carrier settings moved]
     ACTION_CONNECTION_REBIND_SHIMS[Candidate: drop pre-rebind connection fallbacks]
     RUNNER_CLIENT_TEST_HELPERS[Candidate: runner client test helpers into test support]
     RUNNER_LAUNCH_SETTINGS[Decision: runner launch settings separate from capture probes]
@@ -1082,17 +1081,6 @@ never read. `sessions`, `submissions`, `delivery` and `session_changes` are `| N
 convenience, which leaves "not configured" branches production never takes. `database_url` and
 `commands_database_url` are optional settings that `main.py` then requires; pass them as
 `supplied=` from the cdk8s settings file, as the History Service does. Code and fixtures only.
-
-### `APP_SETTINGS_REQUIRED` — app integrations required, carrier settings moved
-
-**Candidate; Legacy burn-down lane.** `electric_url`, `notifications_url`/`notifications_token_file`
-and `action_federation` are optional although both environments set them and the Thread view does
-not work without Electric; their `None` branches (`http://disabled.invalid` placeholders, 503s) serve
-only tests. `kubernetes_binding_cleanup_namespaces`, `kubernetes_cluster_binding_cleanup` and
-`default_egress_policies` on `AppSettingsConfig` are never read by the app; the cdk8s code carries
-them to the Sandbox Service's settings through the app's ConfigMap. Move them to the Sandbox Service
-configuration and make the integrations required. Also fix `app_settings.py`'s comment claiming the
-egress admin Deployment has not landed. Code and generated config only.
 
 ### `ACTION_CONNECTION_REBIND_SHIMS` — drop pre-rebind connection fallbacks
 
