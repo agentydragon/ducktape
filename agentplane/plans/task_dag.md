@@ -449,7 +449,6 @@ flowchart LR
     SANDBOX_LIFECYCLE_DURABILITY[Archive before storage deletion] --> LEGACY_SANDBOX_RETIRE[Blocked: archive and delete pre-dial-out Sandboxes]
     RUNNER_OUTBOUND_ROLLOUT --> LEGACY_SANDBOX_RETIRE
     LEGACY_SANDBOX_RETIRE --> RUNNER_INBOUND_RETIRE
-    FOLLOW_REPLAY[Follow from any cursor] --> RUNNER_OUTBOUND_SPOOL
     VM_PROVIDER --> VM_CONTROL_NETWORKING
     VM_CONTROL_NETWORKING --> VM_LIFECYCLE
     VM_IMAGE --> VM_PROCESS_ISOLATION
@@ -490,7 +489,7 @@ archive identities, duplicate/conflict checks and direct/spooled admission recon
 buffers and keep controls/receipts responsive during catch-up; test reconnect, checkpoint rollback
 and slow readers. Switch the canary's ingester explicitly, then expand this capability in bounded
 steps. This changes event transport, not archive storage or admission authority. Replay through
-the channel then serves `FollowSession` from any cursor (`FOLLOW_REPLAY`); this and
+the channel then serves `FollowSession` from any cursor; this and
 `HISTORY_WRITE_HANDOFF` change opposite ends of ingestion, so either may land first.
 
 ### `RUNNER_OUTBOUND_LIFECYCLE` — migrate remaining inbound control consumers
@@ -723,7 +722,8 @@ seal command. The runner journals one seal entry per Session with its final curs
 resume and further writes in this Sandbox. An ordinary stop never seals, since a stopped Session can
 resume. A seal ends the Sandbox's incarnation of the Session, not the Session: a later revival
 (section 8) continues the same history. The
-seal travels through the journal like any entry and reaches followers as a `sealed` frame, so a
+seal travels through the journal like any entry and reaches followers as the `sealed` frame
+`FollowSession` already defines, so a
 subscriber can tell a finished Session from a lagging one. Runners on images without the command (`LEGACY_SANDBOX_RETIRE`) are compared
 instead against the journal head read over the old route after the harness stops.
 
@@ -753,7 +753,6 @@ flowchart TD
     HISTORY_READ_CUTOVER[App reads raw history from History Service]
     SANDBOX_HISTORY_READS_RETIRE[Blocked: delete Sandbox Service history reads]
     SESSION_WATCH[Blocked: Sandbox Service Session feed]
-    FOLLOW_REPLAY[Blocked: follow from any cursor via the runner]
     RETENTION_HOLDS[Blocked: retention holds gate Sandbox deletion]
     HISTORY_WRITE_HANDOFF[Blocked: History Service ingester takes over]
     SANDBOX_LOCAL_HISTORY_RETIRE[Blocked: delete Sandbox Service ingester and store]
@@ -774,16 +773,13 @@ flowchart TD
     APP_ALEMBIC_SQUASH[Baseline final app schema]
     THREAD_BROWSE_PAGINATE[Bounded history browsing]
     THREAD_READ_POLICY[Scoped archive reads]
-    RUNNER_OUTBOUND_SPOOL[Spool on the runner channel]
     RUNNER_INBOUND_RETIRE[Retire inbound runner access]
     SANDBOX_LIFECYCLE_DURABILITY[Archive before storage deletion]
     SESSION_COMMAND_CONTRACT --> SESSION_FOLLOW_CONTRACT
     HISTORY_READ_CUTOVER --> SANDBOX_HISTORY_READS_RETIRE
     SESSION_FOLLOW_CONTRACT --> SESSION_WATCH
-    SESSION_FOLLOW_CONTRACT --> FOLLOW_REPLAY
     SESSION_FOLLOW_CONTRACT --> RETENTION_HOLDS
     SESSION_WATCH --> HISTORY_WRITE_HANDOFF
-    FOLLOW_REPLAY --> HISTORY_WRITE_HANDOFF
     RETENTION_HOLDS --> HISTORY_WRITE_HANDOFF
     HISTORY_READ_CUTOVER --> HISTORY_WRITE_HANDOFF
     HISTORY_WRITE_HANDOFF --> SANDBOX_LOCAL_HISTORY_RETIRE
@@ -809,7 +805,6 @@ flowchart TD
     APP_PROJECTION_RETIRE --> HISTORY_REPACK
     APP_PROJECTION_RETIRE -. smaller baseline, not required .-> APP_ALEMBIC_SQUASH
     HISTORY_SERVICE_OWNERSHIP -. enforce at the final owner .-> THREAD_READ_POLICY
-    FOLLOW_REPLAY -. replay moves onto the channel .-> RUNNER_OUTBOUND_SPOOL
     RETENTION_HOLDS --> SANDBOX_LIFECYCLE_DURABILITY
 ```
 
@@ -846,12 +841,6 @@ their client code.
 creations and state changes (including the current Sandbox incarnation), from a resumable position.
 No callers yet. Test resume after disconnect and that authorization filters the feed.
 
-### `FOLLOW_REPLAY` — follow from any cursor
-
-**Blocked on the follow contract.** `FollowSession` resumes from a caller-supplied cursor by
-replaying from the runner journal, with no Sandbox Service copy, then continues live, and reports
-the seal. Today's ingester already reads the runner this way; this makes it the public contract.
-
 ### `RETENTION_HOLDS` — holds gate Sandbox deletion
 
 **Blocked on the follow contract.** `PlaceHold`, `ConfirmHold` and
@@ -861,7 +850,7 @@ Session has confirmed its seal cursor. Test holds racing teardown, a holder that
 
 ### `HISTORY_WRITE_HANDOFF` — the History Service ingester takes over
 
-**Blocked on the Session feed, replay, holds and the read cutover.** Move the Sandbox Service's
+**Blocked on the Session feed, holds and the read cutover.** Move the Sandbox Service's
 ingester into the History Service as a subscriber of those calls, with its per-log claim; one writer
 at a time. Test a History Service outage (it resumes from its cursor; the runner journal is the
 buffer), duplicate and conflicting replays, and claim handover between replicas. Rollback: run the

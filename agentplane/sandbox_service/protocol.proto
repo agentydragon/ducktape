@@ -35,6 +35,8 @@ service SandboxService {
   rpc ResumeSession(SessionRequest) returns (ducktape.agentplane.runner.v1.Attached);
   // Returns the original matching CommandAdmitted entry, not command completion.
   rpc SubmitCommand(SubmitCommandRequest) returns (ducktape.agentplane.protocol.v1.EventEntry);
+  // Replays the runner journal after the caller's cursor, then continues live on the same stream.
+  // The Sandbox Service keeps no copy of these entries.
   rpc FollowSession(FollowSessionRequest) returns (stream FollowSessionResponse);
   // Privileged, bounded retained raw history by public Session ID; survives Sandbox deletion.
   rpc ReadSessionEvents(ReadSessionEventsRequest) returns (ReadSessionEventsResponse);
@@ -158,20 +160,32 @@ message SubmitCommandRequest {
 
 message FollowSessionRequest {
   SessionDestination destination = 1;
+  // Entries after this cursor of the current Sandbox incarnation's runner journal. A cursor beyond
+  // the journal's end fails with FAILED_PRECONDITION instead of an Attached snapshot.
   ducktape.agentplane.protocol.v1.Follow follow = 2;
+}
+
+// The runner sealed this Sandbox incarnation of the Session at teardown: its journal is final.
+// Staged for the runner's teardown seal; no runner journals a seal yet, so this is never sent.
+message Sealed {
+  // The incarnation's final cursor. Every entry through it precedes this frame.
+  uint64 cursor = 1;
 }
 
 message FollowSessionResponse {
   oneof observation {
+    // Its last_cursor is the journal end at attach time: entries up to it are replayed, later ones live.
     ducktape.agentplane.runner.v1.Attached attached = 1;
+    // Replayed and live entries have the same shape, with consecutive cursors.
     ducktape.agentplane.protocol.v1.EventEntry entry = 2;
     // Runner attachment reached native EOF. This is not a fabricated execution Event.
     google.protobuf.Empty ended = 3;
     // Planned renewal: reconnect with fresh authorization from the committed cursor.
     // This is transport control, not native EOF or a journal entry.
     google.protobuf.Empty reconnect_required = 4;
+    Sealed sealed = 5;
   }
-  // A successful stream ends with ended or reconnect_required. Bare transport EOF
+  // A successful stream ends with ended, reconnect_required or sealed. Bare transport EOF
   // and DEADLINE_EXCEEDED are failures, never native closure evidence.
 }
 

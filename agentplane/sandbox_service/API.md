@@ -141,14 +141,22 @@ There is no separate inspection or bootstrap RPC added for tests. Bootstrap runs
 exact retries use the runner's stored bootstrap result.
 
 `FollowSession` is server-streaming. Its request selects an explicit session and a native `Follow`
-cursor. It emits:
+cursor, which may be any cursor of the current Sandbox incarnation's runner journal up to its end.
+Entries after it are replayed from the runner journal, then the same stream continues live; the
+Sandbox Service serves them from no copy of its own. A cursor beyond the journal's end fails with
+`FAILED_PRECONDITION` instead of an `Attached` snapshot. It emits:
 
-1. One native `Attached` snapshot.
-2. Original `EventEntry` messages, preserving serving-log cursor, source origin, and command correlation.
+1. One native `Attached` snapshot. Entries through its `last_cursor` are replayed, later ones live.
+2. Original `EventEntry` messages, preserving serving-log cursor, source origin, and command
+   correlation. Replayed and live entries have the same shape and consecutive cursors.
 3. An `ended` observation only when the native runner attachment reaches successful EOF. This is a
    transport observation, not a synthesized execution Event or deletion of retained history.
 4. Alternatively, a terminal `reconnect_required` observation followed by successful stream closure
-   when the follow lease expires. This is planned transport renewal, not native closure.
+   when the follow lease expires, during replay as well as live. This is planned transport renewal,
+   not native closure.
+5. Alternatively, a terminal `sealed` observation carrying the incarnation's final cursor, after
+   every entry through it. It is defined for the runner's teardown seal and not sent yet: no runner
+   journals a seal.
 
 Reconnect from the last durably committed cursor; each reconnect rereads the projected token and
 checks identity and destination again. The app flushes its buffered batch before planned renewal,
@@ -165,7 +173,7 @@ is separately bounded by `admission_timeout_s`, so a stalled consumer cannot pin
 15 minutes. Every exit cancels the runner attachment and closes its channel. There is no unbounded
 fan-out queue.
 
-The service now has independent Session Event history storage for durable identity and future replay.
+The service now has independent Session Event history storage for durable identity.
 `CreateSession` reserves a row but does **not** ingest runner Events yet. Runner logs remain on the
 state volume; the app currently retains its own Session Event copy and checkpoints. Backfilling
 existing Session Event history and moving Event ingestion/read authority into Sandbox Service are
