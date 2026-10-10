@@ -1,6 +1,7 @@
 """Session summaries from the History Service fold, paged newest first under stable tokens."""
 
 from datetime import UTC
+from typing import cast
 from uuid import UUID
 
 from google.protobuf.json_format import ParseDict
@@ -66,8 +67,8 @@ class SummaryReader:
         return _summary(*row)
 
 
-def _summaries() -> Select[tuple[SessionHistory, ThreadHistorySummary | None, ThreadCheckpoint | None]]:
-    # A Session the fold has not discovered yet has neither row.
+def _summaries() -> Select[tuple[SessionHistory, ThreadHistorySummary, ThreadCheckpoint]]:
+    # Outer joins: a Session the fold has not discovered yet has neither row.
     return (
         select(SessionHistory, ThreadHistorySummary, ThreadCheckpoint)
         .outerjoin(ThreadHistorySummary, ThreadHistorySummary.thread_id == SessionHistory.id)
@@ -125,7 +126,7 @@ def _summary(
     if summary.last_model_activity_at is not None:
         message.last_model_activity_at.FromDatetime(summary.last_model_activity_at)
     if summary.last_turn_status is not None:
-        message.last_turn_status = event_pb2.TurnStatus.ValueType(summary.last_turn_status)
+        message.last_turn_status = cast(event_pb2.TurnStatus, summary.last_turn_status)
     if summary.attached is not None:
         ParseDict(summary.attached, message.attached)
         message.feed_status = (
