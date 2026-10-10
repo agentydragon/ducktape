@@ -19,10 +19,8 @@ agent does not require running approvals; using approvals does not require runni
 - The integration app is a client of the backends, never their dependency
   ([dependency rule](service_boundaries.md)).
 
-Kubernetes is the baseline, not one of the optional pieces: identities are ServiceAccounts,
-policies are custom resources, and workloads authenticate by TokenReview. That integration is deep
-and buys a consistent model of identity and authorization, so composability is among Agentplane's
-services on Kubernetes, not away from it.
+Composability is among services on Kubernetes, which is a shared baseline rather than an optional
+piece.
 
 The integration app exists to serve people: one frontend over Actions, sandboxes, threads and the
 rest. Its ideal form is a thin facade in front of N small services that serves that frontend and
@@ -152,8 +150,7 @@ that let an agent script MCP tools from code.
 
 - Egress rules, Actions, policies and notification inboxes are HTTP APIs with OpenAPI schemas,
   reached through the egress proxy with the workload placeholder; the platform instructions point
-  agents at them ([`agent_instructions.j2`](../sandbox_service/agent_instructions.j2)). Plain
-  `curl` against a documented schema is the intended level; agents handle it well.
+  agents at them ([`agent_instructions.j2`](../sandbox_service/agent_instructions.j2)).
 - Kubernetes access is the agent's own `kubectl`, not a wrapper tool.
 - MCP is an additional surface, not the only one: the Action Service also serves its operations as
   MCP tools over OAuth.
