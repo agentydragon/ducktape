@@ -438,6 +438,14 @@ debundle_e2e_test(
 )
 
 debundle_e2e_test(
+    name = "selector_anchor_inference_desiderata_test",
+    deps = [
+        "@crates//:serde_json",
+        "@crates//:tempfile",
+    ],
+)
+
+debundle_e2e_test(
     name = "gate_cli_test",
     deps = ["@crates//:serde_json"],
 )
