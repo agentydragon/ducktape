@@ -173,6 +173,16 @@ def test_a_second_run_over_a_migrated_database_changes_nothing(db_url: str) -> N
     RUNNER.apply(db_url)
 
 
+def test_electric_no_longer_reads_the_app_fold(db_url: str) -> None:
+    engine = create_engine(RUNNER.sync_url(db_url))
+    try:
+        with engine.connect() as connection:
+            assert connection.scalar(text("SELECT count(*) FROM pg_publication")) == 0
+            assert not connection.scalar(text("SELECT has_table_privilege('electric', 'thread_entity', 'SELECT')"))
+    finally:
+        engine.dispose()
+
+
 def test_drop_locator_preserves_identity_and_checkpoint(db_url: str) -> None:
     engine = create_engine(RUNNER.sync_url(db_url))
     thread = uuid.uuid4()
