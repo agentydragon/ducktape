@@ -31,6 +31,8 @@ def chart(app: App) -> Chart:
         url="https://github.com/agentydragon/gaffer-private.git",
         branch="main",
         path="./k8s",
+        # The gaffer-private Kustomizations reconcile from this source's artifact.
+        source_interval="1m",
     )
     return chart
 
