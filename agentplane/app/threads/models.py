@@ -39,11 +39,13 @@ class EventLog(Base):
     # TODO(session-schema-cleanup): Audit sandbox/harness/model/cwd as app display
     # projections versus redundant launch metadata; retain only actual app needs,
     # refreshed from service evidence, never as authoritative launch/routing inputs.
-    # The projected model, updated from service history.
+    # The launch spec's model; once a runner attaches, its spec in `ThreadHistorySummary.attached`
+    # is the current one.
     model: Mapped[str] = mapped_column(Text)
     cwd: Mapped[str] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
-    # App-owned projection, not an observed provider request or cache receipt.
+    # CLEANUP(added 2026-10-10): neither written nor read since `ThreadHistorySummary` carries it;
+    #   drop with the harness/model/cwd copies, once no replica runs an image that writes it.
     last_model_activity_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
@@ -107,6 +109,8 @@ class ThreadHistorySummary(Base):
     end: Mapped[dict[str, str] | None] = mapped_column(JSONB(none_as_null=True))
     # A confirmed resume invalidates EOF at this cursor until newer evidence arrives.
     resumed_after_cursor: Mapped[int | None] = mapped_column(BigInteger)
+    # Inferred from model-originated events, not an observed provider request or cache receipt.
+    last_model_activity_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class ThreadEntity(Base):
