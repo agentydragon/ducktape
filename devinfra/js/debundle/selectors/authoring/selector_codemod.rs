@@ -27,7 +27,7 @@ use spec::{SourceMatch, SourceMatchIdentifierMode};
 use spec_modules::{collect_module_files, is_module_yaml, module_path_from_file};
 use swc_common::DUMMY_SP;
 use swc_ecma_ast::*;
-use swc_ecma_visit::{VisitMut, VisitMutWith};
+use swc_ecma_visit::{Visit, VisitMut, VisitMutWith, VisitWith};
 
 // Hole keyword spellings come from `source_match_holes` so the minimizer
 // emits exactly the tokens the matcher resolves.
@@ -1024,17 +1024,30 @@ fn synthesize_simplest_selector_for_group(
             selector_local: member.export_name.clone(),
         })
         .collect::<Vec<_>>();
+    // If an initializer mentions a selected binding, preserve the source
+    // spellings on the first attempt. Replacing only declaration positions
+    // with export names breaks AlphaAll's identity relation to those uses.
+    // This cheap AST check only chooses search order; every result still goes
+    // through the normal resolver proof.
+    let prefer_source_locals =
+        targets.len() > 1 && initializer_mentions_selected_binding(item, &targets);
+    if prefer_source_locals {
+        for target in &mut targets {
+            target.selector_local = target.runtime_binding.clone();
+        }
+    }
     let mut specialized = match synthesize_specialized_selector(index, item, decl, &targets)? {
         Some(selector) => Some(selector),
         None => relax_exact_declaration(index, item, decl, &targets)?,
     };
-    // A grouped initializer may refer to another selected declarator. Renaming
-    // only the declaration position then makes that reference a distinct free
-    // selector identifier. Keeping the source locals preserves the relationship;
-    // AlphaAll matching treats their spellings as placeholders, not name pins.
+    // Try the alternate spelling if the first search found no selector.
     if specialized.is_none() && targets.len() > 1 {
         for target in &mut targets {
-            target.selector_local = target.runtime_binding.clone();
+            target.selector_local = if prefer_source_locals {
+                target.export_name.clone()
+            } else {
+                target.runtime_binding.clone()
+            };
         }
         specialized = match synthesize_specialized_selector(index, item, decl, &targets)? {
             Some(selector) => Some(selector),
@@ -1085,6 +1098,63 @@ fn synthesize_simplest_selector_for_group(
             alternatives,
         },
     ))
+}
+
+/// Look for cross-target uses inside initializers, excluding each
+/// declarator's own name. Self references are common in generated enum
+/// initializers and do not justify changing the group's search order. A
+/// lexical false positive can only change the order; resolver proof still
+/// decides whether the rendered selector is valid.
+fn initializer_mentions_selected_binding(
+    item: &ModuleItem,
+    targets: &[SynthesizedTargetBinding],
+) -> bool {
+    let Some(var) = item_var_decl(item) else {
+        return false;
+    };
+    let names = targets
+        .iter()
+        .map(|target| target.runtime_binding.clone())
+        .collect::<BTreeSet<_>>();
+    struct Finder<'a> {
+        names: &'a BTreeSet<String>,
+        own: Option<&'a str>,
+        found: bool,
+    }
+    impl Visit for Finder<'_> {
+        fn visit_expr(&mut self, expr: &Expr) {
+            if let Expr::Ident(ident) = expr {
+                let name = ident.sym.as_ref();
+                self.found |= self.own != Some(name) && self.names.contains(name);
+            }
+            if !self.found {
+                expr.visit_children_with(self);
+            }
+        }
+
+        fn visit_prop(&mut self, prop: &Prop) {
+            if let Prop::Shorthand(ident) = prop {
+                let name = ident.sym.as_ref();
+                self.found |= self.own != Some(name) && self.names.contains(name);
+            } else if !self.found {
+                prop.visit_children_with(self);
+            }
+        }
+    }
+    for declarator in &var.decls {
+        if let Some(init) = &declarator.init {
+            let mut finder = Finder {
+                names: &names,
+                own: single_ident_pat_name(&declarator.name),
+                found: false,
+            };
+            init.visit_with(&mut finder);
+            if finder.found {
+                return true;
+            }
+        }
+    }
+    false
 }
 
 // ===========================================================================
