@@ -7,7 +7,13 @@ import { Link, useLocation } from "react-router";
 
 import { JsonView } from "../json_view";
 import { StaleNotice } from "../stream_status";
-import { canApproveInline, renderActionLabel, renderPaneCollapsed, renderPaneOpened } from "./rendering/index";
+import {
+  canApproveInline,
+  renderActionLabel,
+  renderPaneCollapsed,
+  renderPaneOpened,
+  shouldRenderPaneRequestTitle,
+} from "./rendering/index";
 import { ActionDecisionButtons, ActionRequestsContext } from "./requests";
 import "./sidebar.css";
 
@@ -247,6 +253,7 @@ export function ActionsSidebarSection({ onNavigate }: { onNavigate?: () => void 
             const actionLabel = renderActionLabel(request.action, request.arguments);
             const collapsedPreview = renderPaneCollapsed(request.action, request.arguments);
             const openedPreview = renderPaneOpened(request.action, request.arguments);
+            const showRequestTitle = shouldRenderPaneRequestTitle(request.action, request.arguments, request.title);
             const canQuickApprove =
               (request.external_grant === null || request.external_grant === undefined) &&
               canApproveInline(request.action, request.arguments);
@@ -269,33 +276,31 @@ export function ActionsSidebarSection({ onNavigate }: { onNavigate?: () => void 
                     onClick={() => setExpandedId(expanded ? null : request.id)}
                   >
                     {expanded ? <IconChevronDown size={12} /> : <IconChevronRight size={12} />}
+                    <div className="agentplane-actions-sidebar-request-label">
+                      <div className="agentplane-actions-sidebar-name">
+                        {actionLabel ?? `${request.action.group} / ${request.action.name}`}
+                      </div>
+                      {showRequestTitle && (
+                        <Text size="xs" lineClamp={1} title={request.title}>
+                          {request.title}
+                        </Text>
+                      )}
+                      {!expanded && collapsedPreview !== null && (
+                        <div className="agentplane-actions-sidebar-collapsed-preview">{collapsedPreview}</div>
+                      )}
+                    </div>
                   </UnstyledButton>
-                  <div className="agentplane-actions-sidebar-request-label">
+                  <Tooltip label="View full details" withArrow>
                     <Link
-                      className="agentplane-actions-sidebar-name"
+                      className="agentplane-actions-sidebar-details"
                       to={detailsPath}
                       state={navigationState}
                       onClick={onNavigate}
-                      aria-label={
-                        actionLabel === null
-                          ? `View details for ${request.action.group} / ${request.action.name}: ${request.title}`
-                          : undefined
-                      }
+                      aria-label={`View details for ${request.title}`}
                     >
-                      {actionLabel ?? (
-                        <span>
-                          {request.action.group} / {request.action.name}
-                        </span>
-                      )}
-                      <IconArrowRight size={13} aria-hidden="true" />
+                      <IconArrowRight size={15} aria-hidden="true" />
                     </Link>
-                    <Text size="xs" lineClamp={1} title={request.title}>
-                      {request.title}
-                    </Text>
-                    {!expanded && collapsedPreview !== null && (
-                      <div className="agentplane-actions-sidebar-collapsed-preview">{collapsedPreview}</div>
-                    )}
-                  </div>
+                  </Tooltip>
                 </div>
                 {expanded && (
                   <Stack className="agentplane-actions-sidebar-preview" gap="xs">

@@ -86,27 +86,23 @@
 
 .agentplane-actions-sidebar-request-heading {
   display: flex;
-  align-items: flex-start;
-  gap: 4px;
-  padding: 6px;
+  align-items: stretch;
 }
 
 .agentplane-actions-sidebar-expand {
   display: flex;
-  flex: 0 0 auto;
-  align-items: center;
-  justify-content: center;
-  width: 22px;
-  height: 22px;
-  margin-top: 1px;
-  border-radius: var(--mantine-radius-sm);
-  color: var(--mantine-color-dimmed);
+  flex: 1 1 auto;
+  align-items: flex-start;
+  gap: 4px;
+  min-width: 0;
+  padding: 6px;
+  color: var(--mantine-color-text);
+  text-align: left;
 }
 
 .agentplane-actions-sidebar-expand:hover,
 .agentplane-actions-sidebar-expand:focus-visible {
   background: var(--mantine-color-default-hover);
-  color: var(--mantine-color-text);
   outline: none;
 }
 
@@ -135,16 +131,12 @@
 }
 
 .agentplane-actions-sidebar-name {
+  display: block;
   max-width: 100%;
   font-family: var(--mantine-font-family-monospace);
   font-size: var(--mantine-font-size-xs);
   font-weight: 600;
   overflow-wrap: anywhere;
-}
-
-.agentplane-actions-sidebar-name:hover,
-.agentplane-actions-sidebar-details:hover {
-  text-decoration: underline;
 }
 
 .agentplane-actions-sidebar-preview {
@@ -163,6 +155,17 @@
 
 .agentplane-actions-sidebar-details {
   flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  color: var(--mantine-color-dimmed);
   font-size: var(--mantine-font-size-xs);
   font-weight: 600;
+}
+
+.agentplane-actions-sidebar-details:hover,
+.agentplane-actions-sidebar-details:focus-visible {
+  color: var(--mantine-color-text);
+  outline: none;
 }

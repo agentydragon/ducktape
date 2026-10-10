@@ -112,6 +112,7 @@ it("expands a compact action preview and only offers inline approval to eligible
     ...request("decision_pending", 1),
     action: { group: "kubernetes_admin", name: "pods_list_in_namespace" },
     arguments: { namespace: "test-namespace", labelSelector: "app=example" },
+    title: "List pods in namespace test-namespace",
   };
   const ssh = {
     ...request("decision_pending", 2),
@@ -120,19 +121,22 @@ it("expands a compact action preview and only offers inline approval to eligible
   };
 
   await send([pod, ssh]);
-  const podLabelLink = [...container.querySelectorAll("a")].find((link) =>
-    link.textContent?.includes("List pods in namespace test-namespace")
+  const podLabel = [...container.querySelectorAll(".agentplane-actions-sidebar-name")].find((label) =>
+    label.textContent?.includes("List pods in namespace test-namespace")
   );
-  expect(podLabelLink).toBeDefined();
-  expect(podLabelLink?.getAttribute("aria-label")).toBeNull();
-  expect(podLabelLink?.textContent).not.toContain("kubernetes_admin / pods_list_in_namespace");
-  expect(container.textContent).toContain("Get pods");
+  expect(podLabel).toBeDefined();
+  expect(podLabel?.textContent).not.toContain("kubernetes_admin / pods_list_in_namespace");
+  expect(container.textContent?.match(/List pods in namespace test-namespace/g)).toHaveLength(1);
+  expect(container.textContent).toContain("Filters");
   expect(container.textContent).toContain("$ systemctl restart backup");
   const podDisclosure = container.querySelector<HTMLButtonElement>(`button[aria-label="Expand ${pod.title}"]`);
   if (!podDisclosure) throw new Error("missing pod action disclosure");
   await act(async () => podDisclosure.click());
-  expect(container.textContent).toContain("List pods in namespace");
+  expect(container.textContent?.match(/List pods in namespace/g)).toHaveLength(1);
   expect(container.textContent).toContain("test-namespace");
+  expect(container.querySelector(".agentplane-actions-sidebar-preview")?.textContent).not.toContain(
+    "List pods in namespace"
+  );
   expect(container.textContent).not.toContain("Requested by");
   expect(container.textContent).not.toContain("test description adding what the decision_pending title leaves out");
   const approveButton = container.querySelector<HTMLButtonElement>(`button[aria-label="Approve ${pod.title}"]`);
@@ -149,8 +153,12 @@ it("expands a compact action preview and only offers inline approval to eligible
   expect(container.textContent).toContain("test-user@test-host.example");
   expect(container.textContent).toContain("systemctl restart backup");
   expect(container.querySelector<HTMLButtonElement>(`button[aria-label="Approve ${ssh.title}"]`)).toBeNull();
-  expect(container.querySelector('a[aria-label*="View details for ssh / exec"]')).not.toBeNull();
+  expect(container.querySelector(`a[aria-label="View details for ${ssh.title}"]`)).not.toBeNull();
   expect(container.querySelector('[data-testid="current-path"]')?.textContent).toBe("/threads/test-thread");
+  const podDetails = container.querySelector<HTMLAnchorElement>(`a[aria-label="View details for ${pod.title}"]`);
+  if (!podDetails) throw new Error("missing separate action-details arrow");
+  await act(async () => podDetails.click());
+  expect(container.querySelector('[data-testid="current-path"]')?.textContent).toBe(`/actions/${pod.id}`);
 });
 
 it("shows approval widgets for Kubernetes resource, pod-list, and log reads", async () => {

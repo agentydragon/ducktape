@@ -14,7 +14,9 @@ import {
   canQuickApprovePodsInNamespace,
   podsInNamespaceCollapsed,
   podsInNamespaceLabel,
+  podsInNamespacePane,
   podsInNamespacePreview,
+  podsInNamespaceTitleIsRedundant,
 } from "./kubernetes_admin/pods_list_in_namespace";
 import { canQuickApprovePodsLog, podsLogPreview } from "./kubernetes_admin/pods_log";
 import { canQuickApproveResourcesDelete, resourcesDeletePane } from "./kubernetes_admin/resources_delete";
@@ -31,6 +33,7 @@ interface ActionPresentation {
   pane?: {
     collapsed?: ArgumentsPreview;
     opened?: ArgumentsPreview;
+    requestTitleIsRedundant?: (title: string, args: unknown) => boolean;
   };
   details?: {
     arguments?: ArgumentsPreview;
@@ -47,7 +50,11 @@ const PRESENTATIONS: ReadonlyMap<string, ReadonlyMap<string, ActionPresentation>
         "pods_list_in_namespace",
         {
           label: podsInNamespaceLabel,
-          pane: { collapsed: podsInNamespaceCollapsed, opened: podsInNamespacePreview },
+          pane: {
+            collapsed: podsInNamespaceCollapsed,
+            opened: podsInNamespacePane,
+            requestTitleIsRedundant: podsInNamespaceTitleIsRedundant,
+          },
           details: { arguments: podsInNamespacePreview },
         },
       ],
@@ -114,6 +121,11 @@ export function renderPaneCollapsed(action: ActionIdentity, args: unknown): Reac
 export function renderPaneOpened(action: ActionIdentity, args: unknown): ReactNode | null {
   const preview = presentation(action)?.pane?.opened;
   return preview ? renderPreview(preview, args) : null;
+}
+
+/** Whether the caller's title repeats the Action label shown in the pane heading. */
+export function shouldRenderPaneRequestTitle(action: ActionIdentity, args: unknown, title: string): boolean {
+  return !(presentation(action)?.pane?.requestTitleIsRedundant?.(title, args) ?? false);
 }
 
 /** The pretty argument view on the full details page; Raw remains the host's shared exact-JSON view. */

@@ -76,14 +76,21 @@ async def test_sidebar_compact_pod_approval(
         await page.get_by_role("button", name="Toggle navigation").click()
     section = page.locator(".agentplane-actions-sidebar")
     await expect(section.get_by_text("inspect running demo pods")).to_be_visible()
-    await expect(section.get_by_role("link", name=re.compile("^List pods in namespace test-apps"))).to_be_visible()
+    await expect(section.locator(".agentplane-actions-sidebar-name")).to_contain_text(
+        "List pods in namespace test-apps"
+    )
+    await expect(section.get_by_role("link", name="View details for inspect running demo pods")).to_be_visible()
     await expect(section.get_by_text("kubernetes_admin / pods_list_in_namespace", exact=True)).to_have_count(0)
     if expanded:
-        await section.get_by_role("button", name="Expand inspect running demo pods").click()
-        await expect(
-            section.locator(".agentplane-actions-sidebar-preview").get_by_text("List pods in namespace")
-        ).to_be_visible()
-        await expect(section.locator(".agentplane-actions-sidebar-preview").get_by_text("test-apps")).to_be_visible()
+        disclosure = section.get_by_role("button", name="Expand inspect running demo pods")
+        bounds = await disclosure.bounding_box()
+        assert bounds is not None
+        await disclosure.click(position={"x": bounds["width"] - 4, "y": bounds["height"] - 3})
+        preview = section.locator(".agentplane-actions-sidebar-preview")
+        await expect(preview.get_by_text("label selector app=demo")).to_be_visible()
+        await expect(preview.get_by_text("field selector status.phase=Running")).to_be_visible()
+        await expect(preview.get_by_text("List pods in namespace", exact=False)).to_have_count(0)
+        await expect(section.get_by_text("test-apps", exact=True)).to_have_count(1)
         await expect(section.get_by_text("Requested by", exact=False)).to_have_count(0)
         await expect(section.get_by_text("Check the exact call before approving.", exact=True)).to_have_count(0)
         await expect(section.get_by_text("app=demo")).to_be_visible()
@@ -166,14 +173,20 @@ async def test_compact_action_chips(
     if viewport == MOBILE:
         await view.page.get_by_role("button", name="Toggle navigation").click()
     section = view.page.locator(".agentplane-actions-sidebar")
-    await section.get_by_role("button", name=f"Expand review {name}").click()
+    if group == "kubernetes_admin" and name == "pods_list_in_namespace":
+        title = "inspect running demo pods"
+    else:
+        title = f"review {name.replace('_', ' ')}"
+    disclosure = section.get_by_role("button", name=f"Expand {title}")
+    bounds = await disclosure.bounding_box()
+    assert bounds is not None
+    await disclosure.click(position={"x": bounds["width"] - 4, "y": bounds["height"] - 3})
     await expect(section.get_by_text(visible)).to_be_visible()
     if group == "kubernetes_admin" and name == "pods_list_in_namespace":
-        await expect(section.get_by_role("link", name=re.compile("^List pods in namespace"))).to_be_visible()
-    else:
-        await expect(section.get_by_role("link", name=re.compile("View details"))).to_be_visible()
+        await expect(section.locator(".agentplane-actions-sidebar-name")).to_contain_text("List pods in namespace")
+    await expect(section.get_by_role("link", name=f"View details for {title}")).to_be_visible()
     if group == "kubernetes_admin" and name in {"resources_get", "pods_list_in_namespace", "pods_log"}:
-        await expect(section.get_by_role("button", name=f"Approve review {name}")).to_be_visible()
+        await expect(section.get_by_role("button", name=f"Approve {title}")).to_be_visible()
     if group == "kubernetes_admin" and name in {"resources_get", "pods_log"}:
         await expect(section.get_by_text("namespace: (not specified)", exact=True)).to_be_visible()
     if group == "kubernetes_admin" and name == "pods_log":
@@ -201,12 +214,10 @@ async def test_compact_pr_with_description_requires_review(
     section = view.page.locator(".agentplane-actions-sidebar")
     if viewport == MOBILE:
         await view.page.get_by_role("button", name="Toggle navigation").click()
-    await section.get_by_role("button", name="Expand review create_pull_request").click()
+    await section.get_by_role("button", name="Expand review create pull request").click()
     await expect(section.get_by_text("description: open Review")).to_be_visible()
-    await expect(section.get_by_role("button", name="Approve review create_pull_request")).to_have_count(0)
-    await expect(
-        section.get_by_role("link", name="View details for github / create_pull_request: review create_pull_request")
-    ).to_be_visible()
+    await expect(section.get_by_role("button", name="Approve review create pull request")).to_have_count(0)
+    await expect(section.get_by_role("link", name="View details for review create pull request")).to_be_visible()
     await view.capture(target=section)
 
 

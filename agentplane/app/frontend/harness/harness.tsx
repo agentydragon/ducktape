@@ -2808,7 +2808,10 @@ const visualHarness = {
       ...COMPACT_POD_ACTION,
       action,
       arguments: args,
-      title: `review ${action.name}`,
+      title:
+        action.group === "kubernetes_admin" && action.name === "pods_list_in_namespace"
+          ? "inspect running demo pods"
+          : `review ${action.name.replaceAll("_", " ")}`,
       description: "Check the exact call before approving.",
     };
   },

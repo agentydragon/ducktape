@@ -10,6 +10,7 @@ import {
   renderDetailsResult,
   renderPaneCollapsed,
   renderPaneOpened,
+  shouldRenderPaneRequestTitle,
 } from "./index";
 
 const SSH_EXEC = { group: "ssh", name: "exec" };
@@ -36,19 +37,26 @@ describe("Action presentation slots", () => {
       renderDetailsArguments({ group: "kubernetes_admin", name: "pods_list_in_namespace" }, args)
     );
 
-    expect(collapsed.textContent).toContain("Get pods");
-    expect(opened.textContent).toContain("List pods in namespace");
+    expect(collapsed.textContent).toContain("Filters");
+    expect(collapsed.textContent).not.toContain("namespace prod");
+    expect(opened.textContent).toContain("field selector status.phase=Running");
+    expect(opened.textContent).toContain("label selector app=web");
+    expect(opened.textContent).not.toContain("List pods in namespace");
+    expect(opened.textContent).not.toContain("namespace prod");
     expect(details.textContent).toContain("List pods in namespace");
   });
 
   it("uses a human-facing Action label in place of the technical identity", async () => {
     const action = { group: "kubernetes_admin", name: "pods_list_in_namespace" };
-    const label = await mount(renderActionLabel(action, { namespace: "tofu-controller" }));
+    const args = { namespace: "tofu-controller" };
+    const label = await mount(renderActionLabel(action, args));
 
     expect(label.textContent).toContain("List pods in namespace tofu-controller");
     expect(label.textContent).not.toContain("kubernetes_admin");
     expect(label.textContent).not.toContain("pods_list_in_namespace");
     expect(renderActionLabel(action, { namespace: "tofu-controller", hidden: true })).toBeNull();
+    expect(shouldRenderPaneRequestTitle(action, args, "List pods in namespace tofu-controller")).toBe(false);
+    expect(shouldRenderPaneRequestTitle(action, args, "Inspect the running demo pods")).toBe(true);
   });
 
   it("uses SSH's custom pane and full-details argument renderers", async () => {
