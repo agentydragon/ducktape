@@ -4,10 +4,12 @@ evidence behind an entity, and command outcomes.
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Iterator, Sequence
+from contextlib import contextmanager
 from dataclasses import dataclass
 from uuid import UUID
 
+import grpc
 from google.protobuf.json_format import MessageToDict
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
@@ -22,11 +24,12 @@ from agentplane.app.threads.events.debug import (
 )
 from agentplane.app.threads.events.event_log import ThreadNotFoundError
 from agentplane.app.threads.models import EventLog
-from agentplane.history_service.client import HistoryServiceClient
+from agentplane.history_service import protocol_pb2 as history_pb2
+from agentplane.history_service.client import HistoryServiceClient, HistoryServiceError
 from agentplane.protocol import command_pb2, event_log_pb2
 from agentplane.thread_fold import fold
 from agentplane.thread_fold.models import ThreadCheckpoint, ThreadEntity, ThreadEvidence, ThreadNativeLink
-from agentplane.thread_fold.views import EntityKind, ThreadCommandState
+from agentplane.thread_fold.views import EntityKind, ThreadCommandEntityView, ThreadCommandState
 
 # The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.
 # gazelle:include_dep @pypi//protobuf
@@ -137,7 +140,9 @@ class ContentStore:
             )
         frames: list[NativeFrame] = []
         for sequence in sequences[:limit]:
-            entry = await self._archived_entry(thread_id, sequence, source_id)
+            entry = await self._archived_entry(thread_id, sequence)
+            if entry is not None and entry.origin.source_id != source_id:
+                raise ValueError("service history did not return the requested evidence cursor")
             payload = MessageToDict(entry) if entry is not None and entry.event.HasField("native") else None
             frames.append(
                 NativeFrame.model_validate(
@@ -152,7 +157,7 @@ class ContentStore:
             frames=frames, next_after_sequence=str(sequences[limit - 1]) if len(sequences) > limit else None
         )
 
-    async def _archived_entry(self, thread_id: UUID, cursor: int, source_id: str) -> event_log_pb2.EventEntry | None:
+    async def _archived_entry(self, thread_id: UUID, cursor: int) -> event_log_pb2.EventEntry | None:
         # Exact indexed lookup through the history API, never an app raw-table fallback.
         page = await self._history_reader.read_session_events(str(thread_id), after_cursor=cursor - 1, limit=1)
         if not page.entries:
@@ -162,7 +167,6 @@ class ContentStore:
             len(page.entries) != 1
             or entry.cursor != cursor
             or entry.origin.sequence != cursor
-            or entry.origin.source_id != source_id
             or page.last_cursor < cursor
         ):
             raise ValueError("service history did not return the requested evidence cursor")
@@ -210,17 +214,21 @@ class ContentStore:
                 return None
             cursor = summary.cursor
             source_id = checkpoint.source_id
-        entry = await self._archived_entry(thread_id, cursor, source_id)
-        if entry is None:
+        entry = await self._archived_entry(thread_id, cursor)
+        if entry is None or entry.origin.source_id != source_id:
             raise ValueError("command summary has no archived admission")
-        if (
-            not entry.event.HasField("command_admitted")
-            or entry.event.command_admitted.command.command_id != command.command_id
-        ):
-            raise ValueError("command summary does not point to its archived admission")
-        if entry.event.command_admitted.command == command:
-            return entry
-        raise CommandIdConflictError(f"command id {command.command_id!r} was already admitted with different work")
+        return _admission(entry, command)
+
+
+def _admission(entry: event_log_pb2.EventEntry, command: command_pb2.Command) -> event_log_pb2.EventEntry:
+    if (
+        not entry.event.HasField("command_admitted")
+        or entry.event.command_admitted.command.command_id != command.command_id
+    ):
+        raise ValueError("command summary does not point to its archived admission")
+    if entry.event.command_admitted.command == command:
+        return entry
+    raise CommandIdConflictError(f"command id {command.command_id!r} was already admitted with different work")
 
 
 async def _evidence_entity_cursor(
@@ -235,3 +243,147 @@ async def _evidence_entity_cursor(
     if entity is None:
         raise ThreadEvidenceNotFoundError("no selected thread entity")
     return entity.cursor
+
+
+class HistoryContentStore(ContentStore):
+    """The same reads, from the History Service fold rather than the app's projection tables."""
+
+    async def current_scope(self, thread_id: UUID) -> ThreadScope | None:
+        try:
+            summary = await self._history_reader.get_session_summary(str(thread_id))
+        except HistoryServiceError as error:
+            if error.code != grpc.StatusCode.NOT_FOUND:
+                raise
+            return None
+        if not summary.HasField("projection_epoch"):
+            return None
+        return ThreadScope(summary.projection_epoch, summary.folded_through)
+
+    async def evidence(
+        self, thread_id: UUID, *, projection_epoch: str, entity_kind: str, entity_id: str, after_cursor: int, limit: int
+    ) -> EvidencePage:
+        if not 1 <= limit <= 200 or after_cursor < 0:
+            raise ValueError("invalid evidence page bounds")
+        with _evidence_errors():
+            page = await self._history_reader.read_entity_evidence(
+                history_pb2.ReadEntityEvidenceRequest(
+                    session_id=str(thread_id),
+                    projection_epoch=projection_epoch,
+                    entity=history_pb2.EntityKey(entity_kind=entity_kind, entity_id=entity_id),
+                    after_cursor=after_cursor,
+                    limit=limit,
+                )
+            )
+        return EvidencePage(
+            observations=[
+                EvidenceObservation(observation_cursor=str(row.observation_cursor), has_native=row.has_native)
+                for row in page.observations
+            ],
+            next_after_cursor=str(page.next_after_cursor) if page.HasField("next_after_cursor") else None,
+        )
+
+    async def native_frames(
+        self,
+        thread_id: UUID,
+        *,
+        projection_epoch: str,
+        entity_kind: str,
+        entity_id: str,
+        observation_cursor: int,
+        after_sequence: int,
+        limit: int,
+    ) -> NativeFramePage:
+        if not 1 <= limit <= 200 or after_sequence < 0:
+            raise ValueError("invalid native frame page bounds")
+        with _evidence_errors():
+            page = await self._history_reader.read_native_frames(
+                history_pb2.ReadNativeFramesRequest(
+                    session_id=str(thread_id),
+                    projection_epoch=projection_epoch,
+                    entity=history_pb2.EntityKey(entity_kind=entity_kind, entity_id=entity_id),
+                    observation_cursor=observation_cursor,
+                    after_sequence=after_sequence,
+                    limit=limit,
+                )
+            )
+        return NativeFramePage(
+            frames=[
+                NativeFrame.model_validate(
+                    {
+                        "source_sequence": str(frame.source_sequence),
+                        "availability": "present" if frame.HasField("entry") else "unavailable",
+                        "entry": MessageToDict(frame.entry) if frame.HasField("entry") else None,
+                    }
+                )
+                for frame in page.frames
+            ],
+            next_after_sequence=str(page.next_after_sequence) if page.HasField("next_after_sequence") else None,
+        )
+
+    async def command_outcomes(
+        self, thread_id: UUID, projection_epoch: str, command_ids: Sequence[str]
+    ) -> dict[str, fold.CommandOutcome | None]:
+        requested = tuple(dict.fromkeys(command_ids))
+        await self._require_thread(thread_id)
+        if not requested:
+            scope = await self.current_scope(thread_id)
+            if scope is None or scope.projection_epoch != projection_epoch:
+                raise ThreadScopeResetError("thread fold scope was reset")
+            return {}
+        commands = await self._commands(thread_id, projection_epoch, requested)
+        if commands is None:
+            raise ThreadScopeResetError("thread fold scope was reset")
+        outcomes = {command.entity_id: command.state.outcome for command in commands}
+        return {command_id: outcomes.get(command_id) for command_id in requested}
+
+    async def admitted_command(self, thread_id: UUID, command: command_pb2.Command) -> event_log_pb2.EventEntry | None:
+        await self._require_thread(thread_id)
+        commands = await self._commands(thread_id, "", [command.command_id])
+        if not commands:
+            return None
+        entry = await self._archived_entry(thread_id, commands[0].cursor)
+        if entry is None:
+            raise ValueError("command summary has no archived admission")
+        return _admission(entry, command)
+
+    async def _require_thread(self, thread_id: UUID) -> None:
+        async with self._sessions() as session:
+            if await session.get(EventLog, thread_id) is None:
+                raise ThreadNotFoundError(thread_id)
+
+    async def _commands(
+        self, thread_id: UUID, projection_epoch: str, command_ids: Sequence[str]
+    ) -> list[ThreadCommandEntityView] | None:
+        """The commands' entities in `projection_epoch` (empty: the current one); None once it is gone."""
+        try:
+            page = await self._history_reader.read_thread_entities(
+                history_pb2.ReadThreadEntitiesRequest(
+                    session_id=str(thread_id),
+                    projection_epoch=projection_epoch,
+                    keys=history_pb2.EntityKeys(
+                        keys=[
+                            history_pb2.EntityKey(entity_kind=EntityKind.COMMAND, entity_id=command_id)
+                            for command_id in command_ids
+                        ]
+                    ),
+                )
+            )
+        except HistoryServiceError as error:
+            if error.code not in {grpc.StatusCode.FAILED_PRECONDITION, grpc.StatusCode.NOT_FOUND}:
+                raise
+            return None
+        if projection_epoch and page.projection_epoch != projection_epoch:
+            return None
+        return [ThreadCommandEntityView.model_validate_json(entity.view_json) for entity in page.entities]
+
+
+@contextmanager
+def _evidence_errors() -> Iterator[None]:
+    try:
+        yield
+    except HistoryServiceError as error:
+        if error.code == grpc.StatusCode.FAILED_PRECONDITION:
+            raise ThreadScopeChangedError("the thread fold projection epoch has changed") from error
+        if error.code == grpc.StatusCode.NOT_FOUND:
+            raise ThreadEvidenceNotFoundError("no selected thread entity") from error
+        raise

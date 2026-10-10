@@ -9,6 +9,7 @@ py_library(
         ":debug",
         "//agentplane/app:database_updates",
         "//agentplane/app/threads:models",
+        "//agentplane/app/threads:summaries",
         "//agentplane/history_service:client",
         "//agentplane/protocol:event_log_pb2",
         "//agentplane/runner:harness",
@@ -27,6 +28,7 @@ py_library(
     deps = [
         ":event_log",
         "//agentplane/app:changes",
+        "//agentplane/app/threads:summaries",
         "@pypi//protobuf",
     ],
 )
@@ -48,6 +50,7 @@ py_test(
         "//agentplane/app/testing:retained_history",
         "//agentplane/app/testing:thread_test_support",
         "//agentplane/app/threads:models",
+        "//agentplane/app/threads:summaries",
         "//agentplane/history_service:client",
         "//agentplane/protocol:event_pb2",
         "//agentplane/sandbox_service:protocol_pb2",
@@ -71,6 +74,7 @@ py_test(
         "//:conftest",
         "//agentplane/app:changes",
         "//agentplane/app:conftest",
+        "//agentplane/app/threads:summaries",
         "//agentplane/protocol:event_log_pb2",
         "//agentplane/runner:protocol_pb2",
         "@pypi//protobuf",

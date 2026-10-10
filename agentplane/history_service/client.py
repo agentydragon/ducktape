@@ -10,13 +10,11 @@ from typing import Never
 import grpc
 
 from agentplane.grpc_options import grpc_channel_option_kvps
-from agentplane.history_service import protocol_pb2_grpc
+from agentplane.history_service import protocol_pb2 as history_pb2, protocol_pb2_grpc
 from agentplane.sandbox_service import protocol_pb2
 
 # gazelle:include_dep @pypi//protobuf
 # gazelle:include_dep @pypi//grpcio
-# protocol_pb2_grpc stubs name the History Service messages.
-# gazelle:include_dep //agentplane/history_service:protocol_pb2
 
 
 class HistoryServiceError(ConnectionError):
@@ -96,6 +94,56 @@ class HistoryServiceClient:
             request.after_cursor = after_cursor
         try:
             return await self.stub.ReadSessionObservations(
+                request, metadata=await self.metadata(), timeout=self.request_timeout_s
+            )
+        except grpc.aio.AioRpcError as error:
+            _raise(error)
+
+    async def get_session_summary(self, session_id: str) -> history_pb2.SessionSummary:
+        try:
+            return await self.stub.GetSessionSummary(
+                history_pb2.GetSessionSummaryRequest(session_id=session_id),
+                metadata=await self.metadata(),
+                timeout=self.request_timeout_s,
+            )
+        except grpc.aio.AioRpcError as error:
+            _raise(error)
+
+    async def list_session_summaries(
+        self, request: history_pb2.ListSessionSummariesRequest
+    ) -> history_pb2.ListSessionSummariesResponse:
+        try:
+            return await self.stub.ListSessionSummaries(
+                request, metadata=await self.metadata(), timeout=self.request_timeout_s
+            )
+        except grpc.aio.AioRpcError as error:
+            _raise(error)
+
+    async def read_thread_entities(
+        self, request: history_pb2.ReadThreadEntitiesRequest
+    ) -> history_pb2.ReadThreadEntitiesResponse:
+        try:
+            return await self.stub.ReadThreadEntities(
+                request, metadata=await self.metadata(), timeout=self.request_timeout_s
+            )
+        except grpc.aio.AioRpcError as error:
+            _raise(error)
+
+    async def read_entity_evidence(
+        self, request: history_pb2.ReadEntityEvidenceRequest
+    ) -> history_pb2.ReadEntityEvidenceResponse:
+        try:
+            return await self.stub.ReadEntityEvidence(
+                request, metadata=await self.metadata(), timeout=self.request_timeout_s
+            )
+        except grpc.aio.AioRpcError as error:
+            _raise(error)
+
+    async def read_native_frames(
+        self, request: history_pb2.ReadNativeFramesRequest
+    ) -> history_pb2.ReadNativeFramesResponse:
+        try:
+            return await self.stub.ReadNativeFrames(
                 request, metadata=await self.metadata(), timeout=self.request_timeout_s
             )
         except grpc.aio.AioRpcError as error:

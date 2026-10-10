@@ -85,12 +85,12 @@ py_library(
     srcs = ["store.py"],
     deps = [
         ":models",
+        ":summaries",
         ":thread_view",
         "//agentplane/app:database_updates",
         "//agentplane/app/threads/events:event_log",
         "//agentplane/protocol:event_pb2",
         "//agentplane/runner:protocol_pb2",
-        "//agentplane/thread_fold:models",
         "@pypi//protobuf",
         "@pypi//sqlalchemy",
     ],
@@ -102,6 +102,7 @@ py_test(
     srcs = ["test_store.py"],
     deps = [
         ":store",
+        ":summaries",
         "//:conftest",
         "//agentplane/app:conftest",
         "//agentplane/app/testing:retained_history",
@@ -111,6 +112,21 @@ py_test(
         "@pypi//protobuf",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
+    name = "summaries",
+    srcs = ["summaries.py"],
+    deps = [
+        "//agentplane/app:database_updates",
+        "//agentplane/history_service:client",
+        "//agentplane/history_service:protocol_pb2",
+        "//agentplane/runner:protocol_pb2",
+        "//agentplane/thread_fold:models",
+        "@pypi//grpcio",
+        "@pypi//protobuf",
         "@pypi//sqlalchemy",
     ],
 )
@@ -136,6 +152,7 @@ py_library(
     deps = [
         ":ingestion",
         ":sessions",
+        ":summaries",
         "//agentplane/app/threads/events:event_log",
         "//agentplane/app/threads/view:content",
         "//agentplane/protocol:command_pb2",
@@ -159,6 +176,7 @@ py_test(
         ":ingestion",
         ":sessions",
         ":store",
+        ":summaries",
         "//:conftest",
         "//agentplane/app:conftest",
         "//agentplane/app:database_updates",

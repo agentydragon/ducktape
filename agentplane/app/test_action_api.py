@@ -71,6 +71,7 @@ from agentplane.app.testing.history_service import HistoryService
 from agentplane.app.testing.model_test_data import TEST_REASONING_EFFORTS
 from agentplane.app.threads.bridge import RunnerBridge
 from agentplane.app.threads.store import ThreadStore
+from agentplane.app.threads.summaries import AppSummaries
 from agentplane.app.threads.view.content import ContentStore
 from agentplane.history_service.client import HistoryServiceClient
 from agentplane.runner.harness import Harness
@@ -356,7 +357,7 @@ async def review(
         replica = create_app(
             inventory,
             bridge,
-            ThreadStore(replica_engine),
+            ThreadStore(replica_engine, AppSummaries(replica_engine)),
             ModelCatalog(
                 models=[
                     ModelOption(

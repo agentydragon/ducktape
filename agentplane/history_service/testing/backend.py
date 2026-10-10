@@ -17,6 +17,7 @@ from sqlalchemy.ext.asyncio import create_async_engine
 
 from agentplane.history_service.client import HistoryServiceClient
 from agentplane.history_service.evidence import EvidenceReader
+from agentplane.history_service.fold_shadow import FoldShadow
 from agentplane.history_service.grpc_api import Resources, add_service
 from agentplane.history_service.summaries import SummaryReader
 from agentplane.history_service.thread_reads import ThreadReader
@@ -80,4 +81,15 @@ async def history_service(database_url: str, token_file: Path) -> AsyncIterator[
     finally:
         await client.close()
         await server.stop(0)
+        await engine.dispose()
+
+
+async def fold_history(database_url: str) -> None:
+    """Fold every retained Session in the history database until the History Service fold has caught up."""
+    engine = create_async_engine(make_url(database_url).set(drivername="postgresql+asyncpg"))
+    try:
+        shadow = FoldShadow(engine=engine, history=Store(engine), concurrency=1)
+        while (await shadow.cycle()).behind:
+            pass
+    finally:
         await engine.dispose()

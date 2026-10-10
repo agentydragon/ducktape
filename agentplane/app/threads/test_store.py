@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
 
 from agentplane.app.testing.retained_history import seed_retained_session
 from agentplane.app.threads.store import ThreadStore
+from agentplane.app.threads.summaries import AppSummaries
 from agentplane.protocol import event_pb2
 from agentplane.runner import protocol_pb2
 from agentplane.thread_fold.models import ThreadCheckpoint, ThreadHistorySummary
@@ -40,7 +41,7 @@ async def seed_projection(engine: AsyncEngine, *, sandbox: str, cursor: int) -> 
 async def test_thread_views_and_operator_edits_need_no_raw_events(engine: AsyncEngine) -> None:
     thread = await seed_projection(engine, sandbox="one", cursor=7)
     other = await seed_projection(engine, sandbox="two", cursor=3)
-    store = ThreadStore(engine)
+    store = ThreadStore(engine, AppSummaries(engine))
     view = await store.get_thread(thread)
     assert view is not None
     assert view.last_cursor == 7
@@ -72,7 +73,7 @@ async def test_thread_turn_status_comes_from_projection_summary(engine: AsyncEng
         assert summary is not None
         summary.last_turn_status = status
         summary.end = {}
-    store = ThreadStore(engine)
+    store = ThreadStore(engine, AppSummaries(engine))
     view = await store.get_thread(thread)
     assert view is not None
     assert view.last_turn_status == (None if status is None else event_pb2.TurnStatus.Name(status))
@@ -82,7 +83,7 @@ async def test_thread_turn_status_comes_from_projection_summary(engine: AsyncEng
 
 async def test_missing_projection_metadata_does_not_read_retained_raw_history(engine: AsyncEngine) -> None:
     thread = await seed_retained_session(engine)
-    store = ThreadStore(engine)
+    store = ThreadStore(engine, AppSummaries(engine))
     with pytest.raises(ValueError, match="missing service projection metadata"):
         await store.get_thread(thread)
     with pytest.raises(ValueError, match="missing service projection metadata"):

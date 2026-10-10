@@ -46,6 +46,7 @@ from agentplane.app.testing.thread_browser import (
     message_composer,
 )
 from agentplane.app.threads.store import ThreadStore
+from agentplane.app.threads.summaries import AppSummaries
 from agentplane.app.threads.view.content import ContentStore
 from agentplane.protocol import command_pb2, event_log_pb2, event_pb2
 from agentplane.thread_fold.models import (
@@ -523,7 +524,7 @@ async def test_projected_browser_streams_runner_events_and_loads_evidence_lazily
         )
         try:
             thread = await event_logs.open(SANDBOX, SESSION, source.attached.spec)
-            await ThreadStore(engine).rename(thread, "Streamed thread")
+            await ThreadStore(engine, AppSummaries(engine)).rename(thread, "Streamed thread")
             async with (
                 source.serve() as runner_port,
                 app_process(

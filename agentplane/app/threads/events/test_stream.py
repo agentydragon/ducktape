@@ -10,8 +10,9 @@ import pytest
 import pytest_bazel
 
 from agentplane.app.changes import Changes
-from agentplane.app.threads.events.event_log import EventLogStore, FeedEnd, FeedSnapshot, ServiceSessionReference
+from agentplane.app.threads.events.event_log import EventLogStore, ServiceSessionReference
 from agentplane.app.threads.events.stream import follow
+from agentplane.app.threads.summaries import FeedEnd, FeedSnapshot
 from agentplane.protocol import event_log_pb2
 from agentplane.runner import protocol_pb2
 

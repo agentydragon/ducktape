@@ -32,14 +32,15 @@ from agentplane.app.live import LiveIndex, watch_for
 from agentplane.app.oidc import load_settings
 from agentplane.app.operator_sessions import OperatorSessionStore
 from agentplane.app.presets import PresetCatalog
-from agentplane.app.settings import Settings
+from agentplane.app.settings import Settings, ThreadReads
 from agentplane.app.shutdown import Drain, drain_of
 from agentplane.app.threads.bridge import RunnerBridge
 from agentplane.app.threads.events.event_log import EventLogStore
 from agentplane.app.threads.ingestion import Ingester, Ingestion
 from agentplane.app.threads.sessions import SandboxSessions
 from agentplane.app.threads.store import ThreadStore
-from agentplane.app.threads.view.content import ContentStore
+from agentplane.app.threads.summaries import AppSummaries, HistorySummaries
+from agentplane.app.threads.view.content import ContentStore, HistoryContentStore
 from agentplane.history_service.client import HistoryServiceClient
 from agentplane.kubernetes_watch import STALE_AFTER_CYCLES
 from agentplane.sandbox_service.client import SandboxServiceClient
@@ -165,17 +166,22 @@ async def async_main(settings: Settings) -> None:
         )
         engine = connect(settings.database_url)
         database_updates = DatabaseUpdates(engine.url)
-        store = ThreadStore(engine)
-        event_logs = EventLogStore(engine, history_reader=history, history_creator=history)
-        content = ContentStore(engine, history_reader=history)
+        match settings.thread_reads:
+            case ThreadReads.APP:
+                summaries: AppSummaries | HistorySummaries = AppSummaries(engine)
+                content = ContentStore(engine, history_reader=history)
+                projector: HistoryProjector | None = HistoryProjector(
+                    engine, service_pages(history), projection_epoch=THREAD_FOLD_EPOCH, notify=notify_threads
+                )
+            case ThreadReads.HISTORY_SERVICE:
+                summaries = HistorySummaries(engine, history)
+                content = HistoryContentStore(engine, history_reader=history)
+                projector = None
+        store = ThreadStore(engine, summaries)
+        event_logs = EventLogStore(engine, history_reader=history, summaries=summaries, history_creator=history)
         runners = SandboxSessions(live, inventory)
         ingester = Ingester(
-            runners=runners,
-            event_logs=event_logs,
-            ingestion=Ingestion(engine),
-            history_projector=HistoryProjector(
-                engine, service_pages(history), projection_epoch=THREAD_FOLD_EPOCH, notify=notify_threads
-            ),
+            runners=runners, event_logs=event_logs, ingestion=Ingestion(engine), history_projector=projector
         )
         bridge = RunnerBridge(runners=runners, event_logs=event_logs, content=content, ingester=ingester)
 

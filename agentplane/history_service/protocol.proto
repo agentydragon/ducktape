@@ -72,6 +72,8 @@ message SessionSummary {
   optional ducktape.agentplane.protocol.v1.TurnStatus last_turn_status = 10;
   ducktape.agentplane.runner.v1.Attached attached = 11;
   FeedStatus feed_status = 12;
+  // With FEED_STATUS_FAILED: why the runner's history was rejected.
+  optional string feed_error = 13;
 }
 
 // Internal to the History Service: the serialized form of a page token.

@@ -39,6 +39,7 @@ from agentplane.app.testing.thread_test_support import SPEC, Replica, event_entr
 from agentplane.app.threads.bridge import RunnerBridge
 from agentplane.app.threads.sessions import SandboxSessions
 from agentplane.app.threads.store import ThreadStore
+from agentplane.app.threads.summaries import AppSummaries
 from agentplane.app.threads.view.content import ContentStore
 from agentplane.history_service.client import HistoryServiceClient
 
@@ -157,7 +158,7 @@ async def engine(db_url: str) -> AsyncIterator[AsyncEngine]:
 
 @pytest.fixture
 def store(engine: AsyncEngine) -> ThreadStore:
-    return ThreadStore(engine)
+    return ThreadStore(engine, AppSummaries(engine))
 
 
 @pytest.fixture
@@ -202,7 +203,7 @@ async def replica(
     engine = connect(db_url)
     try:
         yield Replica(
-            ThreadStore(engine),
+            ThreadStore(engine, AppSummaries(engine)),
             EventLogStore(engine, peer=history_peer, history_reader=history_client),
             Ingestion(engine, peer=history_peer, history_reader=history_client),
             OperatorSessionStore(engine),

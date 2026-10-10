@@ -136,4 +136,6 @@ def _summary(
             if summary.end
             else protocol_pb2.FEED_STATUS_ENDED
         )
+        if summary.end:
+            message.feed_error = summary.end["message"]
     return message

@@ -32,6 +32,7 @@ from agentplane.app.threads.events.event_log import EventLogStore
 from agentplane.app.threads.ingestion import Ingester, Ingestion
 from agentplane.app.threads.sessions import SandboxSessions
 from agentplane.app.threads.store import ThreadStore
+from agentplane.app.threads.summaries import AppSummaries
 from agentplane.app.threads.view.content import ContentStore
 from agentplane.history_service.client import HistoryServiceClient
 from agentplane.runner.harness import Harness
@@ -59,7 +60,7 @@ def _openapi_document(api_client: k8s_client.ApiClient) -> dict[str, Any]:
     engine = connect("postgresql+asyncpg://schema@localhost/schema")
     database_updates = DatabaseUpdates(engine.url)
     event_logs, content = (
-        EventLogStore(engine, history_reader=history, history_creator=history),
+        EventLogStore(engine, summaries=AppSummaries(engine), history_reader=history, history_creator=history),
         ContentStore(engine, history_reader=history),
     )
     live = LiveIndex(stale_after_seconds=900, core_v1=CoreV1Api(api_client))
@@ -79,7 +80,7 @@ def _openapi_document(api_client: k8s_client.ApiClient) -> dict[str, Any]:
                 ),
             ),
         ),
-        ThreadStore(engine),
+        ThreadStore(engine, AppSummaries(engine)),
         ModelCatalog(
             models=[
                 ModelOption(

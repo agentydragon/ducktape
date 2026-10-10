@@ -16,10 +16,11 @@ from agentplane.app.testing.projection_lease import LeaseFactory
 from agentplane.app.testing.retained_history import seed_retained_session
 from agentplane.app.testing.thread_test_support import SPEC, event_entry
 from agentplane.app.threads.bridge import RunnerBridge
-from agentplane.app.threads.events.event_log import EventLogStore as ServiceEventLogStore, FeedEnd
+from agentplane.app.threads.events.event_log import EventLogStore as ServiceEventLogStore
 from agentplane.app.threads.ingestion import Ingester
 from agentplane.app.threads.sessions import SandboxSessions
 from agentplane.app.threads.store import ThreadStore
+from agentplane.app.threads.summaries import AppSummaries, FeedEnd
 from agentplane.app.threads.view.content import ContentStore
 from agentplane.history_service.client import HistoryServiceClient
 from agentplane.protocol import event_pb2
@@ -248,7 +249,7 @@ async def test_thread_metadata_survives_projection_retry(
     ]
     await ingestion.record(thread, first, lease=lease)
     await ingestion.record(sibling, first, lease=sibling_lease)
-    store = ThreadStore(engine)
+    store = ThreadStore(engine, AppSummaries(engine))
     before = await store.get_thread(thread)
     assert before is not None
     assert (await store.list_threads())[0].last_cursor == 2
@@ -280,7 +281,9 @@ async def test_thread_metadata_survives_projection_retry(
     after = await store.get_thread(thread)
     assert after is not None
     assert after.last_cursor == 4
-    service_logs = ServiceEventLogStore(engine, history_reader=cast(HistoryServiceClient, reader))
+    service_logs = ServiceEventLogStore(
+        engine, summaries=AppSummaries(engine), history_reader=cast(HistoryServiceClient, reader)
+    )
     assert await service_logs.last_cursor(thread) == 4
     assert after.last_event_at == before.last_event_at
     assert after.last_turn_status == "TURN_STATUS_INTERRUPTED"
@@ -331,7 +334,7 @@ async def test_lifecycle_uses_only_covered_service_snapshot(
     assert snapshot is not None
     assert isinstance(snapshot.end, FeedEnd)
     assert snapshot.attached.last_cursor == 2
-    views = {view.id: view for view in await ThreadStore(engine).list_threads()}
+    views = {view.id: view for view in await ThreadStore(engine, AppSummaries(engine)).list_threads()}
     assert views[thread].feed_status == "ended"
     assert views[thread].harness_state == "HARNESS_STATE_STOPPED"
 
@@ -445,7 +448,7 @@ async def test_deleted_history_keeps_seeded_terminal_state_without_service_snaps
         notify=notify_threads,
     ).project_batch(thread, lease=lease)
     assert await event_logs.feed_state(thread) == before
-    assert (await ThreadStore(engine).rename(thread, "archive")).feed_status == "ended"
+    assert (await ThreadStore(engine, AppSummaries(engine)).rename(thread, "archive")).feed_status == "ended"
 
 
 async def test_projection_failure_retains_checkpoint_not_eof_and_recovers(
@@ -502,7 +505,10 @@ async def test_discovery_of_new_service_thread_never_starts_legacy_follow(
     reader.read_session_observations.return_value = protocol_pb2.ReadSessionObservationsResponse(last_cursor=0)
     reader.read_session_events.return_value = protocol_pb2.ReadSessionEventsResponse(last_cursor=0)
     logs = ServiceEventLogStore(
-        engine, history_reader=cast(HistoryServiceClient, reader), history_creator=cast(HistoryServiceClient, reader)
+        engine,
+        summaries=AppSummaries(engine),
+        history_reader=cast(HistoryServiceClient, reader),
+        history_creator=cast(HistoryServiceClient, reader),
     )
     client = AsyncMock()
     client.list_sessions.return_value = [
@@ -540,7 +546,10 @@ async def test_discovery_racing_open_agrees_on_the_service_id(engine: AsyncEngin
     reader.read_session_observations.return_value = protocol_pb2.ReadSessionObservationsResponse(last_cursor=0)
     reader.read_session_events.return_value = protocol_pb2.ReadSessionEventsResponse(last_cursor=0)
     logs = ServiceEventLogStore(
-        engine, history_reader=cast(HistoryServiceClient, reader), history_creator=cast(HistoryServiceClient, reader)
+        engine,
+        summaries=AppSummaries(engine),
+        history_reader=cast(HistoryServiceClient, reader),
+        history_creator=cast(HistoryServiceClient, reader),
     )
     client = AsyncMock()
     client.list_sessions.return_value = [runner_pb2.SessionSummary(session_id=str(public_id), spec=SPEC)]
@@ -582,7 +591,9 @@ async def test_sessions_without_projection_metadata_are_not_scheduled(
 ) -> None:
     thread = await seed_retained_session(engine)
     reader = AsyncMock(spec=HistoryServiceClient)
-    logs = ServiceEventLogStore(engine, history_reader=cast(HistoryServiceClient, reader))
+    logs = ServiceEventLogStore(
+        engine, summaries=AppSummaries(engine), history_reader=cast(HistoryServiceClient, reader)
+    )
     assert thread not in await logs.projection_sessions()
     runners = Mock(spec=SandboxSessions)
     runners.running.return_value = set()
@@ -609,11 +620,13 @@ async def test_runtime_feed_metadata_requires_projection_summary(engine: AsyncEn
     thread = await seed_retained_session(engine)
     attached = {"sessionId": "s-retained"}
     reader = AsyncMock(spec=HistoryServiceClient)
-    runtime = ServiceEventLogStore(engine, history_reader=cast(HistoryServiceClient, reader))
+    runtime = ServiceEventLogStore(
+        engine, summaries=AppSummaries(engine), history_reader=cast(HistoryServiceClient, reader)
+    )
     assert await runtime.feed_state(thread) is None
     await runtime.resume_pending(thread)
     with pytest.raises(ValueError, match="missing service projection metadata"):
-        await ThreadStore(engine).get_thread(thread)
+        await ThreadStore(engine, AppSummaries(engine)).get_thread(thread)
     async with async_sessionmaker(engine).begin() as session:
         session.add(ThreadHistorySummary(thread_id=thread, attached=attached, end={}))
     snapshot = await runtime.feed_state(thread)

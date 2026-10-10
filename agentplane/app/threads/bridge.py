@@ -9,9 +9,10 @@ from fastapi import APIRouter, Depends, Request, status
 from google.protobuf.json_format import MessageToDict, ParseDict, ParseError
 from pydantic import BaseModel, ConfigDict, Field
 
-from agentplane.app.threads.events.event_log import EventLogStore, FeedError, ThreadNotFoundError
+from agentplane.app.threads.events.event_log import EventLogStore, ThreadNotFoundError
 from agentplane.app.threads.ingestion import Ingester
 from agentplane.app.threads.sessions import SandboxSessions
+from agentplane.app.threads.summaries import FeedError
 from agentplane.app.threads.view.content import ContentStore
 from agentplane.protocol import command_pb2, event_log_pb2
 from agentplane.runner import protocol_pb2

@@ -53,7 +53,8 @@ class Ingester:
         runners: SandboxSessions,
         event_logs: EventLogStore,
         ingestion: Ingestion,
-        history_projector: HistoryProjector,
+        # None while Thread reads come from the History Service: the app then only discovers Sessions.
+        history_projector: HistoryProjector | None,
     ) -> None:
         self._runners = runners
         self._history_projector = history_projector
@@ -87,16 +88,18 @@ class Ingester:
     async def reconcile(self) -> None:
         """Project registered Sessions independently; discover live Sandbox Sessions separately."""
         async with self._reconcile_lock:
-            projectable = await self._event_logs.projection_sessions()
+            projector = self._history_projector
+            projectable = {} if projector is None else await self._event_logs.projection_sessions()
             for session_id in set(self._leases) - projectable.keys():
                 await self._release(session_id)
             async with asyncio.TaskGroup() as tasks:
-                for session_id in projectable:
-                    tasks.create_task(self._reconcile_session(session_id))
+                if projector is not None:
+                    for session_id in projectable:
+                        tasks.create_task(self._reconcile_session(projector, session_id))
                 for sandbox in sorted(self._runners.running()):
                     tasks.create_task(self._discover_sessions(sandbox))
 
-    async def _reconcile_session(self, session_id: UUID) -> None:
+    async def _reconcile_session(self, projector: HistoryProjector, session_id: UUID) -> None:
         try:
             async with asyncio.timeout(10):
                 lease = self._leases.get(session_id)
@@ -108,7 +111,7 @@ class Ingester:
                     if lease is None:
                         return
                     self._leases[session_id] = lease
-                await self._project_history(session_id, lease)
+                await self._project_history(projector, session_id, lease)
         except SQLAlchemyError, OSError, TimeoutError:
             logger.warning("Session %s projection reconciliation failed; will retry", session_id, exc_info=True)
 
@@ -133,9 +136,9 @@ class Ingester:
         ):
             logger.warning("sandbox %s Session discovery unavailable", sandbox, exc_info=True)
 
-    async def _project_history(self, thread_id: UUID, lease: ProjectionLease) -> None:
+    async def _project_history(self, projector: HistoryProjector, thread_id: UUID, lease: ProjectionLease) -> None:
         try:
-            progress = await self._history_projector.project_batch(thread_id, lease=lease)
+            progress = await projector.project_batch(thread_id, lease=lease)
             logger.debug(
                 "service projection %s: through=%s service=%s",
                 thread_id,

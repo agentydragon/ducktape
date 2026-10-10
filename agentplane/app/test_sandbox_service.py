@@ -18,8 +18,10 @@ from agentplane.app.testing.history import (
 )
 from agentplane.app.threads.bridge import MalformedMessageError, RunnerBridge
 from agentplane.app.threads.sessions import SandboxSessions
-from agentplane.app.threads.view.content import ContentStore
-from agentplane.history_service.testing.backend import history_service
+from agentplane.app.threads.store import ThreadStore
+from agentplane.app.threads.summaries import AppSummaries, HistorySummaries
+from agentplane.app.threads.view.content import ContentStore, HistoryContentStore, ThreadScopeResetError
+from agentplane.history_service.testing.backend import fold_history, history_service
 from agentplane.protocol import command_pb2
 from agentplane.runner import protocol_pb2
 from agentplane.runner.testing.fixtures import RunnerHandle
@@ -27,6 +29,7 @@ from agentplane.runner.testing.scripted_model import ScriptedModel, Text
 from agentplane.sandbox_service.client import ServiceError
 from agentplane.sandbox_service.testing.kubernetes import SANDBOX, Cluster, authenticated_service, kubernetes
 from agentplane.testing.fake_apiserver import SANDBOX_NAMESPACE
+from agentplane.thread_fold.views import EntityKind
 from util.agent_sandbox import SANDBOXES_PLURAL
 
 # gazelle:include_dep @pypi//protobuf
@@ -122,6 +125,102 @@ async def test_production_bridge_archives_native_evidence_across_bounded_service
         finally:
             await ingester.close()
             await directory.close()
+
+
+async def test_history_service_reads_match_the_app_projection(
+    cluster: Cluster,
+    live_index: LiveIndex,
+    tmp_path: Path,
+    event_logs: EventLogStore,
+    ingestion: Ingestion,
+    content: ContentStore,
+    runner: RunnerHandle,
+    spec: protocol_pb2.SessionSpec,
+    model: ScriptedModel,
+    service_history_db_url: str,
+) -> None:
+    """Both folds over one retained history: every Thread read must agree but the epoch it names."""
+    engine = event_logs.engine
+    async with (
+        authenticated_service(
+            cluster, runner.port, tmp_path / "service-token", history_database_url=service_history_db_url
+        ) as remote,
+        history_service(service_history_db_url, tmp_path / "history-service-token") as history,
+    ):
+        event_logs = EventLogStore(engine, peer=event_logs.peer, history_reader=history)
+        ingestion = Ingestion(engine, peer=event_logs.peer, history_reader=history)
+        content = ContentStore(engine, history_reader=history)
+        directory = SandboxSessions(live_index, remote)
+        ingester = Ingester(runners=directory, event_logs=event_logs, ingestion=ingestion)
+        bridge = RunnerBridge(runners=directory, event_logs=event_logs, content=content, ingester=ingester)
+        try:
+            await bridge.open_session(SANDBOX, "parity", spec)
+            thread = await event_logs.find(SANDBOX, "parity")
+            assert thread is not None
+            command = command_pb2.Command(command_id="parity-first", submit_input=command_pb2.SubmitInput(text="first"))
+            await bridge.command(thread, command)
+            await model.reply(await model.request(), Text("FIRST"))
+            await bridge.command(
+                thread,
+                command_pb2.Command(command_id="parity-stop", stop_runner_session=command_pb2.StopRunnerSession()),
+            )
+            async for attempt in AsyncRetrying(
+                stop=stop_after_delay(15), wait=wait_fixed(0.1), retry=retry_if_exception_type(AssertionError)
+            ):
+                with attempt:
+                    archived = await event_logs.events(thread, limit=1000)
+                    assert any(entry.event.HasField("harness_exited") for entry in archived)
+                    assert await event_logs.last_cursor(thread) == archived[-1].cursor
+                    feed = await event_logs.feed_state(thread)
+                    assert feed is not None
+                    assert feed.end is not None
+        finally:
+            await ingester.close()
+            await directory.close()
+
+        await fold_history(service_history_db_url)
+
+        app = AppSummaries(engine)
+        folded = HistorySummaries(engine, history)
+        folded_logs = EventLogStore(engine, peer=event_logs.peer, history_reader=history, summaries=folded)
+        folded_content = HistoryContentStore(engine, history_reader=history)
+        assert await ThreadStore(engine, folded).list_threads() == await ThreadStore(engine, app).list_threads()
+        assert await folded_logs.feed_state(thread) == await event_logs.feed_state(thread)
+        app_scope = await content.current_scope(thread)
+        folded_scope = await folded_content.current_scope(thread)
+        assert app_scope is not None
+        assert folded_scope is not None
+        assert folded_scope.through_cursor == app_scope.through_cursor
+        commands = ["parity-first", "parity-stop", "parity-never-sent"]
+        assert await folded_content.command_outcomes(
+            thread, folded_scope.projection_epoch, commands
+        ) == await content.command_outcomes(thread, app_scope.projection_epoch, commands)
+        assert await folded_content.admitted_command(thread, command) == await content.admitted_command(thread, command)
+        assert await folded_content.evidence(
+            thread,
+            projection_epoch=folded_scope.projection_epoch,
+            entity_kind=EntityKind.COMMAND,
+            entity_id="parity-first",
+            after_cursor=0,
+            limit=200,
+        ) == await content.evidence(
+            thread,
+            projection_epoch=app_scope.projection_epoch,
+            entity_kind=EntityKind.COMMAND,
+            entity_id="parity-first",
+            after_cursor=0,
+            limit=200,
+        )
+        # A browser holding the app projection's rows sees a reset, not the other fold's rows.
+        with pytest.raises(ThreadScopeResetError):
+            await folded_content.command_outcomes(thread, app_scope.projection_epoch, commands)
+        # A confirmed restart masks the previous incarnation's end in both, until a new attachment folds.
+        await folded_logs.resume_pending(thread)
+        await event_logs.resume_pending(thread)
+        resumed = await folded_logs.feed_state(thread)
+        assert resumed is not None
+        assert resumed.end is None
+        assert resumed == await event_logs.feed_state(thread)
 
 
 async def test_stopped_service_never_falls_back_to_reachable_runner(

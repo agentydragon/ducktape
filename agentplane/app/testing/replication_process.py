@@ -49,6 +49,7 @@ from agentplane.app.threads.events.event_log import EventLogStore
 from agentplane.app.threads.ingestion import Ingester, Ingestion
 from agentplane.app.threads.sessions import SandboxSessions
 from agentplane.app.threads.store import ThreadStore
+from agentplane.app.threads.summaries import AppSummaries
 from agentplane.app.threads.view.content import ContentStore
 from agentplane.history_service.client import HistoryServiceClient
 from agentplane.runner.harness import Harness
@@ -259,7 +260,7 @@ async def _serve(
 ) -> None:
     ingestion_module.RECONCILE_S = 0.05
     engine = connect(database_url)
-    store = ThreadStore(engine)
+    store = ThreadStore(engine, AppSummaries(engine))
     ingestion = Ingestion(engine)
     database_updates = DatabaseUpdates(engine.url)
     custom, core = cast(Any, FakeCustomObjectsApi()), cast(Any, FakeCoreV1Api())
@@ -284,7 +285,7 @@ async def _serve(
         )
         # The scripted peer serves both services' methods on one port.
         history = HistoryServiceClient(f"127.0.0.1:{runner_port}", token_file=token_file, request_timeout_s=10)
-        event_logs = EventLogStore(engine, history_reader=history)
+        event_logs = EventLogStore(engine, summaries=AppSummaries(engine), history_reader=history)
         content = ContentStore(engine, history_reader=history)
         projector = (
             GatedProjector(engine, history, Gate(boundary, connection), cursor)

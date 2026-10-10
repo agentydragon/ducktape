@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from uuid import UUID
 
-from google.protobuf.json_format import MessageToDict, ParseDict
+from google.protobuf.json_format import MessageToDict
 from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
@@ -13,11 +13,12 @@ from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
 from agentplane.app.database_updates import Channel, notify
 from agentplane.app.threads.events.debug import ArchivedObservation, ArchivedObservationEntry, ObservationPage
 from agentplane.app.threads.models import EventLog
+from agentplane.app.threads.summaries import AppSummaries, FeedSnapshot, HistorySummaries
 from agentplane.history_service.client import HistoryServiceClient
 from agentplane.protocol import event_log_pb2
 from agentplane.runner import protocol_pb2
 from agentplane.runner.harness import Harness
-from agentplane.thread_fold.models import ThreadCheckpoint, ThreadHistorySummary
+from agentplane.thread_fold.models import ThreadHistorySummary
 from agentplane.thread_fold.recording import EventReplicationError
 
 # The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.
@@ -28,22 +29,6 @@ from agentplane.thread_fold.recording import EventReplicationError
 class ThreadNotFoundError(Exception):
     def __init__(self, thread_id: UUID) -> None:
         super().__init__(f"no thread {thread_id}")
-
-
-@dataclass(frozen=True)
-class FeedEnd:
-    pass
-
-
-@dataclass(frozen=True)
-class FeedError:
-    message: str
-
-
-@dataclass(frozen=True)
-class FeedSnapshot:
-    attached: protocol_pb2.Attached
-    end: FeedEnd | FeedError | None
 
 
 @dataclass(frozen=True)
@@ -60,10 +45,12 @@ class EventLogStore:
         engine: AsyncEngine,
         *,
         history_reader: HistoryServiceClient,
+        summaries: AppSummaries | HistorySummaries,
         history_creator: HistoryServiceClient | None = None,
     ) -> None:
         self._sessions = async_sessionmaker(engine, expire_on_commit=False)
         self._history_reader = history_reader
+        self._summaries = summaries
         self._history_creator = history_creator
 
     async def open(self, sandbox: str, session_id: str, spec: protocol_pb2.SessionSpec) -> UUID:
@@ -117,18 +104,8 @@ class EventLogStore:
             return await session.get(ThreadHistorySummary, thread_id) is not None
 
     async def resume_pending(self, thread_id: UUID) -> None:
-        """A runner-confirmed restart supersedes a normal terminal feed, not a replay error.
-
-        The ingester still owns the archived cursor and the next attached snapshot; this only
-        prevents an SSE reader from mistaking the previous incarnation's end for the new one.
-        """
-        async with self._sessions.begin() as session:
-            state = await session.get(ThreadHistorySummary, thread_id, with_for_update=True)
-            if state is not None and state.end == {}:
-                state.end = None
-                if state.attached is not None:
-                    state.resumed_after_cursor = ParseDict(state.attached, protocol_pb2.Attached()).last_cursor
-                await notify(session, Channel.THREADS)
+        """A runner-confirmed restart supersedes a normal terminal feed, not a replay error."""
+        await self._summaries.resume_pending(thread_id)
 
     async def find(self, sandbox: str, session_id: str) -> UUID | None:
         try:
@@ -148,13 +125,9 @@ class EventLogStore:
             return None if log is None else ServiceSessionReference(log.sandbox, str(log.id))
 
     async def last_cursor(self, thread_id: UUID) -> int:
-        """The committed app projection cursor, independent of archive progress."""
-        async with self._sessions() as session:
-            return (
-                await session.scalar(
-                    select(ThreadCheckpoint.through_cursor).where(ThreadCheckpoint.thread_id == thread_id)
-                )
-            ) or 0
+        """The committed fold cursor, independent of archive progress."""
+        summary = await self._summaries.get(thread_id)
+        return 0 if summary is None else summary.folded_through
 
     async def projection_sessions(self) -> dict[UUID, ServiceSessionReference]:
         """Sessions with app projection metadata, including deleted Sandboxes."""
@@ -252,9 +225,5 @@ class EventLogStore:
         return ArchivedObservationEntry(cursor=str(cursor), entry=MessageToDict(entry))
 
     async def feed_state(self, thread_id: UUID) -> FeedSnapshot | None:
-        async with self._sessions() as session:
-            state = await session.get(ThreadHistorySummary, thread_id)
-            if state is None or state.attached is None:
-                return None
-            end = None if state.end is None else FeedError(state.end["message"]) if state.end else FeedEnd()
-            return FeedSnapshot(ParseDict(state.attached, protocol_pb2.Attached()), end)
+        summary = await self._summaries.get(thread_id)
+        return None if summary is None else summary.feed

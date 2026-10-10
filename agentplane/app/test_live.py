@@ -61,6 +61,7 @@ from agentplane.app.testing.thread_test_support import Replica
 from agentplane.app.threads.bridge import RunnerBridge
 from agentplane.app.threads.sessions import SandboxSessions
 from agentplane.app.threads.store import ThreadStore
+from agentplane.app.threads.summaries import AppSummaries
 from agentplane.app.threads.view.content import ContentStore
 from agentplane.history_service.client import HistoryServiceClient
 from agentplane.runner import protocol_pb2
@@ -333,7 +334,7 @@ def app(
     return create_app(
         inventory,
         bridge,
-        ThreadStore(engine),
+        ThreadStore(engine, AppSummaries(engine)),
         MODELS,
         egress,
         decisions,

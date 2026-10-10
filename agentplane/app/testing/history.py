@@ -12,6 +12,7 @@ from agentplane.app.threads.events.event_log import EventLogStore
 from agentplane.app.threads.ingestion import Ingester, Ingestion
 from agentplane.app.threads.models import EventLog
 from agentplane.app.threads.sessions import SandboxSessions
+from agentplane.app.threads.summaries import AppSummaries, HistorySummaries
 from agentplane.history_service.client import HistoryServiceClient
 from agentplane.protocol import event_log_pb2
 from agentplane.runner import protocol_pb2 as runner_pb2
@@ -35,11 +36,17 @@ class SeededEventLogStore(EventLogStore):
         peer: HistoryService,
         history_reader: HistoryServiceClient,
         history_creator: HistoryServiceClient | None = None,
+        summaries: AppSummaries | HistorySummaries | None = None,
     ) -> None:
         self.engine = engine
         self.peer = peer
         self.reader = history_reader
-        super().__init__(engine, history_reader=self.reader, history_creator=history_creator)
+        super().__init__(
+            engine,
+            history_reader=self.reader,
+            summaries=AppSummaries(engine) if summaries is None else summaries,
+            history_creator=history_creator,
+        )
 
     async def find(self, sandbox: str, session_id: str) -> UUID | None:
         # Fixture aliases are deterministic public IDs, not production locator lookups.
