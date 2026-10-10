@@ -95,3 +95,17 @@ it("preserves an intentionally empty workspace", () => {
   const empty: MosaicWorkspace = { panes: [], layout: null, activePaneId: null };
   expect(parseWorkspaceJson(serializeWorkspace(empty))).toEqual(empty);
 });
+
+it("round trips the threads, pending actions, and action history panes", () => {
+  const workspace: MosaicWorkspace = {
+    panes: [
+      { kind: "threads", id: "threads" },
+      { kind: "actions", id: "actions" },
+      { kind: "history", id: "history" },
+    ],
+    layout: createDefaultLayout(["threads", "actions", "history"]),
+    activePaneId: "history",
+  };
+
+  expect(parseWorkspaceJson(serializeWorkspace(workspace))).toEqual(workspace);
+});

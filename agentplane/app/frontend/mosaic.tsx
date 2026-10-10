@@ -1,12 +1,36 @@
-import { ActionIcon, Badge, Box, Button, Group, Menu, Paper, Select, Stack, Text, Title } from "@mantine/core";
+import {
+  ActionIcon,
+  Badge,
+  Box,
+  Button,
+  Group,
+  Menu,
+  Paper,
+  ScrollArea,
+  Select,
+  Stack,
+  Text,
+  TextInput,
+  Title,
+} from "@mantine/core";
 import IconGripVertical from "@tabler/icons-react/dist/esm/icons/IconGripVertical.mjs";
 import IconPlus from "@tabler/icons-react/dist/esm/icons/IconPlus.mjs";
 import IconX from "@tabler/icons-react/dist/esm/icons/IconX.mjs";
-import { type CSSProperties, type JSX, useContext, useEffect, useRef, useState, type PointerEvent } from "react";
+import {
+  type CSSProperties,
+  type JSX,
+  type PointerEvent,
+  type ReactNode,
+  useContext,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 
+import { ActionHistory } from "./actions/history";
 import type { ActionRequestView } from "./actions/client";
 import { ActionRequestDetail } from "./actions/detail";
-import { ActionRequestsContext } from "./actions/requests";
+import { ActionRequests, ActionRequestsContext } from "./actions/requests";
 import type { ThreadView } from "./client";
 import { useRequiredThreadsLive } from "./live";
 import {
@@ -23,6 +47,8 @@ import {
   type MosaicWorkspace,
 } from "./mosaic_layout";
 import { ProjectedSession } from "./threads/projected_session";
+import { snapshotFresh, threadStatusFromSnapshot } from "./thread_status";
+import { ThreadStatusIndicator } from "./thread_status_indicator";
 import { TopbarActions, TopbarTitle } from "./topbar";
 import "./mosaic.css";
 
@@ -198,11 +224,12 @@ function MosaicResizeHandle({
   );
 }
 
-function MosaicActionPane({
+function MosaicContentPane({
   pane,
   label,
   active,
   dropEdge,
+  children,
   onActivate,
   onClose,
   onDragStart,
@@ -210,10 +237,11 @@ function MosaicActionPane({
   onDragEnd,
   onDragCancel,
 }: {
-  pane: Extract<MosaicPane, { kind: "action" }>;
+  pane: Exclude<MosaicPane, { kind: "thread" }>;
   label: string;
   active: boolean;
   dropEdge: MosaicDockEdge | null;
+  children: ReactNode;
   onActivate: () => void;
   onClose: () => void;
   onDragStart: (paneId: string) => void;
@@ -221,15 +249,23 @@ function MosaicActionPane({
   onDragEnd: (paneId: string) => void;
   onDragCancel: () => void;
 }): JSX.Element {
+  const badgeLabel =
+    pane.kind === "action"
+      ? "Action"
+      : pane.kind === "history"
+        ? "History"
+        : pane.kind === "threads"
+          ? "Threads"
+          : "Actions";
   return (
     <Paper
       withBorder
       className={`agentplane-mosaic-pane${active ? " is-active" : ""}`}
       data-mosaic-pane
       data-mosaic-pane-id={pane.id}
-      data-mosaic-pane-kind="action"
+      data-mosaic-pane-kind={pane.kind}
       data-drop-edge={dropEdge ?? undefined}
-      aria-label={`Action pane: ${label}`}
+      aria-label={`${pane.kind} pane: ${label}`}
       onPointerDown={onActivate}
       onFocusCapture={onActivate}
     >
@@ -248,16 +284,86 @@ function MosaicActionPane({
           {label}
         </Text>
         <Badge size="xs" variant="light" color="gray">
-          Action
+          {badgeLabel}
         </Badge>
-        <ActionIcon variant="subtle" aria-label="Close action pane" onClick={onClose}>
+        <ActionIcon variant="subtle" aria-label={`Close ${pane.kind} pane`} onClick={onClose}>
           <IconX size={16} />
         </ActionIcon>
       </Group>
-      <Box className="agentplane-mosaic-pane-content">
-        <ActionRequestDetail requestId={pane.requestId} embedded />
-      </Box>
+      <Box className="agentplane-mosaic-pane-content">{children}</Box>
     </Paper>
+  );
+}
+
+function MosaicThreadBrowserPane({
+  openThreadIds,
+  onOpenThread,
+}: {
+  openThreadIds: ReadonlySet<string>;
+  onOpenThread: (thread: ThreadView) => void;
+}): JSX.Element {
+  const live = useRequiredThreadsLive();
+  const [query, setQuery] = useState("");
+  const fresh = snapshotFresh(live);
+  const threads = live.snapshot?.threads ?? [];
+  const sandboxes = new Map((live.snapshot?.sandboxes ?? []).map((sandbox) => [sandbox.name, sandbox]));
+  const filtered = threads.filter((thread) => {
+    const label = thread.name ?? thread.session_id;
+    return `${label} ${thread.sandbox} ${thread.id}`.toLowerCase().includes(query.trim().toLowerCase());
+  });
+
+  return (
+    <>
+      <TextInput
+        value={query}
+        onChange={(event) => setQuery(event.currentTarget.value)}
+        placeholder="Filter threads"
+        aria-label="Filter threads"
+        size="xs"
+        mb="xs"
+      />
+      <ScrollArea className="agentplane-mosaic-thread-browser-scroll">
+        <Stack gap={4}>
+          {live.snapshot === null && (
+            <Text c="dimmed" size="sm">
+              Loading threads…
+            </Text>
+          )}
+          {live.snapshot !== null && filtered.length === 0 && (
+            <Text c="dimmed" size="sm">
+              {threads.length === 0 ? "No threads yet." : "No matching threads."}
+            </Text>
+          )}
+          {filtered.map((thread) => {
+            const label = thread.name ?? thread.session_id;
+            const status = threadStatusFromSnapshot(thread, sandboxes.get(thread.sandbox), fresh);
+            const isOpen = openThreadIds.has(thread.id);
+            return (
+              <Button
+                key={thread.id}
+                variant={isOpen ? "light" : "subtle"}
+                color={isOpen ? "blue" : "gray"}
+                size="compact-sm"
+                justify="flex-start"
+                fullWidth
+                leftSection={<ThreadStatusIndicator kind={status.kind} label={status.label} size="small" />}
+                rightSection={
+                  isOpen ? (
+                    <Badge size="xs" variant="light">
+                      Open
+                    </Badge>
+                  ) : undefined
+                }
+                onClick={() => onOpenThread(thread)}
+                title={`${label} · ${thread.sandbox}`}
+              >
+                <span className="agentplane-mosaic-thread-name">{label}</span>
+              </Button>
+            );
+          })}
+        </Stack>
+      </ScrollArea>
+    </>
   );
 }
 
@@ -267,6 +373,9 @@ export function MosaicView(): JSX.Element {
   const [workspace, setWorkspace] = useState<MosaicWorkspace | null>(readStoredWorkspace);
   const [dropTarget, setDropTarget] = useState<DropTarget | null>(null);
   const dropTargetRef = useRef<DropTarget | null>(null);
+  const [actionOriginByPane, setActionOriginByPane] = useState<ReadonlyMap<string, string>>(() => new Map());
+  const [addPaneOpened, setAddPaneOpened] = useState(false);
+  const [addPaneQuery, setAddPaneQuery] = useState("");
   const threads = threadsLive.snapshot?.threads ?? [];
   const requests = actions?.requests ?? [];
   const knownRequests = actions?.knownRequests;
@@ -308,10 +417,32 @@ export function MosaicView(): JSX.Element {
     pane: { kind: "action", id: `action:${request.id}`, requestId: request.id } as const,
     label: requestLabel(request),
   }));
-  const paneLabel = (pane: MosaicPane): string =>
-    pane.kind === "thread"
-      ? threadLabel(threads.find((thread) => thread.id === pane.threadId) ?? { id: pane.threadId, name: null })
-      : requestLabel(knownRequests?.get(pane.requestId) ?? requests.find((request) => request.id === pane.requestId));
+  const paneLabel = (pane: MosaicPane): string => {
+    switch (pane.kind) {
+      case "threads":
+        return "Threads";
+      case "actions":
+        return "Actions";
+      case "history":
+        return "Action history";
+      case "thread":
+        return threadLabel(threads.find((thread) => thread.id === pane.threadId) ?? { id: pane.threadId, name: null });
+      case "action":
+        return requestLabel(
+          knownRequests?.get(pane.requestId) ?? requests.find((request) => request.id === pane.requestId)
+        );
+    }
+  };
+  const paneQuery = addPaneQuery.trim().toLowerCase();
+  const visibleBuiltInPanes: MosaicPane[] = [
+    { kind: "threads", id: "threads" },
+    { kind: "actions", id: "actions" },
+    { kind: "history", id: "history" },
+  ].filter((pane) => paneLabel(pane).toLowerCase().includes(paneQuery));
+  const visibleThreadPanes = threadPanes.filter(({ pane, label }) =>
+    `${label} ${threads.find((thread) => thread.id === pane.threadId)?.sandbox ?? ""}`.toLowerCase().includes(paneQuery)
+  );
+  const visibleActionPanes = actionPanes.filter(({ label }) => label.toLowerCase().includes(paneQuery));
 
   function updateWorkspace(update: (current: MosaicWorkspace) => MosaicWorkspace): void {
     setWorkspace((current) => update(current ?? { panes: [], layout: null, activePaneId: null }));
@@ -329,16 +460,45 @@ export function MosaicView(): JSX.Element {
     });
   }
 
+  function openActionDetails(originPaneId: string, requestId: string): void {
+    const pane: MosaicPane = { kind: "action", id: `action:${requestId}`, requestId };
+    const origin = originPaneId === pane.id ? "actions" : originPaneId;
+    setActionOriginByPane((current) => new Map(current).set(pane.id, origin));
+    updateWorkspace((current) => {
+      if (current.panes.some((item) => item.id === pane.id)) return { ...current, activePaneId: pane.id };
+      const targetPaneId = current.panes.some((item) => item.id === origin)
+        ? origin
+        : (current.activePaneId ?? paneIds(current.layout)[0]);
+      const layout: MosaicLayoutNode | null =
+        current.layout === null || targetPaneId === undefined
+          ? ({ type: "pane", paneId: pane.id } as const)
+          : dockPane(current.layout, pane.id, targetPaneId, "right");
+      return { panes: [...current.panes, pane], layout, activePaneId: pane.id };
+    });
+  }
+
   function removePane(paneId: string): void {
+    const returnToPaneId = actionOriginByPane.get(paneId);
     updateWorkspace((current) => {
       const panes = current.panes.filter((pane) => pane.id !== paneId);
       const layout = removePaneFromLayout(current.layout, paneId);
       const remainingIds = paneIds(layout);
+      const fallbackPaneId =
+        (returnToPaneId !== undefined && remainingIds.includes(returnToPaneId) ? returnToPaneId : undefined) ??
+        panes.find((pane) => pane.kind === "actions")?.id ??
+        remainingIds[0] ??
+        null;
       return {
         panes,
         layout,
-        activePaneId: current.activePaneId === paneId ? (remainingIds[0] ?? null) : current.activePaneId,
+        activePaneId: current.activePaneId === paneId ? fallbackPaneId : current.activePaneId,
       };
+    });
+    setActionOriginByPane((current) => {
+      if (!current.has(paneId)) return current;
+      const next = new Map(current);
+      next.delete(paneId);
+      return next;
     });
   }
 
@@ -379,54 +539,92 @@ export function MosaicView(): JSX.Element {
     const label = paneLabel(pane);
     const active = pane.id === currentWorkspace.activePaneId;
     const target = dropTarget?.paneId === pane.id ? dropTarget.edge : null;
-    if (pane.kind === "action") {
+    if (pane.kind === "thread") {
       return (
-        <MosaicActionPane
+        <Paper
           key={pane.id}
-          pane={pane}
-          label={label}
-          active={active}
-          dropEdge={target}
-          onActivate={() => activatePane(pane.id)}
-          onClose={() => removePane(pane.id)}
-          onDragStart={activatePane}
-          onDragMove={handleDragMove}
-          onDragEnd={handleDragEnd}
-          onDragCancel={handleDragCancel}
-        />
+          withBorder
+          className={`agentplane-mosaic-pane${active ? " is-active" : ""}`}
+          data-mosaic-pane
+          data-mosaic-pane-id={pane.id}
+          data-mosaic-pane-kind="thread"
+          data-drop-edge={target ?? undefined}
+          aria-label={`Thread pane: ${label}`}
+          onPointerDown={() => activatePane(pane.id)}
+          onFocusCapture={() => activatePane(pane.id)}
+        >
+          {target !== null && <div className="agentplane-mosaic-drop-preview" aria-hidden="true" />}
+          <ProjectedSession
+            threadId={pane.threadId}
+            embedded
+            embeddedHeaderActions={
+              <MosaicPaneGrip
+                paneId={pane.id}
+                label={label}
+                onActivate={() => activatePane(pane.id)}
+                onDragStart={activatePane}
+                onDragMove={handleDragMove}
+                onDragEnd={handleDragEnd}
+                onDragCancel={handleDragCancel}
+              />
+            }
+            onClose={() => removePane(pane.id)}
+          />
+        </Paper>
       );
     }
+
+    const sharedProps = {
+      key: pane.id,
+      pane,
+      label,
+      active,
+      dropEdge: target,
+      onActivate: () => activatePane(pane.id),
+      onClose: () => removePane(pane.id),
+      onDragStart: activatePane,
+      onDragMove: handleDragMove,
+      onDragEnd: handleDragEnd,
+      onDragCancel: handleDragCancel,
+    };
+
+    let content: ReactNode;
+    switch (pane.kind) {
+      case "threads":
+        content = (
+          <MosaicThreadBrowserPane
+            openThreadIds={
+              new Set(
+                currentWorkspace.panes
+                  .filter((item): item is Extract<MosaicPane, { kind: "thread" }> => item.kind === "thread")
+                  .map((item) => item.threadId)
+              )
+            }
+            onOpenThread={(thread) => addPane({ kind: "thread", id: `thread:${thread.id}`, threadId: thread.id })}
+          />
+        );
+        break;
+      case "actions":
+        content = <ActionRequests embedded onOpenDetails={(request) => openActionDetails(pane.id, request.id)} />;
+        break;
+      case "history":
+        content = <ActionHistory embedded onOpenDetails={(request) => openActionDetails(pane.id, request.id)} />;
+        break;
+      case "action":
+        content = (
+          <ActionRequestDetail
+            requestId={pane.requestId}
+            embedded
+            onBack={() => removePane(pane.id)}
+            onResolved={() => removePane(pane.id)}
+          />
+        );
+        break;
+    }
     return (
-      <Paper
-        key={pane.id}
-        withBorder
-        className={`agentplane-mosaic-pane${active ? " is-active" : ""}`}
-        data-mosaic-pane
-        data-mosaic-pane-id={pane.id}
-        data-mosaic-pane-kind="thread"
-        data-drop-edge={target ?? undefined}
-        aria-label={`Thread pane: ${label}`}
-        onPointerDown={() => activatePane(pane.id)}
-        onFocusCapture={() => activatePane(pane.id)}
-      >
-        {target !== null && <div className="agentplane-mosaic-drop-preview" aria-hidden="true" />}
-        <ProjectedSession
-          threadId={pane.threadId}
-          embedded
-          embeddedHeaderActions={
-            <MosaicPaneGrip
-              paneId={pane.id}
-              label={label}
-              onActivate={() => activatePane(pane.id)}
-              onDragStart={activatePane}
-              onDragMove={handleDragMove}
-              onDragEnd={handleDragEnd}
-              onDragCancel={handleDragCancel}
-            />
-          }
-          onClose={() => removePane(pane.id)}
-        />
-      </Paper>
+      <MosaicContentPane {...sharedProps}>
+        {pane.kind === "threads" ? <Box className="agentplane-mosaic-thread-browser">{content}</Box> : content}
+      </MosaicContentPane>
     );
   }
 
@@ -487,34 +685,89 @@ export function MosaicView(): JSX.Element {
               if (paneId !== null) activatePane(paneId);
             }}
           />
-          <Menu position="bottom-end" withinPortal>
+          <Menu
+            position="bottom-end"
+            withinPortal
+            opened={addPaneOpened}
+            onChange={(opened) => {
+              setAddPaneOpened(opened);
+              if (!opened) setAddPaneQuery("");
+            }}
+          >
             <Menu.Target>
               <Button size="xs" variant="light" leftSection={<IconPlus size={14} />}>
                 Add pane
               </Button>
             </Menu.Target>
-            <Menu.Dropdown>
-              <Menu.Label>Threads</Menu.Label>
-              {threadPanes.length === 0 ? (
-                <Menu.Item disabled>No open threads</Menu.Item>
-              ) : (
-                threadPanes.map(({ pane, label }) => (
-                  <Menu.Item key={pane.id} onClick={() => addPane(pane)}>
-                    {label}
-                  </Menu.Item>
-                ))
-              )}
-              <Menu.Divider />
-              <Menu.Label>Pending actions</Menu.Label>
-              {actionPanes.length === 0 ? (
-                <Menu.Item disabled>{actions?.loading ? "Loading actions…" : "No pending actions"}</Menu.Item>
-              ) : (
-                actionPanes.map(({ pane, label }) => (
-                  <Menu.Item key={pane.id} onClick={() => addPane(pane)}>
-                    {label}
-                  </Menu.Item>
-                ))
-              )}
+            <Menu.Dropdown style={{ width: 320 }}>
+              <TextInput
+                aria-label="Find a pane or thread"
+                placeholder="Find a pane or thread"
+                value={addPaneQuery}
+                onChange={(event) => setAddPaneQuery(event.currentTarget.value)}
+                size="xs"
+                mx="xs"
+                mt="xs"
+                mb="xs"
+              />
+              <ScrollArea mah={320} type="auto">
+                {visibleBuiltInPanes.length > 0 && (
+                  <>
+                    <Menu.Label>Workspace panes</Menu.Label>
+                    {visibleBuiltInPanes.map((pane) => (
+                      <Menu.Item
+                        key={pane.id}
+                        onClick={() => {
+                          addPane(pane);
+                          setAddPaneOpened(false);
+                        }}
+                      >
+                        {paneLabel(pane)}
+                      </Menu.Item>
+                    ))}
+                  </>
+                )}
+                {visibleThreadPanes.length > 0 && (
+                  <>
+                    <Menu.Label>Threads</Menu.Label>
+                    {visibleThreadPanes.map(({ pane, label }) => (
+                      <Menu.Item
+                        key={pane.id}
+                        onClick={() => {
+                          addPane(pane);
+                          setAddPaneOpened(false);
+                        }}
+                        title={threads.find((thread) => thread.id === pane.threadId)?.sandbox}
+                      >
+                        {label}
+                      </Menu.Item>
+                    ))}
+                  </>
+                )}
+                {visibleActionPanes.length > 0 && (
+                  <>
+                    <Menu.Label>Pending actions</Menu.Label>
+                    {visibleActionPanes.map(({ pane, label }) => (
+                      <Menu.Item
+                        key={pane.id}
+                        onClick={() => {
+                          openActionDetails(currentWorkspace.activePaneId ?? "actions", pane.requestId);
+                          setAddPaneOpened(false);
+                        }}
+                      >
+                        {label}
+                      </Menu.Item>
+                    ))}
+                  </>
+                )}
+                {visibleBuiltInPanes.length === 0 &&
+                  visibleThreadPanes.length === 0 &&
+                  visibleActionPanes.length === 0 && (
+                    <Menu.Item disabled>
+                      {actions?.loading && paneQuery.length === 0 ? "Loading actions…" : "No panes match this search"}
+                    </Menu.Item>
+                  )}
+              </ScrollArea>
             </Menu.Dropdown>
           </Menu>
         </Group>
@@ -522,7 +775,7 @@ export function MosaicView(): JSX.Element {
       <section className="agentplane-mosaic" aria-label="Docked panes">
         {currentWorkspace.layout === null ? (
           <Stack align="center" justify="center" h="100%" c="dimmed">
-            <Text>No threads or pending actions are available to open.</Text>
+            <Text>Use Add pane to open Threads, Actions, or action history.</Text>
           </Stack>
         ) : (
           renderLayout(currentWorkspace.layout)

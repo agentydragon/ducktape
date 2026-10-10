@@ -1,4 +1,5 @@
 import { Button, Group, Paper, Stack, Text, Title } from "@mantine/core";
+import IconArrowUpRight from "@tabler/icons-react/dist/esm/icons/IconArrowUpRight.mjs";
 import IconCheck from "@tabler/icons-react/dist/esm/icons/IconCheck.mjs";
 import IconX from "@tabler/icons-react/dist/esm/icons/IconX.mjs";
 import { createContext, type JSX, type ReactNode, useCallback, useContext, useEffect, useRef, useState } from "react";
@@ -286,10 +287,12 @@ export function PendingActionCard({
   request,
   deciding,
   onDecide,
+  onOpenDetails,
 }: {
   request: ActionRequestView;
   deciding: boolean;
   onDecide: (request: ActionRequestView, verdict: Verdict) => void;
+  onOpenDetails?: (request: ActionRequestView) => void;
 }): JSX.Element {
   const [raw, setRaw] = useState(false);
   return (
@@ -298,7 +301,26 @@ export function PendingActionCard({
         <ActionCall
           request={request}
           headerActions={
-            <ActionDecisionButtons size="sm" deciding={deciding} onDecide={(verdict) => onDecide(request, verdict)} />
+            onOpenDetails ? (
+              <Group gap={6} wrap="nowrap">
+                <Button
+                  variant="subtle"
+                  size="compact-xs"
+                  rightSection={<IconArrowUpRight size={13} />}
+                  aria-label={`Open details for ${request.title}`}
+                  onClick={() => onOpenDetails(request)}
+                >
+                  Details
+                </Button>
+                <ActionDecisionButtons
+                  size="sm"
+                  deciding={deciding}
+                  onDecide={(verdict) => onDecide(request, verdict)}
+                />
+              </Group>
+            ) : (
+              <ActionDecisionButtons size="sm" deciding={deciding} onDecide={(verdict) => onDecide(request, verdict)} />
+            )
           }
           raw={raw}
           onRawChange={setRaw}
@@ -314,9 +336,11 @@ export function PendingActionCard({
 export function ActionRequests({
   service = actionService,
   embedded = false,
+  onOpenDetails,
 }: {
   service?: ActionService;
   embedded?: boolean;
+  onOpenDetails?: (request: ActionRequestView) => void;
 }): JSX.Element {
   const shared = useContext(ActionRequestsContext);
   const local = useActionRequests(service, !(shared !== null && service === actionService));
@@ -340,7 +364,13 @@ export function ActionRequests({
       <Title order={3}>{loading || error ? "Pending" : `Pending (${pending.length})`}</Title>
       {!loading && !error && pending.length === 0 && <Text c="dimmed">No requests are waiting for a decision.</Text>}
       {pending.map((request) => (
-        <PendingActionCard key={request.id} request={request} deciding={deciding === request.id} onDecide={decide} />
+        <PendingActionCard
+          key={request.id}
+          request={request}
+          deciding={deciding === request.id}
+          onDecide={decide}
+          onOpenDetails={onOpenDetails}
+        />
       ))}
     </Stack>
   );

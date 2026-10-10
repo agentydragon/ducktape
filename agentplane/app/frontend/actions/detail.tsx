@@ -33,9 +33,13 @@ function inAppReturnTo(value: unknown): InAppReturnTo | null {
 export function ActionRequestDetail({
   requestId,
   embedded = false,
+  onBack,
+  onResolved,
 }: {
   requestId: string;
   embedded?: boolean;
+  onBack?: () => void;
+  onResolved?: () => void;
 }): JSX.Element {
   const navigate = useNavigate();
   const location = useLocation();
@@ -74,7 +78,7 @@ export function ActionRequestDetail({
   }, [knownRequests, loadDetail, liveRequest, requestId, staleRequestIds]);
 
   useEffect(() => {
-    if (returnAfterDecision === null || returnTo === null) return;
+    if (returnAfterDecision === null) return;
     const decided = actions?.knownRequests.get(returnAfterDecision.requestId);
     if (
       decided === undefined ||
@@ -83,8 +87,14 @@ export function ActionRequestDetail({
     ) {
       return;
     }
-    void navigate(returnTo, { replace: true });
-  }, [actions?.knownRequests, navigate, returnAfterDecision, returnTo]);
+    if (onResolved !== undefined) {
+      setReturnAfterDecision(null);
+      onResolved();
+    } else if (returnTo !== null) {
+      setReturnAfterDecision(null);
+      void navigate(returnTo, { replace: true });
+    }
+  }, [actions?.knownRequests, navigate, onResolved, returnAfterDecision, returnTo]);
 
   useEffect(() => {
     if (detailRequestId === undefined || detailRequestState === "decision_pending") {
@@ -106,7 +116,9 @@ export function ActionRequestDetail({
   }, [detailActionGroup, detailRequestId, detailRequestState]);
 
   function goBack(): void {
-    if (returnTo !== null) {
+    if (onBack !== undefined) {
+      onBack();
+    } else if (returnTo !== null) {
       void navigate(-1);
     } else {
       void navigate("/actions", { replace: true });
@@ -115,7 +127,7 @@ export function ActionRequestDetail({
 
   return (
     <Stack style={embedded ? { minWidth: 0 } : undefined}>
-      {!embedded && (
+      {(!embedded || onBack !== undefined) && (
         <Group align="center" gap="sm">
           <Button variant="subtle" size="sm" leftSection={<IconArrowLeft size={15} />} onClick={goBack}>
             Back
