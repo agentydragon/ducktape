@@ -60,6 +60,8 @@ jobs:
         with:
           sops_age_key: ${{ secrets.SOPS_AGE_KEY }}
 
+      # Run first to verify independence from host Bazel setup: the NixOS image
+      # supplies Bazelisk, and run.sh mounts credentials separately.
       - name: Run NixOS Bazel RBE integration test
         run: devinfra/nixos_bazel_test/run.sh test
 
