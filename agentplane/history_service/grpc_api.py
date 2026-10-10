@@ -1,6 +1,7 @@
 """Authenticated gRPC reads of retained Session history; the Sandbox Service still writes it."""
 
 import asyncio
+import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
@@ -9,9 +10,12 @@ from uuid import UUID
 
 import grpc
 from kubernetes_asyncio import client as k8s_client
+from pydantic import ValidationError
 from sqlalchemy.exc import SQLAlchemyError
 
-from agentplane.history_service import protocol_pb2_grpc
+from agentplane.history_service import protocol_pb2 as history_pb2, protocol_pb2_grpc
+from agentplane.history_service.summaries import SummaryReader
+from agentplane.history_service.thread_reads import PayloadNotFoundError, ThreadReader, ThreadScopeResetError
 from agentplane.sandbox_service import protocol_pb2
 from agentplane.sandbox_service.session_history.store import HistoryNotFoundError, Store
 from agentplane.subjects import ServiceAccountRef
@@ -21,11 +25,15 @@ from agentplane.workload_auth.principal import WorkloadPrincipalRejectedError, W
 # gazelle:include_dep @pypi//protobuf
 # gazelle:include_dep @pypi//grpcio
 
+logger = logging.getLogger(__name__)
+
 
 @dataclass(frozen=True)
 class Resources:
     principals: WorkloadPrincipalResolver
     history: Store
+    summaries: SummaryReader
+    threads: ThreadReader
     # A public Session UUID is not itself authority: only these accounts read transcripts.
     reader_accounts: frozenset[ServiceAccountRef]
     request_timeout_s: float
@@ -59,6 +67,14 @@ class HistoryService(protocol_pb2_grpc.HistoryServiceServicer):
             await context.abort(grpc.StatusCode.UNAUTHENTICATED, "invalid workload bearer")
         except HistoryNotFoundError:
             await context.abort(grpc.StatusCode.NOT_FOUND, "session history not found")
+        except PayloadNotFoundError:
+            await context.abort(grpc.StatusCode.NOT_FOUND, "payload revision not found")
+        except ThreadScopeResetError:
+            await context.abort(grpc.StatusCode.FAILED_PRECONDITION, "thread projection epoch was reset")
+        except ValidationError:
+            # Stored rows outside the published view contract are a server fault, not a bad request.
+            logger.exception("stored thread entity failed validation")
+            await context.abort(grpc.StatusCode.INTERNAL, "stored thread entity is invalid")
         except ValueError:
             await context.abort(grpc.StatusCode.INVALID_ARGUMENT, "invalid session history request")
         except TimeoutError:
@@ -92,6 +108,34 @@ class HistoryService(protocol_pb2_grpc.HistoryServiceServicer):
                     protocol_pb2.SessionObservation(cursor=cursor, kind=kind) for cursor, kind in observations
                 ],
             )
+
+    @override
+    async def ListSessionSummaries(
+        self, request: history_pb2.ListSessionSummariesRequest, context: grpc.aio.ServicerContext
+    ) -> history_pb2.ListSessionSummariesResponse:
+        async with self.reader(context):
+            return await self.resources.summaries.list_page(request)
+
+    @override
+    async def GetSessionSummary(
+        self, request: history_pb2.GetSessionSummaryRequest, context: grpc.aio.ServicerContext
+    ) -> history_pb2.SessionSummary:
+        async with self.reader(context):
+            return await self.resources.summaries.get(UUID(request.session_id))
+
+    @override
+    async def ReadThreadEntities(
+        self, request: history_pb2.ReadThreadEntitiesRequest, context: grpc.aio.ServicerContext
+    ) -> history_pb2.ReadThreadEntitiesResponse:
+        async with self.reader(context):
+            return await self.resources.threads.entities(request)
+
+    @override
+    async def ReadPayload(
+        self, request: history_pb2.ReadPayloadRequest, context: grpc.aio.ServicerContext
+    ) -> history_pb2.ReadPayloadResponse:
+        async with self.reader(context):
+            return await self.resources.threads.payload(request)
 
 
 def add_service(resources: Resources, server: grpc.aio.Server) -> None:

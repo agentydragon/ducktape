@@ -35,6 +35,7 @@ from agentplane.thread_fold.views import (
 # gazelle:include_dep @pypi//protobuf
 
 
+# The epoch the app's projection was built in.
 THREAD_FOLD_EPOCH = "v1"
 
 
@@ -51,22 +52,27 @@ class ThreadFoldError(EventReplicationError):
 
 
 async def record_thread_fold(
-    session: AsyncSession, thread_id: UUID, source_id: str, entries: Sequence[event_log_pb2.EventEntry]
+    session: AsyncSession,
+    thread_id: UUID,
+    source_id: str,
+    entries: Sequence[event_log_pb2.EventEntry],
+    *,
+    projection_epoch: str,
 ) -> None:
     checkpoint = await session.scalar(
         select(ThreadCheckpoint).where(ThreadCheckpoint.thread_id == thread_id).with_for_update()
     )
     if checkpoint is None:
-        state = fold.initial(source_id, THREAD_FOLD_EPOCH)
+        state = fold.initial(source_id, projection_epoch)
         operational = None
     else:
         if checkpoint.source_id != source_id:
             raise EventReplicationError(
                 f"thread fold source changed at cursor {entries[0].cursor}", cursor=entries[0].cursor
             )
-        if checkpoint.projection_epoch != THREAD_FOLD_EPOCH:
+        if checkpoint.projection_epoch != projection_epoch:
             raise ThreadFoldError(
-                f"thread fold epoch {checkpoint.projection_epoch!r} must be reset for {THREAD_FOLD_EPOCH!r}",
+                f"thread fold epoch {checkpoint.projection_epoch!r} must be reset for {projection_epoch!r}",
                 cursor=entries[0].cursor,
             )
         state, operational = await _fold_state(session, checkpoint)

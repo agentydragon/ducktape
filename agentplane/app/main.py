@@ -44,7 +44,8 @@ from agentplane.history_service.client import HistoryServiceClient
 from agentplane.kubernetes_watch import STALE_AFTER_CYCLES
 from agentplane.sandbox_service.client import SandboxServiceClient
 from agentplane.sandbox_service.egress_views import EgressReader
-from agentplane.thread_fold.projector import HistoryProjector
+from agentplane.thread_fold.projector import HistoryProjector, service_pages
+from agentplane.thread_fold.recording import THREAD_FOLD_EPOCH
 from util.bazel.runfiles import get_required_path
 from util.kubernetes import CustomObjectsClient
 
@@ -172,7 +173,9 @@ async def async_main(settings: Settings) -> None:
             runners=runners,
             event_logs=event_logs,
             ingestion=Ingestion(engine),
-            history_projector=HistoryProjector(engine, history, notify=notify_threads),
+            history_projector=HistoryProjector(
+                engine, service_pages(history), projection_epoch=THREAD_FOLD_EPOCH, notify=notify_threads
+            ),
         )
         bridge = RunnerBridge(runners=runners, event_logs=event_logs, content=content, ingester=ingester)
 

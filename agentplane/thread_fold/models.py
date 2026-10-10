@@ -49,8 +49,14 @@ class ThreadHistorySummary(Base):
     """Event-derived sidebar metadata for service-backed Thread projection."""
 
     __tablename__ = "thread_history_summary"
+    __table_args__ = (
+        # Scanned backward for the list order, newest first with not-yet-folded Sessions ahead.
+        Index("ix_thread_history_summary_first_event", "first_event_at", "thread_id"),
+    )
 
     thread_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True)
+    # Set once, from the entry at cursor 1, so a list ordered by it pages stably.
+    first_event_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     last_event_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     # Preserve the protobuf enum number rather than a closed SQL enum.
     last_turn_status: Mapped[int | None] = mapped_column(BigInteger)

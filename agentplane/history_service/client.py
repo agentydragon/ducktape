@@ -15,6 +15,8 @@ from agentplane.sandbox_service import protocol_pb2
 
 # gazelle:include_dep @pypi//protobuf
 # gazelle:include_dep @pypi//grpcio
+# protocol_pb2_grpc stubs name the History Service messages.
+# gazelle:include_dep //agentplane/history_service:protocol_pb2
 
 
 class HistoryServiceError(ConnectionError):

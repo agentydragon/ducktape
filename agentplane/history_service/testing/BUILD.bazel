@@ -13,6 +13,8 @@ py_library(
         "//agentplane:subjects",
         "//agentplane/history_service:client",
         "//agentplane/history_service:grpc_api",
+        "//agentplane/history_service:summaries",
+        "//agentplane/history_service:thread_reads",
         "//agentplane/sandbox_service/session_history:store",
         "//agentplane/workload_auth:principal",
         "@pypi//asyncpg",

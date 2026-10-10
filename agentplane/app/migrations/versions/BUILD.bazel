@@ -28,6 +28,7 @@ exports_files(
         "0024_retire_app_raw_history.py",
         "0025_summary_model_activity.py",
         "0026_fold_keys_drop.py",
+        "0027_summary_first_event.py",
     ],
     visibility = ["//agentplane/app/migrations:__pkg__"],
 )
@@ -227,5 +228,11 @@ py_library(
 py_library(
     name = "0026_fold_keys_drop",
     srcs = ["0026_fold_keys_drop.py"],
+    deps = ["@pypi//alembic"],
+)
+
+py_library(
+    name = "0027_summary_first_event",
+    srcs = ["0027_summary_first_event.py"],
     deps = ["@pypi//alembic"],
 )
