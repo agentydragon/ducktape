@@ -59,7 +59,7 @@ from constructs import Construct
 
 from agentplane.action_service.sandbox.binding import DESCRIPTION_ANNOTATION
 from agentplane.app.oidc import OIDCSettings
-from agentplane.app.settings import CONFIG_FILE_ENV, Settings
+from agentplane.app.settings import CONFIG_FILE_ENV, Settings, ThreadReads
 from cluster.cdk8s import cilium, node_scheduling, pod_policy
 from cluster.cdk8s.agentplane import (
     actions,
@@ -234,7 +234,13 @@ class App(Construct):
                 "postgresql+asyncpg://$(AGENTPLANE_DB_USER):$(AGENTPLANE_DB_PASSWORD)"
                 "@$(AGENTPLANE_DB_HOST):$(AGENTPLANE_DB_PORT)/$(AGENTPLANE_DB_NAME)"
             ),
-            env_name(Settings, "electric_url"): EnvValue.from_value(electric.service(namespace, electric.APP).url),
+            env_name(Settings, "electric_url"): EnvValue.from_value(
+                electric.service(
+                    namespace,
+                    electric.HISTORY if self.env.thread_reads is ThreadReads.HISTORY_SERVICE else electric.APP,
+                ).url
+            ),
+            env_name(Settings, "thread_reads"): EnvValue.from_value(self.env.thread_reads),
             env_name(OIDCSettings, "issuer"): EnvValue.from_value(self.env.app.oidc_issuer),
             env_name(OIDCSettings, "public_base_url"): EnvValue.from_value(f"https://{self.env.app.hostname}"),
             env_name(OIDCSettings, "client_id"): self.oidc.key("client-id").env_value(self, "oidc-client-id-ref"),

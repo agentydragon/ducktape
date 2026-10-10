@@ -15,7 +15,7 @@ from cdk8s_plus_34 import DeploymentStrategy
 from cilium_crds.io.cilium import CiliumNetworkPolicySpecEgress
 
 from agentplane.action_service.settings import ActionServiceDeploymentSettings
-from agentplane.app.settings import AppSettingsConfig
+from agentplane.app.settings import AppSettingsConfig, ThreadReads
 from agentplane.llm_ingress.models import ModelConfig
 
 
@@ -131,6 +131,8 @@ class Environment:
     history_writer: HistoryWriter
     # Whether the History Service rebuilds the thread fold from the raw log beside the app's.
     fold_shadow: bool
+    # Which fold the app reads Threads from; the app's Electric upstream follows it.
+    thread_reads: ThreadReads
     db: DbProps
     llm_ingress: LlmIngressProps
     egress: EgressProps
