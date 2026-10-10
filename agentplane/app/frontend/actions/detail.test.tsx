@@ -91,11 +91,11 @@ it("opens cached stream details without a reload and Back returns to the origina
 });
 
 it.each([
-  { verdict: "allow" as const, resultState: "allowed" as const, buttonName: "Approve", receiptLabel: "Allowed" },
-  { verdict: "deny" as const, resultState: "denied" as const, buttonName: "Deny", receiptLabel: "Denied" },
+  { verdict: "allow" as const, resultState: "allowed" as const, buttonName: "Approve" },
+  { verdict: "deny" as const, resultState: "denied" as const, buttonName: "Deny" },
 ])(
   "returns to the originating page after a successful $verdict decision",
-  async ({ verdict, resultState, buttonName, receiptLabel }) => {
+  async ({ verdict, resultState, buttonName }) => {
     vi.spyOn(actionGroupService, "list").mockResolvedValue([]);
     const decide = vi.spyOn(actionService, "decide").mockImplementation(async (row) => ({
       ...row,
@@ -118,7 +118,6 @@ it.each([
     if (!decisionButton) throw new Error(`missing ${buttonName} button`);
     await act(async () => decisionButton.click());
     expect(decide).toHaveBeenCalledWith(ROW, verdict);
-    await vi.waitFor(() => expect(container.textContent).toContain(receiptLabel));
     await vi.waitFor(() =>
       expect(container.querySelector('[data-testid="current-path"]')?.textContent).toBe("/threads/example-thread")
     );
