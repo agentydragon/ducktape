@@ -139,7 +139,15 @@ pub struct SelectorCodemodReport {
 }
 
 pub fn run_selector_codemod(config: &SelectorCodemodConfig) -> Result<SelectorCodemodReport> {
-    run_selector_codemod_with_module_results(config, &mut |_, _, _, _| Ok(()))
+    run_selector_codemod_with_module_results(config, &mut |_| Ok(()))
+}
+
+#[derive(Serialize)]
+pub struct SelectorCodemodModuleResult<'a> {
+    pub module: &'a str,
+    pub file: String,
+    pub candidates: &'a [SelectorCodemodCandidate],
+    pub file_written: bool,
 }
 
 /// Report a module as soon as its candidates and optional YAML edit are done.
@@ -147,14 +155,14 @@ pub fn run_selector_codemod(config: &SelectorCodemodConfig) -> Result<SelectorCo
 /// can use this hook to emit useful partial output during long scans.
 pub fn run_selector_codemod_with_module_results(
     config: &SelectorCodemodConfig,
-    on_module: &mut dyn FnMut(&str, &Path, &[SelectorCodemodCandidate], bool) -> Result<()>,
+    on_module: &mut dyn FnMut(&SelectorCodemodModuleResult<'_>) -> Result<()>,
 ) -> Result<SelectorCodemodReport> {
     js_ast::with_swc_globals(|| run_selector_codemod_impl(config, on_module))
 }
 
 fn run_selector_codemod_impl(
     config: &SelectorCodemodConfig,
-    on_module: &mut dyn FnMut(&str, &Path, &[SelectorCodemodCandidate], bool) -> Result<()>,
+    on_module: &mut dyn FnMut(&SelectorCodemodModuleResult<'_>) -> Result<()>,
 ) -> Result<SelectorCodemodReport> {
     let selected_items = config
         .items
@@ -209,7 +217,12 @@ fn run_selector_codemod_impl(
                 None,
                 "module YAML is not a mapping",
             ));
-            on_module(&module, &file, &candidates[candidate_start..], false)?;
+            on_module(&SelectorCodemodModuleResult {
+                module: &module,
+                file: file.display().to_string(),
+                candidates: &candidates[candidate_start..],
+                file_written: false,
+            })?;
             continue;
         };
         let selected_exports = selected_item_exports.get(&module);
@@ -248,7 +261,12 @@ fn run_selector_codemod_impl(
         if file_written {
             summary.files_written.push(file.display().to_string());
         }
-        on_module(&module, &file, &candidates[candidate_start..], file_written)?;
+        on_module(&SelectorCodemodModuleResult {
+            module: &module,
+            file: file.display().to_string(),
+            candidates: &candidates[candidate_start..],
+            file_written,
+        })?;
     }
 
     Ok(SelectorCodemodReport {

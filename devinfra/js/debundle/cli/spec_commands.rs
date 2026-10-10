@@ -297,29 +297,12 @@ fn run_synthesize_selectors_cmd(args: SelectorCodemodArgs) -> Result<()> {
         candidates: args.candidates,
     };
     if format == OutputFormat::Ndjson {
-        #[derive(serde::Serialize)]
-        struct ModuleLine<'a> {
-            module: &'a str,
-            file: String,
-            candidates: &'a [selector_codemod::SelectorCodemodCandidate],
-            file_written: bool,
-        }
-        let report = selector_codemod::run_selector_codemod_with_module_results(
-            &config,
-            &mut |module, file, candidates, file_written| {
-                print_section(
-                    "module",
-                    &ModuleLine {
-                        module,
-                        file: file.display().to_string(),
-                        candidates,
-                        file_written,
-                    },
-                )?;
+        let report =
+            selector_codemod::run_selector_codemod_with_module_results(&config, &mut |module| {
+                print_section("module", module)?;
                 std::io::Write::flush(&mut std::io::stdout())?;
                 Ok(())
-            },
-        )?;
+            })?;
         return print_section("summary", &report.summary);
     }
     let report = run_selector_codemod(&config)?;
