@@ -53,6 +53,7 @@ py_library(
         ":binding_storage",
         ":kubernetes_views",
         ":models",
+        ":retention_holds",
         ":session_config",
         "//agentplane:subjects",
         "//agentplane/action_service/policies:resources",
@@ -62,6 +63,7 @@ py_library(
         "@pypi//kubernetes_asyncio",
         "@pypi//protobuf",
         "@pypi//pydantic",
+        "@pypi//tenacity",
     ],
 )
 
@@ -460,6 +462,7 @@ py_library(
         ":egress_views",
         ":models",
         ":provisioning",
+        ":retention_holds",
         ":session_lifecycle",
         ":wire",
         "//agentplane:grpc_options",
@@ -704,5 +707,50 @@ py_library(
         "@pypi//pydantic",
         "@pypi//pydantic_settings",
         "@pypi//pyyaml",
+    ],
+)
+
+py_library(
+    name = "retention_holds",
+    srcs = ["retention_holds.py"],
+    deps = [
+        "//agentplane/sandbox_service:protocol_pb2",
+        "@pypi//protobuf",
+        "@pypi//pydantic",
+    ],
+)
+
+py_test(
+    name = "test_retention_holds",
+    srcs = ["test_retention_holds.py"],
+    deps = [
+        ":action_policy",
+        ":client",
+        ":conftest",
+        ":destinations",
+        ":egress",
+        ":grpc_api",
+        ":inventory",
+        ":kubernetes_bindings",
+        ":kubernetes_views",
+        ":models",
+        ":provisioning",
+        "//:conftest",
+        "//agentplane:subjects",
+        "//agentplane/runner:errors",
+        "//agentplane/sandbox_service:protocol_pb2",
+        "//agentplane/sandbox_service/testing:fake_inventory",
+        "//agentplane/sandbox_service/testing:fake_rbac",
+        "//agentplane/sandbox_service/testing:grpc_service",
+        "//agentplane/sandbox_service/testing:kubernetes",
+        "//agentplane/testing:fake_apiserver",
+        "//agentplane/workload_auth:principal",
+        "//util:agent_sandbox",
+        "//util:kubernetes",
+        "@pypi//grpcio",
+        "@pypi//kubernetes_asyncio",
+        "@pypi//protobuf",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
     ],
 )

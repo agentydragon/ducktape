@@ -703,14 +703,14 @@ unless the operator reviews a change. Separate Sandbox initialization from per-s
 
 ### `SANDBOX_LIFECYCLE_DURABILITY` — preserve archive before deleting storage
 
-**Blocked on the teardown seal and retention holds.** Quiesce/fence and archive the final prefix before managed storage
+**Blocked on the teardown seal.** Quiesce/fence and archive the final prefix before managed storage
 removal. Explicitly handle an unreachable runner or incomplete state rather than claiming recovery.
 Use existing same-storage suspension tests; a bounded deletion/archive check validates the new
 boundary. No copied-volume portability or simultaneous multi-component crash requirement.
 After `HISTORY_WRITE_HANDOFF`, "archived" means the History Service committed the final prefix.
 Completeness is the seal from `RUNNER_TEARDOWN_SEAL` for every Session in the Sandbox, and every
-retention hold (`RETENTION_HOLDS`) on those Sessions confirmed through its seal cursor; with no
-holds, deletion follows the seal.
+[retention hold](../sandbox_service/API.md#retention-holds) on those Sessions confirmed through its
+seal cursor; with no holds, deletion follows the seal.
 When a runner is unreachable or its volume is broken, stop and ask the operator: delete with the
 last committed cursor recorded as the end, or keep the Sandbox.
 
@@ -751,8 +751,7 @@ flowchart TD
     SESSION_FOLLOW_CONTRACT[Decision: History Service as an ordinary subscriber]
     SESSION_COMMAND_CONTRACT[Command admission contract]
     SANDBOX_HISTORY_READS_RETIRE[Blocked: delete Sandbox Service history reads]
-    RETENTION_HOLDS[Blocked: retention holds gate Sandbox deletion]
-    HISTORY_WRITE_HANDOFF[Blocked: History Service ingester takes over]
+    HISTORY_WRITE_HANDOFF[Candidate: History Service ingester takes over]
     SANDBOX_LOCAL_HISTORY_RETIRE[Blocked: delete Sandbox Service ingester and store]
     FOLD_SHADOW[Blocked: History Service folds in shadow]
     ELECTRIC_HISTORY_SOURCE[Blocked: Electric replicates the history database]
@@ -770,10 +769,8 @@ flowchart TD
     THREAD_BROWSE_PAGINATE[Bounded history browsing]
     THREAD_READ_POLICY[Scoped archive reads]
     RUNNER_INBOUND_RETIRE[Retire inbound runner access]
-    SANDBOX_LIFECYCLE_DURABILITY[Archive before storage deletion]
     SESSION_COMMAND_CONTRACT --> SESSION_FOLLOW_CONTRACT
-    SESSION_FOLLOW_CONTRACT --> RETENTION_HOLDS
-    RETENTION_HOLDS --> HISTORY_WRITE_HANDOFF
+    SESSION_FOLLOW_CONTRACT --> HISTORY_WRITE_HANDOFF
     HISTORY_WRITE_HANDOFF --> SANDBOX_LOCAL_HISTORY_RETIRE
     SANDBOX_HISTORY_READS_RETIRE --> SANDBOX_LOCAL_HISTORY_RETIRE
     HISTORY_WRITE_HANDOFF --> FOLD_SHADOW
@@ -794,7 +791,6 @@ flowchart TD
     APP_PROJECTION_RETIRE --> HISTORY_REPACK
     APP_PROJECTION_RETIRE -. smaller baseline, not required .-> APP_ALEMBIC_SQUASH
     HISTORY_SERVICE_OWNERSHIP -. enforce at the final owner .-> THREAD_READ_POLICY
-    RETENTION_HOLDS --> SANDBOX_LIFECYCLE_DURABILITY
 ```
 
 ### `SESSION_FOLLOW_CONTRACT` — History Service as an ordinary subscriber
@@ -810,7 +806,7 @@ the archive transaction. A Session's incarnations (`SessionChange.sandbox_uid`) 
 For now only the app's ServiceAccount reads history, for every Session; agent reads are
 `THREAD_READ_POLICY`. Any permitted Sandbox Service caller may place a hold for now (operator,
 2026-10-10 PDT), since only a few services call it. Holds never expire: a stale hold keeps the Sandbox until
-the operator releases it, and `GetSandbox` shows which hold blocks deletion. API sketch:
+the operator releases it, and `ListHolds` shows which hold blocks deletion. API sketch:
 [History Service plan](history_service.md#apis).
 
 ### `SANDBOX_HISTORY_READS_RETIRE` — delete the old read path
@@ -818,16 +814,9 @@ the operator releases it, and `GetSandbox` shows which hold blocks deletion. API
 **Blocked one release after the app's History Service reads are deployed to both environments.**
 Remove the Sandbox Service history read RPCs and their client code.
 
-### `RETENTION_HOLDS` — holds gate Sandbox deletion
-
-**Blocked on the follow contract.** `PlaceHold`, `ConfirmHold` and
-`ReleaseHold`, stored by the Sandbox Service. `DeleteSandbox` waits until every hold on every
-Session has confirmed its seal cursor. Test holds racing teardown, a holder that never confirms
-(deletion waits and reports it), and a Sandbox with no holds.
-
 ### `HISTORY_WRITE_HANDOFF` — the History Service ingester takes over
 
-**Blocked on holds.** Move the Sandbox Service's
+**Candidate.** Move the Sandbox Service's
 ingester into the History Service as a subscriber of those calls, with its per-log claim; one writer
 at a time. Test a History Service outage (it resumes from its cursor; the runner journal is the
 buffer), duplicate and conflicting replays, and claim handover between replicas. Rollback: run the
