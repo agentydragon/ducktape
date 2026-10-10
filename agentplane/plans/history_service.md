@@ -59,10 +59,10 @@ Properties the target keeps:
   package has its own migrations). Handing it to the History Service moves the raw log with no copy;
   the registry moves out first (`SESSION_REGISTRY_MOVE`). Command admission lives in its own
   `sandbox_commands` database.
-- **The fold's tables live in the `app` database** (`thread_entity`, `thread_evidence`,
+- **The app still keeps its own copy of the fold** (`thread_entity`, `thread_evidence`,
   `thread_native_link`, `thread_payload_chunk`/`_manifest`, `thread_checkpoint`,
-  `session_projection_lease`), and Electric replicates from it. Moving the fold means a new
-  projection in the history database and a new Electric source.
+  `session_projection_lease`) with its projector and Electric source, though both environments
+  now read the History Service's projection through its own Electric source.
 - **Projections are derived.** A rebuild into a new epoch from the raw log is supported
   ([storage and durability](../docs/thread_view_sync.md#storage-and-durability)); only the raw log is
   irreplaceable. The staging-preservation rule ([`AGENTS.md`](../AGENTS.md#preserve-staging-data-during-the-sandbox-service-extraction))
@@ -106,17 +106,10 @@ final.
 
 ```proto
 service SandboxService {
-  // Changed: fence, stop and seal before the hold check. Progress comes from GetSandbox.
-  rpc DeleteSandbox(DeleteSandboxRequest) returns (google.protobuf.Empty);
-  rpc GetCommand(GetCommandRequest) returns (CommandStatus);                        // new
-  // ReadSessionEvents and ReadSessionObservations are removed (served by the History Service).
+  rpc GetCommand(GetCommandRequest) returns (CommandStatus);
 }
 
 service HistoryService {
-  // ReadSessionEvents gains settlements.
-  rpc ListSessionSummaries(ListSessionSummariesRequest) returns (ListSessionSummariesResponse);
-  rpc ReadThreadEntities(ReadThreadEntitiesRequest) returns (ReadThreadEntitiesResponse);
-  rpc ReadPayload(ReadPayloadRequest) returns (Payload);
   // Committed cursor, incarnations with seal cursors, fold cursor or error.
   rpc GetSessionHistory(GetSessionHistoryRequest) returns (SessionHistoryStatus);
 }
