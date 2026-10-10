@@ -108,7 +108,7 @@ message Heartbeat {}
 
 ## Event following
 
-Status: **proposed, under review.** Not built; until it is, every runner's Events are read through
+Status: **accepted (operator, 2026-10-10 PDT), not built yet.** Not built; until it is, every runner's Events are read through
 `Attach`.
 
 A runner that lists `events` in `Hello` serves its journal over the channel, and the Sandbox Service
@@ -184,7 +184,7 @@ make the Sandbox Service store history.
 
 ## Connection records in Kubernetes
 
-Status: **proposed, under review.** It replaces the `runner_connection` table, the
+Status: **accepted (operator, 2026-10-10 PDT), not built yet.** It replaces the `runner_connection` table, the
 `Connection ownership and fencing` table below and Postgres-based liveness; command submissions
 and dispatch attempts stay in Postgres.
 
