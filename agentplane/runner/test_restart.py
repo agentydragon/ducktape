@@ -19,6 +19,7 @@ from agentplane.harness_tests.claude.messages import AnthropicMessages
 from agentplane.harness_tests.codex.responses import OpenAIResponses
 from agentplane.protocol import event_pb2
 from agentplane.runner import protocol_pb2
+from agentplane.runner.errors import RunnerError
 from agentplane.runner.harness_process import HarnessProcess
 from agentplane.runner.store import StateOwner
 from agentplane.runner.testing import events, launches
@@ -107,6 +108,32 @@ async def test_runner_shutdown_interrupts_setup_without_rerunning_it(
     assert len(events.of_kind(second.seen, "setup_interrupted")) == 1
     assert not events.of_kind(second.seen, "harness_started")
     await second_client.close()
+
+
+async def test_runner_death_interrupts_bootstrap_without_rerunning_it(
+    start_runner: Callable[..., Awaitable[RunnerProcess]], runner_client_factory: RunnerClientFactory, tmp_path: Path
+) -> None:
+    script = "echo run >> runs\necho $$\nwhile :; do sleep 1; done\n"
+    first_runner = await start_runner()
+    first_client = runner_client_factory(first_runner.target)
+    call = first_client.initialize_events(script)
+    started = await call.read()
+    assert isinstance(started, protocol_pb2.InitializationEvent)
+    await first_runner.crash([int(started.output.data)])
+    await first_client.close()
+
+    second_runner = await start_runner()
+    second_client = runner_client_factory(second_runner.target)
+    replayed = [event async for event in second_client.initialize_events(script)]
+    repeated = [event async for event in second_client.initialize_events(script)]
+    with pytest.raises(RunnerError, match="interrupted"):
+        await second_client.initialize(script)
+    await second_client.close()
+
+    assert replayed[0] == started
+    assert replayed[-1].HasField("interrupted")
+    assert repeated == replayed
+    assert (tmp_path / "state" / "runs").read_text() == "run\n"
 
 
 def _runner_environment(tmp_path: Path) -> dict[str, str]:

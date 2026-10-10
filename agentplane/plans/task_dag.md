@@ -522,7 +522,7 @@ flowchart LR
     CLAUDE_AI_SA[Decision: review caller authority] --> MANAGED_SA_RBAC[Blocked: account-owned Kubernetes grants]
     KUBERNETES_RBAC_POLICIES[Decision: reusable groups and update semantics] --> KUBERNETES_RBAC_POLICY_BINDINGS[Blocked: apply groups and one-SA changes]
     KUBERNETES_RBAC_POLICY_BINDINGS --> MANAGED_SA_RBAC
-    BOOTSTRAP_ATTEMPT_RECEIPT[Candidate: one durable bootstrap attempt] --> BOOTSTRAP_PROGRESS_CONTRACT[Blocked: asynchronous progress API]
+    BOOTSTRAP_PROGRESS_CONTRACT[Candidate: asynchronous progress API]
     HISTORY_WRITE_HANDOFF[History Service ingester takes over] --> SANDBOX_IDLE_EXPIRY[Blocked: delete idle Sandboxes]
 ```
 
@@ -596,15 +596,9 @@ creating subscriptions or inbox entries. Record the result once; no exhaustive p
 binding kinds on one explicit subject before adding multi-subject use. Preserve owner/replacement
 and authorization semantics; this cleanup does not authorize broader grants.
 
-### `BOOTSTRAP_ATTEMPT_RECEIPT` — one Sandbox bootstrap attempt
-
-**Candidate.** Make repeated initialization return the retained attempt/result, including failed
-or interrupted state, without rerunning a script. Test ordinary response loss/restart; an unknown
-result is not automatic retry permission. A fresh initialization needs a distinct Sandbox.
-
 ### `BOOTSTRAP_PROGRESS_CONTRACT` — asynchronous start/status
 
-**Blocked on durable attempt semantics.** Add authorized start/progress/result semantics without
+**Candidate.** Add authorized start/progress/result semantics without
 holding an Open RPC through a long script. Keep successful bootstrap as the Open precondition
 unless the operator reviews a change. Separate Sandbox initialization from per-session setup.
 

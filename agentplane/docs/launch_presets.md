@@ -87,10 +87,11 @@ at every session open.
 Bootstrap belongs to the SandboxPreset as inline script content. Before every session open on a
 bound Sandbox, the app sends that content to the runner (`bridge.initialize`); the app never
 executes shell. The runner pins the SHA-256 of the first script it is given under its state
-directory, runs it with `/bin/sh -eu`, and keeps a replayable log of output and result: the same
-script re-sent is a no-op once completed and a retry after a failure, while a different script is
-refused (`FAILED_PRECONDITION`), so a changed preset bootstrap never reruns on a live Sandbox. A
-refused or non-zero-exit bootstrap fails the session open with 409. Arbitrary user-provided shell,
+directory, runs it once with `/bin/sh -eu`, and keeps a replayable log of output and result: the
+same script re-sent replays that one attempt, failed or interrupted included, while a different
+script is refused (`FAILED_PRECONDITION`), so bootstrap never reruns on a live Sandbox and a fresh
+one needs a new Sandbox. A refused, interrupted or non-zero-exit bootstrap fails the session open
+with 409. Arbitrary user-provided shell,
 automatic reruns after source changes, and a script registry are out of scope.
 
 Thread setup is separate from Sandbox bootstrap. The app passes the selected Thread setup source

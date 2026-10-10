@@ -176,6 +176,8 @@ class RunnerClient:
         async for event in self.initialize_events(script):
             if event.HasField("result"):
                 result = event.result
+            if event.HasField("interrupted"):
+                raise RunnerError("the Sandbox bootstrap was interrupted and never runs again; use a new Sandbox")
         if result is None:
             raise RunnerError("the initialization stream ended without a result")
         return result

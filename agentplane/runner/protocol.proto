@@ -14,8 +14,9 @@ import "agentplane/protocol/event_log.proto";
 
 service Runner {
   rpc Attach(stream ClientMessage) returns (stream ServerMessage);
-  // Execute control-plane configured initialization for this Sandbox. The runner records the
-  // selected script at one fixed state path. An exact retry is a no-op; any other script is refused.
+  // Execute control-plane configured initialization for this Sandbox, at most once. The runner
+  // records the selected script at one fixed state path. An exact retry replays the one attempt,
+  // failed or interrupted included, without running the script again; any other script is refused.
   rpc Initialize(InitializeRequest) returns (stream InitializationEvent);
   // Every session in the runner's state directory. Session ids are client-chosen, so this is how a
   // client that keeps no record of its own finds them again.
@@ -48,14 +49,20 @@ message InitializeResult {
   int32 exit_code = 2;
 }
 
+// The attempt stopped without a result, e.g. its runner died, so the script may have run any part
+// of itself. It is never run again: a fresh initialization needs a new Sandbox.
+message InitializationInterrupted {}
+
 message InitializationEvent {
   // Sandbox-scoped, dense, and persisted across runner restarts for cursor-based replay.
   uint64 sequence = 1;
-  // Failed executions may be retried, but only with the exact script originally selected.
+  // 1 for the one attempt. Logs from older runners, which retried failed attempts, count higher.
   uint32 attempt = 2;
   oneof observation {
     InitializationOutput output = 3;
+    // A result or an interruption ends the attempt; nothing follows either.
     InitializeResult result = 4;
+    InitializationInterrupted interrupted = 5;
   }
 }
 

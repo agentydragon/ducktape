@@ -1,4 +1,4 @@
-"""Durable, replayable output from the one bootstrap initialization a sandbox may select."""
+"""Durable, replayable output from the one bootstrap attempt a sandbox may make."""
 
 from __future__ import annotations
 
@@ -49,8 +49,9 @@ class InitializationLog:
         return self._events[-1].attempt if self._events else 0
 
     @property
-    def completed(self) -> bool:
-        return bool(self._events and self._events[-1].HasField("result") and self._events[-1].result.exit_code == 0)
+    def ended(self) -> bool:
+        """The attempt has a recorded result or interruption. Nothing is appended after either."""
+        return bool(self._events and self._events[-1].WhichOneof("observation") in ("result", "interrupted"))
 
     def since(self, after_sequence: int) -> Sequence[protocol_pb2.InitializationEvent]:
         return self._events[after_sequence:]
@@ -68,6 +69,13 @@ class InitializationLog:
         result = protocol_pb2.InitializeResult(executed=True, exit_code=exit_code)
         self._append(protocol_pb2.InitializationEvent(sequence=self.last_sequence + 1, attempt=attempt, result=result))
         return result
+
+    def append_interrupted(self, attempt: int) -> None:
+        self._append(
+            protocol_pb2.InitializationEvent(
+                sequence=self.last_sequence + 1, attempt=attempt, interrupted=protocol_pb2.InitializationInterrupted()
+            )
+        )
 
     def _append(self, event: protocol_pb2.InitializationEvent) -> None:
         self._file.write(json.dumps(MessageToDict(event, preserving_proto_field_name=True)).encode() + b"\n")

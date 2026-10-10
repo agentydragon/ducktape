@@ -80,17 +80,23 @@ class Runner:
         if not source or len(source) > _MAX_BOOTSTRAP_BYTES:
             raise ValueError(f"initialize.script must contain 1..{_MAX_BOOTSTRAP_BYTES} UTF-8 bytes")
         async with self._initialize_lock:
-            log = self._claim_initialization(source)
-            if log.completed:
+            log, selected_now = self._claim_initialization(source)
+            if log.ended:
                 return log, None
-            if self._initialization_task is None or self._initialization_task.done():
-                attempt = log.last_attempt + 1
+            if self._initialization_task is not None and not self._initialization_task.done():
+                return log, self._initialization_task
+            if selected_now:
                 self._initialization_task = asyncio.create_task(
-                    self._execute_initialization(source, attempt, log), name=f"sandbox-initialization-{attempt}"
+                    self._execute_initialization(source, 1, log), name="sandbox-initialization"
                 )
-            return log, self._initialization_task
+                return log, self._initialization_task
+            # Selected earlier with no recorded end and nothing running it now: the script may have
+            # run any part of itself. Never run it again; a fresh initialization needs a new Sandbox.
+            log.append_interrupted(max(log.last_attempt, 1))
+            return log, None
 
-    def _claim_initialization(self, source: bytes) -> InitializationLog:
+    def _claim_initialization(self, source: bytes) -> tuple[InitializationLog, bool]:
+        """The selection's log, and whether this call made the selection."""
         root = self.config.state_dir / "initialization"
         metadata_path = root / "request.json"
         requested = {"script_sha256": hashlib.sha256(source).hexdigest()}
@@ -100,6 +106,7 @@ class Runner:
                 raise InitializationConflictError(
                     "sandbox already selected a different bootstrap script; refusing another"
                 )
+            selected_now = False
         else:
             root.mkdir(parents=True, exist_ok=True)
             staged = metadata_path.with_suffix(".json.tmp")
@@ -113,9 +120,10 @@ class Runner:
                 os.fsync(directory)
             finally:
                 os.close(directory)
+            selected_now = True
         if self._initialization_log is None:
             self._initialization_log = InitializationLog(root / "events.jsonl")
-        return self._initialization_log
+        return self._initialization_log, selected_now
 
     async def _execute_initialization(self, source: bytes, attempt: int, log: InitializationLog) -> None:
         process = HarnessProcess(

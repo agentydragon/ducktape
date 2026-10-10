@@ -397,6 +397,7 @@ py_test(
     ],
     deps = [
         ":conftest",
+        ":errors",
         ":harness_process",
         ":store",
         "//:conftest",

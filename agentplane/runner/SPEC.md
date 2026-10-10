@@ -15,9 +15,13 @@ Thread-page projection. Their cross-layer contract is [Thread, runner, and harne
 - The first request durably selects the script digest at the fixed path
   `<state_dir>/initialization/request.json`, before the script starts. The runner thereafter refuses
   changed source, including after a failed attempt: two possibly incompatible initializations must
-  never be combined in one Sandbox. An exact request after success only replays the original record;
-  the exact script may be retried after failure.
-- Stdout, stderr, and each attempt's terminal result are appended to a persistent event log with
+  never be combined in one Sandbox.
+- The script runs at most once. An exact request after it ended, by a result of any exit code, only
+  replays the record. An exact request that finds the script selected by an earlier runner, with
+  no result and nothing running it, records the attempt as interrupted and replays that: the script
+  may have run any part of itself, and an unknown result does not permit a retry. A fresh
+  initialization needs a new Sandbox.
+- Stdout, stderr, and the attempt's result or interruption are appended to a persistent event log with
   dense Sandbox-scoped sequence numbers. `InitializeRequest.after_sequence` is a reconnect cursor:
   the runner first replays later saved events, then follows live output through the current attempt.
   Disconnecting a client does not stop the script or recording, and a future exact request can

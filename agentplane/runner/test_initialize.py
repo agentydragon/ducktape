@@ -1,4 +1,4 @@
-"""Sandbox initialization is single-choice, durable, streamed, and replayable."""
+"""Sandbox initialization is single-choice, runs at most once, and is durable, streamed and replayable."""
 
 from __future__ import annotations
 
@@ -107,33 +107,26 @@ async def test_initialized_sandbox_refuses_a_different_script_after_restart(
     assert (state / "initialized").read_text() == "first\n"
 
 
-async def test_failed_initialize_output_is_saved_and_the_same_script_may_be_retried(
+async def test_failed_initialize_is_replayed_and_never_rerun(
     tmp_path: Path, runner_client_factory: RunnerClientFactory
 ) -> None:
     state = tmp_path / "state"
     state.mkdir()
     server, runner, port = await serve(RunnerConfig(state_dir=state))
     client = runner_client_factory(f"127.0.0.1:{port}")
-    script = "echo broken >&2\nexit 7\n"
+    script = "echo run >> runs\necho broken >&2\nexit 7\n"
     try:
         first = await collect(client.initialize_events(script))
-        retried = await collect(client.initialize_events(script))
+        repeated = await collect(client.initialize_events(script))
     finally:
         await client.close()
         await runner.stop()
         await server.stop(0)
 
     assert (first[-1].result.executed, first[-1].result.exit_code) == (True, 7)
-    assert (retried[-1].result.executed, retried[-1].result.exit_code) == (True, 7)
-    assert [event.attempt for event in retried if event.HasField("result")] == [1, 2]
-    assert (
-        b"".join(
-            event.output.data
-            for event in retried
-            if event.HasField("output") and event.output.stream == protocol_pb2.INITIALIZATION_STREAM_STDERR
-        )
-        == b"broken\nbroken\n"
-    )
+    assert first[0].output.data == b"broken\n"
+    assert repeated == first
+    assert (state / "runs").read_text() == "run\n"
 
 
 if __name__ == "__main__":
