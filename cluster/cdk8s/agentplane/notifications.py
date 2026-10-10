@@ -77,7 +77,9 @@ class Notifications(Construct):
             automount_service_account_token=True,
             docker_registry_auth=forgejo_images_creds_secret_ref(self, "images-creds"),
             security_context=PodSecurityContextProps(ensure_non_root=True, user=1000, group=1000, fs_group=1000),
-            init_containers=[migrate_init_container(f"{_IMAGE}-migrate:unset", env_variables=variables)],
+            init_containers=[
+                migrate_init_container(f"{_IMAGE}-migrate:unset", name="migrate", env_variables=variables)
+            ],
         )
         github = env.notifications_github
         supplied: list[tuple[str, ...]] = [("database_url",)]

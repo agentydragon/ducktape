@@ -35,3 +35,6 @@ images:
   # Bootstrap only: CI publishes the first image after merge; Flux must select a real tag before rollout.
   - name: git.allegedly.works/ducktape-ci/agentplane-history-service
     newTag: unset # {"$imagepolicy": "flux-system:agentplane-history-service:tag"}
+  # Bootstrap only: CI publishes the first image after merge; Flux must select a real tag before rollout.
+  - name: git.allegedly.works/ducktape-ci/agentplane-sandbox-commands-migrate
+    newTag: unset # {"$imagepolicy": "flux-system:agentplane-sandbox-commands-migrate:tag"}
