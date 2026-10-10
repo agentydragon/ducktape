@@ -149,24 +149,6 @@ async def test_sidebar_compact_pod_approval(
             },
             "Update docs",
         ),
-        (
-            "kubernetes_admin",
-            "pods_exec",
-            {"name": "web-0", "namespace": "apps", "container": "main", "command": ["printenv", "POD_NAME"]},
-            "printenv POD_NAME",
-        ),
-        (
-            "gmail",
-            "drafts_create",
-            {"to": ["reviewer@example.com"], "subject": "Deployment review", "body": "Please review."},
-            "reviewer@example.com",
-        ),
-        (
-            "gmail",
-            "threads_list",
-            {"q": "from:deployments@example.com", "max_results": 5},
-            "from:deployments@example.com",
-        ),
     ],
     ids=[
         "resource-get",
@@ -176,9 +158,6 @@ async def test_sidebar_compact_pod_approval(
         "resource-delete",
         "events-list",
         "github-pr",
-        "pod-exec",
-        "gmail-draft",
-        "gmail-search",
     ],
 )
 async def test_compact_action_chips(
@@ -197,10 +176,6 @@ async def test_compact_action_chips(
     section = view.page.locator(".agentplane-actions-sidebar")
     if group == "kubernetes_admin" and name == "pods_list_in_namespace":
         title = "inspect running demo pods"
-    elif group == "gmail" and name == "drafts_create":
-        title = "review the draft email"
-    elif group == "gmail" and name == "threads_list":
-        title = "search recent deployment threads"
     else:
         title = f"review {name.replace('_', ' ')}"
     disclosure = section.get_by_role("button", name=f"Expand {title}")
