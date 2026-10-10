@@ -122,12 +122,7 @@ def chart(app: App) -> Chart:
             "controller": {
                 "type": "daemonset",
                 "volumes": {
-                    "extra": [
-                        {
-                            "name": "wal",
-                            "hostPath": {"path": _NODE_STORAGE_PATH, "type": "DirectoryOrCreate"},
-                        }
-                    ]
+                    "extra": [{"name": "wal", "hostPath": {"path": _NODE_STORAGE_PATH, "type": "DirectoryOrCreate"}}]
                 },
                 "tolerations": [node_scheduling.CONTROL_PLANE_TOLERATION],
                 # Roaming laptops are left out: their metrics aren't wanted, and an offline
