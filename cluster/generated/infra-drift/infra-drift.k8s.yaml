@@ -37,6 +37,24 @@ spec:
     branch: devel
   url: https://github.com/agentydragon/ducktape.git
 ---
+apiVersion: source.extensions.fluxcd.io/v1beta1
+kind: ArtifactGenerator
+metadata:
+  name: infra-drift
+  namespace: flux-system
+spec:
+  artifacts:
+    - copy:
+        - from: "@repo/**"
+          to: "@artifact/"
+      name: infra-drift
+      originRevision: "@repo"
+  sources:
+    - alias: repo
+      kind: GitRepository
+      name: infra-drift-source
+      namespace: flux-system
+---
 apiVersion: infra.contrib.fluxcd.io/v1alpha2
 kind: Terraform
 metadata:
@@ -74,8 +92,8 @@ spec:
           memory: 512Mi
   serviceAccountName: tf-runner
   sourceRef:
-    kind: GitRepository
-    name: infra-drift-source
+    kind: ExternalArtifact
+    name: infra-drift
     namespace: flux-system
   storeReadablePlan: human
   targets:

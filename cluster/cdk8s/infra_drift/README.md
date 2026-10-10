@@ -133,6 +133,12 @@ pulls from growing.
 It uses `ignore`, not `sparseCheckout`, because `sparseCheckout` takes
 directories and this root reads a repo-root **file** (`nebula-mesh.json`).
 
+The Terraform CR reads that checkout through an `ExternalArtifact` of the same
+tree (the `infra-drift` `ArtifactGenerator`), not the `GitRepository` itself: a
+`GitRepository` revision is the commit, so every push would replan, while the
+`ExternalArtifact` revision is a digest of the filtered files and changes only
+when one of them does.
+
 ### Which files the artifact must carry
 
 **`-target` does not prune configuration evaluation.** It narrows which

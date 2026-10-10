@@ -8,6 +8,14 @@ from __future__ import annotations
 from cdk8s import ApiObjectMetadata, App, Chart
 from flux_gitrepository_crds.io.fluxcd.toolkit.source import GitRepositorySpecRef
 from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecHealthChecks
+from source_watcher_crds.io.fluxcd.extensions.source import (
+    ArtifactGenerator,
+    ArtifactGeneratorSpec,
+    ArtifactGeneratorSpecArtifacts,
+    ArtifactGeneratorSpecArtifactsCopy,
+    ArtifactGeneratorSpecSources,
+    ArtifactGeneratorSpecSourcesKind,
+)
 from tofu_controller.io.fluxcd.contrib.infra import (
     TerraformV1Alpha2SpecSourceRef,
     TerraformV1Alpha2SpecSourceRefKind,
@@ -76,6 +84,31 @@ def chart(app: App) -> Chart:
             "!/terraform/modules\n"
         ),
     )
+    # The GitRepository's revision is the commit, so every push to the branch would
+    # replan. The ExternalArtifact's is a digest of the filtered tree: a plan runs when
+    # a file the root reads changes, or on the interval.
+    module = ArtifactGenerator(
+        chart,
+        "artifact",
+        metadata=ApiObjectMetadata(name=NAME, namespace=terraform.NAMESPACE),
+        spec=ArtifactGeneratorSpec(
+            sources=[
+                ArtifactGeneratorSpecSources(
+                    alias="repo",
+                    kind=ArtifactGeneratorSpecSourcesKind.GIT_REPOSITORY,
+                    name=source.name,
+                    namespace=terraform.NAMESPACE,
+                )
+            ],
+            artifacts=[
+                ArtifactGeneratorSpecArtifacts(
+                    name=NAME,
+                    origin_revision="@repo",
+                    copy=[ArtifactGeneratorSpecArtifactsCopy(from_="@repo/**", to="@artifact/")],
+                )
+            ],
+        ),
+    )
     terraform.tofu_state_terraform(
         chart,
         "terraform",
@@ -96,7 +129,7 @@ def chart(app: App) -> Chart:
         interval="6h",
         path="./cluster/terraform/main",
         source_ref=TerraformV1Alpha2SpecSourceRef(
-            kind=TerraformV1Alpha2SpecSourceRefKind.GIT_REPOSITORY, name=source.name, namespace=terraform.NAMESPACE
+            kind=TerraformV1Alpha2SpecSourceRefKind.EXTERNAL_ARTIFACT, name=module.name, namespace=terraform.NAMESPACE
         ),
         # The OVH server resources and nothing else — the one subgraph whose only
         # dependencies are the ovh provider and two SOPS files. README § What this
