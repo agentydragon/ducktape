@@ -26,6 +26,7 @@ exports_files(
         "0022_session_projection_lease.py",
         "0023_drop_app_runner_locator.py",
         "0024_retire_app_raw_history.py",
+        "0025_summary_model_activity.py",
     ],
     visibility = ["//agentplane/app/migrations:__pkg__"],
 )
@@ -213,5 +214,11 @@ py_library(
 py_library(
     name = "0024_retire_app_raw_history",
     srcs = ["0024_retire_app_raw_history.py"],
+    deps = ["@pypi//alembic"],
+)
+
+py_library(
+    name = "0025_summary_model_activity",
+    srcs = ["0025_summary_model_activity.py"],
     deps = ["@pypi//alembic"],
 )

@@ -22,7 +22,7 @@ from agentplane.app.threads.events.event_log import (
 from agentplane.app.threads.events.projection_lease import ProjectionLeaseLostError
 from agentplane.app.threads.history_projector import HistoryProjector
 from agentplane.app.threads.ingestion import Ingester
-from agentplane.app.threads.models import EventLog, ThreadCheckpoint, ThreadEntity, ThreadHistorySummary
+from agentplane.app.threads.models import ThreadCheckpoint, ThreadEntity, ThreadHistorySummary
 from agentplane.app.threads.sessions import SandboxSessions
 from agentplane.app.threads.store import ThreadStore
 from agentplane.app.threads.view.views import ThreadViewState
@@ -179,7 +179,7 @@ async def test_projection_updates_activity_atomically_and_ignores_tool_output(
         await projector.project_batch(thread, lease=lease)
     async with async_sessionmaker(engine)() as session:
         assert await session.scalar(select(ThreadCheckpoint.through_cursor)) == 2
-        assert await session.scalar(select(EventLog.last_model_activity_at)) == first[-1].event.at.ToDatetime(
+        assert await session.scalar(select(ThreadHistorySummary.last_model_activity_at)) == first[-1].event.at.ToDatetime(
             tzinfo=UTC
         )
     assert (await projector.project_batch(thread, lease=lease)).through_cursor == 3
@@ -191,7 +191,7 @@ async def test_projection_updates_activity_atomically_and_ignores_tool_output(
     reader.read_session_events.return_value = protocol_pb2.ReadSessionEventsResponse(last_cursor=4)
     assert (await projector.project_batch(thread, lease=lease)).through_cursor == 4
     async with async_sessionmaker(engine)() as session:
-        assert await session.scalar(select(EventLog.last_model_activity_at)) == activity.event.at.ToDatetime(tzinfo=UTC)
+        assert await session.scalar(select(ThreadHistorySummary.last_model_activity_at)) == activity.event.at.ToDatetime(tzinfo=UTC)
         assert await session.scalar(select(ThreadCheckpoint.through_cursor)) == 4
 
 

@@ -6,7 +6,7 @@ from google.protobuf.json_format import MessageToDict, ParseDict
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from agentplane.app.threads.events.event_log import EventReplicationError, project_attached
-from agentplane.app.threads.models import EventLog, ThreadHistorySummary
+from agentplane.app.threads.models import ThreadHistorySummary
 from agentplane.app.threads.view.recording import set_operational
 from agentplane.runner import protocol_pb2 as runner_pb2
 from agentplane.sandbox_service import protocol_pb2
@@ -54,18 +54,10 @@ async def project_lifecycle(
             summary.resumed_after_cursor = None
     summary.attached = MessageToDict(attached)
     summary.end = end
-    log = await session.get(EventLog, thread_id)
-    assert log is not None
-    model_changed = log.model != attached.spec.model
-    log.model = attached.spec.model
     operational_changed = await set_operational(
         session,
         thread_id,
         status="active" if end is None else "failed" if end else "ended",
         error=end.get("message") if end else None,
     )
-    return (
-        previous != (summary.attached, summary.end, summary.resumed_after_cursor)
-        or model_changed
-        or operational_changed
-    )
+    return previous != (summary.attached, summary.end, summary.resumed_after_cursor) or operational_changed

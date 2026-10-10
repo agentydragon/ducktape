@@ -11,7 +11,7 @@ from uuid import UUID
 from sqlalchemy import update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from agentplane.app.threads.models import EventLog
+from agentplane.app.threads.models import ThreadHistorySummary
 from agentplane.protocol import event_log_pb2, event_pb2
 
 # gazelle:include_dep @pypi//protobuf
@@ -44,7 +44,7 @@ async def record_model_activity(
     last_activity = next((entry for entry in reversed(entries) if is_model_activity(entry.event)), None)
     if last_activity is not None:
         await session.execute(
-            update(EventLog)
-            .where(EventLog.id == thread_id)
+            update(ThreadHistorySummary)
+            .where(ThreadHistorySummary.thread_id == thread_id)
             .values(last_model_activity_at=last_activity.event.at.ToDatetime(tzinfo=UTC))
         )
