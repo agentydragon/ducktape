@@ -20,8 +20,8 @@ upstream Helm chart with the image, CRD and RBAC swapped in by that module.
 `go.mod` replaces upstream and its nested `api` module with the `external-artifact-source`
 branch of [agentydragon/tofu-controller](https://github.com/agentydragon/tofu-controller):
 upstream `main` plus the change meant for an upstream PR (the `ExternalArtifact` source kind,
-its index, watch and RBAC, regenerated CRD and docs, and an envtest case). That branch needs
-Go 1.26.6, which sets the floor for the repository's Go SDK.
+its index, watch and RBAC, regenerated CRD and docs, and an envtest case).
+`MODULE.bazel` fetches that commit's Go proxy zips with `archive_override`.
 
 `patches/bazel.patch` exports the CRD YAML: build glue, not part of the branch.
 
@@ -38,7 +38,8 @@ and switch `cluster/cdk8s/tofu_controller/release.py` back to the chart's image 
 
 ## Updating the controller
 
-Push to the fork branch, then point both `replace` directives at the new commit and refresh
+Push to the fork branch, point both `replace` directives at the new commit and refresh
 `go.mod`/`go.sum` with `go mod tidy` over the manager's imports (`gomega` and
-controller-runtime's `fake` for the test). Keep `cluster/cdk8s/tofu_controller/release.py`'s
+controller-runtime's `fake` for the test), then set both `archive_override`s to the new
+pseudo-versions and their zips' checksums. Keep `cluster/cdk8s/tofu_controller/release.py`'s
 chart version on the release the branch is based on.
