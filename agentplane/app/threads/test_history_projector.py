@@ -179,9 +179,9 @@ async def test_projection_updates_activity_atomically_and_ignores_tool_output(
         await projector.project_batch(thread, lease=lease)
     async with async_sessionmaker(engine)() as session:
         assert await session.scalar(select(ThreadCheckpoint.through_cursor)) == 2
-        assert await session.scalar(select(ThreadHistorySummary.last_model_activity_at)) == first[-1].event.at.ToDatetime(
-            tzinfo=UTC
-        )
+        assert await session.scalar(select(ThreadHistorySummary.last_model_activity_at)) == first[
+            -1
+        ].event.at.ToDatetime(tzinfo=UTC)
     assert (await projector.project_batch(thread, lease=lease)).through_cursor == 3
     reader.read_session_events.return_value = protocol_pb2.ReadSessionEventsResponse(
         last_cursor=4,
@@ -191,7 +191,9 @@ async def test_projection_updates_activity_atomically_and_ignores_tool_output(
     reader.read_session_events.return_value = protocol_pb2.ReadSessionEventsResponse(last_cursor=4)
     assert (await projector.project_batch(thread, lease=lease)).through_cursor == 4
     async with async_sessionmaker(engine)() as session:
-        assert await session.scalar(select(ThreadHistorySummary.last_model_activity_at)) == activity.event.at.ToDatetime(tzinfo=UTC)
+        assert await session.scalar(
+            select(ThreadHistorySummary.last_model_activity_at)
+        ) == activity.event.at.ToDatetime(tzinfo=UTC)
         assert await session.scalar(select(ThreadCheckpoint.through_cursor)) == 4
 
 
