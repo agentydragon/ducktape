@@ -59,13 +59,4 @@ go_deps.module_override(
     patch_cmds = ["""grep -rl --include=BUILD.bazel '"//conditions' . | xargs sed -i 's#"//conditions#"@com_github_fluxcd_pkg_runtime//conditions#g'"""],
     path = "github.com/fluxcd/pkg/runtime",
 )
-use_repo(
-    go_deps,
-    "com_github_flux_iac_tofu_controller",
-    "com_github_flux_iac_tofu_controller_api",
-    "com_github_fluxcd_pkg_apis_meta",
-    "com_github_fluxcd_source_controller_api",
-    "com_github_onsi_gomega",
-    "io_k8s_apimachinery",
-    "io_k8s_sigs_controller_runtime",
-)
+use_repo(go_deps, "com_github_flux_iac_tofu_controller")

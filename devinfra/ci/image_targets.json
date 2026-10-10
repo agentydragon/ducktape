@@ -36,8 +36,7 @@
       "registry": "forgejo"
     },
     "tofu-controller": {
-      "target": "@ducktape_tofu_controller//:image",
-      "test": "@ducktape_tofu_controller//:tests"
+      "target": "@ducktape_tofu_controller//:image"
     },
     "exec-backend": {
       "target": "//mcp_infra/exec:direct_image",

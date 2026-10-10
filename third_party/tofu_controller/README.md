@@ -7,7 +7,6 @@ from its own artifact instead of the whole repository's (#9271). Go dependencies
 from Ducktape's; `rules_oci` packages the manager into a distroless image.
 
 ```bash
-bbr test @ducktape_tofu_controller//:tests
 bbr build @ducktape_tofu_controller//:image
 ```
 
@@ -25,9 +24,9 @@ its index, watch and RBAC, regenerated CRD and docs, and an envtest case).
 
 `patches/bazel.patch` exports the CRD YAML: build glue, not part of the branch.
 
-`external_artifact_source_test.go` covers source resolution and the revision-change mapping
-with a fake client, embedding the patched `controllers` library: upstream's envtest suite needs
-a `kube-apiserver` and a `tofu` binary, so it does not run under Bazel here.
+The controller's tests, including the `ExternalArtifact` envtest case, live on the branch
+and run in its own CI: they need a `kube-apiserver` and a `tofu` binary, so Ducktape only
+builds the manager.
 
 **Gotcha:** the `MODULE.bazel` overrides are build fixes, not features: `//conditions` labels
 in `fluxcd/pkg/runtime` resolve to the main repository, and proto generation in `runner/`
@@ -40,7 +39,6 @@ release includes it, remove the module and switch `cluster/cdk8s/tofu_controller
 ## Updating the controller
 
 Push to the fork branch, point both `replace` directives at the new commit and refresh
-`go.mod`/`go.sum` with `go mod tidy` over the manager's imports (`gomega` and
-controller-runtime's `fake` for the test), then set both `archive_override`s to the new
+`go.mod`/`go.sum` with `go mod tidy` over the manager's imports, then set both `archive_override`s to the new
 pseudo-versions and their zips' checksums. Keep `cluster/cdk8s/tofu_controller/release.py`'s
 chart version on the release the branch is based on.
