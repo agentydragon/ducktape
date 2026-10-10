@@ -13,6 +13,10 @@ projection (`agentplane.thread_fold`), in epoch `history-v1`, from cursor 0: a p
 cycle under the per-Session projection leases, so replicas share the work. Those tables are the only
 ones it writes. Each cycle logs how many Sessions and events the fold is behind.
 
+Session summaries (`ListSessionSummaries`, `GetSessionSummary`) read that fold. They list newest
+first by the time of a Session's first event, with not-yet-folded Sessions ahead, and report the
+committed cursor beside the folded one. A page token continues only the filter it was issued for.
+
 Bazel targets: `:main`, `:image`. Settings come from `AGENTPLANE_HISTORY_SERVICE_*` environment
 variables or the YAML file named by `AGENTPLANE_HISTORY_SERVICE_CONFIG_FILE` (`settings.py`). gRPC
 listens on `port`, and `/healthz` on `health_port` reports process liveness only.
