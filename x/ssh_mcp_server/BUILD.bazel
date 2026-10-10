@@ -27,6 +27,21 @@ py_binary(
     deps = [":server"],
 )
 
+py_library(
+    name = "export_frontend_schema",
+    srcs = ["export_frontend_schema.py"],
+    deps = [
+        ":server",
+        "@pypi//fastmcp_slim",
+    ],
+)
+
+py_binary(
+    name = "export_frontend_schema_bin",
+    main_module = "x.ssh_mcp_server.export_frontend_schema",
+    deps = [":export_frontend_schema"],
+)
+
 py_test(
     name = "test_server",
     srcs = ["test_server.py"],

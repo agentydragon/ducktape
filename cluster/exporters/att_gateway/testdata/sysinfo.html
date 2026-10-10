@@ -1,0 +1,174 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html lang="en" xml:lang="en" xmlns="http://www.w3.org/1999/xhtml" >
+    <head>
+        <title>System Information</title>
+        <meta http-equiv="Content-Type" content="text/html; charset=windows-1252" />
+        <meta http-equiv="Content-Style-Type" content="text/css" />
+        <meta http-equiv="Content-Script-Type" content="type" />
+        <link rel="icon" type="image/ico" href="/favicon.ico" />
+        <link rel="stylesheet" type="text/css" href="/baseINID.css" />
+        <link rel="stylesheet" type="text/css" href="/INID.css" />
+<script type="text/css"><!--
+<style id="antiClickjack" type="text/css">body{display:none;}</style>
+//-->
+</script>
+    <script language="javascript" type="text/javascript"><!--
+  adImages=new Array('/images/Block1.gif','/images/Block3.gif','/images/Block5.gif','/images/Block7.gif','/images/Block9.gif','/images/Block11.gif','/images/Block14.gif')
+  thisAd=0
+  imgCt=adImages.length
+if (self == top) {
+    var antiClickjack = document.getElementById("antiClickjack");
+    antiClickjack.parentNode.removeChild(antiClickjack);
+} else {
+    top.location = self.location;
+}
+function rotate(){
+    if (document.images) {
+        thisAd++
+            if (thisAd==imgCt){
+                thisAd=0
+            }
+        document.adBanner.src=adImages[thisAd]
+            setTimeout('rotate()',200)
+    }
+}
+function reloadPage()
+{
+    if (document.forms[0].hidden.value == "update_refresh") {
+      rotate()
+    }
+    else if (document.forms[0].hidden.value == "freshen") {
+      setTimeout("self.location.reload(true)", 10000)
+      rotate()
+    }
+}
+
+
+//-->
+</script>
+    </head>
+           <body>
+  <div id="wrapper">
+    <div id="whole-page">
+      <div id="main-content">
+        <div id="header">
+          <div id="tab-container">
+            <div id="logo-div">
+	      <img id="main-logo" src="/images/att_logo.png" alt="" style="height:42px;" />
+            </div>
+            <div style="clear: both;"></div>
+<div id="skip"><a href="#content-sub">Skip to Main Content</a></div>
+            <div id="top-navigation">
+              <div id="top-navigation-buttons">
+<a class="topnav topnavselected" href="/cgi-bin/home.ha"><span>Device</span></a>
+<a class="topnav" href="/cgi-bin/broadbandstatistics.ha"><span>Broadband</span></a>
+<a class="topnav" href="/cgi-bin/lanstatistics.ha"><span>
+Home Network
+</span></a>
+
+<a class="topnav" href="/cgi-bin/voice.ha"><span>Voice</span></a>
+<a class="topnav" href="/cgi-bin/firewall.ha"><span>Firewall</span></a>
+<a class="topnav" href="/cgi-bin/diag.ha"><span>Diagnostics</span></a>
+              <div style="clear: both;"></div>
+            </div>
+          </div>
+          <div id="secondary-nav">
+            <div id="secondary-nav-buttons">
+<a class="secondary-link" href="/cgi-bin/home.ha">Status</a>
+<a class="secondary-link" href="/cgi-bin/devices.ha">Device List</a>
+<a class="secondary-link sec-selected" href="/cgi-bin/sysinfo.ha">System Information</a>
+<a class="secondary-link" href="/cgi-bin/routerpasswd.ha">Access Code</a>
+<a class="secondary-link" href="/cgi-bin/remoteaccess.ha">Remote Access</a>
+<a class="secondary-link" href="/cgi-bin/restart.ha">Restart Device</a>
+                  </div></div></div>
+                <div style="clear: both;"></div>
+              </div>
+        <div style="clear: both;"></div>
+      <div id="mid-section">
+          <div id="content-padding"><!-- CONTENT -->
+            <div id="content"
+><div id="content-sub">
+                <div class="first-section-header">
+                 <h1>System Information</h1>
+                 </div>
+                 <div class="section-content">
+                 <table class="table75" summary="This table includes system information about the device and its software">
+                          <tr>
+                            <th width="50%" scope="row">Manufacturer</th>
+                                                            <td width="50%">HUMAX</td>
+                                                      </tr>
+                          <tr>
+                            <th scope="row">Model Number</th>
+                            <td class="col2">BGW320-500</td>
+                          </tr>
+                          <tr>
+                            <th scope="row">Serial Number</th>
+                            <td class="col2">TESTSERIAL0001</td>
+                          </tr>
+                          <tr>
+                            <th scope="row">Software Version</th>
+                            <td class="col2">6.35.8</td>
+                          </tr>
+                          <tr><th scope="row">MAC Address</th>
+                                                                <td class="col2">02:00:5e:00:00:00</td>
+                                                        </tr>
+                          <tr>
+                            <th scope="row">First Use Date</th>
+                            <td class="col2">2026-06-25T16:56:51Z</td>
+                          </tr>
+                          <tr>
+                            <th scope="row">Time Since Last Reboot</th>
+                            <td class="col2">632802</td>
+                          </tr>
+                          <tr>
+                            <th scope="row">Current Date/Time</th>
+                            <td class="col2">
+2026-10-09T17:28:29
+                            </td>
+                          </tr>
+                          <tr>
+                            <th scope="row">Hardware Version</th>
+                            <td class="col2">02001F00460050</td>
+                          </tr>
+                          <tr>
+                            <th scope="row">Legal Disclaimer</th>
+                            <td class="col2"><a href="
+/legal.txt
+" target="_blank">Open Source Licenses</a>
+                            </td>
+                          </tr>
+               </table>
+             </div>
+<br/><br/>
+                </div>
+              </div>
+            </div>
+ <!-- isWANUP -->
+            <div id="help">
+              <div id="help-sub">
+              <h2>Help</h2><br />
+          <strong>Manufacturer:</strong> Your device's manufacturer.<br /><br />
+          <strong>Model Number:</strong> Your device's manufacturing information.<br /><br />
+          <strong>Serial Number:</strong> Your device's unique serial number. Usually also printed on the device's label.<br /><br />
+          <strong>Software Version:</strong> The version of embedded operating system software currently running on the device.<br /><br />
+          <strong>MAC Address:</strong> The WAN MAC Address of the device.<br /><br />
+          <strong>First Use Date:</strong> Date and time in UTC that the CPE first both successfully established an IP-layer network connection and acquired an absolute time reference using NTP or equivalent over that network connection. The CPE MAY reset this date after a factory reset.<br /><br />
+          <strong>Time Since Last Reboot:</strong> Days:Hours:Minutes:Seconds since the device was restarted.<br /><br />
+          <strong>Current Date/Time:</strong> Date in YYYY-MM-DD, T for time, Time in 24hour format HH:MM:SS, followed by Z (if timezone is not set) to match the logs. If WAN is down, this field is blank, using Time Since Last Reboot.<br /><br />
+          <strong>Hardware Version:</strong> A combination of the board ID and system SKU.<br /><br />
+              </div> <!-- help-sub -->
+            </div> <!-- help -->
+            <div style="clear: both;"></div>
+          </div>
+        </div>
+        <div style="clear: both;"></div>
+      </div>
+      <div id="footer">
+      <div><br>
+   <span class="inner">&copy; 2016-2025 AT&T Intellectual Property. All rights reserved. AT&T and Globe logo are registered trademarks of AT&T Intellectual Property.</span>
+   <span class="sitemap"><a href="/cgi-bin/sitemap.ha">Site Map</a></span></br></div>
+   <div><span class="inner">&copy; 2016 ARRIS Enterprises LLC. All rights reserved. ARRIS is a registered trademark of ARRIS Enterprises LLC.</span></div>
+   </div>
+      </div>
+</body>
+</html>

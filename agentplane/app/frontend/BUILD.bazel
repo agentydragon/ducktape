@@ -5,9 +5,9 @@
 # gazelle:exclude test_visual_navigation.py
 # gazelle:exclude test_visual_scenes.py
 load("@aspect_rules_esbuild//esbuild:defs.bzl", "esbuild")
-load("@aspect_rules_js//js:defs.bzl", "js_library", "js_test")
+load("@aspect_rules_js//js:defs.bzl", "js_library")
 load("@aspect_rules_ts//ts:defs.bzl", "ts_config")
-load("//devinfra/js:openapi.bzl", "js_openapi_schema")
+load("//devinfra/js:openapi.bzl", "js_openapi_schema", "js_openapi_zod")
 load("//devinfra/js:spa_bundle.bzl", "spa_bundle")
 load("//devinfra/js:ts_library.bzl", "ts_library")
 load("//devinfra/js:vitest.bzl", "check_vitest_specs", "vitest_config")
@@ -24,11 +24,35 @@ ts_config(
     src = "tsconfig.json",
 )
 
+# Generated Zod modules infer their exported types from the generated schemas; declaration emit
+# needs whole-program inference rather than isolatedDeclarations' authored-type annotations.
+ts_config(
+    name = "tsconfig_generated",
+    src = "tsconfig.generated.json",
+    deps = [":tsconfig"],
+)
+
 # TypeScript types from the app's OpenAPI document: the inventory's models and routes. The bridge's
 # proto-JSON bodies are plain objects there; the runner's shared protocol types them.
 js_openapi_schema(
     name = "schema",
     generator = "//agentplane/app:export_schema_bin",
+)
+
+# Generate the SSH argument/result validators from the schema FastMCP builds from the server's
+# registered tool signature and return type.
+js_openapi_zod(
+    name = "ssh_action_schemas_generated",
+    out = "actions/schemas/ssh/exec.zod.ts",
+    generator = "//x/ssh_mcp_server:export_frontend_schema_bin",
+    tsconfig = ":tsconfig_generated",
+)
+
+ts_library(
+    name = "ssh_action_schemas",
+    srcs = ["actions/schemas/ssh/exec.ts"],
+    tsconfig = TSCONFIG,
+    deps = [":ssh_action_schemas_generated"],
 )
 
 ts_library(
@@ -137,10 +161,18 @@ ts_library(
 )
 
 ts_library(
+    name = "actions_types",
+    srcs = ["actions/types.ts"],
+    tsconfig = TSCONFIG,
+    deps = [":schema"],
+)
+
+ts_library(
     name = "actions_client",
     srcs = ["actions/client.ts"],
     tsconfig = TSCONFIG,
     deps = [
+        ":actions_types",
         ":client",
         ":schema",
     ],
@@ -465,6 +497,7 @@ ts_library(
         ":actions_rendering_result_entry",
         ":code_block",
         ":command_view",
+        ":ssh_action_schemas",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
         "//:node_modules/react",
@@ -1175,11 +1208,6 @@ ts_library(
     ],
 )
 
-filegroup(
-    name = "service_worker",
-    srcs = ["sw.js"],
-)
-
 ts_library(
     name = "app",
     srcs = [
@@ -1390,14 +1418,6 @@ agentplane_visual_test(
     name = "visual_policies",
     src = "test_visual_policies.py",
     title = "Agentplane: policies",
-)
-
-js_test(
-    name = "sw_test",
-    size = "small",
-    data = [":service_worker"],
-    entry_point = "sw_test.mjs",
-    env = {"SW_SOURCE": "$(rootpath :service_worker)"},
 )
 
 agentplane_vitest_test(

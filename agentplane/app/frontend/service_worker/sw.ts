@@ -1,6 +1,35 @@
+import type { ActionRequestView } from "../actions/types";
+
+interface PushShow {
+  kind: "show";
+  action_id: string;
+  action_group: string;
+  action_name: string;
+  version?: number;
+}
+
+interface PushRetract {
+  kind: "retract";
+  action_id: string;
+  outcome: string;
+}
+
+type PushMessage = PushShow | PushRetract;
+
+// The worker is checked against WebWorker globals, not the frontend's document globals.
+declare const self: ServiceWorkerGlobalScope;
+
+// TypeScript's standard libraries do not declare notification actions yet, despite their use by
+// ServiceWorkerRegistration.showNotification(). Augment only the missing options field.
+declare global {
+  interface NotificationOptions {
+    actions?: Array<{ action: string; title: string }>;
+  }
+}
+
 self.addEventListener("push", (event) => {
   if (!event.data) return;
-  const message = event.data.json();
+  const message = event.data.json() as PushMessage;
   if (message.kind === "retract") {
     event.waitUntil(
       self.registration.showNotification(message.outcome, {
@@ -17,10 +46,10 @@ self.addEventListener("push", (event) => {
     (async () => {
       // Push services can deliver an old show after its retraction. Re-read authority before
       // offering decisions; an expired session gets a reauthentication deep link, not buttons.
-      let current = null;
+      let current: ActionRequestView | null = null;
       try {
         const response = await fetch(`/actions/${encodeURIComponent(message.action_id)}`, { credentials: "include" });
-        if (response.ok) current = await response.json();
+        if (response.ok) current = (await response.json()) as ActionRequestView;
       } catch {
         /* Offline delivery still opens the app without offering stale decisions. */
       }
@@ -47,9 +76,10 @@ self.addEventListener("push", (event) => {
     })()
   );
 });
+
 self.addEventListener("notificationclick", (event) => {
   event.notification.close();
-  const message = event.notification.data;
+  const message = event.notification.data as PushMessage | null;
   if (!message || message.kind !== "show") return;
   if (event.action !== "approve" && event.action !== "deny") {
     event.waitUntil(self.clients.openWindow("/#/actions"));

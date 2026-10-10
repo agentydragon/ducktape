@@ -54,8 +54,8 @@ class ThreadStore:
                 Thread,
                 case((fenced, ThreadCheckpoint.through_cursor), else_=last_cursor),
                 case((fenced, ThreadHistorySummary.last_event_at), else_=last_at),
-                FeedState.attached,
-                FeedState.end,
+                case((fenced, ThreadHistorySummary.attached), else_=FeedState.attached),
+                case((fenced, ThreadHistorySummary.end), else_=FeedState.end),
                 case((fenced, None), else_=last_turn),
                 ThreadHistorySummary,
             )
@@ -135,14 +135,7 @@ async def _last(
         cursor = await session.scalar(
             select(ThreadCheckpoint.through_cursor).where(ThreadCheckpoint.thread_id == thread_id)
         )
-        return (
-            cursor,
-            summary.last_event_at,
-            state.attached if state is not None else None,
-            state.end if state is not None else None,
-            None,
-            summary,
-        )
+        return (cursor, summary.last_event_at, summary.attached, summary.end, None, summary)
     last_cursor = await session.scalar(
         select(Event.cursor).where(Event.thread_id == thread_id).order_by(Event.cursor.desc()).limit(1)
     )

@@ -17,6 +17,10 @@ from cdk8s_plus_34 import k8s
 ZONE_LABEL = "topology.kubernetes.io/zone"
 # The OVH nodes. Pinning to it keeps a workload off the home nodes (wyrm2, optiplex).
 HIL_OVH_ZONE = "hil-ovh"
+REGION_LABEL = "topology.kubernetes.io/region"
+# The laptops (iguana, rugged): they join and leave the cluster, so nothing that must keep running
+# belongs there.
+ROAMING_REGION = "roaming"
 # A dict typed read-only: jsii serializes only `dict` instances as maps.
 HIL_OVH_NODE_SELECTOR: Mapping[str, str] = {ZONE_LABEL: HIL_OVH_ZONE}
 # Control-plane nodes also carry this key as a label, which node affinities and selectors match.

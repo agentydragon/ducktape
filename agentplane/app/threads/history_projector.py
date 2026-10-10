@@ -17,6 +17,7 @@ from agentplane.app.threads.events.event_log import EventReplicationError
 from agentplane.app.threads.events.ingestion_lease import IngestionLease
 from agentplane.app.threads.model_activity import record_model_activity
 from agentplane.app.threads.models import EventLog, ThreadCheckpoint, ThreadHistorySummary
+from agentplane.app.threads.projected_lifecycle import project_lifecycle
 from agentplane.app.threads.view.recording import record_thread_fold
 from agentplane.sandbox_service.client import SandboxServiceClient
 
@@ -67,7 +68,7 @@ class HistoryProjector:
             # delayed batch from an old owner. Do not hold the fence over the RPC.
             await ingestion_lease.fence(session, lease, thread_id)
             persisted_barrier = await session.scalar(
-                select(EventLog.raw_ingestion_fenced_at_cursor).where(EventLog.id == thread_id)
+                select(EventLog.raw_ingestion_fenced_at_cursor).where(EventLog.id == thread_id).with_for_update()
             )
             if persisted_barrier != barrier:
                 raise EventReplicationError("raw ingestion fence changed during projection fetch")
@@ -83,6 +84,8 @@ class HistoryProjector:
             if summary is None:
                 raise EventReplicationError("missing service projection metadata at raw fence")
             if not page.entries:
+                await project_lifecycle(session, thread_id, summary, page, through_cursor=after)
+                await notify(session, Channel.THREADS)
                 return ProjectionProgress(after, page.last_cursor)
             source_id = page.entries[0].origin.source_id
             if any(entry.origin.source_id != source_id for entry in page.entries):
@@ -96,5 +99,6 @@ class HistoryProjector:
                 if entry.event.HasField("turn_completed"):
                     summary.last_turn_status = entry.event.turn_completed.status
 
+            await project_lifecycle(session, thread_id, summary, page, through_cursor=page.entries[-1].cursor)
             await notify(session, Channel.THREADS)
         return ProjectionProgress(page.entries[-1].cursor, page.last_cursor)

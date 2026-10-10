@@ -201,6 +201,11 @@ spec:
       name: airlock
       namespace: flux-system
     - apiVersion: image.toolkit.fluxcd.io/v1
+      filter: req.package.name == 'att-gateway-exporter'
+      kind: ImageRepository
+      name: att-gateway-exporter
+      namespace: flux-system
+    - apiVersion: image.toolkit.fluxcd.io/v1
       filter: req.package.name == 'attic-jwt-rotation'
       kind: ImageRepository
       name: attic-jwt-rotation

@@ -1,0 +1,336 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html lang="en" xml:lang="en" xmlns="http://www.w3.org/1999/xhtml" >
+    <head>
+        <title>Broadband Status</title>
+        <meta http-equiv="Content-Type" content="text/html; charset=windows-1252" />
+        <meta http-equiv="Content-Style-Type" content="text/css" />
+        <meta http-equiv="Content-Script-Type" content="type" />
+        <link rel="icon" type="image/ico" href="/favicon.ico" />
+        <link rel="stylesheet" type="text/css" href="/baseINID.css" />
+        <link rel="stylesheet" type="text/css" href="/INID.css" />
+<script type="text/css"><!--
+<style id="antiClickjack" type="text/css">body{display:none;}</style>
+//-->
+</script>
+    <script language="javascript" type="text/javascript"><!--
+  adImages=new Array('/images/Block1.gif','/images/Block3.gif','/images/Block5.gif','/images/Block7.gif','/images/Block9.gif','/images/Block11.gif','/images/Block14.gif')
+  thisAd=0
+  imgCt=adImages.length
+if (self == top) {
+    var antiClickjack = document.getElementById("antiClickjack");
+    antiClickjack.parentNode.removeChild(antiClickjack);
+} else {
+    top.location = self.location;
+}
+function rotate(){
+    if (document.images) {
+        thisAd++
+            if (thisAd==imgCt){
+                thisAd=0
+            }
+        document.adBanner.src=adImages[thisAd]
+            setTimeout('rotate()',200)
+    }
+}
+function reloadPage()
+{
+    if (document.forms[0].hidden.value == "update_refresh") {
+      rotate()
+    }
+    else if (document.forms[0].hidden.value == "freshen") {
+      setTimeout("self.location.reload(true)", 10000)
+      rotate()
+    }
+}
+
+
+//-->
+</script>
+    </head>
+           <body>
+  <div id="wrapper">
+    <div id="whole-page">
+      <div id="main-content">
+        <div id="header">
+          <div id="tab-container">
+            <div id="logo-div">
+	      <img id="main-logo" src="/images/att_logo.png" alt="" style="height:42px;" />
+            </div>
+            <div style="clear: both;"></div>
+<div id="skip"><a href="#content-sub">Skip to Main Content</a></div>
+            <div id="top-navigation">
+              <div id="top-navigation-buttons">
+<a class="topnav" href="/cgi-bin/home.ha"><span>Device</span></a>
+<a class="topnav topnavselected" href="/cgi-bin/broadbandstatistics.ha"><span>Broadband</span></a>
+<a class="topnav" href="/cgi-bin/lanstatistics.ha"><span>
+Home Network
+</span></a>
+
+<a class="topnav" href="/cgi-bin/voice.ha"><span>Voice</span></a>
+<a class="topnav" href="/cgi-bin/firewall.ha"><span>Firewall</span></a>
+<a class="topnav" href="/cgi-bin/diag.ha"><span>Diagnostics</span></a>
+              <div style="clear: both;"></div>
+            </div>
+          </div>
+          <div id="secondary-nav">
+            <div id="secondary-nav-buttons">
+<a class="secondary-link sec-selected" href="/cgi-bin/broadbandstatistics.ha">Status</a>
+<a class="secondary-link" href="/cgi-bin/broadbandconfig.ha">Configure</a>
+<a class="secondary-link" href="/cgi-bin/fiberstat.ha">Fiber Status</a>
+                  </div></div></div>
+                <div style="clear: both;"></div>
+              </div>
+        <div style="clear: both;"></div>
+      <div id="mid-section">
+          <div id="content-padding"><!-- CONTENT -->
+            <div id="content"
+><div id="content-sub">
+                <div class="first-section-header">
+                 <h1>Broadband Status</h1>
+                 </div>
+         <form method="post" action="/cgi-bin/broadbandstatistics.ha">
+<input type="hidden" name="nonce" value="068f97ddc7c4239ff19cd7d45caf6b34e8ae9274c1e86e68f12ad7506aa6330a" />
+                 <div class="section-header"><h2>Primary Broadband</h2></div>
+                 <div>
+                 <table class="table75" summary="Summary of the most important WAN information">
+                 <tr><th scope="row" width="47%">Broadband Connection Source</th><td class="col2">
+FIBER
+                 </td></tr>
+                 <tr><td>&nbsp;</td></tr>
+
+                   <tr><th scope="row" width="47%">Broadband Connection</th>
+                         <td class="col2">
+Up
+                </td>
+                     </tr>
+                       <tr>
+                         <th scope="row">Broadband Network Type</th>
+                         <td class="col2">Lightspeed</td>
+                       </tr>
+                       <tr>
+                         <th scope="row">Broadband IPv4 Address</th>
+                         <td class="col2">203.0.113.35</td>
+                       </tr>
+                       <tr>
+                         <th scope="row">Gateway IPv4 Address</th>
+                         <td class="col2">203.0.113.1</td>
+                       </tr>
+                       <tr>
+                          <th scope="row">MAC Address</th>
+                          <td class="col2">02:00:5e:00:00:00</td>
+                       </tr>
+                       <tr>
+                         <th scope="row">Primary DNS</th>
+                         <td class="col2">198.51.100.8</td>
+                       </tr>
+                       <tr>
+                         <th scope="row">Secondary DNS</th>
+                         <td class="col2">198.51.100.9</td>
+                       </tr>
+                       <tr>
+                         <th scope="row">Primary DNS Name</th>
+                         <td class="col2"></td>
+                       </tr>
+                       <tr>
+                         <th scope="row">Secondary DNS Name&nbsp;</th>
+                         <td class="col2"></td>
+                       </tr>
+                       <tr>
+                         <th scope="row">MTU</th>
+                         <td class="col2">1500</td>
+                       </tr>
+                 </table>
+                </div>
+
+               <div class="section-header"><h2>Ethernet Status</h2></div>
+                   <div>
+                     <table class="grid table75" summary="Ethernet Statistics Table">
+                       <tr class="a">
+                           <th scope="row" width="47%" class="heading a">Line State</th>
+                           <td>
+                           Up
+</td>
+                       </tr>
+                       <tr class="b">
+                           <th scope="row" width="47%" class="heading b">Current Speed (Mbps)</th>
+                           <td>10000</td>
+                       </tr>
+                       <tr class="a">
+                           <th scope="row" width="47%" class="heading a">Current Duplex</th>
+                           <td>full</td>
+                       </tr>
+                     </table>
+                   </div>
+
+               <div class="section-header"><h2>IPv6</h2></div>
+                   <div>
+                     <table class="table75" summary="IPv6 Table">
+                       <tr>
+                           <th scope="row" width="47%">Status</th>
+                           <td class="col2">Available</td>
+                       </tr>
+                       <tr>
+                           <th scope="row" width="47%">Service Type</th>
+                           <td class="col2">native IPv6</td>
+                       </tr>
+                       <tr>
+                           <th scope="row">Global Unicast IPv6 Address</th>
+                           <td class="col2">2001:db8:1::1                           </td>
+                       </tr>
+                       <tr>
+                           <th scope="row">Link Local Address</th>
+                           <td class="col2">fe80::5eff:fe00:300</td>
+                       </tr>
+                       <tr>
+                           <th scope="row">Default IPv6 Gateway Address</th>
+                           <td class="col2">
+fe80::5eff:fe00:1
+</td>
+                       </tr>
+                       <tr>
+                           <th scope="row">Primary DNS</th>
+                           <td class="col2"></td>
+                       </tr>
+                       <tr>
+                           <th scope="row">Secondary DNS</th>
+                           <td class="col2"></td>
+                       </tr>
+                       <tr>
+                           <th scope="row">MTU</th>
+                           <td class="col2">1500</td>
+                       </tr>
+                     </table>
+                 </div>
+               <div class="section-header"><h2>IPv4 Statistics</h2></div>
+                   <div>
+                     <table class="table75" summary="Ethernet IPv4 Statistics Table">
+                       <tr>
+                           <th scope="row" width="47%">Receive Packets</th>
+                           <td>2359286031</td>
+                       </tr>
+                       <tr>
+                           <th scope="row" width="47%">Transmit Packets</th>
+                           <td>848278681</td>
+                       </tr>
+                       <tr>
+                           <th scope="row" width="47%">Receive Bytes</th>
+                           <td>2875130071354</td>
+                       </tr>
+                       <tr>
+                           <th scope="row" width="47%">Transmit Bytes</th>
+                           <td>379370832040</td>
+                       </tr>
+                       <tr>
+                           <th scope="row" width="47%">Receive Unicast</th>
+                           <td>2359286230</td>
+                       </tr>
+                       <tr>
+                           <th scope="row" width="47%">Transmit Unicast</th>
+                           <td>7</td>
+                       </tr>
+                       <tr>
+                           <th scope="row" width="47%">Receive Multicast</th>
+                           <td>0</td>
+                       </tr>
+                       <tr>
+                           <th scope="row" width="47%">Transmit Multicast</th>
+                           <td>1</td>
+                       </tr>
+                       <tr>
+                           <th scope="row" width="47%">Receive Drops</th>
+                           <td>0</td>
+                       </tr>
+                       <tr>
+                           <th scope="row" width="47%">Transmit Drops</th>
+                           <td>0</td>
+                       </tr>
+                       <tr>
+                           <th scope="row" width="47%">Receive Errors</th>
+                           <td>0</td>
+                       </tr>
+                       <tr>
+                           <th scope="row" width="47%">Transmit Errors</th>
+                           <td>0</td>
+                       </tr>
+                       <tr>
+                           <th scope="row" width="47%">Collisions</th>
+                           <td>0</td>
+                       </tr>
+                     </table>
+                   </div>
+               <div class="section-header"><h2>IPv6 Statistics</h2></div>
+                   <div>
+                     <table class="table75" summary="IPv6 Statistics Table">
+                       <tr>
+                           <th scope="row" width="47%">Transmit Packets</th>
+                           <td class="col2">7</td>
+                       </tr>
+                       <tr>
+                           <th scope="row">Transmit Errors</th>
+                           <td class="col2">0</td>
+                       </tr>
+                       <tr>
+                           <th scope="row">Transmit Discards</th>
+                           <td class="col2">0</td>
+                       </tr>
+                     </table>
+                 </div>
+              <div>
+                  <input type="submit" name="Clear" class="cssbtn btnspacer" value="Clear Statistics" />
+              </div>
+
+                 <div class="section-header"><h2>GPON Status</h2></div>
+                   <div>
+                     <table class="table75" summary="GPON Status Table">
+                       <tr>
+                           <th scope="row" width="47%">PON Link Status</th>
+                           <td>OPERATION (O5)</td>
+                       </tr>
+                       <tr>
+                           <th scope="row" width="47%">UNI Status</th>
+                           <td>up</td>
+
+                       </tr>
+                     </table>
+                   </div>
+             </form>
+                 </div>
+              </div>
+            </div>
+ <!-- isWANUP -->
+            <div id="help">
+              <div id="help-sub">
+              <h2>Help</h2><br />
+       <p>The Broadband Status page displays statistics, status, and current parameter settings of the WAN side of the device. Definitions are given for some of the more commonly used items. Other items are highly technical and meant only for use by service provider technicians.</p>
+          <strong>Broadband Connection Source:</strong> Indicates which type of WAN connection is specified or currently in use, Fiber or Ethernet.<br /><br />
+          <strong>Broadband Connection:</strong> The status of the device's WAN connection to the Internet.<br /><br />
+                            <strong>Broadband Network Type:</strong> Indicates which type of WAN Network is currently in use, iPAG or Lightspeed.<br /><br />
+                    <strong>Broadband IPv4 Address:</strong> The public IP address of your device, whether dynamically or statically assigned.<br /><br />
+          <strong>Gateway IPv4 Address:</strong> Your ISP's gateway router IP address.<br /><br />
+          <strong>MAC Address:</strong> The MAC Address for the WAN side of the device.<br /><br />
+          <strong>Primary DNS:</strong> The IP Address of the Primary Domain Name Server.<br /><br />
+          <strong>Secondary DNS:</strong> The IP Address of the backup Domain Name Server.<br /><br />
+          <strong>Primary DNS Name:</strong> The hostname of the Primary Domain Name Server.<br /><br />
+          <strong>Secondary DNS Name:</strong> The hostname of the backup Domain Name Server.<br /><br />
+          <strong>MTU:</strong> Maximum Transmittable Unit before packets are broken into multiple packets<br /><br />
+      <strong>Ethernet Status:</strong> Status of the WAN ethernet port if in use.<br /><br />
+      <strong>IPv6:</strong> Status items of the IPv6 WAN. If IPv6 Status is Unavailable, some items will not be shown.<br /><br />
+      <strong>IPv4 Statistics:</strong> WAN IPv4 statistics collected since the last restart of the device.<br /><br />
+      <strong>IPv6 Statistics:</strong> IPv6 WAN transmit statistics collected since the last restart of the device if IPv6 is enabled. <br /><br />
+      <strong>Clear Statistics:</strong> This button clears statistics, but the counters immediately begin counting again, so you may or may not see values display as zeroes.
+              </div> <!-- help-sub -->
+            </div> <!-- help -->
+            <div style="clear: both;"></div>
+          </div>
+        </div>
+        <div style="clear: both;"></div>
+      </div>
+      <div id="footer">
+      <div><br>
+   <span class="inner">&copy; 2016-2025 AT&T Intellectual Property. All rights reserved. AT&T and Globe logo are registered trademarks of AT&T Intellectual Property.</span>
+   <span class="sitemap"><a href="/cgi-bin/sitemap.ha">Site Map</a></span></br></div>
+   <div><span class="inner">&copy; 2016 ARRIS Enterprises LLC. All rights reserved. ARRIS is a registered trademark of ARRIS Enterprises LLC.</span></div>
+   </div>
+      </div>
+</body>
+</html>

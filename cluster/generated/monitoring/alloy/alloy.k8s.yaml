@@ -37,8 +37,73 @@ spec:
           protocol: TCP
           targetPort: 4318
     controller:
+      nodeSelector:
+        topology.kubernetes.io/zone: hil-ovh
       replicas: 1
       type: deployment
+    serviceMonitor:
+      enabled: true
+---
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: alloy-node
+  namespace: monitoring
+spec:
+  chart:
+    spec:
+      chart: alloy
+      interval: 12h
+      sourceRef:
+        kind: HelmRepository
+        name: grafana
+        namespace: flux-system
+      version: 1.x
+  interval: 30m
+  values:
+    alloy:
+      configMap:
+        create: false
+        key: node.alloy
+        name: alloy-node-config
+      extraEnv:
+        - name: MIMIR_PUSH_URL
+          value: http://mimir-gateway.monitoring.svc.cluster.local/api/v1/push
+        - name: NODE_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: spec.nodeName
+      mounts:
+        extra:
+          - mountPath: /var/lib/alloy-node
+            name: wal
+      resources:
+        requests:
+          cpu: 20m
+          memory: 256Mi
+      storagePath: /var/lib/alloy-node
+    controller:
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: topology.kubernetes.io/region
+                    operator: NotIn
+                    values:
+                      - roaming
+      tolerations:
+        - effect: NoSchedule
+          key: node-role.kubernetes.io/control-plane
+          operator: Exists
+      type: daemonset
+      volumes:
+        extra:
+          - hostPath:
+              path: /var/lib/alloy-node
+              type: DirectoryOrCreate
+            name: wal
+    nameOverride: alloy-node
     serviceMonitor:
       enabled: true
 ---

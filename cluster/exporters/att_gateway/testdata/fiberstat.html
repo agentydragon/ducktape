@@ -1,0 +1,407 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html lang="en" xml:lang="en" xmlns="http://www.w3.org/1999/xhtml" >
+    <head>
+        <title>Fiber Status</title>
+        <meta http-equiv="Content-Type" content="text/html; charset=windows-1252" />
+        <meta http-equiv="Content-Style-Type" content="text/css" />
+        <meta http-equiv="Content-Script-Type" content="type" />
+        <link rel="icon" type="image/ico" href="/favicon.ico" />
+        <link rel="stylesheet" type="text/css" href="/baseINID.css" />
+        <link rel="stylesheet" type="text/css" href="/INID.css" />
+<script type="text/css"><!--
+<style id="antiClickjack" type="text/css">body{display:none;}</style>
+//-->
+</script>
+    <script language="javascript" type="text/javascript"><!--
+  adImages=new Array('/images/Block1.gif','/images/Block3.gif','/images/Block5.gif','/images/Block7.gif','/images/Block9.gif','/images/Block11.gif','/images/Block14.gif')
+  thisAd=0
+  imgCt=adImages.length
+if (self == top) {
+    var antiClickjack = document.getElementById("antiClickjack");
+    antiClickjack.parentNode.removeChild(antiClickjack);
+} else {
+    top.location = self.location;
+}
+function rotate(){
+    if (document.images) {
+        thisAd++
+            if (thisAd==imgCt){
+                thisAd=0
+            }
+        document.adBanner.src=adImages[thisAd]
+            setTimeout('rotate()',200)
+    }
+}
+function reloadPage()
+{
+    if (document.forms[0].hidden.value == "update_refresh") {
+      rotate()
+    }
+    else if (document.forms[0].hidden.value == "freshen") {
+      setTimeout("self.location.reload(true)", 10000)
+      rotate()
+    }
+}
+
+
+//-->
+</script>
+    </head>
+           <body>
+  <div id="wrapper">
+    <div id="whole-page">
+      <div id="main-content">
+        <div id="header">
+          <div id="tab-container">
+            <div id="logo-div">
+	      <img id="main-logo" src="/images/att_logo.png" alt="" style="height:42px;" />
+            </div>
+            <div style="clear: both;"></div>
+<div id="skip"><a href="#content-sub">Skip to Main Content</a></div>
+            <div id="top-navigation">
+              <div id="top-navigation-buttons">
+<a class="topnav" href="/cgi-bin/home.ha"><span>Device</span></a>
+<a class="topnav topnavselected" href="/cgi-bin/broadbandstatistics.ha"><span>Broadband</span></a>
+<a class="topnav" href="/cgi-bin/lanstatistics.ha"><span>
+Home Network
+</span></a>
+
+<a class="topnav" href="/cgi-bin/voice.ha"><span>Voice</span></a>
+<a class="topnav" href="/cgi-bin/firewall.ha"><span>Firewall</span></a>
+<a class="topnav" href="/cgi-bin/diag.ha"><span>Diagnostics</span></a>
+              <div style="clear: both;"></div>
+            </div>
+          </div>
+          <div id="secondary-nav">
+            <div id="secondary-nav-buttons">
+<a class="secondary-link" href="/cgi-bin/broadbandstatistics.ha">Status</a>
+<a class="secondary-link" href="/cgi-bin/broadbandconfig.ha">Configure</a>
+<a class="secondary-link sec-selected" href="/cgi-bin/fiberstat.ha">Fiber Status</a>
+                  </div></div></div>
+                <div style="clear: both;"></div>
+              </div>
+        <div style="clear: both;"></div>
+      <div id="mid-section">
+          <div id="content-padding"><!-- CONTENT -->
+            <div id="content"
+><div id="content-sub">
+                <div class="first-section-header">
+                 <h1>Fiber Status</h1>
+                 </div>
+                 <div>
+                 <table class="table75" summary="Table of Fiber stats">
+                 <tr><th scope="row" width="47%">Optical WAN Operational Status</th>
+                 <td class="col2">Up                 </td></tr>
+                 <tr><th scope="row" width="47%">Fiber Module</th>
+                 <td class="col2">Unavailable                 </td></tr>
+                 <tr><th scope="row">Last Change</th>
+                 <td class="col2">1780035482                 </td></tr>
+                 <tr><th scope="row">Link State</th>
+                 <td class="col2">Up                 </td></tr>
+                 <tr><th scope="row">Name</th>
+                 <td class="col2">SFP                 </td></tr>
+                 <tr><th scope="row">Connector</th>
+                 <td class="col2">1</td></tr>
+                 <tr><th scope="row">Transceiver</th>
+                 <td class="col2">000000000000000000</td></tr>
+                 <tr><th scope="row">Encoding</th>
+                 <td class="col2">3</td></tr>
+                 <tr><th scope="row">BR Nominal</th>
+                 <td class="col2">100</td></tr>
+                 <tr><th scope="row">Br Min</th>
+                 <td class="col2">0</td></tr>
+                 <tr><th scope="row">Br Max</th>
+                 <td class="col2">0</td></tr>
+                 <tr><th scope="row">Rate ID</th>
+                 <td class="col2">0</td></tr>
+                 <tr><th scope="row">Wave Length</th>
+                 <td class="col2">1270 nm </td></tr>
+                 <tr><th scope="row">Tx Disable State</th>
+                 <td class="col2">0</td></tr>
+                 <tr><th scope="row">RS1 State</th>
+                 <td class="col2">0</td></tr>
+                 <tr><th scope="row">Rate Select State</th>
+                 <td class="col2">0</td></tr>
+                 <tr><th scope="row">Tx Fault State</th>
+                 <td class="col2">0</td></tr>
+                 <tr><th scope="row">Rx LOS State</th>
+                 <td class="col2">0</td></tr>
+                 <tr><th scope="row">Data Ready Bar State</th>
+                 <td class="col2">0</td></tr>
+                 <tr><td>&nbsp;</td></tr>
+                 <tr><th scope="row">Length SMF-km</th>
+                 <td class="col2">20</td></tr>
+                 <tr><th scope="row">Length SMF</th>
+                 <td class="col2">200</td></tr>
+                 <tr><th scope="row">Length 50uM</th>
+                 <td class="col2">0</td></tr>
+                 <tr><th scope="row">Length 62dot5uM</th>
+                 <td class="col2">0</td></tr>
+                 <tr><th scope="row">Length OM3</th>
+                 <td class="col2">0</td></tr>
+                 <tr><td>&nbsp;</td></tr>
+                 <tr><th scope="row">Vendor Name</th>
+                 <td class="col2">Gemtek</td></tr>
+                 <tr><th scope="row">Vendor OUI</th>
+                 <td class="col2">000000</td></tr>
+                 <tr><th scope="row">Vendor PN</th>
+                 <td class="col2">XGSPON-OMD8-CW</td></tr>
+                 <tr><th scope="row">Vendor Rev</th>
+                 <td class="col2">V.03</td></tr>
+                 <tr><th scope="row">Vendor SN</th>
+                 <td class="col2">TESTVENDORSN01</td></tr>
+                 <tr><th scope="row">Vendor Date Code</th>
+                 <td class="col2">251025</td></tr>
+                 <tr><td>&nbsp;</td></tr>
+                 <tr><th scope="row">OPT Cooled Trans</th>
+                 <td>
+uncooled transceiver
+                 </td></tr>
+                 <tr><th scope="row">OPT Powerlvl</th>
+                 <td>
+2
+                 </td></tr>
+                 <tr><th scope="row">OPT Linear Rcvr</th>
+                 <td>
+conventional receiver
+                 </td></tr>
+                 <tr><th scope="row">OPT Rate Select</th>
+                 <td class="col2">0</td></tr>
+                 <tr><th scope="row">OPT Tx Disable</th>
+                 <td class="col2">0</td></tr>
+                 <tr><th scope="row">OPT Tx Fault</th>
+                 <td class="col2">0</td></tr>
+                 <tr><th scope="row">OPT Inverted-LOS</th>
+                 <td class="col2">0</td></tr>
+                 <tr><th scope="row">OPT LOS</th>
+                 <td class="col2">0</td></tr>
+                 <tr><td>&nbsp;</td></tr>
+                 <tr><th scope="row">DMC Type Implemented</th>
+                 <td class="col2">1</td></tr>
+                 <tr><th scope="row">DMC Type Internal Cal</th>
+                 <td class="col2">1</td></tr>
+                 <tr><th scope="row">DMC Type External Cal</th>
+                 <td class="col2">0</td></tr>
+                 <tr><th scope="row">DMC Type Rx Avg Pwr</th>
+                 <td>
+Average power method
+                 </td></tr>
+                 <tr><td>&nbsp;</td></tr>
+                 <tr><th scope="row">EOC Alarm Implemented</th>
+                 <td class="col2">1</td></tr>
+                 <tr><th scope="row">EOC Soft Tx Disable</th>
+                 <td class="col2">1</td></tr>
+                 <tr><th scope="row">EOC Soft Tx fault</th>
+                 <td class="col2">1</td></tr>
+                 <tr><th scope="row">EOC Soft Rx LOS</th>
+                 <td class="col2">1</td></tr>
+                 <tr><th scope="row">EOC Soft Rate Select</th>
+                 <td class="col2">0</td></tr>
+                 <tr><td>&nbsp;</td></tr>
+                 <tr><th scope="row">SFF 8079 App Select</th>
+                 <td class="col2">0</td></tr>
+                 <tr><th scope="row">SFF 8431 Soft Rate Select</th>
+                 <td class="col2">0</td></tr>
+                 <tr><th scope="row">SFF Ver Compliance</th>
+                 <td>
+rev 11.0
+                 </td></tr>
+                 </table>
+                 </div>
+
+                 <p>&nbsp;</p>
+                 <div>
+                 <h1>Temperature&nbsp;&nbsp;Currently 41</h1>
+                 <table class="grid table100" summary="Temperature table">
+                 <thead>
+                 <tr><th scope="col" width="30%">&nbsp;</th>
+                 <th scope="col" width="35%">Low</th>
+                 <th scope="col" width="35%">High</th>
+                 </tr>
+                 </thead>
+                 <tbody>
+                 <tr class="a"><td class="heading" scope="row">Alarm</td>
+                 <td>0                 (Threshold -10)</td>
+                 <td>0                 (Threshold 80)</td>
+                 </tr>
+                 <tr class="b"><td class="heading" scope="row">Warning</td>
+                 <td>0                 (Threshold -5)</td>
+                 <td>0                 (Threshold 75)</td>
+                 </tr>
+                 </tbody>
+                 </table>
+                 </div>
+
+                 <p>&nbsp;</p>
+                 <div>
+                 <h1>Vcc&nbsp;&nbsp;Currently 3</h1>
+                 <table class="grid table100" summary="Test results for Vcc">
+                 <thead>
+                 <tr><th scope="col" width="30%">&nbsp;</th>
+                 <th scope="col" width="35%">Low</th>
+                 <th scope="col" width="35%">High</th>
+                 </tr>
+                 </thead>
+                 <tbody>
+                 <tr class="a"><td class="heading" scope="row">Alarm</td>
+                 <td>0                 (Threshold 2)</td>
+                 <td>0                 (Threshold 3)</td>
+                 </tr>
+                 <tr class="b"><td class="heading" scope="row">Warning</td>
+                 <td>0                 (Threshold 3)</td>
+                 <td>0                 (Threshold 3)</td>
+                 </tr>
+                 </tbody>
+                 </table>
+                 </div>
+
+                 <p>&nbsp;</p>
+                 <div>
+                 <h1>Tx Bias&nbsp;&nbsp;Currently 37</h1>
+                 <table class="grid table100" summary="Tx Bias table">
+                 <thead>
+                 <tr><th scope="col" width="30%">&nbsp;</th>
+                 <th scope="col" width="35%">Low</th>
+                 <th scope="col" width="35%">High</th>
+                 </tr>
+                 </thead>
+                 <tbody>
+                 <tr class="a"><td class="heading" scope="row">Alarm</td>
+                 <td>0                 (Threshold 0)</td>
+                 <td>0                 (Threshold 1100)</td>
+                 </tr>
+                 <tr class="b"><td class="heading" scope="row">Warning</td>
+                 <td>0                 (Threshold 0)</td>
+                 <td>0                 (Threshold 1000)</td>
+                 </tr>
+                 </tbody>
+                 </table>
+                 </div>
+
+
+                 <p>&nbsp;</p>
+                 <div>
+                 <h1>Tx Power&nbsp;&nbsp;Currently 61</h1>
+                 <table class="grid table100" summary="Tx Power table">
+                 <thead>
+                 <tr><th scope="col" width="30%">&nbsp;</th>
+                 <th scope="col" width="35%">Low</th>
+                 <th scope="col" width="35%">High</th>
+                 </tr>
+                 </thead>
+                 <tbody>
+                 <tr class="a"><td class="heading" scope="row">Alarm</td>
+                 <td>0                 (Threshold 30)</td>
+                 <td>0                 (Threshold 81)</td>
+                 </tr>
+                 <tr class="b"><td class="heading" scope="row">Warning</td>
+                 <td>0                 (Threshold 40)</td>
+                 <td>0                 (Threshold 81)</td>
+                 </tr>
+                 </tbody>
+                 </table>
+                 </div>
+
+                 <p>&nbsp;</p>
+                 <div>
+                 <h1>Rx Power&nbsp;&nbsp;Currently -148</h1>
+                 <table class="grid table100" summary="Rx Power table">
+                 <thead>
+                 <tr><th scope="col" width="30%">&nbsp;</th>
+                 <th scope="col" width="35%">Low</th>
+                 <th scope="col" width="35%">High</th>
+                 </tr>
+                 </thead>
+                 <tbody>
+                 <tr class="a"><td class="heading" scope="row">Alarm</td>
+                 <td>0                 (Threshold -300)</td>
+                 <td>0                 (Threshold -50)</td>
+                 </tr>
+                 <tr class="b"><td class="heading" scope="row">Warning</td>
+                 <td>0                 (Threshold -285)</td>
+                 <td>0                 (Threshold -70)</td>
+                 </tr>
+                 </tbody>
+                 </table>
+                 </div>
+
+                </div>
+              </div>
+            </div>
+ <!-- isWANUP -->
+            <div id="help">
+              <div id="help-sub">
+              <h2>Help</h2><br />
+<p>Fiber status is presented for service technicians.</p>
+<strong>Optical WAN Operational Status:</strong> When connected to a fiber source, displays whether or not the WAN is operational.<br /><br />
+<strong>Fiber Module:</strong> The type of connector detected by the device.<br /><br />
+<strong>Last Change:</strong> Accumulated time in seconds since the optical interface entered its current state.<br /><br />
+<strong>Link State:</strong> Up indicates link is operational.<br /><br />
+<strong>Name:</strong> Name of the optical converter.<br /><br />
+<strong>Connector:</strong> The code for the external optical or electrical cable connector provided as the media interface.<br /><br />
+<strong>Transceiver:</strong> The code for electronic or optical compatibility.<br /><br />
+<strong>Encoding:</strong> The code for the high speed serial encoding algorithm.<br /><br />
+<strong>BR Nominal:</strong> The nominal signaling rate in 100 MBd.<br /><br />
+<strong>Br Min:</strong> Lower bit rate margin, units of %.<br /><br />
+<strong>Br Max:</strong> Upper bit rate margin, units of %.<br /><br />
+<strong>Rate ID:</strong> The coded rate select identifier.<br /><br />
+<strong>Wave Length:</strong> Laser Wavelength.<br /><br />
+<strong>Tx Disable State:</strong> The digital state of the TX Disable input pin.<br /><br />
+<strong>RS1 State:</strong> The digital state of SFP input pin AS(1) or RS(1).<br /><br />
+<strong>Rate Select State:</strong> The digital state of the SFP Rate_Select input pin.<br /><br />
+<strong>Tx Fault State:</strong> The digital state of the TX Fault output pin.<br /><br />
+<strong>Rx LOS State:</strong> The digital state of the RX_LOS output pin.<br /><br />
+<strong>Data Ready Bar State:</strong> Flag indicates power up and data ready.<br /><br />
+<strong>Length SMF-km:</strong> Supported link length in kilo meters.<br /><br />
+<strong>Length SMF:</strong> Supported link length in units of 100 meters.<br /><br />
+<strong>Length 50uM:</strong> Supported link length for 50 micro meter OM2 fiber ( units of 10 meters).<br /><br />
+<strong>Length 62dot5uM:</strong> Supported link length for 62.5 micro meter OM1 fiber (units of 10 meters).<br /><br />
+<strong>Length OM3:</strong> Supported link length for 50 micro meter OM3 fiber.(units of 10 meters).<br /><br />
+<strong>Vendor Name:</strong> SFP vendor name.<br /><br />
+<strong>Vendor OUI:</strong> IEEE company ID for the SFP vendor.<br /><br />
+<strong>Vendor PN:</strong> SFP module vendor part number.<br /><br />
+<strong>Vendor Rev:</strong> SFP module revision level for the part number.<br /><br />
+<strong>Vendor SN:</strong> SFP module serial number from vendor.<br /><br />
+<strong>Vendor Date code:</strong> In format &lt;yymmddxx&gt; where xx is vendor specific and may be blank.<br /><br />
+<strong>OPT Cooled Trans:</strong> The transceiver indication of cooled or uncooled.<br /><br />
+<strong>OPT Powerlvl:</strong> Power Level Operation of either 1 or 2.<br /><br />
+<strong>OPT Linear Rcvr:</strong> Indicates if Receiver is a conventional or linear receiver.<br /><br />
+<strong>OPT Rate Select:</strong> Indicates if Rate Select is implemented. 1 = implemented. 0 = not implemented.<br /><br />
+<strong>OPT Tx Disable:</strong> Ability to disable the serial output. 1 = implemented. 0 = not implemented.<br /><br />
+<strong>OPT Tx Fault:</strong> TX_FAULT signal is implemented. 1 = implemented. 0 = not implemented.<br /><br />
+<strong>OPT Inverted-LOS:</strong> Also known as 'signal detect'. 1 = implemented. 0 = not implemented.<br /><br />
+<strong>OPT LOS:</strong> Loss of Signal. 1 = implemented. 0 = not implemented.<br /><br />
+<strong>DMC Type Legacy:</strong> Reserved. Always 0<br /><br />
+<strong>DMC Type Implemented:</strong> Diag monitoring. 1 = implemented. 0 = not implemented.<br /><br />
+<strong>DMC Type Internal Cal:</strong> Device internally calibrated.<br /><br />
+<strong>DMC Type External Cal:</strong> Device externally calibrated.<br /><br />
+<strong>DMC Type Ex Avg Pwr:</strong> Type of power measurement: Modulation Amplitude method or Average power method.<br /><br />
+<strong>EOC Alarm:</strong> 1 = alarm implemented. 0 = alarm not implemented.<br /><br />
+<strong>EOC Soft Tx Disable:</strong> TX_DISABLE control and monitoring: 1 = implemented. 0 = not implemented.<br /><br />
+<strong>EOC Soft Tx fault:</strong> TX_FAULT monitoring: 1 = implemented. 0 = not implemented.<br /><br />
+<strong>EOC Soft Rx LOS:</strong> RX_LOS monitoring: 1 = implemented. 0 = not implemented.<br /><br />
+<strong>EOC Soft Rate Select:</strong> Soft RATE_SELECT control and monitoring: 1 = implemented. 0 = not implemented.<br /><br />
+<strong>SFF 8079 App Select:</strong> Application select implemented from the standard SFF 8079: 1 = implemented (partial). 0 = not implemented.<br /><br />
+<strong>SFF 8431 Rate Select:</strong> Rate select implemented from standard 8431: 1 = implement. 0 = not implemented.<br /><br />
+<strong>SFF Ver Compliance:</strong> Reference 3.12 table in SFF 8472. Rev 9.3 or rev 9.5.<br /><br />
+<strong>Temperature:</strong> The temperature in degrees celsius. System is stable when current value is between low and high warning/alarm thresholds.<br /><br />
+<strong>Vcc:</strong> Voltage in Volts/10,000. System is stable when current value is between low and high warning/alarm thresholds.<br /><br />
+<strong>Tx Bias:</strong> Tx Bias in amperes/500,000. System is stable when current value is between low and high warning/alarm thresholds.<br /><br />
+<strong>Tx Power:</strong> Power in one-tenth of a dBm. System is stable when current value is between low and high warning/alarm thresholds.<br /><br />
+<strong>Rx Power:</strong> Power in one-tenth of a dBm. System is stable when current value is between low and high warning/alarm thresholds.<br /><br />
+              </div> <!-- help-sub -->
+            </div> <!-- help -->
+            <div style="clear: both;"></div>
+          </div>
+        </div>
+        <div style="clear: both;"></div>
+      </div>
+      <div id="footer">
+      <div><br>
+   <span class="inner">&copy; 2016-2025 AT&T Intellectual Property. All rights reserved. AT&T and Globe logo are registered trademarks of AT&T Intellectual Property.</span>
+   <span class="sitemap"><a href="/cgi-bin/sitemap.ha">Site Map</a></span></br></div>
+   <div><span class="inner">&copy; 2016 ARRIS Enterprises LLC. All rights reserved. ARRIS is a registered trademark of ARRIS Enterprises LLC.</span></div>
+   </div>
+      </div>
+</body>
+</html>

@@ -10,15 +10,16 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
 
 from agentplane.app.testing.thread_test_support import SPEC, event_entry
-from agentplane.app.threads.events.event_log import EventLogStore, EventReplicationError
+from agentplane.app.threads.events.event_log import EventLogStore, EventReplicationError, FeedEnd
 from agentplane.app.threads.events.ingestion_lease import IngestionLease, IngestionLeaseLostError
 from agentplane.app.threads.history_handoff import fence_raw_ingestion
 from agentplane.app.threads.history_projector import HistoryProjector
 from agentplane.app.threads.ingestion import Ingester, Ingestion
-from agentplane.app.threads.models import Event, EventLog, ThreadCheckpoint
+from agentplane.app.threads.models import Event, EventLog, FeedState, ThreadCheckpoint
 from agentplane.app.threads.sessions import SandboxSessions
 from agentplane.app.threads.store import ThreadStore
 from agentplane.protocol import event_pb2
+from agentplane.runner import protocol_pb2 as runner_pb2
 from agentplane.sandbox_service import protocol_pb2
 from agentplane.sandbox_service.client import SandboxServiceClient
 
@@ -239,6 +240,107 @@ async def test_thread_metadata_survives_handoff_and_projection_retry(
     assert renamed.last_cursor == 4
     assert renamed.last_turn_status == after.last_turn_status
     assert await event_logs.last_cursor(thread) == 2
+
+
+async def test_fenced_lifecycle_uses_covered_snapshot_and_preserves_legacy_feed(
+    engine: AsyncEngine, event_logs: EventLogStore, ingestion: Ingestion, lease: IngestionLease
+) -> None:
+    thread = await event_logs.open("sb-1", "s-1", SPEC)
+    initial = runner_pb2.Attached(session_id="s-1", spec=SPEC, harness_state=runner_pb2.HARNESS_STATE_RUNNING)
+    await ingestion.set_attached(thread, initial, lease=lease)
+    await fence_raw_ingestion(engine, thread)
+    reader = AsyncMock(spec=SandboxServiceClient)
+    page = protocol_pb2.ReadSessionEventsResponse(
+        last_cursor=2,
+        entries=[event_entry(1, harness_started=event_pb2.HarnessStarted(pid=7))],
+        feed_state=protocol_pb2.SessionFeedState(
+            attached=runner_pb2.Attached(
+                session_id="s-1", spec=SPEC, last_cursor=2, harness_state=runner_pb2.HARNESS_STATE_STOPPED
+            ),
+            ended=True,
+        ),
+    )
+    reader.read_session_events.return_value = page
+    projector = HistoryProjector(engine, cast(SandboxServiceClient, reader))
+    await projector.project_batch(thread, lease=lease)
+    snapshot = await event_logs.feed_state(thread)
+    assert snapshot is not None
+    assert snapshot.attached.last_cursor == 1
+    assert snapshot.end is None
+    del page.entries[:]
+    page.entries.append(event_entry(2, harness_exited=event_pb2.HarnessExited()))
+    await projector.project_batch(thread, lease=lease)
+    snapshot = await event_logs.feed_state(thread)
+    assert snapshot is not None
+    assert isinstance(snapshot.end, FeedEnd)
+    assert snapshot.attached.last_cursor == 2
+    views = {view.id: view for view in await ThreadStore(engine).list_threads()}
+    assert views[thread].feed_status == "ended"
+    assert views[thread].harness_state == "HARNESS_STATE_STOPPED"
+    async with async_sessionmaker(engine)() as session:
+        old = await session.get(FeedState, thread)
+        assert old is not None
+        assert old.end is None
+        assert old.attached.get("lastCursor", "0") == "0"
+    # A confirmed resume must not write frozen FeedState or be undone by stale EOF.
+    await event_logs.resume_pending(thread)
+    del page.entries[:]
+    await projector.project_batch(thread, lease=lease)
+    snapshot = await event_logs.feed_state(thread)
+    assert snapshot is not None
+    assert snapshot.end is None
+    page.last_cursor = 3
+    page.entries.append(event_entry(3, harness_started=event_pb2.HarnessStarted(resumed=True, pid=8)))
+    await projector.project_batch(thread, lease=lease)
+    snapshot = await event_logs.feed_state(thread)
+    assert snapshot is not None
+    assert snapshot.attached.last_cursor == 3
+    assert snapshot.attached.harness_state == runner_pb2.HARNESS_STATE_RUNNING
+    assert snapshot.end is None
+
+
+async def test_empty_page_adopts_eof_and_rolls_back_invalid_snapshot(
+    engine: AsyncEngine, event_logs: EventLogStore, lease: IngestionLease
+) -> None:
+    thread = await event_logs.open("sb-1", "empty", SPEC)
+    await fence_raw_ingestion(engine, thread)
+    reader = AsyncMock(spec=SandboxServiceClient)
+    page = protocol_pb2.ReadSessionEventsResponse(
+        last_cursor=0,
+        feed_state=protocol_pb2.SessionFeedState(
+            attached=runner_pb2.Attached(session_id="empty", spec=SPEC, last_cursor=1), ended=True
+        ),
+    )
+    reader.read_session_events.return_value = page
+    projector = HistoryProjector(engine, cast(SandboxServiceClient, reader))
+    with pytest.raises(EventReplicationError, match="outside"):
+        await projector.project_batch(thread, lease=lease)
+    assert await event_logs.feed_state(thread) is None
+    page.feed_state.attached.last_cursor = 0
+    await projector.project_batch(thread, lease=lease)
+    snapshot = await event_logs.feed_state(thread)
+    assert snapshot is not None
+    assert isinstance(snapshot.end, FeedEnd)
+    page.feed_state.ended = False
+    await projector.project_batch(thread, lease=lease)
+    snapshot = await event_logs.feed_state(thread)
+    assert snapshot is not None
+    assert isinstance(snapshot.end, FeedEnd)
+
+
+async def test_deleted_history_keeps_seeded_terminal_state_without_service_snapshot(
+    engine: AsyncEngine, event_logs: EventLogStore, ingestion: Ingestion, lease: IngestionLease
+) -> None:
+    thread = await event_logs.open("sb-1", "gone", SPEC)
+    await ingestion.set_attached(thread, runner_pb2.Attached(session_id="gone", spec=SPEC), lease=lease)
+    await ingestion.end_feed(thread, lease=lease, error=None)
+    before = await event_logs.feed_state(thread)
+    await fence_raw_ingestion(engine, thread)
+    reader = AsyncMock(spec=SandboxServiceClient)
+    reader.read_session_events.return_value = protocol_pb2.ReadSessionEventsResponse(last_cursor=0)
+    await HistoryProjector(engine, cast(SandboxServiceClient, reader)).project_batch(thread, lease=lease)
+    assert await event_logs.feed_state(thread) == before
+    assert (await ThreadStore(engine).rename(thread, "archive")).feed_status == "ended"
 
 
 if __name__ == "__main__":

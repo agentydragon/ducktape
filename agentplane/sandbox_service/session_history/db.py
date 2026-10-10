@@ -58,6 +58,8 @@ class SessionHistory(Base):
     launch_spec: Mapped[bytes | None] = mapped_column(LargeBinary)
     source_id: Mapped[str | None] = mapped_column(String)
     last_cursor: Mapped[int] = mapped_column(BigInteger)
+    # Complete SessionFeedState protobuf, absent until a runner prefix is observed.
+    feed_state: Mapped[bytes | None] = mapped_column(LargeBinary)
 
 
 class SessionEvent(Base):

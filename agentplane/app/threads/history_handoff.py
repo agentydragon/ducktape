@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
 
 from agentplane.app.database_updates import Channel, notify
 from agentplane.app.threads.events.event_log import ThreadNotFoundError
-from agentplane.app.threads.models import Event, EventLog, ThreadHistorySummary
+from agentplane.app.threads.models import Event, EventLog, FeedState, ThreadHistorySummary
 from agentplane.protocol import event_log_pb2
 
 # gazelle:include_dep @pypi//protobuf
@@ -44,10 +44,13 @@ async def fence_raw_ingestion(engine: AsyncEngine, thread_id: UUID) -> int:
             .order_by(Event.cursor.desc())
             .limit(1)
         )
+        feed = await session.get(FeedState, thread_id)
         session.add(
             ThreadHistorySummary(
                 thread_id=thread_id,
                 last_event_at=last_at,
+                attached=feed.attached if feed is not None else None,
+                end=feed.end if feed is not None else None,
                 last_turn_status=(
                     ParseDict(last_turn, event_log_pb2.EventEntry()).event.turn_completed.status
                     if last_turn is not None

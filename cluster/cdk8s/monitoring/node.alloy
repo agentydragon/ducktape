@@ -1,0 +1,115 @@
+// Per-node Alloy (DaemonSet): scrapes only targets on its own node, `NODE_NAME`, and buffers them
+// in a WAL on that node's disk. When the node loses its link to Mimir (a home WAN outage), it
+// keeps scraping and replays the backlog once the link returns, within `max_keepalive_time` and
+// Mimir's `out_of_order_time_window`. Cluster-wide work stays on the central Alloy (config.alloy).
+
+prometheus.remote_write "mimir" {
+  endpoint {
+    url = sys.env("MIMIR_PUSH_URL")
+  }
+
+  // The default 8h would drop the oldest unsent samples of a longer outage. Matches Mimir's
+  // `out_of_order_time_window`, past which replayed samples would be rejected anyway.
+  wal {
+    max_keepalive_time = "720h"
+  }
+}
+
+// --- kubelet ---
+
+// `job` and `metrics_path` are load-bearing: the kubernetes-mixin rules select on job="kubelet"
+// and metrics_path="/metrics" or "/metrics/cadvisor" (see config.alloy's control-plane notes).
+
+discovery.kubernetes "node" {
+  role = "node"
+
+  selectors {
+    role  = "node"
+    field = string.format("metadata.name=%s", sys.env("NODE_NAME"))
+  }
+}
+
+// One relabel per kubelet path: the `metrics_path` label has to be a literal, and it is what
+// separates cAdvisor series from kubelet's own on a shared job.
+discovery.relabel "kubelet_metrics" {
+  targets = discovery.kubernetes.node.targets
+
+  rule {
+    source_labels = ["__meta_kubernetes_node_name"]
+    target_label  = "node"
+  }
+  rule {
+    target_label = "metrics_path"
+    replacement  = "/metrics"
+  }
+}
+
+discovery.relabel "kubelet_cadvisor" {
+  targets = discovery.kubernetes.node.targets
+
+  rule {
+    source_labels = ["__meta_kubernetes_node_name"]
+    target_label  = "node"
+  }
+  rule {
+    target_label = "metrics_path"
+    replacement  = "/metrics/cadvisor"
+  }
+}
+
+discovery.relabel "kubelet_probes" {
+  targets = discovery.kubernetes.node.targets
+
+  rule {
+    source_labels = ["__meta_kubernetes_node_name"]
+    target_label  = "node"
+  }
+  rule {
+    target_label = "metrics_path"
+    replacement  = "/metrics/probes"
+  }
+}
+
+// insecure_skip_verify mirrors the chart's own kubelet ServiceMonitor: the kubelet serving
+// certificate is node-local and not signed by the cluster CA.
+prometheus.scrape "kubelet_metrics" {
+  targets           = discovery.relabel.kubelet_metrics.output
+  job_name          = "kubelet"
+  scheme            = "https"
+  metrics_path      = "/metrics"
+  honor_labels      = true
+  bearer_token_file = "/var/run/secrets/kubernetes.io/serviceaccount/token"
+
+  tls_config {
+    insecure_skip_verify = true
+  }
+  forward_to = [prometheus.remote_write.mimir.receiver]
+}
+
+prometheus.scrape "kubelet_cadvisor" {
+  targets           = discovery.relabel.kubelet_cadvisor.output
+  job_name          = "kubelet"
+  scheme            = "https"
+  metrics_path      = "/metrics/cadvisor"
+  honor_labels      = true
+  bearer_token_file = "/var/run/secrets/kubernetes.io/serviceaccount/token"
+
+  tls_config {
+    insecure_skip_verify = true
+  }
+  forward_to = [prometheus.remote_write.mimir.receiver]
+}
+
+prometheus.scrape "kubelet_probes" {
+  targets           = discovery.relabel.kubelet_probes.output
+  job_name          = "kubelet"
+  scheme            = "https"
+  metrics_path      = "/metrics/probes"
+  honor_labels      = true
+  bearer_token_file = "/var/run/secrets/kubernetes.io/serviceaccount/token"
+
+  tls_config {
+    insecure_skip_verify = true
+  }
+  forward_to = [prometheus.remote_write.mimir.receiver]
+}

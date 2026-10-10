@@ -24,7 +24,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 from agentplane.app.database_updates import Channel, notify
 from agentplane.app.threads.events.debug import ArchivedObservation, ArchivedObservationEntry, ObservationPage
 from agentplane.app.threads.model_activity import record_model_activity
-from agentplane.app.threads.models import Event, EventLog, FeedState
+from agentplane.app.threads.models import Event, EventLog, FeedState, ThreadHistorySummary
 from agentplane.protocol import event_log_pb2
 from agentplane.runner import protocol_pb2
 from agentplane.runner.harness import Harness
@@ -117,9 +117,16 @@ class EventLogStore:
         prevents an SSE reader from mistaking the previous incarnation's end for the new one.
         """
         async with self._sessions.begin() as session:
-            state = await session.get(FeedState, thread_id, with_for_update=True)
+            log = await session.get(EventLog, thread_id, with_for_update=True)
+            state = (
+                await session.get(ThreadHistorySummary, thread_id, with_for_update=True)
+                if log is not None and log.raw_ingestion_fenced_at_cursor is not None
+                else await session.get(FeedState, thread_id, with_for_update=True)
+            )
             if state is not None and state.end == {}:
                 state.end = None
+                if isinstance(state, ThreadHistorySummary) and state.attached is not None:
+                    state.resumed_after_cursor = ParseDict(state.attached, protocol_pb2.Attached()).last_cursor
                 await notify(session, Channel.THREADS)
 
     async def find(self, sandbox: str, session_id: str) -> UUID | None:
@@ -291,14 +298,19 @@ class EventLogStore:
 
     async def feed_state(self, thread_id: UUID) -> FeedSnapshot | None:
         async with self._sessions() as session:
-            state = await session.get(FeedState, thread_id)
-            if state is None:
+            log = await session.get(EventLog, thread_id)
+            state = (
+                await session.get(ThreadHistorySummary, thread_id)
+                if log is not None and log.raw_ingestion_fenced_at_cursor is not None
+                else await session.get(FeedState, thread_id)
+            )
+            if state is None or state.attached is None:
                 return None
             end = None if state.end is None else FeedError(state.end["message"]) if state.end else FeedEnd()
             return FeedSnapshot(ParseDict(state.attached, protocol_pb2.Attached()), end)
 
 
-def _project_attached(attached: protocol_pb2.Attached, entry: event_log_pb2.EventEntry) -> None:
+def project_attached(attached: protocol_pb2.Attached, entry: event_log_pb2.EventEntry) -> None:
     attached.last_cursor = entry.cursor
     event = entry.event
     match event.WhichOneof("observation"):
@@ -389,7 +401,7 @@ async def advance_feed(session: AsyncSession, thread_id: UUID, inserted: Sequenc
             # earlier log fills history, but must not rewind that snapshot's state.
             if entry.cursor <= attached.last_cursor:
                 continue
-            _project_attached(attached, entry)
+            project_attached(attached, entry)
             if entry.event.HasField("harness_started"):
                 state.end = None
         state.attached = MessageToDict(attached)

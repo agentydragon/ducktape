@@ -10,3 +10,9 @@ configMapGenerator:
       disableNameSuffixHash: true
     files:
       - config.alloy
+  - name: alloy-node-config
+    namespace: monitoring
+    options:
+      disableNameSuffixHash: true
+    files:
+      - node.alloy

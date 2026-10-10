@@ -179,6 +179,7 @@ py_library(
     deps = [
         ":model_activity",
         ":models",
+        ":projected_lifecycle",
         "//agentplane/app:database_updates",
         "//agentplane/app/threads/events:event_log",
         "//agentplane/app/threads/events:ingestion_lease",
@@ -208,6 +209,7 @@ py_test(
         "//agentplane/app/threads/events:event_log",
         "//agentplane/app/threads/events:ingestion_lease",
         "//agentplane/protocol:event_pb2",
+        "//agentplane/runner:protocol_pb2",
         "//agentplane/sandbox_service:client",
         "//agentplane/sandbox_service:protocol_pb2",
         "@pypi//protobuf",
@@ -249,6 +251,20 @@ py_test(
         "@pypi//protobuf",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
+    name = "projected_lifecycle",
+    srcs = ["projected_lifecycle.py"],
+    deps = [
+        ":models",
+        "//agentplane/app/threads/events:event_log",
+        "//agentplane/app/threads/view:recording",
+        "//agentplane/runner:protocol_pb2",
+        "//agentplane/sandbox_service:protocol_pb2",
+        "@pypi//protobuf",
         "@pypi//sqlalchemy",
     ],
 )
