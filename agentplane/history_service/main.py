@@ -11,6 +11,7 @@ from kubernetes_asyncio import client as k8s_client, config as k8s_config
 from sqlalchemy.engine import URL, make_url
 from sqlalchemy.ext.asyncio import create_async_engine
 
+from agentplane.history_service.evidence import EvidenceReader
 from agentplane.history_service.fold_shadow import FoldShadow
 from agentplane.history_service.grpc_api import Resources, add_service
 from agentplane.history_service.ingester import HistoryIngester
@@ -68,6 +69,7 @@ async def serve(settings: Settings) -> None:
                 history=history,
                 summaries=SummaryReader(engine),
                 threads=ThreadReader(engine),
+                evidence=EvidenceReader(engine, history),
                 reader_accounts=settings.reader_accounts,
                 request_timeout_s=settings.request_timeout_s,
             )

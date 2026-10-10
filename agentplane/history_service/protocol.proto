@@ -4,6 +4,7 @@ syntax = "proto3";
 package ducktape.agentplane.history.v1;
 
 import "agentplane/protocol/event.proto";
+import "agentplane/protocol/event_log.proto";
 import "agentplane/runner/protocol.proto";
 import "agentplane/sandbox_service/protocol.proto";
 import "google/protobuf/timestamp.proto";
@@ -20,6 +21,9 @@ service HistoryService {
   // Fails with FAILED_PRECONDITION when the caller's projection epoch is no longer current.
   rpc ReadThreadEntities(ReadThreadEntitiesRequest) returns (ReadThreadEntitiesResponse);
   rpc ReadPayload(ReadPayloadRequest) returns (ReadPayloadResponse);
+  // The observations an entity was folded from, and the native harness frames behind each.
+  rpc ReadEntityEvidence(ReadEntityEvidenceRequest) returns (ReadEntityEvidenceResponse);
+  rpc ReadNativeFrames(ReadNativeFramesRequest) returns (ReadNativeFramesResponse);
 }
 
 message ListSessionSummariesRequest {
@@ -143,4 +147,46 @@ message ReadPayloadResponse {
   uint64 content_bytes = 2;
   // The revision's chunks from `start_chunk`, which concatenate to its text.
   repeated string chunks = 3;
+}
+
+message ReadEntityEvidenceRequest {
+  string session_id = 1;
+  string projection_epoch = 2;
+  EntityKey entity = 3;
+  uint64 after_cursor = 4;
+  // At most 200.
+  uint32 limit = 5;
+}
+
+message EvidenceObservation {
+  uint64 observation_cursor = 1;
+  bool has_native = 2;
+}
+
+message ReadEntityEvidenceResponse {
+  repeated EvidenceObservation observations = 1;
+  // Absent on the last page.
+  optional uint64 next_after_cursor = 2;
+}
+
+message ReadNativeFramesRequest {
+  string session_id = 1;
+  string projection_epoch = 2;
+  EntityKey entity = 3;
+  uint64 observation_cursor = 4;
+  uint64 after_sequence = 5;
+  // At most 200.
+  uint32 limit = 6;
+}
+
+message NativeFrame {
+  uint64 source_sequence = 1;
+  // Absent when the retained entry at that sequence carries no native frame.
+  ducktape.agentplane.protocol.v1.EventEntry entry = 2;
+}
+
+message ReadNativeFramesResponse {
+  repeated NativeFrame frames = 1;
+  // Absent on the last page.
+  optional uint64 next_after_sequence = 2;
 }

@@ -20,6 +20,7 @@ proto_library(
     srcs = ["protocol.proto"],
     visibility = ["//agentplane:__subpackages__"],
     deps = [
+        "//agentplane/protocol:event_log_proto",
         "//agentplane/protocol:event_proto",
         "//agentplane/runner:protocol_proto",
         "//agentplane/sandbox_service:protocol_proto",
@@ -44,6 +45,7 @@ py_library(
     name = "grpc_api",
     srcs = ["grpc_api.py"],
     deps = [
+        ":evidence",
         ":summaries",
         ":thread_reads",
         "//agentplane:subjects",
@@ -76,6 +78,42 @@ py_library(
         "//agentplane/sandbox_service:protocol_pb2",
         "@pypi//grpcio",
         "@pypi//protobuf",
+    ],
+)
+
+py_library(
+    name = "evidence",
+    srcs = ["evidence.py"],
+    deps = [
+        ":thread_reads",
+        "//agentplane/history_service:protocol_pb2",
+        "//agentplane/sandbox_service/session_history:store",
+        "//agentplane/thread_fold:models",
+        "@pypi//protobuf",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_test(
+    name = "test_evidence",
+    size = "medium",
+    srcs = ["test_evidence.py"],
+    requires_docker = True,
+    deps = [
+        ":evidence",
+        ":fold_shadow",
+        ":thread_reads",
+        "//:conftest",
+        "//agentplane/history_service:protocol_pb2",
+        "//agentplane/protocol:event_log_pb2",
+        "//agentplane/protocol:event_pb2",
+        "//agentplane/sandbox_service/session_history:conftest",
+        "//agentplane/sandbox_service/session_history:store",
+        "//agentplane/thread_fold:views",
+        "@pypi//protobuf",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//sqlalchemy",
     ],
 )
 
@@ -258,6 +296,7 @@ py_library(
     name = "main",
     srcs = ["main.py"],
     deps = [
+        ":evidence",
         ":fold_shadow",
         ":grpc_api",
         ":ingester",
@@ -282,6 +321,7 @@ py_test(
     srcs = ["test_grpc_api.py"],
     deps = [
         ":conftest",
+        ":evidence",
         ":grpc_api",
         ":summaries",
         ":thread_reads",

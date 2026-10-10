@@ -16,6 +16,7 @@ from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import create_async_engine
 
 from agentplane.history_service.client import HistoryServiceClient
+from agentplane.history_service.evidence import EvidenceReader
 from agentplane.history_service.grpc_api import Resources, add_service
 from agentplane.history_service.summaries import SummaryReader
 from agentplane.history_service.thread_reads import ThreadReader
@@ -52,6 +53,7 @@ async def history_service(database_url: str, token_file: Path) -> AsyncIterator[
         make_url(database_url).set(drivername="postgresql+asyncpg"),
         connect_args={"server_settings": {"default_transaction_read_only": "on"}},
     )
+    history = Store(engine)
     server = grpc.aio.server()
     add_service(
         Resources(
@@ -60,9 +62,10 @@ async def history_service(database_url: str, token_file: Path) -> AsyncIterator[
                 audience=AUDIENCE,
                 allowed_service_account_namespaces={READER.namespace},
             ),
-            history=Store(engine),
+            history=history,
             summaries=SummaryReader(engine),
             threads=ThreadReader(engine),
+            evidence=EvidenceReader(engine, history),
             reader_accounts=frozenset({READER}),
             request_timeout_s=10,
         ),

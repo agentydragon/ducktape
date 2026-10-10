@@ -12,6 +12,7 @@ py_library(
     deps = [
         "//agentplane:subjects",
         "//agentplane/history_service:client",
+        "//agentplane/history_service:evidence",
         "//agentplane/history_service:grpc_api",
         "//agentplane/history_service:summaries",
         "//agentplane/history_service:thread_reads",
