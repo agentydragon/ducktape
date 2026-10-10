@@ -17,6 +17,8 @@ from sqlalchemy.ext.asyncio import create_async_engine
 
 from agentplane.history_service.client import HistoryServiceClient
 from agentplane.history_service.grpc_api import Resources, add_service
+from agentplane.history_service.summaries import SummaryReader
+from agentplane.history_service.thread_reads import ThreadReader
 from agentplane.sandbox_service.session_history.store import Store
 from agentplane.subjects import ServiceAccountRef
 from agentplane.workload_auth.principal import POD_NAME_CLAIM, POD_UID_CLAIM, WorkloadPrincipalResolver
@@ -59,6 +61,8 @@ async def history_service(database_url: str, token_file: Path) -> AsyncIterator[
                 allowed_service_account_namespaces={READER.namespace},
             ),
             history=Store(engine),
+            summaries=SummaryReader(engine),
+            threads=ThreadReader(engine),
             reader_accounts=frozenset({READER}),
             request_timeout_s=10,
         ),

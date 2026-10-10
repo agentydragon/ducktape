@@ -1,6 +1,7 @@
 """Standalone History Service entry point: serves retained Session history and, when enabled, ingests it."""
 
 import asyncio
+import contextlib
 import logging
 
 import grpc
@@ -10,15 +11,20 @@ from kubernetes_asyncio import client as k8s_client, config as k8s_config
 from sqlalchemy.engine import URL, make_url
 from sqlalchemy.ext.asyncio import create_async_engine
 
+from agentplane.history_service.fold_shadow import FoldShadow
 from agentplane.history_service.grpc_api import Resources, add_service
 from agentplane.history_service.ingester import HistoryIngester
 from agentplane.history_service.settings import Settings
+from agentplane.history_service.summaries import SummaryReader
+from agentplane.history_service.thread_reads import ThreadReader
 from agentplane.sandbox_service.client import SandboxServiceClient
 from agentplane.sandbox_service.session_history.store import Store
 from agentplane.workload_auth.principal import WorkloadPrincipalResolver
 
 # The asyncpg dialect is loaded by SQLAlchemy from the configured driver name.
 # gazelle:include_dep @pypi//asyncpg
+
+logger = logging.getLogger(__name__)
 
 
 async def serve(settings: Settings) -> None:
@@ -35,15 +41,33 @@ async def serve(settings: Settings) -> None:
     engine = create_async_engine(
         url, pool_size=4, max_overflow=2, connect_args={"server_settings": {"default_transaction_read_only": "on"}}
     )
+    # The fold writes only its own tables.
+    fold_engine = create_async_engine(url, pool_size=2, max_overflow=2)
     try:
         async with k8s_client.ApiClient(configuration) as api:
+            history = Store(engine)
+            # A failed fold stops folding, not the raw reads this process serves.
+            shadow = (
+                asyncio.create_task(
+                    FoldShadow(engine=fold_engine, history=history, concurrency=settings.fold_concurrency).run(
+                        interval_s=settings.fold_interval_s
+                    ),
+                    name="fold-shadow",
+                )
+                if settings.fold_shadow
+                else None
+            )
+            if shadow is not None:
+                shadow.add_done_callback(_report_shadow_exit)
             resources = Resources(
                 principals=WorkloadPrincipalResolver(
                     authentication=k8s_client.AuthenticationV1Api(api),
                     audience=settings.token_audience,
                     allowed_service_account_namespaces={account.namespace for account in settings.reader_accounts},
                 ),
-                history=Store(engine),
+                history=history,
+                summaries=SummaryReader(engine),
+                threads=ThreadReader(engine),
                 reader_accounts=settings.reader_accounts,
                 request_timeout_s=settings.request_timeout_s,
             )
@@ -72,7 +96,12 @@ async def serve(settings: Settings) -> None:
                         ingesting.cancel()
             finally:
                 await server.stop(grace=5)
+                if shadow is not None:
+                    shadow.cancel()
+                    with contextlib.suppress(asyncio.CancelledError):
+                        await shadow
     finally:
+        await fold_engine.dispose()
         await engine.dispose()
 
 
@@ -103,6 +132,11 @@ async def ingest(settings: Settings, url: URL) -> None:
     finally:
         await sandboxes.close()
         await engine.dispose()
+
+
+def _report_shadow_exit(task: asyncio.Task[None]) -> None:
+    if not task.cancelled() and (error := task.exception()) is not None:
+        logger.error("fold shadow stopped", exc_info=error)
 
 
 def main() -> None:

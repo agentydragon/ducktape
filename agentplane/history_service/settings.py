@@ -67,6 +67,10 @@ class Settings(BaseSettings):
     kubeconfig: Path | None = None
     sandbox_service: SandboxServiceSettings
     ingester: IngesterSettings = Field(default_factory=IngesterSettings)
+    # Folds every retained Session from its raw log; off until the operator starts the rebuild.
+    fold_shadow: bool = False
+    fold_concurrency: int = Field(default=4, ge=1, le=64)
+    fold_interval_s: float = Field(default=2, gt=0)
 
     def __init__(self, **values: Any) -> None:
         super().__init__(**values)

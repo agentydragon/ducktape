@@ -63,6 +63,7 @@ py_library(
         "//agentplane/sandbox_service/testing:fake_inventory",
         "//agentplane/thread_fold:projection_lease",
         "//agentplane/thread_fold:projector",
+        "//agentplane/thread_fold:recording",
         "@pypi//asyncpg",
         "@pypi//fastapi",
         "@pypi//httpx",
