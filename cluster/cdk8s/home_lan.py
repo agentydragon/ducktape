@@ -1,17 +1,14 @@
 """The fixed addresses on the home LAN behind the AT&T gateway (docs/home_lan.md).
 
-`write_manifests` renders them to `cluster/generated/home-lan.json` for consumers outside
-cdk8s: cluster/terraform/main/home-nodes.tf and tf/gitops/home-switch/bootstrap.sh.
+cluster/terraform/main/home-nodes.tf and tf/gitops/home-switch/bootstrap.sh repeat the ones
+they need; keep them in sync.
 """
 
 from __future__ import annotations
 
 from ipaddress import IPv4Address, IPv4Network
-from pathlib import Path
 
 from pydantic import BaseModel, ConfigDict, Field
-
-from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 
 
 class HomeLan(BaseModel):
@@ -29,7 +26,3 @@ HOME_LAN = HomeLan(
     switch=IPv4Address("192.168.1.100"),
     optiplex=IPv4Address("192.168.1.10"),
 )
-
-
-def write_manifests(root: Path) -> None:
-    (root / GENERATED_ROOT / "home-lan.json").write_text(HOME_LAN.model_dump_json(indent=2) + "\n")

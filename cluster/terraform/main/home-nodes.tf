@@ -6,9 +6,6 @@
 # operator step documented in cluster/docs/optiplex_provisioning.md.
 
 locals {
-  # Fixed home LAN addresses, rendered from cluster/cdk8s/home_lan.py.
-  home_lan = jsondecode(file("${path.module}/../../generated/home-lan.json"))
-
   # Keyed by host name; the Nebula IP is the mesh roster's (local.nebula_hosts, nebula.tf).
   home_node_provisioning = {
     optiplex = {
@@ -16,8 +13,9 @@ locals {
       region       = "home"
       zone         = "home-lan"
       # A fixed LAN address beside the DHCP lease, below the AT&T gateway's DHCP pool
-      # (docs/home_lan.md). The home switch sends its syslog here.
-      lan_address = "${local.home_lan.optiplex}/${split("/", local.home_lan.network)[1]}"
+      # (docs/home_lan.md). The home switch and gateway send their syslog here. Keep in sync with
+      # HOME_LAN.optiplex and .network in cluster/cdk8s/home_lan.py.
+      lan_address = "192.168.1.10/24"
       lan_mac     = "e4:54:e8:85:9f:b2"
     }
   }
