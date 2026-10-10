@@ -250,8 +250,7 @@ Status: **proposed, under review.** Not built; until it is, every runner's lifec
 inbound API.
 
 A runner that lists `lifecycle` in `Hello` takes every remaining inbound call over `Connect` as a
-control request, and once a connection of a Sandbox has agreed it, the Sandbox Service makes none of
-those calls inbound. Each request names an explicit verb; nothing is inferred from which fields are
+control request. Each request names an explicit verb; nothing is inferred from which fields are
 present, unlike `Attach`, where any matching spec restarts a stopped harness.
 
 ```protobuf
