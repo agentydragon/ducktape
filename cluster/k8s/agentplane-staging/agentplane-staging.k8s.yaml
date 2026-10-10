@@ -2142,6 +2142,7 @@ data:
         name: agentplane-history-service
       - namespace: agentplane-staging
         name: agentplane-notifications
+    token_audience: agentplane-sandbox-service
     platform_instructions: |-
       You are running in a Kubernetes sandbox managed by Agentplane. Agentplane governs outbound network
       access and sensitive operations. Instead of real service tokens you receive credential placeholders:
@@ -2351,8 +2352,6 @@ data:
       and wait for the decision and execution result via the Actions API/notifications as described
       in the shared platform instructions. Never impersonate an operator, bypass the egress proxy,
       or use admin Actions for unrelated work. Approval is not execution success.
-    lifecycle_timeout_s: 300
-    ingest_history: false
     default_egress_policies:
       - basic
       - inference-experiments
@@ -2809,18 +2808,14 @@ data:
       - tana-mcp
       - vm-images-publisher
     kubernetes_cluster_binding_cleanup: true
-    token_audience: agentplane-sandbox-service
-    runner_channel_audience: agentplane-runner-channel
-    runner_channel_port: 8082
-    runner_port: 7000
-    admission_timeout_s: 15
-    runner_admission_ack_timeout_s: 15
-    follow_lease_s: 900
     runner_grpc_channel_options:
       grpc.max_receive_message_length: 33554432
-    host: 0.0.0.0
+    runner_channel_audience: agentplane-runner-channel
     port: 8080
+    runner_channel_port: 8082
     health_port: 8081
+    runner_port: 7000
+    ingest_history: false
 immutable: false
 ---
 apiVersion: apps/v1

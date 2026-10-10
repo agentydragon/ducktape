@@ -144,8 +144,8 @@ def service_history_db_url(db_url: str) -> Iterator[str]:
 
 
 @pytest.fixture
-def integration_history_database_url() -> str | None:
-    return None
+def ingest_sandbox_history() -> bool:
+    return False
 
 
 @pytest.fixture
@@ -305,7 +305,8 @@ def sandbox_endpoint(
     sandbox_rbac: FakeRbac,
     tmp_path: Path,
     sandbox_runner_port: int,
-    integration_history_database_url: str | None,
+    service_history_db_url: str,
+    ingest_sandbox_history: bool,
 ) -> Iterator[Endpoint]:
     with backend(
         custom_objects,
@@ -315,7 +316,8 @@ def sandbox_endpoint(
         grants=sandbox_grants,
         rbac=sandbox_rbac,
         runner_port=sandbox_runner_port,
-        history_database_url=integration_history_database_url,
+        database_url=service_history_db_url,
+        ingest_history=ingest_sandbox_history,
     ) as endpoint:
         yield endpoint
 

@@ -68,7 +68,7 @@ async def test_production_bridge_archives_native_evidence_across_bounded_service
 ) -> None:
     async with (
         authenticated_service(
-            cluster, runner.port, tmp_path / "service-token", history_database_url=service_history_db_url
+            cluster, runner.port, tmp_path / "service-token", database_url=service_history_db_url, ingest_history=True
         ) as remote,
         history_service(service_history_db_url, tmp_path / "history-service-token") as history,
     ):
@@ -145,7 +145,7 @@ async def test_history_service_reads_match_the_app_projection(
     engine = event_logs.engine
     async with (
         authenticated_service(
-            cluster, runner.port, tmp_path / "service-token", history_database_url=service_history_db_url
+            cluster, runner.port, tmp_path / "service-token", database_url=service_history_db_url, ingest_history=True
         ) as remote,
         history_service(service_history_db_url, tmp_path / "history-service-token") as history,
     ):
@@ -222,9 +222,11 @@ async def test_history_service_reads_match_the_app_projection(
 
 
 async def test_stopped_service_never_falls_back_to_reachable_runner(
-    cluster: Cluster, live_index: LiveIndex, tmp_path: Path, runner: RunnerHandle
+    cluster: Cluster, live_index: LiveIndex, tmp_path: Path, runner: RunnerHandle, service_history_db_url: str
 ) -> None:
-    async with authenticated_service(cluster, runner.port, tmp_path / "service-token") as remote:
+    async with authenticated_service(
+        cluster, runner.port, tmp_path / "service-token", database_url=service_history_db_url
+    ) as remote:
         directory = SandboxSessions(live_index, remote)
         assert await directory.client(SANDBOX).list_sessions() == []
     try:

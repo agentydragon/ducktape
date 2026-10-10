@@ -58,6 +58,9 @@ NAME = "agentplane-sandbox-service"
 TOKEN_AUDIENCE = "agentplane-sandbox-service"
 _LABELS = {"app.kubernetes.io/name": NAME}
 _IMAGE = "git.allegedly.works/ducktape-ci/agentplane-sandbox-service"
+_HEALTH = Port(name="health", number=8081)
+# The port every runner listens on (app.py's SandboxTemplate); this service dials it.
+RUNNER_PORT = 7000
 KUBERNETES_ADMIN_INSTRUCTIONS = (
     Path(__file__).with_name("kubernetes_admin_instructions.md").read_text(encoding="utf-8").strip()
 )
@@ -100,51 +103,49 @@ class SandboxService(Construct):
         )
         self._add_rbac(account)
         actions_service = actions.service(env.namespace)
-        settings = Settings(
-            _cli_parse_args=False,
-            sandbox_namespace=env.namespace,
-            caller_accounts=frozenset(
-                {
-                    manager,
-                    ServiceAccountRef(namespace=env.namespace, name=notifications.NAME),
-                    # Subscribes to Sessions (WatchSessions, FollowSession) for its ingester.
-                    ServiceAccountRef(namespace=env.namespace, name=history_service.NAME),
-                }
-            ),
-            token_audience=TOKEN_AUDIENCE,
-            platform_instructions=combine_instructions(
-                render_platform_instructions(
-                    egress_api_url=f"http://{egress.agent_api(env.namespace).fqdn}",
-                    actions_service_url=f"http://{actions_service.fqdn}:{actions_service.port.number}",
-                    notifications_service_url=f"http://{notifications.service(env.namespace).fqdn}:8080",
-                ),
-                KUBERNETES_ADMIN_INSTRUCTIONS,
-            ),
-            default_egress_policies=[*egress.DEFAULT_POLICIES, RUNNER_CHANNEL_POLICY],
-            kubernetes_grants=env.app_config.kubernetes_grants,
-            kubernetes_binding_cleanup_namespaces=set(env.kubernetes_binding_cleanup_namespaces),
-            kubernetes_cluster_binding_cleanup=env.kubernetes_cluster_binding_cleanup,
-            runner_grpc_channel_options=dict(env.runner_grpc_channel_options),
-            runner_channel_audience=RUNNER_CHANNEL_AUDIENCE,
-            runner_channel_port=channel.pod_port,
-            ingest_history=env.history_writer is HistoryWriter.SANDBOX_SERVICE,
-        )
+        caller_accounts = {
+            manager,
+            ServiceAccountRef(namespace=env.namespace, name=notifications.NAME),
+            # Subscribes to Sessions (WatchSessions, FollowSession) for its ingester.
+            ServiceAccountRef(namespace=env.namespace, name=history_service.NAME),
+        }
         config = SettingsFile(
             self,
             "config",
             metadata=ApiObjectMetadata(name=f"{NAME}-config", namespace=env.namespace),
             model=Settings,
-            content=settings.model_dump(mode="json", exclude_none=True)
-            | {
-                "kubernetes_binding_cleanup_namespaces": sorted(settings.kubernetes_binding_cleanup_namespaces),
+            content={
+                "sandbox_namespace": env.namespace,
                 "caller_accounts": [
                     account.model_dump()
-                    for account in sorted(
-                        settings.caller_accounts, key=lambda account: (account.namespace, account.name)
-                    )
+                    for account in sorted(caller_accounts, key=lambda account: (account.namespace, account.name))
                 ],
+                "token_audience": TOKEN_AUDIENCE,
+                "platform_instructions": combine_instructions(
+                    render_platform_instructions(
+                        egress_api_url=f"http://{egress.agent_api(env.namespace).fqdn}",
+                        actions_service_url=f"http://{actions_service.fqdn}:{actions_service.port.number}",
+                        notifications_service_url=f"http://{notifications.service(env.namespace).fqdn}:8080",
+                    ),
+                    KUBERNETES_ADMIN_INSTRUCTIONS,
+                ),
+                "default_egress_policies": [*egress.DEFAULT_POLICIES, RUNNER_CHANNEL_POLICY],
+                "kubernetes_grants": {
+                    name: grant.model_dump(mode="json", exclude_none=True)
+                    for name, grant in env.app_config.kubernetes_grants.items()
+                },
+                "kubernetes_binding_cleanup_namespaces": sorted(env.kubernetes_binding_cleanup_namespaces),
+                "kubernetes_cluster_binding_cleanup": env.kubernetes_cluster_binding_cleanup,
+                "runner_grpc_channel_options": dict(env.runner_grpc_channel_options),
+                "runner_channel_audience": RUNNER_CHANNEL_AUDIENCE,
+                "port": endpoint.port.number,
+                "runner_channel_port": channel.pod_port,
+                "health_port": _HEALTH.number,
+                "runner_port": RUNNER_PORT,
+                "ingest_history": env.history_writer is HistoryWriter.SANDBOX_SERVICE,
             },
             path="/etc/agentplane-sandbox-service/config.yaml",
+            supplied=[("database_url",), ("commands_database_url",)],
         )
         # Like the other database-backed services, a migration failure blocks Pod
         # startup, including existing lifecycle RPCs. The command has no retry loop.
@@ -193,13 +194,9 @@ class SandboxService(Construct):
             image=f"{_IMAGE}:unset",
             env_variables=migration_env | commands_migration_env,
             image_pull_policy=ImagePullPolicy.IF_NOT_PRESENT,
-            ports=[
-                endpoint.port.container_port(),
-                channel.port.container_port(),
-                Port(name="health", number=settings.health_port).container_port(),
-            ],
-            readiness=http_probe("/healthz", port=settings.health_port, initial_delay_seconds=3, period_seconds=10),
-            liveness=http_probe("/healthz", port=settings.health_port, initial_delay_seconds=20, period_seconds=30),
+            ports=[endpoint.port.container_port(), channel.port.container_port(), _HEALTH.container_port()],
+            readiness=http_probe("/healthz", port=_HEALTH.number, initial_delay_seconds=3, period_seconds=10),
+            liveness=http_probe("/healthz", port=_HEALTH.number, initial_delay_seconds=20, period_seconds=30),
             resources=ContainerResources(
                 cpu=CpuResources(request=Cpu.millis(50)),
                 memory=MemoryResources(request=Size.mebibytes(128), limit=Size.mebibytes(512)),
@@ -234,9 +231,7 @@ class SandboxService(Construct):
                     {"k8s:io.kubernetes.pod.namespace": env.namespace, "k8s:cnpg.io/cluster": "postgres"},
                     database.POSTGRES_PORT,
                 ),
-                EgressRule.to_endpoints(
-                    cilium.endpoint_labels(env.namespace, "agentplane-runner"), settings.runner_port
-                ),
+                EgressRule.to_endpoints(cilium.endpoint_labels(env.namespace, "agentplane-runner"), RUNNER_PORT),
             ],
         )
         self._add_runner_channel_egress(channel)

@@ -9,10 +9,15 @@ import grpc
 import pytest
 import pytest_bazel
 from kubernetes_asyncio import client as k8s_client
+from sqlalchemy.ext.asyncio import AsyncEngine
 
 from agentplane.sandbox_service import protocol_pb2
 from agentplane.sandbox_service.action_policy import ActionPolicyBindings
+from agentplane.sandbox_service.channel_delivery import ChannelDelivery
 from agentplane.sandbox_service.client import SandboxServiceClient, ServiceError
+from agentplane.sandbox_service.commands.connections import ConnectionStore
+from agentplane.sandbox_service.commands.dispatch import DispatchStore
+from agentplane.sandbox_service.commands.store import SubmissionStore
 from agentplane.sandbox_service.destinations import DestinationResolver
 from agentplane.sandbox_service.egress import EgressInventory
 from agentplane.sandbox_service.grpc_api import Resources
@@ -21,6 +26,8 @@ from agentplane.sandbox_service.kubernetes_bindings import KubernetesBindings
 from agentplane.sandbox_service.models import SandboxNotFoundError
 from agentplane.sandbox_service.protocol_pb2 import Hold
 from agentplane.sandbox_service.provisioning import Provisioning
+from agentplane.sandbox_service.session_history.session_changes import SessionChanges
+from agentplane.sandbox_service.session_registry import SessionRegistry
 from agentplane.sandbox_service.testing.fake_inventory import NAMESPACE, FakeCoreV1Api, FakeCustomObjectsApi, sandbox
 from agentplane.sandbox_service.testing.fake_rbac import FakeRbac
 from agentplane.sandbox_service.testing.grpc_service import service_client
@@ -32,6 +39,9 @@ from util.agent_sandbox import SANDBOXES_PLURAL
 from util.kubernetes import CustomObjectsClient
 
 # gazelle:include_dep @pypi//protobuf
+# gazelle:include_dep //agentplane/sandbox_service/commands:conftest
+
+pytest_plugins = ("agentplane.sandbox_service.commands.conftest",)
 
 TOKEN = "test-holder-token"
 AUDIENCE = "test-retention-holds"
@@ -87,7 +97,12 @@ def destination(custom_objects: RacingObjects) -> protocol_pb2.SessionDestinatio
 
 @pytest.fixture
 async def api(
-    cluster: Cluster, inventory: SandboxInventory, custom_objects: RacingObjects, core_v1: FakeCoreV1Api, tmp_path: Path
+    cluster: Cluster,
+    inventory: SandboxInventory,
+    custom_objects: RacingObjects,
+    core_v1: FakeCoreV1Api,
+    engine: AsyncEngine,
+    tmp_path: Path,
 ) -> AsyncIterator[SandboxServiceClient]:
     cluster.fake.tokens[TOKEN] = TokenVerdict(
         username=f"system:serviceaccount:{HOLDER_ACCOUNT.namespace}:{HOLDER_ACCOUNT.name}",
@@ -113,6 +128,12 @@ async def api(
             {},
             KubernetesBindings(inventory, cast(k8s_client.RbacAuthorizationV1Api, FakeRbac())),
         ),
+        sessions=SessionRegistry(engine),
+        submissions=SubmissionStore(engine),
+        delivery=ChannelDelivery(
+            engine.url, dispatches=DispatchStore(engine), connections=ConnectionStore(engine), liveness_s=1
+        ),
+        session_changes=SessionChanges(engine.url),
     )
     token_file = tmp_path / "token"
     token_file.write_text(TOKEN)

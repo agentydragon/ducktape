@@ -877,20 +877,11 @@ verifiable condition in code (`keepingOffset` in `thread_store.tsx`, the jsdom p
 
 ```mermaid
 flowchart TD
-    SANDBOX_SERVICE_RESOURCES_REQUIRED[Candidate: Sandbox Service wiring stops being optional]
     APP_THREAD_VIEW_CLEANUP[Candidate: app Thread view shims]
     RUNNER_SESSION_RECORD_SHIMS[Blocked: drop runner session record compatibility]
     LEGACY_SANDBOX_RETIRE[Retire pre-dial-out Sandboxes]
     LEGACY_SANDBOX_RETIRE --> RUNNER_SESSION_RECORD_SHIMS
 ```
-
-### `SANDBOX_SERVICE_RESOURCES_REQUIRED` — Sandbox Service wiring stops being optional
-
-**Candidate; Runner dial-out lane, which is changing `grpc_api.py`.** `Resources.history` is set and
-never read. `sessions`, `submissions`, `delivery` and `session_changes` are `| None` only for test
-convenience, which leaves "not configured" branches production never takes. `database_url` and
-`commands_database_url` are optional settings that `main.py` then requires; pass them as
-`supplied=` from the cdk8s settings file, as the History Service does. Code and fixtures only.
 
 ### `RUNNER_SESSION_RECORD_SHIMS` — drop runner session record compatibility
 

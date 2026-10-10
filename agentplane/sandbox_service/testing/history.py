@@ -8,15 +8,13 @@ own UUID; the production HistoryIngester owns copying and lifecycle evidence.
 import asyncio
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager, suppress
-from dataclasses import replace
 from uuid import UUID
 
 import grpc
-from sqlalchemy.ext.asyncio import create_async_engine
+from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 
 from agentplane.runner.client import RunnerClient
 from agentplane.sandbox_service.commands import db as commands_db
-from agentplane.sandbox_service.commands.store import SubmissionStore
 from agentplane.sandbox_service.destinations import DestinationUnavailableError
 from agentplane.sandbox_service.grpc_api import Resources
 from agentplane.sandbox_service.models import SandboxNotFoundError
@@ -24,7 +22,6 @@ from agentplane.sandbox_service.protocol_pb2 import SandboxDestination
 from agentplane.sandbox_service.session_history.db import Base
 from agentplane.sandbox_service.session_history.ingestion import HistoryIngester
 from agentplane.sandbox_service.session_history.store import Store
-from agentplane.sandbox_service.session_registry import SessionRegistry
 from agentplane.sandbox_service.testing.sessions import register_session
 
 # gazelle:include_dep @pypi//asyncpg
@@ -32,20 +29,29 @@ from agentplane.sandbox_service.testing.sessions import register_session
 
 
 @asynccontextmanager
-async def with_history(resources: Resources, database_url: str | None) -> AsyncIterator[Resources]:
-    if database_url is None:
-        yield resources
-        return
+async def service_database(database_url: str) -> AsyncIterator[AsyncEngine]:
+    """One test database for the Sandbox Service's history and commands schemas."""
     engine = create_async_engine(database_url)
-    async with engine.begin() as connection:
-        await connection.run_sync(Base.metadata.create_all)
-        # Production keeps admission in its own database; one test database serves both here.
-        await connection.run_sync(commands_db.Base.metadata.create_all)
-    store = Store(engine)
-    sessions = SessionRegistry(engine)
-    submissions = SubmissionStore(engine)
+    try:
+        async with engine.begin() as connection:
+            await connection.run_sync(Base.metadata.create_all)
+            # Production keeps admission in its own database; one test database serves both here.
+            await connection.run_sync(commands_db.Base.metadata.create_all)
+        yield engine
+    finally:
+        await engine.dispose()
+
+
+@asynccontextmanager
+async def with_history(resources: Resources, engine: AsyncEngine) -> AsyncIterator[None]:
+    sessions = resources.sessions
     ingester = HistoryIngester(
-        store, sessions, submissions, resources.destinations, runner_grpc_channel_options={}, interval_s=0.05
+        Store(engine),
+        sessions,
+        resources.submissions,
+        resources.destinations,
+        runner_grpc_channel_options={},
+        interval_s=0.05,
     )
 
     async def discover_and_copy() -> None:
@@ -89,9 +95,8 @@ async def with_history(resources: Resources, database_url: str | None) -> AsyncI
 
     task = asyncio.create_task(discover_and_copy())
     try:
-        yield replace(resources, sessions=sessions, submissions=submissions)
+        yield
     finally:
         task.cancel()
         with suppress(asyncio.CancelledError):
             await task
-        await engine.dispose()

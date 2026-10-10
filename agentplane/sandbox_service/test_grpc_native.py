@@ -20,12 +20,16 @@ from agentplane.runner.testing import events
 from agentplane.runner.testing.fixtures import RunnerHandle
 from agentplane.runner.testing.scripted_model import ScriptedModel, Text
 from agentplane.sandbox_service import protocol_pb2
+from agentplane.sandbox_service.channel_delivery import ChannelDelivery
 from agentplane.sandbox_service.client import Runner, SandboxServiceClient, ServiceError
 from agentplane.sandbox_service.commands import db as commands_db
+from agentplane.sandbox_service.commands.connections import ConnectionStore
+from agentplane.sandbox_service.commands.dispatch import DispatchStore
 from agentplane.sandbox_service.commands.store import SubmissionStore
 from agentplane.sandbox_service.destinations import DestinationResolver
 from agentplane.sandbox_service.grpc_api import Resources
 from agentplane.sandbox_service.protocol_pb2 import SandboxBinding, SandboxDestination, SessionDefaults
+from agentplane.sandbox_service.session_history.session_changes import SessionChanges
 from agentplane.sandbox_service.session_registry import SessionRegistry
 from agentplane.sandbox_service.testing.grpc_service import service_client
 from agentplane.sandbox_service.testing.kubernetes import ACCOUNT, SANDBOX, SANDBOX_UID, Cluster
@@ -81,6 +85,13 @@ def resources(cluster: Cluster, runner: RunnerHandle, commands_engine: AsyncEngi
         platform_instructions="Test backend-owned guidance.",
         sessions=SessionRegistry(commands_engine),
         submissions=SubmissionStore(commands_engine),
+        delivery=ChannelDelivery(
+            commands_engine.url,
+            dispatches=DispatchStore(commands_engine),
+            connections=ConnectionStore(commands_engine),
+            liveness_s=1,
+        ),
+        session_changes=SessionChanges(commands_engine.url),
     )
 
 

@@ -51,8 +51,6 @@ async def serve(settings: Settings) -> None:
         k8s_config.load_incluster_config(client_configuration=configuration)
     else:
         await k8s_config.load_kube_config(config_file=str(settings.kubeconfig), client_configuration=configuration)
-    if settings.database_url is None or settings.commands_database_url is None:
-        raise ValueError("Sandbox Service history and commands database URLs are required at runtime")
     engine = create_async_engine(
         make_url(settings.database_url).set(drivername="postgresql+asyncpg"), pool_size=4, max_overflow=2
     )

@@ -92,7 +92,6 @@ NAME = "agentplane-app"
 _APP_IMAGE = "git.allegedly.works/ducktape-ci/agentplane-app"
 _MIGRATE_IMAGE = "git.allegedly.works/ducktape-ci/agentplane-app-migrate"
 RUNNER_IMAGE = "git.allegedly.works/ducktape-ci/runner"
-_RUNNER_PORT = 7000
 _LABELS = {"app.kubernetes.io/name": NAME}
 _RUNNER_LABELS = {"app.kubernetes.io/name": "agentplane-runner"}
 # Shared by the runner's --state-dir flag, its container volumeMount, and the
@@ -456,7 +455,7 @@ class App(Construct):
             "networkpolicy-runner",
             metadata=ApiObjectMetadata(name="agentplane-runner", namespace=namespace),
             endpoint_selector=runner.selector,
-            ingress=[sandbox_service.service(namespace).pods.admit(_RUNNER_PORT)],
+            ingress=[sandbox_service.service(namespace).pods.admit(sandbox_service.RUNNER_PORT)],
             egress=[dns_egress, egress.proxy(namespace).egress()],
         )
         # The app takes browser traffic straight from the gateway and reaches DNS, the
@@ -545,7 +544,7 @@ class RunnerTemplate(Construct):
             "--state-dir",
             _STATE_DIR,
             "--listen",
-            f"0.0.0.0:{_RUNNER_PORT}",
+            f"0.0.0.0:{sandbox_service.RUNNER_PORT}",
             # Where the runner image (agentplane/runner/image.nix) links nixpkgs' harnesses.
             "--claude-binary",
             "/bin/claude",
@@ -578,7 +577,11 @@ class RunnerTemplate(Construct):
             # The runner works in absolute paths. This is for a command exec'd in: the sandbox
             # Actions' `runner` boxes start there unless the caller names a directory.
             working_dir=_STATE_DIR,
-            ports=[SandboxTemplateSpecPodTemplateSpecContainersPorts(name="runner", container_port=_RUNNER_PORT)],
+            ports=[
+                SandboxTemplateSpecPodTemplateSpecContainersPorts(
+                    name="runner", container_port=sandbox_service.RUNNER_PORT
+                )
+            ],
             security_context=sandbox_pod.workload_security_context(),
             env=sandbox_pod.workload_environment(
                 self.env,

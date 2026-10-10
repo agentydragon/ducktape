@@ -11,12 +11,17 @@ import grpc
 import pytest
 import pytest_bazel
 from kubernetes_asyncio import client as k8s_client
+from sqlalchemy.ext.asyncio import AsyncEngine
 
 from agentplane.runner import protocol_pb2 as runner_pb2
 from agentplane.runner.errors import RunnerError
 from agentplane.sandbox_service import protocol_pb2
 from agentplane.sandbox_service.action_policy import ActionPolicyBindings
+from agentplane.sandbox_service.channel_delivery import ChannelDelivery
 from agentplane.sandbox_service.client import SandboxServiceClient, ServiceError
+from agentplane.sandbox_service.commands.connections import ConnectionStore
+from agentplane.sandbox_service.commands.dispatch import DispatchStore
+from agentplane.sandbox_service.commands.store import SubmissionStore
 from agentplane.sandbox_service.destinations import DestinationResolver
 from agentplane.sandbox_service.egress import EgressInventory
 from agentplane.sandbox_service.grpc_api import Resources
@@ -26,6 +31,8 @@ from agentplane.sandbox_service.kubernetes_grants import RoleBindingGrant, RoleR
 from agentplane.sandbox_service.kubernetes_views import SANDBOX_BINDING_ANNOTATION
 from agentplane.sandbox_service.protocol_pb2 import CreateSandboxRequest, SandboxDestination
 from agentplane.sandbox_service.provisioning import Provisioning
+from agentplane.sandbox_service.session_history.session_changes import SessionChanges
+from agentplane.sandbox_service.session_registry import SessionRegistry
 from agentplane.sandbox_service.testing.fake_inventory import (
     NAMESPACE,
     TEMPLATE,
@@ -45,6 +52,9 @@ from util.kubernetes import CustomObjectsClient
 
 # The generated protobuf stubs also need their library types in this target's mypy environment.
 # gazelle:include_dep @pypi//protobuf
+# gazelle:include_dep //agentplane/sandbox_service/commands:conftest
+
+pytest_plugins = ("agentplane.sandbox_service.commands.conftest",)
 
 TOKEN = "test-provisioner-token"
 ADMIN = ServiceAccountRef(namespace=SANDBOX_NAMESPACE, name="test-provisioner")
@@ -99,7 +109,7 @@ def case() -> Case:
 
 
 @pytest.fixture
-async def api(case: Case, cluster: Cluster, tmp_path: Path) -> AsyncIterator[SandboxServiceClient]:
+async def api(case: Case, cluster: Cluster, engine: AsyncEngine, tmp_path: Path) -> AsyncIterator[SandboxServiceClient]:
     cluster.fake.tokens[TOKEN] = TokenVerdict(
         username=f"system:serviceaccount:{ADMIN.namespace}:{ADMIN.name}",
         pod_name="test-provisioner-pod",
@@ -117,6 +127,12 @@ async def api(case: Case, cluster: Cluster, tmp_path: Path) -> AsyncIterator[San
         caller_accounts=frozenset({ADMIN}),
         platform_instructions="",
         provisioning=case.service,
+        sessions=SessionRegistry(engine),
+        submissions=SubmissionStore(engine),
+        delivery=ChannelDelivery(
+            engine.url, dispatches=DispatchStore(engine), connections=ConnectionStore(engine), liveness_s=1
+        ),
+        session_changes=SessionChanges(engine.url),
     )
     token_file = tmp_path / "token"
     token_file.write_text(TOKEN)

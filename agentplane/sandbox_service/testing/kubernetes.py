@@ -2,7 +2,7 @@
 
 import asyncio
 from collections.abc import AsyncIterator
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, nullcontext
 from dataclasses import dataclass
 from pathlib import Path
 from typing import cast
@@ -11,7 +11,11 @@ from kubernetes_asyncio import client as k8s_client
 
 from agentplane.sandbox_service.action_policy import ActionPolicyBindings
 from agentplane.sandbox_service.binding_storage import write_binding
+from agentplane.sandbox_service.channel_delivery import ChannelDelivery
 from agentplane.sandbox_service.client import SandboxServiceClient
+from agentplane.sandbox_service.commands.connections import ConnectionStore
+from agentplane.sandbox_service.commands.dispatch import DispatchStore
+from agentplane.sandbox_service.commands.store import SubmissionStore
 from agentplane.sandbox_service.destinations import DestinationResolver
 from agentplane.sandbox_service.egress import EgressInventory
 from agentplane.sandbox_service.grpc_api import Resources
@@ -20,8 +24,10 @@ from agentplane.sandbox_service.kubernetes_bindings import KubernetesBindings
 from agentplane.sandbox_service.kubernetes_views import MANAGED_LABEL, SANDBOX_BINDING_ANNOTATION
 from agentplane.sandbox_service.protocol_pb2 import SandboxBinding
 from agentplane.sandbox_service.provisioning import Provisioning
+from agentplane.sandbox_service.session_history.session_changes import SessionChanges
+from agentplane.sandbox_service.session_registry import SessionRegistry
 from agentplane.sandbox_service.testing.grpc_service import service_client
-from agentplane.sandbox_service.testing.history import with_history
+from agentplane.sandbox_service.testing.history import service_database, with_history
 from agentplane.subjects import ServiceAccountRef
 from agentplane.testing.fake_apiserver import SANDBOX_NAMESPACE, FakeApiServer, TokenVerdict, fake_apiserver, pod_for
 from agentplane.workload_auth.principal import WorkloadPrincipalResolver
@@ -101,7 +107,8 @@ async def authenticated_service(
     runner_port: int,
     token_file: Path,
     *,
-    history_database_url: str | None = None,
+    database_url: str,
+    ingest_history: bool = False,
     manager: ServiceAccountRef | None = None,
     token: str = "test-app-service-token",
     audience: str = "test-app-sandbox-service",
@@ -115,21 +122,28 @@ async def authenticated_service(
         pod_uid="test-app-pod-uid",
         audiences=(audience,),
     )
-    resources = Resources(
-        runner_admission_ack_timeout_s=1,
-        principals=WorkloadPrincipalResolver(
-            authentication=k8s_client.AuthenticationV1Api(cluster.api),
-            audience=audience,
-            allowed_service_account_namespaces={SANDBOX_NAMESPACE},
-        ),
-        destinations=DestinationResolver(cluster.inventory, k8s_client.CoreV1Api(cluster.api), runner_port),
-        provisioning=cluster.provisioning,
-        caller_accounts=frozenset({manager}),
-        platform_instructions=platform_instructions,
-        follow_lease_s=1,
-    )
-    async with (
-        with_history(resources, history_database_url) as configured,
-        service_client(configured, token_file) as client,
-    ):
-        yield client
+    async with service_database(database_url) as engine:
+        resources = Resources(
+            runner_admission_ack_timeout_s=1,
+            principals=WorkloadPrincipalResolver(
+                authentication=k8s_client.AuthenticationV1Api(cluster.api),
+                audience=audience,
+                allowed_service_account_namespaces={SANDBOX_NAMESPACE},
+            ),
+            destinations=DestinationResolver(cluster.inventory, k8s_client.CoreV1Api(cluster.api), runner_port),
+            provisioning=cluster.provisioning,
+            caller_accounts=frozenset({manager}),
+            platform_instructions=platform_instructions,
+            follow_lease_s=1,
+            sessions=SessionRegistry(engine),
+            submissions=SubmissionStore(engine),
+            delivery=ChannelDelivery(
+                engine.url, dispatches=DispatchStore(engine), connections=ConnectionStore(engine), liveness_s=1
+            ),
+            session_changes=SessionChanges(engine.url),
+        )
+        async with (
+            with_history(resources, engine) if ingest_history else nullcontext(),
+            service_client(resources, token_file) as client,
+        ):
+            yield client

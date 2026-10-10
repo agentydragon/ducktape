@@ -156,8 +156,8 @@ async def read_until(lines: AsyncIterator[str], key: str) -> list[SseMessage]:
 
 
 @pytest.fixture
-def integration_history_database_url(service_history_db_url: str) -> str:
-    return service_history_db_url
+def ingest_sandbox_history() -> bool:
+    return True
 
 
 @pytest.fixture

@@ -5,7 +5,7 @@ Only the endpoint and public client escape this fixture, never provisioning impl
 """
 
 from collections.abc import Callable, Iterator, Sequence
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, cast
@@ -14,7 +14,11 @@ from anyio.from_thread import start_blocking_portal
 from kubernetes_asyncio import client as k8s_client
 
 from agentplane.sandbox_service.action_policy import ActionPolicyBindings
+from agentplane.sandbox_service.channel_delivery import ChannelDelivery
 from agentplane.sandbox_service.client import SandboxServiceClient
+from agentplane.sandbox_service.commands.connections import ConnectionStore
+from agentplane.sandbox_service.commands.dispatch import DispatchStore
+from agentplane.sandbox_service.commands.store import SubmissionStore
 from agentplane.sandbox_service.destinations import DestinationResolver
 from agentplane.sandbox_service.egress import EgressInventory
 from agentplane.sandbox_service.grpc_api import Resources
@@ -22,6 +26,8 @@ from agentplane.sandbox_service.inventory import SandboxInventory
 from agentplane.sandbox_service.kubernetes_bindings import KubernetesBindings
 from agentplane.sandbox_service.kubernetes_grants import KubernetesGrant
 from agentplane.sandbox_service.provisioning import Provisioning
+from agentplane.sandbox_service.session_history.session_changes import SessionChanges
+from agentplane.sandbox_service.session_registry import SessionRegistry
 from agentplane.sandbox_service.testing.fake_inventory import (
     NAMESPACE,
     FakeCoreV1Api,
@@ -31,7 +37,7 @@ from agentplane.sandbox_service.testing.fake_inventory import (
 )
 from agentplane.sandbox_service.testing.fake_rbac import FakeRbac
 from agentplane.sandbox_service.testing.grpc_service import service
-from agentplane.sandbox_service.testing.history import with_history
+from agentplane.sandbox_service.testing.history import service_database, with_history
 from agentplane.subjects import ServiceAccountRef
 from agentplane.workload_auth.principal import POD_NAME_CLAIM, POD_UID_CLAIM, WorkloadPrincipalResolver
 from util.agent_sandbox import SANDBOX_API
@@ -81,8 +87,9 @@ def backend(
     core: FakeCoreV1Api,
     token_file: Path,
     *,
+    database_url: str,
+    ingest_history: bool = False,
     runner_port: int = 1,
-    history_database_url: str | None = None,
     default_policies: Sequence[str] = (),
     grants: dict[str, KubernetesGrant] | None = None,
     rbac: FakeRbac | None = None,
@@ -93,30 +100,36 @@ def backend(
     core_api = cast(k8s_client.CoreV1Api, core)
     inventory = SandboxInventory(namespace=NAMESPACE, custom_objects=custom, core_v1=core_api)
     bindings = KubernetesBindings(inventory, cast(k8s_client.RbacAuthorizationV1Api, rbac or FakeRbac()))
-    resources = Resources(
-        runner_admission_ack_timeout_s=1,
-        principals=WorkloadPrincipalResolver(
-            authentication=cast(k8s_client.AuthenticationV1Api, Authentication()),
-            audience=AUDIENCE,
-            allowed_service_account_namespaces={NAMESPACE},
-        ),
-        destinations=DestinationResolver(inventory, core_api, runner_port),
-        caller_accounts=frozenset({MANAGER}),
-        platform_instructions=platform_instructions,
-        provisioning=Provisioning(
-            inventory,
-            EgressInventory(namespace=NAMESPACE, custom_objects=custom, default_policies=default_policies),
-            ActionPolicyBindings(namespace=NAMESPACE, custom_objects=custom),
-            grants if grants is not None else {},
-            bindings,
-        ),
-    )
-    with (
-        start_blocking_portal() as portal,
-        portal.wrap_async_context_manager(with_history(resources, history_database_url)) as configured,
-        portal.wrap_async_context_manager(service(configured)) as target,
-    ):
-        yield Endpoint(target, token_file, lambda: portal.call(resources.provisioning.reconcile_once))
+    with start_blocking_portal() as portal, portal.wrap_async_context_manager(service_database(database_url)) as engine:
+        resources = Resources(
+            runner_admission_ack_timeout_s=1,
+            principals=WorkloadPrincipalResolver(
+                authentication=cast(k8s_client.AuthenticationV1Api, Authentication()),
+                audience=AUDIENCE,
+                allowed_service_account_namespaces={NAMESPACE},
+            ),
+            destinations=DestinationResolver(inventory, core_api, runner_port),
+            caller_accounts=frozenset({MANAGER}),
+            platform_instructions=platform_instructions,
+            provisioning=Provisioning(
+                inventory,
+                EgressInventory(namespace=NAMESPACE, custom_objects=custom, default_policies=default_policies),
+                ActionPolicyBindings(namespace=NAMESPACE, custom_objects=custom),
+                grants if grants is not None else {},
+                bindings,
+            ),
+            sessions=SessionRegistry(engine),
+            submissions=SubmissionStore(engine),
+            delivery=ChannelDelivery(
+                engine.url, dispatches=DispatchStore(engine), connections=ConnectionStore(engine), liveness_s=1
+            ),
+            session_changes=SessionChanges(engine.url),
+        )
+        with (
+            portal.wrap_async_context_manager(with_history(resources, engine)) if ingest_history else nullcontext(),
+            portal.wrap_async_context_manager(service(resources)) as target,
+        ):
+            yield Endpoint(target, token_file, lambda: portal.call(resources.provisioning.reconcile_once))
 
 
 def seed_runner(

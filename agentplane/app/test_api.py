@@ -695,6 +695,7 @@ def test_a_runner_that_does_not_answer_is_a_503(
     electric_proxy: ElectricProxy,
     notifications_http: httpx.AsyncClient,
     notifications_token_file: Path,
+    service_history_db_url: str,
 ) -> None:
     """A Pod with an address but no runner listening yet, as right after a resume."""
     live_index.sandboxes["live"], live_index.pods["live"] = seed_runner(custom_objects, core_v1, "live")
@@ -703,7 +704,11 @@ def test_a_runner_that_does_not_answer_is_a_503(
     with socket.socket() as closed_port:
         closed_port.bind(("127.0.0.1", 0))
         with backend(
-            custom_objects, core_v1, tmp_path / "failure-token", runner_port=closed_port.getsockname()[1]
+            custom_objects,
+            core_v1,
+            tmp_path / "failure-token",
+            database_url=service_history_db_url,
+            runner_port=closed_port.getsockname()[1],
         ) as endpoint:
             runners = SandboxSessions(live_index, endpoint.client())
             app = create_app(

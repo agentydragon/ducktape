@@ -68,10 +68,10 @@ class Resources:
     caller_accounts: frozenset[ServiceAccountRef]
     platform_instructions: str
     runner_admission_ack_timeout_s: float
-    sessions: SessionRegistry | None = None
-    submissions: SubmissionStore | None = None
-    delivery: ChannelDelivery | None = None
-    session_changes: SessionChanges | None = None
+    sessions: SessionRegistry
+    submissions: SubmissionStore
+    delivery: ChannelDelivery
+    session_changes: SessionChanges
     admission_timeout_s: float = 15
     follow_lease_s: float = 900
     lifecycle_timeout_s: float = 300
@@ -366,38 +366,22 @@ class SandboxService(protocol_pb2_grpc.SandboxServiceServicer):
     ) -> runner_pb2.ListSessionsResponse:
         async with self.request(context), self.runner(request.destination, writes=False) as (client, _):
             sessions = await client.list_sessions()
-            if self.resources.sessions is not None:
-                for summary in sessions:
-                    public_id = await self.resources.sessions.session_id(
-                        sandbox_namespace=self.resources.destinations.inventory.namespace,
-                        sandbox_name=request.destination.sandbox,
-                        sandbox_uid=UUID(request.destination.sandbox_uid),
-                        runner_session_id=summary.session_id,
-                    )
-                    if public_id is not None:
-                        summary.session_id = str(public_id)
+            for summary in sessions:
+                public_id = await self.resources.sessions.session_id(
+                    sandbox_namespace=self.resources.destinations.inventory.namespace,
+                    sandbox_name=request.destination.sandbox,
+                    sandbox_uid=UUID(request.destination.sandbox_uid),
+                    runner_session_id=summary.session_id,
+                )
+                if public_id is not None:
+                    summary.session_id = str(public_id)
             return runner_pb2.ListSessionsResponse(sessions=sessions)
-
-    def sessions(self) -> SessionRegistry:
-        if self.resources.sessions is None:
-            raise DestinationUnavailableError("Session registry database not configured")
-        return self.resources.sessions
-
-    def submissions(self) -> SubmissionStore:
-        if self.resources.submissions is None:
-            raise DestinationUnavailableError("command admission database not configured")
-        return self.resources.submissions
-
-    def delivery(self) -> ChannelDelivery:
-        if self.resources.delivery is None:
-            raise DestinationUnavailableError("runner channel delivery not configured")
-        return self.resources.delivery
 
     async def runner_session_id(self, destination: protocol_pb2.SessionDestination) -> str:
         """Keep physical runner identifiers behind this service, including on follow."""
         if (session_id := public_session_id(destination.session_id)) is None:
             return destination.session_id  # legacy caller-chosen runner ID
-        return await self.sessions().runner_id(
+        return await self.resources.sessions.runner_id(
             session_id,
             sandbox_namespace=self.resources.destinations.inventory.namespace,
             sandbox_name=destination.sandbox.sandbox,
@@ -445,7 +429,7 @@ class SandboxService(protocol_pb2_grpc.SandboxServiceServicer):
                         launch.open.setup_script = setup_script
                     return launch.SerializeToString(deterministic=True)
 
-                reservation = await self.sessions().reserve(
+                reservation = await self.resources.sessions.reserve(
                     caller_namespace=caller.namespace,
                     caller_name=caller.name,
                     sandbox_namespace=self.resources.destinations.inventory.namespace,
@@ -476,7 +460,7 @@ class SandboxService(protocol_pb2_grpc.SandboxServiceServicer):
             if not request.idempotency_key or len(request.idempotency_key) > 128:
                 raise ValueError("Open key is required and must not exceed 128 characters")
             await self.checked_sandbox(protocol_pb2.SandboxRequest(destination=request.sandbox))
-            public_id = await self.sessions().lookup_open(
+            public_id = await self.resources.sessions.lookup_open(
                 caller_namespace=caller.namespace,
                 caller_name=caller.name,
                 sandbox_namespace=self.resources.destinations.inventory.namespace,
@@ -552,7 +536,7 @@ class SandboxService(protocol_pb2_grpc.SandboxServiceServicer):
             public_id = public_session_id(destination.session_id)
             # Once a runner of this Sandbox has agreed commands over the channel, they never fall
             # back to the relay.
-            channel_routed = self.resources.delivery is not None and ChannelOperation.COMMANDS in (
+            channel_routed = ChannelOperation.COMMANDS in (
                 await self.resources.delivery.connections.read_operations(UUID(destination.sandbox.sandbox_uid))
             )
             if public_id is None:
@@ -568,10 +552,10 @@ class SandboxService(protocol_pb2_grpc.SandboxServiceServicer):
                         after_cursor=request.follow.after_cursor,
                         timeout_s=self.resources.runner_admission_ack_timeout_s,
                     )
-            submissions = self.submissions()
+            submissions = self.resources.submissions
 
             if channel_routed:
-                delivery = self.delivery()
+                delivery = self.resources.delivery
                 # Verifies the incarnation and its owner, as the relay's runner lookup does.
                 await self.resources.destinations.resolve(destination.sandbox, writes=True)
 
@@ -627,7 +611,7 @@ class SandboxService(protocol_pb2_grpc.SandboxServiceServicer):
             session_id = await self.checked_public_session(request.destination)
             if not 1 <= len(request.command_id) <= 128:
                 raise ValueError("command ID must contain 1 to 128 characters")
-            return command_status(await self.submissions().read(session_id, request.command_id))
+            return command_status(await self.resources.submissions.read(session_id, request.command_id))
 
     @override
     async def ListCommands(
@@ -642,7 +626,7 @@ class SandboxService(protocol_pb2_grpc.SandboxServiceServicer):
                 raise ValueError("unknown command state")
             states = {SUBMISSION_STATES[state] for state in request.states}
             after = read_page_token(request.page_token) if request.page_token else None
-            page = await self.submissions().list(session_id, states=states, after=after, limit=limit)
+            page = await self.resources.submissions.list(session_id, states=states, after=after, limit=limit)
             result = protocol_pb2.ListCommandsResponse(commands=[command_status(row) for row in page])
             if len(page) == limit:
                 last = page[-1]
@@ -713,9 +697,7 @@ class SandboxService(protocol_pb2_grpc.SandboxServiceServicer):
             async with asyncio.timeout(self.resources.admission_timeout_s):
                 # Any allowed service caller may watch; the feed carries no transcript.
                 await self.resources.authenticate(context)
-                if self.resources.session_changes is None:
-                    raise DestinationUnavailableError("Session change notifications not configured")
-                sessions, changes = self.sessions(), self.resources.session_changes
+                sessions, changes = self.resources.sessions, self.resources.session_changes
             loop = asyncio.get_running_loop()
             deadline = loop.time() + self.resources.follow_lease_s
             position = request.after_position

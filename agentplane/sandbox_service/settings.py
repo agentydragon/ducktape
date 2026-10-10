@@ -24,9 +24,9 @@ class Settings(BaseSettings):
     )
 
     sandbox_namespace: str = Field(min_length=1)
-    database_url: str | None = Field(default=None, min_length=1)
-    commands_database_url: str | None = Field(
-        default=None, min_length=1, description="The `sandbox_commands` database holding command admission."
+    database_url: str = Field(min_length=1)
+    commands_database_url: str = Field(
+        min_length=1, description="The `sandbox_commands` database holding command admission."
     )
     caller_accounts: frozenset[ServiceAccountRef] = Field(min_length=1)
     platform_instructions: str = Field(min_length=1)
