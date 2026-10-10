@@ -350,8 +350,7 @@ flowchart LR
     RUNNER_OUTBOUND_SPOOL --> RUNNER_OUTBOUND_ROLLOUT
     RUNNER_OUTBOUND_LIFECYCLE --> RUNNER_OUTBOUND_ROLLOUT
     RUNNER_OUTBOUND_ROLLOUT --> RUNNER_INBOUND_RETIRE[Blocked: retire inbound runner access]
-    HISTORY_WRITE_HANDOFF[History Service ingester takes over] --> LEGACY_SANDBOX_RETIRE[Blocked: archive and delete pre-dial-out Sandboxes]
-    RUNNER_OUTBOUND_ROLLOUT --> LEGACY_SANDBOX_RETIRE
+    RUNNER_OUTBOUND_ROLLOUT --> LEGACY_SANDBOX_RETIRE[Blocked: archive and delete pre-dial-out Sandboxes]
     LEGACY_SANDBOX_RETIRE --> RUNNER_INBOUND_RETIRE
     VM_PROVIDER --> VM_CONTROL_NETWORKING
     VM_CONTROL_NETWORKING --> VM_LIFECYCLE
@@ -384,8 +383,7 @@ buffers and keep controls/receipts responsive during catch-up; test reconnect, c
 and slow readers. Acknowledge only what is committed, never Events held in a lost owner's memory, and
 never read a transport cancellation as harness cancellation. Switch the canary's ingester explicitly, then expand this capability in bounded
 steps. This changes event transport, not archive storage or admission authority. Replay through
-the channel then serves `FollowSession` from any cursor; this and
-`HISTORY_WRITE_HANDOFF` change opposite ends of ingestion, so either may land first.
+the channel then serves `FollowSession` from any cursor.
 
 ### `RUNNER_OUTBOUND_LIFECYCLE` — migrate remaining inbound control consumers
 
@@ -404,7 +402,7 @@ competing route. Not a gate on first VM use.
 
 ### `LEGACY_SANDBOX_RETIRE` — wind down pre-dial-out Sandboxes
 
-**Blocked on the rollout and the write handoff**, whose retention holds keep each Sandbox until its
+**Blocked on the rollout.** The History Service's retention holds keep each Sandbox until its
 history is archived. The operator approved on 2026-10-10 PDT
 archiving and then deleting Sandboxes whose runner image cannot dial out, instead of upgrading them.
 Settle each one's history (final prefix archived), then delete it with its runner storage. Exit: no
@@ -507,7 +505,7 @@ flowchart LR
     KUBERNETES_RBAC_POLICIES[Decision: reusable groups and update semantics] --> KUBERNETES_RBAC_POLICY_BINDINGS[Blocked: apply groups and one-SA changes]
     KUBERNETES_RBAC_POLICY_BINDINGS --> MANAGED_SA_RBAC
     BOOTSTRAP_PROGRESS_CONTRACT[Candidate: asynchronous progress API]
-    HISTORY_WRITE_HANDOFF[History Service ingester takes over] --> SANDBOX_IDLE_EXPIRY[Blocked: delete idle Sandboxes]
+    SANDBOX_IDLE_EXPIRY[Candidate: delete idle Sandboxes]
 ```
 
 ### `PC_EGRESS_CREDENTIALS` — label public-coder's Action Service caller
@@ -588,7 +586,7 @@ unless the operator reviews a change. Separate Sandbox initialization from per-s
 
 ### `SANDBOX_IDLE_EXPIRY` — delete Sandboxes nobody uses
 
-**Blocked on the write handoff.** Draft [#7859](https://github.com/agentydragon/ducktape/pull/7859)
+**Candidate.** Draft [#7859](https://github.com/agentydragon/ducktape/pull/7859)
 expires idle Sandboxes (`TODO(sandbox-lifetime)` in `action_service/sandbox/inventory.py`). Deleting
 one goes through [teardown](../sandbox_service/API.md#teardown), which waits on the History Service's
 retention hold, so history is archived first.
@@ -608,7 +606,6 @@ node switches which service reads or writes it. Only the fold double-runs.
 
 ```mermaid
 flowchart TD
-    HISTORY_WRITE_HANDOFF[Candidate: History Service ingester takes over staging]
     SANDBOX_LOCAL_HISTORY_RETIRE[Blocked: delete Sandbox Service ingester and store]
     APP_PROJECTOR_RETIRE[Candidate: delete app projector code]
     APP_PROJECTION_RETIRE[Blocked: drop app projection tables]
@@ -620,7 +617,6 @@ flowchart TD
     HISTORY_REPACK[Blocked: return freed space to the volume]
     APP_ALEMBIC_SQUASH[Baseline final app schema]
     THREAD_READ_POLICY[Scoped archive reads]
-    HISTORY_WRITE_HANDOFF --> SANDBOX_LOCAL_HISTORY_RETIRE
     APP_PROJECTOR_RETIRE --> APP_PROJECTION_RETIRE
     APP_EVENT_LOG_COPIES_RETIRE --> HISTORY_SERVICE_OWNERSHIP
     APP_PROJECTION_RETIRE --> HISTORY_SERVICE_OWNERSHIP
@@ -633,16 +629,9 @@ flowchart TD
     HISTORY_SERVICE_OWNERSHIP -. enforce at the final owner .-> THREAD_READ_POLICY
 ```
 
-### `HISTORY_WRITE_HANDOFF` — the History Service ingester takes over
-
-**Candidate.** The History Service ingester writes testing's history
-([History Service](../history_service/README.md#ingester)). What remains is staging: set
-`history_writer` to the History Service and verify new entries are committed by it alone, and that
-every followed Session carries its `history` hold. Rollback: set it back; the tables are the same.
-
 ### `SANDBOX_LOCAL_HISTORY_RETIRE` — remove the local store
 
-**Blocked on the write handoff, one release later.** Delete the Sandbox
+**Blocked until the release after staging's History Service ingester took over writes.** Delete the Sandbox
 Service's ingester and `session_history` store code and revoke its grants on history tables. Test
 that the Sandbox Service provisions, drives and reconciles commands with no History Service
 running, and update `sandbox_service/API.md`.
@@ -818,11 +807,9 @@ flowchart TD
     SANDBOX_DATABASE_RENAME[Blocked: name the sandbox_commands database for the Sandbox Service]
     APP_ELECTRIC_RETIRE[Blocked: remove Electric's access to the app database]
     PROTO_DIRECTORY[Unscheduled: cross-component protos under one proto directory]
-    HISTORY_WRITE_HANDOFF[History Service ingester takes over]
     SANDBOX_LOCAL_HISTORY_RETIRE[Delete Sandbox Service ingester and store]
     APP_PROJECTOR_RETIRE[Delete app projector]
     HISTORY_SERVICE_OWNERSHIP[History Service ownership]
-    HISTORY_WRITE_HANDOFF --> HISTORY_SESSION_COLUMNS_DROP
     SANDBOX_LOCAL_HISTORY_RETIRE --> HISTORY_STORE_MOVE
     SANDBOX_LOCAL_HISTORY_RETIRE --> HISTORY_WRITER_SWITCH_RETIRE
     HISTORY_STORE_MOVE --> HISTORY_SERVICE_OWNERSHIP
@@ -834,7 +821,7 @@ flowchart TD
 
 ### `HISTORY_SESSION_COLUMNS_DROP` — history keeps only history
 
-**Blocked on the write handoff; stops for the operator.** Ingesters create
+**Candidate; stops for the operator.** Ingesters create
 history rows from the feed; in the history database's `session_history` nothing reads the Open
 reservation or the change position, and the runner session ID only names stored feed snapshots.
 Drop all three, with their indexes and the `session_change_position` sequence, once feed snapshots

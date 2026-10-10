@@ -322,7 +322,7 @@ ENV = Environment(
         history_service_grpc_channel_options=LARGE_EVENT_GRPC_CHANNEL_OPTIONS,
     ),
     runner_grpc_channel_options=LARGE_EVENT_GRPC_CHANNEL_OPTIONS,
-    history_writer=HistoryWriter.SANDBOX_SERVICE,
+    history_writer=HistoryWriter.HISTORY_SERVICE,
     fold_shadow=True,
     thread_reads=ThreadReads.HISTORY_SERVICE,
     notifications_github=GitHubAppProps(app_id=5188971, secret_name="agentplane-github-app"),
