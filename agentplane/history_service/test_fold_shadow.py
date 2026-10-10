@@ -120,7 +120,7 @@ async def test_replicas_split_sessions_by_lease(engine: AsyncEngine, history: St
 async def folded_rows(session: AsyncSession, session_id: UUID) -> list[tuple[object, ...]]:
     """Each entity with its body text. A body's generation is the cursor that last wrote it, which
     a settled item's chunks no longer are."""
-    rows = []
+    rows: list[tuple[object, ...]] = []
     for entity in await session.scalars(
         select(ThreadEntity)
         .where(ThreadEntity.thread_id == session_id, ThreadEntity.projection_epoch == FOLD_EPOCH)
