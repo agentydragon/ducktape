@@ -416,22 +416,30 @@ const SPEC: SessionSpec = create(SessionSpecSchema, {
   reasoningEffort: "low",
 });
 
+const IDLE_THREAD = "5f1c4a2e-0000-4000-8000-000000000001";
+const UNNAMED_STOPPED_THREAD = "5f1c4a2e-0000-4000-8000-000000000000";
+const RUNNING_THREAD = "5f1c4a2e-0000-4000-8000-000000000002";
+
 const SESSIONS: SessionSummary[] = [
-  create(SessionSummarySchema, { sessionId: "s-1", spec: SPEC, lastCursor: 14n, harnessState: HarnessState.RUNNING }),
   create(SessionSummarySchema, {
-    sessionId: "unnamed-stopped-thread",
+    sessionId: IDLE_THREAD,
+    spec: SPEC,
+    lastCursor: 14n,
+    harnessState: HarnessState.RUNNING,
+  }),
+  create(SessionSummarySchema, {
+    sessionId: UNNAMED_STOPPED_THREAD,
     spec: SPEC,
     lastCursor: 31n,
     harnessState: HarnessState.STOPPED,
   }),
 ];
 
-/** The store's copy of the sessions: s-1 named, the stopped one not, so both renderings are on the page. */
+/** The store's copy of the sessions: the idle one named, the stopped one not, so both renderings are on the page. */
 const THREADS: ThreadView[] = [
   {
-    id: "5f1c4a2e-0000-4000-8000-000000000001",
+    id: IDLE_THREAD,
     sandbox: "ready-sandbox",
-    session_id: "s-1",
     harness: "HARNESS_CLAUDE",
     model: "harness-claude-model",
     cwd: "/state/work",
@@ -444,9 +452,8 @@ const THREADS: ThreadView[] = [
     feed_status: "active",
   },
   {
-    id: "5f1c4a2e-0000-4000-8000-000000000000",
+    id: UNNAMED_STOPPED_THREAD,
     sandbox: "ready-sandbox",
-    session_id: "unnamed-stopped-thread",
     harness: "HARNESS_CLAUDE",
     model: "harness-claude-model",
     cwd: "/state/work",
@@ -459,9 +466,8 @@ const THREADS: ThreadView[] = [
     feed_status: "active",
   },
   {
-    id: "5f1c4a2e-0000-4000-8000-000000000002",
+    id: RUNNING_THREAD,
     sandbox: "ready-sandbox",
-    session_id: "s-2",
     harness: "HARNESS_CLAUDE",
     model: "harness-claude-model",
     cwd: "/state/work",
@@ -486,7 +492,6 @@ const THREADS_WITH_SANDBOXES: ThreadView[] = [
   {
     id: "5f1c4a2e-0000-4000-8000-000000000003",
     sandbox: "pending-sandbox",
-    session_id: "s-3",
     harness: "HARNESS_CODEX",
     model: "harness-codex-model",
     cwd: "/state/work",
@@ -500,7 +505,6 @@ const THREADS_WITH_SANDBOXES: ThreadView[] = [
   {
     id: "5f1c4a2e-0000-4000-8000-000000000004",
     sandbox: "suspended-sandbox",
-    session_id: "s-4",
     harness: "HARNESS_CLAUDE",
     model: "harness-claude-model",
     cwd: "/state/work",
@@ -514,7 +518,6 @@ const THREADS_WITH_SANDBOXES: ThreadView[] = [
   {
     id: "5f1c4a2e-0000-4000-8000-000000000005",
     sandbox: "deleted-sandbox",
-    session_id: "s-5",
     harness: "HARNESS_CLAUDE",
     model: "harness-claude-model",
     cwd: "/state/work",
@@ -528,7 +531,6 @@ const THREADS_WITH_SANDBOXES: ThreadView[] = [
   {
     id: "5f1c4a2e-0000-4000-8000-000000000006",
     sandbox: "ready-sandbox",
-    session_id: "s-6",
     harness: "HARNESS_CLAUDE",
     model: "harness-claude-model",
     cwd: "/state/work",
@@ -543,7 +545,7 @@ const THREADS_WITH_SANDBOXES: ThreadView[] = [
 
 /** The `endedAttachment` fixture: the states thread's harness was shut down, and the runner feed has ended. */
 function withEndedAttachment(thread: ThreadView): ThreadView {
-  return thread.session_id === "s-2"
+  return thread.id === RUNNING_THREAD
     ? {
         ...thread,
         name: "Shut-down thread",
@@ -556,7 +558,7 @@ function withEndedAttachment(thread: ThreadView): ThreadView {
 
 /** The `failedTurn` scenarios: the idle thread's history ends in a failed turn, which is also its last completed one. */
 function withFailedTurn(thread: ThreadView): ThreadView {
-  return thread.session_id === "s-1"
+  return thread.id === IDLE_THREAD
     ? { ...thread, name: "Failed-turn thread", last_turn_status: "TURN_STATUS_FAILED" }
     : thread;
 }
@@ -1983,7 +1985,7 @@ routes.push(
                     {
                       inbox: {
                         id: "inbox-one",
-                        session_id: "s-1",
+                        session_id: IDLE_THREAD,
                         last_cursor: 9,
                         acknowledged: 4,
                         covered: 7,
@@ -2349,12 +2351,7 @@ routes.push(
   [
     "GET",
     /^\/threads$/,
-    (_match, query) =>
-      THREADS.filter(
-        (thread) =>
-          (!query.has("sandbox") || thread.sandbox === query.get("sandbox")) &&
-          (!query.has("session_id") || thread.session_id === query.get("session_id"))
-      ),
+    (_match, query) => THREADS.filter((thread) => !query.has("sandbox") || thread.sandbox === query.get("sandbox")),
   ],
   [
     "GET",
@@ -3002,7 +2999,7 @@ const visualHarness = {
   rememberSettledCommands,
   completedRollout(): void {
     mapThread = (thread) =>
-      thread.session_id === "s-1"
+      thread.id === IDLE_THREAD
         ? {
             ...thread,
             name: "Completed diagnostic run",
@@ -3015,7 +3012,7 @@ const visualHarness = {
   },
   reportedRollout(): void {
     mapThread = (thread) =>
-      thread.session_id === "s-1"
+      thread.id === IDLE_THREAD
         ? {
             ...thread,
             name: "Reported thread excerpt",

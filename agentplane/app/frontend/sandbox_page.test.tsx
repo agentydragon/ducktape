@@ -85,7 +85,7 @@ afterEach(async () => {
 });
 afterAll(() => vi.unstubAllGlobals());
 
-function thread(overrides: Partial<ThreadView> & Pick<ThreadView, "id" | "session_id">): ThreadView {
+function thread(overrides: Partial<ThreadView> & Pick<ThreadView, "id">): ThreadView {
   return {
     sandbox: "startup-test",
     harness: "HARNESS_CLAUDE",
@@ -120,17 +120,10 @@ async function render(
     if (path === "/egress/policies" || /^\/sandboxes\/(startup-test|other-test)\/egress\/decisions$/.test(path)) {
       return Promise.resolve(Response.json([]));
     }
-    if (path === "/threads" && request.method === "GET") {
-      const url = new URL(request.url);
-      return Promise.resolve(
-        Response.json(
-          live.snapshot.threads.filter(
-            (thread) =>
-              thread.sandbox === url.searchParams.get("sandbox") &&
-              thread.session_id === url.searchParams.get("session_id")
-          )
-        )
-      );
+    const threadPath = /^\/threads\/([^/]+)$/.exec(path);
+    if (threadPath && request.method === "GET") {
+      const found = live.snapshot.threads.find((thread) => thread.id === threadPath[1]);
+      return Promise.resolve(found ? Response.json(found) : Response.json({ detail: "not found" }, { status: 404 }));
     }
     if (/^\/sandboxes\/(startup-test|other-test)\/sessions/.test(path)) return sessions(request);
     if (/^\/threads\/[^/]+\/(un)?archive$/.test(path)) return threadActions(request);
@@ -410,7 +403,7 @@ it("recovers a lost Open from lookup without sending a second Open", async () =>
   );
   const onOpenThread = await render(sessions);
   await act(async () => newSession().click());
-  live.snapshot.threads = [thread({ id: publicId, session_id: publicId })];
+  live.snapshot.threads = [thread({ id: publicId })];
   await act(async () => button("Check Open status").click());
   expect(onOpenThread).toHaveBeenCalledWith(publicId);
   expect(sessions.mock.calls.filter(([request]) => request.method === "POST")).toHaveLength(1);
@@ -447,7 +440,7 @@ it("reload retains only the opaque key, never the Open spec or bootstrap", async
 
 it("opens a service-owned public session ID on success, never the Open key", async () => {
   const publicId = "7af90050-01fd-423c-a3cb-c1f552b6cda7";
-  live.snapshot.threads = [thread({ id: publicId, session_id: publicId })];
+  live.snapshot.threads = [thread({ id: publicId })];
   const sessions = vi.fn<(request: Request) => Promise<Response>>((request) =>
     Promise.resolve(request.method === "GET" ? Response.json([]) : Response.json({ sessionId: publicId }))
   );
@@ -459,7 +452,7 @@ it("opens a service-owned public session ID on success, never the Open key", asy
 });
 
 it("hides an archived thread's session by default, reveals it via Show archived, and unarchives it", async () => {
-  live.snapshot.threads = [thread({ id: "test-thread-1", session_id: "existing-session", archived: true })];
+  live.snapshot.threads = [thread({ id: "existing-session", archived: true })];
   const archiveRequests: Request[] = [];
   await render(
     async () => Response.json([{ sessionId: "existing-session" }]),
@@ -481,12 +474,12 @@ it("hides an archived thread's session by default, reveals it via Show archived,
   await act(async () => menuItem("Unarchive").click());
 
   expect(archiveRequests.map((request) => [request.method, new URL(request.url).pathname])).toEqual([
-    ["POST", "/threads/test-thread-1/unarchive"],
+    ["POST", "/threads/existing-session/unarchive"],
   ]);
 });
 
 it("disables archiving a thread while its harness is running", async () => {
-  live.snapshot.threads = [thread({ id: "test-thread-1", session_id: "existing-session" })];
+  live.snapshot.threads = [thread({ id: "existing-session" })];
   await render(async () =>
     Response.json([
       {
@@ -512,7 +505,7 @@ it("disables archiving a thread while its harness is running", async () => {
 });
 
 it("defaults new sessions to an offered harness while retaining existing Claude threads", async () => {
-  live.snapshot.threads = [thread({ id: "old-claude", session_id: "old-session", name: "Existing Claude" })];
+  live.snapshot.threads = [thread({ id: "old-session", name: "Existing Claude" })];
   const sessions = vi.fn<(request: Request) => Promise<Response>>(async (request) =>
     request.method === "GET"
       ? Response.json([{ sessionId: "old-session", spec: { harness: "HARNESS_CLAUDE" } }])

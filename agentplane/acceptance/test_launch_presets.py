@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest_bazel
 
@@ -59,7 +59,7 @@ async def test_public_coder_preset_launches_an_initialized_editable_codex_thread
     # instructions remain the exact final block; the Sandbox binding above stores only that edit.
     assert first.attached.spec.instructions.rsplit("\n\n", 1)[-1] == INSTRUCTIONS
 
-    thread = await client.thread(view.name, first.attached.session_id)
+    thread = await client.thread(UUID(first.attached.session_id))
     agent = Agent(client, thread_id=thread.id, cursor=first.last_cursor)
     turn = await agent.run(
         "Use a shell tool to read /state/workspaces/.agentplane-public-coder-ready, then briefly report its exact content."

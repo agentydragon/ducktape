@@ -36,22 +36,16 @@ class SeededEventLogStore(EventLogStore):
         *,
         peer: HistoryService,
         history_reader: HistoryServiceClient,
-        history_creator: HistoryServiceClient | None = None,
         summaries: AppSummaries | HistorySummaries | None = None,
     ) -> None:
         self.engine = engine
         self.peer = peer
         self.reader = history_reader
         super().__init__(
-            engine,
-            history_reader=self.reader,
-            summaries=AppSummaries(engine) if summaries is None else summaries,
-            history_creator=history_creator,
+            engine, history_reader=self.reader, summaries=AppSummaries(engine) if summaries is None else summaries
         )
 
     async def open(self, sandbox: str, session_id: str, spec: runner_pb2.SessionSpec) -> UUID:
-        if self._history_creator is not None:
-            return await super().open(sandbox, session_id, spec)
         # Fixture aliases are deterministic public IDs, not production locator lookups.
         try:
             public_id = UUID(session_id)

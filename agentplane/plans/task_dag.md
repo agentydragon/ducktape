@@ -922,7 +922,7 @@ verifiable condition in code (`keepingOffset` in `thread_store.tsx`, the jsdom p
 ```mermaid
 flowchart TD
     SANDBOX_SERVICE_RESOURCES_REQUIRED[Candidate: Sandbox Service wiring stops being optional]
-    APP_THREAD_VIEW_CLEANUP[Candidate: app Thread view and event_log shims]
+    APP_THREAD_VIEW_CLEANUP[Candidate: app Thread view shims]
     RUNNER_SESSION_RECORD_SHIMS[Blocked: drop runner session record compatibility]
     LEGACY_SANDBOX_RETIRE[Retire pre-dial-out Sandboxes]
     LEGACY_SANDBOX_RETIRE --> RUNNER_SESSION_RECORD_SHIMS
@@ -945,14 +945,14 @@ budget resolution, 2026-10-10 PDT) re-resolves the budget at Open, and `instruct
 then still resume on these records. Once none remains, delete the flag and its Open branch, make
 both fields required, and have `from_spec` set `event_source_id` explicitly.
 
-### `APP_THREAD_VIEW_CLEANUP` — app Thread view and event_log shims
+### `APP_THREAD_VIEW_CLEANUP` — app Thread view shims
 
-**Candidate; Thread fold move lane.** `ThreadView.session_id` always equals
-`id` (and `GET /threads?session_id=` filters on it). `EventLogStore` takes `history_creator` as a
-second, nullable copy of `history_reader` for test support, and `has_projection_metadata` is read
-only by tests. The frontend reads `requested_value` with a `.default(null)` for Command rows written
-before the field existed; a fold rebuilt in a new epoch has none. The fold's page size is `128` in
-both `fold_shadow.PAGE_SIZE` (read only by tests) and `projector.py`; keep one. Code only.
+**Candidate; Thread fold move lane.** The fold's page size is `128` in both `fold_shadow.PAGE_SIZE`
+(read only by tests) and `projector.py`; keep one. **Blocked on app projector retirement:** the
+frontend reads `requested_value` with a `.default(null)` because the app's own fold (epoch `v1`)
+still holds Command rows written before the field existed, and `thread_reads: APP` serves them;
+once that switch is gone, only the History Service fold (rebuilt in `history-v1`, every row
+carrying the field) is read and the default can go. Code only.
 
 ## Scope and retirement of stale gates
 

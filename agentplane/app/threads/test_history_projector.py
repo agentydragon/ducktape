@@ -506,10 +506,7 @@ async def test_discovery_of_new_service_thread_never_starts_legacy_follow(
     reader.read_session_observations.return_value = history_pb2.ReadSessionObservationsResponse(last_cursor=0)
     reader.read_session_events.return_value = history_pb2.ReadSessionEventsResponse(last_cursor=0)
     logs = ServiceEventLogStore(
-        engine,
-        summaries=AppSummaries(engine),
-        history_reader=cast(HistoryServiceClient, reader),
-        history_creator=cast(HistoryServiceClient, reader),
+        engine, summaries=AppSummaries(engine), history_reader=cast(HistoryServiceClient, reader)
     )
     client = AsyncMock()
     client.list_sessions.return_value = [
@@ -532,7 +529,7 @@ async def test_discovery_of_new_service_thread_never_starts_legacy_follow(
     )
     try:
         await coordinator.reconcile()
-        assert await logs.has_projection_metadata(public_id)
+        assert public_id in await logs.projection_sessions()
         await coordinator.reconcile()
         reader.read_session_events.assert_awaited_once_with(str(public_id), after_cursor=0, limit=128)
         client.follow.assert_not_called()
@@ -547,10 +544,7 @@ async def test_discovery_racing_open_agrees_on_the_service_id(engine: AsyncEngin
     reader.read_session_observations.return_value = history_pb2.ReadSessionObservationsResponse(last_cursor=0)
     reader.read_session_events.return_value = history_pb2.ReadSessionEventsResponse(last_cursor=0)
     logs = ServiceEventLogStore(
-        engine,
-        summaries=AppSummaries(engine),
-        history_reader=cast(HistoryServiceClient, reader),
-        history_creator=cast(HistoryServiceClient, reader),
+        engine, summaries=AppSummaries(engine), history_reader=cast(HistoryServiceClient, reader)
     )
     client = AsyncMock()
     client.list_sessions.return_value = [runner_pb2.SessionSummary(session_id=str(public_id), spec=SPEC)]

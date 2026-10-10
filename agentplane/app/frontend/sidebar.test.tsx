@@ -60,7 +60,7 @@ function sandbox(name: string, overrides: Partial<SandboxView> = {}): SandboxVie
   };
 }
 
-function thread(overrides: Partial<ThreadView> & Pick<ThreadView, "id" | "sandbox" | "session_id">): ThreadView {
+function thread(overrides: Partial<ThreadView> & Pick<ThreadView, "id" | "sandbox">): ThreadView {
   return {
     harness: "HARNESS_CLAUDE",
     model: "test-model",
@@ -170,7 +170,6 @@ it("applies pushed renames and Sandbox state without marking a suspended harness
   const running = thread({
     id: "t-1",
     sandbox: "test-sandbox",
-    session_id: "s-1",
     name: "Before rename",
     harness_state: "HARNESS_STATE_RUNNING",
   });
@@ -204,7 +203,6 @@ it("shows chevrons in the shared status indicator when a fresh sidebar thread ha
   const active = thread({
     id: "t-1",
     sandbox: "test-sandbox",
-    session_id: "s-1",
     name: "Active thread",
     harness_state: "HARNESS_STATE_RUNNING",
     active_turn_id: "turn-1",
@@ -228,7 +226,6 @@ it("keeps retained rows but withdraws live indicators when any update source is 
     thread({
       id: "t-1",
       sandbox: "test-sandbox",
-      session_id: "s-1",
       name: "Retained thread",
       harness_state: "HARNESS_STATE_RUNNING",
     }),
@@ -268,9 +265,9 @@ it("keeps retained rows but withdraws live indicators when any update source is 
 it("groups threads by sandbox, showing each group's state, name and visible thread count", async () => {
   await render(
     [
-      thread({ id: "t-1", sandbox: "demo-a1b2", session_id: "s-1", name: "List the repository files" }),
-      thread({ id: "t-2", sandbox: "demo-a1b2", session_id: "s-2", name: "Clean up the stale branch" }),
-      thread({ id: "t-3", sandbox: "prod-x7f2", session_id: "s-3", name: "Investigate flaky CI" }),
+      thread({ id: "t-1", sandbox: "demo-a1b2", name: "List the repository files" }),
+      thread({ id: "t-2", sandbox: "demo-a1b2", name: "Clean up the stale branch" }),
+      thread({ id: "t-3", sandbox: "prod-x7f2", name: "Investigate flaky CI" }),
     ],
     { "demo-a1b2": sandbox("demo-a1b2"), "prod-x7f2": sandbox("prod-x7f2", { operating_mode: "Suspended", pod: null }) }
   );
@@ -284,10 +281,7 @@ it("groups threads by sandbox, showing each group's state, name and visible thre
 });
 
 it("opens retained Thread history even when its Sandbox is gone", async () => {
-  await render(
-    [thread({ id: "t-1", sandbox: "old-debug-3f9c", session_id: "s-9", name: "Why did the migration hang" })],
-    {}
-  );
+  await render([thread({ id: "t-1", sandbox: "old-debug-3f9c", name: "Why did the migration hang" })], {});
 
   const label = [...container.querySelectorAll(".agentplane-sidebar-group-name")].find(
     (node) => node.textContent === "old-debug-3f9c"
@@ -337,8 +331,8 @@ it("dims only the rows of threads whose harness is stopped", async () => {
   const live = { sandbox: "test-sandbox", feed_status: "active" } as const;
   await render(
     [
-      thread({ ...live, id: "t-1", session_id: "s-1", name: "Idle thread", harness_state: "HARNESS_STATE_RUNNING" }),
-      thread({ ...live, id: "t-2", session_id: "s-2", name: "Stopped thread", harness_state: "HARNESS_STATE_STOPPED" }),
+      thread({ ...live, id: "t-1", name: "Idle thread", harness_state: "HARNESS_STATE_RUNNING" }),
+      thread({ ...live, id: "t-2", name: "Stopped thread", harness_state: "HARNESS_STATE_STOPPED" }),
     ],
     { "test-sandbox": sandbox("test-sandbox") }
   );
@@ -359,7 +353,7 @@ it("opens the details of a provisioning Sandbox with no Threads", async () => {
 
 it("links a Sandbox name to its details without changing Thread navigation", async () => {
   await render(
-    [thread({ id: "t-1", sandbox: "demo-a1b2", session_id: "s-1", name: "First thread" })],
+    [thread({ id: "t-1", sandbox: "demo-a1b2", name: "First thread" })],
     { "demo-a1b2": sandbox("demo-a1b2") },
     { initialPath: "/threads/t-1" }
   );
@@ -377,7 +371,7 @@ it("links a Sandbox name to its details without changing Thread navigation", asy
 it("highlights only the current Sandbox group on its details route", async () => {
   const name = "demo a1b2";
   await render(
-    [thread({ id: "t-1", sandbox: name, session_id: "s-1", name: "First thread" })],
+    [thread({ id: "t-1", sandbox: name, name: "First thread" })],
     { [name]: sandbox(name), other: sandbox("other") },
     { initialPath: "/sandboxes/demo%20a1b2?tab=status" }
   );
@@ -398,8 +392,8 @@ it("highlights only the current Sandbox group on its details route", async () =>
 it("opens the stable Thread route and highlights that Thread", async () => {
   await render(
     [
-      thread({ id: "t-1", sandbox: "demo-a1b2", session_id: "s-1", name: "First thread" }),
-      thread({ id: "t-2", sandbox: "demo-a1b2", session_id: "s-2", name: "Second thread" }),
+      thread({ id: "t-1", sandbox: "demo-a1b2", name: "First thread" }),
+      thread({ id: "t-2", sandbox: "demo-a1b2", name: "Second thread" }),
     ],
     { "demo-a1b2": sandbox("demo-a1b2") },
     { initialPath: "/threads/t-2" }
@@ -415,8 +409,8 @@ it("opens the stable Thread route and highlights that Thread", async () => {
 it("hides archived threads until the switch is toggled, and archives a thread from its row action", async () => {
   await render(
     [
-      thread({ id: "t-1", sandbox: "demo-a1b2", session_id: "s-1", name: "Active thread" }),
-      thread({ id: "t-2", sandbox: "demo-a1b2", session_id: "s-2", name: "Old spike", archived: true }),
+      thread({ id: "t-1", sandbox: "demo-a1b2", name: "Active thread" }),
+      thread({ id: "t-2", sandbox: "demo-a1b2", name: "Old spike", archived: true }),
     ],
     { "demo-a1b2": sandbox("demo-a1b2") }
   );
@@ -443,9 +437,9 @@ it("hides archived threads until the switch is toggled, and archives a thread fr
 it("keeps the open Thread in the list while it is archived and the archived switch is off", async () => {
   await render(
     [
-      thread({ id: "t-1", sandbox: "demo-a1b2", session_id: "s-1", name: "Active thread" }),
-      thread({ id: "t-2", sandbox: "demo-a1b2", session_id: "s-2", name: "Open archive", archived: true }),
-      thread({ id: "t-3", sandbox: "demo-a1b2", session_id: "s-3", name: "Other archive", archived: true }),
+      thread({ id: "t-1", sandbox: "demo-a1b2", name: "Active thread" }),
+      thread({ id: "t-2", sandbox: "demo-a1b2", name: "Open archive", archived: true }),
+      thread({ id: "t-3", sandbox: "demo-a1b2", name: "Other archive", archived: true }),
     ],
     { "demo-a1b2": sandbox("demo-a1b2") },
     { initialPath: "/threads/t-2" }
@@ -469,7 +463,6 @@ it.each([
       thread({
         id: "t-1",
         sandbox: "demo",
-        session_id: "s-1",
         name: "Live thread",
         harness_state: "HARNESS_STATE_RUNNING",
         ...overrides,
@@ -484,7 +477,7 @@ it.each([
 });
 
 it("keeps the last snapshot when archiving fails and reports the error", async () => {
-  await render([thread({ id: "t-1", sandbox: "demo", session_id: "s-1", name: "Keep this thread" })], {
+  await render([thread({ id: "t-1", sandbox: "demo", name: "Keep this thread" })], {
     demo: sandbox("demo"),
   });
   fetchMock.mockResolvedValueOnce(Response.json({ detail: "Archive unavailable" }, { status: 503 }));
@@ -623,7 +616,7 @@ it("closes the phone-width overlay, but leaves the desktop column open, on openi
   for (const phone of [true, false]) {
     stubPhoneWidth(phone);
     const { onClose: closeOnOpenThread } = await render(
-      [thread({ id: "t-1", sandbox: "demo-a1b2", session_id: "s-1", name: "First thread" })],
+      [thread({ id: "t-1", sandbox: "demo-a1b2", name: "First thread" })],
       { "demo-a1b2": sandbox("demo-a1b2") },
       { open: true }
     );

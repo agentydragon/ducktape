@@ -16,7 +16,6 @@ class ThreadView(BaseModel):
 
     id: UUID
     sandbox: str
-    session_id: str
     harness: Harness = Field(description="The runner protocol Harness enum member.")
     model: str
     cwd: str

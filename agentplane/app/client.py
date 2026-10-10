@@ -131,12 +131,9 @@ class Client:
         answered = await self._json("POST", f"/threads/{thread_id}/resume")
         return Attachment(ParseDict(answered, protocol_pb2.Attached()))
 
-    async def thread(self, sandbox: str, session_id: str) -> ThreadView:
-        """Resolve the persistent Thread of a created Session."""
-        threads = await self._json("GET", "/threads", params={"sandbox": sandbox, "session_id": session_id})
-        if not threads:
-            raise RuntimeError(f"no persisted Thread for {sandbox}/{session_id}")
-        return ThreadView.model_validate(threads[0])
+    async def thread(self, thread_id: UUID) -> ThreadView:
+        """The persistent Thread of a created Session; its ID is the Session's public ID."""
+        return ThreadView.model_validate(await self._json("GET", f"/threads/{thread_id}"))
 
     async def command(self, thread_id: UUID, command: command_pb2.Command) -> event_log_pb2.EventEntry:
         """Return the archived runner CommandAdmitted entry, not a native command outcome."""

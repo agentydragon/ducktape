@@ -25,7 +25,7 @@ import { fromJson, type JsonValue } from "@bufbuild/protobuf";
 import {
   api,
   displayableError,
-  findThread,
+  getThread,
   listSessions,
   lookupOpen,
   modelsForHarness,
@@ -302,14 +302,10 @@ export function SandboxPage({
   const live = useLive<SandboxSnapshot>(liveSandboxUrl(name, includeArchived), `Sandbox ${name}`);
   const sandbox: SandboxView | null = live.snapshot?.sandbox ?? null;
   const threads = live.snapshot?.threads ?? [];
-  // The store's copy of each session's thread, which outlives the runner's own list.
-  const threadBySession: Record<string, ThreadView> = Object.fromEntries(
-    threads.map((thread) => [thread.session_id, thread])
-  );
-  // Thread names by session id: the store's copy, which outlives the runner's list.
-  const names = Object.fromEntries(
-    threads.flatMap((thread) => (thread.name ? [[thread.session_id, thread.name]] : []))
-  );
+  // The store's copy of each session's thread, keyed by its id, which is the session's; it outlives
+  // the runner's own list.
+  const threadBySession: Record<string, ThreadView> = Object.fromEntries(threads.map((thread) => [thread.id, thread]));
+  const names = Object.fromEntries(threads.flatMap((thread) => (thread.name ? [[thread.id, thread.name]] : [])));
   const visibleSessions = sessions.filter(
     (session) => includeArchived || !threadBySession[session.sessionId]?.archived
   );
@@ -488,8 +484,7 @@ export function SandboxPage({
 
   async function openThread(sessionId: string, resolvedOpenKey?: string): Promise<void> {
     try {
-      const thread = threadBySession[sessionId] ?? (await findThread(name, sessionId));
-      if (!thread) throw new Error(`Thread metadata is not available for session ${sessionId}`);
+      const thread = threadBySession[sessionId] ?? (await getThread(sessionId));
       if (resolvedOpenKey && sessionStorage.getItem(pendingOpenKey(name)) === resolvedOpenKey) rememberOpen(null);
       onOpenThread(thread.id);
     } catch (reason: unknown) {

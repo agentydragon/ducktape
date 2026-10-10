@@ -391,15 +391,6 @@ export async function getThread(threadId: string): Promise<ThreadView> {
   return data;
 }
 
-/** A session's thread, or null before the bridge has opened the session. */
-export async function findThread(sandbox: string, sessionId: string): Promise<ThreadView | null> {
-  const { data, error } = await api.GET("/threads", {
-    params: { query: { sandbox, session_id: sessionId, include_archived: true } },
-  });
-  if (error) throw new Error(displayableError(error));
-  return data[0] ?? null;
-}
-
 /** Set the thread's name; null (or a blank, which the API normalises) leaves it unnamed. */
 export async function renameThread(threadId: string, name: string | null): Promise<ThreadView> {
   const { data, error } = await api.PATCH("/threads/{thread_id}", {

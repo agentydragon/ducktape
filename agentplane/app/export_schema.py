@@ -60,7 +60,7 @@ def _openapi_document(api_client: k8s_client.ApiClient) -> dict[str, Any]:
     engine = connect("postgresql+asyncpg://schema@localhost/schema")
     database_updates = DatabaseUpdates(engine.url)
     event_logs, content = (
-        EventLogStore(engine, summaries=AppSummaries(engine), history_reader=history, history_creator=history),
+        EventLogStore(engine, summaries=AppSummaries(engine), history_reader=history),
         ContentStore(engine, history_reader=history),
     )
     live = LiveIndex(stale_after_seconds=900, core_v1=CoreV1Api(api_client))

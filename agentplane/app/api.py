@@ -748,14 +748,10 @@ class ThreadRename(BaseModel):
 async def list_threads(
     store: Store,
     sandbox: Annotated[str | None, Query(description="Only threads of this sandbox.")] = None,
-    session_id: Annotated[
-        str | None, Query(description="Only threads of this public Sandbox Service Session UUID.")
-    ] = None,
     include_archived: Annotated[bool, Query(description="Also list archived threads.")] = False,
 ) -> list[ThreadView]:
-    """Every persisted thread, newest first; a thread outlives its sandbox. Both filters together
-    name at most one thread: a session's."""
-    return await store.list_threads(sandbox=sandbox, session_id=session_id, include_archived=include_archived)
+    """Every persisted thread, newest first; a thread outlives its sandbox."""
+    return await store.list_threads(sandbox=sandbox, include_archived=include_archived)
 
 
 @threads.get("/{thread_id}")
@@ -802,7 +798,7 @@ async def archive_thread(store: Store, bridge: runner_bridge.Bridge, inventory: 
                 )
             sessions = await bridge.list_sessions(thread.sandbox)
             if any(
-                session.session_id == thread.session_id and session.harness_state == protocol_pb2.HARNESS_STATE_RUNNING
+                session.session_id == str(thread.id) and session.harness_state == protocol_pb2.HARNESS_STATE_RUNNING
                 for session in sessions
             ):
                 raise HTTPException(status.HTTP_409_CONFLICT, "stop the harness before archiving this thread")

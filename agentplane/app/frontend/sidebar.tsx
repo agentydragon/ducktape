@@ -187,7 +187,7 @@ function ThreadRow({
   onOpen: (thread: ThreadView) => void;
   onToggleArchived: (thread: ThreadView) => void;
 }): JSX.Element {
-  const label = thread.name ?? thread.session_id;
+  const label = thread.name ?? thread.id;
   const readonly = sandbox === null;
   const status = threadStatusFromSnapshot(thread, sandbox ?? undefined, fresh);
   const harnessRunning = status.kind === "running" || status.kind === "idle" || status.kind === "turn_error";

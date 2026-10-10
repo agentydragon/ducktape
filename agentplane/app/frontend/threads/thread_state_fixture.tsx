@@ -6,7 +6,6 @@ import type { PayloadRef, ThreadEntity, ThreadState, ThreadSync } from "./thread
 export const THREAD: ThreadView = {
   id: "10000000-0000-4000-8000-000000000001",
   sandbox: "composer-test",
-  session_id: "session-test",
   harness: "HARNESS_CLAUDE",
   model: "test-model",
   cwd: "/test-workspace",

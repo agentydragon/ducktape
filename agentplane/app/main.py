@@ -173,7 +173,7 @@ async def async_main(settings: Settings) -> None:
                     retry_interval_s=1,
                 )
         store = ThreadStore(engine, summaries)
-        event_logs = EventLogStore(engine, history_reader=history, summaries=summaries, history_creator=history)
+        event_logs = EventLogStore(engine, history_reader=history, summaries=summaries)
         runners = SandboxSessions(live, inventory)
         ingester = Ingester(
             runners=runners, event_logs=event_logs, ingestion=Ingestion(engine), history_projector=projector

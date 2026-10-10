@@ -29,22 +29,14 @@ class ThreadStore:
         self._sessions = async_sessionmaker(engine, expire_on_commit=False)
         self._summaries = summaries
 
-    async def list_threads(
-        self, *, sandbox: str | None = None, session_id: str | None = None, include_archived: bool = False
-    ) -> list[ThreadView]:
-        """Newest first; each filter given narrows the list to threads matching it. Archived
-        threads are excluded unless asked for, mirroring the Sandbox inventory's own default."""
+    async def list_threads(self, *, sandbox: str | None = None, include_archived: bool = False) -> list[ThreadView]:
+        """Newest first, narrowed to `sandbox` when given. Archived threads are excluded unless asked
+        for, mirroring the Sandbox inventory's own default."""
         query = (
             select(EventLog, Thread).outerjoin(Thread, Thread.id == EventLog.id).order_by(EventLog.created_at.desc())
         )
         if sandbox is not None:
             query = query.where(EventLog.sandbox == sandbox)
-        if session_id is not None:
-            try:
-                public_id = UUID(session_id)
-            except ValueError:
-                return []
-            query = query.where(EventLog.id == public_id)
         if not include_archived:
             query = query.where(Thread.archived.is_not(True))
         async with self._sessions() as session:
@@ -105,7 +97,6 @@ def _view(log: EventLog, thread: Thread | None, summary: FoldSummary | None) -> 
     return ThreadView(
         id=log.id,
         sandbox=log.sandbox,
-        session_id=str(log.id),
         harness=log.harness,
         model=attachment.spec.model if attachment is not None else log.model,
         cwd=log.cwd,

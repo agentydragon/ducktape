@@ -44,7 +44,6 @@ function thread(overrides: Partial<ThreadView> = {}): ThreadView {
   return {
     id: "10000000-0000-4000-8000-000000000001",
     sandbox: READY_SANDBOX.name,
-    session_id: "test-session",
     harness: "HARNESS_CLAUDE",
     model: "test-model",
     cwd: "/work",

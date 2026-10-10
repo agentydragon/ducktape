@@ -23,7 +23,7 @@ function sandboxView(name: string, overrides: Partial<SandboxView> = {}): Sandbo
   };
 }
 
-function threadView(overrides: Partial<ThreadView> & Pick<ThreadView, "id" | "sandbox" | "session_id">): ThreadView {
+function threadView(overrides: Partial<ThreadView> & Pick<ThreadView, "id" | "sandbox">): ThreadView {
   return {
     harness: "HARNESS_CLAUDE",
     model: "test-model",
@@ -38,9 +38,9 @@ function threadView(overrides: Partial<ThreadView> & Pick<ThreadView, "id" | "sa
 }
 
 it("groups threads by sandbox, newest thread first fixing each group's order", () => {
-  const newest = threadView({ id: "t-newest", sandbox: "sb-b", session_id: "s-1" });
-  const middle = threadView({ id: "t-middle", sandbox: "sb-a", session_id: "s-2" });
-  const oldest = threadView({ id: "t-oldest", sandbox: "sb-a", session_id: "s-3" });
+  const newest = threadView({ id: "t-newest", sandbox: "sb-b" });
+  const middle = threadView({ id: "t-middle", sandbox: "sb-a" });
+  const oldest = threadView({ id: "t-oldest", sandbox: "sb-a" });
   const sandboxes = { "sb-a": sandboxView("sb-a"), "sb-b": sandboxView("sb-b", { operating_mode: "Suspended" }) };
 
   const groups = groupThreads([newest, middle, oldest], sandboxes, false, null);
@@ -51,8 +51,8 @@ it("groups threads by sandbox, newest thread first fixing each group's order", (
 });
 
 it("hides archived Threads without hiding their existing Sandbox", () => {
-  const archived = threadView({ id: "t-1", sandbox: "sb-a", session_id: "s-1", archived: true });
-  const kept = threadView({ id: "t-2", sandbox: "sb-b", session_id: "s-2" });
+  const archived = threadView({ id: "t-1", sandbox: "sb-a", archived: true });
+  const kept = threadView({ id: "t-2", sandbox: "sb-b" });
   const sandboxes = { "sb-a": sandboxView("sb-a"), "sb-b": sandboxView("sb-b") };
 
   const hidden = groupThreads([archived, kept], sandboxes, false, null);
@@ -64,9 +64,9 @@ it("hides archived Threads without hiding their existing Sandbox", () => {
 });
 
 it("keeps the open Thread in its group even when it is archived and archived Threads are hidden", () => {
-  const open = threadView({ id: "t-1", sandbox: "sb-a", session_id: "s-1", archived: true });
-  const other = threadView({ id: "t-2", sandbox: "sb-a", session_id: "s-2", archived: true });
-  const kept = threadView({ id: "t-3", sandbox: "sb-a", session_id: "s-3" });
+  const open = threadView({ id: "t-1", sandbox: "sb-a", archived: true });
+  const other = threadView({ id: "t-2", sandbox: "sb-a", archived: true });
+  const kept = threadView({ id: "t-3", sandbox: "sb-a" });
 
   const groups = groupThreads([open, other, kept], { "sb-a": sandboxView("sb-a") }, false, "t-1");
 
@@ -75,9 +75,9 @@ it("keeps the open Thread in its group even when it is archived and archived Thr
 
 it("counts archived threads across every sandbox regardless of visibility", () => {
   const threads = [
-    threadView({ id: "t-1", sandbox: "sb-a", session_id: "s-1", archived: true }),
-    threadView({ id: "t-2", sandbox: "sb-b", session_id: "s-2", archived: true }),
-    threadView({ id: "t-3", sandbox: "sb-a", session_id: "s-3" }),
+    threadView({ id: "t-1", sandbox: "sb-a", archived: true }),
+    threadView({ id: "t-2", sandbox: "sb-b", archived: true }),
+    threadView({ id: "t-3", sandbox: "sb-a" }),
   ];
 
   expect(archivedCount(threads)).toBe(2);

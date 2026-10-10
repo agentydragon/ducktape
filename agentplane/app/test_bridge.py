@@ -1319,7 +1319,6 @@ async def test_inventory_change_discovers_existing_runner_session_without_browse
                 await ingester.reconcile()
                 assert await event_logs.last_cursor(threads[0].id) > 0
         assert threads[0].sandbox == SANDBOX
-        assert threads[0].session_id in (SESSION, str(threads[0].id))
     finally:
         await ingester.close()
         await runners.close()

@@ -41,17 +41,11 @@ class ServiceSessionReference:
 
 class EventLogStore:
     def __init__(
-        self,
-        engine: AsyncEngine,
-        *,
-        history_reader: HistoryServiceClient,
-        summaries: AppSummaries | HistorySummaries,
-        history_creator: HistoryServiceClient | None = None,
+        self, engine: AsyncEngine, *, history_reader: HistoryServiceClient, summaries: AppSummaries | HistorySummaries
     ) -> None:
         self._sessions = async_sessionmaker(engine, expire_on_commit=False)
         self._history_reader = history_reader
         self._summaries = summaries
-        self._history_creator = history_creator
 
     async def open(self, sandbox: str, session_id: str, spec: protocol_pb2.SessionSpec) -> UUID:
         """Materialize a public service Session without consulting private runner locators."""
@@ -64,16 +58,15 @@ class EventLogStore:
         if str(thread_id) != session_id:
             raise EventReplicationError("new service-projected Thread requires a canonical public Session ID")
         existing_query = select(EventLog).where(EventLog.sandbox == sandbox, EventLog.id == thread_id)
-        if self._history_creator is not None:
-            async with self._sessions() as session:
-                existing = await session.scalar(existing_query)
-                if existing is not None:
-                    # Discovery does not reconstruct missing projection metadata from raw rows.
-                    # Existing app identities and summaries remain authoritative for the UI.
-                    return existing.id
-            # Confirm durable service registration before admitting an app projection.
-            # Do not hold an app DB transaction over this RPC or copy its event payload.
-            await self._history_creator.read_session_observations(session_id, limit=1)
+        async with self._sessions() as session:
+            existing = await session.scalar(existing_query)
+            if existing is not None:
+                # Discovery does not reconstruct missing projection metadata from raw rows.
+                # Existing app identities and summaries remain authoritative for the UI.
+                return existing.id
+        # Confirm durable service registration before admitting an app projection.
+        # Do not hold an app DB transaction over this RPC or copy its event payload.
+        await self._history_reader.read_session_observations(session_id, limit=1)
         async with self._sessions.begin() as session:
             created = await session.scalar(
                 insert(EventLog)
@@ -88,8 +81,7 @@ class EventLogStore:
                 .returning(EventLog.id)
             )
             if created is not None:
-                if self._history_creator is not None:
-                    session.add(ThreadHistorySummary(thread_id=created))
+                session.add(ThreadHistorySummary(thread_id=created))
                 await notify(session, Channel.THREADS)
                 return created
             existing = (await session.scalars(existing_query)).one_or_none()
@@ -98,10 +90,6 @@ class EventLogStore:
             # Another replica may win this insert race. Preserve its mapping and
             # projection state rather than reinitializing an existing Thread.
             return existing.id
-
-    async def has_projection_metadata(self, thread_id: UUID) -> bool:
-        async with self._sessions() as session:
-            return await session.get(ThreadHistorySummary, thread_id) is not None
 
     async def resume_pending(self, thread_id: UUID) -> None:
         """A runner-confirmed restart supersedes a normal terminal feed, not a replay error."""

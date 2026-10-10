@@ -652,17 +652,17 @@ async def test_open_lookup_reconciles_only_runner_confirmed_sessions(
         absent = await http.get(path, params={"idempotency_key": "opaque-key"})
         assert absent.status_code == 200
         assert absent.json() == {"status": "absent", "session_id": None}
-        assert (await http.get("/threads", params={"sandbox": "live", "session_id": public_id})).json() == []
+        assert (await http.get(f"/threads/{public_id}")).status_code == 404
 
         result.session_id = public_id
         unconfirmed = await http.get(path, params={"idempotency_key": "opaque-key"})
         assert unconfirmed.json() == {"status": "unconfirmed", "session_id": public_id}
-        assert (await http.get("/threads", params={"sandbox": "live", "session_id": public_id})).json() == []
+        assert (await http.get(f"/threads/{public_id}")).status_code == 404
 
         result.failed = True
         failed = await http.get(path, params={"idempotency_key": "opaque-key"})
         assert failed.json() == {"status": "failed", "session_id": public_id}
-        assert (await http.get("/threads", params={"sandbox": "live", "session_id": public_id})).json() == []
+        assert (await http.get(f"/threads/{public_id}")).status_code == 404
 
         result.failed = False
         result.summary.CopyFrom(summary)
@@ -671,9 +671,7 @@ async def test_open_lookup_reconciles_only_runner_confirmed_sessions(
             assert ready.status_code == 200, ready.text
             assert ready.json() == {"status": "ready", "session_id": public_id}
             assert "secret" not in ready.text
-        threads = (await http.get("/threads", params={"sandbox": "live", "session_id": public_id})).json()
-        assert len(threads) == 1
-        assert threads[0]["id"] == public_id
+        assert (await http.get(f"/threads/{public_id}")).json()["sandbox"] == "live"
         assert calls == ["opaque-key"] * 5
         assert (await http.get(path, params={"idempotency_key": ""})).status_code == 422
 
@@ -1051,7 +1049,7 @@ async def test_a_thread_is_found_by_its_session_and_renamed_in_place(
     async with httpx.AsyncClient(
         transport=httpx.ASGITransport(app=app), base_url="http://test", headers=AGENT_AUTH
     ) as http:
-        (found,) = (await http.get("/threads", params={"sandbox": "live", "session_id": thread_id})).json()
+        found = (await http.get(f"/threads/{thread_id}")).json()
         assert (found["id"], found["name"]) == (thread_id, None)
         assert (await http.get("/threads", params={"sandbox": "other"})).json() == []
 

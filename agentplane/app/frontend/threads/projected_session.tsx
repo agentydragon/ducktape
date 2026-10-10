@@ -1300,7 +1300,7 @@ function ProjectedSessionBody({
             </Button>
             <NotificationStatus
               sandbox={thread.sandbox}
-              sessionId={thread.session_id}
+              sessionId={thread.id}
               opened={notificationsOpen}
               onClose={() => setNotificationsOpen(false)}
             />

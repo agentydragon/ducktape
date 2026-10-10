@@ -24,7 +24,7 @@ async def test_agent_open_retries_unavailable_without_creating_another_session()
     client = create_autospec(Client, instance=True)
     client.create_session.side_effect = [
         unavailable,
-        Attachment(protocol_pb2.Attached(session_id="test-session", last_cursor=7)),
+        Attachment(protocol_pb2.Attached(session_id="00000000-0000-4000-8000-000000000001", last_cursor=7)),
     ]
     client.thread.return_value = Mock(id=UUID("00000000-0000-4000-8000-000000000001"))
 
@@ -35,7 +35,7 @@ async def test_agent_open_retries_unavailable_without_creating_another_session()
     assert first.args[0] == "test-sandbox"
     assert first.args[1].startswith("acceptance-")
     assert first.kwargs["overrides"]["model"] == "test-model"
-    client.thread.assert_awaited_once_with("test-sandbox", "test-session")
+    client.thread.assert_awaited_once_with(UUID("00000000-0000-4000-8000-000000000001"))
 
 
 @pytest.mark.parametrize("status", [409, 500, 502])

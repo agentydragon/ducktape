@@ -135,7 +135,7 @@ class Agent:
         async for attempt in runner_startup_retries():
             with attempt:
                 attachment = await client.create_session(sandbox, key, overrides=MessageToDict(spec))
-                thread = await client.thread(sandbox, attachment.attached.session_id)
+                thread = await client.thread(UUID(attachment.attached.session_id))
                 return cls(client, thread_id=thread.id, cursor=attachment.last_cursor)
         raise AssertionError("unreachable: reraise=True either returns an agent or raises")
 
