@@ -565,9 +565,9 @@ async def test_forged_proxy_authorization_never_becomes_dynamic_credential(
 
 @asynccontextmanager
 async def recording_grpc_upstream(
-    cert_pem: bytes, key_pem: bytes
+    keypair: tuple[bytes, bytes] | None,
 ) -> AsyncIterator[tuple[int, asyncio.Queue[tuple[tuple[str, str], ...]]]]:
-    """A TLS gRPC server recording metadata on unary and bidirectional calls."""
+    """A gRPC server recording metadata on unary and bidirectional calls: TLS with a keypair, else plaintext."""
     requests: asyncio.Queue[tuple[tuple[str, str], ...]] = asyncio.Queue()
 
     async def call(request: bytes, context: grpc.aio.ServicerContext) -> bytes:
@@ -604,7 +604,11 @@ async def recording_grpc_upstream(
             ),
         )
     )
-    port = server.add_secure_port("127.0.0.1:0", grpc.ssl_server_credentials([(key_pem, cert_pem)]))
+    port = (
+        server.add_insecure_port("127.0.0.1:0")
+        if keypair is None
+        else server.add_secure_port("127.0.0.1:0", grpc.ssl_server_credentials([(keypair[1], keypair[0])]))
+    )
     await server.start()
     try:
         yield port, requests
@@ -680,9 +684,8 @@ async def test_buildbuddy_http_and_grpc_metadata_placeholder_is_substituted(
     token_file = proxy.tmp_path / "sidecar-token"
     token_file.write_text(TOKEN_A)
     cert_path, key_path = issue_leaf(proxy.upstream_ca, UPSTREAM_HOST, proxy.tmp_path)
-    cert_pem, key_pem = read_keypair(cert_path, key_path)
     async with (
-        recording_grpc_upstream(cert_pem, key_pem) as (port, requests),
+        recording_grpc_upstream(read_keypair(cert_path, key_path)) as (port, requests),
         SidecarRelay(
             proxy_host="127.0.0.1", proxy_port=proxy.proxy_port, token_file=token_file, listen_port=0
         ) as sidecar,
@@ -723,6 +726,79 @@ async def test_buildbuddy_http_and_grpc_metadata_placeholder_is_substituted(
         "buildbuddy-secret",
         "buildbuddy-secret",
     ]
+
+
+async def test_plaintext_grpc_stream_metadata_placeholder_is_substituted(
+    fake: FakeApiServer, proxy: ProxyUnderTest, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A plaintext (h2c) bidirectional stream through the sidecar's CONNECT tunnel gets its metadata substituted.
+
+    The runner channel is a long-lived stream to an in-cluster plaintext gRPC listener
+    (agentplane/docs/runner_channel.md); this pins that the proxy reads h2c inside the tunnel.
+    """
+    credential_name = "runner-channel-test"
+    credential_secret = "runner-channel-test-secret"
+    policy_name = "runner-channel-test"
+    # The recording upstream's bidirectional method; the name is incidental here.
+    path = "/google.devtools.build.v1.PublishBuildEvent/PublishBuildToolEventStream"
+    placeholder = placeholder_of(credential_name)
+    fake.put(SECRETS_PLURAL, secret(credential_secret, {"token": "runner-channel-secret"}))
+    fake.put(
+        CREDENTIALS_PLURAL,
+        credential(
+            credential_name,
+            secret_name=credential_secret,
+            key="token",
+            targets=[{"header": "authorization", "method": TargetMethod.SCHEME_TOKEN}],
+        ),
+    )
+    fake.put(
+        POLICIES_PLURAL,
+        policy(
+            policy_name,
+            [
+                {
+                    "hosts": [UPSTREAM_HOST],
+                    "methods": ["POST"],
+                    "paths": [path],
+                    "credentialRef": {"name": credential_name},
+                }
+            ],
+        ),
+    )
+    fake.put(
+        BINDINGS_PLURAL, binding(BINDING, subjects=[SUBJECT_A.model_dump()], policies=[GITHUB_POLICY, policy_name])
+    )
+    await proxy.index.wait_for(
+        lambda: (
+            credential_name in proxy.index.credentials
+            and policy_name in proxy.index.policies
+            and policy_name in proxy.index.bindings[BINDING].spec.policies
+        )
+    )
+
+    token_file = proxy.tmp_path / "sidecar-token"
+    token_file.write_text(TOKEN_A)
+    async with (
+        recording_grpc_upstream(None) as (port, requests),
+        SidecarRelay(
+            proxy_host="127.0.0.1", proxy_port=proxy.proxy_port, token_file=token_file, listen_port=0
+        ) as sidecar,
+    ):
+        monkeypatch.setenv("grpc_proxy", f"http://127.0.0.1:{sidecar.listen_port}")
+        monkeypatch.setenv("no_proxy", "")
+        async with grpc.aio.insecure_channel(f"{UPSTREAM_HOST}:{port}") as channel:
+            stream = channel.stream_stream(
+                path, request_serializer=lambda value: value, response_deserializer=lambda value: value
+            )(metadata=(("authorization", f"Bearer {placeholder}"),), timeout=10)
+            await stream.write(b"one")
+            first = await stream.read()
+            await stream.write(b"two")
+            await stream.done_writing()
+            rest = [message async for message in stream]
+
+    assert [first, *rest] == [b"upstream:one", b"upstream:two"]
+    assert dict(await requests.get())["authorization"] == "Bearer runner-channel-secret"
 
 
 async def test_allowed_request_without_placeholder_is_forwarded_as_is(proxy: ProxyUnderTest) -> None:
