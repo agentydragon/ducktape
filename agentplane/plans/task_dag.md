@@ -67,7 +67,7 @@ flowchart TD
     THREAD_IDENTITY_NEW[Blocked: finish service-owned new Session identity cutover]
     THREAD_EVENT_CONTINUITY[Capstone: new and legacy identity continuity]
     APP_ALEMBIC_SQUASH[Blocked: baseline final app schema]
-    SESSION_EVENT_RETENTION[Blocked: measure and select history retention]
+    SESSION_EVENT_RETENTION[Draft: settle redundant streamed deltas, flag off]
     THREAD_ARCHIVE_BACKFILL --> THREAD_ARCHIVE_INGEST
     THREAD_ARCHIVE_INGEST --> THREAD_ARCHIVE_READ_CUTOVER
     THREAD_ARCHIVE_READ_CUTOVER --> THREAD_ARCHIVE_UI_CUTOVER
@@ -168,11 +168,15 @@ Retain the data-preserving rollback procedure. No Action Service or other databa
 
 ### `SESSION_EVENT_RETENTION` — measure before changing history retention
 
-**Blocked on old-copy retirement.** Re-measure actual table/TOAST/index and fold/evidence costs;
-the earlier app sample (~6.2 GiB raw Events, ~11m rows) is not the final service footprint. Present
-a policy for redundant terminal text/tool deltas before implementing deletion. Keep incomplete
-turns and raw/native evidence by default; final UI text is not proof a native frame is reconstructible.
-Use replay/fold tests and bounded storage measurement, not an open-ended live failure exercise.
+**Draft [#9713](https://github.com/agentydragon/ducktape/pull/9713) (2026-10-10 PDT); merge waits
+on old-copy retirement and the persistence hold unless the operator lifts them.** A bounded staging
+sample on 2026-10-10 put streamed deltas at ~85–90% of `session_event` bytes. The operator approved
+the policy the same day: behind a Sandbox Service default plus per-Session override (default off),
+the service removes an item's delta frames and derived deltas only when every frame matches an exact
+versioned template and the retained native completion frame holds exactly their concatenation.
+What is dropped is the chunking, per-chunk ids and timestamps, and frame serialization; anomalous
+or incomplete items keep everything, and the runner journal is unchanged. After merge: enable on
+staging and re-measure. A one-off compaction of existing history needs its own reviewed plan.
 
 ## 2. Service-owned command admission and later notification presentation
 
@@ -526,6 +530,7 @@ connection direction need not move command durability or remove the runner journ
 ```mermaid
 flowchart LR
     RUNNER_TRANSPORT_DESIGN[Decision: outbound channel contract]
+    SERVICE_BOUNDARIES[Decision: which components share a service]
     RUNNER_OUTBOUND_CHANNEL[Blocked: outbound command delivery peers]
     RUNNER_OUTBOUND_CANARY[Blocked: service-first deployment and fresh runner canary]
     SESSION_COMMAND_SUBMISSION[Blocked: durable submission through existing relay]
@@ -540,6 +545,7 @@ flowchart LR
     VM_LIFECYCLE[Blocked: integrated lifecycle]
     THREAD_ARCHIVE_OWNERSHIP[Archive ownership cutover] -. service-change scheduling hold .-> VM_PROVIDER
     RUNNER_TRANSPORT_DESIGN --> RUNNER_OUTBOUND_CHANNEL
+    SERVICE_BOUNDARIES -. co-design .- RUNNER_TRANSPORT_DESIGN
     SESSION_COMMAND_CONTRACT[Decision: generic command admission contract] --> RUNNER_OUTBOUND_CHANNEL
     THREAD_ARCHIVE_OWNERSHIP -. merge and deployment gate .-> RUNNER_OUTBOUND_CHANNEL
     RUNNER_TRANSPORT_DESIGN --> VM_CONTROL_NETWORKING
@@ -578,6 +584,27 @@ not require the complete spool or lifecycle protocol to ship durable admission o
 Spool replay/backpressure review belongs to `RUNNER_OUTBOUND_SPOOL`; inventory remaining lifecycle
 consumers early and finish their mappings separately. Keep runner journal authority and offline
 queue policy unchanged. Details: [runner transport design](runner_discovery.md#outbound-control-channel-design).
+
+### `SERVICE_BOUNDARIES` — which components share a service
+
+**Decision; not scheduled (operator, 2026-10-10 PDT).** The Sandbox Service holds provisioning, the
+authenticated relay to runners and the raw history archive; the runner holds harness driving,
+journal-ordered command admission and its journal; the app holds the thread fold. Decide which of
+these belong together. Use cases to keep possible: driving a runner directly with no service, and
+provisioning and driving without the archive (its ingester always runs today) or without
+service-side command submission. Unreviewed candidate: driver, admission authority and journal stay
+in the runner; provisioning and routing stay in the Sandbox Service; the archive and the thread fold
+move together into a history service the app fronts, so history storage policy (such as
+`SESSION_EVENT_RETENTION`) and folding stop crossing a read API. Candidate wiring: the runner's
+one outbound connection ends at the Sandbox Service, so commands come from it (app → Sandbox
+Service submission → runner channel), and it forwards the spool to the history service through an
+append idempotent by cursor; the app reads threads from the history service behind its own auth.
+Command outcomes need no separate path: admission comes back as a journal event. Without a
+configured history sink the Sandbox Service only drives. Still to choose: how browsers get live
+fold updates once the fold leaves the app database. Open question: who owns the
+Session locator ↔ Sandbox identity binding the archive checks before reading a runner. Co-design
+with `RUNNER_TRANSPORT_DESIGN`, since a dialing-out runner must know which service it reports to;
+this does not reopen `SESSION_COMMAND_CONTRACT`.
 
 ### `RUNNER_OUTBOUND_CHANNEL` — implement outbound command delivery
 
