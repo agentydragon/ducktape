@@ -53,6 +53,7 @@ APP_ENVIRONMENT = {
     "AGENTPLANE_NAMESPACE": "test-namespace",
     "AGENTPLANE_SANDBOX_NAMESPACE": "test-sandbox-namespace",
     "AGENTPLANE_SANDBOX_SERVICE_TARGET": "sandbox-service.test:8080",
+    "AGENTPLANE_HISTORY_SERVICE_TARGET": "history-service.test:8080",
     "AGENTPLANE_DATABASE_URL": "postgresql+asyncpg://test@test.invalid/test",
     "AGENTPLANE_MODELS": json.dumps(
         {

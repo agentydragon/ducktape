@@ -21,7 +21,7 @@ from agentplane.app.threads.model_activity import record_model_activity
 from agentplane.app.threads.models import ThreadCheckpoint, ThreadHistorySummary
 from agentplane.app.threads.projected_lifecycle import project_lifecycle
 from agentplane.app.threads.view.recording import record_thread_fold, set_operational
-from agentplane.sandbox_service.client import SandboxServiceClient
+from agentplane.history_service.client import HistoryServiceClient
 
 # gazelle:include_dep @pypi//protobuf
 # gazelle:include_dep //agentplane/sandbox_service:protocol_pb2
@@ -37,7 +37,7 @@ class ProjectionProgress:
 
 
 class HistoryProjector:
-    def __init__(self, engine: AsyncEngine, reader: SandboxServiceClient) -> None:
+    def __init__(self, engine: AsyncEngine, reader: HistoryServiceClient) -> None:
         self._sessions = async_sessionmaker(engine, expire_on_commit=False)
         self._reader = reader
 
@@ -78,7 +78,7 @@ class HistoryProjector:
     async def _project_prefix(self, thread_id: UUID, *, lease: ProjectionLease, after: int) -> ProjectionProgress:
         page = await self._reader.read_session_events(str(thread_id), after_cursor=after, limit=128)
         if page.last_cursor < after:
-            raise ConnectionError("Sandbox Service has not covered the app projection checkpoint")
+            raise ConnectionError("History Service has not covered the app projection checkpoint")
         if len(page.entries) > 128 or any(
             entry.cursor != after + index + 1
             or entry.cursor > page.last_cursor

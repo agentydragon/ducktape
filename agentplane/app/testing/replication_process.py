@@ -52,6 +52,7 @@ from agentplane.app.threads.ingestion import Ingester, Ingestion
 from agentplane.app.threads.sessions import SandboxSessions
 from agentplane.app.threads.store import ThreadStore
 from agentplane.app.threads.view.content import ContentStore
+from agentplane.history_service.client import HistoryServiceClient
 from agentplane.runner.harness import Harness
 from agentplane.sandbox_service.client import SandboxServiceClient
 from agentplane.sandbox_service.egress_views import EgressReader
@@ -190,7 +191,7 @@ class GatedSession(AsyncSession):
 
 
 class GatedProjector(HistoryProjector):
-    def __init__(self, engine: AsyncEngine, reader: SandboxServiceClient, gate: Gate, cursor: int) -> None:
+    def __init__(self, engine: AsyncEngine, reader: HistoryServiceClient, gate: Gate, cursor: int) -> None:
         super().__init__(engine, reader)
         self._sessions = async_sessionmaker(engine, class_=GatedSession, expire_on_commit=False)
         self._gate = gate
@@ -279,12 +280,14 @@ async def _serve(
             lifecycle_timeout_s=10,
             follow_timeout_s=10,
         )
-        event_logs = EventLogStore(engine, history_reader=inventory)
-        content = ContentStore(engine, history_reader=inventory)
+        # The scripted peer serves both services' methods on one port.
+        history = HistoryServiceClient(f"127.0.0.1:{runner_port}", token_file=token_file, request_timeout_s=10)
+        event_logs = EventLogStore(engine, history_reader=history)
+        content = ContentStore(engine, history_reader=history)
         projector = (
-            GatedProjector(engine, inventory, Gate(boundary, connection), cursor)
+            GatedProjector(engine, history, Gate(boundary, connection), cursor)
             if boundary is not None
-            else HistoryProjector(engine, inventory)
+            else HistoryProjector(engine, history)
         )
         runners = SandboxSessions(index, inventory)
         ingester = Ingester(runners=runners, event_logs=event_logs, ingestion=ingestion, history_projector=projector)
@@ -357,6 +360,7 @@ async def _serve(
                     finally:
                         await ingester.close()
                         await runners.close()
+                        await history.close()
             finally:
                 await engine.dispose()
                 await core.close()

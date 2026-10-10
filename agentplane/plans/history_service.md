@@ -1,6 +1,6 @@
 # History Service extraction, runner dial-out and delta settlement
 
-Status: **proposed sequence, nothing implemented.** The operator agreed to the target wiring in
+Status: **in progress.** The operator agreed to the target wiring in
 discussion on 2026-10-10 PDT. The [task DAG](task_dag.md#7-history-service-extraction-and-delta-settlement)
 owns every step, its status and its edges; this plan owns the target, the facts the order rests
 on, and the alternatives behind each decision node.

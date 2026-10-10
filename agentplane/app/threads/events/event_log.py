@@ -13,10 +13,10 @@ from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
 from agentplane.app.database_updates import Channel, notify
 from agentplane.app.threads.events.debug import ArchivedObservation, ArchivedObservationEntry, ObservationPage
 from agentplane.app.threads.models import EventLog, ThreadCheckpoint, ThreadHistorySummary
+from agentplane.history_service.client import HistoryServiceClient
 from agentplane.protocol import event_log_pb2
 from agentplane.runner import protocol_pb2
 from agentplane.runner.harness import Harness
-from agentplane.sandbox_service.client import SandboxServiceClient
 
 # The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.
 # gazelle:include_dep @pypi//protobuf
@@ -65,8 +65,8 @@ class EventLogStore:
         self,
         engine: AsyncEngine,
         *,
-        history_reader: SandboxServiceClient,
-        history_creator: SandboxServiceClient | None = None,
+        history_reader: HistoryServiceClient,
+        history_creator: HistoryServiceClient | None = None,
     ) -> None:
         self._sessions = async_sessionmaker(engine, expire_on_commit=False)
         self._history_reader = history_reader
@@ -194,15 +194,15 @@ class EventLogStore:
             if through is None:
                 through = page.last_cursor
             if page.last_cursor < through or cursor > page.last_cursor:
-                raise ConnectionError("Sandbox Service history regressed behind the reader's cursor")
+                raise ConnectionError("History Service regressed behind the reader's cursor")
             if len(page.entries) > requested or any(
                 entry.cursor != cursor + index + 1 or entry.cursor > page.last_cursor
                 for index, entry in enumerate(page.entries)
             ):
-                raise ConnectionError("Sandbox Service history page is not contiguous or exceeds its watermark")
+                raise ConnectionError("History Service page is not contiguous or exceeds its watermark")
             if not page.entries:
                 if cursor < through:
-                    raise ConnectionError("Sandbox Service omitted entries from a published prefix")
+                    raise ConnectionError("History Service omitted entries from a published prefix")
                 break
             result.extend(entry for entry in page.entries if entry.cursor <= through)
             cursor = result[-1].cursor
@@ -247,14 +247,14 @@ class EventLogStore:
             return None
         page = await self._history_reader.read_session_events(str(thread_id), after_cursor=cursor - 1, limit=1)
         if page.last_cursor < cursor <= await self.last_cursor(thread_id):
-            raise ConnectionError("Requested observation is not committed in Sandbox Service history yet")
+            raise ConnectionError("Requested observation is not committed in History Service yet")
         if not page.entries:
             if cursor <= page.last_cursor:
-                raise ConnectionError("Sandbox Service omitted a published entry")
+                raise ConnectionError("History Service omitted a published entry")
             return None
         entry = page.entries[0]
         if len(page.entries) != 1 or entry.cursor != cursor or entry.cursor > page.last_cursor:
-            raise ConnectionError("Sandbox Service returned an entry outside the requested committed position")
+            raise ConnectionError("History Service returned an entry outside the requested committed position")
         return ArchivedObservationEntry(cursor=str(cursor), entry=MessageToDict(entry))
 
     async def feed_state(self, thread_id: UUID) -> FeedSnapshot | None:

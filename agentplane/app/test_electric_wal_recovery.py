@@ -20,8 +20,8 @@ from agentplane.app.testing.history import ProjectedHistory as Ingestion, Seeded
 from agentplane.app.testing.history_service import HistoryService
 from agentplane.app.testing.replication_source import SANDBOX, SESSION, ReplicationSource
 from agentplane.app.threads.events.projection_lease import ProjectionLease
+from agentplane.history_service.client import HistoryServiceClient
 from agentplane.protocol import event_pb2
-from agentplane.sandbox_service.client import SandboxServiceClient
 from util.testing.undeclared_outputs import undeclared_outputs_dir
 
 # gazelle:include_dep @pypi//protobuf
@@ -32,7 +32,7 @@ _BATCH_BYTES = 4 * 1024 * 1024
 
 
 async def test_electric_lagging_slot_forces_client_resnapshot_after_wal_cap(
-    history_peer: HistoryService, history_client: SandboxServiceClient
+    history_peer: HistoryService, history_client: HistoryServiceClient
 ) -> None:
     """A stopped Electric service loses its slot and cannot continue an old shape cursor."""
     with tempfile.TemporaryDirectory(prefix="electric-wal-state-") as state_dir:

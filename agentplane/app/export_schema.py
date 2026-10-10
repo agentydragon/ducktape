@@ -35,13 +35,14 @@ from agentplane.app.threads.sessions import SandboxSessions
 from agentplane.app.threads.store import ThreadStore
 from agentplane.app.threads.view.content import ContentStore
 from agentplane.app.threads.view.views import ThreadEntityView
+from agentplane.history_service.client import HistoryServiceClient
 from agentplane.runner.harness import Harness
 from agentplane.sandbox_service.client import SandboxServiceClient
 from agentplane.sandbox_service.egress_views import EgressReader
 
 
 def _openapi_document(api_client: k8s_client.ApiClient) -> dict[str, Any]:
-    # Only routes and models shape the document; the inventory's clients are never called.
+    # Only routes and models shape the document; the service clients are never called.
     inventory = SandboxServiceClient(
         "schema.invalid:8080",
         namespace="schema",
@@ -52,12 +53,13 @@ def _openapi_document(api_client: k8s_client.ApiClient) -> dict[str, Any]:
         lifecycle_timeout_s=1,
         follow_timeout_s=1,
     )
+    history = HistoryServiceClient("schema.invalid:8080", token_file=Path("/schema-unused-token"), request_timeout_s=1)
     # An engine connects lazily, so a URL nothing listens on is fine for a document.
     engine = connect("postgresql+asyncpg://schema@localhost/schema")
     database_updates = DatabaseUpdates(engine.url)
     event_logs, content = (
-        EventLogStore(engine, history_reader=inventory, history_creator=inventory),
-        ContentStore(engine, history_reader=inventory),
+        EventLogStore(engine, history_reader=history, history_creator=history),
+        ContentStore(engine, history_reader=history),
     )
     live = LiveIndex(stale_after_seconds=900, core_v1=CoreV1Api(api_client))
     runners = SandboxSessions(live, inventory)
@@ -71,7 +73,7 @@ def _openapi_document(api_client: k8s_client.ApiClient) -> dict[str, Any]:
                 runners=runners,
                 event_logs=event_logs,
                 ingestion=Ingestion(engine),
-                history_projector=HistoryProjector(engine, inventory),
+                history_projector=HistoryProjector(engine, history),
             ),
         ),
         ThreadStore(engine),
