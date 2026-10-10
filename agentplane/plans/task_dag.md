@@ -753,7 +753,6 @@ flowchart TD
     SANDBOX_HISTORY_READS_RETIRE[Blocked: delete Sandbox Service history reads]
     HISTORY_WRITE_HANDOFF[Candidate: History Service ingester takes over]
     SANDBOX_LOCAL_HISTORY_RETIRE[Blocked: delete Sandbox Service ingester and store]
-    FOLD_LIBRARY_EXTRACT[Blocked: fold and projector in a neutral package]
     FOLD_SHADOW[Blocked: History Service folds in shadow]
     FOLD_READ_API[Blocked: History Service serves Thread reads]
     ELECTRIC_HISTORY_SOURCE[Blocked: Electric replicates the history database]
@@ -775,7 +774,6 @@ flowchart TD
     SESSION_FOLLOW_CONTRACT --> HISTORY_WRITE_HANDOFF
     HISTORY_WRITE_HANDOFF --> SANDBOX_LOCAL_HISTORY_RETIRE
     SANDBOX_HISTORY_READS_RETIRE --> SANDBOX_LOCAL_HISTORY_RETIRE
-    FOLD_LIBRARY_EXTRACT --> FOLD_SHADOW
     HISTORY_WRITE_HANDOFF --> FOLD_SHADOW
     FOLD_SHADOW --> FOLD_READ_API
     FOLD_SHADOW --> ELECTRIC_HISTORY_SOURCE
@@ -834,15 +832,9 @@ Service's ingester and `session_history` store code and revoke its grants on his
 that the Sandbox Service provisions, drives and reconciles commands with no History Service
 running, and update `sandbox_service/API.md`.
 
-### `FOLD_LIBRARY_EXTRACT` — the fold leaves `agentplane.app`
-
-**Candidate.** Move the fold and projector into a neutral package the app and the
-History Service both import, since backends may not import the app. The app keeps running it; no
-behavior change.
-
 ### `FOLD_SHADOW` — History Service folds beside the app
 
-**Blocked on the neutral fold and the write handoff.** History Service copies of the projection
+**Blocked on the write handoff.** History Service copies of `agentplane.thread_fold`'s projection
 tables (`thread_entity`, payload chunks and manifests, `thread_evidence`, `thread_native_link`,
 `thread_checkpoint`), `session_projection_lease` and `thread_history_summary`, with the projector,
 built in a new epoch by rebuild (all decided by the operator, 2026-10-10 PDT), while the app projector keeps serving. The rebuild reads

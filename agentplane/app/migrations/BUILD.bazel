@@ -29,6 +29,8 @@ filegroup(
         "//agentplane/app/migrations/versions:0022_session_projection_lease.py",
         "//agentplane/app/migrations/versions:0023_drop_app_runner_locator.py",
         "//agentplane/app/migrations/versions:0024_retire_app_raw_history.py",
+        "//agentplane/app/migrations/versions:0025_summary_model_activity.py",
+        "//agentplane/app/migrations/versions:0026_fold_keys_drop.py",
     ],
     visibility = ["//agentplane/app:__pkg__"],
 )

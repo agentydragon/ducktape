@@ -12,23 +12,17 @@ from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
 
 from agentplane.app.database_updates import Channel, notify
 from agentplane.app.threads.events.debug import ArchivedObservation, ArchivedObservationEntry, ObservationPage
-from agentplane.app.threads.models import EventLog, ThreadCheckpoint, ThreadHistorySummary
+from agentplane.app.threads.models import EventLog
 from agentplane.history_service.client import HistoryServiceClient
 from agentplane.protocol import event_log_pb2
 from agentplane.runner import protocol_pb2
 from agentplane.runner.harness import Harness
+from agentplane.thread_fold.models import ThreadCheckpoint, ThreadHistorySummary
+from agentplane.thread_fold.recording import EventReplicationError
 
 # The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.
 # gazelle:include_dep @pypi//protobuf
 # gazelle:include_dep //agentplane/sandbox_service:protocol_pb2
-
-
-class EventReplicationError(ValueError):
-    """The runner stream conflicts with the archived prefix or skips an entry."""
-
-    def __init__(self, message: str, *, cursor: int | None = None) -> None:
-        super().__init__(message)
-        self.cursor = cursor
 
 
 class ThreadNotFoundError(Exception):
@@ -264,30 +258,3 @@ class EventLogStore:
                 return None
             end = None if state.end is None else FeedError(state.end["message"]) if state.end else FeedEnd()
             return FeedSnapshot(ParseDict(state.attached, protocol_pb2.Attached()), end)
-
-
-def project_attached(attached: protocol_pb2.Attached, entry: event_log_pb2.EventEntry) -> None:
-    attached.last_cursor = entry.cursor
-    event = entry.event
-    match event.WhichOneof("observation"):
-        case "setup_finished":
-            attached.setup_state = (
-                protocol_pb2.SETUP_STATE_SUCCEEDED
-                if event.setup_finished.exit_code == 0
-                else protocol_pb2.SETUP_STATE_FAILED
-            )
-        case "setup_interrupted":
-            attached.setup_state = protocol_pb2.SETUP_STATE_INTERRUPTED
-        case "harness_started":
-            attached.harness_state = protocol_pb2.HARNESS_STATE_RUNNING
-        case "harness_exited" | "harness_lost":
-            attached.harness_state = protocol_pb2.HARNESS_STATE_STOPPED
-            attached.active_turn_id = ""
-        case "turn_started":
-            attached.active_turn_id = event.turn_started.turn_id
-        case "turn_completed":
-            attached.active_turn_id = ""
-        case "model_changed":
-            attached.spec.model = event.model_changed.model
-        case "reasoning_effort_changed":
-            attached.spec.reasoning_effort = event.reasoning_effort_changed.effort

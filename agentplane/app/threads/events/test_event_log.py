@@ -14,11 +14,13 @@ from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
 
 from agentplane.app.testing.retained_history import seed_retained_session
 from agentplane.app.testing.thread_test_support import SPEC, event_entry
-from agentplane.app.threads.events.event_log import EventLogStore, EventReplicationError
-from agentplane.app.threads.models import EventLog, ThreadCheckpoint, ThreadHistorySummary
+from agentplane.app.threads.events.event_log import EventLogStore
+from agentplane.app.threads.models import EventLog
 from agentplane.history_service.client import HistoryServiceClient
 from agentplane.protocol import event_pb2
 from agentplane.sandbox_service import protocol_pb2
+from agentplane.thread_fold.models import ThreadCheckpoint, ThreadHistorySummary
+from agentplane.thread_fold.recording import EventReplicationError
 
 # The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.
 # gazelle:include_dep @pypi//protobuf

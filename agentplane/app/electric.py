@@ -26,8 +26,8 @@ from starlette.types import Receive, Scope, Send
 from agentplane.app.changes import Changes
 from agentplane.app.threads.events.event_log import EventLogStore
 from agentplane.app.threads.view.content import ContentStore
-from agentplane.app.threads.view.fold import PayloadField
-from agentplane.app.threads.view.views import EntityKind
+from agentplane.thread_fold.fold import PayloadField
+from agentplane.thread_fold.views import EntityKind
 
 logger = logging.getLogger(__name__)
 

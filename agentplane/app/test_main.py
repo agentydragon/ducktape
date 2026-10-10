@@ -39,7 +39,6 @@ from agentplane.app.testing.model_test_data import TEST_REASONING_EFFORTS
 from agentplane.app.testing.thread_test_support import SPEC
 from agentplane.app.threads.bridge import RunnerBridge
 from agentplane.app.threads.ingestion import Ingester
-from agentplane.app.threads.models import SessionProjectionLease
 from agentplane.app.threads.sessions import SandboxSessions
 from agentplane.app.threads.store import ThreadStore
 from agentplane.app.threads.view.content import ContentStore
@@ -47,6 +46,7 @@ from agentplane.runner.harness import Harness
 from agentplane.sandbox_service.client import SandboxServiceClient
 from agentplane.sandbox_service.testing.backend import seed_runner
 from agentplane.sandbox_service.testing.fake_inventory import FakeCoreV1Api, FakeCustomObjectsApi
+from agentplane.thread_fold.models import SessionProjectionLease
 from util.net import pick_free_port
 
 APP_ENVIRONMENT = {

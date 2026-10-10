@@ -15,17 +15,7 @@ from sqlalchemy import select
 from agentplane.app.testing.history import ProjectedHistory as Ingestion, SeededEventLogStore as EventLogStore
 from agentplane.app.testing.projection_lease import LeaseFactory
 from agentplane.app.testing.thread_test_support import SPEC, Replica, event_entry
-from agentplane.app.threads.models import (
-    ThreadCheckpoint,
-    ThreadEntity,
-    ThreadEvidence,
-    ThreadNativeLink,
-    ThreadPayloadChunk,
-    ThreadPayloadManifest,
-)
 from agentplane.app.threads.store import ThreadStore
-from agentplane.app.threads.view.fold import ObservationNotUnderstoodError
-from agentplane.app.threads.view.views import EntityKind, ThreadOperationalState
 from agentplane.protocol import command_pb2, event_pb2
 from agentplane.runner import protocol_pb2
 from agentplane.runner.codex import CodexAdapter
@@ -33,6 +23,16 @@ from agentplane.runner.config import CodexLaunch
 from agentplane.runner.observation import Observation
 from agentplane.runner.session import Session
 from agentplane.runner.store import SessionRecord
+from agentplane.thread_fold.fold import ObservationNotUnderstoodError
+from agentplane.thread_fold.models import (
+    ThreadCheckpoint,
+    ThreadEntity,
+    ThreadEvidence,
+    ThreadNativeLink,
+    ThreadPayloadChunk,
+    ThreadPayloadManifest,
+)
+from agentplane.thread_fold.views import EntityKind, ThreadOperationalState
 
 # The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.
 # gazelle:include_dep @pypi//protobuf

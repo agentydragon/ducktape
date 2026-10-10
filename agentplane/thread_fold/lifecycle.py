@@ -1,15 +1,15 @@
-"""Fold service lifecycle only within the app's materialized prefix."""
+"""Fold service lifecycle only within the fold's materialized prefix."""
 
 from uuid import UUID
 
 from google.protobuf.json_format import MessageToDict, ParseDict
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from agentplane.app.threads.events.event_log import EventReplicationError, project_attached
-from agentplane.app.threads.models import EventLog, ThreadHistorySummary
-from agentplane.app.threads.view.recording import set_operational
+from agentplane.protocol import event_log_pb2
 from agentplane.runner import protocol_pb2 as runner_pb2
 from agentplane.sandbox_service import protocol_pb2
+from agentplane.thread_fold.models import ThreadHistorySummary
+from agentplane.thread_fold.recording import EventReplicationError, set_operational
 
 # gazelle:include_dep @pypi//protobuf
 
@@ -54,18 +54,37 @@ async def project_lifecycle(
             summary.resumed_after_cursor = None
     summary.attached = MessageToDict(attached)
     summary.end = end
-    log = await session.get(EventLog, thread_id)
-    assert log is not None
-    model_changed = log.model != attached.spec.model
-    log.model = attached.spec.model
     operational_changed = await set_operational(
         session,
         thread_id,
         status="active" if end is None else "failed" if end else "ended",
         error=end.get("message") if end else None,
     )
-    return (
-        previous != (summary.attached, summary.end, summary.resumed_after_cursor)
-        or model_changed
-        or operational_changed
-    )
+    return previous != (summary.attached, summary.end, summary.resumed_after_cursor) or operational_changed
+
+
+def project_attached(attached: runner_pb2.Attached, entry: event_log_pb2.EventEntry) -> None:
+    attached.last_cursor = entry.cursor
+    event = entry.event
+    match event.WhichOneof("observation"):
+        case "setup_finished":
+            attached.setup_state = (
+                runner_pb2.SETUP_STATE_SUCCEEDED
+                if event.setup_finished.exit_code == 0
+                else runner_pb2.SETUP_STATE_FAILED
+            )
+        case "setup_interrupted":
+            attached.setup_state = runner_pb2.SETUP_STATE_INTERRUPTED
+        case "harness_started":
+            attached.harness_state = runner_pb2.HARNESS_STATE_RUNNING
+        case "harness_exited" | "harness_lost":
+            attached.harness_state = runner_pb2.HARNESS_STATE_STOPPED
+            attached.active_turn_id = ""
+        case "turn_started":
+            attached.active_turn_id = event.turn_started.turn_id
+        case "turn_completed":
+            attached.active_turn_id = ""
+        case "model_changed":
+            attached.spec.model = event.model_changed.model
+        case "reasoning_effort_changed":
+            attached.spec.reasoning_effort = event.reasoning_effort_changed.effort

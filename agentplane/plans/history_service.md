@@ -125,9 +125,9 @@ Accepted 2026-10-10 PDT.
 
 ### Fold placement (decided 2026-10-10 PDT)
 
-Moves: the projector (`app/threads/history_projector.py`, `projected_lifecycle.py`), the fold
-(`app/threads/view/`), the projection tables above with their per-Session leases, and
-`thread_history_summary`, every field of which is derived from the log. Stays in the app: Thread
+Moves: the projector and fold (`thread_fold/`, shared by the app and the History Service), the
+projection tables above with their per-Session leases, and `thread_history_summary`, every field of
+which is derived from the log. Stays in the app: Thread
 `name` and `archived`, which the operator authors, and `event_log` reduced to the Thread → Session
 link, its harness, model and cwd copies dropped. The read API keys by public Session ID and serves
 list summaries, an entity window, payloads by reference and raw/debug reads.

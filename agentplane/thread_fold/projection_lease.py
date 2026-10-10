@@ -13,7 +13,7 @@ from sqlalchemy import delete, func, select, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from agentplane.app.threads.models import SessionProjectionLease
+from agentplane.thread_fold.models import SessionProjectionLease
 
 
 @dataclass(frozen=True)

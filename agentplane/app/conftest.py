@@ -37,7 +37,6 @@ from agentplane.app.testing.history_service import HistoryService
 from agentplane.app.testing.projection_lease import LeaseFactory
 from agentplane.app.testing.thread_test_support import SPEC, Replica, event_entry
 from agentplane.app.threads.bridge import RunnerBridge
-from agentplane.app.threads.events.projection_lease import ProjectionLease
 from agentplane.app.threads.sessions import SandboxSessions
 from agentplane.app.threads.store import ThreadStore
 from agentplane.app.threads.view.content import ContentStore
@@ -70,6 +69,7 @@ from agentplane.sandbox_service.testing.fake_inventory import (
     close_fake_api_clients,
 )
 from agentplane.sandbox_service.testing.fake_rbac import FakeRbac
+from agentplane.thread_fold.projection_lease import ProjectionLease
 from util.testing.postgres import create_database_sync, force_drop_database_sync
 from util.testing.postgres_fixtures import postgres_container
 

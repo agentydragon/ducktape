@@ -6,20 +6,21 @@ from uuid import NAMESPACE_URL, UUID, uuid5
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from agentplane.app.database_updates import Channel, notify
+from agentplane.app.database_updates import Channel, notify, notify_threads
 from agentplane.app.testing.history_service import HistoryService
 from agentplane.app.threads.events.event_log import EventLogStore
-from agentplane.app.threads.events.projection_lease import ProjectionLease
-from agentplane.app.threads.history_projector import HistoryProjector
 from agentplane.app.threads.ingestion import Ingester, Ingestion
-from agentplane.app.threads.models import EventLog, ThreadHistorySummary
+from agentplane.app.threads.models import EventLog
 from agentplane.app.threads.sessions import SandboxSessions
-from agentplane.app.threads.view.recording import set_operational
 from agentplane.history_service.client import HistoryServiceClient
 from agentplane.protocol import event_log_pb2
 from agentplane.runner import protocol_pb2 as runner_pb2
 from agentplane.runner.harness import Harness
 from agentplane.sandbox_service import protocol_pb2
+from agentplane.thread_fold.models import ThreadHistorySummary
+from agentplane.thread_fold.projection_lease import ProjectionLease
+from agentplane.thread_fold.projector import HistoryProjector
+from agentplane.thread_fold.recording import set_operational
 
 # gazelle:include_dep @pypi//protobuf
 
@@ -83,7 +84,7 @@ class ProjectedHistory(Ingestion):
         super().__init__(engine)
         self.peer = peer
         self.reader = history_reader
-        self.projector = HistoryProjector(engine, history_reader)
+        self.projector = HistoryProjector(engine, history_reader, notify=notify_threads)
         self._attachments: dict[UUID, runner_pb2.Attached] = {}
 
     async def project(self, thread_id: UUID, lease: ProjectionLease) -> None:
