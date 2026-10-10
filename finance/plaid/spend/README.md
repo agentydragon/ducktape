@@ -68,7 +68,10 @@ Each card's `label` is its short display name. For spending accounts that are no
 falls back to the Plaid account name. Card IDs cannot also appear in `account_labels`, so each display name has one
 configured source.
 
-Allowance rules are evaluated in order; the first match determines the classification. `review` rules keep positive
+Allowance rules are evaluated in order; the first match determines the classification. Optional `overrides` correct a
+single transaction by match (bounded date range plus a name/category/amount condition) rather than by Plaid
+transaction ID, which relinking rewrites; they are evaluated before every rule. See
+[one-off overrides](docs/allowance.md#one-off-overrides). `review` rules keep positive
 purchases in provisional spending and the unmatched total, while unverified negative credits remain separate from
 spending. Conditions can combine merchant or category matches, account type, merchant category code, counterparty type
 and name, and amount sign. Private analyses use the same ordered matcher and policy file as the app. Required

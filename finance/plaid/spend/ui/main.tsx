@@ -689,6 +689,45 @@ function ConfigurationPanel({
                   </SimpleGrid>
                 </div>
                 <Divider />
+                {(allowance.overrides ?? []).length > 0 && (
+                  <>
+                    <Text fw={650} mb="sm">
+                      One-off overrides
+                    </Text>
+                    <Stack gap="xs">
+                      {(allowance.overrides ?? []).map((item) => {
+                        const { label, color } = ruleKindDisplay[item.kind];
+                        return (
+                          <Paper key={item.id} withBorder radius="md" p="sm">
+                            <Group align="flex-start" gap="sm" wrap="nowrap">
+                              <Badge color="violet" variant="light" style={{ flexShrink: 0 }}>
+                                Override
+                              </Badge>
+                              <Badge color={color} variant="light" style={{ flexShrink: 0 }}>
+                                {label}
+                              </Badge>
+                              <Stack gap={2} miw={0}>
+                                <Text size="sm" fw={600} style={{ overflowWrap: "anywhere" }}>
+                                  {item.id}
+                                </Text>
+                                <Text size="xs" c="dimmed" style={{ overflowWrap: "anywhere" }}>
+                                  {ruleConditionText(item.match)}
+                                </Text>
+                                <Text size="xs" c="dimmed" style={{ overflowWrap: "anywhere" }}>
+                                  {item.note}
+                                </Text>
+                              </Stack>
+                            </Group>
+                          </Paper>
+                        );
+                      })}
+                    </Stack>
+                    <Text size="xs" c="dimmed" mt="sm">
+                      {overridesIntro}
+                    </Text>
+                    <Divider my="md" />
+                  </>
+                )}
                 <div>
                   <Text fw={650} mb="sm">
                     Classification rules
@@ -797,18 +836,38 @@ const statementText = {
   unavailable: "Card cycle unavailable",
 } satisfies Record<NonNullable<TransactionRow["statement_reason"]>, string>;
 
+// An override replaces the rule decision, so the kind that governs the money is the override's kind.
+function effectiveKind(row: TransactionRow): RuleKind | null {
+  if (row.override) return row.override.kind;
+  return row.rule?.kind ?? null;
+}
+
 function isReviewRow(row: TransactionRow): boolean {
+  const kind = effectiveKind(row);
   return (
     row.allowance_in_scope &&
-    ((row.disposition === "counted" && (row.rule == null || row.rule.kind === "review")) ||
-      row.disposition === "held_refund")
+    ((row.disposition === "counted" && (kind == null || kind === "review")) || row.disposition === "held_refund")
   );
 }
+
+const overridesIntro =
+  "Each override corrects one transaction, matched by name, date, and amount rather than a Plaid transaction id, and is checked before every rule.";
+
+const overrideKindNote =
+  "A match-addressed correction replaces the rule decision for this transaction, so no rule number applies.";
+
+const dispositionKindText = {
+  fixed: "Counted as mandatory",
+  excluded: "Excluded",
+  review: "Counted as flexible pending review",
+  flexible: "Counted as flexible",
+} satisfies Record<RuleKind, string>;
 
 function classificationForRow(row: TransactionRow): { label: string; color: string } {
   if (row.disposition === "held_refund") return { label: "Refund held", color: "orange" };
   if (row.disposition === "superseded_pending") return { label: "Superseded", color: "gray" };
   if (row.disposition === "other_currency") return { label: "Other currency", color: "gray" };
+  if (row.override) return { label: `${ruleKindDisplay[row.override.kind].label} (override)`, color: "violet" };
   if (row.rule) return ruleKindDisplay[row.rule.kind];
   if (!row.allowance_in_scope) return { label: "Outside allowance", color: "gray" };
   if (row.disposition === null) return { label: "Unavailable", color: "gray" };
@@ -994,6 +1053,18 @@ function TransactionDetails({ row, currency }: { row: TransactionRow; currency: 
           row.disposition === "counted" &&
           " This charge is counted as flexible while its classification is reviewed."}
       </Text>
+      {row.override && (
+        <Stack gap={2}>
+          <Text size="sm" fw={650}>{`Override “${row.override.id}”`}</Text>
+          <Text size="sm">{dispositionKindText[row.override.kind]}</Text>
+          <Text size="xs" c="dimmed">
+            {row.override.note}
+          </Text>
+          <Text size="xs" c="dimmed">
+            {overrideKindNote}
+          </Text>
+        </Stack>
+      )}
       {row.rule && (
         <Stack gap={2}>
           <Text size="sm">

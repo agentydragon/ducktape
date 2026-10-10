@@ -2,6 +2,7 @@
 
 from datetime import UTC, date, datetime
 from decimal import Decimal
+from pathlib import Path
 from typing import Literal
 from zoneinfo import ZoneInfo
 
@@ -13,24 +14,33 @@ from finance.plaid.spend.allowance import (
     AllOf,
     AllowancePolicy,
     AllowanceView,
+    AmountExact,
     AmountSign,
     AnalysisCategory,
     AnyOf,
     CategoryExact,
+    DateRange,
     FieldExact,
     Kind,
     NameContains,
     NamePrefix,
+    OneOffOverride,
     PaceAlert,
     PeriodId,
     Rule,
     Status,
     Transaction,
     calculate,
+    matching_override,
     matching_rule,
     month_anniversary,
 )
-from finance.plaid.spend.models import SpendConfiguration
+from finance.plaid.spend.models import (
+    AllowanceConfigurationView,
+    SpendConfiguration,
+    SpendConfigurationView,
+    load_configuration,
+)
 
 START = datetime(2026, 1, 31, tzinfo=UTC)
 START_DATE = date(2026, 1, 31)
@@ -45,14 +55,20 @@ def name_rule(field: Literal["name", "merchant_name"], prefix: str, kind: Kind) 
 
 
 def policy(
-    *, activation_at: date = START_DATE, rules: list[Rule] | None = None, time_zone: ZoneInfo | None = None
+    *,
+    activation_at: date = START_DATE,
+    rules: list[Rule] | None = None,
+    time_zone: ZoneInfo | None = None,
+    overrides: list[OneOffOverride] | None = None,
 ) -> AllowancePolicy:
     configured_rules = (
         rules if rules is not None else [category_rule(field="pfc_primary", value="SHOPPING", kind=Kind.FLEXIBLE)]
     )
+    configured_overrides = overrides or []
     category_ids = {
         "unclassified",
         *(rule.analysis_category for rule in configured_rules if rule.analysis_category is not None),
+        *(override.analysis_category for override in configured_overrides if override.analysis_category is not None),
     }
     return AllowancePolicy(
         monthly_minor_units=10_000,
@@ -60,6 +76,7 @@ def policy(
         activation_at=activation_at,
         time_zone=time_zone or ZoneInfo("UTC"),
         rules=configured_rules,
+        overrides=configured_overrides,
         analysis_categories={
             category_id: AnalysisCategory(label=category_id.replace("_", " ").title(), color="#336699")
             for category_id in category_ids
@@ -404,6 +421,235 @@ def test_reviewed_negative_credit_is_not_spending_or_income():
     result = calculate(policy(rules=[review]), [row("2026-01-31", -5)], now=START, last_synced_at=START)
     assert result.available_minor_units == 10_000
     assert result.unmatched_refunds_minor_units == 500
+
+
+def override(
+    override_id: str,
+    kind: Kind,
+    *,
+    prefix: str = "EXAMPLE",
+    day: str = "2026-01-31",
+    amount: str | None = None,
+    analysis_category: str | None = None,
+    note: str = "Corrected by the owner 2026-02-01.",
+) -> OneOffOverride:
+    conditions: list = [
+        NamePrefix(field="name", prefix=prefix),
+        DateRange(start=date.fromisoformat(day), end=date.fromisoformat(day)),
+    ]
+    if amount is not None:
+        conditions.append(AmountExact(value=amount))
+    return OneOffOverride(
+        id=override_id, match=AllOf(conditions=conditions), kind=kind, analysis_category=analysis_category, note=note
+    )
+
+
+# A rule that matches nothing, so the un-overridden path stays the default-flexible behaviour.
+NO_MATCH_RULE = name_rule("name", "NO OTHER MERCHANT", Kind.FIXED)
+
+
+def test_override_addresses_a_transaction_by_match_not_by_plaid_id():
+    correction = override("holiday-stay-is-travel", Kind.FIXED, amount="60.00", analysis_category="fixed_travel")
+    purchase = row("2026-01-31", 60)
+    assert matching_override(purchase, [correction]) == correction
+    assert matching_override(purchase.model_copy(update={"name": "OTHER SHOP"}), [correction]) is None
+    assert matching_override(purchase.model_copy(update={"amount": Decimal(61)}), [correction]) is None
+    assert matching_override(purchase.model_copy(update={"date": date(2026, 2, 1)}), [correction]) is None
+    # A relink that rewrites Plaid ids cannot dangle the correction: ids are not consulted.
+    assert matching_override(purchase.model_copy(update={"transaction_id": "relinked-id"}), [correction]) == correction
+
+
+def test_override_takes_precedence_over_rules_and_the_default_flexible_bucket():
+    purchase = row("2026-01-31", 60)
+    default = calculate(policy(rules=[NO_MATCH_RULE]), [purchase], now=START, last_synced_at=START)
+    assert default.available_minor_units == 4_000
+    assert default.review_transaction_count == 1
+
+    corrected = calculate(
+        policy(rules=[name_rule("name", "EXAMPLE", Kind.FLEXIBLE)], overrides=[override("rent", Kind.FIXED)]),
+        [purchase],
+        now=START,
+        last_synced_at=START,
+    )
+    assert corrected.available_minor_units == 10_000
+    assert corrected.review_transaction_count == 0
+
+    excluded = calculate(
+        policy(rules=[name_rule("name", "EXAMPLE", Kind.FIXED)], overrides=[override("transfer", Kind.EXCLUDED)]),
+        [purchase],
+        now=START,
+        last_synced_at=START,
+    )
+    assert excluded.available_minor_units == 10_000
+
+    decisions: list = []
+    calculate(
+        policy(rules=[name_rule("name", "EXAMPLE", Kind.FLEXIBLE)], overrides=[override("rent", Kind.FIXED)]),
+        [purchase],
+        now=START,
+        last_synced_at=START,
+        decisions=decisions,
+    )
+    assert decisions[0].override is not None
+    assert decisions[0].override.id == "rent"
+    assert decisions[0].override.note == "Corrected by the owner 2026-02-01."
+    assert decisions[0].rule is None
+    assert decisions[0].rule_number is None
+
+    without: list = []
+    calculate(
+        policy(rules=[name_rule("name", "EXAMPLE", Kind.FIXED)]),
+        [purchase],
+        now=START,
+        last_synced_at=START,
+        decisions=without,
+    )
+    assert without[0].override is None
+    assert without[0].rule_number == 1
+
+
+def test_override_can_keep_a_purchase_counted_for_review():
+    review = override("unclear-charge", Kind.REVIEW, analysis_category="merchant_review")
+    result = calculate(
+        policy(rules=[NO_MATCH_RULE], overrides=[review]), [row("2026-01-31", 20)], now=START, last_synced_at=START
+    )
+    assert result.available_minor_units == 8_000
+    assert result.review_minor_units == 2_000
+    assert result.review_transaction_count == 1
+
+
+def test_override_on_a_negative_credit_avoids_the_held_refund_bucket():
+    correction = OneOffOverride(
+        id="reversal-pair",
+        match=AllOf(
+            conditions=[
+                NamePrefix(field="name", prefix="EXAMPLE"),
+                DateRange(start=date(2026, 1, 31), end=date(2026, 1, 31)),
+                AmountSign(sign="negative"),
+            ]
+        ),
+        kind=Kind.EXCLUDED,
+        note="Paired reversal leg; confirmed by the owner 2026-02-01.",
+    )
+    credit = row("2026-01-31", -250)
+    held = calculate(policy(rules=[NO_MATCH_RULE]), [credit], now=START, last_synced_at=START)
+    assert held.unmatched_refunds_minor_units == 25_000
+    paired = calculate(policy(rules=[NO_MATCH_RULE], overrides=[correction]), [credit], now=START, last_synced_at=START)
+    assert paired.unmatched_refunds_minor_units == 0
+    assert paired.available_minor_units == 10_000
+    decisions: list = []
+    calculate(
+        policy(rules=[NO_MATCH_RULE], overrides=[correction]),
+        [credit],
+        now=START,
+        last_synced_at=START,
+        decisions=decisions,
+    )
+    applied = decisions[0].override
+    assert applied is not None
+    assert applied.id == "reversal-pair"
+
+
+def test_override_match_must_be_bounded_and_specific():
+    def build(conditions: list, override_id: str = "example") -> dict:
+        return {
+            "id": override_id,
+            "match": {"type": "all_of", "conditions": conditions},
+            "kind": "excluded",
+            "note": "owner confirmed 2026-02-01.",
+        }
+
+    named = {"type": "name_prefix", "field": "name", "prefix": "EXAMPLE"}
+    one_day = {"type": "date_range", "start": "2026-01-31", "end": "2026-01-31"}
+    assert OneOffOverride.model_validate(build([named, one_day]))
+    with pytest.raises(ValidationError, match="all_of"):
+        OneOffOverride.model_validate(
+            {"id": "example", "match": named, "kind": "excluded", "note": "owner confirmed 2026-02-01."}
+        )
+    with pytest.raises(ValidationError, match="all_of"):
+        OneOffOverride.model_validate(build([{"type": "any_of", "conditions": [named, one_day]}]))
+    with pytest.raises(ValidationError, match="date_range"):
+        OneOffOverride.model_validate(build([named, {"type": "date_range", "start": "2026-01-31"}]))
+    with pytest.raises(ValidationError, match="at most"):
+        OneOffOverride.model_validate(
+            build([named, {"type": "date_range", "start": "2026-01-01", "end": "2026-06-30"}])
+        )
+    with pytest.raises(ValidationError, match="name, category, amount, field, or counterparty"):
+        OneOffOverride.model_validate(build([one_day, {"type": "amount_sign", "sign": "positive"}]))
+    with pytest.raises(ValidationError, match="unique ids"):
+        policy(rules=[NO_MATCH_RULE], overrides=[override("same", Kind.EXCLUDED), override("same", Kind.FIXED)])
+    unconfigured = policy(rules=[NO_MATCH_RULE]).model_dump(mode="json")
+    unconfigured["overrides"] = [
+        override("missing", Kind.FIXED, analysis_category="absent_category").model_dump(mode="json")
+    ]
+    with pytest.raises(ValidationError, match="analysis_categories is missing"):
+        AllowancePolicy.model_validate(unconfigured)
+
+
+def test_override_yaml_round_trip_and_configuration_view():
+    document = """
+cards: []
+allowance:
+  monthly_minor_units: 100000
+  activation_at: 2026-01-31
+  spending_account_ids:
+    - example-credit-id
+  analysis_categories:
+    fixed_travel:
+      label: Holiday travel
+      color: "#DB2777"
+    unclassified:
+      label: Unclassified
+      color: "#D97706"
+  rules:
+    - condition:
+        type: name_prefix
+        field: name
+        prefix: EXAMPLE RENT
+      kind: fixed
+      analysis_category: fixed_travel
+  overrides:
+    - id: example-hotel-2026-06-04
+      match:
+        type: all_of
+        conditions:
+          - type: name_prefix
+            field: name
+            prefix: EXAMPLE HOTEL
+          - type: date_range
+            start: 2026-06-04
+            end: 2026-06-04
+          - type: amount_exact
+            value: '2430.78'
+      kind: fixed
+      analysis_category: fixed_travel
+      note: Confirmed example holiday stay; date and amount limit this to the observed charge.
+"""
+    path = Path("/tmp/ducktape-override-round-trip.yaml")
+    path.write_text(document, encoding="utf-8")
+    loaded = load_configuration(path)
+    assert loaded.allowance is not None
+    assert [item.id for item in loaded.allowance.overrides] == ["example-hotel-2026-06-04"]
+    assert SpendConfiguration.model_validate(loaded.model_dump(mode="json")) == loaded
+    assert load_configuration(path) == loaded
+    assert (
+        SpendConfigurationView(
+            cards=[],
+            allowance=AllowanceConfigurationView(
+                monthly_minor_units=loaded.allowance.monthly_minor_units,
+                activation_at=loaded.allowance.activation_at,
+                currency=loaded.allowance.currency,
+                spending_account_count=len(loaded.allowance.spending_account_ids),
+                max_sync_age_hours=loaded.allowance.max_sync_age_hours,
+                forecast_basis_period_id=loaded.allowance.forecast_basis_period_id,
+                rules=loaded.allowance.rules,
+                overrides=loaded.allowance.overrides,
+                analysis_categories=loaded.allowance.analysis_categories,
+            ),
+        )
+        .allowance.overrides[0]
+        .note.startswith("Confirmed example")
+    )
 
 
 if __name__ == "__main__":

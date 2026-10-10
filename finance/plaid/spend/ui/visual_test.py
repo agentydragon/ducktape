@@ -26,12 +26,15 @@ from finance.plaid.spend.allowance import (
     AmountSign,
     AnalysisCategory,
     AnyOf,
+    DateRange,
     Disposition,
     EstimatePeriodId,
     FieldExact,
     ForecastView,
     Kind,
+    NameContains,
     NamePrefix,
+    OneOffOverride,
     PaceAlert,
     Period,
     PeriodId,
@@ -46,6 +49,7 @@ from finance.plaid.spend.models import (
     AlertState,
     AllowanceConfigurationView,
     AnalysisCategoryView,
+    AppliedOverride,
     CardConfigurationView,
     CardView,
     PaceEffect,
@@ -255,6 +259,19 @@ def dashboard_url() -> Iterator[str]:
                 spending_account_count=1,
                 max_sync_age_hours=72,
                 forecast_basis_period_id=PeriodId.ROLLING_7D,
+                overrides=[
+                    OneOffOverride(
+                        id="example-funding-transfer",
+                        match=AllOf(
+                            conditions=[
+                                NameContains(field="name", substring="EXAMPLE FUNDING"),
+                                DateRange(start=date(2026, 10, 3), end=date(2026, 10, 3)),
+                            ]
+                        ),
+                        kind=Kind.EXCLUDED,
+                        note="Own-account funding leg, confirmed by the owner 2026-10-04.",
+                    )
+                ],
                 rules=[
                     Rule(
                         condition=AllOf(
@@ -387,6 +404,35 @@ def dashboard_url() -> Iterator[str]:
                 statement_reason=StatementReason.COUNTED,
                 pfc_primary="GENERAL_MERCHANDISE",
                 pfc_detailed="GENERAL_MERCHANDISE_OTHER",
+                merchant_category_code=None,
+                category=AnalysisCategoryView(id="unclassified", label="Unclassified", color="#D97706"),
+            ),
+            SpendTransactionRow(
+                date=date(2026, 10, 11),
+                account_label="Example checking",
+                name="EXAMPLE OWN ACCOUNT TRANSFER",
+                merchant_name=None,
+                amount_minor_units=12_000,
+                currency="USD",
+                pending=False,
+                allowance_in_scope=True,
+                disposition=Disposition.EXCLUDED,
+                rule_number=None,
+                rule=None,
+                override=AppliedOverride(
+                    id="example-own-account-leg",
+                    kind=Kind.EXCLUDED,
+                    note="Second leg of one own-account transfer, confirmed by the owner 2026-10-12.",
+                ),
+                allowance_minor_units=0,
+                pace_effects=[
+                    PaceEffect(period_id=period_id, amount_minor_units=0)
+                    for period_id in (PeriodId.ROLLING_7D, PeriodId.ROLLING_30D)
+                ],
+                statement_minor_units=None,
+                statement_reason=None,
+                pfc_primary="TRANSFER_OUT",
+                pfc_detailed="TRANSFER_OUT_OTHER",
                 merchant_category_code=None,
                 category=AnalysisCategoryView(id="unclassified", label="Unclassified", color="#D97706"),
             ),
@@ -624,6 +670,13 @@ async def test_review_rule_configuration_render(
     await page.get_by_text("Unverified credit; inspect the earlier purchase before netting it.").wait_for()
     await expect(page.get_by_text("Review", exact=True)).to_have_count(1)
     await expect(page.get_by_text("Amount is negative AND (Transaction name starts with", exact=False)).to_have_count(1)
+    await expect(page.get_by_text("One-off overrides", exact=True)).to_have_count(1)
+    await page.get_by_text("example-funding-transfer", exact=True).wait_for()
+    await expect(
+        page.get_by_text("Own-account funding leg, confirmed by the owner 2026-10-04.", exact=True)
+    ).to_have_count(1)
+    await expect(page.get_by_text("Transaction name contains", exact=False)).to_have_count(1)
+    await expect(page.get_by_text("Date is 2026-10-03", exact=False)).to_have_count(1)
     view.errors.assert_none(context="Spend")
     image = f"configuration-review-{width}.png"
     await view.capture(
@@ -636,7 +689,7 @@ async def _open_transaction_details(page: Page, rows: Locator, width: int) -> No
     await page.get_by_text("Allowance bridge", exact=True).wait_for()
     if width >= 992:
         await rows.locator("tbody tr[data-transaction-row]").filter(has_text="UPS").click()
-        await expect(rows.locator("tbody tr")).to_have_count(5)
+        await expect(rows.locator("tbody tr")).to_have_count(6)
     else:
         await _expand_accordion(rows.get_by_role("button", name="UPS", exact=False))
     await rows.get_by_text("Required document shipping for a synthetic example.").wait_for()
@@ -667,9 +720,10 @@ async def test_transaction_explanations_render(
     await expect(rows.get_by_text("Document shipping", exact=True)).to_have_count(1)
     await expect(rows.get_by_text("Holiday travel", exact=True)).to_have_count(1)
     await expect(rows.locator('[data-category-id="travel"]')).to_have_count(1)
+    await expect(rows.get_by_text("Excluded (override)", exact=True)).to_have_count(1)
     await expect(page.get_by_text("1 · $15", exact=True)).to_have_count(1)
     if width >= 992:
-        await expect(rows.locator("tbody tr")).to_have_count(4)
+        await expect(rows.locator("tbody tr")).to_have_count(5)
     view.errors.assert_none(context="Spend")
     assert await page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
     image = f"transactions-{width}.png"
@@ -682,8 +736,9 @@ async def test_transaction_explanations_render(
         expanded.removesuffix(".png"), label=f"{width}px rule explanation", full_page=True, animations="disabled"
     )
     await page.get_by_text("Review", exact=True).click()
-    await page.get_by_text("Showing 2 of 4", exact=True).wait_for()
+    await page.get_by_text("Showing 2 of 5", exact=True).wait_for()
     await expect(rows.get_by_text("UPS", exact=True)).to_have_count(0)
+    await expect(rows.get_by_text("EXAMPLE OWN ACCOUNT TRANSFER", exact=True)).to_have_count(0)
     await expect(rows.get_by_text("Confirm the purchase before netting this refund.")).not_to_be_visible()
     view.errors.assert_none(context="Spend")
     review = f"transactions-review-{width}.png"

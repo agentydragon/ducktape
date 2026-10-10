@@ -59,6 +59,60 @@ allowance:
 An inclusive `date_range` condition accepts `start`, `end`, or both as ISO dates. Combine it with a merchant condition
 and, when needed, `amount_exact` in an `all_of` rule to limit a historical classification without a Plaid transaction ID.
 
+## One-off overrides
+
+```yaml
+allowance:
+  monthly_minor_units: 100000
+  activation_at: 2026-01-31
+  spending_account_ids:
+    - example-credit-id
+  analysis_categories:
+    fixed_housing:
+      label: Housing
+      color: "#64748B"
+    unclassified:
+      label: Unclassified
+      color: "#D97706"
+  rules:
+    - condition:
+        type: name_prefix
+        field: name
+        prefix: EXAMPLE RENT
+      kind: fixed
+      analysis_category: fixed_housing
+  overrides:
+    - id: example-hotel-2026-06-04
+      match:
+        type: all_of
+        conditions:
+          - type: name_prefix
+            field: name
+            prefix: EXAMPLE HOTEL
+          - type: date_range
+            start: 2026-06-04
+            end: 2026-06-04
+          - type: amount_exact
+            value: "2430.78"
+      kind: fixed
+      analysis_category: fixed_housing
+      note: Confirmed example stay; date and amount limit this to the observed charge (owner confirmed 2026-10-04).
+```
+
+An `override` corrects **one observed transaction** while `rules` describe recurring patterns. Overrides are checked
+first, so a correction always wins over a rule that also matches. They address a transaction by **match** — a bounded
+`all_of` requiring a `date_range` with both `start` and `end` (at most 31 days) plus at least one name, category,
+amount, field, or counterparty condition — and never by Plaid transaction ID: relinking an account rewrites those ids
+and silently dangles any id-addressed correction, restoring the wrong classification without an error. Use an `all_of`
+rule instead when the classification applies to more than the handful of transactions inside that window. `id` is a
+stable human-written key shown with each matched transaction, and `note` records why, ideally who confirmed it and
+when. Overrides reuse the same `kind` values and `analysis_category` catalog as rules, so an overridden transaction is
+accounted for exactly like a rule-classified one: `fixed`/`excluded` leave the allowance, `flexible` and `review`
+remain counted, and a negative credit addressed by an `excluded` override is a paired transfer leg rather than an
+unmatched refund. The Configuration tab lists overrides separately from rules, and the Transactions tab names the
+applied override and its note in place of a rule number. Keep the override list short: it is a ledger of reviewed
+exceptions, not a second rule engine.
+
 When `allowance` is present, it is active. Supply a required `activation_at` ISO date (YYYY-MM-DD) as the stable
 credit-cycle anchor; null or omission is invalid. To disable the allowance, omit the entire `allowance` object. Plaid
 supplies only transaction **dates**, not trustworthy purchase times: activation uses the full UTC date, and a purchase

@@ -31,6 +31,7 @@ from finance.plaid.spend.models import (
     AlertState,
     AllowanceConfigurationView,
     AnalysisCategoryView,
+    AppliedOverride,
     CardConfigurationView,
     CardView,
     PaceEffect,
@@ -119,6 +120,7 @@ class SpendService:
                 max_sync_age_hours=policy.max_sync_age_hours,
                 forecast_basis_period_id=policy.forecast_basis_period_id,
                 rules=policy.rules,
+                overrides=policy.overrides,
                 analysis_categories=policy.analysis_categories,
             )
         return SpendConfigurationView(
@@ -440,9 +442,10 @@ class SpendService:
                 statement_reason = None
             category = None
             if decision is not None and allowance_policy is not None:
+                decided = decision.override if decision.override is not None else decision.rule
                 category_id = (
-                    decision.rule.analysis_category
-                    if decision.rule is not None and decision.rule.analysis_category is not None
+                    decided.analysis_category
+                    if decided is not None and decided.analysis_category is not None
                     else "unclassified"
                 )
                 category_config = allowance_policy.analysis_categories[category_id]
@@ -462,6 +465,13 @@ class SpendService:
                     disposition=decision.disposition if decision else None,
                     rule_number=decision.rule_number if decision else None,
                     rule=decision.rule if decision else None,
+                    override=(
+                        AppliedOverride(
+                            id=decision.override.id, kind=decision.override.kind, note=decision.override.note
+                        )
+                        if decision is not None and decision.override is not None
+                        else None
+                    ),
                     allowance_minor_units=decision.allowance_minor_units if decision else 0,
                     pace_effects=[
                         PaceEffect(
