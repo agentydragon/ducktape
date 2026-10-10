@@ -72,9 +72,9 @@ async def test_desktop_shows_two_threads_and_an_action(
     assert saved_layout is not None
     # The visual harness clears localStorage at page startup. Navigate away and back to remount
     # MosaicView without that test-harness reset, then confirm its browser-local saved tree returns.
-    await app.mount_app("/sandboxes")
+    await page.evaluate("() => { window.location.hash = '/sandboxes'; }")
     await expect(page.locator(".agentplane-mosaic")).to_have_count(0)
-    await app.mount_app("/mosaic")
+    await page.evaluate("() => { window.location.hash = '/mosaic'; }")
     await expect(page.locator("[data-mosaic-pane]")).to_have_count(3)
     await expect(page.locator("[data-mosaic-pane-kind='action']")).to_be_visible()
     restored_layout = await page.evaluate("() => localStorage.getItem('agentplane-mosaic-workspace-v1')")
