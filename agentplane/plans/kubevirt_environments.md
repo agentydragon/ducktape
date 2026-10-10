@@ -8,21 +8,15 @@ The disposable pinned-stack prototype and guest runtime acceptance are recorded 
 production Sandbox Service or production egress gateway. KubeVirt remains the recommended first
 VM provider.
 
-## Control-transport decision before network integration
+## Control transport
 
-Co-sequence VM control networking with
-[`RUNNER_TRANSPORT_DESIGN`](task_dag.md#runner_transport_design--runner-dial-out-and-connection-lifecycle).
-The diagram below shows the inbound-control baseline, not an irreversible choice for v1. Compare
-it with the runner dialing Sandbox Service over an authenticated persistent channel, similar in
-connection direction to Claude RemoteIO. This could avoid exposing/routing a guest runner service;
-it does not eliminate the egress relay or its credential boundary. See the
-[connection lifecycle design questions](runner_discovery.md#outbound-control-channel-design).
-
-Choose transport, heartbeat/liveness semantics, replica connection ownership, reconnect and fencing
-before `VM_CONTROL_NETWORKING`. Implement `RUNNER_OUTBOUND_CHANNEL` only if selected; new container
-Sandboxes move under `RUNNER_OUTBOUND_ROLLOUT`. Image/storage and process-boundary work
-can proceed independently. This decision does not remove the runner journal or choose central command
-admission.
+The guest runner dials the Sandbox Service over the [runner channel](../docs/runner_channel.md)
+through the same egress relay its LLM and Action traffic needs, so no guest runner service has to
+be exposed or routed. It does not remove that relay or its credential boundary. Diagrams below show
+the inbound-control baseline that the channel replaces. `VM_CONTROL_NETWORKING` states which
+guest ports, endpoint discovery and network policies go away; new container Sandboxes move under
+`RUNNER_OUTBOUND_ROLLOUT`. Image/storage and process-boundary work can proceed independently. The
+channel neither removes the runner journal nor chooses central command admission.
 
 ## Proposed shape
 
@@ -286,8 +280,6 @@ environments and the Sandbox Service extraction's staging-preservation requireme
 
 The [DAG VM lane](task_dag.md#4-vm-environment-phases) now sequences these separately:
 
-- `RUNNER_TRANSPORT_DESIGN`: review dial-out versus inbound control and connection lifecycle before
-  committing VM control routing; separate from runner durability redesign.
 - `RUNNER_OUTBOUND_CHANNEL`: conditional implementation retaining command/Event semantics;
   `RUNNER_OUTBOUND_ROLLOUT` later makes it the default for new container Sandboxes.
 - `VM_CONTROL_NETWORKING`: implement the chosen route after the transport decision and provider,
