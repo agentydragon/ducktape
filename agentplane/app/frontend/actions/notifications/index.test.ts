@@ -79,6 +79,20 @@ describe("action notification formatting", () => {
     expect(formatActionNotification(request).title).toBe("List pods in namespace tofu-controller");
   });
 
+  it("uses Tana's human-facing Action description in the notification title", () => {
+    const request = actionRequest({
+      action: { group: "tana", name: "get_or_create_calendar_node" },
+      arguments: { workspaceId: "workspace-1", granularity: "week" },
+      title: "Prepare this week's planning page",
+      description: "Create the planning page if it does not exist.",
+    });
+
+    expect(formatActionNotification(request)).toEqual({
+      title: "Prepare this week's planning page · Get or create calendar node",
+      text: "Create the planning page if it does not exist.",
+    });
+  });
+
   it("falls back when SSH arguments contain fields the widget cannot show", () => {
     const request = actionRequest({
       action: { group: "ssh", name: "exec" },

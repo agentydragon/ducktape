@@ -294,6 +294,7 @@ ts_library(
         "notifications/index.ts",
         "notifications/kubernetes_admin/pods_list_in_namespace.ts",
         "notifications/ssh/exec.ts",
+        "notifications/tana/get_or_create_calendar_node.ts",
         "notifications/types.ts",
     ],
     tsconfig = TSCONFIG,

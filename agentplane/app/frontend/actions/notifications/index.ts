@@ -1,6 +1,7 @@
 import type { ActionRequestView } from "../types";
 import { podsInNamespaceNotification } from "./kubernetes_admin/pods_list_in_namespace";
 import { sshExecNotification } from "./ssh/exec";
+import { tanaCalendarNodeNotification } from "./tana/get_or_create_calendar_node";
 import type { ActionNotificationContent, ActionNotificationParts } from "./types";
 
 type ActionNotificationFormatter = (request: ActionRequestView) => ActionNotificationParts | null;
@@ -10,6 +11,7 @@ type ActionNotificationFormatter = (request: ActionRequestView) => ActionNotific
 const FORMATTERS: ReadonlyMap<string, ReadonlyMap<string, ActionNotificationFormatter>> = new Map([
   ["kubernetes_admin", new Map([["pods_list_in_namespace", podsInNamespaceNotification]])],
   ["ssh", new Map([["exec", sshExecNotification]])],
+  ["tana", new Map([["get_or_create_calendar_node", tanaCalendarNodeNotification]])],
 ]);
 
 /** Format a pending Action for the OS notification surface. Unknown Actions use only their
