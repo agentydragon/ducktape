@@ -597,15 +597,12 @@ js_library(
 ts_library(
     name = "workspace",
     srcs = [
-        "workspace.tsx",
         "css.d.ts",
         "tabler_icons.d.ts",
+        "workspace.tsx",
     ],
     tsconfig = TSCONFIG,
     deps = [
-        "//agentplane/app/frontend/actions:detail",
-        "//agentplane/app/frontend/actions:history",
-        "//agentplane/app/frontend/actions:requests",
         ":client",
         ":live",
         ":thread_status",
@@ -618,6 +615,9 @@ ts_library(
         "//:node_modules/react",
         "//:node_modules/react-mosaic-component",
         "//:node_modules/react-router",
+        "//agentplane/app/frontend/actions:detail",
+        "//agentplane/app/frontend/actions:history",
+        "//agentplane/app/frontend/actions:requests",
         "//agentplane/app/frontend/threads:projected_session",
     ],
 )
