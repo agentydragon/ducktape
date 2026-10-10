@@ -462,7 +462,6 @@ flowchart LR
     SANDBOX_VM_ISOLATION --> LOCAL_BAZEL[Blocked: bounded local Bazel client in VM]
 ```
 
-
 ### `RUNNER_OUTBOUND_CHANNEL` — implement outbound command delivery
 
 **Blocked on the admission contract review and admission core; draft code/isolated tests permitted,
