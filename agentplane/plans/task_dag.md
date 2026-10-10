@@ -54,16 +54,13 @@ Retain the data-preserving rollback procedure. No Action Service or other databa
 
 ```mermaid
 flowchart LR
-    SESSION_COMMAND_CONTRACT[Decision: generic command admission contract]
-    SESSION_COMMAND_STATUS_READ[Blocked: authorized admission status]
+    SESSION_COMMAND_STATUS_READ[Authorized admission status]
     SESSION_COMMAND_STATUS_UI[Blocked: show service-retained command status]
-    SESSION_INPUT_METADATA[Follow-up: typed input annotations and provenance]
+    SESSION_INPUT_METADATA[Typed input annotations and provenance]
     SESSION_INPUT_METADATA_READ[Blocked: metadata reads and message correlation]
     NOTIFICATION_NOTICE_METADATA[Blocked: attach notice metadata to submissions]
     NOTIFICATION_PRESENTATION[Blocked: compact frontend presentation]
-    SESSION_COMMAND_CONTRACT --> SESSION_COMMAND_STATUS_READ
     SESSION_COMMAND_STATUS_READ --> SESSION_COMMAND_STATUS_UI
-    SESSION_COMMAND_CONTRACT --> SESSION_INPUT_METADATA
     SESSION_INPUT_METADATA --> SESSION_INPUT_METADATA_READ
     SESSION_INPUT_METADATA --> NOTIFICATION_NOTICE_METADATA
     SESSION_INPUT_METADATA_READ --> NOTIFICATION_PRESENTATION
@@ -73,16 +70,9 @@ flowchart LR
 Details: [Command admission](command_admission.md); later
 [notification presentation and input metadata](notification_presentation.md).
 
-### `SESSION_COMMAND_CONTRACT` — review durable command admission
-
-**Decision; remaining: authenticated destination scope and retention.** Immutable retries,
-refusal recorded only when definitive, and admission evidence that never regresses were accepted
-with the admission store (#9741). No notification metadata or producer integration in the
-initial PR.
-
 ### `SESSION_COMMAND_STATUS_READ` — authorized submission status
 
-**Blocked on command admission.** Read pending/admitted/rejected state and retained receipts through
+Read pending/admitted/rejected state and retained receipts through
 Session authorization, including reconnect and lost responses. Keep runner admission distinct from
 harness effects. The service-retained UI indicator is a later client integration, not part of the
 initial persistence/routing PR.
@@ -97,7 +87,7 @@ persistence/routing PR; include focused state/visual tests.
 
 ### `SESSION_INPUT_METADATA` — later typed annotations on input commands
 
-**Follow-up; blocked on command admission contract settling.** Extend the service envelope with typed
+Extend the service envelope with typed
 metadata and restricted trusted producer provenance. Notification-specific authorization and producer
 integration belong here, not in the generic command-admission PR. Metadata never enters runner commands;
 notification attachments are invalid on controls. No untyped extension dictionary.
@@ -362,7 +352,7 @@ journal.
 
 ```mermaid
 flowchart LR
-    RUNNER_OUTBOUND_CHANNEL[Blocked: outbound command delivery peers]
+    RUNNER_OUTBOUND_CHANNEL[Outbound command delivery peers]
     RUNNER_OUTBOUND_CANARY[Blocked: service-first deployment and fresh runner canary]
     RUNNER_OUTBOUND_SPOOL[Blocked: move spool delivery onto channel]
     RUNNER_OUTBOUND_LIFECYCLE[Blocked: migrate remaining lifecycle consumers]
@@ -373,7 +363,6 @@ flowchart LR
     VM_EGRESS[Candidate: production admission and egress integration]
     VM_PROCESS_ISOLATION[Blocked: harness/process resource boundary]
     VM_LIFECYCLE[Blocked: integrated lifecycle]
-    SESSION_COMMAND_CONTRACT[Decision: generic command admission contract] --> RUNNER_OUTBOUND_CHANNEL
     RUNNER_OUTBOUND_CHANNEL --> VM_CONTROL_NETWORKING
     RUNNER_OUTBOUND_LIFECYCLE --> VM_CONTROL_NETWORKING
     RUNNER_OUTBOUND_SPOOL --> VM_CONTROL_NETWORKING
@@ -400,8 +389,7 @@ flowchart LR
 
 ### `RUNNER_OUTBOUND_CHANNEL` — implement outbound command delivery
 
-**Blocked on the admission contract review; draft code/isolated tests permitted, with
-merge/deployment gated on it.** Implement both gRPC peers of the
+**Service peer merged (#9754); remaining: the runner peer.** Implement both gRPC peers of the
 [runner channel](../docs/runner_channel.md): framing and capabilities, the dedicated token audience
 and its egress policy, incarnation binding, epoch fencing, dispatch attempts over the
 `sandbox_commands` submission records, heartbeats and reconnect. Reconnect must not scan pending commands for delivery.
@@ -674,7 +662,6 @@ node switches which service reads or writes it. Only the fold double-runs.
 
 ```mermaid
 flowchart TD
-    SESSION_COMMAND_CONTRACT[Command admission contract]
     HISTORY_WRITE_HANDOFF[Blocked: History Service ingester takes over staging]
     SANDBOX_LOCAL_HISTORY_RETIRE[Blocked: delete Sandbox Service ingester and store]
     FOLD_SHADOW[Blocked: History Service folds in shadow]
@@ -693,7 +680,6 @@ flowchart TD
     THREAD_BROWSE_PAGINATE[Bounded history browsing]
     THREAD_READ_POLICY[Scoped archive reads]
     RUNNER_INBOUND_RETIRE[Retire inbound runner access]
-    SESSION_COMMAND_CONTRACT --> HISTORY_WRITE_HANDOFF
     HISTORY_WRITE_HANDOFF --> SANDBOX_LOCAL_HISTORY_RETIRE
     HISTORY_WRITE_HANDOFF --> FOLD_SHADOW
     FOLD_SHADOW --> ELECTRIC_HISTORY_SOURCE

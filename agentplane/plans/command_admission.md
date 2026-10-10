@@ -1,8 +1,8 @@
 # Durable command admission through Sandbox Service
 
-Status: draft implementation, not deployed. The operator approved code and isolated tests while the
-Session Event migration runs; merge, schema application and deployment remain gated on archive
-ownership and compatibility verification. The [task DAG](task_dag.md) owns rollout dependencies.
+Status: the admission store, channel delivery and admission reconciliation are merged; the contract
+they implement is in the [Sandbox Service API](../sandbox_service/API.md#sessions-and-commands). The
+[task DAG](task_dag.md) owns the remaining work.
 
 ## Scope
 
@@ -10,7 +10,7 @@ One surface for routing **all supported runner Commands** through Sandbox Servic
 text input, model/reasoning changes, interrupts and session stop. This is not a text-only queue,
 a second execution authority, a background dispatcher, or permission to start a stopped harness.
 Notification attachments, notification-specific authorization, producer integration and presentation
-are separate follow-ups, after this admission contract settles. Do not add an untyped metadata bag
+are separate follow-ups. Do not add an untyped metadata bag
 in their place. Retain authenticated caller provenance for the submission itself.
 
 The current app path has a browser recovery outbox, not an app database command queue to retire.

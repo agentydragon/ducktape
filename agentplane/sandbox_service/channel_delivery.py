@@ -36,10 +36,8 @@ logger = logging.getLogger(__name__)
 
 
 class CommandRefusedError(Exception):
-    """The runner definitively did not admit the command; the submission itself stays pending.
-
-    Which refusals settle a submission is the command admission contract's decision, still open.
-    """
+    """The runner did not admit this delivery. The submission stays pending: a stopped harness
+    may run again, and an exact retry reopens the attempt."""
 
     def __init__(self, refusal: channel_pb2.CommandRefused) -> None:
         super().__init__(channel_pb2.CommandRefused.Reason.Name(refusal.reason))

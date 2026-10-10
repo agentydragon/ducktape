@@ -168,7 +168,9 @@ readable but are not polled until their binding is established by a verified han
   through the submission's dispatch attempt. Such a Sandbox takes public Session IDs only, and with no
   live runner connection the call is `UNAVAILABLE` rather than relayed. A runner refusal returns
   `FAILED_PRECONDITION` (`ALREADY_EXISTS` for a conflicting command, `INVALID_ARGUMENT` for an
-  invalid one) and leaves the submission pending; an exact retry reopens the attempt.
+  invalid one) and leaves the submission pending; an exact retry reopens the attempt. A recorded
+  admission or rejection never changes, and submissions are kept forever: nothing expires or deletes
+  them.
 
 Read/follow/command RPCs never provision, resume, or wake a Sandbox or harness.
 

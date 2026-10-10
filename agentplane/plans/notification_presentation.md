@@ -78,7 +78,7 @@ retry and spool-reconciliation contract for all runner commands. This notificati
 later phase, outside the initial command-admission PR; it must not add another input-only queue.
 The source trace and admission recovery requirements live in that owning plan.
 
-After the admission contract settles, extend its service-owned record with typed metadata and
+Extend the service-owned admission record with typed metadata and
 server-stamped producer provenance. Preserve an immutable accepted snapshot across replay, inbox
 expiration and subscription cancellation; no cross-service database joins or live inbox are required
 for historical rendering. Conflicting metadata on a repeated command ID must conflict, not overwrite.
@@ -127,15 +127,13 @@ rendering and must not give the app dispatch ownership.
 
 The [DAG](task_dag.md#2-service-owned-command-admission-and-later-notification-presentation) owns status and edges:
 
-1. `SESSION_COMMAND_CONTRACT`: review the generic durable command admission contract, which already
-   runs over the existing relay.
-2. `SESSION_COMMAND_STATUS_READ` and `SESSION_COMMAND_STATUS_UI`: expose authorized admission status
+1. `SESSION_COMMAND_STATUS_READ` and `SESSION_COMMAND_STATUS_UI`: expose authorized admission status
    and the service-retained state dot, independently of notification rendering.
-3. `SESSION_INPUT_METADATA`: after generic admission settles, add typed annotations and producer
+2. `SESSION_INPUT_METADATA`: add typed annotations and producer
    authorization. This is not part of the initial command-admission PR.
-4. `SESSION_INPUT_METADATA_READ` and `NOTIFICATION_NOTICE_METADATA`: authorized annotation reads and
+3. `SESSION_INPUT_METADATA_READ` and `NOTIFICATION_NOTICE_METADATA`: authorized annotation reads and
    producer integration after the metadata extension exists.
-5. `NOTIFICATION_PRESENTATION`: compact rendering after metadata reads and producer integration.
+4. `NOTIFICATION_PRESENTATION`: compact rendering after metadata reads and producer integration.
 
 Tests cover ordinary input, restricted provenance, destination authorization, identical/conflicting
 retries (including concurrent requests), crashes around dispatch, pending/rejected inputs, replay
