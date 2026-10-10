@@ -50,6 +50,7 @@ from trust_manager_crds.io.cert_manager.trust import (
 
 from agentplane.egress.database_migrate import MigrationSettings
 from agentplane.egress.settings import CONFIG_FILE_ENV, Settings
+from agentplane.sandbox_service.settings import RUNNER_CHANNEL_AUDIENCE
 from agentplane.workload_auth.audience import WORKLOAD_TOKEN_AUDIENCE
 from cluster.cdk8s import cilium, node_scheduling, pod_policy
 from cluster.cdk8s.agentplane import actions, database, llm_ingress, notifications
@@ -563,7 +564,11 @@ class Egress(Construct):
             model=Settings,
             content={
                 "allowed_service_account_namespaces": [env.namespace, *env.egress.external_workload_namespaces],
-                "projected_token_audiences": [KUBERNETES_AUDIENCE, notifications.TOKEN_AUDIENCE],
+                "projected_token_audiences": [
+                    KUBERNETES_AUDIENCE,
+                    notifications.TOKEN_AUDIENCE,
+                    RUNNER_CHANNEL_AUDIENCE,
+                ],
             },
             # A directory of its own: the CA volumes mount under /etc/agentplane-egress, and nothing
             # can mount inside a read-only ConfigMap volume.

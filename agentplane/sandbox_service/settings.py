@@ -15,6 +15,7 @@ from agentplane.sandbox_service.kubernetes_grants import KubernetesGrant
 from agentplane.subjects import ServiceAccountRef
 
 CONFIG_FILE_ENV = "AGENTPLANE_SANDBOX_SERVICE_CONFIG_FILE"
+RUNNER_CHANNEL_AUDIENCE = "agentplane-runner-channel"
 
 
 class Settings(BaseSettings):
@@ -39,7 +40,7 @@ class Settings(BaseSettings):
     kubernetes_cluster_binding_cleanup: bool = False
     token_audience: str = "agentplane-sandbox-service"
     runner_channel_audience: str = Field(
-        default="agentplane-runner-channel",
+        default=RUNNER_CHANNEL_AUDIENCE,
         description="Audience of the Pod tokens the egress proxy substitutes on runner channel connections.",
     )
     runner_channel_port: int = Field(default=8082, ge=1, le=65535)
