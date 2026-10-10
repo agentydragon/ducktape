@@ -387,6 +387,8 @@ async def test_history_copy_replays_only_published_prefix_and_detects_regression
         runner = RunnerClient(channel)
         assert await copy_confirmed_prefix(store, locator, runner, batch_size=1) == 2
         await (await peer.attachments.get()).closed.wait()
+        assert (await store.read_page(session_id)).feed_state.attached.session_id == physical
+        assert not (await store.read_page(session_id)).feed_state.ended
         assert (await store.read(session_id))[1] == peer.history[physical]
         assert await copy_confirmed_prefix(store, locator, runner) == 2  # exact replay is idempotent
         await (await peer.attachments.get()).closed.wait()
@@ -977,6 +979,49 @@ async def test_history_read_requires_explicit_reader_even_after_sandbox_deletion
 
         with pytest.raises(ValueError, match="invalid session history page"):
             await remote.read_session_events(str(public_id), limit=1001)
+
+
+@pytest.mark.parametrize("outcome", ["eof", "timeout", "transport_error", "new_event"])
+async def test_history_copy_records_only_explicit_eof(peer: Peer, engine: AsyncEngine, outcome: str) -> None:
+    store = Store(engine)
+    session_id = uuid4()
+    physical = f"r-{session_id}"
+    await store.open(
+        session_id,
+        sandbox_namespace=SANDBOX_NAMESPACE,
+        sandbox_name=SANDBOX,
+        sandbox_uid=UUID(SANDBOX_UID),
+        runner_session_id=physical,
+    )
+    [locator] = await store.runnable_locators(SANDBOX_NAMESPACE, [SANDBOX])
+    peer.state = runner_pb2.HARNESS_STATE_STOPPED
+    async with grpc.aio.insecure_channel(f"127.0.0.1:{peer.port}") as channel:
+        runner = RunnerClient(channel)
+        copying = asyncio.create_task(copy_confirmed_prefix(store, locator, runner))
+        try:
+            connection = await asyncio.wait_for(peer.attachments.get(), timeout=5)
+            if outcome == "eof":
+                connection.responses.put_nowait(None)
+            elif outcome == "transport_error":
+                connection.responses.put_nowait(grpc.StatusCode.UNAVAILABLE)
+            elif outcome == "new_event":
+                connection.responses.put_nowait(
+                    runner_pb2.ServerMessage(event_entry=event_log_pb2.EventEntry(cursor=1))
+                )
+            if outcome == "transport_error":
+                with pytest.raises(grpc.RpcError):
+                    await copying
+            else:
+                assert await copying == 0
+            page = await store.read_page(session_id)
+            assert page.HasField("feed_state")
+            assert page.feed_state.ended == (outcome == "eof")
+            assert page.feed_state.attached.last_cursor == 0
+            assert page.last_cursor == 0
+            assert not page.entries
+        finally:
+            copying.cancel()
+            await asyncio.gather(copying, return_exceptions=True)
 
 
 if __name__ == "__main__":

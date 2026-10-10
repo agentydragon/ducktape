@@ -153,10 +153,9 @@ class SandboxService(protocol_pb2_grpc.SandboxServiceServicer):
             if not 1 <= request.limit <= 1000:
                 raise ValueError("invalid history page size")
             session_id = UUID(request.session_id)
-            last_cursor, entries = await self.resources.history.read(
+            return await self.resources.history.read_page(
                 session_id, after_cursor=request.after_cursor, limit=request.limit
             )
-            return protocol_pb2.ReadSessionEventsResponse(last_cursor=last_cursor, entries=entries)
 
     @override
     async def ReadSessionObservations(

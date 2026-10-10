@@ -8,6 +8,8 @@ import pytest_bazel
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from agentplane.protocol import event_log_pb2
+from agentplane.runner import protocol_pb2 as runner_pb2
+from agentplane.sandbox_service import protocol_pb2
 from agentplane.sandbox_service.session_history.store import (
     HistoryConflictError,
     HistoryNotFoundError,
@@ -234,6 +236,45 @@ async def test_observation_pages_seek_retained_prefix_without_returning_payloads
         await store.read_observations(session_id, limit=201)
     with pytest.raises(HistoryNotFoundError):
         await store.read_observations(uuid4())
+
+
+@pytest.mark.asyncio
+async def test_feed_snapshot_requires_covered_bound_history_and_cannot_regress(engine: AsyncEngine) -> None:
+    store = Store(engine)
+    session_id = uuid4()
+    await opened(store, session_id)
+    assert not (await store.read_page(session_id)).HasField("feed_state")
+    feed = protocol_pb2.SessionFeedState(
+        attached=runner_pb2.Attached(
+            session_id="original-native-path", last_cursor=1, harness_state=runner_pb2.HARNESS_STATE_STOPPED
+        )
+    )
+    with pytest.raises(HistoryConflictError, match="ahead"):
+        await store.record_feed_state(session_id, feed)
+    await store.append(session_id, [entry(1)])
+    await store.record_feed_state(session_id, feed)
+    feed.ended = True
+    await store.record_feed_state(session_id, feed)
+    feed.ended = False
+    await store.record_feed_state(session_id, feed)
+    assert (await Store(engine).read_page(session_id)).feed_state.ended
+    feed.attached.harness_state = runner_pb2.HARNESS_STATE_RUNNING
+    with pytest.raises(HistoryConflictError, match="conflicting attachment"):
+        await store.record_feed_state(session_id, feed)
+    await store.append(session_id, [entry(2, resumed=True)])
+    feed.attached.last_cursor = 2
+    await store.record_feed_state(session_id, feed)
+    stale = protocol_pb2.SessionFeedState(
+        attached=runner_pb2.Attached(session_id="original-native-path", last_cursor=1), ended=True
+    )
+    await store.record_feed_state(session_id, stale)
+    page = await store.read_page(session_id, after_cursor=2)
+    assert page.last_cursor == 2
+    assert page.feed_state == feed
+    assert not page.entries
+    feed.attached.session_id = "replacement-runner"
+    with pytest.raises(HistoryConflictError, match="bound runner"):
+        await store.record_feed_state(session_id, feed)
 
 
 if __name__ == "__main__":

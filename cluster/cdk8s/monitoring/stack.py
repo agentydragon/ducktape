@@ -362,6 +362,9 @@ def _values() -> dict[str, object]:
         "nodeExporter": {"enabled": True},
         "kube-state-metrics": {
             "fullnameOverride": "kube-state-metrics",
+            # Rules join on its series (kube_node_info), so it must keep reporting while home is
+            # offline; on a home node it would go dark with the home WAN.
+            "nodeSelector": node_scheduling.HIL_OVH_NODE_SELECTOR,
             # Export the node media tier used by the local-path storage classes. The
             # default kube-state-metrics configuration intentionally omits arbitrary
             # Kubernetes labels; this narrow allowlist lets dashboards join node

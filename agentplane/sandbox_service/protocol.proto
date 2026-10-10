@@ -115,6 +115,15 @@ message ReadSessionEventsRequest {
 message ReadSessionEventsResponse {
   uint64 last_cursor = 1;
   repeated ducktape.agentplane.protocol.v1.EventEntry entries = 2;
+  // Absent for imported history without a retained runner attachment.
+  SessionFeedState feed_state = 3;
+}
+
+message SessionFeedState {
+  ducktape.agentplane.runner.v1.Attached attached = 1;
+  // True only after runner EOF at exactly attached.last_cursor. False means
+  // unconfirmed, not evidence of current connectivity or a running harness.
+  bool ended = 2;
 }
 
 message ReadSessionObservationsRequest {

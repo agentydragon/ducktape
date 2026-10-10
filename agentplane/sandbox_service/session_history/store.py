@@ -12,6 +12,7 @@ from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
 
 from agentplane.protocol import event_log_pb2
+from agentplane.sandbox_service import protocol_pb2
 from agentplane.sandbox_service.session_history.db import SessionEvent, SessionHistory
 
 # The generated protobuf stubs need the protobuf runtime as a direct mypy dependency.
@@ -258,10 +259,39 @@ class Store:
                 row.last_cursor = cursor
             return row.last_cursor
 
+    async def record_feed_state(self, session_id: UUID, feed: protocol_pb2.SessionFeedState) -> None:
+        """Record only a covered runner snapshot; delayed copiers cannot rewind it."""
+        snapshot = protocol_pb2.SessionFeedState()
+        snapshot.CopyFrom(feed)
+        async with self._sessions.begin() as session:
+            row = await session.scalar(select(SessionHistory).where(SessionHistory.id == session_id).with_for_update())
+            if row is None:
+                raise HistoryNotFoundError(session_id)
+            if not snapshot.HasField("attached") or snapshot.attached.session_id != row.runner_session_id:
+                raise HistoryConflictError("feed snapshot does not match the bound runner session")
+            if snapshot.attached.last_cursor > row.last_cursor:
+                raise HistoryConflictError("feed snapshot is ahead of committed history")
+            if row.feed_state is not None:
+                prior = protocol_pb2.SessionFeedState.FromString(row.feed_state)
+                if snapshot.attached.last_cursor < prior.attached.last_cursor:
+                    return
+                if snapshot.attached.last_cursor == prior.attached.last_cursor:
+                    if snapshot.attached != prior.attached:
+                        raise HistoryConflictError("conflicting attachment snapshots at one cursor")
+                    snapshot.ended = snapshot.ended or prior.ended
+            row.feed_state = snapshot.SerializeToString()
+
     async def read(
         self, session_id: UUID, *, after_cursor: int = 0, limit: int = 128
     ) -> tuple[int, list[event_log_pb2.EventEntry]]:
         """Internal replay only; never expose this as an unscoped workload read API."""
+        page = await self.read_page(session_id, after_cursor=after_cursor, limit=limit)
+        return page.last_cursor, list(page.entries)
+
+    async def read_page(
+        self, session_id: UUID, *, after_cursor: int = 0, limit: int = 128
+    ) -> protocol_pb2.ReadSessionEventsResponse:
+        """Read prefix watermark and lifecycle from the same history-row snapshot."""
         if after_cursor < 0 or not 1 <= limit <= 1000:
             raise ValueError("invalid history page")
         async with self._sessions() as session:
@@ -280,7 +310,13 @@ class Store:
                 .order_by(SessionEvent.cursor)
                 .limit(limit)
             )
-            return history.last_cursor, [event_log_pb2.EventEntry.FromString(row.payload) for row in rows]
+            page = protocol_pb2.ReadSessionEventsResponse(
+                last_cursor=history.last_cursor,
+                entries=[event_log_pb2.EventEntry.FromString(row.payload) for row in rows],
+            )
+            if history.feed_state is not None:
+                page.feed_state.ParseFromString(history.feed_state)
+            return page
 
     async def read_observations(
         self, session_id: UUID, *, before_cursor: int | None = None, after_cursor: int | None = None, limit: int = 30

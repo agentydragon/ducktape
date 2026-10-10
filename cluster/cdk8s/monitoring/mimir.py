@@ -125,7 +125,10 @@ def _values() -> dict[str, object]:
                 "ruler_storage": {"backend": "s3", "s3": _s3("mimir-ruler")},
                 "limits": {
                     "compactor_blocks_retention_period": "365d",
-                    "out_of_order_time_window": "30m",
+                    # How late a sample may arrive and still be accepted. Home-node Alloys buffer
+                    # scrapes on disk through a home WAN outage and replay them afterwards; this
+                    # matches their WAL `max_keepalive_time`, so up to 48h of outage backfills.
+                    "out_of_order_time_window": "48h",
                     "max_global_series_per_user": 0,
                     "ingestion_rate": 100000,
                     "ingestion_burst_size": 500000,
