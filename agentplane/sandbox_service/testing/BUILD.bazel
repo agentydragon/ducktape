@@ -98,6 +98,7 @@ py_library(
         "//agentplane/sandbox_service:grpc_api",
         "//agentplane/sandbox_service:models",
         "//agentplane/sandbox_service:protocol_pb2",
+        "//agentplane/sandbox_service:session_registry",
         "//agentplane/sandbox_service/commands:db",
         "//agentplane/sandbox_service/commands:store",
         "//agentplane/sandbox_service/session_history:db",

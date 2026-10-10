@@ -29,6 +29,9 @@ from agentplane.sandbox_service.commands.dispatch import (
 )
 from agentplane.sandbox_service.destinations import DestinationUnavailableError
 
+# The generated message stubs import google.protobuf; mypy reads stubs only from direct deps.
+# gazelle:include_dep @pypi//protobuf
+
 logger = logging.getLogger(__name__)
 
 

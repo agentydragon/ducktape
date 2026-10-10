@@ -4,6 +4,7 @@ exports_files([
     "0001_command_admission.py",
     "0002_runner_connection.py",
     "0003_submission_attempt.py",
+    "0004_session.py",
 ])
 
 py_library(
@@ -27,6 +28,15 @@ py_library(
 py_library(
     name = "0003_submission_attempt",
     srcs = ["0003_submission_attempt.py"],
+    deps = [
+        "@pypi//alembic",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
+    name = "0004_session",
+    srcs = ["0004_session.py"],
     deps = [
         "@pypi//alembic",
         "@pypi//sqlalchemy",

@@ -2836,10 +2836,7 @@ spec:
     matchLabels:
       cdk8s.io/metadata.addr: agentplane-sandbox-service-deployment-c8b904d8
   strategy:
-    rollingUpdate:
-      maxSurge: 1
-      maxUnavailable: 0
-    type: RollingUpdate
+    type: Recreate
   template:
     metadata:
       labels:

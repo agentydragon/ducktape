@@ -177,6 +177,7 @@ py_library(
         ":kubernetes_grants",
         ":provisioning",
         ":runner_channel",
+        ":session_registry",
         ":settings",
         "//agentplane/runner_channel:protocol_pb2",
         "//agentplane/runner_channel:protocol_pb2_grpc",
@@ -474,6 +475,7 @@ py_library(
         ":retention_holds",
         ":runner_channel",
         ":session_lifecycle",
+        ":session_registry",
         ":wire",
         "//agentplane:grpc_options",
         "//agentplane:subjects",
@@ -509,6 +511,7 @@ py_test(
         ":grpc_api",
         ":kubernetes_grants",
         ":kubernetes_views",
+        ":session_registry",
         ":wire",
         "//:conftest",
         "//agentplane:subjects",
@@ -835,6 +838,42 @@ py_library(
         "//agentplane/runner_channel:protocol_pb2",
         "//agentplane/sandbox_service/commands:connections",
         "//agentplane/sandbox_service/commands:dispatch",
+        "@pypi//protobuf",
         "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
+    name = "session_registry",
+    srcs = ["session_registry.py"],
+    deps = [
+        "//agentplane/sandbox_service:protocol_pb2",
+        "//agentplane/sandbox_service/commands:db",
+        "//agentplane/sandbox_service/session_history:db",
+        "//agentplane/sandbox_service/session_history:session_changes",
+        "//agentplane/sandbox_service/session_history:store",
+        "@pypi//protobuf",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_test(
+    name = "test_session_registry",
+    size = "medium",
+    srcs = ["test_session_registry.py"],
+    requires_docker = True,
+    deps = [
+        ":conftest",
+        ":session_registry",
+        "//:conftest",
+        "//agentplane/sandbox_service/commands:database_migrate",
+        "//agentplane/sandbox_service/commands:db",
+        "//agentplane/sandbox_service/session_history:conftest",
+        "//agentplane/sandbox_service/session_history:store",
+        "//util/testing:postgres",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//sqlalchemy",
+        "@pypi//testcontainers",
     ],
 )
