@@ -262,6 +262,12 @@ and subscription expiry also trigger snapshots when their displayed status chang
 The app proxies this stream under the operator session lifetime; the drawer follows
 it only while open, retains the last snapshot during an outage, and marks it stale.
 
+`GET /operator/v1/notices/stream?session_id=…` (at most 200 Sessions) streams the same kind of
+snapshot for the named Sessions' live inboxes in the operator's own namespace, reduced to what a
+Thread list shows: `queued` entries no notice covers yet, `unacknowledged` entries a notice covers
+that the agent has not acknowledged, the latest notice's stage and error, the wait reason, and while
+debouncing `eligible_at`, an estimate that a new entry can push back. Reading it acknowledges nothing.
+
 The snapshot groups inboxes by session and reports cursor counts, subscriptions, source errors and
 the latest notice stage. `unannounced_count` counts retained entries beyond the maximum of covered,
 acknowledged and expired cursors; `pending_acknowledgement_count` counts retained, non-expired

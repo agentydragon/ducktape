@@ -195,3 +195,32 @@ class InboxStatus(Model):
 class SandboxNotificationStatus(Model):
     observed_at: datetime
     inboxes: list[InboxStatus]
+
+
+class NoticeProgress(StrEnum):
+    PREPARED = "prepared"
+    ATTEMPTED = "attempted"
+    ADMITTED = "admitted"
+    CONFIRMED = "confirmed"
+
+
+class InboxNoticeState(Model):
+    """One live inbox at a glance: what waits for a notice, what a notice covers that the agent has
+    not acknowledged, and how far the latest notice got."""
+
+    inbox_id: UUID
+    session_id: str
+    queued: int = Field(description="Entries no notice covers yet.")
+    unacknowledged: int = Field(description="Entries a notice covers that the agent has not acknowledged.")
+    notice: NoticeProgress | None = Field(description="How far the latest notice got; None before the first.")
+    notice_wait_reason: str | None
+    eligible_at: datetime | None = Field(
+        description="While debouncing, when a notice of the queued entries becomes due; an estimate, since "
+        "a new entry extends the quiet window."
+    )
+    error: str | None = Field(description="The latest notice's error, or else the inbox's delivery error.")
+
+
+class SessionNoticeStates(Model):
+    observed_at: datetime
+    inboxes: list[InboxNoticeState]

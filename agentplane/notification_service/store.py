@@ -2,7 +2,7 @@
 
 import hashlib
 import json
-from collections.abc import Sequence
+from collections.abc import Sequence, Set
 from dataclasses import asdict
 from datetime import UTC, datetime, timedelta
 from uuid import UUID, uuid4
@@ -48,11 +48,14 @@ from agentplane.notification_service.models import (
     GitHubStatus,
     GitHubSubjectStatus,
     InboxEntrySummary,
+    InboxNoticeState,
     InboxPage,
     InboxStatus,
     InboxView,
+    NoticeProgress,
     NoticeView,
     SandboxNotificationStatus,
+    SessionNoticeStates,
     SourceFailureKind,
     Subscribe,
     SubscriptionStatus,
@@ -68,6 +71,7 @@ from agentplane.workload_auth.principal import WorkloadPrincipal
 
 # gazelle:include_dep @pypi//protobuf
 
+MAX_NOTICE_STATE_SESSIONS = 200
 
 _EVENT: TypeAdapter[EventIdentity] = TypeAdapter(EventIdentity)
 
@@ -471,23 +475,8 @@ class Store:
                             cursor=entry.cursor, created_at=entry.created_at, provider=event.provider, summary=summary
                         )
                     )
-                quiet_until = last + timedelta(seconds=quiet_seconds) if last else None
-                max_wait_at = first + timedelta(seconds=max_wait_seconds) if first else None
-                due = min(quiet_until, max_wait_at) if quiet_until and max_wait_at else None
-                wait_reason = (
-                    "retired"
-                    if row.retired
-                    else "notice_error"
-                    if notice and notice.error
-                    else "delivery_retry"
-                    if row.delivery_error
-                    else "awaiting_confirmation"
-                    if notice and not notice.confirmed
-                    else "debouncing"
-                    if due and due > observed
-                    else "ready"
-                    if due
-                    else None
+                wait_reason, due, quiet_until, max_wait_at = _notice_wait(
+                    row, notice, first, last, observed, quiet_seconds=quiet_seconds, max_wait_seconds=max_wait_seconds
                 )
                 result.append(
                     InboxStatus(
@@ -513,14 +502,69 @@ class Store:
                         pending_acknowledgement_count=pending_ack,
                         pending_entries=summaries,
                         pending_entries_more=pending_ack > len(summaries),
-                        notice_due_at=due if wait_reason == "debouncing" else None,
-                        quiet_until=quiet_until if wait_reason == "debouncing" else None,
-                        max_wait_at=max_wait_at if wait_reason == "debouncing" else None,
+                        notice_due_at=due,
+                        quiet_until=quiet_until,
+                        max_wait_at=max_wait_at,
                         notice_wait_reason=wait_reason,
                         next_work_at=row.next_attempt,
                     )
                 )
             return SandboxNotificationStatus(observed_at=observed, inboxes=result)
+
+    async def session_notice_states(
+        self, namespace: str, session_ids: Set[str], *, quiet_seconds: float, max_wait_seconds: float
+    ) -> SessionNoticeStates:
+        """The live inboxes of the named Sessions in `namespace`, each at a glance. Reading changes
+        nothing: only an agent's acknowledgement moves what counts as acknowledged."""
+        if len(session_ids) > MAX_NOTICE_STATE_SESSIONS:
+            raise ValueError(f"at most {MAX_NOTICE_STATE_SESSIONS} Sessions per read")
+        async with self.sessions() as session:
+            observed = datetime.now(UTC)
+            rows = (
+                await session.execute(
+                    select(Inbox, Notice)
+                    .outerjoin(Notice, Notice.inbox_id == Inbox.id)
+                    .where(
+                        Inbox.destination_ref["namespace"].astext == namespace,
+                        Inbox.session_id.in_(session_ids),
+                        Inbox.retired.is_(False),
+                    )
+                    .order_by(Inbox.session_id, Inbox.id)
+                )
+            ).all()
+            states = []
+            for row, notice in rows:
+                first, last, queued = (
+                    await session.execute(
+                        select(func.min(Entry.created_at), func.max(Entry.created_at), func.count()).where(
+                            Entry.inbox_id == row.id,
+                            Entry.cursor > max(row.covered, row.acknowledged, row.expired_through),
+                        )
+                    )
+                ).one()
+                unacknowledged = (
+                    await session.execute(
+                        select(func.count()).where(
+                            Entry.inbox_id == row.id, Entry.cursor > max(row.acknowledged, row.expired_through)
+                        )
+                    )
+                ).scalar_one()
+                wait_reason, due, _, _ = _notice_wait(
+                    row, notice, first, last, observed, quiet_seconds=quiet_seconds, max_wait_seconds=max_wait_seconds
+                )
+                states.append(
+                    InboxNoticeState(
+                        inbox_id=row.id,
+                        session_id=row.session_id,
+                        queued=queued,
+                        unacknowledged=unacknowledged - queued,
+                        notice=None if notice is None else _notice_progress(notice),
+                        notice_wait_reason=wait_reason,
+                        eligible_at=due,
+                        error=(notice.error if notice is not None else None) or row.delivery_error,
+                    )
+                )
+            return SessionNoticeStates(observed_at=observed, inboxes=states)
 
     async def inboxes(self, owner: ServiceAccountRef) -> list[InboxView]:
         async with self.sessions() as session:
@@ -1142,3 +1186,48 @@ class Store:
                     entry.payload = None
                     inbox.expired_through = entry.cursor
             return last_id
+
+
+def _notice_wait(
+    row: Inbox,
+    notice: Notice | None,
+    first: datetime | None,
+    last: datetime | None,
+    observed: datetime,
+    *,
+    quiet_seconds: float,
+    max_wait_seconds: float,
+) -> tuple[str | None, datetime | None, datetime | None, datetime | None]:
+    """Why an inbox's next notice waits, and while it is debouncing, when it is due and the quiet
+    and maximum-wait deadlines that set that; `first` and `last` bound the entries no notice covers."""
+    quiet_until = last + timedelta(seconds=quiet_seconds) if last else None
+    max_wait_at = first + timedelta(seconds=max_wait_seconds) if first else None
+    due = min(quiet_until, max_wait_at) if quiet_until and max_wait_at else None
+    wait_reason = (
+        "retired"
+        if row.retired
+        else "notice_error"
+        if notice and notice.error
+        else "delivery_retry"
+        if row.delivery_error
+        else "awaiting_confirmation"
+        if notice and not notice.confirmed
+        else "debouncing"
+        if due and due > observed
+        else "ready"
+        if due
+        else None
+    )
+    if wait_reason != "debouncing":
+        return wait_reason, None, None, None
+    return wait_reason, due, quiet_until, max_wait_at
+
+
+def _notice_progress(notice: Notice) -> NoticeProgress:
+    if notice.confirmed:
+        return NoticeProgress.CONFIRMED
+    if notice.admitted:
+        return NoticeProgress.ADMITTED
+    if notice.attempted:
+        return NoticeProgress.ATTEMPTED
+    return NoticeProgress.PREPARED

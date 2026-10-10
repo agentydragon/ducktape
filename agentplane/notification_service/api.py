@@ -4,7 +4,7 @@ import asyncio
 import json
 import logging
 import traceback
-from collections.abc import AsyncGenerator, AsyncIterator
+from collections.abc import AsyncGenerator, AsyncIterator, Awaitable, Callable, Iterable
 from contextlib import asynccontextmanager, suppress
 from datetime import UTC, datetime
 from typing import Annotated, cast
@@ -21,6 +21,7 @@ from agentplane.notification_service.models import (
     InboxPage,
     InboxView,
     SandboxNotificationStatus,
+    SessionNoticeStates,
     SourceView,
     Subscribe,
     SubscriptionUpdate,
@@ -35,7 +36,7 @@ from agentplane.notification_service.sources.github import (
     UnsupportedWebhookEventError,
 )
 from agentplane.notification_service.sources.github_client import GitHubRetryError, GitHubUnavailableError
-from agentplane.notification_service.store import ConflictError, NotFoundError, QuotaError
+from agentplane.notification_service.store import MAX_NOTICE_STATE_SESSIONS, ConflictError, NotFoundError, QuotaError
 from agentplane.workload_auth.http import WorkloadPrincipalAuthenticator
 from agentplane.workload_auth.principal import WorkloadPrincipal, WorkloadPrincipalResolver
 
@@ -82,12 +83,7 @@ async def health(request: Request) -> dict[str, str]:
 
 
 def _authorize_sandbox_status(namespace: str, caller: WorkloadPrincipal, service: Service) -> None:
-    if (
-        caller.namespace != service.sandboxes.namespace
-        or caller.service_account_name != service.operator_reader_account
-        or service.operator_reader_account is None
-    ):
-        raise HTTPException(403, "operator diagnostics not authorized")
+    _authorize_operator_reader(caller, service)
     if namespace != caller.namespace:
         raise HTTPException(404, "sandbox not found")
 
@@ -110,36 +106,48 @@ async def sandbox_notifications(
     return await _sandbox_status(service, namespace, name, uid)
 
 
-async def sandbox_status_frames(service: Service, namespace: str, name: str, uid: str) -> AsyncGenerator[bytes]:
-    """Subscribe before the first snapshot; NOTIFY invalidates, canonical rows are the source."""
+async def _status_frames[S: SandboxNotificationStatus | SessionNoticeStates](
+    service: Service,
+    read: Callable[[], Awaitable[S]],
+    key: Callable[[S], str],
+    deadlines: Callable[[S], Iterable[datetime | None]],
+) -> AsyncGenerator[bytes]:
+    """Subscribe before the first snapshot; NOTIFY invalidates, canonical rows are the source. A
+    snapshot is sent when its `key` changes, and read again at its next deadline."""
     with service.store.wakeups.subscribe() as changed:
         listener = service.store.wakeups.listener
         generation = listener.generation
         last: str | None = None
         while listener.connected and listener.generation == generation:
             changed.clear()
-            status = await _sandbox_status(service, namespace, name, uid)
-            payload = status.model_dump(mode="json")
-            # observed_at is a read timestamp, not a state change.
-            key = json.dumps(payload["inboxes"], sort_keys=True) + json.dumps(
-                [sub.expires_at <= status.observed_at for item in status.inboxes for sub in item.subscriptions]
-            )
-            if key != last:
-                yield f"event: snapshot\ndata: {json.dumps(payload)}\n\n".encode()
-                last = key
+            status = await read()
+            if (current := key(status)) != last:
+                yield f"event: snapshot\ndata: {json.dumps(status.model_dump(mode='json'))}\n\n".encode()
+                last = current
             now = datetime.now(UTC)
-            deadlines = [
-                deadline
-                for item in status.inboxes
-                for deadline in (
-                    item.notice_due_at,
-                    *(sub.expires_at for sub in item.subscriptions if not sub.cancelled),
-                )
-                if deadline is not None and deadline > status.observed_at
-            ]
-            delay = max(0, (min(deadlines) - now).total_seconds()) if deadlines else None
+            due = [deadline for deadline in deadlines(status) if deadline is not None and deadline > status.observed_at]
+            delay = max(0, (min(due) - now).total_seconds()) if due else None
             with suppress(TimeoutError):
                 await asyncio.wait_for(changed.wait(), timeout=delay)
+
+
+def sandbox_status_frames(service: Service, namespace: str, name: str, uid: str) -> AsyncGenerator[bytes]:
+    def key(status: SandboxNotificationStatus) -> str:
+        # observed_at is a read timestamp, not a state change.
+        return json.dumps(status.model_dump(mode="json")["inboxes"], sort_keys=True) + json.dumps(
+            [sub.expires_at <= status.observed_at for item in status.inboxes for sub in item.subscriptions]
+        )
+
+    return _status_frames(
+        service,
+        lambda: _sandbox_status(service, namespace, name, uid),
+        key,
+        lambda status: (
+            deadline
+            for item in status.inboxes
+            for deadline in (item.notice_due_at, *(sub.expires_at for sub in item.subscriptions if not sub.cancelled))
+        ),
+    )
 
 
 @router.get("/operator/v1/sandboxes/{namespace}/{name}/notifications/stream")
@@ -149,6 +157,45 @@ async def sandbox_notifications_stream(
     _authorize_sandbox_status(namespace, caller, service)
     return StreamingResponse(
         sandbox_status_frames(service, namespace, name, uid),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache"},
+    )
+
+
+def _authorize_operator_reader(caller: WorkloadPrincipal, service: Service) -> None:
+    if (
+        caller.namespace != service.sandboxes.namespace
+        or caller.service_account_name != service.operator_reader_account
+        or service.operator_reader_account is None
+    ):
+        raise HTTPException(403, "operator diagnostics not authorized")
+
+
+def session_notice_frames(service: Service, namespace: str, session_ids: set[str]) -> AsyncGenerator[bytes]:
+    return _status_frames(
+        service,
+        lambda: service.store.session_notice_states(
+            namespace,
+            session_ids,
+            quiet_seconds=service.notice_debounce.quiet_seconds,
+            max_wait_seconds=service.notice_debounce.max_wait_seconds,
+        ),
+        lambda states: json.dumps(states.model_dump(mode="json")["inboxes"], sort_keys=True),
+        lambda states: (inbox.eligible_at for inbox in states.inboxes),
+    )
+
+
+@router.get("/operator/v1/notices/stream")
+async def session_notices_stream(
+    caller: Caller,
+    service: Notifications,
+    session_id: Annotated[list[str], Query(max_length=MAX_NOTICE_STATE_SESSIONS)],
+) -> StreamingResponse:
+    """The named Sessions' live inboxes at a glance, in the operator's Sandbox namespace, pushed
+    whenever they change and when a debounced notice falls due."""
+    _authorize_operator_reader(caller, service)
+    return StreamingResponse(
+        session_notice_frames(service, caller.namespace, set(session_id)),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache"},
     )

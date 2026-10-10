@@ -1,6 +1,7 @@
 """Subscription HTTP operations and service-owned worker lifetime."""
 
 import asyncio
+import json
 from datetime import UTC, datetime
 from types import SimpleNamespace
 from unittest.mock import create_autospec
@@ -11,7 +12,12 @@ import pytest
 import pytest_bazel
 
 from agentplane.action_service.models import ActionEventView, ActionState
-from agentplane.notification_service.api import authenticated_caller, create_app, sandbox_status_frames
+from agentplane.notification_service.api import (
+    authenticated_caller,
+    create_app,
+    sandbox_status_frames,
+    session_notice_frames,
+)
 from agentplane.notification_service.models import (
     ActionsSource,
     DestinationRef,
@@ -233,6 +239,58 @@ async def test_status_stream_replays_snapshot_and_follows_committed_changes(stor
             assert b'"cancelled": true' in cancelled
         finally:
             await frames.aclose()
+
+
+async def test_session_notice_stream_counts_queued_entries_without_acknowledging(store: Store) -> None:
+    service = create_autospec(Service, instance=True)
+    service.store = store
+    service.sandboxes = SimpleNamespace(namespace="test")
+    service.operator_reader_account = "app"
+    service.notice_debounce = NoticeDebounceSettings(quiet_seconds=60, max_wait_seconds=120)
+    app = create_app(service, create_autospec(WorkloadPrincipalResolver, instance=True))
+    app.dependency_overrides[authenticated_caller] = lambda: PRINCIPAL
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://notifications.test"
+    ) as client:
+        response = await client.get("/operator/v1/notices/stream", params={"session_id": "noticed"})
+        assert response.status_code == 403  # An agent reads its own inbox, not other Sessions'.
+    sub = await store.subscribe(
+        PRINCIPAL,
+        Subscribe(
+            destination_ref=DestinationRef(namespace="test", name="sandbox", uid="sandbox-uid"),
+            session_id="noticed",
+            idempotency_key="notice-state",
+            source=ActionsSource(provider="actions", request_id=uuid4()),
+        ),
+    )
+    async with store.wakeups.listener.listen():
+        frames = session_notice_frames(service, "test", {"noticed", "unknown"})
+        try:
+            initial = json.loads((await asyncio.wait_for(anext(frames), 5)).decode().split("data: ", 1)[1])
+            assert [(inbox["session_id"], inbox["queued"]) for inbox in initial["inboxes"]] == [("noticed", 0)]
+            assert initial["inboxes"][0]["notice"] is None
+            claim = await store.claim()
+            assert claim is not None
+            source = await store.source(claim)
+            assert source is not None
+            await store.record(
+                claim, source, [ActionEventView(sequence=1, state=ActionState.DECISION_PENDING, at=datetime.now(UTC))]
+            )
+            queued = json.loads((await asyncio.wait_for(anext(frames), 5)).decode().split("data: ", 1)[1])
+            (inbox,) = queued["inboxes"]
+            assert (inbox["queued"], inbox["unacknowledged"]) == (1, 0)
+            assert inbox["notice_wait_reason"] == "debouncing"
+            assert inbox["eligible_at"] is not None
+            # Reading the state twice acknowledges nothing.
+            states = await store.session_notice_states("test", {"noticed"}, quiet_seconds=60, max_wait_seconds=120)
+            assert states.inboxes[0].queued == 1
+            await store.acknowledge(PRINCIPAL.account, sub.inbox_id, 1)
+            acknowledged = json.loads((await asyncio.wait_for(anext(frames), 5)).decode().split("data: ", 1)[1])
+            assert (acknowledged["inboxes"][0]["queued"], acknowledged["inboxes"][0]["eligible_at"]) == (0, None)
+        finally:
+            await frames.aclose()
+        other = await store.session_notice_states("other", {"noticed"}, quiet_seconds=60, max_wait_seconds=120)
+        assert other.inboxes == []
 
 
 if __name__ == "__main__":
