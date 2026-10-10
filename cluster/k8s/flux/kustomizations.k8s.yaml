@@ -2993,6 +2993,32 @@ spec:
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
+  annotations:
+    description: AT&T gateway device access code, for the exporter's login-only pages.
+  name: att-gateway-exporter-secrets
+  namespace: ducktape-flux
+spec:
+  decryption:
+    provider: sops
+    secretRef:
+      name: sops-age-cluster-secrets
+  dependsOn:
+    - name: monitoring-namespace
+      namespace: ducktape-flux
+  interval: 10m
+  path: ./cluster/k8s/att-gateway-exporter-secrets
+  prune: true
+  retryInterval: 1m
+  sourceRef:
+    kind: ExternalArtifact
+    name: att-gateway-exporter-secrets
+    namespace: ducktape-flux
+  timeout: 5m
+  wait: true
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
   name: grocy-sf
   namespace: ducktape-flux
 spec:

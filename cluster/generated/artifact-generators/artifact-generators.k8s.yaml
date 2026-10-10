@@ -525,6 +525,11 @@ spec:
       name: att-gateway-exporter
       originRevision: "@repo"
     - copy:
+        - from: "@repo/cluster/k8s/att-gateway-exporter-secrets/**"
+          to: "@artifact/cluster/k8s/att-gateway-exporter-secrets/"
+      name: att-gateway-exporter-secrets
+      originRevision: "@repo"
+    - copy:
         - from: "@repo/cluster/generated/goldilocks/**"
           to: "@artifact/cluster/generated/goldilocks/"
       name: goldilocks

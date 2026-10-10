@@ -77,10 +77,7 @@ from cluster.cdk8s.artifact_generators import (
     artifact_generators as artifact_generators_factory,
     write_artifact_generators,
 )
-from cluster.cdk8s.att_gateway_exporter import (
-    access_code as att_gateway_access_code,
-    app as att_gateway_exporter_app,
-)
+from cluster.cdk8s.att_gateway_exporter import access_code as att_gateway_access_code, app as att_gateway_exporter_app
 from cluster.cdk8s.atuin import server as atuin_server, user_provisioner as atuin_user_provisioner
 from cluster.cdk8s.authentik import (
     app as authentik_app,
