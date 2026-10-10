@@ -1,5 +1,8 @@
 load("@rules_python//python:packaging.bzl", "py_package", "py_wheel")
 load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
+load("//util/testing/frontend_visual:py_visual_test.bzl", "py_visual_test")
+
+# gazelle:exclude test_gallery_visual.py
 
 py_library(
     name = "check_run",
@@ -66,6 +69,8 @@ py_library(
     name = "publisher",
     srcs = ["publisher.py"],
     data = [
+        "gallery_frames.css",
+        "gallery_sort.js",
         "pr_visual_test.html.j2",
         "pr_visuals.html.j2",
     ],
@@ -118,6 +123,32 @@ py_test(
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
+)
+
+filegroup(
+    name = "gallery_visual_harness",
+    testonly = True,
+    srcs = ["gallery_harness/gallery_harness.js"],
+)
+
+py_visual_test(
+    name = "test_gallery_visual",
+    size = "medium",
+    assets = ["gallery_harness/index.html"],
+    harness = ":gallery_visual_harness",
+    test_deps = [
+        ":publisher",
+        "//util:playwright",
+        "//util/testing:viewports",
+        "//util/testing:visual_capture",
+        "@pypi//pillow",
+        "@pypi//playwright",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+    test_module = "devinfra.pr_visuals.test_gallery_visual",
+    test_srcs = ["test_gallery_visual.py"],
+    title = "PR visual gallery",
 )
 
 py_library(

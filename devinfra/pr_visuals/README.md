@@ -28,6 +28,14 @@ targets open by default; each section includes its modified, new, or removed
 screenshots. The comment uses up to 55,000 characters, with the complete gallery
 available for any target omitted to stay within budget.
 
+The gallery index starts in the same target-impact ordering as the comment, with
+controls to sort by test name or changed-screenshot count. Per-test pages put
+Before beside After and use shared, fixed-aspect-ratio frames so screenshots with
+different dimensions remain aligned without cropping. When dimensions change, the
+gallery shows both images and explains why no diff overlay is available.
+`//devinfra/pr_visuals:test_gallery_visual` captures the generated index and test
+page with mixed aspect ratios on desktop and mobile.
+
 ## Determinism checks
 
 `//devinfra/pr_visuals:determinism_bin` repeats visual targets and checks the PNGs

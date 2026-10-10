@@ -485,6 +485,9 @@ def _review_test_page_data(test: ReviewTest, *, asset_base: str, page_url: str) 
     page["assets"] = [
         _asset_page_data(asset, asset_base=asset_base, page_url=page_url) for asset in _ordered_assets(test.assets)
     ]
+    impact_key = _test_impact_key(test)
+    page["sort_changed_count"] = -impact_key[1]
+    page["sort_largest_change"] = -impact_key[0]
     if test.preview is not None:
         page["preview"] = _asset_page_data(test.preview, asset_base=asset_base, page_url=page_url)
     return page
@@ -540,8 +543,8 @@ def _classify_test_assets(
         if comparison.classification == "unchanged":
             enriched.append(ReviewAsset(path=asset.path, label=asset.label, classification="unchanged"))
             continue
-        diff_dir.mkdir(parents=True, exist_ok=True)
         if comparison.diff_overlay is not None:
+            diff_dir.mkdir(parents=True, exist_ok=True)
             comparison.diff_overlay.save(diff_dir / asset.path)
         enriched.append(
             ReviewAsset(
@@ -580,7 +583,9 @@ def build_bundle(
 
     bundle = output_root / "commits" / commit_sha
     environment = _templates()
-    page_tests: list[dict[str, Any]] = []
+    bundle.mkdir(parents=True, exist_ok=True)
+    shutil.copyfile(Path(__file__).with_name("gallery_frames.css"), bundle / "gallery_frames.css")
+    shutil.copyfile(Path(__file__).with_name("gallery_sort.js"), bundle / "gallery_sort.js")
     review_tests: list[ReviewTest] = []
     for test in tests:
         target_dir = bundle / "tests" / test.slug
@@ -614,22 +619,20 @@ def build_bundle(
         page = _review_test_page_data(review_test, asset_base="", page_url="")
         (target_dir / "index.html").write_text(
             environment.get_template("pr_visual_test.html.j2").render(
-                repository=repository, commit_sha=commit_sha, **page
-            )
-        )
-        page_tests.append(
-            _review_test_page_data(
-                review_test, asset_base=f"tests/{test.slug}/", page_url=f"tests/{test.slug}/index.html"
+                repository=repository, commit_sha=commit_sha, gallery_stylesheet="../../gallery_frames.css", **page
             )
         )
         review_tests.append(review_test)
 
-    bundle.mkdir(parents=True, exist_ok=True)
     metadata = ReviewBundleMetadata(repository=repository, commit_sha=commit_sha, tests=review_tests)
     (bundle / "metadata.json").write_text(metadata.model_dump_json(indent=2, exclude_none=True) + "\n")
+    page_tests = [
+        _review_test_page_data(test, asset_base=f"tests/{test.slug}/", page_url=f"tests/{test.slug}/index.html")
+        for test in sorted(review_tests, key=_test_impact_key)
+    ]
     (bundle / "index.html").write_text(
         environment.get_template("pr_visuals.html.j2").render(
-            repository=repository, commit_sha=commit_sha, tests=page_tests
+            repository=repository, commit_sha=commit_sha, gallery_stylesheet="gallery_frames.css", tests=page_tests
         )
     )
     return bundle

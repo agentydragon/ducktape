@@ -4,6 +4,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <title>{{ title }} · {{ commit_sha }}</title>
+    <link rel="stylesheet" href="{{ gallery_stylesheet }}">
     <style>
       :root { color-scheme: light dark; font: 15px/1.45 system-ui, sans-serif; background: #f4f5f7; color: #16181d; }
       body { margin: 0; }
@@ -13,6 +14,7 @@
       main { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(520px, 100%), 1fr)); gap: 20px; padding: 20px; align-items: start; }
       figure { margin: 0; padding: 12px; border: 1px solid #bbb; border-radius: 10px; background: Canvas; }
       img { display: block; max-width: 100%; height: auto; border-radius: 6px; background: white; }
+      .sample-frame--empty { padding: 12px; box-sizing: border-box; color: #555; font-size: 13px; text-align: center; }
       figcaption { padding-top: 9px; font-weight: 600; }
       .pair { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
       .pair > div { font-size: 12px; color: #666; }
@@ -24,7 +26,8 @@
       .label-line { font-size: 12px; color: #666; margin-top: 8px; }
       details { grid-column: 1 / -1; }
       details summary { cursor: pointer; padding: 8px 0; }
-      @media (prefers-color-scheme: dark) { :root { background: #17181b; color: #eee; } figure, header { border-color: #444; } .metric, .pair > div, .label-line { color: #aaa; } }
+      @media (max-width: 700px) { .pair { grid-template-columns: 1fr; } }
+      @media (prefers-color-scheme: dark) { :root { background: #17181b; color: #eee; } figure, header { border-color: #444; } .sample-frame--empty { color: #ccc; } .metric, .pair > div, .label-line { color: #aaa; } }
     </style>
   </head>
   <body>
@@ -45,23 +48,27 @@
             {% if asset.dimension_changed %}<span class="badge modified">dims {{ asset.candidate_dimensions[0] }}×{{ asset.candidate_dimensions[1] }} ← {{ asset.baseline_dimensions[0] }}×{{ asset.baseline_dimensions[1] }}</span>{% endif %}
             <span class="metric">{{ "%.2f"|format(asset.changed_fraction * 100) }}% · {{ asset.changed_pixels }} px</span></figcaption>
           <div class="pair">
-            <div>candidate<a href="{{ asset.candidate_url }}"><img src="{{ asset.candidate_url }}" alt="{{ asset.label }} candidate" loading="lazy"></a></div>
-            <div>baseline<a href="{{ asset.baseline_url }}"><img src="{{ asset.baseline_url }}" alt="{{ asset.label }} baseline" loading="lazy"></a></div>
+            <div><div>Before</div><a class="sample-frame" href="{{ asset.baseline_url }}"><img src="{{ asset.baseline_url }}" alt="{{ asset.label }} before" loading="lazy"></a></div>
+            <div><div>After</div><a class="sample-frame" href="{{ asset.candidate_url }}"><img src="{{ asset.candidate_url }}" alt="{{ asset.label }} after" loading="lazy"></a></div>
           </div>
-          <div class="label-line">diff</div>
-          <img src="{{ asset.diff_url }}" alt="{{ asset.label }} diff" loading="lazy">
+          {% if asset.dimension_changed %}
+          <div class="sample-frame sample-frame--empty" role="note">Difference overlay unavailable because the screenshot dimensions changed.</div>
+          {% else %}
+          <div class="label-line">Diff</div>
+          <a class="sample-frame" href="{{ asset.diff_url }}"><img src="{{ asset.diff_url }}" alt="{{ asset.label }} diff" loading="lazy"></a>
+          {% endif %}
         </figure>
         {% endfor %}
         {% for asset in new_assets %}
         <figure id="{{ asset.path }}">
           <figcaption>{{ asset.label }}<span class="badge new">new</span></figcaption>
-          <a href="{{ asset.candidate_url }}"><img src="{{ asset.candidate_url }}" alt="{{ asset.label }}" loading="lazy"></a>
+          <a class="sample-frame" href="{{ asset.candidate_url }}"><img src="{{ asset.candidate_url }}" alt="{{ asset.label }}" loading="lazy"></a>
         </figure>
         {% endfor %}
         {% for asset in removed %}
         <figure id="{{ asset.path }}">
           <figcaption>{{ asset.label }}<span class="badge removed">removed</span></figcaption>
-          <a href="{{ asset.baseline_url }}"><img src="{{ asset.baseline_url }}" alt="{{ asset.label }} baseline" loading="lazy"></a>
+          <a class="sample-frame" href="{{ asset.baseline_url }}"><img src="{{ asset.baseline_url }}" alt="{{ asset.label }} before" loading="lazy"></a>
         </figure>
         {% endfor %}
         {% if unchanged %}
@@ -69,7 +76,7 @@
           <summary>{{ unchanged | length }} unchanged</summary>
           <div class="pair" style="margin-top: 8px">
             {% for asset in unchanged %}
-            <figure id="{{ asset.path }}"><figcaption>{{ asset.label }}</figcaption><a href="{{ asset.candidate_url }}"><img src="{{ asset.candidate_url }}" alt="{{ asset.label }}" loading="lazy"></a></figure>
+            <figure id="{{ asset.path }}"><figcaption>{{ asset.label }}</figcaption><a class="sample-frame" href="{{ asset.candidate_url }}"><img src="{{ asset.candidate_url }}" alt="{{ asset.label }}" loading="lazy"></a></figure>
             {% endfor %}
           </div>
         </details>
@@ -77,7 +84,7 @@
       {% else %}
         {% for asset in assets %}
         <figure id="{{ asset.path }}">
-          <a href="{{ asset.candidate_url }}"><img src="{{ asset.candidate_url }}" alt="{{ asset.label }}" loading="lazy"></a>
+          <a class="sample-frame" href="{{ asset.candidate_url }}"><img src="{{ asset.candidate_url }}" alt="{{ asset.label }}" loading="lazy"></a>
           <figcaption>{{ asset.label }}</figcaption>
         </figure>
         {% endfor %}

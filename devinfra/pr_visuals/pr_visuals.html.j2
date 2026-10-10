@@ -4,6 +4,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <title>Visual review · {{ commit_sha }}</title>
+    <link rel="stylesheet" href="{{ gallery_stylesheet }}">
     <style>
       :root { color-scheme: light dark; font: 15px/1.45 system-ui, sans-serif; background: #f4f5f7; color: #16181d; }
       body { margin: 0; }
@@ -11,9 +12,12 @@
       h1 { margin: 0 0 4px; font-size: 18px; }
       h2 { font-size: 16px; }
       code { overflow-wrap: anywhere; font-size: 12px; }
+      .gallery-controls { padding: 14px 20px 0; }
+      .gallery-controls label { margin-right: 8px; font-weight: 600; }
       main { padding: 20px; }
       section { margin-bottom: 28px; }
       .assets { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(360px, 100%), 1fr)); gap: 16px; }
+      .assets .sample-frame { max-width: 420px; margin-inline: auto; }
       figure { margin: 0; padding: 10px; border: 1px solid #bbb; border-radius: 10px; background: Canvas; }
       img { display: block; max-width: 100%; height: auto; border-radius: 6px; background: white; }
       figcaption { padding-top: 8px; font-weight: 600; }
@@ -25,9 +29,17 @@
       <h1>Visual review</h1>
       <div>{{ repository }} · <code>{{ commit_sha }}</code> · {{ tests | length }} Bazel test targets</div>
     </header>
+    <div class="gallery-controls">
+      <label for="test-sort">Sort tests</label>
+      <select id="test-sort">
+        <option value="impact">Review impact (comment order)</option>
+        <option value="name">Test name (A–Z)</option>
+        <option value="changed">Most changed screenshots</option>
+      </select>
+    </div>
     <main>
       {% for test in tests %}
-      <section>
+      <section data-title="{{ test.title | lower }}" data-changed-count="{{ test.sort_changed_count }}" data-largest-change="{{ test.sort_largest_change }}">
         <h2><a href="tests/{{ test.slug }}/index.html">{{ test.title }}</a></h2>
         <p>
           <code>{{ test.target_label }}</code>
@@ -40,14 +52,21 @@
         <div class="assets">
           {% if test.preview and test.preview.classification == "modified" %}
           <figure>
-            <a href="{{ test.preview.anchor_url }}">
+            {% if test.preview.dimension_changed %}
+            <a class="sample-frame" href="{{ test.preview.anchor_url }}">
+              <img src="{{ test.preview.candidate_url }}" alt="{{ test.preview.label }} after" loading="lazy">
+            </a>
+            <figcaption>{{ test.preview.label }} after · dimensions changed</figcaption>
+            {% else %}
+            <a class="sample-frame" href="{{ test.preview.anchor_url }}">
               <img src="{{ test.preview.diff_url }}" alt="{{ test.preview.label }} diff" loading="lazy">
             </a>
             <figcaption>{{ test.preview.label }} diff</figcaption>
+            {% endif %}
           </figure>
           {% elif test.preview %}
           <figure>
-            <a href="{{ test.preview.anchor_url }}">
+            <a class="sample-frame" href="{{ test.preview.anchor_url }}">
               <img src="{{ test.preview.candidate_url }}" alt="{{ test.preview.label }}" loading="lazy">
             </a>
             <figcaption>{{ test.preview.label }} (new)</figcaption>
@@ -55,7 +74,7 @@
           {% elif not test.summary %}
             {% for asset in test.assets[:2] %}
             <figure>
-              <a href="{{ asset.anchor_url }}">
+              <a class="sample-frame" href="{{ asset.anchor_url }}">
                 <img src="{{ asset.candidate_url }}" alt="{{ asset.label }}" loading="lazy">
               </a>
               <figcaption>{{ asset.label }}</figcaption>
@@ -66,5 +85,6 @@
       </section>
       {% endfor %}
     </main>
+    <script src="gallery_sort.js" defer></script>
   </body>
 </html>
