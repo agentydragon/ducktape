@@ -26,7 +26,6 @@ from agentplane.sandbox_service.commands.store import SubmissionStore
 from agentplane.sandbox_service.destinations import DestinationResolver
 from agentplane.sandbox_service.grpc_api import Resources
 from agentplane.sandbox_service.protocol_pb2 import SandboxBinding, SandboxDestination, SessionDefaults
-from agentplane.sandbox_service.session_history.store import Store
 from agentplane.sandbox_service.session_registry import SessionRegistry
 from agentplane.sandbox_service.testing.grpc_service import service_client
 from agentplane.sandbox_service.testing.kubernetes import ACCOUNT, SANDBOX, SANDBOX_UID, Cluster
@@ -80,7 +79,7 @@ def resources(cluster: Cluster, runner: RunnerHandle, commands_engine: AsyncEngi
         destinations=DestinationResolver(cluster.inventory, k8s_client.CoreV1Api(cluster.api), runner.port),
         caller_accounts=frozenset({OWNER}),
         platform_instructions="Test backend-owned guidance.",
-        sessions=SessionRegistry(commands_engine, Store(commands_engine)),
+        sessions=SessionRegistry(commands_engine),
         submissions=SubmissionStore(commands_engine),
     )
 
