@@ -57,9 +57,12 @@ def _is_conflict(error: BaseException) -> bool:
     return isinstance(error, k8s_client.ApiException) and error.status == 409
 
 
-# A resourceVersion guard failed: another writer changed the Sandbox between our read and write.
-# Read it again and decide again; the decision must see what the other writer committed.
-_retry_on_conflict = retry(retry=retry_if_exception(_is_conflict), stop=stop_after_attempt(5), reraise=True)
+def _retry_on_conflict[F: Callable[..., Awaitable[object]]](fn: F) -> F:
+    """A resourceVersion guard failed: another writer changed the Sandbox between our read and write.
+    Read it again and decide again; the decision must see what the other writer committed."""
+    # Annotated: tenacity's keyword-configured decorator does not carry the wrapped signature.
+    retried: F = retry(retry=retry_if_exception(_is_conflict), stop=stop_after_attempt(5), reraise=True)(fn)
+    return retried
 
 
 # Kubernetes-boundary models: the subset of each CR the inventory reads, parsed once off the wire.
