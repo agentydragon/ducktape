@@ -611,6 +611,7 @@ ts_library(
         ":status_mark",
         ":stream_status",
         ":thread_groups",
+        ":thread_notices",
         ":thread_status",
         ":thread_status_indicator",
         "//:node_modules/@mantine/core",
@@ -660,6 +661,18 @@ ts_library(
 ts_library(
     name = "notification_status",
     srcs = ["notification_status.tsx"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":live_stream",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+    ],
+)
+
+ts_library(
+    name = "thread_notices",
+    srcs = ["thread_notices.tsx"],
     tsconfig = TSCONFIG,
     deps = [
         ":live_stream",
@@ -997,6 +1010,7 @@ ts_library(
         ":stream_status",
         ":test_model_catalog",
         ":theme",
+        ":thread_notices",
         ":visual_rollouts",
         "//:node_modules/@bufbuild/protobuf",
         "//:node_modules/@mantine/core",

@@ -17,6 +17,7 @@ import { sampleConnection } from "../connections_fixture";
 import type { BindingView, Decision, McpLinkageView, PolicyView, SandboxView, ThreadView } from "../client";
 import type { ActionGroupView, ActionPolicyView, ActionRequestView } from "../actions/client";
 import type { SandboxesSnapshot, SandboxSnapshot, ThreadsSnapshot, WatchHealth } from "../live";
+import type { InboxNoticeState } from "../thread_notices";
 import { EventSchema, ItemKind, RecoveryDisposition, TurnStatus } from "../../../proto/event_pb";
 import { CommandSchema } from "../../../proto/command_pb";
 import { EventEntrySchema } from "../../../proto/event_log_pb";
@@ -1917,6 +1918,7 @@ const MCP_GROUPS: ActionGroupView[] = [
 ];
 
 let notificationStatusUnavailable = false;
+let threadNoticesShown = false;
 let notificationExtraEntry = false;
 let pushBrowserAdded = false;
 let connectionRenamed = false;
@@ -2711,6 +2713,38 @@ class HarnessEventSource extends EventTarget {
       if (dropInventoryStream) this.drop();
       return;
     }
+    if (url.pathname === "/threads/notices/stream") {
+      // By thread: one with notices waiting, one with a delivered notice the agent has not
+      // acknowledged, and one whose delivery failed.
+      const states: Record<string, Partial<InboxNoticeState>> = threadNoticesShown
+        ? {
+            [IDLE_THREAD]: {
+              queued: 2,
+              notice: "confirmed",
+              notice_wait_reason: "debouncing",
+              eligible_at: ago(-90_000),
+            },
+            [RUNNING_THREAD]: { unacknowledged: 1, notice: "confirmed" },
+            "5f1c4a2e-0000-4000-8000-000000000003": { queued: 1, notice: "attempted", error: "runner unreachable" },
+          }
+        : {};
+      const inboxes = url.searchParams
+        .getAll("thread_id")
+        .filter((session) => session in states)
+        .map((session): InboxNoticeState => ({
+          inbox_id: `inbox-${session}`,
+          session_id: session,
+          queued: 0,
+          unacknowledged: 0,
+          notice: null,
+          notice_wait_reason: null,
+          eligible_at: null,
+          error: null,
+          ...states[session],
+        }));
+      this.dispatchEvent(new MessageEvent("snapshot", { data: JSON.stringify({ observed_at: ago(0), inboxes }) }));
+      return;
+    }
     const sandbox = url.pathname.startsWith("/live/sandboxes/") ? url.pathname.slice("/live/sandboxes/".length) : null;
     const notification = url.pathname.match(/^\/sandboxes\/([^/]+)\/notifications\/stream$/);
     if (notification) {
@@ -2923,6 +2957,9 @@ const visualHarness = {
   publishMcpHealthChange(): void {
     mcpHealthChanged = true;
     HarnessEventSource.publishMcp("/action-groups/stream");
+  },
+  showThreadNotices(): void {
+    threadNoticesShown = true;
   },
   setNotificationStatusUnavailable(unavailable: boolean): void {
     notificationStatusUnavailable = unavailable;

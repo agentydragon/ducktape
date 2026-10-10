@@ -31,6 +31,7 @@ import { SANDBOX_STATUS_MARKS } from "./status_mark";
 import "./sidebar.css";
 import { ConnectionIndicator } from "./stream_status";
 import { groupThreads, type ThreadGroup } from "./thread_groups";
+import { ThreadNoticeBadge, type ThreadNotices, useThreadNotices } from "./thread_notices";
 import { ThreadStatusIndicator } from "./thread_status_indicator";
 import { ScrollDebugTools } from "./threads/scroll_debug_tools";
 import { snapshotFresh, threadStatusFromSnapshot } from "./thread_status";
@@ -186,6 +187,7 @@ function ThreadRow({
   sandbox,
   fresh,
   current,
+  notices,
   onOpen,
   onToggleArchived,
 }: {
@@ -193,6 +195,7 @@ function ThreadRow({
   sandbox: SandboxView | null;
   fresh: boolean;
   current: boolean;
+  notices: ThreadNotices;
   onOpen: (thread: ThreadView) => void;
   onToggleArchived: (thread: ThreadView) => void;
 }): JSX.Element {
@@ -227,6 +230,7 @@ function ThreadRow({
     >
       <ThreadStatusIndicator kind={status.kind} label={status.label} size="small" />
       <span className="agentplane-sidebar-row-name">{label}</span>
+      <ThreadNoticeBadge inboxes={notices.bySession?.get(thread.id) ?? []} live={notices.live} />
       <Tooltip
         label={thread.archived ? "Unarchive" : harnessRunning ? "Stop the harness before archiving" : "Archive"}
         withArrow
@@ -261,6 +265,7 @@ function ThreadGroupSection({
   fresh,
   current,
   currentSandbox,
+  notices,
   onNavigate,
   onOpen,
   onToggleArchived,
@@ -269,6 +274,7 @@ function ThreadGroupSection({
   fresh: boolean;
   current: string | null;
   currentSandbox: boolean;
+  notices: ThreadNotices;
   onNavigate: () => void;
   onOpen: (thread: ThreadView) => void;
   onToggleArchived: (thread: ThreadView) => void;
@@ -309,6 +315,7 @@ function ThreadGroupSection({
           sandbox={group.sandbox}
           fresh={fresh}
           current={current === thread.id}
+          notices={notices}
           onOpen={onOpen}
           onToggleArchived={onToggleArchived}
         />
@@ -369,6 +376,7 @@ function SidebarView({
     current
   );
   const archived = data?.archived_count ?? 0;
+  const notices = useThreadNotices(threads.map((thread) => thread.id));
 
   useEffect(() => {
     // Each listing is its own stream, so typing waits for a pause before asking for one.
@@ -477,6 +485,7 @@ function SidebarView({
               fresh={fresh}
               current={current}
               currentSandbox={sandboxRoute?.params.name === group.sandboxName}
+              notices={notices}
               onNavigate={closeIfPhone}
               onOpen={openThread}
               onToggleArchived={(thread) => void toggleArchived(thread)}

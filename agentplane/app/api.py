@@ -232,14 +232,31 @@ async def sandbox_notifications_stream(
     inventory: Inventory, request: Request, name: str, shutdown: Shutdown, updates: Updates
 ) -> StreamingResponse:
     """Operator-only SSE proxy; scope the upstream by the current Sandbox incarnation UID."""
+    _require_operator_login(request)
+    sandbox = sandbox_view(await inventory.get(name))
+    return _notifications_proxy(
+        request,
+        shutdown,
+        updates,
+        f"/operator/v1/sandboxes/{sandbox.namespace}/{sandbox.name}/notifications/stream",
+        {"uid": str(sandbox.uid)},
+    )
+
+
+def _require_operator_login(request: Request) -> None:
+    # Workload authentication of the app is not operator authorization to inspect another inbox.
     if request.app.state.oidc is None or request_session(request).login is None:
         raise HTTPException(403, "operator login required")
+
+
+def _notifications_proxy(
+    request: Request, shutdown: Shutdown, updates: Updates, upstream: str, params: dict[str, str | list[str]]
+) -> StreamingResponse:
+    """Relay a Notification Service operator stream for as long as the operator session lasts."""
     client = request.app.state.notifications_http
     token_file = request.app.state.notifications_token_file
-    sandbox = sandbox_view(await inventory.get(name))
     sessions = _operator_sessions(request)
     session_id = operator_session_row(request).id
-    upstream = f"/operator/v1/sandboxes/{sandbox.namespace}/{sandbox.name}/notifications/stream"
 
     async def session_over() -> None:
         await sessions.until_ended(session_id, updates.changes[Channel.OPERATOR_SESSIONS])
@@ -249,7 +266,7 @@ async def sandbox_notifications_stream(
             async with client.stream(
                 "GET",
                 upstream,
-                params={"uid": sandbox.uid},
+                params=params,
                 headers={"Authorization": f"Bearer {token_file.read_text().strip()}"},
                 timeout=httpx.Timeout(None, connect=5),
             ) as response:
@@ -763,6 +780,22 @@ async def list_threads(
     """Persisted threads, newest first; a thread outlives its sandbox."""
     return await store.list_page(
         limit=limit, page_token=page_token, sandbox=sandbox, search=search, include_archived=include_archived
+    )
+
+
+@threads.get("/notices/stream")
+async def thread_notices_stream(
+    request: Request,
+    shutdown: Shutdown,
+    updates: Updates,
+    thread_id: Annotated[list[UUID], Query(max_length=MAX_PAGE, description="The threads to follow.")],
+) -> StreamingResponse:
+    """Operator-only SSE of the named threads' live notification inboxes: entries queued for a
+    notice, entries a notice delivered that the agent has not acknowledged, and how far the latest
+    notice got. Following it acknowledges nothing."""
+    _require_operator_login(request)
+    return _notifications_proxy(
+        request, shutdown, updates, "/operator/v1/notices/stream", {"session_id": [str(thread) for thread in thread_id]}
     )
 
 

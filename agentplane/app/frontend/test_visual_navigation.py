@@ -30,6 +30,18 @@ async def test_archived_thread_toggle(view: VisualPage, app: AgentplaneFixture) 
     await view.capture(target=view.page.locator("#app"))
 
 
+async def test_thread_notice_badges(view: VisualPage, app: AgentplaneFixture) -> None:
+    """Queued, delivered-but-unacknowledged and failed notification states on Thread rows."""
+    await app.show_thread_notices()
+    await app.mount_app("/")
+    await view.check(context="fixture ready")
+    page = view.page
+    badges = page.locator(".agentplane-sidebar-row-notices")
+    for state in ["queued", "delivered", "error"]:
+        await expect(badges.and_(page.locator(f'[data-state="{state}"]'))).to_have_count(1)
+    await view.capture(target=page.get_by_role("navigation", name="Threads"))
+
+
 @pytest.mark.parametrize("viewport", [DESKTOP, MOBILE], ids=["desktop", "mobile"])
 async def test_current_sandbox_highlight(view: VisualPage, app: AgentplaneFixture, viewport: Viewport) -> None:
     await app.mount_app("/sandboxes/ready-sandbox?tab=status")

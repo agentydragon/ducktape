@@ -126,6 +126,9 @@ class AgentplaneFixture:
     async def publish_mcp_health_change(self) -> None:
         await self.page.evaluate("() => window.agentplaneVisual.publishMcpHealthChange()")
 
+    async def show_thread_notices(self) -> None:
+        await self.page.evaluate("() => window.agentplaneVisual.showThreadNotices()")
+
     async def set_notification_status_unavailable(self, unavailable: bool) -> None:
         await self.page.evaluate(
             "unavailable => window.agentplaneVisual.setNotificationStatusUnavailable(unavailable)", unavailable

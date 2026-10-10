@@ -190,6 +190,10 @@
   white-space: nowrap;
 }
 
+.agentplane-sidebar-row-notices {
+  flex-shrink: 0;
+}
+
 .agentplane-sidebar-row-action {
   opacity: 0;
 }
