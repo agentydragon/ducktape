@@ -45,6 +45,10 @@
   height: 100%;
 }
 
+.agentplane-shell-main-content.agentplane-shell-mosaic {
+  padding: 0;
+}
+
 /* The main area's own header row: the sidebar-toggle button, then the current route's title
    (topbar.tsx's TopbarTitle, portaled in) and trailing actions (TopbarActions). Shown at every
    width -- not just phone width -- so the toggle also collapses the desktop sidebar. Sticky rather

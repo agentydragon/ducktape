@@ -178,7 +178,9 @@ function AppRoutes(): JSX.Element {
               <div className="agentplane-topbar-title" ref={titleRef} />
               <div className="agentplane-topbar-actions" ref={actionsRef} />
             </div>
-            <div className={`agentplane-shell-main-content${fullBleed ? " agentplane-shell-fullbleed" : ""}`}>
+            <div
+              className={`agentplane-shell-main-content${fullBleed ? " agentplane-shell-fullbleed" : ""}${mosaicRoute !== null ? " agentplane-shell-mosaic" : ""}`}
+            >
               {threadRoute !== null || mosaicRoute !== null ? (
                 <SandboxesLiveProvider>{routes}</SandboxesLiveProvider>
               ) : (

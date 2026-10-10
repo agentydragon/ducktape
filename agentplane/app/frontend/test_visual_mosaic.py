@@ -38,6 +38,9 @@ async def test_desktop_shell_docks_the_existing_browsers(
     await _mount(view, app)
     page = view.page
     await expect(page.locator("[data-mosaic-pane]")).to_have_count(3)
+    await expect(page.locator(".agentplane-shell-main-content")).to_have_css("padding-left", "0px")
+    await expect(page.locator(".agentplane-mosaic .mosaic-tile").first).to_have_css("margin-left", "0px")
+    await expect(page.locator(".agentplane-mosaic .mosaic-window").first).to_have_css("border-top-left-radius", "0px")
     await expect(page.locator("[data-mosaic-pane-kind='actions'] .agentplane-actions-sidebar-request")).to_have_count(3)
     await expect(
         page.locator("[data-mosaic-pane-kind='threads'] .agentplane-sidebar-group-label").first

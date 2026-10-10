@@ -13,15 +13,51 @@
   background: var(--mantine-color-body);
 }
 
+.agentplane-mosaic .mosaic-root {
+  inset: 0;
+}
+
+.agentplane-mosaic .mosaic-tile {
+  margin: 0;
+}
+
 .agentplane-mosaic .mosaic-window {
-  border: 1px solid var(--mantine-color-default-border);
-  border-radius: var(--mantine-radius-sm);
+  border: 0;
+  border-radius: 0;
   background: var(--mantine-color-body);
   box-shadow: none;
 }
 
 .agentplane-mosaic .mosaic-window.agentplane-mosaic-active {
-  border-color: var(--mantine-primary-color-filled);
+  box-shadow: inset 0 0 0 1px var(--mantine-primary-color-filled);
+}
+
+.agentplane-mosaic .mosaic-split {
+  z-index: 5;
+}
+
+.agentplane-mosaic .mosaic-split:hover,
+.agentplane-mosaic .mosaic-split.-preview {
+  background: transparent;
+}
+
+.agentplane-mosaic .mosaic-split .mosaic-split-line {
+  background: var(--mantine-color-default-border);
+}
+
+.agentplane-mosaic .mosaic-split.-row .mosaic-split-line {
+  right: auto;
+  width: 1px;
+}
+
+.agentplane-mosaic .mosaic-split.-column .mosaic-split-line {
+  bottom: auto;
+  height: 1px;
+}
+
+.agentplane-mosaic .mosaic-split:hover .mosaic-split-line,
+.agentplane-mosaic .mosaic-split.-preview .mosaic-split-line {
+  background: var(--mantine-primary-color-filled);
 }
 
 .agentplane-mosaic .mosaic-window-toolbar,
@@ -31,6 +67,7 @@
   padding: 3px 8px;
   border-bottom: 1px solid var(--mantine-color-default-border);
   background: var(--mantine-color-body);
+  box-shadow: none;
 }
 
 .agentplane-mosaic .mosaic-window-title {
