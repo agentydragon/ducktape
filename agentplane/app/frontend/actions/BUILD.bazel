@@ -291,10 +291,10 @@ agentplane_vitest_test(
 ts_library(
     name = "notifications",
     srcs = [
-        "notifications/index.ts",
         "notifications/grocy/get_system_info.ts",
         "notifications/grocy/products_list.ts",
         "notifications/grocy/quantity_units_list.ts",
+        "notifications/index.ts",
         "notifications/kubernetes_admin/pods_list_in_namespace.ts",
         "notifications/ssh/exec.ts",
         "notifications/tana/get_or_create_calendar_node.ts",
