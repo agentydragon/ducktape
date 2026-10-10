@@ -82,7 +82,7 @@ pub use explain::{
     ExplainRangeKind, RangeExplanation, RangeExplanationStatus, RangeFailure, RangeFailureCategory,
     explain_range,
 };
-pub use fact_near_miss::{fact_near_misses, fact_source_match_body_debt};
+pub use fact_near_miss::{SourceMatchDebtRuntime, fact_near_misses, fact_source_match_body_debt};
 pub use free_identifiers::{free_identifiers, template_free_identifiers};
 pub use parse_validate::parse_selector_module;
 pub use preview::source_match_preview;

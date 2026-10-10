@@ -386,6 +386,7 @@ fn compute_selector_debt_impl(
                 .with_context(|| format!("parsing {}", config.source_file.display()))
         })
         .transpose()?;
+    let runtime_debt = std::cell::OnceCell::new();
     let mut source_aware_checked = 0usize;
     let mut source_aware_unique = 0usize;
     let mut source_aware_near_ambiguous = Vec::new();
@@ -440,7 +441,9 @@ fn compute_selector_debt_impl(
                 &mut source_aware_unique,
                 &mut source_aware_near_ambiguous,
                 source_aware,
-                runtime_module.as_ref(),
+                runtime_module.as_ref().map(|module| {
+                    runtime_debt.get_or_init(|| source_match::SourceMatchDebtRuntime::new(module))
+                }),
                 &module_path,
                 SelectorSite::SourceMatch,
                 None,
@@ -484,7 +487,9 @@ fn compute_selector_debt_impl(
                 &mut source_aware_unique,
                 &mut source_aware_near_ambiguous,
                 source_aware,
-                runtime_module.as_ref(),
+                runtime_module.as_ref().map(|module| {
+                    runtime_debt.get_or_init(|| source_match::SourceMatchDebtRuntime::new(module))
+                }),
                 &module_path,
                 SelectorSite::AnonymousStatement,
                 None,
@@ -888,18 +893,18 @@ fn collect_source_aware_debt(
     unique: &mut usize,
     rows: &mut Vec<SourceAwareStructuralSelector>,
     config: Option<&SourceAwareSelectorDebtConfig<'_>>,
-    runtime_module: Option<&swc_ecma_ast::Module>,
+    runtime_debt: Option<&source_match::SourceMatchDebtRuntime<'_>>,
     module_path: &str,
     site: SelectorSite,
     export_name: Option<String>,
     selector: &AnonymousStatementSelector,
 ) -> Result<Option<Vec<usize>>> {
-    let (Some(config), Some(runtime_module)) = (config, runtime_module) else {
+    let (Some(config), Some(runtime_debt)) = (config, runtime_debt) else {
         return Ok(None);
     };
     *checked += 1;
     let debt = source_match::fact_source_match_body_debt(
-        runtime_module,
+        runtime_debt,
         module_path,
         selector,
         config.near_match_min_score,

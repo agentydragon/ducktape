@@ -258,13 +258,29 @@ fn item_index(item: &ModuleItem) -> Option<Index> {
     chunk_resolver::item_facts(item).map(|facts| Index::build(&facts))
 }
 
+/// Fact indices of one source chunk, shared by every source-aware debt probe.
+/// Building these for each selector repeatedly extracts the same large bundle.
+pub struct SourceMatchDebtRuntime<'a> {
+    module: &'a Module,
+    subject_indices: Vec<Index>,
+}
+
+impl<'a> SourceMatchDebtRuntime<'a> {
+    pub fn new(module: &'a Module) -> Self {
+        Self {
+            module,
+            subject_indices: item_indices(&module.body),
+        }
+    }
+}
+
 /// `source_match` body debt: the exact top-level alignments (`exact_groups`) plus
 /// the scored "first structural divergence" for every non-matching top-level
 /// candidate scoring `>= min_score`, computed by [`fact_first_mismatch_reason`].
 /// Both halves read the fact model. Rows are sorted `(score desc, body_idx asc)`
 /// and truncated to `limit` (0 = no limit).
 pub fn fact_source_match_body_debt(
-    runtime_module: &Module,
+    runtime: &SourceMatchDebtRuntime<'_>,
     request_id: &str,
     selector: &AnonymousStatementSelector,
     min_score: usize,
@@ -278,18 +294,18 @@ pub fn fact_source_match_body_debt(
     )?;
     let mode = selector_mode(selector);
     let needle_indices = item_indices(&parsed.body);
-    let subject_indices = item_indices(&runtime_module.body);
-    let exact_groups = fact_exact_groups(&needle_indices, &subject_indices, mode);
+    let exact_groups = fact_exact_groups(&needle_indices, &runtime.subject_indices, mode);
     let exact_body_indices = exact_groups
         .iter()
         .flat_map(|group| group.iter().flatten().copied())
         .collect::<BTreeSet<_>>();
     let near_misses = near_misses_among(
-        runtime_module,
+        runtime.module,
         &parsed.body,
         &needle_indices,
         mode,
-        subject_indices
+        runtime
+            .subject_indices
             .iter()
             .enumerate()
             .filter(|(idx, _)| !exact_body_indices.contains(idx)),
