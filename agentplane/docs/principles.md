@@ -81,8 +81,9 @@ Elsewhere:
 - The LLM ingress forwards provider-native request and response bodies untranslated.
 - Projections for display may compact, but only what can be rebuilt from retained evidence.
 
-Dropping data is allowed when it is chosen deliberately: a stated retention or trimming policy, or
-withholding a secret. It is never a side effect of a convenient schema.
+Preserving is the default; storage is mostly cheap. Dropping data happens only as a deliberate,
+design-level decision, such as compacting streamed deltas once a turn completes, never as a side
+effect of a convenient schema.
 
 Errors follow the same rule. There is no `except: return "something went wrong"`: a failure
 propagates with its cause, or is logged with its detail where a fallback is genuinely correct
