@@ -985,7 +985,7 @@ def generate_manifests(root: Path) -> None:
             monitoring_alloy_artifact,
             alloy.chart,
             namespace=alloy.NAMESPACE,
-            config_map_generator=[alloy.write_config_map(root)],
+            config_map_generator=alloy.write_config_maps(root),
         ),
         monitoring_crds_kustomization,
     )
