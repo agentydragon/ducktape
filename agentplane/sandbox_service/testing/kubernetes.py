@@ -10,13 +10,15 @@ from typing import cast
 from kubernetes_asyncio import client as k8s_client
 
 from agentplane.sandbox_service.action_policy import ActionPolicyBindings
+from agentplane.sandbox_service.binding_storage import write_binding
 from agentplane.sandbox_service.client import SandboxServiceClient
 from agentplane.sandbox_service.destinations import DestinationResolver
 from agentplane.sandbox_service.egress import EgressInventory
 from agentplane.sandbox_service.grpc_api import Resources
 from agentplane.sandbox_service.inventory import SandboxInventory
 from agentplane.sandbox_service.kubernetes_bindings import KubernetesBindings
-from agentplane.sandbox_service.kubernetes_views import MANAGED_LABEL
+from agentplane.sandbox_service.kubernetes_views import MANAGED_LABEL, SANDBOX_BINDING_ANNOTATION
+from agentplane.sandbox_service.protocol_pb2 import SandboxBinding
 from agentplane.sandbox_service.provisioning import Provisioning
 from agentplane.sandbox_service.testing.grpc_service import service_client
 from agentplane.sandbox_service.testing.history import with_history
@@ -40,6 +42,11 @@ class Cluster:
     @property
     def inventory(self) -> SandboxInventory:
         return self.provisioning.inventory
+
+    def set_binding(self, binding: SandboxBinding) -> None:
+        self.fake.objects[SANDBOXES_PLURAL][SANDBOX]["metadata"].setdefault("annotations", {})[
+            SANDBOX_BINDING_ANNOTATION
+        ] = write_binding(binding)
 
 
 @asynccontextmanager

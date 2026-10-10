@@ -480,6 +480,14 @@ the Thread event stream and starts the harness only after setup succeeds. A fail
 readable Thread and workspace but cannot rerun setup under the same session id. The Sandbox page
 uses the configured cwd template instead of replacing it with a hardcoded workspace path.
 
+A new Thread's id is the public Session ID that the Sandbox Service's `CreateSession` reserves, so
+`{session_id}` in a cwd resolves server-side. The browser sends a random Open key with the original
+overrides once and keeps only that key in `sessionStorage`, never the spec or setup script. After a
+lost reply or a reload it never re-sends Open: **Check Open status** asks
+`GET /sandboxes/{name}/sessions/open`, which reports `absent`, `unconfirmed`, `failed` or `ready` and
+materializes the Thread only once the runner has confirmed a native start. Discovery through
+`ListSessions` may materialize the same Thread first; both key it by the same public ID.
+
 ## Action policy
 
 The Sandbox page's "Action policy" tab, carried in the live snapshot frame, shows the Action

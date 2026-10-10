@@ -19,18 +19,15 @@ from agentplane.runner.testing import events
 from agentplane.runner.testing.fixtures import RunnerHandle
 from agentplane.runner.testing.scripted_model import ScriptedModel, Text
 from agentplane.sandbox_service import protocol_pb2
-from agentplane.sandbox_service.binding_storage import write_binding
 from agentplane.sandbox_service.client import Runner, SandboxServiceClient, ServiceError
 from agentplane.sandbox_service.destinations import DestinationResolver
 from agentplane.sandbox_service.grpc_api import Resources
-from agentplane.sandbox_service.kubernetes_views import SANDBOX_BINDING_ANNOTATION
 from agentplane.sandbox_service.protocol_pb2 import SandboxBinding, SandboxDestination, SessionDefaults
 from agentplane.sandbox_service.testing.grpc_service import service_client
 from agentplane.sandbox_service.testing.kubernetes import ACCOUNT, SANDBOX, SANDBOX_UID, Cluster
 from agentplane.subjects import ServiceAccountRef
 from agentplane.testing.fake_apiserver import SANDBOX_NAMESPACE, TokenVerdict
 from agentplane.workload_auth.principal import WorkloadPrincipalResolver
-from util.agent_sandbox import SANDBOXES_PLURAL
 
 # gazelle:include_dep @pypi//protobuf
 # gazelle:include_dep @pypi//grpcio
@@ -79,12 +76,6 @@ def token_file(tmp_path: Path) -> Path:
 async def remote(resources: Resources, token_file: Path) -> AsyncIterator[SandboxServiceClient]:
     async with service_client(resources, token_file) as client:
         yield client
-
-
-def set_binding(cluster: Cluster, binding: SandboxBinding) -> None:
-    cluster.fake.objects[SANDBOXES_PLURAL][SANDBOX]["metadata"].setdefault("annotations", {})[
-        SANDBOX_BINDING_ANNOTATION
-    ] = write_binding(binding)
 
 
 async def inspect(remote: SandboxServiceClient) -> runner_pb2.Attached:
@@ -138,8 +129,7 @@ async def test_launch_delivery_and_restart_preserve_evidence_and_configuration(
 ) -> None:
     bootstrap_marker = workspace / "bootstrap-runs"
     setup_marker = workspace / "setup-runs"
-    set_binding(
-        cluster,
+    cluster.set_binding(
         SandboxBinding(
             bootstrap=f"printf B >> {shlex.quote(str(bootstrap_marker))}",
             session_defaults=SessionDefaults(
@@ -150,7 +140,7 @@ async def test_launch_delivery_and_restart_preserve_evidence_and_configuration(
                 instructions="Test task guidance.",
                 setup_script=f"printf S >> {shlex.quote(str(setup_marker))}",
             ),
-        ),
+        )
     )
     async with service_client(resources, token_file) as remote:
         runner = remote.runner(DESTINATION)
@@ -207,7 +197,7 @@ async def test_launch_delivery_and_restart_preserve_evidence_and_configuration(
         with pytest.raises(RunnerError):
             await runner.attach(SESSION, after_cursor=stopped.attached.last_cursor + 1)
     # Stop the service, change its configuration and stored defaults, and recover solely from the runner.
-    set_binding(cluster, SandboxBinding(bootstrap="exit 42", session_defaults=SessionDefaults(model="changed")))
+    cluster.set_binding(SandboxBinding(bootstrap="exit 42", session_defaults=SessionDefaults(model="changed")))
     async with service_client(
         replace(resources, platform_instructions="New platform guidance."), token_file
     ) as restarted:
@@ -261,7 +251,7 @@ async def test_invalid_launch_and_failed_bootstrap_never_create(
         with pytest.raises(ServiceError) as rejected:
             await runner.open(SESSION, invalid)
         assert rejected.value.code == grpc.StatusCode.INVALID_ARGUMENT
-    set_binding(cluster, SandboxBinding(bootstrap="exit 42"))
+    cluster.set_binding(SandboxBinding(bootstrap="exit 42"))
     with pytest.raises(RunnerError):
         await runner.open(SESSION, MessageToDict(spec))
     assert not await runner.list_sessions()

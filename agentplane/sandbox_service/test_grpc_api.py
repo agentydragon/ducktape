@@ -492,6 +492,23 @@ async def test_managed_open_lost_response_uses_same_reservation(
         await second.closed.wait()
 
 
+async def test_managed_open_expands_default_cwd_with_reserved_id(
+    resources: Resources, token_file: Path, peer: Peer, engine: AsyncEngine, cluster: Cluster
+) -> None:
+    cluster.set_binding(
+        protocol_pb2.SandboxBinding(
+            session_defaults=protocol_pb2.SessionDefaults(
+                harness=runner_pb2.HARNESS_CODEX, model="test-model", cwd="/state/workspaces/{session_id}"
+            )
+        )
+    )
+    async with service_client(replace(resources, history=Store(engine)), token_file) as remote:
+        created = await remote.runner(DESTINATION).create(idempotency_key="default-cwd", spec={})
+        opened = await peer.attachments.get()
+        assert opened.opened.spec.cwd == f"/state/workspaces/{created.session_id}"
+        await opened.closed.wait()
+
+
 def admission(command: command_pb2.Command, cursor: int) -> event_log_pb2.EventEntry:
     return event_log_pb2.EventEntry(
         cursor=cursor,

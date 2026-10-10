@@ -120,7 +120,7 @@ readable but are not polled until their binding is established by a verified han
   a changed request with the same key is rejected. `ResumeSession`, `FollowSession`, and
   `SubmitCommand` accept the returned ID and resolve it to the retained runner ID within the
   pinned Sandbox UID. The key is not a Session ID and does not apply to runner-discovered native
-  child sessions. No app caller uses this new RPC until its own cutover.
+  child sessions. The app opens every new Thread through it.
 - `LookupSession`: read-only reconciliation by authenticated caller, current Sandbox name/UID
   and opaque Open key. Returns no public ID for an absent reservation, or the public ID
   without runner confirmation for a reserved Open. A runner summary is present only when

@@ -15,10 +15,12 @@ from agentplane.app.testing.history import ProjectedHistory as Ingestion, Seeded
 from agentplane.app.testing.projection_lease import LeaseFactory
 from agentplane.app.testing.retained_history import seed_retained_session
 from agentplane.app.testing.thread_test_support import SPEC, event_entry
+from agentplane.app.threads.bridge import RunnerBridge
 from agentplane.app.threads.events.event_log import EventLogStore as ServiceEventLogStore, FeedEnd
 from agentplane.app.threads.ingestion import Ingester
 from agentplane.app.threads.sessions import SandboxSessions
 from agentplane.app.threads.store import ThreadStore
+from agentplane.app.threads.view.content import ContentStore
 from agentplane.history_service.client import HistoryServiceClient
 from agentplane.protocol import event_pb2
 from agentplane.runner import protocol_pb2 as runner_pb2
@@ -527,6 +529,50 @@ async def test_discovery_of_new_service_thread_never_starts_legacy_follow(
         await coordinator.reconcile()
         reader.read_session_events.assert_awaited_once_with(str(public_id), after_cursor=0, limit=128)
         client.follow.assert_not_called()
+    finally:
+        await coordinator.close()
+
+
+async def test_discovery_racing_open_agrees_on_the_service_id(engine: AsyncEngine, ingestion: Ingestion) -> None:
+    """Discovery lists the runner session before CreateSession's reply reaches the app."""
+    public_id = uuid4()
+    reader = AsyncMock(spec=HistoryServiceClient)
+    reader.read_session_observations.return_value = protocol_pb2.ReadSessionObservationsResponse(last_cursor=0)
+    reader.read_session_events.return_value = protocol_pb2.ReadSessionEventsResponse(last_cursor=0)
+    logs = ServiceEventLogStore(
+        engine, history_reader=cast(HistoryServiceClient, reader), history_creator=cast(HistoryServiceClient, reader)
+    )
+    client = AsyncMock()
+    client.list_sessions.return_value = [runner_pb2.SessionSummary(session_id=str(public_id), spec=SPEC)]
+    client.create.return_value = protocol_pb2.CreateSessionResponse(
+        session_id=str(public_id), attached=runner_pb2.Attached(session_id=str(public_id), spec=SPEC)
+    )
+    runners = Mock(spec=SandboxSessions)
+    runners.running.return_value = {"sb-1"}
+    runners.client.return_value = client
+    coordinator = Ingester(
+        runners=cast(SandboxSessions, runners),
+        event_logs=logs,
+        ingestion=ingestion,
+        history_projector=HistoryProjector(
+            engine,
+            service_pages(cast(HistoryServiceClient, reader)),
+            projection_epoch=THREAD_FOLD_EPOCH,
+            notify=notify_threads,
+        ),
+    )
+    bridge = RunnerBridge(
+        runners=cast(SandboxSessions, runners),
+        event_logs=logs,
+        content=cast(ContentStore, Mock(spec=ContentStore)),
+        ingester=cast(Ingester, AsyncMock(spec=Ingester)),
+    )
+    try:
+        await coordinator.reconcile()
+        assert await logs.find("sb-1", str(public_id)) == public_id
+        attached = await bridge.create_session("sb-1", "open-key", {})
+        assert attached.session_id == str(public_id)
+        assert await logs.find("sb-1", str(public_id)) == public_id
     finally:
         await coordinator.close()
 

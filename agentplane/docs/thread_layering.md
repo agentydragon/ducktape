@@ -90,20 +90,21 @@ Raw evidence; the projection does not change runner Events or command admission.
 | Thread                               | Assembled from one Event log: the conversation view projected from its Events, under the log's id and stable URL, plus the name and archive state an operator sets | Its Event log's sequence, as the conversation view presents it                                      |
 | Runner session / harness incarnation | Attachment and execution provenance within an Event log                                                                                                            | Does not create a new conversation or a new Event counter                                           |
 | Runner command journal               | Exact immutable `Command`, identified by `command_id` within its execution scope                                                                                   | Serialized admission; operation-specific execution                                                  |
-| Runner Event log and app copy        | Runner appends; the app mints the copy's identity, with its static Sandbox association, on first sight of a runner session and persists the same `EventEntry`      | One sequence per log across supported harness incarnations; app and browser track consumed prefixes |
+| Runner Event log and app copy        | Runner appends; the app keys the copy, with its static Sandbox association, by the public Session ID and persists the same `EventEntry`                            | One sequence per log across supported harness incarnations; app and browser track consumed prefixes |
 | Sandbox and bootstrap state          | Kubernetes desired/observed objects; bootstrap's own log                                                                                                           | Separate operational state, with its own provenance                                                 |
 | Conversation view                    | Pure projection of runner Events                                                                                                                                   | Cards anchored to their causal Event; streaming may compact several Events                          |
 
 One Sandbox can host multiple Threads. A Thread may resume through several harness
 processes on that Sandbox. Current runner storage calls its durable, resumable container
 a “session”; it already spans process restarts. That existing name does not establish
-the target product Thread/incarnation relationship. The identity cutover must make the
-mapping explicit without duplicating the log's static Sandbox on each association.
+the target product Thread/incarnation relationship. The Sandbox Service's Session registry holds
+the mapping, without duplicating the log's static Sandbox on each association.
 
 A Thread is a view/fold of one durable logical Session's Event log, with its own
-operator-set presentation; it is not a second execution source. Today the app mints
-a UUID for its Event-log/Thread view on first sight of a runner Session identified by
-`(sandbox, session_id)`. A suspend/resume on retained storage reuses that Session ID,
+operator-set presentation; it is not a second execution source. Its id is the Sandbox
+Service's public Session UUID: `CreateSession` reserves it before runner contact, and the app
+materializes the Thread under it from the Open reply, an Open-key lookup, or `ListSessions`
+discovery, whichever comes first. A suspend/resume on retained storage reuses that Session ID,
 native conversation, and Event sequence; a fresh harness process is an incarnation,
 not another Session. Runner restart tests verify the identical ID and contiguous
 Event prefix after crash and SIGTERM; the Sandbox suspend/resume acceptance exercises
@@ -115,12 +116,12 @@ ID across Sandboxes only if it restores the same fenced journal and native state
 separate copied-state tests gate that claim. For existing histories, keep the
 app UUID as the canonical public ID and import its association to the existing
 `(sandbox, runner session_id)` into the durable history authority. That runner ID remains the physical storage/runtime locator: its
-native files, directories, and workspace paths need no rekey. New histories can use
-the canonical UUID as their runner Session ID. A future multi-Session Thread would
+native files, directories, and workspace paths need no rekey. New histories run under
+the runner locator `r-<uuid>`, which never leaves the Sandbox Service. A future multi-Session Thread would
 need a new explicit model rather than overloading this one-to-one identity.
 
-A runner's Event sequence goes into a Thread but is not itself the Thread. The app mints
-the Event log when it first sees a runner session and copies the runner's Events into it, along
+A runner's Event sequence goes into a Thread but is not itself the Thread. The app creates
+the Event log under the public Session ID and copies the runner's Events into it, along
 with the feed state. The Thread is assembled from that log: its conversation view is projected
 from the Events, under the log's id, and it adds what an operator sets (a name, and whether it is
 archived). A Thread exists exactly when its log does, so ingestion never has to create one.

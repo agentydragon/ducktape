@@ -23,10 +23,8 @@ contracts remain multi-replica unless a reviewed temporary restriction says othe
 ```mermaid
 flowchart TD
     APP_SESSION_SCHEMA_RENAME[Candidate: name app Session reference accurately]
-    THREAD_IDENTITY_NEW[Candidate: audit remaining new Session identity requirements]
-    THREAD_EVENT_CONTINUITY[Capstone: new and legacy identity continuity]
+    THREAD_EVENT_CONTINUITY[Candidate: new and legacy identity continuity]
     APP_ALEMBIC_SQUASH[Blocked: baseline final app schema]
-    THREAD_IDENTITY_NEW --> THREAD_EVENT_CONTINUITY
     APP_SESSION_SCHEMA_RENAME --> APP_ALEMBIC_SQUASH
     THREAD_EVENT_CONTINUITY --> APP_ALEMBIC_SQUASH
 ```
@@ -38,17 +36,9 @@ references. Preserve public IDs and app projection/operator metadata; do not ren
 service archive tables or runner storage. Coordinate a safe schema rollout. Metadata
 consumer audits remain scoped cleanup, not permission to discard useful UI projections.
 
-### `THREAD_IDENTITY_NEW` — service-owned identity for new histories
-
-**Candidate: reconcile remaining identity requirements with deployed CreateSession.** Audit the
-[app identity cutover](app_session_identity_cutover.md): use the service-reserved public UUID,
-resolve cwd after reservation, and recover a committed Open via authorized lookup. Preserve
-legacy private runner locators, native storage and existing URLs. This is not a new public-ID
-placement decision. Reconcile already-open implementations before dispatching duplicate work.
-
 ### `THREAD_EVENT_CONTINUITY` — identity cutover capstone
 
-**Blocked on the remaining new-ID requirements.** Verify the retained legacy association and the new
+**Candidate.** Verify the retained legacy association and the new
 identity path through Open/resume/replay without inventing a second Event counter. Existing
 same-storage runner restart/resume tests remain evidence; do not demand copied-volume portability
 or a new native experiment. If this particular cutover changes a runner protocol/image, use a
@@ -256,7 +246,6 @@ flowchart TD
     AGENT_MESSAGE_INGRESS --> AGENT_MESSAGE_RECEPTION
     AGENT_MESSAGE_RECEPTION --> AGENT_MESSAGING
     THREAD_CREATE_POLICY --> THREAD_CREATE_AUTHORIZATION
-    THREAD_IDENTITY_NEW[Service-owned Session identity] --> THREAD_CREATE_AUTHORIZATION
     AGENT_LAUNCH_POLICY_DESIGN --> AGENT_SANDBOX_LAUNCH
 ```
 
@@ -343,7 +332,7 @@ need not choose a durable offline command queue.
 
 ### `THREAD_CREATE_AUTHORIZATION` — implement session-create grants
 
-**Blocked on create policy and new identity cutover.** Enforce scope/defaults and idempotent Open
+**Blocked on create policy.** Enforce scope/defaults and idempotent Open
 lookup at the service boundary; test forbidden targets/overrides and a lost creation reply.
 
 ### `AGENT_LAUNCH_POLICY_DESIGN` — Sandbox launch and delegation policy
@@ -868,13 +857,11 @@ flowchart TD
     SESSION_REVIVE[Blocked: revive a Session in a new Sandbox]
     THREAD_SUCCESSOR_DELIVERY[Blocked: commands unsettled across incarnations]
     HOSTED_THREAD_SURFACES[Blocked: show and revive Sessions without a Sandbox]
-    THREAD_IDENTITY_NEW[Service-owned Session identity]
     HISTORY_SERVICE_OWNERSHIP[History Service ownership]
     RUNNER_TEARDOWN_SEAL[Teardown seal]
     LEGACY_SANDBOX_RETIRE[Retire pre-dial-out Sandboxes]
     DURABLE_SESSION_LIFECYCLE --> SESSION_STATE_VOLUME_DESIGN
     DURABLE_SESSION_LIFECYCLE --> SESSION_INCARNATIONS
-    THREAD_IDENTITY_NEW --> SESSION_INCARNATIONS
     SESSION_STATE_VOLUME_DESIGN --> CLAUDE_PORTABLE_STATE
     SESSION_STATE_VOLUME_DESIGN --> CODEX_PORTABLE_STATE
     SESSION_STATE_VOLUME_DESIGN --> STATE_VOLUME_RETENTION
@@ -923,7 +910,7 @@ a newer image) and resume, checking continuation and prompt-cache cost. The froz
 
 ### `SESSION_INCARNATIONS` — a Session records its Sandboxes over time
 
-**Blocked on the lifecycle decision and service-owned identity.** The Sandbox Service's Session
+**Blocked on the lifecycle decision.** The Sandbox Service's Session
 record holds a sequence of Sandbox incarnations, at most one live; the locator ↔ Sandbox binding
 becomes per incarnation. The Session feed (`WatchSessions`) reports each incarnation's `sandbox_uid`, from
 which the History Service records it, and its seal ends that incarnation, not the Session. On the retained volume the runner journal and its
@@ -1116,8 +1103,8 @@ runner channel and History Service proto churn lands so moves do not conflict wi
 - Native subsessions and runner durability/thin-adapter redesign remain frozen. Transport direction
   has its own decision co-sequenced with VMs; neither that nor multiagent design unfreezes the broader
   runner-state redesign.
-- `CROSS_THREAD_DELIVERY` is consolidated into `AGENT_MESSAGING_DESIGN`; `THREAD_OPEN_RELOAD_RECOVERY` is part
-  of the identity cutover. Do not dispatch duplicate work under the old names.
+- `CROSS_THREAD_DELIVERY` is consolidated into `AGENT_MESSAGING_DESIGN`. Do not dispatch duplicate work under
+  the old name.
 - Existing security boundaries, data-preserving migration checks and representative deployment
   integration checks remain requirements. The freezer is not a waiver for a known data-loss or
   unauthorized-access bug; promote one when evidence makes it concrete.
