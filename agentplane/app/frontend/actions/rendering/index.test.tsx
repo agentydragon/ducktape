@@ -163,7 +163,7 @@ describe("Action presentation slots", () => {
       return { example: "value" };
     };
 
-    for (const { group, name, resultLabel } of ACTION_PRESENTATION_CATALOG) {
+    for (const { group, name } of ACTION_PRESENTATION_CATALOG) {
       const action = { group, name };
       const args = argumentsFor(group, name);
       const label = renderActionLabel(action, args);
