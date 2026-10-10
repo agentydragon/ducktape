@@ -17,6 +17,9 @@ from typing import Self
 from mitmproxy import addons
 from mitmproxy.master import Master
 from mitmproxy.options import Options
+from mitmproxy.proxy.layer import NextLayer
+from mitmproxy.proxy.layers.http import HttpLayer, HTTPMode
+from mitmproxy.proxy.server_hooks import ServerConnectionHookData
 
 from agentplane.egress.addon import EgressAddon
 from agentplane.egress.upstream import PinnedDialEventLoop
@@ -42,6 +45,33 @@ class _RunningSignal:
 
     def running(self) -> None:
         self.running_event.set()
+
+
+_H2_PREFACE = b"PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n"
+
+
+class _H2PriorKnowledge:
+    """Reads cleartext HTTP/2 inside a CONNECT tunnel as HTTP/2 rather than as HTTP/1.
+
+    Deviation: mitmproxy picks its HTTP/2 layers only from a TLS-negotiated `h2` ALPN, so a
+    plaintext gRPC channel's prior-knowledge preface reaches its HTTP/1 parser, which the stock
+    `DisableH2C` addon then kills. A tunnel opening with the preface is marked `h2` on both sides
+    before its HTTP layer starts; the upstream is plaintext too and gets the preface likewise.
+    """
+
+    def next_layer(self, nextlayer: NextLayer) -> None:
+        context = nextlayer.context
+        if (
+            isinstance(nextlayer.layer, HttpLayer)
+            and nextlayer.layer.mode is HTTPMode.transparent
+            and not context.client.tls
+            and bytes(nextlayer.data_client()).startswith(_H2_PREFACE)
+        ):
+            context.client.alpn = b"h2"
+
+    def server_connect(self, data: ServerConnectionHookData) -> None:
+        if data.client.alpn == b"h2" and not data.client.tls and not data.server.tls:
+            data.server.alpn = b"h2"
 
 
 def write_interception_ca(confdir: Path, ca_cert: Path, ca_key: Path) -> None:
@@ -86,7 +116,7 @@ class EgressProxyServer:
         )
         master.addons.add(*addons.default_addons())
         signal = _RunningSignal()
-        master.addons.add(self._addon, signal)
+        master.addons.add(_H2PriorKnowledge(), self._addon, signal)
         # lazy: the eager default dials the upstream before the gate's hook runs. The onboarding app
         # (mit.it) is an ungated response surface nothing here needs.
         master.options.update(connection_strategy="lazy", onboarding=False)

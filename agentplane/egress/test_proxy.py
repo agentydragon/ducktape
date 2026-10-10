@@ -749,7 +749,7 @@ async def test_plaintext_grpc_stream_metadata_placeholder_is_substituted(
             credential_name,
             secret_name=credential_secret,
             key="token",
-            targets=[{"header": "authorization", "method": TargetMethod.SCHEME_TOKEN}],
+            targets=[{"header": "authorization", "method": TargetMethod.SCHEME_TOKEN, "scheme": "Bearer"}],
         ),
     )
     fake.put(
@@ -792,12 +792,11 @@ async def test_plaintext_grpc_stream_metadata_placeholder_is_substituted(
                 path, request_serializer=lambda value: value, response_deserializer=lambda value: value
             )(metadata=(("authorization", f"Bearer {placeholder}"),), timeout=10)
             await stream.write(b"one")
-            first = await stream.read()
             await stream.write(b"two")
             await stream.done_writing()
-            rest = [message async for message in stream]
+            streamed = [message async for message in stream]
 
-    assert [first, *rest] == [b"upstream:one", b"upstream:two"]
+    assert streamed == [b"upstream:one", b"upstream:two"]
     assert dict(await requests.get())["authorization"] == "Bearer runner-channel-secret"
 
 
