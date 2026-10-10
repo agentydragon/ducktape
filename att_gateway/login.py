@@ -34,4 +34,8 @@ async def log_in(client: httpx.AsyncClient, access_code: SecretStr, page_gap_sec
             "Continue": "Continue",
         },
     )
-    response.raise_for_status()
+    # A good login answers with a redirect to the page that sent the session to the form; a
+    # wrong code with the form again, which the caller sees when the page it wanted still
+    # serves the form.
+    if response.is_error:
+        response.raise_for_status()

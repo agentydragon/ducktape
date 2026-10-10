@@ -33,7 +33,10 @@ class FakeGateway:
                 return httpx.Response(200, text=_LOGIN_FORM, headers={"Set-Cookie": "SessionID=anonymous"})
             form = dict(httpx.QueryParams(request.content.decode()))
             if form["hashpassword"] == hashlib.md5(f"{_ACCESS_CODE}{_NONCE}".encode()).hexdigest():
-                return httpx.Response(200, text="<html>Status</html>", headers={"Set-Cookie": "SessionID=granted"})
+                # The live gateway answers a good login with a redirect to the page that sent it there.
+                return httpx.Response(
+                    302, headers={"Location": "/cgi-bin/nattable.ha", "Set-Cookie": "SessionID=granted"}
+                )
             return httpx.Response(200, text=_LOGIN_FORM)
         if Page(page).needs_login and request.headers.get("Cookie") != "SessionID=granted":
             return httpx.Response(200, text=_LOGIN_FORM)

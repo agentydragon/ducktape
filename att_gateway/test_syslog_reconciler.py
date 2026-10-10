@@ -50,7 +50,10 @@ class FakeGateway:
                 request.method == "POST"
                 and form["hashpassword"] == hashlib.md5(f"{_ACCESS_CODE}{_LOGIN_NONCE}".encode()).hexdigest()
             ):
-                return httpx.Response(200, text="<html>Status</html>", headers={"Set-Cookie": "SessionID=granted"})
+                # The live gateway answers a good login with a redirect to the page that sent it there.
+                return httpx.Response(
+                    302, headers={"Location": "/cgi-bin/syslog.ha", "Set-Cookie": "SessionID=granted"}
+                )
             return httpx.Response(200, text=_LOGIN_FORM, headers={"Set-Cookie": "SessionID=anonymous"})
         assert page == "syslog"
         if request.headers.get("Cookie") != "SessionID=granted":
