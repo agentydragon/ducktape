@@ -249,10 +249,27 @@ boundary measurement**. Preserve the source's word “context”: do not quietly
 it as a proven independently attainable maximum input. “Display only” also cannot
 be generalized to our client: Codex demonstrably uses metadata to constrain budgets.
 
-The current [CLIProxy public registry](https://github.com/router-for-me/models/blob/main/models.json)
-lists GPT-6 Astra/Sol/Luna in applicable subscription groups with `context_length:
-272000` and `max_completion_tokens: 128000`. That mutable snapshot is another metadata
-source, not a capacity measurement or proof of which snapshot our deployed gateway uses.
+The [CLIProxy public registry snapshot `18a3f4b749db`](https://github.com/router-for-me/models/blob/18a3f4b749dbba28f6d7d81ef5c34caecb03d0d8/models.json),
+rechecked 2026-10-10 after removing GPT-5.6, declares **272000 `context_length` and
+128000 `max_completion_tokens`** for Astra/Sol/Luna in `codex-team`, `codex-plus`
+and `codex-pro`; `codex-free` includes Luna with the same numbers. This is shared
+catalogue metadata, not an account entitlement or a measured capacity pair.
+
+The repo-pinned [CLIProxyAPI projection](https://github.com/router-for-me/CLIProxyAPI/blob/7fac6b15bcfe5ea55c18c9eaec8e5b7e6457d974/internal/registry/model_registry.go#L1409-L1476)
+exposes `ContextLength` as `context_length` for OpenAI discovery, but renames the
+same value to `max_input_tokens` for Claude discovery; `MaxCompletionTokens`
+becomes `max_completion_tokens` or `max_tokens`, respectively. That adapter rename
+is **not independent evidence of a subscription input ceiling**. The registry
+calls `ContextLength` a context window, and this snapshot supplies neither a
+separate maximum-input field nor an explicit combined-context contract. Do not
+sum the two values or subtract output from context to manufacture one.
+
+The [updater](https://github.com/router-for-me/CLIProxyAPI/blob/7fac6b15bcfe5ea55c18c9eaec8e5b7e6457d974/internal/registry/model_updater.go#L17-L93)
+loads an embedded fallback and refreshes remotely on startup/every three hours.
+The inspected source and public snapshot do not prove the effective account
+catalogue of the running gateway. Its pinned [Responses translator](https://github.com/router-for-me/CLIProxyAPI/blob/7fac6b15bcfe5ea55c18c9eaec8e5b7e6457d974/internal/translator/codex/openai/responses/codex_openai-responses_request.go#L24-L34)
+also removes `max_output_tokens` and `max_completion_tokens` before forwarding;
+the 128000 catalogue declaration is not evidence of request-cap enforcement.
 
 ### Reproductions and historical reports, not provider guarantees
 
@@ -283,9 +300,10 @@ There is no justified universal subscription input/output pair to install from t
 sources. In particular, do not copy the API's 922000/128000, promote our historical
 372000/128000, or subtract 128000 from a native client budget to invent a ceiling.
 The Astra maintainer claim is a candidate contract requiring corroboration; it is not
-permission to extend it to Sol/Luna. Keep runtime values unchanged in this research
-update, and treat unjustified provider limits as unknown in the proposed pair-or-none
-publication policy.
+permission to extend it to Sol/Luna. The 2026-10-10 recheck therefore leaves the six
+retained GPT-6 route declarations provisional: Astra 872000/128000, Sol/Luna 372000/128000. No newly justified
+input/output pair was found. Keep published metadata and consumer budgets unchanged;
+the unresolved publication decision is not another automatic source-audit task.
 
 A next non-inference check would be a sanitized catalogue for the actual upstream
 account and client path, through an explicitly authorized credential-substitution

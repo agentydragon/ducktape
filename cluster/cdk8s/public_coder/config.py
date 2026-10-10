@@ -53,7 +53,7 @@ def config() -> dict:
             "defaults": {
                 "userTimezone": "America/Los_Angeles",
                 # The working path is Codex subscription -> CLIProxyAPI -> LiteLLM's
-                # native Responses endpoint. Keep this on the measured 5.6 roster.
+                # native Responses endpoint. This selection is not a capacity measurement.
                 "model": {"primary": f"litellm/{GPT6_LUNA_RESPONSES.id}"},
                 "sandbox": {"mode": "off"},
                 "maxConcurrent": 16,
