@@ -94,8 +94,8 @@
       "registry": "forgejo"
     },
     "att-gateway-exporter": {
-      "target": "//cluster/exporters/att_gateway:image",
-      "test": "//cluster/exporters/att_gateway/...",
+      "target": "//att_gateway:image",
+      "test": "//att_gateway/...",
       "registry": "forgejo"
     },
     "github-api-proxy": {

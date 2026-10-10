@@ -10,9 +10,9 @@ import logging
 import httpx
 from pydantic import SecretStr
 
-from cluster.exporters.att_gateway.login import log_in
-from cluster.exporters.att_gateway.pages import SyslogPage, parse_syslog, syslog_form
-from cluster.exporters.att_gateway.settings import Syslog, SyslogSettings
+from att_gateway.login import log_in
+from att_gateway.pages import SyslogPage, parse_syslog, syslog_form
+from att_gateway.settings import Syslog, SyslogSettings
 
 logger = logging.getLogger(__name__)
 

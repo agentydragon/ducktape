@@ -1,4 +1,4 @@
-"""The AT&T gateway exporter (`cluster/exporters/att_gateway/`): its Deployment on a node on
+"""The AT&T gateway exporter (`att_gateway/`): its Deployment on a node on
 the gateway's LAN, Service, ServiceMonitor and the "Home gateway" dashboard
 (`dashboard.json` beside this module). Also the CronJob running the image's syslog
 reconciler, which keeps the gateway sending its firewall log to alloy-syslog.
@@ -19,6 +19,7 @@ from prometheus_operator_crds.com.coreos.monitoring import (
 )
 from pydantic_settings import BaseSettings
 
+from att_gateway.settings import Settings, SyslogLevel, SyslogSettings
 from cluster.cdk8s import pod_policy
 from cluster.cdk8s.att_gateway_exporter import access_code
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
@@ -31,7 +32,6 @@ from cluster.cdk8s.node_scheduling import OPTIPLEX
 from cluster.cdk8s.providers.grafana_operator.grafana_dashboard import GrafanaDashboard
 from cluster.cdk8s.providers.prometheus_operator.service_monitor import ServiceMonitor
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
-from cluster.exporters.att_gateway.settings import Settings, SyslogLevel, SyslogSettings
 from util.settings_contract import env_name
 
 NAME = "att-gateway-exporter"
@@ -145,8 +145,8 @@ def _syslog_cron_job(chart: Chart) -> k8s.KubeCronJob:
                                 name="reconcile",
                                 image=_IMAGE,
                                 image_pull_policy="IfNotPresent",
-                                # The image's second binary (cluster/exporters/att_gateway/BUILD.bazel).
-                                command=["/cluster/exporters/att_gateway/syslog_reconciler_image_bin"],
+                                # The image's second binary (att_gateway/BUILD.bazel).
+                                command=["/att_gateway/syslog_reconciler_image_bin"],
                                 env=[
                                     *_gateway_env(SyslogSettings),
                                     *(

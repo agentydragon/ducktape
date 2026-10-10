@@ -14,7 +14,7 @@ from enum import StrEnum
 
 from bs4 import BeautifulSoup, Tag
 
-from cluster.exporters.att_gateway.settings import Syslog, SyslogLevel
+from att_gateway.settings import Syslog, SyslogLevel
 
 
 class Page(StrEnum):

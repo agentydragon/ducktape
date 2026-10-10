@@ -9,7 +9,7 @@ from pathlib import Path
 import pytest
 import pytest_bazel
 
-from cluster.exporters.att_gateway.pages import (
+from att_gateway.pages import (
     Bound,
     Direction,
     Level,
@@ -23,7 +23,7 @@ from cluster.exporters.att_gateway.pages import (
     parse_syslog,
     syslog_form,
 )
-from cluster.exporters.att_gateway.settings import Syslog, SyslogLevel
+from att_gateway.settings import Syslog, SyslogLevel
 
 _TESTDATA = Path(__file__).parent / "testdata"
 

@@ -8,8 +8,8 @@ import pytest_bazel
 from prometheus_client import CollectorRegistry
 from pydantic import SecretStr
 
-from cluster.exporters.att_gateway.main import GatewayCollector, PageResult, poll_once
-from cluster.exporters.att_gateway.pages import Page, parse_speed, parse_sysinfo
+from att_gateway.exporter import GatewayCollector, PageResult, poll_once
+from att_gateway.pages import Page, parse_speed, parse_sysinfo
 
 _TESTDATA = Path(__file__).parent / "testdata"
 _BASE_URL = "http://gateway.test"

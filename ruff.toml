@@ -172,6 +172,7 @@ known-first-party = [
     "agentplane",
     "aiquota",
     "airlock",
+    "att_gateway",
     "augur",
     "cluster",
     "haku",
