@@ -151,6 +151,29 @@ it("stays on action details when a decision fails", async () => {
   expect(container.textContent).toContain("Exact arguments (unredacted)");
 });
 
+it("keeps a direct action link on its terminal receipt after a successful decision", async () => {
+  vi.spyOn(actionGroupService, "list").mockResolvedValue([]);
+  vi.spyOn(actionService, "get").mockResolvedValue(ROW);
+  vi.spyOn(actionService, "decide").mockResolvedValue({
+    ...request("allowed", 21),
+    action: ROW.action,
+    arguments: ROW.arguments,
+    title: ROW.title,
+  });
+  const container = await mount(<App initialPath={`/actions/${ROW.id}`} />);
+  const approve = await vi.waitFor(() => {
+    const button = container.querySelector<HTMLButtonElement>('button[aria-label="Approve"]');
+    if (!button) throw new Error("missing Approve button");
+    return button;
+  });
+
+  await act(async () => approve.click());
+  await vi.waitFor(() => expect(container.textContent).toContain("Allowed"));
+
+  expect(container.querySelector('[data-testid="current-path"]')?.textContent).toBe(`/actions/${ROW.id}`);
+  expect(container.textContent).toContain("Action details");
+});
+
 it("loads uncached deep links and falls back to the Actions page on Back", async () => {
   const get = vi.spyOn(actionService, "get").mockResolvedValue(ROW);
   const container = await mount(<App initialPath={`/actions/${ROW.id}`} />);

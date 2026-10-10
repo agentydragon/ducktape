@@ -35,6 +35,7 @@ export function ActionRequestDetail({ requestId }: { requestId: string }): JSX.E
   const location = useLocation();
   const actions = useContext(ActionRequestsContext);
   const [executorKind, setExecutorKind] = useState<string | null>(null);
+  const [returnAfterDecision, setReturnAfterDecision] = useState<{ requestId: string; version: number } | null>(null);
   const historyState = location.state as { returnTo?: unknown } | null;
   const returnTo = inAppReturnTo(historyState?.returnTo);
   const liveRequest = actions?.requests.find((item) => item.id === requestId);
@@ -65,6 +66,19 @@ export function ActionRequestDetail({ requestId }: { requestId: string }): JSX.E
     if (cached !== undefined && !refresh) return;
     void loadDetail(requestId, refresh).catch(() => undefined);
   }, [knownRequests, loadDetail, liveRequest, requestId, staleRequestIds]);
+
+  useEffect(() => {
+    if (returnAfterDecision === null || returnTo === null) return;
+    const decided = actions?.knownRequests.get(returnAfterDecision.requestId);
+    if (
+      decided === undefined ||
+      decided.state === "decision_pending" ||
+      decided.version <= returnAfterDecision.version
+    ) {
+      return;
+    }
+    void navigate(returnTo, { replace: true });
+  }, [actions?.knownRequests, navigate, returnAfterDecision, returnTo]);
 
   useEffect(() => {
     if (detailRequestId === undefined || detailRequestState === "decision_pending") {
@@ -124,9 +138,8 @@ export function ActionRequestDetail({ requestId }: { requestId: string }): JSX.E
             deciding={actions?.deciding === request.id}
             onDecide={(row, verdict) => {
               if (actions === null) return;
-              void actions.decide(row, verdict).then((succeeded) => {
-                if (succeeded && returnTo !== null) void navigate(returnTo, { replace: true });
-              });
+              setReturnAfterDecision({ requestId: row.id, version: row.version });
+              actions.decide(row, verdict);
             }}
           />
         </Stack>
