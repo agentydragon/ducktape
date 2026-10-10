@@ -30,6 +30,12 @@ Before changing staging:
    than replaying commands, tool side effects or Actions to reconstruct history. Rollback must handle
    writes made after cutover: never restore an old backup over new work. Retire old copies only after
    validation and the agreed rollback window.
+6. **Hold a breaking migration's rollout prerequisite through deployment verification.** When a
+   release drops what the previous one reads, keep `Recreate` (or whatever keeps old replicas off the
+   new schema) until every environment runs and passes checks on it, not just until it merges or
+   builds. Restoring `RollingUpdate` early let an old staging replica hit a dropped column while the
+   new migration ran (#9723 before #9725). A dropped copy cannot be restored by Alembic downgrade;
+   rollback needs a pre-drop backup.
 
 If preservation proves infeasible, report exactly what would be lost, the alternatives considered
 and the operational impact, and get explicit operator approval before deleting or resetting anything.

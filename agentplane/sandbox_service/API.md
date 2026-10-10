@@ -285,7 +285,6 @@ accepts Pod tokens for `runner_channel_audience` (default `agentplane-runner-cha
 Deployment must grant the service the appropriate Kubernetes/TokenReview/provisioning permissions,
 project an audience-correct token for app-to-service calls, and enforce sole normal production access
 to runner control/event RPCs. Do not leave a direct-runner app fallback or two provisioning reconcilers.
-Inventory/backup and rollback checks gate staging handoff; no staging data reset is part of this change.
 
 Deployment source uses the dedicated `agentplane-sandbox-service` token audience; the app mounts a
 rotating projected token and the client rereads it on every RPC. `AGENTPLANE_SANDBOX_SERVICE_CONFIG_FILE`
