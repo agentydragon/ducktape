@@ -11,7 +11,7 @@ latest speed test to AT&T per direction).
 The gateway keeps no link event history: `events.ha` only toggles redirect notifications,
 and `logs.ha` is a firewall drop log covering the last few minutes. That log can be sent
 live as syslog over UDP (`syslog.ha`). The exporter only reads; the image's second binary,
-`syslog_reconciler`, sets that page to `ATT_GATEWAY_SYSLOG_SERVER`/`PORT`/`LEVEL` when it
+`syslog_reconciler`, sets that page to `ATT_GATEWAY_SYSLOG__{ENABLED,SERVER,PORT,LEVEL}` when it
 differs (say after a factory reset) and reads it back, one pass per run, failing when the
 setting does not hold. Its settings: `SyslogSettings` in <settings.py>.
 

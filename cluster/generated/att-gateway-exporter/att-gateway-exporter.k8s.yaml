@@ -97,10 +97,14 @@ spec:
                     secretKeyRef:
                       key: access-code
                       name: att-gateway-exporter-access-code
-                - name: ATT_GATEWAY_SYSLOG_SERVER
+                - name: ATT_GATEWAY_SYSLOG__ENABLED
+                  value: "true"
+                - name: ATT_GATEWAY_SYSLOG__SERVER
                   value: 192.168.1.10
-                - name: ATT_GATEWAY_SYSLOG_PORT
+                - name: ATT_GATEWAY_SYSLOG__PORT
                   value: "1514"
+                - name: ATT_GATEWAY_SYSLOG__LEVEL
+                  value: Notice
               image: git.allegedly.works/ducktape-ci/att-gateway-exporter:unset
               imagePullPolicy: IfNotPresent
               name: reconcile

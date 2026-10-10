@@ -31,7 +31,7 @@ from cluster.cdk8s.node_scheduling import OPTIPLEX
 from cluster.cdk8s.providers.grafana_operator.grafana_dashboard import GrafanaDashboard
 from cluster.cdk8s.providers.prometheus_operator.service_monitor import ServiceMonitor
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
-from cluster.exporters.att_gateway.settings import Settings, SyslogSettings
+from cluster.exporters.att_gateway.settings import Settings, SyslogLevel, SyslogSettings
 from util.settings_contract import env_name
 
 NAME = "att-gateway-exporter"
@@ -149,12 +149,15 @@ def _syslog_cron_job(chart: Chart) -> k8s.KubeCronJob:
                                 command=["/cluster/exporters/att_gateway/syslog_reconciler_image_bin"],
                                 env=[
                                     *_gateway_env(SyslogSettings),
-                                    k8s.EnvVar(
-                                        name=env_name(SyslogSettings, "syslog_server"), value=str(HOME_LAN.optiplex)
-                                    ),
-                                    k8s.EnvVar(
-                                        name=env_name(SyslogSettings, "syslog_port"),
-                                        value=str(alloy.GATEWAY_SYSLOG_HOST_PORT),
+                                    *(
+                                        k8s.EnvVar(name=env_name(SyslogSettings, "syslog", field), value=value)
+                                        for field, value in (
+                                            ("enabled", "true"),
+                                            ("server", str(HOME_LAN.optiplex)),
+                                            ("port", str(alloy.GATEWAY_SYSLOG_HOST_PORT)),
+                                            # The most inclusive level.
+                                            ("level", str(SyslogLevel.NOTICE)),
+                                        )
                                     ),
                                 ],
                                 resources=_RESOURCES,

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from enum import StrEnum
 
-from pydantic import Field, HttpUrl, SecretStr
+from pydantic import BaseModel, ConfigDict, Field, HttpUrl, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -16,6 +16,18 @@ class SyslogLevel(StrEnum):
     ERROR = "Error"
     WARNING = "Warning"
     NOTICE = "Notice"
+
+
+class Syslog(BaseModel):
+    """Where the gateway sends its firewall log (the rows `logs.ha` shows) as syslog over UDP:
+    its `syslog.ha` form."""
+
+    model_config = ConfigDict(frozen=True)
+
+    enabled: bool
+    server: str = Field(description="Host the gateway sends to; empty on a gateway that never had one set.")
+    port: int = Field(ge=1, le=65535)
+    level: SyslogLevel = Field(description="The least severe firewall log level the gateway sends.")
 
 
 class Settings(BaseSettings):
@@ -43,15 +55,13 @@ class Settings(BaseSettings):
 class SyslogSettings(BaseSettings):
     """`syslog_reconciler`'s: where the gateway should send its firewall log."""
 
-    model_config = SettingsConfigDict(env_prefix="ATT_GATEWAY_", case_sensitive=False, extra="ignore", frozen=True)
+    model_config = SettingsConfigDict(
+        env_prefix="ATT_GATEWAY_", env_nested_delimiter="__", case_sensitive=False, extra="ignore", frozen=True
+    )
 
     url: HttpUrl = Field(description="The gateway's LAN web UI, e.g. `http://192.168.1.254`.")
     access_code: SecretStr = Field(description="The device access code printed on the gateway; opens `syslog.ha`.")
-    syslog_server: str = Field(description="Where the gateway should send its firewall log as syslog over UDP.")
-    syslog_port: int = Field(default=514, ge=1, le=65535, description="The UDP port at `syslog_server`.")
-    syslog_level: SyslogLevel = Field(
-        default=SyslogLevel.NOTICE, description="The least severe firewall log level the gateway sends."
-    )
+    syslog: Syslog = Field(description="The setting the gateway should have.")
     page_gap_seconds: float = Field(
         default=5,
         ge=0,

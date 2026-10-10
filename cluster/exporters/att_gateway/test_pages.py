@@ -14,7 +14,6 @@ from cluster.exporters.att_gateway.pages import (
     Direction,
     Level,
     Limit,
-    Syslog,
     parse_broadband,
     parse_fiber,
     parse_lan,
@@ -24,7 +23,7 @@ from cluster.exporters.att_gateway.pages import (
     parse_syslog,
     syslog_form,
 )
-from cluster.exporters.att_gateway.settings import SyslogLevel
+from cluster.exporters.att_gateway.settings import Syslog, SyslogLevel
 
 _TESTDATA = Path(__file__).parent / "testdata"
 

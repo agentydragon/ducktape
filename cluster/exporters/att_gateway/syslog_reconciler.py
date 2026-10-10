@@ -11,8 +11,8 @@ import httpx
 from pydantic import SecretStr
 
 from cluster.exporters.att_gateway.login import log_in
-from cluster.exporters.att_gateway.pages import Syslog, SyslogPage, parse_syslog, syslog_form
-from cluster.exporters.att_gateway.settings import SyslogSettings
+from cluster.exporters.att_gateway.pages import SyslogPage, parse_syslog, syslog_form
+from cluster.exporters.att_gateway.settings import Syslog, SyslogSettings
 
 logger = logging.getLogger(__name__)
 
@@ -53,11 +53,8 @@ async def reconcile(
 
 
 async def _main(settings: SyslogSettings) -> None:
-    desired = Syslog(
-        enabled=True, server=settings.syslog_server, port=settings.syslog_port, level=settings.syslog_level
-    )
     async with httpx.AsyncClient(base_url=str(settings.url), timeout=settings.request_timeout_seconds) as client:
-        await reconcile(client, desired, settings.access_code, settings.page_gap_seconds)
+        await reconcile(client, settings.syslog, settings.access_code, settings.page_gap_seconds)
 
 
 def main() -> None:

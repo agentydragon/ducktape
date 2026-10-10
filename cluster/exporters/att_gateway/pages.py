@@ -14,7 +14,7 @@ from enum import StrEnum
 
 from bs4 import BeautifulSoup, Tag
 
-from cluster.exporters.att_gateway.settings import SyslogLevel
+from cluster.exporters.att_gateway.settings import Syslog, SyslogLevel
 
 
 class Page(StrEnum):
@@ -367,16 +367,6 @@ def parse_speed(html: str) -> Speed:
             )
         )
     )
-
-
-@dataclass(frozen=True)
-class Syslog:
-    """Where the gateway sends its firewall log (the rows `logs.ha` shows) as syslog over UDP."""
-
-    enabled: bool
-    server: str
-    port: int
-    level: SyslogLevel
 
 
 @dataclass(frozen=True)
