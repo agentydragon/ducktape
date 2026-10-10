@@ -902,6 +902,21 @@ ts_library(
 )
 
 ts_library(
+    name = "mosaic_layout",
+    srcs = ["mosaic_layout.ts"],
+    tsconfig = TSCONFIG,
+)
+
+agentplane_vitest_test(
+    name = "mosaic_layout_test",
+    srcs = ["mosaic_layout.test.ts"],
+    deps = [
+        ":mosaic_layout",
+        "//:node_modules/vitest",
+    ],
+)
+
+ts_library(
     name = "mosaic",
     srcs = [
         "css.d.ts",
@@ -911,6 +926,7 @@ ts_library(
     tsconfig = TSCONFIG,
     deps = [
         ":live",
+        ":mosaic_layout",
         ":mosaic_css",
         ":topbar",
         "//:node_modules/@mantine/core",

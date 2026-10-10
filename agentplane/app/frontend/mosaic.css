@@ -1,20 +1,63 @@
 .agentplane-mosaic {
   flex: 1;
+  min-width: 0;
   min-height: 0;
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  grid-template-rows: repeat(2, minmax(0, 1fr));
-  grid-auto-rows: minmax(15rem, 1fr);
-  gap: var(--mantine-spacing-sm);
+  display: flex;
+  overflow: hidden;
   padding-block: var(--mantine-spacing-sm);
-  overflow: auto;
 }
 
 .agentplane-mosaic-title-mobile {
   display: none;
 }
 
+.agentplane-mosaic-split {
+  display: grid;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+}
+
+.agentplane-mosaic > .agentplane-mosaic-pane {
+  width: 100%;
+  height: 100%;
+}
+
+.agentplane-mosaic-split[data-direction="horizontal"] > [data-child="first"] {
+  grid-column: 1;
+  grid-row: 1;
+}
+
+.agentplane-mosaic-split[data-direction="horizontal"] > [data-child="second"] {
+  grid-column: 3;
+  grid-row: 1;
+}
+
+.agentplane-mosaic-split[data-direction="vertical"] > [data-child="first"] {
+  grid-column: 1;
+  grid-row: 1;
+}
+
+.agentplane-mosaic-split[data-direction="vertical"] > [data-child="second"] {
+  grid-column: 1;
+  grid-row: 3;
+}
+
+.agentplane-mosaic-split-child,
+.agentplane-mosaic-split-child > .agentplane-mosaic-pane {
+  width: 100%;
+  height: 100%;
+}
+
+.agentplane-mosaic-split-child {
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
 .agentplane-mosaic-pane {
+  position: relative;
   min-width: 0;
   min-height: 0;
   display: flex;
@@ -29,16 +72,22 @@
   box-shadow: 0 0 0 1px var(--mantine-primary-color-filled);
 }
 
-.agentplane-mosaic-pane[data-pane-position="0"] {
-  grid-row: span 2;
-}
-
-.agentplane-mosaic-thread-header,
-.agentplane-mosaic-pane-header {
+.agentplane-mosaic-pane-header,
+.agentplane-mosaic-thread-header {
   flex: 0 0 auto;
   min-height: 2.5rem;
   padding: 0.25rem var(--mantine-spacing-xs);
   border-bottom: 1px solid var(--mantine-color-default-border);
+}
+
+.agentplane-mosaic-pane-grip {
+  flex: 0 0 auto;
+  cursor: grab;
+  touch-action: none;
+}
+
+.agentplane-mosaic-pane-grip:active {
+  cursor: grabbing;
 }
 
 .agentplane-mosaic-pane-content {
@@ -48,9 +97,69 @@
   padding: var(--mantine-spacing-sm);
 }
 
+.agentplane-mosaic-resize-handle {
+  z-index: 2;
+  min-width: 0;
+  min-height: 0;
+  background: var(--mantine-color-default-border);
+  touch-action: none;
+  outline: none;
+}
+
+.agentplane-mosaic-split[data-direction="horizontal"] > .agentplane-mosaic-resize-handle {
+  grid-column: 2;
+  grid-row: 1;
+  cursor: col-resize;
+}
+
+.agentplane-mosaic-split[data-direction="vertical"] > .agentplane-mosaic-resize-handle {
+  grid-column: 1;
+  grid-row: 2;
+  cursor: row-resize;
+}
+
+.agentplane-mosaic-resize-handle:hover,
+.agentplane-mosaic-resize-handle:focus-visible {
+  background: var(--mantine-primary-color-filled);
+}
+
+.agentplane-mosaic-drop-preview {
+  position: absolute;
+  z-index: 3;
+  pointer-events: none;
+  background: var(--mantine-primary-color-filled);
+  opacity: 0.15;
+}
+
+.agentplane-mosaic-pane[data-drop-edge="left"] > .agentplane-mosaic-drop-preview {
+  inset: 0 auto 0 0;
+  width: 28%;
+  border-right: 2px solid var(--mantine-primary-color-filled);
+}
+
+.agentplane-mosaic-pane[data-drop-edge="right"] > .agentplane-mosaic-drop-preview {
+  inset: 0 0 0 auto;
+  width: 28%;
+  border-left: 2px solid var(--mantine-primary-color-filled);
+}
+
+.agentplane-mosaic-pane[data-drop-edge="top"] > .agentplane-mosaic-drop-preview {
+  inset: 0 0 auto;
+  height: 28%;
+  border-bottom: 2px solid var(--mantine-primary-color-filled);
+}
+
+.agentplane-mosaic-pane[data-drop-edge="bottom"] > .agentplane-mosaic-drop-preview {
+  inset: auto 0 0;
+  height: 28%;
+  border-top: 2px solid var(--mantine-primary-color-filled);
+}
+
 @media (max-width: 560px) {
   .agentplane-mosaic-title-desktop,
-  .agentplane-mosaic-experimental-badge {
+  .agentplane-mosaic-experimental-badge,
+  .agentplane-mosaic-pane-grip,
+  .agentplane-mosaic-resize-handle {
     display: none;
   }
 
@@ -63,19 +172,19 @@
     position: relative;
   }
 
+  .agentplane-mosaic-split,
+  .agentplane-mosaic-split-child {
+    display: contents;
+  }
+
   .agentplane-mosaic-pane {
     position: absolute;
-    inset: var(--mantine-spacing-sm) 0 0;
+    inset: 0;
     display: none;
-    min-height: 0;
   }
 
   .agentplane-mosaic-pane.is-active {
     display: flex;
-  }
-
-  .agentplane-mosaic-pane[data-pane-position="0"] {
-    grid-row: auto;
   }
 
   .agentplane-topbar-actions .mantine-Select-root {

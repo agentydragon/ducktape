@@ -1450,12 +1450,15 @@ export function ProjectedSession({
   threadId,
   settingsOpen = false,
   embedded = false,
+  embeddedHeaderActions,
   onClose,
 }: {
   threadId: string;
   settingsOpen?: boolean;
   /** Render inside a pane, with a local title and no global tab title or topbar portal. */
   embedded?: boolean;
+  /** Optional controls alongside the title when embedded in a docked pane. */
+  embeddedHeaderActions?: ReactNode;
   onClose?: () => void;
 }): JSX.Element {
   const sync = useThreadSync();
@@ -1524,6 +1527,7 @@ export function ProjectedSession({
       <Stack style={{ flex: 1, minHeight: 0, minWidth: 0 }}>
         {embedded && (
           <Group className="agentplane-mosaic-thread-header" gap="xs" wrap="nowrap">
+            {embeddedHeaderActions}
             <Box style={{ flex: 1, minWidth: 0 }}>{title}</Box>
             {onClose && (
               <ActionIcon variant="subtle" aria-label="Close thread pane" onClick={onClose}>
