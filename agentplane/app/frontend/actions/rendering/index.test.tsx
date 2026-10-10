@@ -63,7 +63,7 @@ describe("Action presentation slots", () => {
 
   it("keeps fallback argument labels generic instead of dispatching on action fields", async () => {
     const details = await mount(
-      renderDetailsArguments({ group: "grocy_sf", name: "products_list" }, { vendor_field: "fixture" })
+      renderDetailsArguments({ group: "ssh", name: "list_targets" }, { vendor_field: "fixture" })
     );
 
     expect(details.textContent).toContain("Vendor field");
