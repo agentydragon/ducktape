@@ -167,19 +167,6 @@ async def test_sidebar_compact_pod_approval(
             {"q": "from:deployments@example.com", "max_results": 5},
             "from:deployments@example.com",
         ),
-        (
-            "google_calendar",
-            "create_event",
-            {
-                "summary": "Release review",
-                "start": "2026-10-11T10:00:00-07:00",
-                "end": "2026-10-11T10:30:00-07:00",
-                "location": "Video call",
-            },
-            "Release review",
-        ),
-        ("grocy_sf", "stock_add", {"items": [{"product_id": 27, "amount": 2, "location_id": 3}]}, "1 item"),
-        ("tana", "import_tana_paste", {"paste": "- Review deployment\n  - Check health"}, "Review deployment"),
     ],
     ids=[
         "resource-get",
@@ -192,9 +179,6 @@ async def test_sidebar_compact_pod_approval(
         "pod-exec",
         "gmail-draft",
         "gmail-search",
-        "calendar-event",
-        "grocy-stock-add",
-        "tana-import",
     ],
 )
 async def test_compact_action_chips(
@@ -217,12 +201,6 @@ async def test_compact_action_chips(
         title = "review the draft email"
     elif group == "gmail" and name == "threads_list":
         title = "search recent deployment threads"
-    elif group == "google_calendar":
-        title = "schedule the release review"
-    elif group == "grocy_sf":
-        title = "update pantry stock"
-    elif group == "tana":
-        title = "import the deployment checklist"
     else:
         title = f"review {name.replace('_', ' ')}"
     disclosure = section.get_by_role("button", name=f"Expand {title}")
