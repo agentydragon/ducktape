@@ -9,6 +9,8 @@ description: >
 
 # Debundle Mint Names
 
+@references/docs/bug_reproductions.md
+
 Assign descriptive names to unrenamed symbols in any debundle spec.
 
 ## Scope

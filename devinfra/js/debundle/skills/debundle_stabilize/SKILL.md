@@ -9,6 +9,8 @@ description: >-
 
 # Debundle Stabilize
 
+@references/docs/bug_reproductions.md
+
 Turn a debundle spec's fragile selectors into ones likely to keep working across
 future minified rebuilds of the same app. You do exactly one thing: **choose and
 write `source_match` selectors**. You do not rename symbols, move modules, or

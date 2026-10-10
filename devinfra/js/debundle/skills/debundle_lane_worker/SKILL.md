@@ -5,6 +5,8 @@ description: Apply one scoped debundle module-assignment or reorganization task 
 
 # Debundle Lane Worker
 
+@references/docs/bug_reproductions.md
+
 Use this role for one scoped implementation assignment: a seed cluster from
 intake, a binding-patch/residual cohort, or a firm reorganization task from
 the architect.

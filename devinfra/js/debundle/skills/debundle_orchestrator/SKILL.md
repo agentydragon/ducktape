@@ -5,6 +5,8 @@ description: Coordinate a generic AI-driven debundling loop across intake, lane 
 
 # Debundle Orchestrator
 
+@references/docs/bug_reproductions.md
+
 Use this role to keep an AI-driven debundling loop moving. The orchestrator
 routes work between specialist roles and owns project-adapter details.
 

@@ -5,6 +5,8 @@ description: Turn `debundle modules propose` output into named, dispatchable see
 
 # Debundle Intake
 
+@references/docs/bug_reproductions.md
+
 Use this role after `debundle_plan_work` has produced planner output. Intake
 translates certified structural proposals into work packets for lane workers.
 

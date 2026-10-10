@@ -24,26 +24,7 @@ truth** for which symbols belong where and what they are called. Consequences:
 - **The debundler is itself a living target** — when a new bundle shape exposes a
   missing capability, extend it, reproducing the failure minimally first.
 
-## Bug-fix discipline
-
-When a debundler bug surfaces at the e2e / smoke / pipeline layer:
-
-1. **Localize the failure** — file path, line numbers, exact shape.
-2. **Reproduce with a minimal e2e fixture under `e2e/`** that fails for the same
-   reason on synthetic inputs. The e2e flipping green is the contract for the fix.
-3. **Then fix.** Land fixture and fix in the same PR.
-
-### Fixture minimization
-
-A bug-reproducing fixture is the **smallest** input that still triggers the bug:
-strip every removable feature and use generic placeholder names (`a`, `mod_x`,
-`readable`) over upstream-flavored ones. A fixture that passes against
-`origin/devel` before the fix isn't testing the bug — drop it or move it to a
-separate PR documenting the invariant. Keep each fixture focused on one pipeline
-stage or bug class. Bugs first seen against a private corpus are minimized to
-synthetic e2e inputs so the regression test lands in public CI; if one genuinely
-can't be reproduced synthetically, say so in the PR body, add coverage at the
-next-coarsest level, and smoke-test that corpus.
+@docs/bug_reproductions.md
 
 ## Performance Profiling
 

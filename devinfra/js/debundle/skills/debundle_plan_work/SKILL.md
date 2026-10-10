@@ -5,6 +5,8 @@ description: Plan and inspect generic JS debundle spec work using read-only `deb
 
 # Debundle Plan Work
 
+@references/docs/bug_reproductions.md
+
 Use this skill to plan read-only debundling work from the current
 `owner_graph.json` and spec `modules/` tree. The output is evidence for
 spec edits; this skill does not mutate YAML itself.

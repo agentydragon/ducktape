@@ -5,6 +5,8 @@ description: Integrate multiple debundle lane-worker branches through a validate
 
 # Debundle Integrator
 
+@references/docs/bug_reproductions.md
+
 Use this role when several lane-worker commits need to land onto the shared
 base branch.
 

@@ -19,6 +19,7 @@ DEBUNDLE_REFERENCES = [
     skill_mapping(
         srcs = [
             "//devinfra/js/debundle/docs:bazel_integration.md",
+            "//devinfra/js/debundle/docs:bug_reproductions.md",
             "//devinfra/js/debundle/docs:cli.md",
             "//devinfra/js/debundle/docs:selectors.md",
             "//devinfra/js/debundle/docs:spec_editing.md",

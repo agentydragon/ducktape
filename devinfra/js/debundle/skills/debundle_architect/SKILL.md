@@ -5,6 +5,8 @@ description: Audit a debundle spec's named modules for idiomatic JavaScript stru
 
 # Debundle Architect
 
+@references/docs/bug_reproductions.md
+
 Use this role for structural review of an in-progress debundle spec. The
 architect owns source-tree taxonomy health for the target: it should infer,
 maintain, and course-correct the conventions that make the emitted tree read
