@@ -33,8 +33,9 @@ a `kube-apiserver` and a `tofu` binary, so it does not run under Bazel here.
 in `fluxcd/pkg/runtime` resolve to the main repository, and proto generation in `runner/`
 would link a second grpc. Both explain themselves in place.
 
-No upstream release supports `ExternalArtifact` sources yet. Once one does, remove the module
-and switch `cluster/cdk8s/tofu_controller/release.py` back to the chart's image and CRD.
+No upstream release supports `ExternalArtifact` sources yet; the change is proposed upstream as
+[flux-iac/tofu-controller#1901](https://github.com/flux-iac/tofu-controller/pull/1901). Once a
+release includes it, remove the module and switch `cluster/cdk8s/tofu_controller/release.py` back to the chart's image and CRD.
 
 ## Updating the controller
 
