@@ -289,8 +289,9 @@ message ControlResult {
 
 The contract's rule becomes: no operation creates a Session or starts a harness implicitly; only
 `OpenSession` and `ResumeSession` do. `Seal` travels on `Connect` behind every command already
-sent, so no command delivered before it lands after it. A control request reaching a replica that
-does not own the connection goes through the same relay as a follow. Requests are bounded by the
+sent, so no command delivered before it lands after it. Only the replica holding the runner's
+stream sends control requests: callers reach it through the Sandbox's control Service, as for
+follows, and background work such as sealing runs on the replica holding the Lease. Requests are bounded by the
 calling RPC's deadline, like dispatch attempts, and a reconnect replays none of them.
 
 | Inbound caller (Sandbox Service)                     | Channel operation                             |
