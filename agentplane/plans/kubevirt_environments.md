@@ -19,8 +19,8 @@ it does not eliminate the egress relay or its credential boundary. See the
 [connection lifecycle design questions](runner_discovery.md#outbound-control-channel-design).
 
 Choose transport, heartbeat/liveness semantics, replica connection ownership, reconnect and fencing
-before `VM_CONTROL_NETWORKING`. Implement `RUNNER_OUTBOUND_CHANNEL` only if selected; migrate existing
-container runners separately under `RUNNER_OUTBOUND_ROLLOUT`. Image/storage and process-boundary work
+before `VM_CONTROL_NETWORKING`. Implement `RUNNER_OUTBOUND_CHANNEL` only if selected; new container
+Sandboxes move under `RUNNER_OUTBOUND_ROLLOUT`. Image/storage and process-boundary work
 can proceed independently. This decision does not remove the runner journal or choose central command
 admission. New service persistence remains behind the archive-migration hold.
 
@@ -289,7 +289,7 @@ The [DAG VM lane](task_dag.md#4-vm-environment-phases) now sequences these separ
 - `RUNNER_TRANSPORT_DESIGN`: review dial-out versus inbound control and connection lifecycle before
   committing VM control routing; separate from runner durability redesign.
 - `RUNNER_OUTBOUND_CHANNEL`: conditional implementation retaining command/Event semantics;
-  `RUNNER_OUTBOUND_ROLLOUT` covers a subsequent bounded transition of existing environments.
+  `RUNNER_OUTBOUND_ROLLOUT` later makes it the default for new container Sandboxes.
 - `VM_CONTROL_NETWORKING`: implement the chosen route after the transport decision and provider,
   depending on outbound transport only if selected. Gate integrated VM lifecycle on this path.
 - `VM_IMAGE`: digest-pinned guest and bounded retained storage, tested with both harnesses.

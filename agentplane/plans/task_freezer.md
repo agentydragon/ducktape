@@ -166,6 +166,10 @@ Requires a fresh operator product/architecture decision. These alternatives are 
 
 Choose whether command durability moves centrally and the runner becomes a thin adapter. Central-admission changes require this decision. Transport direction is now a separate [VM-coordinated design gate](task_dag.md#runner_transport_design--runner-dial-out-and-connection-lifecycle); it can retain runner durability.
 
+### `RUNNER_JOURNAL_SETTLEMENT` — settle deltas in the runner journal too
+
+Trigger: measured runner volume pressure from streamed deltas. A runner-side flag reusing the History Service's settlement templates, so the journal also drops settled chunks; today the journal is the only place a live Sandbox keeps every chunk.
+
 ### `CLAUDE_OFFLINE_CATCHUP` — recover work done offline
 
 Conditional on thin-runner design: determine which continuation evidence requires native history versus a minimal spool.
@@ -206,33 +210,9 @@ After a durable combined-start contract is selected; pre-scoped composer. Manual
 
 Same prerequisite, unscoped composer. Do not implement durability as a browser-owned chain.
 
-### `THREAD_SUCCESSOR_DELIVERY` — unsettled command across a successor runner session
-
-On successor-session delivery demand. Require identity continuity and harness-specific evidence; never replay side effects merely because an old outcome is unknown.
-
-### `THREAD_OUTLIVES_SANDBOX` — a Thread lifecycle beyond its Sandbox
-
-When moving from Sandbox-bound to hosted Thread lifecycle. Choose durable identity/lifecycle first.
-
-### `THREAD_PORTABLE_STATE` — durable state beyond a Sandbox volume
-
-When cross-volume portability is needed. Review snapshots, fencing and native state restore; archive Events alone are not a native resume image.
-
-### `CLAUDE_PORTABLE_STATE` — only on supported evidence
-
-Only after shared portability contract and Claude evidence, including cost implications if material.
-
-### `CODEX_PORTABLE_STATE` — only on supported evidence
-
-Only after shared portability contract and Codex evidence; no requirement that both harnesses become portable together.
-
 ### `THREAD_ON_DEMAND_RUNTIME` — disposable Sandbox for a durable Thread
 
-After hosted lifecycle and supported portable state, plus reviewed wake authority/budget. No implicit wake on reads or notifications.
-
-### `HOSTED_THREAD_SURFACES` — read and control for a hosted Thread
-
-After choosing hosted lifecycle: read/control interfaces independent of a currently live Sandbox.
+After revival ([task DAG section 8](task_dag.md#8-sessions-that-outlive-their-sandbox)), plus reviewed wake authority/budget. No implicit wake on reads or notifications.
 
 ### `AG` — hosted Agent and Thread model
 

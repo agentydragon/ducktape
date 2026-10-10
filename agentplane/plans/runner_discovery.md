@@ -168,7 +168,8 @@ separates persistence, command transport and event transport rather than making 
    backpressure; switch the canary reader. Preserve archive identities and duplicate/conflict rules.
 4. `RUNNER_OUTBOUND_LIFECYCLE`: migrate remaining lifecycle/inbound consumers. Inventory these early;
    their full wire design need not block the first command canary. Then `RUNNER_OUTBOUND_ROLLOUT`
-   expands complete outbound support to selected environments and retires old access.
+   makes outbound the default for new Sandboxes; old Sandboxes are archived and deleted rather
+   than upgraded, after which inbound access is retired.
 
 Each operation has an explicit route per environment/incarnation. Command WS plus the legacy spool
 reader is deliberate staged coexistence, not two competing command routes. Do not silently fall back
@@ -265,6 +266,6 @@ revocation, ordinary reconnect, stale-owner fencing, notification loss and comma
 automated peers. Add spool replay/backpressure coverage in `RUNNER_OUTBOUND_SPOOL`, not as a gate on
 initial admission. Perform a bounded real-VM connection/reconnect/receipt check for the actual
 proxy/network path; no compound failure drills. Before VM use without inbound control, complete all
-spool and lifecycle capabilities that replace that access. `RUNNER_OUTBOUND_ROLLOUT` then handles
-selected existing environments with explicit route modes, compatible images and rollback. Fleet
-rollout is not automatically a gate on first VM use.
+spool and lifecycle capabilities that replace that access. `RUNNER_OUTBOUND_ROLLOUT` then makes
+outbound the default for new Sandboxes; existing ones are retired rather than upgraded. Neither is
+a gate on first VM use.

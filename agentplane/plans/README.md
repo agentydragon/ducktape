@@ -35,6 +35,9 @@ execution sequence. This is a priority decision, not a technical dependency.
 - [Sandbox Service](sandbox_service.md) — independent sandbox lifecycle/session access;
   [Session archive migration](session_archive_placement.md) and [input metadata](notification_presentation.md)
   are sequenced follow-ups; [discovery/access notes](runner_discovery.md) retain network-policy access and the runner-auth TODO
+- [History Service](history_service.md) — target split (runner, Sandbox Service, History Service,
+  app facade) and the gated sequence for moving the raw log and thread fold, runner dial-out and
+  delta settlement
 - [Subscriptions and notifications](notifications.md) — standalone service design: SA-authorized session scope,
   explicit inbox acknowledgement, shipped Actions/GitHub delivery, remaining reliability acceptance,
   and deferred Kubernetes monitoring, automatic following and wake

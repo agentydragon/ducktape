@@ -37,7 +37,6 @@ flowchart TD
     THREAD_IDENTITY_NEW[Candidate: audit remaining new Session identity requirements]
     THREAD_EVENT_CONTINUITY[Capstone: new and legacy identity continuity]
     APP_ALEMBIC_SQUASH[Blocked: baseline final app schema]
-    SESSION_EVENT_RETENTION[Draft: settle redundant streamed deltas, flag off]
     THREAD_IDENTITY_NEW --> THREAD_EVENT_CONTINUITY
     APP_SESSION_SCHEMA_RENAME --> APP_ALEMBIC_SQUASH
     THREAD_EVENT_CONTINUITY --> APP_ALEMBIC_SQUASH
@@ -71,18 +70,6 @@ compatible guarded rollout; automatic fleet upgrades are not inherently a prereq
 **Blocked on final schema naming/cleanup and identity continuity.** Baseline only the settled schema,
 verify fresh and migrated databases and their deployed stamps before pruning old revisions.
 Retain the data-preserving rollback procedure. No Action Service or other database squash implied.
-
-### `SESSION_EVENT_RETENTION` — measure before changing history retention
-
-**Draft [#9713](https://github.com/agentydragon/ducktape/pull/9713) (2026-10-10 PDT); the old-copy
-retirement dependency is satisfied.** A bounded staging
-sample on 2026-10-10 put streamed deltas at ~85–90% of `session_event` bytes. The operator approved
-the policy the same day: behind a Sandbox Service default plus per-Session override (default off),
-the service removes an item's delta frames and derived deltas only when every frame matches an exact
-versioned template and the retained native completion frame holds exactly their concatenation.
-What is dropped is the chunking, per-chunk ids and timestamps, and frame serialization; anomalous
-or incomplete items keep everything, and the runner journal is unchanged. After merge: enable on
-staging and re-measure. A one-off compaction of existing history needs its own reviewed plan.
 
 ## 2. Service-owned command admission and later notification presentation
 
@@ -306,6 +293,7 @@ flowchart TD
     THREAD_READ_POLICY_DESIGN --> SANDBOX_COMPARTMENT_BOUNDARY
     THREAD_READ_POLICY_DESIGN --> THREAD_READ_POLICY
     SANDBOX_COMPARTMENT_BOUNDARY --> THREAD_READ_POLICY
+    HISTORY_SERVICE_OWNERSHIP[History Service ownership] -. enforce at the final owner .-> THREAD_READ_POLICY
     AGENT_MESSAGING_DESIGN --> AGENT_MESSAGE_INGRESS
     SESSION_COMMAND_SUBMISSION[Service-owned command submission] -. if direct-input delivery selected .-> AGENT_MESSAGE_INGRESS
     SESSION_INPUT_METADATA_READ[Input provenance reads] -. if direct-input delivery selected .-> AGENT_MESSAGE_RECEPTION
@@ -429,13 +417,13 @@ connection direction need not move command durability or remove the runner journ
 ```mermaid
 flowchart LR
     RUNNER_TRANSPORT_DESIGN[Decision: outbound channel contract]
-    SERVICE_BOUNDARIES[Decision: which components share a service]
+    SERVICE_BOUNDARIES[Decision: target service split]
     RUNNER_OUTBOUND_CHANNEL[Blocked: outbound command delivery peers]
     RUNNER_OUTBOUND_CANARY[Blocked: service-first deployment and fresh runner canary]
     SESSION_COMMAND_SUBMISSION[Blocked: durable submission through existing relay]
     RUNNER_OUTBOUND_SPOOL[Blocked: move spool delivery onto channel]
     RUNNER_OUTBOUND_LIFECYCLE[Blocked: migrate remaining lifecycle consumers]
-    RUNNER_OUTBOUND_ROLLOUT[Blocked: migrate selected existing runners]
+    RUNNER_OUTBOUND_ROLLOUT[Blocked: outbound by default for new Sandboxes]
     VM_CONTROL_NETWORKING[Blocked: integrate selected VM control path]
     VM_IMAGE[Candidate: packaged guest and storage]
     VM_PROVIDER[Blocked: production provider and API]
@@ -455,6 +443,11 @@ flowchart LR
     RUNNER_OUTBOUND_CANARY --> RUNNER_OUTBOUND_LIFECYCLE
     RUNNER_OUTBOUND_SPOOL --> RUNNER_OUTBOUND_ROLLOUT
     RUNNER_OUTBOUND_LIFECYCLE --> RUNNER_OUTBOUND_ROLLOUT
+    RUNNER_OUTBOUND_ROLLOUT --> RUNNER_INBOUND_RETIRE[Blocked: retire inbound runner access]
+    SANDBOX_LIFECYCLE_DURABILITY[Archive before storage deletion] --> LEGACY_SANDBOX_RETIRE[Blocked: archive and delete pre-dial-out Sandboxes]
+    RUNNER_OUTBOUND_ROLLOUT --> LEGACY_SANDBOX_RETIRE
+    LEGACY_SANDBOX_RETIRE --> RUNNER_INBOUND_RETIRE
+    FOLLOW_REPLAY[Follow from any cursor] --> RUNNER_OUTBOUND_SPOOL
     VM_PROVIDER --> VM_CONTROL_NETWORKING
     VM_CONTROL_NETWORKING --> VM_LIFECYCLE
     VM_IMAGE --> VM_PROCESS_ISOLATION
@@ -480,28 +473,24 @@ fencing and active dispatch-attempt lifetime. Resolve these before channel imple
 not require the complete spool or lifecycle protocol to ship durable admission over the old relay.
 Spool replay/backpressure review belongs to `RUNNER_OUTBOUND_SPOOL`; inventory remaining lifecycle
 consumers early and finish their mappings separately. Keep runner journal authority and offline
-queue policy unchanged. Details: [runner transport design](runner_discovery.md#outbound-control-channel-design).
+queue policy unchanged. Channel authentication is the runner authentication the
+[runner-auth TODO](runner_discovery.md#todo-proper-runner-authentication-and-transport-security)
+asks for; choose it here rather than for the inbound RPC that is being retired. Details:
+[runner transport design](runner_discovery.md#outbound-control-channel-design).
 
-### `SERVICE_BOUNDARIES` — which components share a service
+### `SERVICE_BOUNDARIES` — target service split
 
-**Decision; not scheduled (operator, 2026-10-10 PDT).** The Sandbox Service holds provisioning, the
-authenticated relay to runners and the raw history archive; the runner holds harness driving,
-journal-ordered command admission and its journal; the app holds the thread fold. Decide which of
-these belong together. Use cases to keep possible: driving a runner directly with no service, and
-provisioning and driving without the archive (its ingester always runs today) or without
-service-side command submission. Unreviewed candidate: driver, admission authority and journal stay
-in the runner; provisioning and routing stay in the Sandbox Service; the archive and the thread fold
-move together into a history service the app fronts, so history storage policy (such as
-`SESSION_EVENT_RETENTION`) and folding stop crossing a read API. Candidate wiring: the runner's
-one outbound connection ends at the Sandbox Service, so commands come from it (app → Sandbox
-Service submission → runner channel), and it forwards the spool to the history service through an
-append idempotent by cursor; the app reads threads from the history service behind its own auth.
-Command outcomes need no separate path: admission comes back as a journal event. Without a
-configured history sink the Sandbox Service only drives. Still to choose: how browsers get live
-fold updates once the fold leaves the app database. Open question: who owns the
-Session locator ↔ Sandbox identity binding the archive checks before reading a runner. Co-design
-with `RUNNER_TRANSPORT_DESIGN`, since a dialing-out runner must know which service it reports to;
-this does not reopen `SESSION_COMMAND_CONTRACT`.
+**Decision; wiring agreed in operator discussion, 2026-10-10 PDT.** The runner keeps harness
+driving, journal-ordered admission and its journal; the Sandbox Service keeps provisioning, the
+runner channel, command submission, and live follow with replay from the journal, but stores no
+history; a new History Service owns the raw log, settlement and the thread fold, and subscribes to
+the Sandbox Service like any other client; the app fronts it. Use cases kept possible: driving a runner
+with no service, and driving without history or without service-side submission. The remaining
+choices are separate decisions in [section 7](#7-history-service-extraction-and-delta-settlement);
+target, reasoning and gates are in the [History Service plan](history_service.md). The locator ↔
+Sandbox binding stays with the Sandbox Service, since the History Service never reads runners.
+This does not reopen `SESSION_COMMAND_CONTRACT` beyond the reconciliation clause
+`SESSION_FOLLOW_CONTRACT` restates.
 
 ### `RUNNER_OUTBOUND_CHANNEL` — implement outbound command delivery
 
@@ -525,11 +514,14 @@ proves command delivery independently of moving spool traffic or migrating exist
 ### `RUNNER_OUTBOUND_SPOOL` — move spool delivery onto the channel
 
 **Blocked on the command canary; review replay/acknowledgement and backpressure here.** Add independent
-cursor-based replay/live Events and acknowledgements only after archive commit. Preserve existing
+cursor-based replay/live Events, acknowledged once the Sandbox Service commits its own admission
+reconciliation (`SESSION_FOLLOW_CONTRACT`); the journal stays the buffer for every subscriber. Preserve existing
 archive identities, duplicate/conflict checks and direct/spooled admission reconciliation. Bound
 buffers and keep controls/receipts responsive during catch-up; test reconnect, checkpoint rollback
 and slow readers. Switch the canary's ingester explicitly, then expand this capability in bounded
-steps. This changes event transport, not archive storage or admission authority.
+steps. This changes event transport, not archive storage or admission authority. Replay through
+the channel then serves `FollowSession` from any cursor (`FOLLOW_REPLAY`); this and
+`HISTORY_WRITE_HANDOFF` change opposite ends of ingestion, so either may land first.
 
 ### `RUNNER_OUTBOUND_LIFECYCLE` — migrate remaining inbound control consumers
 
@@ -538,14 +530,28 @@ and other inbound/`Attach` consumers onto the channel without accidental startup
 Verify each consumer's auth and retry behavior before retiring its old route. Completion establishes
 that selected environments no longer require inbound controls; no automatic fleet migration.
 
-### `RUNNER_OUTBOUND_ROLLOUT` — migrate selected existing runners and retire legacy routes
+### `RUNNER_OUTBOUND_ROLLOUT` — outbound by default for new Sandboxes
 
-**Blocked on outbound spool and remaining lifecycle integration.** Expand complete outbound support
-to selected existing environments with explicit image/route transitions and rollback preserving
-submissions, command IDs, history and runner storage. Partial command/spool canaries above need not
-wait for this full migration. Never blindly resend ambiguous commands through a competing route.
-Retire legacy `Attach` command submission and inbound access only after all relevant consumers move.
-Fleet migration is not a gate on first VM use.
+**Blocked on outbound spool and remaining lifecycle integration.** New Sandboxes start on an image
+that dials out, with the route chosen per incarnation and rollback preserving submissions, command
+IDs and history. Existing runners are not upgraded in place (operator, 2026-10-10 PDT); they keep
+the inbound route until `LEGACY_SANDBOX_RETIRE`. Never blindly resend ambiguous commands through a
+competing route. Not a gate on first VM use.
+
+### `LEGACY_SANDBOX_RETIRE` — wind down pre-dial-out Sandboxes
+
+**Blocked on the rollout and archive-before-delete.** The operator approved on 2026-10-10 PDT
+archiving and then deleting Sandboxes whose runner image cannot dial out, instead of upgrading them.
+Settle each one's history (final prefix archived), then delete it with its runner storage. Exit: no
+live Sandbox runs a pre-dial-out image. This is a deliberate exception to the staging-preservation
+rule for runner volumes; archived history and public Session identities are kept.
+
+### `RUNNER_INBOUND_RETIRE` — remove inbound runner access
+
+**Blocked on legacy Sandbox retirement.** Remove
+`Attach` command submission, the pull ingester, the runner control port and its network policy.
+The [runner-auth TODO](runner_discovery.md#todo-proper-runner-authentication-and-transport-security)
+goes with them.
 
 ### `VM_CONTROL_NETWORKING` — integrate the reviewed connection direction
 
@@ -616,7 +622,8 @@ Independent of compact delivered-message rendering. Never acknowledge from viewi
 
 **Candidate; data changes wait for migration.** Paginate/search the Thread listing with authorized
 stable cursors, independent of deferred transcript full-text search. Verify ordering, navigation and
-permissions rather than making the frontend load every Thread.
+permissions rather than making the frontend load every Thread. The paging cursors come from the History Service's
+list API (`FOLD_READ_API`); client-only work can start earlier.
 
 ### `THREAD_SYNC_STOPPED_RECOVERY` — recover stopped UI synchronization
 
@@ -638,7 +645,9 @@ flowchart LR
     KUBERNETES_RBAC_POLICIES[Decision: reusable groups and update semantics] --> KUBERNETES_RBAC_POLICY_BINDINGS[Blocked: apply groups and one-SA changes]
     KUBERNETES_RBAC_POLICY_BINDINGS --> MANAGED_SA_RBAC
     BOOTSTRAP_ATTEMPT_RECEIPT[Candidate: one durable bootstrap attempt] --> BOOTSTRAP_PROGRESS_CONTRACT[Blocked: asynchronous progress API]
-    SANDBOX_LIFECYCLE_DURABILITY[Candidate: safe managed storage deletion]
+    SANDBOX_LIFECYCLE_DURABILITY[Blocked: archive before managed storage deletion]
+    SANDBOX_LIFECYCLE_DURABILITY --> SANDBOX_IDLE_EXPIRY[Blocked: delete idle Sandboxes]
+    RUNNER_TEARDOWN_SEAL[Candidate: runner seals Sessions at teardown] --> SANDBOX_LIFECYCLE_DURABILITY
 ```
 
 ### `PC_EGRESS_CREDENTIALS` — label public-coder's Action Service caller
@@ -726,10 +735,406 @@ unless the operator reviews a change. Separate Sandbox initialization from per-s
 
 ### `SANDBOX_LIFECYCLE_DURABILITY` — preserve archive before deleting storage
 
-**Candidate.** Quiesce/fence and archive the final prefix before managed storage
+**Blocked on the teardown seal and retention holds.** Quiesce/fence and archive the final prefix before managed storage
 removal. Explicitly handle an unreachable runner or incomplete state rather than claiming recovery.
 Use existing same-storage suspension tests; a bounded deletion/archive check validates the new
 boundary. No copied-volume portability or simultaneous multi-component crash requirement.
+After `HISTORY_WRITE_HANDOFF`, "archived" means the History Service committed the final prefix.
+Completeness is the seal from `RUNNER_TEARDOWN_SEAL` for every Session in the Sandbox, and every
+retention hold (`RETENTION_HOLDS`) on those Sessions confirmed through its seal cursor; with no
+holds, deletion follows the seal.
+When a runner is unreachable or its volume is broken, stop and ask the operator: delete with the
+last committed cursor recorded as the end, or keep the Sandbox.
+
+### `RUNNER_TEARDOWN_SEAL` — prove a Session's history is final
+
+**Candidate (design approved by the operator, 2026-10-10 PDT).** At Sandbox teardown the Sandbox
+Service fences the Sandbox (no new Sessions, only stop commands), stops every harness, then sends a
+seal command. The runner journals one seal entry per Session with its final cursor and then refuses
+resume and further writes in this Sandbox. An ordinary stop never seals, since a stopped Session can
+resume. A seal ends the Sandbox's incarnation of the Session, not the Session: a later revival
+(section 8) continues the same history. The
+seal travels through the journal like any entry and reaches followers as a `sealed` frame, so a
+subscriber can tell a finished Session from a lagging one. Runners on images without the command (`LEGACY_SANDBOX_RETIRE`) are compared
+instead against the journal head read over the old route after the harness stops.
+
+### `SANDBOX_IDLE_EXPIRY` — delete Sandboxes nobody uses
+
+**Blocked on archive-before-delete.** Draft [#7859](https://github.com/agentydragon/ducktape/pull/7859)
+expires idle Sandboxes (`TODO(sandbox-lifetime)` in `action_service/sandbox/inventory.py`); deleting
+one must first archive its final prefix.
+
+## 7. History Service extraction and delta settlement
+
+Not scheduled. Target and the reasoning behind this order: [History Service plan](history_service.md).
+Decided by the operator on 2026-10-10 PDT: the History Service takes over the existing
+`sandbox_service` database; the fold's projection is rebuilt from the raw log, not copied; Electric
+replicates the history database; `session_event` keeps its name.
+
+Each implementation node is one deployment, in this order: a server capability with no callers, then
+the caller switch, then deleting the old path in a later release after bounded checks on both
+environments. Testing goes first, staging after its checks pass. Retained data is deleted only by a
+node that says so. There is no dual write of the raw log: there is one copy of its tables, and each
+node switches which service reads or writes it. Only the fold double-runs.
+
+```mermaid
+flowchart TD
+    SERVICE_BOUNDARIES[Decision: target service split]
+    SESSION_FOLLOW_CONTRACT[Decision: History Service as an ordinary subscriber]
+    SESSION_COMMAND_CONTRACT[Command admission contract]
+    SESSION_COMMAND_CORE[Draft: admission foundation]
+    SANDBOX_COMMAND_DATABASE[Blocked: Sandbox Service database for admission]
+    HISTORY_SERVICE_BRINGUP[Blocked: deploy History Service raw read API]
+    HISTORY_READ_CUTOVER[Blocked: app reads raw history from History Service]
+    SANDBOX_HISTORY_READS_RETIRE[Blocked: delete Sandbox Service history reads]
+    SESSION_WATCH[Blocked: Sandbox Service Session feed]
+    FOLLOW_REPLAY[Blocked: follow from any cursor via the runner]
+    RETENTION_HOLDS[Blocked: retention holds gate Sandbox deletion]
+    HISTORY_WRITE_HANDOFF[Blocked: History Service ingester takes over]
+    SANDBOX_LOCAL_HISTORY_RETIRE[Blocked: delete Sandbox Service ingester and store]
+    FOLD_LIBRARY_EXTRACT[Blocked: fold and projector in a neutral package]
+    FOLD_SHADOW[Blocked: History Service folds in shadow]
+    FOLD_READ_API[Blocked: History Service serves Thread reads]
+    ELECTRIC_HISTORY_SOURCE[Blocked: Electric replicates the history database]
+    FOLD_READ_CUTOVER[Blocked: app and browser read the History Service fold]
+    APP_PROJECTOR_RETIRE[Blocked: delete app projector code]
+    APP_PROJECTION_RETIRE[Blocked: drop app projection tables]
+    APP_EVENT_LOG_COPIES_RETIRE[Blocked: drop event_log launch copies]
+    HISTORY_SERVICE_OWNERSHIP[Capstone: History Service owns log and fold]
+    SESSION_EVENT_RETENTION[Blocked: settle streamed deltas at ingestion, flag off]
+    SESSION_EVENT_RETENTION_ENABLE[Blocked: enable on staging and re-measure]
+    SESSION_EVENT_COMPACTION_PLAN[Decision: approve compaction of stored history]
+    SESSION_EVENT_COMPACTION[Blocked: settle stored history]
+    HISTORY_REPACK[Blocked: return freed space to the volume]
+    APP_ALEMBIC_SQUASH[Baseline final app schema]
+    THREAD_BROWSE_PAGINATE[Bounded history browsing]
+    THREAD_READ_POLICY[Scoped archive reads]
+    RUNNER_OUTBOUND_SPOOL[Spool on the runner channel]
+    RUNNER_INBOUND_RETIRE[Retire inbound runner access]
+    SANDBOX_LIFECYCLE_DURABILITY[Archive before storage deletion]
+    SERVICE_BOUNDARIES --> SESSION_FOLLOW_CONTRACT
+    SESSION_COMMAND_CONTRACT --> SESSION_FOLLOW_CONTRACT
+    SERVICE_BOUNDARIES --> SANDBOX_COMMAND_DATABASE
+    SANDBOX_COMMAND_DATABASE -. merge gate .-> SESSION_COMMAND_CORE
+    SERVICE_BOUNDARIES --> HISTORY_SERVICE_BRINGUP
+    HISTORY_SERVICE_BRINGUP --> HISTORY_READ_CUTOVER
+    HISTORY_READ_CUTOVER --> SANDBOX_HISTORY_READS_RETIRE
+    SESSION_FOLLOW_CONTRACT --> SESSION_WATCH
+    SESSION_FOLLOW_CONTRACT --> FOLLOW_REPLAY
+    SESSION_FOLLOW_CONTRACT --> RETENTION_HOLDS
+    SESSION_WATCH --> HISTORY_WRITE_HANDOFF
+    FOLLOW_REPLAY --> HISTORY_WRITE_HANDOFF
+    RETENTION_HOLDS --> HISTORY_WRITE_HANDOFF
+    HISTORY_READ_CUTOVER --> HISTORY_WRITE_HANDOFF
+    HISTORY_WRITE_HANDOFF --> SANDBOX_LOCAL_HISTORY_RETIRE
+    SANDBOX_HISTORY_READS_RETIRE --> SANDBOX_LOCAL_HISTORY_RETIRE
+    SERVICE_BOUNDARIES --> FOLD_LIBRARY_EXTRACT
+    FOLD_LIBRARY_EXTRACT --> FOLD_SHADOW
+    HISTORY_WRITE_HANDOFF --> FOLD_SHADOW
+    FOLD_SHADOW --> FOLD_READ_API
+    FOLD_SHADOW --> ELECTRIC_HISTORY_SOURCE
+    FOLD_READ_API --> FOLD_READ_CUTOVER
+    FOLD_READ_CUTOVER -. paginated list API .-> THREAD_BROWSE_PAGINATE
+    ELECTRIC_HISTORY_SOURCE --> FOLD_READ_CUTOVER
+    FOLD_READ_CUTOVER --> APP_PROJECTOR_RETIRE
+    APP_PROJECTOR_RETIRE --> APP_PROJECTION_RETIRE
+    FOLD_READ_CUTOVER --> APP_EVENT_LOG_COPIES_RETIRE
+    APP_EVENT_LOG_COPIES_RETIRE --> HISTORY_SERVICE_OWNERSHIP
+    APP_PROJECTION_RETIRE --> HISTORY_SERVICE_OWNERSHIP
+    SANDBOX_LOCAL_HISTORY_RETIRE --> HISTORY_SERVICE_OWNERSHIP
+    FOLD_READ_CUTOVER --> SESSION_EVENT_RETENTION
+    SESSION_EVENT_RETENTION --> SESSION_EVENT_RETENTION_ENABLE
+    SESSION_EVENT_RETENTION_ENABLE --> SESSION_EVENT_COMPACTION_PLAN
+    SESSION_EVENT_COMPACTION_PLAN --> SESSION_EVENT_COMPACTION
+    SESSION_EVENT_COMPACTION --> HISTORY_REPACK
+    APP_PROJECTION_RETIRE --> HISTORY_REPACK
+    APP_PROJECTION_RETIRE -. smaller baseline, not required .-> APP_ALEMBIC_SQUASH
+    HISTORY_SERVICE_OWNERSHIP -. enforce at the final owner .-> THREAD_READ_POLICY
+    FOLLOW_REPLAY -. replay moves onto the channel .-> RUNNER_OUTBOUND_SPOOL
+    RETENTION_HOLDS --> SANDBOX_LIFECYCLE_DURABILITY
+```
+
+### `SESSION_FOLLOW_CONTRACT` — History Service as an ordinary subscriber
+
+**Decision; design accepted by the operator, 2026-10-10 PDT.** The History Service uses the same
+Sandbox Service calls as a historyless client: it discovers Sessions with `WatchSessions`, follows
+each from its own committed cursor with `FollowSession`, and places a retention hold. The Sandbox
+Service stores no history and pushes to no one; older entries are replayed from the runner journal.
+Running without history means running no subscriber. Command admission is still reconciled in the
+Sandbox Service from the stream it terminates, and its acknowledgement to the runner waits only on
+its own commit; this replaces the [command admission](command_admission.md) clause that reconciles in
+the archive transaction. A Session's incarnations (`SessionChange.sandbox_uid`) come from the feed.
+For now only the app's ServiceAccount reads history, for every Session; agent reads are
+`THREAD_READ_POLICY`. Any permitted Sandbox Service caller may place a hold for now (operator,
+2026-10-10 PDT), since only a few services call it. Holds never expire: a stale hold keeps the Sandbox until
+the operator releases it, and `GetSandbox` shows which hold blocks deletion. API sketch:
+[History Service plan](history_service.md#apis).
+
+### `SANDBOX_COMMAND_DATABASE` — a database for command admission
+
+**Blocked on the service split.** A new Sandbox Service database and role,
+so admission tables never land in the database handed to the History Service. Draft #9573 targets
+it before merge. Rollout: deploy the empty database; nothing reads it until #9573.
+
+### `HISTORY_SERVICE_BRINGUP` — deploy the History Service
+
+**Blocked on the service split.** Deployment, ServiceAccount, the
+`session_history` package and migrations, and raw and observation read RPCs over the tables in the
+existing `sandbox_service` database, with a read-only grant. Leave a `TODO` at the database
+declaration in `cluster/cdk8s/agentplane/database.py` that the name is a misnomer once the History
+Service owns it. No callers; the Sandbox Service stays the only writer. Exit: reads
+match the Sandbox Service's on a bounded sample in both environments.
+
+### `HISTORY_READ_CUTOVER` — app reads raw history from the History Service
+
+**Blocked on bring-up.** Switch the app's raw and observation reads, with authorization and lag
+explicit. Rollback: point the app back at the same tables.
+
+### `SANDBOX_HISTORY_READS_RETIRE` — delete the old read path
+
+**Blocked on the read cutover, one release later.** Remove the Sandbox Service history read RPCs and
+their client code.
+
+### `SESSION_WATCH` — a feed of Sessions
+
+**Blocked on the follow contract.** `WatchSessions` streams every Session the caller may see, then
+creations and state changes (including the current Sandbox incarnation), from a resumable position.
+No callers yet. Test resume after disconnect and that authorization filters the feed.
+
+### `FOLLOW_REPLAY` — follow from any cursor
+
+**Blocked on the follow contract.** `FollowSession` resumes from a caller-supplied cursor by
+replaying from the runner journal, with no Sandbox Service copy, then continues live, and reports
+the seal. Today's ingester already reads the runner this way; this makes it the public contract.
+
+### `RETENTION_HOLDS` — holds gate Sandbox deletion
+
+**Blocked on the follow contract.** `PlaceHold`, `ConfirmHold` and
+`ReleaseHold`, stored by the Sandbox Service. `DeleteSandbox` waits until every hold on every
+Session has confirmed its seal cursor. Test holds racing teardown, a holder that never confirms
+(deletion waits and reports it), and a Sandbox with no holds.
+
+### `HISTORY_WRITE_HANDOFF` — the History Service ingester takes over
+
+**Blocked on the Session feed, replay, holds and the read cutover.** Move the Sandbox Service's
+ingester into the History Service as a subscriber of those calls, with its per-log claim; one writer
+at a time. Test a History Service outage (it resumes from its cursor; the runner journal is the
+buffer), duplicate and conflicting replays, and claim handover between replicas. Rollback: run the
+old ingester again; the tables are the same.
+
+### `SANDBOX_LOCAL_HISTORY_RETIRE` — remove the local store
+
+**Blocked on the write handoff and read retirement, one release later.** Delete the Sandbox
+Service's ingester and `session_history` store code and revoke its grants on history tables. Test
+that the Sandbox Service provisions, drives and reconciles commands with no History Service
+running, and update `sandbox_service/API.md`.
+
+### `FOLD_LIBRARY_EXTRACT` — the fold leaves `agentplane.app`
+
+**Blocked on the service split.** Move the fold and projector into a neutral package the app and the
+History Service both import, since backends may not import the app. The app keeps running it; no
+behavior change.
+
+### `FOLD_SHADOW` — History Service folds beside the app
+
+**Blocked on the neutral fold and the write handoff.** History Service copies of the projection
+tables (`thread_entity`, payload chunks and manifests, `thread_evidence`, `thread_native_link`,
+`thread_checkpoint`), `session_projection_lease` and `thread_history_summary`, with the projector,
+built in a new epoch by rebuild (all decided by the operator, 2026-10-10 PDT), while the app projector keeps serving. The rebuild reads
+every retained event once (operator-approved despite the migration's no-scan rule) and is expected
+to run long: it is resumable from its own checkpoint, rate-bounded so live ingestion and folding
+keep up, and reports per-Session progress. Exit: materialized
+threads (entities and bodies) equal the app's on a bounded sample of Sessions, plus live catch-up.
+Rollback: drop the shadow tables.
+
+### `FOLD_READ_API` — History Service serves Thread reads
+
+**Blocked on the shadow.** The Thread read API, keyed by public Session ID (list summaries, an entity window,
+payloads by reference, raw/debug reads), authorized per Session,
+with fold lag and errors explicit. List summaries page with stable, authorized cursors from the
+start (operator, 2026-10-10 PDT), so `THREAD_BROWSE_PAGINATE` only adds the UI. No callers yet.
+
+### `ELECTRIC_HISTORY_SOURCE` — Electric over the history database
+
+**Blocked on the shadow.** An Electric deployment replicating the History
+Service projection, reachable through the app's authorization proxy but not yet selected. Measure
+shape count and memory as `thread_sync` requires.
+
+### `FOLD_READ_CUTOVER` — read the History Service fold
+
+**Blocked on the read API and the new Electric source.** App Thread reads and the proxy's Electric
+upstream switch together; the app projector stops but keeps its checkpoint. Test with the app
+unavailable: ingestion and folding continue. Rollback: switch back and resume the app projector.
+Open tabs need a reload after the switch; `THREAD_SYNC_STOPPED_RECOVERY` is not a prerequisite
+(operator, 2026-10-10 PDT).
+
+### `APP_PROJECTOR_RETIRE` — delete the app projector
+
+**Blocked on the fold read cutover, one release later.** Remove the app projector, its leases'
+code and the app's Electric deployment. Retained tables stay.
+
+### `APP_PROJECTION_RETIRE` — drop the app projection
+
+**Blocked on projector retirement.** An explicit deletion PR for the app projection tables and
+leases. The data is derived and rebuildable from the raw log. Skip
+[post-cutover cleanup](session_history_read_cutover.md#post-cutover-schema-cleanup) renames of
+tables this drops.
+
+### `APP_EVENT_LOG_COPIES_RETIRE` — drop the app's launch copies
+
+**Blocked on the fold read cutover; decided by the operator, 2026-10-10 PDT.** The app reads
+harness and cwd from the Sandbox Service's session record and the current model and last model
+activity from the History Service summary, then an explicit schema PR drops those `event_log`
+columns, leaving it the Thread → Session link. `APP_SESSION_SCHEMA_RENAME` renames the same
+table; either may land first, and the second rebases its migration. Replaces that item of the
+[post-cutover cleanup audit](session_history_read_cutover.md#post-cutover-schema-cleanup).
+
+### `HISTORY_SERVICE_OWNERSHIP` — capstone
+
+**Blocked on projection and local-store retirement.** The History Service is
+the only owner of the raw log and fold; the app is a facade over it. Each service's README states
+what unrelated agents can still do while it is down or rolling.
+
+### `SESSION_EVENT_RETENTION` — settle streamed deltas
+
+**Blocked on the fold read cutover.** The policy was approved 2026-10-10 PDT: behind a default plus
+per-Session override (off by default), drop an item's delta frames and derived deltas only when
+every frame matches an exact versioned template and the retained completion holds exactly their
+concatenation. Lift the templates, pure settler and settlement tables from draft
+[#9713](https://github.com/agentydragon/ducktape/pull/9713) into the History Service ingester's
+batch transaction, deleting fold evidence for
+the settled cursors in the same transaction; the app-side gap handling is not carried over. #9713
+stays parked as the fallback if disk pressure arrives first.
+
+### `SESSION_EVENT_RETENTION_ENABLE` — turn it on and measure
+
+**Blocked on settlement.** Enable on testing, then staging, and re-measure `session_event` and
+evidence growth against the 2026-10-10 sample.
+
+### `SESSION_EVENT_COMPACTION_PLAN` — approve settling stored history
+
+**Decision.** A reviewed plan for a resumable one-off Job that settles stored Sessions with the same
+code: the Sessions it touches and what is lost. It deletes stored history, so it needs the
+operator's explicit approval.
+
+### `SESSION_EVENT_COMPACTION` — settle stored history
+
+**Blocked on the approved plan.** Run the Job in testing, then staging, stopping and resuming
+cleanly. Backups keep the old rows until their retention expires.
+
+### `HISTORY_REPACK` — return freed space
+
+**Blocked on compaction and the app projection drop.** `pg_repack` (or `VACUUM FULL` in a window)
+on the log and projection tables; deleted rows otherwise stay as reusable space inside Postgres.
+
+## 8. Sessions that outlive their Sandbox
+
+Not scheduled (operator, 2026-10-10 PDT: co-plan, not now). A Session and its history are durable;
+its Sandbox is one incarnation that can be deleted, with a new one provisioned later to revive the
+Session on a runner. Today a Session lives exactly as long as its Sandbox's runner volume
+(suspension removes the Pod and keeps the volume). The event log alone is not a native resume image;
+the operator's direction (2026-10-10 PDT) is a state volume holding the harness files and runner
+state that survives the Sandbox and is attached to the next one. Section 7 is written so it does not
+preclude this: the History Service keys by Session, a Session records each Sandbox incarnation, and
+a teardown seal closes an incarnation, not the Session.
+
+```mermaid
+flowchart TD
+    DURABLE_SESSION_LIFECYCLE[Decision: Session lifetime beyond its Sandbox]
+    SESSION_STATE_VOLUME_DESIGN[Decision: a state volume that outlives the Sandbox]
+    CLAUDE_PORTABLE_STATE[Candidate: Claude resumes on a reattached volume]
+    CODEX_PORTABLE_STATE[Candidate: Codex resumes on a reattached volume]
+    SESSION_INCARNATIONS[Blocked: Sessions record Sandbox incarnations]
+    STATE_VOLUME_RETENTION[Blocked: keep the state volume at teardown]
+    SESSION_REVIVE[Blocked: revive a Session in a new Sandbox]
+    THREAD_SUCCESSOR_DELIVERY[Blocked: commands unsettled across incarnations]
+    HOSTED_THREAD_SURFACES[Blocked: show and revive Sessions without a Sandbox]
+    THREAD_IDENTITY_NEW[Service-owned Session identity]
+    SESSION_FOLLOW_CONTRACT[Follow and hold contract]
+    HISTORY_SERVICE_OWNERSHIP[History Service ownership]
+    RUNNER_TEARDOWN_SEAL[Teardown seal]
+    LEGACY_SANDBOX_RETIRE[Retire pre-dial-out Sandboxes]
+    DURABLE_SESSION_LIFECYCLE --> SESSION_STATE_VOLUME_DESIGN
+    DURABLE_SESSION_LIFECYCLE --> SESSION_INCARNATIONS
+    THREAD_IDENTITY_NEW --> SESSION_INCARNATIONS
+    SESSION_FOLLOW_CONTRACT -. incarnation in the Session feed .-> SESSION_INCARNATIONS
+    SESSION_STATE_VOLUME_DESIGN --> CLAUDE_PORTABLE_STATE
+    SESSION_STATE_VOLUME_DESIGN --> CODEX_PORTABLE_STATE
+    SESSION_STATE_VOLUME_DESIGN --> STATE_VOLUME_RETENTION
+    RUNNER_TEARDOWN_SEAL --> STATE_VOLUME_RETENTION
+    SESSION_INCARNATIONS --> SESSION_REVIVE
+    STATE_VOLUME_RETENTION --> SESSION_REVIVE
+    CLAUDE_PORTABLE_STATE -. per harness .-> SESSION_REVIVE
+    CODEX_PORTABLE_STATE -. per harness .-> SESSION_REVIVE
+    SESSION_REVIVE --> THREAD_SUCCESSOR_DELIVERY
+    SESSION_REVIVE --> HOSTED_THREAD_SURFACES
+    HISTORY_SERVICE_OWNERSHIP --> HOSTED_THREAD_SURFACES
+    STATE_VOLUME_RETENTION -. if first, retire keeps old volumes .-> LEGACY_SANDBOX_RETIRE
+```
+
+### `DURABLE_SESSION_LIFECYCLE` — Session lifetime beyond its Sandbox
+
+**Decision.** Replaces the frozen `THREAD_OUTLIVES_SANDBOX`. Decide: what a revived Session gets
+back (native harness state only, or also its workspace files); which launch configuration a new
+incarnation uses (the Session's frozen one, or a current template, which also decides whether an
+image upgrade happens on revival); who may revive and how (an explicit API call, never implicitly
+on a read or a notification). Sessions that shared a Sandbox revive together (one state volume per
+Sandbox, `SESSION_STATE_VOLUME_DESIGN`).
+
+### `SESSION_STATE_VOLUME_DESIGN` — a state volume that outlives the Sandbox
+
+**Decision; direction set by the operator, 2026-10-10 PDT.** Replaces the frozen
+`THREAD_PORTABLE_STATE`. A persistent volume holds the native harness files and the runner's state,
+separate from the workspace, is kept when the Sandbox is deleted, and is attached to the next
+incarnation, whose runner continues the same journal. Decided: one volume per Sandbox, so the
+Sessions that shared a Sandbox revive together in its successor. Decide: whether the runner's state
+goes on it or only the harness files;
+whether the workspace survives too (operator neutral; default: it does, kept with the state volume,
+because a revived conversation refers to files the agent made and its cwd must exist); storage class, since `local-path` pins a volume to one node and
+so pins revival there; who deletes a retained volume (an explicit Session deletion) and its quota;
+and refusing to attach to an incompatible harness or runner version rather than attempting it.
+
+### `CLAUDE_PORTABLE_STATE` — Claude evidence
+
+**Candidate after the volume design.** Attach a retained volume to a new Sandbox (new Pod, possibly
+a newer image) and resume, checking continuation and prompt-cache cost. The frozen
+`RUNNER_IMAGE_UPGRADE_PROOF` is the same experiment on one Sandbox. Independent of Codex.
+
+### `CODEX_PORTABLE_STATE` — Codex evidence
+
+**Candidate after the volume design.** The same for Codex; neither harness waits for the other.
+
+### `SESSION_INCARNATIONS` — a Session records its Sandboxes over time
+
+**Blocked on the lifecycle decision and service-owned identity.** The Sandbox Service's Session
+record holds a sequence of Sandbox incarnations, at most one live; the locator ↔ Sandbox binding
+becomes per incarnation. The Session feed (`WatchSessions`) reports each incarnation's `sandbox_uid`, from
+which the History Service records it, and its seal ends that incarnation, not the Session. On the retained volume the runner journal and its
+cursors simply continue; the next incarnation journals that it resumed after a seal.
+
+### `STATE_VOLUME_RETENTION` — keep the state volume at teardown
+
+**Blocked on the volume design and the teardown seal.** Provision the state volume separately from
+the Sandbox's other storage; at teardown, after the seal commits, delete the Sandbox and keep the
+volume, bound to the deleted Sandbox's identity so that its successor receives it. Test that a Sandbox
+deletion never deletes a retained volume and that an explicit Session deletion does.
+
+### `SESSION_REVIVE` — revive a Session in a new Sandbox
+
+**Blocked on incarnations, retained volumes and per-harness evidence.** Provision a new Sandbox
+from the decided launch configuration with the retained volume attached, and resume the harness as a new
+incarnation of the same Session and history. Ships per harness as its evidence lands. Test revival
+after deletion, a refused incompatible volume, and concurrent revive requests.
+
+### `THREAD_SUCCESSOR_DELIVERY` — commands unsettled across incarnations
+
+**Blocked on revival.** A command whose admission was ambiguous when an incarnation ended is not
+replayed into the next one; it stays unknown and is shown as such. Moved from the freezer.
+
+### `HOSTED_THREAD_SURFACES` — show and revive Sessions without a Sandbox
+
+**Blocked on revival and History Service ownership.** The app lists Sessions whose Sandbox is gone,
+reads their history from the History Service, and offers an explicit revive. Moved from the freezer.
 
 ## Scope and retirement of stale gates
 
