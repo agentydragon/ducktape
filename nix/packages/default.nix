@@ -153,6 +153,13 @@ let
       src = artifacts.${pname};
       inherit propagatedBuildInputs buildInputs;
       nativeBuildInputs = nativeBuildInputs ++ [ pkgs.cacert ];
+      # The generated scripts supply their own Python closure. An inherited
+      # PYTHONPATH can put another interpreter's extension modules ahead of it
+      # (for example Python 3.13 pygit2 in a Python 3.14 hook).
+      makeWrapperArgs = [
+        "--unset"
+        "PYTHONPATH"
+      ];
       # pygit2 (and anything else that calls OpenSSL at module import) needs
       # a CA bundle visible during the imports-check phase, otherwise libgit2
       # fails with "failed to load certificates" inside the sealed build env.
