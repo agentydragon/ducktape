@@ -52,6 +52,17 @@
   display: none;
 }
 
+.agentplane-mosaic-thread-tile,
+.agentplane-mosaic-mobile-tile {
+  container-type: inline-size;
+}
+
+@container (max-width: 520px) {
+  .agentplane-mosaic-thread-meta {
+    display: none;
+  }
+}
+
 .agentplane-mosaic-tile-content,
 .agentplane-mosaic-mobile-tile {
   display: flex;

@@ -55,6 +55,10 @@ async def test_desktop_shell_docks_the_existing_browsers(
     detail = page.locator("[data-mosaic-pane-kind='action']")
     await expect(detail).to_be_visible()
     await expect(page.locator("[data-mosaic-pane]")).to_have_count(4)
+    thread_name = page.locator("[data-mosaic-pane-kind='thread']").get_by_role("textbox", name="Thread name")
+    thread_name_box = await thread_name.bounding_box()
+    assert thread_name_box is not None
+    assert thread_name_box["width"] >= 100
     await page.mouse.move(0, 0)
     await view.capture(name="mosaic-desktop-action-detail", target=page.locator("#app"))
     await detail.get_by_role("button", name="Approve").click()

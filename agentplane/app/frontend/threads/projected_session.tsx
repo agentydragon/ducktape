@@ -1515,7 +1515,12 @@ export function ProjectedSession({
         />
       </Box>
       {thread && (
-        <Text size="xs" c="dimmed" style={{ flexShrink: 0 }}>
+        <Text
+          className={embedded ? "agentplane-mosaic-thread-meta" : undefined}
+          size="xs"
+          c="dimmed"
+          style={{ flexShrink: 0 }}
+        >
           {thread.sandbox} · {harnessLabel(thread.harness)}
         </Text>
       )}
