@@ -273,6 +273,11 @@ is not in-stream reauthentication or a lease derived from the token's exact expi
 30-second database ingestion-ownership lease is independently renewed without closing follows.
 Runner RPC authentication/TLS remains a separate TODO.
 
+`runner_channel_port` (default 8082) is a separate gRPC listener serving only the
+[runner channel](../docs/runner_channel.md), so a Sandbox's network fence can admit it alone. It
+accepts Pod tokens for `runner_channel_audience` (default `agentplane-runner-channel`), and
+`commands_database_url` holds its connection rows next to command admission.
+
 Deployment must grant the service the appropriate Kubernetes/TokenReview/provisioning permissions,
 project an audience-correct token for app-to-service calls, and enforce sole normal production access
 to runner control/event RPCs. Do not leave a direct-runner app fallback or two provisioning reconcilers.

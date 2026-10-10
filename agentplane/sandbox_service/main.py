@@ -2,6 +2,7 @@
 
 import asyncio
 import logging
+import socket
 from contextlib import suppress
 from typing import cast
 
@@ -12,7 +13,9 @@ from kubernetes_asyncio import client as k8s_client, config as k8s_config
 from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 
+from agentplane.runner_channel import protocol_pb2_grpc
 from agentplane.sandbox_service.action_policy import ActionPolicyBindings
+from agentplane.sandbox_service.commands.connections import ConnectionStore
 from agentplane.sandbox_service.commands.store import SubmissionStore
 from agentplane.sandbox_service.controller import SandboxController
 from agentplane.sandbox_service.destinations import DestinationResolver
@@ -22,6 +25,7 @@ from agentplane.sandbox_service.inventory import SandboxInventory
 from agentplane.sandbox_service.kubernetes_bindings import KubernetesBindings
 from agentplane.sandbox_service.kubernetes_grants import ClusterRoleBindingGrant, RoleBindingGrant
 from agentplane.sandbox_service.provisioning import Provisioning
+from agentplane.sandbox_service.runner_channel import ChannelTiming, RunnerChannelService
 from agentplane.sandbox_service.session_history.ingestion import HistoryIngester
 from agentplane.sandbox_service.session_history.session_changes import SessionChanges
 from agentplane.sandbox_service.session_history.store import Store
@@ -31,6 +35,8 @@ from util.kubernetes import CustomObjectsClient
 
 # The asyncpg dialect is loaded by SQLAlchemy from the configured driver name.
 # gazelle:include_dep @pypi//asyncpg
+# The channel servicer stub names its messages; mypy reads stubs only from direct deps.
+# gazelle:include_dep //agentplane/runner_channel:protocol_pb2
 
 
 async def serve(settings: Settings) -> None:
@@ -114,12 +120,31 @@ async def serve_with_engines(
             runner_grpc_channel_options=settings.runner_grpc_channel_options,
             provisioning=provisioning,
         )
-        if settings.port == settings.health_port:
-            raise ValueError("gRPC and health ports must differ")
+        if len({settings.port, settings.health_port, settings.runner_channel_port}) != 3:
+            raise ValueError("gRPC, runner channel and health ports must differ")
         server = grpc.aio.server()
         add_service(resources, server)
         server.add_insecure_port(f"{settings.host}:{settings.port}")
         await server.start()
+        # A separate listener, so the network fence can admit runners to the channel and nothing else.
+        channel_server = grpc.aio.server()
+        protocol_pb2_grpc.add_RunnerChannelServicer_to_server(
+            RunnerChannelService(
+                principals=WorkloadPrincipalResolver(
+                    authentication=k8s_client.AuthenticationV1Api(api),
+                    audience=settings.runner_channel_audience,
+                    allowed_service_account_namespaces={settings.sandbox_namespace},
+                ),
+                inventory=inventory,
+                core=core,
+                connections=ConnectionStore(commands_engine),
+                replica=socket.gethostname(),  # the Pod name
+                timing=ChannelTiming(),
+            ),
+            channel_server,
+        )
+        channel_server.add_insecure_port(f"{settings.host}:{settings.runner_channel_port}")
+        await channel_server.start()
         health = FastAPI(openapi_url=None, docs_url=None, redoc_url=None)
 
         @health.get("/healthz")
@@ -146,6 +171,7 @@ async def serve_with_engines(
             ).serve()
         finally:
             await server.stop(grace=5)
+            await channel_server.stop(grace=5)
             reconcile.cancel()
             with suppress(asyncio.CancelledError):
                 await reconcile
