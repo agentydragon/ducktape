@@ -24,22 +24,23 @@ py_binary(
 )
 
 py_library(
-    name = "bun_standalone_extract_lib",
+    name = "bun_standalone_extract",
     srcs = ["bun_standalone_extract.py"],
 )
 
 py_binary(
-    name = "bun_standalone_extract",
+    name = "bun_standalone_extract_bin",
     main_module = "devinfra.js.bun_standalone_extract",
     visibility = ["//visibility:public"],
-    deps = [":bun_standalone_extract_lib"],
+    deps = [":bun_standalone_extract"],
 )
 
 py_test(
     name = "bun_standalone_extract_test",
     srcs = ["bun_standalone_extract_test.py"],
     deps = [
-        ":bun_standalone_extract_lib",
+        ":bun_standalone_extract",
+        "//:conftest",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
