@@ -79,7 +79,6 @@ Retain the data-preserving rollback procedure. No Action Service or other databa
 ```mermaid
 flowchart LR
     SESSION_COMMAND_CONTRACT[Decision: generic command admission contract]
-    SESSION_COMMAND_CORE[Draft: transport-independent admission foundation]
     SESSION_COMMAND_SUBMISSION[Blocked: durable submission through existing relay]
     SESSION_COMMAND_STATUS_READ[Blocked: authorized admission status]
     SESSION_COMMAND_STATUS_UI[Blocked: show service-retained command status]
@@ -87,8 +86,7 @@ flowchart LR
     SESSION_INPUT_METADATA_READ[Blocked: metadata reads and message correlation]
     NOTIFICATION_NOTICE_METADATA[Blocked: attach notice metadata to submissions]
     NOTIFICATION_PRESENTATION[Blocked: compact frontend presentation]
-    SESSION_COMMAND_CONTRACT --> SESSION_COMMAND_CORE
-    SESSION_COMMAND_CORE --> SESSION_COMMAND_SUBMISSION
+    SESSION_COMMAND_CONTRACT --> SESSION_COMMAND_SUBMISSION
     SESSION_COMMAND_SUBMISSION --> SESSION_COMMAND_STATUS_READ
     SESSION_COMMAND_STATUS_READ --> SESSION_COMMAND_STATUS_UI
     SESSION_COMMAND_SUBMISSION --> SESSION_INPUT_METADATA
@@ -109,26 +107,9 @@ No notification metadata or producer integration in the initial PR. Review authe
 scope, immutable retries, rejection semantics and retention. The command is a protobuf message, not
 an operation enum; typed SQLAlchemy columns retain its wire payload and unknown fields.
 
-### `SESSION_COMMAND_CORE` — transport-independent admission foundation
-
-**Draft code and isolated tests permitted; merge/deployment gated on contract review and archive
-ownership.** Separate the protobuf service envelope from the full runner Command. Implement durable
-submission records, immutable retries, immediate-dispatch coordination through a transport interface,
-receipt lookup and direct/spooled reconciliation. No notification metadata, background dispatch or
-automatic startup. Keep runner journal admission independent of `Attach`; do not require new inbound
-`InsertCommand`/`ListenSpool` endpoints before inversion. Unique command keys and per-command updates
-must not serialize unrelated queue work with ingestion; no database lock spans a runner call.
-Admission tables go in the `sandbox_commands` database, never the `sandbox_service` database the
-History Service takes over.
-
-In-flight source: operator discussion and draft [#9573](https://github.com/agentydragon/ducktape/pull/9573),
-2026-10-09 PDT. Draft implementation is not deployed capability or verified runtime acceptance.
-Test concurrent/conflicting retries, mutable protobuf snapshots, lost receipts, reconciliation
-rollback and interrupt responsiveness. The public handler remains a separate integration outcome.
-
 ### `SESSION_COMMAND_SUBMISSION` — wire durable submission through the existing relay
 
-**Blocked on admission core, admission contract review not on inversion.**
+**Blocked on admission contract review, not on inversion.**
 Wire the authenticated public RPC to persistence and immediate dispatch through a narrow adapter
 around the existing `Attach`-based relay. Reusing this path does not require new inbound runner RPCs.
 Return OK only on durable runner admission; record explicit refusal and preserve uncertainty on
@@ -435,7 +416,6 @@ flowchart LR
     VM_PROCESS_ISOLATION[Blocked: harness/process resource boundary]
     VM_LIFECYCLE[Blocked: integrated lifecycle]
     SESSION_COMMAND_CONTRACT[Decision: generic command admission contract] --> RUNNER_OUTBOUND_CHANNEL
-    SESSION_COMMAND_CORE[Draft: admission foundation] --> RUNNER_OUTBOUND_CHANNEL
     RUNNER_OUTBOUND_CHANNEL --> VM_CONTROL_NETWORKING
     RUNNER_OUTBOUND_LIFECYCLE --> VM_CONTROL_NETWORKING
     RUNNER_OUTBOUND_SPOOL --> VM_CONTROL_NETWORKING
@@ -464,11 +444,11 @@ flowchart LR
 
 ### `RUNNER_OUTBOUND_CHANNEL` — implement outbound command delivery
 
-**Blocked on the admission contract review and admission core; draft code/isolated tests permitted,
-with merge/deployment gated on them.** Implement both gRPC peers of the
+**Blocked on the admission contract review; draft code/isolated tests permitted, with
+merge/deployment gated on it.** Implement both gRPC peers of the
 [runner channel](../docs/runner_channel.md): framing and capabilities, the dedicated token audience
-and its egress policy, incarnation binding, epoch fencing, dispatch attempts over the core's
-submission records, heartbeats and reconnect. Reconnect must not scan pending commands for delivery.
+and its egress policy, incarnation binding, epoch fencing, dispatch attempts over the
+`sandbox_commands` submission records, heartbeats and reconnect. Reconnect must not scan pending commands for delivery.
 Keep existing spool ingestion unchanged. Test missed/duplicate/delayed notifications, owner loss,
 authentication denial/revocation, stale connections and ambiguous sends. No new inbound unary API.
 
