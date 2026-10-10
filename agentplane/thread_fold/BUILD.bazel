@@ -1,5 +1,10 @@
 load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
+# gazelle:resolve py agentplane.protocol.command_pb2 //agentplane/protocol:command_pb2
+# gazelle:resolve py agentplane.protocol.event_pb2 //agentplane/protocol:event_pb2
+# gazelle:resolve py agentplane.protocol.event_log_pb2 //agentplane/protocol:event_log_pb2
+# gazelle:resolve py agentplane.runner.protocol_pb2 //agentplane/runner:protocol_pb2
+
 package(default_visibility = ["//agentplane:__subpackages__"])
 
 py_library(
