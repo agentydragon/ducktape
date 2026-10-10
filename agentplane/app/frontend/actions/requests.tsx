@@ -75,10 +75,9 @@ export function useActionRequests(
     }
 
     setDetailErrors((current) => {
-      let next = current;
+      if (!rows.some((request) => current.has(request.id))) return current;
+      const next = new Map(current);
       for (const request of rows) {
-        if (!next.has(request.id)) continue;
-        if (next === current) next = new Map(current);
         next.delete(request.id);
       }
       return next;
