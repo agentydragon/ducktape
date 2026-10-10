@@ -11,6 +11,7 @@ py_library(
         ":settings",
         "@pypi//httpx",
         "@pypi//prometheus_client",
+        "@pypi//pydantic",
     ],
 )
 
@@ -40,6 +41,7 @@ py_test(
         "//:conftest",
         "@pypi//httpx",
         "@pypi//prometheus_client",
+        "@pypi//pydantic",
         "@pypi//pytest_bazel",
     ],
 )

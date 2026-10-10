@@ -916,6 +916,7 @@ py_test(
     data = [
         "//tf/gitops/dns-records:variables.tf",
         "//tf/gitops/forgejo-images:variables.tf",
+        "//tf/gitops/home-switch:variables.tf",
         "//tf/gitops/litellm-keys:variables.tf",
         "@nodejs_linux_amd64//:bin/node",
     ],
@@ -925,6 +926,7 @@ py_test(
         "//:conftest",
         "//cluster/cdk8s/forgejo_registry:chart",
         "//cluster/cdk8s/litellm:keys",
+        "//cluster/cdk8s/monitoring:home_switch",
         "//util/bazel:runfiles",
         "@pypi//pydantic",
         "@pypi//pygohcl",

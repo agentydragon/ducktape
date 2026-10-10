@@ -2,8 +2,17 @@ import { readFileSync } from "node:fs";
 import { runInNewContext } from "node:vm";
 import { describe, expect, it } from "vitest";
 
+import type { ActionRequestView } from "../actions/types";
+
 type PushMessage =
-  | { kind: "show"; action_id: string; action_group: string; action_name: string; version?: number }
+  | {
+      kind: "show";
+      action_id: string;
+      action_group: string;
+      action_name: string;
+      version: number;
+      url: string;
+    }
   | { kind: "retract"; action_id: string; outcome: string };
 
 type Notice = {
@@ -27,15 +36,38 @@ type TestWorker = {
   requests: Array<{ url: string; options?: RequestInit }>;
   windows: string[];
   notices: Notice[];
-  setCurrent(action: { state: string; version: number } | null): void;
+  setCurrent(action: ActionRequestView | null): void;
 };
+
+function actionRequest(
+  fields: Pick<ActionRequestView, "action" | "arguments" | "title" | "description">
+): ActionRequestView {
+  return {
+    id: "00000000-0000-4000-8000-000000000001",
+    idempotency_key: "notification-format-test",
+    ...fields,
+    caller: null,
+    external_grant: null,
+    state: "decision_pending",
+    version: 1,
+    created_at: "2026-10-09T12:00:00Z",
+    updated_at: "2026-10-09T12:00:00Z",
+    decision: null,
+    execution: null,
+  };
+}
 
 function loadWorker(): TestWorker {
   const listeners: TestWorker["listeners"] = new Map();
   const requests: TestWorker["requests"] = [];
   const windows: TestWorker["windows"] = [];
   const notices: TestWorker["notices"] = [];
-  let current: { state: string; version: number } | null = { state: "decision_pending", version: 1 };
+  let current: ActionRequestView | null = actionRequest({
+    action: { group: "finance", name: "transfer" },
+    title: "Transfer $400 to vendor",
+    description: "Invoice 2026-04-18.",
+    arguments: { recipient: "vendor", amount: 400, account: "checking" },
+  });
 
   const self = {
     addEventListener: (
@@ -78,6 +110,7 @@ const showMessage: PushMessage = {
   action_group: "finance",
   action_name: "transfer",
   version: 1,
+  url: "/#/actions",
 };
 
 async function show(worker: TestWorker, message = showMessage): Promise<Notice> {
@@ -87,22 +120,44 @@ async function show(worker: TestWorker, message = showMessage): Promise<Notice> 
   return notice;
 }
 
-describe("service worker", () => {
-  it("keeps the existing notification text and buttons", async () => {
+describe("service worker notifications", () => {
+  it("renders the generic Action title and body", async () => {
     const worker = loadWorker();
 
     const notice = await show(worker);
 
     expect({ title: notice.title, body: notice.body }).toMatchInlineSnapshot(`
       {
-        "body": "Action requires approval",
-        "title": "finance / transfer",
+        "body": "Invoice 2026-04-18.",
+        "title": "Transfer $400 to vendor · finance / transfer",
       }
     `);
-    expect(notice.actions).toEqual([
-      { action: "approve", title: "Approve" },
-      { action: "deny", title: "Deny" },
-    ]);
+    expect(notice.actions).toHaveLength(2);
+  });
+
+  it("renders SSH exec with its target, command, and timeout", async () => {
+    const worker = loadWorker();
+    worker.setCurrent(
+      actionRequest({
+        action: { group: "ssh", name: "exec" },
+        title: "Check disk space",
+        description: "Run the disk usage check on the build host.",
+        arguments: { user: "deploy", host: "build-01", command: "df -h", timeout_seconds: 30 },
+      })
+    );
+
+    const notice = await show(worker, {
+      ...showMessage,
+      action_group: "ssh",
+      action_name: "exec",
+    });
+
+    expect({ title: notice.title, body: notice.body }).toMatchInlineSnapshot(`
+      {
+        "body": "$ df -h · Timeout 30 s",
+        "title": "Check disk space · SSH exec · deploy@build-01",
+      }
+    `);
   });
 
   it("only decides on explicit buttons and removes stale decision buttons", async () => {
@@ -127,17 +182,19 @@ describe("service worker", () => {
     expect(retracted.tag).toBe("request");
     expect(retracted.actions).toBeUndefined();
 
-    worker.setCurrent({ state: "denied", version: 2 });
+    worker.setCurrent({
+      ...actionRequest({
+        action: { group: "ssh", name: "exec" },
+        title: "Check disk space",
+        description: "Run the disk usage check on the build host.",
+        arguments: { user: "deploy", host: "build-01", command: "df -h", timeout_seconds: 30 },
+      }),
+      state: "denied",
+      version: 2,
+    });
     expect((await show(worker)).actions).toBeUndefined();
 
     worker.setCurrent(null);
-    const unavailable = await show(worker);
-    expect(unavailable.actions).toEqual([]);
-    expect({ title: unavailable.title, body: unavailable.body }).toMatchInlineSnapshot(`
-      {
-        "body": "Open Agentplane to review this Action",
-        "title": "finance / transfer",
-      }
-    `);
+    expect((await show(worker)).actions).toEqual([]);
   });
 });

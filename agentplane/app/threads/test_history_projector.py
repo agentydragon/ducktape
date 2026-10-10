@@ -3,6 +3,7 @@
 from datetime import UTC
 from typing import cast
 from unittest.mock import AsyncMock, Mock, patch
+from uuid import uuid4
 
 import pytest
 import pytest_bazel
@@ -15,9 +16,10 @@ from agentplane.app.threads.events.ingestion_lease import IngestionLease, Ingest
 from agentplane.app.threads.history_handoff import fence_raw_ingestion
 from agentplane.app.threads.history_projector import HistoryProjector
 from agentplane.app.threads.ingestion import Ingester, Ingestion
-from agentplane.app.threads.models import Event, EventLog, FeedState, ThreadCheckpoint
+from agentplane.app.threads.models import Event, EventLog, FeedState, ThreadCheckpoint, ThreadEntity
 from agentplane.app.threads.sessions import SandboxSessions
 from agentplane.app.threads.store import ThreadStore
+from agentplane.app.threads.view.views import ThreadViewState
 from agentplane.protocol import event_pb2
 from agentplane.runner import protocol_pb2 as runner_pb2
 from agentplane.sandbox_service import protocol_pb2
@@ -341,6 +343,76 @@ async def test_deleted_history_keeps_seeded_terminal_state_without_service_snaps
     await HistoryProjector(engine, cast(SandboxServiceClient, reader)).project_batch(thread, lease=lease)
     assert await event_logs.feed_state(thread) == before
     assert (await ThreadStore(engine).rename(thread, "archive")).feed_status == "ended"
+
+
+async def test_projection_failure_retains_checkpoint_not_eof_and_recovers(
+    engine: AsyncEngine, event_logs: EventLogStore, ingestion: Ingestion, lease: IngestionLease
+) -> None:
+    thread = await event_logs.open("sb-1", "projection-failure", SPEC)
+    await ingestion.record(thread, [event_entry(1, harness_started=event_pb2.HarnessStarted(pid=7))], lease=lease)
+    await fence_raw_ingestion(engine, thread)
+    reader = AsyncMock(spec=SandboxServiceClient)
+    reader.read_session_events.side_effect = ConnectionError("private backend details")
+    projector = HistoryProjector(engine, cast(SandboxServiceClient, reader))
+    with pytest.raises(ConnectionError):
+        await projector.project_batch(thread, lease=lease)
+    async with async_sessionmaker(engine)() as session:
+        assert await session.scalar(select(ThreadCheckpoint.through_cursor)) == 1
+        state = await session.scalar(select(ThreadEntity.state).where(ThreadEntity.entity_id == "current"))
+        assert state is not None
+        assert ThreadViewState.model_validate(state).operational.status == "failed"
+        assert "private backend" not in str(state)
+    assert await event_logs.feed_state(thread) is None  # failure is not runner EOF
+    reader.read_session_events.side_effect = None
+    reader.read_session_events.return_value = protocol_pb2.ReadSessionEventsResponse(last_cursor=1)
+    await projector.project_batch(thread, lease=lease)
+    async with async_sessionmaker(engine)() as session:
+        state = await session.scalar(select(ThreadEntity.state).where(ThreadEntity.entity_id == "current"))
+        assert state is not None
+        assert ThreadViewState.model_validate(state).operational.status == "active"
+        assert ThreadViewState.model_validate(state).operational.feed_error is None
+    # A delayed failure report cannot overwrite a newer committed prefix.
+    reader.read_session_events.return_value = protocol_pb2.ReadSessionEventsResponse(
+        last_cursor=2, entries=[event_entry(2, turn_started=event_pb2.TurnStarted(turn_id="turn"))]
+    )
+    await projector.project_batch(thread, lease=lease)
+    await projector._record_failure(thread, lease=lease, after=1, error=ConnectionError())
+    async with async_sessionmaker(engine)() as session:
+        state = await session.scalar(select(ThreadEntity.state).where(ThreadEntity.entity_id == "current"))
+        assert state is not None
+        assert ThreadViewState.model_validate(state).operational.status == "active"
+    await ingestion.release(lease)
+    with pytest.raises(IngestionLeaseLostError):
+        await projector._record_failure(thread, lease=lease, after=2, error=ConnectionError())
+
+
+async def test_discovery_of_new_service_thread_never_starts_legacy_follow(
+    engine: AsyncEngine, ingestion: Ingestion
+) -> None:
+    public_id = uuid4()
+    reader = AsyncMock(spec=SandboxServiceClient)
+    reader.read_session_observations.return_value = protocol_pb2.ReadSessionObservationsResponse(last_cursor=0)
+    reader.read_session_events.return_value = protocol_pb2.ReadSessionEventsResponse(last_cursor=0)
+    logs = EventLogStore(engine, history_creator=cast(SandboxServiceClient, reader))
+    client = AsyncMock()
+    client.list_sessions.return_value = [runner_pb2.SessionSummary(session_id=str(public_id), spec=SPEC)]
+    runners = Mock(spec=SandboxSessions)
+    runners.running.return_value = {"sb-1"}
+    runners.client.return_value = client
+    coordinator = Ingester(
+        runners=cast(SandboxSessions, runners),
+        event_logs=logs,
+        ingestion=ingestion,
+        history_projector=HistoryProjector(engine, cast(SandboxServiceClient, reader)),
+    )
+    try:
+        await coordinator.reconcile()
+        assert await logs.is_raw_ingestion_fenced(public_id)
+        await coordinator.reconcile()
+        reader.read_session_events.assert_awaited_once_with(str(public_id), after_cursor=0, limit=128)
+        client.follow.assert_not_called()
+    finally:
+        await coordinator.close()
 
 
 if __name__ == "__main__":

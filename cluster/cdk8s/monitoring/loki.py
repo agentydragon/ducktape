@@ -482,14 +482,18 @@ def _network_policy(chart: Chart) -> None:
                 ),
                 to_ports=_ingress_tcp("3100"),
             ),
-            # Alloy → Loki (OTel log forwarding)
+            # Central Alloy → Loki (OTel log forwarding); the per-node Alloys scrape the
+            # components' metrics on the same port.
             CiliumNetworkPolicySpecIngress(
-                from_endpoints=_from_pods({"app.kubernetes.io/name": "alloy", namespace_label: "monitoring"}),
+                from_endpoints=[
+                    *_from_pods({"app.kubernetes.io/name": "alloy", namespace_label: "monitoring"}),
+                    *_from_pods({"app.kubernetes.io/name": "alloy-node", namespace_label: "monitoring"}),
+                ],
                 to_ports=_ingress_tcp("3100"),
             ),
-            # Alloy → Loki canary metrics (ServiceMonitor scraping)
+            # Per-node Alloy → Loki canary metrics (ServiceMonitor scraping)
             CiliumNetworkPolicySpecIngress(
-                from_endpoints=_from_pods({"app.kubernetes.io/name": "alloy", namespace_label: "monitoring"}),
+                from_endpoints=_from_pods({"app.kubernetes.io/name": "alloy-node", namespace_label: "monitoring"}),
                 to_ports=_ingress_tcp("3500"),
             ),
             # Gatus → Loki (health checks)

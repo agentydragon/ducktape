@@ -1,0 +1,117 @@
+apiVersion: generators.external-secrets.io/v1alpha1
+kind: Password
+metadata:
+  name: home-switch-monitoring
+  namespace: monitoring
+spec:
+  allowRepeat: true
+  digits: 12
+  length: 48
+  noUpper: false
+  symbols: 0
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  annotations:
+    description: Password of the home switch's read-only RouterOS user; tf/gitops/home-switch sets it on the switch.
+  name: home-switch-monitoring
+  namespace: monitoring
+spec:
+  dataFrom:
+    - sourceRef:
+        generatorRef:
+          apiVersion: generators.external-secrets.io/v1alpha1
+          kind: Password
+          name: home-switch-monitoring
+  refreshPolicy: CreatedOnce
+  target:
+    creationPolicy: Owner
+    name: home-switch-monitoring
+    template:
+      data:
+        password: "{{ .password }}"
+      type: Opaque
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: home-switch-tls
+  namespace: monitoring
+spec:
+  commonName: CRS310
+  ipAddresses:
+    - 192.168.1.100
+  issuerRef:
+    kind: ClusterIssuer
+    name: cluster-internal-ca
+  privateKey:
+    algorithm: ECDSA
+    size: 256
+  secretName: home-switch-tls
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: home-switch-bootstrap-tls
+  namespace: monitoring
+spec:
+  commonName: CRS310
+  ipAddresses:
+    - 192.168.1.100
+  issuerRef:
+    kind: ClusterIssuer
+    name: cluster-internal-ca
+  privateKey:
+    algorithm: ECDSA
+    size: 256
+  secretName: home-switch-bootstrap-tls
+---
+apiVersion: infra.contrib.fluxcd.io/v1alpha2
+kind: Terraform
+metadata:
+  name: home-switch
+  namespace: flux-system
+spec:
+  backendConfig:
+    customConfiguration: |
+      backend "pg" {
+        conn_str    = "postgres://tfstate@tofu-state-db-ovh-rw.tofu-state.svc:5432/tfstate?sslmode=disable"
+        schema_name = "home_switch"
+      }
+  interval: 15m
+  path: ./tf/gitops/home-switch
+  refreshBeforeApply: true
+  runnerPodTemplate:
+    spec:
+      env:
+        - name: PGPASSWORD
+          valueFrom:
+            secretKeyRef:
+              key: password
+              name: tofu-state-db-credentials
+      nodeSelector:
+        topology.kubernetes.io/zone: home-lan
+      resources:
+        requests:
+          cpu: 250m
+          memory: 512Mi
+      volumeMounts:
+        - mountPath: /etc/cluster-ca
+          name: cluster-ca
+          readOnly: true
+      volumes:
+        - configMap:
+            name: cluster-internal-ca-bundle
+          name: cluster-ca
+  serviceAccountName: tf-runner
+  sourceRef:
+    kind: GitRepository
+    name: ducktape
+    namespace: ducktape-flux
+  storeReadablePlan: human
+  vars:
+    - name: switch_address
+      value: 192.168.1.100
+    - name: lan_cidr
+      value: 192.168.1.0/24

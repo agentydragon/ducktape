@@ -122,3 +122,28 @@ old-cursor EOF until newer evidence arrives, without writing frozen `FeedState`.
 The follow-up remains under test, not a cutover. Projection failure/lag presentation,
 new-Session handoff, mixed-replica acceptance and removal of temporary flags and
 legacy paths remain unfinished. No raw Event rewrite or full verification scan.
+
+### Projection failure reporting (implementation in progress)
+
+Service read/validation/fold failures retain a bounded diagnostic in the existing
+materialized view's operational state, without changing the retained runner
+attachment or EOF. Error publication requires the current sandbox lease and the
+same projection cursor as the failed attempt. A successful batch (including an
+empty suffix without a runner snapshot) clears the projection diagnostic. Backend
+exception text is not exposed to callers. There is no materialized diagnostic
+before the first checkpoint, and same-cursor concurrent attempts still require
+coordinator serialization; these are not new runner terminal states.
+
+New-session handoff and explicit projection lag presentation remain unfinished.
+EOF is not inferred from a service outage or projection failure.
+
+### New-session admission (implementation in progress)
+
+With service projection enabled, new app Threads require a canonical public Session
+ID and a successful metadata-only service history lookup. Creation atomically writes
+the zero raw-writer fence and empty projection summary. Existing unfenced Threads,
+including an old replica winning a concurrent creation, require explicit handoff;
+opening a Thread never silently migrates its retained history. Reconciliation checks
+the durable fence after discovery, not just its earlier inventory snapshot, so it
+cannot start a legacy Follow for a just-created service projection. Existing flags
+remain off until coordinated cutover; this adds no new temporary flag.

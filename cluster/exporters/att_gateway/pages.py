@@ -1,5 +1,5 @@
-"""Parsers for the BGW320's no-login status pages (`/cgi-bin/<page>.ha`), written against
-firmware 6.35.8. Every page is a set of `<table summary="...">` blocks of label/value rows;
+"""Parsers for the BGW320's status pages (`/cgi-bin/<page>.ha`), written against firmware
+6.35.8. Every page is a set of `<table summary="...">` blocks of label/value rows;
 the parsers look tables up by that summary and rows by their label, and raise on anything
 missing, so a firmware change that moves a field fails loudly instead of exporting zeros.
 """
@@ -7,7 +7,9 @@ missing, so a firmware change that moves a field fails loudly instead of exporti
 from __future__ import annotations
 
 import re
+from collections import Counter
 from dataclasses import dataclass
+from datetime import datetime
 from enum import StrEnum
 
 from bs4 import BeautifulSoup, Tag
@@ -18,6 +20,15 @@ class Page(StrEnum):
     BROADBAND = "broadbandstatistics"
     FIBER = "fiberstat"
     LAN = "lanstatistics"
+    # Behind the device access code.
+    NAT = "nattable"
+    SPEED = "speed"
+    # TODO: consider shipping `logs.ha` to Loki: the firewall drop log, about 20 minutes of
+    # rows with local-time stamps, mostly internet scanners. Left out for now (Rai, 2026-10-10).
+
+    @property
+    def needs_login(self) -> bool:
+        return self in {Page.NAT, Page.SPEED}
 
 
 @dataclass(frozen=True)
@@ -26,6 +37,9 @@ class SysInfo:
     firmware: str
     hardware: str
     uptime_seconds: int
+    # The gateway's wall clock in its own time zone, which the page does not name; None
+    # while the WAN is down and the gateway has no time reference.
+    clock: datetime | None
 
 
 @dataclass(frozen=True)
@@ -115,6 +129,38 @@ class Lan:
     ports: tuple[LanPort, ...]
 
 
+@dataclass(frozen=True)
+class Nat:
+    sessions_available: int
+    sessions_in_use: int
+    # Rows of the session table per IPv4 source address. LAN hosts' outbound sessions are the
+    # ones the gateway translates; the gateway's own WAN address shows up for its own.
+    ipv4_sessions_by_source: dict[str, int]
+
+
+class Direction(StrEnum):
+    UPSTREAM = "upstream"
+    DOWNSTREAM = "downstream"
+
+
+@dataclass(frozen=True)
+class SpeedTest:
+    # In the gateway's time zone, like `SysInfo.clock`.
+    completed: datetime
+    direction: Direction
+    throughput_bps: float
+    latency_seconds: float
+    # "Success" on a completed test; throughput and latency mean nothing otherwise.
+    status: str
+
+
+@dataclass(frozen=True)
+class Speed:
+    """The gateway's own speed tests against AT&T's server, newest first."""
+
+    tests: tuple[SpeedTest, ...]
+
+
 def _soup(html: str) -> BeautifulSoup:
     return BeautifulSoup(html, "html.parser")
 
@@ -166,6 +212,10 @@ def parse_sysinfo(html: str) -> SysInfo:
         firmware=_field(fields, "Software Version"),
         hardware=_field(fields, "Hardware Version"),
         uptime_seconds=int(_field(fields, "Time Since Last Reboot")),
+        # A trailing Z means the gateway has no time zone set and runs on UTC, as do its logs.
+        clock=datetime.fromisoformat(clock.removesuffix("Z"))
+        if (clock := _field(fields, "Current Date/Time"))
+        else None,
     )
 
 
@@ -281,4 +331,39 @@ def parse_lan(html: str) -> Lan:
             )
             for i, name in enumerate(ports)
         ),
+    )
+
+
+def _rows(table: Tag) -> list[list[str]]:
+    """The table's data rows: those with `<td>` cells, skipping header rows."""
+    return [_cells(row) for row in table.find_all("tr") if row.find("td")]
+
+
+def parse_nat(html: str) -> Nat:
+    soup = _soup(html)
+    summary = _fields(_table(soup, "This table displays a summary of session information."))
+    sessions = _table(soup, "Summary of nattable connections")
+    header = [cell.get_text(" ", strip=True) for cell in sessions.find_all("th")]
+    family, source = header.index("IP Family"), header.index("Source Address")
+    return Nat(
+        sessions_available=int(_field(summary, "Total sessions available")),
+        sessions_in_use=int(_field(summary, "Total sessions in use")),
+        ipv4_sessions_by_source=dict(Counter(row[source] for row in _rows(sessions) if row[family] == "ipv4")),
+    )
+
+
+def parse_speed(html: str) -> Speed:
+    return Speed(
+        tests=tuple(
+            SpeedTest(
+                completed=datetime.strptime(completed, "%m/%d/%Y %H:%M:%S"),
+                direction=Direction(direction),
+                throughput_bps=float(throughput_mbps) * 1_000_000,
+                latency_seconds=float(latency_ms) / 1000,
+                status=status,
+            )
+            for completed, direction, throughput_mbps, _overhead, latency_ms, status in _rows(
+                _table(_soup(html), "Table of Speed Test Result History")
+            )
+        )
     )

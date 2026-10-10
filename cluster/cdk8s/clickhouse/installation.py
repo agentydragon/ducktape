@@ -548,6 +548,11 @@ def networkpolicy_chart(app: App) -> Chart:
                     from_=_from_namespace("monitoring", {"app.kubernetes.io/name": "alloy"}),
                     ports=_ports(client.HTTP.pod_port, _METRICS.number),
                 ),
+                # Scraped by the Alloy on each ClickHouse pod's node.
+                k8s.NetworkPolicyIngressRule(
+                    from_=_from_namespace("monitoring", {"app.kubernetes.io/name": "alloy-node"}),
+                    ports=_ports(_METRICS.number),
+                ),
                 k8s.NetworkPolicyIngressRule(
                     from_=_from_namespace("langfuse", {"app.kubernetes.io/name": "langfuse"}),
                     ports=_ports(client.HTTP.pod_port, client.NATIVE.pod_port),

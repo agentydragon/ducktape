@@ -38,7 +38,10 @@ async def project_lifecycle(
             attached.CopyFrom(feed.attached)
             end = {} if feed.ended else end if same_cursor else None
     if attached is None:
-        return  # imported/deleted history without an attachment remains unknown
+        # Successful projection clears an earlier projection error even if imported
+        # history has no runner lifecycle snapshot. This does not manufacture EOF.
+        await set_operational(session, thread_id, status="active", error=None)
+        return
     for entry in page.entries:
         if entry.cursor <= attached.last_cursor:
             continue

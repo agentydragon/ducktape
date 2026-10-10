@@ -5,6 +5,9 @@ line in `_FILE_DASHBOARDS`.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
+from dataclasses import dataclass
+
 from cdk8s import ApiObjectMetadata, App, Chart
 from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecDeletionPolicy, KustomizationSpecHealthChecks
 from grafana_grafana_crds.org.integreatly.grafana import (
@@ -61,13 +64,23 @@ _ADMIN = SecretRef(namespace=_NAMESPACE, name="grafana-admin-password")
 _OIDC = SecretRef(namespace=_NAMESPACE, name="grafana-oidc-config")
 # The label the Grafana CR carries and every dashboard and datasource selects.
 _INSTANCE_LABELS = {"dashboards": _NAME}
-# `dashboards/<name>.json` beside this module, deployed as the `<name>-dashboard` ConfigMap, and
-# the datasource each of its inputs binds to.
+
+
+@dataclass(frozen=True)
+class _FileDashboard:
+    # Maps each dashboard input to a datasource name.
+    datasources: Mapping[str, str]
+    folder: str | None = None
+
+
+# `dashboards/<name>.json` beside this module, deployed as the `<name>-dashboard` ConfigMap.
 _FILE_DASHBOARDS = {
-    "flux-cluster": {},
-    "interface-flap-frequency": {"DS_LOKI": "Loki", "DS_PROMETHEUS": "Mimir"},
-    "rugged-power": {"DS_PROMETHEUS": "Mimir"},
-    "cluster-storage-io": {"DS_MIMIR": "Mimir", "DS_LOKI": "Loki"},
+    "flux-cluster": _FileDashboard(datasources={}),
+    "interface-flap-frequency": _FileDashboard(datasources={"DS_LOKI": "Loki", "DS_PROMETHEUS": "Mimir"}),
+    "rugged-power": _FileDashboard(datasources={"DS_PROMETHEUS": "Mimir"}),
+    "cluster-storage-io": _FileDashboard(datasources={"DS_MIMIR": "Mimir", "DS_LOKI": "Loki"}),
+    # Beside the AT&T gateway exporter's own "Home gateway" dashboard.
+    "home-network-overview": _FileDashboard(datasources={}, folder="Home network"),
 }
 
 
@@ -291,7 +304,8 @@ def _dashboard(
     chart: Chart,
     name: str,
     *,
-    datasources: dict[str, str] | None = None,
+    datasources: Mapping[str, str] | None = None,
+    folder: str | None = None,
     config_map: DashboardFile | None = None,
     grafana_com: GrafanaDashboardSpecGrafanaCom | None = None,
 ) -> None:
@@ -301,6 +315,7 @@ def _dashboard(
         f"dashboard-{name}",
         metadata=ApiObjectMetadata(name=name, namespace=_NAMESPACE),
         instance_selector=GrafanaDashboardSpecInstanceSelector(match_labels=_INSTANCE_LABELS),
+        folder=folder,
         datasources=[
             GrafanaDashboardSpecDatasources(input_name=input_name, datasource_name=datasource)
             for input_name, datasource in datasources.items()
@@ -313,8 +328,10 @@ def _dashboard(
 
 
 def _dashboards(chart: Chart) -> None:
-    for name, datasources in _FILE_DASHBOARDS.items():
-        _dashboard(chart, name, datasources=datasources, config_map=_dashboard_file(name))
+    for name, dashboard in _FILE_DASHBOARDS.items():
+        _dashboard(
+            chart, name, datasources=dashboard.datasources, folder=dashboard.folder, config_map=_dashboard_file(name)
+        )
     _dashboard(
         chart,
         "cert-manager",

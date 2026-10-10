@@ -395,7 +395,8 @@ def _network_policy(scope: Construct) -> None:
         endpoint_selector=_SERVICE.pods.selector,
         ingress=[
             IngressRule.from_gateway(_SERVICE.pod_port),
-            IngressRule.from_endpoints(cilium.endpoint_labels("monitoring", "alloy"), ports=[_METRICS.number]),
+            # Scraped by the Alloy on this pod's node.
+            IngressRule.from_endpoints(cilium.endpoint_labels("monitoring", "alloy-node"), ports=[_METRICS.number]),
         ],
         egress=[*cilium.open_internet_egress(ports=[80, 443], entities=(Entity.WORLD,))],
         # These non-public ranges can be outside Cilium's cluster identity set.

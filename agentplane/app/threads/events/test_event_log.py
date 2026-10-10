@@ -7,16 +7,18 @@ import asyncio
 from datetime import UTC, datetime
 from typing import cast
 from unittest.mock import AsyncMock
-from uuid import UUID
+from uuid import UUID, uuid4
 
 import pytest
 import pytest_bazel
-from sqlalchemy.ext.asyncio import AsyncEngine
+from sqlalchemy import func, select
+from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
 
 from agentplane.app.testing.thread_test_support import SPEC, Replica, event_entry
-from agentplane.app.threads.events.event_log import EventLogStore
+from agentplane.app.threads.events.event_log import EventLogStore, EventReplicationError
 from agentplane.app.threads.events.ingestion_lease import IngestionLease
 from agentplane.app.threads.ingestion import Ingestion
+from agentplane.app.threads.models import EventLog, ThreadHistorySummary
 from agentplane.protocol import event_pb2
 from agentplane.sandbox_service import protocol_pb2
 from agentplane.sandbox_service.client import SandboxServiceClient
@@ -185,6 +187,53 @@ async def test_service_observation_page_rejects_missing_entries(engine: AsyncEng
     remote = EventLogStore(engine, history_reader=cast(SandboxServiceClient, reader))
     with pytest.raises(ConnectionError, match="invalid service observation"):
         await remote.observations(UUID("00000000-0000-0000-0000-000000000001"), limit=2)
+
+
+async def test_new_service_thread_is_atomically_fenced_and_idempotent(engine: AsyncEngine) -> None:
+    reader = AsyncMock(spec=SandboxServiceClient)
+    reader.read_session_observations.return_value = protocol_pb2.ReadSessionObservationsResponse(last_cursor=0)
+    left = EventLogStore(engine, history_creator=cast(SandboxServiceClient, reader))
+    right = EventLogStore(engine, history_creator=cast(SandboxServiceClient, reader))
+    public_id = uuid4()
+    left_id, right_id = await asyncio.gather(
+        left.open("sb-1", str(public_id), SPEC), right.open("sb-1", str(public_id), SPEC)
+    )
+    assert left_id == public_id
+    assert right_id == public_id
+    assert await left.is_raw_ingestion_fenced(public_id)
+    async with async_sessionmaker(engine)() as session:
+        assert await session.scalar(select(func.count()).select_from(ThreadHistorySummary)) == 1
+        row = await session.get(ThreadHistorySummary, public_id)
+        assert row is not None
+        assert row.attached is None
+    # A legacy replica observes the same ID, but cannot unfence it by opening it.
+    assert await EventLogStore(engine).open("sb-1", str(public_id), SPEC) == public_id
+    assert await right.is_raw_ingestion_fenced(public_id)
+
+
+async def test_failed_service_registration_does_not_create_app_thread(engine: AsyncEngine) -> None:
+    reader = AsyncMock(spec=SandboxServiceClient)
+    reader.read_session_observations.side_effect = ConnectionError("service unavailable")
+    store = EventLogStore(engine, history_creator=cast(SandboxServiceClient, reader))
+    with pytest.raises(ConnectionError):
+        await store.open("sb-1", str(uuid4()), SPEC)
+    async with async_sessionmaker(engine)() as session:
+        assert await session.scalar(select(func.count()).select_from(EventLog)) == 0
+        assert await session.scalar(select(func.count()).select_from(ThreadHistorySummary)) == 0
+    with pytest.raises(EventReplicationError, match="canonical"):
+        await store.open("sb-1", "legacy-id", SPEC)
+
+
+async def test_projection_mode_never_silently_hands_off_existing_thread(engine: AsyncEngine) -> None:
+    legacy = EventLogStore(engine)
+    public_id = uuid4()
+    await legacy.open("sb-1", str(public_id), SPEC)
+    reader = AsyncMock(spec=SandboxServiceClient)
+    store = EventLogStore(engine, history_creator=cast(SandboxServiceClient, reader))
+    with pytest.raises(EventReplicationError, match="explicit history handoff"):
+        await store.open("sb-1", str(public_id), SPEC)
+    reader.read_session_observations.assert_not_awaited()
+    assert not await store.is_raw_ingestion_fenced(public_id)
 
 
 if __name__ == "__main__":

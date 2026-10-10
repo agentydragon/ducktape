@@ -56,6 +56,7 @@ py_test(
         "//agentplane/app:conftest",
         "//agentplane/app/testing:thread_test_support",
         "//agentplane/app/threads:ingestion",
+        "//agentplane/app/threads:models",
         "//agentplane/protocol:event_pb2",
         "//agentplane/sandbox_service:client",
         "//agentplane/sandbox_service:protocol_pb2",

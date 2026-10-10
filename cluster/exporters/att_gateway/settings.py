@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from pydantic import Field, HttpUrl
+from pydantic import Field, HttpUrl, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -8,6 +8,10 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_prefix="ATT_GATEWAY_", case_sensitive=False, extra="ignore", frozen=True)
 
     url: HttpUrl = Field(description="The gateway's LAN web UI, e.g. `http://192.168.1.254`.")
+    access_code: SecretStr | None = Field(
+        default=None,
+        description="The device access code printed on the gateway. Unset, the pages behind it are not polled.",
+    )
     poll_interval_seconds: float = Field(
         default=60, gt=0, description="Start of one poll of every page to the start of the next."
     )

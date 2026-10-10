@@ -4,25 +4,31 @@ The rollout must fence runner-backed ingestion before scheduling this worker. Re
 app lease and existing UI checkpoint; never acquire runner storage or copy raw Event rows.
 """
 
+import logging
 from dataclasses import dataclass
 from datetime import UTC
 from uuid import UUID
 
+import grpc
 from sqlalchemy import select
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
 
 from agentplane.app.database_updates import Channel, notify
 from agentplane.app.threads.events import ingestion_lease
 from agentplane.app.threads.events.event_log import EventReplicationError
-from agentplane.app.threads.events.ingestion_lease import IngestionLease
+from agentplane.app.threads.events.ingestion_lease import IngestionLease, IngestionLeaseLostError
 from agentplane.app.threads.model_activity import record_model_activity
 from agentplane.app.threads.models import EventLog, ThreadCheckpoint, ThreadHistorySummary
 from agentplane.app.threads.projected_lifecycle import project_lifecycle
-from agentplane.app.threads.view.recording import record_thread_fold
+from agentplane.app.threads.view.recording import record_thread_fold, set_operational
 from agentplane.sandbox_service.client import SandboxServiceClient
 
 # gazelle:include_dep @pypi//protobuf
 # gazelle:include_dep //agentplane/sandbox_service:protocol_pb2
+
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -50,6 +56,34 @@ class HistoryProjector:
             )
         if barrier is None:
             raise EventReplicationError("app raw writer must be fenced before service projection")
+        try:
+            return await self._project_prefix(thread_id, lease=lease, after=after, barrier=barrier)
+        except (ConnectionError, TimeoutError, grpc.RpcError, ValueError) as error:
+            try:
+                await self._record_failure(thread_id, lease=lease, after=after, error=error)
+            except IngestionLeaseLostError, SQLAlchemyError:
+                logger.warning("could not retain projection failure for %s", thread_id, exc_info=True)
+            raise
+
+    async def _record_failure(self, thread_id: UUID, *, lease: IngestionLease, after: int, error: Exception) -> None:
+        async with self._sessions.begin() as session:
+            await ingestion_lease.fence(session, lease, thread_id)
+            checkpoint = await session.get(ThreadCheckpoint, thread_id, with_for_update=True)
+            if checkpoint is None or checkpoint.through_cursor != after:
+                return  # no materialized view, or a newer batch already recovered
+            # Caller-visible diagnostics never include backend or raw event text.
+            await set_operational(
+                session,
+                thread_id,
+                status="failed",
+                error="Session history projection stalled; retained events and the last verified view are unchanged.",
+                error_cursor=error.cursor if isinstance(error, EventReplicationError) else None,
+            )
+            await notify(session, Channel.THREADS)
+
+    async def _project_prefix(
+        self, thread_id: UUID, *, lease: IngestionLease, after: int, barrier: int
+    ) -> ProjectionProgress:
         page = await self._reader.read_session_events(str(thread_id), after_cursor=after, limit=128)
         if page.last_cursor < max(after, barrier):
             raise ConnectionError("Sandbox Service has not covered the final raw cursor and projection checkpoint")

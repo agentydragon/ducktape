@@ -1,7 +1,7 @@
 """Prometheus exporter for an AT&T BGW320 fiber gateway.
 
 The gateway has no SNMP or API, only HTML status pages, and its web server stalls when
-polled in a burst. So a background loop fetches one page at a time with a pause between
+polled in a burst. Pages behind the device access code are polled only when the code is set. So a background loop fetches one page at a time with a pause between
 them, and `/metrics` serves the last parsed values: a Prometheus scrape never reaches the
 gateway. A page whose last fetch or parse failed exports only
 `att_gateway_scrape_success{page} 0`, so no stale value outlives the fetch that would have
@@ -11,45 +11,64 @@ replaced it.
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import logging
+import re
 import time
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass
+from datetime import UTC
 
 import httpx
 from prometheus_client import REGISTRY, start_http_server
 from prometheus_client.core import CounterMetricFamily, GaugeMetricFamily, Metric
 from prometheus_client.registry import Collector
+from pydantic import SecretStr
 
 from cluster.exporters.att_gateway.pages import (
     Broadband,
+    Direction,
     Fiber,
     Lan,
+    Nat,
     Page,
     Sensor,
+    Speed,
     SysInfo,
     parse_broadband,
     parse_fiber,
     parse_lan,
+    parse_nat,
+    parse_speed,
     parse_sysinfo,
 )
 from cluster.exporters.att_gateway.settings import Settings
 
 logger = logging.getLogger(__name__)
 
-_PARSERS: dict[Page, Callable[[str], SysInfo | Broadband | Fiber | Lan]] = {
+type Parsed = SysInfo | Broadband | Fiber | Lan | Nat | Speed
+
+_PARSERS: dict[Page, Callable[[str], Parsed]] = {
     Page.SYSINFO: parse_sysinfo,
     Page.BROADBAND: parse_broadband,
     Page.FIBER: parse_fiber,
     Page.LAN: parse_lan,
+    Page.NAT: parse_nat,
+    Page.SPEED: parse_speed,
 }
+_NONCE = re.compile(r'name="nonce" value="([0-9a-f]+)"')
+# The gateway's clock is on local time in a zone it does not name; its offset from UTC
+# is read off the clock rounded to this.
+_UTC_OFFSET_STEP_SECONDS = 15 * 60
 
 
 @dataclass(frozen=True)
 class PageResult:
+    # Unix time the fetch started.
+    fetched_at: float
     duration_seconds: float
     # None when the fetch or the parse failed.
-    parsed: SysInfo | Broadband | Fiber | Lan | None
+    parsed: Parsed | None
 
 
 def _gauge(name: str, documentation: str, value: float, labels: dict[str, str] | None = None) -> GaugeMetricFamily:
@@ -110,6 +129,56 @@ def _broadband_metrics(broadband: Broadband) -> Iterator[Metric]:
         "ITU-T G.984/G.9807 ONU state number; 5 (O5, Operation) is the only one carrying traffic.",
         broadband.pon_state,
     )
+
+
+def _nat_metrics(nat: Nat) -> Iterator[Metric]:
+    yield _gauge("att_gateway_nat_sessions_available", "Session table capacity.", nat.sessions_available)
+    yield _gauge("att_gateway_nat_sessions_in_use", "Session table entries in use.", nat.sessions_in_use)
+    by_source = GaugeMetricFamily(
+        "att_gateway_nat_ipv4_sessions", "IPv4 session table entries per source address.", labels=["source"]
+    )
+    for source, sessions in nat.ipv4_sessions_by_source.items():
+        by_source.add_metric([source], sessions)
+    yield by_source
+
+
+def _speed_metrics(speed: Speed, utc_offset_seconds: float | None) -> Iterator[Metric]:
+    throughput = GaugeMetricFamily(
+        "att_gateway_speedtest_throughput_bps",
+        "Throughput of the gateway's latest successful speed test to AT&T, protocol overhead included.",
+        labels=["direction"],
+    )
+    latency = GaugeMetricFamily(
+        "att_gateway_speedtest_latency_seconds",
+        "Average round-trip latency of the gateway's latest successful speed test.",
+        labels=["direction"],
+    )
+    completed = GaugeMetricFamily(
+        "att_gateway_speedtest_completed_timestamp_seconds",
+        "When the gateway's latest successful speed test completed.",
+        labels=["direction"],
+    )
+    for direction in Direction:
+        tests = [test for test in speed.tests if test.direction == direction and test.status == "Success"]
+        if not tests:
+            continue
+        latest = max(tests, key=lambda test: test.completed)
+        throughput.add_metric([direction], latest.throughput_bps)
+        latency.add_metric([direction], latest.latency_seconds)
+        if utc_offset_seconds is not None:
+            completed.add_metric([direction], latest.completed.replace(tzinfo=UTC).timestamp() - utc_offset_seconds)
+    yield throughput
+    yield latency
+    yield completed
+
+
+def _utc_offset_seconds(results: dict[Page, PageResult]) -> float | None:
+    """The gateway clock's offset from UTC, from its sysinfo clock reading against the fetch time."""
+    result = results.get(Page.SYSINFO)
+    if result is None or not isinstance(result.parsed, SysInfo) or result.parsed.clock is None:
+        return None
+    skew = result.parsed.clock.replace(tzinfo=UTC).timestamp() - result.fetched_at
+    return round(skew / _UTC_OFFSET_STEP_SECONDS) * _UTC_OFFSET_STEP_SECONDS
 
 
 def _sensor_metrics(name: str, documentation: str, sensor: Sensor) -> Iterator[Metric]:
@@ -204,35 +273,85 @@ class GatewayCollector(Collector):
                     yield from _fiber_metrics(fiber)
                 case Lan() as lan:
                     yield from _lan_metrics(lan)
+                case Nat() as nat:
+                    yield from _nat_metrics(nat)
+                case Speed() as speed:
+                    yield from _speed_metrics(speed, _utc_offset_seconds(results))
                 case None:
                     pass
 
 
-async def fetch_page(client: httpx.AsyncClient, page: Page) -> PageResult:
+async def log_in(client: httpx.AsyncClient, access_code: SecretStr, page_gap_seconds: float) -> None:
+    """The web UI's form login. The first visit sets the session cookie, the second serves
+    the form with a nonce bound to that session, and the form posts the code hashed with
+    the nonce; the session cookie then opens the pages behind the code."""
+    await client.get("/cgi-bin/login.ha")
+    await asyncio.sleep(page_gap_seconds)
+    form = await client.get("/cgi-bin/login.ha")
+    form.raise_for_status()
+    nonce = _NONCE.search(form.text)
+    if nonce is None:
+        raise ValueError("no nonce in the login form")
+    code = access_code.get_secret_value()
+    await asyncio.sleep(page_gap_seconds)
+    response = await client.post(
+        "/cgi-bin/login.ha",
+        data={
+            "nonce": nonce.group(1),
+            "password": "*" * len(code),
+            "hashpassword": hashlib.md5((code + nonce.group(1)).encode(), usedforsecurity=False).hexdigest(),
+            "Continue": "Continue",
+        },
+    )
+    response.raise_for_status()
+
+
+async def _fetch_parsed(client: httpx.AsyncClient, page: Page) -> Parsed:
+    response = await client.get(f"/cgi-bin/{page}.ha")
+    response.raise_for_status()
+    return _PARSERS[page](response.text)
+
+
+async def fetch_page(
+    client: httpx.AsyncClient, page: Page, access_code: SecretStr | None, page_gap_seconds: float
+) -> PageResult:
+    """`access_code` is for a page behind it; such a page answers 200 with the login form
+    until the session logs in, so a parse failure there logs in and fetches it again."""
+    fetched_at = time.time()
     started = time.monotonic()
+    parsed: Parsed | None
     try:
-        response = await client.get(f"/cgi-bin/{page}.ha")
-        response.raise_for_status()
-        parsed = _PARSERS[page](response.text)
+        try:
+            parsed = await _fetch_parsed(client, page)
+        except ValueError:
+            if access_code is None:
+                raise
+            await log_in(client, access_code, page_gap_seconds)
+            parsed = await _fetch_parsed(client, page)
     except httpx.HTTPError, ValueError:
         logger.warning("fetching %s failed", page, exc_info=True)
         parsed = None
-    return PageResult(duration_seconds=time.monotonic() - started, parsed=parsed)
+    return PageResult(fetched_at=fetched_at, duration_seconds=time.monotonic() - started, parsed=parsed)
 
 
-async def poll_once(client: httpx.AsyncClient, collector: GatewayCollector, page_gap_seconds: float) -> None:
-    """Fetch every page in turn, never two at once."""
-    for i, page in enumerate(Page):
+async def poll_once(
+    client: httpx.AsyncClient, collector: GatewayCollector, access_code: SecretStr | None, page_gap_seconds: float
+) -> None:
+    """Fetch every page in turn, never two at once; those behind the access code only when it is set."""
+    pages = [page for page in Page if access_code is not None or not page.needs_login]
+    for i, page in enumerate(pages):
         if i:
             await asyncio.sleep(page_gap_seconds)
-        collector.results[page] = await fetch_page(client, page)
+        collector.results[page] = await fetch_page(
+            client, page, access_code if page.needs_login else None, page_gap_seconds
+        )
 
 
 async def poll_forever(settings: Settings, collector: GatewayCollector) -> None:
     async with httpx.AsyncClient(base_url=str(settings.url), timeout=settings.request_timeout_seconds) as client:
         while True:
             started = time.monotonic()
-            await poll_once(client, collector, settings.page_gap_seconds)
+            await poll_once(client, collector, settings.access_code, settings.page_gap_seconds)
             await asyncio.sleep(max(0, settings.poll_interval_seconds - (time.monotonic() - started)))
 
 

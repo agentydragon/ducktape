@@ -73,9 +73,16 @@ class RunnerSession:
 
 
 class EventLogStore:
-    def __init__(self, engine: AsyncEngine, *, history_reader: SandboxServiceClient | None = None) -> None:
+    def __init__(
+        self,
+        engine: AsyncEngine,
+        *,
+        history_reader: SandboxServiceClient | None = None,
+        history_creator: SandboxServiceClient | None = None,
+    ) -> None:
         self._sessions = async_sessionmaker(engine, expire_on_commit=False)
         self._history_reader = history_reader
+        self._history_creator = history_creator
 
     async def open(self, sandbox: str, session_id: str, spec: protocol_pb2.SessionSpec) -> UUID:
         """Materialize the Session's Thread; preserve any existing legacy mapping."""
@@ -87,6 +94,20 @@ class EventLogStore:
             thread_id = parsed if str(parsed) == session_id else uuid4()
         except ValueError:
             thread_id = uuid4()
+        if self._history_creator is not None:
+            async with self._sessions() as session:
+                existing = await session.scalar(
+                    select(EventLog).where(EventLog.sandbox == sandbox, EventLog.session_id == session_id)
+                )
+                if existing is not None:
+                    if existing.raw_ingestion_fenced_at_cursor is None:
+                        raise EventReplicationError("existing Thread requires explicit history handoff")
+                    return existing.id
+            if str(thread_id) != session_id:
+                raise EventReplicationError("new service-projected Thread requires a canonical public Session ID")
+            # Confirm durable service registration before admitting an app projection.
+            # Do not hold an app DB transaction over this RPC or copy its event payload.
+            await self._history_creator.read_session_observations(session_id, limit=1)
         async with self._sessions.begin() as session:
             created = await session.scalar(
                 insert(EventLog)
@@ -97,18 +118,31 @@ class EventLogStore:
                     harness=Harness(protocol_pb2.Harness.Name(spec.harness)),
                     model=spec.model,
                     cwd=spec.cwd,
+                    raw_ingestion_fenced_at_cursor=0 if self._history_creator is not None else None,
                 )
                 .on_conflict_do_nothing(index_elements=[EventLog.sandbox, EventLog.session_id])
                 .returning(EventLog.id)
             )
             if created is not None:
+                if self._history_creator is not None:
+                    session.add(ThreadHistorySummary(thread_id=created))
                 await notify(session, Channel.THREADS)
                 return created
-            return (
+            existing = (
                 await session.scalars(
-                    select(EventLog.id).where(EventLog.sandbox == sandbox, EventLog.session_id == session_id)
+                    select(EventLog).where(EventLog.sandbox == sandbox, EventLog.session_id == session_id)
                 )
             ).one()
+            if self._history_creator is not None and existing.raw_ingestion_fenced_at_cursor is None:
+                raise EventReplicationError("concurrent legacy Thread creation requires explicit history handoff")
+            return existing.id
+
+    async def is_raw_ingestion_fenced(self, thread_id: UUID) -> bool:
+        async with self._sessions() as session:
+            cursor = await session.scalar(
+                select(EventLog.raw_ingestion_fenced_at_cursor).where(EventLog.id == thread_id)
+            )
+            return cursor is not None
 
     async def resume_pending(self, thread_id: UUID) -> None:
         """A runner-confirmed restart supersedes a normal terminal feed, not a replay error.

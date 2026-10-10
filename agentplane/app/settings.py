@@ -83,7 +83,8 @@ class Settings(AppSettingsConfig):
     sandbox_service_token_file: Path = Path("/var/run/secrets/agentplane-sandbox-service/token")
     sandbox_service_request_timeout_s: float = Field(default=20, gt=0, allow_inf_nan=False)
     history_reads_enabled: bool = False
-    # Draft handoff supervisor. Only consumes explicitly fenced Threads; never fences on startup.
+    # Projects fenced Threads and creates new service-backed Threads fenced at zero.
+    # Existing Threads require explicit handoff; never bulk-fence on startup.
     history_projection_enabled: bool = False
     sandbox_service_lifecycle_timeout_s: float = Field(default=310, gt=0, allow_inf_nan=False)
     sandbox_service_follow_timeout_s: float = Field(default=960, gt=0, allow_inf_nan=False)

@@ -347,7 +347,7 @@ class Ingester:
                                 continue
                             await feed.close()
                         thread_id = await self._event_logs.open(sandbox, summary.session_id, summary.spec)
-                        if thread_id in fenced:
+                        if thread_id in fenced or await self._event_logs.is_raw_ingestion_fenced(thread_id):
                             continue
                         snapshot = await self._event_logs.feed_state(thread_id)
                         # A semantic replay failure is durable evidence that this runner's prefix is

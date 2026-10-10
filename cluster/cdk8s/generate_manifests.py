@@ -602,7 +602,12 @@ def generate_manifests(root: Path) -> None:
     monitoring_home_switch_artifact = artifact("monitoring-home-switch", monitoring_home_switch.OUTPUT_DIR)
     monitoring_home_switch_kustomization = monitoring_home_switch.home_switch(
         flux_chart,
-        write_directory(root, monitoring_home_switch_artifact, monitoring_home_switch.chart),
+        write_directory(
+            root,
+            monitoring_home_switch_artifact,
+            monitoring_home_switch.chart,
+            siblings=[monitoring_home_switch.TOFU_PASSWORD_FILE],
+        ),
         cert_manager_kustomization,
         external_secrets_operator_kustomization,
         tofu_controller_kustomization,
@@ -1250,6 +1255,12 @@ def generate_manifests(root: Path) -> None:
         external_secrets_operator_kustomization,
         grafana_operator_kustomization,
     )
+    att_gateway_access_code_artifact = artifact(att_gateway_access_code.NAME, att_gateway_access_code.OUTPUT_DIR)
+    att_gateway_access_code_kustomization = att_gateway_access_code.att_gateway_exporter_secrets(
+        flux_chart,
+        write_directory(root, att_gateway_access_code_artifact, siblings=["access-code.sops.yaml"]),
+        monitoring_namespace_kustomization,
+    )
     att_gateway_exporter_artifact = artifact(
         "att-gateway-exporter", att_gateway_exporter_app.OUTPUT_DIR, att_gateway_exporter_app.PINS_DIR
     )
@@ -1266,14 +1277,9 @@ def generate_manifests(root: Path) -> None:
             configurations=[grafana_dashboards.write_kustomize_config(root, att_gateway_exporter_app.OUTPUT_DIR)],
         ),
         monitoring_namespace_kustomization,
+        att_gateway_access_code_kustomization,
         monitoring_crds_kustomization,
         grafana_operator_kustomization,
-    )
-    att_gateway_access_code_artifact = artifact(att_gateway_access_code.NAME, att_gateway_access_code.OUTPUT_DIR)
-    att_gateway_access_code.att_gateway_exporter_secrets(
-        flux_chart,
-        write_directory(root, att_gateway_access_code_artifact, siblings=["access-code.sops.yaml"]),
-        monitoring_namespace_kustomization,
     )
     grocy_sf_artifact = artifact("grocy-sf", grocy_app.output_dir("sf"), grocy_mcp.output_dir("sf"), grocy_mcp.PINS_DIR)
     grocy_sf_kustomization = grocy_flux_kustomizations.grocy_sf(
