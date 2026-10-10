@@ -447,13 +447,17 @@ pub(super) fn finish_logical_chunk(
         owner_graph_and_units: precomputed,
     } = chunk_analysis;
     apply_rebind_folds_from_chunk_analysis(&mut builder, &precomputed);
-    if explicit_requests.is_empty() {
-        builder.add_unclaimed_chunk_statements(&precomputed, &runtime_ast.module.body);
-    }
     if matches!(chunk_unassigned_mode, UnassignedMode::MiniFactors) {
         builder.synthesize_mini_factors(&precomputed, &runtime_ast.module.body, target_dir)?;
     }
     builder.route_nested_var_statements(&runtime_ast.module.body, &declarations)?;
+    if matches!(chunk_unassigned_mode, UnassignedMode::CatchallFile { .. }) {
+        builder.route_unclaimed_anonymous_to_catchall(
+            &precomputed,
+            &runtime_ast.module.body,
+            explicit_requests.is_empty(),
+        );
+    }
     if let Some(report) = builder.selector_outcome_report()
         && let Some(report_out_dir) = report_emission.rejection_dir()
     {
