@@ -298,7 +298,9 @@ repos:
             # Authentik blueprints are not K8s manifests, skip validation
             cluster/k8s/authentik/app/blueprints/.*|
             # Authelia configuration files consumed via configMapGenerator, not K8s manifests
-            cluster/parked/authelia/(configuration|users)\.yml
+            cluster/parked/authelia/(configuration|users)\.yml|
+            # A partial HelmRelease the tofu-controller image-pins Component patches in
+            cluster/k8s/tofu-controller-image-pins/helmrelease-image\.yaml
           )$
         types: [yaml]
 
