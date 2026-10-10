@@ -856,7 +856,6 @@ py_library(
     deps = [
         "//agentplane/sandbox_service:protocol_pb2",
         "//agentplane/sandbox_service/commands:db",
-        "//agentplane/sandbox_service/session_history:db",
         "//agentplane/sandbox_service/session_history:session_changes",
         "//agentplane/sandbox_service/session_history:store",
         "@pypi//protobuf",
@@ -873,15 +872,11 @@ py_test(
         ":conftest",
         ":session_registry",
         "//:conftest",
-        "//agentplane/sandbox_service/commands:database_migrate",
-        "//agentplane/sandbox_service/commands:db",
-        "//agentplane/sandbox_service/session_history:conftest",
+        "//agentplane/sandbox_service/commands:conftest",
         "//agentplane/sandbox_service/session_history:store",
-        "//util/testing:postgres",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
-        "@pypi//testcontainers",
     ],
 )
 

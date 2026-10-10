@@ -214,7 +214,7 @@ async def sessions(engine: AsyncEngine) -> SessionRegistry:
     # The registry tables share the history test database; production keeps them apart.
     async with engine.begin() as connection:
         await connection.run_sync(commands_db.Base.metadata.create_all)
-    return SessionRegistry(engine, Store(engine))
+    return SessionRegistry(engine)
 
 
 @pytest.fixture
@@ -238,10 +238,7 @@ async def test_managed_open_keeps_runner_id_internal_and_retries_frozen_launch(
     sessions: SessionRegistry,
     submissions: SubmissionStore,
 ) -> None:
-    store = Store(engine)
-    async with service_client(
-        replace(resources, history=store, sessions=sessions, submissions=submissions), token_file
-    ) as remote:
+    async with service_client(replace(resources, sessions=sessions, submissions=submissions), token_file) as remote:
         runner = remote.runner(DESTINATION)
         overrides: dict[str, object] = {"harness": "HARNESS_CODEX", "model": "test-model", "cwd": "/state/{session_id}"}
         created = await runner.create(idempotency_key="first-attempt", spec=overrides)
@@ -258,8 +255,7 @@ async def test_managed_open_keeps_runner_id_internal_and_retries_frozen_launch(
 
         # Simulate changed defaults/platform instructions after the original reply was lost.
         async with service_client(
-            replace(resources, history=Store(engine), sessions=sessions, platform_instructions="Changed guidance"),
-            token_file,
+            replace(resources, sessions=sessions, platform_instructions="Changed guidance"), token_file
         ) as retry:
             again = await retry.runner(DESTINATION).create(idempotency_key="first-attempt", spec=overrides)
         second = await peer.attachments.get()
@@ -318,9 +314,7 @@ async def test_public_session_command_survives_a_lost_reply(
     command = command_pb2.Command(command_id="durable", submit_input=command_pb2.SubmitInput(text="hi"))
     async with (
         asyncio.timeout(10),
-        service_client(
-            replace(resources, history=store, sessions=sessions, submissions=submissions), token_file
-        ) as remote,
+        service_client(replace(resources, sessions=sessions, submissions=submissions), token_file) as remote,
     ):
         runner = remote.runner(DESTINATION)
         with pytest.raises(TimeoutError):
@@ -364,7 +358,6 @@ async def test_channel_routed_command_never_falls_back_to_the_relay(
         runner_boot_id="test-boot",
         operations={"commands"},
     )
-    store = Store(engine)
     session_id = uuid4()
     await sessions.open(
         session_id,
@@ -378,7 +371,7 @@ async def test_channel_routed_command_never_falls_back_to_the_relay(
     )
     command = command_pb2.Command(command_id="channel", submit_input=command_pb2.SubmitInput(text="hi"))
     async with service_client(
-        replace(resources, history=store, sessions=sessions, submissions=submissions, delivery=delivery), token_file
+        replace(resources, sessions=sessions, submissions=submissions, delivery=delivery), token_file
     ) as remote:
         runner = remote.runner(DESTINATION)
         for session in (str(session_id), "legacy-runner-session"):
@@ -392,8 +385,7 @@ async def test_channel_routed_command_never_falls_back_to_the_relay(
 async def test_lookup_open_scopes_reservation_and_waits_for_runner_confirmation(
     resources: Resources, token_file: Path, peer: Peer, engine: AsyncEngine, sessions: SessionRegistry
 ) -> None:
-    store = Store(engine)
-    async with service_client(replace(resources, history=store, sessions=sessions), token_file) as remote:
+    async with service_client(replace(resources, sessions=sessions), token_file) as remote:
         runner = remote.runner(DESTINATION)
         assert not (await runner.lookup(idempotency_key="lookup-key")).session_id
         reserved = await sessions.reserve(
@@ -435,7 +427,7 @@ async def test_lookup_rejects_failed_native_open_but_recovers_an_earlier_success
     resources: Resources, token_file: Path, peer: Peer, engine: AsyncEngine, sessions: SessionRegistry
 ) -> None:
     """Inventory also retains a spec after a native handshake fails; never project it as a Thread."""
-    async with service_client(replace(resources, history=Store(engine), sessions=sessions), token_file) as remote:
+    async with service_client(replace(resources, sessions=sessions), token_file) as remote:
         runner = remote.runner(DESTINATION)
         created = await runner.create(
             idempotency_key="failed-handshake", spec={"harness": "HARNESS_CODEX", "model": "m", "cwd": "/state"}
@@ -539,14 +531,13 @@ async def test_managed_open_lost_response_uses_same_reservation(
     resources: Resources, token_file: Path, peer: Peer, engine: AsyncEngine, sessions: SessionRegistry
 ) -> None:
     peer.answer_open = False
-    store = Store(engine)
     request = protocol_pb2.CreateSessionRequest(
         sandbox=DESTINATION,
         idempotency_key="lost-response",
         spec=runner_pb2.SessionSpec(harness=runner_pb2.HARNESS_CODEX, cwd="/state", model="test-model"),
     )
     request.override_mask.paths.extend(["harness", "cwd", "model"])
-    async with service_client(replace(resources, history=store, sessions=sessions), token_file) as remote:
+    async with service_client(replace(resources, sessions=sessions), token_file) as remote:
         call = remote.stub.CreateSession(request, metadata=await remote.metadata(), timeout=10)
         async with asyncio.timeout(5):
             first = await peer.attachments.get()
@@ -573,7 +564,7 @@ async def test_managed_open_expands_default_cwd_with_reserved_id(
             )
         )
     )
-    async with service_client(replace(resources, history=Store(engine), sessions=sessions), token_file) as remote:
+    async with service_client(replace(resources, sessions=sessions), token_file) as remote:
         created = await remote.runner(DESTINATION).create(idempotency_key="default-cwd", spec={})
         opened = await peer.attachments.get()
         assert opened.opened.spec.cwd == f"/state/workspaces/{created.session_id}"
@@ -1178,7 +1169,6 @@ async def test_watch_sessions_resumes_after_disconnect_and_wakes_on_other_writer
     sessions: SessionRegistry,
     session_changes: SessionChanges,
 ) -> None:
-    store = Store(engine)
     legacy_id, current_id = uuid4(), uuid4()
     await sessions.open(
         legacy_id,
@@ -1194,7 +1184,7 @@ async def test_watch_sessions_resumes_after_disconnect_and_wakes_on_other_writer
         sandbox_uid=UUID(SANDBOX_UID),
         runner_session_id=f"r-{current_id}",
     )
-    configured = replace(resources, history=store, sessions=sessions, session_changes=session_changes, follow_lease_s=2)
+    configured = replace(resources, sessions=sessions, session_changes=session_changes, follow_lease_s=2)
     async with service_client(configured, token_file) as remote:
         first_call = remote.stub.WatchSessions(
             protocol_pb2.WatchSessionsRequest(), metadata=await remote.metadata(), timeout=10
@@ -1251,7 +1241,6 @@ async def test_watch_sessions_requires_allowed_caller(
     # The token authenticates OWNER, which this configuration does not allow as a service caller.
     configured = replace(
         resources,
-        history=Store(engine),
         sessions=sessions,
         session_changes=session_changes,
         caller_accounts=frozenset({ServiceAccountRef(namespace=SANDBOX_NAMESPACE, name="allowed-service")}),

@@ -9,6 +9,7 @@ exports_files([
     "0006_summary_first_event.py",
     "0007_electric_publication.py",
     "0008_delta_settlement.py",
+    "0009_history_rows_from_feed.py",
 ])
 
 py_library(
@@ -72,4 +73,10 @@ py_library(
         "@pypi//alembic",
         "@pypi//sqlalchemy",
     ],
+)
+
+py_library(
+    name = "0009_history_rows_from_feed",
+    srcs = ["0009_history_rows_from_feed.py"],
+    deps = ["@pypi//alembic"],
 )

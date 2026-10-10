@@ -41,7 +41,7 @@ async def with_history(resources: Resources, database_url: str | None) -> AsyncI
         # Production keeps admission in its own database; one test database serves both here.
         await connection.run_sync(commands_db.Base.metadata.create_all)
     store = Store(engine)
-    sessions = SessionRegistry(engine, store)
+    sessions = SessionRegistry(engine)
     submissions = SubmissionStore(engine)
     ingester = HistoryIngester(
         store, sessions, submissions, resources.destinations, runner_grpc_channel_options={}, interval_s=0.05
@@ -79,7 +79,7 @@ async def with_history(resources: Resources, database_url: str | None) -> AsyncI
 
     task = asyncio.create_task(discover_and_copy())
     try:
-        yield replace(resources, history=store, sessions=sessions, submissions=submissions)
+        yield replace(resources, sessions=sessions, submissions=submissions)
     finally:
         task.cancel()
         with suppress(asyncio.CancelledError):

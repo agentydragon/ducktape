@@ -17,7 +17,7 @@ from agentplane.history_service.conftest import ScriptedSandboxService, subscrib
 from agentplane.history_service.ingester import HistoryIngester, claim, logger
 from agentplane.protocol import event_log_pb2, event_pb2
 from agentplane.sandbox_service import protocol_pb2
-from agentplane.sandbox_service.session_history.store import HistoryConflictError, Store
+from agentplane.sandbox_service.session_history.store import HistoryConflictError, HistoryNotFoundError, Store
 
 # gazelle:include_dep @pypi//protobuf
 # gazelle:include_dep //agentplane/sandbox_service/session_history:conftest
@@ -38,16 +38,9 @@ def entry(cursor: int, text: str = "journal") -> event_log_pb2.EventEntry:
     )
 
 
-async def session(store: Store, sandbox_service: ScriptedSandboxService) -> UUID:
-    """A Session the Sandbox Service created, as its row and its feed record."""
+def session(sandbox_service: ScriptedSandboxService) -> UUID:
+    """A Session the Sandbox Service created, as its feed record; the ingester creates its row."""
     session_id = uuid4()
-    await store.open(
-        session_id,
-        sandbox_namespace=NAMESPACE,
-        sandbox_name=SANDBOX,
-        sandbox_uid=UUID(SANDBOX_UID),
-        runner_session_id=f"r-{session_id}",
-    )
     sandbox_service.add(str(session_id), sandbox=SANDBOX, sandbox_uid=SANDBOX_UID, owner=OWNER)
     return session_id
 
@@ -105,7 +98,10 @@ def store(engine: AsyncEngine) -> Store:
 def committed(store: Store, commits: Commits) -> Callable[[UUID, int], Awaitable[None]]:
     async def through(session_id: UUID, cursor: int) -> None:
         async def reached() -> bool:
-            return (await store.read(session_id, limit=1))[0] >= cursor
+            try:
+                return (await store.read(session_id, limit=1))[0] >= cursor
+            except HistoryNotFoundError:
+                return False  # the ingester has not created the row yet
 
         await commits.until(reached)
 
@@ -165,7 +161,7 @@ async def test_discovered_session_is_copied_through_its_owners_destination(
 ) -> None:
     async with running(replica("test-replica")):
         # Created after the ingester started: only WatchSessions can name it.
-        session_id = await session(store, sandbox_service)
+        session_id = session(sandbox_service)
         sandbox_service.append(str(session_id), entry(1), entry(2))
         await committed(session_id, 2)
         sandbox_service.append(str(session_id), entry(3))  # live, after the replayed prefix
@@ -176,15 +172,15 @@ async def test_discovered_session_is_copied_through_its_owners_destination(
     )
     page = await store.read_page(session_id)
     assert list(page.entries) == [entry(1), entry(2), entry(3)]
-    # Stored as the Sandbox Service ingester stores it, so either can write the same row.
-    assert page.feed_state.attached.session_id == f"r-{session_id}"
+    # The row this ingester created knows only the public ID it followed.
+    assert page.feed_state.attached.session_id == str(session_id)
 
 
 async def test_repeated_feed_failures_dial_a_fresh_connection(
     store: Store, sandbox_service: ScriptedSandboxService, replica: Replica, committed: Committed
 ) -> None:
     sandbox_service.watch_failures = 2
-    session_id = await session(store, sandbox_service)
+    session_id = session(sandbox_service)
     sandbox_service.append(str(session_id), entry(1))
     async with running(replica("test-replica")):
         await committed(session_id, 1)
@@ -196,7 +192,7 @@ async def test_repeated_feed_failures_dial_a_fresh_connection(
 async def test_restart_resumes_from_committed_cursor(
     store: Store, sandbox_service: ScriptedSandboxService, replica: Replica, committed: Committed
 ) -> None:
-    session_id = await session(store, sandbox_service)
+    session_id = session(sandbox_service)
     sandbox_service.append(str(session_id), entry(1), entry(2))
     async with running(replica("test-replica-before")):
         await committed(session_id, 2)
@@ -214,7 +210,7 @@ async def test_restart_resumes_from_committed_cursor(
 async def test_replay_of_entries_another_writer_committed_is_accepted(
     store: Store, sandbox_service: ScriptedSandboxService, replica: Replica, committed: Committed
 ) -> None:
-    session_id = await session(store, sandbox_service)
+    session_id = session(sandbox_service)
     sandbox_service.append(str(session_id), entry(1), entry(2), entry(3))
     sandbox_service.replay_gate = asyncio.Event()
     async with running(replica("test-replica")):
@@ -240,7 +236,7 @@ class ConflictLogged(logging.Handler):
 async def test_conflicting_replay_is_rejected_loudly(
     store: Store, sandbox_service: ScriptedSandboxService, replica: Replica
 ) -> None:
-    session_id = await session(store, sandbox_service)
+    session_id = session(sandbox_service)
     sandbox_service.append(str(session_id), entry(1), entry(2))
     sandbox_service.replay_gate = asyncio.Event()
     conflict = ConflictLogged()
@@ -278,7 +274,7 @@ async def test_one_replica_follows_a_session_until_it_stops(
     store: Store, sandbox_service: ScriptedSandboxService, replica: Replica, committed: Committed
 ) -> None:
     sandbox_service.lease_s = 30  # no planned renewal: a follow holds its claim throughout
-    session_id = await session(store, sandbox_service)
+    session_id = session(sandbox_service)
     sandbox_service.append(str(session_id), entry(1))
     replicas = {name: replica(name) for name in ("test-replica-a", "test-replica-b")}
     try:
@@ -302,12 +298,15 @@ async def test_one_replica_follows_a_session_until_it_stops(
 async def test_seal_is_recorded_as_the_incarnations_end(
     store: Store, sandbox_service: ScriptedSandboxService, replica: Replica, commits: Commits
 ) -> None:
-    session_id = await session(store, sandbox_service)
+    session_id = session(sandbox_service)
     sandbox_service.append(str(session_id), entry(1), entry(2))
     sandbox_service.seal(str(session_id))
 
     async def sealed() -> bool:
-        return (await store.read_page(session_id)).feed_state.HasField("sealed")
+        try:
+            return (await store.read_page(session_id)).feed_state.HasField("sealed")
+        except HistoryNotFoundError:
+            return False
 
     async with running(replica("test-replica")):
         await commits.until(sealed)

@@ -1,9 +1,5 @@
 """The Sandbox Service's Session registry: public Session IDs, runner locators, Open reservations
-and the WatchSessions feed, in the service's own database.
-
-Until the ingesters create their own history rows, every registry write is mirrored into the history
-database's `session_history`, whose rows those ingesters append to.
-"""
+and the WatchSessions feed, in the service's own database."""
 
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -16,20 +12,13 @@ from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 from agentplane.sandbox_service import protocol_pb2
 from agentplane.sandbox_service.commands.db import CHANGE_POSITION, Session
-from agentplane.sandbox_service.session_history.db import SessionHistory
 from agentplane.sandbox_service.session_history.session_changes import CHANNEL
-from agentplane.sandbox_service.session_history.store import (
-    REGISTRY_COLUMNS,
-    HistoryConflictError,
-    HistoryNotFoundError,
-    Store,
-)
+from agentplane.sandbox_service.session_history.store import HistoryConflictError, HistoryNotFoundError
 
 # gazelle:include_dep @pypi//protobuf
 
-# The service's own database; no other advisory lock uses these keys.
+# The service's own database; no other advisory lock uses this key.
 CHANGE_POSITION_LOCK = 0x5345_5350  # "SESP"
-IMPORT_LOCK = 0x5345_494D  # "SEIM"
 
 
 @dataclass(frozen=True)
@@ -41,6 +30,7 @@ class OpenReservation:
 @dataclass(frozen=True)
 class HistoryLocator:
     session_id: UUID
+    sandbox_namespace: str
     sandbox_name: str
     sandbox_uid: UUID
     runner_session_id: str
@@ -60,44 +50,9 @@ async def next_change_position(session: AsyncSession) -> int:
     return position
 
 
-def _values(row: Session | SessionHistory) -> tuple[object, ...]:
-    return tuple(getattr(row, column) for column in REGISTRY_COLUMNS)
-
-
 class SessionRegistry:
-    def __init__(self, engine: AsyncEngine, history: Store) -> None:
+    def __init__(self, engine: AsyncEngine) -> None:
         self._sessions = async_sessionmaker(engine, expire_on_commit=False)
-        self.history = history
-
-    async def import_history(self) -> int:
-        """Copy every registry row the history database holds and this one lacks; return the count.
-
-        Run before serving, while no replica allocates positions from the history database: copied
-        rows keep their positions and the sequence continues past the largest. A row already here
-        must equal its history twin.
-        """
-        # CLEANUP(added 2026-10-10): Delete with the history mirror once ingesters create their own
-        #   history rows (task DAG SESSION_HISTORY_ROW_FROM_FEED).
-        records = await self.history.registry_records()
-        async with self._sessions.begin() as session:
-            await session.execute(select(func.pg_advisory_xact_lock(IMPORT_LOCK)))
-            existing = {row.id: row for row in await session.scalars(select(Session))}
-            missing = [record for record in records if record.id not in existing]
-            for record in records:
-                if (row := existing.get(record.id)) is not None and _values(row) != _values(record):
-                    raise HistoryConflictError(f"session {record.id} differs from its history registry row")
-            if missing:
-                await session.execute(
-                    insert(Session),
-                    [{column: getattr(record, column) for column in REGISTRY_COLUMNS} for record in missing],
-                )
-            largest = await session.scalar(select(func.max(Session.change_position)))
-            if largest is not None:
-                last = await session.scalar(select(CHANGE_POSITION.next_value()))
-                assert last is not None
-                if last < largest:
-                    await session.execute(select(func.setval(CHANGE_POSITION.name, largest)))
-            return len(missing)
 
     async def open(
         self,
@@ -136,7 +91,6 @@ class SessionRegistry:
                 runner_session_id,
             ):
                 raise HistoryConflictError(f"session {session_id} has a different runner locator")
-        await self.history.mirror(row)
 
     async def reserve(
         self,
@@ -155,8 +109,7 @@ class SessionRegistry:
         The key is opaque to the Service and scoped to the authenticated caller and
         Sandbox incarnation. The request bytes identify the caller's original inputs;
         the launch factory freezes effective runner setup for the candidate ID.
-        Committing before runner contact lets a retry recover the same setup, and repeats
-        the history mirror a failed attempt may have missed.
+        Committing before runner contact lets a retry recover the same setup.
         """
         if not all((caller_namespace, caller_name, sandbox_namespace, sandbox_name, open_key)):
             raise ValueError("caller, sandbox, and Open idempotency key are required")
@@ -196,7 +149,6 @@ class SessionRegistry:
         if row.open_request != open_request:
             raise HistoryConflictError("Open idempotency key reused with different inputs")
         assert row.launch_spec is not None
-        await self.history.mirror(row)
         return OpenReservation(row.id, row.launch_spec)
 
     async def lookup_open(
@@ -292,7 +244,7 @@ class SessionRegistry:
                 )
             )
             return [
-                HistoryLocator(row.id, row.sandbox_name, row.sandbox_uid, row.runner_session_id)
+                HistoryLocator(row.id, row.sandbox_namespace, row.sandbox_name, row.sandbox_uid, row.runner_session_id)
                 for row in rows
                 if row.sandbox_uid is not None and row.runner_session_id is not None
             ]

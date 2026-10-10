@@ -42,7 +42,7 @@ from agentplane.sandbox_service.provisioning import Provisioning
 from agentplane.sandbox_service.retention_holds import MAX_HOLD_KEY_LENGTH
 from agentplane.sandbox_service.runner_channel import ChannelOperation
 from agentplane.sandbox_service.session_history.session_changes import SessionChanges
-from agentplane.sandbox_service.session_history.store import HistoryNotFoundError, Store
+from agentplane.sandbox_service.session_history.store import HistoryNotFoundError
 from agentplane.sandbox_service.session_registry import SessionRegistry
 from agentplane.subjects import ServiceAccountRef
 from agentplane.workload_auth.bearer import parse_bearer, sole_header
@@ -62,7 +62,6 @@ class Resources:
     caller_accounts: frozenset[ServiceAccountRef]
     platform_instructions: str
     runner_admission_ack_timeout_s: float
-    history: Store | None = None
     sessions: SessionRegistry | None = None
     submissions: SubmissionStore | None = None
     delivery: ChannelDelivery | None = None

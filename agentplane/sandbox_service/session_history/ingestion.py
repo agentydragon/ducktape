@@ -36,13 +36,21 @@ logger = logging.getLogger(__name__)
 async def copy_confirmed_prefix(
     store: Store, submissions: SubmissionStore, locator: HistoryLocator, runner: RunnerClient, *, batch_size: int = 128
 ) -> int:
-    """Copy the prefix published at attach time; never start or resume a native harness.
+    """Copy the prefix published at attach time, creating the history row first; never start or
+    resume a native harness.
 
     No speculative read or cursor advancement: only the exact published EventEntry
     bytes commit. An interruption leaves a durable prefix for the next call to replay.
     """
     if batch_size < 1:
         raise ValueError("batch size must be positive")
+    await store.record_session(
+        locator.session_id,
+        sandbox_namespace=locator.sandbox_namespace,
+        sandbox_name=locator.sandbox_name,
+        sandbox_uid=locator.sandbox_uid,
+        runner_session_id=locator.runner_session_id,
+    )
     copied, _ = await store.read(locator.session_id, limit=1)
     # The two databases commit separately, so either may be ahead after an interruption.
     cursor = min(copied, await submissions.read_reconciled_through(locator.session_id))

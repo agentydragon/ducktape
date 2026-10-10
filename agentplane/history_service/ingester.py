@@ -1,10 +1,11 @@
 """Copy runner journals into the history tables as an ordinary Sandbox Service subscriber.
 
 `WatchSessions` names every Session and its current incarnation; each is followed with
-`FollowSession` from the cursor this service committed, and every batch is one `Store.append`.
-The runner journal is the buffer: after an outage or restart, following resumes from the
-committed cursor. A per-Session claim keeps replicas from duplicating work, while
-`Store.append` (exact replays accepted, gaps and conflicts refused) keeps a log correct without it.
+`FollowSession` from the cursor this service committed (creating its history row first), and every
+batch is one `Store.append`. The runner journal is the buffer: after an outage or restart,
+following resumes from the committed cursor. A per-Session claim keeps replicas from duplicating
+work, while `Store.append` (exact replays accepted, gaps and conflicts refused) keeps a log correct
+without it.
 """
 
 import asyncio
@@ -102,7 +103,7 @@ class HistoryIngester:
         self._ready: asyncio.Queue[UUID] = asyncio.Queue()
 
     async def run(self) -> None:
-        # TODO: place holds once the runner journals seals (RUNNER_TEARDOWN_SEAL); before that none clears.
+        # TODO: place retention holds, which a Session's journaled seal clears.
         async with asyncio.TaskGroup() as tasks:
             for _ in range(self.concurrency):
                 tasks.create_task(self._work())
@@ -173,6 +174,14 @@ class HistoryIngester:
         async with claim(self.engine, session_id) as claimed:
             if not claimed:
                 return Next.LATER
+            # The owner is the Sandbox's ServiceAccount, in the Sandbox's own namespace.
+            await self.store.record_session(
+                session_id,
+                sandbox_namespace=change.owner.namespace,
+                sandbox_name=change.sandbox,
+                sandbox_uid=UUID(change.sandbox_uid),
+                runner_session_id=None,
+            )
             cursor, _ = await self.store.read(session_id, limit=1)
             destination = SandboxDestination(owner=change.owner, sandbox=change.sandbox, sandbox_uid=change.sandbox_uid)
             attachment = await self.sandboxes.runner(destination).attach(change.session_id, after_cursor=cursor)

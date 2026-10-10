@@ -844,7 +844,6 @@ are irreplaceable, and a node that deletes a column or row stops for the operato
 ```mermaid
 flowchart TD
     SESSION_REGISTRY_MOVE[Candidate: Sandbox Service Session records in its own database]
-    SESSION_HISTORY_ROW_FROM_FEED[Blocked: ingesters create their own history rows]
     HISTORY_SESSION_COLUMNS_DROP[Blocked: drop registry columns from the history database]
     HISTORY_STORE_MOVE[Blocked: history store and migrations move to the History Service]
     HISTORY_WRITER_SWITCH_RETIRE[Blocked: delete the history_writer switch]
@@ -857,8 +856,7 @@ flowchart TD
     APP_PROJECTOR_RETIRE[Delete app projector]
     HISTORY_SERVICE_OWNERSHIP[History Service ownership]
     SESSION_REGISTRY_MOVE --> SANDBOX_LOCAL_HISTORY_RETIRE
-    SESSION_REGISTRY_MOVE --> SESSION_HISTORY_ROW_FROM_FEED
-    SESSION_HISTORY_ROW_FROM_FEED --> HISTORY_SESSION_COLUMNS_DROP
+    SESSION_REGISTRY_MOVE --> HISTORY_SESSION_COLUMNS_DROP
     HISTORY_WRITE_HANDOFF --> HISTORY_SESSION_COLUMNS_DROP
     SANDBOX_LOCAL_HISTORY_RETIRE --> HISTORY_STORE_MOVE
     SANDBOX_LOCAL_HISTORY_RETIRE --> HISTORY_WRITER_SWITCH_RETIRE
@@ -892,21 +890,13 @@ The history tables keep the Session ID with no foreign key into the registry. Ve
 every public Session ID resolves to the same locator before and after, and that the History Service
 ingester's `WatchSessions` resumes without losing a change.
 
-### `SESSION_HISTORY_ROW_FROM_FEED` — history rows come from the feed
-
-**Blocked on the registry move.** Each ingester creates its Session's history row on first append,
-from the `SessionChange` it follows, so the Sandbox Service no longer writes the history database on
-Create or Open and the startup copy is deleted. The History Service keeps the Sandbox locator it
-reads by (`ListSessionSummaries` filters by Sandbox). The history-side registration code, already
-unused in production since the registry move, goes with it: `session_history` `Store.open` and its
-`next_change_position` allocation. The CLEANUP on the startup copy cites this node's name; code
-comments must not cite plan nodes, so state the condition instead.
-
 ### `HISTORY_SESSION_COLUMNS_DROP` — history keeps only history
 
-**Blocked on history rows from the feed and the write handoff; stops for the operator.** Drop the
-registry-only columns from the history database's `session_history`: the Open reservation, the
-runner session ID and the change position. Per-Session ingestion state (`source_id`, `last_cursor`,
+**Blocked on the registry move and the write handoff; stops for the operator.** Ingesters create
+history rows from the feed; in the history database's `session_history` nothing reads the Open
+reservation or the change position, and the runner session ID only names stored feed snapshots.
+Drop all three, with their indexes and the `session_change_position` sequence, once feed snapshots
+are stored under the public ID. Per-Session ingestion state (`source_id`, `last_cursor`,
 `feed_state`) and the Sandbox locator stay beside `session_event`.
 
 ### `HISTORY_STORE_MOVE` — the history store belongs to the History Service

@@ -94,7 +94,7 @@ async def test_reader_reads_history_of_a_deleted_sandbox(
     stub: protocol_pb2_grpc.HistoryServiceAsyncStub, history: Store
 ) -> None:
     session_id = uuid4()
-    await history.open(
+    await history.record_session(
         session_id,
         sandbox_namespace=SANDBOX_NAMESPACE,
         sandbox_name="test-deleted-sandbox",

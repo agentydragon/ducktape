@@ -45,7 +45,7 @@ def reader(engine: AsyncEngine) -> ThreadReader:
 @pytest.fixture
 async def folded(engine: AsyncEngine, history: Store) -> UUID:
     session_id = uuid4()
-    await history.open(
+    await history.record_session(
         session_id,
         sandbox_namespace="test-namespace",
         sandbox_name="test-sandbox",

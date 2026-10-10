@@ -31,11 +31,9 @@ py_library(
     srcs = ["store.py"],
     deps = [
         ":db",
-        ":session_changes",
         ":settlement",
         "//agentplane/history_service:protocol_pb2",
         "//agentplane/protocol:event_log_pb2",
-        "//agentplane/sandbox_service/commands:db",
         "@pypi//protobuf",
         "@pypi//sqlalchemy",
     ],

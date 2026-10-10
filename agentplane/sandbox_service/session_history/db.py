@@ -5,17 +5,7 @@ The migration is owned by Sandbox Service. No app tables or app-issued identitie
 
 from uuid import UUID
 
-from sqlalchemy import (
-    BigInteger,
-    CheckConstraint,
-    ForeignKey,
-    ForeignKeyConstraint,
-    Index,
-    LargeBinary,
-    Sequence,
-    String,
-    text,
-)
+from sqlalchemy import BigInteger, CheckConstraint, ForeignKey, ForeignKeyConstraint, Index, LargeBinary, String, text
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 
@@ -23,16 +13,13 @@ class Base(DeclarativeBase):
     pass
 
 
-# Allocated only by `Store`, under a lock that orders positions by commit (WatchSessions resumes after one).
-CHANGE_POSITION = Sequence("session_change_position", metadata=Base.metadata)
-
-
 class SessionHistory(Base):
     __tablename__ = "session_history"
     __table_args__ = (
         CheckConstraint("last_cursor >= 0", name="history_last_cursor_nonnegative"),
-        # A runner locator is a physical binding, not a durable identity. Reservations
-        # have no runner yet; imported locators with no UID still cannot be claimed twice.
+        # A runner locator is a physical binding, not a durable identity. Rows a History Service
+        # ingester created have no runner ID; imported locators with no UID still cannot be
+        # claimed twice.
         Index(
             "ux_history_runner_locator",
             "sandbox_namespace",
@@ -63,21 +50,19 @@ class SessionHistory(Base):
     # Nullable for imported records whose original Sandbox UID was not retained in app history.
     sandbox_uid: Mapped[UUID | None]
     runner_session_id: Mapped[str | None] = mapped_column(String)
-    # The caller provides an opaque key, never a runner session ID. Nullable for imported histories.
+    # The Sandbox Service registry's former columns: an Open reservation and a WatchSessions
+    # position, kept on rows from before the registry moved to its own database. Nothing reads them;
+    # rows the ingesters create leave them empty.
     caller_namespace: Mapped[str | None] = mapped_column(String)
     caller_name: Mapped[str | None] = mapped_column(String)
     open_key: Mapped[str | None] = mapped_column(String)
-    # Original Open inputs identify a retry; the effective launch spec is frozen
-    # before runner contact, so a changed default cannot alter the retried launch.
     open_request: Mapped[bytes | None] = mapped_column(LargeBinary)
     launch_spec: Mapped[bytes | None] = mapped_column(LargeBinary)
+    change_position: Mapped[int | None] = mapped_column(BigInteger)
     source_id: Mapped[str | None] = mapped_column(String)
     last_cursor: Mapped[int] = mapped_column(BigInteger)
     # Complete SessionFeedState protobuf, absent until a runner prefix is observed.
     feed_state: Mapped[bytes | None] = mapped_column(LargeBinary)
-    # Position of this Session's latest change in the WatchSessions feed. Every write
-    # that changes the Session's identity or binding takes a new one.
-    change_position: Mapped[int] = mapped_column(BigInteger)
 
 
 class SessionEvent(Base):

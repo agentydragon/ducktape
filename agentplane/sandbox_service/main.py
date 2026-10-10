@@ -44,8 +44,6 @@ from util.kubernetes import CustomObjectsClient
 # gazelle:include_dep //agentplane/runner_channel:protocol_pb2
 # gazelle:include_dep @pypi//protobuf
 
-logger = logging.getLogger(__name__)
-
 
 async def serve(settings: Settings) -> None:
     configuration = k8s_client.Configuration()
@@ -111,9 +109,7 @@ async def serve_with_engines(
             ),
         )
         history_store = Store(engine)
-        sessions = SessionRegistry(commands_engine, history_store)
-        imported = await sessions.import_history()
-        logger.info("Imported %d Sessions from the history database's registry", imported)
+        sessions = SessionRegistry(commands_engine)
         submissions = SubmissionStore(commands_engine)
         connections = ConnectionStore(commands_engine)
         timing = ChannelTiming()
@@ -125,7 +121,6 @@ async def serve_with_engines(
         )
         resources = Resources(
             principals=principals,
-            history=history_store,
             sessions=sessions,
             submissions=submissions,
             delivery=delivery,

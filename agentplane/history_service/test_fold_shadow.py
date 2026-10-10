@@ -66,7 +66,7 @@ def history(engine: AsyncEngine) -> Store:
 async def retained_session(history: Store, entries: list[event_log_pb2.EventEntry]) -> UUID:
     session_id = uuid4()
     # A deleted Sandbox's Session is folded like any other.
-    await history.open(
+    await history.record_session(
         session_id,
         sandbox_namespace="test-namespace",
         sandbox_name="test-deleted-sandbox",

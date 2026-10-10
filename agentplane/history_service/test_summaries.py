@@ -45,7 +45,7 @@ def summaries(engine: AsyncEngine) -> SummaryReader:
 
 async def session_in(history: Store, sandbox: str, entries: list[event_log_pb2.EventEntry]) -> UUID:
     session_id = uuid4()
-    await history.open(
+    await history.record_session(
         session_id,
         sandbox_namespace="test-namespace",
         sandbox_name=sandbox,

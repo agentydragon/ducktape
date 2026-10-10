@@ -6,58 +6,22 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from uuid import UUID
 
-from sqlalchemy import delete, func, select
+from sqlalchemy import delete, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 from agentplane.history_service import protocol_pb2 as history_pb2
 from agentplane.protocol import event_log_pb2
-from agentplane.sandbox_service.commands.db import Session
 from agentplane.sandbox_service.session_history.db import (
-    CHANGE_POSITION,
     SessionEvent,
     SessionEventSettledRange,
     SessionEventSettlement,
     SessionHistory,
 )
-from agentplane.sandbox_service.session_history.session_changes import CHANNEL
 from agentplane.sandbox_service.session_history.settlement import completion_target, settle, started_item
 
 # The generated protobuf stubs need the protobuf runtime as a direct mypy dependency.
 # gazelle:include_dep @pypi//protobuf
-
-
-# The service's own database; no other advisory lock uses this key.
-CHANGE_POSITION_LOCK = 0x53455343
-
-# The Sandbox Service registry's columns this table still repeats.
-REGISTRY_COLUMNS = (
-    "id",
-    "sandbox_namespace",
-    "sandbox_name",
-    "sandbox_uid",
-    "runner_session_id",
-    "caller_namespace",
-    "caller_name",
-    "open_key",
-    "open_request",
-    "launch_spec",
-    "change_position",
-)
-
-
-async def next_change_position(session: AsyncSession) -> int:
-    """Allocate a WatchSessions position that becomes visible in commit order, and wake watchers.
-
-    The transaction lock is held to commit, so no position commits after a larger one: a reader
-    resuming after any position it has seen misses nothing. A rolled-back position is a gap.
-    """
-    await session.execute(select(func.pg_advisory_xact_lock(CHANGE_POSITION_LOCK)))
-    # PostgreSQL delivers NOTIFY only on commit, to every replica listening.
-    await session.execute(select(func.pg_notify(CHANNEL, "")))
-    position = await session.scalar(select(CHANGE_POSITION.next_value()))
-    assert position is not None
-    return position
 
 
 class HistoryConflictError(ValueError):
@@ -87,19 +51,19 @@ class Store:
         self._sessions = async_sessionmaker(engine, expire_on_commit=False)
         self._settle_deltas = settle_deltas
 
-    async def open(
+    async def record_session(
         self,
         session_id: UUID,
         *,
         sandbox_namespace: str,
         sandbox_name: str,
         sandbox_uid: UUID | None,
-        runner_session_id: str,
+        runner_session_id: str | None,
     ) -> None:
-        """Register a durable ID and its immutable physical locator, including legacy IDs.
+        """Create the history row a Session's entries append to, or confirm the existing one.
 
-        The ID belongs to the Session (and remains usable after the Sandbox is deleted).
-        Re-opening the same ID with another runner is an error, not a history overwrite.
+        Ingesters call this from the Sandbox Service's Session feed before their first append. A
+        History Service ingester follows by public ID and never learns the runner session ID.
         """
         async with self._sessions.begin() as session:
             await session.execute(
@@ -112,40 +76,18 @@ class Store:
                     runner_session_id=runner_session_id,
                     source_id=None,
                     last_cursor=0,
-                    change_position=await next_change_position(session),
                 )
                 .on_conflict_do_nothing()
             )
             row = await session.get(SessionHistory, session_id)
             if row is None:
                 raise HistoryConflictError(f"runner locator already belongs to another session, not {session_id}")
-            if (row.sandbox_namespace, row.sandbox_name, row.sandbox_uid, row.runner_session_id) != (
+            if (row.sandbox_namespace, row.sandbox_name, row.sandbox_uid) != (
                 sandbox_namespace,
                 sandbox_name,
                 sandbox_uid,
-                runner_session_id,
-            ):
-                raise HistoryConflictError(f"session {session_id} has a different runner locator")
-
-    async def registry_records(self) -> list[SessionHistory]:
-        """Every row, for the Sandbox Service's registry import."""
-        async with self._sessions() as session:
-            return list(await session.scalars(select(SessionHistory)))
-
-    async def mirror(self, record: Session) -> None:
-        """Insert the history row of a registered Session with the registry's values, or confirm it.
-
-        The ingesters append to this row; it repeats the Sandbox Service registry until they
-        create their own.
-        """
-        values = {column: getattr(record, column) for column in REGISTRY_COLUMNS}
-        async with self._sessions.begin() as session:
-            await session.execute(
-                insert(SessionHistory).values(**values, source_id=None, last_cursor=0).on_conflict_do_nothing()
-            )
-            row = await session.get(SessionHistory, record.id)
-            if row is None or any(getattr(row, column) != value for column, value in values.items()):
-                raise HistoryConflictError(f"session {record.id} history row differs from its registry record")
+            ) or runner_session_id not in (None, row.runner_session_id):
+                raise HistoryConflictError(f"session {session_id} has a different locator")
 
     async def append(self, session_id: UUID, entries: Sequence[event_log_pb2.EventEntry]) -> int:
         """Replay exact duplicates or extend the prefix; serialize concurrent writers by Session ID.
@@ -189,7 +131,8 @@ class Store:
         """Record only a covered runner snapshot; delayed copiers cannot rewind it or drop a seal.
 
         The snapshot may name the runner session (a direct runner attach) or the public Session ID
-        (a Sandbox Service follow); it is stored under the runner's, as either copier wrote it.
+        (a Sandbox Service follow); it is stored under the runner's where the row knows it, as
+        either copier wrote it.
         """
         snapshot = history_pb2.SessionFeedState()
         snapshot.CopyFrom(feed)
@@ -197,13 +140,13 @@ class Store:
             row = await session.scalar(select(SessionHistory).where(SessionHistory.id == session_id).with_for_update())
             if row is None:
                 raise HistoryNotFoundError(session_id)
-            if (
-                row.runner_session_id is None
-                or not snapshot.HasField("attached")
-                or snapshot.attached.session_id not in (row.runner_session_id, str(row.id))
+            if not snapshot.HasField("attached") or snapshot.attached.session_id not in (
+                row.runner_session_id,
+                str(row.id),
             ):
                 raise HistoryConflictError("feed snapshot does not match the bound runner session")
-            snapshot.attached.session_id = row.runner_session_id
+            # Rows a History Service ingester created know only the public ID.
+            snapshot.attached.session_id = row.runner_session_id or str(row.id)
             if snapshot.attached.last_cursor > row.last_cursor:
                 raise HistoryConflictError("feed snapshot is ahead of committed history")
             if snapshot.HasField("sealed") and snapshot.sealed.cursor != row.last_cursor:
