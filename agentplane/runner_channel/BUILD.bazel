@@ -10,6 +10,8 @@ proto_library(
     deps = [
         "//agentplane/protocol:command_proto",
         "//agentplane/protocol:event_log_proto",
+        "//agentplane/runner:protocol_proto",
+        "@protobuf//:empty_proto",
     ],
 )
 

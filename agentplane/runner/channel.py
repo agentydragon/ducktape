@@ -1,28 +1,38 @@
-"""The runner's peer of the runner channel: it dials the Sandbox Service, keeps one `Connect` stream
-and admits the commands delivered over it. Contract: `agentplane/docs/runner_channel.md`."""
+"""The runner's peer of the runner channel: it dials the Sandbox Service, keeps one `Connect` stream,
+admits the commands delivered over it and serves each journal follow the service asks for on its own
+`Follow` RPC. Contract: `agentplane/docs/runner_channel.md`."""
 
 from __future__ import annotations
 
 import asyncio
 import logging
+from contextlib import aclosing
 from dataclasses import dataclass
 from uuid import uuid4
 
 import grpc
+from google.protobuf import empty_pb2
 from sqlalchemy.exc import SQLAlchemyError
 from tenacity import AsyncRetrying, RetryCallState, retry_if_exception_type, wait_random_exponential
 
 from agentplane.grpc_options import grpc_channel_option_kvps
 from agentplane.protocol import command_pb2
 from agentplane.runner.journal import CommandConflictError, JournalSealedError
-from agentplane.runner.service import OpenError, Runner, finish_command
+from agentplane.runner.service import OpenError, Runner, build_attached, finish_command, follow_journal
 from agentplane.runner_channel import protocol_pb2 as channel_pb2, protocol_pb2_grpc
 
 # gazelle:include_dep @pypi//protobuf
 
 logger = logging.getLogger(__name__)
 
-CAPABILITIES = ("commands",)
+CAPABILITIES = ("commands", "events")
+# Past this many follows on one connection, the runner opens the asked-for `Follow` and ends it
+# without a frame, and the service answers that follow's caller `UNAVAILABLE`.
+FOLLOW_LIMIT = 64
+EPOCH_METADATA = "x-agentplane-connection-epoch"
+FOLLOW_METADATA = "x-agentplane-follow-id"
+
+type Metadata = tuple[tuple[str, str], ...]
 
 
 @dataclass(frozen=True)
@@ -82,6 +92,45 @@ async def receipt(runner: Runner, deliver: channel_pb2.DeliverCommand) -> channe
     )
 
 
+def _follow_refused(reason: channel_pb2.FollowRefused.Reason, detail: str) -> channel_pb2.FollowFrame:
+    return channel_pb2.FollowFrame(refused=channel_pb2.FollowRefused(reason=reason, detail=detail))
+
+
+async def stream_follow(
+    runner: Runner,
+    call: grpc.aio.StreamUnaryCall[channel_pb2.FollowFrame, empty_pb2.Empty],
+    opened: channel_pb2.OpenFollow,
+) -> None:
+    """Write one Session's journal after `opened.after_cursor`, then its live entries, until it is
+    sealed. It only reads: it never starts a harness, and cancelling it interrupts no turn."""
+    session = await runner.stored_session(opened.session_id)
+    if session is None:
+        await call.write(_follow_refused(channel_pb2.FollowRefused.REASON_SESSION_UNKNOWN, "no such session"))
+    elif opened.after_cursor > (published := session.journal.recovery_state).through_cursor:
+        await call.write(
+            _follow_refused(
+                channel_pb2.FollowRefused.REASON_CURSOR_BEYOND_JOURNAL,
+                f"after_cursor {opened.after_cursor} is beyond the journal, "
+                f"whose last cursor is {published.through_cursor}",
+            )
+        )
+    else:
+        await call.write(channel_pb2.FollowFrame(attached=build_attached(session, published)))
+        cursor = opened.after_cursor
+        async with aclosing(follow_journal(session.journal, cursor)) as entries:
+            async for entry in entries:
+                await call.write(channel_pb2.FollowFrame(entry=entry))
+                cursor = entry.cursor
+        await call.write(channel_pb2.FollowFrame(sealed=cursor))
+    await call.done_writing()
+    await call
+
+
+def _report_follow(task: asyncio.Task[None]) -> None:
+    if not task.cancelled() and (error := task.exception()) is not None:
+        logger.error("%s failed", task.get_name(), exc_info=error)
+
+
 class RunnerChannelClient:
     """Keeps one `Connect` stream to the Sandbox Service for as long as the runner runs.
 
@@ -112,6 +161,32 @@ class RunnerChannelClient:
             return self.timing.backoff_max_s
         return wait_random_exponential(multiplier=self.timing.backoff_initial_s, max=self.timing.backoff_max_s)(state)
 
+    def _metadata(self) -> Metadata:
+        return (("authorization", f"Bearer {self.bearer}"),)
+
+    async def follow(
+        self, stub: protocol_pb2_grpc.RunnerChannelAsyncStub, metadata: Metadata, opened: channel_pb2.OpenFollow
+    ) -> None:
+        call = stub.Follow(metadata=metadata)
+        try:
+            await stream_follow(self.runner, call, opened)
+        except grpc.aio.AioRpcError, asyncio.InvalidStateError:
+            if not call.done():
+                raise
+            # The service ended the follow: a transport event, never a command.
+            logger.info("follow %s ended by the service: %s", opened.follow_id, await call.code())
+        finally:
+            call.cancel()
+
+    @staticmethod
+    async def refuse_follow(stub: protocol_pb2_grpc.RunnerChannelAsyncStub, metadata: Metadata) -> None:
+        call = stub.Follow(metadata=metadata)
+        try:
+            await call.done_writing()
+            await call
+        finally:
+            call.cancel()
+
     async def run(self) -> None:
         while True:
             # A connection that carried traffic returns normally and resets the backoff; one that
@@ -135,9 +210,8 @@ class RunnerChannelClient:
         welcomed_at: float | None = None
         lost = ChannelLostError(None, "the stream ended")
         try:
-            call = protocol_pb2_grpc.RunnerChannelStub(channel).Connect(
-                metadata=(("authorization", f"Bearer {self.bearer}"),)
-            )
+            stub = protocol_pb2_grpc.RunnerChannelStub(channel)
+            call = stub.Connect(metadata=self._metadata())
             await call.write(
                 channel_pb2.RunnerFrame(hello=channel_pb2.Hello(runner_boot_id=self.boot_id, capabilities=CAPABILITIES))
             )
@@ -149,7 +223,7 @@ class RunnerChannelClient:
                 raise ChannelLostError(None, f"expected Welcome, got {first.WhichOneof('frame')}")
             welcomed_at = loop.time()
             logger.info("runner channel connected at epoch %d", first.welcome.connection_epoch)
-            await self.serve(call, set(first.welcome.capabilities))
+            await self.serve(stub, call, first.welcome)
         except grpc.aio.AioRpcError as error:
             lost = ChannelLostError(error.code(), error.details() or "")
         except TimeoutError:
@@ -164,13 +238,20 @@ class RunnerChannelClient:
         raise lost
 
     async def serve(
-        self, call: grpc.aio.StreamStreamCall[channel_pb2.RunnerFrame, channel_pb2.ServiceFrame], capabilities: set[str]
+        self,
+        stub: protocol_pb2_grpc.RunnerChannelAsyncStub,
+        call: grpc.aio.StreamStreamCall[channel_pb2.RunnerFrame, channel_pb2.ServiceFrame],
+        welcome: channel_pb2.Welcome,
     ) -> None:
-        """Answer deliveries and keep the stream alive until it ends; always raises."""
+        """Answer deliveries and follows and keep the stream alive until it ends; always raises. The
+        connection's follows end with it."""
         loop = asyncio.get_running_loop()
         last_frame = loop.time()
         writing = asyncio.Lock()
-        commands = "commands" in capabilities
+        commands = "commands" in welcome.capabilities
+        events = "events" in welcome.capabilities
+        follows: dict[str, asyncio.Task[None]] = {}
+        refusals: set[asyncio.Task[None]] = set()
 
         async def send(frame: channel_pb2.RunnerFrame) -> None:
             async with writing:
@@ -185,6 +266,25 @@ class RunnerChannelClient:
                 return
             await send(channel_pb2.RunnerFrame(receipt=answered))
 
+        def open_follow(opened: channel_pb2.OpenFollow) -> None:
+            if opened.follow_id in follows:
+                raise ChannelLostError(grpc.StatusCode.INVALID_ARGUMENT, f"follow {opened.follow_id} is already open")
+            metadata = (
+                *self._metadata(),
+                (EPOCH_METADATA, str(welcome.connection_epoch)),
+                (FOLLOW_METADATA, opened.follow_id),
+            )
+            name = f"follow {opened.follow_id} of session {opened.session_id}"
+            if len(follows) >= FOLLOW_LIMIT:
+                task = asyncio.create_task(self.refuse_follow(stub, metadata), name=f"refused {name}")
+                refusals.add(task)
+                task.add_done_callback(refusals.discard)
+            else:
+                task = asyncio.create_task(self.follow(stub, metadata, opened), name=name)
+                follows[opened.follow_id] = task
+                task.add_done_callback(lambda _: follows.pop(opened.follow_id, None))
+            task.add_done_callback(_report_follow)
+
         async def read(tasks: asyncio.TaskGroup) -> None:
             nonlocal last_frame
             while isinstance(frame := await call.read(), channel_pb2.ServiceFrame):
@@ -194,6 +294,12 @@ class RunnerChannelClient:
                         pass
                     case "deliver" if commands:
                         tasks.create_task(answer(frame.deliver))
+                    case "open_follow" if events:
+                        open_follow(frame.open_follow)
+                    case "close_follow" if events:
+                        # A follow that already ended has nothing left to close.
+                        if (closed := follows.get(frame.close_follow.follow_id)) is not None:
+                            closed.cancel()
                     case kind:
                         raise ChannelLostError(grpc.StatusCode.INVALID_ARGUMENT, f"unexpected {kind} frame")
             raise ChannelLostError(await call.code(), await call.details())
@@ -214,3 +320,8 @@ class RunnerChannelClient:
             raise group.exceptions[0] from None
         finally:
             call.cancel()
+            # Already reported by `_report_follow`.
+            ending = [*follows.values(), *refusals]
+            for task in ending:
+                task.cancel()
+            await asyncio.gather(*ending, return_exceptions=True)

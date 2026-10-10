@@ -6,9 +6,15 @@ package ducktape.agentplane.runner_channel.v1;
 
 import "agentplane/protocol/command.proto";
 import "agentplane/protocol/event_log.proto";
+import "agentplane/runner/protocol.proto";
+import "google/protobuf/empty.proto";
 
 service RunnerChannel {
   rpc Connect(stream RunnerFrame) returns (stream ServiceFrame);
+  // Opened by the runner when asked by `OpenFollow`, on the connection that carried it, with the
+  // connection epoch and follow ID in `x-agentplane-connection-epoch` and `x-agentplane-follow-id`
+  // metadata. A follow past the runner's per-connection cap opens and ends without a frame.
+  rpc Follow(stream FollowFrame) returns (google.protobuf.Empty);
 }
 
 message RunnerFrame {
@@ -24,6 +30,8 @@ message ServiceFrame {
     Welcome welcome = 1;  // reply to Hello, exactly once
     DeliverCommand deliver = 2;
     Heartbeat heartbeat = 3;
+    OpenFollow open_follow = 4;
+    CloseFollow close_follow = 5;
   }
 }
 
@@ -69,3 +77,32 @@ message CommandRefused {
 }
 
 message Heartbeat {}
+
+message OpenFollow {
+  string follow_id = 1;  // chosen by the service, unique per connection epoch
+  string session_id = 2;  // the runner's Session ID
+  uint64 after_cursor = 3;
+}
+
+message CloseFollow {
+  string follow_id = 1;
+}
+
+message FollowFrame {
+  oneof frame {
+    ducktape.agentplane.runner.v1.Attached attached = 1;  // first frame: snapshot and last cursor
+    ducktape.agentplane.protocol.v1.EventEntry entry = 2;  // cursors strictly increasing by one
+    uint64 sealed = 3;  // terminal: journal sealed at this cursor
+    FollowRefused refused = 4;  // terminal, in place of `attached`
+  }
+}
+
+message FollowRefused {
+  enum Reason {
+    REASON_UNSPECIFIED = 0;
+    REASON_SESSION_UNKNOWN = 1;
+    REASON_CURSOR_BEYOND_JOURNAL = 2;
+  }
+  Reason reason = 1;
+  string detail = 2;
+}

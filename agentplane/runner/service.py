@@ -7,12 +7,14 @@ import hashlib
 import json
 import logging
 import os
-from collections.abc import AsyncIterator, Awaitable
-from contextlib import AsyncExitStack, suppress
+from collections.abc import AsyncGenerator, AsyncIterator, Awaitable, Callable
+from contextlib import AsyncExitStack, aclosing, suppress
 from pathlib import Path, PurePosixPath
+from typing import Any
 
 import grpc
 
+from agentplane.protocol import event_log_pb2
 from agentplane.runner import protocol_pb2, protocol_pb2_grpc
 from agentplane.runner.adapter import HarnessAdapter
 from agentplane.runner.claude import ClaudeAdapter
@@ -20,7 +22,7 @@ from agentplane.runner.codex import CodexAdapter
 from agentplane.runner.config import RunnerConfig
 from agentplane.runner.harness_process import HarnessProcess
 from agentplane.runner.initialization import InitializationLog
-from agentplane.runner.journal import Journal
+from agentplane.runner.journal import Journal, RecoveryState
 from agentplane.runner.model_config import ModelConfigLookupError
 from agentplane.runner.session import Session
 from agentplane.runner.store import SessionRecord, SessionStore, StateOwner, validate_session_id
@@ -31,6 +33,7 @@ from agentplane.runner.store import SessionRecord, SessionStore, StateOwner, val
 
 logger = logging.getLogger(__name__)
 _MAX_BOOTSTRAP_BYTES = 65_536
+_FOLLOW_PAGE = 128
 
 
 class OpenError(Exception):
@@ -411,18 +414,7 @@ class RunnerService(protocol_pb2_grpc.RunnerServicer):
         published = session.journal.recovery_state
         opened_cursor = published.through_cursor
         ended = not published.harness_running and not session.setup_active
-        yield protocol_pb2.ServerMessage(
-            attached=protocol_pb2.Attached(
-                session_id=session.session_id,
-                spec=session.record.spec(),
-                last_cursor=opened_cursor,
-                harness_state=protocol_pb2.HARNESS_STATE_RUNNING
-                if session.running
-                else protocol_pb2.HARNESS_STATE_STOPPED,
-                active_turn_id=published.active_turn_id,
-                setup_state=session.setup_state,
-            )
-        )
+        yield protocol_pb2.ServerMessage(attached=build_attached(session, published))
         closing = asyncio.Event()
         failure: list[str] = []
         consumer = asyncio.create_task(
@@ -430,8 +422,10 @@ class RunnerService(protocol_pb2_grpc.RunnerServicer):
         )
         cursor = first.open.follow.after_cursor
         try:
-            while True:
-                for entry in await session.journal.since(cursor, limit=128):
+            async with aclosing(
+                follow_journal(session.journal, cursor, stop=lambda: ended or closing.is_set(), closing=closing)
+            ) as entries:
+                async for entry in entries:
                     if ended and entry.cursor > opened_cursor and entry.event.HasField("harness_started"):
                         return
                     yield protocol_pb2.ServerMessage(event_entry=entry)
@@ -444,26 +438,49 @@ class RunnerService(protocol_pb2_grpc.RunnerServicer):
                         ended = True
                     if entry.event.HasField("harness_launch_failed"):
                         ended = True
-                if cursor < session.journal.last_cursor:
-                    continue
-                if session.journal.sealed_cursor is not None:
-                    yield protocol_pb2.ServerMessage(sealed=protocol_pb2.Sealed(cursor=cursor))
-                    return
-                if ended:
-                    return
-                if closing.is_set():
-                    if failure:
-                        yield protocol_pb2.ServerMessage(error=failure[0])
-                    return
-                await _wake(session, closing, cursor)
+            if session.journal.sealed_cursor is not None:
+                yield protocol_pb2.ServerMessage(sealed=protocol_pb2.Sealed(cursor=cursor))
+            elif not ended and failure:
+                yield protocol_pb2.ServerMessage(error=failure[0])
         finally:
             if not consumer.done():
                 consumer.cancel()
             await asyncio.gather(consumer, return_exceptions=True)
 
 
-async def _wake(session: Session, closing: asyncio.Event, cursor: int) -> None:
-    waits = [asyncio.create_task(session.journal.wait_beyond(cursor)), asyncio.create_task(closing.wait())]
+def build_attached(session: Session, published: RecoveryState) -> protocol_pb2.Attached:
+    """The snapshot a follow opens with, at the journal's published cursor."""
+    return protocol_pb2.Attached(
+        session_id=session.session_id,
+        spec=session.record.spec(),
+        last_cursor=published.through_cursor,
+        harness_state=protocol_pb2.HARNESS_STATE_RUNNING if session.running else protocol_pb2.HARNESS_STATE_STOPPED,
+        active_turn_id=published.active_turn_id,
+        setup_state=session.setup_state,
+    )
+
+
+async def follow_journal(
+    journal: Journal, cursor: int, *, stop: Callable[[], bool] = lambda: False, closing: asyncio.Event | None = None
+) -> AsyncGenerator[event_log_pb2.EventEntry]:
+    """Entries after `cursor`, then live ones as they are journaled. Pages are read only as the
+    consumer drains them, so a slow consumer holds at most one. Ends once caught up, if the journal
+    is sealed or `stop()` holds; `closing` wakes an idle follow to check `stop()` again."""
+    while True:
+        for entry in await journal.since(cursor, limit=_FOLLOW_PAGE):
+            yield entry
+            cursor = entry.cursor
+        if cursor < journal.last_cursor:
+            continue
+        if journal.sealed_cursor is not None or stop():
+            return
+        await _wake(journal, closing, cursor)
+
+
+async def _wake(journal: Journal, closing: asyncio.Event | None, cursor: int) -> None:
+    waits: list[asyncio.Task[Any]] = [asyncio.create_task(journal.wait_beyond(cursor))]
+    if closing is not None:
+        waits.append(asyncio.create_task(closing.wait()))
     try:
         done, _ = await asyncio.wait(waits, return_when=asyncio.FIRST_COMPLETED)
         for completed in done:

@@ -216,6 +216,7 @@ py_library(
         ":model_config",
         ":session",
         ":store",
+        "//agentplane/protocol:event_log_pb2",
         "//agentplane/runner:protocol_pb2",
         "//agentplane/runner:protocol_pb2_grpc",
         "@pypi//grpcio",

@@ -84,12 +84,18 @@ Thread-page projection. Their cross-layer contract is [Thread, runner, and harne
 
 - Given `--channel-target`, the runner also dials the Sandbox Service's
   [runner channel](../docs/runner_channel.md) and keeps one `Connect` stream for as long as it runs,
-  reconnecting on a fresh connection after any loss. It offers `commands`.
+  reconnecting on a fresh connection after any loss. It offers `commands` and `events`.
 - A delivered command is admitted exactly as an `Attach` command is, and answered from the journal:
   its `CommandAdmitted` entry, also when the command was already journaled with the same payload.
   Otherwise it is refused with its cause: an unknown session, a harness that is not running or a
   sealed journal, a command ID already used for other work, or a command without an ID and an
   operation. Delivery never creates a session or starts a harness.
+- Each `OpenFollow` is answered on its own `Follow` RPC on the same connection: the session's
+  `Attached` snapshot, its journal after the requested cursor and then its live entries, ending
+  `sealed` at the journal's final cursor; or a refusal for an unknown session or a cursor beyond the
+  journal. A connection carries at most 64 follows; past that, the asked-for `Follow` ends without
+  a frame. `CloseFollow` and the connection's end end its follows, and ending one never interrupts a
+  turn or stops a harness.
 - The bearer it sends is a placeholder the egress proxy substitutes; the runner never holds the
   channel token.
 
