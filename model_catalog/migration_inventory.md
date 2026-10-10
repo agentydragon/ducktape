@@ -7,6 +7,15 @@ The [tracking issue](https://github.com/agentydragon/ducktape/issues/9574) owns 
 status and links to the historical parked-integration inventory in
 [#9121](https://github.com/agentydragon/ducktape/issues/9121).
 
+## Current sequencing checkpoint
+
+The [routing review](routing_review.md#work-ordering-routing-decision-before-further-roster-implementation)
+precedes further roster restructuring. This inventory remains a record of existing
+responsibilities and unfinished acceptance, not a queue to implement while the routing
+architecture is reconsidered. Reconcile dispositions after that decision; some LiteLLM
+configuration and projection wiring may no longer be needed. No runtime change follows
+from this checkpoint.
+
 ## Consumer inventory and side effects
 
 Before deletion or renaming, check these as well as the obvious clients:
@@ -73,12 +82,12 @@ The settled boundaries are:
   the resolved budget in the native adapter's vocabulary. The
   [client-budget description](client_budgets.md#codex-and-agentplane) owns these semantics.
 
-Remaining review is narrower than reworking those boundaries:
+Source disposition and remaining work:
 
-| Files / boundary                                                                   | Remaining question                                                                                                                                                                         |
-| ---------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `cluster/cdk8s/model_selections.py`; Agentplane environment and preset definitions | Are any selection/default identities still independently reconstructed? Keep offering, default and budget policy distinct; review `PUBLIC_CODER_MODELS` with its consumer.                 |
-| Ingress `app.py`, `settings.py`; runner lookup and session handling                | Should exposed model IDs differ from LiteLLM IDs? Translation remains a TODO, not an implemented or activated mapping. Coordinate request/response identity, authorization and accounting. |
+| Files / boundary                                                                   | Disposition / remaining question                                                                                                                                                                                  |
+| ---------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `cluster/cdk8s/model_selections.py`; Agentplane environment and preset definitions | Reviewed 2026-10-10: retain named-route offerings and explicit preset defaults. Staging/testing public-coder defaults select Luna; Haku selects Qwen 256K. No reconstructed default slugs or second roster found. |
+| Ingress `app.py`, `settings.py`; runner lookup and session handling                | Should exposed model IDs differ from LiteLLM IDs? Translation remains a TODO, not an implemented or activated mapping. Coordinate request/response identity, authorization and accounting.                        |
 
 Runtime acceptance remains open: verify new-runner startup/session/model-switch
 behavior and existing-runner inference/stream continuity. Source wiring and template
@@ -86,13 +95,17 @@ inspection do not establish those outcomes; the tracker owns the dated evidence.
 
 #### Nix wrappers and direct local clients
 
-| Current file(s)                                                                                                                          | Question to resolve                                                                                                                                                                       |
-| ---------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `model_catalog/nix.py`                                                                                                                   | What wrapper selections/settings should it own, and what should it merely project? Its exact future location/shape is undecided.                                                          |
-| `model_catalog/claude-wrappers.json`                                                                                                     | Is this generated interface still the simplest boundary, and what fields should it contain if retained? It is not a hand-maintained roster.                                               |
-| `nix/home/claude_code/gateway.nix`                                                                                                       | What common wrapper rendering belongs here, and what configuration is duplicated elsewhere?                                                                                               |
-| `codex-claude.nix`, `gemini-claude.nix`, `antigravity-claude.nix`, `litellm-claude.nix`, `tana-claude.nix` under `nix/home/claude_code/` | What are the eventual module boundaries and inputs? The already-approved pause and requirement to retain renderers remain; this inventory is not permission to delete or reactivate them. |
-| `nix/home/codex/default.nix`; `nix/home/claude_code/default.nix`; machine activation/import configuration such as `nix/home/hosts/*.nix` | Are changes needed at all? Preserve direct-provider clients and the wrapper pause; central-gateway migration is not implicit.                                                             |
+Source review: **retain the current boundary**, not another wrapper migration.
+`model_catalog/nix.py` owns wrapper route selections and client budgets, validates
+primary/Haiku membership in the key lane, and emits `claude-wrappers.json`.
+`nix/home/claude_code/gateway.nix` renders that data into environment/exec settings;
+individual wrappers retain family-specific behavior, not duplicate rosters.
+The JSON remains generated, not another authored model registry.
+
+`nix/home/home.nix` explicitly pauses gateway wrapper installation. Keep the
+renderers, secrets and direct Codex/Claude modules; no centralized-gateway migration
+or reactivation is implied. Source review does not verify workstation activation
+or the current behavior of installed clients (#9112).
 
 #### Ollama serving variants
 
@@ -104,12 +117,28 @@ inspection do not establish those outcomes; the tracker owns the dated evidence.
 
 #### Public Coder and smaller consumers
 
-| Current file(s)                                                                                                                                                                                                                 | Question to resolve                                                                                                                                                  |
-| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `cluster/cdk8s/public_coder/app.py`                                                                                                                                                                                             | Where should OpenClaw selections, labels and client budgets live? What retained renderer is useful for revival without supporting every paused combination now?      |
-| Public Coder workload/storage configuration, including `cluster/cdk8s/public_coder/devbox.py`, `public_coder/proxy.py`, `public_coder/egress.py`, `public_coder/sshpiper.py`, `public_coder/backup.py` and associated manifests | Which files actually depend on roster decisions? No change may incidentally undo the pause, delete retained storage/backups, or change a durable embedding identity. |
-| `cluster/cdk8s/parked/haku_openclaw_spike_config.py`                                                                                                                                                                            | What dependencies and revival information need to remain documented, and is any source change needed while parked?                                                   |
-| `cluster/cdk8s/gatus/config.py`                                                                                                                                                                                                 | Is probe selection already a sufficient projection of canonical routes, or does it duplicate naming/selection logic?                                                 |
+Reviewed 2026-10-10; no structural rewrite justified:
+
+- `cluster/cdk8s/public_coder/config.py` owns the paused OpenClaw client's named
+  route selections, labels and explicit context/output budgets. `app.py` serializes
+  that config; workload, egress, devbox and backup modules are not model rosters.
+  Keep the renderer and embedding route identity. The current default is GPT-6
+  Luna, not a capacity measurement; the stale “measured 5.6” comment is corrected.
+- `cluster/cdk8s/parked/haku_openclaw_spike_config.py` selects named Claude
+  subscription routes and renders native Claude CLI IDs intentionally, not LiteLLM
+  routing IDs. Retain its aliases, runtime/auth wiring and revival information.
+- `cluster/cdk8s/gatus/config.py` selects the named GPT-OSS 20B 128K route for its
+  probe. It does not reconstruct route slugs or maintain a second model catalogue.
+- `model_catalog/policies.py` owns key lanes and fallback subsets;
+  `cluster/cdk8s/litellm/keys.py` serializes them, and Terraform owns explicit
+  key/team/accounting bindings. Combining lanes is authorization policy, not
+  duplicate model identity. Keep these boundaries.
+
+Existing roster, Nix, key-policy and OpenClaw tests check identity, authorization,
+serialization and native-consumer assumptions. Preserve them; do not add tests that
+merely copy the roster constants. This is source-disposition review, **not** live
+startup/model-switch acceptance, pause verification, storage cleanup or permission
+to restore consumers. Those operational obligations remain in #9574.
 
 #### Generated outputs, tests, build boundaries and documentation
 
@@ -133,7 +162,12 @@ and runtime code stay in Agentplane. This decision does not settle any other fil
 
 ## Token metadata ownership migration
 
-**Agreed target:** every retained served route gets its applicable token metadata from
+**Prior target, under reconsideration (2026-10-10):** the [routing review](routing_review.md)
+now precedes further publication expansion or unwiring. The inventory below records
+existing state and gaps, not an instruction to fill every gap before that review.
+No runtime change or replacement has been selected.
+
+The prior target was that every retained served route gets its applicable token metadata from
 Ducktape declarations. LiteLLM catalogue values may be copied with entry/revision
 provenance; live fallback is not the long-term authority. Legacy schema aliases are
 projected from the same declaration, not independent facts. Fresh probing of every model
@@ -152,14 +186,14 @@ three Tana routes are parked; their restoration constraints below remain in forc
 The tracker retains the PR ledger and dated rollout evidence rather than repeating
 successive implementation/CI states here.
 
-| Family                                                           | Remaining work                                                                                                                                                                                                                                                                                                       |
-| ---------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| ChatGPT GPT-6, both wires (six published entries)                | Audit the mixed historical/client-derived declarations. Current/legacy aliases are already coherent; they do not validate the numbers. Preserve the active subscription path and consumer budgets.                                                                                                                   |
-| Anthropic subscription                                           | Opus/Sonnet/Haiku 5.5 and Fable 5.1 have sourced gateway declarations. Registration/configuration/pricing presence was verified on 2026-10-09 ([record](litellm_metadata.md#claude-subscription-refresh-2026-10-09)); account request success and beta-dependent/full-output/joint capacity remain untested.         |
-| Antigravity                                                      | Text publication is complete from the recorded response and gateway convention; Claude/GPT-OSS boundaries and joint capacity remain untested. The one image entry still needs applicable metadata or an explicit disposition.                                                                                        |
-| Ollama chat (13 unpublished entries)                             | Installed GGUF context facts are recorded ([audit](litellm_metadata.md#ollama-gguf-context-audit-2026-10-09)). Choose defensible publication semantics: GGUF context and requested `num_ctx` are not an input/output pair. Larger native GPT-OSS variants remain; the audit does not prove their labeled capacities. |
-| Groq transcription (two unpublished entries)                     | Research applicable audio metadata and projection behavior without inventing a generative output ceiling.                                                                                                                                                                                                            |
-| Embeddings (four published entries, including the durable alias) | Declarations are complete. Ollama full-input/boundary verification with truncation disabled remains explicitly deferred; batch/special-token limits may be lower ([record](litellm_metadata.md#ollama-embedding-input-metadata-2026-10-09)). Preserve dimensions and stored indexes.                                 |
+| Family                                                           | Remaining work                                                                                                                                                                                                                                                                                                                                                                                   |
+| ---------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| ChatGPT GPT-6, both wires (six published entries)                | The [2026-10-10 source recheck](client_budgets.md#gateway-maintainer-account-of-the-subscription-backend) found no justified replacement pair. [Two approved Luna probes](client_budgets.md#luna-subscription-path-probes-2026-10-10) establish 900419 accepted input, not an exact maximum; the ~990K failure masked its cause. Publication policy remains open; client budgets stay unchanged. |
+| Anthropic subscription                                           | Opus/Sonnet/Haiku 5.5 and Fable 5.1 have sourced gateway declarations. Registration/configuration/pricing presence was verified on 2026-10-09 ([record](litellm_metadata.md#claude-subscription-refresh-2026-10-09)); account request success and beta-dependent/full-output/joint capacity remain untested.                                                                                     |
+| Antigravity                                                      | Text publication is complete from the recorded response and gateway convention; Claude/GPT-OSS boundaries and joint capacity remain untested. The one image entry still needs applicable metadata or an explicit disposition.                                                                                                                                                                    |
+| Ollama chat (13 unpublished entries)                             | Installed GGUF context facts are recorded ([audit](litellm_metadata.md#ollama-gguf-context-audit-2026-10-09)). Choose defensible publication semantics: GGUF context and requested `num_ctx` are not an input/output pair. Larger native GPT-OSS variants remain; the audit does not prove their labeled capacities.                                                                             |
+| Groq transcription (two unpublished entries)                     | Research applicable audio metadata and projection behavior without inventing a generative output ceiling.                                                                                                                                                                                                                                                                                        |
+| Embeddings (four published entries, including the durable alias) | Declarations are complete. Ollama full-input/boundary verification with truncation disabled remains explicitly deferred; batch/special-token limits may be lower ([record](litellm_metadata.md#ollama-embedding-input-metadata-2026-10-09)). Preserve dimensions and stored indexes.                                                                                                             |
 
 These are **remaining data/disposition decisions**, not a second runtime registry.
 The `publish_limits` flag remains transitional until retained declarations and
