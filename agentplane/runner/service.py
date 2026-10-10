@@ -185,6 +185,8 @@ class Runner:
             session_id = validate_session_id(request.session_id)
         except ValueError as error:
             raise OpenError(str(error)) from error
+        if request.HasField("spec") and self.store.sealed:
+            raise OpenError("this Sandbox is sealed: its sessions can be followed, not created or resumed")
         if self.store.exists(session_id):
             session = await self._load(session_id)
             if request.HasField("spec") and request.spec != session.record.spec():
@@ -241,12 +243,26 @@ class Runner:
             session = await self._load(session_id)
             if record.setup_script_sha256 is not None:
                 session.start_setup(request.setup_script)
+        if request.HasField("spec") and self.store.sealed:
+            # Sealing began during this Open and may have listed the store before it held this session.
+            await session.seal()
+            raise OpenError("this Sandbox is sealed: its sessions can be followed, not created or resumed")
         if request.HasField("spec") and session.setup_state in (
             protocol_pb2.SETUP_STATE_NOT_REQUIRED,
             protocol_pb2.SETUP_STATE_SUCCEEDED,
         ):
             await session.ensure_running()
         return session
+
+    async def seal(self) -> list[protocol_pb2.SessionSeal]:
+        """Sandbox teardown: refuse new and resumed sessions, stop every harness, seal every journal."""
+        self.store.seal()
+        sessions = [await self._load(session_id) for session_id in self.store.session_ids()]
+        cursors = await asyncio.gather(*(session.seal() for session in sessions))
+        return [
+            protocol_pb2.SessionSeal(session_id=session.session_id, cursor=cursor)
+            for session, cursor in zip(sessions, cursors, strict=True)
+        ]
 
     def _validate_workspace(self, cwd: str) -> None:
         workspace_root = self.config.workspace_root
@@ -346,6 +362,12 @@ class RunnerService(protocol_pb2_grpc.RunnerServicer):
         del request, context
         return protocol_pb2.ListSessionsResponse(sessions=self.runner.summaries())
 
+    async def Seal(  # noqa: N802  # gRPC names servicer methods after the RPC
+        self, request: protocol_pb2.SealRequest, context: grpc.aio.ServicerContext
+    ) -> protocol_pb2.SealResponse:
+        del request, context
+        return protocol_pb2.SealResponse(sessions=await self.runner.seal())
+
     async def Attach(  # noqa: N802  # gRPC names servicer methods after the RPC
         self, request_iterator: AsyncIterator[protocol_pb2.ClientMessage], context: grpc.aio.ServicerContext
     ) -> AsyncIterator[protocol_pb2.ServerMessage]:
@@ -408,6 +430,9 @@ class RunnerService(protocol_pb2_grpc.RunnerServicer):
                         ended = True
                 if cursor < session.journal.last_cursor:
                     continue
+                if session.journal.sealed_cursor is not None:
+                    yield protocol_pb2.ServerMessage(sealed=protocol_pb2.Sealed(cursor=cursor))
+                    return
                 if ended:
                     return
                 if closing.is_set():

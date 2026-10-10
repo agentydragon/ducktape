@@ -11,7 +11,7 @@ import pytest_bazel
 from agentplane.protocol import event_pb2
 from agentplane.runner import protocol_pb2
 from agentplane.runner.client import RunnerClient
-from agentplane.runner.errors import RunnerError
+from agentplane.runner.errors import RunnerError, SessionSealedError
 from agentplane.runner.testing import events
 from agentplane.runner.testing.scripted_model import Reasoning, ScriptedModel, ShellCall, Text
 
@@ -143,6 +143,23 @@ async def test_shutdown_stops_the_harness_and_open_resumes_the_conversation(
         await model.reply(request, Text("RESUMED_OK"))
         done = await second.until(events.turn_completed)
         assert done.event.turn_completed.status == event_pb2.TURN_STATUS_COMPLETED
+
+
+async def test_seal_stops_the_running_harness_and_ends_live_followers(
+    client: RunnerClient, model: ScriptedModel, spec: protocol_pb2.SessionSpec
+) -> None:
+    first = await client.attach("seal-1", spec=spec)
+    await first.send("input-1", "Reply with exactly: SEED_OK")
+    await model.reply(await model.request(), Text("SEED_OK"))
+    await first.until(events.turn_completed)
+    (seal,) = await client.seal()
+    assert seal.session_id == "seal-1"
+    with pytest.raises(SessionSealedError) as sealed:
+        await first.until(lambda _: False)
+    assert sealed.value.cursor == seal.cursor == first.cursor
+    assert events.of_kind(first.seen, "harness_exited")[-1].event.harness_exited.stopped_by_runner
+    with pytest.raises(RunnerError):
+        await client.attach("seal-1", spec=spec)
 
 
 async def test_resume_sends_the_model_the_reasoning_of_the_previous_harness(

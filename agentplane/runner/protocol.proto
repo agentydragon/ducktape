@@ -20,6 +20,10 @@ service Runner {
   // Every session in the runner's state directory. Session ids are client-chosen, so this is how a
   // client that keeps no record of its own finds them again.
   rpc ListSessions(ListSessionsRequest) returns (ListSessionsResponse);
+  // Sandbox teardown. The runner durably refuses new and resumed sessions, stops every harness and
+  // setup script, then seals every session's journal at its final cursor. Sealing again returns the
+  // same cursors. Sealed sessions can still be followed to their end.
+  rpc Seal(SealRequest) returns (SealResponse);
 }
 
 message InitializeRequest {
@@ -134,11 +138,30 @@ message ListSessionsResponse {
   repeated SessionSummary sessions = 1;
 }
 
+message SealRequest {}
+
+message SessionSeal {
+  string session_id = 1;
+  // The session's final cursor in this Sandbox incarnation.
+  uint64 cursor = 2;
+}
+
+message SealResponse {
+  repeated SessionSeal sessions = 1;
+}
+
+// The session's journal is final: every entry through `cursor` precedes this message.
+message Sealed {
+  uint64 cursor = 1;
+}
+
 message ServerMessage {
   oneof message {
     Attached attached = 1;
     ducktape.agentplane.protocol.v1.EventEntry event_entry = 2;
     // The stream ends after an error, such as a malformed command or a spec mismatch.
     string error = 3;
+    // Ends the stream of a sealed session once it has replayed through the seal's cursor.
+    Sealed sealed = 4;
   }
 }

@@ -76,6 +76,19 @@ Thread-page projection. Their cross-layer contract is [Thread, runner, and harne
 - `StopRunnerSession` interrupts an active turn, stops the harness, reports `HarnessExited`, and
   ends the streams after every observer drains the terminal events. The session stays resumable.
 
+## Teardown seal
+
+- `Seal` is for Sandbox teardown only. The runner first records, durably, that the Sandbox is sealed;
+  from then on, including after a restart, it refuses `Open` with a spec, so no session is created
+  or resumed. It then stops every setup script and harness, and seals each session's journal at its
+  final cursor, returning those cursors. Sealing again returns the same cursors.
+- A sealed journal takes no further Events, so its commands are refused.
+- `Open` without a spec still follows a sealed session: it replays every entry through the seal's
+  cursor, then ends the stream with `Sealed`. A stream already following the session when it is
+  sealed ends the same way.
+- An ordinary stop never seals, since a stopped session can resume. A seal ends this Sandbox's
+  incarnation of the session's history.
+
 ## Events
 
 Every observation is delivered in a common `EventEntry`: the runner's session log assigns a dense

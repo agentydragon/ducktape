@@ -828,3 +828,23 @@ py_test(
         "@pypi//pytest_bazel",
     ],
 )
+
+py_test(
+    name = "test_seal",
+    srcs = ["test_seal.py"],
+    deps = [
+        ":client",
+        ":config",
+        ":conftest",
+        ":errors",
+        ":service",
+        ":store",
+        "//:conftest",
+        "//agentplane/protocol:event_pb2",
+        "//agentplane/runner:protocol_pb2",
+        "@pypi//grpcio",
+        "@pypi//protobuf",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)

@@ -11,3 +11,11 @@ class OpenTimeoutError(RunnerError):
 
 class StreamClosedError(Exception):
     """The runner ended the stream without an error, after StopRunnerSession or Detach."""
+
+
+class SessionSealedError(StreamClosedError):
+    """The runner ended the stream of a sealed session: its journal is final at `cursor`."""
+
+    def __init__(self, cursor: int) -> None:
+        super().__init__(f"{cursor=}")
+        self.cursor = cursor

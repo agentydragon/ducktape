@@ -65,6 +65,15 @@ class Checkpoint(Base):
     active_turn_id: Mapped[str]
 
 
+class Seal(Base):
+    """Present once the Sandbox's teardown made this journal final at `cursor`."""
+
+    __tablename__ = "seal"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    cursor: Mapped[int]
+
+
 class DebugCheckpoint(Base):
     __tablename__ = "debug_checkpoint"
 
@@ -141,11 +150,18 @@ class JournalStorageError(OSError):
     """Publication stopped; reopen the database before serving this source again."""
 
 
+class JournalSealedError(RuntimeError):
+    """The Sandbox's teardown sealed this journal; it takes no further Events."""
+
+
 class Journal:
-    def __init__(self, connection: AsyncConnection, source_id: str, state: RecoveryState) -> None:
+    def __init__(
+        self, connection: AsyncConnection, source_id: str, state: RecoveryState, sealed_cursor: int | None
+    ) -> None:
         self._connection = connection
         self.source_id = source_id
         self._state = state
+        self._sealed_cursor = sealed_cursor
         self._lock = asyncio.Lock()
         self._changed = asyncio.Event()
         self._failure: BaseException | None = None
@@ -190,10 +206,13 @@ class Journal:
                         raise ValueError("journal recovery checkpoint does not match stored prefix")
                     if last is not None:
                         cls._decode(last.payload, source_id, last.cursor)
+                    seal = await session.get(Seal, 1)
+                    if seal is not None and seal.cursor != checkpoint.through_cursor:
+                        raise ValueError("journal has Events after its seal")
                     state = RecoveryState(
                         checkpoint.through_cursor, checkpoint.harness_running, checkpoint.active_turn_id
                     )
-                yield cls(connection, source_id, state)
+                yield cls(connection, source_id, state, None if seal is None else seal.cursor)
         finally:
             await engine.dispose()
 
@@ -211,6 +230,11 @@ class Journal:
     @property
     def last_cursor(self) -> int:
         return self._state.through_cursor
+
+    @property
+    def sealed_cursor(self) -> int | None:
+        """The final cursor once the journal is sealed; None while it is open."""
+        return self._sealed_cursor
 
     async def since(self, after_cursor: int, *, limit: int) -> list[event_log_pb2.EventEntry]:
         through_cursor = self.last_cursor
@@ -276,9 +300,23 @@ class Journal:
             raise JournalStorageError("journal failed; reopen it for recovery") from self._failure
 
     async def wait_beyond(self, cursor: int) -> None:
-        while self.last_cursor <= cursor:
+        """Return once an Event follows `cursor`, or once the journal is sealed."""
+        while self.last_cursor <= cursor and self._sealed_cursor is None:
             self._check_writable()
             await self._changed.wait()
+
+    async def seal(self) -> int:
+        """Make the journal final at its current end and return that cursor; sealing again returns it."""
+        async with self._committed_transaction() as (session, _):
+            seal = await session.get(Seal, 1)
+            if seal is None:
+                seal = Seal(id=1, cursor=self.last_cursor)
+                session.add(seal)
+            # A failed commit fails the whole journal, so nothing is ever written past this cursor.
+            self._sealed_cursor = seal.cursor
+        changed, self._changed = self._changed, asyncio.Event()
+        changed.set()
+        return seal.cursor
 
     @asynccontextmanager
     async def batch(self) -> AsyncIterator[None]:
@@ -412,6 +450,8 @@ class Journal:
         observation: Observation,
         sources: Sequence[int],
     ) -> event_log_pb2.EventEntry:
+        if self._sealed_cursor is not None:
+            raise JournalSealedError("the journal is sealed")
         cursor = (await session.scalar(select(func.max(EventEntry.cursor))) or 0) + 1
         if cursor != self.last_cursor + len(appended) + 1:
             raise JournalStorageError("journal changed outside its owner; reopen it for recovery")

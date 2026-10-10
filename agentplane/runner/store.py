@@ -141,6 +141,17 @@ class SessionStore:
     def session_ids(self) -> list[str]:
         return sorted(path.name for path in self.root.iterdir() if (path / "session.json").is_file())
 
+    @property
+    def sealed(self) -> bool:
+        return (self.root / "sealed").is_file()
+
+    def seal(self) -> None:
+        """Durably refuse new and resumed sessions in this Sandbox, across runner restarts."""
+        marker = self.root / "sealed"
+        if not marker.is_file():
+            marker.touch()
+            sync_directory(self.root)
+
     def exists(self, session_id: str) -> bool:
         return (self.directory(session_id) / "session.json").is_file()
 

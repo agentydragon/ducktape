@@ -20,7 +20,7 @@ from agentplane.runner import protocol_pb2
 from agentplane.runner.adapter import HarnessAdapter
 from agentplane.runner.config import RunnerConfig
 from agentplane.runner.harness_process import HarnessProcess
-from agentplane.runner.journal import Journal
+from agentplane.runner.journal import Journal, JournalSealedError
 from agentplane.runner.model_config import ModelConfigLookupError
 from agentplane.runner.observation import Observation
 from agentplane.runner.recovery import observed_items, unknown_report
@@ -90,6 +90,8 @@ class Session:
         # Replies the stdout reader has matched, held until the batch recording them commits.
         self._replies: list[tuple[_Request, NativeReceipt]] = []
         self._stopping = False
+        # Set under the session lock, so no harness starts once sealing has begun.
+        self._sealing = journal.sealed_cursor is not None
         self._lock = asyncio.Lock()
         self._shutdown_lock = asyncio.Lock()
         self.setup_state = (
@@ -249,6 +251,8 @@ class Session:
         async with self._lock:
             if self.running:
                 return
+            if self._sealing:
+                raise JournalSealedError("the session is sealed")
             if self.config.native_state_dir is not None:
                 await asyncio.to_thread(self.native_directory.mkdir, parents=True, exist_ok=True)
             adapter = self.make_adapter(self)
@@ -706,6 +710,13 @@ class Session:
         except OSError:
             await process.stop()
             raise
+
+    async def seal(self) -> int:
+        """Sandbox teardown: stop setup and the harness, then make the journal final at its cursor."""
+        async with self._lock:
+            self._sealing = True
+        await self.stop()
+        return await self.journal.seal()
 
     async def stop(self) -> None:
         """Runner shutdown: stop the harness without interrupting; the log records the exit."""

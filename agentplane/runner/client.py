@@ -11,7 +11,7 @@ import grpc
 
 from agentplane.protocol import command_pb2, event_log_pb2
 from agentplane.runner import protocol_pb2, protocol_pb2_grpc
-from agentplane.runner.errors import OpenTimeoutError, RunnerError, StreamClosedError
+from agentplane.runner.errors import OpenTimeoutError, RunnerError, SessionSealedError, StreamClosedError
 
 # The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.
 # gazelle:include_dep @pypi//protobuf
@@ -104,6 +104,10 @@ class Attachment:
         assert isinstance(message, protocol_pb2.ServerMessage)
         if message.HasField("error"):
             raise RunnerError(message.error)
+        if message.HasField("sealed"):
+            # The runner has ended the stream; there is nothing left to detach from.
+            self._detach_sent = True
+            raise SessionSealedError(message.sealed.cursor)
         assert message.HasField("event_entry"), "an Attached message after the first is a protocol violation"
         self._cursor = message.event_entry.cursor
         if self._capture_history:
@@ -198,6 +202,11 @@ class RunnerClient:
 
     async def list_sessions(self) -> list[protocol_pb2.SessionSummary]:
         response = await self._stub.ListSessions(protocol_pb2.ListSessionsRequest())
+        return list(response.sessions)
+
+    async def seal(self) -> list[protocol_pb2.SessionSeal]:
+        # Staged for the Sandbox Service's teardown, which seals before deleting the Sandbox.
+        response = await self._stub.Seal(protocol_pb2.SealRequest())
         return list(response.sessions)
 
     async def close(self) -> None:

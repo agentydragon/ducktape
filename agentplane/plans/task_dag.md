@@ -579,7 +579,7 @@ flowchart LR
     BOOTSTRAP_ATTEMPT_RECEIPT[Candidate: one durable bootstrap attempt] --> BOOTSTRAP_PROGRESS_CONTRACT[Blocked: asynchronous progress API]
     SANDBOX_LIFECYCLE_DURABILITY[Blocked: archive before managed storage deletion]
     SANDBOX_LIFECYCLE_DURABILITY --> SANDBOX_IDLE_EXPIRY[Blocked: delete idle Sandboxes]
-    RUNNER_TEARDOWN_SEAL[Candidate: runner seals Sessions at teardown] --> SANDBOX_LIFECYCLE_DURABILITY
+    RUNNER_TEARDOWN_SEAL[In progress: runner seals Sessions at teardown] --> SANDBOX_LIFECYCLE_DURABILITY
 ```
 
 ### `PC_EGRESS_CREDENTIALS` — label public-coder's Action Service caller
@@ -679,16 +679,13 @@ last committed cursor recorded as the end, or keep the Sandbox.
 
 ### `RUNNER_TEARDOWN_SEAL` — prove a Session's history is final
 
-**Candidate (design approved by the operator, 2026-10-10 PDT).** At Sandbox teardown the Sandbox
-Service fences the Sandbox (no new Sessions, only stop commands), stops every harness, then sends a
-seal command. The runner journals one seal entry per Session with its final cursor and then refuses
-resume and further writes in this Sandbox. An ordinary stop never seals, since a stopped Session can
-resume. A seal ends the Sandbox's incarnation of the Session, not the Session: a later revival
-(section 8) continues the same history. The
-seal travels through the journal like any entry and reaches followers as the `sealed` frame
-`FollowSession` already defines, so a
-subscriber can tell a finished Session from a lagging one. Runners on images without the command (`LEGACY_SANDBOX_RETIRE`) are compared
-instead against the journal head read over the old route after the harness stops.
+**In progress (design approved by the operator, 2026-10-10 PDT).** The runner side is built:
+`Seal` in the [runner protocol](../runner/SPEC.md#teardown-seal). Remaining: at Sandbox teardown the
+Sandbox Service fences the Sandbox (no new Sessions, only stop commands), stops every harness, calls
+`Seal` and keeps each Session's final cursor, and `FollowSession` relays the runner's `sealed` frame,
+so a subscriber can tell a finished Session from a lagging one. Runners on images without `Seal`
+(`LEGACY_SANDBOX_RETIRE`) are compared instead against the journal head read over the old route
+after the harness stops.
 
 ### `SANDBOX_IDLE_EXPIRY` — delete Sandboxes nobody uses
 

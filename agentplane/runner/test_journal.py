@@ -18,7 +18,14 @@ from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 
 from agentplane.protocol import command_pb2, event_log_pb2, event_pb2
-from agentplane.runner.journal import Command, CommandConflictError, EventEntry, Journal, JournalStorageError
+from agentplane.runner.journal import (
+    Command,
+    CommandConflictError,
+    EventEntry,
+    Journal,
+    JournalSealedError,
+    JournalStorageError,
+)
 from agentplane.runner.observation import Observation
 
 # gazelle:include_dep @pypi//protobuf
@@ -235,6 +242,27 @@ async def test_a_rejected_write_inside_a_batch_is_undone_alone(journal: Journal)
     assert [entry.cursor for entry in (before, after)] == [2, 3]
     assert [entry.cursor for entry in await journal.since(0, limit=128)] == [1, 2, 3]
     assert (await journal.append(event_pb2.HarnessLost())).cursor == 4
+
+
+async def test_a_seal_is_final_across_reopening(journal: Journal, tmp_path: Path) -> None:
+    last = await journal.append(event_pb2.HarnessExited(exit_code=0))
+    follower = asyncio.create_task(journal.wait_beyond(last.cursor))
+    assert await journal.seal() == last.cursor
+    # A follower at the end learns the journal will never grow.
+    await follower
+    with pytest.raises(JournalSealedError):
+        await journal.append(event_pb2.Native(line="after the seal"))
+    with pytest.raises(JournalSealedError):
+        await journal.admit(
+            command_pb2.Command(command_id="test-command", stop_runner_session=command_pb2.StopRunnerSession())
+        )
+    assert journal.last_cursor == last.cursor
+    assert await journal.seal() == last.cursor
+    async with Journal.open(tmp_path / "journal.sqlite", "test-source") as reopened:
+        assert reopened.sealed_cursor == last.cursor
+        assert await reopened.seal() == last.cursor
+        with pytest.raises(JournalSealedError):
+            await reopened.append(event_pb2.Native(line="after reopening"))
 
 
 async def test_admission_dedup_uses_the_full_frozen_command(journal: Journal, tmp_path: Path) -> None:
