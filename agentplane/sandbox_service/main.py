@@ -108,7 +108,6 @@ async def serve_with_engines(
             runner_admission_ack_timeout_s=settings.runner_admission_ack_timeout_s,
             follow_lease_s=settings.follow_lease_s,
             caller_accounts=settings.caller_accounts,
-            history_reader_accounts=settings.history_reader_accounts,
             platform_instructions=settings.platform_instructions,
             lifecycle_timeout_s=settings.lifecycle_timeout_s,
             runner_grpc_channel_options=settings.runner_grpc_channel_options,

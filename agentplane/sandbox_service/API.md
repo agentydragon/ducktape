@@ -218,8 +218,8 @@ subsequent cutover work, not part of this Open RPC.
 
 ## Session feed
 
-`WatchSessions` is server-streaming and open to every `caller_accounts` caller; unlike
-`ReadSessionEvents` it needs no history-reader grant, since it carries no transcript. It sends every recorded Session, including those of deleted Sandboxes and
+`WatchSessions` is server-streaming and open to every `caller_accounts` caller; it carries no
+transcript. It sends every recorded Session, including those of deleted Sandboxes and
 reservations whose runner Open never succeeded, in `position` order, then each later change as it
 commits on any replica. A `SessionChange` is the Session's current record: public ID, Sandbox name
 and current incarnation UID (empty for imported Sessions without one), and that Sandbox's owner

@@ -77,9 +77,7 @@ async def with_history(resources: Resources, database_url: str | None) -> AsyncI
 
     task = asyncio.create_task(discover_and_copy())
     try:
-        yield replace(
-            resources, history=store, submissions=submissions, history_reader_accounts=resources.caller_accounts
-        )
+        yield replace(resources, history=store, submissions=submissions)
     finally:
         task.cancel()
         with suppress(asyncio.CancelledError):

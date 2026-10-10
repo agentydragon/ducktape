@@ -697,7 +697,6 @@ node switches which service reads or writes it. Only the fold double-runs.
 ```mermaid
 flowchart TD
     SESSION_COMMAND_CONTRACT[Command admission contract]
-    SANDBOX_HISTORY_READS_RETIRE[Blocked: delete Sandbox Service history reads]
     HISTORY_WRITE_HANDOFF[Blocked: History Service ingester takes over staging]
     SANDBOX_LOCAL_HISTORY_RETIRE[Blocked: delete Sandbox Service ingester and store]
     FOLD_SHADOW[Blocked: History Service folds in shadow]
@@ -719,7 +718,6 @@ flowchart TD
     SESSION_COMMAND_CONTRACT --> HISTORY_WRITE_HANDOFF
     RUNNER_TEARDOWN_SEAL[Runner seals Sessions at teardown] -. holds clear .-> HISTORY_WRITE_HANDOFF
     HISTORY_WRITE_HANDOFF --> SANDBOX_LOCAL_HISTORY_RETIRE
-    SANDBOX_HISTORY_READS_RETIRE --> SANDBOX_LOCAL_HISTORY_RETIRE
     HISTORY_WRITE_HANDOFF --> FOLD_SHADOW
     FOLD_SHADOW --> ELECTRIC_HISTORY_SOURCE
     FOLD_READ_CUTOVER -. paginated list API .-> THREAD_BROWSE_PAGINATE
@@ -740,11 +738,6 @@ flowchart TD
     HISTORY_SERVICE_OWNERSHIP -. enforce at the final owner .-> THREAD_READ_POLICY
 ```
 
-### `SANDBOX_HISTORY_READS_RETIRE` — delete the old read path
-
-**Blocked one release after the app's History Service reads are deployed to both environments.**
-Remove the Sandbox Service history read RPCs and their client code.
-
 ### `HISTORY_WRITE_HANDOFF` — the History Service ingester takes over
 
 **Blocked on retention holds clearing (`RUNNER_TEARDOWN_SEAL`) and on command admission
@@ -759,7 +752,7 @@ moving that reconciliation off ingestion. Rollback: set it back; the tables are 
 
 ### `SANDBOX_LOCAL_HISTORY_RETIRE` — remove the local store
 
-**Blocked on the write handoff and read retirement, one release later.** Delete the Sandbox
+**Blocked on the write handoff, one release later.** Delete the Sandbox
 Service's ingester and `session_history` store code and revoke its grants on history tables. Test
 that the Sandbox Service provisions, drives and reconciles commands with no History Service
 running, and update `sandbox_service/API.md`.
@@ -969,7 +962,7 @@ flowchart TD
     HISTORY_WRITER_SWITCH_RETIRE[Blocked: delete the history_writer switch]
     HISTORY_DATABASE_RENAME[Blocked: rename the sandbox_service database and role]
     SANDBOX_DATABASE_RENAME[Blocked: name the sandbox_commands database for the Sandbox Service]
-    HISTORY_PROTO_OWNERSHIP[Blocked: History Service owns its request messages]
+    HISTORY_PROTO_OWNERSHIP[Candidate: History Service owns its request messages]
     HISTORY_PROJECTION_NAMING[Decision: names of the History Service projection tables]
     APP_ELECTRIC_RETIRE[Blocked: remove Electric's access to the app database]
     SANDBOX_BINDING_ANNOTATION_RENAME[Candidate: write session_defaults, not thread_defaults]
@@ -977,7 +970,6 @@ flowchart TD
     PROTO_DIRECTORY[Unscheduled: cross-component protos under one proto directory]
     RUNNER_OUTBOUND_CHANNEL[Outbound command delivery peers]
     HISTORY_WRITE_HANDOFF[History Service ingester takes over]
-    SANDBOX_HISTORY_READS_RETIRE[Delete Sandbox Service history reads]
     SANDBOX_LOCAL_HISTORY_RETIRE[Delete Sandbox Service ingester and store]
     FOLD_SHADOW[History Service folds in shadow]
     APP_PROJECTOR_RETIRE[Delete app projector]
@@ -992,7 +984,6 @@ flowchart TD
     HISTORY_STORE_MOVE --> HISTORY_DATABASE_RENAME
     HISTORY_SESSION_COLUMNS_DROP --> HISTORY_DATABASE_RENAME
     HISTORY_DATABASE_RENAME --> SANDBOX_DATABASE_RENAME
-    SANDBOX_HISTORY_READS_RETIRE --> HISTORY_PROTO_OWNERSHIP
     HISTORY_PROJECTION_NAMING -. cheapest before the tables exist .-> FOLD_SHADOW
     APP_PROJECTOR_RETIRE --> APP_ELECTRIC_RETIRE
     HISTORY_PROTO_OWNERSHIP -. after proto churn settles .-> PROTO_DIRECTORY
@@ -1065,9 +1056,9 @@ names.
 
 ### `HISTORY_PROTO_OWNERSHIP` — History Service request messages
 
-**Blocked on Sandbox Service history-read retirement.** `history_service/protocol.proto` reuses
-`ducktape.agentplane.sandbox.v1` request and response messages for `ReadSessionEvents` and
-`ReadSessionObservations`. Move them into the History Service's own package with its callers.
+**Candidate.** `history_service/protocol.proto` reuses `ducktape.agentplane.sandbox.v1` request
+and response messages for `ReadSessionEvents` and `ReadSessionObservations`, which the Sandbox
+Service no longer serves. Move them into the History Service's own package with its callers.
 
 ### `HISTORY_PROJECTION_NAMING` — name the History Service projection tables
 

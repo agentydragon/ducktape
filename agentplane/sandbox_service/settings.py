@@ -28,7 +28,6 @@ class Settings(BaseSettings):
         default=None, min_length=1, description="The `sandbox_commands` database holding command admission."
     )
     caller_accounts: frozenset[ServiceAccountRef] = Field(min_length=1)
-    history_reader_accounts: frozenset[ServiceAccountRef] = frozenset()
     platform_instructions: str = Field(min_length=1)
     lifecycle_timeout_s: float = Field(default=300, gt=0)
     ingest_history: bool = Field(

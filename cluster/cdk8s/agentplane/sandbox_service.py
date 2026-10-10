@@ -81,7 +81,6 @@ class SandboxService(Construct):
                 }
             ),
             token_audience=TOKEN_AUDIENCE,
-            history_reader_accounts=frozenset({manager}),
             platform_instructions=combine_instructions(
                 render_platform_instructions(
                     egress_api_url=f"http://{egress.agent_api(env.namespace).fqdn}",
@@ -105,7 +104,6 @@ class SandboxService(Construct):
             content=settings.model_dump(mode="json", exclude_none=True)
             | {
                 "kubernetes_binding_cleanup_namespaces": sorted(settings.kubernetes_binding_cleanup_namespaces),
-                "history_reader_accounts": [manager.model_dump()],
                 "caller_accounts": [
                     account.model_dump()
                     for account in sorted(

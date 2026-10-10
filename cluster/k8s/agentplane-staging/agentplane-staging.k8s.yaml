@@ -2140,9 +2140,6 @@ data:
         name: agentplane-history-service
       - namespace: agentplane-staging
         name: agentplane-notifications
-    history_reader_accounts:
-      - namespace: agentplane-staging
-        name: agentplane-app
     platform_instructions: |-
       You are running in a Kubernetes sandbox managed by Agentplane. Agentplane governs outbound network
       access and sensitive operations. Instead of real service tokens you receive credential placeholders:

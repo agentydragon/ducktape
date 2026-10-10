@@ -62,7 +62,6 @@ class Resources:
     history: Store | None = None
     submissions: SubmissionStore | None = None
     session_changes: SessionChanges | None = None
-    history_reader_accounts: frozenset[ServiceAccountRef] = frozenset()
     admission_timeout_s: float = 15
     follow_lease_s: float = 900
     lifecycle_timeout_s: float = 300
@@ -81,8 +80,6 @@ class Resources:
             raise ValueError("timeouts must be positive")
         if not self.caller_accounts:
             raise ValueError("at least one service caller is required")
-        if not self.history_reader_accounts <= self.caller_accounts:
-            raise ValueError("history readers must be allowed service callers")
 
     async def authenticate(self, context: grpc.aio.ServicerContext) -> ServiceAccountRef:
         values = [value for key, value in (context.invocation_metadata() or ()) if key == "authorization"]
@@ -96,12 +93,6 @@ class Resources:
         if principal.account not in self.caller_accounts:
             await context.abort(grpc.StatusCode.PERMISSION_DENIED, "service caller not allowed")
         return principal.account
-
-    async def authenticate_history_reader(self, context: grpc.aio.ServicerContext) -> None:
-        # A public Session UUID is not itself authority. Notifications and future
-        # agent callers admitted for lifecycle may not read transcripts.
-        if await self.authenticate(context) not in self.history_reader_accounts:
-            await context.abort(grpc.StatusCode.PERMISSION_DENIED, "session history reader not allowed")
 
 
 @asynccontextmanager
@@ -176,42 +167,6 @@ class SandboxService(protocol_pb2_grpc.SandboxServiceServicer):
             yield client, endpoint
         finally:
             await client.close()
-
-    @override
-    async def ReadSessionEvents(
-        self, request: protocol_pb2.ReadSessionEventsRequest, context: grpc.aio.ServicerContext
-    ) -> protocol_pb2.ReadSessionEventsResponse:
-        async with errors(context), asyncio.timeout(self.resources.admission_timeout_s):
-            await self.resources.authenticate_history_reader(context)
-            if self.resources.history is None:
-                raise ConnectionError("history unavailable")
-            if not 1 <= request.limit <= 1000:
-                raise ValueError("invalid history page size")
-            session_id = UUID(request.session_id)
-            return await self.resources.history.read_page(
-                session_id, after_cursor=request.after_cursor, limit=request.limit
-            )
-
-    @override
-    async def ReadSessionObservations(
-        self, request: protocol_pb2.ReadSessionObservationsRequest, context: grpc.aio.ServicerContext
-    ) -> protocol_pb2.ReadSessionObservationsResponse:
-        async with errors(context), asyncio.timeout(self.resources.admission_timeout_s):
-            await self.resources.authenticate_history_reader(context)
-            if self.resources.history is None:
-                raise ConnectionError("history unavailable")
-            last_cursor, observations = await self.resources.history.read_observations(
-                UUID(request.session_id),
-                before_cursor=request.before_cursor if request.HasField("before_cursor") else None,
-                after_cursor=request.after_cursor if request.HasField("after_cursor") else None,
-                limit=request.limit,
-            )
-            return protocol_pb2.ReadSessionObservationsResponse(
-                last_cursor=last_cursor,
-                observations=[
-                    protocol_pb2.SessionObservation(cursor=cursor, kind=kind) for cursor, kind in observations
-                ],
-            )
 
     @override
     async def ListSandboxes(
