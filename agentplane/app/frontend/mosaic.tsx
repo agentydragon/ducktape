@@ -434,11 +434,12 @@ export function MosaicView(): JSX.Element {
     }
   };
   const paneQuery = addPaneQuery.trim().toLowerCase();
-  const visibleBuiltInPanes: MosaicPane[] = [
+  const builtInPanes: MosaicPane[] = [
     { kind: "threads", id: "threads" },
     { kind: "actions", id: "actions" },
     { kind: "history", id: "history" },
-  ].filter((pane) => paneLabel(pane).toLowerCase().includes(paneQuery));
+  ];
+  const visibleBuiltInPanes = builtInPanes.filter((pane) => paneLabel(pane).toLowerCase().includes(paneQuery));
   const visibleThreadPanes = threadPanes.filter(({ pane, label }) =>
     `${label} ${threads.find((thread) => thread.id === pane.threadId)?.sandbox ?? ""}`.toLowerCase().includes(paneQuery)
   );
