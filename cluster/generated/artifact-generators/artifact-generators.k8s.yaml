@@ -518,6 +518,13 @@ spec:
       name: github-exporter
       originRevision: "@repo"
     - copy:
+        - from: "@repo/cluster/generated/att-gateway-exporter/**"
+          to: "@artifact/cluster/generated/att-gateway-exporter/"
+        - from: "@repo/cluster/k8s/att-gateway-exporter-image-pins/**"
+          to: "@artifact/cluster/k8s/att-gateway-exporter-image-pins/"
+      name: att-gateway-exporter
+      originRevision: "@repo"
+    - copy:
         - from: "@repo/cluster/generated/goldilocks/**"
           to: "@artifact/cluster/generated/goldilocks/"
       name: goldilocks
