@@ -14,7 +14,7 @@ import {
   type ActionRequestView,
   type ActionService,
 } from "./client";
-import { renderDetailsResult } from "./rendering/index";
+import { renderActionCall, renderDetailsResult } from "./rendering/index";
 import { stateLabel } from "./requests";
 
 /** The stored result: its pretty rendering unless it has none or the action is switched to Raw, and
@@ -55,6 +55,7 @@ export function ActionHistoryCard({ request, mcp }: { request: ActionRequestView
   // place, has no rendering but its JSON.
   const call = mcp && result !== null && result !== undefined ? parseCallToolResult(result) : null;
   const prettyResult = call === null ? null : renderDetailsResult(request.action, call);
+  const combinedCall = renderActionCall(request.action, request.arguments, call ?? undefined);
   return (
     <Paper withBorder p="md">
       <Stack gap="sm">
@@ -77,6 +78,7 @@ export function ActionHistoryCard({ request, mcp }: { request: ActionRequestView
           raw={raw}
           onRawChange={setRaw}
           prettyResult={prettyResult !== null}
+          combinedCall={combinedCall}
         />
         {decision?.decision_note && <Text size="sm">{decision.decision_note}</Text>}
         {policySet && (
@@ -86,7 +88,9 @@ export function ActionHistoryCard({ request, mcp }: { request: ActionRequestView
         )}
         {(hasResult || hasExecutionError || !decisionState) && (
           <Stack gap="xs" data-testid="action-execution-outcome">
-            {hasResult && <ExecutionResult result={result} pretty={prettyResult} raw={raw} />}
+            {hasResult && !(combinedCall?.includesResult && !raw) && (
+              <ExecutionResult result={result} pretty={prettyResult} raw={raw} />
+            )}
             {hasExecutionError && (
               <div>
                 <Text size="sm" fw={600} mb={4}>

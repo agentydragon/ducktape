@@ -7,7 +7,7 @@ import type { ReactNode } from "react";
 
 import { type CallToolResult, CallToolResultView, toolValue } from "../call_tool_result";
 import type { ActionRequestView } from "../client";
-import { renderPreview, type ArgumentsPreview } from "./entry";
+import { renderPreview, type ArgumentsPreview, type CallPreview } from "./entry";
 import {
   canApprovePullRequestInline,
   createPullRequestLabel,
@@ -15,6 +15,7 @@ import {
 } from "./github/create_pull_request";
 import {
   gmailDraftCollapsed,
+  gmailDraftCall,
   gmailDraftDetails,
   gmailDraftLabel,
   gmailDraftOpened,
@@ -73,6 +74,8 @@ type ActionIdentity = ActionRequestView["action"];
 interface ActionPresentation {
   /** Omit a slot for the generic fallback, set null to suppress it, or provide its own React DOM. */
   label?: ArgumentsPreview | null;
+  /** A custom view that keeps an Action's arguments and returned value together. */
+  call?: CallPreview;
   pane?: {
     collapsed?: ArgumentsPreview | null;
     opened?: ArgumentsPreview | null;
@@ -167,6 +170,7 @@ const ACTION_RENDERERS: ReadonlyMap<string, ReadonlyMap<string, ActionPresentati
         "drafts_create",
         {
           label: gmailDraftLabel,
+          call: gmailDraftCall,
           pane: { collapsed: gmailDraftCollapsed, opened: gmailDraftOpened },
           details: { arguments: gmailDraftDetails, result: gmailDraftResult },
         },
@@ -290,6 +294,34 @@ export function shouldRenderPaneRequestTitle(action: ActionIdentity, args: unkno
 export function renderDetailsArguments(action: ActionIdentity, args: unknown): ReactNode | null {
   const preview = presentation(action)?.details?.arguments;
   return preview ? renderPreview(preview, args) : null;
+}
+
+export interface RenderedActionCall {
+  content: ReactNode;
+  /** Whether this view includes a successfully parsed result and can replace the separate result block. */
+  includesResult: boolean;
+}
+
+/** A combined per-Action request/result view, or `null` when its action-local schemas do not match. */
+export function renderActionCall(
+  action: ActionIdentity,
+  args: unknown,
+  result?: CallToolResult
+): RenderedActionCall | null {
+  const preview = presentation(action)?.call;
+  if (!preview) return null;
+  const parsedArgs = preview.argumentSchema.safeParse(args);
+  if (!parsedArgs.success) return null;
+
+  if (result === undefined || result.isError) {
+    return { content: preview.render(parsedArgs.data as never, undefined), includesResult: false };
+  }
+
+  const value = toolValue(result);
+  if (value === undefined) return null;
+  const parsedResult = preview.resultSchema.safeParse(value);
+  if (!parsedResult.success) return null;
+  return { content: preview.render(parsedArgs.data as never, parsedResult.data as never), includesResult: true };
 }
 
 /** An MCP result's action-specific details view, or the generic view of the tool's response. */

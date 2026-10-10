@@ -843,6 +843,52 @@ const COMPACT_POD_ACTION: ActionRequestView = {
   idempotency_key: "visual-pods-compact-pending",
 };
 
+const GMAIL_DRAFT_ACTION: ActionRequestView = {
+  id: "70000000-0000-4000-8000-000000000010",
+  action: { group: "gmail", name: "drafts_create" },
+  arguments: {
+    to: ["reviewer@example.com"],
+    cc: ["release-team@example.com"],
+    subject: "Release notes",
+    body: "The release is ready.\nPlease review it before sending.",
+    thread_id: "release-thread-123",
+  },
+  title: "prepare the release email",
+  description: "Check the recipients and body before approving.",
+  idempotency_key: "visual-gmail-draft-completed",
+  caller: { namespace: "agentplane-visual", name: "ready-sandbox" },
+  state: "succeeded",
+  version: 4,
+  created_at: ago(7 * 60_000),
+  updated_at: ago(6 * 60_000),
+  decision: {
+    id: "71000000-0000-4000-8000-000000000010",
+    verdict: "allow",
+    provider: "human_operator",
+    operator: { issuer: "https://test-operator.example/oidc", subject: "test-operator" },
+    decision_note: null,
+    idempotency_key: "visual-allow-gmail-draft",
+    decided_at: ago(6 * 60_000),
+  },
+  execution: {
+    id: "72000000-0000-4000-8000-000000000010",
+    state: "succeeded",
+    result: {
+      content: [],
+      structuredContent: {
+        id: "draft-release-123",
+        message: { payload: { headers: [{ name: "Subject", value: "Release notes" }] } },
+      },
+      isError: false,
+    },
+    error: null,
+    created_at: ago(6 * 60_000),
+    started_at: ago(6 * 60_000 - 500),
+    completed_at: ago(6 * 60_000 - 1_500),
+    reconciled_at: null,
+  },
+};
+
 const CONVERSATION_SOURCE = "visual-runner";
 const CONVERSATION_EPOCH = "20260921";
 const payloadBodies = new Map<string, string>();
@@ -1842,6 +1888,14 @@ const MCP_GROUPS: ActionGroupView[] = [
     retry_at: new Date(NOW + 20_000).toISOString(),
     failures: 7,
   }),
+  mcpGroup("gmail", "Test Gmail action group for Agentplane rendering.", {
+    state: "available",
+    reason: null,
+    detail: null,
+    last_discovery_at: ago(60_000),
+    retry_at: null,
+    failures: 0,
+  }),
   mcpGroup("example_notes", "Test MCP backend behind a static bearer.", {
     state: "available",
     reason: null,
@@ -2203,7 +2257,9 @@ routes.push(
     "GET",
     /^\/actions\/history$/,
     (_match, query) => {
-      const past = ACTIONS.filter((request) => request.state !== "decision_pending");
+      const past = includeGmailDraftHistory
+        ? [GMAIL_DRAFT_ACTION]
+        : ACTIONS.filter((request) => request.state !== "decision_pending");
       return pageActionHistory && !query.has("cursor")
         ? { items: past.slice(0, 2), next_cursor: "second-page" }
         : { items: pageActionHistory ? past.slice(2) : past, next_cursor: null };
@@ -2759,6 +2815,7 @@ let dropThreadStream = false;
 let dropInventoryStream = false;
 let includePendingActions = false;
 let includeCompactPodAction = false;
+let includeGmailDraftHistory = false;
 let previewAction: ActionRequestView | null = null;
 let watchHealth = FRESH;
 
@@ -2802,6 +2859,9 @@ const visualHarness = {
   },
   showCompactPodAction(): void {
     includeCompactPodAction = true;
+  },
+  showGmailDraftHistory(): void {
+    includeGmailDraftHistory = true;
   },
   showActionPreview(action: ActionRequestView["action"], args: ActionRequestView["arguments"]): void {
     previewAction = {

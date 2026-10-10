@@ -115,6 +115,34 @@ describe("action notification formatting", () => {
     }
   });
 
+  it("adds Gmail's draft description through the shared notification title combiner", () => {
+    const request = actionRequest({
+      action: { group: "gmail", name: "drafts_create" },
+      arguments: { to: ["reader@example.com"], subject: "Release notes", body: "Ready to review." },
+      title: "Prepare the release email",
+      description: "Check the recipients and body before approving.",
+    });
+
+    expect(formatActionNotification(request)).toEqual({
+      title: "Prepare the release email · Gmail: Draft email",
+      text: "Check the recipients and body before approving.",
+    });
+  });
+
+  it("uses Gmail's thread-search description without duplicating a matching caller title", () => {
+    const request = actionRequest({
+      action: { group: "gmail", name: "threads_list" },
+      arguments: { q: "from:alerts@example.com" },
+      title: "Gmail: Search threads",
+      description: null,
+    });
+
+    expect(formatActionNotification(request)).toEqual({
+      title: "Gmail: Search threads",
+      text: "Action requires approval",
+    });
+  });
+
   it("falls back when SSH arguments contain fields the widget cannot show", () => {
     const request = actionRequest({
       action: { group: "ssh", name: "exec" },

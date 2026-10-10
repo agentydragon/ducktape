@@ -4,7 +4,7 @@ import { z } from "zod";
 
 import { CodeBlock } from "../../code_block";
 import { Chip } from "./chips";
-import { definePreview, type ArgumentsPreview } from "./entry";
+import { defineCallPreview, definePreview, type ArgumentsPreview, type CallPreviewProps } from "./entry";
 import { defineResultPreview, type ResultPreview } from "./result_entry";
 
 const draftArguments = z.strictObject({
@@ -22,8 +22,8 @@ function recipients(args: DraftArguments): string {
   return args.to.join(", ");
 }
 
-function DraftLabel({ args }: { args: DraftArguments }): JSX.Element {
-  return <Text fw={600}>Draft email{args.subject ? `: ${args.subject}` : ""}</Text>;
+function DraftLabel(): JSX.Element {
+  return <Text fw={600}>Gmail: Draft email</Text>;
 }
 
 function DraftCollapsed({ args }: { args: DraftArguments }): JSX.Element {
@@ -76,7 +76,7 @@ type ThreadSearchArguments = z.infer<typeof threadSearchArguments>;
 
 function ThreadSearchLabel({ args }: { args: ThreadSearchArguments }): JSX.Element {
   void args;
-  return <Text fw={600}>Search Gmail threads</Text>;
+  return <Text fw={600}>Gmail: Search threads</Text>;
 }
 
 function ThreadSearchCollapsed({ args }: { args: ThreadSearchArguments }): JSX.Element {
@@ -111,7 +111,74 @@ export const gmailThreadSearchLabel: ArgumentsPreview = definePreview(threadSear
 export const gmailThreadSearchCollapsed: ArgumentsPreview = definePreview(threadSearchArguments, ThreadSearchCollapsed);
 export const gmailThreadSearchOpened: ArgumentsPreview = definePreview(threadSearchArguments, ThreadSearchOpened);
 
-const draftResult = z.object({ id: z.string().nullable().optional() }).passthrough();
+const draftResult = z
+  .object({
+    id: z.string().nullable().optional(),
+    message: z
+      .object({
+        payload: z
+          .object({
+            headers: z
+              .array(
+                z
+                  .object({
+                    name: z.string().nullable().optional(),
+                    value: z.string().nullable().optional(),
+                  })
+                  .passthrough()
+              )
+              .nullable()
+              .optional(),
+          })
+          .passthrough()
+          .nullable()
+          .optional(),
+      })
+      .passthrough()
+      .nullable()
+      .optional(),
+  })
+  .passthrough();
+
+type DraftResult = z.infer<typeof draftResult>;
+
+function draftSubject(result: DraftResult): string | null {
+  return result.message?.payload?.headers?.find((header) => header.name?.toLowerCase() === "subject")?.value ?? null;
+}
+
+function DraftCall({ args, result }: CallPreviewProps<DraftArguments, DraftResult>): JSX.Element {
+  const subject = result ? (draftSubject(result) ?? args.subject) : args.subject;
+  const draftHref = result?.id
+    ? `https://mail.google.com/mail/u/0/#drafts?compose=${encodeURIComponent(result.id)}`
+    : null;
+  const threadHref = args.thread_id
+    ? `https://mail.google.com/mail/u/0/#all/${encodeURIComponent(args.thread_id)}`
+    : null;
+
+  return (
+    <Stack gap="xs">
+      {draftHref ? (
+        <Anchor href={draftHref} target="_blank" rel="noreferrer" fw={600}>
+          {subject}
+        </Anchor>
+      ) : (
+        <Text fw={600}>{subject}</Text>
+      )}
+      <Chip label="To" value={recipients(args)} />
+      {args.cc && args.cc.length > 0 && <Chip label="Cc" value={args.cc.join(", ")} />}
+      {args.bcc && args.bcc.length > 0 && <Chip label="Bcc" value={args.bcc.join(", ")} />}
+      <CodeBlock text={args.body} />
+      {threadHref && (
+        <Anchor href={threadHref} target="_blank" rel="noreferrer">
+          Reply in Gmail thread
+        </Anchor>
+      )}
+      {result?.id && <Code>draft {result.id}</Code>}
+    </Stack>
+  );
+}
+
+export const gmailDraftCall = defineCallPreview(draftArguments, draftResult, DraftCall);
 
 function DraftResult({ result }: { result: z.infer<typeof draftResult> }): JSX.Element {
   const href = result.id

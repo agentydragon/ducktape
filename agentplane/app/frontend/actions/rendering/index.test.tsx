@@ -5,6 +5,7 @@ import { type CallToolResult, parseCallToolResult } from "../call_tool_result";
 import { mount, SSH_EXEC_ARGUMENTS, sshExec } from "../testing";
 import {
   canApproveInline,
+  renderActionCall,
   renderActionLabel,
   renderDetailsArguments,
   renderDetailsResult,
@@ -127,7 +128,7 @@ describe("Action presentation slots", () => {
     const opened = await mount(renderPaneOpened(action, args));
     const details = await mount(renderDetailsArguments(action, args));
 
-    expect(label.textContent).toContain("Draft email: Release notes");
+    expect(label.textContent).toContain("Gmail: Draft email");
     expect(collapsed.textContent).toContain("reader@example.com");
     expect(opened.textContent).toContain("copy@example.com");
     expect(opened.textContent).toContain("The release is ready.");
@@ -143,6 +144,55 @@ describe("Action presentation slots", () => {
     ).not.toBeNull();
   });
 
+  it("keeps a Gmail draft's request and created draft in one call view", async () => {
+    const action = { group: "gmail", name: "drafts_create" };
+    const args = {
+      to: ["reader@example.com"],
+      cc: ["copy@example.com"],
+      bcc: ["blind-copy@example.com"],
+      subject: "Release notes",
+      body: "The release is ready.\nPlease review it.",
+      thread_id: "thread-123",
+    };
+    const pending = renderActionCall(action, args);
+    expect(pending?.includesResult).toBe(false);
+    const pendingView = await mount(pending?.content ?? null);
+    expect(pendingView.textContent).toContain("Release notes");
+    expect(pendingView.textContent).toContain("reader@example.com");
+    expect(pendingView.textContent).toContain("blind-copy@example.com");
+    expect(pendingView.textContent).toContain("Please review it.");
+    expect(pendingView.querySelector('a[href="https://mail.google.com/mail/u/0/#all/thread-123"]')).not.toBeNull();
+
+    const result = parseCallToolResult({
+      content: [],
+      structuredContent: {
+        id: "draft-123",
+        message: { payload: { headers: [{ name: "Subject", value: "Release notes saved" }] } },
+      },
+      isError: false,
+    });
+    if (result === null) throw new Error("the fixture is not a CallToolResult");
+    const completed = renderActionCall(action, args, result);
+    expect(completed?.includesResult).toBe(true);
+    const completedView = await mount(completed?.content ?? null);
+    expect(completedView.textContent).toContain("Release notes saved");
+    expect(completedView.textContent).toContain("reader@example.com");
+    expect(completedView.textContent).toContain("The release is ready.");
+    expect(completedView.textContent).toContain("draft draft-123");
+    expect(
+      completedView.querySelector('a[href="https://mail.google.com/mail/u/0/#drafts?compose=draft-123"]')
+    ).not.toBeNull();
+    expect(renderActionCall(action, { ...args, unexpected: true })).toBeNull();
+
+    const unexpectedResult = parseCallToolResult({
+      content: [],
+      structuredContent: { id: 123 },
+      isError: false,
+    });
+    if (unexpectedResult === null) throw new Error("the fixture is not a CallToolResult");
+    expect(renderActionCall(action, args, unexpectedResult)).toBeNull();
+  });
+
   it("renders Gmail search arguments and results without fetching subjects", async () => {
     const action = { group: "gmail", name: "threads_list" };
     const args = { q: "from:alerts@example.com", maxResults: 5, includeSpamTrash: false };
@@ -150,7 +200,7 @@ describe("Action presentation slots", () => {
     const collapsed = await mount(renderPaneCollapsed(action, args));
     const opened = await mount(renderPaneOpened(action, args));
 
-    expect(label.textContent).toContain("Search Gmail threads");
+    expect(label.textContent).toContain("Gmail: Search threads");
     expect(collapsed.textContent).toContain("from:alerts@example.com");
     expect(opened.textContent).toContain("Maximum results: 5");
     expect(opened.textContent).toContain("Include spam and trash");

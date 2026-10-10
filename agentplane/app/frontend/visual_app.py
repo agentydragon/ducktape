@@ -105,6 +105,9 @@ class AgentplaneFixture:
             [{"group": group, "name": name}, arguments],
         )
 
+    async def show_gmail_draft_history(self) -> None:
+        await self.page.evaluate("() => window.agentplaneVisual.showGmailDraftHistory()")
+
     async def paginate_action_history(self) -> None:
         await self.page.evaluate("() => window.agentplaneVisual.paginateActionHistory()")
 

@@ -220,7 +220,7 @@ async def test_compact_action_chips(
     if group == "kubernetes_admin" and name == "pods_list_in_namespace":
         await expect(section.locator(".agentplane-actions-sidebar-name")).to_contain_text("List pods in namespace")
     if group == "gmail" and name == "threads_list":
-        await expect(section.locator(".agentplane-actions-sidebar-name")).to_contain_text("Search Gmail threads")
+        await expect(section.locator(".agentplane-actions-sidebar-name")).to_contain_text("Gmail: Search threads")
         await expect(
             section.locator(".agentplane-actions-sidebar-preview").get_by_text("Maximum results: 5", exact=True)
         ).to_be_visible()
@@ -517,6 +517,22 @@ async def test_action_history_receipt(view: VisualPage, app: AgentplaneFixture) 
     await _focus(page, receipt)
     await _in_viewport(page.get_by_text("History", exact=True))
     await view.capture(target=view.page.locator("#app"))
+
+
+@pytest.mark.parametrize("viewport", [DESKTOP, MOBILE], ids=["desktop", "mobile"])
+async def test_gmail_draft_history_keeps_request_and_result_together(
+    view: VisualPage, app: AgentplaneFixture, viewport: Viewport
+) -> None:
+    await app.show_gmail_draft_history()
+    await app.mount_app("/actions")
+    page = view.page
+    await expect(page.get_by_text("prepare the release email", exact=True)).to_be_visible()
+    await expect(page.get_by_role("link", name="Release notes", exact=True)).to_be_visible()
+    await expect(page.get_by_text("Please review it before sending.", exact=True)).to_be_visible()
+    await expect(page.get_by_role("link", name="Reply in Gmail thread")).to_be_visible()
+    await expect(page.get_by_text("Result", exact=True)).to_have_count(0)
+    await view.check(context="Gmail draft request and result rendered")
+    await view.capture(target=page.locator("#app"))
 
 
 @pytest.mark.parametrize("viewport", [DESKTOP, MOBILE], ids=["desktop", "mobile"])

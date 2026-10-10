@@ -6,7 +6,12 @@ import { Disclosure } from "../disclosure";
 import { JsonView } from "../json_view";
 import { RawSwitch } from "../raw_switch";
 import type { ActionRequestView } from "./client";
-import { renderActionLabel, renderDetailsArguments } from "./rendering/index";
+import {
+  renderActionCall,
+  renderActionLabel,
+  renderDetailsArguments,
+  type RenderedActionCall,
+} from "./rendering/index";
 
 /** The grant fields, folded inside `RequestAuditDetails`' disclosure rather than shown
  * unconditionally: verbose per-request provenance an operator deciding needs occasionally, not on
@@ -72,6 +77,7 @@ export function ActionCall({
   raw,
   onRawChange,
   prettyResult,
+  combinedCall: providedCombinedCall,
 }: {
   request: ActionRequestView;
   status?: ReactNode;
@@ -80,9 +86,12 @@ export function ActionCall({
   onRawChange: (raw: boolean) => void;
   /** Whether the card's result renders other than as its stored JSON. */
   prettyResult: boolean;
+  /** Precomputed by history so it can hide a result already shown in this view. */
+  combinedCall?: RenderedActionCall | null;
 }): JSX.Element {
   const actionLabel = renderActionLabel(request.action, request.arguments);
   const prettyArguments = renderDetailsArguments(request.action, request.arguments);
+  const combinedCall = providedCombinedCall ?? renderActionCall(request.action, request.arguments);
   return (
     <Stack gap="sm">
       <Stack gap={2}>
@@ -94,7 +103,9 @@ export function ActionCall({
           )}
           <Group gap="xs" justify="flex-end" wrap="wrap">
             {status}
-            {(prettyArguments !== null || prettyResult) && <RawSwitch raw={raw} onChange={onRawChange} />}
+            {(prettyArguments !== null || prettyResult || combinedCall !== null) && (
+              <RawSwitch raw={raw} onChange={onRawChange} />
+            )}
             {headerActions}
           </Group>
         </Group>
@@ -119,12 +130,21 @@ export function ActionCall({
         )}
         <RequestAuditDetails request={request} />
       </Stack>
-      <div>
-        <Text size="sm" fw={600} mb={4}>
-          Exact arguments (unredacted)
-        </Text>
-        {prettyArguments === null || raw ? <JsonView value={request.arguments} /> : prettyArguments}
-      </div>
+      {combinedCall !== null && !raw ? (
+        <div>
+          <Text size="sm" fw={600} mb={4}>
+            Call
+          </Text>
+          {combinedCall.content}
+        </div>
+      ) : (
+        <div>
+          <Text size="sm" fw={600} mb={4}>
+            Exact arguments (unredacted)
+          </Text>
+          {prettyArguments === null || raw ? <JsonView value={request.arguments} /> : prettyArguments}
+        </div>
+      )}
     </Stack>
   );
 }

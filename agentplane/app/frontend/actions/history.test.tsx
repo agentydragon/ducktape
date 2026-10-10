@@ -41,6 +41,32 @@ function succeeded(groupKey: string, result: unknown): ActionRequestView {
   return { ...row, action: { group: groupKey, name: "test_tool" }, execution: { ...row.execution!, result } };
 }
 
+function gmailDraft(): ActionRequestView {
+  const row = request("succeeded", 1);
+  return {
+    ...row,
+    action: { group: "gmail", name: "drafts_create" },
+    arguments: {
+      to: ["reader@example.com"],
+      cc: ["copy@example.com"],
+      subject: "Release notes",
+      body: "The release is ready.\nPlease review it.",
+    },
+    title: "Prepare the release email",
+    execution: {
+      ...row.execution!,
+      result: {
+        content: [],
+        structuredContent: {
+          id: "draft-123",
+          message: { payload: { headers: [{ name: "Subject", value: "Release notes saved" }] } },
+        },
+        isError: false,
+      },
+    },
+  };
+}
+
 // base64 of "test-image-bytes": nothing here decodes it.
 const IMAGE_DATA = "dGVzdC1pbWFnZS1ieXRlcw==";
 const IMAGE_RESULT = {
@@ -222,6 +248,30 @@ describe("ActionHistory", () => {
     expect(container.textContent).toContain('"structuredContent"');
     await act(async () => switches[0].click());
     expect(drawn()).toEqual({ request: true, response: true });
+  });
+
+  it("shows a Gmail draft's arguments and result together, with both available in Raw", async () => {
+    const container = await render(
+      { list: async () => [gmailDraft()], decide: vi.fn() },
+      historyOver(async () => [group("gmail", "mcp")])
+    );
+    expect(container.textContent).toContain("Call");
+    expect(container.textContent).toContain("Release notes saved");
+    expect(container.textContent).toContain("reader@example.com");
+    expect(container.textContent).toContain("The release is ready.");
+    expect(container.textContent).not.toContain("Exact arguments (unredacted)");
+    expect(container.querySelector('[data-testid="action-execution-outcome"]')?.textContent).not.toContain("Result");
+    expect(
+      container.querySelector('a[href="https://mail.google.com/mail/u/0/#drafts?compose=draft-123"]')
+    ).not.toBeNull();
+
+    const raw = container.querySelector<HTMLInputElement>('input[type="checkbox"]');
+    expect(raw).not.toBeNull();
+    await act(async () => raw!.click());
+    expect(container.textContent).toContain("Exact arguments (unredacted)");
+    expect(container.textContent).toContain('"subject": "Release notes"');
+    expect(container.textContent).toContain('"id": "draft-123"');
+    expect(container.querySelector('[data-testid="action-execution-outcome"]')?.textContent).toContain("Result");
   });
 
   it("keeps a sandbox group's result as its stored JSON, without a Raw switch, even one shaped like a CallToolResult", async () => {

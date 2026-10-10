@@ -9,6 +9,13 @@ import type { ActionNotificationContent, ActionNotificationParts } from "./types
 
 type ActionNotificationFormatter = (request: ActionRequestView) => ActionNotificationParts | null;
 
+function fixedActionNotification(actionTitle: string): ActionNotificationFormatter {
+  return (request) => ({
+    actionTitle,
+    text: request.description ?? "Action requires approval",
+  });
+}
+
 // This registry intentionally stays parallel to the React presentation registry. The service
 // worker imports this module, so notification formatters must remain React-free.
 const FORMATTERS: ReadonlyMap<string, ReadonlyMap<string, ActionNotificationFormatter>> = new Map([
@@ -19,6 +26,13 @@ const FORMATTERS: ReadonlyMap<string, ReadonlyMap<string, ActionNotificationForm
       ["products_list", grocyProductsListNotification],
       ["quantity_units_list", grocyQuantityUnitsListNotification],
       ["get_system_info", grocySystemInfoNotification],
+    ]),
+  ],
+  [
+    "gmail",
+    new Map([
+      ["drafts_create", fixedActionNotification("Gmail: Draft email")],
+      ["threads_list", fixedActionNotification("Gmail: Search threads")],
     ]),
   ],
   ["ssh", new Map([["exec", sshExecNotification]])],
