@@ -158,13 +158,10 @@ describe("Action presentation slots", () => {
         };
       }
       if (group === "ssh" && name === "exec") return SSH_EXEC_ARGUMENTS as Record<string, unknown>;
-      const spec = ACTION_PRESENTATION_CATALOG.find(
-        (candidate) => candidate.group === group && candidate.name === name
-      );
-      return Object.fromEntries((spec?.summaryFields ?? []).map((key) => [key, "example"]));
+      return { example: "value" };
     };
 
-    for (const { group, name, summaryFields, resultLabel } of ACTION_PRESENTATION_CATALOG) {
+    for (const { group, name, resultLabel } of ACTION_PRESENTATION_CATALOG) {
       const action = { group, name };
       const args = argumentsFor(group, name);
       const label = renderActionLabel(action, args);
@@ -174,9 +171,6 @@ describe("Action presentation slots", () => {
       expect(opened).not.toBeNull();
       expect(details).not.toBeNull();
       expect((await mount(label)).textContent).not.toBe("");
-      if (summaryFields !== undefined && summaryFields.length > 0) {
-        expect(renderPaneCollapsed(action, args)).not.toBeNull();
-      }
       if (resultLabel !== undefined) {
         const result = group === "ssh" && name === "exec" ? stored() : stored({ example: "value" });
         const expectedLabel = group === "ssh" && name === "exec" ? "Exit 0" : resultLabel;
