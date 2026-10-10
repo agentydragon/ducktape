@@ -487,16 +487,18 @@ def test_suspend_resume_apply_in_order(client: TestClient, custom_objects: FakeC
     assert client.post("/sandboxes/nope/suspend").status_code == 404
 
 
-def test_delete_removes_the_sandbox_once_it_is_suspended(
+def test_delete_starts_teardown_once_the_sandbox_is_suspended(
     client: TestClient, custom_objects: FakeCustomObjectsApi
 ) -> None:
     assert client.delete("/sandboxes/live").status_code == 409
-    assert ("sandboxes", "live") in custom_objects.objects
+    assert not client.get("/sandboxes/live").json()["deleting"]
 
     assert client.post("/sandboxes/live/suspend").status_code == 204
     assert client.delete("/sandboxes/live").status_code == 204
-    assert ("sandboxes", "live") not in custom_objects.objects
-    assert client.delete("/sandboxes/live").status_code == 404
+    # The Sandbox Service deletes it once its runner has sealed every Session.
+    assert client.get("/sandboxes/live").json()["deleting"]
+    assert client.delete("/sandboxes/live").status_code == 204
+    assert client.delete("/sandboxes/nope").status_code == 404
 
 
 def test_bound_thread_forwards_overrides_without_app_bootstrap_or_default_assembly(
