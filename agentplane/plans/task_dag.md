@@ -769,8 +769,7 @@ node switches which service reads or writes it. Only the fold double-runs.
 flowchart TD
     SESSION_FOLLOW_CONTRACT[Decision: History Service as an ordinary subscriber]
     SESSION_COMMAND_CONTRACT[Command admission contract]
-    HISTORY_SERVICE_BRINGUP[Blocked: deploy History Service raw read API]
-    HISTORY_READ_CUTOVER[Blocked: app reads raw history from History Service]
+    HISTORY_READ_CUTOVER[App reads raw history from History Service]
     SANDBOX_HISTORY_READS_RETIRE[Blocked: delete Sandbox Service history reads]
     SESSION_WATCH[Blocked: Sandbox Service Session feed]
     FOLLOW_REPLAY[Blocked: follow from any cursor via the runner]
@@ -798,7 +797,6 @@ flowchart TD
     RUNNER_INBOUND_RETIRE[Retire inbound runner access]
     SANDBOX_LIFECYCLE_DURABILITY[Archive before storage deletion]
     SESSION_COMMAND_CONTRACT --> SESSION_FOLLOW_CONTRACT
-    HISTORY_SERVICE_BRINGUP --> HISTORY_READ_CUTOVER
     HISTORY_READ_CUTOVER --> SANDBOX_HISTORY_READS_RETIRE
     SESSION_FOLLOW_CONTRACT --> SESSION_WATCH
     SESSION_FOLLOW_CONTRACT --> FOLLOW_REPLAY
@@ -850,19 +848,11 @@ For now only the app's ServiceAccount reads history, for every Session; agent re
 the operator releases it, and `GetSandbox` shows which hold blocks deletion. API sketch:
 [History Service plan](history_service.md#apis).
 
-### `HISTORY_SERVICE_BRINGUP` — deploy the History Service
-
-**Candidate.** Deployment, ServiceAccount, the
-`session_history` package and migrations, and raw and observation read RPCs over the tables in the
-existing `sandbox_service` database, with a read-only grant. Leave a `TODO` at the database
-declaration in `cluster/cdk8s/agentplane/database.py` that the name is a misnomer once the History
-Service owns it. No callers; the Sandbox Service stays the only writer. Exit: reads
-match the Sandbox Service's on a bounded sample in both environments.
-
 ### `HISTORY_READ_CUTOVER` — app reads raw history from the History Service
 
-**Blocked on bring-up.** Switch the app's raw and observation reads, with authorization and lag
-explicit. Rollback: point the app back at the same tables.
+**Candidate.** Switch the app's raw and observation reads to the deployed History Service, with
+authorization and lag explicit, after its reads match the Sandbox Service's on a bounded sample in
+both environments. Rollback: point the app back at the same tables.
 
 ### `SANDBOX_HISTORY_READS_RETIRE` — delete the old read path
 

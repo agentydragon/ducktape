@@ -27,8 +27,13 @@ async def serve(settings: Settings) -> None:
         k8s_config.load_incluster_config(client_configuration=configuration)
     else:
         await k8s_config.load_kube_config(config_file=str(settings.kubeconfig), client_configuration=configuration)
+    # The Sandbox Service still writes and migrates these tables; until the History Service takes
+    # over writing, its connections refuse writes.
     engine = create_async_engine(
-        make_url(settings.database_url).set(drivername="postgresql+asyncpg"), pool_size=4, max_overflow=2
+        make_url(settings.database_url).set(drivername="postgresql+asyncpg"),
+        pool_size=4,
+        max_overflow=2,
+        connect_args={"server_settings": {"default_transaction_read_only": "on"}},
     )
     try:
         async with k8s_client.ApiClient(configuration) as api:

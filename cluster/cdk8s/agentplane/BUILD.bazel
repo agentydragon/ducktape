@@ -129,6 +129,32 @@ py_library(
 )
 
 py_library(
+    name = "history_service",
+    srcs = ["history_service.py"],
+    deps = [
+        ":database",
+        ":environment",
+        ":pod_disruption_budget",
+        "//agentplane:subjects",
+        "//agentplane/history_service:settings",
+        "//cluster/cdk8s:cilium",
+        "//cluster/cdk8s:node_scheduling",
+        "//cluster/cdk8s:pod_policy",
+        "//cluster/cdk8s:probes",
+        "//cluster/cdk8s:secret_ref",
+        "//cluster/cdk8s:service_ref",
+        "//cluster/cdk8s:settings_file",
+        "//cluster/cdk8s:token_reviewer_rbac",
+        "//cluster/cdk8s/forgejo_registry:chart",
+        "//cluster/cdk8s/providers/cilium:network_policy",
+        "//util:settings_contract",
+        "@pypi//cdk8s",
+        "@pypi//cdk8s_plus_34",
+        "@pypi//constructs",
+    ],
+)
+
+py_library(
     name = "llm_ingress",
     srcs = ["llm_ingress.py"],
     deps = [
@@ -440,6 +466,7 @@ py_library(
         ":database",
         ":egress",
         ":environment",
+        ":history_service",
         ":llm_ingress",
         ":notifications",
         ":sandbox_pod",

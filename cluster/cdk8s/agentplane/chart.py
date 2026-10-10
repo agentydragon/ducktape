@@ -17,6 +17,7 @@ from cluster.cdk8s.agentplane import (
     database,
     egress,
     electric,
+    history_service,
     llm_ingress,
     notifications,
     sandbox_pod,
@@ -63,6 +64,13 @@ def environment_chart(app: App, env: Environment) -> Chart:
         "sandbox-service",
         env,
         manager=ServiceAccountRef(namespace=env.namespace, name=app_component.NAME),
+        caller=app_component.service(env.namespace),
+    )
+    history_service.HistoryService(
+        chart,
+        "history-service",
+        env,
+        reader=ServiceAccountRef(namespace=env.namespace, name=app_component.NAME),
         caller=app_component.service(env.namespace),
     )
     app_component.App(chart, "app", env)

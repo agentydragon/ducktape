@@ -5,7 +5,7 @@ public Session ID. It authenticates callers by projected ServiceAccount token (T
 serves only the configured reader accounts. A Session UUID by itself grants nothing.
 
 Today the Sandbox Service still writes the history tables and runs their migrations. This service
-reads them through `sandbox_service/session_history`. Target and sequence:
+reads them, in read-only transactions, through `sandbox_service/session_history`. Target and sequence:
 [History Service plan](../plans/history_service.md).
 
 Bazel targets: `:main`, `:image`. Settings come from `AGENTPLANE_HISTORY_SERVICE_*` environment
