@@ -39,7 +39,7 @@ pub(crate) fn try_var_read_off_candidates(
     let targets = std::slice::from_ref(target);
     let only_target = BTreeSet::from([target_slot]);
     let export_for =
-        |name: &str| (name == target.runtime_binding).then(|| target.export_name.clone());
+        |name: &str| (name == target.runtime_binding).then(|| target.selector_local.clone());
 
     // Shared var-slot render: `DECLARATORS_*` holes for the non-target declarators
     // (none when the target stands alone), the target's non-object init holed via

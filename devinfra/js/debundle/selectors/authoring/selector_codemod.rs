@@ -139,10 +139,31 @@ pub struct SelectorCodemodReport {
 }
 
 pub fn run_selector_codemod(config: &SelectorCodemodConfig) -> Result<SelectorCodemodReport> {
-    js_ast::with_swc_globals(|| run_selector_codemod_impl(config))
+    run_selector_codemod_with_module_results(config, &mut |_| Ok(()))
 }
 
-fn run_selector_codemod_impl(config: &SelectorCodemodConfig) -> Result<SelectorCodemodReport> {
+#[derive(Serialize)]
+pub struct SelectorCodemodModuleResult<'a> {
+    pub module: &'a str,
+    pub file: String,
+    pub candidates: &'a [SelectorCodemodCandidate],
+    pub file_written: bool,
+}
+
+/// Report a module as soon as its candidates and optional YAML edit are done.
+/// The final report remains available for text/JSON callers; NDJSON callers
+/// can use this hook to emit useful partial output during long scans.
+pub fn run_selector_codemod_with_module_results(
+    config: &SelectorCodemodConfig,
+    on_module: &mut dyn FnMut(&SelectorCodemodModuleResult<'_>) -> Result<()>,
+) -> Result<SelectorCodemodReport> {
+    js_ast::with_swc_globals(|| run_selector_codemod_impl(config, on_module))
+}
+
+fn run_selector_codemod_impl(
+    config: &SelectorCodemodConfig,
+    on_module: &mut dyn FnMut(&SelectorCodemodModuleResult<'_>) -> Result<()>,
+) -> Result<SelectorCodemodReport> {
     let selected_items = config
         .items
         .iter()
@@ -184,6 +205,7 @@ fn run_selector_codemod_impl(config: &SelectorCodemodConfig) -> Result<SelectorC
             continue;
         }
         summary.modules_scanned += 1;
+        let candidate_start = candidates.len();
 
         let mut doc = yaml_edit::read_yaml(&file)?;
         let mut file_changed = false;
@@ -195,6 +217,12 @@ fn run_selector_codemod_impl(config: &SelectorCodemodConfig) -> Result<SelectorC
                 None,
                 "module YAML is not a mapping",
             ));
+            on_module(&SelectorCodemodModuleResult {
+                module: &module,
+                file: file.display().to_string(),
+                candidates: &candidates[candidate_start..],
+                file_written: false,
+            })?;
             continue;
         };
         let selected_exports = selected_item_exports.get(&module);
@@ -228,9 +256,17 @@ fn run_selector_codemod_impl(config: &SelectorCodemodConfig) -> Result<SelectorC
             candidates.push(candidate);
         }
 
-        if config.apply && file_changed && yaml_edit::apply_yaml_edit(&file, &doc, false)? {
+        let file_written =
+            config.apply && file_changed && yaml_edit::apply_yaml_edit(&file, &doc, false)?;
+        if file_written {
             summary.files_written.push(file.display().to_string());
         }
+        on_module(&SelectorCodemodModuleResult {
+            module: &module,
+            file: file.display().to_string(),
+            candidates: &candidates[candidate_start..],
+            file_written,
+        })?;
     }
 
     Ok(SelectorCodemodReport {
@@ -291,6 +327,9 @@ pub struct SynthesizedSelectorGroup {
 pub struct SynthesizedTargetBinding {
     export_name: String,
     runtime_binding: String,
+    /// Identifier used within the alpha-matched selector, independent of the
+    /// readable name exported by the claim.
+    selector_local: String,
 }
 
 /// One synthesized selector together with the members it covers and the
@@ -436,9 +475,8 @@ fn rewrite_name_bindings_to_source_match(
             &group_members,
             options.candidates,
         );
-        // A use of one target binding from another target's initializer can
-        // prevent the joint source_match from proving even when each member's
-        // own declarator proves. Salvage the members as separate claims.
+        // Some groups still have no proving joint selector. Salvage members
+        // whose own declarators prove as separate claims.
         if group_members.len() > 1 && !matches!(&outcome, Ok(GroupSelectorOutcome::Synthesized(_)))
         {
             for member in group_members {
@@ -539,14 +577,14 @@ fn rewrite_name_bindings_to_source_match(
                 apply: options.apply,
                 group_id,
                 synthesized: &synthesized,
-                target_binding: Some(target.export_name.clone()),
+                target_binding: Some(target.selector_local.clone()),
             }));
             if options.apply {
                 add_synthesized_member_annotations(module, member, &mut annotations)?;
                 source_matches.push(source_match_claim_value(
                     &synthesized.match_source,
                     vec![MigratedSourceBinding {
-                        local: target.export_name.clone(),
+                        local: target.selector_local.clone(),
                         name: member.export_name.clone(),
                     }],
                     None,
@@ -758,7 +796,7 @@ fn synthesized_source_match_claim_value(synthesized: &SynthesizedSelectorGroup) 
             .target_bindings
             .iter()
             .map(|target| MigratedSourceBinding {
-                local: target.export_name.clone(),
+                local: target.selector_local.clone(),
                 name: target.export_name.clone(),
             })
             .collect(),
@@ -978,17 +1016,31 @@ fn synthesize_simplest_selector_for_group(
         .body
         .get(decl.body_idx)
         .with_context(|| format!("missing source body index {}", decl.body_idx))?;
-    let targets = members
+    let mut targets = members
         .iter()
         .map(|member| SynthesizedTargetBinding {
             export_name: member.export_name.clone(),
             runtime_binding: member.binding_name.clone(),
+            selector_local: member.export_name.clone(),
         })
         .collect::<Vec<_>>();
-    let specialized = match synthesize_specialized_selector(index, item, decl, &targets)? {
+    let mut specialized = match synthesize_specialized_selector(index, item, decl, &targets)? {
         Some(selector) => Some(selector),
         None => relax_exact_declaration(index, item, decl, &targets)?,
     };
+    // A grouped initializer may refer to another selected declarator. Renaming
+    // only the declaration position then makes that reference a distinct free
+    // selector identifier. Keeping the source locals preserves the relationship;
+    // AlphaAll matching treats their spellings as placeholders, not name pins.
+    if specialized.is_none() && targets.len() > 1 {
+        for target in &mut targets {
+            target.selector_local = target.runtime_binding.clone();
+        }
+        specialized = match synthesize_specialized_selector(index, item, decl, &targets)? {
+            Some(selector) => Some(selector),
+            None => relax_exact_declaration(index, item, decl, &targets)?,
+        };
+    }
     let Some(specialized) = specialized else {
         return Ok(GroupSelectorOutcome::Skipped(
             "minimization found no proving own-declaration selector".to_string(),
@@ -1292,7 +1344,7 @@ fn prove_synthesized_selector(
             Ok(Member {
                 export_name: target.export_name.clone(),
                 selector: MemberSelector::SourceMatch(parse_member_selector(
-                    &target.export_name,
+                    &target.selector_local,
                     match_source,
                 )?),
             })

@@ -968,7 +968,7 @@ minimizer_expectation_case!(
 );
 
 #[test]
-fn falls_back_to_single_declarators_when_group_references_a_member() {
+fn groups_declarators_when_one_initializer_references_another() {
     let case = MinimizedSelectorCase {
         name: "group with a reference to another member",
         source: "const noise = buildMenu(),\n  empty = values => Object.values(values).every(value => value === void 0),\n  spacer = 2,\n  entry = node => ({ id: node.id, direction: \"ASC\" }),\n  entries = node => (node?.children.map(entry) || []).sort(),\n  tail = 3;\nexport { empty, entry, entries };\n",
@@ -1009,17 +1009,71 @@ fn falls_back_to_single_declarators_when_group_references_a_member() {
     let rewritten = fs::read_to_string(modules.join("app/helpers.yaml")).unwrap();
     let doc: serde_yaml::Value = serde_yaml::from_str(&rewritten).unwrap();
     let outputs = collect_selector_outputs(&doc);
-    assert_eq!(outputs.len(), 3, "{outputs:?}");
+    assert_eq!(outputs.len(), 1, "{outputs:?}");
     assert_eq!(
         outputs
             .into_iter()
             .map(|output| output.exports)
             .collect::<BTreeSet<_>>(),
-        ["Empty", "Entry", "Entries"]
-            .into_iter()
-            .map(|name| BTreeSet::from([name.to_string()]))
-            .collect()
+        BTreeSet::from([BTreeSet::from([
+            "Empty".to_string(),
+            "Entry".to_string(),
+            "Entries".to_string(),
+        ])])
     );
+    let claim = &doc["source_matches"][0];
+    assert!(claim["match"].as_str().unwrap().contains("map(entry)"));
+    let variant = dir.path().join("renamed.js");
+    write_text_file(
+        &variant,
+        "const unused = buildMenu(), e = values => Object.values(values).every(value => value === void 0), spacer = 2, f = node => ({ id: node.id, direction: \"ASC\" }), g = node => (node?.children.map(f) || []).sort(), tail = 3; export { e, f, g };\n",
+    );
+    let validated = run_debundle(&[
+        "spec",
+        "validate",
+        "--modules",
+        modules.to_str().unwrap(),
+        "--source-file",
+        variant.to_str().unwrap(),
+        "--format",
+        "json",
+    ]);
+    assert!(validated.status.success(), "{validated:?}");
+    let report = parse_stdout_json(&validated);
+    assert!(
+        report["outcomes"].as_array().unwrap().is_empty(),
+        "{report}"
+    );
+}
+
+#[test]
+fn ndjson_reports_completed_modules_before_a_later_module_fails() {
+    let dir = tempfile::tempdir().unwrap();
+    let source = dir.path().join("source.js");
+    write_text_file(&source, "const first = () => 1, second = () => 2;\n");
+    let modules = dir.path().join("modules");
+    write_text_file(
+        &modules.join("app/a.yaml"),
+        "members:\n  - name: First\n    selector:\n      binding:\n        name: first\n",
+    );
+    write_text_file(&modules.join("app/z.yaml"), "members: [");
+
+    let out = run_debundle(&[
+        "spec",
+        "synthesize-selectors",
+        "--modules",
+        modules.to_str().unwrap(),
+        "--source-file",
+        source.to_str().unwrap(),
+        "--format",
+        "ndjson",
+    ]);
+    assert!(!out.status.success(), "{out:?}");
+    let rows = String::from_utf8(out.stdout).unwrap();
+    let completed: serde_json::Value = serde_json::from_str(rows.trim()).unwrap();
+    assert_eq!(completed["section"], "module", "{rows}");
+    assert_eq!(completed["module"], "app/a", "{rows}");
+    assert_eq!(completed["candidates"].as_array().unwrap().len(), 1);
 }
 
 minimizer_expectation_case!(

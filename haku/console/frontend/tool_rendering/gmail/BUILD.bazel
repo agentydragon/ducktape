@@ -66,21 +66,6 @@ ts_library(
     ],
 )
 
-# `drafts_create`'s combined pending/finished widget (see ../BUILD.bazel's :call_entry).
-ts_library(
-    name = "calls",
-    srcs = ["calls.tsx"],
-    isolated_typecheck = True,
-    tsconfig = TSCONFIG,
-    deps = [
-        ":requests",
-        ":responses",
-        "//:node_modules/@types/react",
-        "//:node_modules/react",
-        "//haku/console/frontend/tool_rendering:call_entry",
-    ],
-)
-
 # Sources Tailwind must scan; aggregated by the parent's tailwind_srcs.
 filegroup(
     name = "tailwind_srcs",
