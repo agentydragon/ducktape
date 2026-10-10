@@ -310,8 +310,11 @@ py_library(
         "//cluster/cdk8s:fleet_rules",
         "//cluster/cdk8s:flux",
         "//cluster/cdk8s:manifest_roots",
+        "//cluster/cdk8s:secret_ref",
         "//cluster/cdk8s/cert_manager:cluster_ca",
+        "//cluster/cdk8s/external_secrets:minted_secret",
         "//cluster/cdk8s/providers/cert_manager:cert_manager_certificate",
+        "//cluster/cdk8s/providers/external_secrets:externalsecret",
         "@pypi//cdk8s",
     ],
 )

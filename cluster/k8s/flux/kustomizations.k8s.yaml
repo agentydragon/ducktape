@@ -1090,6 +1090,8 @@ spec:
   dependsOn:
     - name: cert-manager
       namespace: ducktape-flux
+    - name: external-secrets-operator
+      namespace: ducktape-flux
   interval: 10m
   path: ./cluster/generated/monitoring/home-switch
   prune: true

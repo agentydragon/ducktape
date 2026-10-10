@@ -603,6 +603,7 @@ def generate_manifests(root: Path) -> None:
         flux_chart,
         write_directory(root, monitoring_home_switch_artifact, monitoring_home_switch.chart),
         cert_manager_kustomization,
+        external_secrets_operator_kustomization,
     )
     volsync_artifact = artifact("volsync", volsync.OUTPUT_DIR)
     volsync_kustomization = volsync.volsync(
