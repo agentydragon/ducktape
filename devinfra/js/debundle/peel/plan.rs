@@ -159,13 +159,11 @@ pub struct ExplainArgs {
 }
 
 #[derive(Debug, Clone)]
-pub struct SourceSliceArgs {
+pub struct SourceSelectionArgs {
     pub common: CommonArgs,
     pub selection: SelectionKind,
     /// Hard line ceiling used when resolving a proposal selection.
     pub size_cap_lines: usize,
-    /// Extra source lines to include around the selected owner span.
-    pub context_lines: usize,
     /// Root used to resolve relative `source_location.source_path` values.
     pub source_root: Option<PathBuf>,
 }
@@ -187,7 +185,7 @@ pub enum QueryKind {
     Diagnostic,
 }
 
-/// What `describe` / `show-source` select owners by; each variant carries its id.
+/// What `describe` / `inspect-source --id` select owners by; each variant carries its id.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SelectionKind {
     /// One owner id from `owner_graph.json`.
@@ -372,25 +370,23 @@ pub enum BindingHomeSourceKind {
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
-pub struct SourceSliceReport {
+pub struct SourceSelectionReport {
     pub query: QueryReport,
     pub owner_ids: Vec<String>,
     /// Bindings claimed by a module-path selection that do not
     /// appear in the owner graph. Always empty for other selections.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub unknown_binding_ids: Vec<String>,
-    pub slices: Vec<SourceSlice>,
+    pub owners: Vec<SelectedOwnerSource>,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
-pub struct SourceSlice {
+pub struct SelectedOwnerSource {
+    pub owner_id: String,
     pub source_path: String,
     pub resolved_path: String,
-    pub start_line: usize,
-    pub end_line: usize,
-    pub context_start_line: usize,
-    pub context_end_line: usize,
-    pub text: String,
+    pub statement_ordinal: usize,
+    pub source_location: SourceLocation,
 }
 
 /// Uniform output format selector for every read-only query command,
@@ -806,7 +802,7 @@ pub fn run_explain_report(args: &ExplainArgs) -> Result<ExplainReport> {
     })
 }
 
-pub fn run_source_slice_report(args: &SourceSliceArgs) -> Result<SourceSliceReport> {
+pub fn run_source_selection_report(args: &SourceSelectionArgs) -> Result<SourceSelectionReport> {
     let graph = load_graph(&args.common.owner_graph_path)?;
     let selection = &args.selection;
     let query = query_report(selection);
@@ -823,37 +819,49 @@ pub fn run_source_slice_report(args: &SourceSliceArgs) -> Result<SourceSliceRepo
     )?;
     let owner_set: BTreeSet<String> = owner_ids.iter().cloned().collect();
     let owners = owners_for_ids(&graph, &owner_set);
-    let spans = source_spans(&owners)?;
-    let mut slices = Vec::new();
-    for (source_path, location) in spans {
-        let resolved = resolve_source_file(
-            &source_path,
-            args.source_root.as_deref(),
-            &args.common.owner_graph_path,
-            &args.common.modules_root,
-        )?;
-        let (context_start_line, context_end_line, text) = read_source_text(
-            &resolved,
-            location.start_line,
-            location.end_line,
-            args.context_lines,
-        )
-        .with_context(|| format!("reading source slice from {}", resolved.display()))?;
-        slices.push(SourceSlice {
-            source_path,
-            resolved_path: resolved.display().to_string(),
-            start_line: location.start_line,
-            end_line: location.end_line,
-            context_start_line,
-            context_end_line,
-            text,
+    let mut selected = Vec::new();
+    let mut resolved_paths: BTreeMap<String, String> = BTreeMap::new();
+    for owner in owners {
+        let location = owner
+            .source_location
+            .as_ref()
+            .with_context(|| format!("owner {} has no source location", owner.id))?;
+        let source_path = &location.source_path;
+        let resolved_path = match resolved_paths.get(source_path) {
+            Some(path) => path.clone(),
+            None => {
+                let path = resolve_source_file(
+                    source_path,
+                    args.source_root.as_deref(),
+                    &args.common.owner_graph_path,
+                    &args.common.modules_root,
+                )?
+                .display()
+                .to_string();
+                resolved_paths.insert(source_path.clone(), path.clone());
+                path
+            }
+        };
+        selected.push(SelectedOwnerSource {
+            owner_id: owner.id.clone(),
+            source_path: source_path.clone(),
+            resolved_path,
+            statement_ordinal: owner.statement_ordinal.0,
+            source_location: location.clone(),
         });
     }
-    Ok(SourceSliceReport {
+    selected.sort_by(|a, b| {
+        (&a.source_path, a.statement_ordinal, &a.owner_id).cmp(&(
+            &b.source_path,
+            b.statement_ordinal,
+            &b.owner_id,
+        ))
+    });
+    Ok(SourceSelectionReport {
         query,
         owner_ids,
         unknown_binding_ids,
-        slices,
+        owners: selected,
     })
 }
 
@@ -1209,7 +1217,7 @@ fn query_report(selection: &SelectionKind) -> QueryReport {
 ///
 /// This is the one shared resolver every CLI verb that accepts a
 /// binding name from the owner graph (`cluster`, `scc --binding`,
-/// `describe`, `show-source`) routes through. Spec-edit verbs
+/// `describe`, `inspect-source --id`) routes through. Spec-edit verbs
 /// (`bindings rename` / `assign` / `unassign` / `comment`) use
 /// [`crate::binding::resolve_unambiguous`] instead — they need YAML
 /// member positions, not owner-graph node refs.
@@ -1489,44 +1497,4 @@ fn binding_homes(
         }
     }
     Ok(homes.into_iter().collect())
-}
-
-fn source_spans(owners: &[OwnerGraphNodeReport]) -> Result<BTreeMap<String, SourceLocation>> {
-    let mut spans: BTreeMap<String, SourceLocation> = BTreeMap::new();
-    for owner in owners {
-        let Some(location) = &owner.source_location else {
-            continue;
-        };
-        spans
-            .entry(location.source_path.clone())
-            .and_modify(|span| span.expand_to(location))
-            .or_insert_with(|| location.clone());
-    }
-    if spans.is_empty() {
-        bail!("selected owners do not have source locations");
-    }
-    Ok(spans)
-}
-
-fn read_source_text(
-    path: &Path,
-    start_line: usize,
-    end_line: usize,
-    context_lines: usize,
-) -> Result<(usize, usize, String)> {
-    let body = fs::read_to_string(path)?;
-    let lines: Vec<&str> = body.lines().collect();
-    if lines.is_empty() {
-        return Ok((1, 0, String::new()));
-    }
-    let context_start_line = start_line.saturating_sub(context_lines).max(1);
-    let context_end_line = end_line.saturating_add(context_lines).min(lines.len());
-    let start_index = context_start_line.saturating_sub(1).min(lines.len());
-    let end_index = context_end_line.min(lines.len());
-    let text = if start_index <= end_index {
-        lines[start_index..end_index].join("\n")
-    } else {
-        String::new()
-    };
-    Ok((context_start_line, context_end_line, text))
 }

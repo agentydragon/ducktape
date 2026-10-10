@@ -26,7 +26,7 @@ Read other bundled references as needed:
 The orchestrator or project adapter provides:
 
 - `<proposals-json>` from `debundle modules propose`
-- `<graph>` and `<modules-dir>` for follow-up `describe` or `show-source`
+- `<graph>` and `<modules-dir>` for follow-up `describe` or `inspect-source --id`
 - `<source-root>` or emitted JS root for short body reads
 - `<conventions-docs>` and any current architecture notes
 - a scratch directory for `seeds.json`, `inflight.json`, `landed.json`, and
@@ -49,7 +49,7 @@ flag them for the architect.
 Unaddressable-anonymous rows stay advisory until the selector question
 is resolved.
 
-Use `debundle_plan_work` for `describe` and `show-source` lookups. Do not
+Use `debundle_plan_work` for `describe` and `inspect-source --id` lookups. Do not
 reimplement graph parsing by grepping generated output unless the graph lacks
 the needed evidence.
 

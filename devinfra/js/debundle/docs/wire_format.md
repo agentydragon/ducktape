@@ -5,7 +5,7 @@ are consumed by:
 
 - spec authors with `jq` poking at cycle / owner-graph / atomic-unit reports;
 - CLI tooling (top-level `debundle modules propose` / `atoms` /
-  `coverage` / `describe` / `show-source` / `scc` / `cluster` /
+  `coverage` / `describe` / `inspect-source --id` / `scc` / `cluster` /
   `graph-summary`);
 - humans reading the files during debugging.
 
@@ -70,12 +70,12 @@ replay and pre-filtering inner-scope reads don't pay for themselves. See
 
 ## Reader audiences
 
-| Consumer                                                                                                             | Reads                                                           | Cross-process?          |
-| -------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------- | ----------------------- |
-| Spec author with `jq`                                                                                                | `owner_graph.json`, `cycles.json`, `atomic_unit_conflicts.json` | yes (Atom-only)         |
-| `debundle atoms` / `coverage` / `graph-summary` / `scc` / `cluster` / `describe` / `show-source` / `modules propose` | `owner_graph.json`, source bytes + spec                         | yes (Atom-only)         |
-| `debundle bindings assign` / `bindings rename` / `modules merge`                                                     | spec YAMLs + `owner_graph.json` (gate)                          | yes                     |
-| Materializer (`debundle run`)                                                                                        | spec + chunk bytes + everything in-process                      | N/A — always in-process |
+| Consumer                                                                                                                     | Reads                                                           | Cross-process?          |
+| ---------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------- | ----------------------- |
+| Spec author with `jq`                                                                                                        | `owner_graph.json`, `cycles.json`, `atomic_unit_conflicts.json` | yes (Atom-only)         |
+| `debundle atoms` / `coverage` / `graph-summary` / `scc` / `cluster` / `describe` / `inspect-source --id` / `modules propose` | `owner_graph.json`, source bytes + spec                         | yes (Atom-only)         |
+| `debundle bindings assign` / `bindings rename` / `modules merge`                                                             | spec YAMLs + `owner_graph.json` (gate)                          | yes                     |
+| Materializer (`debundle run`)                                                                                                | spec + chunk bytes + everything in-process                      | N/A — always in-process |
 
 ## Reconstruction recipe
 

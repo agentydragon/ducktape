@@ -1,17 +1,18 @@
 //! Graph/source inspection commands and their ID resolution and rendering.
 use crate::emit_report;
 use anyhow::{Context, Result, bail};
-use clap::Args as ClapArgs;
+use clap::{Args as ClapArgs, ValueEnum};
 use peel::propose::DEFAULT_SIZE_CAP_LINES;
 use peel::{
     CommonArgs as PeelCommonArgs, ExplainArgs, GraphSummaryArgs, OutputFormat, PatchPlanArgs,
-    SelectionKind, SourceSliceArgs, UnitsArgs, run_explain_report, run_graph_summary_report,
-    run_patch_plan_report, run_source_slice_report, run_units_report,
+    SelectionKind, SourceSelectionArgs, UnitsArgs, run_explain_report, run_graph_summary_report,
+    run_patch_plan_report, run_source_selection_report, run_units_report,
 };
 use selector_codemod::source_input::resolve_chunk_source_file;
 use serde::Serialize;
 use source_inspection::{PreparedSource, StatementRange, StatementRow};
 use spec_modules::{collect_module_files, module_path_from_file};
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
 
 /// Args for `debundle describe <id>`.
@@ -51,35 +52,25 @@ pub(super) struct DescribeArgs {
     pub format: Option<OutputFormat>,
 }
 
-/// Args for `debundle show-source <id>`.
-#[derive(Debug, ClapArgs)]
-pub(super) struct ShowSourceArgs {
-    /// Identifier to print source text for.
-    pub id: String,
-
-    #[command(flatten)]
-    pub common: PeelCommonArgs,
-
-    /// Hard line ceiling used when resolving proposal-id references.
-    #[arg(long = "size-cap-lines", default_value_t = DEFAULT_SIZE_CAP_LINES)]
-    pub size_cap_lines: usize,
-
-    /// Extra source lines around the selected owner span.
-    #[arg(long = "context-lines", default_value_t = 20)]
-    pub context_lines: usize,
-
-    /// Root used to resolve relative `source_location.source_path` values.
-    #[arg(long = "source-root", env = "DEBUNDLE_SOURCE_ROOT")]
-    pub source_root: Option<PathBuf>,
-
-    /// Output format. Default `text` on tty, `json` on pipe.
-    #[arg(long, value_enum)]
-    pub format: Option<OutputFormat>,
-}
-
 /// Args for `debundle inspect-source`.
 #[derive(Debug, ClapArgs)]
 pub(super) struct InspectSourceArgs {
+    /// Resolve a binding, owner, atom, proposal, diagnostic, or module ID.
+    #[arg(long, conflicts_with_all = ["source_file", "chunk", "statements", "around_binding"])]
+    pub id: Option<String>,
+
+    /// Owner graph for --id (or DEBUNDLE_GRAPH).
+    #[arg(long, env = "DEBUNDLE_GRAPH")]
+    pub graph: Option<PathBuf>,
+
+    /// Module spec root for --id (or DEBUNDLE_MODULES).
+    #[arg(long, env = "DEBUNDLE_MODULES")]
+    pub modules: Option<PathBuf>,
+
+    /// Hard line ceiling used when resolving proposal IDs.
+    #[arg(long = "size-cap-lines", default_value_t = DEFAULT_SIZE_CAP_LINES)]
+    pub size_cap_lines: usize,
+
     /// Read this JavaScript source file directly.
     #[arg(long = "source-file", conflicts_with = "chunk")]
     pub source_file: Option<PathBuf>,
@@ -100,21 +91,72 @@ pub(super) struct InspectSourceArgs {
     #[arg(long)]
     pub around_binding: Option<String>,
 
-    /// Number of neighboring top-level items to show on each side of the binding.
-    #[arg(long = "context-statements", default_value_t = 2)]
-    pub context_statements: usize,
+    /// Neighboring items around --around-binding (default 2) or --id (default 0).
+    #[arg(long = "context-statements")]
+    pub context_statements: Option<usize>,
+
+    /// Show readable SWC output or exact source bytes.
+    #[arg(long, value_enum, default_value = "pretty")]
+    pub view: SourceView,
+
+    /// Maximum bytes from any displayed source line; 0 disables this limit.
+    #[arg(long = "max-line-bytes", default_value_t = 512)]
+    pub max_line_bytes: usize,
+
+    /// Maximum complete top-level items to display; 0 disables this limit.
+    #[arg(long = "max-statements", default_value_t = 32)]
+    pub max_statements: usize,
+
+    /// Maximum serialized output bytes, including JSON; 0 disables this limit.
+    #[arg(long = "max-output-bytes", default_value_t = 32768)]
+    pub max_output_bytes: usize,
 
     /// Output format. Default `text` on tty, `json` on pipe.
     #[arg(long, value_enum)]
     pub format: Option<OutputFormat>,
 }
 
+#[derive(Debug, Clone, Copy, Serialize, ValueEnum)]
+#[serde(rename_all = "snake_case")]
+pub(super) enum SourceView {
+    Pretty,
+    Raw,
+}
+
 #[derive(Debug, Serialize)]
 struct InspectSourceReport {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    query: Option<peel::plan::QueryReport>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    selected_owner_count: Option<usize>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    unknown_binding_ids: Vec<String>,
+    index_basis: &'static str,
+    view: SourceView,
+    files: Vec<InspectedFile>,
+    omitted_items: usize,
+}
+
+#[derive(Debug, Serialize)]
+struct InspectedFile {
     source_file: String,
     total_statements: usize,
-    index_basis: &'static str,
-    statements: Vec<StatementRow>,
+    statements: Vec<InspectedStatement>,
+}
+
+#[derive(Debug, Serialize)]
+struct InspectedStatement {
+    index: usize,
+    byte_start: usize,
+    byte_end: usize,
+    start_line: usize,
+    start_column: usize,
+    end_line: usize,
+    end_column: usize,
+    bindings: Vec<String>,
+    owner_ids: Vec<String>,
+    source: String,
+    omitted_source_bytes: usize,
 }
 
 /// Dispatch an `<id>` argument into the [`SelectionKind`] it names. Module
@@ -197,79 +239,345 @@ pub(super) fn run_describe(args: DescribeArgs) -> Result<()> {
     )
 }
 
-pub(super) fn run_show_source(args: ShowSourceArgs) -> Result<()> {
-    let selection = dispatch_id_selection(&args.id, &args.common.modules_root)?;
-    let inner = SourceSliceArgs {
-        common: args.common,
-        selection,
-        size_cap_lines: args.size_cap_lines,
-        context_lines: args.context_lines,
-        source_root: args.source_root,
-    };
-    let report = run_source_slice_report(&inner)?;
-    emit_report(
-        args.format,
-        &report,
-        render_source_slice_text,
-        "writing show-source output",
-    )
-}
-
 pub(super) fn run_inspect_source(args: InspectSourceArgs) -> Result<()> {
-    if args.statements.is_some() && args.around_binding.is_some() {
-        bail!("use either --statements or --around-binding, not both");
+    let mut report = InspectSourceReport {
+        query: None,
+        selected_owner_count: None,
+        unknown_binding_ids: Vec::new(),
+        index_basis: "zero-based raw parsed Module.body index; not a graph owner ordinal",
+        view: args.view,
+        files: Vec::new(),
+        omitted_items: 0,
+    };
+    if let Some(id) = &args.id {
+        let graph = args.graph.clone().context("--id requires --graph")?;
+        let modules = args.modules.clone().context("--id requires --modules")?;
+        let selection = dispatch_id_selection(id, &modules)?;
+        let selected = run_source_selection_report(&SourceSelectionArgs {
+            common: PeelCommonArgs {
+                owner_graph_path: graph,
+                modules_root: modules,
+            },
+            selection,
+            size_cap_lines: args.size_cap_lines,
+            source_root: args.source_root.clone(),
+        })?;
+        report.query = Some(selected.query);
+        report.selected_owner_count = Some(selected.owner_ids.len());
+        report.unknown_binding_ids = selected.unknown_binding_ids;
+        let mut by_file: BTreeMap<String, Vec<peel::SelectedOwnerSource>> = BTreeMap::new();
+        for owner in selected.owners {
+            by_file
+                .entry(owner.resolved_path.clone())
+                .or_default()
+                .push(owner);
+        }
+        for (path, owners) in by_file {
+            let source = PreparedSource::load(&path)?;
+            let mut by_index: BTreeMap<usize, BTreeSet<String>> = BTreeMap::new();
+            let ordinals: Vec<_> = owners.iter().map(|owner| owner.statement_ordinal).collect();
+            for (owner, index) in owners
+                .iter()
+                .zip(source.body_indices_for_owner_ordinals(&ordinals))
+            {
+                let index = index.with_context(|| {
+                    format!(
+                        "owner {} ordinal {} is outside parsed source {}; regenerate the owner graph",
+                        owner.owner_id, owner.statement_ordinal, path
+                    )
+                })?;
+                let row = source.statement_coordinates(index)?;
+                let location = &owner.source_location;
+                // A split comma-list owner can start inside its raw item.
+                // Its recorded span must still fit within that item's span.
+                let starts_before_item = location.start_line < row.start_line
+                    || (location.start_line == row.start_line
+                        && location
+                            .start_column
+                            .is_some_and(|column| column < row.start_column));
+                let starts_after_item = location.start_line > row.end_line
+                    || (location.start_line == row.end_line
+                        && location
+                            .start_column
+                            .is_some_and(|column| column > row.end_column));
+                if starts_before_item || starts_after_item || location.end_line > row.end_line {
+                    bail!(
+                        "owner {} location {:?} does not fit body[{index}] at {}:{}..{}:{} in {}; regenerate the owner graph from this source",
+                        owner.owner_id,
+                        location,
+                        row.start_line,
+                        row.start_column,
+                        row.end_line,
+                        row.end_column,
+                        path
+                    );
+                }
+                by_index
+                    .entry(index)
+                    .or_default()
+                    .insert(owner.owner_id.clone());
+            }
+            append_file(
+                &mut report,
+                &source,
+                by_index,
+                args.context_statements.unwrap_or(0),
+                &args,
+            )?;
+        }
+    } else {
+        let source_file = resolve_chunk_source_file(
+            args.source_file.as_deref(),
+            args.source_root.as_deref(),
+            args.chunk.as_deref(),
+        )?;
+        let source = PreparedSource::load(&source_file)?;
+        let range =
+            match args.around_binding.as_deref() {
+                Some(binding) => Some(source.statement_range_around_binding(
+                    binding,
+                    args.context_statements.unwrap_or(2),
+                )?),
+                None => args.statements,
+            };
+        let (start, end) = match range {
+            Some(range) => {
+                range.validate(source.statement_count())?;
+                (range.start, range.end + 1)
+            }
+            None => (0, source.statement_count()),
+        };
+        let indices = (start..end).map(|index| (index, BTreeSet::new())).collect();
+        append_file(&mut report, &source, indices, 0, &args)?;
     }
-    let source_file = resolve_chunk_source_file(
-        args.source_file.as_deref(),
-        args.source_root.as_deref(),
-        args.chunk.as_deref(),
-    )?;
-    let source = PreparedSource::load(&source_file)?;
-    let statements = match args.around_binding.as_deref() {
-        Some(binding) => source.statement_rows_around_binding(binding, args.context_statements)?,
-        None => source.statement_rows(args.statements)?,
-    };
-    let report = InspectSourceReport {
-        source_file: source.path().display().to_string(),
-        total_statements: source.statement_count(),
-        index_basis: "zero-based raw parsed Module.body index; not an owner ID",
-        statements,
-    };
+    let format = OutputFormat::resolve(args.format);
+    bound_report(&mut report, format, args.max_output_bytes)?;
     emit_report(
-        args.format,
+        Some(format),
         &report,
         render_inspect_source_text,
         "writing inspect-source output",
     )
 }
 
+fn append_file(
+    report: &mut InspectSourceReport,
+    source: &PreparedSource,
+    mut owners_by_index: BTreeMap<usize, BTreeSet<String>>,
+    context: usize,
+    args: &InspectSourceArgs,
+) -> Result<()> {
+    let mut indices = BTreeSet::new();
+    for index in owners_by_index.keys() {
+        indices.extend(
+            index.saturating_sub(context)
+                ..=index
+                    .saturating_add(context)
+                    .min(source.statement_count() - 1),
+        );
+    }
+    let remaining = args
+        .max_statements
+        .saturating_sub(displayed_statement_count(report));
+    let keep = if args.max_statements == 0 {
+        indices.len()
+    } else {
+        remaining.min(indices.len())
+    };
+    report.omitted_items += indices.len() - keep;
+    let statements = indices
+        .into_iter()
+        .take(keep)
+        .map(|index| {
+            let row = source
+                .statement_rows_with_pretty(
+                    Some(StatementRange {
+                        start: index,
+                        end: index,
+                    }),
+                    matches!(args.view, SourceView::Pretty),
+                )?
+                .remove(0);
+            Ok(inspected_statement(
+                row,
+                owners_by_index
+                    .remove(&index)
+                    .unwrap_or_default()
+                    .into_iter()
+                    .collect(),
+                args.view,
+                args.max_line_bytes,
+            ))
+        })
+        .collect::<Result<Vec<_>>>()?;
+    report.files.push(InspectedFile {
+        source_file: source.path().display().to_string(),
+        total_statements: source.statement_count(),
+        statements,
+    });
+    Ok(())
+}
+
 fn render_inspect_source_text(report: &InspectSourceReport, out: &mut String) {
+    out.push_str(&format!("Index: {}\n", report.index_basis));
     out.push_str(&format!(
-        "{} top-level statement(s) in {}\nIndex: {}\n",
-        report.total_statements, report.source_file, report.index_basis
-    ));
-    for statement in &report.statements {
-        let bindings = if statement.bindings.is_empty() {
-            "none".to_string()
-        } else {
-            statement.bindings.join(", ")
-        };
-        out.push_str(&format!(
-            "\nbody[{}] bytes={}..{} location={}:{}..{}:{} bindings=[{}]\n",
-            statement.index,
-            statement.byte_start,
-            statement.byte_end,
-            statement.start_line,
-            statement.start_column,
-            statement.end_line,
-            statement.end_column,
-            bindings,
-        ));
-        for line in statement.pretty_source.lines() {
-            out.push_str("  ");
-            out.push_str(line);
-            out.push('\n');
+        "View: {}\n",
+        match report.view {
+            SourceView::Pretty => "pretty",
+            SourceView::Raw => "raw",
         }
+    ));
+    if let Some(query) = &report.query {
+        out.push_str(&format!(
+            "Selection: {:?} {:?} ({} owner(s))\n",
+            query.kind,
+            query.value,
+            report.selected_owner_count.unwrap_or(0)
+        ));
+    }
+    for file in &report.files {
+        out.push_str(&format!(
+            "{} top-level statement(s) in {}\n",
+            file.total_statements, file.source_file
+        ));
+        for statement in &file.statements {
+            let bindings = if statement.bindings.is_empty() {
+                "none".to_string()
+            } else {
+                statement.bindings.join(", ")
+            };
+            out.push_str(&format!(
+                "\nbody[{}] bytes={}..{} location={}:{}..{}:{} bindings=[{}] owners=[{}]\n",
+                statement.index,
+                statement.byte_start,
+                statement.byte_end,
+                statement.start_line,
+                statement.start_column,
+                statement.end_line,
+                statement.end_column,
+                bindings,
+                statement.owner_ids.join(", "),
+            ));
+            for line in statement.source.lines() {
+                out.push_str("  ");
+                out.push_str(line);
+                out.push('\n');
+            }
+            if statement.omitted_source_bytes > 0 {
+                out.push_str(&format!(
+                "  [omitted {} source byte(s); use --max-line-bytes or --max-output-bytes to expand]\n",
+                statement.omitted_source_bytes
+            ));
+            }
+        }
+    }
+    if report.omitted_items > 0 {
+        out.push_str(&format!(
+            "[omitted {} statement(s); use --max-statements to expand]\n",
+            report.omitted_items
+        ));
+    }
+}
+
+fn displayed_statement_count(report: &InspectSourceReport) -> usize {
+    report.files.iter().map(|file| file.statements.len()).sum()
+}
+
+fn inspected_statement(
+    row: StatementRow,
+    owner_ids: Vec<String>,
+    view: SourceView,
+    max_line_bytes: usize,
+) -> InspectedStatement {
+    let full_source = match view {
+        SourceView::Pretty => row.pretty_source,
+        SourceView::Raw => row.original_source,
+    };
+    let source = clip_source_lines(&full_source, max_line_bytes);
+    InspectedStatement {
+        index: row.index,
+        byte_start: row.byte_start,
+        byte_end: row.byte_end,
+        start_line: row.start_line,
+        start_column: row.start_column,
+        end_line: row.end_line,
+        end_column: row.end_column,
+        bindings: row.bindings,
+        owner_ids,
+        omitted_source_bytes: full_source.len() - source.len(),
+        source,
+    }
+}
+
+fn clip_source_lines(source: &str, max_line_bytes: usize) -> String {
+    if max_line_bytes == 0 {
+        return source.to_string();
+    }
+    let mut clipped = String::new();
+    for line in source.split_inclusive('\n') {
+        let (body, newline) = match line.strip_suffix('\n') {
+            Some(body) => (body, "\n"),
+            None => (line, ""),
+        };
+        let mut end = body.len().min(max_line_bytes);
+        while !body.is_char_boundary(end) {
+            end -= 1;
+        }
+        clipped.push_str(&body[..end]);
+        clipped.push_str(newline);
+    }
+    clipped
+}
+
+fn report_size(report: &InspectSourceReport, format: OutputFormat) -> Result<usize> {
+    let size = match format {
+        OutputFormat::Text => {
+            let mut output = String::new();
+            render_inspect_source_text(report, &mut output);
+            output.len() + usize::from(!output.ends_with('\n'))
+        }
+        OutputFormat::Json => serde_json::to_string_pretty(report)?.len() + 1,
+        OutputFormat::Ndjson => serde_json::to_string(report)?.len() + 1,
+    };
+    Ok(size)
+}
+
+fn bound_report(
+    report: &mut InspectSourceReport,
+    format: OutputFormat,
+    max_bytes: usize,
+) -> Result<()> {
+    if max_bytes == 0 {
+        return Ok(());
+    }
+    loop {
+        let size = report_size(report, format)?;
+        if size <= max_bytes {
+            return Ok(());
+        }
+        let Some(file) = report
+            .files
+            .iter_mut()
+            .rev()
+            .find(|file| !file.statements.is_empty())
+        else {
+            bail!("inspect-source metadata exceeds --max-output-bytes={max_bytes}");
+        };
+        let statement = file.statements.last_mut().expect("a statement exists");
+        if statement.source.is_empty() {
+            file.statements.pop();
+            report.omitted_items += 1;
+            continue;
+        }
+        let mut end = statement.source.len().saturating_sub(size - max_bytes);
+        if end == statement.source.len() {
+            end -= 1;
+        }
+        while !statement.source.is_char_boundary(end) {
+            end -= 1;
+        }
+        statement.omitted_source_bytes += statement.source.len() - end;
+        statement.source.truncate(end);
     }
 }
 
@@ -355,19 +663,6 @@ fn render_explain_text(report: &peel::ExplainReport, out: &mut String) {
         report.incoming_edges.len(),
         report.outgoing_edges.len()
     ));
-}
-
-fn render_source_slice_text(report: &peel::SourceSliceReport, out: &mut String) {
-    for slice in &report.slices {
-        out.push_str(&format!(
-            "--- {} (lines {}-{}) ---\n",
-            slice.source_path, slice.context_start_line, slice.context_end_line
-        ));
-        out.push_str(&slice.text);
-        if !slice.text.ends_with('\n') {
-            out.push('\n');
-        }
-    }
 }
 
 pub(super) fn run_atoms(args: UnitsArgs) -> Result<()> {

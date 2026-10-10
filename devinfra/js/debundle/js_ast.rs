@@ -454,6 +454,33 @@ pub fn body_index_for_statement_ordinal(body: &[ModuleItem], stmt_ordinal: usize
     None
 }
 
+/// Map many post-split ordinals in one pass over the raw body. The input
+/// ordinals may be unordered and several may point into one comma-list item.
+pub fn body_indices_for_statement_ordinals(
+    body: &[ModuleItem],
+    ordinals: &[usize],
+) -> Vec<Option<usize>> {
+    let mut sorted: Vec<_> = ordinals.iter().copied().enumerate().collect();
+    sorted.sort_by_key(|(_, ordinal)| *ordinal);
+    let mut indices = vec![None; ordinals.len()];
+    let mut body_index = 0;
+    let mut next_ordinal = 0usize;
+    for (position, ordinal) in sorted {
+        while let Some(item) = body.get(body_index) {
+            let after_item = next_ordinal.saturating_add(post_split_top_level_count(item));
+            if ordinal < after_item {
+                break;
+            }
+            next_ordinal = after_item;
+            body_index += 1;
+        }
+        if body_index < body.len() {
+            indices[position] = Some(body_index);
+        }
+    }
+    indices
+}
+
 /// Emit a JS module with optional leading line comments.
 ///
 /// `binding_comments` maps a top-level binding name to a human-readable
@@ -781,6 +808,17 @@ pub fn named_export_module_item(
 mod tests {
     use super::*;
     use swc_common::{DUMMY_SP, Spanned};
+
+    #[test]
+    fn batch_owner_ordinals_map_to_raw_body_items() {
+        with_swc_globals(|| {
+            let parsed = parse_js_module("foo.js", "const a = 1, b = 2; const c = 3;").unwrap();
+            assert_eq!(
+                body_indices_for_statement_ordinals(&parsed.module.body, &[2, 0, 1, 9]),
+                vec![Some(1), Some(0), Some(0), None]
+            );
+        });
+    }
 
     #[test]
     fn named_export_constructor_preserves_local_hygiene() {

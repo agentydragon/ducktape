@@ -88,12 +88,13 @@ Cheat sheet of the most-used commands:
   `--source-root` annotates anonymous-statement addressability.
 - `debundle modules merge --target <T> <sources...>` — splice module
   YAMLs.
-- `debundle describe <id>` / `debundle show-source <id>` — graph +
-  source context for any binding / module path or `logical:N` module id /
-  atom / owner / proposal / diagnostic ID.
-- `debundle inspect-source` — pretty-print parsed top-level source items
-  with stable raw indices, original byte spans, source locations, and bindings;
-  it does not load a spec or owner graph.
+- `debundle describe <id>` — graph + spec context for a binding, module,
+  atom, owner, proposal, or diagnostic ID.
+- `debundle inspect-source --id <id>` — select the owners behind one of those
+  IDs and show their numbered source items without including unrelated code.
+- `debundle inspect-source --source-file <file> --statements 12..16` — inspect
+  source without a graph. Both modes show raw `body[N]` indices and byte/line
+  ranges; snippets are bounded by default. Use `--view raw` for original text.
 - `debundle bindings comment <sym>` / `debundle modules comment <module>` —
   edit `comment:` fields (see "Comments" below).
 

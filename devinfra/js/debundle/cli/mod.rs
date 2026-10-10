@@ -22,7 +22,7 @@ use pipeline::{TransformArgs, TransformRunOptions, run_transform_cli};
 
 use crate::bindings_commands::BindingsNs;
 use crate::gate::{GateArgs, run_gate_cli};
-use crate::inspection_commands::{DescribeArgs, InspectSourceArgs, ShowSourceArgs};
+use crate::inspection_commands::{DescribeArgs, InspectSourceArgs};
 use crate::modules_commands::ModulesNs;
 use crate::scc_cluster::{ClusterArgs, SccArgs, run_cluster, run_scc};
 use crate::spec_commands::SpecNs;
@@ -78,15 +78,7 @@ enum DebundleCommand {
     /// Dereference any identifier (binding, module path, proposal,
     /// atom, owner, diagnostic) with full graph + spec context.
     Describe(DescribeArgs),
-    /// Print the source text for any identifier.
-    ///
-    /// Same `<id>` dispatch as `debundle describe`; a module path,
-    /// unambiguous module filename, or module id prints the
-    /// concatenated source of every owner statement in the module, in
-    /// declaration order.
-    #[command(name = "show-source")]
-    ShowSource(ShowSourceArgs),
-    /// Pretty-print parsed top-level source items with source spans and indices.
+    /// Inspect source by graph ID, binding, or numbered top-level item.
     #[command(name = "inspect-source")]
     InspectSource(InspectSourceArgs),
     /// List SCCs in the module-quotient graph.
@@ -125,7 +117,6 @@ pub fn run_debundle_cli(args: DebundleArgs) -> Result<()> {
         DebundleCommand::Coverage(args) => inspection_commands::run_coverage(args),
         DebundleCommand::GraphSummary(args) => inspection_commands::run_graph_summary(args),
         DebundleCommand::Describe(args) => inspection_commands::run_describe(args),
-        DebundleCommand::ShowSource(args) => inspection_commands::run_show_source(args),
         DebundleCommand::InspectSource(args) => inspection_commands::run_inspect_source(args),
         DebundleCommand::Scc(args) => run_scc(args),
         DebundleCommand::Cluster(args) => run_cluster(args),

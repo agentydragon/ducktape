@@ -144,7 +144,7 @@ wrong anchor, so slack only prioritizes; it never decides.
 
 ## The loop (per member, or per cohesive cluster)
 
-1. **Read what it is.** `debundle show-source` for the binding (and the emitted JS
+1. **Read what it is.** `debundle inspect-source --id` for the binding (and the emitted JS
    for surrounding context). Decide the entity's role: a route table, an error
    class, a reducer, a style map, an event emitter, an API client, a config
    constant. The role tells you where its identifying anchor lives.

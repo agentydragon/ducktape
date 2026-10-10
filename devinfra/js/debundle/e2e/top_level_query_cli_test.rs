@@ -3,9 +3,172 @@
 use debundle_e2e_support::GraphFixture;
 use serde_json::{Value, json};
 use std::collections::BTreeMap;
+use std::fs;
 
 fn fixture() -> GraphFixture {
     GraphFixture::new("const ZZ = class PaymentError {};\nconst aa = ZZ;\n", &[])
+}
+
+#[test]
+fn inspect_source_graph_id_selects_only_its_statement_on_one_line() {
+    let fixture = GraphFixture::new("const a = 1; const b = 2; console.log(a, b);", &[]);
+    let report = fixture.json(&["inspect-source", "--id", "owner:1", "--view", "raw"]);
+    assert_eq!(
+        report["files"][0]["statements"].as_array().unwrap().len(),
+        1
+    );
+    let statement = &report["files"][0]["statements"][0];
+    assert_eq!(statement["index"], 1);
+    assert_eq!(statement["owner_ids"], json!(["owner:1"]));
+    assert_eq!(statement["source"], "const b = 2;");
+}
+
+#[test]
+fn inspect_source_maps_split_graph_ordinals_to_one_raw_body_item() {
+    let fixture = GraphFixture::new(
+        "const a = 1, b = 2; console.log(a, b);",
+        &[(
+            "foo.yaml",
+            "members: [{selector: {binding: {name: a}}}, {selector: {binding: {name: b}}}]\n",
+        )],
+    );
+    let report = fixture.json(&["inspect-source", "--id", "owner:1", "--view", "raw"]);
+    let statement = &report["files"][0]["statements"][0];
+    assert_eq!(statement["index"], 0);
+    assert_eq!(statement["owner_ids"], json!(["owner:1"]));
+    assert_eq!(statement["source"], "const a = 1, b = 2;");
+    let module = fixture.json(&["inspect-source", "--id", "foo", "--view", "raw"]);
+    assert_eq!(
+        module["files"][0]["statements"].as_array().unwrap().len(),
+        1
+    );
+    assert_eq!(
+        module["files"][0]["statements"][0]["owner_ids"],
+        json!(["owner:0", "owner:1"])
+    );
+}
+
+#[test]
+fn inspect_source_keeps_separated_module_statements_separate() {
+    let fixture = GraphFixture::new(
+        "const a = 1;\nconst b = 2;\nconst c = 3;\nconsole.log(a, b, c);\n",
+        &[(
+            "foo.yaml",
+            "members: [{selector: {binding: {name: a}}}, {selector: {binding: {name: c}}}]\n",
+        )],
+    );
+    let report = fixture.json(&["inspect-source", "--id", "foo", "--view", "raw"]);
+    let statements = report["files"][0]["statements"].as_array().unwrap();
+    assert_eq!(statements.len(), 2);
+    assert_eq!(statements[0]["index"], 0);
+    assert_eq!(statements[1]["index"], 2);
+    assert_eq!(statements[0]["source"], "const a = 1;");
+    assert_eq!(statements[1]["source"], "const c = 3;");
+}
+
+#[test]
+fn inspect_source_bounds_long_lines_and_serialized_output() {
+    let source = format!("const a = \"{}\"; const b = 1;", "x".repeat(2000));
+    let fixture = GraphFixture::new(&source, &[]);
+    let report = fixture.json(&[
+        "inspect-source",
+        "--id",
+        "owner:0",
+        "--view",
+        "raw",
+        "--max-line-bytes",
+        "32",
+    ]);
+    let statement = &report["files"][0]["statements"][0];
+    assert!(statement["source"].as_str().unwrap().len() <= 32);
+    assert!(statement["omitted_source_bytes"].as_u64().unwrap() > 1900);
+    assert!(statement["byte_end"].as_u64().unwrap() > 2000);
+
+    let out = fixture.command(&[
+        "inspect-source",
+        "--id",
+        "owner:0",
+        "--view",
+        "raw",
+        "--max-line-bytes",
+        "0",
+        "--max-output-bytes",
+        "1200",
+        "--format",
+        "json",
+    ]);
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert!(out.stdout.len() <= 1200, "{} bytes", out.stdout.len());
+    let bounded: Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(bounded["files"][0]["statements"][0]["index"], 0);
+    assert!(
+        bounded["files"][0]["statements"][0]["omitted_source_bytes"]
+            .as_u64()
+            .unwrap()
+            > 0
+    );
+    let text = fixture.command(&[
+        "inspect-source",
+        "--id",
+        "owner:0",
+        "--max-line-bytes",
+        "0",
+        "--max-output-bytes",
+        "1200",
+        "--format",
+        "text",
+    ]);
+    assert!(
+        text.status.success(),
+        "{}",
+        String::from_utf8_lossy(&text.stderr)
+    );
+    assert!(text.stdout.len() <= 1200, "{} bytes", text.stdout.len());
+    assert!(String::from_utf8_lossy(&text.stdout).contains("body[0] bytes="));
+}
+
+#[test]
+fn inspect_source_direct_range_uses_raw_body_indices_and_default_item_limit() {
+    let source = (0..40)
+        .map(|index| format!("const a{index} = {index};"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    let fixture = GraphFixture::new(&source, &[]);
+    let path = fixture.source_path();
+    let path = path.to_str().unwrap();
+    let selected = fixture.json(&[
+        "inspect-source",
+        "--source-file",
+        path,
+        "--statements",
+        "39",
+        "--view",
+        "raw",
+    ]);
+    let statement = &selected["files"][0]["statements"][0];
+    assert_eq!(statement["index"], 39);
+    assert_eq!(statement["source"], "const a39 = 39;");
+    assert_eq!(statement["owner_ids"], json!([]));
+
+    let all = fixture.json(&["inspect-source", "--source-file", path]);
+    assert_eq!(all["files"][0]["statements"].as_array().unwrap().len(), 32);
+    assert_eq!(all["omitted_items"], 8);
+}
+
+#[test]
+fn inspect_source_rejects_stale_graph_source_and_old_command() {
+    let fixture = GraphFixture::new("const a = 1;\n", &[]);
+    fs::write(fixture.source_path(), "\nconst a = 1;\n").unwrap();
+    let out = fixture.command(&["inspect-source", "--id", "owner:0"]);
+    assert!(!out.status.success());
+    assert!(String::from_utf8_lossy(&out.stderr).contains("regenerate the owner graph"));
+    let out = fixture.command(&["show-source", "owner:0"]);
+    assert!(!out.status.success());
+    assert!(String::from_utf8_lossy(&out.stderr).contains("unrecognized subcommand"));
 }
 
 #[test]
@@ -23,7 +186,7 @@ fn atoms_summary_and_proposals_describe_the_real_graph() {
 }
 
 #[test]
-fn describe_and_show_source_dispatch_bindings_and_module_ids() {
+fn describe_and_inspect_source_dispatch_bindings_and_module_ids() {
     let fixture = fixture();
     for id in ["ZZ", "owner:0", "atomic:0"] {
         let report = fixture.json(&["describe", id]);
@@ -34,10 +197,13 @@ fn describe_and_show_source_dispatch_bindings_and_module_ids() {
     let destination = &graph.nodes[0].destination;
     let report = fixture.json(&["describe", destination.as_str()]);
     assert_eq!(report["owner_ids"], json!(["owner:0", "owner:1"]));
-    let report = fixture.json(&["show-source", "ZZ", "--context-lines", "1"]);
-    assert_eq!(report["slices"].as_array().unwrap().len(), 1);
+    let report = fixture.json(&["inspect-source", "--id", "ZZ"]);
+    assert_eq!(
+        report["files"][0]["statements"].as_array().unwrap().len(),
+        1
+    );
     assert!(
-        report["slices"][0]["text"]
+        report["files"][0]["statements"][0]["source"]
             .as_str()
             .unwrap()
             .contains("class PaymentError")
@@ -117,14 +283,18 @@ fn anonymous_only_module_path_dispatches_before_proposal_prefix() {
         );
     }
     let report = fixture.json(&[
-        "show-source",
+        "inspect-source",
+        "--id",
         "auto_partition/auto_partition_0187",
-        "--context-lines",
-        "0",
+        "--view",
+        "raw",
     ]);
-    assert_eq!(report["slices"].as_array().unwrap().len(), 1);
+    assert_eq!(
+        report["files"][0]["statements"].as_array().unwrap().len(),
+        1
+    );
     assert!(
-        report["slices"][0]["text"]
+        report["files"][0]["statements"][0]["source"]
             .as_str()
             .unwrap()
             .contains("console.log(\"task\");")
@@ -161,7 +331,7 @@ fn stale_proposal_and_diagnostic_ids_report_their_kind_and_recovery_command() {
         ("auto_partition_0499", "proposal"),
         ("diagnostic:size_cap_0001", "diagnostic"),
     ] {
-        let out = fixture.command(&["show-source", id]);
+        let out = fixture.command(&["inspect-source", "--id", id]);
         assert!(!out.status.success());
         let stderr = String::from_utf8_lossy(&out.stderr);
         assert!(stderr.contains(&format!("{kind} id {id:?}")), "{stderr}");
@@ -340,23 +510,27 @@ fn describe_limit_truncates_each_section_and_reports_its_total() {
 }
 
 #[test]
-fn show_source_context_is_clamped_to_the_source_file() {
+fn inspect_source_context_is_clamped_to_the_source_file() {
     let fixture = patched_fixture();
-    for (id, context, start, end) in [("aa", "0", 2, 2), ("aa", "1", 1, 3), ("ZZ", "5", 1, 4)] {
-        let report = fixture.json(&["show-source", id, "--context-lines", context]);
-        let slice = &report["slices"][0];
-        assert_eq!(slice["context_start_line"], start, "{id} +{context}");
-        assert_eq!(slice["context_end_line"], end, "{id} +{context}");
-        assert_eq!(
-            slice["text"],
-            PATCHED_SOURCE
-                .lines()
-                .skip(start - 1)
-                .take(end - start + 1)
-                .collect::<Vec<_>>()
-                .join("\n"),
-            "{id} +{context}"
-        );
+    for (id, context, indices) in [
+        ("aa", "0", vec![1]),
+        ("aa", "1", vec![0, 1, 2]),
+        ("ZZ", "5", vec![0, 1, 2, 3]),
+    ] {
+        let report = fixture.json(&[
+            "inspect-source",
+            "--id",
+            id,
+            "--context-statements",
+            context,
+        ]);
+        let actual = report["files"][0]["statements"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|statement| statement["index"].as_u64().unwrap() as usize)
+            .collect::<Vec<_>>();
+        assert_eq!(actual, indices, "{id} +{context}");
     }
 }
 

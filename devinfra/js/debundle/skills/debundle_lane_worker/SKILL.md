@@ -38,7 +38,7 @@ The orchestrator or project adapter provides:
 
 1. Confirm the worktree is at the expected base before editing.
 2. Check the assignment against the current graph with `debundle describe`
-   and `debundle show-source`; if needed, scan with `debundle atoms`,
+   and `debundle inspect-source --id`; if needed, scan with `debundle atoms`,
    `coverage`, or `cluster <sym>` (see the shared CLI guide above).
 3. Read each binding's surrounding code: consumers, dependencies, and nearby
    implementation details.

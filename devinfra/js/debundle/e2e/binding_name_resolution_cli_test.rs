@@ -5,7 +5,7 @@ use peel::resolve_binding_owners;
 use serde_json::json;
 
 #[test]
-fn describe_and_show_source_accept_both_name_forms() {
+fn describe_and_inspect_source_accept_both_name_forms() {
     let fixture = GraphFixture::new(
         "const XOe = class PluginSettingsAccessor {};\nconst YOe = XOe;\n",
         &[(
@@ -16,11 +16,11 @@ fn describe_and_show_source_accept_both_name_forms() {
     for name in ["XOe", "PluginSettingsAccessor"] {
         let report = fixture.json(&["describe", name]);
         assert_eq!(report["owner_ids"], json!(["owner:0"]));
-        let report = fixture.json(&["show-source", name, "--context-lines", "1"]);
-        let slices = report["slices"].as_array().unwrap();
-        assert_eq!(slices.len(), 1);
+        let report = fixture.json(&["inspect-source", "--id", name, "--view", "raw"]);
+        let statements = report["files"][0]["statements"].as_array().unwrap();
+        assert_eq!(statements.len(), 1);
         assert!(
-            slices[0]["text"]
+            statements[0]["source"]
                 .as_str()
                 .unwrap()
                 .contains("class PluginSettingsAccessor")

@@ -37,7 +37,7 @@ For a focused look at one proposal before applying:
 
 ```bash
 debundle describe <proposal-id>
-debundle show-source <proposal-id> --context-lines 40
+debundle inspect-source --id <proposal-id> --context-statements 1
 ```
 
 ## Workflow: moving a binding from one module to another
@@ -149,7 +149,7 @@ and the destinations each member would land in.
    rebind, sequenced, ...).
 2. **Inspect the atom.** Run `debundle describe <atom-id>` for graph
    context (which owners are in it, why they're co-bound), then
-   `debundle show-source <atom-id>` to read the source.
+   `debundle inspect-source --id <atom-id>` to read the source.
 3. **List atoms broadly** if you need to triangulate:
    ```bash
    debundle atoms --format json | jq '.[] | select(...)'

@@ -1743,7 +1743,7 @@ any module-level quotienting. Diagnostics are projections of that
 graph: validation cycles explain why the current explicit assignment
 is not realizable, `atomic_graph` records which owner sets are
 indivisible, and the read-only query surface (`debundle modules
-propose`, `atoms`, `coverage`, `describe`, `show-source`, `scc`,
+propose`, `atoms`, `coverage`, `describe`, `inspect-source --id`, `scc`,
 `cluster`, `graph-summary`) can rank or annotate DAG-derived proposals. None of those projections silently assign bindings on
 behalf of the spec author.
 
@@ -1781,7 +1781,7 @@ use the owner graph and source bodies for drill-down.
    - **Atomic DAG facts** in `owner_graph.json` for planning the next peel.
 3. Spec author resolves: first fix any validation cycles or atomic-unit
    conflicts; then use `debundle modules propose`, `atoms`, `coverage`,
-   `describe`, and `show-source` to choose explicit owner sets for new
+   `describe`, and `inspect-source --id` to choose explicit owner sets for new
    spec modules with good public names.
 4. Re-run validator. Iterate until validation is green and the
    residual contains only intentionally generated or low-value noise.
@@ -1797,7 +1797,7 @@ only reports whether the current spec passed forces spec authors into
 speculative edit/build/test loops. `debundle run` therefore emits the
 atomic-unit DAG in `owner_graph.json`, and the top-level read-only
 queries (`debundle modules propose`, `atoms`, `coverage`, `describe`,
-`show-source`, `scc`, `cluster`, `graph-summary`) compute advisory
+`inspect-source --id`, `scc`, `cluster`, `graph-summary`) compute advisory
 views from that stable graph.
 
 <peel_proposer.md> is the current-state implementation note for how

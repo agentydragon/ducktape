@@ -231,7 +231,7 @@ paths and owner ids belong in the consuming repo.
   span, atomic-unit membership, matching proposal (if any), immediate
   constraining neighbors, and the exact reason the owner is not
   landable today.
-- **Source roots.** `show-source --source-root ...` depends on the
+- **Source roots.** `inspect-source --id <id> --source-root ...` depends on the
   consuming target's source-tree layout. Runbooks and skills should make
   that target-specific root explicit instead of assuming repository root
   or working directory.

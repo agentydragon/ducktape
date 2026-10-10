@@ -48,7 +48,7 @@ bazelisk --output_base=/tmp/debundle-cli-bazel \
   the ladder: prefer lanes that land minimized selectors.
 - Use `coverage` and `atoms` when current YAML or atomic-unit closure is
   the question.
-- Use `describe` and `show-source` before recommending any assignment.
+- Use `describe` and `inspect-source --id` before recommending any assignment.
 - Treat `modules propose` output as planning evidence. Fresh binding rows use
   `modules apply` after semantic naming and selector proof; existing claims
   use `bindings assign`. See `references/docs/cli.md` § Claiming fresh proposals.

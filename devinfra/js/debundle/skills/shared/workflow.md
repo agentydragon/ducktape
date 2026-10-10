@@ -17,7 +17,7 @@ verification gates.
   and reorg recommendations.
 - Integrator: lands worker branches through a validated merge train.
 - Planner/namer skills: `debundle_plan_work` handles read-only
-  `debundle` graph/source queries (`describe`, `show-source`, `atoms`,
+  `debundle` graph/source queries (`describe`, `inspect-source --id`, `atoms`,
   `coverage`, `modules propose`, `scc`, `cluster`, `graph-summary`);
   `debundle_mint_names` handles naming-only edits.
 

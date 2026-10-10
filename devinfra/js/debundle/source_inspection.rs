@@ -14,7 +14,10 @@ use swc_ecma_ast::{
 };
 
 use binding_targets::declaration_name_strings;
-use js_ast::{ParsedJsModule, emit_module_source, parse_js_module_consuming};
+use js_ast::{
+    ParsedJsModule, body_indices_for_statement_ordinals, emit_module_source,
+    parse_js_module_consuming,
+};
 
 /// A parsed JavaScript source file together with its original text and path.
 pub struct PreparedSource {
@@ -62,9 +65,24 @@ impl PreparedSource {
         self.parsed.module.body.len()
     }
 
+    /// Map graph ordinals (after comma-list splitting) to raw parsed items.
+    /// Several owners may share one body item.
+    pub fn body_indices_for_owner_ordinals(&self, ordinals: &[usize]) -> Vec<Option<usize>> {
+        body_indices_for_statement_ordinals(&self.parsed.module.body, ordinals)
+    }
+
     /// Return statements in the requested inclusive range, or all statements
     /// when `range` is `None`.
     pub fn statement_rows(&self, range: Option<StatementRange>) -> Result<Vec<StatementRow>> {
+        self.statement_rows_with_pretty(range, true)
+    }
+
+    /// Skip SWC codegen when the caller only needs exact source bytes.
+    pub fn statement_rows_with_pretty(
+        &self,
+        range: Option<StatementRange>,
+        include_pretty: bool,
+    ) -> Result<Vec<StatementRow>> {
         let count = self.statement_count();
         let (start, end) = match range {
             Some(range) => {
@@ -78,7 +96,7 @@ impl PreparedSource {
         self.parsed.module.body[start..=end]
             .iter()
             .enumerate()
-            .map(|(offset, item)| self.statement_row(start + offset, item))
+            .map(|(offset, item)| self.statement_row(start + offset, item, include_pretty))
             .collect()
     }
 
@@ -92,6 +110,17 @@ impl PreparedSource {
         name: &str,
         context_statements: usize,
     ) -> Result<Vec<StatementRow>> {
+        self.statement_rows(Some(
+            self.statement_range_around_binding(name, context_statements)?,
+        ))
+    }
+
+    /// Find the raw item range around a declaration without rendering it.
+    pub fn statement_range_around_binding(
+        &self,
+        name: &str,
+        context_statements: usize,
+    ) -> Result<StatementRange> {
         let matches = self
             .parsed
             .module
@@ -125,10 +154,21 @@ impl PreparedSource {
         let end = index
             .saturating_add(context_statements)
             .min(self.statement_count().saturating_sub(1));
-        self.statement_rows(Some(StatementRange { start, end }))
+        Ok(StatementRange { start, end })
     }
 
-    fn statement_row(&self, index: usize, item: &ModuleItem) -> Result<StatementRow> {
+    /// Coordinates only, without copying or pretty-printing the source item.
+    pub fn statement_coordinates(&self, index: usize) -> Result<StatementCoordinates> {
+        let item = self
+            .parsed
+            .module
+            .body
+            .get(index)
+            .with_context(|| format!("body[{index}] is outside the parsed source"))?;
+        self.item_coordinates(index, item)
+    }
+
+    fn item_coordinates(&self, index: usize, item: &ModuleItem) -> Result<StatementCoordinates> {
         let span = item.span();
         if span.is_dummy() {
             bail!("parsed source item body[{index}] has no original source span");
@@ -158,28 +198,59 @@ impl PreparedSource {
                 self.source.len()
             );
         }
-        let original_source = self
-            .source
-            .get(byte_start..byte_end)
-            .with_context(|| format!("source span for body[{index}] is not on UTF-8 boundaries"))?
-            .to_string();
         let (start_line, start_column) = line_and_byte_column(&self.line_starts, byte_start);
         let (end_line, end_column) = line_and_byte_column(&self.line_starts, byte_end);
-        let pretty_source = pretty_print_item(item)?;
-
-        Ok(StatementRow {
-            index,
+        Ok(StatementCoordinates {
             byte_start,
             byte_end,
             start_line,
             start_column,
             end_line,
             end_column,
+        })
+    }
+
+    fn statement_row(
+        &self,
+        index: usize,
+        item: &ModuleItem,
+        include_pretty: bool,
+    ) -> Result<StatementRow> {
+        let coordinates = self.item_coordinates(index, item)?;
+        let original_source = self
+            .source
+            .get(coordinates.byte_start..coordinates.byte_end)
+            .with_context(|| format!("source span for body[{index}] is not on UTF-8 boundaries"))?
+            .to_string();
+        let pretty_source = if include_pretty {
+            pretty_print_item(item)?
+        } else {
+            String::new()
+        };
+
+        Ok(StatementRow {
+            index,
+            byte_start: coordinates.byte_start,
+            byte_end: coordinates.byte_end,
+            start_line: coordinates.start_line,
+            start_column: coordinates.start_column,
+            end_line: coordinates.end_line,
+            end_column: coordinates.end_column,
             bindings: top_level_binding_names(item),
             original_source,
             pretty_source,
         })
     }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct StatementCoordinates {
+    pub byte_start: usize,
+    pub byte_end: usize,
+    pub start_line: usize,
+    pub start_column: usize,
+    pub end_line: usize,
+    pub end_column: usize,
 }
 
 /// Inclusive, zero-based range of raw parsed top-level items.

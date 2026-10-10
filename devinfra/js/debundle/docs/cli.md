@@ -20,7 +20,7 @@ as the rest of ducktape.
   `spec synthesize-selectors` with `--apply`
 - Read-only queries: `bindings list`, `modules {list,propose}`,
   `spec {stats,selector-debt,match-selector,validate}`, `atoms`, `coverage`,
-  `graph-summary`, `describe <id>`, `show-source <id>`, `inspect-source`, `scc`,
+  `graph-summary`, `describe <id>`, `inspect-source`, `scc`,
   `cluster <sym>`, `gate {list,describe,cut}`
 
 Renaming or disabling a module is a plain `mv` of its YAML file, not a
@@ -114,7 +114,7 @@ wherever the lookup is unambiguous:
 If both forms could match different bindings, the command refuses with a
 list. Use the minified form to disambiguate.
 
-`describe` and `show-source` take any ID kind and dispatch on shape:
+`describe` and `inspect-source --id` take any ID kind and dispatch on shape:
 bindings (minified or readable), module paths (`runtime/plugins`) or
 unambiguous module filenames, module ids (`logical:7`), owner ids
 (`owner:42`), atom ids (`atomic:N`), proposal ids, diagnostic ids.
@@ -197,33 +197,48 @@ the edit gate, `describe` and `peel` when they resolve source claims. The
 binary needs nothing beside it. `match-selector` and `synthesize-selectors`
 resolve one selector at a time and never solve.
 
-### Inspecting source without a spec
+### Inspecting source
 
-`debundle inspect-source` parses one JavaScript source file with the same SWC
-parser used by `spec match-selector`, then prints selected raw top-level module
-items in readable form:
+`debundle inspect-source` parses source with the same SWC parser used by
+`spec match-selector`. It can select numbered top-level items directly from a
+file, or resolve a graph/spec ID to its owners:
 
 ```sh
 debundle inspect-source --source-file app.js
 debundle inspect-source --source-root extracted --chunk static/app.js \
   --statements 12..16 --format json
 debundle inspect-source --source-file app.js --around-binding XOe
+debundle inspect-source --id atomic:17 --graph owner_graph.json --modules spec/modules \
+  --source-root extracted
+debundle inspect-source --id runtime/plugins --view raw --context-statements 1
 ```
 
 `--statements` accepts one zero-based index or an inclusive `START..END`
-range. With no selector it prints every item. `--around-binding NAME` locates
+range. With no selector it starts at the first item and prints up to the
+configured statement limit. `--around-binding NAME` locates
 the unique top-level item that declares that name and includes two neighboring
 items on each side by default; set `--context-statements` to change that count.
-The range and binding options are mutually exclusive. A missing or repeated
-top-level declaration is an error.
+The range, binding, and ID options are mutually exclusive. A missing or
+repeated top-level declaration is an error. `--id` accepts the same IDs as
+`describe` and requires `--graph` and `--modules` (or their environment
+variables). It shows each selected raw item separately, even if selected
+owners are far apart. The graph's post-split owner ordinals are converted to
+raw `body[N]` indices; a multi-declarator item can contain several owners.
+Graph/source location mismatches are errors, not silent substitutions.
 
 The labels are raw parsed `Module.body` indices. They use the same `body[N]`
-coordinate that structural selectors report, but they are not owner IDs and do
-not require a spec or owner graph. Each result includes its half-open UTF-8
+coordinate that structural selectors report, but they are not owner IDs.
+Direct source-file selection does not require a spec or owner graph. Each
+result includes its half-open UTF-8
 byte span in the original file, one-based byte line/columns (end exclusive),
-declared top-level binding names, the original source slice in JSON, and the
-pretty-printed AST item. Text is the interactive default; pipes default to
-JSON, and `--format` can select either explicitly.
+declared top-level binding names, selected owner IDs when applicable, and a
+source snippet. `--view pretty` (default) uses SWC's readable rendering;
+`--view raw` uses the original source bytes before truncation. The chosen view
+applies to text and JSON. By default, the command shows at most 32 items,
+512 bytes per source line, and 32 KiB of serialized output. It reports omitted
+items and source bytes. Set `--max-statements 0`, `--max-line-bytes 0`, or
+`--max-output-bytes 0` to disable the corresponding limit explicitly.
+Text is the interactive default; pipes default to JSON.
 
 ### Selector outcomes
 
@@ -458,8 +473,9 @@ When a binding's role is unclear or a proposal is suspicious:
    owner, home module, atom membership, and incoming/outgoing edges. Add
    `--include-proposals` only when proposer proposal/diagnostic
    annotations are needed.
-2. **`debundle show-source <sym>`** — print the original source span for
-   the owner. Use `--context-lines 40` to widen the view.
+2. **`debundle inspect-source --id <sym>`** — inspect the owner's numbered
+   source item. Use `--view raw` for original bytes and
+   `--context-statements 1` for neighboring items.
 3. **`debundle cluster <sym>`** — list the module-quotient neighbors of the
    binding's owner. Useful for "what does this module touch?" questions
    before deciding a destination.

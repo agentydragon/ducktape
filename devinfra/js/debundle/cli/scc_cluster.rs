@@ -203,7 +203,7 @@ pub fn run_cluster(args: ClusterArgs) -> Result<()> {
     let sym = args.resolve_sym()?;
     let graph = crate::load_owner_graph_report(&args.common.owner_graph_path)?;
     // Use the shared `resolve_binding_owners` helper (same code path
-    // `describe` / `show-source` / `scc --binding` use), so minified
+    // `describe` / `inspect-source --id` / `scc --binding` use), so minified
     // and readable names both work.
     let owner = resolve_one_binding_owner(&graph, sym)?;
     let home_key = &owner.destination;
