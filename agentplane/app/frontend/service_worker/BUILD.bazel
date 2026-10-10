@@ -22,7 +22,10 @@ ts_library(
     srcs = ["sw.ts"],
     isolated_typecheck = True,
     tsconfig = ":tsconfig",
-    deps = ["//agentplane/app/frontend:actions_types"],
+    deps = [
+        "//agentplane/app/frontend:actions_notifications",
+        "//agentplane/app/frontend:actions_types",
+    ],
 )
 
 # The worker URL stays /sw.js; keep the generated bundle separate from ts_library's sw.js output.
@@ -36,7 +39,13 @@ esbuild(
     deps = [":service_worker_lib"],
 )
 
-# The server and test consume only the JavaScript output; esbuild also emits a linked source map.
+filegroup(
+    name = "service_worker",
+    srcs = [":service_worker_bundle"],
+    visibility = ["//agentplane/app:__pkg__"],
+)
+
+# Single-file view: the esbuild target also emits a linked source map.
 filegroup(
     name = "service_worker_js",
     srcs = ["bundled/sw.js"],

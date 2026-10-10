@@ -1,11 +1,13 @@
 import type { ActionRequestView } from "../actions/types";
+import { formatActionNotification } from "../actions/notifications";
 
 interface PushShow {
   kind: "show";
   action_id: string;
   action_group: string;
   action_name: string;
-  version?: number;
+  version: number;
+  url: string;
 }
 
 interface PushRetract {
@@ -61,8 +63,14 @@ self.addEventListener("push", (event) => {
         });
         return;
       }
-      await self.registration.showNotification(`${message.action_group} / ${message.action_name}`, {
-        body: current ? "Action requires approval" : "Open Agentplane to review this Action",
+      const content = current
+        ? formatActionNotification(current)
+        : {
+            title: `${message.action_group} / ${message.action_name}`,
+            body: "Open Agentplane to review this Action",
+          };
+      await self.registration.showNotification(content.title, {
+        body: content.body,
         tag: message.action_id,
         requireInteraction: true,
         actions: current

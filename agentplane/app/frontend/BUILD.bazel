@@ -1209,6 +1209,30 @@ ts_library(
 )
 
 ts_library(
+    name = "actions_notifications",
+    srcs = [
+        "actions/notifications/index.ts",
+        "actions/notifications/ssh/exec.ts",
+        "actions/notifications/types.ts",
+    ],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":actions_types",
+        ":ssh_action_schemas",
+    ],
+)
+
+agentplane_vitest_test(
+    name = "actions_notifications_test",
+    srcs = ["actions/notifications/index.test.ts"],
+    deps = [
+        ":actions_notifications",
+        ":actions_types",
+        "//:node_modules/vitest",
+    ],
+)
+
+ts_library(
     name = "app",
     srcs = [
         "app.tsx",
