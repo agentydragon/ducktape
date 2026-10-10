@@ -7,7 +7,7 @@ import pytest_bazel
 import yaml
 from more_itertools import one
 
-from cluster.cdk8s.agentplane import app, notifications, sandbox_service
+from cluster.cdk8s.agentplane import app, history_service, notifications, sandbox_service
 from cluster.cdk8s.agentplane.conftest import NAMESPACES
 
 
@@ -34,6 +34,19 @@ def test_app_uses_independent_service(namespace: str, agentplane_manifests: dict
         }
     ]
     assert one(mount for mount in container["volumeMounts"] if mount["name"] == "sandbox-service-token")["readOnly"]
+    history = history_service.service(namespace)
+    assert f"--history-service-target={history.fqdn}:{history.pod_port}" in container["args"]
+    history_token = one(volume for volume in application["volumes"] if volume["name"] == "history-service-token")
+    assert history_token["projected"]["sources"] == [
+        {
+            "serviceAccountToken": {
+                "audience": history_service.TOKEN_AUDIENCE,
+                "expirationSeconds": 3600,
+                "path": "token",
+            }
+        }
+    ]
+    assert one(mount for mount in container["volumeMounts"] if mount["name"] == "history-service-token")["readOnly"]
     service_pod = resource("Deployment", sandbox_service.NAME)["spec"]["template"]["spec"]
     assert service_pod["serviceAccountName"] == sandbox_service.NAME
     assert all("persistentVolumeClaim" not in volume for volume in service_pod.get("volumes", []))

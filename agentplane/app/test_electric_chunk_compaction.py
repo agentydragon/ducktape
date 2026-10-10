@@ -50,8 +50,8 @@ from agentplane.app.testing.replication_source import SANDBOX, SESSION, Replicat
 from agentplane.app.threads.models import ThreadEntity, ThreadPayloadChunk
 from agentplane.app.threads.view.content import ContentStore
 from agentplane.app.threads.view.views import ThreadPayloadReference
+from agentplane.history_service.client import HistoryServiceClient
 from agentplane.protocol import event_pb2
-from agentplane.sandbox_service.client import SandboxServiceClient
 
 # gazelle:include_dep @pypi//protobuf
 
@@ -158,7 +158,7 @@ class _FollowedBody:
 
 @asynccontextmanager
 async def _followed_body(
-    history_peer: HistoryService, history_client: SandboxServiceClient
+    history_peer: HistoryService, history_client: HistoryServiceClient
 ) -> AsyncIterator[_FollowedBody]:
     async with electric_service() as service:
         engine = connect(service.database_url)
@@ -245,7 +245,7 @@ def _key(row: Row) -> Row:
 
 
 async def test_compacting_in_place_reaches_every_reader_of_the_field_as_one_batch(
-    history_peer: HistoryService, history_client: SandboxServiceClient
+    history_peer: HistoryService, history_client: HistoryServiceClient
 ) -> None:
     """Chunk 0 rewritten to the whole text and the other chunks deleted: every row the compacted body
     keeps is one a holder of the uncompacted body already has."""
@@ -282,7 +282,7 @@ async def test_compacting_in_place_reaches_every_reader_of_the_field_as_one_batc
 
 
 async def test_compacting_by_reinsertion_reaches_every_reader_of_the_field_as_one_batch(
-    history_peer: HistoryService, history_client: SandboxServiceClient
+    history_peer: HistoryService, history_client: HistoryServiceClient
 ) -> None:
     """Every chunk deleted and the compacted row inserted at chunk 0's key. Electric passes both halves
     on, so a holder keeps its text on screen only by applying the batch whole: applied change by

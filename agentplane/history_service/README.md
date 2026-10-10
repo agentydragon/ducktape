@@ -2,7 +2,9 @@
 
 Serves retained Session history: the raw runner Event log and its observation metadata, keyed by
 public Session ID. It authenticates callers by projected ServiceAccount token (TokenReview) and
-serves only the configured reader accounts. A Session UUID by itself grants nothing.
+serves only the configured reader accounts, today the integration app's. A Session UUID by itself
+grants nothing. Consumers use `client.py`; `testing/backend.py` serves the real boundary over a test
+database.
 
 Today the Sandbox Service still writes the history tables and runs their migrations. This service
 reads them, in read-only transactions, through `sandbox_service/session_history`. Target and sequence:

@@ -41,6 +41,7 @@ from agentplane.app.threads.ingestion import Ingester, Ingestion
 from agentplane.app.threads.sessions import SandboxSessions
 from agentplane.app.threads.store import ThreadStore
 from agentplane.app.threads.view.content import ContentStore
+from agentplane.history_service.client import HistoryServiceClient
 from agentplane.kubernetes_watch import STALE_AFTER_CYCLES
 from agentplane.sandbox_service.client import SandboxServiceClient
 from agentplane.sandbox_service.egress_views import EgressReader
@@ -141,6 +142,12 @@ async def async_main(settings: Settings) -> None:
             follow_timeout_s=settings.sandbox_service_follow_timeout_s,
             channel_options=settings.sandbox_service_grpc_channel_options,
         )
+        history = HistoryServiceClient(
+            settings.history_service_target,
+            token_file=settings.history_service_token_file,
+            request_timeout_s=settings.history_service_request_timeout_s,
+            channel_options=settings.history_service_grpc_channel_options,
+        )
         egress = EgressAccess(EgressReader(namespace=settings.namespace, custom_objects=custom_objects), inventory)
         # In the Sandbox's namespace, not the app's: that is where the Action Service matches a
         # binding to the authenticated Sandbox, and where the owner reference cascades.
@@ -158,14 +165,14 @@ async def async_main(settings: Settings) -> None:
         engine = connect(settings.database_url)
         database_updates = DatabaseUpdates(engine.url)
         store = ThreadStore(engine)
-        event_logs = EventLogStore(engine, history_reader=inventory, history_creator=inventory)
-        content = ContentStore(engine, history_reader=inventory)
+        event_logs = EventLogStore(engine, history_reader=history, history_creator=history)
+        content = ContentStore(engine, history_reader=history)
         runners = SandboxSessions(live, inventory)
         ingester = Ingester(
             runners=runners,
             event_logs=event_logs,
             ingestion=Ingestion(engine),
-            history_projector=HistoryProjector(engine, inventory),
+            history_projector=HistoryProjector(engine, history),
         )
         bridge = RunnerBridge(runners=runners, event_logs=event_logs, content=content, ingester=ingester)
 
@@ -235,6 +242,7 @@ async def async_main(settings: Settings) -> None:
         finally:
             watch_task.cancel()
             await asyncio.gather(watch_task, return_exceptions=True)
+            await history.close()
 
 
 async def serve_then_close(

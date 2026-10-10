@@ -24,8 +24,8 @@ from agentplane.app.threads.events.event_log import ThreadNotFoundError
 from agentplane.app.threads.models import EventLog, ThreadCheckpoint, ThreadEntity, ThreadEvidence, ThreadNativeLink
 from agentplane.app.threads.view import fold
 from agentplane.app.threads.view.views import EntityKind, ThreadCommandState
+from agentplane.history_service.client import HistoryServiceClient
 from agentplane.protocol import command_pb2, event_log_pb2
-from agentplane.sandbox_service.client import SandboxServiceClient
 
 # The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.
 # gazelle:include_dep @pypi//protobuf
@@ -47,7 +47,7 @@ class ThreadScope:
 
 
 class ContentStore:
-    def __init__(self, engine: AsyncEngine, *, history_reader: SandboxServiceClient) -> None:
+    def __init__(self, engine: AsyncEngine, *, history_reader: HistoryServiceClient) -> None:
         self._sessions = async_sessionmaker(engine, expire_on_commit=False)
         self._history_reader = history_reader
 

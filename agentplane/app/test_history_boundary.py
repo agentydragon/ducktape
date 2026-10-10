@@ -10,8 +10,8 @@ import pytest_bazel
 
 from agentplane.app.testing.history_service import HistoryService
 from agentplane.app.testing.thread_test_support import event_entry
+from agentplane.history_service.client import HistoryServiceClient, HistoryServiceError
 from agentplane.protocol import event_pb2
-from agentplane.sandbox_service.client import SandboxServiceClient, ServiceError
 
 # gazelle:include_dep @pypi//protobuf
 
@@ -22,13 +22,13 @@ def history_peer() -> HistoryService:
 
 
 @pytest.fixture
-async def history_client(history_peer: HistoryService, tmp_path: Path) -> AsyncIterator[SandboxServiceClient]:
+async def history_client(history_peer: HistoryService, tmp_path: Path) -> AsyncIterator[HistoryServiceClient]:
     async with history_peer.connect(tmp_path / "history-token") as client:
         yield client
 
 
 async def test_history_peer_pages_original_evidence_over_grpc(
-    history_peer: HistoryService, history_client: SandboxServiceClient
+    history_peer: HistoryService, history_client: HistoryServiceClient
 ) -> None:
     session = uuid4()
     history_peer.open(session)
@@ -47,10 +47,10 @@ async def test_history_peer_pages_original_evidence_over_grpc(
 
 
 async def test_history_rpc_failure_is_not_an_empty_archive(
-    history_peer: HistoryService, history_client: SandboxServiceClient
+    history_peer: HistoryService, history_client: HistoryServiceClient
 ) -> None:
     history_peer.failure = grpc.StatusCode.PERMISSION_DENIED
-    with pytest.raises(ServiceError) as failure:
+    with pytest.raises(HistoryServiceError) as failure:
         await history_client.read_session_events(str(uuid4()))
     assert failure.value.code == grpc.StatusCode.PERMISSION_DENIED
 

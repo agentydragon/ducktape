@@ -4353,6 +4353,8 @@ data:
       - inference-experiments
     sandbox_service_grpc_channel_options:
       grpc.max_receive_message_length: 33554432
+    history_service_grpc_channel_options:
+      grpc.max_receive_message_length: 33554432
     egress_admin_url: http://agentplane-egress-admin.agentplane-staging.svc:8081/
     action_federation:
       service_url: http://agentplane-actions.agentplane-staging.svc:8080/
@@ -4401,6 +4403,7 @@ spec:
             - --namespace=agentplane-staging
             - --sandbox-namespace=agentplane-staging
             - --sandbox-service-target=agentplane-sandbox-service.agentplane-staging.svc.cluster.local:8080
+            - --history-service-target=agentplane-history-service.agentplane-staging.svc.cluster.local:8080
             - --notifications-url=http://agentplane-notifications.agentplane-staging.svc.cluster.local:8080
             - --notifications-token-file=/var/run/secrets/agentplane-notifications/token
             - --host=0.0.0.0
@@ -4502,6 +4505,9 @@ spec:
             - mountPath: /var/run/secrets/agentplane-sandbox-service
               name: sandbox-service-token
               readOnly: true
+            - mountPath: /var/run/secrets/agentplane-history-service
+              name: history-service-token
+              readOnly: true
             - mountPath: /var/run/secrets/agentplane-notifications
               name: notifications-token
               readOnly: true
@@ -4602,6 +4608,13 @@ spec:
             sources:
               - serviceAccountToken:
                   audience: agentplane-sandbox-service
+                  expirationSeconds: 3600
+                  path: token
+        - name: history-service-token
+          projected:
+            sources:
+              - serviceAccountToken:
+                  audience: agentplane-history-service
                   expirationSeconds: 3600
                   path: token
         - name: notifications-token
@@ -4737,6 +4750,14 @@ spec:
     - toEndpoints:
         - matchLabels:
             app.kubernetes.io/name: agentplane-sandbox-service
+            k8s:io.kubernetes.pod.namespace: agentplane-staging
+      toPorts:
+        - ports:
+            - port: "8080"
+              protocol: TCP
+    - toEndpoints:
+        - matchLabels:
+            app.kubernetes.io/name: agentplane-history-service
             k8s:io.kubernetes.pod.namespace: agentplane-staging
       toPorts:
         - ports:

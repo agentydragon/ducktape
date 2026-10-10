@@ -317,6 +317,7 @@ ENV = Environment(
         models=STAGING_APP_MODELS,
         action_federation=_ACTION_FEDERATION,
         sandbox_service_grpc_channel_options=LARGE_EVENT_GRPC_CHANNEL_OPTIONS,
+        history_service_grpc_channel_options=LARGE_EVENT_GRPC_CHANNEL_OPTIONS,
     ),
     runner_grpc_channel_options=LARGE_EVENT_GRPC_CHANNEL_OPTIONS,
     notifications_github=GitHubAppProps(app_id=5188971, secret_name="agentplane-github-app"),

@@ -157,6 +157,7 @@ ENV = Environment(
         thread_preset_codex_model=GPT6_LUNA_RESPONSES,
         action_federation=_ACTION_FEDERATION,
         sandbox_service_grpc_channel_options=LARGE_EVENT_GRPC_CHANNEL_OPTIONS,
+        history_service_grpc_channel_options=LARGE_EVENT_GRPC_CHANNEL_OPTIONS,
     ),
     runner_grpc_channel_options=LARGE_EVENT_GRPC_CHANNEL_OPTIONS,
     db=DbProps(instances=1),

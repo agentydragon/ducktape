@@ -66,6 +66,7 @@ from cluster.cdk8s.agentplane import (
     database,
     egress,
     electric,
+    history_service,
     llm_ingress,
     notifications,
     sandbox_pod,
@@ -297,6 +298,7 @@ class App(Construct):
                 # runner ServiceAccount out of here.
                 sandbox_namespace=namespace,
                 sandbox_service_target=f"{sandbox_service.service(namespace).fqdn}:{sandbox_service.service(namespace).pod_port}",
+                history_service_target=f"{history_service.service(namespace).fqdn}:{history_service.service(namespace).pod_port}",
                 notifications_url=f"http://{notifications.service(namespace).fqdn}:{notifications.service(namespace).port.number}",
                 notifications_token_file="/var/run/secrets/agentplane-notifications/token",
                 host="0.0.0.0",
@@ -338,6 +340,34 @@ class App(Construct):
                 k8s.VolumeMount(
                     name="sandbox-service-token",
                     mount_path="/var/run/secrets/agentplane-sandbox-service",
+                    read_only=True,
+                ),
+            )
+        )
+
+        ApiObject.of(deployment).add_json_patch(
+            JsonPatch.add(
+                "/spec/template/spec/volumes/-",
+                k8s.Volume(
+                    name="history-service-token",
+                    projected=k8s.ProjectedVolumeSource(
+                        sources=[
+                            k8s.VolumeProjection(
+                                service_account_token=k8s.ServiceAccountTokenProjection(
+                                    audience=history_service.TOKEN_AUDIENCE, expiration_seconds=3600, path="token"
+                                )
+                            )
+                        ]
+                    ),
+                ),
+            )
+        )
+        ApiObject.of(deployment).add_json_patch(
+            JsonPatch.add(
+                "/spec/template/spec/containers/0/volumeMounts/-",
+                k8s.VolumeMount(
+                    name="history-service-token",
+                    mount_path="/var/run/secrets/agentplane-history-service",
                     read_only=True,
                 ),
             )
@@ -422,8 +452,8 @@ class App(Construct):
             egress=[dns_egress, egress.proxy(namespace).egress()],
         )
         # The app takes browser traffic straight from the gateway and reaches DNS, the
-        # API server, the OIDC provider, Sandbox Service, the egress proxy's admin
-        # port, the Action Service, and the trajectory store.
+        # API server, the OIDC provider, Sandbox Service, History Service, the egress
+        # proxy's admin port, the Action Service, and the trajectory store.
         NetworkPolicy(
             self,
             "networkpolicy-app",
@@ -435,6 +465,7 @@ class App(Construct):
                 EgressRule.to_entities(Entity.KUBE_APISERVER),
                 *self._oidc_egress_rules(),
                 sandbox_service.service(namespace).egress(),
+                history_service.service(namespace).egress(),
                 notifications.service(namespace).egress(),
                 egress.admin(namespace).egress(),
                 # Separate BFF/operator transport boundary. The Action Service

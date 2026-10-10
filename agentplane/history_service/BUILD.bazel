@@ -52,6 +52,22 @@ py_library(
 )
 
 py_library(
+    name = "client",
+    srcs = ["client.py"],
+    visibility = [
+        "//agentplane/app:__subpackages__",
+        "//agentplane/history_service:__subpackages__",
+    ],
+    deps = [
+        "//agentplane:grpc_options",
+        "//agentplane/history_service:protocol_pb2_grpc",
+        "//agentplane/sandbox_service:protocol_pb2",
+        "@pypi//grpcio",
+        "@pypi//protobuf",
+    ],
+)
+
+py_library(
     name = "settings",
     srcs = ["settings.py"],
     visibility = [

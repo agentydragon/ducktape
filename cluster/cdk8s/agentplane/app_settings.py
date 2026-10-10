@@ -49,12 +49,14 @@ def settings(
     action_federation: ActionFederationSettings | None = None,
     action_policy_sets: list[str] | None = None,
     sandbox_service_grpc_channel_options: dict[str, int | str] | None = None,
+    history_service_grpc_channel_options: dict[str, int | str] | None = None,
     kubernetes_grants: dict[str, KubernetesGrant] | None = None,
     kubernetes_binding_cleanup_namespaces: list[str] | None = None,
     kubernetes_cluster_binding_cleanup: bool = False,
 ) -> AppSettingsConfig:
     return AppSettingsConfig(
         sandbox_service_grpc_channel_options=sandbox_service_grpc_channel_options or {},
+        history_service_grpc_channel_options=history_service_grpc_channel_options or {},
         models=ModelCatalog(
             models=[
                 ModelOption(
