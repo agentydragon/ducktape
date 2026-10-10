@@ -8,6 +8,7 @@ filegroup(
         "//agentplane/sandbox_service/session_history/migrations/versions:0002_session_open_reservations.py",
         "//agentplane/sandbox_service/session_history/migrations/versions:0003_history_feed_state.py",
         "//agentplane/sandbox_service/session_history/migrations/versions:0004_thread_fold_projection.py",
+        "//agentplane/sandbox_service/session_history/migrations/versions:0005_summary_first_event.py",
     ],
     visibility = ["//agentplane/sandbox_service/session_history:__pkg__"],
 )

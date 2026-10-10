@@ -137,6 +137,8 @@ class HistoryProjector:
             await record_model_activity(session, thread_id, page.entries)
             for entry in page.entries:
                 at = entry.event.at.ToDatetime(tzinfo=UTC)
+                if entry.cursor == 1:
+                    summary.first_event_at = at
                 if summary.last_event_at is None or at > summary.last_event_at:
                     summary.last_event_at = at
                 if entry.event.HasField("turn_completed"):

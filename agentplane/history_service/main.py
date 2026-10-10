@@ -14,6 +14,7 @@ from sqlalchemy.ext.asyncio import create_async_engine
 from agentplane.history_service.fold_shadow import FoldShadow
 from agentplane.history_service.grpc_api import Resources, add_service
 from agentplane.history_service.settings import Settings
+from agentplane.history_service.summaries import SummaryReader
 from agentplane.sandbox_service.session_history.store import Store
 from agentplane.workload_auth.principal import WorkloadPrincipalResolver
 
@@ -66,6 +67,7 @@ async def serve(settings: Settings) -> None:
                     allowed_service_account_namespaces={account.namespace for account in settings.reader_accounts},
                 ),
                 history=history,
+                summaries=SummaryReader(engine),
                 reader_accounts=settings.reader_accounts,
                 request_timeout_s=settings.request_timeout_s,
             )

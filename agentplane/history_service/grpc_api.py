@@ -11,7 +11,8 @@ import grpc
 from kubernetes_asyncio import client as k8s_client
 from sqlalchemy.exc import SQLAlchemyError
 
-from agentplane.history_service import protocol_pb2_grpc
+from agentplane.history_service import protocol_pb2 as history_pb2, protocol_pb2_grpc
+from agentplane.history_service.summaries import SummaryReader
 from agentplane.sandbox_service import protocol_pb2
 from agentplane.sandbox_service.session_history.store import HistoryNotFoundError, Store
 from agentplane.subjects import ServiceAccountRef
@@ -26,6 +27,7 @@ from agentplane.workload_auth.principal import WorkloadPrincipalRejectedError, W
 class Resources:
     principals: WorkloadPrincipalResolver
     history: Store
+    summaries: SummaryReader
     # A public Session UUID is not itself authority: only these accounts read transcripts.
     reader_accounts: frozenset[ServiceAccountRef]
     request_timeout_s: float
@@ -92,6 +94,20 @@ class HistoryService(protocol_pb2_grpc.HistoryServiceServicer):
                     protocol_pb2.SessionObservation(cursor=cursor, kind=kind) for cursor, kind in observations
                 ],
             )
+
+    @override
+    async def ListSessionSummaries(
+        self, request: history_pb2.ListSessionSummariesRequest, context: grpc.aio.ServicerContext
+    ) -> history_pb2.ListSessionSummariesResponse:
+        async with self.reader(context):
+            return await self.resources.summaries.list_page(request)
+
+    @override
+    async def GetSessionSummary(
+        self, request: history_pb2.GetSessionSummaryRequest, context: grpc.aio.ServicerContext
+    ) -> history_pb2.SessionSummary:
+        async with self.reader(context):
+            return await self.resources.summaries.get(UUID(request.session_id))
 
 
 def add_service(resources: Resources, server: grpc.aio.Server) -> None:
