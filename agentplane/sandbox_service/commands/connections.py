@@ -1,9 +1,10 @@
 """Runner channel connection ownership: the newest accepted connection for a Sandbox wins."""
 
+from collections.abc import Set
 from datetime import datetime
 from uuid import UUID
 
-from sqlalchemy import func, update
+from sqlalchemy import func, select, text, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
 
@@ -18,8 +19,13 @@ class ConnectionStore:
     def __init__(self, engine: AsyncEngine) -> None:
         self._sessions = async_sessionmaker(engine, expire_on_commit=False)
 
-    async def accept(self, *, sandbox_uid: UUID, pod_uid: str, owner_replica: str, runner_boot_id: str) -> int:
-        """Take ownership for a new connection and return its epoch, committed before `Welcome`."""
+    async def accept(
+        self, *, sandbox_uid: UUID, pod_uid: str, owner_replica: str, runner_boot_id: str, operations: Set[str]
+    ) -> int:
+        """Take ownership for a new connection and return its epoch, committed before `Welcome`.
+
+        The Sandbox's recorded operations gain this connection's agreed `operations`.
+        """
         values = {
             "pod_uid": pod_uid,
             "owner_replica": owner_replica,
@@ -29,10 +35,17 @@ class ConnectionStore:
         async with self._sessions.begin() as session:
             result = await session.execute(
                 insert(db.RunnerConnection)
-                .values(sandbox_uid=sandbox_uid, connection_epoch=1, **values)
+                .values(sandbox_uid=sandbox_uid, connection_epoch=1, operations=sorted(operations), **values)
                 .on_conflict_do_update(
                     index_elements=[db.RunnerConnection.sandbox_uid],
-                    set_={"connection_epoch": db.RunnerConnection.connection_epoch + 1, **values},
+                    set_={
+                        "connection_epoch": db.RunnerConnection.connection_epoch + 1,
+                        "operations": text(
+                            "ARRAY(SELECT DISTINCT unnest(runner_connection.operations || excluded.operations) "
+                            "ORDER BY 1)"
+                        ),
+                        **values,
+                    },
                 )
                 .returning(db.RunnerConnection.connection_epoch)
             )
@@ -49,3 +62,11 @@ class ConnectionStore:
             )
         if touched is None:
             raise ConnectionSupersededError(sandbox_uid)
+
+    async def read_operations(self, sandbox_uid: UUID) -> frozenset[str]:
+        """The operations any connection of this Sandbox has agreed, whether or not one is live now."""
+        async with self._sessions() as session:
+            operations = await session.scalar(
+                select(db.RunnerConnection.operations).where(db.RunnerConnection.sandbox_uid == sandbox_uid)
+            )
+        return frozenset(operations or ())

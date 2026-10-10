@@ -98,7 +98,7 @@ message Heartbeat {}
   a submission is the [command admission](../plans/command_admission.md) contract's decision, not
   the channel's.
 - **Status codes.** The service ends a stream with a gRPC status naming the cause:
-  `UNAUTHENTICATED`, `PERMISSION_DENIED` (not a channel-routed Sandbox), `ABORTED` (superseded by a
+  `UNAUTHENTICATED`, `PERMISSION_DENIED` (not a Sandbox Pod of this service), `ABORTED` (superseded by a
   newer connection), `INVALID_ARGUMENT` (protocol error) or `UNAVAILABLE` (replica draining or the
   connection's maximum age). The runner logs the status and reconnects, except that
   `PERMISSION_DENIED` backs off to its maximum interval.
@@ -155,7 +155,7 @@ those recipients can replay a token they saw as a runner connection, and a chann
 call the Sandbox Service API.
 
 The rule that admits the channel host lives in its own egress policy, which the Sandbox Service
-binds to every channel-routed Sandbox at creation. It is not one of the launch-selectable
+binds to every Sandbox at creation. It is not one of the launch-selectable
 policies, so choosing a narrow egress set cannot cut a Sandbox off from its own control plane.
 
 When a `Connect` stream opens, the Sandbox Service authenticates the bearer with the shared
@@ -166,7 +166,6 @@ resolves the principal the way destination resolution does, in reverse:
 2. It has exactly one controller reference, a `Sandbox` of the agent-sandbox API, and that Sandbox
    is in the service's inventory with the same UID.
 3. The Sandbox runs as the token's ServiceAccount.
-4. The Sandbox is channel-routed (below).
 
 A VM environment's runner reaches the channel from its `virt-launcher` Pod's egress relay, and that
 Pod resolves to its environment through its own controller chain under the same rules.
@@ -178,8 +177,7 @@ TokenReview.
 
 **Revocation.** Every RPC is authenticated when it opens. With each liveness write (every 15 s) the
 owning replica resolves the connection's Pod and Sandbox again, and ends the connection's streams
-when its Pod is deleted or replaced, its Sandbox's ServiceAccount changes or the Sandbox stops being
-channel-routed. As a backstop for a
+when its Pod is deleted or replaced or its Sandbox's ServiceAccount changes. As a backstop for a
 missed watch event, it ends every `Connect` stream after one hour; the runner reconnects and
 authenticates again.
 
@@ -193,30 +191,31 @@ that keeps the runner outside the agent's reach.
 
 ## Route selection
 
-Whether a Sandbox's runner is reached over the channel is fixed for that Sandbox, never inferred
-per request from whether a connection happens to exist. The SandboxTemplate declares the operations
-its runner image carries over the channel; the Sandbox Service copies that set onto the Sandbox
-as an annotation at creation, as it already copies the template's Pod shape (`agentplane.allegedly.works/runner-channel`, for example
-`commands`), so editing a template does not move existing Sandboxes. The set grows on an existing
-Sandbox only by explicit operator action, one operation at a time.
+The runner says which operations it carries over the channel in `Hello`, and `Welcome` agrees the
+ones the service also supports. The Sandbox Service records every operation any connection of the
+Sandbox has agreed, and the set only grows: once an operation has been agreed, that Sandbox's
+operation is channel-routed for good, whether or not a connection exists right now. Routing is
+never inferred per request from whether a connection happens to be live.
 
 For a channel-routed operation with no current connection, the service reports the destination
 unavailable. It never falls back to `Attach`, and the inbound route never takes over a command
-whose channel delivery was ambiguous. Operations not in the set keep their inbound route, so a
-Sandbox can carry commands over the channel while its events are still read through `Attach`.
+whose channel delivery was ambiguous. Operations no connection has agreed keep their inbound route,
+so a Sandbox can carry commands over the channel while its events are still read through `Attach`,
+and an old runner that never dials out keeps working unchanged.
 
 ## Connection ownership and fencing
 
 The Sandbox Service keeps one row per Sandbox in its own database:
 
-| column             | meaning                                            |
-| ------------------ | -------------------------------------------------- |
-| `sandbox_uid`      | primary key                                        |
-| `pod_uid`          | the Pod the current connection authenticated as    |
-| `connection_epoch` | increases by one for every accepted connection     |
-| `owner_replica`    | the service replica holding the current connection |
-| `runner_boot_id`   | from `Hello`                                       |
-| `last_seen_at`     | last frame received, written at most every 15 s    |
+| column             | meaning                                             |
+| ------------------ | --------------------------------------------------- |
+| `sandbox_uid`      | primary key                                         |
+| `pod_uid`          | the Pod the current connection authenticated as     |
+| `connection_epoch` | increases by one for every accepted connection      |
+| `owner_replica`    | the service replica holding the current connection  |
+| `runner_boot_id`   | from `Hello`                                        |
+| `last_seen_at`     | last frame received, written at most every 15 s     |
+| `operations`       | every operation a connection has agreed; grows only |
 
 Accepting a connection increments the epoch and sets the owner in one transaction, commits, then
 sends `Welcome` with the new epoch. The previous owner, if it still holds a stream, sees its epoch
