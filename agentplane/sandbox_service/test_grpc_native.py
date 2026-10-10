@@ -22,6 +22,7 @@ from agentplane.runner.testing.scripted_model import ScriptedModel, Text
 from agentplane.sandbox_service import protocol_pb2
 from agentplane.sandbox_service.client import Runner, SandboxServiceClient, ServiceError
 from agentplane.sandbox_service.commands import db as commands_db
+from agentplane.sandbox_service.commands.store import SubmissionStore
 from agentplane.sandbox_service.destinations import DestinationResolver
 from agentplane.sandbox_service.grpc_api import Resources
 from agentplane.sandbox_service.protocol_pb2 import SandboxBinding, SandboxDestination, SessionDefaults
@@ -53,15 +54,15 @@ SESSION = "grpc-session"
 
 
 @pytest.fixture
-async def sessions(engine: AsyncEngine) -> SessionRegistry:
-    # The registry tables share the history test database; production keeps them apart.
+async def commands_engine(engine: AsyncEngine) -> AsyncEngine:
+    # The registry and admission tables share the history test database; production keeps them apart.
     async with engine.begin() as connection:
         await connection.run_sync(commands_db.Base.metadata.create_all)
-    return SessionRegistry(engine, Store(engine))
+    return engine
 
 
 @pytest.fixture
-def resources(cluster: Cluster, runner: RunnerHandle, sessions: SessionRegistry) -> Resources:
+def resources(cluster: Cluster, runner: RunnerHandle, commands_engine: AsyncEngine) -> Resources:
     cluster.fake.tokens[TOKEN] = TokenVerdict(
         username=f"system:serviceaccount:{OWNER.namespace}:{OWNER.name}",
         pod_name="test-native-caller",
@@ -79,7 +80,8 @@ def resources(cluster: Cluster, runner: RunnerHandle, sessions: SessionRegistry)
         destinations=DestinationResolver(cluster.inventory, k8s_client.CoreV1Api(cluster.api), runner.port),
         caller_accounts=frozenset({OWNER}),
         platform_instructions="Test backend-owned guidance.",
-        sessions=sessions,
+        sessions=SessionRegistry(commands_engine, Store(commands_engine)),
+        submissions=SubmissionStore(commands_engine),
     )
 
 
