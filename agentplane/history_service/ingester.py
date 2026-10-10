@@ -114,8 +114,9 @@ class HistoryIngester:
                 async for change in self.sandboxes.watch_sessions(after_position=position):
                     self._observe(change)
                     position = change.position
-            except (ConnectionError, TimeoutError, RunnerError) as error:
-                logger.warning("Session feed failed after position %d (%r); reconnecting", position, error)
+            except ConnectionError, TimeoutError, RunnerError:
+                # The chained gRPC error carries the status details the client keeps out of its message.
+                logger.warning("Session feed failed after position %d; reconnecting", position, exc_info=True)
                 await asyncio.sleep(self.retry_interval_s)
 
     def _observe(self, change: SessionChange) -> None:
