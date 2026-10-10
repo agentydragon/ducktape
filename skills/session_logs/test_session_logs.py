@@ -91,13 +91,45 @@ def test_claude_compaction_markers_are_counted(tmp_path) -> None:
     )
 
 
-def test_codex_compaction_markers_are_counted(tmp_path) -> None:
-    _assert_compaction_marker_count(
-        tmp_path,
-        "codex",
-        {"type": "event_msg", "payload": {"type": "context_compacted"}},
-        {"type": "event_msg", "payload": {"type": "user_message"}},
-    )
+@pytest.mark.parametrize(
+    ("marker", "near_miss"),
+    [
+        (
+            {"type": "event_msg", "payload": {"type": "context_compacted"}},
+            {"type": "event_msg", "payload": {"type": "user_message"}},
+        ),
+        (
+            {"type": "compacted", "payload": {"window_number": 1}},
+            {"type": "world_state", "payload": {"window_number": 2}},
+        ),
+    ],
+)
+def test_codex_compaction_markers_are_counted(tmp_path, marker, near_miss) -> None:
+    _assert_compaction_marker_count(tmp_path, "codex", marker, near_miss)
+
+
+def test_codex_conversation_shows_top_level_compaction(tmp_path, monkeypatch, capsys) -> None:
+    transcript = tmp_path / "codex.jsonl"
+    entries = [
+        {
+            "type": "response_item",
+            "timestamp": "2026-01-01T00:00:00Z",
+            "payload": {"type": "message", "role": "user", "content": [{"type": "input_text", "text": "first turn"}]},
+        },
+        {"type": "compacted", "timestamp": "2026-01-01T00:01:00Z", "payload": {"window_number": 1}},
+        {
+            "type": "response_item",
+            "timestamp": "2026-01-01T00:02:00Z",
+            "payload": {"type": "message", "role": "user", "content": [{"type": "input_text", "text": "second turn"}]},
+        },
+    ]
+    transcript.write_text("\n".join(json.dumps(entry) for entry in entries) + "\n")
+
+    monkeypatch.setattr(session_logs.sys, "argv", ["conversation.py", "codex", str(transcript)])
+    assert session_logs.main_conversation() == 0
+    output = capsys.readouterr().out
+    assert "Compaction markers: 1" in output
+    assert output.index("first turn") < output.index("### Compaction marker") < output.index("second turn")
 
 
 @pytest.mark.parametrize(
