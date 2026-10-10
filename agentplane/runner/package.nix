@@ -19,6 +19,7 @@ python.pkgs.buildPythonApplication {
     protobuf
     pydantic
     sqlalchemy
+    tenacity
     typer
   ];
   pythonImportsCheck = [
