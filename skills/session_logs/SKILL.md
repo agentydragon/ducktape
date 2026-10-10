@@ -80,9 +80,9 @@ human text is in `type: "user"` entries whose content is a string or text block;
 traffic rather than user turns. Compaction is recorded as
 `type: "system", subtype: "compact_boundary"` in the same JSONL file.
 
-### Codex CLI 0.154.0
+### Codex CLI
 
-Validated on this machine with Codex CLI `0.154.0`:
+To inspect a Codex CLI transcript on this machine:
 
 ```bash
 CODEX_SESSION=$(~/.codex/skills/session_logs/find_current_session.py codex)
@@ -98,7 +98,8 @@ with the same session id, so the helper selects the larger parent transcript.
 Codex user turns are `response_item` records with
 `payload.type: "message", payload.role: "user"`; do not also read
 `event_msg` `user_message` records because they duplicate those turns. Codex
-compaction is `event_msg.payload.type: "context_compacted"` in the same file.
+compaction is recorded as a top-level `type: "compacted"` entry in current
+transcripts; older transcripts use `event_msg.payload.type: "context_compacted"`.
 The `content_item_kinds` metadata parallels `payload.content` and identifies
 harness-injected blocks so the conversation helper can omit them by default.
 

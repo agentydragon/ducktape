@@ -284,6 +284,8 @@ def is_assistant(entry: Mapping[str, Any], harness: str) -> bool:
 def is_compaction(entry: Mapping[str, Any], harness: str) -> bool:
     if harness == "claude":
         return entry.get("type") == "system" and entry.get("subtype") == "compact_boundary"
+    if entry.get("type") == "compacted":
+        return True
     payload = entry.get("payload")
     return entry.get("type") == "event_msg" and isinstance(payload, dict) and payload.get("type") == "context_compacted"
 
