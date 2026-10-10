@@ -91,6 +91,7 @@ class ImageUpdatePush(Construct):
         source_description: str,
         description: str | None = None,
         sparse_checkout: Sequence[str] | None = None,
+        source_interval: str = "1m",
     ) -> None:
         super().__init__(scope, id)
         self.source = GitRepository(
@@ -99,7 +100,7 @@ class ImageUpdatePush(Construct):
             metadata=ApiObjectMetadata(
                 name=source_name, namespace=_GITHUB_APP_NAMESPACE, annotations={"description": source_description}
             ),
-            interval="1m",
+            interval=source_interval,
             provider=GitRepositorySpecProvider.GITHUB,
             ref=GitRepositorySpecRef(branch=branch),
             secret_ref=GitRepositorySpecSecretRef(name=_GITHUB_APP_SECRET),

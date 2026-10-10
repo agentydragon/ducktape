@@ -29,6 +29,9 @@ def automation_chart(app: App) -> Chart:
         branch=ducktape_flux.BRANCH,
         path=f"./{HAND_WRITTEN_ROOT}",
         sparse_checkout=[f"{HAND_WRITTEN_ROOT}/"],
+        # The automation reads only this source's URL, branch and credentials and clones on its own;
+        # nothing reads the fetched artifact, so frequent polling just re-downloads the repo.
+        source_interval="24h",
     )
     return chart
 
