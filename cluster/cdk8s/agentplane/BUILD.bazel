@@ -227,6 +227,7 @@ py_library(
         ":egress",
         ":electric",
         ":environment",
+        ":history_service",
         ":llm_ingress",
         ":migrate_container",
         ":pod_disruption_budget",
@@ -804,6 +805,7 @@ py_test(
     deps = [
         ":app",
         ":conftest",
+        ":history_service",
         ":notifications",
         ":sandbox_service",
         "//:conftest",

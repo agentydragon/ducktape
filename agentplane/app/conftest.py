@@ -41,6 +41,7 @@ from agentplane.app.threads.events.projection_lease import ProjectionLease
 from agentplane.app.threads.sessions import SandboxSessions
 from agentplane.app.threads.store import ThreadStore
 from agentplane.app.threads.view.content import ContentStore
+from agentplane.history_service.client import HistoryServiceClient
 
 # The per-test database is created over psycopg, which SQLAlchemy loads from the URL scheme.
 # gazelle:include_dep @pypi//psycopg
@@ -165,25 +166,25 @@ def history_peer() -> HistoryService:
 
 
 @pytest.fixture
-async def history_client(history_peer: HistoryService, tmp_path: Path) -> AsyncIterator[SandboxServiceClient]:
+async def history_client(history_peer: HistoryService, tmp_path: Path) -> AsyncIterator[HistoryServiceClient]:
     async with history_peer.connect(tmp_path / "history-token") as client:
         yield client
 
 
 @pytest.fixture
 def event_logs(
-    engine: AsyncEngine, history_peer: HistoryService, history_client: SandboxServiceClient
+    engine: AsyncEngine, history_peer: HistoryService, history_client: HistoryServiceClient
 ) -> EventLogStore:
     return EventLogStore(engine, peer=history_peer, history_reader=history_client)
 
 
 @pytest.fixture
-def content(engine: AsyncEngine, history_client: SandboxServiceClient) -> ContentStore:
+def content(engine: AsyncEngine, history_client: HistoryServiceClient) -> ContentStore:
     return ContentStore(engine, history_reader=history_client)
 
 
 @pytest.fixture
-def ingestion(engine: AsyncEngine, history_peer: HistoryService, history_client: SandboxServiceClient) -> Ingestion:
+def ingestion(engine: AsyncEngine, history_peer: HistoryService, history_client: HistoryServiceClient) -> Ingestion:
     return Ingestion(engine, peer=history_peer, history_reader=history_client)
 
 
@@ -196,7 +197,7 @@ async def database_updates(engine: AsyncEngine) -> AsyncIterator[DatabaseUpdates
 
 @pytest.fixture
 async def replica(
-    db_url: str, history_peer: HistoryService, history_client: SandboxServiceClient
+    db_url: str, history_peer: HistoryService, history_client: HistoryServiceClient
 ) -> AsyncIterator[Replica]:
     engine = connect(db_url)
     try:

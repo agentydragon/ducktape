@@ -1,10 +1,10 @@
 # Agentplane integration app
 
 The human-facing frontend over Agentplane's services: a FastAPI service that reaches sandboxes and
-runner sessions through the Sandbox Service, reads their archived session history from it,
-projects those events into PostgreSQL thread entity rows, and synchronizes selected rows and
-content to the browser through authenticated Electric endpoints. It also presents Actions,
-operator decisions and Connection consent.
+runner sessions through the Sandbox Service, reads their archived session history from the
+History Service, projects those events into PostgreSQL thread entity rows, and synchronizes
+selected rows and content to the browser through authenticated Electric endpoints. It also presents
+Actions, operator decisions and Connection consent.
 The staging instance lives in `cluster/k8s/agentplane-staging/`.
 
 ## Dependency boundary
@@ -16,7 +16,8 @@ attachments, and app-only provisioning or prompt/bootstrap state, including in v
 
 Backend responsibilities needed by another service move to an independent owner, not a temporary
 app endpoint. The [Sandbox Service](../sandbox_service/README.md) owns sandbox lifecycle,
-runner-session control and following, and the session-event archive; the app is its client.
+runner-session control and following, and writes the session-event archive, which the
+[History Service](../history_service/README.md) serves; the app is a client of both.
 Notifications depends on that backend and Actions, not this app. The app's thread projections are
 its own state, and like any state the app holds they are candidates to move into a dedicated
 service ([principles](../docs/principles.md#composable-services-not-a-platform-you-sign-up-for-whole)).

@@ -26,8 +26,8 @@ from agentplane.app.testing.replication_source import SANDBOX, SESSION, Replicat
 from agentplane.app.threads.events.projection_lease import ProjectionLease
 from agentplane.app.threads.models import ThreadEntity
 from agentplane.app.threads.view.recording import THREAD_FOLD_EPOCH
+from agentplane.history_service.client import HistoryServiceClient
 from agentplane.protocol import event_pb2
-from agentplane.sandbox_service.client import SandboxServiceClient
 
 # gazelle:include_dep @pypi//protobuf
 
@@ -102,7 +102,7 @@ async def _record(
 
 
 async def test_one_thread_shape_serves_a_moving_window(
-    history_peer: HistoryService, history_client: SandboxServiceClient
+    history_peer: HistoryService, history_client: HistoryServiceClient
 ) -> None:
     async with electric_service() as service:
         engine = connect(service.database_url)
@@ -209,7 +209,7 @@ async def test_one_thread_shape_serves_a_moving_window(
 
 
 async def test_bodies_load_as_subsets_of_one_shape_per_field(
-    history_peer: HistoryService, history_client: SandboxServiceClient
+    history_peer: HistoryService, history_client: HistoryServiceClient
 ) -> None:
     async with electric_service() as service:
         engine = connect(service.database_url)

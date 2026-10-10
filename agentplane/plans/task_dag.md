@@ -750,7 +750,6 @@ node switches which service reads or writes it. Only the fold double-runs.
 flowchart TD
     SESSION_FOLLOW_CONTRACT[Decision: History Service as an ordinary subscriber]
     SESSION_COMMAND_CONTRACT[Command admission contract]
-    HISTORY_READ_CUTOVER[App reads raw history from History Service]
     SANDBOX_HISTORY_READS_RETIRE[Blocked: delete Sandbox Service history reads]
     SESSION_WATCH[Blocked: Sandbox Service Session feed]
     FOLLOW_REPLAY[Blocked: follow from any cursor via the runner]
@@ -778,14 +777,12 @@ flowchart TD
     RUNNER_INBOUND_RETIRE[Retire inbound runner access]
     SANDBOX_LIFECYCLE_DURABILITY[Archive before storage deletion]
     SESSION_COMMAND_CONTRACT --> SESSION_FOLLOW_CONTRACT
-    HISTORY_READ_CUTOVER --> SANDBOX_HISTORY_READS_RETIRE
     SESSION_FOLLOW_CONTRACT --> SESSION_WATCH
     SESSION_FOLLOW_CONTRACT --> FOLLOW_REPLAY
     SESSION_FOLLOW_CONTRACT --> RETENTION_HOLDS
     SESSION_WATCH --> HISTORY_WRITE_HANDOFF
     FOLLOW_REPLAY --> HISTORY_WRITE_HANDOFF
     RETENTION_HOLDS --> HISTORY_WRITE_HANDOFF
-    HISTORY_READ_CUTOVER --> HISTORY_WRITE_HANDOFF
     HISTORY_WRITE_HANDOFF --> SANDBOX_LOCAL_HISTORY_RETIRE
     SANDBOX_HISTORY_READS_RETIRE --> SANDBOX_LOCAL_HISTORY_RETIRE
     FOLD_LIBRARY_EXTRACT --> FOLD_SHADOW
@@ -829,16 +826,10 @@ For now only the app's ServiceAccount reads history, for every Session; agent re
 the operator releases it, and `GetSandbox` shows which hold blocks deletion. API sketch:
 [History Service plan](history_service.md#apis).
 
-### `HISTORY_READ_CUTOVER` — app reads raw history from the History Service
-
-**Candidate.** Switch the app's raw and observation reads to the deployed History Service, with
-authorization and lag explicit, after its reads match the Sandbox Service's on a bounded sample in
-both environments. Rollback: point the app back at the same tables.
-
 ### `SANDBOX_HISTORY_READS_RETIRE` — delete the old read path
 
-**Blocked on the read cutover, one release later.** Remove the Sandbox Service history read RPCs and
-their client code.
+**Blocked one release after the app's History Service reads are deployed to both environments.**
+Remove the Sandbox Service history read RPCs and their client code.
 
 ### `SESSION_WATCH` — a feed of Sessions
 
@@ -861,7 +852,7 @@ Session has confirmed its seal cursor. Test holds racing teardown, a holder that
 
 ### `HISTORY_WRITE_HANDOFF` — the History Service ingester takes over
 
-**Blocked on the Session feed, replay, holds and the read cutover.** Move the Sandbox Service's
+**Blocked on the Session feed, replay and holds.** Move the Sandbox Service's
 ingester into the History Service as a subscriber of those calls, with its per-log claim; one writer
 at a time. Test a History Service outage (it resumes from its cursor; the runner journal is the
 buffer), duplicate and conflicting replays, and claim handover between replicas. Rollback: run the
