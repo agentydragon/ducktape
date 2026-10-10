@@ -38,8 +38,8 @@ py_library(
     name = "grpc_api",
     srcs = ["grpc_api.py"],
     deps = [
-        ":protocol_pb2_grpc",
         "//agentplane:subjects",
+        "//agentplane/history_service:protocol_pb2_grpc",
         "//agentplane/sandbox_service:protocol_pb2",
         "//agentplane/sandbox_service/session_history:store",
         "//agentplane/workload_auth:bearer",
@@ -89,9 +89,9 @@ py_test(
     srcs = ["test_grpc_api.py"],
     deps = [
         ":grpc_api",
-        ":protocol_pb2_grpc",
         "//:conftest",
         "//agentplane:subjects",
+        "//agentplane/history_service:protocol_pb2_grpc",
         "//agentplane/protocol:event_log_pb2",
         "//agentplane/protocol:event_pb2",
         "//agentplane/sandbox_service:protocol_pb2",
