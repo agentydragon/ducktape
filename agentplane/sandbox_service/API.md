@@ -81,9 +81,9 @@ Any allowed service caller may place, confirm or release any hold, and holds nev
 - `ReleaseHold` is idempotent. An operator clears a stale hold with it.
 - A hold is satisfied once its Session has a seal cursor and `confirmed_through >= seal_cursor`.
   `DeleteSandbox` refuses with `FAILED_PRECONDITION` while any hold is unsatisfied; the caller
-  retries after the holders catch up. `GetSandbox` and `ListSandboxes` list every hold with its
-  confirmed and seal cursors, so they show which one blocks deletion. With no holds, deletion
-  proceeds as before.
+  retries after the holders catch up. `ListHolds` takes a `SandboxDestination` and lists every hold
+  on that incarnation with its confirmed and seal cursors, so it shows which one blocks deletion.
+  With no holds, deletion proceeds as before.
 - A seal ends the Session's incarnation in this Sandbox, not the Session.
 
 **Gap:** the runner does not seal Sessions at teardown yet, so no seal cursor is ever recorded and

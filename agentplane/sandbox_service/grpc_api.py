@@ -99,9 +99,7 @@ async def errors(context: grpc.aio.ServicerContext) -> AsyncIterator[None]:
     except HoldNotFoundError:
         await context.abort(grpc.StatusCode.NOT_FOUND, "retention hold not found")
     except RetentionHeldError:
-        await context.abort(
-            grpc.StatusCode.FAILED_PRECONDITION, "retention holds block deletion; GetSandbox lists them"
-        )
+        await context.abort(grpc.StatusCode.FAILED_PRECONDITION, "retention holds block deletion; ListHolds names them")
     except SandboxConflictError:
         await context.abort(grpc.StatusCode.ALREADY_EXISTS, "sandbox name or initialization conflicts")
     except ValueError, ParseError, UnknownPolicyError, UnknownPolicySetError:
@@ -295,6 +293,16 @@ class SandboxService(protocol_pb2_grpc.SandboxServiceServicer):
                 view.name, uid=view.uid, session_id=request.destination.session_id, holder=request.holder
             )
             return Empty()
+
+    @override
+    async def ListHolds(
+        self, request: protocol_pb2.SandboxRequest, context: grpc.aio.ServicerContext
+    ) -> protocol_pb2.ListHoldsResponse:
+        async with self.request(context):
+            provisioning, view = await self.checked_sandbox(request)
+            return protocol_pb2.ListHoldsResponse(
+                holds=await provisioning.inventory.list_holds(view.name, uid=view.uid)
+            )
 
     @override
     async def ListTemplates(

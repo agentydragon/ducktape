@@ -144,12 +144,17 @@ async def release(
     await api.unary(api.stub.ReleaseHold, protocol_pb2.HoldRequest(destination=destination, holder=holder))
 
 
+async def holds(api: SandboxServiceClient, destination: protocol_pb2.SessionDestination) -> list[Hold]:
+    listed = await api.unary(api.stub.ListHolds, protocol_pb2.SandboxRequest(destination=destination.sandbox))
+    return list(listed.holds)
+
+
 async def test_sandbox_without_holds_deletes(api: SandboxServiceClient, custom_objects: RacingObjects) -> None:
     await api.delete(NAME)
     assert (SANDBOXES_PLURAL, NAME) not in custom_objects.objects
 
 
-async def test_unconfirmed_hold_keeps_the_sandbox_and_shows_in_get_sandbox_until_released(
+async def test_unconfirmed_hold_keeps_the_sandbox_and_is_listed_until_released(
     api: SandboxServiceClient, destination: protocol_pb2.SessionDestination, custom_objects: RacingObjects
 ) -> None:
     await place(api, destination)
@@ -159,7 +164,7 @@ async def test_unconfirmed_hold_keeps_the_sandbox_and_shows_in_get_sandbox_until
         with pytest.raises(RunnerError):
             await api.delete(NAME)
     assert custom_objects.deleted == []
-    assert list((await api.get(NAME)).holds) == [Hold(session_id=SESSION, holder="history", confirmed_through=7)]
+    assert await holds(api, destination) == [Hold(session_id=SESSION, holder="history", confirmed_through=7)]
 
     await release(api, destination)
     await api.delete(NAME)
@@ -183,7 +188,7 @@ async def test_deletion_waits_for_every_holder_to_confirm_through_the_seal(
     )
     with pytest.raises(RunnerError):
         await api.delete(NAME)
-    assert list((await api.get(NAME)).holds) == [
+    assert await holds(api, destination) == [
         Hold(session_id=SESSION, holder="archiver", confirmed_through=9, seal_cursor=10),
         Hold(session_id=SESSION, holder="history", confirmed_through=10, seal_cursor=10),
     ]
@@ -211,7 +216,7 @@ async def test_hold_is_idempotent_per_holder_and_confirmation_never_regresses(
     assert wrong_incarnation.value.code == grpc.StatusCode.NOT_FOUND
     await release(api, destination)
     await release(api, destination)
-    assert not (await api.get(NAME)).holds
+    assert not await holds(api, destination)
 
 
 async def test_hold_placed_while_deletion_is_in_flight_refuses_it(
@@ -226,7 +231,7 @@ async def test_hold_placed_while_deletion_is_in_flight_refuses_it(
     with pytest.raises(RunnerError):
         await api.delete(NAME)
     assert custom_objects.deleted == []
-    assert list((await api.get(NAME)).holds) == [Hold(session_id=SESSION, holder="history")]
+    assert await holds(api, destination) == [Hold(session_id=SESSION, holder="history")]
 
 
 @pytest.mark.parametrize("finalizers", [[], ["test.agentplane/cleanup"]])
@@ -245,7 +250,7 @@ async def test_hold_racing_a_committed_deletion_is_refused(
     assert custom_objects.deleted == [(SANDBOXES_PLURAL, NAME)]
     if finalizers:
         assert (await api.get(NAME)).deleting
-        assert not (await api.get(NAME)).holds
+        assert not await holds(api, destination)
     else:
         with pytest.raises(SandboxNotFoundError):
             await api.get(NAME)

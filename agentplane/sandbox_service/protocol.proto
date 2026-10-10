@@ -20,7 +20,7 @@ service SandboxService {
   rpc SuspendSandbox(SandboxRequest) returns (google.protobuf.Empty);
   rpc ResumeSandbox(SandboxRequest) returns (google.protobuf.Empty);
   // Refused while the Sandbox runs, or while a retention hold on it is unsatisfied
-  // (FAILED_PRECONDITION; GetSandbox lists the holds).
+  // (FAILED_PRECONDITION; ListHolds names them).
   rpc DeleteSandbox(SandboxRequest) returns (google.protobuf.Empty);
   rpc ListTemplates(google.protobuf.Empty) returns (ListTemplatesResponse);
 
@@ -54,6 +54,8 @@ service SandboxService {
   // Idempotent. Any permitted caller may release any hold; this is how the operator clears a
   // stale one, since holds never expire.
   rpc ReleaseHold(HoldRequest) returns (google.protobuf.Empty);
+  // Every hold on the incarnation, with its confirmed and seal cursors.
+  rpc ListHolds(SandboxRequest) returns (ListHoldsResponse);
 }
 
 message ServiceAccount {
@@ -146,6 +148,8 @@ message Hold {
   // The Session's final cursor in this incarnation, once the runner has sealed it.
   optional uint64 seal_cursor = 4;
 }
+
+message ListHoldsResponse { repeated Hold holds = 1; }
 
 message ReadSessionEventsRequest {
   string session_id = 1;
@@ -302,7 +306,6 @@ message Sandbox {
   google.protobuf.Struct status = 16;
   bool launch_grants_pending = 17;
   bool initializing = 18;
-  repeated Hold holds = 19;
 }
 message ListSandboxesResponse { repeated Sandbox sandboxes = 1; }
 message ListTemplatesResponse { repeated string templates = 1; }

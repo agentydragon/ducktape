@@ -385,6 +385,9 @@ class SandboxInventory:
         sandbox = await self._incarnation(name, uid=uid)
         await self._write_holds(sandbox, self._holds(sandbox).release(session_id, holder))
 
+    async def list_holds(self, name: str, *, uid: str) -> list[Hold]:
+        return self._holds(await self._incarnation(name, uid=uid)).holds()
+
     @staticmethod
     def _holds(sandbox: SandboxResource) -> RetentionHolds:
         return read_holds(sandbox.metadata.annotations.get(RETENTION_HOLDS_ANNOTATION))

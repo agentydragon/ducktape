@@ -629,7 +629,6 @@ py_library(
     deps = [
         ":binding_storage",
         ":kubernetes_grants",
-        ":retention_holds",
         "//agentplane/sandbox_service:protocol_pb2",
         "//util:agent_sandbox",
         "@pypi//kubernetes_asyncio",
