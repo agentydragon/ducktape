@@ -18,31 +18,17 @@ oci.pull(
 use_repo(oci, "tofu_controller_distroless_cc_linux_amd64")
 
 go_sdk = use_extension("@io_bazel_rules_go//go:extensions.bzl", "go_sdk")
-go_sdk.download(version = "1.26.4")
+go_sdk.download(version = "1.26.6")
 
 go_deps = use_extension("@bazel_gazelle//:extensions.bzl", "go_deps", isolate = True)
 go_deps.from_file(go_mod = "//:go.mod")
 
-# Upstream's api/ is a nested Go module, so it is a separate archive with its own patch.
-# Both archives are the Go module proxy's zips of the v0.16.5 tag commit (4cb9876f84af).
-go_deps.archive_override(
+# go.mod replaces upstream (and its nested api/ module) with the ExternalArtifact branch of
+# agentydragon/tofu-controller. Exporting the CRD YAML is build glue, not part of that branch.
+go_deps.module_override(
     patch_strip = 1,
-    patches = [
-        "//patches:external-artifact-source.patch",
-        "//patches:bazel.patch",
-    ],
+    patches = ["//patches:bazel.patch"],
     path = "github.com/flux-iac/tofu-controller",
-    sha256 = "6a806e983e1c08c9e95efaadfdb748b74a32afc85c2112ce9f0ee6ccf136be83",
-    strip_prefix = "github.com/flux-iac/tofu-controller@v0.16.5",
-    urls = ["https://proxy.golang.org/github.com/flux-iac/tofu-controller/@v/v0.16.5.zip"],
-)
-go_deps.archive_override(
-    patch_strip = 1,
-    patches = ["//patches:api-external-artifact.patch"],
-    path = "github.com/flux-iac/tofu-controller/api",
-    sha256 = "c89b20ae42e84aa228cda8cc671cd7366d8010d68071352b1a9b3a3e8bfd2ccb",
-    strip_prefix = "github.com/flux-iac/tofu-controller/api@v0.0.0-20260806140806-4cb9876f84af",
-    urls = ["https://proxy.golang.org/github.com/flux-iac/tofu-controller/api/@v/v0.0.0-20260806140806-4cb9876f84af.zip"],
 )
 
 # Use upstream's checked-in runner.pb.go: a generated go_proto_library would link rules_go's own

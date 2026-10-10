@@ -15,23 +15,15 @@ The image publication roster pushes it to `ghcr.io/agentydragon/tofu-controller`
 Forgejo: see `cluster/cdk8s/tofu_controller/release.py`). The cluster runs it through the
 upstream Helm chart with the image, CRD and RBAC swapped in by that module.
 
-## Patch ownership
+## Source
 
-`patches/external-artifact-source.patch` and `patches/api-external-artifact.patch` are one
-upstream-ready change, split because the nested `api` module is a separate archive:
+`go.mod` replaces upstream and its nested `api` module with the `external-artifact-source`
+branch of [agentydragon/tofu-controller](https://github.com/agentydragon/tofu-controller):
+upstream `main` plus the change meant for an upstream PR (the `ExternalArtifact` source kind,
+its index, watch and RBAC, regenerated CRD and docs, and an envtest case). That branch needs
+Go 1.26.6, which sets the floor for the repository's Go SDK.
 
-- the `ExternalArtifact` case in `getSource`, its field index and watch, and the RBAC markers;
-- the `v1alpha2` `sourceRef.kind` enum marker and the index key (`api` patch);
-- everything upstream regenerates from those (`make manifests api-docs`: CRD, `role.yaml`, the
-  chart's CRD copy, the API reference) and the chart's RBAC template;
-- `SetupWithManager` taking the manager's context instead of `context.TODO()`;
-- an envtest case, `tc000012_src_externalartifact_no_outputs_test.go`, with the source-controller
-  `ExternalArtifact` CRD it loads, and a usage page under `docs/use-tf-controller/`.
-
-The upstream change also lets `tfctl create --source` name an `ExternalArtifact`. `tfctl` is a
-third Go module this build never fetches, so that hunk is not here.
-
-`patches/bazel.patch` exports the CRD YAML: build glue, not an upstream feature.
+`patches/bazel.patch` exports the CRD YAML: build glue, not part of the branch.
 
 `external_artifact_source_test.go` covers source resolution and the revision-change mapping
 with a fake client, embedding the patched `controllers` library: upstream's envtest suite needs
@@ -41,15 +33,12 @@ a `kube-apiserver` and a `tofu` binary, so it does not run under Bazel here.
 in `fluxcd/pkg/runtime` resolve to the main repository, and proto generation in `runner/`
 would link a second grpc. Both explain themselves in place.
 
-No upstream release supports `ExternalArtifact` sources yet. Remove the module, and switch
-`cluster/cdk8s/tofu_controller/release.py` back to the chart's image and CRD, once one does.
+No upstream release supports `ExternalArtifact` sources yet. Once one does, remove the module
+and switch `cluster/cdk8s/tofu_controller/release.py` back to the chart's image and CRD.
 
-## Updating upstream
+## Updating the controller
 
-Bump both proxy archives (the main module's tag and the `api` module's pseudo-version at the
-same commit) with their checksums. Rebase the change in an upstream checkout, rerun
-`make manifests api-docs` there, and re-export both patches from its diff
-(`git diff -- . ':!api' ':!tfctl'` and `git diff --relative=api -- api`). Refresh
+Push to the fork branch, then point both `replace` directives at the new commit and refresh
 `go.mod`/`go.sum` with `go mod tidy` over the manager's imports (`gomega` and
 controller-runtime's `fake` for the test). Keep `cluster/cdk8s/tofu_controller/release.py`'s
-chart version on the same release.
+chart version on the release the branch is based on.
