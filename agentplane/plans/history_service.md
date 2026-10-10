@@ -99,32 +99,13 @@ Properties the target keeps:
 
 ## APIs
 
-What is still to build, beside the implemented `sandbox_service/protocol.proto` and
-`history_service/protocol.proto` ([Sandbox Service API](../sandbox_service/API.md)); names are not
-final.
+The implemented APIs are `sandbox_service/protocol.proto` and `history_service/protocol.proto`
+([Sandbox Service API](../sandbox_service/API.md)). Live browser updates are not an RPC: Electric
+replicates the projection tables behind the app's authorization proxy.
 
-```proto
-service SandboxService {
-  rpc GetCommand(GetCommandRequest) returns (CommandStatus);
-}
-
-service HistoryService {
-  // Committed cursor, incarnations with seal cursors, fold cursor or error.
-  rpc GetSessionHistory(GetSessionHistoryRequest) returns (SessionHistoryStatus);
-}
-```
-
-Live browser updates are not an RPC: Electric replicates the projection tables behind the app's
-authorization proxy. The History Service ingester loops: `WatchSessions`; per Session under its
-claim, `PlaceHold`, then `FollowSession` from its committed cursor; per batch, one transaction that
-stores entries, settles and advances the checkpoint; then `ConfirmHold`. The fold reads the
-settlement with the completion that triggered it and drops the settled cursors' evidence in its
-own transaction. On `sealed` it records the incarnation's end and keeps the hold until the Sandbox is
-gone.
-
-| Caller               | Sandbox Service                                    | History Service                    |
-| -------------------- | -------------------------------------------------- | ---------------------------------- |
-| App                  | sandboxes, Sessions, `SubmitCommand`, `GetCommand` | summaries, entities, payloads, raw |
-| History Service      | `WatchSessions`, `FollowSession`, holds            |                                    |
-| Historyless client   | Sessions, `SubmitCommand`, `FollowSession`         |                                    |
-| Notification Service | `SubmitCommand`                                    |                                    |
+| Caller               | Sandbox Service                            | History Service                    |
+| -------------------- | ------------------------------------------ | ---------------------------------- |
+| App                  | sandboxes, Sessions, `SubmitCommand`       | summaries, entities, payloads, raw |
+| History Service      | `WatchSessions`, `FollowSession`, holds    |                                    |
+| Historyless client   | Sessions, `SubmitCommand`, `FollowSession` |                                    |
+| Notification Service | `SubmitCommand`                            |                                    |
