@@ -188,6 +188,7 @@ from cluster.cdk8s.monitoring import (
     grafana_helmrepository,
     grafana_instance,
     grafana_operator,
+    home_switch as monitoring_home_switch,
     loki,
     mimir,
     namespace as monitoring_namespace,
@@ -557,6 +558,12 @@ def generate_manifests(root: Path) -> None:
         write_directory(root, external_secrets_operator_artifact, external_secrets_operator.chart),
         external_secrets_crds_kustomization,
         cert_manager_kustomization,
+    )
+    monitoring_home_switch_artifact = artifact("monitoring-home-switch", monitoring_home_switch.OUTPUT_DIR)
+    monitoring_home_switch.home_switch(
+        flux_chart,
+        write_directory(root, monitoring_home_switch_artifact, monitoring_home_switch.chart),
+        external_secrets_operator_kustomization,
     )
     clickhouse_artifact = artifact("clickhouse", clickhouse_installation.OUTPUT_DIR)
     clickhouse_kustomization = clickhouse_installation.clickhouse(
@@ -1700,6 +1707,7 @@ def generate_manifests(root: Path) -> None:
             agents_mitmproxy_artifact,
             monitoring_alloy_artifact,
             monitoring_gateway_probe_artifact,
+            monitoring_home_switch_artifact,
             monitoring_loki_artifact,
             monitoring_mimir_artifact,
             monitoring_tempo_artifact,

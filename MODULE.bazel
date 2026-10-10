@@ -186,6 +186,7 @@ tf.download(
         # Receives the ducktape-ci password (tf/gitops/forgejo-images), which Forgejo's own
         # provider has no resource to use for a user-level webhook.
         "restapi": "mastercard/restapi:2.0.1",
+        "routeros": "terraform-routeros/routeros:1.99.1",
         "sops": "carlpett/sops:1.4.1",
         "talos": "siderolabs/talos:0.11.0",
     },
