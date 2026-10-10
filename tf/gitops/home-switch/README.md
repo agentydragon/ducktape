@@ -38,8 +38,8 @@ one on the switch's sticker until you change it.
 
 ## Approving a plan
 
-A plan with changes (drift, or a change merged here) leaves the `Terraform` not Ready, waiting on
-`spec.approvePlan` naming that plan:
+A plan with changes (drift, or a change merged here) leaves the `Terraform`, and so the
+`monitoring-home-switch` Kustomization, not Ready, waiting on `spec.approvePlan` naming that plan:
 
 ```bash
 kubectl get terraform --namespace flux-system home-switch   # READY False/Unknown: a plan is pending

@@ -124,8 +124,8 @@ def home_switch(
         flux_chart,
         "monitoring-home-switch",
         directory,
+        # Health-checks the Terraform too, so a plan awaiting approval also shows as this
+        # Kustomization not Ready.
         timeout="10m",
-        # A Terraform with a plan awaiting approval is never Ready, which is not a failed rollout.
-        wait=False,
         depends_on=flux_kustomization_depends_on_many(cert_manager, external_secrets_operator, tofu_controller),
     )
