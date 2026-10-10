@@ -93,6 +93,28 @@ describe("action notification formatting", () => {
     });
   });
 
+  it("uses human-facing descriptions for Grocy's no-lookup Actions", () => {
+    const cases = [
+      ["products_list", "List Grocy products"],
+      ["quantity_units_list", "List quantity units"],
+      ["get_system_info", "Show Grocy system information"],
+    ] as const;
+
+    for (const [name, actionTitle] of cases) {
+      const request = actionRequest({
+        action: { group: "grocy_sf", name },
+        arguments: {},
+        title: "Check the pantry service",
+        description: "Read-only Grocy request.",
+      });
+
+      expect(formatActionNotification(request)).toEqual({
+        title: `Check the pantry service · ${actionTitle}`,
+        text: "Read-only Grocy request.",
+      });
+    }
+  });
+
   it("falls back when SSH arguments contain fields the widget cannot show", () => {
     const request = actionRequest({
       action: { group: "ssh", name: "exec" },

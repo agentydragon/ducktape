@@ -1,4 +1,7 @@
 import type { ActionRequestView } from "../types";
+import { grocySystemInfoNotification } from "./grocy/get_system_info";
+import { grocyProductsListNotification } from "./grocy/products_list";
+import { grocyQuantityUnitsListNotification } from "./grocy/quantity_units_list";
 import { podsInNamespaceNotification } from "./kubernetes_admin/pods_list_in_namespace";
 import { sshExecNotification } from "./ssh/exec";
 import { tanaCalendarNodeNotification } from "./tana/get_or_create_calendar_node";
@@ -10,6 +13,14 @@ type ActionNotificationFormatter = (request: ActionRequestView) => ActionNotific
 // worker imports this module, so notification formatters must remain React-free.
 const FORMATTERS: ReadonlyMap<string, ReadonlyMap<string, ActionNotificationFormatter>> = new Map([
   ["kubernetes_admin", new Map([["pods_list_in_namespace", podsInNamespaceNotification]])],
+  [
+    "grocy_sf",
+    new Map([
+      ["products_list", grocyProductsListNotification],
+      ["quantity_units_list", grocyQuantityUnitsListNotification],
+      ["get_system_info", grocySystemInfoNotification],
+    ]),
+  ],
   ["ssh", new Map([["exec", sshExecNotification]])],
   ["tana", new Map([["get_or_create_calendar_node", tanaCalendarNodeNotification]])],
 ]);
