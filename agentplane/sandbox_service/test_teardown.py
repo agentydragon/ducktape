@@ -38,7 +38,7 @@ LEGACY = "test-legacy-session"
 class ScriptedRunner:
     """Seal, ListSessions and an Attach that answers StopRunnerSession by ending the stream."""
 
-    harness_states: dict[str, runner_pb2.HarnessState.ValueType] = field(default_factory=dict)
+    harness_states: dict[str, runner_pb2.HarnessState] = field(default_factory=dict)
     last_cursors: dict[str, int] = field(default_factory=dict)
     # None answers Seal as a runner image without it does.
     seals: dict[str, int] | None = None

@@ -159,6 +159,7 @@ py_library(
         "//agentplane/sandbox_service:protocol_pb2",
         "//util:agent_sandbox",
         "//util:kubernetes_watch",
+        "@pypi//protobuf",
     ],
 )
 

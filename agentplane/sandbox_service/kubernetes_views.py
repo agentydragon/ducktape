@@ -3,6 +3,7 @@
 import json
 from collections.abc import Iterable
 from datetime import datetime
+from typing import cast
 
 from google.protobuf.json_format import ParseDict
 from google.protobuf.struct_pb2 import Struct
@@ -76,9 +77,11 @@ class SandboxResource(_KubernetesModel):
     status: dict[str, object] | None = None
 
     @property
-    def teardown(self) -> TeardownPhase.ValueType:
+    def teardown(self) -> TeardownPhase:
         raw = self.metadata.annotations.get(TEARDOWN_ANNOTATION)
-        return TeardownPhase.TEARDOWN_PHASE_UNSPECIFIED if raw is None else TeardownPhase.Value(raw)
+        return (
+            TeardownPhase.TEARDOWN_PHASE_UNSPECIFIED if raw is None else cast(TeardownPhase, TeardownPhase.Value(raw))
+        )
 
 
 def sandbox_views(

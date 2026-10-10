@@ -19,6 +19,9 @@ from agentplane.sandbox_service.teardown import Teardown
 from util.agent_sandbox import SANDBOX_API, SANDBOXES_PLURAL
 from util.kubernetes_watch import ListWatch, WatchedKind
 
+# Generated stubs require the protobuf runtime as a direct mypy dependency.
+# gazelle:include_dep @pypi//protobuf
+
 logger = logging.getLogger(__name__)
 
 

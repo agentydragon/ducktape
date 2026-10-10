@@ -18,7 +18,7 @@ from agentplane.sandbox_service.protocol_pb2 import Sandbox, ServiceAccount, Tea
         (TeardownPhase.TEARDOWN_PHASE_SEALED, True),
     ],
 )
-def test_a_sandbox_being_torn_down_reads_as_deleting(teardown: TeardownPhase.ValueType, deleting: bool) -> None:
+def test_a_sandbox_being_torn_down_reads_as_deleting(teardown: TeardownPhase, deleting: bool) -> None:
     view = Sandbox(
         name="test-sandbox",
         created_at=Timestamp(seconds=1),
