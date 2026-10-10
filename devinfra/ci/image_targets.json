@@ -95,6 +95,11 @@
       "test": "//cluster/exporters/att_gateway/...",
       "registry": "forgejo"
     },
+    "routeros-log-shipper": {
+      "target": "//cluster/exporters/routeros_log:image",
+      "test": "//cluster/exporters/routeros_log/...",
+      "registry": "forgejo"
+    },
     "github-api-proxy": {
       "target": "//devinfra/github_proxy/central:image",
       "test": "//devinfra/github_proxy/central:tests",
