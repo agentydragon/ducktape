@@ -539,9 +539,8 @@ in
     # Keep the dedicated scratch filesystem bounded without disrupting active files.
     "q /tmp 1777 root root 14d"
     # For the alloy-node DaemonSet's hostPath WAL (cluster/cdk8s/monitoring/alloy.py, landing
-    # next in agentydragon/ducktape#9612), on the HDD
-    # scratch disk rather than the SSD root. A path with its own line is skipped by the /tmp
-    # age cleanup above.
+    # next in agentydragon/ducktape#9612), on the HDD scratch disk rather than the SSD root.
+    # A path with its own line is skipped by the /tmp age cleanup above.
     # TODO: give the WAL its own tank-hdd virtio disk and mount it at /var/lib/alloy-node,
     # replacing this symlink. Blocked on wyrm2's `ignore_changes = [disk]` CLEANUP in
     # cluster/terraform/main/proxmox-vms.tf, which keeps tofu from adding a disk.
