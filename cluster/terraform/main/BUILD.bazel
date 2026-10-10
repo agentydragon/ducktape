@@ -23,6 +23,7 @@ tf_providers_versions(
 tf_module(
     name = "main",
     data = [
+        "//:home-lan.json",
         "//:nebula-mesh.json",
         "//cluster:generated/talos-cloud-controller-manager/helmrelease.k8s.yaml",
         "//cluster/k8s:flux_bootstrap_files",

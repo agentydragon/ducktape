@@ -1,0 +1,7 @@
+{
+  "_comment": "Single source of truth for the fixed addresses on the home LAN behind the AT&T gateway. Consumers: cluster/terraform/main/home-nodes.tf (jsondecode), cluster/cdk8s/home_lan.py (everything cdk8s renders), tf/gitops/home-switch/bootstrap.sh (jq). Who owns each address and what is free: docs/home_lan.md.",
+  "network": "192.168.1.0/24",
+  "gateway": "192.168.1.254",
+  "switch": "192.168.1.100",
+  "optiplex": "192.168.1.10"
+}

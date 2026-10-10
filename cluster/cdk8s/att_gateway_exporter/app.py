@@ -22,6 +22,7 @@ from cluster.cdk8s.att_gateway_exporter import access_code
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.forgejo_registry import chart as forgejo_images
 from cluster.cdk8s.grafana_dashboards import DashboardFile
+from cluster.cdk8s.home_lan import HOME_LAN
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT, HAND_WRITTEN_ROOT
 from cluster.cdk8s.node_scheduling import OPTIPLEX
 from cluster.cdk8s.providers.grafana_operator.grafana_dashboard import GrafanaDashboard
@@ -34,8 +35,8 @@ NAME = "att-gateway-exporter"
 OUTPUT_DIR = f"{GENERATED_ROOT}/{NAME}"
 PINS_DIR = f"{HAND_WRITTEN_ROOT}/{NAME}-image-pins"
 _NAMESPACE = "monitoring"
-# The BGW320's fixed LAN address; only home-LAN nodes reach it.
-_GATEWAY_URL = "http://192.168.1.254"
+# Only home-LAN nodes reach the gateway.
+_GATEWAY_URL = f"http://{HOME_LAN.gateway}"
 _HTTP = Port(name="http", number=9173)
 _SERVICE = ServiceRef(
     name=NAME, port=_HTTP, pods=Pods(namespace=_NAMESPACE, labels=(("app.kubernetes.io/name", NAME),))
