@@ -346,7 +346,13 @@ class Ingester:
                             if feed.client is client:
                                 continue
                             await feed.close()
-                        thread_id = await self._event_logs.open(sandbox, summary.session_id, summary.spec)
+                        try:
+                            thread_id = await self._event_logs.open(sandbox, summary.session_id, summary.spec)
+                        except EventReplicationError:
+                            logger.warning(
+                                "session %s/%s requires explicit history reconciliation", sandbox, summary.session_id
+                            )
+                            continue
                         if thread_id in fenced or await self._event_logs.is_raw_ingestion_fenced(thread_id):
                             continue
                         snapshot = await self._event_logs.feed_state(thread_id)

@@ -100,8 +100,8 @@ class EventLogStore:
                     select(EventLog).where(EventLog.sandbox == sandbox, EventLog.session_id == session_id)
                 )
                 if existing is not None:
-                    if existing.raw_ingestion_fenced_at_cursor is None:
-                        raise EventReplicationError("existing Thread requires explicit history handoff")
+                    # Discovery must keep existing Threads running during staged handoff.
+                    # Only explicit handoff may fence an already-created legacy prefix.
                     return existing.id
             if str(thread_id) != session_id:
                 raise EventReplicationError("new service-projected Thread requires a canonical public Session ID")
@@ -133,8 +133,8 @@ class EventLogStore:
                     select(EventLog).where(EventLog.sandbox == sandbox, EventLog.session_id == session_id)
                 )
             ).one()
-            if self._history_creator is not None and existing.raw_ingestion_fenced_at_cursor is None:
-                raise EventReplicationError("concurrent legacy Thread creation requires explicit history handoff")
+            # A legacy replica may win this insert race. Preserve its mapping and
+            # leave its final cursor to the explicit handoff, rather than killing discovery.
             return existing.id
 
     async def is_raw_ingestion_fenced(self, thread_id: UUID) -> bool:

@@ -142,8 +142,11 @@ EOF is not inferred from a service outage or projection failure.
 With service projection enabled, new app Threads require a canonical public Session
 ID and a successful metadata-only service history lookup. Creation atomically writes
 the zero raw-writer fence and empty projection summary. Existing unfenced Threads,
-including an old replica winning a concurrent creation, require explicit handoff;
-opening a Thread never silently migrates its retained history. Reconciliation checks
+including an old replica winning a concurrent creation, remain on their current path
+until explicit handoff; opening a Thread never silently migrates its retained history.
+Discovery must return these existing mappings, not reject them and stop the coordinator.
+An unregistered legacy ID is isolated to its own discovery entry rather than stopping
+other Sessions in the Sandbox. Reconciliation checks
 the durable fence after discovery, not just its earlier inventory snapshot, so it
 cannot start a legacy Follow for a just-created service projection. Existing flags
 remain off until coordinated cutover; this adds no new temporary flag.

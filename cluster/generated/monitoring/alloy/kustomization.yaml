@@ -16,3 +16,9 @@ configMapGenerator:
       disableNameSuffixHash: true
     files:
       - node.alloy
+  - name: alloy-syslog-config
+    namespace: monitoring
+    options:
+      disableNameSuffixHash: true
+    files:
+      - syslog.alloy

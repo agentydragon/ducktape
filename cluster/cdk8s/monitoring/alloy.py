@@ -1,8 +1,9 @@
-"""Grafana Alloy, as two HelmReleases: the central `alloy` Deployment for cluster-wide work, and the
-`alloy-node` DaemonSet scraping each node's own targets into a WAL on that node's disk. Also the
-NetworkPolicy admitting OTLP from Authentik's outpost to the central one, and both ConfigMaps.
+"""Grafana Alloy, as three HelmReleases: the central `alloy` Deployment for cluster-wide work, the
+`alloy-node` DaemonSet scraping each node's own targets into a WAL on that node's disk, and the
+`alloy-syslog` Deployment receiving the home switch's syslog on optiplex. Also the NetworkPolicy
+admitting OTLP from Authentik's outpost to the central one, and the ConfigMaps.
 
-Their configs are `config.alloy` and `node.alloy` beside this module. They read the addresses other
+Their configs are `config.alloy`, `node.alloy` and `syslog.alloy` beside this module. They read the addresses other
 modules own through `sys.env`, from the environment the HelmReleases set.
 """
 
@@ -41,6 +42,13 @@ _NODE_CONFIG_MAP = "alloy-node-config"
 _NODE_CONFIG_KEY = "node.alloy"
 # Node-local disk for the per-node WAL, so a buffered outage survives a pod restart.
 _NODE_STORAGE_PATH = "/var/lib/alloy-node"
+_SYSLOG_NAME = "alloy-syslog"
+_SYSLOG_CONFIG_MAP = "alloy-syslog-config"
+_SYSLOG_CONFIG_KEY = "syslog.alloy"
+# Bound on optiplex's addresses, its fixed LAN address among them (`lan_address` in
+# cluster/terraform/main/home-nodes.tf), which the home switch sends to (tf/gitops/home-switch).
+_SYSLOG_HOST_PORT = 514
+_SYSLOG_LISTEN_PORT = 5514
 # What config.alloy's `sys.env` calls read.
 _CONFIG_ENV = {
     "MIMIR_PUSH_URL": mimir.PUSH_URL,
@@ -62,7 +70,11 @@ def write_config_maps(root: Path) -> list[ConfigMapArgs]:
             options=GeneratorOptions(disable_name_suffix_hash=True),
             files=[copy_source_file(root, OUTPUT_DIR, f"cluster/cdk8s/monitoring/{key}")],
         )
-        for name, key in ((_CONFIG_MAP, _CONFIG_KEY), (_NODE_CONFIG_MAP, _NODE_CONFIG_KEY))
+        for name, key in (
+            (_CONFIG_MAP, _CONFIG_KEY),
+            (_NODE_CONFIG_MAP, _NODE_CONFIG_KEY),
+            (_SYSLOG_CONFIG_MAP, _SYSLOG_CONFIG_KEY),
+        )
     ]
 
 
@@ -153,6 +165,44 @@ def chart(app: App) -> Chart:
             "serviceMonitor": {"enabled": True},
         },
     )
+    helm_release(
+        chart,
+        _SYSLOG_NAME,
+        NAMESPACE,
+        repository=grafana_helmrepository.SOURCE_REF,
+        chart=_NAME,
+        version="1.x",
+        interval="30m",
+        chart_interval="12h",
+        values={
+            "nameOverride": _SYSLOG_NAME,
+            "alloy": {
+                "configMap": {"name": _SYSLOG_CONFIG_MAP, "key": _SYSLOG_CONFIG_KEY, "create": False},
+                "extraEnv": [
+                    {"name": "LOKI_PUSH_URL", "value": loki.PUSH_URL},
+                    {"name": "SYSLOG_LISTEN_ADDRESS", "value": f"0.0.0.0:{_SYSLOG_LISTEN_PORT}"},
+                ],
+                "extraPorts": [
+                    {
+                        "name": "syslog",
+                        "port": _SYSLOG_HOST_PORT,
+                        "targetPort": _SYSLOG_LISTEN_PORT,
+                        "hostPort": _SYSLOG_HOST_PORT,
+                        "protocol": "UDP",
+                    }
+                ],
+                "resources": {"requests": {"cpu": "10m", "memory": "128Mi"}},
+            },
+            "controller": {
+                "type": "deployment",
+                "replicas": 1,
+                "nodeSelector": node_scheduling.OPTIPLEX.node_selector,
+                # A surge pod could never schedule beside the old one holding the hostPort.
+                "updateStrategy": {"type": "Recreate"},
+            },
+            "serviceMonitor": {"enabled": True},
+        },
+    )
     k8s.KubeNetworkPolicy(
         chart,
         "otlp-ingress",
@@ -203,7 +253,7 @@ def alloy(chart: Chart, directory: RenderedDirectory, monitoring_crds: Kustomiza
             KustomizationSpecHealthChecks(
                 api_version="helm.toolkit.fluxcd.io/v2", kind="HelmRelease", name=name, namespace=NAMESPACE
             )
-            for name in (_NAME, _NODE_NAME)
+            for name in (_NAME, _NODE_NAME, _SYSLOG_NAME)
         ],
         timeout="5m",
         # the chart's serviceMonitor

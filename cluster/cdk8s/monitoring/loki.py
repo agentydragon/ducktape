@@ -433,7 +433,7 @@ def _network_policy(chart: Chart) -> None:
     #   - Promtail (loki namespace, log shipping)
     #   - Vector Talos-log receiver (vector-talos-logs namespace, Talos node logs)
     #   - Grafana (monitoring namespace, log queries)
-    #   - Alloy (monitoring namespace, OTel log forwarding)
+    #   - Alloy (monitoring namespace, OTel log forwarding and the home switch's syslog)
     #   - Gatus (gatus namespace, health checks)
     #   - Authentik proxy outpost (authentik namespace, SSO-protected external access)
     #   - Alloy (monitoring namespace, Loki canary metrics)
@@ -482,12 +482,13 @@ def _network_policy(chart: Chart) -> None:
                 ),
                 to_ports=_ingress_tcp("3100"),
             ),
-            # Central Alloy → Loki (OTel log forwarding); the per-node Alloys scrape the
-            # components' metrics on the same port.
+            # Central Alloy → Loki (OTel log forwarding), the syslog Alloy → Loki (the home switch's
+            # logs); the per-node Alloys scrape the components' metrics on the same port.
             CiliumNetworkPolicySpecIngress(
                 from_endpoints=[
                     *_from_pods({"app.kubernetes.io/name": "alloy", namespace_label: "monitoring"}),
                     *_from_pods({"app.kubernetes.io/name": "alloy-node", namespace_label: "monitoring"}),
+                    *_from_pods({"app.kubernetes.io/name": "alloy-syslog", namespace_label: "monitoring"}),
                 ],
                 to_ports=_ingress_tcp("3100"),
             ),

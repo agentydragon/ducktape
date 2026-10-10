@@ -230,10 +230,28 @@ async def test_projection_mode_never_silently_hands_off_existing_thread(engine: 
     await legacy.open("sb-1", str(public_id), SPEC)
     reader = AsyncMock(spec=SandboxServiceClient)
     store = EventLogStore(engine, history_creator=cast(SandboxServiceClient, reader))
-    with pytest.raises(EventReplicationError, match="explicit history handoff"):
-        await store.open("sb-1", str(public_id), SPEC)
+    assert await store.open("sb-1", str(public_id), SPEC) == public_id
     reader.read_session_observations.assert_not_awaited()
     assert not await store.is_raw_ingestion_fenced(public_id)
+
+
+async def test_legacy_creator_winning_registration_race_remains_unfenced(engine: AsyncEngine) -> None:
+    public_id = uuid4()
+    legacy = EventLogStore(engine)
+    reader = AsyncMock(spec=SandboxServiceClient)
+
+    async def register(session_id: str, *, limit: int) -> protocol_pb2.ReadSessionObservationsResponse:
+        assert session_id == str(public_id)
+        assert limit == 1
+        await legacy.open("sb-1", session_id, SPEC)
+        return protocol_pb2.ReadSessionObservationsResponse(last_cursor=0)
+
+    reader.read_session_observations.side_effect = register
+    current = EventLogStore(engine, history_creator=cast(SandboxServiceClient, reader))
+    assert await current.open("sb-1", str(public_id), SPEC) == public_id
+    assert not await current.is_raw_ingestion_fenced(public_id)
+    async with async_sessionmaker(engine)() as session:
+        assert await session.scalar(select(func.count()).select_from(ThreadHistorySummary)) == 0
 
 
 if __name__ == "__main__":

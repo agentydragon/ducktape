@@ -395,7 +395,10 @@ async def test_discovery_of_new_service_thread_never_starts_legacy_follow(
     reader.read_session_events.return_value = protocol_pb2.ReadSessionEventsResponse(last_cursor=0)
     logs = EventLogStore(engine, history_creator=cast(SandboxServiceClient, reader))
     client = AsyncMock()
-    client.list_sessions.return_value = [runner_pb2.SessionSummary(session_id=str(public_id), spec=SPEC)]
+    client.list_sessions.return_value = [
+        runner_pb2.SessionSummary(session_id="unregistered-legacy-session", spec=SPEC),
+        runner_pb2.SessionSummary(session_id=str(public_id), spec=SPEC),
+    ]
     runners = Mock(spec=SandboxSessions)
     runners.running.return_value = {"sb-1"}
     runners.client.return_value = client

@@ -107,6 +107,54 @@ spec:
     serviceMonitor:
       enabled: true
 ---
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: alloy-syslog
+  namespace: monitoring
+spec:
+  chart:
+    spec:
+      chart: alloy
+      interval: 12h
+      sourceRef:
+        kind: HelmRepository
+        name: grafana
+        namespace: flux-system
+      version: 1.x
+  interval: 30m
+  values:
+    alloy:
+      configMap:
+        create: false
+        key: syslog.alloy
+        name: alloy-syslog-config
+      extraEnv:
+        - name: LOKI_PUSH_URL
+          value: http://loki-write.loki.svc.cluster.local:3100/loki/api/v1/push
+        - name: SYSLOG_LISTEN_ADDRESS
+          value: 0.0.0.0:5514
+      extraPorts:
+        - hostPort: 514
+          name: syslog
+          port: 514
+          protocol: UDP
+          targetPort: 5514
+      resources:
+        requests:
+          cpu: 10m
+          memory: 128Mi
+    controller:
+      nodeSelector:
+        kubernetes.io/hostname: optiplex
+      replicas: 1
+      type: deployment
+      updateStrategy:
+        type: Recreate
+    nameOverride: alloy-syslog
+    serviceMonitor:
+      enabled: true
+---
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
