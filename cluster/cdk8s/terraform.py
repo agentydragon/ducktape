@@ -21,6 +21,8 @@ from tofu_controller.io.fluxcd.contrib.infra import (
     TerraformV1Alpha2SpecRunnerPodTemplateSpecEnvValueFromSecretKeyRef,
     TerraformV1Alpha2SpecRunnerPodTemplateSpecResources,
     TerraformV1Alpha2SpecRunnerPodTemplateSpecResourcesRequests,
+    TerraformV1Alpha2SpecRunnerPodTemplateSpecVolumeMounts,
+    TerraformV1Alpha2SpecRunnerPodTemplateSpecVolumes,
     TerraformV1Alpha2SpecSourceRef,
     TerraformV1Alpha2SpecSourceRefKind,
     TerraformV1Alpha2SpecStoreReadablePlan,
@@ -85,6 +87,8 @@ def tofu_state_terraform(
     env: Sequence[TerraformV1Alpha2SpecRunnerPodTemplateSpecEnv] = (),
     env_from: Sequence[TerraformV1Alpha2SpecRunnerPodTemplateSpecEnvFrom] = (),
     node_selector: Mapping[str, str] | None = None,
+    volumes: Sequence[TerraformV1Alpha2SpecRunnerPodTemplateSpecVolumes] = (),
+    volume_mounts: Sequence[TerraformV1Alpha2SpecRunnerPodTemplateSpecVolumeMounts] = (),
 ) -> Terraform:
     """A `Terraform` in flux-system, run by `tf-runner`, with its state under `schema` in the
     tofu-state Postgres; the runner reads that database's password as `PGPASSWORD`, ahead of `env`.
@@ -116,6 +120,8 @@ def tofu_state_terraform(
                 env=[secret_env("PGPASSWORD", _STATE_DB_PASSWORD), *env],
                 node_selector=node_selector,
                 resources=_RUNNER_RESOURCES,
+                volumes=list(volumes) or None,
+                volume_mounts=list(volume_mounts) or None,
             )
         ),
     )
@@ -134,6 +140,8 @@ def gitops_terraform(
     schema: str | None = None,
     store_readable_plan: TerraformV1Alpha2SpecStoreReadablePlan | None = None,
     node_selector: Mapping[str, str] | None = None,
+    volumes: Sequence[TerraformV1Alpha2SpecRunnerPodTemplateSpecVolumes] = (),
+    volume_mounts: Sequence[TerraformV1Alpha2SpecRunnerPodTemplateSpecVolumeMounts] = (),
 ) -> Terraform:
     """The `tf/gitops/<name>` module, run from the `ducktape` GitRepository and auto-approved.
     `name` is the module directory and, underscored, its state schema unless `schema` names the
@@ -151,7 +159,8 @@ def gitops_terraform(
     the plan masks.
 
     `node_selector` pins the runner pod, for a module whose provider reaches something only
-    some nodes can (a device on the home LAN).
+    some nodes can (a device on the home LAN). `volumes` and `volume_mounts` add files to the
+    runner pod, such as a CA bundle a provider verifies against.
     """
     return tofu_state_terraform(
         scope,
@@ -176,4 +185,6 @@ def gitops_terraform(
         env=env,
         env_from=env_from,
         node_selector=node_selector,
+        volumes=volumes,
+        volume_mounts=volume_mounts,
     )

@@ -1088,6 +1088,8 @@ metadata:
   namespace: ducktape-flux
 spec:
   dependsOn:
+    - name: cert-manager
+      namespace: ducktape-flux
     - name: external-secrets-operator
       namespace: ducktape-flux
     - name: tofu-controller

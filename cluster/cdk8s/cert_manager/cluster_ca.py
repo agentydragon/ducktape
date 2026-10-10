@@ -29,6 +29,11 @@ from cluster.cdk8s.providers.cert_manager.cluster_issuer import ClusterIssuer
 
 NAME = "cluster-ca"
 ROOT_CA_SECRET = "cluster-root-ca-secret"
+# The issuer for leaf certificates, and the ConfigMap (in every namespace) holding the roots
+# that verify them.
+INTERNAL_ISSUER = CertificateSpecIssuerRef(name="cluster-internal-ca", kind="ClusterIssuer")
+BUNDLE = "cluster-internal-ca-bundle"
+BUNDLE_KEY = "ca-certificates.crt"
 
 
 class _LongLivedCa(TypedDict):
@@ -63,18 +68,18 @@ def chart(app: App) -> Chart:
     ClusterIssuer(
         chart,
         "internal",
-        metadata=ApiObjectMetadata(name="cluster-internal-ca"),
+        metadata=ApiObjectMetadata(name=INTERNAL_ISSUER.name),
         ca=ClusterIssuerSpecCa(secret_name=ROOT_CA_SECRET),
     )
     Bundle(
         chart,
         "bundle",
-        metadata=ApiObjectMetadata(name="cluster-internal-ca-bundle"),
+        metadata=ApiObjectMetadata(name=BUNDLE),
         sources=[
             BundleSpecSources(secret=BundleSpecSourcesSecret(name=ROOT_CA_SECRET, key="ca.crt")),
             # The active issuer's root, from `config`.
             BundleSpecSources(secret=BundleSpecSourcesSecret(name=f"{LETSENCRYPT_ISSUER}-root-ca", key="ca.crt")),
         ],
-        target=BundleSpecTarget(config_map=BundleSpecTargetConfigMap(key="ca-certificates.crt")),
+        target=BundleSpecTarget(config_map=BundleSpecTargetConfigMap(key=BUNDLE_KEY)),
     )
     return chart
