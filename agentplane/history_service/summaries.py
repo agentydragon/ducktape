@@ -1,5 +1,6 @@
 """Session summaries from the History Service fold, paged newest first under stable tokens."""
 
+from collections.abc import Set
 from datetime import UTC
 from typing import cast
 from uuid import UUID
@@ -58,6 +59,13 @@ class SummaryReader:
                 token.first_event_at.CopyFrom(last.first_event_at)
             response.next_page_token = token.SerializeToString()
         return response
+
+    async def get_many(self, session_ids: Set[UUID]) -> list[protocol_pb2.SessionSummary]:
+        if len(session_ids) > MAX_PAGE:
+            raise ValueError("too many Sessions in one summary read")
+        async with self._sessions() as session:
+            rows = await session.execute(_summaries().where(SessionHistory.id.in_(session_ids)))
+        return [_summary(*row) for row in rows]
 
     async def get(self, session_id: UUID) -> protocol_pb2.SessionSummary:
         async with self._sessions() as session:

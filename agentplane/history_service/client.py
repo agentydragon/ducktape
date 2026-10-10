@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import AsyncIterator, Mapping
+from collections.abc import AsyncIterator, Collection, Mapping
 from pathlib import Path
 from typing import Never
 
@@ -129,6 +129,17 @@ class HistoryServiceClient:
             )
         except grpc.aio.AioRpcError as error:
             _raise(error)
+
+    async def batch_get_session_summaries(self, session_ids: Collection[str]) -> list[history_pb2.SessionSummary]:
+        try:
+            response = await self.stub.BatchGetSessionSummaries(
+                history_pb2.BatchGetSessionSummariesRequest(session_ids=session_ids),
+                metadata=await self.metadata(),
+                timeout=self.request_timeout_s,
+            )
+        except grpc.aio.AioRpcError as error:
+            _raise(error)
+        return list(response.summaries)
 
     async def read_thread_entities(
         self, request: history_pb2.ReadThreadEntitiesRequest

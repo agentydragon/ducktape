@@ -112,5 +112,19 @@ async def test_a_sandbox_filter_and_its_token_go_together(history: Store, summar
         await summaries.list_page(protocol_pb2.ListSessionSummariesRequest(limit=1, page_token=first.next_page_token))
 
 
+async def test_a_batch_read_leaves_out_sessions_without_history(history: Store, summaries: SummaryReader) -> None:
+    named = {await session_in(history, "test-sandbox", started(minutes)) for minutes in (0, 1)}
+    await session_in(history, "test-sandbox", started(2))
+
+    read = await summaries.get_many(named | {uuid4()})
+
+    assert {UUID(summary.session_id) for summary in read} == named
+
+
+async def test_a_batch_read_is_bounded(summaries: SummaryReader) -> None:
+    with pytest.raises(ValueError, match="too many"):
+        await summaries.get_many({uuid4() for _ in range(201)})
+
+
 if __name__ == "__main__":
     pytest_bazel.main()

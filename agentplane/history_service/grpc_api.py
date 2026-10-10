@@ -135,6 +135,14 @@ class HistoryService(protocol_pb2_grpc.HistoryServiceServicer):
             return await self.resources.summaries.get(UUID(request.session_id))
 
     @override
+    async def BatchGetSessionSummaries(
+        self, request: history_pb2.BatchGetSessionSummariesRequest, context: grpc.aio.ServicerContext
+    ) -> history_pb2.BatchGetSessionSummariesResponse:
+        async with self.reader(context):
+            summaries = await self.resources.summaries.get_many({UUID(session_id) for session_id in request.session_ids})
+            return history_pb2.BatchGetSessionSummariesResponse(summaries=summaries)
+
+    @override
     async def ReadThreadEntities(
         self, request: history_pb2.ReadThreadEntitiesRequest, context: grpc.aio.ServicerContext
     ) -> history_pb2.ReadThreadEntitiesResponse:

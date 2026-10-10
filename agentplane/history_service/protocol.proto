@@ -16,6 +16,8 @@ service HistoryService {
   // Newest first by `first_event_at`, Sessions with nothing folded yet ahead of the rest.
   rpc ListSessionSummaries(ListSessionSummariesRequest) returns (ListSessionSummariesResponse);
   rpc GetSessionSummary(GetSessionSummaryRequest) returns (SessionSummary);
+  // The named Sessions' summaries, in no particular order; a Session with no history is left out.
+  rpc BatchGetSessionSummaries(BatchGetSessionSummariesRequest) returns (BatchGetSessionSummariesResponse);
   // Fails with FAILED_PRECONDITION when the caller's projection epoch is no longer current.
   rpc ReadThreadEntities(ReadThreadEntitiesRequest) returns (ReadThreadEntitiesResponse);
   rpc ReadPayload(ReadPayloadRequest) returns (ReadPayloadResponse);
@@ -117,6 +119,15 @@ message ListSessionSummariesResponse {
 
 message GetSessionSummaryRequest {
   string session_id = 1;
+}
+
+message BatchGetSessionSummariesRequest {
+  // At most 200.
+  repeated string session_ids = 1;
+}
+
+message BatchGetSessionSummariesResponse {
+  repeated SessionSummary summaries = 1;
 }
 
 enum FeedStatus {
