@@ -601,6 +601,7 @@ def generate_manifests(root: Path) -> None:
     monitoring_home_switch.home_switch(
         flux_chart,
         write_directory(root, monitoring_home_switch_artifact, monitoring_home_switch.chart),
+        cert_manager_kustomization,
         external_secrets_operator_kustomization,
         tofu_controller_kustomization,
     )

@@ -13,10 +13,18 @@ home LAN node (`topology.kubernetes.io/zone: home-lan`); the CR and both passwor
 
 Neither password exists outside the cluster and the switch.
 
+cert-manager issues the switch's TLS certificates from the cluster CA (`cluster-internal-ca`), for
+`IP:192.168.1.100`, so the Terraform verifies `api-ssl` against the CA bundle mounted into its runner:
+
+- `monitoring/home-switch-tls`: this module imports it for `api-ssl` and `www-ssl`, and imports
+  each renewal under a new name before deleting the old one.
+- `monitoring/home-switch-bootstrap-tls`: `bootstrap.sh` installs it, so the first reconcile can
+  verify the switch.
+
 ## Bootstrap (new switch, or after a factory reset)
 
-tofu-controller can't reach the switch until it has a certificate on `api-ssl` and the `tofu`
-user exists. From a home-LAN host with cluster access (wyrm2), as the switch's admin:
+tofu-controller can't reach the switch until `api-ssl` serves a cluster-CA certificate and the
+`tofu` user exists. From a home-LAN host with cluster access (wyrm2), as the switch's admin:
 
 ```bash
 tf/gitops/home-switch/bootstrap.sh            # [admin-user] [switch-address]

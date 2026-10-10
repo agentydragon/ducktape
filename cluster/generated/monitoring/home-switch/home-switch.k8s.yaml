@@ -68,6 +68,40 @@ spec:
         password: "{{ .password }}"
       type: Opaque
 ---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: home-switch-tls
+  namespace: monitoring
+spec:
+  commonName: CRS310
+  ipAddresses:
+    - 192.168.1.100
+  issuerRef:
+    kind: ClusterIssuer
+    name: cluster-internal-ca
+  privateKey:
+    algorithm: ECDSA
+    size: 256
+  secretName: home-switch-tls
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: home-switch-bootstrap-tls
+  namespace: monitoring
+spec:
+  commonName: CRS310
+  ipAddresses:
+    - 192.168.1.100
+  issuerRef:
+    kind: ClusterIssuer
+    name: cluster-internal-ca
+  privateKey:
+    algorithm: ECDSA
+    size: 256
+  secretName: home-switch-bootstrap-tls
+---
 apiVersion: infra.contrib.fluxcd.io/v1alpha2
 kind: Terraform
 metadata:
@@ -98,6 +132,14 @@ spec:
         requests:
           cpu: 250m
           memory: 512Mi
+      volumeMounts:
+        - mountPath: /etc/cluster-ca
+          name: cluster-ca
+          readOnly: true
+      volumes:
+        - configMap:
+            name: cluster-internal-ca-bundle
+          name: cluster-ca
   serviceAccountName: tf-runner
   sourceRef:
     kind: GitRepository

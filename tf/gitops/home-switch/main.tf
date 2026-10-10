@@ -9,7 +9,8 @@ locals {
   lan_cidr = "192.168.1.0/24"
 }
 
-# Both minted by ESO in cluster/cdk8s/monitoring/home_switch.py.
+# Passwords minted by ESO, certificate issued by cert-manager from the cluster CA, all in
+# cluster/cdk8s/monitoring/home_switch.py.
 data "kubernetes_secret_v1" "tofu" {
   metadata {
     name      = "home-switch-tofu"
@@ -24,16 +25,37 @@ data "kubernetes_secret_v1" "monitoring" {
   }
 }
 
+data "kubernetes_secret_v1" "tls" {
+  metadata {
+    name      = "home-switch-tls"
+    namespace = "monitoring"
+  }
+}
+
 provider "routeros" {
   hosturl  = "apis://${local.switch_address}:8729"
   username = "tofu"
   password = data.kubernetes_secret_v1.tofu.data["password"]
-  # bootstrap.sh signs the api-ssl certificate on the switch itself, and the endpoint is LAN-only.
-  insecure = true
+  # The cluster CA bundle, mounted into the runner pod.
+  ca_certificate = "/etc/cluster-ca/ca-certificates.crt"
 }
 
 resource "routeros_system_identity" "this" {
   name = "CRS310"
+}
+
+# Importing is create-only, so each renewal by cert-manager imports a new certificate under a new
+# name, moves the services onto it, then deletes the old one.
+resource "routeros_system_certificate" "tls" {
+  name        = "home-switch-${substr(nonsensitive(sha1(data.kubernetes_secret_v1.tls.data["tls.crt"])), 0, 8)}"
+  common_name = "CRS310"
+  import {
+    cert_file_content = data.kubernetes_secret_v1.tls.data["tls.crt"]
+    key_file_content  = data.kubernetes_secret_v1.tls.data["tls.key"]
+  }
+  lifecycle {
+    create_before_destroy = true
+  }
 }
 
 resource "routeros_ip_service" "tls" {
@@ -41,7 +63,7 @@ resource "routeros_ip_service" "tls" {
   numbers     = each.key
   port        = each.key == "api-ssl" ? 8729 : 443
   address     = local.lan_cidr
-  certificate = "api" # created by bootstrap.sh
+  certificate = routeros_system_certificate.tls.name
   tls_version = "only-1.2"
   disabled    = false
 }
