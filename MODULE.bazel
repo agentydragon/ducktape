@@ -881,6 +881,22 @@ filegroup(
     urls = ["https://storage.googleapis.com/chrome-for-testing-public/151.0.7922.34/linux64/chrome-headless-shell-linux64.zip"],
 )
 
+# mktxp's config templates, which //cluster/cdk8s/monitoring:mktxp fills in. Pinned to the
+# commit of the release its image runs (v2.1.0).
+http_file(
+    name = "mktxp_conf",
+    downloaded_file_path = "mktxp.conf",
+    sha256 = "461ed4d34f336ee9d4d96c01d0b84dcd9dcb2ca61ac3c886c36b99177b3dbd78",
+    urls = ["https://raw.githubusercontent.com/akpw/mktxp/e703ee9a573eac831a566525e483225595448503/mktxp/cli/config/mktxp.conf"],
+)
+
+http_file(
+    name = "mktxp_system_conf",
+    downloaded_file_path = "_mktxp.conf",
+    sha256 = "d3243f507fdff5dd05a1563277fc663a3a6b50f7b54bee4db26c6d6a4b373803",
+    urls = ["https://raw.githubusercontent.com/akpw/mktxp/e703ee9a573eac831a566525e483225595448503/mktxp/cli/config/_mktxp.conf"],
+)
+
 # Flux CRD pins follow the controller versions in cluster/k8s/flux/flux-system/gotk-components.yaml.
 http_file(
     name = "flux_kustomization_crd",

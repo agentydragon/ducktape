@@ -6,6 +6,9 @@ next to the credentials YAML it builds from the `monitoring` user's password.
 
 from __future__ import annotations
 
+import configparser
+import io
+from collections.abc import Mapping
 from pathlib import Path
 
 from cdk8s import ApiObjectMetadata, App, Chart
@@ -26,17 +29,16 @@ from cluster.cdk8s.flux import (
     flux_kustomization,
     flux_kustomization_depends_on_many,
 )
-from cluster.cdk8s.generation import copy_source_file
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.monitoring.home_switch import MONITORING_PASSWORD
 from cluster.cdk8s.node_scheduling import OPTIPLEX
 from cluster.cdk8s.providers.prometheus_operator.service_monitor import ServiceMonitor
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
+from util.bazel.runfiles import get_required_path
 
 NAME = "mktxp"
 NAMESPACE = "monitoring"
 OUTPUT_DIR = f"{GENERATED_ROOT}/monitoring/{NAME}"
-_CONFIG_FILES = ("mktxp.conf", "_mktxp.conf")
 _CONFIG_MAP = f"{NAME}-config"
 _HTTP = Port(name="http", number=49090)
 _SERVICE = ServiceRef(name=NAME, port=_HTTP, pods=Pods(namespace=NAMESPACE, labels=(("app.kubernetes.io/name", NAME),)))
@@ -50,16 +52,85 @@ _CONFIG_SOURCE_DIR = "/etc/mktxp-source"
 # The RouterOS user tf/gitops/home-switch/main.tf creates for this exporter.
 _USERNAME = "monitoring"
 
+# Routers to scrape, each a section of `mktxp.conf` overriding its `[default]`.
+_ROUTERS: Mapping[str, Mapping[str, str]] = {
+    "CRS310": {
+        "hostname": "192.168.1.100",
+        "port": "8729",
+        "credentials_file": f"{_CONFIG_DIR}/credentials.yaml",
+        "use_ssl": "True",
+        "ssl_certificate_verify": "True",
+        "ssl_check_hostname": "True",
+        "ssl_ca_file": f"{_CA_BUNDLE_DIR}/{cluster_ca.BUNDLE_KEY}",
+        "health": "True",
+        "interface": "True",
+        "monitor": "True",
+        "switch_port": "True",
+        "routerboard": "True",
+        "installed_packages": "True",
+        "neighbor": "True",
+        "certificate": "True",
+        "user": "True",
+        # Nothing to report on a switch without routing, DHCP, PoE or wireless.
+        "dhcp": "False",
+        "dhcp_lease": "False",
+        "connections": "False",
+        "route": "False",
+        "pool": "False",
+        "firewall": "False",
+        "public_ip": "False",
+        "netwatch": "False",
+        "poe": "False",
+        "wireless": "False",
+        "wireless_clients": "False",
+        "capsman": "False",
+        "capsman_clients": "False",
+        "queue": "False",
+    }
+}
+# Changes to `_mktxp.conf`, mktxp's own settings.
+_SYSTEM_OVERRIDES: Mapping[str, Mapping[str, str]] = {"MKTXP": {"enable_probe": "False"}}
+# The template's example router.
+_SAMPLE_ROUTER = "Sample-Router"
+
+
+class _ConfigParser(configparser.ConfigParser):
+    def __init__(self) -> None:
+        super().__init__(interpolation=None, inline_comment_prefixes=("#",), empty_lines_in_values=False)
+
+    def optionxform(self, optionstr: str) -> str:
+        return optionstr
+
+
+def _render(template: str, overrides: Mapping[str, Mapping[str, str]], drop: str | None = None) -> str:
+    """`template` with `overrides` set, its `drop` section removed, and its comments gone.
+
+    mktxp rewrites a config file missing any key its template has, so ours are the template
+    plus our values rather than our values alone.
+    """
+    config = _ConfigParser()
+    config.read_string(template)
+    if drop is not None:
+        config.remove_section(drop)
+    config.read_dict(overrides)
+    out = io.StringIO()
+    config.write(out)
+    return out.getvalue()
+
 
 def write_config_maps(root: Path) -> list[ConfigMapArgs]:
-    """Copy mktxp's config files into `OUTPUT_DIR`; return their `configMapGenerator` entry."""
-    return [
-        ConfigMapArgs(
-            name=_CONFIG_MAP,
-            namespace=NAMESPACE,
-            files=[copy_source_file(root, OUTPUT_DIR, f"cluster/cdk8s/monitoring/{name}") for name in _CONFIG_FILES],
-        )
-    ]
+    """Write mktxp's config files into `OUTPUT_DIR`; return their `configMapGenerator` entry."""
+    out_dir = root / OUTPUT_DIR
+    out_dir.mkdir(parents=True, exist_ok=True)
+    # MODULE.bazel pins these templates to the mktxp release in `_IMAGE`.
+    files = {
+        "mktxp.conf": ("mktxp_conf", _ROUTERS, _SAMPLE_ROUTER),
+        "_mktxp.conf": ("mktxp_system_conf", _SYSTEM_OVERRIDES, None),
+    }
+    for name, (repository, overrides, drop) in files.items():
+        template = get_required_path(f"{repository}/file/{name}").read_text()
+        (out_dir / name).write_text(_render(template, overrides, drop))
+    return [ConfigMapArgs(name=_CONFIG_MAP, namespace=NAMESPACE, files=list(files))]
 
 
 def _deployment(chart: Chart) -> k8s.KubeDeployment:
