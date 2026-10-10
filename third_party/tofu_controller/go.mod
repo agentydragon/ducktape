@@ -127,6 +127,6 @@ require (
 	sigs.k8s.io/yaml v1.6.0 // indirect
 )
 
-replace github.com/flux-iac/tofu-controller => github.com/agentydragon/tofu-controller v0.16.5-0.20261010043443-44fa32cd593a
+replace github.com/flux-iac/tofu-controller => github.com/agentydragon/tofu-controller v0.16.5-0.20261010044756-694b6e0d2103
 
-replace github.com/flux-iac/tofu-controller/api => github.com/agentydragon/tofu-controller/api v0.0.0-20261010043443-44fa32cd593a
+replace github.com/flux-iac/tofu-controller/api => github.com/agentydragon/tofu-controller/api v0.0.0-20261010044756-694b6e0d2103
