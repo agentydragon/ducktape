@@ -198,7 +198,6 @@ class ConnectionAuthority:
                 id=request.grant_id,
                 connection_id=connection.id,
                 revision=revision,
-                caller=request.service_account.model_dump(mode="json"),
                 original_caller=request.service_account.model_dump(mode="json"),
                 issuer=request.issuer,
                 client_id=request.client_id,

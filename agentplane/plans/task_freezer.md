@@ -7,6 +7,27 @@ These are not promises to perform every former acceptance test. Waived or redund
 are removed, not stored here as obligations. Security/data-loss bugs with concrete evidence belong
 in active work. See [maintenance conventions](../AGENTS.md#task-dag-maintenance).
 
+## Legacy leftovers
+
+Deferred by the operator on 2026-10-10. Revisit when the operator asks.
+
+### `RUNNER_LAUNCH_SETTINGS` — runner launch settings separate from capture probes
+
+The runner builds its harness launch from the native capture scenarios, so every Claude Session runs
+with `--system-prompt "You are a concise test assistant..."` (Session instructions are added at
+initialize), `--tools Bash,Edit,Read`, `--name agentplane-capture` and two upstream retries; every
+Codex thread gets the same test base instructions and `clientInfo` `agentplane-capture`. Promoting
+it means deciding the production values (Claude Code's default system prompt or a platform one, the
+tool set, a Session name, a retry budget), then giving the runner its own launch settings while the
+scenario values stay with capture and `harness_tests`. Model-visible; new Sandboxes only.
+
+### `WORKLOAD_AUDIENCE_RENAME` — rename the `agentplane-egress` audience
+
+`workload_auth/README.md` calls `agentplane-egress` a compatibility audience that may become
+`agentplane-workload`. Renaming needs every verifier to accept both until running Sandbox Pods carry
+the new projected token, or a Sandbox restart: an accept-both release, then dropping the old audience
+once `LEGACY_SANDBOX_RETIRE` has replaced old Pods.
+
 ## Notifications and operations
 
 Revisit on a concrete latency, cost, delivery or new-source need; not a release checklist.

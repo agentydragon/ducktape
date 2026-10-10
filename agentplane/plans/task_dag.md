@@ -1028,15 +1028,11 @@ verifiable condition in code (`keepingOffset` in `thread_store.tsx`, the jsdom p
 flowchart TD
     OPEN_SESSION_RETIRE[Candidate: delete the caller-chosen OpenSession path]
     SANDBOX_SERVICE_RESOURCES_REQUIRED[Candidate: Sandbox Service wiring stops being optional]
-    ACTION_GRANT_CALLER_DROP[Decision: drop the unread grant caller column]
-    RUNNER_LAUNCH_SETTINGS[Decision: runner launch settings separate from capture probes]
-    WORKLOAD_AUDIENCE_RENAME[Decision: rename the agentplane-egress audience]
+    ACTION_GRANT_CALLER_DROP[Blocked: drop the grant caller column]
     APP_THREAD_VIEW_CLEANUP[Blocked: app Thread view and event_log shims]
     RUNNER_INBOUND_RETIRE[Retire inbound runner access]
     FOLD_READ_CUTOVER[Read the History Service fold]
     OPEN_SESSION_RETIRE --> RUNNER_INBOUND_RETIRE
-    RUNNER_LAUNCH_SETTINGS_SPLIT[Blocked: give the runner its own launch settings]
-    RUNNER_LAUNCH_SETTINGS --> RUNNER_LAUNCH_SETTINGS_SPLIT
     FOLD_READ_CUTOVER --> APP_THREAD_VIEW_CLEANUP
     RUNNER_SESSION_RECORD_SHIMS[Blocked: drop runner session record compatibility]
     LEGACY_SANDBOX_RETIRE[Retire pre-dial-out Sandboxes]
@@ -1063,38 +1059,14 @@ convenience, which leaves "not configured" branches production never takes. `dat
 `commands_database_url` are optional settings that `main.py` then requires; pass them as
 `supplied=` from the cdk8s settings file, as the History Service does. Code and fixtures only.
 
-### `ACTION_GRANT_CALLER_DROP` — drop the unread grant caller column
+### `ACTION_GRANT_CALLER_DROP` — drop the grant caller column
 
-**Decision for the operator (a column drop); Legacy burn-down lane.** Since
-`0023_connection_binding_required`, nothing reads `connection_grant.caller`: the Connection's
-`original_caller` and `bound_caller` carry the binding, and `bind` writes the original account into
-`caller` only because the column is NOT NULL. Rows rebound earlier hold the account bound at their
-last rebind. Dropping the column is data deletion. With it, `Connection.bound_caller` in the API
+**Blocked on `0023_connection_binding_required` reaching both environments; Legacy burn-down lane;
+the operator approved the drop.** `0023` leaves `external_connection_grant.caller` nullable and
+unmapped: the Connection's `original_caller` and `bound_caller` carry the binding. A new migration
+drops the column; the PR names its staging row count. With it, `Connection.bound_caller` in the API
 becomes required for unrevoked Connections, and the frontend's fallback to the grant's caller in
 `settings/connections.tsx` and its fixtures go.
-
-### `RUNNER_LAUNCH_SETTINGS` — runner launch settings separate from capture probes
-
-**Decision for the operator.** The runner builds its harness launch from the native capture
-scenarios, so every Claude Session runs with `--system-prompt "You are a concise test assistant..."`
-(Session instructions are added at initialize), `--tools Bash,Edit,Read`, `--name
-agentplane-capture` and two upstream retries; every Codex thread gets the same test base
-instructions and `clientInfo` `agentplane-capture`. Decide the production values: Claude Code's
-default system prompt or a platform one, the full or a chosen tool set, a Session name, a retry
-budget.
-
-### `RUNNER_LAUNCH_SETTINGS_SPLIT` — give the runner its own launch settings
-
-**Blocked on the decision; Legacy burn-down lane.** The runner gets its own launch settings with the
-decided values; the scenario values stay with capture and `harness_tests`. Model-visible change, new
-Sandboxes only.
-
-### `WORKLOAD_AUDIENCE_RENAME` — rename the `agentplane-egress` audience
-
-**Decision for the operator.** `workload_auth/README.md` calls `agentplane-egress` a compatibility
-audience that may become `agentplane-workload`. Renaming needs every verifier to accept both until
-running Sandbox Pods carry the new projected token, or a Sandbox restart. Recommended: rename with an
-accept-both release, then drop the old audience once `LEGACY_SANDBOX_RETIRE` has replaced old Pods.
 
 ### `RUNNER_SESSION_RECORD_SHIMS` — drop runner session record compatibility
 
