@@ -316,6 +316,9 @@ struct ChunkSelectorIndex<'m> {
     chunk: selector_resolve::Chunk<'m>,
     decls: Vec<IndexedDeclaration>,
     binding_to_decl: BTreeMap<String, Vec<usize>>,
+    /// Top-level object literals with a named property directly referencing a
+    /// binding. Built once so use-site fallback does not scan the chunk per pin.
+    named_object_use_sites: BTreeMap<String, Vec<usize>>,
     /// Layer-1 read-off shape index (W2). Built once per chunk; the migrated
     /// forms (single-target function and var) read their minimal anchor set off
     /// it instead of running the cover search. The resolve
@@ -840,7 +843,14 @@ impl<'m> ChunkSelectorIndex<'m> {
     fn new(module: &'m Module) -> Self {
         let mut decls = Vec::new();
         let mut binding_to_decl: BTreeMap<String, Vec<usize>> = BTreeMap::new();
+        let mut named_object_use_sites: BTreeMap<String, Vec<usize>> = BTreeMap::new();
         for (body_idx, item) in module.body.iter().enumerate() {
+            for binding in minimize::named_object_use_bindings(item) {
+                named_object_use_sites
+                    .entry(binding)
+                    .or_default()
+                    .push(body_idx);
+            }
             let indexed = IndexedDeclaration::from_item(body_idx, item);
             if indexed.declared_bindings.is_empty() {
                 continue;
@@ -860,6 +870,7 @@ impl<'m> ChunkSelectorIndex<'m> {
             chunk: selector_resolve::Chunk::analyze(SYNTHESIS_MODULE, module),
             decls,
             binding_to_decl,
+            named_object_use_sites,
             shape_index,
         }
     }

@@ -6,7 +6,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use debundle_e2e_support::{
-    parse_stdout_json, run_match_selector, run_synthesize_selectors, write_text_file,
+    parse_stdout_json, run_debundle, run_match_selector, run_synthesize_selectors, write_text_file,
 };
 
 struct MinimizedSelectorCase {
@@ -840,3 +840,109 @@ minimizer_expectation_case!(
     ],
     expected = "expected_match.js",
 );
+
+/// Two classes are identical, but a property in a use site identifies one.
+/// This needs a free-identifier binding claim rather than declaration context.
+#[test]
+fn minimizes_identical_class_using_a_named_use_site() {
+    let dir = tempfile::tempdir().unwrap();
+    let case = MinimizedSelectorCase {
+        name: "identical classes with a named use site",
+        source: "class a extends Error {}\nclass b extends Error {}\nconst roles = { primary: a, secondary: b };\n",
+        module: "app/classes",
+        bindings: &[BindingCase {
+            export_name: "Selected",
+            runtime_name: "a",
+        }],
+        outputs: &[],
+    };
+    let (modules, source) = write_case(dir.path(), &case);
+
+    // Prove that the selector language can already identify this binding.
+    write_text_file(
+        &modules.join("app/classes.yaml"),
+        "source_matches:\n  - match: 'const roles = { primary: Selected, secondary: ANYTHING };'\n    bindings:\n      - Selected\n",
+    );
+    let validated = run_debundle(&[
+        "spec",
+        "validate",
+        "--modules",
+        modules.to_str().unwrap(),
+        "--source-file",
+        source.to_str().unwrap(),
+        "--format",
+        "json",
+    ]);
+    assert!(
+        validated.status.success(),
+        "manual use-site control failed:\n{}\n{}",
+        String::from_utf8_lossy(&validated.stdout),
+        String::from_utf8_lossy(&validated.stderr)
+    );
+
+    write_case(dir.path(), &case);
+    let out = run_synthesize_selectors(
+        &modules,
+        &[
+            "--source-file",
+            source.to_str().unwrap(),
+            "--item",
+            "app/classes:Selected",
+            "--candidates",
+            "10",
+            "--format",
+            "json",
+        ],
+    );
+    let parsed = parse_stdout_json(&out);
+    let selector = parsed["candidates"][0]["match_source"]
+        .as_str()
+        .unwrap_or_else(|| panic!("no selector: {parsed}"));
+    assert!(
+        selector.contains("primary"),
+        "the minimizer should consider the named use site: {parsed}"
+    );
+
+    run_synthesize_selectors(
+        &modules,
+        &[
+            "--source-file",
+            source.to_str().unwrap(),
+            "--item",
+            "app/classes:Selected",
+            "--apply",
+            "--format",
+            "json",
+        ],
+    );
+    let rewritten = fs::read_to_string(modules.join("app/classes.yaml")).unwrap();
+    assert!(rewritten.contains("source_matches:"), "{rewritten}");
+
+    let variant = dir.path().join("renamed.js");
+    write_text_file(
+        &variant,
+        "class x extends Error {}\nclass y extends Error {}\nconst roles = { secondary: y, extra: 1, primary: x };\n",
+    );
+    let renamed = run_match_selector(
+        &variant,
+        selector,
+        &["--target-binding", "Selected", "--no-slack"],
+    );
+    assert_eq!(renamed["outcomes"][0]["outcome"]["binding"], "x");
+    let validated = run_debundle(&[
+        "spec",
+        "validate",
+        "--modules",
+        modules.to_str().unwrap(),
+        "--source-file",
+        variant.to_str().unwrap(),
+        "--format",
+        "json",
+    ]);
+    assert!(
+        validated.status.success(),
+        "generated use-site selector failed after renaming/reordering:\n{}\n{}",
+        String::from_utf8_lossy(&validated.stdout),
+        String::from_utf8_lossy(&validated.stderr)
+    );
+}
