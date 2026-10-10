@@ -1,4 +1,3 @@
-import hashlib
 from pathlib import Path
 
 import httpx
@@ -9,12 +8,10 @@ from pydantic import SecretStr
 from att_gateway.pages import parse_syslog
 from att_gateway.settings import Syslog, SyslogLevel
 from att_gateway.syslog_reconciler import reconcile
+from att_gateway.testing.fake_login import ACCESS_CODE, LOGIN_FORM, handle_login, is_logged_in
 
 _TESTDATA = Path(__file__).parent / "testdata"
 _BASE_URL = "http://gateway.test"
-_ACCESS_CODE = "test-code-1"
-_LOGIN_NONCE = "0123abcd"
-_LOGIN_FORM = f'<html><body><form><input type="hidden" name="nonce" value="{_LOGIN_NONCE}" /></form></body></html>'
 # The nonce in the saved `syslog.ha`.
 _SYSLOG_NONCE = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 _DESIRED = Syslog(enabled=True, server="192.0.2.10", port=1514, level=SyslogLevel.NOTICE)
@@ -33,8 +30,7 @@ def _syslog_page(syslog: Syslog) -> str:
 
 
 class FakeGateway:
-    """Serves `syslog.ha` only to a session that posted the login form with `_ACCESS_CODE`
-    hashed with the nonce, and applies a post carrying the page's nonce."""
+    """Serves `syslog.ha` only to a logged-in session, and applies a post carrying the page's nonce."""
 
     def __init__(self, syslog: Syslog) -> None:
         self.syslog = syslog
@@ -44,21 +40,13 @@ class FakeGateway:
 
     def handle(self, request: httpx.Request) -> httpx.Response:
         page = request.url.path.removeprefix("/cgi-bin/").removesuffix(".ha")
-        form = dict(httpx.QueryParams(request.content.decode()))
         if page == "login":
-            if (
-                request.method == "POST"
-                and form["hashpassword"] == hashlib.md5(f"{_ACCESS_CODE}{_LOGIN_NONCE}".encode()).hexdigest()
-            ):
-                # The live gateway answers a good login with a redirect to the page that sent it there.
-                return httpx.Response(
-                    302, headers={"Location": "/cgi-bin/syslog.ha", "Set-Cookie": "SessionID=granted"}
-                )
-            return httpx.Response(200, text=_LOGIN_FORM, headers={"Set-Cookie": "SessionID=anonymous"})
+            return handle_login(request, redirect_to="/cgi-bin/syslog.ha")
         assert page == "syslog"
-        if request.headers.get("Cookie") != "SessionID=granted":
-            return httpx.Response(200, text=_LOGIN_FORM)
+        if not is_logged_in(request):
+            return httpx.Response(200, text=LOGIN_FORM)
         if request.method == "POST":
+            form = dict(httpx.QueryParams(request.content.decode()))
             self.posts.append(form)
             if form["nonce"] == _SYSLOG_NONCE and not self.ignore_saves:
                 self.syslog = Syslog(
@@ -70,7 +58,7 @@ class FakeGateway:
         return httpx.Response(200, text=_syslog_page(self.syslog))
 
 
-async def _reconcile(gateway: FakeGateway, access_code: str = _ACCESS_CODE) -> bool:
+async def _reconcile(gateway: FakeGateway, access_code: str = ACCESS_CODE) -> bool:
     async with httpx.AsyncClient(transport=httpx.MockTransport(gateway.handle), base_url=_BASE_URL) as client:
         return await reconcile(client, _DESIRED, SecretStr(access_code), page_gap_seconds=0)
 

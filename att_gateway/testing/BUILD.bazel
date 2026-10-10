@@ -1,0 +1,10 @@
+load("//devinfra/python:defs.bzl", "py_library")
+
+package(default_testonly = True)
+
+py_library(
+    name = "fake_login",
+    srcs = ["fake_login.py"],
+    visibility = ["//att_gateway:__pkg__"],
+    deps = ["@pypi//httpx"],
+)

@@ -1,5 +1,4 @@
 import asyncio
-import hashlib
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -10,17 +9,14 @@ from pydantic import SecretStr
 
 from att_gateway.exporter import GatewayCollector, PageResult, poll_once
 from att_gateway.pages import Page, parse_speed, parse_sysinfo
+from att_gateway.testing.fake_login import ACCESS_CODE, LOGIN_FORM, handle_login, is_logged_in
 
 _TESTDATA = Path(__file__).parent / "testdata"
 _BASE_URL = "http://gateway.test"
-_ACCESS_CODE = "test-code-1"
-_NONCE = "0123abcd"
-_LOGIN_FORM = f'<html><body><form><input type="hidden" name="nonce" value="{_NONCE}" /></form></body></html>'
 
 
 class FakeGateway:
-    """Serves the saved pages; those behind the access code only to a session that posted the
-    login form with `_ACCESS_CODE` hashed with the nonce, as the real one checks it."""
+    """Serves the saved pages; those behind the access code only to a logged-in session."""
 
     def __init__(self) -> None:
         self.requested: list[str] = []
@@ -29,21 +25,13 @@ class FakeGateway:
         page = request.url.path.removeprefix("/cgi-bin/").removesuffix(".ha")
         self.requested.append(page)
         if page == "login":
-            if request.method == "GET":
-                return httpx.Response(200, text=_LOGIN_FORM, headers={"Set-Cookie": "SessionID=anonymous"})
-            form = dict(httpx.QueryParams(request.content.decode()))
-            if form["hashpassword"] == hashlib.md5(f"{_ACCESS_CODE}{_NONCE}".encode()).hexdigest():
-                # The live gateway answers a good login with a redirect to the page that sent it there.
-                return httpx.Response(
-                    302, headers={"Location": "/cgi-bin/nattable.ha", "Set-Cookie": "SessionID=granted"}
-                )
-            return httpx.Response(200, text=_LOGIN_FORM)
-        if Page(page).needs_login and request.headers.get("Cookie") != "SessionID=granted":
-            return httpx.Response(200, text=_LOGIN_FORM)
+            return handle_login(request, redirect_to="/cgi-bin/nattable.ha")
+        if Page(page).needs_login and not is_logged_in(request):
+            return httpx.Response(200, text=LOGIN_FORM)
         return httpx.Response(200, text=(_TESTDATA / f"{page}.html").read_text())
 
 
-async def _poll(handler: httpx.MockTransport, access_code: str | None = _ACCESS_CODE) -> CollectorRegistry:
+async def _poll(handler: httpx.MockTransport, access_code: str | None = ACCESS_CODE) -> CollectorRegistry:
     collector = GatewayCollector()
     registry = CollectorRegistry()
     registry.register(collector)
