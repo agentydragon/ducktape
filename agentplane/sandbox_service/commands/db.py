@@ -59,3 +59,18 @@ class AdmissionReconciliation(Base):
     # The runner journal the cursor counts in; a different source is a conflict, not a reset.
     source_id: Mapped[str] = mapped_column(String)
     reconciled_through: Mapped[int] = mapped_column(BigInteger)
+
+
+class RunnerConnection(Base):
+    """The Sandbox's current runner channel connection; the newest accepted connection owns it."""
+
+    __tablename__ = "runner_connection"
+    __table_args__ = (CheckConstraint("connection_epoch > 0", name="connection_epoch_positive"),)
+
+    sandbox_uid: Mapped[UUID] = mapped_column(primary_key=True)
+    pod_uid: Mapped[str] = mapped_column(String)
+    # Increases by one per accepted connection, never reset, so a superseded owner can tell.
+    connection_epoch: Mapped[int] = mapped_column(BigInteger)
+    owner_replica: Mapped[str] = mapped_column(String)
+    runner_boot_id: Mapped[str] = mapped_column(String)
+    last_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))

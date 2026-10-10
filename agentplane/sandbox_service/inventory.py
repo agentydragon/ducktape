@@ -31,6 +31,7 @@ from agentplane.sandbox_service.kubernetes_views import (
     MANAGED_LABEL,
     PROVISIONING_ANNOTATION,
     RETENTION_HOLDS_ANNOTATION,
+    RUNNER_CHANNEL_ANNOTATION,
     SANDBOX_BINDING_ANNOTATION,
     SandboxResource,
     sandbox_view,
@@ -306,6 +307,11 @@ class SandboxInventory:
         await self._patch(
             sandbox.name, {"metadata": {"uid": str(sandbox.uid), "annotations": {PROVISIONING_ANNOTATION: None}}}
         )
+
+    async def runner_channel(self, name: str) -> frozenset[str]:
+        """The operations this Sandbox's runner carries over the outbound channel."""
+        raw = (await self._sandbox(name)).metadata.annotations.get(RUNNER_CHANNEL_ANNOTATION)
+        return frozenset() if raw is None else frozenset(raw.split(","))
 
     async def binding(self, name: str) -> SandboxBinding | None:
         raw = (await self._sandbox(name)).metadata.annotations.get(SANDBOX_BINDING_ANNOTATION)

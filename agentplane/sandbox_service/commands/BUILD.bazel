@@ -111,3 +111,12 @@ oci_image(
     user = "1000:1000",
     visibility = ["//visibility:public"],
 )
+
+py_library(
+    name = "connections",
+    srcs = ["connections.py"],
+    deps = [
+        ":db",
+        "@pypi//sqlalchemy",
+    ],
+)
