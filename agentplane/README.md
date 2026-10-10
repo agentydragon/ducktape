@@ -18,7 +18,8 @@ an MCP approval gateway for any MCP-capable LLM product.
 - [LLM ingress](llm_ingress/README.md): authenticated hop in front of LiteLLM.
 - [Notification service](notification_service/README.md): subscriptions and session inboxes.
 - [Indexing](indexing/README.md): Git semantic search.
-- [Integration app](app/README.md): the browser UI, a client of the services above.
+- [Integration app](app/README.md): the human-facing frontend over the services above, and a
+  client of them.
 
 Status, open work and design gates: [`plans/`](plans/README.md). Implemented contracts:
 [`docs/`](docs/).
