@@ -1399,7 +1399,8 @@ function SyncedThread({
       {error && <p role="alert">Thread sync failed: {error}; showing the current window and retrying.</p>}
       {shown.error && (
         <p role="alert">
-          Thread synchronization stopped: {shown.error} <button onClick={shown.refresh}>Refresh thread</button>
+          Thread synchronization stopped: {shown.error}. Retrying automatically; the rows shown may be out of date.{" "}
+          <button onClick={shown.retry}>Retry now</button>
         </p>
       )}
       {!shown.error && !shown.caughtUp && (

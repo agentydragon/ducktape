@@ -23,7 +23,7 @@ const LAST_RETRY_MS = 30_000;
 
 /** Between half and all of a delay that doubles with each retry, so the pages that lost one server
  * do not all come back to it at once. */
-function backoff(retries: number): number {
+export function backoff(retries: number): number {
   const ceiling = Math.min(LAST_RETRY_MS, FIRST_RETRY_MS * 2 ** retries);
   return ceiling / 2 + (Math.random() * ceiling) / 2;
 }

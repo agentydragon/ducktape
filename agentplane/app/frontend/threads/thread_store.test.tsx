@@ -189,6 +189,8 @@ class FakeSync {
   beforeBodyRead: ((read: number) => Promise<void>) | null = null;
   /** Whether every read of bodies is refused 400, as one the proxy rejects is. */
   refusingBodies = false;
+  /** How many live reads of entities are still to be refused 400, which stops the client. */
+  refusingLive = 0;
   readonly requests: { thread: string; method: string; path: string; query: URLSearchParams; subset: Subset | null }[] =
     [];
   readonly #live = new Map<string, Connection>();
@@ -238,6 +240,10 @@ class FakeSync {
       });
     if (url.searchParams.get("live_sse") !== "true")
       return Response.json({ message: "the store follows shapes over SSE" }, { status: 400 });
+    if (path === "entities" && this.refusingLive > 0) {
+      this.refusingLive--;
+      return Response.json({ message: "test refusal" }, { status: 400 });
+    }
     if (this.liveUnanswered) {
       this.waiting++;
       return new Promise((_, reject) =>
@@ -681,6 +687,31 @@ it("says it is reconnecting while Electric's client retries a failed read, until
   await vi.waitFor(() => expect(itemsShown(container)).toContain("item-4@4"));
 });
 
+it("follows a stopped window on from where its log was read, by itself, showing the error meanwhile", async () => {
+  const sync = stubSync();
+  thread(sync, 3);
+  const container = await renderThread(<Shown>{(rows, history) => <Rows rows={rows} history={history} />}</Shown>);
+  await vi.waitFor(() => expect(itemsShown(container)).toHaveLength(3));
+  const reading = await sync.liveOffset("entities");
+  const scopes = sync.requests.filter((request) => request.path === "scope").length;
+
+  sync.refusingLive = 1;
+  await sync.close("entities");
+  await vi.waitFor(() => expect(container.querySelector('[role="alert"]')).not.toBeNull());
+  expect(itemsShown(container)).toHaveLength(3);
+
+  // The first attempt follows the failure within a second.
+  await vi.waitFor(() => expect(container.querySelector('[role="alert"]')).toBeNull(), { timeout: 2_000 });
+  expect(await sync.liveOffset("entities")).toBe(reading);
+  expect(sync.requests.filter((request) => request.path === "scope")).toHaveLength(scopes);
+  await sync.send("entities", (relation) => [
+    change(relation, "update", item(3, "epoch-1", { revision_cursor: "71" })),
+    change(relation, "insert", item(4)),
+  ]);
+  await vi.waitFor(() => expect(itemsShown(container)).toContain("item-4@4"));
+  expect(itemsShown(container).filter((shown) => shown.startsWith("item-3@"))).toEqual(["item-3@71"]);
+});
+
 it("sends the browser to log in when a shape read finds the login expired, and shows the thread no error", async () => {
   const replace = vi.fn();
   vi.stubGlobal("location", { href: window.location.href, pathname: "/", hash: "#/threads/thread", replace });
@@ -1089,6 +1120,18 @@ it("reads a stopped body again on retry", async () => {
   );
 
   await vi.waitFor(() => expect(bodyText(container, "item-2")).toBe("Bye"));
+  expect(bodyStopped(container, "item-2")).toBeNull();
+});
+
+it("reads a stopped body again by itself", async () => {
+  const sync = stubSync();
+  const container = await threadWithRefusedBody(sync);
+
+  sync.refusingBodies = false;
+  sync.chunks.push(chunk("b", 0, "Bye"));
+
+  // The first attempt follows the failure within a second.
+  await vi.waitFor(() => expect(bodyText(container, "item-2")).toBe("Bye"), { timeout: 2_000 });
   expect(bodyStopped(container, "item-2")).toBeNull();
 });
 

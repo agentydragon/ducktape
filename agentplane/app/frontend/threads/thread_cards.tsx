@@ -99,7 +99,8 @@ function PayloadView({
     <>
       {error && (
         <p role="alert">
-          Payload synchronization stopped: {error} <button onClick={retry}>Retry payload synchronization</button>
+          Payload synchronization stopped: {error}. Retrying automatically.{" "}
+          <button onClick={retry}>Retry payload synchronization now</button>
         </p>
       )}
       {body === null && fallbackText !== undefined ? (

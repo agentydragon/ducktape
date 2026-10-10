@@ -370,7 +370,11 @@ For a disconnect, the engine resumes the same shape from its own token and dedup
 delivery. When Electric retires a shape's log, reload the rows held as fresh subsets while
 they stay on screen; when the projection epoch is gone, read the scope again and replace the
 window once the new one has caught up. The store takes the view state leaving the shape as that
-signal, since an open SSE connection meets the proxy's 410 only when it reconnects. Restore an old
+signal, since an open SSE connection meets the proxy's 410 only when it reconnects. A read that
+stops the client (any other 4xx) stops the window, which shows the error and, after a backoff that
+doubles with each failure in a row, reopens its log at the position it had applied (re-reading the
+rows held where it has none) and clears the error once those reads answer; a stopped body read is
+retried the same way. Neither needs the reader to refresh. Restore an old
 reading position with by-ID and before/after queries. Preserve drafts, disclosure state and
 reading position. Do not download the items between that position and the tail. Ignore late
 callbacks from superseded subscriptions.

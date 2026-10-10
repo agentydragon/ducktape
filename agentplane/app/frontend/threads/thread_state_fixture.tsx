@@ -82,7 +82,7 @@ export function threadState({
           ? { phase: "live", since: Date.now() }
           : { phase: "reconnecting", since: Date.now() - reconnectingFor, attempt: 1, lastError: "HTTP 503" },
       error: windowError,
-      refresh: () => {},
+      retry: () => {},
     },
     error,
   };

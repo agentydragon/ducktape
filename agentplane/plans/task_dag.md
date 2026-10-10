@@ -503,13 +503,6 @@ stable cursors, independent of deferred transcript full-text search. Verify orde
 permissions rather than making the frontend load every Thread. The paging cursors come from the History Service's
 list API (`ListSessionSummaries`).
 
-### `THREAD_SYNC_STOPPED_RECOVERY` — recover stopped UI synchronization
-
-**Candidate; preserve service-backed replay.** Recover stopped feeds from retained cursors
-without a manual refresh loop; show honest lag/failure and avoid duplicate rows. Follow the
-[Thread sync plan](thread_sync/README.md), including bounded paging and error visibility. Changes to
-app persistence require their own safe rollout; client-only recovery can proceed.
-
 ## 6. Existing access and lifecycle follow-ups
 
 These are bounded existing work, not dependencies on the broader multiagent model. Confirm current

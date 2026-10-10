@@ -30,7 +30,7 @@ import { createContext, type JSX, type ReactNode, useContext, useEffect, useStat
 import { z } from "zod";
 
 import { displayableError, fetchWithLogin, threadScope, type ThreadScope } from "../client";
-import type { StreamConnection } from "../live_stream";
+import { backoff, type StreamConnection } from "../live_stream";
 import {
   decimalBigInt,
   type Decimal,
@@ -348,6 +348,9 @@ class PayloadShape extends Listeners {
   #version = 0;
   // Why a read of a body failed, until a chunk of the body arrives or the bodies are read again.
   readonly #failures = new Map<string, string>();
+  // The bodies are read again by themselves after a pause, which doubles with each failure in a row.
+  #retry: number | undefined;
+  #retries = 0;
   #closed = false;
   #suspended = false;
   // Where the shape was read through when it was suspended, until it is opened there.
@@ -416,6 +419,8 @@ class PayloadShape extends Listeners {
   }
 
   retry = (): void => {
+    window.clearTimeout(this.#retry);
+    this.#retry = undefined;
     this.#shape?.close();
     this.#shape = null;
     this.#failures.clear();
@@ -426,6 +431,8 @@ class PayloadShape extends Listeners {
   /** Stops following the log, keeping the chunks held and where in the log they are read through. */
   suspend(): void {
     this.#suspended = true;
+    window.clearTimeout(this.#retry);
+    this.#retry = undefined;
     this.#position = this.#shape?.position ?? null;
     this.#shape?.close();
     this.#shape = null;
@@ -435,6 +442,7 @@ class PayloadShape extends Listeners {
    * held are read again. */
   resume(): void {
     this.#suspended = false;
+    if (this.#failures.size > 0) return this.retry();
     if (this.#position === null) this.#queued = [...this.#requested.values()];
     else {
       this.#shape = this.#open(this.#position);
@@ -446,6 +454,7 @@ class PayloadShape extends Listeners {
 
   close(): void {
     this.#closed = true;
+    window.clearTimeout(this.#retry);
     this.#shape?.close();
   }
 
@@ -515,6 +524,7 @@ class PayloadShape extends Listeners {
       this.#failures.delete(key);
       changed = true;
     }
+    if (changed && this.#failures.size === 0) this.#retries = 0;
     if (changed) this.#changed();
     // The chunks written while the log was being rebuilt are not on it: read the bodies shown again.
     if (retired) this.#queue([...this.#requested.values()]);
@@ -527,6 +537,8 @@ class PayloadShape extends Listeners {
       const failure = displayableError(error);
       for (const { ownerId, generation } of bodies) this.#failures.set(bodyKey(ownerId, generation), failure);
       this.#changed();
+      if (this.#retry === undefined && !this.#suspended && !this.#closed)
+        this.#retry = window.setTimeout(this.retry, backoff(this.#retries++));
     }
   }
 
@@ -581,6 +593,10 @@ class EpochWindow extends Listeners {
   #connection: StreamConnection = { phase: "live", since: Date.now() };
   #closed = false;
   #suspended = false;
+  // A stopped window follows the thread again by itself after a pause, which doubles with each
+  // failure in a row.
+  #recovery: number | undefined;
+  #failures = 0;
   // The last event the fold had applied when the scope was read; null while suspended, until it is
   // read again, as the rows held reach no scope then.
   #through: bigint | null;
@@ -649,9 +665,18 @@ class EpochWindow extends Listeners {
     return this.#ready && this.#refreshed === null && !this.#gone && this.#state.error === null;
   }
 
+  /** Follows a stopped window on from where its log was read through, at once. */
+  retry = (): void => {
+    if (this.#state.error === null || this.#gone || this.#suspended || this.#closed) return;
+    window.clearTimeout(this.#recovery);
+    void this.#recover();
+  };
+
   /** Stops following the thread, keeping the rows and bodies held and where in each log they are read through. */
   suspend(): void {
     this.#suspended = true;
+    window.clearTimeout(this.#recovery);
+    this.#recovery = undefined;
     this.#through = null;
     this.#position = this.#shape.position;
     this.#shape.close();
@@ -675,6 +700,7 @@ class EpochWindow extends Listeners {
 
   close(): void {
     this.#closed = true;
+    window.clearTimeout(this.#recovery);
     this.#shape.close();
     for (const shape of this.#bodies.values()) shape.close();
   }
@@ -788,8 +814,40 @@ class EpochWindow extends Listeners {
   #fail(error: unknown): void {
     if (this.#closed) return;
     // The fold was rebuilt under a new epoch: the reader resolves the thread's scope again.
-    if (error instanceof FetchError && error.status === 410) this.#retire();
-    else this.#publish(displayableError(error));
+    if (error instanceof FetchError && error.status === 410) return this.#retire();
+    this.#publish(displayableError(error));
+    if (this.#recovery === undefined && !this.#suspended)
+      this.#recovery = window.setTimeout(() => void this.#recover(), backoff(this.#failures++));
+  }
+
+  /**
+   * Follows the thread again from where its log was read through, so the rows held stay and only
+   * what changed since arrives; rows are keyed, so nothing read twice shows twice. A log with no
+   * position, or one Electric has since retired (a 409), reads the rows held again instead. The
+   * window shows its error until the reads that make it current have answered.
+   */
+  async #recover(): Promise<void> {
+    this.#recovery = undefined;
+    if (this.#closed || this.#suspended || this.#gone) return;
+    const from = this.#shape.position;
+    this.#shape.close();
+    this.#shape = this.#open(from);
+    this.#connection = { phase: "live", since: Date.now() };
+    this.#retrying.clear();
+    if (from === null && this.#ready) await this.#refetch();
+    else
+      await this.#guard(() =>
+        Promise.all([
+          this.#serial(() => (this.#ready ? Promise.resolve() : this.#catchUp(INITIAL_ROWS))),
+          this.#shape.subset(VIEW_STATE),
+          this.#shape.subset(PENDING_COMMANDS),
+        ])
+      );
+    // A read that failed meanwhile has stopped the window again, and set its next attempt.
+    if (this.#recovery !== undefined || this.#closed || this.#suspended || this.#gone) return;
+    this.#failures = 0;
+    this.#ready = true;
+    this.#publish(null);
   }
 
   #retire(): void {
@@ -1013,7 +1071,7 @@ function useThread(): ThreadState {
             loadOlder: shown.loadOlder,
             connection: state.connection,
             error: state.error,
-            refresh: thread.refresh,
+            retry: shown.retry,
           },
     error,
   };

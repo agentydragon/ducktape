@@ -2203,7 +2203,7 @@ async def test_electric_reconnects_unconfirmed_command_without_reloading(thread_
         await document.dispose()
 
 
-async def test_terminal_shape_error_keeps_rows_until_a_refresh_replaces_the_window(
+async def test_terminal_shape_error_keeps_rows_and_follows_on_from_where_it_stopped(
     thread_browser: ThreadBrowser,
 ) -> None:
     page, source = thread_browser.page, thread_browser.source
@@ -2222,18 +2222,27 @@ async def test_terminal_shape_error_keeps_rows_until_a_refresh_replaces_the_wind
 
     await page.route("**/sync/entities?*", terminal_shape_error, times=1)
     try:
-        # Dropping the connection ends the live SSE response; the client's reconnect is the one the
-        # route answers.
-        async with page.expect_response(lambda response: "/sync/entities?" in response.url and response.status == 400):
-            await thread_browser.ingress.drop_connections()
-        stopped = page.get_by_role("alert").filter(has_text="Thread synchronization stopped:")
-        await expect(stopped).to_be_visible()
-        await expect(page.get_by_text("Test retained prefix", exact=True)).to_be_visible()
-        await expect_pending_message_bubble(page, command.submit_input.text)
-
-        async with page.expect_response(lambda response: "/sync/scope" in response.url and response.status == 200):
-            await stopped.get_by_role("button", name="Refresh thread", exact=True).click()
+        # No click recovers it: the window reopens its log, by itself, at the position it had read through.
+        async with page.expect_response(
+            lambda response: (
+                "/sync/entities?" in response.url
+                and "handle=" in response.url
+                and "offset=now" not in response.url
+                and response.status == 200
+            )
+        ):
+            # Dropping the connection ends the live SSE response; the client's reconnect is the one
+            # the route answers.
+            async with page.expect_response(
+                lambda response: "/sync/entities?" in response.url and response.status == 400
+            ):
+                await thread_browser.ingress.drop_connections()
+            stopped = page.get_by_role("alert").filter(has_text="Thread synchronization stopped:")
+            await expect(stopped).to_be_visible()
+            await expect(page.get_by_text("Test retained prefix", exact=True)).to_be_visible()
+            await expect_pending_message_bubble(page, command.submit_input.text)
         await expect(page.get_by_text("Thread synchronization stopped:", exact=False)).to_have_count(0)
+        await expect(page.get_by_text("Test retained prefix", exact=True)).to_have_count(1)
         await expect_pending_message_bubble(page, command.submit_input.text)
         source.append(
             event_pb2.Event(

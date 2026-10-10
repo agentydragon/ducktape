@@ -46,9 +46,11 @@ export interface ThreadWindow {
   /** `reconnecting` while a failed read of the thread is being retried, and until one succeeds
    * `rows` may be out of date; `live` otherwise. */
   connection: StreamConnection;
-  /** Why the window stopped following the thread; `refresh` opens it again. */
+  /** Why the window stopped following the thread. It follows on again by itself from where it
+   * stopped, after a pause that grows with each failure in a row, and shows the error until it is
+   * current again; `retry` tries at once. */
   error: string | null;
-  refresh: () => void;
+  retry: () => void;
 }
 
 export interface ThreadState {
@@ -63,7 +65,8 @@ export interface Payload {
    * null before any has. */
   body: string | null;
   /** Why the body stopped loading short of the whole revision; null while it loads and once it is
-   * whole. `retry` starts it again. */
+   * whole. It is read again by itself after a pause that grows with each failure in a row; `retry`
+   * starts it again at once. */
   error: string | null;
   retry: () => void;
 }
