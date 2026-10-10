@@ -93,9 +93,7 @@
         "graphMode": "none",
         "justifyMode": "auto",
         "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
+          "calcs": ["lastNotNull"],
           "fields": "",
           "values": false
         },
@@ -168,9 +166,7 @@
         "graphMode": "none",
         "justifyMode": "auto",
         "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
+          "calcs": ["lastNotNull"],
           "fields": "",
           "values": false
         },
@@ -243,9 +239,7 @@
         "graphMode": "none",
         "justifyMode": "auto",
         "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
+          "calcs": ["lastNotNull"],
           "fields": "",
           "values": false
         },
@@ -307,9 +301,7 @@
         "graphMode": "none",
         "justifyMode": "auto",
         "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
+          "calcs": ["lastNotNull"],
           "fields": "",
           "values": false
         },
@@ -371,9 +363,7 @@
         "graphMode": "none",
         "justifyMode": "auto",
         "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
+          "calcs": ["lastNotNull"],
           "fields": "",
           "values": false
         },
@@ -435,9 +425,7 @@
         "graphMode": "none",
         "justifyMode": "auto",
         "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
+          "calcs": ["lastNotNull"],
           "fields": "",
           "values": false
         },
@@ -1079,9 +1067,7 @@
   ],
   "refresh": "1m",
   "schemaVersion": 41,
-  "tags": [
-    "home-network"
-  ],
+  "tags": ["home-network"],
   "time": {
     "from": "now-24h",
     "to": "now"
