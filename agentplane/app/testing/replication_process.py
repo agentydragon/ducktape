@@ -191,7 +191,7 @@ class GatedSession(AsyncSession):
 
 class GatedProjector(HistoryProjector):
     def __init__(self, engine: AsyncEngine, reader: SandboxServiceClient, gate: Gate, cursor: int) -> None:
-        super().__init__(engine, reader)
+        super().__init__(engine, reader, notify=notify_threads)
         self._sessions = async_sessionmaker(engine, class_=GatedSession, expire_on_commit=False)
         self._gate = gate
         self._cursor = cursor
