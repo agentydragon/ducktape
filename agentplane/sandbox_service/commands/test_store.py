@@ -289,8 +289,10 @@ async def test_acceptance_does_not_wait_for_reconciliation_transaction(
 
     async def pause_ingestion(session: AsyncSession, identity: UUID, entry: event_log_pb2.EventEntry) -> None:
         await reconcile(session, identity, entry)
-        ingestion_waiting.set()
-        await release_ingestion.wait()
+        # The direct receipt below goes through the same function and must not pause.
+        if entry.event.command_admitted.command.command_id == earlier.command.command_id:
+            ingestion_waiting.set()
+            await release_ingestion.wait()
 
     monkeypatch.setattr(store, "reconcile_admission", pause_ingestion)
     earlier = make_input_submission(command_id="being-ingested", text="earlier")
