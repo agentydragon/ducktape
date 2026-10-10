@@ -221,6 +221,35 @@ async def test_compact_action_chips(
 
 
 @pytest.mark.parametrize("viewport", [DESKTOP, MOBILE], ids=["desktop", "mobile"])
+@pytest.mark.parametrize(
+    ("group", "name"),
+    [("ssh", "list_targets"), ("uncatalogued", "unknown_action")],
+    ids=["catalogued-fallback", "uncatalogued-fallback"],
+)
+async def test_action_argument_fallbacks_use_json_view(
+    view: VisualPage, app: AgentplaneFixture, viewport: Viewport, group: str, name: str
+) -> None:
+    await app.show_action_preview(group, name, {"vendor_field": "fixture"})
+    await app.mount_thread(IDLE_THREAD)
+    page = view.page
+    if viewport == MOBILE:
+        await page.get_by_role("button", name="Toggle navigation").click()
+
+    title = f"review {name.replace('_', ' ')}"
+    section = page.locator(".agentplane-actions-sidebar")
+    await section.get_by_role("button", name=f"Expand {title}").click()
+    preview = section.locator(".agentplane-actions-sidebar-preview")
+    await expect(preview).to_contain_text('"vendor_field": "fixture"')
+    await view.capture("expanded-pane", target=section)
+
+    await section.get_by_role("link", name=f"View details for {title}").click()
+    details = page.locator(".agentplane-shell-main-content")
+    await expect(details.get_by_text("Exact arguments (unredacted)")).to_be_visible()
+    await expect(details).to_contain_text('"vendor_field": "fixture"')
+    await view.capture("full-details", target=page.locator("#app"))
+
+
+@pytest.mark.parametrize("viewport", [DESKTOP, MOBILE], ids=["desktop", "mobile"])
 async def test_compact_pr_with_description_requires_review(
     view: VisualPage, app: AgentplaneFixture, viewport: Viewport
 ) -> None:
