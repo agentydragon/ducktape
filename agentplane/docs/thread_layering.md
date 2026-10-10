@@ -125,6 +125,11 @@ native files, directories, and workspace paths need no rekey. New histories run 
 the runner locator `r-<uuid>`, which never leaves the Sandbox Service. A future multi-Session Thread would
 need a new explicit model rather than overloading this one-to-one identity.
 
+Both identities resolve through the same registry row, so Resume, Follow and command take the
+public ID whichever locator it names, and replay reads the History Service by that ID. A legacy row
+whose Sandbox UID was never recorded stays readable but cannot be resumed or polled. Each Session
+keeps one Event counter, the runner's cursor, contiguous from 1 in the history archive.
+
 A runner's Event sequence goes into a Thread but is not itself the Thread. The app creates
 the Event log under the public Session ID and copies the runner's Events into it, along
 with the feed state. The Thread is assembled from that log: its conversation view is projected

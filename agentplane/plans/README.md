@@ -53,7 +53,7 @@ the other implemented contracts.
 outside the cluster: sandboxes that run as the calling ServiceAccount, and Kubernetes reach from
 inside one.
 [Thread, runner, and harness layering](../docs/thread_layering.md) owns the command/Event
-architecture, pending Thread identity continuity, native recovery, and optional
+architecture, Thread identity continuity, native recovery, and optional
 app-first acceptance. [Thread view synchronization](../docs/thread_view_sync.md)
 owns the proposed conversation model and sync-engine integration, on-demand Raw, history/catch-up and
 frontend state; it is distinct from the implemented raw-replay API.

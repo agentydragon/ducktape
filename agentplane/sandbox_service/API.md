@@ -109,8 +109,9 @@ tables instead. The app's projection
 consumes this archive independently. Legacy rows without a known Sandbox UID remain
 readable but are not polled until their binding is established by a verified handoff.
 
-- `ListSessions`: Sandbox destination; maps Service-created runner IDs to public Session IDs in
-  the returned summaries. Legacy runner-owned sessions retain their existing IDs.
+- `ListSessions`: Sandbox destination; maps every registered runner ID, `r-<uuid>` or an imported
+  legacy one, to its public Session ID in the returned summaries. Unregistered runner sessions keep
+  their runner IDs.
 - `OpenSession`: legacy caller-chosen runner ID; retained for deployed app sessions until cutover.
 - `CreateSession`: new explicit Open with Sandbox destination, caller-scoped idempotency key,
   and selected overrides (no runner ID). A durable public Session UUID and effective launch

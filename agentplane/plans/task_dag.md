@@ -23,10 +23,8 @@ contracts remain multi-replica unless a reviewed temporary restriction says othe
 ```mermaid
 flowchart TD
     APP_SESSION_SCHEMA_RENAME[Candidate: name app Session reference accurately]
-    THREAD_EVENT_CONTINUITY[Candidate: new and legacy identity continuity]
     APP_ALEMBIC_SQUASH[Blocked: baseline final app schema]
     APP_SESSION_SCHEMA_RENAME --> APP_ALEMBIC_SQUASH
-    THREAD_EVENT_CONTINUITY --> APP_ALEMBIC_SQUASH
 ```
 
 ### `APP_SESSION_SCHEMA_RENAME` — name the app Session reference accurately
@@ -36,17 +34,9 @@ references. Preserve public IDs and app projection/operator metadata; do not ren
 service archive tables or runner storage. Coordinate a safe schema rollout. Metadata
 consumer audits remain scoped cleanup, not permission to discard useful UI projections.
 
-### `THREAD_EVENT_CONTINUITY` — identity cutover capstone
-
-**Candidate.** Verify the retained legacy association and the new
-identity path through Open/resume/replay without inventing a second Event counter. Existing
-same-storage runner restart/resume tests remain evidence; do not demand copied-volume portability
-or a new native experiment. If this particular cutover changes a runner protocol/image, use a
-compatible guarded rollout; automatic fleet upgrades are not inherently a prerequisite.
-
 ### `APP_ALEMBIC_SQUASH` — consolidate the final app schema
 
-**Blocked on final schema naming/cleanup and identity continuity.** Baseline only the settled schema,
+**Blocked on final schema naming/cleanup.** Baseline only the settled schema,
 verify fresh and migrated databases and their deployed stamps before pruning old revisions.
 Retain the data-preserving rollback procedure. No Action Service or other database squash implied.
 
