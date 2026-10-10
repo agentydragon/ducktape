@@ -170,5 +170,27 @@ def test_model_configs_are_generated_into_the_llm_ingress_configmap(
             assert "AGENTPLANE_MODEL_CONTEXT_WINDOWS" not in {entry["name"] for entry in runner["env"]}
 
 
+def test_channel_canary_only_adds_the_channel_flags_to_the_generic_runner(
+    agentplane_manifests: dict[str, list[dict[str, Any]]],
+) -> None:
+    for namespace, docs in agentplane_manifests.items():
+        templates = {doc["metadata"]["name"]: doc for doc in docs if doc["kind"] == "SandboxTemplate"}
+        if namespace != "agentplane-staging":
+            assert "runner-channel-canary" not in templates
+            continue
+        canary = deepcopy(templates["runner-channel-canary"]["spec"])
+        args = canary["podTemplate"]["spec"]["containers"][0]["args"]
+        target = args.index("--channel-target")
+        # The exact host and placeholder the runner-channel EgressPolicy and EgressCredential match.
+        assert args[target : target + 4] == [
+            "--channel-target",
+            f"agentplane-sandbox-service.{namespace}.svc.cluster.local:8082",
+            "--channel-bearer",
+            "agentplane-credential-agentplane-runner-channel",
+        ]
+        del args[target : target + 4]
+        assert canary == templates["runner"]["spec"]
+
+
 if __name__ == "__main__":
     pytest_bazel.main()

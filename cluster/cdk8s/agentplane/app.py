@@ -91,7 +91,7 @@ _PLACEHOLDER_TAG = "unset"  # always overridden by image-pins/kustomization.yaml
 NAME = "agentplane-app"
 _APP_IMAGE = "git.allegedly.works/ducktape-ci/agentplane-app"
 _MIGRATE_IMAGE = "git.allegedly.works/ducktape-ci/agentplane-app-migrate"
-_RUNNER_IMAGE = "git.allegedly.works/ducktape-ci/runner"
+RUNNER_IMAGE = "git.allegedly.works/ducktape-ci/runner"
 _RUNNER_PORT = 7000
 _LABELS = {"app.kubernetes.io/name": NAME}
 _RUNNER_LABELS = {"app.kubernetes.io/name": "agentplane-runner"}
@@ -149,7 +149,7 @@ class App(Construct):
             "runner-template",
             env,
             name="runner",
-            image=_RUNNER_IMAGE,
+            image=RUNNER_IMAGE,
             description=(
                 "The shared runner image, built to host an agent harness: the sandbox tools (git, "
                 "curl, ripgrep, jq, openssl, kubectl, python3) plus the runner, Claude Code and Codex."
@@ -509,11 +509,13 @@ class RunnerTemplate(Construct):
         description: str,
         buildbuddy_secret: bool = False,
         extra_harness_env: Sequence[str] = (),
+        dial_channel: bool = False,
     ) -> None:
         super().__init__(scope, id)
         self.env = env
         self.buildbuddy_secret = buildbuddy_secret
         self.extra_harness_env = extra_harness_env
+        self.dial_channel = dial_channel
         self._add_sandbox_template(name=name, image=image, description=description)
 
     def _runner_container(self, image: str) -> SandboxTemplateSpecPodTemplateSpecContainers:
@@ -558,6 +560,17 @@ class RunnerTemplate(Construct):
             args.extend(["--harness-env", entry])
         for name in self.env.harness_inherited_env:
             args.extend(["--harness-inherit-env", name])
+        if self.dial_channel:
+            # Through the egress proxy, which swaps the placeholder bearer for this Pod's token.
+            channel = sandbox_service.runner_channel(self.env.namespace)
+            args.extend(
+                [
+                    "--channel-target",
+                    f"{channel.fqdn}:{channel.port.number}",
+                    "--channel-bearer",
+                    sandbox_service.RUNNER_CHANNEL_BEARER,
+                ]
+            )
         return SandboxTemplateSpecPodTemplateSpecContainers(
             name="runner",
             image=f"{image}:{_PLACEHOLDER_TAG}",
