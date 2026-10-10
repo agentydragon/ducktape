@@ -3,6 +3,7 @@
 # gazelle:exclude test_visual_history.py
 # gazelle:exclude test_visual_policies.py
 # gazelle:exclude test_visual_navigation.py
+# gazelle:exclude test_visual_mosaic.py
 # gazelle:exclude test_visual_scenes.py
 load("@aspect_rules_esbuild//esbuild:defs.bzl", "esbuild")
 load("@aspect_rules_js//js:defs.bzl", "js_library")
@@ -878,6 +879,7 @@ ts_library(
     deps = [
         ":consent",
         ":live",
+        ":mosaic",
         ":sandbox_page",
         ":sandboxes",
         ":settings",
@@ -897,6 +899,51 @@ ts_library(
         "//agentplane/app/frontend/threads:thread_store",
         "//agentplane/app/frontend/threads:thread_sync",
     ],
+)
+
+ts_library(
+    name = "mosaic_layout",
+    srcs = ["mosaic_layout.ts"],
+    tsconfig = TSCONFIG,
+)
+
+agentplane_vitest_test(
+    name = "mosaic_layout_test",
+    srcs = ["mosaic_layout.test.ts"],
+    deps = [
+        ":mosaic_layout",
+        "//:node_modules/vitest",
+    ],
+)
+
+ts_library(
+    name = "mosaic",
+    srcs = [
+        "css.d.ts",
+        "mosaic.tsx",
+        "tabler_icons.d.ts",
+    ],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":live",
+        ":mosaic_css",
+        ":mosaic_layout",
+        ":topbar",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@tabler/icons-react",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+        "//agentplane/app/frontend:client",
+        "//agentplane/app/frontend/actions:action_client",
+        "//agentplane/app/frontend/actions:detail",
+        "//agentplane/app/frontend/actions:requests",
+        "//agentplane/app/frontend/threads:projected_session",
+    ],
+)
+
+js_library(
+    name = "mosaic_css",
+    srcs = ["mosaic.css"],
 )
 
 ts_library(
@@ -1068,6 +1115,12 @@ agentplane_visual_test(
     name = "visual_navigation",
     src = "test_visual_navigation.py",
     title = "Agentplane: navigation",
+)
+
+agentplane_visual_test(
+    name = "visual_mosaic",
+    src = "test_visual_mosaic.py",
+    title = "Agentplane: mosaic preview",
 )
 
 agentplane_visual_test(

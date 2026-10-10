@@ -13,6 +13,7 @@ export function appDocumentTitle(pathname: string, settingsOpen: boolean): strin
   if (settingsOpen) return `Settings — ${DEFAULT_APP_TITLE}`;
   if (pathname === "/actions" || pathname.startsWith("/actions/")) return `Actions — ${DEFAULT_APP_TITLE}`;
   if (pathname === "/sandboxes") return `Sandboxes — ${DEFAULT_APP_TITLE}`;
+  if (pathname === "/mosaic") return `Mosaic preview — ${DEFAULT_APP_TITLE}`;
   if (pathname.startsWith("/sandboxes/")) {
     const encodedName = pathname.slice("/sandboxes/".length).split("/")[0];
     let name = encodedName;
