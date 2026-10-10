@@ -2047,6 +2047,7 @@ data:
       in the shared platform instructions. Never impersonate an operator, bypass the egress proxy,
       or use admin Actions for unrelated work. Approval is not execution success.
     lifecycle_timeout_s: 300
+    ingest_history: false
     default_egress_policies:
       - basic
       - inference-experiments
@@ -2324,7 +2325,7 @@ data:
       grpc_channel_options:
         grpc.max_receive_message_length: 33554432
     ingester:
-      enabled: false
+      enabled: true
 immutable: false
 ---
 apiVersion: apps/v1

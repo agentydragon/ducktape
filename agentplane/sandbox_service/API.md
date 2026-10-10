@@ -104,8 +104,9 @@ contiguous Event prefix into the Service database under the existing canonical S
 ID. It verifies the current Sandbox UID/owner before connecting and never sends an Open
 spec or starts a harness. Copies from concurrent service replicas may overlap: the
 shared store serializes them, accepts exact duplicate bytes and refuses conflicts.
-Stopped or deleted Sandboxes retain their already-copied prefix. The ingester always
-runs when the Service starts; there is no runtime feature gate. The app's projection
+Stopped or deleted Sandboxes retain their already-copied prefix. The ingester runs when
+`ingest_history` is set, which is off wherever the History Service ingester writes the
+tables instead. The app's projection
 consumes this archive independently. Legacy rows without a known Sandbox UID remain
 readable but are not polled until their binding is established by a verified handoff.
 

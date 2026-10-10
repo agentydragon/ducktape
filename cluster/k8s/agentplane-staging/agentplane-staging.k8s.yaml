@@ -2171,6 +2171,7 @@ data:
       in the shared platform instructions. Never impersonate an operator, bypass the egress proxy,
       or use admin Actions for unrelated work. Approval is not execution success.
     lifecycle_timeout_s: 300
+    ingest_history: true
     default_egress_policies:
       - basic
       - inference-experiments

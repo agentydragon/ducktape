@@ -54,6 +54,7 @@ from cluster.cdk8s.agentplane.environment import (
     DbProps,
     EgressProps,
     Environment,
+    HistoryWriter,
     LlmIngressProps,
     ReplicaProfile,
 )
@@ -160,7 +161,7 @@ ENV = Environment(
         history_service_grpc_channel_options=LARGE_EVENT_GRPC_CHANNEL_OPTIONS,
     ),
     runner_grpc_channel_options=LARGE_EVENT_GRPC_CHANNEL_OPTIONS,
-    history_ingester=False,
+    history_writer=HistoryWriter.HISTORY_SERVICE,
     db=DbProps(instances=1),
     llm_ingress=LlmIngressProps(litellm_key_secret_name=_LITELLM_KEY_SECRET, models=model_configs(TESTING_APP_MODELS)),
     egress=EgressProps(

@@ -25,8 +25,9 @@ At most `ingester.concurrency` Sessions are followed per replica; a follow ends 
 Service's planned renewal, so waiting Sessions rotate in. The feed position is kept in memory, so a
 restarted replica rereads the feed and each Session resumes from its cursor.
 
-`ingester.enabled` is off in both environments while the Sandbox Service ingester writes the
-tables; turning it on and that one off is a single cutover. It places no retention holds yet.
+One ingester writes the tables per environment: the cdk8s `Environment.history_writer` turns this
+one's `ingester.enabled` on and the Sandbox Service's `ingest_history` off, or the reverse. It places
+no retention holds yet.
 
 Bazel targets: `:main`, `:image`. Settings come from `AGENTPLANE_HISTORY_SERVICE_*` environment
 variables or the YAML file named by `AGENTPLANE_HISTORY_SERVICE_CONFIG_FILE` (`settings.py`). gRPC

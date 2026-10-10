@@ -751,7 +751,7 @@ flowchart TD
     SESSION_FOLLOW_CONTRACT[Decision: History Service as an ordinary subscriber]
     SESSION_COMMAND_CONTRACT[Command admission contract]
     SANDBOX_HISTORY_READS_RETIRE[Blocked: delete Sandbox Service history reads]
-    HISTORY_WRITE_HANDOFF[Candidate: History Service ingester takes over]
+    HISTORY_WRITE_HANDOFF[Blocked: History Service ingester takes over staging]
     SANDBOX_LOCAL_HISTORY_RETIRE[Blocked: delete Sandbox Service ingester and store]
     FOLD_LIBRARY_EXTRACT[Blocked: fold and projector in a neutral package]
     FOLD_SHADOW[Blocked: History Service folds in shadow]
@@ -773,6 +773,7 @@ flowchart TD
     RUNNER_INBOUND_RETIRE[Retire inbound runner access]
     SESSION_COMMAND_CONTRACT --> SESSION_FOLLOW_CONTRACT
     SESSION_FOLLOW_CONTRACT --> HISTORY_WRITE_HANDOFF
+    RUNNER_TEARDOWN_SEAL[Runner seals Sessions at teardown] -. holds clear .-> HISTORY_WRITE_HANDOFF
     HISTORY_WRITE_HANDOFF --> SANDBOX_LOCAL_HISTORY_RETIRE
     SANDBOX_HISTORY_READS_RETIRE --> SANDBOX_LOCAL_HISTORY_RETIRE
     FOLD_LIBRARY_EXTRACT --> FOLD_SHADOW
@@ -821,11 +822,12 @@ Remove the Sandbox Service history read RPCs and their client code.
 
 ### `HISTORY_WRITE_HANDOFF` — the History Service ingester takes over
 
-**Candidate.** The History Service ingester exists, deployed with `ingester.enabled` off in both
-environments ([History Service](../history_service/README.md#ingester)). What remains is the flip:
-enable it and stop the Sandbox Service ingester, testing first and then staging, verifying on each
-that new entries are committed by the History Service alone. Rollback: run the old ingester again;
-the tables are the same.
+**Blocked on retention holds clearing (`RUNNER_TEARDOWN_SEAL`).** The History Service ingester
+writes testing's history ([History Service](../history_service/README.md#ingester)). What remains
+is staging: set `history_writer` to the History Service and verify new entries are committed by it
+alone. Until holds clear, nothing keeps a Sandbox from being deleted before the History Service has
+copied its journal, unless the operator accepts that. Rollback: set it back; the tables are the
+same.
 
 ### `SANDBOX_LOCAL_HISTORY_RETIRE` — remove the local store
 

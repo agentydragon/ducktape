@@ -30,7 +30,7 @@ from agentplane.sandbox_service.settings import CONFIG_FILE_ENV, Settings
 from agentplane.subjects import ServiceAccountRef
 from cluster.cdk8s import cilium, node_scheduling, pod_policy
 from cluster.cdk8s.agentplane import actions, database, egress, history_service, notifications
-from cluster.cdk8s.agentplane.environment import Environment
+from cluster.cdk8s.agentplane.environment import Environment, HistoryWriter
 from cluster.cdk8s.agentplane.migrate_container import migrate_init_container
 from cluster.cdk8s.agentplane.pod_disruption_budget import add_pod_disruption_budget
 from cluster.cdk8s.api_resource import custom_resource, named_resource
@@ -95,6 +95,7 @@ class SandboxService(Construct):
             kubernetes_binding_cleanup_namespaces=set(env.app_config.kubernetes_binding_cleanup_namespaces),
             kubernetes_cluster_binding_cleanup=env.app_config.kubernetes_cluster_binding_cleanup,
             runner_grpc_channel_options=dict(env.runner_grpc_channel_options),
+            ingest_history=env.history_writer is HistoryWriter.SANDBOX_SERVICE,
         )
         config = SettingsFile(
             self,
