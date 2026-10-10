@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Awaitable, Callable, Mapping
+from collections.abc import AsyncIterator, Awaitable, Callable, Mapping
 from pathlib import Path
 from typing import Never
 
@@ -31,6 +31,14 @@ class ServiceError(ConnectionError):
 
 class ReconnectRequiredError(ConnectionError):
     """Planned follow renewal, not an interruption or native session end."""
+
+
+class SealedError(StreamClosedError):
+    """The runner sealed this Sandbox incarnation of the Session; its journal ends at `cursor`."""
+
+    def __init__(self, cursor: int) -> None:
+        super().__init__(f"Session incarnation sealed at cursor {cursor}")
+        self.cursor = cursor
 
 
 def _raise(error: grpc.aio.AioRpcError) -> Never:
@@ -69,6 +77,10 @@ class Attachment:
             self._ended = True
             self._call.cancel()
             raise StreamClosedError
+        if message.HasField("sealed"):
+            self._ended = True
+            self._call.cancel()
+            raise SealedError(message.sealed.cursor)
         self._call.cancel()
         raise ConnectionError("Sandbox Service sent an unexpected follow observation")
 
@@ -81,7 +93,8 @@ class SandboxServiceClient:
         self,
         target: str,
         *,
-        namespace: str,
+        # The Sandbox namespace, for callers that check destinations against it.
+        namespace: str | None,
         token_file: Path,
         command_admission_timeout_s: float | None,
         request_timeout_s: float,
@@ -199,6 +212,28 @@ class SandboxServiceClient:
 
     async def revoke_egress(self, name: str) -> None:
         await self.unary(self.stub.RevokeEgress, protocol_pb2.RevokeEgressRequest(binding_name=name))
+
+    async def watch_sessions(self, *, after_position: int) -> AsyncIterator[protocol_pb2.SessionChange]:
+        """Yield changes after the position until planned renewal, which returns; anything else raises."""
+        call = self.stub.WatchSessions(
+            protocol_pb2.WatchSessionsRequest(after_position=after_position),
+            metadata=await self.metadata(),
+            timeout=self.follow_timeout_s,
+        )
+        try:
+            while True:
+                try:
+                    message = await call.read()
+                except grpc.aio.AioRpcError as error:
+                    _raise(error)
+                if message is grpc.aio.EOF:
+                    raise ConnectionError("Sandbox Service ended the Session feed without planned renewal")
+                assert isinstance(message, protocol_pb2.WatchSessionsResponse)
+                if message.HasField("reconnect_required"):
+                    return
+                yield message.change
+        finally:
+            call.cancel()
 
     def runner(self, destination: SandboxDestination) -> Runner:
         return Runner(self, destination)

@@ -172,6 +172,8 @@ message SessionFeedState {
   // True only after runner EOF at exactly attached.last_cursor. False means
   // unconfirmed, not evidence of current connectivity or a running harness.
   bool ended = 2;
+  // The incarnation's seal, once a follower committed every entry through it. Sticky.
+  Sealed sealed = 3;
 }
 
 message ReadSessionObservationsRequest {
@@ -207,6 +209,9 @@ message SessionChange {
   string sandbox_uid = 3;
   // Durable and commit-ordered across replicas: resuming after it misses no later change.
   uint64 position = 4;
+  // The Sandbox's ServiceAccount, which a SessionDestination names, read from inventory as the
+  // change is sent. Unset when that incarnation no longer exists.
+  ServiceAccount owner = 5;
 }
 
 message WatchSessionsResponse {

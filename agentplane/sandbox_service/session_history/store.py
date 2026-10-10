@@ -307,22 +307,38 @@ class Store:
             return row.last_cursor
 
     async def record_feed_state(self, session_id: UUID, feed: protocol_pb2.SessionFeedState) -> None:
-        """Record only a covered runner snapshot; delayed copiers cannot rewind it."""
+        """Record only a covered runner snapshot; delayed copiers cannot rewind it or drop a seal.
+
+        The snapshot may name the runner session (a direct runner attach) or the public Session ID
+        (a Sandbox Service follow); it is stored under the runner's, as either copier wrote it.
+        """
         snapshot = protocol_pb2.SessionFeedState()
         snapshot.CopyFrom(feed)
         async with self._sessions.begin() as session:
             row = await session.scalar(select(SessionHistory).where(SessionHistory.id == session_id).with_for_update())
             if row is None:
                 raise HistoryNotFoundError(session_id)
-            if not snapshot.HasField("attached") or snapshot.attached.session_id != row.runner_session_id:
+            if (
+                row.runner_session_id is None
+                or not snapshot.HasField("attached")
+                or snapshot.attached.session_id not in (row.runner_session_id, str(row.id))
+            ):
                 raise HistoryConflictError("feed snapshot does not match the bound runner session")
+            snapshot.attached.session_id = row.runner_session_id
             if snapshot.attached.last_cursor > row.last_cursor:
                 raise HistoryConflictError("feed snapshot is ahead of committed history")
+            if snapshot.HasField("sealed") and snapshot.sealed.cursor != row.last_cursor:
+                raise HistoryConflictError("seal does not end the committed history")
             if row.feed_state is not None:
                 prior = protocol_pb2.SessionFeedState.FromString(row.feed_state)
+                if prior.HasField("sealed"):
+                    if snapshot.HasField("sealed") and snapshot.sealed != prior.sealed:
+                        raise HistoryConflictError("conflicting seals")
+                    snapshot.sealed.CopyFrom(prior.sealed)
                 if snapshot.attached.last_cursor < prior.attached.last_cursor:
-                    return
-                if snapshot.attached.last_cursor == prior.attached.last_cursor:
+                    snapshot.attached.CopyFrom(prior.attached)
+                    snapshot.ended = prior.ended
+                elif snapshot.attached.last_cursor == prior.attached.last_cursor:
                     if snapshot.attached != prior.attached:
                         raise HistoryConflictError("conflicting attachment snapshots at one cursor")
                     snapshot.ended = snapshot.ended or prior.ended

@@ -625,7 +625,11 @@ class SandboxService(protocol_pb2_grpc.SandboxServiceServicer):
                     changed.clear()
                     async with asyncio.timeout(self.resources.admission_timeout_s):
                         page = await history.read_changes(after_position=position, limit=WATCH_PAGE)
+                        sandboxes = await self.resources.destinations.inventory.list_sandboxes() if page else []
+                    owners = {(sandbox.name, sandbox.uid): sandbox.service_account for sandbox in sandboxes}
                     for change in page:
+                        if (owner := owners.get((change.sandbox, change.sandbox_uid))) is not None:
+                            change.owner.CopyFrom(owner)
                         async with asyncio.timeout(self.resources.admission_timeout_s):
                             await context.write(protocol_pb2.WatchSessionsResponse(change=change))
                         position = change.position

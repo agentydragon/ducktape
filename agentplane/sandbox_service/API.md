@@ -187,7 +187,7 @@ Sandbox Service serves them from no copy of its own. A cursor beyond the journal
    not native closure.
 5. Alternatively, a terminal `sealed` observation carrying the incarnation's final cursor, after
    every entry through it. It is defined for the runner's teardown seal and not sent yet: no runner
-   journals a seal.
+   journals a seal. A history copier records it as the stored feed state's `sealed`.
 
 Reconnect from the last durably committed cursor; each reconnect rereads the projected token and
 checks identity and destination again. The app flushes its buffered batch before planned renewal,
@@ -216,7 +216,9 @@ subsequent cutover work, not part of this Open RPC.
 `ReadSessionEvents` it needs no history-reader grant, since it carries no transcript. It sends every recorded Session, including those of deleted Sandboxes and
 reservations whose runner Open never succeeded, in `position` order, then each later change as it
 commits on any replica. A `SessionChange` is the Session's current record: public ID, Sandbox name
-and current incarnation UID (empty for imported Sessions without one). A Session that changes again
+and current incarnation UID (empty for imported Sessions without one), and that Sandbox's owner
+ServiceAccount, which completes the `SessionDestination` for `FollowSession`. The owner is read from
+inventory as the change is sent and is unset once the incarnation is gone. A Session that changes again
 reappears at a larger position, so a lagging reader sees only its latest record. The feed carries no
 harness lifecycle; the Sandbox Service records none, and `FollowSession` reports it.
 

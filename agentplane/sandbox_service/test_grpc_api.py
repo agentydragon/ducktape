@@ -1085,6 +1085,7 @@ async def test_watch_sessions_resumes_after_disconnect_and_wakes_on_other_writer
         )
         legacy = (await first_call.read()).change
         assert (legacy.session_id, legacy.sandbox, legacy.sandbox_uid) == (str(legacy_id), "deleted-sandbox", "")
+        assert not legacy.HasField("owner")  # no live incarnation to follow
         first_call.cancel()  # disconnect before acknowledging the second Session
 
         resumed = remote.stub.WatchSessions(
@@ -1094,6 +1095,8 @@ async def test_watch_sessions_resumes_after_disconnect_and_wakes_on_other_writer
         )
         current = (await resumed.read()).change
         assert (current.session_id, current.sandbox, current.sandbox_uid) == (str(current_id), SANDBOX, SANDBOX_UID)
+        # The owner completes a SessionDestination a watcher can follow.
+        assert current.owner == DESTINATION.owner
         assert current.position > legacy.position
 
         # Another replica's commit reaches this stream through NOTIFY, not this replica's Store.
