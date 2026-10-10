@@ -19,6 +19,7 @@ py_library(
     deps = [
         "//agentplane:crd_group",
         "//agentplane/egress:resources",
+        "//agentplane/sandbox_service/testing:fake_inventory",
         "//agentplane/workload_auth:principal",
         "//util:agent_sandbox",
         "@pypi//aiohttp",

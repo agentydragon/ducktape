@@ -144,7 +144,7 @@ def service_history_db_url(db_url: str) -> Iterator[str]:
 
 
 @pytest.fixture
-def ingest_sandbox_history() -> bool:
+def register_attached_sessions() -> bool:
     return False
 
 
@@ -306,7 +306,7 @@ def sandbox_endpoint(
     tmp_path: Path,
     sandbox_runner_port: int,
     service_history_db_url: str,
-    ingest_sandbox_history: bool,
+    register_attached_sessions: bool,
 ) -> Iterator[Endpoint]:
     with backend(
         custom_objects,
@@ -317,7 +317,7 @@ def sandbox_endpoint(
         rbac=sandbox_rbac,
         runner_port=sandbox_runner_port,
         database_url=service_history_db_url,
-        ingest_history=ingest_sandbox_history,
+        register_attached=register_attached_sessions,
     ) as endpoint:
         yield endpoint
 

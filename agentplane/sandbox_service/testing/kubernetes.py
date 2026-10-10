@@ -2,7 +2,7 @@
 
 import asyncio
 from collections.abc import AsyncIterator
-from contextlib import asynccontextmanager, nullcontext
+from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from pathlib import Path
 from typing import cast
@@ -27,7 +27,7 @@ from agentplane.sandbox_service.provisioning import Provisioning
 from agentplane.sandbox_service.session_history.session_changes import SessionChanges
 from agentplane.sandbox_service.session_registry import SessionRegistry
 from agentplane.sandbox_service.testing.grpc_service import service_client
-from agentplane.sandbox_service.testing.history import service_database, with_history
+from agentplane.sandbox_service.testing.history import service_database
 from agentplane.subjects import ServiceAccountRef
 from agentplane.testing.fake_apiserver import SANDBOX_NAMESPACE, FakeApiServer, TokenVerdict, fake_apiserver, pod_for
 from agentplane.workload_auth.principal import WorkloadPrincipalResolver
@@ -108,7 +108,6 @@ async def authenticated_service(
     token_file: Path,
     *,
     database_url: str,
-    ingest_history: bool = False,
     manager: ServiceAccountRef | None = None,
     token: str = "test-app-service-token",
     audience: str = "test-app-sandbox-service",
@@ -142,8 +141,5 @@ async def authenticated_service(
             ),
             session_changes=SessionChanges(engine.url),
         )
-        async with (
-            with_history(resources, engine) if ingest_history else nullcontext(),
-            service_client(resources, token_file) as client,
-        ):
+        async with service_client(resources, token_file) as client:
             yield client

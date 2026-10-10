@@ -54,7 +54,7 @@ from agentplane.app.threads.sessions import SandboxSessions
 from agentplane.app.threads.store import ThreadStore
 from agentplane.app.threads.view.content import ContentStore
 from agentplane.history_service.client import HistoryServiceClient
-from agentplane.history_service.testing.backend import history_service
+from agentplane.history_service.testing.backend import history_service, ingest
 from agentplane.protocol import command_pb2, event_log_pb2, event_pb2
 from agentplane.runner import protocol_pb2, service
 from agentplane.runner.harness import Harness
@@ -156,7 +156,7 @@ async def read_until(lines: AsyncIterator[str], key: str) -> list[SseMessage]:
 
 
 @pytest.fixture
-def ingest_sandbox_history() -> bool:
+def register_attached_sessions() -> bool:
     return True
 
 
@@ -168,18 +168,22 @@ def sandbox_runner_port(runner: RunnerHandle) -> int:
 @pytest.fixture
 async def history_client(
     request: pytest.FixtureRequest,
-    sandbox_endpoint: Endpoint,
+    inventory: SandboxServiceClient,
     service_history_db_url: str,
     history_peer: HistoryService,
     tmp_path: Path,
 ) -> AsyncIterator[HistoryServiceClient]:
-    # Native cross-service cases read, through a real History Service, the separate service DB that
-    # `sandbox_endpoint` creates and ingests into. Pure command/projection cases keep the controlled RPC peer.
+    # Native cross-service cases read, through a real History Service whose ingester follows
+    # `sandbox_endpoint`, the separate service DB it creates. Pure command/projection cases keep the
+    # controlled RPC peer.
     native = "local_runners" in request.fixturenames or request.node.name.startswith(
         "test_inventory_change_discovers_existing_runner_session"
     )
     if native:
-        async with history_service(service_history_db_url, tmp_path / "history-service-token") as client:
+        async with (
+            ingest(service_history_db_url, inventory),
+            history_service(service_history_db_url, tmp_path / "history-service-token") as client,
+        ):
             yield client
     else:
         async with history_peer.connect(tmp_path / "history-token") as client:

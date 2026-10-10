@@ -24,7 +24,7 @@ from agentplane.app.threads.sessions import SandboxSessions
 from agentplane.app.threads.store import ThreadStore
 from agentplane.app.threads.summaries import AppSummaries, HistorySummaries
 from agentplane.app.threads.view.content import ContentStore, HistoryContentStore
-from agentplane.history_service.testing.backend import fold_history, history_service
+from agentplane.history_service.testing.backend import fold_history, history_service, ingest
 from agentplane.protocol import command_pb2
 from agentplane.runner import protocol_pb2
 from agentplane.runner.testing.fixtures import RunnerHandle
@@ -68,8 +68,9 @@ async def test_production_bridge_archives_native_evidence_across_bounded_service
 ) -> None:
     async with (
         authenticated_service(
-            cluster, runner.port, tmp_path / "service-token", database_url=service_history_db_url, ingest_history=True
+            cluster, runner.port, tmp_path / "service-token", database_url=service_history_db_url
         ) as remote,
+        ingest(service_history_db_url, remote),
         history_service(service_history_db_url, tmp_path / "history-service-token") as history,
     ):
         event_logs = EventLogStore(event_logs.engine, peer=event_logs.peer, history_reader=history)
@@ -145,8 +146,9 @@ async def test_history_service_reads_match_the_app_projection(
     engine = event_logs.engine
     async with (
         authenticated_service(
-            cluster, runner.port, tmp_path / "service-token", database_url=service_history_db_url, ingest_history=True
+            cluster, runner.port, tmp_path / "service-token", database_url=service_history_db_url
         ) as remote,
+        ingest(service_history_db_url, remote),
         history_service(service_history_db_url, tmp_path / "history-service-token") as history,
     ):
         event_logs = EventLogStore(engine, peer=event_logs.peer, history_reader=history)

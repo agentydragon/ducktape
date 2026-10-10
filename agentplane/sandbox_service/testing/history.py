@@ -1,8 +1,8 @@
-"""Real service history for cross-service/native integration tests only.
+"""One service database for cross-service/native integration tests, and the Sessions a test attaches
+on a runner directly.
 
-Consumer tests see a gRPC endpoint, not the Store or a service database session.
 A runner Session a test attaches directly, bypassing CreateSession, is registered here under its
-own UUID; the production HistoryIngester owns copying and lifecycle evidence.
+own UUID, so the History Service ingester under test follows it like any other.
 """
 
 import asyncio
@@ -20,8 +20,6 @@ from agentplane.sandbox_service.grpc_api import Resources
 from agentplane.sandbox_service.models import SandboxNotFoundError
 from agentplane.sandbox_service.protocol_pb2 import SandboxDestination
 from agentplane.sandbox_service.session_history.db import Base
-from agentplane.sandbox_service.session_history.ingestion import HistoryIngester
-from agentplane.sandbox_service.session_history.store import Store
 from agentplane.sandbox_service.testing.sessions import register_session
 
 # gazelle:include_dep @pypi//asyncpg
@@ -30,7 +28,7 @@ from agentplane.sandbox_service.testing.sessions import register_session
 
 @asynccontextmanager
 async def service_database(database_url: str) -> AsyncIterator[AsyncEngine]:
-    """One test database for the Sandbox Service's history and commands schemas."""
+    """One test database for the history and Sandbox Service commands schemas."""
     engine = create_async_engine(database_url)
     try:
         async with engine.begin() as connection:
@@ -43,18 +41,10 @@ async def service_database(database_url: str) -> AsyncIterator[AsyncEngine]:
 
 
 @asynccontextmanager
-async def with_history(resources: Resources, engine: AsyncEngine) -> AsyncIterator[None]:
+async def register_attached_sessions(resources: Resources, engine: AsyncEngine) -> AsyncIterator[None]:
     sessions = resources.sessions
-    ingester = HistoryIngester(
-        Store(engine),
-        sessions,
-        resources.submissions,
-        resources.destinations,
-        runner_grpc_channel_options={},
-        interval_s=0.05,
-    )
 
-    async def discover_and_copy() -> None:
+    async def discover() -> None:
         while True:
             for view in await resources.destinations.inventory.list_sandboxes():
                 try:
@@ -90,10 +80,9 @@ async def with_history(resources: Resources, engine: AsyncEngine) -> AsyncIterat
                             )
                 except SandboxNotFoundError, DestinationUnavailableError, grpc.RpcError:
                     continue
-            await ingester.cycle()
             await asyncio.sleep(0.05)
 
-    task = asyncio.create_task(discover_and_copy())
+    task = asyncio.create_task(discover())
     try:
         yield
     finally:

@@ -1,4 +1,4 @@
-"""An in-memory API server for informer tests: TokenReview, Pod reads, list/watch, status patches.
+"""An in-memory API server for informer tests: TokenReview, Pod reads, list/watch, merge patches.
 
 Objects are kept in wire shape, with a global `resourceVersion` counter the way the real server
 stamps them, so the informer's list-then-watch-from-version protocol is exercised for real: a watch
@@ -23,6 +23,7 @@ from more_itertools import one
 
 from agentplane.crd_group import GROUP, VERSION
 from agentplane.egress.resources import BINDINGS_PLURAL, CREDENTIALS_PLURAL, POLICIES_PLURAL
+from agentplane.sandbox_service.testing.fake_inventory import merge_patch
 from agentplane.workload_auth.principal import POD_NAME_CLAIM, POD_UID_CLAIM
 from util.agent_sandbox import SANDBOX_API, SANDBOX_KIND, SANDBOXES_PLURAL
 
@@ -242,6 +243,23 @@ class FakeApiServer:
             return web.json_response({"kind": "Status", "code": 404, "reason": "NotFound"}, status=404)
         return web.json_response(obj)
 
+    async def patch_object(self, request: web.Request) -> web.Response:
+        """A merge patch, refused with 409 when it names a `resourceVersion` that is no longer current."""
+        plural, name = request.match_info["plural"], request.match_info["name"]
+        assert request.match_info["namespace"] == self.namespace_of[plural]
+        assert request.content_type == "application/merge-patch+json"
+        patch = await request.json()
+        current = self.objects[plural].get(name)
+        if current is None:
+            return web.json_response({"kind": "Status", "code": 404, "reason": "NotFound"}, status=404)
+        version = patch.get("metadata", {}).get("resourceVersion")
+        if version is not None and version != current["metadata"]["resourceVersion"]:
+            return web.json_response({"kind": "Status", "code": 409, "reason": "Conflict"}, status=409)
+        patched = json.loads(json.dumps(current))
+        merge_patch(patched, patch)
+        self.put(plural, patched)
+        return web.json_response(self.objects[plural][name])
+
     async def patch_status(self, request: web.Request) -> web.Response:
         plural, name = request.match_info["plural"], request.match_info["name"]
         assert request.match_info["namespace"] == self.namespace_of[plural]
@@ -368,6 +386,7 @@ async def fake_apiserver(namespace_of: dict[str, str] | None = None) -> AsyncIte
     app.router.add_get("/api/v1/namespaces/{namespace}/{plural}", fake.list_or_watch)
     app.router.add_get("/apis/{group}/{version}/namespaces/{namespace}/{plural}", fake.list_or_watch)
     app.router.add_get("/apis/{group}/{version}/namespaces/{namespace}/{plural}/{name}", fake.get_object)
+    app.router.add_patch("/apis/{group}/{version}/namespaces/{namespace}/{plural}/{name}", fake.patch_object)
     app.router.add_patch("/apis/{group}/{version}/namespaces/{namespace}/{plural}/{name}/status", fake.patch_status)
     # handler_cancellation: a watch handler outliving its disconnected client would otherwise
     # stall cleanup for the shutdown timeout.

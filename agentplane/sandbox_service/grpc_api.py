@@ -48,8 +48,7 @@ from agentplane.sandbox_service.provisioning import Provisioning
 from agentplane.sandbox_service.retention_holds import MAX_HOLD_KEY_LENGTH
 from agentplane.sandbox_service.runner_channel import ChannelOperation
 from agentplane.sandbox_service.session_history.session_changes import SessionChanges
-from agentplane.sandbox_service.session_history.store import HistoryNotFoundError
-from agentplane.sandbox_service.session_registry import SessionRegistry
+from agentplane.sandbox_service.session_registry import SessionNotFoundError, SessionRegistry
 from agentplane.subjects import ServiceAccountRef
 from agentplane.workload_auth.bearer import parse_bearer, sole_header
 from agentplane.workload_auth.principal import WorkloadPrincipalRejectedError, WorkloadPrincipalResolver
@@ -112,7 +111,7 @@ async def errors(context: grpc.aio.ServicerContext) -> AsyncIterator[None]:
         yield
     except WorkloadPrincipalRejectedError:
         await context.abort(grpc.StatusCode.UNAUTHENTICATED, "invalid workload bearer")
-    except SandboxNotFoundError, BindingNotFoundError, HistoryNotFoundError:
+    except SandboxNotFoundError, BindingNotFoundError, SessionNotFoundError:
         await context.abort(grpc.StatusCode.NOT_FOUND, "sandbox incarnation not found")
     except HoldNotFoundError:
         await context.abort(grpc.StatusCode.NOT_FOUND, "retention hold not found")

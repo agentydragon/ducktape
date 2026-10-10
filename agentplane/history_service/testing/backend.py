@@ -1,12 +1,13 @@
-"""Serve the real History Service read boundary over a history database for consumer tests.
+"""Serve the real History Service over a history database for consumer tests.
 
-The schema and rows belong to whatever writes that database in the test (the Sandbox Service
-fixture's ingester); this server only reads it, in read-only transactions as in production.
+The schema belongs to the Sandbox Service fixture that creates the database. `ingest` writes it as
+production does, following that fixture's Sandbox Service; the server only reads it, in read-only
+transactions as in production.
 """
 
 import asyncio
 from collections.abc import AsyncIterator
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 from pathlib import Path
 from typing import cast
 
@@ -19,9 +20,11 @@ from agentplane.history_service.client import HistoryServiceClient
 from agentplane.history_service.evidence import EvidenceReader
 from agentplane.history_service.fold_shadow import FoldShadow
 from agentplane.history_service.grpc_api import Resources, add_service
+from agentplane.history_service.ingester import HistoryIngester
 from agentplane.history_service.summaries import SummaryReader
 from agentplane.history_service.summary_changes import SummaryChanges, notify_summaries
 from agentplane.history_service.thread_reads import ThreadReader
+from agentplane.sandbox_service.client import SandboxServiceClient
 from agentplane.sandbox_service.session_history.store import Store
 from agentplane.subjects import ServiceAccountRef
 from agentplane.thread_fold.models import Base
@@ -89,6 +92,22 @@ async def history_service(
     finally:
         await client.close()
         await server.stop(0)
+        await engine.dispose()
+
+
+@asynccontextmanager
+async def ingest(database_url: str, sandboxes: SandboxServiceClient) -> AsyncIterator[None]:
+    """Copy every Session `sandboxes` reports into the history database, as the deployed ingester does."""
+    engine = create_async_engine(make_url(database_url).set(drivername="postgresql+asyncpg"))
+    task = asyncio.create_task(
+        HistoryIngester(Store(engine), engine, sandboxes, concurrency=4, retry_interval_s=0.05).run()
+    )
+    try:
+        yield
+    finally:
+        task.cancel()
+        with suppress(asyncio.CancelledError):
+            await task
         await engine.dispose()
 
 
