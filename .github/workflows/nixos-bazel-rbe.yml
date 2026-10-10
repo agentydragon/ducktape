@@ -42,6 +42,11 @@ on:
       # keep-sorted end
   workflow_dispatch:
 
+concurrency:
+  # New PR heads supersede old runs; keep push and manual runs independent.
+  group: bazel-contract-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 permissions:
   contents: read
 
