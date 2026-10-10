@@ -68,6 +68,7 @@ async def test_listen_deliver_read_ack_and_recover_lost_response_without_app(
     monkeypatch: pytest.MonkeyPatch,
     caplog: pytest.LogCaptureFixture,
     failed_native_journal: None,
+    sandbox_service_db_url: str,
     busy: bool,
     failed_before_rpc: bool,
 ) -> None:
@@ -114,6 +115,7 @@ async def test_listen_deliver_read_ack_and_recover_lost_response_without_app(
                     cluster,
                     runner.port,
                     token_file,
+                    history_database_url=sandbox_service_db_url,
                     manager=delegate,
                     token="delegate-token",
                     audience="test-notifications",
@@ -144,7 +146,9 @@ async def test_listen_deliver_read_ack_and_recover_lost_response_without_app(
                         sandbox_uid=SANDBOX_UID,
                     )
                     native = remote.runner(destination)
-                    await native.open("notifications", MessageToDict(spec))
+                    session_id = (
+                        await native.create(idempotency_key="notifications", spec=MessageToDict(spec))
+                    ).session_id
                     submitted = await action_http.post(
                         "/v1/action-requests",
                         headers={"Authorization": "Bearer owner-token"},
@@ -167,7 +171,7 @@ async def test_listen_deliver_read_ack_and_recover_lost_response_without_app(
                     )
                     body = {
                         "destination_ref": {"namespace": SANDBOX_NAMESPACE, "name": SANDBOX, "uid": SANDBOX_UID},
-                        "session_id": "notifications",
+                        "session_id": session_id,
                         "source": {"provider": "actions", "request_id": request["id"]},
                         "idempotency_key": "listen",
                     }
@@ -211,7 +215,7 @@ async def test_listen_deliver_read_ack_and_recover_lost_response_without_app(
                     initial = None
                     if busy:
                         await native.command(
-                            "notifications",
+                            session_id,
                             command_pb2.Command(
                                 command_id="initial", submit_input=command_pb2.SubmitInput(text="Do other work")
                             ),
@@ -233,7 +237,7 @@ async def test_listen_deliver_read_ack_and_recover_lost_response_without_app(
                             command.WhichOneof("operation"),
                             history_cursor,
                         )
-                        receipt = await native.command("notifications", command, after_cursor=history_cursor)
+                        receipt = await native.command(session_id, command, after_cursor=history_cursor)
                         history_cursor = receipt.cursor
                         logger.info(
                             "notification journal seed %d/130: admitted command_id=%s cursor=%d",
@@ -350,7 +354,8 @@ async def test_listen_deliver_read_ack_and_recover_lost_response_without_app(
                         json={"through_cursor": page["entries"][-1]["cursor"]},
                     )
                     assert ack.json()["acknowledged"] == 2
-                    journal = await runner.runner.sessions["notifications"].journal.since(0, limit=1000)
+                    (native_session,) = runner.runner.sessions.values()
+                    journal = await native_session.journal.since(0, limit=1000)
                     admitted = [
                         entry.event.command_admitted.command.command_id
                         for entry in journal
@@ -358,7 +363,7 @@ async def test_listen_deliver_read_ack_and_recover_lost_response_without_app(
                     ]
                     assert admitted.count(page["notice"]["command_id"]) == 1
                     await native.command(
-                        "notifications",
+                        session_id,
                         command_pb2.Command(command_id="stop", stop_runner_session=command_pb2.StopRunnerSession()),
                         after_cursor=0,
                     )

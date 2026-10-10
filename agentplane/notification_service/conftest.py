@@ -58,9 +58,13 @@ async def failed_native_journal(request: pytest.FixtureRequest, runner: RunnerHa
         logger.warning("native journal capture failed: %s", type(error).__name__)
 
 
+def admin_url(postgres_container: PostgresContainer) -> str:
+    return f"postgresql+psycopg://postgres:postgres@{postgres_container.get_container_host_ip()}:{postgres_container.get_exposed_port(5432)}/postgres"
+
+
 @pytest.fixture
 def db_url(postgres_container: PostgresContainer) -> Iterator[str]:
-    admin = f"postgresql+psycopg://postgres:postgres@{postgres_container.get_container_host_ip()}:{postgres_container.get_exposed_port(5432)}/postgres"
+    admin = admin_url(postgres_container)
     name = f"notifications_{uuid4().hex}"
     url = (
         make_url(create_database_sync(admin, name))
@@ -69,6 +73,19 @@ def db_url(postgres_container: PostgresContainer) -> Iterator[str]:
     )
     RUNNER.apply(url)
     yield url
+    force_drop_database_sync(admin, name)
+
+
+@pytest.fixture
+def sandbox_service_db_url(postgres_container: PostgresContainer) -> Iterator[str]:
+    """The Sandbox Service's own database; its schema belongs to the service fixture."""
+    admin = admin_url(postgres_container)
+    name = f"sandbox_service_{uuid4().hex}"
+    yield (
+        make_url(create_database_sync(admin, name))
+        .set(drivername="postgresql+asyncpg")
+        .render_as_string(hide_password=False)
+    )
     force_drop_database_sync(admin, name)
 
 
@@ -88,7 +105,7 @@ async def store(engine: AsyncEngine) -> Store:
 
 @pytest.fixture
 async def action_engine(postgres_container: PostgresContainer) -> AsyncIterator[AsyncEngine]:
-    admin = f"postgresql+psycopg://postgres:postgres@{postgres_container.get_container_host_ip()}:{postgres_container.get_exposed_port(5432)}/postgres"
+    admin = admin_url(postgres_container)
     name = f"actions_{uuid4().hex}"
     url = (
         make_url(create_database_sync(admin, name))
