@@ -21,4 +21,4 @@ def handle_login(request: httpx.Request, redirect_to: str) -> httpx.Response:
 
 
 def is_logged_in(request: httpx.Request) -> bool:
-    return request.headers.get("Cookie") == "SessionID=granted"
+    return request.headers.get_list("Cookie") == ["SessionID=granted"]
