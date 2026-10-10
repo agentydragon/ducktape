@@ -73,6 +73,9 @@ class Peer:
         self.answer_open = True
         self.opened_ids: dict[str, runner_pb2.Open] = {}
         self.history: dict[str, list[event_log_pb2.EventEntry]] = {}
+        # Replay pauses after this cursor until released, as a slow journal read would.
+        self.replay_paused_after: int | None = None
+        self.replay_released = asyncio.Event()
 
     async def list_sessions(
         self, request: runner_pb2.ListSessionsRequest, context: grpc.aio.ServicerContext
@@ -115,6 +118,8 @@ class Peer:
                 )
                 for entry in self.history.get(first.open.session_id, []):
                     if entry.cursor > first.open.follow.after_cursor:
+                        if self.replay_paused_after is not None and entry.cursor > self.replay_paused_after:
+                            await self.replay_released.wait()
                         yield runner_pb2.ServerMessage(event_entry=entry)
             while (message := await connection.responses.get()) is not None:
                 if isinstance(message, grpc.StatusCode):
@@ -566,6 +571,67 @@ async def test_follow_reconnect_rechecks_token_and_preserves_cursor(
             await runner.attach("session", after_cursor=12)
         assert revoked.value.code == grpc.StatusCode.UNAUTHENTICATED
         assert peer.attachments.empty()
+
+
+def journal_entry(cursor: int) -> event_log_pb2.EventEntry:
+    return event_log_pb2.EventEntry(
+        cursor=cursor,
+        origin=event_log_pb2.EventOrigin(source_id="test-journal", sequence=cursor),
+        event=event_pb2.Event(native=event_pb2.Native(line=f"line {cursor}")),
+    )
+
+
+# The fixture's Resources has no history store: entries can only come from the runner journal.
+@pytest.mark.parametrize("after_cursor", [2, 5], ids=["mid-journal", "live-edge"])
+async def test_follow_replays_runner_journal_then_continues_live(
+    remote: SandboxServiceClient, peer: Peer, after_cursor: int
+) -> None:
+    peer.history["session"] = [journal_entry(cursor) for cursor in range(1, 6)]
+    async with asyncio.timeout(8):
+        attachment = await remote.runner(DESTINATION).attach("session", after_cursor=after_cursor)
+        connection = await peer.attachments.get()
+        try:
+            assert connection.opened.follow.after_cursor == after_cursor
+            assert attachment.attached.last_cursor == 5
+            replayed = [await attachment.next_entry() for _ in range(5 - after_cursor)]
+            assert replayed == peer.history["session"][after_cursor:]
+            connection.responses.put_nowait(runner_pb2.ServerMessage(event_entry=journal_entry(6)))
+            assert await attachment.next_entry() == journal_entry(6)
+        finally:
+            attachment.cancel()
+        await connection.closed.wait()
+
+
+async def test_follow_renewal_mid_replay_resumes_without_gap_or_duplicate(
+    remote: SandboxServiceClient, peer: Peer
+) -> None:
+    peer.history["session"] = [journal_entry(cursor) for cursor in range(1, 7)]
+    peer.replay_paused_after = 3
+    runner = remote.runner(DESTINATION)
+    received: list[event_log_pb2.EventEntry] = []
+    renewed_during_replay = False
+    async with asyncio.timeout(8):
+        cursor = 1
+        while cursor < 7:
+            attachment = await runner.attach("session", after_cursor=cursor)
+            connection = await peer.attachments.get()
+            try:
+                while cursor < 7:
+                    if cursor == 6:
+                        connection.responses.put_nowait(runner_pb2.ServerMessage(event_entry=journal_entry(7)))
+                    try:
+                        entry = await attachment.next_entry()
+                    except ReconnectRequiredError:
+                        renewed_during_replay |= cursor < attachment.attached.last_cursor
+                        peer.replay_released.set()
+                        break
+                    received.append(entry)
+                    cursor = entry.cursor
+            finally:
+                attachment.cancel()
+            await connection.closed.wait()
+    assert renewed_during_replay
+    assert received == [journal_entry(cursor) for cursor in range(2, 8)]
 
 
 @pytest.mark.parametrize("ending", [None, grpc.StatusCode.UNAVAILABLE])
