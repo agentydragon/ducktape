@@ -1,5 +1,6 @@
 """The shadow fold over a migrated history database, read from its own raw log."""
 
+import asyncio
 from datetime import UTC, datetime, timedelta
 from uuid import UUID, uuid4
 
@@ -98,6 +99,30 @@ async def test_folds_retained_sessions_a_page_per_cycle_until_caught_up(engine: 
         assert summary.last_turn_status == event_pb2.TURN_STATUS_COMPLETED
         assert await session.get(ThreadHistorySummary, empty) is not None
         assert await session.scalar(select(ThreadCheckpoint).where(ThreadCheckpoint.thread_id == empty)) is None
+
+
+async def test_run_folds_without_waiting_out_the_interval_while_behind(engine: AsyncEngine, history: Store) -> None:
+    entries = turn(1)
+    session_id = await retained_session(history, entries)
+    shadow = FoldShadow(engine=engine, history=history, concurrency=1)
+    sessions = async_sessionmaker(engine)
+
+    async def caught_up() -> None:
+        while True:
+            async with sessions() as session:
+                through = await session.scalar(
+                    select(ThreadCheckpoint.through_cursor).where(ThreadCheckpoint.thread_id == session_id)
+                )
+            if through == len(entries):
+                return
+            await asyncio.sleep(0.05)
+
+    async with asyncio.TaskGroup() as tasks:
+        # More than a page behind: an interval wait between pages would outlast the timeout.
+        running = tasks.create_task(shadow.run(interval_s=3600))
+        async with asyncio.timeout(30):
+            await caught_up()
+        running.cancel()
 
 
 async def test_replicas_split_sessions_by_lease(engine: AsyncEngine, history: Store) -> None:

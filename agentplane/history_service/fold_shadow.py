@@ -63,6 +63,7 @@ class FoldShadow:
         self._leases: dict[UUID, ProjectionLease] = {}
 
     async def run(self, *, interval_s: float) -> None:
+        """Cycle back to back while any Session is behind; wait `interval_s` once caught up or after a failure."""
         try:
             while True:
                 try:
@@ -76,6 +77,9 @@ class FoldShadow:
                 # asyncpg raises connect-time server errors (e.g. no free connection slots) unwrapped.
                 except SQLAlchemyError, PostgresError, OSError:
                     logger.warning("fold shadow cycle failed; will retry", exc_info=True)
+                else:
+                    if backlog.behind:
+                        continue
                 await asyncio.sleep(interval_s)
         finally:
             await self.release()
