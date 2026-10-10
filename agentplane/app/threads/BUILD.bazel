@@ -13,14 +13,24 @@ py_library(
 )
 
 py_library(
+    name = "thread_view",
+    srcs = ["thread_view.py"],
+    deps = [
+        "//agentplane/runner:harness",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
     name = "ingestion",
     srcs = ["ingestion.py"],
     deps = [
-        ":history_projector",
         ":sessions",
         "//agentplane/app/threads/events:event_log",
-        "//agentplane/app/threads/events:projection_lease",
         "//agentplane/sandbox_service:models",
+        "//agentplane/thread_fold:projection_lease",
+        "//agentplane/thread_fold:projector",
+        "//agentplane/thread_fold:recording",
         "@pypi//grpcio",
         "@pypi//sqlalchemy",
     ],
@@ -32,12 +42,12 @@ py_test(
     srcs = ["test_ingestion.py"],
     deps = [
         ":ingestion",
-        ":models",
         "//:conftest",
         "//agentplane/app:conftest",
         "//agentplane/app/testing:projection_lease",
         "//agentplane/app/testing:retained_history",
-        "//agentplane/app/threads/events:projection_lease",
+        "//agentplane/thread_fold:models",
+        "//agentplane/thread_fold:projection_lease",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
@@ -51,7 +61,6 @@ py_test(
     size = "large",
     srcs = ["test_indexing.py"],
     deps = [
-        ":models",
         ":store",
         "//:conftest",
         "//agentplane/app:conftest",
@@ -62,6 +71,7 @@ py_test(
         "//agentplane/protocol:command_pb2",
         "//agentplane/protocol:event_log_pb2",
         "//agentplane/protocol:event_pb2",
+        "//agentplane/thread_fold:models",
         "//util/testing:undeclared_outputs",
         "@pypi//protobuf",
         "@pypi//pytest",
@@ -75,11 +85,12 @@ py_library(
     srcs = ["store.py"],
     deps = [
         ":models",
+        ":thread_view",
         "//agentplane/app:database_updates",
         "//agentplane/app/threads/events:event_log",
-        "//agentplane/app/threads/view:views",
         "//agentplane/protocol:event_pb2",
         "//agentplane/runner:protocol_pb2",
+        "//agentplane/thread_fold:models",
         "@pypi//protobuf",
         "@pypi//sqlalchemy",
     ],
@@ -90,13 +101,13 @@ py_test(
     size = "medium",
     srcs = ["test_store.py"],
     deps = [
-        ":models",
         ":store",
         "//:conftest",
         "//agentplane/app:conftest",
         "//agentplane/app/testing:retained_history",
         "//agentplane/protocol:event_pb2",
         "//agentplane/runner:protocol_pb2",
+        "//agentplane/thread_fold:models",
         "@pypi//protobuf",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
@@ -138,62 +149,32 @@ py_library(
     ],
 )
 
-py_library(
-    name = "model_activity",
-    srcs = ["model_activity.py"],
-    deps = [
-        ":models",
-        "//agentplane/protocol:event_log_pb2",
-        "//agentplane/protocol:event_pb2",
-        "@pypi//protobuf",
-        "@pypi//sqlalchemy",
-        "@pypi//types_protobuf",  # keep: mypy follows generated protobuf interfaces
-    ],
-)
-
-py_library(
-    name = "history_projector",
-    srcs = ["history_projector.py"],
-    deps = [
-        ":model_activity",
-        ":models",
-        ":projected_lifecycle",
-        "//agentplane/app:database_updates",
-        "//agentplane/app/threads/events:event_log",
-        "//agentplane/app/threads/events:projection_lease",
-        "//agentplane/app/threads/view:recording",
-        "//agentplane/sandbox_service:client",
-        "//agentplane/sandbox_service:protocol_pb2",
-        "@pypi//grpcio",
-        "@pypi//protobuf",
-        "@pypi//sqlalchemy",
-    ],
-)
-
 py_test(
     name = "test_history_projector",
     size = "medium",
     srcs = ["test_history_projector.py"],
     requires_docker = True,
     deps = [
-        ":history_projector",
         ":ingestion",
-        ":models",
         ":sessions",
         ":store",
         "//:conftest",
         "//agentplane/app:conftest",
+        "//agentplane/app:database_updates",
         "//agentplane/app/testing:history",
         "//agentplane/app/testing:projection_lease",
         "//agentplane/app/testing:retained_history",
         "//agentplane/app/testing:thread_test_support",
         "//agentplane/app/threads/events:event_log",
-        "//agentplane/app/threads/events:projection_lease",
-        "//agentplane/app/threads/view:views",
         "//agentplane/protocol:event_pb2",
         "//agentplane/runner:protocol_pb2",
         "//agentplane/sandbox_service:client",
         "//agentplane/sandbox_service:protocol_pb2",
+        "//agentplane/thread_fold:models",
+        "//agentplane/thread_fold:projection_lease",
+        "//agentplane/thread_fold:projector",
+        "//agentplane/thread_fold:recording",
+        "//agentplane/thread_fold:views",
         "@pypi//protobuf",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
@@ -201,16 +182,3 @@ py_test(
     ],
 )
 
-py_library(
-    name = "projected_lifecycle",
-    srcs = ["projected_lifecycle.py"],
-    deps = [
-        ":models",
-        "//agentplane/app/threads/events:event_log",
-        "//agentplane/app/threads/view:recording",
-        "//agentplane/runner:protocol_pb2",
-        "//agentplane/sandbox_service:protocol_pb2",
-        "@pypi//protobuf",
-        "@pypi//sqlalchemy",
-    ],
-)

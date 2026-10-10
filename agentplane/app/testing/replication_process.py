@@ -33,7 +33,7 @@ from starlette.types import ASGIApp, Message, Receive, Scope, Send
 from agentplane.app.action_policy import ActionPolicyInventory
 from agentplane.app.api import create_app
 from agentplane.app.database import connect
-from agentplane.app.database_updates import Channel, DatabaseUpdates
+from agentplane.app.database_updates import Channel, DatabaseUpdates, notify_threads
 from agentplane.app.decisions import DecisionsClient
 from agentplane.app.egress_access import EgressAccess
 from agentplane.app.electric import ElectricProxy
@@ -46,8 +46,6 @@ from agentplane.app.testing.replication_source import SANDBOX
 from agentplane.app.threads import ingestion as ingestion_module
 from agentplane.app.threads.bridge import RunnerBridge
 from agentplane.app.threads.events.event_log import EventLogStore
-from agentplane.app.threads.events.projection_lease import ProjectionLease
-from agentplane.app.threads.history_projector import HistoryProjector, ProjectionProgress
 from agentplane.app.threads.ingestion import Ingester, Ingestion
 from agentplane.app.threads.sessions import SandboxSessions
 from agentplane.app.threads.store import ThreadStore
@@ -57,6 +55,8 @@ from agentplane.sandbox_service.client import SandboxServiceClient
 from agentplane.sandbox_service.egress_views import EgressReader
 from agentplane.sandbox_service.testing.backend import seed_runner
 from agentplane.sandbox_service.testing.fake_inventory import NAMESPACE, FakeCoreV1Api, FakeCustomObjectsApi
+from agentplane.thread_fold.projection_lease import ProjectionLease
+from agentplane.thread_fold.projector import HistoryProjector, ProjectionProgress
 
 # gazelle:include_dep @pypi//protobuf
 # gazelle:include_dep @pypi//asyncpg
@@ -284,7 +284,7 @@ async def _serve(
         projector = (
             GatedProjector(engine, inventory, Gate(boundary, connection), cursor)
             if boundary is not None
-            else HistoryProjector(engine, inventory)
+            else HistoryProjector(engine, inventory, notify=notify_threads)
         )
         runners = SandboxSessions(index, inventory)
         ingester = Ingester(runners=runners, event_logs=event_logs, ingestion=ingestion, history_projector=projector)

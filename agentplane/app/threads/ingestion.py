@@ -10,12 +10,13 @@ import grpc
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
 
-from agentplane.app.threads.events import projection_lease
-from agentplane.app.threads.events.event_log import EventLogStore, EventReplicationError
-from agentplane.app.threads.events.projection_lease import ProjectionLease, ProjectionLeaseLostError
-from agentplane.app.threads.history_projector import HistoryProjector
+from agentplane.app.threads.events.event_log import EventLogStore
 from agentplane.app.threads.sessions import SandboxNotReachableError, SandboxSessions
 from agentplane.sandbox_service.models import SandboxNotFoundError
+from agentplane.thread_fold import projection_lease
+from agentplane.thread_fold.projection_lease import ProjectionLease, ProjectionLeaseLostError
+from agentplane.thread_fold.projector import HistoryProjector
+from agentplane.thread_fold.recording import EventReplicationError
 
 # gazelle:include_dep @pypi//grpcio
 

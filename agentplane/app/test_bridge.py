@@ -49,7 +49,6 @@ from agentplane.app.testing.history_service import HistoryService
 from agentplane.app.testing.model_test_data import TEST_REASONING_EFFORTS
 from agentplane.app.threads.bridge import RunnerAdmissionTimeoutError, RunnerBridge
 from agentplane.app.threads.events.stream import follow
-from agentplane.app.threads.models import ThreadCheckpoint, ThreadEntity, ThreadPayloadChunk
 from agentplane.app.threads.sessions import SandboxSessions
 from agentplane.app.threads.store import ThreadStore
 from agentplane.app.threads.view.content import ContentStore
@@ -62,6 +61,7 @@ from agentplane.runner.testing.scripted_model import ScriptedModel, ShellCall, T
 from agentplane.sandbox_service.client import SandboxServiceClient
 from agentplane.sandbox_service.testing.backend import Endpoint, seed_runner
 from agentplane.sandbox_service.testing.fake_inventory import FakeCoreV1Api, FakeCustomObjectsApi
+from agentplane.thread_fold.models import ThreadCheckpoint, ThreadEntity, ThreadPayloadChunk
 from util.net import bind_free_port
 from util.testing.asgi import serve_app_in_loop
 from util.testing.undeclared_outputs import undeclared_outputs_dir

@@ -10,8 +10,9 @@ from sqlalchemy import func, select, tuple_
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from agentplane.app.threads.events.event_log import EventReplicationError
-from agentplane.app.threads.models import (
+from agentplane.protocol import event_log_pb2
+from agentplane.thread_fold import fold
+from agentplane.thread_fold.models import (
     ThreadCheckpoint,
     ThreadEntity,
     ThreadEvidence,
@@ -19,10 +20,9 @@ from agentplane.app.threads.models import (
     ThreadPayloadChunk,
     ThreadPayloadManifest,
 )
-from agentplane.app.threads.view import fold
-from agentplane.app.threads.view.payloads import write_payloads
-from agentplane.app.threads.view.rows import command_summary, fold_item, ordered_entity_rows, payload_references
-from agentplane.app.threads.view.views import (
+from agentplane.thread_fold.payloads import write_payloads
+from agentplane.thread_fold.rows import command_summary, fold_item, ordered_entity_rows, payload_references
+from agentplane.thread_fold.views import (
     EntityKind,
     ThreadCommandEntityView,
     ThreadFeedErrorState,
@@ -30,13 +30,20 @@ from agentplane.app.threads.view.views import (
     ThreadOperationalState,
     ThreadViewState,
 )
-from agentplane.protocol import event_log_pb2
 
 # The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.
 # gazelle:include_dep @pypi//protobuf
 
 
 THREAD_FOLD_EPOCH = "v1"
+
+
+class EventReplicationError(ValueError):
+    """The runner stream conflicts with the archived prefix or skips an entry."""
+
+    def __init__(self, message: str, *, cursor: int | None = None) -> None:
+        super().__init__(message)
+        self.cursor = cursor
 
 
 class ThreadFoldError(EventReplicationError):

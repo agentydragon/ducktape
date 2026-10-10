@@ -14,16 +14,9 @@ py_library(
         "//agentplane/runner:protocol_pb2",
         "//agentplane/sandbox_service:client",
         "//agentplane/sandbox_service:protocol_pb2",
+        "//agentplane/thread_fold:models",
+        "//agentplane/thread_fold:recording",
         "@pypi//protobuf",
-        "@pypi//sqlalchemy",
-    ],
-)
-
-py_library(
-    name = "projection_lease",
-    srcs = ["projection_lease.py"],
-    deps = [
-        "//agentplane/app/threads:models",
         "@pypi//sqlalchemy",
     ],
 )
@@ -58,6 +51,8 @@ py_test(
         "//agentplane/protocol:event_pb2",
         "//agentplane/sandbox_service:client",
         "//agentplane/sandbox_service:protocol_pb2",
+        "//agentplane/thread_fold:models",
+        "//agentplane/thread_fold:recording",
         "@pypi//protobuf",
         "@pypi//pytest",
         "@pypi//pytest_bazel",

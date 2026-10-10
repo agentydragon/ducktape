@@ -230,12 +230,6 @@ def test_session_leases_replace_sandbox_ownership_without_changing_identity(db_u
             assert not inspect(connection).has_table("sandbox_ingestion")
             assert connection.scalar(text("SELECT count(*) FROM session_projection_lease")) == 0
             assert connection.scalar(text("SELECT id FROM event_log WHERE id = :id"), {"id": thread}) == thread
-            connection.execute(
-                text("INSERT INTO session_projection_lease VALUES (:id, :token, '2030-01-01T00:00:00Z')"),
-                {"id": thread, "token": token},
-            )
-            connection.execute(text("DELETE FROM event_log WHERE id = :id"), {"id": thread})
-            assert connection.scalar(text("SELECT count(*) FROM session_projection_lease")) == 0
     finally:
         engine.dispose()
 

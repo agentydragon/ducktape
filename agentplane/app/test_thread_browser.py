@@ -45,7 +45,10 @@ from agentplane.app.testing.thread_browser import (
     frames,
     message_composer,
 )
-from agentplane.app.threads.models import (
+from agentplane.app.threads.store import ThreadStore
+from agentplane.app.threads.view.content import ContentStore
+from agentplane.protocol import command_pb2, event_log_pb2, event_pb2
+from agentplane.thread_fold.models import (
     ThreadCheckpoint,
     ThreadEntity,
     ThreadEvidence,
@@ -54,10 +57,7 @@ from agentplane.app.threads.models import (
     ThreadPayloadChunk,
     ThreadPayloadManifest,
 )
-from agentplane.app.threads.store import ThreadStore
-from agentplane.app.threads.view.content import ContentStore
-from agentplane.app.threads.view.views import ThreadFeedErrorState, ThreadOperationalState, ThreadViewState
-from agentplane.protocol import command_pb2, event_log_pb2, event_pb2
+from agentplane.thread_fold.views import ThreadFeedErrorState, ThreadOperationalState, ThreadViewState
 from util.bazel.runfiles import get_required_path
 from util.testing.undeclared_outputs import undeclared_outputs_dir
 from util.testing.viewports import DESKTOP, MOBILE, SMALL_MOBILE, Viewport
