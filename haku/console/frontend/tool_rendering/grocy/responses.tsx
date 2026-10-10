@@ -3,10 +3,8 @@
 // per-op details, or `kind: "error"` with an `error` message — so the widgets show an ok/failed
 // count summary (compact adds the first few product names) and, detailed, every row with its
 // amounts/units/locations, failed rows in red. The result schemas are the FastMCP-advertised
-// output schemas (generated in mcp_tool_result_schema.ts from tools/list). The two tools with no
-// reliable generated schema — `shopping_list_get` (returns a bare dict → empty output schema) and
-// `get_system_info` (an OpenAPI tool with no batch counterpart, not in the catalog) — keep
-// hand-authored schemas at the bottom.
+// output schemas (generated in mcp_tool_result_schema.ts from tools/list). `shopping_list_get`
+// returns a bare dict → empty output schema, so it keeps a hand-authored schema below.
 
 import { Group, Stack } from "@mantine/core";
 import type { ReactNode } from "react";
@@ -48,19 +46,13 @@ const zStockGetResult: z.ZodType<McpToolResultFor<typeof GROCY_SERVER_ID, "stock
   GROCY_SERVER_ID,
   "stock_get"
 );
-const zProductsListResult: z.ZodType<McpToolResultFor<typeof GROCY_SERVER_ID, "products_list">> = mcpToolResultSchema(
-  GROCY_SERVER_ID,
-  "products_list"
-);
-const zQuantityUnitsListResult: z.ZodType<McpToolResultFor<typeof GROCY_SERVER_ID, "quantity_units_list">> =
-  mcpToolResultSchema(GROCY_SERVER_ID, "quantity_units_list");
 
 type StockAddOkRow = OkRowOf<z.infer<typeof zStockAddResult>>;
 type ProductsCreateOkRow = OkRowOf<z.infer<typeof zProductsCreateResult>>;
 type ShoppingListItemOkRow = OkRowOf<z.infer<typeof zShoppingListItemsAddResult>>;
 type StockEntryEditOkRow = OkRowOf<z.infer<typeof zStockEntryEditResult>>;
 
-// These two have no reliable generated result schema, so they stay hand-authored (see header).
+// This tool has no reliable generated result schema, so it stays hand-authored (see header).
 const zShoppingListGetResult: z.ZodType<{
   name: string;
   description?: string | null;
@@ -85,24 +77,6 @@ const zShoppingListGetResult: z.ZodType<{
       done: z.boolean(),
     })
   ),
-});
-// Grocy's `GET /system/info` nests the app version in its own object ({Version, ReleaseDate, …})
-// rather than a bare string, typed explicitly so the widget formats it instead of falling through
-// to a blind `String(value)` that prints "[object Object]".
-const zSystemInfoResult: z.ZodType<{
-  grocy_version?: { Version: string; ReleaseDate?: string | null } | null;
-  php_version?: string | null;
-  sqlite_version?: string | null;
-  db_version?: string | number | null;
-  os?: string | null;
-  client?: string | null;
-}> = z.looseObject({
-  grocy_version: z.looseObject({ Version: z.string(), ReleaseDate: z.string().nullish() }).nullish(),
-  php_version: z.string().nullish(),
-  sqlite_version: z.string().nullish(),
-  db_version: z.union([z.string(), z.number()]).nullish(),
-  os: z.string().nullish(),
-  client: z.string().nullish(),
 });
 
 function splitRows<Ok extends object>(rows: readonly (Ok | ErrorRow)[]): { ok: Ok[]; failed: ErrorRow[] } {
@@ -334,30 +308,6 @@ function StockGetResultView({ result, variant }: ResultPreviewProps<z.infer<type
   );
 }
 
-// products_list and quantity_units_list both return rows shaped `{id, name}` (a brief/full union);
-// either's result is assignable here, so the view is decoupled from one specific schema.
-function NamedRowsResultView({ result, variant }: ResultPreviewProps<{ id: number; name: string }[]>) {
-  const rows = variant === "compact" ? result.slice(0, COMPACT_ITEM_LIMIT) : result;
-  return (
-    <Stack gap={2}>
-      <PreviewTitle>{result.length} found</PreviewTitle>
-      {rows.map((row) => (
-        <PreviewText key={row.id}>
-          {row.name}{" "}
-          <PreviewText span c="dimmed">
-            #{row.id}
-          </PreviewText>
-        </PreviewText>
-      ))}
-      <MoreLine count={result.length - rows.length} />
-    </Stack>
-  );
-}
-
-function QuantityUnitsResultView({ result, variant }: ResultPreviewProps<z.infer<typeof zQuantityUnitsListResult>>) {
-  return <NamedRowsResultView result={result} variant={variant} />;
-}
-
 function ShoppingListGetResultView({ result, variant }: ResultPreviewProps<z.infer<typeof zShoppingListGetResult>>) {
   const rows = variant === "compact" ? result.items.slice(0, COMPACT_ITEM_LIMIT) : result.items;
   return (
@@ -377,45 +327,6 @@ function ShoppingListGetResultView({ result, variant }: ResultPreviewProps<z.inf
         </Group>
       ))}
       <MoreLine count={result.items.length - rows.length} />
-    </Stack>
-  );
-}
-
-function SystemInfoRow({ label, value }: { label: string; value: string }) {
-  return (
-    <PreviewText>
-      <PreviewText span c="dimmed">
-        {label}:{" "}
-      </PreviewText>
-      {value}
-    </PreviewText>
-  );
-}
-
-function SystemInfoResultView({ result }: ResultPreviewProps<z.infer<typeof zSystemInfoResult>>) {
-  const rows: { key: string; label: string; value: string }[] = [];
-  if (result.grocy_version) {
-    rows.push({
-      key: "grocy_version",
-      label: "grocy version",
-      value: result.grocy_version.ReleaseDate
-        ? `${result.grocy_version.Version} (${result.grocy_version.ReleaseDate})`
-        : result.grocy_version.Version,
-    });
-  }
-  if (result.php_version) rows.push({ key: "php_version", label: "php version", value: result.php_version });
-  if (result.sqlite_version) {
-    rows.push({ key: "sqlite_version", label: "sqlite version", value: result.sqlite_version });
-  }
-  if (result.db_version != null)
-    rows.push({ key: "db_version", label: "db version", value: String(result.db_version) });
-  if (result.os) rows.push({ key: "os", label: "os", value: result.os });
-  if (result.client) rows.push({ key: "client", label: "client", value: result.client });
-  return (
-    <Stack gap={2}>
-      {rows.map((row) => (
-        <SystemInfoRow key={row.key} label={row.label} value={row.value} />
-      ))}
     </Stack>
   );
 }
@@ -440,9 +351,6 @@ export const grocyResultPreviews: {
   stock_add: ToolResultPreview<typeof zStockAddResult>;
   stock_entry_edit: ToolResultPreview<typeof zStockEntryEditResult>;
   stock_get: ToolResultPreview<typeof zStockGetResult>;
-  products_list: ToolResultPreview<typeof zProductsListResult>;
-  quantity_units_list: ToolResultPreview<typeof zQuantityUnitsListResult>;
-  get_system_info: ToolResultPreview<typeof zSystemInfoResult>;
   shopping_list_get: ToolResultPreview<typeof zShoppingListGetResult>;
   shopping_list_items_remove: ToolResultPreview<typeof zShoppingListItemsRemoveResult>;
   products_create: ToolResultPreview<typeof zProductsCreateResult>;
@@ -451,9 +359,6 @@ export const grocyResultPreviews: {
   stock_add: defineResultPreview(zStockAddResult, StockAddResultView),
   stock_entry_edit: defineResultPreview(zStockEntryEditResult, StockEntryEditResultView),
   stock_get: defineResultPreview(zStockGetResult, StockGetResultView),
-  products_list: defineResultPreview(zProductsListResult, NamedRowsResultView),
-  quantity_units_list: defineResultPreview(zQuantityUnitsListResult, QuantityUnitsResultView),
-  get_system_info: defineResultPreview(zSystemInfoResult, SystemInfoResultView),
   shopping_list_get: defineResultPreview(zShoppingListGetResult, ShoppingListGetResultView),
   shopping_list_items_remove: defineResultPreview(zShoppingListItemsRemoveResult, ShoppingListItemsRemoveResultView),
   products_create: defineResultPreview(zProductsCreateResult, ProductsCreateResultView),

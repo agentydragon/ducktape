@@ -246,6 +246,10 @@ For broad old-spec conversion passes, use an automation-first loop:
    files a reviewer can reason about.
 3. Run `debundle spec synthesize-selectors` in dry-run JSON mode for that
    bucket, with `--item` for explicit export lists when available.
+   For long scans, `--format ndjson` emits and flushes one `section: module`
+   row (including that module's candidates) as each module completes, then a
+   final `section: summary` row. If a later module fails, completed rows remain
+   available without a final summary.
 4. Apply only after the JSON summary shows a useful hit rate and bounded skip
    reasons, and after spot-checking that the proposed selectors are concise
    enough to be forward-compatible. After `--apply`, run `git diff --check`,

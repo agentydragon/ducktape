@@ -635,17 +635,11 @@ fn apply_rebind_folds_from_chunk_analysis(
 /// "anon residual" sentinel that holds the partition's default
 /// destination.
 ///
-/// Commit 1 transitional behavior: the partition's "default
-/// destination" — the module owners with no claim fall back to — is a
-/// factorization-only sentinel logical module appended past
-/// `module_plans.len()`. The emit loop iterates `module_plans`, so
-/// the sentinel never gets emitted as a file. Anonymous statements
-/// without an explicit logical-module `anonymous_statements` match
-/// thus stay in the sentinel, preserving the pre-refactor split
-/// where anon-fallback was a distinct destination from the residual
-/// logical module (which only held named-unclaimed bindings). Commit
-/// 2 collapses this sentinel back into the residual module via
-/// explicit `anonymous_statement_ordinals` routing.
+/// The partition's default destination is a factorization-only sentinel
+/// appended past `module_plans.len()`. The emit loop never writes it as a
+/// file. In `catchall_file` mode, plan construction routes the anonymous
+/// owners required by catchall atomicity or side-effect order there; other
+/// independent owners remain in the sentinel and are emitted in the entry.
 fn project_factorization_modules_with_sentinel(
     module_plans: &[ModulePlan],
     body: &[ModuleItem],

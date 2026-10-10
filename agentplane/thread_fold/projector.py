@@ -14,7 +14,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
-from agentplane.sandbox_service.client import SandboxServiceClient
+from agentplane.history_service.client import HistoryServiceClient
 from agentplane.thread_fold import projection_lease
 from agentplane.thread_fold.lifecycle import project_lifecycle
 from agentplane.thread_fold.model_activity import record_model_activity
@@ -37,7 +37,7 @@ class ProjectionProgress:
 
 class HistoryProjector:
     def __init__(
-        self, engine: AsyncEngine, reader: SandboxServiceClient, *, notify: Callable[[AsyncSession], Awaitable[None]]
+        self, engine: AsyncEngine, reader: HistoryServiceClient, *, notify: Callable[[AsyncSession], Awaitable[None]]
     ) -> None:
         """`notify` runs inside each transaction that changes what a Thread's readers see."""
         self._sessions = async_sessionmaker(engine, expire_on_commit=False)
@@ -81,7 +81,7 @@ class HistoryProjector:
     async def _project_prefix(self, thread_id: UUID, *, lease: ProjectionLease, after: int) -> ProjectionProgress:
         page = await self._reader.read_session_events(str(thread_id), after_cursor=after, limit=128)
         if page.last_cursor < after:
-            raise ConnectionError("Sandbox Service has not covered the app projection checkpoint")
+            raise ConnectionError("History Service has not covered the app projection checkpoint")
         if len(page.entries) > 128 or any(
             entry.cursor != after + index + 1
             or entry.cursor > page.last_cursor

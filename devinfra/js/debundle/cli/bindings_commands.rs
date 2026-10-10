@@ -42,9 +42,8 @@ enum BindingsNsCommand {
     ///
     /// Validation is name-collision detection: no two bindings in the
     /// chunk get the same readable name. A convenience over
-    /// `bindings assign` for the rename-without-move case; unlike
-    /// assign/unassign it also works on `source_matches[].bindings[]`
-    /// members.
+    /// `bindings assign` for the rename-without-move case. It also
+    /// works on `source_matches[].bindings[]` entries.
     Rename(BindingsRenameArgs),
     /// Move one or more bindings into named logical modules atomically.
     ///
@@ -57,10 +56,12 @@ enum BindingsNsCommand {
     /// can land in one shot; wanting refuse-intermediate-invalid
     /// semantics means invoking once per move. Destination modules are
     /// auto-created (paths canonicalized/lowercased); batch source
-    /// modules drained to zero members are deleted unless they carry a
+    /// modules drained of all ownership claims are deleted unless they carry a
     /// module-level `comment:`, `source_matches:`, `annotations:`, or
-    /// `anonymous_statements:`. Does not yet support moving a
-    /// `source_matches[].bindings[]` member out of its claim.
+    /// `anonymous_statements:`. A `source_matches[].bindings[]` move
+    /// carries the source template and its claim note; moving only part
+    /// of a claim splits that claim across modules. The post-batch gate
+    /// rejects any split of a source statement's atomic owner.
     /// Contract details: docs/cli.md § "Batch atomicity".
     Assign(BindingsAssignArgs),
     /// Remove one or more bindings from their current modules
@@ -71,7 +72,8 @@ enum BindingsNsCommand {
     /// sweep as `bindings assign`. Splitting an atom by unassigning
     /// only some of its members is rejected; unassigning a whole atom
     /// together is accepted. Dry-run and apply share an exit code on
-    /// the same input.
+    /// the same input. `source_matches[].bindings[]` entries cannot yet
+    /// be unassigned with this command.
     Unassign(BindingsUnassignArgs),
 }
 
@@ -119,7 +121,8 @@ struct BindingsUnassignArgs {
     #[command(flatten)]
     pub edit: GraphEditArgs,
     /// Binding symbols (minified or readable) to remove from their
-    /// current modules. Same resolution rules as `bindings assign`.
+    /// current modules. `source_matches[].bindings[]` entries are not
+    /// supported yet.
     #[arg(required = true)]
     pub syms: Vec<String>,
 }

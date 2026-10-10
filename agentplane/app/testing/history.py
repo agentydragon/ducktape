@@ -12,11 +12,11 @@ from agentplane.app.threads.events.event_log import EventLogStore
 from agentplane.app.threads.ingestion import Ingester, Ingestion
 from agentplane.app.threads.models import EventLog
 from agentplane.app.threads.sessions import SandboxSessions
+from agentplane.history_service.client import HistoryServiceClient
 from agentplane.protocol import event_log_pb2
 from agentplane.runner import protocol_pb2 as runner_pb2
 from agentplane.runner.harness import Harness
 from agentplane.sandbox_service import protocol_pb2
-from agentplane.sandbox_service.client import SandboxServiceClient
 from agentplane.thread_fold.models import ThreadHistorySummary
 from agentplane.thread_fold.projection_lease import ProjectionLease
 from agentplane.thread_fold.projector import HistoryProjector
@@ -33,8 +33,8 @@ class SeededEventLogStore(EventLogStore):
         engine: AsyncEngine,
         *,
         peer: HistoryService,
-        history_reader: SandboxServiceClient,
-        history_creator: SandboxServiceClient | None = None,
+        history_reader: HistoryServiceClient,
+        history_creator: HistoryServiceClient | None = None,
     ) -> None:
         self.engine = engine
         self.peer = peer
@@ -80,7 +80,7 @@ class SeededEventLogStore(EventLogStore):
 class ProjectedHistory(Ingestion):
     """Fixture commands that publish external evidence then run the real app projector."""
 
-    def __init__(self, engine: AsyncEngine, *, peer: HistoryService, history_reader: SandboxServiceClient) -> None:
+    def __init__(self, engine: AsyncEngine, *, peer: HistoryService, history_reader: HistoryServiceClient) -> None:
         super().__init__(engine)
         self.peer = peer
         self.reader = history_reader

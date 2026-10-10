@@ -1,4 +1,4 @@
-"""The production app directory/bridge/archive against authenticated Sandbox Service gRPC."""
+"""The production app directory/bridge/archive against authenticated Sandbox Service and History Service gRPC."""
 
 import logging
 from collections.abc import AsyncIterator
@@ -19,6 +19,7 @@ from agentplane.app.testing.history import (
 from agentplane.app.threads.bridge import MalformedMessageError, RunnerBridge
 from agentplane.app.threads.sessions import SandboxSessions
 from agentplane.app.threads.view.content import ContentStore
+from agentplane.history_service.testing.backend import history_service
 from agentplane.protocol import command_pb2
 from agentplane.runner import protocol_pb2
 from agentplane.runner.testing.fixtures import RunnerHandle
@@ -59,12 +60,15 @@ async def test_production_bridge_archives_native_evidence_across_bounded_service
     caplog: pytest.LogCaptureFixture,
     service_history_db_url: str,
 ) -> None:
-    async with authenticated_service(
-        cluster, runner.port, tmp_path / "service-token", history_database_url=service_history_db_url
-    ) as remote:
-        event_logs = EventLogStore(event_logs.engine, peer=event_logs.peer, history_reader=remote)
-        ingestion = Ingestion(event_logs.engine, peer=event_logs.peer, history_reader=remote)
-        content = ContentStore(event_logs.engine, history_reader=remote)
+    async with (
+        authenticated_service(
+            cluster, runner.port, tmp_path / "service-token", history_database_url=service_history_db_url
+        ) as remote,
+        history_service(service_history_db_url, tmp_path / "history-service-token") as history,
+    ):
+        event_logs = EventLogStore(event_logs.engine, peer=event_logs.peer, history_reader=history)
+        ingestion = Ingestion(event_logs.engine, peer=event_logs.peer, history_reader=history)
+        content = ContentStore(event_logs.engine, history_reader=history)
         directory = SandboxSessions(live_index, remote)
         ingester = Ingester(runners=directory, event_logs=event_logs, ingestion=ingestion)
         bridge = RunnerBridge(runners=directory, event_logs=event_logs, content=content, ingester=ingester)

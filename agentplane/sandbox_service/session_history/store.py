@@ -7,16 +7,35 @@ from dataclasses import dataclass
 from typing import cast
 from uuid import UUID, uuid4
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.dialects.postgresql import insert
-from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
+from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 from agentplane.protocol import event_log_pb2
 from agentplane.sandbox_service import protocol_pb2
-from agentplane.sandbox_service.session_history.db import SessionEvent, SessionHistory
+from agentplane.sandbox_service.session_history.db import CHANGE_POSITION, SessionEvent, SessionHistory
+from agentplane.sandbox_service.session_history.session_changes import CHANNEL
 
 # The generated protobuf stubs need the protobuf runtime as a direct mypy dependency.
 # gazelle:include_dep @pypi//protobuf
+
+
+# The service's own database; no other advisory lock uses this key.
+CHANGE_POSITION_LOCK = 0x53455343
+
+
+async def next_change_position(session: AsyncSession) -> int:
+    """Allocate a WatchSessions position that becomes visible in commit order, and wake watchers.
+
+    The transaction lock is held to commit, so no position commits after a larger one: a reader
+    resuming after any position it has seen misses nothing. A rolled-back position is a gap.
+    """
+    await session.execute(select(func.pg_advisory_xact_lock(CHANGE_POSITION_LOCK)))
+    # PostgreSQL delivers NOTIFY only on commit, to every replica listening.
+    await session.execute(select(func.pg_notify(CHANNEL, "")))
+    position = await session.scalar(select(CHANGE_POSITION.next_value()))
+    assert position is not None
+    return position
 
 
 class HistoryConflictError(ValueError):
@@ -91,6 +110,7 @@ class Store:
                     runner_session_id=runner_session_id,
                     source_id=None,
                     last_cursor=0,
+                    change_position=await next_change_position(session),
                 )
                 .on_conflict_do_nothing()
             )
@@ -160,6 +180,7 @@ class Store:
                     runner_session_id=f"r-{candidate}",
                     source_id=None,
                     last_cursor=0,
+                    change_position=await next_change_position(session),
                 )
                 .on_conflict_do_nothing()
                 .returning(SessionHistory.id)
@@ -201,6 +222,32 @@ class Store:
                     )
                 ),
             )
+
+    async def read_changes(self, *, after_position: int, limit: int) -> list[protocol_pb2.SessionChange]:
+        """Every Session whose latest change is after the position, oldest change first."""
+        if after_position < 0 or not 1 <= limit <= 1000:
+            raise ValueError("invalid Session change page")
+        async with self._sessions() as session:
+            rows = await session.execute(
+                select(
+                    SessionHistory.id,
+                    SessionHistory.sandbox_name,
+                    SessionHistory.sandbox_uid,
+                    SessionHistory.change_position,
+                )
+                .where(SessionHistory.change_position > after_position)
+                .order_by(SessionHistory.change_position)
+                .limit(limit)
+            )
+            return [
+                protocol_pb2.SessionChange(
+                    session_id=str(row.id),
+                    sandbox=row.sandbox_name,
+                    sandbox_uid=str(row.sandbox_uid) if row.sandbox_uid is not None else "",
+                    position=row.change_position,
+                )
+                for row in rows
+            ]
 
     async def runner_id(self, session_id: UUID, *, sandbox_namespace: str, sandbox_name: str, sandbox_uid: UUID) -> str:
         """Resolve a public Session ID only in its original Sandbox incarnation."""

@@ -124,7 +124,7 @@ fn slot_minimal_anchors(
     // Single-target view of this slot: the slot is the lone target, every other
     // declarator holes to a `DECLARATORS_*` run.
     let only_this = BTreeSet::from([slot]);
-    let export_for = |name: &str| (name == runtime).then(|| target.export_name.clone());
+    let export_for = |name: &str| (name == runtime).then(|| target.selector_local.clone());
     let no_regex = BTreeMap::new();
     let render_slot = |kept: &BTreeSet<AnchorSpan>| -> Result<String> {
         render_var_slots(var, &only_this, &export_for, kept, &no_regex)
@@ -169,7 +169,7 @@ fn try_var_group_read_off(
         targets
             .iter()
             .find(|target| target.runtime_binding == runtime)
-            .map(|target| target.export_name.clone())
+            .map(|target| target.selector_local.clone())
     };
     let item = index
         .module
@@ -324,7 +324,7 @@ pub(crate) fn minimize_var_group_selector_candidates(
         targets
             .iter()
             .find(|target| target.runtime_binding == runtime)
-            .map(|target| target.export_name.clone())
+            .map(|target| target.selector_local.clone())
     };
     let target_slots: BTreeSet<usize> = var
         .decls

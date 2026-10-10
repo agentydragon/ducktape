@@ -77,8 +77,8 @@ class PushShow(BaseModel):
 
     The call's identity and arguments travel raw rather than pre-rendered: the service worker
     describes it through the same registry the approvals card uses
-    (`frontend/tool_rendering/actions.ts`), so a notification reads "Gmail: Draft email" instead
-    of "gmail · drafts_create" and the two surfaces cannot drift into different phrasings for the
+    (`frontend/tool_rendering/actions.ts`), so a notification reads "Grocy: Add 5 items to stock"
+    instead of "grocy-sf.stock_add" and the two surfaces cannot drift into different phrasings for the
     same call. The payload is encrypted to the subscription, so this exposes nothing the operator's
     own browser would not already show.
 

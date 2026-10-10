@@ -16,9 +16,6 @@ export const grocyActions: Record<string, ActionEntry> = {
     text: `Grocy: Edit ${a.items.length} stock ${a.items.length === 1 ? "entry" : "entries"}`,
   })),
   stock_get: fixed("Grocy: View stock"),
-  products_list: fixed("Grocy: List products"),
-  quantity_units_list: fixed("Grocy: List quantity units"),
-  get_system_info: fixed("Grocy: View system information"),
   products_create: fromArgs(mcpToolSchema(GROCY_SERVER_ID, "products_create"), (a) => ({
     text: `Grocy: Create ${plural(a.items.length, "product")}`,
   })),
