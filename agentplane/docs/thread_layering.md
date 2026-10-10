@@ -47,6 +47,11 @@ Sandbox without a Thread and manual lifecycle/inspection surfaces remain useful.
 
 ## Authorities and representations
 
+A **Session** is the raw Event stream: harness messages, protocol reconciliation chatter and
+everything else the runner journals. A **Thread** is the conversation-style projection of a
+Session, its messages and the like. Names follow that split wherever the data lives: the fold's
+tables are `thread_*` in the History Service too, although they are keyed by public Session ID.
+
 ```mermaid
 flowchart LR
     F[Frontend] -->|Command| A[App]

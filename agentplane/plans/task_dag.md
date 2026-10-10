@@ -947,14 +947,12 @@ flowchart TD
     HISTORY_DATABASE_RENAME[Blocked: rename the sandbox_service database and role]
     SANDBOX_DATABASE_RENAME[Blocked: name the sandbox_commands database for the Sandbox Service]
     HISTORY_PROTO_OWNERSHIP[Candidate: History Service owns its request messages]
-    HISTORY_PROJECTION_NAMING[Decision: names of the History Service projection tables]
     APP_ELECTRIC_RETIRE[Blocked: remove Electric's access to the app database]
     SANDBOX_BINDING_ANNOTATION_RENAME[Candidate: write session_defaults, not thread_defaults]
     PROTO_DIRECTORY[Unscheduled: cross-component protos under one proto directory]
     RUNNER_OUTBOUND_CHANNEL[Outbound command delivery peers]
     HISTORY_WRITE_HANDOFF[History Service ingester takes over]
     SANDBOX_LOCAL_HISTORY_RETIRE[Delete Sandbox Service ingester and store]
-    FOLD_SHADOW[History Service folds in shadow]
     APP_PROJECTOR_RETIRE[Delete app projector]
     HISTORY_SERVICE_OWNERSHIP[History Service ownership]
     SESSION_REGISTRY_MOVE --> SANDBOX_LOCAL_HISTORY_RETIRE
@@ -967,7 +965,6 @@ flowchart TD
     HISTORY_STORE_MOVE --> HISTORY_DATABASE_RENAME
     HISTORY_SESSION_COLUMNS_DROP --> HISTORY_DATABASE_RENAME
     HISTORY_DATABASE_RENAME --> SANDBOX_DATABASE_RENAME
-    HISTORY_PROJECTION_NAMING -. cheapest before the tables exist .-> FOLD_SHADOW
     APP_PROJECTOR_RETIRE --> APP_ELECTRIC_RETIRE
     HISTORY_PROTO_OWNERSHIP -. after proto churn settles .-> PROTO_DIRECTORY
     RUNNER_OUTBOUND_CHANNEL -. after proto churn settles .-> PROTO_DIRECTORY
@@ -1042,13 +1039,6 @@ names.
 **Candidate.** `history_service/protocol.proto` reuses `ducktape.agentplane.sandbox.v1` request
 and response messages for `ReadSessionEvents` and `ReadSessionObservations`, which the Sandbox
 Service no longer serves. Move them into the History Service's own package with its callers.
-
-### `HISTORY_PROJECTION_NAMING` — name the History Service projection tables
-
-**Decision.** The fold's tables are `thread_*` because the app owned Threads. In the History
-Service they are keyed by public Session ID and hold no Thread metadata. Decide whether the shadow
-tables keep the app's names (no rename later, matching `session_event` keeping its name) or take
-Session names while they are created, which costs nothing then and a migration afterwards.
 
 ### `APP_ELECTRIC_RETIRE` — Electric no longer reads the app database
 

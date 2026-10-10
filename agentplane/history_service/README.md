@@ -33,7 +33,8 @@ no retention holds yet.
 ## Thread fold
 
 With `fold_shadow` set, it folds every retained Session into its own copy of the thread
-projection (`agentplane.thread_fold`), in epoch `history-v1`, from cursor 0: a page per Session per
+projection (`agentplane.thread_fold`; `thread_*` tables, since a Thread is the projection of a
+Session: [layering](../docs/thread_layering.md#authorities-and-representations)), in epoch `history-v1`, from cursor 0: a page per Session per
 cycle under the per-Session projection leases, so replicas share the work. The fold writes only those
 tables. Each cycle logs how many Sessions and events the fold is behind.
 
