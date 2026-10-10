@@ -1076,6 +1076,9 @@ flowchart TD
     RUNNER_LAUNCH_SETTINGS --> RUNNER_LAUNCH_SETTINGS_SPLIT
     WORKLOAD_AUDIENCE_DEFAULTS -. same constant .-> WORKLOAD_AUDIENCE_RENAME
     FOLD_READ_CUTOVER --> APP_THREAD_VIEW_CLEANUP
+    RUNNER_SESSION_RECORD_SHIMS[Blocked: drop runner session record compatibility]
+    LEGACY_SANDBOX_RETIRE[Retire pre-dial-out Sandboxes]
+    LEGACY_SANDBOX_RETIRE --> RUNNER_SESSION_RECORD_SHIMS
 ```
 
 ### `OPEN_SESSION_RETIRE` — delete the caller-chosen OpenSession path
@@ -1154,6 +1157,15 @@ give the constant a shared home.
 audience that may become `agentplane-workload`. Renaming needs every verifier to accept both until
 running Sandbox Pods carry the new projected token, or a Sandbox restart. Recommended: rename with an
 accept-both release, then drop the old audience once `LEGACY_SANDBOX_RETIRE` has replaced old Pods.
+
+### `RUNNER_SESSION_RECORD_SHIMS` — drop runner session record compatibility
+
+**Blocked on legacy Sandbox retirement; Legacy burn-down lane.** The runner's `SessionRecord` reads
+`session.json` written by older images: `context_budget_resolved` (False only for records from before
+budget resolution, 2026-10-10 PDT) re-resolves the budget at Open, and `instructions` and
+`event_source_id` have defaults that fill records predating them. Staging Sandboxes created before
+then still resume on these records. Once none remains, delete the flag and its Open branch, make
+both fields required, and have `from_spec` set `event_source_id` explicitly.
 
 ### `APP_THREAD_VIEW_CLEANUP` — app Thread view and event_log shims
 
