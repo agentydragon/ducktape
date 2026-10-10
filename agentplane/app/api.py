@@ -85,9 +85,8 @@ from agentplane.app.threads.events.debug import (
 from agentplane.app.threads.events.event_log import EventLogStore, ThreadNotFoundError
 from agentplane.app.threads.sessions import SandboxNotReachableError
 from agentplane.app.threads.store import ThreadStore
+from agentplane.app.threads.thread_view import ThreadView
 from agentplane.app.threads.view.content import CommandIdConflictError, ContentStore, ThreadScopeResetError
-from agentplane.app.threads.view.fold import CommandOutcome
-from agentplane.app.threads.view.views import ThreadView
 from agentplane.notification_service.models import SandboxNotificationStatus
 from agentplane.runner import protocol_pb2
 from agentplane.runner.errors import OpenTimeoutError, RunnerError
@@ -109,6 +108,7 @@ from agentplane.sandbox_service.kubernetes_grants import (
 )
 from agentplane.sandbox_service.models import SandboxNotFoundError, SandboxRunningError
 from agentplane.subjects import ServiceAccountRef
+from agentplane.thread_fold.fold import CommandOutcome
 
 # The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.
 # gazelle:include_dep @pypi//protobuf

@@ -30,10 +30,10 @@ from agentplane.app.database_updates import Channel, DatabaseUpdates
 from agentplane.app.electric import SUBSET_BODY_LIMIT, SUBSET_ROW_LIMIT, ElectricProxy, router
 from agentplane.app.testing.history import ProjectedHistory as Ingestion, SeededEventLogStore as EventLogStore
 from agentplane.app.testing.replication_source import SANDBOX, SESSION, ReplicationSource
-from agentplane.app.threads.events.projection_lease import ProjectionLease
 from agentplane.app.threads.view.content import ContentStore, ThreadScope
 from agentplane.protocol import event_pb2
 from agentplane.sandbox_service.client import SandboxServiceClient
+from agentplane.thread_fold.projection_lease import ProjectionLease
 
 # The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.
 # gazelle:include_dep @pypi//protobuf

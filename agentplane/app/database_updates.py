@@ -46,3 +46,7 @@ class DatabaseUpdates:
 async def notify(session: AsyncSession, channel: Channel) -> None:
     # PostgreSQL delivers NOTIFY only on commit, to every replica listening.
     await session.execute(select(func.pg_notify(channel, "")))
+
+
+async def notify_threads(session: AsyncSession) -> None:
+    await notify(session, Channel.THREADS)

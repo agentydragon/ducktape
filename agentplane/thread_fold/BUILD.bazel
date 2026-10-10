@@ -1,0 +1,141 @@
+load("//devinfra/python:defs.bzl", "py_library", "py_test")
+
+# gazelle:resolve py agentplane.protocol.command_pb2 //agentplane/protocol:command_pb2
+# gazelle:resolve py agentplane.protocol.event_pb2 //agentplane/protocol:event_pb2
+# gazelle:resolve py agentplane.protocol.event_log_pb2 //agentplane/protocol:event_log_pb2
+# gazelle:resolve py agentplane.runner.protocol_pb2 //agentplane/runner:protocol_pb2
+
+package(default_visibility = ["//agentplane:__subpackages__"])
+
+py_library(
+    name = "models",
+    srcs = ["models.py"],
+    deps = ["@pypi//sqlalchemy"],
+)
+
+py_library(
+    name = "fold",
+    srcs = ["fold.py"],
+    deps = [
+        "//agentplane/protocol:command_pb2",
+        "//agentplane/protocol:event_log_pb2",
+        "//agentplane/protocol:event_pb2",
+        "@pypi//protobuf",  # keep: mypy follows generated protobuf interfaces
+        "@pypi//types_protobuf",  # keep: mypy follows generated protobuf interfaces
+    ],
+)
+
+py_library(
+    name = "lifecycle",
+    srcs = ["lifecycle.py"],
+    deps = [
+        ":models",
+        ":recording",
+        "//agentplane/protocol:event_log_pb2",
+        "//agentplane/runner:protocol_pb2",
+        "//agentplane/sandbox_service:protocol_pb2",
+        "@pypi//protobuf",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
+    name = "model_activity",
+    srcs = ["model_activity.py"],
+    deps = [
+        ":models",
+        "//agentplane/protocol:event_log_pb2",
+        "//agentplane/protocol:event_pb2",
+        "@pypi//protobuf",
+        "@pypi//sqlalchemy",
+        "@pypi//types_protobuf",  # keep: mypy follows generated protobuf interfaces
+    ],
+)
+
+py_library(
+    name = "payloads",
+    srcs = ["payloads.py"],
+    deps = [
+        ":fold",
+        ":models",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
+    name = "projection_lease",
+    srcs = ["projection_lease.py"],
+    deps = [
+        ":models",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
+    name = "projector",
+    srcs = ["projector.py"],
+    deps = [
+        ":lifecycle",
+        ":model_activity",
+        ":models",
+        ":projection_lease",
+        ":recording",
+        "//agentplane/sandbox_service:client",
+        "//agentplane/sandbox_service:protocol_pb2",
+        "@pypi//grpcio",
+        "@pypi//protobuf",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
+    name = "recording",
+    srcs = ["recording.py"],
+    deps = [
+        ":fold",
+        ":models",
+        ":payloads",
+        ":rows",
+        ":views",
+        "//agentplane/protocol:event_log_pb2",
+        "@pypi//protobuf",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
+    name = "rows",
+    srcs = ["rows.py"],
+    deps = [
+        ":fold",
+        ":views",
+        "@pypi//protobuf",
+    ],
+)
+
+py_library(
+    name = "views",
+    srcs = ["views.py"],
+    deps = [
+        ":fold",
+        "@pypi//pydantic",
+    ],
+)
+
+py_test(
+    name = "test_fold",
+    srcs = ["test_fold.py"],
+    # Pure synchronous tests with local fixtures; no conftest fixture is needed.
+    args = ["--noconftest"],
+    deps = [
+        ":fold",
+        "//:conftest",
+        "//agentplane/protocol:command_pb2",
+        "//agentplane/protocol:event_log_pb2",
+        "//agentplane/protocol:event_pb2",
+        "@pypi//more_itertools",
+        "@pypi//protobuf",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)

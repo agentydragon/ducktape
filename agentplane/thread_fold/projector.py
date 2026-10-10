@@ -1,9 +1,10 @@
-"""Bounded service-history projection under app replica leases.
+"""Bounded service-history projection under per-Session replica leases.
 
 Resume the UI checkpoint without acquiring runner storage or copying raw Event rows.
 """
 
 import logging
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from datetime import UTC
 from uuid import UUID
@@ -11,17 +12,15 @@ from uuid import UUID
 import grpc
 from sqlalchemy import select
 from sqlalchemy.exc import SQLAlchemyError
-from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
+from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
-from agentplane.app.database_updates import Channel, notify
-from agentplane.app.threads.events import projection_lease
-from agentplane.app.threads.events.event_log import EventReplicationError
-from agentplane.app.threads.events.projection_lease import ProjectionLease, ProjectionLeaseLostError
-from agentplane.app.threads.model_activity import record_model_activity
-from agentplane.app.threads.models import ThreadCheckpoint, ThreadHistorySummary
-from agentplane.app.threads.projected_lifecycle import project_lifecycle
-from agentplane.app.threads.view.recording import record_thread_fold, set_operational
 from agentplane.sandbox_service.client import SandboxServiceClient
+from agentplane.thread_fold import projection_lease
+from agentplane.thread_fold.lifecycle import project_lifecycle
+from agentplane.thread_fold.model_activity import record_model_activity
+from agentplane.thread_fold.models import ThreadCheckpoint, ThreadHistorySummary
+from agentplane.thread_fold.projection_lease import ProjectionLease, ProjectionLeaseLostError
+from agentplane.thread_fold.recording import EventReplicationError, record_thread_fold, set_operational
 
 # gazelle:include_dep @pypi//protobuf
 # gazelle:include_dep //agentplane/sandbox_service:protocol_pb2
@@ -37,9 +36,13 @@ class ProjectionProgress:
 
 
 class HistoryProjector:
-    def __init__(self, engine: AsyncEngine, reader: SandboxServiceClient) -> None:
+    def __init__(
+        self, engine: AsyncEngine, reader: SandboxServiceClient, *, notify: Callable[[AsyncSession], Awaitable[None]]
+    ) -> None:
+        """`notify` runs inside each transaction that changes what a Thread's readers see."""
         self._sessions = async_sessionmaker(engine, expire_on_commit=False)
         self._reader = reader
+        self._notify = notify
 
     async def project_batch(self, thread_id: UUID, *, lease: ProjectionLease) -> ProjectionProgress:
         """Resume from the UI checkpoint; a failed fold leaves that checkpoint unchanged."""
@@ -73,7 +76,7 @@ class HistoryProjector:
                 error="Session history projection stalled; retained events and the last verified view are unchanged.",
                 error_cursor=error.cursor if isinstance(error, EventReplicationError) else None,
             )
-            await notify(session, Channel.THREADS)
+            await self._notify(session)
 
     async def _project_prefix(self, thread_id: UUID, *, lease: ProjectionLease, after: int) -> ProjectionProgress:
         page = await self._reader.read_session_events(str(thread_id), after_cursor=after, limit=128)
@@ -106,7 +109,7 @@ class HistoryProjector:
                 raise EventReplicationError("missing service projection metadata")
             if not page.entries:
                 if await project_lifecycle(session, thread_id, summary, page, through_cursor=after):
-                    await notify(session, Channel.THREADS)
+                    await self._notify(session)
                 return ProjectionProgress(after, page.last_cursor)
             source_id = page.entries[0].origin.source_id
             if any(entry.origin.source_id != source_id for entry in page.entries):
@@ -121,5 +124,5 @@ class HistoryProjector:
                     summary.last_turn_status = entry.event.turn_completed.status
 
             await project_lifecycle(session, thread_id, summary, page, through_cursor=page.entries[-1].cursor)
-            await notify(session, Channel.THREADS)
+            await self._notify(session)
         return ProjectionProgress(page.entries[-1].cursor, page.last_cursor)

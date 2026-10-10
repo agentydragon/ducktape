@@ -9,10 +9,10 @@ from google.protobuf.json_format import MessageToDict
 from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
 
 from agentplane.app.testing.retained_history import seed_retained_session
-from agentplane.app.threads.models import ThreadCheckpoint, ThreadHistorySummary
 from agentplane.app.threads.store import ThreadStore
 from agentplane.protocol import event_pb2
 from agentplane.runner import protocol_pb2
+from agentplane.thread_fold.models import ThreadCheckpoint, ThreadHistorySummary
 
 # gazelle:include_dep @pypi//protobuf
 

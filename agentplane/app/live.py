@@ -46,7 +46,7 @@ from agentplane.app.identity import CallerIdentity, require_caller
 from agentplane.app.sandbox_models import SandboxView, sandbox_view as http_sandbox_view
 from agentplane.app.shutdown import Shutdown
 from agentplane.app.threads.store import ThreadStore
-from agentplane.app.threads.view.views import ThreadView
+from agentplane.app.threads.thread_view import ThreadView
 from agentplane.sandbox_service.action_policy_views import ACTION_POLICY_API
 from agentplane.sandbox_service.egress_views import (
     BINDINGS_PLURAL,

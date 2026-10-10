@@ -7,7 +7,8 @@ import pytest_bazel
 from google.protobuf import json_format
 from more_itertools import partitions
 
-from agentplane.app.threads.view.fold import (
+from agentplane.protocol import command_pb2, event_log_pb2, event_pb2
+from agentplane.thread_fold.fold import (
     AppendPayload,
     CommandOutcome,
     CommandSummary,
@@ -28,7 +29,6 @@ from agentplane.app.threads.view.fold import (
     initial,
     touched_keys,
 )
-from agentplane.protocol import command_pb2, event_log_pb2, event_pb2
 
 # gazelle:include_dep @pypi//protobuf
 
