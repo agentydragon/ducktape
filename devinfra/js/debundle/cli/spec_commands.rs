@@ -217,7 +217,8 @@ struct SelectorCodemodArgs {
     #[arg(long = "candidates", default_value_t = 1)]
     pub candidates: usize,
 
-    /// Output format. Default `text` on tty, `json` on pipe.
+    /// Output format. Default `text` on tty, `json` on pipe. `ndjson` flushes
+    /// each completed module, followed by a final summary.
     #[arg(long, value_enum)]
     pub format: Option<OutputFormat>,
 }
@@ -282,7 +283,8 @@ struct MatchSelectorArgs {
 }
 
 fn run_synthesize_selectors_cmd(args: SelectorCodemodArgs) -> Result<()> {
-    let report = run_selector_codemod(&SelectorCodemodConfig {
+    let format = OutputFormat::resolve(args.format);
+    let config = SelectorCodemodConfig {
         modules_root: args.modules_root,
         apply: args.apply,
         files: args.files,
@@ -293,7 +295,17 @@ fn run_synthesize_selectors_cmd(args: SelectorCodemodArgs) -> Result<()> {
         source_file: args.source_file,
         items: args.items,
         candidates: args.candidates,
-    })?;
+    };
+    if format == OutputFormat::Ndjson {
+        let report =
+            selector_codemod::run_selector_codemod_with_module_results(&config, &mut |module| {
+                print_section("module", module)?;
+                std::io::Write::flush(&mut std::io::stdout())?;
+                Ok(())
+            })?;
+        return print_section("summary", &report.summary);
+    }
+    let report = run_selector_codemod(&config)?;
     emit_report(
         args.format,
         &report,

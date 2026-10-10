@@ -26,7 +26,7 @@ fn class_render_with<'a>(
 ) -> impl Fn(&BTreeSet<AnchorSpan>) -> Result<String> + 'a {
     move |kept: &BTreeSet<AnchorSpan>| {
         emit_selector(ModuleItem::Stmt(Stmt::Decl(Decl::Class(ClassDecl {
-            ident: ident_node(&target.export_name),
+            ident: ident_node(&target.selector_local),
             declare: false,
             class: Box::new(hole_class(class, kept)),
         }))))

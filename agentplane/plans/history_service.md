@@ -144,7 +144,7 @@ service SandboxService {
   rpc DeleteSandbox(DeleteSandboxRequest) returns (google.protobuf.Empty);
   rpc WatchSessions(WatchSessionsRequest) returns (stream SessionChange);           // new
   rpc GetCommand(GetCommandRequest) returns (CommandStatus);                        // new
-  // Changed: replays from the runner journal below the live tail; adds a `sealed` frame.
+  // Replays from the runner journal below the live tail; sends `sealed` once runners seal.
   rpc FollowSession(FollowSessionRequest) returns (stream FollowSessionResponse);
   rpc PlaceHold(PlaceHoldRequest) returns (Hold);                                   // new, idempotent per holder
   rpc ConfirmHold(ConfirmHoldRequest) returns (Hold);                               // new: through_cursor

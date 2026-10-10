@@ -20,7 +20,7 @@ fn function_render_with<'a>(
 ) -> impl Fn(&BTreeSet<AnchorSpan>) -> Result<String> + 'a {
     move |kept: &BTreeSet<AnchorSpan>| {
         emit_selector(ModuleItem::Stmt(Stmt::Decl(Decl::Fn(FnDecl {
-            ident: ident_node(&target.export_name),
+            ident: ident_node(&target.selector_local),
             declare: false,
             function: Box::new(hole_function(function, kept)),
         }))))

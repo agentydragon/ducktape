@@ -1011,11 +1011,11 @@ impl ChunkPlanBuilder {
         Ok(())
     }
 
-    /// When the catchall is the only module, preserve the whole statement
-    /// sequence there, even if the spec names some of its bindings explicitly.
-    /// Otherwise, route only anonymous owners that share an atomic unit with
-    /// catchall-owned bindings. Unrelated effects stay in the entry, where
-    /// they may run after other peeled modules.
+    /// Move anonymous owners into the catchall when their atomic unit already
+    /// belongs there, or when a catchall owner must run after them according
+    /// to the source-order side-effect graph. Other anonymous statements may
+    /// stay in the entry and run after peeled modules. Explicit claims win;
+    /// the realizability gate rejects an order that cannot be represented.
     pub(super) fn route_unclaimed_anonymous_to_catchall(
         &mut self,
         precomputed: &OwnerGraphAndUnits,
@@ -1024,35 +1024,51 @@ impl ChunkPlanBuilder {
         let Some(index) = self.residual_plan_index else {
             return;
         };
-        let whole_chunk = self.module_plans.len() == 1;
         let graph = &precomputed.owner_graph;
         let mut body_indices = BTreeSet::new();
+        let mut catchall_owners = BTreeSet::new();
+        for node in graph.iter_nodes() {
+            if !node.declared.is_empty()
+                && node
+                    .declared
+                    .iter()
+                    .all(|binding| self.binding_assignment.get(binding) == Some(&index))
+            {
+                catchall_owners.insert(node.id);
+            } else if node.declared.is_empty()
+                && let Some(body_index) =
+                    body_index_for_statement_ordinal(body, node.statement_ordinal.0)
+                && self.anonymous_ordinal_assignment.get(&body_index) == Some(&index)
+            {
+                catchall_owners.insert(node.id);
+            }
+        }
         for unit in &precomputed.atomic_units {
-            if !whole_chunk {
-                let mut has_catchall_binding = false;
-                let all_members_fit = unit.members.iter().all(|&owner_id| {
-                    let Some(node) = graph.node(owner_id) else {
+            let mut has_catchall_binding = false;
+            let all_members_fit = unit.members.iter().all(|&owner_id| {
+                let Some(node) = graph.node(owner_id) else {
+                    return false;
+                };
+                if node.declared.is_empty() {
+                    let Some(body_index) =
+                        body_index_for_statement_ordinal(body, node.statement_ordinal.0)
+                    else {
                         return false;
                     };
-                    if node.declared.is_empty() {
-                        let Some(body_index) =
-                            body_index_for_statement_ordinal(body, node.statement_ordinal.0)
-                        else {
-                            return false;
-                        };
-                        return self
-                            .anonymous_ordinal_assignment
-                            .get(&body_index)
-                            .is_none_or(|&assigned| assigned == index);
-                    }
-                    has_catchall_binding = true;
-                    node.declared
-                        .iter()
-                        .all(|binding| self.binding_assignment.get(binding) == Some(&index))
-                });
-                if !has_catchall_binding || !all_members_fit {
-                    continue;
+                    return self
+                        .anonymous_ordinal_assignment
+                        .get(&body_index)
+                        .is_none_or(|&assigned| assigned == index);
                 }
+                let in_catchall = node
+                    .declared
+                    .iter()
+                    .all(|binding| self.binding_assignment.get(binding) == Some(&index));
+                has_catchall_binding |= in_catchall;
+                in_catchall
+            });
+            if !has_catchall_binding || !all_members_fit {
+                continue;
             }
             for &owner_id in &unit.members {
                 let Some(node) = graph.node(owner_id) else {
@@ -1061,6 +1077,56 @@ impl ChunkPlanBuilder {
                 if node.declared.is_empty()
                     && let Some(body_index) =
                         body_index_for_statement_ordinal(body, node.statement_ordinal.0)
+                    && self
+                        .anonymous_ordinal_assignment
+                        .get(&body_index)
+                        .is_none_or(|&assigned| assigned == index)
+                {
+                    body_indices.insert(body_index);
+                    catchall_owners.insert(owner_id);
+                }
+            }
+        }
+        // A Sequenced edge points from a later effect to an earlier one.
+        // Follow those edges backwards so no required predecessor remains in
+        // the entry, which always evaluates after the catchall module.
+        let mut pending: Vec<OwnerId> = catchall_owners.iter().copied().collect();
+        while let Some(owner_id) = pending.pop() {
+            for &edge_id in graph.out_edges_of(owner_id) {
+                let edge = graph.edge(edge_id);
+                if !edge.reason.is_sequenced() {
+                    continue;
+                }
+                let Some(node) = graph.node(edge.to) else {
+                    continue;
+                };
+                if !node.declared.is_empty() {
+                    continue;
+                }
+                let Some(body_index) =
+                    body_index_for_statement_ordinal(body, node.statement_ordinal.0)
+                else {
+                    continue;
+                };
+                if self
+                    .anonymous_ordinal_assignment
+                    .get(&body_index)
+                    .is_some_and(|&assigned| assigned != index)
+                {
+                    continue;
+                }
+                body_indices.insert(body_index);
+                if catchall_owners.insert(node.id) {
+                    pending.push(node.id);
+                }
+            }
+        }
+        // With no other module to order against, keep the complete chunk in
+        // its catchall file, including independent trailing statements.
+        if self.module_plans.len() == 1 {
+            for node in graph.iter_nodes().filter(|node| node.declared.is_empty()) {
+                if let Some(body_index) =
+                    body_index_for_statement_ordinal(body, node.statement_ordinal.0)
                 {
                     body_indices.insert(body_index);
                 }
