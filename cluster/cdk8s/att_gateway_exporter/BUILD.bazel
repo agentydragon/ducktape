@@ -3,6 +3,17 @@
 load("//devinfra/python:defs.bzl", "py_library")
 
 py_library(
+    name = "access_code",
+    srcs = ["access_code.py"],
+    visibility = ["//cluster/cdk8s:__pkg__"],
+    deps = [
+        "//cluster/cdk8s:flux",
+        "//cluster/cdk8s:manifest_roots",
+        "@pypi//cdk8s",
+    ],
+)
+
+py_library(
     name = "app",
     srcs = ["app.py"],
     data = ["dashboard.json"],
