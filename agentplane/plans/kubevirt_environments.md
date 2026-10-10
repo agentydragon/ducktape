@@ -280,8 +280,8 @@ environments and the Sandbox Service extraction's staging-preservation requireme
 
 The [DAG VM lane](task_dag.md#4-vm-environment-phases) now sequences these separately:
 
-- `RUNNER_OUTBOUND_CHANNEL`: conditional implementation retaining command/Event semantics;
-  `RUNNER_OUTBOUND_ROLLOUT` later makes it the default for new container Sandboxes.
+- `RUNNER_OUTBOUND_ROLLOUT`: makes outbound delivery, which keeps command/Event semantics, the
+  default for new container Sandboxes.
 - `VM_CONTROL_NETWORKING`: implement the chosen route after the transport decision and provider,
   depending on outbound transport only if selected. Gate integrated VM lifecycle on this path.
 - `VM_IMAGE`: digest-pinned guest and bounded retained storage, tested with both harnesses.

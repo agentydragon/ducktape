@@ -342,8 +342,7 @@ journal.
 
 ```mermaid
 flowchart LR
-    RUNNER_OUTBOUND_CHANNEL[Outbound command delivery peers]
-    RUNNER_OUTBOUND_CANARY[Blocked: service-first deployment and fresh runner canary]
+    RUNNER_OUTBOUND_CANARY[Fresh runner canary]
     RUNNER_OUTBOUND_SPOOL[Blocked: move spool delivery onto channel]
     RUNNER_OUTBOUND_LIFECYCLE[Blocked: migrate remaining lifecycle consumers]
     RUNNER_OUTBOUND_ROLLOUT[Blocked: outbound by default for new Sandboxes]
@@ -353,10 +352,8 @@ flowchart LR
     VM_EGRESS[Candidate: production admission and egress integration]
     VM_PROCESS_ISOLATION[Blocked: harness/process resource boundary]
     VM_LIFECYCLE[Blocked: integrated lifecycle]
-    RUNNER_OUTBOUND_CHANNEL --> VM_CONTROL_NETWORKING
     RUNNER_OUTBOUND_LIFECYCLE --> VM_CONTROL_NETWORKING
     RUNNER_OUTBOUND_SPOOL --> VM_CONTROL_NETWORKING
-    RUNNER_OUTBOUND_CHANNEL --> RUNNER_OUTBOUND_CANARY
     RUNNER_OUTBOUND_CANARY --> RUNNER_OUTBOUND_SPOOL
     RUNNER_OUTBOUND_CANARY --> RUNNER_OUTBOUND_LIFECYCLE
     RUNNER_OUTBOUND_SPOOL --> RUNNER_OUTBOUND_ROLLOUT
@@ -377,19 +374,11 @@ flowchart LR
     SANDBOX_VM_ISOLATION --> LOCAL_BAZEL[Blocked: bounded local Bazel client in VM]
 ```
 
-### `RUNNER_OUTBOUND_CHANNEL` — implement outbound command delivery
-
-**Both gRPC peers of the [runner channel](../docs/runner_channel.md) are built; remaining: the
-channel's egress policy.** Add the egress credential that substitutes the Pod's token for the
-`agentplane-runner-channel` audience, and the policy admitting the channel host, which the Sandbox
-Service binds to every Sandbox at creation and which no launch selection can drop. Keep existing
-spool ingestion unchanged. No new inbound unary API.
-
 ### `RUNNER_OUTBOUND_CANARY` — switch command delivery on a fresh runner
 
-**Blocked on outbound command peers and durable submission through the existing relay.** Deploy
-compatible service support first with old routes unchanged, then a compatible runner image in a fresh
-canary. Select one explicit command route per incarnation and switch its submission adapter to the channel;
+**Startable once a runner image carrying the channel peer is published.** The Sandbox Service's
+listener and the channel's egress path are deployed with old routes unchanged; start a fresh canary
+on that image with `--channel-target` and `--channel-bearer`. Select one explicit command route per incarnation and switch its submission adapter to the channel;
 keep the existing spool reader. Verify the real proxy path, cross-replica routing, owner loss and
 reconnect, receipt persistence and exact retries. No silent fallback after an ambiguous send. This
 proves command delivery independently of moving spool traffic or migrating existing environments.
@@ -902,7 +891,6 @@ flowchart TD
     SANDBOX_DATABASE_RENAME[Blocked: name the sandbox_commands database for the Sandbox Service]
     APP_ELECTRIC_RETIRE[Blocked: remove Electric's access to the app database]
     PROTO_DIRECTORY[Unscheduled: cross-component protos under one proto directory]
-    RUNNER_OUTBOUND_CHANNEL[Outbound command delivery peers]
     HISTORY_WRITE_HANDOFF[History Service ingester takes over]
     SANDBOX_LOCAL_HISTORY_RETIRE[Delete Sandbox Service ingester and store]
     APP_PROJECTOR_RETIRE[Delete app projector]
@@ -918,7 +906,6 @@ flowchart TD
     HISTORY_SESSION_COLUMNS_DROP --> HISTORY_DATABASE_RENAME
     HISTORY_DATABASE_RENAME --> SANDBOX_DATABASE_RENAME
     APP_PROJECTOR_RETIRE --> APP_ELECTRIC_RETIRE
-    RUNNER_OUTBOUND_CHANNEL -. after proto churn settles .-> PROTO_DIRECTORY
 ```
 
 ### `SESSION_REGISTRY_MOVE` — Session records in the Sandbox Service's database

@@ -1,7 +1,7 @@
 # Runner channel
 
-Status: **accepted design, both peers built, not deployed.** The Sandbox Service's channel listener
-(`sandbox_service/runner_channel.py`) authenticates, fences and keeps connections alive, and
+Status: **accepted design, both peers built, service side deployed.** The Sandbox Service's channel
+listener (`sandbox_service/runner_channel.py`), reachable through the egress proxy, authenticates, fences and keeps connections alive, and
 delivers dispatch attempts (`sandbox_service/channel_delivery.py`) for Sandboxes routed to it. The
 runner dials it when started with `--channel-target` (`runner/channel.py`); no Sandbox is started
 that way yet, so runners are reached through the inbound `Attach` RPC, which Cilium admits only
