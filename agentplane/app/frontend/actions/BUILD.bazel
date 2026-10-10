@@ -1,0 +1,446 @@
+load("@aspect_rules_js//js:defs.bzl", "js_library")
+load("//agentplane/app/frontend:vitest.bzl", "agentplane_vitest_test")
+load("//devinfra/js:openapi.bzl", "js_openapi_zod")
+load("//devinfra/js:ts_library.bzl", "ts_library")
+
+package(default_visibility = ["//agentplane/app:__subpackages__"])
+
+TSCONFIG = "//agentplane/app/frontend:tsconfig"
+
+# Generate the SSH argument/result validators from the schema FastMCP builds from the server's
+# registered tool signature and return type.
+js_openapi_zod(
+    name = "ssh_action_schemas_generated",
+    out = "schemas/ssh/exec.zod.ts",
+    generator = "//x/ssh_mcp_server:export_frontend_schema_bin",
+    tsconfig = "//agentplane/app/frontend:tsconfig_generated",
+)
+
+ts_library(
+    name = "ssh_action_schemas",
+    srcs = ["schemas/ssh/exec.ts"],
+    tsconfig = TSCONFIG,
+    deps = [":ssh_action_schemas_generated"],
+)
+
+ts_library(
+    name = "types",
+    srcs = ["types.ts"],
+    tsconfig = TSCONFIG,
+    deps = ["//agentplane/app/frontend:schema"],
+)
+
+ts_library(
+    name = "action_client",
+    srcs = ["client.ts"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":types",
+        "//agentplane/app/frontend:client",
+        "//agentplane/app/frontend:schema",
+    ],
+)
+
+ts_library(
+    name = "call",
+    srcs = ["call.tsx"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":action_client",
+        ":rendering",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+        "//agentplane/app/frontend:client",
+        "//agentplane/app/frontend:disclosure",
+        "//agentplane/app/frontend:json_view",
+        "//agentplane/app/frontend:raw_switch",
+    ],
+)
+
+ts_library(
+    name = "requests",
+    srcs = [
+        "requests.tsx",
+        # Ambient module declaration for the per-icon Tabler imports used by the decision buttons.
+        "tabler_icons.d.ts",
+    ],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":action_client",
+        ":call",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@tabler/icons-react",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+        "//agentplane/app/frontend:client",
+        "//agentplane/app/frontend:live_stream",
+        "//agentplane/app/frontend:stream_status",
+    ],
+)
+
+ts_library(
+    name = "sidebar",
+    srcs = [
+        "css.d.ts",
+        "sidebar.tsx",
+        "tabler_icons.d.ts",
+    ],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":rendering",
+        ":requests",
+        ":sidebar_css",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@tabler/icons-react",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+        "//:node_modules/react-router",
+        "//agentplane/app/frontend:client",
+        "//agentplane/app/frontend:json_view",
+        "//agentplane/app/frontend:stream_status",
+    ],
+)
+
+agentplane_vitest_test(
+    name = "requests_test",
+    srcs = ["requests.test.tsx"],
+    deps = [
+        ":action_client",
+        ":requests",
+        ":testing",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+        "//:node_modules/react-router",
+        "//:node_modules/vitest",
+        "//agentplane/app/frontend:stream_status",
+    ],
+)
+
+agentplane_vitest_test(
+    name = "sidebar_test",
+    srcs = ["sidebar.test.tsx"],
+    deps = [
+        ":requests",
+        ":sidebar",
+        ":testing",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+        "//:node_modules/react-router",
+        "//:node_modules/vitest",
+    ],
+)
+
+ts_library(
+    name = "detail",
+    srcs = [
+        "detail.tsx",
+        # Ambient declaration for the @tabler/icons-react per-icon subpath this page imports.
+        "tabler_icons.d.ts",
+    ],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":action_client",
+        ":history",
+        ":requests",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@tabler/icons-react",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+        "//:node_modules/react-router",
+    ],
+)
+
+agentplane_vitest_test(
+    name = "detail_test",
+    srcs = ["detail.test.tsx"],
+    deps = [
+        ":action_client",
+        ":detail",
+        ":requests",
+        ":sidebar",
+        ":testing",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+        "//:node_modules/react-router",
+        "//:node_modules/vitest",
+    ],
+)
+
+ts_library(
+    name = "history",
+    srcs = ["history.tsx"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":action_client",
+        ":call",
+        ":call_tool_result",
+        ":rendering",
+        ":requests",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+        "//agentplane/app/frontend:client",
+        "//agentplane/app/frontend:json_view",
+        "//agentplane/app/frontend:live_stream",
+        "//agentplane/app/frontend:stream_status",
+        "//agentplane/app/frontend:topbar",
+    ],
+)
+
+ts_library(
+    name = "call_tool_result",
+    srcs = ["call_tool_result.tsx"],
+    tsconfig = TSCONFIG,
+    deps = [
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+        "//:node_modules/zod",
+        "//agentplane/app/frontend:json_view",
+        "//agentplane/app/frontend:parsed_json",
+    ],
+)
+
+ts_library(
+    name = "kubernetes_pod_list_schema",
+    srcs = ["schemas/kubernetes_admin/pods_list_in_namespace.ts"],
+    tsconfig = TSCONFIG,
+    deps = ["//:node_modules/zod"],
+)
+
+# Widgets for particular Actions' requests and responses, registered by the Action's identity:
+# rendering/index.tsx dispatches; each Action widget lives under its group.
+ts_library(
+    name = "rendering",
+    srcs = ["rendering/index.tsx"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":action_client",
+        ":call_tool_result",
+        ":rendering_entry",
+        ":rendering_github",
+        ":rendering_kubernetes_admin",
+        ":rendering_result_entry",
+        ":rendering_ssh",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+    ],
+)
+
+ts_library(
+    name = "rendering_chips",
+    srcs = ["rendering/chips.tsx"],
+    tsconfig = TSCONFIG,
+    deps = [
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+    ],
+)
+
+ts_library(
+    name = "rendering_github",
+    srcs = ["rendering/github/create_pull_request.tsx"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":rendering_chips",
+        ":rendering_entry",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+        "//:node_modules/zod",
+    ],
+)
+
+ts_library(
+    name = "rendering_kubernetes_admin",
+    srcs = [
+        "rendering/kubernetes_admin/events_list.tsx",
+        "rendering/kubernetes_admin/pods_list_in_namespace.tsx",
+        "rendering/kubernetes_admin/pods_log.tsx",
+        "rendering/kubernetes_admin/resource_common.tsx",
+        "rendering/kubernetes_admin/resources_delete.tsx",
+        "rendering/kubernetes_admin/resources_get.tsx",
+        "rendering/kubernetes_admin/resources_list.tsx",
+    ],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":kubernetes_pod_list_schema",
+        ":rendering_chips",
+        ":rendering_entry",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+        "//:node_modules/zod",
+    ],
+)
+
+ts_library(
+    name = "rendering_entry",
+    srcs = ["rendering/entry.tsx"],
+    tsconfig = TSCONFIG,
+    deps = [
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+        "//:node_modules/zod",
+    ],
+)
+
+ts_library(
+    name = "rendering_result_entry",
+    srcs = ["rendering/result_entry.tsx"],
+    tsconfig = TSCONFIG,
+    deps = [
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+        "//:node_modules/zod",
+    ],
+)
+
+ts_library(
+    name = "rendering_ssh",
+    srcs = ["rendering/ssh/exec.tsx"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":rendering_entry",
+        ":rendering_result_entry",
+        ":ssh_action_schemas",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+        "//:node_modules/zod",
+        "//agentplane/app/frontend:code_block",
+        "//agentplane/app/frontend:command_view",
+    ],
+)
+
+agentplane_vitest_test(
+    name = "rendering_test",
+    srcs = ["rendering/index.test.tsx"],
+    deps = [
+        ":call_tool_result",
+        ":rendering",
+        ":testing",
+        "//:node_modules/@types/react",
+        "//:node_modules/vitest",
+    ],
+)
+
+agentplane_vitest_test(
+    name = "rendering_ssh_test",
+    srcs = ["rendering/ssh/exec.test.tsx"],
+    deps = [
+        ":rendering_entry",
+        ":rendering_result_entry",
+        ":rendering_ssh",
+        ":testing",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+        "//:node_modules/vitest",
+    ],
+)
+
+agentplane_vitest_test(
+    name = "call_tool_result_test",
+    srcs = ["call_tool_result.test.tsx"],
+    deps = [
+        ":call_tool_result",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@types/react",
+        "//:node_modules/@types/react-dom",
+        "//:node_modules/react",
+        "//:node_modules/react-dom",
+        "//:node_modules/vitest",
+    ],
+)
+
+agentplane_vitest_test(
+    name = "history_test",
+    srcs = ["history.test.tsx"],
+    deps = [
+        ":action_client",
+        ":history",
+        ":requests",
+        ":testing",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+        "//:node_modules/vitest",
+    ],
+)
+
+ts_library(
+    name = "testing",
+    testonly = True,
+    srcs = ["testing.tsx"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":action_client",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@types/react",
+        "//:node_modules/@types/react-dom",
+        "//:node_modules/react",
+        "//:node_modules/react-dom",
+        "//:node_modules/vitest",
+    ],
+)
+
+# sidebar.tsx imports this stylesheet for the bundler.
+js_library(
+    name = "sidebar_css",
+    srcs = ["sidebar.css"],
+)
+
+ts_library(
+    name = "policy",
+    srcs = ["policy.tsx"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":action_client",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+        "//agentplane/app/frontend:code_block",
+        "//agentplane/app/frontend:egress",
+    ],
+)
+
+agentplane_vitest_test(
+    name = "policy_test",
+    srcs = ["policy.test.tsx"],
+    deps = [
+        ":action_client",
+        ":policy",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@types/react",
+        "//:node_modules/@types/react-dom",
+        "//:node_modules/react",
+        "//:node_modules/react-dom",
+        "//:node_modules/vitest",
+    ],
+)
+
+ts_library(
+    name = "notifications",
+    srcs = [
+        "notifications/index.ts",
+        "notifications/kubernetes_admin/pods_list_in_namespace.ts",
+        "notifications/ssh/exec.ts",
+        "notifications/types.ts",
+    ],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":kubernetes_pod_list_schema",
+        ":ssh_action_schemas",
+        ":types",
+    ],
+)
+
+agentplane_vitest_test(
+    name = "notifications_test",
+    srcs = ["notifications/index.test.ts"],
+    deps = [
+        ":notifications",
+        ":types",
+        "//:node_modules/vitest",
+    ],
+)

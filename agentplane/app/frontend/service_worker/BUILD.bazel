@@ -23,8 +23,8 @@ ts_library(
     isolated_typecheck = True,
     tsconfig = ":tsconfig",
     deps = [
-        "//agentplane/app/frontend:actions_notifications",
-        "//agentplane/app/frontend:actions_types",
+        "//agentplane/app/frontend/actions:notifications",
+        "//agentplane/app/frontend/actions:types",
     ],
 )
 
@@ -60,7 +60,7 @@ vitest_test(
     deps = [
         "//:node_modules/@types/node",
         "//:node_modules/vitest",
-        "//agentplane/app/frontend:actions_types",
+        "//agentplane/app/frontend/actions:types",
     ],
 )
 

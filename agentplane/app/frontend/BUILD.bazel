@@ -7,7 +7,7 @@
 load("@aspect_rules_esbuild//esbuild:defs.bzl", "esbuild")
 load("@aspect_rules_js//js:defs.bzl", "js_library")
 load("@aspect_rules_ts//ts:defs.bzl", "ts_config")
-load("//devinfra/js:openapi.bzl", "js_openapi_schema", "js_openapi_zod")
+load("//devinfra/js:openapi.bzl", "js_openapi_schema")
 load("//devinfra/js:spa_bundle.bzl", "spa_bundle")
 load("//devinfra/js:ts_library.bzl", "ts_library")
 load("//devinfra/js:vitest.bzl", "check_vitest_specs", "vitest_config")
@@ -37,22 +37,6 @@ ts_config(
 js_openapi_schema(
     name = "schema",
     generator = "//agentplane/app:export_schema_bin",
-)
-
-# Generate the SSH argument/result validators from the schema FastMCP builds from the server's
-# registered tool signature and return type.
-js_openapi_zod(
-    name = "ssh_action_schemas_generated",
-    out = "actions/schemas/ssh/exec.zod.ts",
-    generator = "//x/ssh_mcp_server:export_frontend_schema_bin",
-    tsconfig = ":tsconfig_generated",
-)
-
-ts_library(
-    name = "ssh_action_schemas",
-    srcs = ["actions/schemas/ssh/exec.ts"],
-    tsconfig = TSCONFIG,
-    deps = [":ssh_action_schemas_generated"],
 )
 
 ts_library(
@@ -161,24 +145,6 @@ ts_library(
 )
 
 ts_library(
-    name = "actions_types",
-    srcs = ["actions/types.ts"],
-    tsconfig = TSCONFIG,
-    deps = [":schema"],
-)
-
-ts_library(
-    name = "actions_client",
-    srcs = ["actions/client.ts"],
-    tsconfig = TSCONFIG,
-    deps = [
-        ":actions_types",
-        ":client",
-        ":schema",
-    ],
-)
-
-ts_library(
     name = "consent_client",
     srcs = ["consent_client.ts"],
     tsconfig = TSCONFIG,
@@ -214,153 +180,6 @@ agentplane_vitest_test(
         "//:node_modules/react",
         "//:node_modules/react-dom",
         "//:node_modules/vitest",
-    ],
-)
-
-ts_library(
-    name = "actions_call",
-    srcs = ["actions/call.tsx"],
-    tsconfig = TSCONFIG,
-    deps = [
-        ":actions_client",
-        ":actions_rendering",
-        ":client",
-        ":disclosure",
-        ":json_view",
-        ":raw_switch",
-        "//:node_modules/@mantine/core",
-        "//:node_modules/@types/react",
-        "//:node_modules/react",
-    ],
-)
-
-ts_library(
-    name = "actions_requests",
-    srcs = [
-        "actions/requests.tsx",
-        # Ambient module declaration for the per-icon Tabler imports used by the decision buttons.
-        "tabler_icons.d.ts",
-    ],
-    tsconfig = TSCONFIG,
-    deps = [
-        ":actions_call",
-        ":actions_client",
-        ":client",
-        ":live_stream",
-        ":stream_status",
-        "//:node_modules/@mantine/core",
-        "//:node_modules/@tabler/icons-react",
-        "//:node_modules/@types/react",
-        "//:node_modules/react",
-    ],
-)
-
-ts_library(
-    name = "actions_sidebar",
-    srcs = [
-        "actions/sidebar.tsx",
-        "css.d.ts",
-        "tabler_icons.d.ts",
-    ],
-    tsconfig = TSCONFIG,
-    deps = [
-        ":actions_rendering",
-        ":actions_requests",
-        ":actions_sidebar_css",
-        ":client",
-        ":json_view",
-        ":stream_status",
-        "//:node_modules/@mantine/core",
-        "//:node_modules/@tabler/icons-react",
-        "//:node_modules/@types/react",
-        "//:node_modules/react",
-        "//:node_modules/react-router",
-    ],
-)
-
-agentplane_vitest_test(
-    name = "actions_requests_test",
-    srcs = ["actions/requests.test.tsx"],
-    deps = [
-        ":actions_client",
-        ":actions_requests",
-        ":actions_testing",
-        ":stream_status",
-        "//:node_modules/@types/react",
-        "//:node_modules/react",
-        "//:node_modules/react-router",
-        "//:node_modules/vitest",
-    ],
-)
-
-agentplane_vitest_test(
-    name = "actions_sidebar_test",
-    srcs = ["actions/sidebar.test.tsx"],
-    deps = [
-        ":actions_requests",
-        ":actions_sidebar",
-        ":actions_testing",
-        "//:node_modules/@types/react",
-        "//:node_modules/react",
-        "//:node_modules/react-router",
-        "//:node_modules/vitest",
-    ],
-)
-
-ts_library(
-    name = "actions_detail",
-    srcs = [
-        "actions/detail.tsx",
-        # Ambient declaration for the @tabler/icons-react per-icon subpath this page imports.
-        "tabler_icons.d.ts",
-    ],
-    tsconfig = TSCONFIG,
-    deps = [
-        ":actions_client",
-        ":actions_history",
-        ":actions_requests",
-        "//:node_modules/@mantine/core",
-        "//:node_modules/@tabler/icons-react",
-        "//:node_modules/@types/react",
-        "//:node_modules/react",
-        "//:node_modules/react-router",
-    ],
-)
-
-agentplane_vitest_test(
-    name = "actions_detail_test",
-    srcs = ["actions/detail.test.tsx"],
-    deps = [
-        ":actions_client",
-        ":actions_detail",
-        ":actions_requests",
-        ":actions_sidebar",
-        ":actions_testing",
-        "//:node_modules/@types/react",
-        "//:node_modules/react",
-        "//:node_modules/react-router",
-        "//:node_modules/vitest",
-    ],
-)
-
-ts_library(
-    name = "actions_history",
-    srcs = ["actions/history.tsx"],
-    tsconfig = TSCONFIG,
-    deps = [
-        ":actions_call",
-        ":actions_call_tool_result",
-        ":actions_client",
-        ":actions_rendering",
-        ":actions_requests",
-        ":client",
-        ":json_view",
-        ":live_stream",
-        ":stream_status",
-        ":topbar",
-        "//:node_modules/@mantine/core",
-        "//:node_modules/@types/react",
-        "//:node_modules/react",
     ],
 )
 
@@ -413,10 +232,10 @@ agentplane_vitest_test(
     name = "clamped_block_test",
     srcs = ["clamped_block.test.tsx"],
     deps = [
-        ":actions_testing",
         ":clamped_block",
         "//:node_modules/@types/react",
         "//:node_modules/vitest",
+        "//agentplane/app/frontend/actions:testing",
     ],
 )
 
@@ -441,204 +260,6 @@ ts_library(
     tsconfig = TSCONFIG,
 )
 
-ts_library(
-    name = "actions_call_tool_result",
-    srcs = ["actions/call_tool_result.tsx"],
-    tsconfig = TSCONFIG,
-    deps = [
-        ":json_view",
-        ":parsed_json",
-        "//:node_modules/@mantine/core",
-        "//:node_modules/@types/react",
-        "//:node_modules/react",
-        "//:node_modules/zod",
-    ],
-)
-
-# Strict request argument schemas shared by Action renderers and React-free service-worker
-# notification formatters.
-ts_library(
-    name = "actions_kubernetes_pod_list_schema",
-    srcs = ["actions/schemas/kubernetes_admin/pods_list_in_namespace.ts"],
-    tsconfig = TSCONFIG,
-    deps = ["//:node_modules/zod"],
-)
-
-# Widgets for particular Actions' requests and responses, registered by the Action's identity:
-# actions/rendering/index.tsx dispatches; each Action widget lives under its group.
-ts_library(
-    name = "actions_rendering",
-    srcs = ["actions/rendering/index.tsx"],
-    tsconfig = TSCONFIG,
-    deps = [
-        ":actions_call_tool_result",
-        ":actions_client",
-        ":actions_rendering_entry",
-        ":actions_rendering_github",
-        ":actions_rendering_kubernetes_admin",
-        ":actions_rendering_result_entry",
-        ":actions_rendering_ssh",
-        "//:node_modules/@types/react",
-        "//:node_modules/react",
-    ],
-)
-
-ts_library(
-    name = "actions_rendering_chips",
-    srcs = ["actions/rendering/chips.tsx"],
-    tsconfig = TSCONFIG,
-    deps = [
-        "//:node_modules/@mantine/core",
-        "//:node_modules/@types/react",
-        "//:node_modules/react",
-    ],
-)
-
-ts_library(
-    name = "actions_rendering_github",
-    srcs = ["actions/rendering/github/create_pull_request.tsx"],
-    tsconfig = TSCONFIG,
-    deps = [
-        ":actions_rendering_chips",
-        ":actions_rendering_entry",
-        "//:node_modules/@types/react",
-        "//:node_modules/react",
-        "//:node_modules/zod",
-    ],
-)
-
-ts_library(
-    name = "actions_rendering_kubernetes_admin",
-    srcs = [
-        "actions/rendering/kubernetes_admin/events_list.tsx",
-        "actions/rendering/kubernetes_admin/pods_list_in_namespace.tsx",
-        "actions/rendering/kubernetes_admin/pods_log.tsx",
-        "actions/rendering/kubernetes_admin/resource_common.tsx",
-        "actions/rendering/kubernetes_admin/resources_delete.tsx",
-        "actions/rendering/kubernetes_admin/resources_get.tsx",
-        "actions/rendering/kubernetes_admin/resources_list.tsx",
-    ],
-    tsconfig = TSCONFIG,
-    deps = [
-        ":actions_kubernetes_pod_list_schema",
-        ":actions_rendering_chips",
-        ":actions_rendering_entry",
-        "//:node_modules/@mantine/core",
-        "//:node_modules/@types/react",
-        "//:node_modules/react",
-        "//:node_modules/zod",
-    ],
-)
-
-ts_library(
-    name = "actions_rendering_entry",
-    srcs = ["actions/rendering/entry.tsx"],
-    tsconfig = TSCONFIG,
-    deps = [
-        "//:node_modules/@types/react",
-        "//:node_modules/react",
-        "//:node_modules/zod",
-    ],
-)
-
-ts_library(
-    name = "actions_rendering_result_entry",
-    srcs = ["actions/rendering/result_entry.tsx"],
-    tsconfig = TSCONFIG,
-    deps = [
-        "//:node_modules/@types/react",
-        "//:node_modules/react",
-        "//:node_modules/zod",
-    ],
-)
-
-ts_library(
-    name = "actions_rendering_ssh",
-    srcs = ["actions/rendering/ssh/exec.tsx"],
-    tsconfig = TSCONFIG,
-    deps = [
-        ":actions_rendering_entry",
-        ":actions_rendering_result_entry",
-        ":code_block",
-        ":command_view",
-        ":ssh_action_schemas",
-        "//:node_modules/@mantine/core",
-        "//:node_modules/@types/react",
-        "//:node_modules/react",
-        "//:node_modules/zod",
-    ],
-)
-
-agentplane_vitest_test(
-    name = "actions_rendering_test",
-    srcs = ["actions/rendering/index.test.tsx"],
-    deps = [
-        ":actions_call_tool_result",
-        ":actions_rendering",
-        ":actions_testing",
-        "//:node_modules/@types/react",
-        "//:node_modules/vitest",
-    ],
-)
-
-agentplane_vitest_test(
-    name = "actions_rendering_ssh_test",
-    srcs = ["actions/rendering/ssh/exec.test.tsx"],
-    deps = [
-        ":actions_rendering_entry",
-        ":actions_rendering_result_entry",
-        ":actions_rendering_ssh",
-        ":actions_testing",
-        "//:node_modules/@types/react",
-        "//:node_modules/react",
-        "//:node_modules/vitest",
-    ],
-)
-
-agentplane_vitest_test(
-    name = "actions_call_tool_result_test",
-    srcs = ["actions/call_tool_result.test.tsx"],
-    deps = [
-        ":actions_call_tool_result",
-        "//:node_modules/@mantine/core",
-        "//:node_modules/@types/react",
-        "//:node_modules/@types/react-dom",
-        "//:node_modules/react",
-        "//:node_modules/react-dom",
-        "//:node_modules/vitest",
-    ],
-)
-
-agentplane_vitest_test(
-    name = "actions_history_test",
-    srcs = ["actions/history.test.tsx"],
-    deps = [
-        ":actions_client",
-        ":actions_history",
-        ":actions_requests",
-        ":actions_testing",
-        "//:node_modules/@types/react",
-        "//:node_modules/react",
-        "//:node_modules/vitest",
-    ],
-)
-
-ts_library(
-    name = "actions_testing",
-    testonly = True,
-    srcs = ["actions/testing.tsx"],
-    tsconfig = TSCONFIG,
-    deps = [
-        ":actions_client",
-        "//:node_modules/@mantine/core",
-        "//:node_modules/@types/react",
-        "//:node_modules/@types/react-dom",
-        "//:node_modules/react",
-        "//:node_modules/react-dom",
-        "//:node_modules/vitest",
-    ],
-)
-
 js_library(
     name = "connections_css",
     srcs = ["settings/connections.css"],
@@ -649,12 +270,12 @@ ts_library(
     srcs = ["caller_grants.tsx"],
     tsconfig = TSCONFIG,
     deps = [
-        ":actions_policy",
         ":client",
         ":egress",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
         "//:node_modules/react",
+        "//agentplane/app/frontend/actions:policy",
     ],
 )
 
@@ -697,12 +318,12 @@ ts_library(
     srcs = ["settings/mcp_servers.tsx"],
     tsconfig = TSCONFIG,
     deps = [
-        ":actions_client",
         ":client",
         ":live_stream",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
         "//:node_modules/react",
+        "//agentplane/app/frontend/actions:action_client",
     ],
 )
 
@@ -710,7 +331,6 @@ agentplane_vitest_test(
     name = "mcp_servers_test",
     srcs = ["settings/mcp_servers.test.tsx"],
     deps = [
-        ":actions_client",
         ":client",
         ":mcp_servers",
         "//:node_modules/@mantine/core",
@@ -719,6 +339,7 @@ agentplane_vitest_test(
         "//:node_modules/react",
         "//:node_modules/react-dom",
         "//:node_modules/vitest",
+        "//agentplane/app/frontend/actions:action_client",
     ],
 )
 
@@ -858,8 +479,6 @@ ts_library(
     ],
     tsconfig = TSCONFIG,
     deps = [
-        ":actions_client",
-        ":actions_policy",
         ":client",
         ":lifecycle",
         ":live",
@@ -871,6 +490,8 @@ ts_library(
         "//:node_modules/@types/react",
         "//:node_modules/react",
         "//:node_modules/react-router",
+        "//agentplane/app/frontend/actions:action_client",
+        "//agentplane/app/frontend/actions:policy",
     ],
 )
 
@@ -957,15 +578,9 @@ js_library(
     srcs = ["thread_status_indicator.css"],
 )
 
-# sidebar.tsx imports this stylesheet for the bundler.
 js_library(
     name = "sidebar_css",
     srcs = ["sidebar.css"],
-)
-
-js_library(
-    name = "actions_sidebar_css",
-    srcs = ["actions/sidebar.css"],
 )
 
 # app.tsx imports this stylesheet for the bundler.
@@ -987,7 +602,6 @@ ts_library(
     ],
     tsconfig = TSCONFIG,
     deps = [
-        ":actions_sidebar",
         ":client",
         ":live",
         ":mark_glyph",
@@ -1003,6 +617,7 @@ ts_library(
         "//:node_modules/@types/react",
         "//:node_modules/react",
         "//:node_modules/react-router",
+        "//agentplane/app/frontend/actions:sidebar",
         "//agentplane/app/frontend/threads:scroll_debug_tools",
     ],
 )
@@ -1042,35 +657,6 @@ ts_library(
 )
 
 ts_library(
-    name = "actions_policy",
-    srcs = ["actions/policy.tsx"],
-    tsconfig = TSCONFIG,
-    deps = [
-        ":actions_client",
-        ":code_block",
-        ":egress",
-        "//:node_modules/@mantine/core",
-        "//:node_modules/@types/react",
-        "//:node_modules/react",
-    ],
-)
-
-agentplane_vitest_test(
-    name = "actions_policy_test",
-    srcs = ["actions/policy.test.tsx"],
-    deps = [
-        ":actions_client",
-        ":actions_policy",
-        "//:node_modules/@mantine/core",
-        "//:node_modules/@types/react",
-        "//:node_modules/@types/react-dom",
-        "//:node_modules/react",
-        "//:node_modules/react-dom",
-        "//:node_modules/vitest",
-    ],
-)
-
-ts_library(
     name = "notification_status",
     srcs = ["notification_status.tsx"],
     tsconfig = TSCONFIG,
@@ -1093,7 +679,6 @@ ts_library(
     ],
     tsconfig = TSCONFIG,
     deps = [
-        ":actions_policy",
         ":client",
         ":egress",
         ":json_view",
@@ -1111,6 +696,7 @@ ts_library(
         "//:node_modules/@types/react",
         "//:node_modules/react",
         "//:node_modules/react-router",
+        "//agentplane/app/frontend/actions:policy",
         "//agentplane/runner:protocol_pb",
     ],
 )
@@ -1222,10 +808,10 @@ agentplane_vitest_test(
     name = "inline_code_test",
     srcs = ["inline_code.test.tsx"],
     deps = [
-        ":actions_testing",
         ":code_block",
         "//:node_modules/@types/react",
         "//:node_modules/vitest",
+        "//agentplane/app/frontend/actions:testing",
     ],
 )
 
@@ -1279,32 +865,6 @@ ts_library(
 )
 
 ts_library(
-    name = "actions_notifications",
-    srcs = [
-        "actions/notifications/index.ts",
-        "actions/notifications/kubernetes_admin/pods_list_in_namespace.ts",
-        "actions/notifications/ssh/exec.ts",
-        "actions/notifications/types.ts",
-    ],
-    tsconfig = TSCONFIG,
-    deps = [
-        ":actions_kubernetes_pod_list_schema",
-        ":actions_types",
-        ":ssh_action_schemas",
-    ],
-)
-
-agentplane_vitest_test(
-    name = "actions_notifications_test",
-    srcs = ["actions/notifications/index.test.ts"],
-    deps = [
-        ":actions_notifications",
-        ":actions_types",
-        "//:node_modules/vitest",
-    ],
-)
-
-ts_library(
     name = "app",
     srcs = [
         "app.tsx",
@@ -1316,9 +876,6 @@ ts_library(
     ],
     tsconfig = TSCONFIG,
     deps = [
-        ":actions_detail",
-        ":actions_history",
-        ":actions_requests",
         ":consent",
         ":live",
         ":sandbox_page",
@@ -1333,6 +890,9 @@ ts_library(
         "//:node_modules/@types/react",
         "//:node_modules/react",
         "//:node_modules/react-router",
+        "//agentplane/app/frontend/actions:detail",
+        "//agentplane/app/frontend/actions:history",
+        "//agentplane/app/frontend/actions:requests",
         "//agentplane/app/frontend/threads:projected_session",
         "//agentplane/app/frontend/threads:thread_store",
         "//agentplane/app/frontend/threads:thread_sync",
@@ -1379,7 +939,6 @@ agentplane_vitest_test(
     name = "sandboxes_test",
     srcs = ["sandboxes.test.tsx"],
     deps = [
-        ":actions_client",
         ":client",
         ":sandboxes",
         ":test_model_catalog",
@@ -1390,6 +949,7 @@ agentplane_vitest_test(
         "//:node_modules/react-dom",
         "//:node_modules/react-router",
         "//:node_modules/vitest",
+        "//agentplane/app/frontend/actions:action_client",
     ],
 )
 
@@ -1426,7 +986,6 @@ ts_library(
     ],
     tsconfig = TSCONFIG,
     deps = [
-        ":actions_client",
         ":app",
         ":clamped_block",
         ":client",
@@ -1444,6 +1003,7 @@ ts_library(
         "//:node_modules/@types/react-dom",
         "//:node_modules/react",
         "//:node_modules/react-dom",
+        "//agentplane/app/frontend/actions:action_client",
         "//agentplane/app/frontend/threads:local_commands",
         "//agentplane/runner:protocol_pb",
     ],
