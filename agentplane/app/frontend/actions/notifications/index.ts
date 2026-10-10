@@ -17,10 +17,7 @@ const FORMATTERS: ReadonlyMap<string, ReadonlyMap<string, ActionNotificationForm
  * caller-authored summary and description; arbitrary arguments can be large or sensitive. */
 export function formatActionNotification(request: ActionRequestView): ActionNotificationContent {
   const formatter = FORMATTERS.get(request.action.group)?.get(request.action.name);
-  const parts =
-    formatter !== undefined
-      ? (formatter(request) ?? fallbackParts(request))
-      : (catalogParts(request) ?? fallbackParts(request));
+  const parts = (formatter !== undefined ? formatter(request) : catalogParts(request)) ?? fallbackParts(request);
   return {
     title: combineNotificationTitle(request.title, parts.actionTitle),
     text: parts.text,
