@@ -97,7 +97,7 @@ pub(super) fn render_via_named_object_use_site(
                     continue;
                 };
                 if holed_value.key.span() == key_span {
-                    *holed_value.value = Expr::Ident(ident_node(&target.export_name));
+                    *holed_value.value = Expr::Ident(ident_node(&target.selector_local));
                 }
             }
 

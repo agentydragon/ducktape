@@ -143,7 +143,7 @@ service SandboxService {
   // Changed: fence, stop, seal, wait for holds, then delete. Progress comes from GetSandbox.
   rpc DeleteSandbox(DeleteSandboxRequest) returns (google.protobuf.Empty);
   rpc GetCommand(GetCommandRequest) returns (CommandStatus);                        // new
-  // Changed: replays from the runner journal below the live tail; adds a `sealed` frame.
+  // Replays from the runner journal below the live tail; sends `sealed` once runners seal.
   rpc FollowSession(FollowSessionRequest) returns (stream FollowSessionResponse);
   rpc PlaceHold(PlaceHoldRequest) returns (Hold);                                   // new, idempotent per holder
   rpc ConfirmHold(ConfirmHoldRequest) returns (Hold);                               // new: through_cursor

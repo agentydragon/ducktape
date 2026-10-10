@@ -15,7 +15,6 @@ import type { z } from "zod";
 
 import { renderCallPreview, type ToolCallPreview } from "./call_entry";
 import { renderPreview, type ToolPreview } from "./entry";
-import { gmailCallPreviews } from "./gmail/calls";
 import { gmailPreviews } from "./gmail/requests";
 import { gmailResultPreviews } from "./gmail/responses";
 import { googleCalendarCallPreviews } from "./google_calendar/calls";
@@ -26,7 +25,6 @@ import { grocyResultPreviews } from "./grocy/responses";
 import { hakuRoutinePreviews } from "./haku_routine/requests";
 import { grantsPreviews } from "./grants/requests";
 import { grantsResultPreviews } from "./grants/responses";
-import { kubectlPreviews } from "./kubectl/requests";
 import { renderResultPreview, type ToolResultPreview } from "./result_entry";
 import {
   GMAIL_SERVER_ID,
@@ -34,7 +32,6 @@ import {
   GRANTS_SERVER_ID,
   GROCY_SERVER_ID,
   HAKU_ROUTINE_SERVER_ID,
-  KUBECTL_SERVER_ID,
   TANA_SERVER_ID,
 } from "./server_ids";
 import { tanaPreviews } from "./tana/requests";
@@ -48,7 +45,6 @@ type PreviewRegistryShape = {
   [GOOGLE_CALENDAR_SERVER_ID]: typeof googleCalendarPreviews;
   [GROCY_SERVER_ID]: typeof grocyPreviews;
   [HAKU_ROUTINE_SERVER_ID]: typeof hakuRoutinePreviews;
-  [KUBECTL_SERVER_ID]: typeof kubectlPreviews;
   [GRANTS_SERVER_ID]: typeof grantsPreviews;
   [TANA_SERVER_ID]: typeof tanaPreviews;
 };
@@ -58,7 +54,6 @@ const REGISTRY: PreviewRegistryShape = {
   [GOOGLE_CALENDAR_SERVER_ID]: googleCalendarPreviews,
   [GROCY_SERVER_ID]: grocyPreviews,
   [HAKU_ROUTINE_SERVER_ID]: hakuRoutinePreviews,
-  [KUBECTL_SERVER_ID]: kubectlPreviews,
   [GRANTS_SERVER_ID]: grantsPreviews,
   [TANA_SERVER_ID]: tanaPreviews,
 } satisfies Record<string, Record<string, ToolPreview>>;
@@ -86,12 +81,10 @@ const RUNTIME_RESULT_REGISTRY: Record<string, Record<string, ToolResultPreview>>
 
 // Combined pending/finished widgets — see call_entry.tsx.
 type CallRegistryShape = {
-  [GMAIL_SERVER_ID]: typeof gmailCallPreviews;
   [GOOGLE_CALENDAR_SERVER_ID]: typeof googleCalendarCallPreviews;
 };
 
 const CALL_REGISTRY: CallRegistryShape = {
-  [GMAIL_SERVER_ID]: gmailCallPreviews,
   [GOOGLE_CALENDAR_SERVER_ID]: googleCalendarCallPreviews,
 } satisfies Record<string, Record<string, ToolCallPreview>>;
 type CallRegistry = typeof CALL_REGISTRY;

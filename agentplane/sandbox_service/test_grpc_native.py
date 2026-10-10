@@ -203,6 +203,9 @@ async def test_launch_delivery_and_restart_preserve_evidence_and_configuration(
                     assert entry.event.command_admitted.command.command_id != "no-wake"
         finally:
             stopped.cancel()
+        # A cursor past the journal's end is refused, not followed until the journal reaches it.
+        with pytest.raises(RunnerError):
+            await runner.attach(SESSION, after_cursor=stopped.attached.last_cursor + 1)
     # Stop the service, change its configuration and stored defaults, and recover solely from the runner.
     set_binding(cluster, SandboxBinding(bootstrap="exit 42", session_defaults=SessionDefaults(model="changed")))
     async with service_client(
