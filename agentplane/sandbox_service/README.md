@@ -30,8 +30,8 @@ admission before model completion, receipt replay, and refusing to create/resume
 `inventory.py` now owns the existing Kubernetes-backed inventory and low-level
 Sandbox lifecycle operations. `session_config.py` owns the concrete, serialized
 launch fields; `kubernetes_grants.py` owns the selected grant shapes. Consumers import public models and read-only projections, not these mutation implementations. UI preset catalogs remain app-owned and are not interpreted
-by this package. The API uses `SessionDefaults` / `session_defaults`; `binding_storage.py` alone preserves the legacy
-annotation field spelling for data preservation and rollback. Annotation keys, defaults,
+by this package. The API and the binding annotation use `SessionDefaults` / `session_defaults`;
+`binding_storage.py` still reads the legacy `thread_defaults` spelling on Sandboxes written before the rename. Annotation keys, defaults,
 ServiceAccount creation, PVC policy, and provisioning behavior are unchanged.
 
 `provisioning.py` owns recoverable grant orchestration and policy binding, with pending launch

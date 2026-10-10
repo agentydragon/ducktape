@@ -41,7 +41,7 @@ async def test_read_retained_sandbox_without_mutation(cluster: Cluster) -> None:
         '{"bootstrap":"printf boot"}',
     ],
 )
-async def test_legacy_binding_storage_is_preserved_but_not_exposed(cluster: Cluster, raw: str) -> None:
+async def test_legacy_binding_spelling_reads_as_session_defaults(cluster: Cluster, raw: str) -> None:
     sandbox = cluster.fake.objects[SANDBOXES_PLURAL][SANDBOX]
     sandbox["metadata"].setdefault("annotations", {})[SANDBOX_BINDING_ANNOTATION] = raw
     before = deepcopy(cluster.fake.objects)
@@ -49,7 +49,7 @@ async def test_legacy_binding_storage_is_preserved_but_not_exposed(cluster: Clus
     binding = await cluster.inventory.binding(SANDBOX)
     assert binding is not None
     assert view.binding == binding
-    assert json.loads(write_binding(binding)) == json.loads(raw)
+    assert json.loads(write_binding(binding)) == json.loads(raw.replace("thread_defaults", "session_defaults"))
     if binding.HasField("session_defaults"):
         spec = launch_spec(
             SessionDestination(

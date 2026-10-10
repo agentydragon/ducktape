@@ -155,7 +155,7 @@ async def test_headless_create_list_and_uid_pinned_lifecycle(api: SandboxService
     assert not view.binding.session_defaults.HasField("cwd")
     stored = case.custom.objects[("sandboxes", view.name)]["metadata"]["annotations"]
     assert json.loads(stored[SANDBOX_BINDING_ANNOTATION]) == {
-        "thread_defaults": {"model": "test-model", "instructions": ""},
+        "session_defaults": {"model": "test-model", "instructions": ""},
         "bootstrap": "printf ready",
     }
     assert view.initializing
