@@ -138,7 +138,7 @@ class RunnerChannelService(protocol_pb2_grpc.RunnerChannelServicer):
         return principal, await resolve_peer(principal, inventory=self.inventory, core=self.core)
 
     @override
-    async def Follow(  # type: ignore[override]
+    async def Follow(
         self, request_iterator: AsyncIterator[protocol_pb2.FollowFrame], context: grpc.aio.ServicerContext
     ) -> empty_pb2.Empty:
         # Staged for the Sandbox Service side of event following; until then no Welcome agrees `events`.
