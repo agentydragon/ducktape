@@ -16,6 +16,8 @@ from agentplane.sandbox_service.session_history.store import HistoryConflictErro
 from agentplane.sandbox_service.session_registry import OpenReservation, SessionRegistry
 from util.testing.postgres import create_database_sync, force_drop_database_sync
 
+# gazelle:include_dep //agentplane/sandbox_service/session_history:conftest
+
 pytest_plugins = ("agentplane.sandbox_service.session_history.conftest",)
 
 
