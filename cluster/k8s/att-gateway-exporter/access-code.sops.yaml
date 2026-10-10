@@ -1,0 +1,34 @@
+apiVersion: v1
+kind: Secret
+metadata:
+    name: att-gateway-exporter-access-code
+    namespace: monitoring
+    annotations:
+        description: BGW320 device access code; the exporter logs in with it to read the event log and NAT table
+type: Opaque
+stringData:
+    access-code: ENC[AES256_GCM,data:b42F2Co91TnDew==,iv:F4wGwfVcXj69mWwPg3cIH08AVrpavdrPz3BeyXJSk6k=,tag:DzsRAXg+PJKR4GocNby/vA==,type:str]
+sops:
+    age:
+        - enc: |
+            -----BEGIN AGE ENCRYPTED FILE-----
+            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBVdmhaY0RwNUUzTkJ5dEUw
+            WnZVZUlFbkk4OHgwTllHQ01PM0E0bjB5c0hBCjJRRnRRdDVZRStYS3g4KzhCUHFB
+            RW9WUXhRMzM0bldOOS9WVW83V0ZlMG8KLS0tIGdvVFRLeXM4V3NPRzFtdkdOVHhB
+            UkVRZHNJUHVROGZ0NEJML3Y1SlNRaHMKRXp8lDNRLOTeLgrO8tR+5Dby6naxHlNk
+            HrORWU3QppG8KMKJfQFa5lvtwtbQOrm3oUC/hPK3KurZYahMhx8V3g==
+            -----END AGE ENCRYPTED FILE-----
+          recipient: age1u858fg7wyakvv5tj7dh3e04jc4hvj7l8880m4nhh9djtx8g04gxs8xyjh0
+        - enc: |
+            -----BEGIN AGE ENCRYPTED FILE-----
+            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBFZFljdWFad05CVlRvZHJw
+            a3oxU20xekxralJjMXZXNndJN2laUVJiQmxNCnRwMmZiQUpYVmpqVWtMZ001bU9n
+            cFBGY2pZUFhyTm8xOGtRYXZFL1dZRW8KLS0tIFpqS200R0NIT3Ywb2lCQ0x5TzRM
+            VXhXSzhoMFdwOHl1emprQ2Y0NVBtU1UKA5LAQBnqqkUfEtJjI6QFI+WXfEvqaqtX
+            BmW9waX3TAo/ZNpgiUVbMshFSP2WSbPWCqw66Nghdk2RRUWntrlbGg==
+            -----END AGE ENCRYPTED FILE-----
+          recipient: age1nywlwepsyfxvyhqwkjquzz02nmus65gf6qewfjju4alym8f7se5qnua8na
+    encrypted_regex: ^(data|stringData)$
+    lastmodified: "2026-10-10T00:58:40Z"
+    mac: ENC[AES256_GCM,data:8AF0BS+SCbBc5tAstjBY+fp4vVx2J2DZiW3AKGLA6Gqifv8KbaoyitYW5mn/9i+1G2aL5/59ZNvjYt8b1fg6eQAWYvHrn01MKVvFI+0bRHYNdU+Ox3ZPG07Ct2rQR/lwScXbyGu3gqQ4xb9JSnLOSHK2hVv+x01A2oC++ZKxYsg=,iv:gw9FQa6wz7Qj0+rFRBOpADdw49/6yOMFAbX6EsIF8o4=,tag:iwfVAV73rtHCVfyAPX17JA==,type:str]
+    version: 3.13.3
