@@ -904,8 +904,8 @@ ts_library(
 ts_library(
     name = "mosaic",
     srcs = [
-        "mosaic.tsx",
         "css.d.ts",
+        "mosaic.tsx",
         "tabler_icons.d.ts",
     ],
     tsconfig = TSCONFIG,
