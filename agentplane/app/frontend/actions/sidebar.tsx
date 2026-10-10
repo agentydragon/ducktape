@@ -2,14 +2,13 @@ import { Badge, Button, Group, Stack, Text, Tooltip, UnstyledButton } from "@man
 import IconArrowRight from "@tabler/icons-react/dist/esm/icons/IconArrowRight.mjs";
 import IconChevronDown from "@tabler/icons-react/dist/esm/icons/IconChevronDown.mjs";
 import IconChevronRight from "@tabler/icons-react/dist/esm/icons/IconChevronRight.mjs";
-import { type JSX, type ReactNode, useContext, useEffect, useRef, useState } from "react";
+import { type JSX, useContext, useEffect, useRef, useState } from "react";
 import { Link, useLocation } from "react-router";
 
 import { serviceAccountKey } from "../client";
 import { StaleNotice } from "../stream_status";
-import { actionService } from "./client";
 import { canApproveInline, compactActionArguments, renderArguments } from "./rendering/index";
-import { ActionRequestsContext, useActionRequests } from "./requests";
+import { ActionRequestsContext } from "./requests";
 import "./sidebar.css";
 
 const MANUAL_CLOSE_KEY = "agentplane-actions-sidebar-manually-closed";
@@ -33,12 +32,6 @@ function writeManuallyClosedRequests(requestIds: readonly string[]): void {
   } catch {
     // The choice only affects whether the sidebar expands automatically; blocked storage is harmless.
   }
-}
-
-/** One action stream shared by the sidebar and the full Actions page. */
-export function ActionAffordance({ children }: { children: ReactNode }): JSX.Element {
-  const actions = useActionRequests(actionService);
-  return <ActionRequestsContext.Provider value={actions}>{children}</ActionRequestsContext.Provider>;
 }
 
 /** Pending-only queue embedded below the thread list in the persistent navigation sidebar. */

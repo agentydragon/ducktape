@@ -251,15 +251,14 @@ ts_library(
 )
 
 ts_library(
-    name = "actions_affordance",
+    name = "actions_sidebar",
     srcs = [
-        "actions/affordance.tsx",
+        "actions/sidebar.tsx",
         "css.d.ts",
         "tabler_icons.d.ts",
     ],
     tsconfig = TSCONFIG,
     deps = [
-        ":actions_client",
         ":actions_rendering",
         ":actions_requests",
         ":actions_sidebar_css",
@@ -292,7 +291,8 @@ agentplane_vitest_test(
     name = "actions_sidebar_test",
     srcs = ["actions/sidebar.test.tsx"],
     deps = [
-        ":actions_affordance",
+        ":actions_requests",
+        ":actions_sidebar",
         ":actions_testing",
         "//:node_modules/@types/react",
         "//:node_modules/react",
@@ -309,7 +309,6 @@ ts_library(
         ":actions_client",
         ":actions_history",
         ":actions_requests",
-        ":client",
         "//:node_modules/@mantine/core",
         "//:node_modules/@tabler/icons-react",
         "//:node_modules/@types/react",
@@ -322,10 +321,10 @@ agentplane_vitest_test(
     name = "actions_detail_test",
     srcs = ["actions/detail.test.tsx"],
     deps = [
-        ":actions_affordance",
         ":actions_client",
         ":actions_detail",
         ":actions_requests",
+        ":actions_sidebar",
         ":actions_testing",
         "//:node_modules/@types/react",
         "//:node_modules/react",
@@ -968,7 +967,7 @@ ts_library(
     ],
     tsconfig = TSCONFIG,
     deps = [
-        ":actions_affordance",
+        ":actions_sidebar",
         ":client",
         ":live",
         ":mark_glyph",
@@ -1295,7 +1294,6 @@ ts_library(
     ],
     tsconfig = TSCONFIG,
     deps = [
-        ":actions_affordance",
         ":actions_detail",
         ":actions_history",
         ":actions_requests",

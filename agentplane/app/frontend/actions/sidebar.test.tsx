@@ -4,7 +4,8 @@ import { act, type JSX } from "react";
 import { MemoryRouter, useLocation } from "react-router";
 import { afterEach, expect, it, vi } from "vitest";
 
-import { ActionAffordance, ActionsSidebarSection } from "./affordance";
+import { ActionsSidebarSection } from "./sidebar";
+import { ActionRequestsProvider } from "./requests";
 import { mount, request, unmountLast } from "./testing";
 
 const stream: { current?: EventTarget } = {};
@@ -41,10 +42,10 @@ it("keeps the Actions section available and suppresses auto-open until the pendi
   vi.stubGlobal("EventSource", ActionStream);
   const container = await mount(
     <MemoryRouter initialEntries={["/threads/test-thread"]}>
-      <ActionAffordance>
+      <ActionRequestsProvider>
         <CurrentPath />
         <ActionsSidebarSection />
-      </ActionAffordance>
+      </ActionRequestsProvider>
     </MemoryRouter>
   );
   const first = request("decision_pending", 1);
@@ -63,6 +64,8 @@ it("keeps the Actions section available and suppresses auto-open until the pendi
   await send([first, second]);
   expect(toggle.getAttribute("aria-expanded")).toBe("false");
   expect(container.textContent).toContain("2");
+  expect(container.textContent).not.toContain(second.title);
+  await act(async () => toggle.click());
   expect(container.textContent).toContain(second.title);
 
   await send([]);
@@ -75,10 +78,10 @@ it("expands a compact action preview and only offers inline approval to eligible
   vi.stubGlobal("EventSource", ActionStream);
   const container = await mount(
     <MemoryRouter initialEntries={["/threads/test-thread"]}>
-      <ActionAffordance>
+      <ActionRequestsProvider>
         <CurrentPath />
         <ActionsSidebarSection />
-      </ActionAffordance>
+      </ActionRequestsProvider>
     </MemoryRouter>
   );
   const pod = {

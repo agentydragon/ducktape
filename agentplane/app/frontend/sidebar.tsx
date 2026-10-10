@@ -15,7 +15,7 @@ import { type JSX, useEffect, useRef, useState, type PointerEvent } from "react"
 import { Link, useLocation, useMatch, useNavigate } from "react-router";
 
 import { archiveThread, displayableError, type SandboxView, type ThreadView } from "./client";
-import { ActionsSidebarSection } from "./actions/affordance";
+import { ActionsSidebarSection } from "./actions/sidebar";
 import { LiveStatus, useRequiredThreadsLive, type Live, type ThreadsSnapshot } from "./live";
 import { MarkGlyph } from "./mark_glyph";
 import { sandboxStatusDetail, sandboxSummary } from "./sandbox_status";

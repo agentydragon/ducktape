@@ -4,9 +4,9 @@ import IconMenu2 from "@tabler/icons-react/dist/esm/icons/IconMenu2.mjs";
 import { type JSX, useCallback, useEffect, useMemo, useState } from "react";
 import { HashRouter, Route, Routes, useLocation, useMatch, useNavigate, useParams } from "react-router";
 
-import { ActionAffordance } from "./actions/affordance";
 import { ActionRequestDetail } from "./actions/detail";
 import { ActionHistory } from "./actions/history";
+import { ActionRequests, ActionRequestsProvider } from "./actions/requests";
 import { ConnectionConsent } from "./consent";
 import { SandboxPage } from "./sandbox_page";
 import { SandboxesLiveProvider, ThreadsLiveProvider } from "./live";
@@ -151,7 +151,7 @@ function AppRoutes(): JSX.Element {
   );
   return (
     <TopbarContext.Provider value={topbarSlots}>
-      <ActionAffordance>
+      <ActionRequestsProvider>
         <div className="agentplane-shell">
           <Sidebar
             settingsOpen={settingsTab !== null}
@@ -182,7 +182,7 @@ function AppRoutes(): JSX.Element {
             onClose={() => setSettingsTab(null)}
           />
         </div>
-      </ActionAffordance>
+      </ActionRequestsProvider>
     </TopbarContext.Provider>
   );
 }

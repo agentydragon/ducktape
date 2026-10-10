@@ -1,13 +1,13 @@
 // @vitest-environment happy-dom
 
 import { type JSX, act } from "react";
-import { MemoryRouter, Route, Routes, useParams, useLocation } from "react-router";
+import { MemoryRouter, Route, Routes, useLocation, useParams } from "react-router";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
 import { ActionRequestDetail } from "./detail";
-import { ActionRequestsContext } from "./requests";
-import type { ActionRequestView, ActionService } from "./client";
-import { ActionsSidebarSection } from "./affordance";
+import { actionGroupService, actionService } from "./client";
+import { ActionsSidebarSection } from "./sidebar";
+import { ActionRequestsProvider } from "./requests";
 import { mount, request, unmountLast } from "./testing";
 
 const ROW = {
@@ -15,11 +15,28 @@ const ROW = {
   action: { group: "ssh", name: "exec" },
   arguments: { host: "test-host.example", user: "test-user", command: "echo exact-command" },
 };
+const stream: { current?: EventTarget } = {};
 
-function DetailRoute({ service }: { service: ActionService }): JSX.Element {
+class ActionStream extends EventTarget {
+  close = vi.fn();
+
+  constructor(url: string) {
+    super();
+    expect(url).toBe("/actions/stream?state=decision_pending");
+    stream.current = this;
+  }
+}
+
+async function send(rows: (typeof ROW)[]): Promise<void> {
+  await act(async () => {
+    stream.current?.dispatchEvent(new MessageEvent("snapshot", { data: JSON.stringify(rows) }));
+  });
+}
+
+function DetailRoute(): JSX.Element {
   const { requestId } = useParams();
   if (requestId === undefined) throw new Error("missing requestId");
-  return <ActionRequestDetail requestId={requestId} service={service} />;
+  return <ActionRequestDetail requestId={requestId} />;
 }
 
 function CurrentPath(): JSX.Element {
@@ -27,47 +44,32 @@ function CurrentPath(): JSX.Element {
   return <div data-testid="current-path">{location.pathname}</div>;
 }
 
-function App({
-  initialPath,
-  service,
-  requests,
-}: {
-  initialPath: string;
-  service: ActionService;
-  requests: ActionRequestView[];
-}): JSX.Element {
-  const actions = {
-    requests,
-    error: null,
-    loading: false,
-    stream: null,
-    deciding: null,
-    decide: vi.fn(),
-  };
+function App({ initialPath }: { initialPath: string }): JSX.Element {
   return (
     <MemoryRouter initialEntries={[initialPath]}>
-      <ActionRequestsContext.Provider value={actions}>
+      <ActionRequestsProvider>
         <ActionsSidebarSection />
         <CurrentPath />
         <Routes>
           <Route path="/threads/:threadId" element={<div>Thread contents remain open</div>} />
-          <Route path="/actions/:requestId" element={<DetailRoute service={service} />} />
+          <Route path="/actions/:requestId" element={<DetailRoute />} />
           <Route path="/actions" element={<div>All actions</div>} />
         </Routes>
-      </ActionRequestsContext.Provider>
+      </ActionRequestsProvider>
     </MemoryRouter>
   );
 }
 
-beforeEach(() => sessionStorage.clear());
+beforeEach(() => {
+  sessionStorage.clear();
+  stream.current = undefined;
+  vi.stubGlobal("EventSource", ActionStream);
+});
 
-it("opens full details from the sidebar and Back returns to the original in-app route", async () => {
-  const service: ActionService = {
-    list: vi.fn(async () => [ROW]),
-    get: vi.fn(async () => ROW),
-    decide: vi.fn(async (item) => item),
-  };
-  const container = await mount(<App initialPath="/threads/example-thread" service={service} requests={[ROW]} />);
+it("opens cached stream details without a reload and Back returns to the original in-app route", async () => {
+  const get = vi.spyOn(actionService, "get");
+  const container = await mount(<App initialPath="/threads/example-thread" />);
+  await send([ROW]);
 
   const disclosure = container.querySelector<HTMLButtonElement>(`button[aria-label="Expand ${ROW.title}"]`);
   if (!disclosure) throw new Error("missing pending action disclosure");
@@ -77,7 +79,7 @@ it("opens full details from the sidebar and Back returns to the original in-app 
   await act(async () => detailsLink.click());
 
   expect(container.querySelector('[data-testid="current-path"]')?.textContent).toBe(`/actions/${ROW.id}`);
-  expect(service.get).toHaveBeenCalledWith(ROW.id);
+  expect(get).not.toHaveBeenCalled();
   expect(container.textContent).toContain("Exact arguments (unredacted)");
   expect(container.textContent).toContain("exact-command");
 
@@ -88,13 +90,13 @@ it("opens full details from the sidebar and Back returns to the original in-app 
   expect(container.textContent).toContain("Thread contents remain open");
 });
 
-it("falls back to the Actions page when detail was opened without an in-app origin", async () => {
-  const service: ActionService = {
-    list: vi.fn(async () => []),
-    get: vi.fn(async () => ROW),
-    decide: vi.fn(async (item) => item),
-  };
-  const container = await mount(<App initialPath={`/actions/${ROW.id}`} service={service} requests={[]} />);
+it("loads uncached deep links and falls back to the Actions page on Back", async () => {
+  const get = vi.spyOn(actionService, "get").mockResolvedValue(ROW);
+  const container = await mount(<App initialPath={`/actions/${ROW.id}`} />);
+  await send([]);
+  expect(get).toHaveBeenCalledWith(ROW.id);
+  expect(container.textContent).toContain("Exact arguments (unredacted)");
+
   const back = [...container.querySelectorAll("button")].find((candidate) => candidate.textContent?.trim() === "Back");
   if (!back) throw new Error("missing action detail Back button");
   await act(async () => back.click());
@@ -102,4 +104,36 @@ it("falls back to the Actions page when detail was opened without an in-app orig
   expect(container.textContent).toContain("All actions");
 });
 
-afterEach(unmountLast);
+it("refreshes the durable receipt when SSE removes an action that was pending", async () => {
+  vi.spyOn(actionGroupService, "list").mockResolvedValue([]);
+  const allowed = {
+    ...request("allowed", 21),
+    id: ROW.id,
+    title: ROW.title,
+    action: ROW.action,
+    arguments: ROW.arguments,
+  };
+  const get = vi.spyOn(actionService, "get").mockResolvedValue(allowed);
+  const container = await mount(<App initialPath="/threads/example-thread" />);
+  await send([ROW]);
+
+  const disclosure = container.querySelector<HTMLButtonElement>(`button[aria-label="Expand ${ROW.title}"]`);
+  if (!disclosure) throw new Error("missing pending action disclosure");
+  await act(async () => disclosure.click());
+  const detailsLink = container.querySelector<HTMLAnchorElement>('a[aria-label^="View details for ssh / exec"]');
+  if (!detailsLink) throw new Error("missing action details link");
+  await act(async () => detailsLink.click());
+  expect(get).not.toHaveBeenCalled();
+
+  await send([]);
+  expect(get).toHaveBeenCalledWith(ROW.id);
+  expect(container.querySelector('button[aria-label="Approve"]')).toBeNull();
+  expect(container.querySelector('button[aria-label="Deny"]')).toBeNull();
+});
+
+afterEach(async () => {
+  await unmountLast();
+  sessionStorage.clear();
+  vi.unstubAllGlobals();
+  vi.restoreAllMocks();
+});
