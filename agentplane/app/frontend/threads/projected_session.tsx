@@ -63,7 +63,7 @@ import { DISCLOSURE_STICKY_Z_INDEX } from "../disclosure";
 import { snapshotFresh, threadStatusFromSnapshot } from "../thread_status";
 import { sandboxReady, sandboxSummary } from "../sandbox_status";
 import { NotificationStatus } from "../notification_status";
-import { TopbarActions, TopbarTitle } from "../topbar";
+import { TopbarActions, TopbarContext, TopbarTitle, type TopbarSlots } from "../topbar";
 import { installThreadFavicon } from "../thread_favicon";
 import {
   appDocumentTitle,
@@ -74,6 +74,8 @@ import {
 import "./projected_session.css";
 
 type ReadingAnchor = { key: string; offset: number; target?: HTMLElement };
+
+const NO_TOPBAR_SLOTS: TopbarSlots = { title: null, actions: null };
 
 /** A run of tool calls and reasoning steps, folded behind its summary until opened. */
 function CollapsibleRows({
@@ -1501,7 +1503,13 @@ export function ProjectedSession({
     <Group gap="xs" wrap="nowrap" style={{ minWidth: 0 }}>
       {thread && <ThreadStatusIndicator kind={topbarStatus.kind} label={topbarStatus.label} />}
       <Box style={{ flex: 1, minWidth: 0 }}>
-        <ThreadTitle threadId={threadId} thread={thread} onRenamed={setThread} onError={setError} />
+        <ThreadTitle
+          threadId={threadId}
+          thread={thread}
+          placeholder={embedded ? `Thread ${threadId.slice(0, 8)}` : threadId}
+          onRenamed={setThread}
+          onError={setError}
+        />
       </Box>
       {thread && (
         <Text size="xs" c="dimmed" style={{ flexShrink: 0 }}>
@@ -1546,13 +1554,25 @@ export function ProjectedSession({
         )}
         {thread && (
           <sync.Thread key={threadId} threadId={threadId}>
-            <SyncedThread
-              threadId={threadId}
-              thread={thread}
-              available={inventoryFresh && sandboxReady(sandbox)}
-              inventory={environment.stream}
-              onStatusChange={setTabStatus}
-            />
+            {embedded ? (
+              <TopbarContext.Provider value={NO_TOPBAR_SLOTS}>
+                <SyncedThread
+                  threadId={threadId}
+                  thread={thread}
+                  available={inventoryFresh && sandboxReady(sandbox)}
+                  inventory={environment.stream}
+                  onStatusChange={setTabStatus}
+                />
+              </TopbarContext.Provider>
+            ) : (
+              <SyncedThread
+                threadId={threadId}
+                thread={thread}
+                available={inventoryFresh && sandboxReady(sandbox)}
+                inventory={environment.stream}
+                onStatusChange={setTabStatus}
+              />
+            )}
           </sync.Thread>
         )}
       </Stack>

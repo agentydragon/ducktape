@@ -15,11 +15,13 @@ import "./thread_title.css";
 export function ThreadTitle({
   threadId,
   thread,
+  placeholder = threadId,
   onRenamed,
   onError,
 }: {
   threadId: string;
   thread: ThreadView | null;
+  placeholder?: string;
   onRenamed: (thread: ThreadView) => void;
   onError: (message: string) => void;
 }): JSX.Element {
@@ -46,7 +48,7 @@ export function ThreadTitle({
       variant="unstyled"
       size="sm"
       value={shown}
-      placeholder={threadId}
+      placeholder={placeholder}
       maxLength={200}
       classNames={{ input: "agentplane-thread-name-input" }}
       onChange={(event) => setDraft(event.currentTarget.value)}
