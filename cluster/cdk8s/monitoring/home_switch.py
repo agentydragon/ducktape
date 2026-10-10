@@ -21,6 +21,7 @@ from tofu_controller.io.fluxcd.contrib.infra import (
     TerraformV1Alpha2SpecRunnerPodTemplateSpecVolumeMounts,
     TerraformV1Alpha2SpecRunnerPodTemplateSpecVolumes,
     TerraformV1Alpha2SpecRunnerPodTemplateSpecVolumesConfigMap,
+    TerraformV1Alpha2SpecStoreReadablePlan,
 )
 
 from cluster.cdk8s import terraform
@@ -91,6 +92,10 @@ def chart(app: App) -> Chart:
         "terraform",
         name=NAME,
         variables=None,
+        # Plans every interval and reports drift; a person approves each apply (README.md).
+        auto_apply=False,
+        # Secret-bearing attributes come from Secrets, so the plan masks them.
+        store_readable_plan=TerraformV1Alpha2SpecStoreReadablePlan.HUMAN,
         node_selector=_HOME_LAN,
         volumes=[
             TerraformV1Alpha2SpecRunnerPodTemplateSpecVolumes(
@@ -120,5 +125,7 @@ def home_switch(
         "monitoring-home-switch",
         directory,
         timeout="10m",
+        # A Terraform with a plan awaiting approval is never Ready, which is not a failed rollout.
+        wait=False,
         depends_on=flux_kustomization_depends_on_many(cert_manager, external_secrets_operator, tofu_controller),
     )

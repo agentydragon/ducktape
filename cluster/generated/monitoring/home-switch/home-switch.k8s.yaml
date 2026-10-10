@@ -108,7 +108,6 @@ metadata:
   name: home-switch
   namespace: flux-system
 spec:
-  approvePlan: auto
   backendConfig:
     customConfiguration: |
       backend "pg" {
@@ -145,3 +144,4 @@ spec:
     kind: GitRepository
     name: ducktape
     namespace: ducktape-flux
+  storeReadablePlan: human

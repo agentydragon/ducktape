@@ -139,11 +139,14 @@ def gitops_terraform(
     env_from: Sequence[TerraformV1Alpha2SpecRunnerPodTemplateSpecEnvFrom] = (),
     schema: str | None = None,
     store_readable_plan: TerraformV1Alpha2SpecStoreReadablePlan | None = None,
+    auto_apply: bool = True,
     node_selector: Mapping[str, str] | None = None,
     volumes: Sequence[TerraformV1Alpha2SpecRunnerPodTemplateSpecVolumes] = (),
     volume_mounts: Sequence[TerraformV1Alpha2SpecRunnerPodTemplateSpecVolumeMounts] = (),
 ) -> Terraform:
-    """The `tf/gitops/<name>` module, run from the `ducktape` GitRepository and auto-approved.
+    """The `tf/gitops/<name>` module, run from the `ducktape` GitRepository and, unless
+    `auto_apply=False`, auto-approved. Without auto-apply each run plans and waits for a person to
+    set `approvePlan` to that plan's id, so drift is reported but nothing changes unasked.
     `name` is the module directory and, underscored, its state schema unless `schema` names the
     one its state already lives in.
 
@@ -174,7 +177,7 @@ def gitops_terraform(
         ),
         path=f"./{ducktape_flux.TF_GITOPS_ROOT}/{name}",
         interval=interval,
-        approve_plan="auto",
+        approve_plan="auto" if auto_apply else None,
         store_readable_plan=store_readable_plan,
         vars=None
         if variables is None
