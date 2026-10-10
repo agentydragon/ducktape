@@ -52,18 +52,21 @@ def _reject_constant(_value: str) -> None:
     raise InvalidJsonBodyError("Non-finite JSON number")
 
 
-def parse_json_body(headers: Mapping[str, Sequence[str]], body: bytes | None) -> dict[str, Any]:
-    """Parse only uncompressed UTF-8 application/json, never logging raw parser exceptions."""
+def is_json_envelope(headers: Mapping[str, Sequence[str]]) -> bool:
+    """Whether the headers declare the only body a JSON credential can be presented in."""
     values = {name.lower(): tuple(value) for name, value in headers.items()}
     content_types = values.get("content-type", ())
     encodings = values.get("content-encoding", ())
-    if (
-        body is None
-        or len(body) > MAX_JSON_BODY_BYTES
-        or len(content_types) != 1
-        or content_types[0].partition(";")[0].strip().lower() != "application/json"
-        or (encodings and encodings != ("identity",))
-    ):
+    return (
+        len(content_types) == 1
+        and content_types[0].partition(";")[0].strip().lower() == "application/json"
+        and encodings in ((), ("identity",))
+    )
+
+
+def parse_json_body(headers: Mapping[str, Sequence[str]], body: bytes | None) -> dict[str, Any]:
+    """Parse only uncompressed UTF-8 application/json, never logging raw parser exceptions."""
+    if body is None or len(body) > MAX_JSON_BODY_BYTES or not is_json_envelope(headers):
         raise InvalidJsonBodyError("Unsupported JSON body envelope")
     try:
         value = json.loads(body.decode("utf-8"), object_pairs_hook=_unique_object, parse_constant=_reject_constant)

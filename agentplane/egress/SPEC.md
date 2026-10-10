@@ -226,6 +226,11 @@ GitOps gates and live rollout acceptance remain separate operational requirement
   trailers (`test_buildbuddy_http_and_grpc_metadata_placeholder_is_substituted`). The client
   trusts the interception CA, the proxy verifies the upstream TLS certificate, and neither leg
   uses mTLS.
+- **Only a JSON request body is held for the decision.** A request whose headers declare anything
+  but an uncompressed `application/json` body is decided from its headers and its body streams to
+  the upstream as it arrives, so an interactive stream such as plaintext gRPC inside a tunnel works
+  (`test_plaintext_grpc_stream_metadata_placeholder_is_substituted`). A refusal of such a request
+  is sent once its body has been read.
 - This proves local Bazel, remote-cache/execution, BES, and BuildBuddy API clients whose credential
   is request metadata. It does **not** make `bb remote` credentialless: the CLI authenticates its
   local Remote Runner control RPC with the metadata, then also serialises the API key into the

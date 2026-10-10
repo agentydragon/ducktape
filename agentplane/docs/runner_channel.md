@@ -276,8 +276,7 @@ those either.
 ## Path through the egress proxy
 
 A gRPC client behind an HTTP proxy opens a `CONNECT` tunnel, and the egress proxy intercepts the
-tunnel to read and substitute metadata. That interception is proven for TLS upstreams on a
-bidirectional stream; the Sandbox Service listens in plaintext. The implementation therefore
-either proves plaintext HTTP/2 inside an intercepted tunnel through the real sidecar and proxy,
-or serves the channel listener over TLS that the proxy verifies. Long streams also cross proxy
+tunnel to read and substitute metadata. It reads the plaintext HTTP/2 the channel listener speaks
+inside that tunnel, and decides a gRPC request from its headers, so the stream's messages pass
+through as they are written rather than after the stream closes. Long streams also cross proxy
 replica drains, which end them; the runner reconnects like after any other `UNAVAILABLE`.

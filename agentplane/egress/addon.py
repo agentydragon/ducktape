@@ -34,6 +34,7 @@ from agentplane.egress.policy import (
     Index,
     evaluate,
 )
+from agentplane.egress.presentation import is_json_envelope
 from agentplane.egress.upstream import Pin, UpstreamRefusedError, UpstreamResolver
 from agentplane.subjects import ServiceAccountRef
 from agentplane.workload_auth.bearer import parse_bearer
@@ -46,6 +47,8 @@ DENIED_HEADER = "x-agentplane-egress"
 # The hop bearer travels in Proxy-Authorization and is not one of these: it authenticates the hop,
 # where these are only ever candidates to substitute, and are worth nothing until reviewed.
 PROJECTED_TOKEN_HEADER = "x-agentplane-workload-token"
+# Flow metadata marking a request already decided at `requestheaders`.
+_GATED = "agentplane.egress.gated"
 
 
 @dataclass(frozen=True)
@@ -78,6 +81,10 @@ def _take_projected_tokens(request: http.Request) -> dict[str, str] | None:
             # Never the value: it is a bearer for some audience even when we cannot read the pair.
             logger.warning("ignoring a malformed %s entry", PROJECTED_TOKEN_HEADER)
     return presented
+
+
+def _headers_of(request: http.Request) -> dict[str, list[str]]:
+    return {name.lower(): request.headers.get_all(name) for name in set(request.headers.keys())}
 
 
 def _refusal(reason: DenyReason) -> http.Response:
@@ -148,8 +155,24 @@ class EgressAddon:
         # A non-2xx response on the CONNECT flow makes mitmproxy refuse the tunnel.
         await self._gate(flow)
 
-    async def request(self, flow: http.HTTPFlow) -> None:
+    async def requestheaders(self, flow: http.HTTPFlow) -> None:
+        """Decide a request no JSON credential can be presented in from its headers, and stream it.
+
+        Outside a JSON envelope the decision never reads the body, so waiting for all of it gains
+        nothing and stalls a bidirectional stream such as gRPC. A refusal is sent once the body is in,
+        because mitmproxy cannot stream a request and answer it at the same time.
+        """
+        request = flow.request
+        if request.method == CONNECT or is_json_envelope(_headers_of(request)):
+            return
         await self._gate(flow)
+        flow.metadata[_GATED] = True
+        if flow.response is None:
+            request.stream = True
+
+    async def request(self, flow: http.HTTPFlow) -> None:
+        if not flow.metadata.get(_GATED):
+            await self._gate(flow)
 
     def server_connect(self, data: server_hooks.ServerConnectionHookData) -> None:
         """Every dial goes to the address the gate checked, or nowhere."""
@@ -222,7 +245,8 @@ class EgressAddon:
             host=request.host,
             port=request.port,
             path=None if request.method == CONNECT else request.path,
-            headers={name.lower(): request.headers.get_all(name) for name in set(request.headers.keys())},
+            headers=_headers_of(request),
+            # Absent when decided at `requestheaders`, where the envelope makes the body irrelevant.
             body=None if request.method == CONNECT else request.raw_content,
         )
         subject: ServiceAccountRef | None = None

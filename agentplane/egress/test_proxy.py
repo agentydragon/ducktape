@@ -731,10 +731,11 @@ async def test_buildbuddy_http_and_grpc_metadata_placeholder_is_substituted(
 async def test_plaintext_grpc_stream_metadata_placeholder_is_substituted(
     fake: FakeApiServer, proxy: ProxyUnderTest, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A plaintext (h2c) bidirectional stream through the sidecar's CONNECT tunnel gets its metadata substituted.
+    """An interactive plaintext (h2c) stream through the sidecar's tunnel streams, with metadata substituted.
 
     The runner channel is a long-lived stream to an in-cluster plaintext gRPC listener
-    (agentplane/docs/runner_channel.md); this pins that the proxy reads h2c inside the tunnel.
+    (agentplane/docs/runner_channel.md); this pins that the proxy reads h2c inside the tunnel and
+    decides a non-JSON request from its headers.
     """
     credential_name = "runner-channel-test"
     credential_secret = "runner-channel-test-secret"
@@ -791,12 +792,14 @@ async def test_plaintext_grpc_stream_metadata_placeholder_is_substituted(
             stream = channel.stream_stream(
                 path, request_serializer=lambda value: value, response_deserializer=lambda value: value
             )(metadata=(("authorization", f"Bearer {placeholder}"),), timeout=10)
-            await stream.write(b"one")
-            await stream.write(b"two")
+            # Each reply arrives while the request body is still open, as on the runner channel; a
+            # proxy that waits for the whole body before deciding stalls here.
+            for message in (b"one", b"two"):
+                await stream.write(message)
+                assert await stream.read() == b"upstream:" + message
             await stream.done_writing()
-            streamed = [message async for message in stream]
+            assert await stream.read() is grpc.aio.EOF
 
-    assert streamed == [b"upstream:one", b"upstream:two"]
     assert dict(await requests.get())["authorization"] == "Bearer runner-channel-secret"
 
 
