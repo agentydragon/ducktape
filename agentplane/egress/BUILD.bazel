@@ -19,6 +19,7 @@ py_library(
         ":decisions",
         ":identity",
         ":policy",
+        ":presentation",
         ":upstream",
         "//agentplane:subjects",
         "//agentplane/workload_auth:bearer",
