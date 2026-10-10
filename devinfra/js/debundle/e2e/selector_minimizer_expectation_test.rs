@@ -486,6 +486,92 @@ fn computed_enum_selector_preserves_parameter_identity_across_renames() {
     }
 }
 
+#[test]
+fn function_and_method_selectors_preserve_parameter_identity() {
+    for (kind, source, renamed, different_receiver) in [
+        (
+            "function",
+            "var left = function(n) { return n[(n.A = 0)] = 'A'; };\nvar right = function(n) { return n[(n.B = 0)] = 'B'; };\n",
+            "var left = function(n) { return n[(n.A = 0)] = 'A'; };\nvar right = function(q) { return q[(q.B = 0)] = 'B'; };\n",
+            "const z = {};\nvar left = function(n) { return n[(n.A = 0)] = 'A'; };\nvar right = function(q) { return z[(z.B = 0)] = 'B'; };\n",
+        ),
+        (
+            "method",
+            "class Left { value(n) { return n[(n.A = 0)] = 'A'; } }\nclass Right { value(n) { return n[(n.B = 0)] = 'B'; } }\n",
+            "class Left { value(n) { return n[(n.A = 0)] = 'A'; } }\nclass Right { value(q) { return q[(q.B = 0)] = 'B'; } }\n",
+            "const z = {};\nclass Left { value(n) { return n[(n.A = 0)] = 'A'; } }\nclass Right { value(q) { return z[(z.B = 0)] = 'B'; } }\n",
+        ),
+        (
+            "constructor",
+            "class Left { constructor(n) { this.value = n[(n.A = 0)] = 'A'; } }\nclass Right { constructor(n) { this.value = n[(n.B = 0)] = 'B'; } }\n",
+            "class Left { constructor(n) { this.value = n[(n.A = 0)] = 'A'; } }\nclass Right { constructor(q) { this.value = q[(q.B = 0)] = 'B'; } }\n",
+            "const z = {};\nclass Left { constructor(n) { this.value = n[(n.A = 0)] = 'A'; } }\nclass Right { constructor(q) { this.value = z[(z.B = 0)] = 'B'; } }\n",
+        ),
+        (
+            "destructured function",
+            "var left = function({n}) { return n[(n.A = 0)] = 'A'; };\nvar right = function({n}) { return n[(n.B = 0)] = 'B'; };\n",
+            "var left = function({n}) { return n[(n.A = 0)] = 'A'; };\nvar right = function({q}) { return q[(q.B = 0)] = 'B'; };\n",
+            "const z = {};\nvar left = function({n}) { return n[(n.A = 0)] = 'A'; };\nvar right = function({q}) { return z[(z.B = 0)] = 'B'; };\n",
+        ),
+    ] {
+        let dir = tempfile::tempdir().unwrap();
+        let source_file = dir.path().join("source.js");
+        write_text_file(&source_file, source);
+        let modules = dir.path().join("modules");
+        let runtime_name = if kind.contains("function") {
+            "right"
+        } else {
+            "Right"
+        };
+        write_text_file(
+            &modules.join("app/case.yaml"),
+            &format!(
+                "members:\n  - name: Right\n    selector:\n      binding: {{ name: {runtime_name} }}\n"
+            ),
+        );
+        let out = run_synthesize_selectors(
+            &modules,
+            &[
+                "--source-file",
+                source_file.to_str().unwrap(),
+                "--item",
+                "app/case:Right",
+                "--format",
+                "json",
+            ],
+        );
+        let parsed = parse_stdout_json(&out);
+        let selector = parsed["candidates"][0]["match_source"]
+            .as_str()
+            .unwrap_or_else(|| panic!("{kind}: no generated selector: {parsed}"));
+        if kind == "destructured function" {
+            assert!(selector.contains("({ n })"), "{kind}: {selector}");
+        } else {
+            assert!(selector.contains("(n)"), "{kind}: {selector}");
+        }
+        // The source matcher does not alpha-rename identifiers bound inside a
+        // destructuring pattern yet; preserving that pattern is conservative.
+        let renamed_outcome = if kind == "destructured function" {
+            "no_match"
+        } else {
+            "resolved"
+        };
+        for (variant, expected) in [(renamed, renamed_outcome), (different_receiver, "no_match")] {
+            let variant_file = dir.path().join("variant.js");
+            write_text_file(&variant_file, variant);
+            let result = run_match_selector(
+                &variant_file,
+                selector,
+                &["--target-binding", "Right", "--no-slack"],
+            );
+            assert_eq!(
+                result["outcomes"][0]["outcome"]["kind"], expected,
+                "{kind}: {selector}"
+            );
+        }
+    }
+}
+
 minimizer_expectation_case!(
     minimizes_object_key_set_group,
     fixture = "object_key_set_group",

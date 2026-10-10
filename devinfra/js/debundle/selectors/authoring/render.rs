@@ -112,17 +112,43 @@ pub(crate) fn holed_function_body(
     holed
 }
 
-/// Hole a function for selector form: every parameter to an `ANYTHING` pattern
-/// (pinning arity, not names) and the body's statements to `STMT_LIST` runs
-/// around the kept anchors. Used both for top-level function selectors and for
+/// Hole a function for selector form, preserving parameters referenced by the
+/// retained body. Used both for top-level function selectors and for
 /// function-valued subexpressions reached through [`hole_expr`].
 pub(crate) fn hole_function(function: &Function, kept: &BTreeSet<AnchorSpan>) -> Function {
     let mut holed = function.clone();
-    holed.params = function.params.iter().map(|_| anything_param()).collect();
     if let Some(body) = &function.body {
         holed.body = Some(holed_function_body(body, kept));
     }
+    let retained = retained_body_identifiers(holed.body.as_ref());
+    holed.params = function
+        .params
+        .iter()
+        .map(|param| retain_or_hole_param(param, &retained))
+        .collect();
     holed
+}
+
+pub(crate) fn retained_body_identifiers(body: Option<&FunctionBody>) -> BTreeSet<String> {
+    let mut retained = RetainedIdentifiers::default();
+    if let Some(body) = body {
+        body.visit_with(&mut retained);
+    }
+    retained.0
+}
+
+pub(crate) fn retain_or_hole_param(param: &Param, retained: &BTreeSet<String>) -> Param {
+    if pattern_referenced_by_retained_body(&param.pat, retained) {
+        param.clone()
+    } else {
+        anything_param()
+    }
+}
+
+fn pattern_referenced_by_retained_body(pat: &Pat, retained: &BTreeSet<String>) -> bool {
+    let mut identifiers = RetainedIdentifiers::default();
+    pat.visit_with(&mut identifiers);
+    !identifiers.0.is_disjoint(retained)
 }
 
 /// Prune an expression into selector form: keep concrete tokens whose span is in
@@ -214,8 +240,8 @@ pub(crate) fn hole_expr(expr: &Expr, kept: &BTreeSet<AnchorSpan>) -> Expr {
             Expr::Assign(holed)
         }
         // Function/arrow-valued subexpressions (e.g. a `wrap(function(){…})` or
-        // `useCallback((e) => {…})` initializer) carrying a kept anchor: hole the
-        // params to `ANYTHING` and the body to `STMT_LIST` around the anchor, the
+        // `useCallback((e) => {…})` initializer) carrying a kept anchor: hole
+        // unreferenced params and the body to `STMT_LIST` around the anchor, the
         // same interior holing the top-level function selector does. A callback
         // with no kept anchor never reaches here — the leading `node_retains_any`
         // guard already collapsed it to `ANYTHING`.
@@ -242,11 +268,12 @@ pub(crate) fn hole_expr(expr: &Expr, kept: &BTreeSet<AnchorSpan>) -> Expr {
             holed.params = arrow
                 .params
                 .iter()
-                .map(|param| match param {
-                    Pat::Ident(binding) if retained.0.contains(binding.id.sym.as_ref()) => {
+                .map(|param| {
+                    if pattern_referenced_by_retained_body(param, &retained.0) {
                         param.clone()
+                    } else {
+                        anything_pat()
                     }
-                    _ => anything_pat(),
                 })
                 .collect();
             Expr::Arrow(holed)

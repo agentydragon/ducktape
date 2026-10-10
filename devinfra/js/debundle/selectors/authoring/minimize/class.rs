@@ -8,8 +8,9 @@ use swc_ecma_ast::*;
 
 use super::read_off_candidates;
 use crate::render::{
-    AnchorSpan, anything_expr, anything_param, class_member_hole, collapse_omitted_runs,
-    emit_selector, holed_function_body, ident_node, node_retains_any,
+    AnchorSpan, anything_expr, class_member_hole, collapse_omitted_runs, emit_selector,
+    hole_function, holed_function_body, ident_node, node_retains_any, retain_or_hole_param,
+    retained_body_identifiers,
 };
 use crate::{
     ChunkSelectorIndex, IndexedDeclaration, SpecializedSelector, SynthesizedTargetBinding,
@@ -88,35 +89,34 @@ fn hole_class_member(member: &ClassMember, kept: &BTreeSet<AnchorSpan>) -> Class
     match member {
         ClassMember::Method(m) => {
             let mut holed = m.clone();
-            holed.function.params = m.function.params.iter().map(|_| anything_param()).collect();
-            holed.function.body = m
-                .function
-                .body
-                .as_ref()
-                .map(|body| holed_function_body(body, kept));
+            holed.function = Box::new(hole_function(&m.function, kept));
             ClassMember::Method(holed)
         }
         ClassMember::PrivateMethod(m) => {
             let mut holed = m.clone();
-            holed.function.params = m.function.params.iter().map(|_| anything_param()).collect();
-            holed.function.body = m
-                .function
-                .body
-                .as_ref()
-                .map(|body| holed_function_body(body, kept));
+            holed.function = Box::new(hole_function(&m.function, kept));
             ClassMember::PrivateMethod(holed)
         }
         ClassMember::Constructor(ctor) => {
             let mut holed = ctor.clone();
-            holed.params = ctor
-                .params
-                .iter()
-                .map(|_| ParamOrTsParamProp::Param(anything_param()))
-                .collect();
             holed.body = ctor
                 .body
                 .as_ref()
                 .map(|body| holed_function_body(body, kept));
+            let retained = retained_body_identifiers(holed.body.as_ref());
+            holed.params = ctor
+                .params
+                .iter()
+                .map(|param| match param {
+                    ParamOrTsParamProp::Param(param) => {
+                        ParamOrTsParamProp::Param(retain_or_hole_param(param, &retained))
+                    }
+                    // TypeScript parameter properties are not part of the JS
+                    // fixtures; keeping them verbatim is safer than severing
+                    // a retained body reference.
+                    ParamOrTsParamProp::TsParamProp(_) => param.clone(),
+                })
+                .collect();
             ClassMember::Constructor(holed)
         }
         // Class fields and other members carrying a kept anchor: keep verbatim.
