@@ -790,7 +790,6 @@ py_test(
     requires_docker = True,
     deps = [
         ":conftest",
-        ":kubernetes_views",
         ":runner_channel",
         "//:conftest",
         "//agentplane/runner_channel:protocol_pb2",
