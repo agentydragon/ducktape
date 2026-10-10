@@ -379,15 +379,9 @@ async def test_command_status_reads_retained_submissions_without_the_runner(
                 remote.stub.GetCommand, protocol_pb2.GetCommandRequest(destination=at, command_id=command_id)
             )
 
-        async def page(
-            token: str = "", *, page_size: int = 0, states: tuple[protocol_pb2.CommandState.ValueType, ...] = ()
-        ) -> protocol_pb2.ListCommandsResponse:
-            return await remote.unary(
-                remote.stub.ListCommands,
-                protocol_pb2.ListCommandsRequest(
-                    destination=destination, page_token=token, page_size=page_size, states=states
-                ),
-            )
+        async def page(request: protocol_pb2.ListCommandsRequest) -> protocol_pb2.ListCommandsResponse:
+            request.destination.CopyFrom(destination)
+            return await remote.unary(remote.stub.ListCommands, request)
 
         admitted = await get("admitted")
         assert (admitted.command, admitted.state, admitted.admission) == (
@@ -404,12 +398,14 @@ async def test_command_status_reads_retained_submissions_without_the_runner(
         listed: list[protocol_pb2.CommandStatus] = []
         token = ""
         while True:
-            response = await page(token, page_size=2)
+            response = await page(protocol_pb2.ListCommandsRequest(page_token=token, page_size=2))
             listed.extend(response.commands)
             if not (token := response.next_page_token):
                 break
         assert listed == [admitted, pending, rejected]
-        only_pending = await page(states=(protocol_pb2.COMMAND_STATE_PENDING_ADMISSION,))
+        only_pending = await page(
+            protocol_pb2.ListCommandsRequest(states=[protocol_pb2.COMMAND_STATE_PENDING_ADMISSION])
+        )
         assert list(only_pending.commands) == [pending]
 
         other_incarnation = protocol_pb2.SessionDestination()
