@@ -255,9 +255,11 @@ _CODEX_EFFORTS = ("minimal", "low", "medium", "high", "xhigh")
 # it established neither an exact input maximum nor the 128K output ceiling. GPT-6
 # Sol/Luna inherited this declaration, not independent serving-path measurements.
 # Astra's 872K came from Codex 0.153.4's configurable client window, not an input
-# capacity measurement. Preserve these already-published proxy values pending the
-# source audit, without passing them to consumers as client budgets. See
-# model_catalog/client_budgets.md; raw OpenAI API limits are not evidence for this path.
+# capacity measurement. The 2026-10-10 source audit found no justified replacement
+# pair; preserve these provisional proxy values without using them as client budgets.
+# Luna subsequently accepted 900,419 input tokens in one approved probe; its legacy
+# 372K publication is not a serving ceiling. See model_catalog/client_budgets.md for
+# the failed larger probe and evidence limits; no client-budget change follows.
 _CHATGPT_LIMITS = TokenLimits(max_input_tokens=372_000, max_output_tokens=128_000)
 _ASTRA_LIMITS = TokenLimits(max_input_tokens=872_000, max_output_tokens=128_000)
 

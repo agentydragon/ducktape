@@ -793,6 +793,9 @@ async def test_unlisted_callers_rejected_before_lookup(
             (remote.stub.OpenSession, protocol_pb2.OpenSessionRequest(destination=destination)),
             (remote.stub.ResumeSession, protocol_pb2.SessionRequest(destination=destination)),
             (remote.stub.SubmitCommand, protocol_pb2.SubmitCommandRequest(destination=destination)),
+            (remote.stub.PlaceHold, protocol_pb2.HoldRequest(destination=destination, holder="test-holder")),
+            (remote.stub.ConfirmHold, protocol_pb2.ConfirmHoldRequest(destination=destination, holder="test-holder")),
+            (remote.stub.ReleaseHold, protocol_pb2.HoldRequest(destination=destination, holder="test-holder")),
         ):
             with pytest.raises(ServiceError) as rejected:
                 await remote.unary(call, request)
