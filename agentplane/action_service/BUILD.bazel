@@ -678,6 +678,19 @@ py_library(
 )
 
 py_library(
+    name = "mcp_tasks",
+    srcs = ["mcp_tasks.py"],
+    deps = [
+        ":db",
+        ":models",
+        "@pypi//fastmcp_slim",
+        "@pypi//mcp",
+        "@pypi//mcp_types",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
     name = "mcp_frontend",
     srcs = ["mcp_frontend.py"],
     deps = [
@@ -685,6 +698,7 @@ py_library(
         ":catalog",
         ":db",
         ":direct_tools",
+        ":mcp_tasks",
         ":models",
         ":policy_view",
         ":service",

@@ -32,6 +32,7 @@ from agentplane.action_service.catalog import (
 )
 from agentplane.action_service.db import ActionConflictError, ActionNotFoundError
 from agentplane.action_service.direct_tools import DIRECT_CALL_TITLE, DirectToolProvider, refusal
+from agentplane.action_service.mcp_tasks import ActionTasksExtension
 from agentplane.action_service.models import (
     ActionEventView,
     ActionRequestInput,
@@ -349,10 +350,13 @@ def create_server(
             "Discover Action identifiers, fetch details only when needed, then submit each request once under "
             "a fresh idempotency key. A pending receipt is not execution success. A repeated key is refused; "
             "recover a lost response with get_action_request(idempotency_key=...), never with a replacement key. "
+            "For task-enabled callers, use start_action_task followed by tasks/get; request_action retains its receipt/wait workflow. "
             f"This instance allows wait.wait_seconds up to {max_wait_seconds:g} seconds."
         ),
         auth=verifier,
         mask_error_details=True,
+        # Only start_action_task is task-enabled; the legacy request_action and
+        # dynamically exposed tools retain their original non-task semantics.
         tasks=False,
     )
 
@@ -513,6 +517,23 @@ def create_server(
             return tool_result(view, catalog.groups[view.action.group].executor, max_wait_seconds=max_wait_seconds)
         return _result(_receipt(view, set(include_fields)), exclude_unset=True)
 
+    @server.tool(task=True, annotations={"readOnlyHint": False, "idempotentHint": True})
+    async def start_action_task(
+        idempotency_key: IdempotencyKey,
+        action: ActionIdentity,
+        arguments: dict[str, JsonValue],
+        title: Annotated[str, Field(min_length=1, max_length=60)],
+        description: Annotated[str | None, Field(max_length=250)] = None,
+    ) -> None:
+        """Submit an Action as an MCP task; tasks/get returns status and the final tool result.
+        Requires the negotiated MCP tasks extension. Use the original idempotency key to
+        recover a lost creation response with get_action_request; never resubmit.
+        For non-task submission, use request_action instead.
+        """
+        # Task-enabled calls are intercepted before the tool body. Do not fall
+        # through to submission without negotiated task support.
+        raise ToolError("start_action_task requires MCP tasks; use request_action for non-task calls")
+
     @server.tool(annotations={"readOnlyHint": True})
     @_tool_errors
     async def get_action_request(
@@ -593,5 +614,31 @@ def create_server(
             ),
             exclude_none=True,
         )
+
+    async def task_submit(arguments: dict[str, Any]) -> ActionRequestView:
+        request = ActionRequestInput.model_validate(arguments)
+        verified = _caller_token(get_access_token())
+        return await service.submit(request, verified.principal, external_grant=verified.external_grant)
+
+    async def task_get(request_id: UUID) -> tuple[ActionRequestView, ActionState | None, datetime | None]:
+        return await service.get_mcp_task(request_id, _caller_token(get_access_token()).principal)
+
+    async def task_cancel(request_id: UUID) -> CancellationOutcome:
+        return (await service.cancel(request_id, _caller_token(get_access_token()).principal)).outcome
+
+    def task_result(view: ActionRequestView) -> dict[str, Any]:
+        answer = tool_result(view, catalog.groups[view.action.group].executor, max_wait_seconds=max_wait_seconds)
+        wire = answer.to_mcp_result()
+        if isinstance(wire, tuple):
+            blocks, structured = wire
+            return {
+                "content": [block.model_dump(mode="json", by_alias=True) for block in blocks],
+                "structuredContent": structured,
+            }
+        if isinstance(wire, list):
+            return {"content": [block.model_dump(mode="json", by_alias=True) for block in wire]}
+        return wire.model_dump(mode="json", by_alias=True, exclude_none=True)
+
+    server.add_extension(ActionTasksExtension(task_submit, task_get, task_cancel, task_result))
 
     return server

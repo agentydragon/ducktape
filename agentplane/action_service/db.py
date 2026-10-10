@@ -589,6 +589,29 @@ class ActionStore:
                 raise ActionNotFoundError(str(request_id))
             return await self._view(session, row, principal)
 
+    async def get_mcp_task(
+        self, request_id: UUID, principal: CallerPrincipal
+    ) -> tuple[ActionRequestView, ActionState | None, datetime | None]:
+        """Read any caller-owned Action as a task; events preserve its first terminal outcome."""
+        async with self._sessions() as session:
+            row = await session.get(ActionRequestRow, request_id)
+            if row is None or not _may_read(row, principal):
+                raise ActionNotFoundError(str(request_id))
+            view = await self._view(session, row, principal)
+            # Query the append-only event stream after reading the receipt: a completion
+            # racing this read must not produce a 'completed' task with a stale result.
+            first = (
+                await session.execute(
+                    select(ActionEventRow.state, ActionEventRow.at)
+                    .where(ActionEventRow.request_id == request_id, ActionEventRow.state.in_(_MCP_TERMINAL_STATES))
+                    .order_by(ActionEventRow.sequence)
+                    .limit(1)
+                )
+            ).first()
+            if first is None or view.state.value not in _MCP_TERMINAL_STATES:
+                return view, None, None
+            return view, ActionState(first.state), first.at
+
     async def events(
         self, request_id: UUID, principal: ReadPrincipal, *, after_sequence: int = 0, limit: int | None = None
     ) -> list[ActionEventView]:
@@ -960,6 +983,18 @@ def _is_caller(row: ActionRequestRow, principal: ReadPrincipal) -> bool:
 
 def _may_read(row: ActionRequestRow, principal: ReadPrincipal) -> bool:
     return isinstance(principal, (OperatorPrincipal, ServiceReaderPrincipal)) or _is_caller(row, principal)
+
+
+_MCP_TERMINAL_STATES = frozenset(
+    state.value
+    for state in (
+        ActionState.SUCCEEDED,
+        ActionState.FAILED,
+        ActionState.CANCELLED,
+        ActionState.DENIED,
+        ActionState.EXECUTION_UNKNOWN,
+    )
+)
 
 
 def _record_event(

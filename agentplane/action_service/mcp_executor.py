@@ -632,6 +632,8 @@ class McpActionGroupExecutor(Executor):
         if connection.failed or self._connection is not connection:
             return self._unavailable_result()
         try:
+            # TODO: Bridge upstream MCP tasks here (including progress and result) without
+            # retrying an execution with an unknown outcome; see agentplane/plans/mcp_action_tasks.md.
             result = await client.call_tool_mcp(name, request.arguments)
         except Exception as error:
             self._session_failed(connection, error)
