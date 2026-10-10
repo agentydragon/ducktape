@@ -360,12 +360,17 @@ async def test_a_lost_connection_ends_its_follows(service: ScriptedService) -> N
     assert service.followed.empty()
 
 
-async def test_a_follow_past_the_per_connection_limit_ends_without_a_frame(service: ScriptedService) -> None:
+async def test_a_follow_past_the_per_connection_limit_is_refused(service: ScriptedService) -> None:
     service.frames += [open_follow(f"test-follow-{index}") for index in range(FOLLOW_LIMIT + 1)]
     service.dial()
     async with asyncio.timeout(10):
-        firsts = dict([await service.followed.get() for _ in range(FOLLOW_LIMIT + 1)])
-    assert firsts.pop(f"test-follow-{FOLLOW_LIMIT}") is ENDED
+        firsts: dict[str, channel_pb2.FollowFrame | Ended] = {}
+        while len(firsts) < FOLLOW_LIMIT + 1:
+            follow_id, frame = await service.followed.get()
+            firsts.setdefault(follow_id, frame)
+    refused = firsts.pop(f"test-follow-{FOLLOW_LIMIT}")
+    assert isinstance(refused, channel_pb2.FollowFrame)
+    assert refused.refused.reason == channel_pb2.FollowRefused.REASON_FOLLOW_LIMIT
     assert {frame.WhichOneof("frame") for frame in firsts.values() if isinstance(frame, channel_pb2.FollowFrame)} == {
         "attached"
     }

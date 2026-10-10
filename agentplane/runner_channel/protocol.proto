@@ -13,7 +13,7 @@ service RunnerChannel {
   rpc Connect(stream RunnerFrame) returns (stream ServiceFrame);
   // Opened by the runner when asked by `OpenFollow`, on the connection that carried it, with the
   // connection epoch and follow ID in `x-agentplane-connection-epoch` and `x-agentplane-follow-id`
-  // metadata. A follow past the runner's per-connection cap opens and ends without a frame.
+  // metadata.
   rpc Follow(stream FollowFrame) returns (google.protobuf.Empty);
 }
 
@@ -102,6 +102,7 @@ message FollowRefused {
     REASON_UNSPECIFIED = 0;
     REASON_SESSION_UNKNOWN = 1;
     REASON_CURSOR_BEYOND_JOURNAL = 2;
+    REASON_FOLLOW_LIMIT = 3;  // the connection already carries the runner's maximum of follows
   }
   Reason reason = 1;
   string detail = 2;

@@ -26,8 +26,7 @@ from agentplane.runner_channel import protocol_pb2 as channel_pb2, protocol_pb2_
 logger = logging.getLogger(__name__)
 
 CAPABILITIES = ("commands", "events")
-# Past this many follows on one connection, the runner opens the asked-for `Follow` and ends it
-# without a frame, and the service answers that follow's caller `UNAVAILABLE`.
+# Past this many follows on one connection, the runner refuses the next with `REASON_FOLLOW_LIMIT`.
 FOLLOW_LIMIT = 64
 EPOCH_METADATA = "x-agentplane-connection-epoch"
 FOLLOW_METADATA = "x-agentplane-follow-id"
@@ -182,6 +181,9 @@ class RunnerChannelClient:
     async def refuse_follow(stub: protocol_pb2_grpc.RunnerChannelAsyncStub, metadata: Metadata) -> None:
         call = stub.Follow(metadata=metadata)
         try:
+            await call.write(
+                _follow_refused(channel_pb2.FollowRefused.REASON_FOLLOW_LIMIT, f"at most {FOLLOW_LIMIT} follows")
+            )
             await call.done_writing()
             await call
         finally:
