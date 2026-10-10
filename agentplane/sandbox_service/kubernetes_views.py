@@ -31,6 +31,8 @@ PROVISIONING_ANNOTATION = "agentplane.allegedly.works/pending-launch-grants"
 KUBERNETES_GRANTS_ANNOTATION = "agentplane.allegedly.works/kubernetes-grants"
 KUBERNETES_GRANTS_READY_ANNOTATION = "agentplane.allegedly.works/kubernetes-grants-ready"
 KUBERNETES_GRANTS_ERROR_ANNOTATION = "agentplane.allegedly.works/kubernetes-grants-error"
+# Comma-separated runner channel operations, fixed when the Sandbox is created.
+RUNNER_CHANNEL_ANNOTATION = "agentplane.allegedly.works/runner-channel"
 RETENTION_HOLDS_ANNOTATION = "agentplane.allegedly.works/retention-holds"
 
 

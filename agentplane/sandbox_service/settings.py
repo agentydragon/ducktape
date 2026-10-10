@@ -38,6 +38,11 @@ class Settings(BaseSettings):
     kubernetes_binding_cleanup_namespaces: set[str] = Field(default_factory=set)
     kubernetes_cluster_binding_cleanup: bool = False
     token_audience: str = "agentplane-sandbox-service"
+    runner_channel_audience: str = Field(
+        default="agentplane-runner-channel",
+        description="Audience of the Pod tokens the egress proxy substitutes on runner channel connections.",
+    )
+    runner_channel_port: int = Field(default=8082, ge=1, le=65535)
     runner_port: int = Field(default=7000, ge=1, le=65535)
     admission_timeout_s: float = Field(default=15, gt=0, le=60)
     runner_admission_ack_timeout_s: float = Field(

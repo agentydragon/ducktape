@@ -2807,6 +2807,8 @@ data:
       - vm-images-publisher
     kubernetes_cluster_binding_cleanup: true
     token_audience: agentplane-sandbox-service
+    runner_channel_audience: agentplane-runner-channel
+    runner_channel_port: 8082
     runner_port: 7000
     admission_timeout_s: 15
     runner_admission_ack_timeout_s: 15

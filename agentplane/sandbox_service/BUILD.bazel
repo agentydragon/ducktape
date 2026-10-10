@@ -175,7 +175,11 @@ py_library(
         ":kubernetes_bindings",
         ":kubernetes_grants",
         ":provisioning",
+        ":runner_channel",
         ":settings",
+        "//agentplane/runner_channel:protocol_pb2",
+        "//agentplane/runner_channel:protocol_pb2_grpc",
+        "//agentplane/sandbox_service/commands:connections",
         "//agentplane/sandbox_service/commands:store",
         "//agentplane/sandbox_service/session_history:ingestion",
         "//agentplane/sandbox_service/session_history:session_changes",
@@ -722,6 +726,25 @@ py_library(
     ],
 )
 
+py_library(
+    name = "runner_channel",
+    srcs = ["runner_channel.py"],
+    deps = [
+        ":inventory",
+        ":models",
+        "//agentplane/runner_channel:protocol_pb2",
+        "//agentplane/runner_channel:protocol_pb2_grpc",
+        "//agentplane/sandbox_service/commands:connections",
+        "//agentplane/workload_auth:bearer",
+        "//agentplane/workload_auth:principal",
+        "//util:agent_sandbox",
+        "@pypi//grpcio",
+        "@pypi//kubernetes_asyncio",
+        "@pypi//protobuf",
+        "@pypi//sqlalchemy",
+    ],
+)
+
 py_test(
     name = "test_retention_holds",
     srcs = ["test_retention_holds.py"],
@@ -754,5 +777,32 @@ py_test(
         "@pypi//protobuf",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_runner_channel",
+    size = "medium",
+    srcs = ["test_runner_channel.py"],
+    requires_docker = True,
+    deps = [
+        ":conftest",
+        ":kubernetes_views",
+        ":runner_channel",
+        "//:conftest",
+        "//agentplane/runner_channel:protocol_pb2",
+        "//agentplane/runner_channel:protocol_pb2_grpc",
+        "//agentplane/sandbox_service/commands:conftest",
+        "//agentplane/sandbox_service/commands:connections",
+        "//agentplane/sandbox_service/testing:kubernetes",
+        "//agentplane/testing:fake_apiserver",
+        "//agentplane/workload_auth:principal",
+        "//util:agent_sandbox",
+        "@pypi//grpcio",
+        "@pypi//kubernetes_asyncio",
+        "@pypi//protobuf",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//sqlalchemy",
     ],
 )

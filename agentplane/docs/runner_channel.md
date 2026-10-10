@@ -1,8 +1,10 @@
 # Runner channel
 
-Status: **accepted design, not implemented.** Runners still serve the inbound `Attach` RPC
-([runner discovery](../plans/runner_discovery.md)); this is the contract the runner-initiated
-replacement implements. It covers command delivery, authentication, connection ownership and
+Status: **accepted design, partly implemented.** The Sandbox Service's channel listener
+(`sandbox_service/runner_channel.py`) authenticates connections, fences them by epoch and keeps them
+alive; command delivery and the runner's side are not built yet, so runners still serve the inbound
+`Attach` RPC ([runner discovery](../plans/runner_discovery.md)). This is the contract the
+runner-initiated replacement implements. It covers command delivery, authentication, connection ownership and
 dispatch attempts. Event replay over the channel and the remaining lifecycle operations are added
 to it later as separate RPCs and do not change what is fixed here.
 
@@ -174,8 +176,10 @@ to the Sandbox UID and Pod UID that resolution returned. A Sandbox being deleted
 accepted, because the runner must stay reachable while it seals its Sessions; a deleted Pod fails
 TokenReview.
 
-**Revocation.** Every RPC is authenticated when it opens. Each replica watches the Pods and Sandboxes behind the connections it holds, and
-ends a connection's streams when its Pod is deleted or replaced or its Sandbox's ServiceAccount changes. As a backstop for a
+**Revocation.** Every RPC is authenticated when it opens. With each liveness write (every 15 s) the
+owning replica resolves the connection's Pod and Sandbox again, and ends the connection's streams
+when its Pod is deleted or replaced, its Sandbox's ServiceAccount changes or the Sandbox stops being
+channel-routed. As a backstop for a
 missed watch event, it ends every `Connect` stream after one hour; the runner reconnects and
 authenticates again.
 

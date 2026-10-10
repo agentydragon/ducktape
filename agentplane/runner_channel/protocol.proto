@@ -1,0 +1,70 @@
+// The runner-initiated control channel to the Sandbox Service; contract in
+// agentplane/docs/runner_channel.md. An incompatible change is a new package.
+syntax = "proto3";
+
+package ducktape.agentplane.runner_channel.v1;
+
+import "agentplane/protocol/command.proto";
+import "agentplane/protocol/event_log.proto";
+
+service RunnerChannel {
+  rpc Connect(stream RunnerFrame) returns (stream ServiceFrame);
+}
+
+message RunnerFrame {
+  oneof frame {
+    Hello hello = 1;  // first frame, exactly once
+    CommandReceipt receipt = 2;
+    Heartbeat heartbeat = 3;
+  }
+}
+
+message ServiceFrame {
+  oneof frame {
+    Welcome welcome = 1;  // reply to Hello, exactly once
+    DeliverCommand deliver = 2;
+    Heartbeat heartbeat = 3;
+  }
+}
+
+message Hello {
+  string runner_boot_id = 1;  // random per runner process start
+  // A peer uses a frame kind or RPC only after both sides listed it.
+  repeated string capabilities = 2;
+  string runner_version = 3;  // diagnostics only
+}
+
+message Welcome {
+  uint64 connection_epoch = 1;
+  repeated string capabilities = 2;  // what the service will use on this connection
+}
+
+message DeliverCommand {
+  string attempt_id = 1;
+  string session_id = 2;
+  ducktape.agentplane.protocol.v1.Command command = 3;
+}
+
+message CommandReceipt {
+  string attempt_id = 1;
+  string session_id = 2;
+  oneof outcome {
+    // The runner journal's CommandAdmitted entry, fresh or already journaled.
+    ducktape.agentplane.protocol.v1.EventEntry admitted = 3;
+    CommandRefused refused = 4;
+  }
+}
+
+message CommandRefused {
+  enum Reason {
+    REASON_UNSPECIFIED = 0;
+    REASON_SESSION_UNKNOWN = 1;
+    REASON_HARNESS_STOPPED = 2;
+    REASON_COMMAND_CONFLICT = 3;  // same command_id, different payload
+    REASON_INVALID_COMMAND = 4;
+  }
+  Reason reason = 1;
+  string detail = 2;
+}
+
+message Heartbeat {}
