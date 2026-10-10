@@ -4,7 +4,13 @@ import { z } from "zod";
 
 import { CodeBlock } from "../../code_block";
 import { Chip } from "./chips";
-import { defineCallPreview, definePreview, type ArgumentsPreview, type CallPreviewProps } from "./entry";
+import {
+  defineCallPreview,
+  definePreview,
+  type ArgumentsPreview,
+  type CallPreview,
+  type CallPreviewProps,
+} from "./entry";
 import { defineResultPreview, type ResultPreview } from "./result_entry";
 
 const draftArguments = z.strictObject({
@@ -140,13 +146,13 @@ const draftResult = z
   })
   .passthrough();
 
-type DraftResult = z.infer<typeof draftResult>;
+type DraftCallResult = z.infer<typeof draftResult>;
 
-function draftSubject(result: DraftResult): string | null {
+function draftSubject(result: DraftCallResult): string | null {
   return result.message?.payload?.headers?.find((header) => header.name?.toLowerCase() === "subject")?.value ?? null;
 }
 
-function DraftCall({ args, result }: CallPreviewProps<DraftArguments, DraftResult>): JSX.Element {
+function DraftCall({ args, result }: CallPreviewProps<DraftArguments, DraftCallResult>): JSX.Element {
   const subject = result ? (draftSubject(result) ?? args.subject) : args.subject;
   const draftHref = result?.id
     ? `https://mail.google.com/mail/u/0/#drafts?compose=${encodeURIComponent(result.id)}`
@@ -178,7 +184,7 @@ function DraftCall({ args, result }: CallPreviewProps<DraftArguments, DraftResul
   );
 }
 
-export const gmailDraftCall = defineCallPreview(draftArguments, draftResult, DraftCall);
+export const gmailDraftCall: CallPreview = defineCallPreview(draftArguments, draftResult, DraftCall);
 
 function DraftResult({ result }: { result: z.infer<typeof draftResult> }): JSX.Element {
   const href = result.id
