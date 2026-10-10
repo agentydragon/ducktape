@@ -139,4 +139,3 @@ oci_image(
     user = "1000:1000",
     visibility = ["//visibility:public"],
 )
-
