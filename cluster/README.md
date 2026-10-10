@@ -127,6 +127,21 @@ Applications use Authentik through Terraform-managed OIDC/proxy providers and a
 shrinking set of blueprint-managed proxy providers. See <docs/sso.md> for the ownership
 split, secret flow, NetworkPolicy template, and tombstone rules.
 
+## In-Cluster Terraform (tofu-controller)
+
+The `Terraform` CRs (`tf/gitops/*`, infra-drift) run on two custom images, both on GHCR rather
+than Forgejo because the Forgejo pull credential is itself created by one of those CRs:
+
+- **Patched controller** (`ghcr.io/agentydragon/tofu-controller`): upstream plus an
+  `ExternalArtifact` source kind, from the `external-artifact-source` branch of our fork
+  (<../third_party/tofu_controller/README.md>). Why: each module reads its own content-addressed
+  `ArtifactGenerator` artifact (`cdk8s/terraform.py`, <cdk8s/infra_drift/README.md>), so only
+  modules whose files changed replan, instead of every `devel` commit replanning all of them
+  (#9271). Drop it once upstream releases flux-iac/tofu-controller#1901.
+- **Custom tf-runner** (`ghcr.io/agentydragon/tf-runner`): upstream's runner with every pinned
+  provider baked in, so `tofu init` downloads nothing (<tf_runner/README.md>). Its base tag must
+  match the release the controller fork is based on.
+
 ## ActivityWatch
 
 Revived 2026-08-26. Each device runs a small importer that reads its own aw-server over
