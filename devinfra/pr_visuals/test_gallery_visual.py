@@ -32,27 +32,17 @@ class _BaselineSource:
         return self.objects.get(key)
 
 
-def _sample_png(size: tuple[int, int], *, accent: str, title: str) -> bytes:
+def _sample_png(size: tuple[int, int], label: str | None = None) -> bytes:
     width, height = size
-    image = Image.new("RGB", size, "#f1f3f6")
-    draw = ImageDraw.Draw(image)
-    margin_x, margin_y = round(width * 0.06), round(height * 0.08)
-    draw.rounded_rectangle(
-        (margin_x, margin_y, width - margin_x, height - margin_y),
-        radius=max(4, round(min(width, height) * 0.035)),
-        fill="white",
-        outline="#cbd0d8",
-        width=max(1, round(min(width, height) * 0.004)),
-    )
-    header_bottom = margin_y + round((height - 2 * margin_y) * 0.2)
-    draw.rectangle((margin_x, margin_y, width - margin_x, header_bottom), fill=accent)
-    draw.text((margin_x + 12, margin_y + 10), title, fill="white")
-    card_top = header_bottom + round(height * 0.07)
-    draw.rounded_rectangle(
-        (margin_x + 12, card_top, width - margin_x - 12, height - margin_y - 12), radius=8, fill="#e7eaf0"
-    )
-    draw.rectangle((margin_x + 24, card_top + 18, width - margin_x - 24, card_top + 28), fill="#8b93a1")
-    draw.rectangle((margin_x + 24, card_top + 42, width - margin_x - 58, card_top + 50), fill=accent)
+    image = Image.new("RGBA", size, "#e9edf3")
+    # Scale up the default bitmap font so size labels remain legible in gallery thumbnails.
+    text_scale = 4
+    text_layer = Image.new("RGBA", (width // text_scale, height // text_scale))
+    draw = ImageDraw.Draw(text_layer)
+    draw.text((8, 8), f"{width} x {height}", fill="#263140")
+    if label:
+        draw.text((8, 24), label, fill="#52647d")
+    image.alpha_composite(text_layer.resize(size, Image.Resampling.NEAREST))
     stream = io.BytesIO()
     image.save(stream, format="PNG")
     return stream.getvalue()
@@ -98,8 +88,8 @@ def _gallery_bundle(tmp_path: Path) -> tuple[Path, str]:
         baseline_objects,
         label=low_label,
         title="Lower impact sample",
-        baseline={"list.png": _sample_png((800, 500), accent="#2878a8", title="List before")},
-        candidate={"list.png": _sample_png((800, 500), accent="#338e67", title="List after")},
+        baseline={"list.png": _sample_png((800, 500), "before")},
+        candidate={"list.png": _sample_png((800, 500), "after")},
     )
     high = _add_test(
         tmp_path / "source",
@@ -107,16 +97,16 @@ def _gallery_bundle(tmp_path: Path) -> tuple[Path, str]:
         label=high_label,
         title="Mixed dimensions and statuses",
         baseline={
-            "dashboard.png": _sample_png((960, 540), accent="#2878a8", title="Dashboard before"),
-            "portrait.png": _sample_png((360, 760), accent="#7656a8", title="Portrait before"),
-            "stable.png": _sample_png((640, 400), accent="#52647d", title="Unchanged"),
-            "removed.png": _sample_png((1000, 600), accent="#a06542", title="Removed sample"),
+            "dashboard.png": _sample_png((960, 540), "before"),
+            "portrait.png": _sample_png((360, 760), "before"),
+            "stable.png": _sample_png((640, 400)),
+            "removed.png": _sample_png((1000, 600), "removed"),
         },
         candidate={
-            "dashboard.png": _sample_png((960, 540), accent="#2e9c55", title="Dashboard after"),
-            "portrait.png": _sample_png((760, 360), accent="#c24d45", title="Landscape after"),
-            "stable.png": _sample_png((640, 400), accent="#52647d", title="Unchanged"),
-            "new-portrait.png": _sample_png((320, 900), accent="#a34f8a", title="New portrait"),
+            "dashboard.png": _sample_png((960, 540), "after"),
+            "portrait.png": _sample_png((760, 360), "after"),
+            "stable.png": _sample_png((640, 400)),
+            "new-portrait.png": _sample_png((320, 900), "new"),
         },
     )
     bundle = build_bundle(
