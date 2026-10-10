@@ -57,7 +57,9 @@ resource "routeros_ip_service" "tls" {
   port        = each.key == "api-ssl" ? 8729 : 443
   address     = var.lan_cidr
   certificate = routeros_system_certificate.tls.name
-  tls_version = "only-1.2"
+  # Not `only-1.2`: RouterOS 7.24 signs TLS 1.2 handshakes with this ECDSA certificate in a way
+  # clients reject ("ECDSA verification failure"), which locked tofu out after the first apply.
+  tls_version = "any"
   disabled    = false
 }
 
