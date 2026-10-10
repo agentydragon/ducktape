@@ -1040,7 +1040,6 @@ py_test(
         "//agentplane/app/testing:replication_source",
         "//agentplane/app/threads/view:content",
         "//agentplane/history_service:client",
-        "//agentplane/history_service:client",
         "//agentplane/protocol:event_pb2",
         "//agentplane/thread_fold:projection_lease",
         "@pypi//fastapi",
