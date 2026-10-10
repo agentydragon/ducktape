@@ -90,6 +90,11 @@
       "test": "//cluster/exporters/github_graphql_rate_limit/...",
       "registry": "forgejo"
     },
+    "att-gateway-exporter": {
+      "target": "//cluster/exporters/att_gateway:image",
+      "test": "//cluster/exporters/att_gateway/...",
+      "registry": "forgejo"
+    },
     "github-api-proxy": {
       "target": "//devinfra/github_proxy/central:image",
       "test": "//devinfra/github_proxy/central:tests",

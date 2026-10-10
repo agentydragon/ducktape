@@ -1,0 +1,674 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html lang="en" xml:lang="en" xmlns="http://www.w3.org/1999/xhtml" >
+    <head>
+        <title>Home Network Status</title>
+        <meta http-equiv="Content-Type" content="text/html; charset=windows-1252" />
+        <meta http-equiv="Content-Style-Type" content="text/css" />
+        <meta http-equiv="Content-Script-Type" content="type" />
+        <link rel="icon" type="image/ico" href="/favicon.ico" />
+        <link rel="stylesheet" type="text/css" href="/baseINID.css" />
+        <link rel="stylesheet" type="text/css" href="/INID.css" />
+<script type="text/css"><!--
+<style id="antiClickjack" type="text/css">body{display:none;}</style>
+//-->
+</script>
+    <script language="javascript" type="text/javascript"><!--
+  adImages=new Array('/images/Block1.gif','/images/Block3.gif','/images/Block5.gif','/images/Block7.gif','/images/Block9.gif','/images/Block11.gif','/images/Block14.gif')
+  thisAd=0
+  imgCt=adImages.length
+if (self == top) {
+    var antiClickjack = document.getElementById("antiClickjack");
+    antiClickjack.parentNode.removeChild(antiClickjack);
+} else {
+    top.location = self.location;
+}
+function rotate(){
+    if (document.images) {
+        thisAd++
+            if (thisAd==imgCt){
+                thisAd=0
+            }
+        document.adBanner.src=adImages[thisAd]
+            setTimeout('rotate()',200)
+    }
+}
+function reloadPage()
+{
+    if (document.forms[0].hidden.value == "update_refresh") {
+      rotate()
+    }
+    else if (document.forms[0].hidden.value == "freshen") {
+      setTimeout("self.location.reload(true)", 10000)
+      rotate()
+    }
+}
+
+
+//-->
+</script>
+    </head>
+           <body>
+  <div id="wrapper">
+    <div id="whole-page">
+      <div id="main-content">
+        <div id="header">
+          <div id="tab-container">
+            <div id="logo-div">
+	      <img id="main-logo" src="/images/att_logo.png" alt="" style="height:42px;" />
+            </div>
+            <div style="clear: both;"></div>
+<div id="skip"><a href="#content-sub">Skip to Main Content</a></div>
+            <div id="top-navigation">
+              <div id="top-navigation-buttons">
+<a class="topnav" href="/cgi-bin/home.ha"><span>Device</span></a>
+<a class="topnav" href="/cgi-bin/broadbandstatistics.ha"><span>Broadband</span></a>
+<a class="topnav topnavselected" href="/cgi-bin/lanstatistics.ha"><span>
+Home Network
+</span></a>
+
+<a class="topnav" href="/cgi-bin/voice.ha"><span>Voice</span></a>
+<a class="topnav" href="/cgi-bin/firewall.ha"><span>Firewall</span></a>
+<a class="topnav" href="/cgi-bin/diag.ha"><span>Diagnostics</span></a>
+              <div style="clear: both;"></div>
+            </div>
+          </div>
+          <div id="secondary-nav">
+            <div id="secondary-nav-buttons">
+<a class="secondary-link sec-selected" href="/cgi-bin/lanstatistics.ha">Status</a>
+<a class="secondary-link" href="/cgi-bin/etherlan.ha">Configure</a>
+<a class="secondary-link" href="/cgi-bin/ip6lan.ha">IPv6</a>
+<a class="secondary-link" href="/cgi-bin/wconfig_unified.ha">Wi-Fi</a>
+<a class="secondary-link" href="/cgi-bin/wmacauth.ha">MAC Filtering</a>
+<a class="secondary-link" href="/cgi-bin/dhcpserver.ha">Subnets &amp; DHCP</a>
+<a class="secondary-link" href="/cgi-bin/ipalloc.ha">IP Allocation</a>
+                  </div></div></div>
+                <div style="clear: both;"></div>
+              </div>
+        <div style="clear: both;"></div>
+      <div id="mid-section">
+          <div id="content-padding"><!-- CONTENT -->
+            <div id="content"
+><div id="content-sub">
+                <div class="first-section-header">
+                 <h1>Home Network Status</h1></div>
+         <form method="post" action="/cgi-bin/lanstatistics.ha">
+<input type="hidden" name="nonce" value="f0bc99ce3890976281cd942e5923ab186c88154615d80a899681bf2fea64491c" />
+                 <div class="section-content">
+                   <table cellpadding="1" class="table100" summary="This table displays the critical LAN status of the device.">
+                    <tr>
+                      <th scope="row" nowrap="nowrap" width="30%">Device IPv4 Address</th>
+	                  <td class="col2" width="70%" colspan="3">192.168.1.254</td>
+	                </tr>
+	                <tr>
+	                  <th scope="row" nowrap="nowrap">DHCPv4 Netmask</th>
+	                  <td class="col2">255.255.255.0</td>
+                    </tr>
+                    <tr>
+	                  <th scope="row" nowrap="nowrap">DHCP Server</th>
+                      <td class="col2">On</td>
+                    </tr>
+                    <tr>
+	                  <th scope="row" nowrap="nowrap">DHCPv4 Start Address</th>
+                      <td class="col2">192.168.1.64</td>
+                    </tr>
+                    <tr>
+	                  <th scope="row" >DHCPv4 End Address</th>
+                      <td class="col2">192.168.1.253</td>
+	                </tr>
+                    <tr>
+                      <th scope="row">DHCP Leases Available</th>
+                      <td class="col2">182</td>
+                    </tr>
+                    <tr>
+                      <th scope="row">DHCP Leases Allocated</th>
+                      <td class="col2">8</td>
+                    </tr>
+                    <tr>
+                      <th scope="row">DHCP Primary Pool</th>
+                      <td class="col2">Private</td>
+                    </tr>
+                    <tr>
+                      <th scope="row">Secondary Subnet</th>
+                      <td class="col2">Disabled</td>
+                    </tr>
+                    <tr>
+                      <th scope="row">
+Public Subnet
+</th>
+                      <td class="col2"></td>
+                    </tr>
+                    <tr>
+                      <th scope="row">Cascaded Router Status</th>
+                      <td class="col2">Disabled</td>
+                    </tr>
+                    <tr>
+                      <th scope="row">IP Passthrough Status</th>
+                      <td class="col2">
+Off (private IP address)
+</td>
+                    </tr>
+                    </table>
+                   <h2>Interfaces</h2>
+                   <div>
+                     <table class="table100" summary="This table displays the LAN Interfaces of the device.">
+                      <thead>
+                      <tr>
+                          <th scope="col">Interface</th>
+                          <th scope="col">Status</th>
+                          <th scope="col">Active Devices</th>
+                          <th scope="col">Inactive Devices</th>
+                      </tr>
+                      </thead>
+                      <tbody>
+                      <tr>
+                           <td scope="row" class="col1" width="30%">Ethernet</td>
+                                                      <td class="col2" width="18%">Enabled</td>
+                                                      <td class="col2" width="18%">0</td>
+                           <td class="col2" width="34%">0</td>
+                       </tr>
+                       <tr>
+                           <td scope="row" class="col1" width="30%">5G Ethernet</td>
+                                                      <td class="col2" width="18%">Enabled</td>
+                                                      <td class="col2" width="18%">7</td>
+                           <td class="col2" width="34%">2</td>
+                       </tr>
+                      <tr>
+                           <td scope="row" class="col1">Wi-Fi 2.4 GHz
+</td>
+                           <td class="col2">Enabled</td>
+                                                      <td class="col2" width="18%">1</td>
+                           <td class="col2" width="34%">3</td>
+                       </tr>
+                       <tr>
+                                                          <td scope="row" class="col1">Wi-Fi 5 GHz</td>
+                                                                       <td class="col2"> Enabled </td>
+                                                              <td class="col2" width="18%">1</td>
+                               <td class="col2" width="34%">13</td>
+                                                   </tr>
+                       
+                           <tr>
+                               <td scope="row" class="col1">Mesh Clients</td>
+                                                                     <td class="col2"> Disabled </td>
+                                                              <td class="col2" width="18%">0</td>
+                               <td class="col2" width="34%">0</td>
+                           </tr>
+                                            </tbody>
+                     </table>
+                   </div>
+                   <h2>IPv6</h2>
+                   <div>
+                     <table class="table100" summary="This table displays IPv6 LAN information.">
+                       <tr>
+                           <th scope="row" width="30%">Status</th>
+                           <td class="col2" width="70%">Available</td>
+                       </tr>
+                       <tr>
+                           <th scope="row">Global Unicast IPv6 Address</th>
+                           <td class="col2">2001:db8:2::1                           </td>
+                       </tr>
+                       <tr>
+                           <th scope="row">Link-local IPv6 Address</th>
+                           <td class="col2">fe80::5eff:fe00:301</td>
+                       </tr>
+                       <tr>
+                           <th scope="row">IPv6 Addressing Subnet (including length)</th>
+                           <td class="col2">2001:db8:2::/64</td>
+                       </tr>
+                       <tr>
+                            <th scope="row">IPv6 Delegated Prefix Subnet (including length)</th>
+                            <td class="col2">
+</td>
+                       </tr>
+                     </table>
+                 </div>
+               <h2>IPv4 Statistics</h2>
+                   <div>
+                     <table class="table100" summary="This table displays IPv4 statistics.">
+                       <tr>
+                           <th scope="row" width="30%">Transmit Packets</th>
+                           <td class="col2">2359332688</td>
+                       </tr>
+                       <tr>
+                           <th scope="row">Transmit Errors</th>
+                           <td class="col2">0</td>
+                       </tr>
+                       <tr>
+                           <th scope="row">Transmit Discards</th>
+                           <td class="col2">0</td>
+                       </tr>
+                       <tr>
+                           <th scope="row" width="30%">Receive Packets</th>
+                           <td class="col2">852133808</td>
+                       </tr>
+                       <tr>
+                           <th scope="row">Receive Errors</th>
+                           <td class="col2">0</td>
+                       </tr>
+                       <tr>
+                           <th scope="row">Receive Discards</th>
+                           <td class="col2">0</td>
+                       </tr>
+                     </table>
+                 </div>
+               <h2>IPv6 Statistics</h2>
+                   <div>
+                     <table class="table100" summary="This table displays IPv6 Statistics.">
+                       <tr>
+                           <th scope="row" width="30%">Transmit Packets</th>
+                           <td class="col2">
+3347833
+</td>
+                       </tr>
+                       <tr>
+                           <th scope="row">Transmit Errors</th>
+                           <td class="col2">
+0
+</td>
+                       </tr>
+                       <tr>
+                           <th scope="row">Transmit Discards</th>
+                           <td class="col2">
+0
+</td>
+                       </tr>
+                     </table>
+                 </div>
+                    <h2>Wi-Fi Status</h2>
+                <table cellpadding="1" class="table100" summary="This table displays Wi-Fi status.">
+                     <tr>
+                            <th scope="col">&nbsp;</th><th scope="col">2.4 GHz</th>
+                        
+                            <th scope="col">5 GHz</th>
+                                                  <tr><td scope="row" class="col1" width="35%">Wi-Fi Radio Status</td>
+                         <td class="col2" width="23.33%">Enabled</td>
+
+                                                           <td class="col2" width="23.33%"> Enabled </td>
+                                                   </tr>
+                     <tr>
+                       <td scope="row" class="col1">Mode</td>
+                       <td class="col2">G/N</td>
+                       <td class="col2">N/AC/AX</td>
+
+                                            </tr>
+                     <tr>
+                       <td scope="row" class="col1">Bandwidth</td>
+                       <td class="col2">20MHz</td>
+                       <td class="col2">80MHz</td>
+
+                                            </tr>
+                     <tr>
+                        <td scope="row" class="col1">Current Bandwidth</td>
+                        <td class="col2">20MHz</td>
+                        <td class="col2">80MHz</td>
+
+                                             </tr>
+                     <tr>
+                       <td scope="row" class="col1">Current Radio Channel</td>
+                       <td class="col2">6</td>
+
+                                                           <td class="col2">52,100</td>
+                                
+                     </tr>
+                     <tr>
+                       <td scope="row" class="col1">Radio Channel Selection</td>
+                       <td class="col2">automatic</td>
+                       <td class="col2">automatic</td>
+
+                                            </tr>
+                     <tr>
+                       <td scope="row" class="col1">Power Level</td>
+                       <td class="col2">100%</td>
+                       <td class="col2">100%</td>
+
+                                            </tr>
+
+                     
+                     <tr><td>&nbsp;</td></tr>
+                                         <tr><td>&nbsp;</td></tr>
+                     <tr>
+                       <td scope="row" class="col1">Home SSID</td>
+                                                  <td class="col2">On</td>
+                                                  <td class="col2">On</td>
+                       
+                     </tr>
+                     <tr>
+                       <td scope="row" class="col1">Network Name (SSID)</td>
+                       <td class="col2"><div class="pre-style"><pre>TestSSID</pre></div></td>
+                       <td class="col2"><div class="pre-style"><pre>TestSSID</pre></div></td>
+
+                                            </tr>
+                     <tr>
+                       <td scope="row" class="col1">Hide Network Name</td>
+                       <td class="col2">Off</td>
+                       <td class="col2">Off</td>
+
+                                            </tr>
+                     <tr>
+                       <td scope="row" class="col1">Security</td>
+                       <td class="col2">WPA-2</td>
+                       <td class="col2">WPA-2</td>
+
+                                            </tr>
+                     <tr>
+                       <td scope="row" class="col1">MAC Address Filtering</td>
+                       <td class="col2">Off</td>
+                       <td class="col2">Off</td>
+
+                                            </tr>
+
+                                          <tr><td>&nbsp;</td></tr>
+                     <tr>
+                       <td scope="row" class="col1">Guest SSID</td>
+                       <td class="col2">Off</td>
+                     </tr>
+                     <tr>
+                       <td scope="row" class="col1">Network Name (SSID)</td>
+                       <td class="col2" colspan="2"><div class="pre-style"><pre>TestSSID_Guest</pre></div></td>
+                     </tr>
+                     <tr>
+                       <td scope="row" class="col1">Hide Network Name</td>
+                       <td class="col2">Off</td>
+                     </tr>
+                     <tr>
+                       <td scope="row" class="col1">Security</td>
+                       <td class="col2">WPA-2</td>
+                     </tr>
+                     <tr>
+                       <td scope="row" class="col1">MAC Address Filtering</td>
+                       <td class="col2">Off</td>
+                     </tr>
+
+                     
+                     </table>
+                 <h2>Wi-Fi Network Statistics</h2>
+              <table cellpadding="1" class="table100" summary="This table displays Wi-Fi Statistics.">
+                     <tr>
+                       <td width="30%">&nbsp;</td>
+
+                                                 <th scope="col" width="23.33%">2.4 GHz</th>
+                                                  <th scope="col" width="23.33%">5 GHz</th>
+                                       </tr>
+                <tr>
+                  <td scope="row" class="col1">Transmit Bytes</td>
+                  <td class="col2">255712977</td>
+
+                                        <td class="col2">1304417044</td>
+                                  </tr>
+                <tr>
+                  <td scope="row" class="col1">Receive Bytes</td>
+                  <td class="col2">10586245</td>
+
+                                        <td class="col2">2040681798</td>
+                                  </tr>
+                <tr>
+                  <td scope="row" class="col1">Transmit Packets</td>
+                  <td class="col2">1612313</td>
+
+                                        <td class="col2">14679918</td>
+                                  </tr>
+                <tr>
+                  <td scope="row" class="col1">Receive Packets</td>
+                  <td class="col2">69106</td>
+
+                                        <td class="col2">9733724</td>
+                                  </tr>
+                <tr>
+                  <td scope="row" class="col1">Transmit Error Packets</td>
+                  <td class="col2">0</td>
+
+                                        <td class="col2">5</td>
+                                  </tr>
+                <tr>
+                  <td scope="row" class="col1">Receive Error Packets</td>
+                  <td class="col2">0</td>
+                                        <td class="col2">19</td>
+                                  </tr>
+                <tr>
+                  <td scope="row" class="col1">Transmit Discard Packets</td>
+                  <td class="col2">0</td>
+
+                                        <td class="col2">0</td>
+                                  </tr>
+                <tr>
+                  <td scope="row" class="col1">Receive Discard Packets</td>
+                  <td class="col2">0</td>
+
+                                        <td class="col2">0</td>
+                                  </tr>
+                <tr><td>&nbsp;</td></tr>
+              </table>
+                    <h2>Wi-Fi Congestion</h2>
+                     <div id="cong">
+                     <p class="desc">WARNING: Running the Congestion test will temporarily disconnect Wi-Fi users.</p>
+
+                     <input type="submit"  name="Congestion" class="cssbtn largerbtn btnspacer" value="Congestion Detection 2.4 GHz" />
+<input type="submit"  name="CongRadio2" class="cssbtn largerbtn" value="Congestion Detection 5 GHz" />
+                     </div>
+                   <h2>Wi-Fi Client Connection Statistics&nbsp;&nbsp;<input type="submit" name="ClearSta" class="cssbtn largebtn" value="Clear Connection Statistics" /></h2>
+              <div class="scroller">
+              <table cellpadding="1" class="table100 grid" summary="Wi-Fi Client Connection Statistics Table">
+                <tr>
+                  <th scope="col">MAC Address</th>
+                  <th scope="col">Authentication State</th>
+                  <th scope="col">IP Address</th>
+                  
+                  <th scope="col">Access Point</th>
+                  <th scope="col">Transmit Packets</th>
+                  <th scope="col">Receive Packets</th>
+                  <th scope="col">Transmit Bytes</th>
+                  <th scope="col">Receive Bytes</th>
+                  <th scope="col">Trans Errors</th>
+                  <th scope="col">Signal Strength</th>
+                  <th scope="col">Disassoc Count</th>
+                  <th scope="col">Deauth Count</th>
+                </tr>
+<tr class="a"><td scope="row" class="heading">
+02:00:5e:00:01:01
+</td><td>
+Connected
+</td><td>
+192.0.2.97
+</td><td><pre class="column">2.4 GHz TestSSID</pre></td>
+                                  <td>
+                                  24505                                  </td><td>
+                                  427544                                  </td><td>
+                                  1118379                                  </td><td>
+                                  30582031                                  </td><td>
+                                  2                                  </td><td>
+                                  -31 dBm&nbsp;<img src="/images/signal-strength-5-bar.png" alt="" />
+                                 </td><td>
+                                 3                                 </td><td>
+                                 2                                 </td></tr>
+                                                  </table>
+                    </div>
+                    <h2>LAN Ethernet Statistics</h2>
+                     <table class="table100" cellpadding="1" summary="LAN Ethernet Statistics Table">
+                     <tr><th scope="col" width="30%">&nbsp;</th>
+                         <th scope="col" width="18%">Port 1</th>
+                         <th scope="col" width="18%">Port 2</th>
+                         <th scope="col" width="18%">Port 3</th>
+                         <th scope="col" width="15%">Port 4</th>
+                     </tr>
+                     <tr><td class="col1" scope="row">State</td>
+                         <td class="col2">up</td>
+                         <td class="col2">down</td>
+                         <td class="col2">down</td>
+                         <td class="col2">down</td>
+                     </tr>
+                     <tr><td class="col1" scope="row">Transmit Speed</td>
+                         <td class="col2">2500000000</td>
+                         <td class="col2">0</td>
+                         <td class="col2">0</td>
+                         <td class="col2">0</td>
+                     </tr>
+                     <tr><td class="col1" scope="row">Transmit Packets</td>
+                         <td class="col2">2271244148</td>
+                         <td class="col2">0</td>
+                         <td class="col2">0</td>
+                         <td class="col2">0</td>
+                     </tr>
+                     <tr><td class="col1" scope="row">Transmit Bytes</td>
+                         <td class="col2">995425418</td>
+                         <td class="col2">0</td>
+                         <td class="col2">0</td>
+                         <td class="col2">0</td>
+                     </tr>
+                     <tr><td class="col1">Transmit Unicast</td>
+                         <td class="col2">2269756456</td>
+                         <td class="col2">0</td>
+                         <td class="col2">0</td>
+                         <td class="col2">0</td>
+                     </tr>
+                     <tr><td class="col1">Transmit Multicast</td>
+                         <td class="col2">897595</td>
+                         <td class="col2">0</td>
+                         <td class="col2">0</td>
+                         <td class="col2">0</td>
+                     </tr>
+                     <tr><td class="col1">Transmit Dropped</td>
+                         <td class="col2">0</td>
+                         <td class="col2">0</td>
+                         <td class="col2">0</td>
+                         <td class="col2">0</td>
+                     </tr>
+                     <tr><td class="col1" scope="row">Transmit Errors</td>
+                         <td class="col2">0</td>
+                         <td class="col2">0</td>
+                         <td class="col2">0</td>
+                         <td class="col2">0</td>
+                     </tr>
+                     <tr><td class="col1" scope="row">Receive Packets</td>
+                         <td class="col2">824491290</td>
+                         <td class="col2">0</td>
+                         <td class="col2">0</td>
+                         <td class="col2">0</td>
+                     </tr>
+                     <tr><td class="col1" scope="row">Receive Bytes</td>
+                         <td class="col2">2994932</td>
+                         <td class="col2">0</td>
+                         <td class="col2">0</td>
+                         <td class="col2">0</td>
+                     </tr>
+                     <tr><td class="col1" scope="row">Receive Unicast</td>
+                         <td class="col2">824146718</td>
+                         <td class="col2">0</td>
+                         <td class="col2">0</td>
+                         <td class="col2">0</td>
+                     </tr>
+                     <tr><td class="col1" scope="row">Receive Multicast</td>
+                         <td class="col2">296959</td>
+                         <td class="col2">0</td>
+                         <td class="col2">0</td>
+                         <td class="col2">0</td>
+                     </tr>
+                     <tr><td class="col1" scope="row">Receive Dropped</td>
+                         <td class="col2">23730</td>
+                         <td class="col2">0</td>
+                         <td class="col2">0</td>
+                         <td class="col2">0</td>
+                     </tr>
+                     <tr><td class="col1" scope="row">Receive Errors</td>
+                         <td class="col2">18474</td>
+                         <td class="col2">0</td>
+                         <td class="col2">0</td>
+                         <td class="col2">0</td>
+                     </tr>
+                </table>
+                 </div>
+                 <div>
+                  <input type="submit" name="Clear" class="cssbtn" value="Clear Statistics" />
+              </div>
+            </form>
+                </div>
+              </div>
+            </div>
+        <div id="help">
+            <div id="help-sub">
+                <table>
+                    <tr>
+                        <td><a href="https://myhomenetwork.att.com/#/login"><img src="/images/SHMicon.png" alt="Information" height="55" width="55"/></a></td>
+                        <td><a href="https://myhomenetwork.att.com/#/login">Smart Home Manager</a><br><br>Control your home network from one easy-to-use app.</td>
+                    </tr>
+                </table>
+            </div> <!-- help-sub -->
+        </div> <!-- help -->
+
+        <div id="help">
+            <p></p>
+        </div> <!-- help -->
+     <!-- isWANUP -->
+            <div id="help">
+              <div id="help-sub">
+              <h2>Help</h2><br />
+      <p>This page displays statistics, status, and current parameter settings of the LAN side of the device. Definitions are given for some of the more commonly used items. Other items are highly technical and meant only for use by service provider technicians.</p>
+      <strong>Device IPv4 Address:</strong> The IP Address of your device as seen from the LAN.<br /><br />
+      <strong>DHCPv4 Netmask:</strong> Subnet mask of your LAN.<br /><br />
+      <strong>DHCP Server:</strong> Indicates if DHCP Service is enabled or disabled. This status applies to all IPv4 interfaces.<br /><br />
+      <strong>DHCPv4 Start Address:</strong> First IP address in the range being served to your LAN by the device's DHCP server.<br /><br />
+      <strong>DHCPv4 End Address:</strong> Last IP address in the range being served to your LAN by the device's DHCP server.<br /><br />
+      <strong>DHCP Leases Available:</strong> DHCP leases remaining to be allocated. This is the total leases configured minus the Leases Allocated. This may include multiple pools.<br /><br />
+      <strong>DHCP Leases Allocated:</strong> The number of ACTIVE leases the device has issued to clients based on the DHCP server lease table.<br /><br />
+      <strong>DHCP Primary Pool:</strong> The device will issue leases beginning with either the private or public (if enabled) pool.<br /><br />
+      <strong>Secondary Subnet:</strong> Enabled indicates that a Cascaded Router or a Public Subnet
+ has been configured.<br /><br />
+      <strong>Public Subnet:</strong> The masked public subnet, if configured.<br /><br />
+      <strong>Cascaded Router Status:</strong> When enabled will route traffic to the specified device.<br /><br />
+      <strong>Cascaded Router Subnet:</strong> The ip address and subnet of the Cascaded Router, if configured.<br /><br />
+      <strong>IP Passthrough Status:</strong> When enabled(on), the device will serve a public IP address to the LAN device.<br /><br />
+      <strong>IP Passthrough Address:</strong> When enabled, the current public IP address of the LAN device.<br /><br />
+      <strong>Interfaces:</strong> Indicates the status of the various LAN interfaces and the device count, active and inactive, for each interface. The device counts include both DHCP and static clients.<br /><br />
+      <strong>IPv6:</strong> Status items of the IPv6 LAN. If no prefixes have been delegated, the IPv6 Delegated Prefix Subnet will be blank.<br /><br />
+      <strong>IPv4 Statistics:</strong> LAN statistics collected since the last restart of the device.<br /><br />
+      <strong>IPv6 Statistics:</strong> IPv6 LAN transmit statistics collected since the last restart of the device if IPv6 is enabled.<br /><br />
+      <strong>Wi-Fi Radio Status:</strong> Indicates whether or not the Wi-Fi interface is enabled and working.<br /><br />
+      <strong>Mode:</strong> The Wi-Fi standard in operation on this device.<br /><br />
+              <strong>Bandwidth:</strong> Both current and configured bandwidths are displayed. These may not match due to government restrictions.<br /><br />
+        <strong>Current Radio Channel:</strong> This may not match the configured value due to government restrictions.<br /><br />
+            <strong>Radio Channel Selection:</strong> Automatic indicates that the device selects the best channel for its environment. Fixed indicates that the user has specified the desired channel.<br /><br />
+      <strong>Power Level:</strong> Operating power may be reduced to operate over a smaller range, reducing interference with other Wi-Fi devices.<br /><br />
+            <strong>Home/Guest SSID:</strong> A Wi-Fi client connected to a Home SSID may be able to communicate with other devices on that SSID and elsewhere on the LAN, as well as connect to the Internet. Depending on the Guest SSID configuration, a Wi-Fi client connected to a Guest SSID may have similar abilities to Home SSID. Typically, Guest SSID clients can connect to the Internet, but cannot communicate with any other wireless devices or with the LAN. On indicates that the SSID is enabled.<br /><br />
+      <strong>SSID Subnet:</strong> Guest clients on the Guest SSID will be handed DHCP leases from this subnet.<br /><br />
+      <strong>Network Name (SSID):</strong> This name should appear when a Wi-Fi client searches for available networks.<br /><br />
+      <strong>Hide Network Name:</strong> If enabled, the device network name above will not appear in Wi-Fi client searches.<br /><br />
+      <strong>Security:</strong> The security mechanism between the device and its clients.<br /><br />
+            <strong>Password:</strong> The Wi-Fi password, if security is enabled.<br /><br />
+            <strong>MAC Address Filtering:</strong> On indicates that the device is inspecting MAC addresses before connecting Wi-Fi clients.<br /><br />
+            <strong>Wi-Fi Network Statistics:</strong> Statistics collected since the last restart of the device.<br /><br />
+      <strong>Wi-Fi Congestion Detection:</strong> For each Wi-Fi channel the radio detects Wi-Fi and non-Wi-Fi traffic to determine the percentage of time it is free to transmit. The following results are displayed:
+          <ul><li>Channel number</li>
+          <li>AP Count</li>
+          <li>Congestion Score(1-10)<br />(10 being the best score)</li></ul>
+      When this button is disabled, this function is performed through the network by AT&T.<br /><br />
+      <strong>Wi-Fi Client Connection Statistics:</strong> For each Wi-Fi client that has attempted connection with the device, the following stats are shown:
+      <ul><li>MAC Address</li>
+      <li>Authentication State</li>
+      <li>IP Address, if known</li>
+            <li>Access Point, including the band of the Wi-Fi radio and the Network Name (SSID)</li>
+      <li>Transmit Packets sent TO the client</li>
+      <li>Receive Packets sent FROM the client</li>
+      <li>Transmit Bytes</li>
+      <li>Receive Bytes</li>
+      <li>Transmission Errors</li>
+      <li>RSSI-Received Signal Strength Indicator and displayed in bars, while connected</li>
+      <li>Disassociation Count</li>
+      <li>Deauthentication Count</li>
+      </ul>
+      <strong>Clear Connection Statistics:</strong> This button clears connection statistics, but the counters immediately begin counting again, so you may or may not see values display as zeroes.<br /><br />
+      <strong>LAN Ethernet Statistics:</strong> Statistics for each port collected since the last restart of the device.<br /><br />
+      <strong>Clear Statistics:</strong> This button clears statistics, but the counters immediately begin counting again, so you may or may not see values display as zeroes.
+              </div> <!-- help-sub -->
+            </div> <!-- help -->
+            <div style="clear: both;"></div>
+          </div>
+        </div>
+        <div style="clear: both;"></div>
+      </div>
+      <div id="footer">
+      <div><br>
+   <span class="inner">&copy; 2016-2025 AT&T Intellectual Property. All rights reserved. AT&T and Globe logo are registered trademarks of AT&T Intellectual Property.</span>
+   <span class="sitemap"><a href="/cgi-bin/sitemap.ha">Site Map</a></span></br></div>
+   <div><span class="inner">&copy; 2016 ARRIS Enterprises LLC. All rights reserved. ARRIS is a registered trademark of ARRIS Enterprises LLC.</span></div>
+   </div>
+      </div>
+</body>
+</html>
