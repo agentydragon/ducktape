@@ -1,8 +1,8 @@
 # Agentplane service dependency rule
 
-Status: **accepted architecture constraint, including v1.** Sandbox Service and the production app
-client are implemented in source; the live authority handoff is not yet verified. Notification
-implementation remains separate. See the [extraction plan](../plans/sandbox_service.md) for rollout gates.
+Status: **accepted architecture constraint, including v1.** Sandbox Service, the app's client of it,
+and the Session Event archive handoff are implemented and deployed; retiring the app's legacy raw
+tables is remaining cleanup.
 
 ## The integration app is a client
 
@@ -40,19 +40,19 @@ presentation state and projections, but those must not become hidden sources of 
 ## Ownership
 
 - **Sandbox Service:** sandbox provisioning/lifecycle, verified destination bindings, authorized
-  runner-session access, and command relay/event following. It does not own a session-log archive.
+  runner-session access, command relay/event following, and the Session Event archive with its live
+  ingestion.
 - **Runner:** native harness scheduling/execution, durable command journal, canonical execution Events
   and causal receipts.
 - **Notification service:** providers, subscriptions, persisted payloads, inbox HWM, notice policy, and
   notice delivery bookkeeping.
 - **Action Service:** Action authorization/Decisions, execution lifecycle, and canonical Action history.
 - **Integration app:** user-facing composition, interaction, presentation, and app-only projections/state;
-  a client of the above, retaining its existing PostgreSQL session archive and ingestion checkpoints.
+  a client of the above that reads session history from Sandbox Service.
 
 The backend is named **Sandbox Service**: it manages sandboxes and access to their runner
 sessions. It is not another Action executor or a service called "runtime" with unspecified ownership.
-`app/threads/` owns only the app's thread archive, metadata, projections, and browser-facing
-composition. Its session adapter uses the service client; it does not provision sandboxes or
+`app/threads/` owns only the app's thread metadata, projections, and browser-facing composition. Its session adapter uses the service client; it does not provision sandboxes or
 connect to runners. Thread identities never enter the Sandbox Service API.
 
 ## Extraction before notification v1
@@ -67,11 +67,9 @@ extracted. Notification-triggered wake and durable acceptance of commands for of
 remain separate, deferred product features. A service boundary is not permission to silently create
 a second runner-command queue.
 
-Runner journals remain durable on runner state volumes. Sandbox Service exposes the surviving
-runner log, not an independently retained archive; clients needing retention beyond that volume
-must archive events themselves. The app keeps its existing archive/projections as a service client.
-That archive must not become a dependency of backend services, and migrating it is not a required
-follow-up. Preserve its retained history and provenance during the app cutover.
+Runner journals remain durable on runner state volumes. Sandbox Service ingests them into its
+Session Event archive, which outlives the runner volume; the app reads history from that archive
+and keeps its UI projections; its legacy raw tables await retirement.
 
 Sandbox Service uses a protobuf/gRPC service API; the app retains its browser-facing HTTP API.
 After cutover, Sandbox Service is the sole normal production client of runner control/event RPCs.

@@ -15,6 +15,7 @@ python.pkgs.buildPythonApplication {
     aiosqlite
     greenlet # sqlalchemy's asyncio extension
     grpcio
+    httpx
     protobuf
     pydantic
     sqlalchemy

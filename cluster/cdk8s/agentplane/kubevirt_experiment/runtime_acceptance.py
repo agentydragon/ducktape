@@ -322,13 +322,6 @@ def _node_selector(value: str) -> tuple[str, str]:
     return key, selected
 
 
-def _context_window(value: str) -> tuple[str, int]:
-    model, separator, size = value.partition("=")
-    if not separator or not model or not size.isdecimal() or int(size) <= 0:
-        raise argparse.ArgumentTypeError("expected MODEL=POSITIVE_INTEGER")
-    return model, int(size)
-
-
 def _localhost_target(value: str) -> str:
     host, separator, port = value.rpartition(":")
     if not separator or host not in {"localhost", "127.0.0.1", "[::1]"}:
@@ -362,8 +355,6 @@ def _validate_create_args(args: argparse.Namespace) -> dict[str, Any]:
         raise ValueError("--kubernetes-host must be a host name")
     if len(dict(args.node_selector)) != len(args.node_selector):
         raise ValueError("--node-selector keys must be unique")
-    if len(dict(args.model_context_window)) != len(args.model_context_window):
-        raise ValueError("--model-context-window model names must be unique")
     if args.cpu_cores < 1:
         raise ValueError("--cpu-cores must be positive")
     for option in ("memory", "state_disk", "workspace_disk", "storage_class"):
@@ -373,7 +364,6 @@ def _validate_create_args(args: argparse.Namespace) -> dict[str, Any]:
         "llm_base_url": _origin(args.llm_base_url, "--llm-base-url"),
         "proxy_url": _origin(args.proxy_url, "--proxy-url"),
         "node_selector": dict(args.node_selector),
-        "model_context_windows": dict(args.model_context_window),
     }
 
 
@@ -428,7 +418,6 @@ def _config_data(args: argparse.Namespace, *, uid: str, config: dict[str, Any]) 
         "listen": "0.0.0.0:7000",
         "llm_base_url": config["llm_base_url"],
         "proxy_url": config["proxy_url"],
-        "model_context_windows": config["model_context_windows"],
         "format_blank_disks": ["state", "workspace"],
     }
     kubeconfig = {
@@ -1185,7 +1174,6 @@ def build_parser() -> argparse.ArgumentParser:
     create_parser.add_argument("--state-disk", default="20Gi")
     create_parser.add_argument("--workspace-disk", default="40Gi")
     create_parser.add_argument("--node-selector", action="append", type=_node_selector, default=[])
-    create_parser.add_argument("--model-context-window", action="append", type=_context_window, default=[])
     create_parser.add_argument("--timeout", type=float, default=3600)
     _add_kubeconfig(create_parser)
     create_parser.set_defaults(handler=create)

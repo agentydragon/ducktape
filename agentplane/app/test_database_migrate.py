@@ -45,6 +45,49 @@ def test_a_second_run_over_a_migrated_database_changes_nothing(db_url: str) -> N
     RUNNER.apply(db_url)
 
 
+def test_session_leases_replace_sandbox_ownership_without_changing_identity(db_url: str) -> None:
+    engine = create_engine(RUNNER.sync_url(db_url))
+    token, thread = uuid.uuid4(), uuid.uuid4()
+    try:
+        with engine.begin() as connection:
+            connection.execute(text("DROP TABLE session_projection_lease"))
+            connection.execute(
+                text(
+                    "CREATE TABLE sandbox_ingestion (sandbox text PRIMARY KEY, token uuid NOT NULL, "
+                    "expires_at timestamptz NOT NULL)"
+                )
+            )
+            connection.execute(text("UPDATE alembic_version_app SET version_num = '0021_projected_feed_state'"))
+            connection.execute(
+                text("INSERT INTO sandbox_ingestion VALUES ('retained-sandbox', :token, '2030-01-01T00:00:00Z')"),
+                {"token": token},
+            )
+            connection.execute(
+                text(
+                    "INSERT INTO event_log (id, sandbox, session_id, harness, model, cwd, created_at) "
+                    "VALUES (:id, 'retained-sandbox', 'private-locator', 'HARNESS_CODEX', 'model', '/', now())"
+                ),
+                {"id": thread},
+            )
+        RUNNER.apply(db_url)
+        RUNNER.apply(db_url)
+        with engine.begin() as connection:
+            assert not inspect(connection).has_table("sandbox_ingestion")
+            assert connection.scalar(text("SELECT count(*) FROM session_projection_lease")) == 0
+            assert (
+                connection.scalar(text("SELECT session_id FROM event_log WHERE id = :id"), {"id": thread})
+                == "private-locator"
+            )
+            connection.execute(
+                text("INSERT INTO session_projection_lease VALUES (:id, :token, '2030-01-01T00:00:00Z')"),
+                {"id": thread, "token": token},
+            )
+            connection.execute(text("DELETE FROM event_log WHERE id = :id"), {"id": thread})
+            assert connection.scalar(text("SELECT count(*) FROM session_projection_lease")) == 0
+    finally:
+        engine.dispose()
+
+
 def test_tables_the_history_does_not_own_are_not_drift(db_url: str) -> None:
     """Histories can share a database, each with a version table of its own."""
     _execute(db_url, "CREATE TABLE another_history_test_table (id integer PRIMARY KEY)")

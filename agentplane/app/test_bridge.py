@@ -18,7 +18,7 @@ from datetime import timedelta
 from pathlib import Path
 from typing import Any
 from unittest.mock import AsyncMock
-from uuid import UUID
+from uuid import UUID, uuid4
 
 import httpx
 import pytest
@@ -342,7 +342,7 @@ async def test_the_bridge_streams_a_turn_to_every_tab_and_resumes_from_the_last_
         # frames, and the exit the shutdown caused.
         (thread,) = (await http.get("/threads")).json()
         assert thread["id"] == thread_id
-        assert (thread["sandbox"], thread["session_id"], thread["model"]) == (SANDBOX, SESSION, spec.model)
+        assert (thread["sandbox"], thread["session_id"], thread["model"]) == (SANDBOX, thread_id, spec.model)
         stored = await _stored_events(http, thread["id"], until="harnessExited")
         assert [entry["cursor"] for entry in stored] == [str(n) for n in range(1, len(stored) + 1)]
         assert [entry["event"]["itemCompleted"]["text"] for entry in stored if "itemCompleted" in entry["event"]] == [
@@ -916,10 +916,11 @@ async def test_the_feed_records_a_turn_nobody_is_watching(
     app_url: str, model: ScriptedModel, spec: protocol_pb2.SessionSpec
 ) -> None:
     """Opening a session starts its feed, so a turn driven over REST alone lands in the store."""
+    session_id = str(uuid4())
     async with httpx.AsyncClient(base_url=app_url, timeout=60, headers=AGENT_AUTH) as http:
-        opened = await http.post(SESSIONS, json={"session_id": "unwatched", "spec": MessageToDict(spec)})
+        opened = await http.post(SESSIONS, json={"session_id": session_id, "spec": MessageToDict(spec)})
         assert opened.status_code == 201, opened.text
-        thread_id = await _thread_id(http, "unwatched")
+        thread_id = await _thread_id(http, session_id)
         accepted = await http.post(
             _commands(thread_id),
             json={"commandId": "input-1", "submitInput": {"text": "Reply with exactly: UNWATCHED_OK"}},
@@ -1152,7 +1153,7 @@ async def test_command_returns_runner_receipt_before_app_archive_catches_up(
     assert await content.admitted_command(thread, command) is None
     assert await event_logs.events(thread, limit=10) == []
 
-    lease = await ingestion.acquire(SANDBOX, timedelta(minutes=1))
+    lease = await ingestion.acquire(thread, timedelta(minutes=1))
     assert lease is not None
     await ingestion.record(thread, [receipt], lease=lease)
     assert await content.admitted_command(thread, command) == receipt

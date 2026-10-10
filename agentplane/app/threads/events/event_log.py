@@ -3,10 +3,10 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from uuid import UUID, uuid4
+from uuid import UUID
 
 from google.protobuf.json_format import MessageToDict, ParseDict
-from sqlalchemy import or_, select
+from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
 
@@ -74,22 +74,16 @@ class EventLogStore:
         self._history_creator = history_creator
 
     async def open(self, sandbox: str, session_id: str, spec: protocol_pb2.SessionSpec) -> UUID:
-        """Materialize the Session's Thread; preserve any existing legacy mapping."""
-        # New service-owned IDs are canonical UUIDs. Old runner IDs (typically s-UUID)
-        # retain their already-minted Thread IDs; discovery and explicit Open race safely
-        # on the (sandbox, session_id) uniqueness constraint.
+        """Materialize a public service Session without consulting private runner locators."""
         try:
-            parsed = UUID(session_id)
-            thread_id = parsed if str(parsed) == session_id else uuid4()
-        except ValueError:
-            thread_id = uuid4()
-        # Migrated Sessions retain their old runner locator but discovery now returns
-        # their public UUID. Resolve either identity without rewriting that locator.
-        existing_query = select(EventLog).where(EventLog.sandbox == sandbox)
-        if str(thread_id) == session_id:
-            existing_query = existing_query.where(or_(EventLog.session_id == session_id, EventLog.id == thread_id))
-        else:
-            existing_query = existing_query.where(EventLog.session_id == session_id)
+            thread_id = UUID(session_id)
+        except ValueError as error:
+            raise EventReplicationError(
+                "new service-projected Thread requires a canonical public Session ID"
+            ) from error
+        if str(thread_id) != session_id:
+            raise EventReplicationError("new service-projected Thread requires a canonical public Session ID")
+        existing_query = select(EventLog).where(EventLog.sandbox == sandbox, EventLog.id == thread_id)
         if self._history_creator is not None:
             async with self._sessions() as session:
                 existing = await session.scalar(existing_query)
@@ -97,8 +91,6 @@ class EventLogStore:
                     # Discovery does not reconstruct missing projection metadata from raw rows.
                     # Existing app identities and summaries remain authoritative for the UI.
                     return existing.id
-            if str(thread_id) != session_id:
-                raise EventReplicationError("new service-projected Thread requires a canonical public Session ID")
             # Confirm durable service registration before admitting an app projection.
             # Do not hold an app DB transaction over this RPC or copy its event payload.
             await self._history_creator.read_session_observations(session_id, limit=1)
@@ -149,11 +141,13 @@ class EventLogStore:
                 await notify(session, Channel.THREADS)
 
     async def find(self, sandbox: str, session_id: str) -> UUID | None:
+        try:
+            public_id = UUID(session_id)
+        except ValueError:
+            return None
         async with self._sessions() as session:
             return (
-                await session.scalars(
-                    select(EventLog.id).where(EventLog.sandbox == sandbox, EventLog.session_id == session_id)
-                )
+                await session.scalars(select(EventLog.id).where(EventLog.sandbox == sandbox, EventLog.id == public_id))
             ).one_or_none()
 
     async def service_session(self, thread_id: UUID) -> ServiceSessionReference | None:

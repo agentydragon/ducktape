@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import asyncio
+import os
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Literal
 from urllib.parse import urlsplit
@@ -35,7 +37,6 @@ class GuestConfig(BaseModel):
     listen: Literal["0.0.0.0:7000"]
     llm_base_url: str = Field(min_length=1)
     proxy_url: str = Field(min_length=1)
-    model_context_windows: dict[str, int] = Field(default_factory=dict)
     format_blank_disks: list[Literal["state", "workspace"]] = Field(default_factory=list)
 
     @field_validator("environment_id")
@@ -43,13 +44,6 @@ class GuestConfig(BaseModel):
     def valid_environment_id(cls, value: str) -> str:
         if any(character.isspace() for character in value):
             raise ValueError("environment_id must not contain whitespace")
-        return value
-
-    @field_validator("model_context_windows")
-    @classmethod
-    def valid_context_windows(cls, value: dict[str, int]) -> dict[str, int]:
-        if any(not model or window <= 0 for model, window in value.items()):
-            raise ValueError("model_context_windows must map non-empty model ids to positive integers")
         return value
 
     @field_validator("format_blank_disks")
@@ -92,6 +86,23 @@ def read_guest_config(path: Path = CONFIG_PATH) -> GuestConfig:
         raise RuntimeError(f"cannot read guest config at {path}: {error}") from error
 
 
+_RUNNER_NETWORK_ENVIRONMENT = (
+    "HTTP_PROXY",
+    "HTTPS_PROXY",
+    "http_proxy",
+    "https_proxy",
+    "NO_PROXY",
+    "no_proxy",
+    "SSL_CERT_FILE",
+)
+
+
+def configure_runner_network_environment(environment: Mapping[str, str]) -> None:
+    """Give the runner process the egress proxy and CA used by its HTTP clients."""
+    for name in _RUNNER_NETWORK_ENVIRONMENT:
+        os.environ[name] = environment[name]
+
+
 def make_runner_config(config: GuestConfig) -> RunnerConfig:
     """Build explicit runner and child configuration from the public seed."""
     llm_base_url = config.llm_base_url
@@ -123,7 +134,6 @@ def make_runner_config(config: GuestConfig) -> RunnerConfig:
     return RunnerConfig(
         state_dir=RUNNER_STATE_DIR,
         harness_environment=harness_environment,
-        model_context_windows=config.model_context_windows,
         claude=ClaudeLaunch(
             binary=Path("/run/current-system/sw/bin/claude"),
             base_url=llm_base_url,
@@ -149,7 +159,9 @@ def make_runner_config(config: GuestConfig) -> RunnerConfig:
 def main() -> None:
     """Entry point used by the dedicated NixOS guest's systemd unit."""
     config = read_guest_config()
-    asyncio.run(async_main(make_runner_config(config), config.listen))
+    runner_config = make_runner_config(config)
+    configure_runner_network_environment(runner_config.harness_environment)
+    asyncio.run(async_main(runner_config, config.listen))
 
 
 def validate_main() -> None:

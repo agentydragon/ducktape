@@ -176,7 +176,7 @@ it("shows approval widgets for Kubernetes resource, pod-list, and log reads", as
       action: { group: "kubernetes_admin", name: "resources_get" },
       arguments: { apiVersion: "apps/v1", kind: "Deployment", name: "api" },
       title: "inspect deployment",
-      visible: ["Get resource", "apps/v1", "Deployment", "namespace: (not specified)"],
+      visible: ["API version: apps/v1"],
     },
     {
       ...request("decision_pending", 4),
@@ -190,7 +190,7 @@ it("shows approval widgets for Kubernetes resource, pod-list, and log reads", as
       action: { group: "kubernetes_admin", name: "pods_log" },
       arguments: { name: "api-0", container: "sidecar", previous: true, tail: -1 },
       title: "inspect pod logs",
-      visible: ["Get pod logs", "api-0", "namespace: (not specified)", "sidecar", "previous: yes", "tail: -1"],
+      visible: ["sidecar", "previous: yes", "tail: -1"],
     },
   ];
   await send(reads);

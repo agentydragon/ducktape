@@ -76,7 +76,7 @@ async def unfolded(event_logs: EventLogStore, ingestion: Ingestion) -> Unfolded:
         )
         source.append(event_pb2.Event(text_delta=event_pb2.TextDelta(item_id=item_id, text=f"body {index}")))
     thread = await event_logs.open(sandbox, SESSION, source.attached.spec)
-    lease = await ingestion.acquire(sandbox, timedelta(minutes=2))
+    lease = await ingestion.acquire(thread, timedelta(minutes=2))
     assert lease is not None
     await ingestion.set_attached(thread, source.attached, lease=lease)
     return Unfolded(thread, source, lease)

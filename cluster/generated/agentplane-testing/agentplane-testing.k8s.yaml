@@ -551,12 +551,18 @@ data:
     allowed_service_account_namespaces:
       - agentplane-testing
     log_llm_requests: false
+    models:
+      - model: ollama/oai-chat/qwen3.8-flash-next-iq4xs-128k
+        total_context_budget_tokens: 131072
+      - model: ollama/oai-chat/qwen3.8-flash-next-iq4xs-256k
+        total_context_budget_tokens: 262144
 immutable: false
 ---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
   annotations:
+    configmap.reloader.stakater.com/reload: agentplane-llm-ingress-settings
     secret.reloader.stakater.com/reload: litellm-key-cheap-experiments
   labels:
     app.kubernetes.io/name: agentplane-llm-ingress
@@ -2940,8 +2946,6 @@ spec:
           env:
             - name: LITELLM_URL
               value: http://agentplane-llm-ingress.agentplane-testing.svc.cluster.local:8080
-            - name: AGENTPLANE_MODEL_CONTEXT_WINDOWS
-              value: '{"ollama/oai-chat/qwen3.8-flash-next-iq4xs-128k":131072,"ollama/oai-chat/qwen3.8-flash-next-iq4xs-256k":262144,"ollama/olm-chat/qwen3.8-flash-next-iq4xs-128k":131072,"ollama/olm-chat/qwen3.8-flash-next-iq4xs-256k":262144}'
             - name: HTTP_PROXY
               value: http://127.0.0.1:3128
             - name: HTTPS_PROXY

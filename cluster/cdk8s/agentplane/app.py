@@ -78,7 +78,6 @@ from cluster.cdk8s.agentplane.pod_disruption_budget import add_pod_disruption_bu
 from cluster.cdk8s.api_resource import custom_resource
 from cluster.cdk8s.forgejo_registry.chart import forgejo_images_creds_external_secret, forgejo_images_creds_secret_ref
 from cluster.cdk8s.gateway import https_route
-from cluster.cdk8s.model_selections import RUNNER_CONTEXT_OVERRIDES
 from cluster.cdk8s.probes import http_probe
 from cluster.cdk8s.providers.agent_sandbox.sandbox_template import SandboxTemplate
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, Entity, IngressRule, NetworkPolicy
@@ -272,9 +271,9 @@ class App(Construct):
             ),
             pod_metadata=ApiObjectMetadata(labels=_LABELS),
             replicas=self.env.replicas.count,
-            # Temporary for Session-lease migration (#9692): old app Pods must exit
-            # before any replacement runs its migration init container. Restore the
-            # environment strategy after both environments have completed the cutover.
+            # Temporary prerequisite for locator-column retirement (#9712).
+            # Old app Pods must exit before the replacement migration drops a column
+            # their ORM still selects/writes. Restore the environment strategy afterward.
             strategy=DeploymentStrategy.recreate(),
             min_ready=self.env.replicas.min_ready,
             # 5s HTTP/SSE drain (--shutdown-timeout), with room for the bridge's lease
@@ -544,16 +543,6 @@ class RunnerTemplate(Construct):
                         ]
                         if self.buildbuddy_secret
                         else []
-                    ),
-                    # Optional runner-only config. Older runner images ignore this environment
-                    # variable; the updated runner applies it when a model is listed.
-                    SandboxTemplateSpecPodTemplateSpecContainersEnv(
-                        name="AGENTPLANE_MODEL_CONTEXT_WINDOWS",
-                        value=json.dumps(
-                            {route.id: budget for route, budget in RUNNER_CONTEXT_OVERRIDES.items()},
-                            sort_keys=True,
-                            separators=(",", ":"),
-                        ),
                     ),
                     # On the container and not just on the harness children the runner spawns.
                     *sandbox_pod.egress_env(),

@@ -5,10 +5,13 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
+import httpx
+
 from agentplane.harness_tests.claude import harness as claude_harness
 from agentplane.harness_tests.codex import harness as codex_harness
 from agentplane.runner import protocol_pb2
 from agentplane.runner.config import ClaudeLaunch, CodexLaunch, RunnerConfig
+from agentplane.runner.model_config import HttpModelConfigResolver
 from util.bazel.runfiles import get_required_path
 
 # The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.
@@ -45,6 +48,11 @@ def config(harness: protocol_pb2.Harness, endpoint: str, *, state_dir: Path, hom
     return RunnerConfig(
         state_dir=state_dir,
         harness_environment=environment(home),
+        model_config_resolver=HttpModelConfigResolver(
+            transport=httpx.MockTransport(
+                lambda _request: httpx.Response(404, json={"detail": "no configuration for model"})
+            )
+        ),
         claude=claude_launch(endpoint) if harness == protocol_pb2.HARNESS_CLAUDE else None,
         codex=codex_launch(endpoint) if harness == protocol_pb2.HARNESS_CODEX else None,
     )

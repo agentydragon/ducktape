@@ -36,9 +36,10 @@ from agentplane.app.settings import Settings
 from agentplane.app.shutdown import drain_of
 from agentplane.app.testing.history import SeededEventLogStore as EventLogStore
 from agentplane.app.testing.model_test_data import TEST_REASONING_EFFORTS
+from agentplane.app.testing.thread_test_support import SPEC
 from agentplane.app.threads.bridge import RunnerBridge
 from agentplane.app.threads.ingestion import Ingester
-from agentplane.app.threads.models import SandboxProjectionLease
+from agentplane.app.threads.models import SessionProjectionLease
 from agentplane.app.threads.sessions import SandboxSessions
 from agentplane.app.threads.store import ThreadStore
 from agentplane.app.threads.view.content import ContentStore
@@ -205,13 +206,7 @@ async def database(db_url: str) -> AsyncIterator[AsyncEngine]:
 
 async def _leases(database: AsyncEngine) -> int:
     async with database.connect() as connection:
-        return (
-            await connection.scalar(
-                select(func.count())
-                .select_from(SandboxProjectionLease)
-                .where(SandboxProjectionLease.sandbox == SANDBOX)
-            )
-        ) or 0
+        return (await connection.scalar(select(func.count()).select_from(SessionProjectionLease))) or 0
 
 
 async def _other_connections(database: AsyncEngine) -> int:
@@ -253,6 +248,7 @@ async def test_sigterm_ends_open_streams_fails_readiness_and_closes_the_ingester
     raw, running = seed_runner(custom_objects, core_v1, SANDBOX)
     live_index.sandboxes[SANDBOX] = raw
     live_index.pods[SANDBOX] = running
+    await event_logs.open(SANDBOX, "shutdown-session", SPEC)
     app = create_app(
         inventory,
         bridge,
@@ -277,7 +273,7 @@ async def test_sigterm_ends_open_streams_fails_readiness_and_closes_the_ingester
     serving = asyncio.create_task(
         serve_then_close(server, ingester=ingester, runners=runners, database_updates=database_updates, engine=engine)
     )
-    # The ingester leases the sandbox it cannot dial; the socket already accepts, so wait for uvicorn itself.
+    # The registered Session gets its own lease even when Sandbox discovery cannot dial.
     while not server.started or await _leases(database) == 0:
         if serving.done():
             serving.result()

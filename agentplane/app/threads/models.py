@@ -34,10 +34,10 @@ class EventLog(Base):
     # TODO(session-schema-cleanup): Drop with the raw tables and their write-rejection
     # triggers. New identities retain a zero value until that explicit schema change.
     raw_ingestion_fenced_at_cursor: Mapped[int | None] = mapped_column(BigInteger)
-    # TODO(session-schema-cleanup): Stop routing by this retained runner locator.
-    # Sandbox Service owns that binding. Route by the public Session UUID (id),
-    # then remove this column and (sandbox, session_id) uniqueness after auditing
-    # discovery, lookup, resume, command dispatch, API filters and old-ID consumers.
+    # Compatibility write only; runtime lookups and views use the public UUID (id).
+    # TODO(session-schema-cleanup): After public-ID-only readers are deployed, remove
+    # this column and (sandbox, session_id) uniqueness in an explicit migration.
+    # Sandbox Service retains the authoritative private runner-locator mapping.
     session_id: Mapped[str] = mapped_column(Text)
     harness: Mapped[Harness] = mapped_column(
         SqlEnum(
@@ -99,14 +99,14 @@ class Event(Base):
     payload: Mapped[dict[str, JsonValue]] = mapped_column(JSON)
 
 
-class SandboxProjectionLease(Base):
+class SessionProjectionLease(Base):
     """Replica ownership of app projection work, not service archive ingestion."""
 
-    # TODO(session-schema-cleanup): Rename the physical table in the explicit schema
-    # cleanup. Keep its current name here until that migration; existing leases stay valid.
-    __tablename__ = "sandbox_ingestion"
+    __tablename__ = "session_projection_lease"
 
-    sandbox: Mapped[str] = mapped_column(Text, primary_key=True)
+    session_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("event_log.id", ondelete="CASCADE"), primary_key=True
+    )
     token: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True))
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 

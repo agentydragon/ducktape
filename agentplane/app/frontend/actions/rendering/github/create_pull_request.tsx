@@ -1,7 +1,9 @@
 import type { JSX } from "react";
 import { z } from "zod";
 
-import { Chip, CompactCall } from "../chips";
+import { Text } from "@mantine/core";
+
+import { Chip } from "../chips";
 import { definePreview, type ArgumentsPreview } from "../entry";
 
 // A nonempty description cannot be reviewed safely in a few lines. These calls stay expanded.
@@ -27,7 +29,7 @@ const approvablePullRequest = z.strictObject({
 
 function CreatePullRequest({ args }: { args: z.infer<typeof createPullRequest> }): JSX.Element {
   return (
-    <CompactCall operation="Create pull request">
+    <>
       <Chip label="repository" value={`${args.owner}/${args.repo}`} />
       <Chip label="title" value={args.title} />
       <Chip label="head → base" value={`${args.head} → ${args.base}`} />
@@ -41,10 +43,20 @@ function CreatePullRequest({ args }: { args: z.infer<typeof createPullRequest> }
         value={args.maintainer_can_modify === undefined ? "default" : args.maintainer_can_modify ? "yes" : "no"}
       />
       <Chip label="reviewers" value={args.reviewers === undefined ? "omitted" : args.reviewers.join(", ") || "none"} />
-    </CompactCall>
+    </>
   );
 }
 
+function CreatePullRequestLabel({ args }: { args: z.infer<typeof createPullRequest> }): JSX.Element {
+  void args;
+  return (
+    <Text size="sm" fw={600}>
+      Create pull request
+    </Text>
+  );
+}
+
+export const createPullRequestLabel: ArgumentsPreview = definePreview(createPullRequest, CreatePullRequestLabel);
 export const createPullRequestPane: ArgumentsPreview = definePreview(createPullRequest, CreatePullRequest);
 export function canApprovePullRequestInline(args: unknown): boolean {
   return approvablePullRequest.safeParse(args).success;

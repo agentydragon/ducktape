@@ -1011,26 +1011,68 @@ impl ChunkPlanBuilder {
         Ok(())
     }
 
-    /// With no explicit modules, the catchall must preserve the whole
-    /// statement sequence, including anonymous effects between declarations.
-    pub(super) fn add_unclaimed_chunk_statements(
+    /// With no explicit modules, the catchall preserves the whole statement
+    /// sequence. Otherwise, route only anonymous owners that share an atomic
+    /// unit with bindings already assigned to the catchall. Unrelated effects
+    /// stay in the entry, where they may run after other peeled modules.
+    pub(super) fn route_unclaimed_anonymous_to_catchall(
         &mut self,
         precomputed: &OwnerGraphAndUnits,
         body: &[ModuleItem],
+        whole_chunk: bool,
     ) {
         let Some(index) = self.residual_plan_index else {
             return;
         };
-        for node in precomputed.owner_graph.iter_nodes() {
-            if node.declared.is_empty()
-                && let Some(body_index) =
-                    body_index_for_statement_ordinal(body, node.statement_ordinal.0)
-            {
-                self.anonymous_ordinal_assignment.insert(body_index, index);
-                self.module_plans[index]
-                    .anonymous_statement_ordinals
-                    .push(body_index);
+        let graph = &precomputed.owner_graph;
+        let mut body_indices = BTreeSet::new();
+        for unit in &precomputed.atomic_units {
+            if !whole_chunk {
+                let mut has_catchall_binding = false;
+                let all_members_fit = unit.members.iter().all(|&owner_id| {
+                    let Some(node) = graph.node(owner_id) else {
+                        return false;
+                    };
+                    if node.declared.is_empty() {
+                        let Some(body_index) =
+                            body_index_for_statement_ordinal(body, node.statement_ordinal.0)
+                        else {
+                            return false;
+                        };
+                        return self
+                            .anonymous_ordinal_assignment
+                            .get(&body_index)
+                            .is_none_or(|&assigned| assigned == index);
+                    }
+                    has_catchall_binding = true;
+                    node.declared
+                        .iter()
+                        .all(|binding| self.binding_assignment.get(binding) == Some(&index))
+                });
+                if !has_catchall_binding || !all_members_fit {
+                    continue;
+                }
             }
+            for &owner_id in &unit.members {
+                let Some(node) = graph.node(owner_id) else {
+                    continue;
+                };
+                if node.declared.is_empty()
+                    && let Some(body_index) =
+                        body_index_for_statement_ordinal(body, node.statement_ordinal.0)
+                {
+                    body_indices.insert(body_index);
+                }
+            }
+        }
+        for body_index in body_indices {
+            if self.anonymous_ordinal_assignment.contains_key(&body_index) {
+                continue;
+            }
+            self.anonymous_ordinal_assignment.insert(body_index, index);
+            self.module_plans[index]
+                .anonymous_statement_ordinals
+                .push(body_index);
         }
     }
 

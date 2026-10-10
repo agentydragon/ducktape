@@ -11,7 +11,6 @@ for it, for the case where the image and not the deployment owns the value.
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
 import os
 import signal
@@ -25,8 +24,6 @@ from agentplane.runner.config import ClaudeLaunch, CodexLaunch, DebugCheckpoint,
 from agentplane.runner.service import serve
 
 logger = logging.getLogger(__name__)
-MODEL_CONTEXT_WINDOWS_ENV = "AGENTPLANE_MODEL_CONTEXT_WINDOWS"
-
 app = typer.Typer(add_completion=False)
 
 
@@ -60,30 +57,6 @@ def harness_environment(
         if name not in child:
             logger.warning("inherited %s is absent from the runner environment: harnesses will not see it", name)
     return child
-
-
-def parse_model_context_windows(raw: str | None) -> dict[str, int]:
-    """Parse the optional deployment-owned route/context map.
-
-    This is runner configuration, not a harness-child variable. Unknown models remain untouched;
-    only routes explicitly supplied by the deployment receive a context override.
-    """
-    if raw is None:
-        return {}
-    try:
-        parsed = json.loads(raw)
-    except json.JSONDecodeError as error:
-        raise ValueError(f"{MODEL_CONTEXT_WINDOWS_ENV} must be a JSON object") from error
-    if not isinstance(parsed, dict) or any(
-        not isinstance(model, str)
-        or not model
-        or isinstance(window, bool)
-        or not isinstance(window, int)
-        or window <= 0
-        for model, window in parsed.items()
-    ):
-        raise ValueError(f"{MODEL_CONTEXT_WINDOWS_ENV} must map non-empty model ids to positive integers")
-    return parsed
 
 
 @app.command()
@@ -139,7 +112,6 @@ def main(
         harness_environment=harness_environment(
             os.environ, declared=harness_env or [], inherited=harness_inherit_env or []
         ),
-        model_context_windows=parse_model_context_windows(os.environ.get(MODEL_CONTEXT_WINDOWS_ENV)),
         claude=claude,
         codex=codex,
         test_debug_checkpoint=(

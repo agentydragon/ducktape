@@ -274,16 +274,26 @@ runner storage; use bounded checks, not another full-history scan.
   `(sandbox, session_id)` uniqueness constraint after replacing current consumers.
   Audit legacy HTTP filters/links and identifier translation explicitly; preserve
   mappings in Sandbox Service, not by inventing another app-owned routing map.
+  Runtime cleanup is staged before the column drop: discovery/Open and find use
+  public UUIDs; Thread views expose that same UUID and `/threads?session_id=` filters
+  by it. Private runner locators are no longer HTTP filter aliases (invalid UUIDs
+  return an empty list). Existing public Thread URLs and service mappings stay intact.
+  The old non-null column remains a compatibility write for overlapping old replicas;
+  deploy these readers before removing it in the schema-retirement PR.
 - Drop `raw_ingestion_fenced_at_cursor` with the old-table write-rejection triggers.
   Runtime projection no longer reads it; new identity setup still writes zero to
   preserve old-table write rejection until that explicit schema change.
 - Drop retained app `event` and `feed_state` tables and their ORM classes only after
   deployment verification shows no runtime dependencies and handoff tooling is retired.
   Make retained-data deletion explicit in that PR rather than incidental to a rename.
-- Rename the physical `sandbox_ingestion` table in the schema cleanup. The Python
-  API is now `SandboxProjectionLease` / `ProjectionLease` / `projection_lease`; it
-  coordinates app projection work, not archive ingestion. The naming cleanup keeps
-  the physical table, lease tokens, expiry and fencing semantics unchanged.
+- Migration `0022_session_projection_lease` replaces ephemeral Sandbox-wide leases
+  with `session_projection_lease`, keyed by public Session/Thread UUID. Each Session
+  independently acquires, renews and fences projection commits; Sandbox discovery does
+  not own projection authority. Deleted-Sandbox histories remain projectable.
+  Stop old app replicas before migration and deploy the matching app code. The migration
+  waits on the old table's writes, removes old lease authority and starts new leases empty;
+  it does not alter archive rows, app projections, checkpoints or runner storage. Stop new
+  replicas before downgrading and restarting old binaries. This is not rollout evidence.
 - Audit app `sandbox`, `harness`, `model` and `cwd` fields: distinguish necessary UI
   projections from redundant launch/routing metadata. They are not all proven dead.
   Session identity, runner bindings and frozen launch configuration remain service-owned;
@@ -295,23 +305,45 @@ runner storage; use bounded checks, not another full-history scan.
   "app ingestion") as their contracts change. Leave durable rules in AGENTS.md;
   keep this temporary cleanup checklist here and in the DAG.
 
-### Session-lease deployment gate
+### Session-lease cutover evidence
 
-Before merging the per-Session lease schema change (#9692), land the deployment-only
-change selecting `Recreate` for **only** `agentplane-app` in testing and staging.
-Verify both live Deployments show `spec.strategy.type: Recreate`, without a
-`rollingUpdate` field. A strategy-only change does not itself change the Pod template.
-Also verify the public-Session routing image from #9691 is healthy before proceeding.
+The per-Session ownership cutover (#9692) completed on 2026-10-10. The temporary
+app-only Recreate prerequisite (#9698) stopped old owners before migration; Sandbox
+Service, runners and their storage were unchanged.
 
-The subsequent image rollout terminates old app Pods before starting replacements;
-the replacement Pods run the migration init container before starting the app. This
-intentionally causes a brief app outage. Sandbox Service, runners and their storage
-are unchanged, and projection resumes from retained checkpoints. Do not force-delete
-Pods or bypass graceful shutdown to accelerate this transition.
+Bounded live checks at 04:53–04:55 America/Los_Angeles verified:
 
-After the migration image is deployed, check app readiness, the Alembic revision,
-Session-keyed lease rows and advancing projection checkpoints with bounded queries.
-Then restore the app's environment-specific rolling-update strategy and remove the
-temporary Recreate regression test in a deployment-only follow-up. Reverting the
-strategy is not a schema rollback: a binary rollback across the ownership-scope
-change still requires stopping the app and downgrading the lease schema first.
+- Testing was 1/1 Ready and staging 2/2 Ready on the f5273a6 app image; all three
+  migration init containers exited zero.
+- Both app databases reported `0022_session_projection_lease`, with
+  `session_projection_lease` present and `sandbox_ingestion` absent.
+- Testing had 142 active leases; staging had 58. Multiple Sessions in one Sandbox
+  held independent leases.
+- Two active staging projection checkpoints advanced between samples, by 135 and
+  3,584 cursor positions. Bounded log samples from both staging replicas and testing
+  had no matching error, exception or stalled lines. No archive scan was performed.
+
+The deployment-only follow-up restores `self.env.replicas.strategy` and removes the
+migration-specific Recreate regression test: staging returns to RollingUpdate;
+testing retains its normal Recreate strategy. This is not a schema rollback.
+A binary rollback across the ownership-scope change still requires stopping the app
+and downgrading the lease schema first.
+
+### Locator-column deployment prerequisite
+
+Before merging #9712, deploy the app-only Recreate strategy and verify it in both
+environments. #9707 is deployed on image `devel-20261010132451-80294e6`: testing
+has one updated/Ready replica and staging two; all migration init containers exited
+zero. Bounded startup logs from all three app Pods had no error/exception matches.
+Those binaries still select/write the locator column, so rolling overlap with the
+column-drop migration is unsafe despite their public-ID routing.
+
+The prerequisite changes only app deployment strategy, not its Pod template. The
+subsequent migration image rollout stops old app Pods normally before replacement
+init containers run. Expect brief app unavailability; Sandbox Service, runners and
+archive storage stay unchanged. Do not force-delete Pods.
+
+After #9712 passes CI and this strategy is verified live, merge the schema change.
+Check migration exit status, revision/column removal, readiness and bounded
+projection progress. Then restore the environment strategy and remove the temporary
+rollout regression test. No full-history scan or backfill is required.

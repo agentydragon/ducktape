@@ -1,7 +1,8 @@
 import type { JSX } from "react";
+import { Code, Text } from "@mantine/core";
 import { z } from "zod";
 
-import { Chip, CompactCall } from "../chips";
+import { Chip } from "../chips";
 import { definePreview, type ArgumentsPreview } from "../entry";
 
 import { resource } from "./resource_common";
@@ -32,13 +33,26 @@ function Selectors({ args }: { args: z.infer<typeof resourcesListArguments> }): 
 
 function List({ args }: { args: z.infer<typeof resourcesListArguments> }): JSX.Element {
   return (
-    <CompactCall operation="List resources">
-      <Chip label="API" value={args.apiVersion} />
-      <Chip label="kind" value={args.kind} />
-      <Chip label="namespace" value={args.namespace ?? "all namespaces / ignored if cluster-scoped"} />
+    <>
+      <Chip label="API version" value={args.apiVersion} />
       <Selectors args={args} />
-    </CompactCall>
+    </>
   );
 }
 
+function ListLabel({ args }: { args: z.infer<typeof resourcesListArguments> }): JSX.Element {
+  return (
+    <Text size="sm" fw={600}>
+      List <Code>{args.kind}</Code> resources
+      {args.namespace && (
+        <>
+          {" "}
+          in namespace <Code>{args.namespace}</Code>
+        </>
+      )}
+    </Text>
+  );
+}
+
+export const resourcesListLabel: ArgumentsPreview = definePreview(resourcesListArguments, ListLabel);
 export const resourcesListPane: ArgumentsPreview = definePreview(resourcesListArguments, List);

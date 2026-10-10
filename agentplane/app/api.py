@@ -794,7 +794,9 @@ class CommandReconciliationResponse(BaseModel):
 async def list_threads(
     store: Store,
     sandbox: Annotated[str | None, Query(description="Only threads of this sandbox.")] = None,
-    session_id: Annotated[str | None, Query(description="Only threads of this session id.")] = None,
+    session_id: Annotated[
+        str | None, Query(description="Only threads of this public Sandbox Service Session UUID.")
+    ] = None,
     include_archived: Annotated[bool, Query(description="Also list archived threads.")] = False,
 ) -> list[ThreadView]:
     """Every persisted thread, newest first; a thread outlives its sandbox. Both filters together

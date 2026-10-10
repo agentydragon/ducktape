@@ -19,10 +19,12 @@ from cdk8s_plus_34 import (
 )
 from constructs import Construct
 
+from agentplane.llm_ingress.models import ModelConfig
 from agentplane.llm_ingress.settings import CONFIG_FILE_ENV, Settings
 from cluster.cdk8s import cilium, node_scheduling, pod_policy
 from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.forgejo_registry.chart import forgejo_images_creds_secret_ref
+from cluster.cdk8s.model_selections import RUNNER_CONTEXT_OVERRIDES, HarnessRoutes
 from cluster.cdk8s.probes import http_probe
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, Entity, IngressRule, NetworkPolicy
 from cluster.cdk8s.secret_ref import SecretRef
@@ -40,6 +42,14 @@ _LABELS = {"app.kubernetes.io/name": _NAME}
 # central egress proxy, then forwarded and verified again here -- every hop must accept
 # the same audience string.
 WORKLOAD_TOKEN_AUDIENCE = "agentplane-egress"
+
+
+def model_configs(models: HarnessRoutes) -> list[ModelConfig]:
+    return [
+        ModelConfig(model=route.id, total_context_budget_tokens=RUNNER_CONTEXT_OVERRIDES[route])
+        for route in sorted(models.all, key=lambda route: route.id)
+        if route in RUNNER_CONTEXT_OVERRIDES
+    ]
 
 
 def service(namespace: str) -> ServiceRef:
@@ -85,6 +95,7 @@ class LlmIngress(Construct):
             content={
                 "allowed_service_account_namespaces": [env.namespace],
                 "log_llm_requests": env.llm_ingress.log_llm_requests,
+                "models": [item.model_dump(mode="json") for item in env.llm_ingress.models],
             },
             path="/etc/agentplane-llm-ingress/settings.yaml",
         )
@@ -100,7 +111,10 @@ class LlmIngress(Construct):
                 name=_NAME,
                 namespace=self.env.namespace,
                 labels=_LABELS,
-                annotations={"secret.reloader.stakater.com/reload": self.env.llm_ingress.litellm_key_secret_name},
+                annotations={
+                    "configmap.reloader.stakater.com/reload": settings.config_map.name,
+                    "secret.reloader.stakater.com/reload": self.env.llm_ingress.litellm_key_secret_name,
+                },
             ),
             pod_metadata=ApiObjectMetadata(labels=_LABELS),
             replicas=self.env.replicas.count,

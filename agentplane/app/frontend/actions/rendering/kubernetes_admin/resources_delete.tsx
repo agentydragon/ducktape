@@ -1,10 +1,11 @@
 import type { JSX } from "react";
+import { Code, Text } from "@mantine/core";
 import { z } from "zod";
 
-import { Chip, CompactCall } from "../chips";
+import { Chip } from "../chips";
 import { definePreview, type ArgumentsPreview } from "../entry";
 
-import { resource, ResourceChips } from "./resource_common";
+import { kubernetesTarget, resource } from "./resource_common";
 
 const resourcesDeleteArguments = z.strictObject({
   ...resource,
@@ -17,14 +18,23 @@ export function canQuickApproveResourcesDelete(args: unknown): boolean {
 
 function Delete({ args }: { args: z.infer<typeof resourcesDeleteArguments> }): JSX.Element {
   return (
-    <CompactCall operation="Delete resource">
-      <ResourceChips args={args} />
+    <>
+      <Chip label="API version" value={args.apiVersion} />
       <Chip
         label="grace period"
         value={args.gracePeriodSeconds === undefined ? "default" : `${args.gracePeriodSeconds}s`}
       />
-    </CompactCall>
+    </>
   );
 }
 
+function DeleteLabel({ args }: { args: z.infer<typeof resourcesDeleteArguments> }): JSX.Element {
+  return (
+    <Text size="sm" fw={600}>
+      Delete <Code>{kubernetesTarget(args.kind, args.name, args.namespace)}</Code>
+    </Text>
+  );
+}
+
+export const resourcesDeleteLabel: ArgumentsPreview = definePreview(resourcesDeleteArguments, DeleteLabel);
 export const resourcesDeletePane: ArgumentsPreview = definePreview(resourcesDeleteArguments, Delete);

@@ -125,7 +125,14 @@ py_library(
 py_library(
     name = "config",
     srcs = ["config.py"],
-    deps = [":cgroups"],
+    deps = [
+        ":cgroups",
+        ":model_config",
+        "//agentplane/llm_ingress:models",
+        "//agentplane/runner:protocol_pb2",
+        "@pypi//protobuf",  # keep: mypy follows generated protobuf interfaces
+        "@pypi//types_protobuf",  # keep: mypy follows generated protobuf interfaces
+    ],
 )
 
 py_library(
@@ -205,6 +212,7 @@ py_library(
         ":harness_process",
         ":initialization",
         ":journal",
+        ":model_config",
         ":session",
         ":store",
         "//agentplane/runner:protocol_pb2",
@@ -222,6 +230,7 @@ py_library(
         ":config",
         ":harness_process",
         ":journal",
+        ":model_config",
         ":observation",
         ":recovery",
         ":store",
@@ -458,6 +467,7 @@ py_wheel(
     requires = [
         "aiosqlite",
         "grpcio",
+        "httpx",
         # The generated *_pb2 modules refuse an older runtime than the protoc that wrote them.
         "protobuf>=7.36,<8",
         "pydantic>=2.0",
@@ -580,11 +590,13 @@ py_test(
         ":conftest",
         ":harness_process",
         ":journal",
+        ":model_config",
         ":session",
         ":store",
         "//:conftest",
         "//agentplane/protocol:command_pb2",
         "//agentplane/protocol:event_pb2",
+        "@pypi//httpx",
         "@pypi//protobuf",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
@@ -655,11 +667,13 @@ py_test(
         ":config",
         ":conftest",
         ":errors",
+        ":model_config",
         ":service",
         ":store",
         "//:conftest",
         "//agentplane/protocol:event_pb2",
         "//agentplane/runner:protocol_pb2",
+        "@pypi//httpx",
         "@pypi//protobuf",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
@@ -788,5 +802,29 @@ py_library(
     visibility = [
         "//agentplane:__subpackages__",
         "//cluster/cdk8s:__subpackages__",
+    ],
+)
+
+py_library(
+    name = "model_config",
+    srcs = ["model_config.py"],
+    deps = [
+        "//agentplane/llm_ingress:models",
+        "@pypi//httpx",
+        "@pypi//pydantic",
+    ],
+)
+
+py_test(
+    name = "test_model_config",
+    srcs = ["test_model_config.py"],
+    deps = [
+        ":conftest",
+        ":model_config",
+        "//:conftest",
+        "//agentplane/llm_ingress:models",
+        "@pypi//httpx",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
     ],
 )

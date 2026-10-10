@@ -8,14 +8,16 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any, cast
 
+import httpx
 import pytest
 import pytest_bazel
 
 from agentplane.protocol import command_pb2, event_pb2
 from agentplane.runner.adapter import HarnessAdapter
-from agentplane.runner.config import RunnerConfig
+from agentplane.runner.config import CodexLaunch, RunnerConfig
 from agentplane.runner.harness_process import HarnessProcess
 from agentplane.runner.journal import Journal
+from agentplane.runner.model_config import HttpModelConfigResolver
 from agentplane.runner.session import Session
 from agentplane.runner.store import SessionRecord, SessionStore, StateOwner
 
@@ -68,15 +70,31 @@ class RunningProcess:
     running = True
 
 
+def model_config_resolver(windows: Mapping[str, int]) -> HttpModelConfigResolver:
+    def respond(request: httpx.Request) -> httpx.Response:
+        model = request.url.params["model"]
+        if window := windows.get(model):
+            return httpx.Response(200, json={"model": model, "total_context_budget_tokens": window})
+        return httpx.Response(404, json={"detail": "no configuration for model"})
+
+    return HttpModelConfigResolver(transport=httpx.MockTransport(respond))
+
+
 @asynccontextmanager
 async def session_with_blocked_adapter(
-    tmp_path: Path, *, model_context_windows: Mapping[str, int] | None = None, initial_model: str = "test-model"
+    tmp_path: Path, *, model_configs: Mapping[str, int] | None = None, initial_model: str = "test-model"
 ) -> AsyncIterator[tuple[Session, BlockingAdapter]]:
     state_dir = tmp_path / "state"
     store = SessionStore(state_dir / "sessions")
     owner = StateOwner(state_dir)
+    windows = model_configs or {}
     record = SessionRecord(
-        harness="HARNESS_CODEX", cwd=str(tmp_path / "workspace"), model=initial_model, reasoning_effort="low"
+        harness="HARNESS_CODEX",
+        cwd=str(tmp_path / "workspace"),
+        model=initial_model,
+        total_context_budget_tokens=windows.get(initial_model),
+        context_budget_resolved=True,
+        reasoning_effort="low",
     )
     store.write("scheduling-1", record)
     adapter = BlockingAdapter()
@@ -89,7 +107,11 @@ async def session_with_blocked_adapter(
                 record=record,
                 journal=journal,
                 store=store,
-                config=RunnerConfig(state_dir=state_dir, model_context_windows=model_context_windows or {}),
+                config=RunnerConfig(
+                    state_dir=state_dir,
+                    model_config_resolver=model_config_resolver(windows),
+                    codex=CodexLaunch(binary=Path("/bin/true"), base_url="http://ingress/v1", api_key="test"),
+                ),
                 make_adapter=lambda _session: adapter,
                 state_owner_descriptor=owner.descriptor,
             )
@@ -189,9 +211,10 @@ async def test_terminal_commands_release_scheduling_state_and_retry_is_deduplica
 async def test_a_model_change_with_a_different_or_missing_context_window_fails(
     tmp_path: Path, initial_model: str, requested_model: str, context_windows: dict[str, int]
 ) -> None:
-    async with session_with_blocked_adapter(
-        tmp_path, initial_model=initial_model, model_context_windows=context_windows
-    ) as (session, adapter):
+    async with session_with_blocked_adapter(tmp_path, initial_model=initial_model, model_configs=context_windows) as (
+        session,
+        adapter,
+    ):
         command = command_pb2.Command(
             command_id="different-window", change_model=command_pb2.ChangeModel(model=requested_model)
         )
@@ -212,7 +235,7 @@ async def test_a_model_change_with_a_different_or_missing_context_window_fails(
 
 async def test_a_same_window_model_change_reaches_the_harness(tmp_path: Path) -> None:
     async with session_with_blocked_adapter(
-        tmp_path, initial_model="qwen-128", model_context_windows={"qwen-128": 128 * 1024, "qwen-128-alias": 128 * 1024}
+        tmp_path, initial_model="qwen-128", model_configs={"qwen-128": 128 * 1024, "qwen-128-alias": 128 * 1024}
     ) as (session, adapter):
         await session.command(
             command_pb2.Command(command_id="same-window", change_model=command_pb2.ChangeModel(model="qwen-128-alias"))

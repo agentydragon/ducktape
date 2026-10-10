@@ -114,7 +114,7 @@ async def test_sidebar_compact_pod_approval(
             "kubernetes_admin",
             "resources_get",
             {"apiVersion": "apps/v1", "kind": "Deployment", "name": "web"},
-            "Deployment",
+            "API version: apps/v1",
         ),
         (
             "kubernetes_admin",
@@ -133,7 +133,7 @@ async def test_sidebar_compact_pod_approval(
             "kubernetes_admin",
             "resources_delete",
             {"apiVersion": "v1", "kind": "Pod", "name": "web-0", "namespace": "apps", "gracePeriodSeconds": 0},
-            "Delete resource",
+            "grace period: 0s",
         ),
         ("kubernetes_admin", "events_list", {"namespace": "apps", "fieldSelector": "type=Warning"}, "type=Warning"),
         (
@@ -149,6 +149,33 @@ async def test_sidebar_compact_pod_approval(
             },
             "Update docs",
         ),
+        (
+            "kubernetes_admin",
+            "pods_exec",
+            {"name": "web-0", "namespace": "apps", "container": "main", "command": ["printenv", "POD_NAME"]},
+            "printenv POD_NAME",
+        ),
+        (
+            "gmail",
+            "drafts_create",
+            {"to": ["reviewer@example.com"], "subject": "Deployment review", "body": "Please review."},
+            "reviewer@example.com",
+        ),
+        (
+            "gmail",
+            "threads_list",
+            {"q": "from:deployments@example.com", "maxResults": 5},
+            "from:deployments@example.com",
+        ),
+        ("grocy_sf", "products_list", {"detail": "full"}, "Full Product records"),
+        ("grocy_sf", "quantity_units_list", {}, "Quantity unit names"),
+        ("grocy_sf", "get_system_info", {}, "No arguments."),
+        (
+            "tana",
+            "get_or_create_calendar_node",
+            {"workspaceId": "workspace-123", "granularity": "week", "date": "2026-10-12"},
+            "Granularity: week",
+        ),
     ],
     ids=[
         "resource-get",
@@ -158,6 +185,13 @@ async def test_sidebar_compact_pod_approval(
         "resource-delete",
         "events-list",
         "github-pr",
+        "pod-exec",
+        "gmail-draft",
+        "gmail-search",
+        "grocy-products",
+        "grocy-units",
+        "grocy-system-info",
+        "tana-calendar-node",
     ],
 )
 async def test_compact_action_chips(
@@ -185,13 +219,47 @@ async def test_compact_action_chips(
     await expect(section.get_by_text(visible)).to_be_visible()
     if group == "kubernetes_admin" and name == "pods_list_in_namespace":
         await expect(section.locator(".agentplane-actions-sidebar-name")).to_contain_text("List pods in namespace")
+    if group == "gmail" and name == "threads_list":
+        await expect(section.locator(".agentplane-actions-sidebar-name")).to_contain_text("Search Gmail threads")
+        await expect(
+            section.locator(".agentplane-actions-sidebar-preview").get_by_text("Maximum results: 5", exact=True)
+        ).to_be_visible()
+    if group == "grocy_sf":
+        expected_label = {
+            "products_list": "List Grocy products",
+            "quantity_units_list": "List quantity units",
+            "get_system_info": "Show Grocy system information",
+        }[name]
+        await expect(section.locator(".agentplane-actions-sidebar-name")).to_contain_text(expected_label)
+    if group == "tana" and name == "get_or_create_calendar_node":
+        await expect(section.locator(".agentplane-actions-sidebar-name")).to_contain_text(
+            "Get or create Tana calendar node"
+        )
     await expect(section.get_by_role("link", name=f"View details for {title}")).to_be_visible()
     if group == "kubernetes_admin" and name in {"resources_get", "pods_list_in_namespace", "pods_log"}:
         await expect(section.get_by_role("button", name=f"Approve {title}")).to_be_visible()
-    if group == "kubernetes_admin" and name in {"resources_get", "pods_log"}:
-        await expect(section.get_by_text("namespace: (not specified)", exact=True)).to_be_visible()
     if group == "kubernetes_admin" and name == "pods_log":
-        await expect(section.get_by_text("container: (not specified)", exact=True)).to_be_visible()
+        await expect(section.get_by_text("container: (default)", exact=True)).to_be_visible()
+    await view.capture(target=section)
+
+
+@pytest.mark.parametrize(
+    ("group", "name"),
+    [("ssh", "list_targets"), ("uncatalogued", "unknown_action")],
+    ids=["unregistered-action", "unknown-action"],
+)
+async def test_action_argument_fallbacks_use_json_view(
+    view: VisualPage, app: AgentplaneFixture, group: str, name: str
+) -> None:
+    await app.show_action_preview(group, name, {"vendor_field": "fixture"})
+    await app.mount_thread(IDLE_THREAD)
+    page = view.page
+
+    title = f"review {name.replace('_', ' ')}"
+    section = page.locator(".agentplane-actions-sidebar")
+    await section.get_by_role("button", name=f"Expand {title}").click()
+    preview = section.locator(".agentplane-actions-sidebar-preview")
+    await expect(preview).to_contain_text('"vendor_field": "fixture"')
     await view.capture(target=section)
 
 

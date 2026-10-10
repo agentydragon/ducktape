@@ -6,6 +6,7 @@ from pathlib import Path
 from pydantic import Field, SecretStr
 from pydantic_settings import BaseSettings, PydanticBaseSettingsSource, SettingsConfigDict, YamlConfigSettingsSource
 
+from agentplane.llm_ingress.models import ModelConfig
 from util.urls import HttpEndpointUrl
 
 # YamlConfigSettingsSource loads yaml lazily inside pydantic-settings; gazelle cannot see the dependency.
@@ -33,6 +34,9 @@ class Settings(BaseSettings):
             "Log full LLM request bodies and streamed response chunks. These logs can contain prompts, "
             "reasoning, generated text, and tool arguments."
         ),
+    )
+    models: list[ModelConfig] = Field(
+        default_factory=list, description="Per-route client configuration exposed to authenticated workloads."
     )
     litellm_url: HttpEndpointUrl = Field(description="Internal LiteLLM base URL.")
     litellm_key: SecretStr = Field(description="The one server-held LiteLLM virtual key.")

@@ -47,11 +47,14 @@ Thread-page projection. Their cross-layer contract is [Thread, runner, and harne
   orders that hold for every turn of it. They reach the model appended to the harness's own system
   prompt, so each harness keeps its coding-agent policy; empty is a session without any. They are
   fixed for the session's life, because a `spec` supplied on re-attach must equal the stored one.
-- The deployment may supply `AGENTPLANE_MODEL_CONTEXT_WINDOWS` as a JSON map from model ids to
-  positive token counts. A listed route sets Claude's `CLAUDE_CODE_MAX_CONTEXT_TOKENS` or Codex's
-  `model_context_window` when its harness starts, including a resume. Codex derives its default
-  automatic-compaction threshold from the overridden window. Unlisted models retain their normal
-  harness metadata. This map is runner configuration, not session protocol data or child environment.
+- The runner asks the workload-authenticated LLM ingress for `ModelConfig` when a
+  session or model selection is made. Its `total_context_budget_tokens` is a client
+  budget shared by input and output, not a provider maximum or an output request cap.
+  The runner consumes this field to set Claude's
+  `CLAUDE_CODE_MAX_CONTEXT_TOKENS` or Codex's `model_context_window`; routes without an override use
+  the harness's normal metadata. The resolved value is retained in the runner's session record so a
+  resume uses the same compaction window. Model changes across different resolved windows require a
+  new session.
 - A session survives the runner process. A runner that starts on a state directory loads every
   session in it; what the previous runner had running is reported as lost (below).
 - `ListSessions` returns every session in the state directory with its spec, harness state,

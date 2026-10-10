@@ -667,6 +667,7 @@ rust_library(
         "selectors/authoring/minimize/group.rs",
         "selectors/authoring/minimize/mod.rs",
         "selectors/authoring/minimize/object.rs",
+        "selectors/authoring/minimize/use_site.rs",
         "selectors/authoring/minimize/var.rs",
         "selectors/authoring/regex_anchor.rs",
         "selectors/authoring/render.rs",

@@ -45,12 +45,14 @@ async def test_thread_views_and_operator_edits_need_no_raw_events(engine: AsyncE
     view = await store.get_thread(thread)
     assert view is not None
     assert view.last_cursor == 7
-    assert view.session_id == "s-retained"
+    assert view.session_id == str(thread)
     assert view.harness_state == "HARNESS_STATE_RUNNING"
     assert view.active_turn_id == "turn"
     assert view.feed_status == "active"
     assert [v.id for v in await store.list_threads(sandbox="one")] == [thread]
-    assert [v.id for v in await store.list_threads(session_id="s-other")] == [other]
+    assert [v.id for v in await store.list_threads(session_id=str(other))] == [other]
+    assert await store.list_threads(session_id="s-other") == []
+    assert await store.list_threads(sandbox="one", session_id=str(other)) == []
     renamed = await store.rename(thread, "retained")
     assert renamed.name == "retained"
     assert renamed.last_cursor == 7

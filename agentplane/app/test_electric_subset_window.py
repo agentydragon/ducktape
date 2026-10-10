@@ -113,7 +113,7 @@ async def test_one_thread_shape_serves_a_moving_window(
             )
             source = ReplicationSource()
             thread = await event_logs.open(SANDBOX, SESSION, source.attached.spec)
-            lease = await ingestion.acquire(SANDBOX, timedelta(minutes=2))
+            lease = await ingestion.acquire(thread, timedelta(minutes=2))
             assert lease is not None
             await ingestion.set_attached(thread, source.attached, lease=lease)
             items = [f"item-{index:02}" for index in range(12)]
@@ -220,7 +220,7 @@ async def test_bodies_load_as_subsets_of_one_shape_per_field(
             )
             source = ReplicationSource()
             thread = await event_logs.open(SANDBOX, SESSION, source.attached.spec)
-            lease = await ingestion.acquire(SANDBOX, timedelta(minutes=2))
+            lease = await ingestion.acquire(thread, timedelta(minutes=2))
             assert lease is not None
             await ingestion.set_attached(thread, source.attached, lease=lease)
             await _record(

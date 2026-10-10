@@ -67,7 +67,7 @@ async def test_lazy_scoped_evidence_and_native_expansion(
         event_pb2.Event(item_started=event_pb2.ItemStarted(item_id="second", kind=event_pb2.ITEM_KIND_ASSISTANT_TEXT))
     )
     thread = await event_logs.open(SANDBOX, SESSION, source.attached.spec)
-    lease = await ingestion.acquire(SANDBOX, timedelta(minutes=1))
+    lease = await ingestion.acquire(thread, timedelta(minutes=1))
     assert lease is not None
     await ingestion.set_attached(thread, source.attached, lease=lease)
     await ingestion.record(thread, source.entries, lease=lease)

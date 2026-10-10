@@ -40,6 +40,14 @@ class SeededEventLogStore(EventLogStore):
         self.reader = history_reader
         super().__init__(engine, history_reader=self.reader, history_creator=history_creator)
 
+    async def find(self, sandbox: str, session_id: str) -> UUID | None:
+        # Fixture aliases are deterministic public IDs, not production locator lookups.
+        try:
+            public_id = UUID(session_id)
+        except ValueError:
+            public_id = uuid5(NAMESPACE_URL, sandbox + "/" + session_id)
+        return await super().find(sandbox, str(public_id))
+
     async def open(self, sandbox: str, session_id: str, spec: runner_pb2.SessionSpec) -> UUID:
         if self._history_creator is not None:
             return await super().open(sandbox, session_id, spec)

@@ -826,3 +826,13 @@ boundary. No copied-volume portability or simultaneous multi-component crash req
 - Existing security boundaries, data-preserving migration checks and representative deployment
   integration checks remain requirements. The freezer is not a waiver for a known data-loss or
   unauthorized-access bug; promote one when evidence makes it concrete.
+
+### `APP_LOCATOR_COLUMN_RETIREMENT` — remove the redundant app locator
+
+**In flight (migration agent, 2026-10-10):** #9707 public-ID readers are deployed.
+Schema cleanup #9712 is draft pending CI and the deployment-only app Recreate
+prerequisite. This operational hold applies before merging the schema-removal image:
+old replicas still map the column. Verify the strategy live first, then schema
+rollout with bounded checks, then remove the temporary override/test. Preserve
+service locator bindings, public identities and retained history. See the
+[deployment prerequisite](session_history_read_cutover.md#locator-column-deployment-prerequisite).

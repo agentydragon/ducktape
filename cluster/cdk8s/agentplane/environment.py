@@ -15,6 +15,7 @@ from cilium_crds.io.cilium import CiliumNetworkPolicySpecEgress
 
 from agentplane.action_service.settings import ActionServiceDeploymentSettings
 from agentplane.app.settings import AppSettingsConfig
+from agentplane.llm_ingress.models import ModelConfig
 
 
 @dataclass(frozen=True)
@@ -38,6 +39,7 @@ class DbProps:
 @dataclass(frozen=True)
 class LlmIngressProps:
     litellm_key_secret_name: str
+    models: Sequence[ModelConfig]
     log_llm_requests: bool = False
 
 

@@ -1,25 +1,25 @@
 # Agentplane integration app
 
-The browser and agent surface over Agentplane's sandboxes: a FastAPI service that stamps
-Sandboxes from a `SandboxTemplate`, dials each runner Pod over the runner protocol,
-projects runner events into PostgreSQL thread entity rows, synchronizes selected rows and content
-to the browser through authenticated Electric endpoints, and watches Kubernetes inventory.
-Raw runner events remain archived for debug access.
+The human-facing frontend over Agentplane's services: a FastAPI service that reaches sandboxes and
+runner sessions through the Sandbox Service, reads their archived session history from it,
+projects those events into PostgreSQL thread entity rows, and synchronizes selected rows and
+content to the browser through authenticated Electric endpoints. It also presents Actions,
+operator decisions and Connection consent.
 The staging instance lives in `cluster/k8s/agentplane-staging/`.
 
-## Dependency boundary and planned extraction
+## Dependency boundary
 
-The description above is the current implementation, not the desired service boundary.
 **The integration app is a user-facing client; other Agentplane services must not depend on it.**
 This applies to APIs, private tables, implementation imports, browser/app-issued identity, background
 attachments, and app-only provisioning or prompt/bootstrap state, including in v1. See the accepted
 [service dependency rule](../docs/service_boundaries.md).
 
 Backend responsibilities needed by another service move to an independent owner, not a temporary
-app endpoint. The planned [Sandbox Service](../plans/sandbox_service.md) extracts sandbox lifecycle,
-runner-session control/following, and required backend state/configuration; the app becomes its client.
-Notifications depends on that backend and Actions, not this app. Event archive/ingestion ownership
-must be explicit; app-only presentation projections can remain here. The extraction is not yet shipped.
+app endpoint. The [Sandbox Service](../sandbox_service/README.md) owns sandbox lifecycle,
+runner-session control and following, and the session-event archive; the app is its client.
+Notifications depends on that backend and Actions, not this app. The app's thread projections are
+its own state, and like any state the app holds they are candidates to move into a dedicated
+service ([principles](../docs/principles.md#composable-services-not-a-platform-you-sign-up-for-whole)).
 
 The current bridge's session-scoped runner attachment is implementation state, not
 the desired product model. [Thread, runner, and harness layering](../docs/thread_layering.md) is

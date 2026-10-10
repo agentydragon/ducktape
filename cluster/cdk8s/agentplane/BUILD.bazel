@@ -133,8 +133,10 @@ py_library(
     srcs = ["llm_ingress.py"],
     deps = [
         ":environment",
+        "//agentplane/llm_ingress:models",
         "//agentplane/llm_ingress:settings",
         "//cluster/cdk8s:cilium",
+        "//cluster/cdk8s:model_selections",
         "//cluster/cdk8s:node_scheduling",
         "//cluster/cdk8s:pod_policy",
         "//cluster/cdk8s:probes",
@@ -210,7 +212,6 @@ py_library(
         "//cluster/cdk8s:api_resource",
         "//cluster/cdk8s:cilium",
         "//cluster/cdk8s:gateway",
-        "//cluster/cdk8s:model_selections",
         "//cluster/cdk8s:node_scheduling",
         "//cluster/cdk8s:pod_policy",
         "//cluster/cdk8s:probes",
@@ -410,6 +411,7 @@ py_library(
     deps = [
         "//agentplane/action_service:settings",
         "//agentplane/app:settings",
+        "//agentplane/llm_ingress:models",
         "//cluster/cdk8s/providers/cilium:ciliumnetworkpolicy",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
@@ -465,6 +467,7 @@ py_library(
         ":environment",
         ":generation",
         ":grpc_channel_config",
+        ":llm_ingress",
         ":namespaces",
         ":notifications",
         ":staging_config",
@@ -512,6 +515,7 @@ py_library(
         ":environment",
         ":generation",
         ":grpc_channel_config",
+        ":llm_ingress",
         ":namespaces",
         "//agentplane/action_service:catalog",
         "//agentplane/action_service:mcp_settings",
@@ -812,6 +816,22 @@ py_library(
 py_library(
     name = "namespaces",
     srcs = ["namespaces.py"],
+)
+
+py_test(
+    name = "test_llm_ingress",
+    srcs = ["test_llm_ingress.py"],
+    data = [
+        "@nodejs_linux_amd64//:bin/node",
+    ],
+    env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
+    deps = [
+        ":llm_ingress",
+        "//:conftest",
+        "//cluster/cdk8s:model_selections",
+        "//model_catalog:catalog",
+        "@pypi//pytest_bazel",
+    ],
 )
 
 py_test(

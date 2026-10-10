@@ -210,3 +210,10 @@ py_library(
         "@pypi//protobuf",
     ],
 )
+
+py_library(
+    name = "projection_lease",
+    srcs = ["projection_lease.py"],
+    visibility = ["//agentplane/app:__subpackages__"],
+    deps = ["//agentplane/app/threads/events:projection_lease"],
+)

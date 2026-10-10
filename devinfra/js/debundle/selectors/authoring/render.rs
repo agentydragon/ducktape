@@ -124,7 +124,7 @@ pub(crate) fn hole_function(function: &Function, kept: &BTreeSet<AnchorSpan>) ->
     holed.params = function
         .params
         .iter()
-        .map(|param| retain_or_hole_param(param, &retained))
+        .map(|param| retain_or_hole_param(param, &retained, kept))
         .collect();
     holed
 }
@@ -137,11 +137,34 @@ pub(crate) fn retained_body_identifiers(body: Option<&FunctionBody>) -> BTreeSet
     retained.0
 }
 
-pub(crate) fn retain_or_hole_param(param: &Param, retained: &BTreeSet<String>) -> Param {
-    if pattern_referenced_by_retained_body(&param.pat, retained) {
-        param.clone()
+pub(crate) fn retain_or_hole_param(
+    param: &Param,
+    retained: &BTreeSet<String>,
+    kept: &BTreeSet<AnchorSpan>,
+) -> Param {
+    if !pattern_referenced_by_retained_body(&param.pat, retained)
+        && !(matches!(param.pat, Pat::Object(_)) && node_retains_any(param.pat.span(), kept))
+    {
+        return anything_param();
+    }
+    let mut holed = param.clone();
+    holed.pat = retain_or_hole_param_pat(&param.pat, retained, kept);
+    holed
+}
+
+fn retain_or_hole_param_pat(
+    pat: &Pat,
+    retained: &BTreeSet<String>,
+    kept: &BTreeSet<AnchorSpan>,
+) -> Pat {
+    if pattern_referenced_by_retained_body(pat, retained) {
+        pat.clone()
+    } else if matches!(pat, Pat::Object(_)) && node_retains_any(pat.span(), kept) {
+        // A parameter's own property key can be the chosen anchor even when
+        // no retained body expression refers to its local binding.
+        hole_pat(pat, kept)
     } else {
-        anything_param()
+        anything_pat()
     }
 }
 
@@ -268,13 +291,7 @@ pub(crate) fn hole_expr(expr: &Expr, kept: &BTreeSet<AnchorSpan>) -> Expr {
             holed.params = arrow
                 .params
                 .iter()
-                .map(|param| {
-                    if pattern_referenced_by_retained_body(param, &retained.0) {
-                        param.clone()
-                    } else {
-                        anything_pat()
-                    }
-                })
+                .map(|param| retain_or_hole_param_pat(param, &retained.0, kept))
                 .collect();
             Expr::Arrow(holed)
         }

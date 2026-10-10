@@ -8,6 +8,7 @@ from collections.abc import AsyncIterator, Generator, Iterator
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any, cast
+from uuid import UUID
 
 import httpx
 import pytest
@@ -33,6 +34,7 @@ from agentplane.app.testing.history import (
     SeededEventLogStore as EventLogStore,
 )
 from agentplane.app.testing.history_service import HistoryService
+from agentplane.app.testing.projection_lease import LeaseFactory
 from agentplane.app.testing.thread_test_support import SPEC, Replica, event_entry
 from agentplane.app.threads.bridge import RunnerBridge
 from agentplane.app.threads.events.projection_lease import ProjectionLease
@@ -229,10 +231,13 @@ async def stored_login(store: OperatorSessionStore, login: OperatorSession) -> S
 
 
 @pytest.fixture
-async def lease(ingestion: Ingestion) -> ProjectionLease:
-    lease = await ingestion.acquire("sb-1", timedelta(minutes=1))
-    assert lease is not None
-    return lease
+def lease_for(ingestion: Ingestion) -> LeaseFactory:
+    async def acquire(session_id: UUID) -> ProjectionLease:
+        lease = await ingestion.acquire(session_id, timedelta(minutes=1))
+        assert lease is not None
+        return lease
+
+    return acquire
 
 
 @pytest.fixture

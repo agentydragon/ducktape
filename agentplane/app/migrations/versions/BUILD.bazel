@@ -23,6 +23,7 @@ exports_files(
         "0019_app_raw_ingestion_fence.py",
         "0020_thread_history_summary.py",
         "0021_projected_feed_state.py",
+        "0022_session_projection_lease.py",
     ],
     visibility = ["//agentplane/app/migrations:__pkg__"],
 )
@@ -192,5 +193,11 @@ py_library(
 py_library(
     name = "0021_projected_feed_state",
     srcs = ["0021_projected_feed_state.py"],
+    deps = ["@pypi//alembic"],
+)
+
+py_library(
+    name = "0022_session_projection_lease",
+    srcs = ["0022_session_projection_lease.py"],
     deps = ["@pypi//alembic"],
 )

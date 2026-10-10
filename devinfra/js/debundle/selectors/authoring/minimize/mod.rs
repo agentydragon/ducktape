@@ -31,11 +31,13 @@ mod class;
 mod function;
 mod group;
 mod object;
+mod use_site;
 mod var;
 
 pub(crate) use class::minimize_class_selector_candidates;
 pub(crate) use function::minimize_function_selector_candidates;
 pub(crate) use group::{minimize_var_group_selector, minimize_var_group_selector_candidates};
+pub(crate) use use_site::named_object_use_bindings;
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -179,6 +181,15 @@ fn read_off_candidates(
         if let Some(selector) = finish_minimized_selector(index, decl, target, scaffold)? {
             collect(selector, &mut out);
         }
+        return Ok(out);
+    }
+
+    // A stable named property in a use site can identify a declaration whose own
+    // body is indistinguishable from a sibling. Prefer that relationship over
+    // an incidental adjacent declaration.
+    if let Some(selector) = use_site::render_via_named_object_use_site(index, decl, target)?
+        && collect(selector, &mut out)
+    {
         return Ok(out);
     }
 

@@ -282,6 +282,19 @@ async def test_public_session_alias_preserves_legacy_locator(engine: AsyncEngine
         assert await session.scalar(select(func.count()).select_from(EventLog)) == 1
 
 
+async def test_lookup_uses_public_identity_not_retained_locator(engine: AsyncEngine) -> None:
+    private_id = uuid4()
+    public_id = await seed_retained_session(engine, locator=str(private_id))
+    reader = AsyncMock(spec=SandboxServiceClient)
+    current = EventLogStore(engine, history_reader=cast(SandboxServiceClient, reader))
+    assert await current.find("sb-1", str(public_id)) == public_id
+    assert await current.find("sb-1", str(private_id)) is None
+    assert await current.find("sb-2", str(public_id)) is None
+    assert await current.find("sb-1", "s-retained") is None
+    with pytest.raises(EventReplicationError, match="canonical"):
+        await current.open("sb-1", "s-retained", SPEC)
+
+
 async def test_service_routes_ignore_retained_private_locator(engine: AsyncEngine) -> None:
     public_id = await seed_retained_session(engine)
     reader = AsyncMock(spec=SandboxServiceClient)

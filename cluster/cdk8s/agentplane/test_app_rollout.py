@@ -1,4 +1,4 @@
-"""The Session-lease scope change must not overlap old and new app replicas."""
+"""The Locator-column scope change must not overlap old and new app replicas."""
 
 from typing import Any
 

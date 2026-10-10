@@ -57,7 +57,8 @@ on:
   workflow_dispatch:
 
 concurrency:
-  group: agentplane-runner-vm-image-${{ github.event.pull_request.number || github.ref }}
+  # Fork pull_request runs skip building; they must not cancel the trusted pull_request_target run.
+  group: agentplane-runner-vm-image-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 permissions:

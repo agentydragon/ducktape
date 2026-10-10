@@ -2,20 +2,20 @@ apiVersion: kustomize.config.k8s.io/v1alpha1
 kind: Component
 images:
   - name: git.allegedly.works/ducktape-ci/agentplane-llm-ingress
-    newTag: devel-20261009103553-3a5d4ae # {"$imagepolicy": "flux-system:agentplane-llm-ingress:tag"}
+    newTag: devel-20261010124026-105ded3 # {"$imagepolicy": "flux-system:agentplane-llm-ingress:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-egress
     newTag: devel-20261009012633-9eb86c8 # {"$imagepolicy": "flux-system:agentplane-egress:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-egress-migrate
     newTag: devel-20261006052220-5d765a8 # {"$imagepolicy": "flux-system:agentplane-egress-migrate:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-app
-    newTag: devel-20261010104836-0afa34e # {"$imagepolicy": "flux-system:agentplane-app:tag"}
+    newTag: devel-20261010134904-7eb6aa9 # {"$imagepolicy": "flux-system:agentplane-app:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-app-migrate
-    newTag: devel-20261010094255-38d0838 # {"$imagepolicy": "flux-system:agentplane-app-migrate:tag"}
+    newTag: devel-20261010132456-80294e6 # {"$imagepolicy": "flux-system:agentplane-app-migrate:tag"}
   # Initial publication on devel supplies the tag through Flux image automation.
   - name: git.allegedly.works/ducktape-ci/runner
-    newTag: devel-20261010111936-d385f9e # {"$imagepolicy": "flux-system:runner:tag"}
+    newTag: devel-20261010134413-9c4c3c3 # {"$imagepolicy": "flux-system:runner:tag"}
   - name: git.allegedly.works/ducktape-ci/runner-ducktape
-    newTag: devel-20261010112349-d385f9e # {"$imagepolicy": "flux-system:runner-ducktape:tag"}
+    newTag: devel-20261010132306-0df32c0 # {"$imagepolicy": "flux-system:runner-ducktape:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-sandbox
     newTag: devel-20261009020443-e053d80 # {"$imagepolicy": "flux-system:agentplane-sandbox:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-sandbox-build

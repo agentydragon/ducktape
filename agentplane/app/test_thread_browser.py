@@ -91,7 +91,7 @@ async def test_archived_thread_page_survives_deleted_sandbox_and_reload(
     certificate: BrowserCertificate,
 ) -> None:
     thread_id = await event_logs.open(SANDBOX, SESSION, thread_source.attached.spec)
-    lease = await ingestion.acquire(SANDBOX, timedelta(minutes=1))
+    lease = await ingestion.acquire(thread_id, timedelta(minutes=1))
     assert lease is not None
     await ingestion.set_attached(thread_id, thread_source.attached, lease=lease)
     await ingestion.record(thread_id, thread_source.entries, lease=lease)
@@ -138,8 +138,6 @@ async def _seed_navigation_threads(
     event_logs: EventLogStore, ingestion: Ingestion, store: ThreadStore
 ) -> tuple[list[UUID], list[ReplicationSource]]:
     """Two threads of 130 messages, "Thread N message M", named "Test navigation thread N"."""
-    lease = await ingestion.acquire(SANDBOX, timedelta(minutes=1))
-    assert lease is not None
     threads: list[UUID] = []
     sources: list[ReplicationSource] = []
     for number in range(2):
@@ -160,12 +158,14 @@ async def _seed_navigation_threads(
                 )
             )
         thread = await event_logs.open(SANDBOX, source.attached.session_id, source.attached.spec)
+        lease = await ingestion.acquire(thread, timedelta(minutes=1))
+        assert lease is not None
         await ingestion.set_attached(thread, source.attached, lease=lease)
         await ingestion.record(thread, source.entries, lease=lease)
         await store.rename(thread, f"Test navigation thread {number}")
         threads.append(thread)
         sources.append(source)
-    await ingestion.release(lease)
+        await ingestion.release(lease)
     return threads, sources
 
 

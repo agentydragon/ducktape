@@ -9,10 +9,11 @@ import pytest_bazel
 from sqlalchemy import func, select, text, update
 from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker, create_async_engine
 
+from agentplane.app.testing.projection_lease import LeaseFactory
 from agentplane.app.testing.retained_history import seed_retained_session
 from agentplane.app.threads.events.projection_lease import ProjectionLease, ProjectionLeaseLostError, fence
 from agentplane.app.threads.ingestion import Ingestion
-from agentplane.app.threads.models import SandboxProjectionLease
+from agentplane.app.threads.models import SessionProjectionLease
 
 
 @pytest.fixture
@@ -26,15 +27,18 @@ async def check_fence(engine: AsyncEngine, lease: ProjectionLease, thread: UUID)
 
 
 async def test_fence_rechecks_expiry_after_waiting_for_the_lease_row(
-    engine: AsyncEngine, lease: ProjectionLease, db_url: str
+    engine: AsyncEngine, lease_for: LeaseFactory, db_url: str
 ) -> None:
     thread = await seed_retained_session(engine)
+    lease = await lease_for(thread)
     engine = create_async_engine(db_url)
     write: asyncio.Task[None] | None = None
     try:
         async with engine.begin() as connection:
             await connection.execute(
-                select(SandboxProjectionLease).where(SandboxProjectionLease.sandbox == lease.sandbox).with_for_update()
+                select(SessionProjectionLease)
+                .where(SessionProjectionLease.session_id == lease.session_id)
+                .with_for_update()
             )
             write = asyncio.create_task(check_fence(engine, lease, thread))
             async with asyncio.timeout(5):
@@ -43,7 +47,7 @@ async def test_fence_rechecks_expiry_after_waiting_for_the_lease_row(
                     waiting = await connection.scalar(
                         text(
                             "SELECT count(*) FROM pg_stat_activity WHERE datname = current_database() "
-                            "AND wait_event_type = 'Lock' AND query LIKE 'SELECT sandbox_ingestion.%'"
+                            "AND wait_event_type = 'Lock' AND query LIKE 'SELECT session_projection_lease.%'"
                         )
                     )
                     if waiting:
@@ -51,8 +55,8 @@ async def test_fence_rechecks_expiry_after_waiting_for_the_lease_row(
             # Expire after record's transaction began. Transaction-start now() would accept the
             # write; clock_timestamp() checked after the lock must reject it.
             await connection.execute(
-                update(SandboxProjectionLease)
-                .where(SandboxProjectionLease.sandbox == lease.sandbox)
+                update(SessionProjectionLease)
+                .where(SessionProjectionLease.session_id == lease.session_id)
                 .values(expires_at=func.clock_timestamp())
             )
         with pytest.raises(ProjectionLeaseLostError):
@@ -65,27 +69,29 @@ async def test_fence_rechecks_expiry_after_waiting_for_the_lease_row(
 
 
 async def test_concurrent_replicas_choose_one_owner(engine: AsyncEngine) -> None:
+    thread = await seed_retained_session(engine)
     first, second = await asyncio.gather(
-        Ingestion(engine).acquire("sb-1", timedelta(minutes=1)), Ingestion(engine).acquire("sb-1", timedelta(minutes=1))
+        Ingestion(engine).acquire(thread, timedelta(minutes=1)), Ingestion(engine).acquire(thread, timedelta(minutes=1))
     )
     assert (first is None) != (second is None)
 
 
 async def test_only_current_lease_can_fence_or_renew(
-    engine: AsyncEngine, ingestion: Ingestion, lease: ProjectionLease
+    engine: AsyncEngine, ingestion: Ingestion, lease_for: LeaseFactory
 ) -> None:
     thread = await seed_retained_session(engine)
+    lease = await lease_for(thread)
     replica = Ingestion(engine)
-    assert await replica.acquire("sb-1", timedelta(minutes=1)) is None
+    assert await replica.acquire(thread, timedelta(minutes=1)) is None
     assert await ingestion.renew(lease, timedelta(minutes=2))
     async with engine.begin() as connection:
         await connection.execute(
-            update(SandboxProjectionLease)
-            .where(SandboxProjectionLease.sandbox == "sb-1")
+            update(SessionProjectionLease)
+            .where(SessionProjectionLease.session_id == thread)
             .values(expires_at=func.clock_timestamp() - timedelta(seconds=1))
         )
     assert not await ingestion.renew(lease, timedelta(minutes=1))
-    successor = await replica.acquire("sb-1", timedelta(minutes=1))
+    successor = await replica.acquire(thread, timedelta(minutes=1))
     assert successor is not None
     assert successor.token != lease.token
     await ingestion.release(lease)
@@ -93,11 +99,29 @@ async def test_only_current_lease_can_fence_or_renew(
     with pytest.raises(ProjectionLeaseLostError):
         await check_fence(engine, lease, thread)
     await check_fence(engine, successor, thread)
-    other = await seed_retained_session(engine, sandbox="sb-2")
+    other = await seed_retained_session(engine, sandbox="sb-1", locator="s-other")
     with pytest.raises(ProjectionLeaseLostError):
         await check_fence(engine, successor, other)
     await replica.release(successor)
-    assert await ingestion.acquire("sb-1", timedelta(minutes=1)) is not None
+    assert await ingestion.acquire(thread, timedelta(minutes=1)) is not None
+
+
+async def test_sessions_in_same_sandbox_have_independent_owners(engine: AsyncEngine) -> None:
+    first = await seed_retained_session(engine, locator="first")
+    second = await seed_retained_session(engine, locator="second")
+    a, b = Ingestion(engine), Ingestion(engine)
+    first_lease = await a.acquire(first, timedelta(minutes=1))
+    second_lease = await b.acquire(second, timedelta(minutes=1))
+    assert first_lease is not None
+    assert second_lease is not None
+    assert await b.acquire(first, timedelta(minutes=1)) is None
+    await check_fence(engine, first_lease, first)
+    await check_fence(engine, second_lease, second)
+    with pytest.raises(ProjectionLeaseLostError):
+        await check_fence(engine, first_lease, second)
+    await a.release(first_lease)
+    assert await b.renew(second_lease, timedelta(minutes=1))
+    assert await b.acquire(first, timedelta(minutes=1)) is not None
 
 
 if __name__ == "__main__":

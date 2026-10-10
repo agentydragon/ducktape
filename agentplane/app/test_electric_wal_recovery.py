@@ -150,7 +150,7 @@ async def _project_initial_item(
     )
     source.append(event_pb2.Event(text_delta=event_pb2.TextDelta(item_id="first", text="before outage")))
     thread = await event_logs.open(SANDBOX, SESSION, source.attached.spec)
-    lease = await ingestion.acquire(SANDBOX, timedelta(minutes=2))
+    lease = await ingestion.acquire(thread, timedelta(minutes=2))
     assert lease is not None
     await ingestion.set_attached(thread, source.attached, lease=lease)
     await ingestion.record(thread, source.entries, lease=lease)

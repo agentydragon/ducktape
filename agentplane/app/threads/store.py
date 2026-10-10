@@ -52,7 +52,11 @@ class ThreadStore:
         if sandbox is not None:
             query = query.where(EventLog.sandbox == sandbox)
         if session_id is not None:
-            query = query.where(EventLog.session_id == session_id)
+            try:
+                public_id = UUID(session_id)
+            except ValueError:
+                return []
+            query = query.where(EventLog.id == public_id)
         if not include_archived:
             query = query.where(Thread.archived.is_not(True))
         async with self._sessions() as session:
@@ -132,7 +136,7 @@ def _view(
     return ThreadView(
         id=log.id,
         sandbox=log.sandbox,
-        session_id=log.session_id,
+        session_id=str(log.id),
         harness=log.harness,
         model=log.model,
         cwd=log.cwd,

@@ -1711,7 +1711,12 @@ materializer never silently co-moves an anonymous statement into a peeled module
 When a chunk has no explicit logical modules, `inline_in_entry` keeps the
 whole statement sequence in the entry; `catchall_file` places named and
 anonymous statements together in the catchall. Their ordering edges are
-internal to that destination and cannot create a module cycle.
+internal to that destination and cannot create a module cycle. With explicit
+modules, unclaimed anonymous statements normally stay in the entry. An
+anonymous statement in the same atomic unit as catchall-owned bindings follows
+those bindings into the catchall; otherwise the default split would violate
+the atomic-unit constraint. Explicit anonymous claims always keep their
+specified destination.
 
 The owner graph is the explicit replacement for hidden closure. It
 records the fine-grained "this owner uses that owner" relation before

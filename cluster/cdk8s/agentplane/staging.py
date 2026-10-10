@@ -52,6 +52,7 @@ from cluster.cdk8s.agentplane.environment import (
     ReplicaProfile,
 )
 from cluster.cdk8s.agentplane.grpc_channel_config import LARGE_EVENT_GRPC_CHANNEL_OPTIONS
+from cluster.cdk8s.agentplane.llm_ingress import model_configs
 from cluster.cdk8s.agentplane.namespaces import STAGING_NAMESPACE
 from cluster.cdk8s.external_secrets.minted_secret import mint_bearer_secret
 from cluster.cdk8s.external_secrets.single_secret_store import single_secret_store
@@ -320,7 +321,9 @@ ENV = Environment(
     runner_grpc_channel_options=LARGE_EVENT_GRPC_CHANNEL_OPTIONS,
     notifications_github=GitHubAppProps(app_id=5188971, secret_name="agentplane-github-app"),
     db=DbProps(instances=2),
-    llm_ingress=LlmIngressProps(litellm_key_secret_name=_LITELLM_KEY_SECRET, log_llm_requests=True),
+    llm_ingress=LlmIngressProps(
+        litellm_key_secret_name=_LITELLM_KEY_SECRET, models=model_configs(STAGING_APP_MODELS), log_llm_requests=True
+    ),
     egress=EgressProps(
         ca_secret_name=public_coder_egress.CA_BUNDLE_NAME,
         credentials_namespace=STAGING_CREDENTIALS_NAMESPACE,

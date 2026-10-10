@@ -18,6 +18,7 @@ from kubernetes_asyncio.client import ApiClient, AuthenticationV1Api
 from more_itertools import one
 
 from agentplane.llm_ingress.app import IngressResources, create_app
+from agentplane.llm_ingress.models import ModelConfig
 from agentplane.testing.fake_apiserver import (
     SANDBOX_NAMESPACE,
     FakeApiServer,
@@ -116,7 +117,7 @@ def configuration(fake: FakeApiServer) -> k8s_client.Configuration:
 
 @asynccontextmanager
 async def ingress_clients(
-    kubernetes: FakeApiServer, backend: FakeLiteLLM
+    kubernetes: FakeApiServer, backend: FakeLiteLLM, *, models: tuple[ModelConfig, ...] = ()
 ) -> AsyncIterator[tuple[httpx.AsyncClient, ApiClient]]:
     async with (
         ApiClient(configuration=configuration(kubernetes)) as api,
@@ -129,7 +130,10 @@ async def ingress_clients(
         )
         app = create_app(
             IngressResources(
-                authenticate=WorkloadPrincipalAuthenticator(resolver), backend=backend_http, litellm_key=LITELLM_KEY
+                authenticate=WorkloadPrincipalAuthenticator(resolver),
+                backend=backend_http,
+                litellm_key=LITELLM_KEY,
+                models={config.model: config for config in models},
             )
         )
         async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://ingress.test") as client:
@@ -254,6 +258,45 @@ async def test_a_workload_no_sandbox_owns_is_served_as_its_service_account() -> 
 
     assert served.status_code == 200, served.text
     assert verified_metadata(backend.requests[0])["agentplane.pod_name"] == "unowned"
+
+
+async def test_model_config_lookup_serves_configured_metadata_without_forwarding() -> None:
+    model = "ollama/oai-chat/qwen3.8-flash-next-iq4xs-256k"
+    async with fake_apiserver() as kubernetes, fake_litellm() as backend:
+        add_sandbox(kubernetes, "sandbox-a", TOKEN_A, pod_uid="pod-a-uid")
+        async with ingress_clients(
+            kubernetes, backend, models=(ModelConfig(model=model, total_context_budget_tokens=256 * 1024),)
+        ) as (client, _):
+            found = await client.get("/agentplane/model-config", params={"model": model}, headers=bearer(TOKEN_A))
+
+    assert found.status_code == 200
+    assert found.json() == {"model": model, "total_context_budget_tokens": 256 * 1024}
+    assert not backend.requests, "metadata is answered from generated ingress configuration, not LiteLLM"
+
+
+async def test_model_config_lookup_returns_not_found_for_unconfigured_model() -> None:
+    async with fake_apiserver() as kubernetes, fake_litellm() as backend:
+        add_sandbox(kubernetes, "sandbox-a", TOKEN_A, pod_uid="pod-a-uid")
+        async with ingress_clients(kubernetes, backend) as (client, _):
+            missing = await client.get(
+                "/agentplane/model-config", params={"model": "unlisted"}, headers=bearer(TOKEN_A)
+            )
+
+    assert missing.status_code == 404
+    assert not backend.requests
+
+
+async def test_model_config_lookup_requires_workload_authentication() -> None:
+    model = "ollama/oai-chat/qwen3.8-flash-next-iq4xs-256k"
+    async with fake_apiserver() as kubernetes, fake_litellm() as backend:
+        add_sandbox(kubernetes, "sandbox-a", TOKEN_A, pod_uid="pod-a-uid")
+        async with ingress_clients(
+            kubernetes, backend, models=(ModelConfig(model=model, total_context_budget_tokens=256 * 1024),)
+        ) as (client, _):
+            unauthenticated = await client.get("/agentplane/model-config", params={"model": model})
+
+    assert unauthenticated.status_code == 401
+    assert not backend.requests
 
 
 if __name__ == "__main__":

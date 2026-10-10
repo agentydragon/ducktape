@@ -3,9 +3,10 @@
 Status: **north star, written down from Rai's description (2026-09-03).** These are the
 experiences the stretch nodes in [`task_dag.md`](task_dag.md) exist for. Each story names what
 already stands under it and what is still missing; a story leaves this file when the app delivers
-it. The unifying concept across all of them is the **trust tier** of an agent identity: which
-credentials it may hold, which data it may receive, which transcripts it may read, and who judges
-its channel.
+it. A recurring theme is the **trust tier** of an agent identity: which credentials it may hold,
+which data it may receive, which transcripts it may read, and who judges its channel. A tier is an
+application built on those separate parts, a convenient named bundle, not a concept the base
+requires ([principles](../docs/principles.md#separate-concepts-mixed-and-matched-no-opaque-bundles)).
 
 ## 1. Ask me, I decide
 
@@ -84,9 +85,10 @@ Standing under it:
 
 Missing:
 
-- **Tiers on identities.** A sandbox carries the tier of the model provider it talks to, and the
-  tier decides the credential set the proxy will substitute (the OpenAI-safe set), the transcripts
-  the agent may read, and whether a judge sits on its channel.
+- **Tiers as bundles over identities.** A sandbox can be launched with the tier of the model
+  provider it talks to, and the tier pre-selects the credential set the proxy will substitute (the
+  OpenAI-safe set), the transcripts the agent may read, and whether a judge sits on its channel.
+  Each part stays separately configurable, and backends see the resolved parts, not the tier name.
 - **No delegation primitive.** The orchestrator uses the objects Rai uses: it creates a sandbox
   from a template its identity may use, opens a session, sends an `Input`, and reads the
   session's events. Its prompt tells it which templates and RBAC configurations it may create

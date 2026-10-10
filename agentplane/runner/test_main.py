@@ -1,7 +1,7 @@
 import pytest
 import pytest_bazel
 
-from agentplane.runner.main import harness_environment, parse_model_context_windows
+from agentplane.runner.main import harness_environment
 
 RUNNER_ENV = {
     "HOME": "/home/runner",
@@ -63,22 +63,6 @@ def test_an_inherited_name_must_be_bare() -> None:
     nothing and set nothing."""
     with pytest.raises(ValueError, match="takes a bare NAME"):
         harness_environment({}, declared=[], inherited=["TZDIR=/usr/share/zoneinfo"])
-
-
-def test_model_context_windows_are_optional_runner_owned_configuration() -> None:
-    assert parse_model_context_windows(None) == {}
-    assert parse_model_context_windows('{"qwen-128": 131072, "qwen-256": 262144}') == {
-        "qwen-128": 131072,
-        "qwen-256": 262144,
-    }
-
-
-@pytest.mark.parametrize(
-    "raw", ["not-json", "[]", '{"": 128}', '{"qwen": 0}', '{"qwen": -1}', '{"qwen": true}', '{"qwen": "128"}']
-)
-def test_invalid_model_context_windows_are_rejected_at_startup(raw: str) -> None:
-    with pytest.raises(ValueError, match="AGENTPLANE_MODEL_CONTEXT_WINDOWS"):
-        parse_model_context_windows(raw)
 
 
 if __name__ == "__main__":

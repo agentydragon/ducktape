@@ -10,8 +10,8 @@ from sqlalchemy.ext.asyncio import create_async_engine
 
 from agentplane.app.database_updates import Channel, DatabaseUpdates
 from agentplane.app.testing.history import ProjectedHistory as Ingestion, SeededEventLogStore as EventLogStore
+from agentplane.app.testing.projection_lease import LeaseFactory
 from agentplane.app.testing.thread_test_support import SPEC, Replica, event_entry
-from agentplane.app.threads.events.projection_lease import ProjectionLease
 from agentplane.app.threads.store import ThreadStore
 from agentplane.protocol import event_pb2
 
@@ -25,7 +25,7 @@ async def test_commits_wake_another_replica_and_leave_durable_replay(
     ingestion: Ingestion,
     replica: Replica,
     database_updates: DatabaseUpdates,
-    lease: ProjectionLease,
+    lease_for: LeaseFactory,
 ) -> None:
     changed, sessions_changed = asyncio.Event(), asyncio.Event()
     with (
@@ -33,6 +33,7 @@ async def test_commits_wake_another_replica_and_leave_durable_replay(
         database_updates.changes[Channel.OPERATOR_SESSIONS].subscribe(sessions_changed),
     ):
         thread = await event_logs.open("sb-1", "s-1", SPEC)
+        lease = await lease_for(thread)
         await asyncio.wait_for(changed.wait(), timeout=5)
         assert (await replica.store.list_threads())[0].id == thread
         changed.clear()
@@ -56,10 +57,11 @@ async def test_listener_reconnect_wakes_every_channel_for_writes_during_the_gap(
     ingestion: Ingestion,
     replica: Replica,
     database_updates: DatabaseUpdates,
-    lease: ProjectionLease,
+    lease_for: LeaseFactory,
     db_url: str,
 ) -> None:
     thread = await event_logs.open("sb-1", "s-1", SPEC)
+    lease = await lease_for(thread)
     engine = create_async_engine(db_url)
     changed, sessions_changed = asyncio.Event(), asyncio.Event()
     try:

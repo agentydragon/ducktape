@@ -8,9 +8,9 @@ import pytest
 import pytest_bazel
 
 from agentplane.app.testing.history import ProjectedHistory as Ingestion, SeededEventLogStore as EventLogStore
+from agentplane.app.testing.projection_lease import LeaseFactory
 from agentplane.app.testing.thread_test_support import SPEC, event_entry
 from agentplane.app.threads.events.event_log import ThreadNotFoundError
-from agentplane.app.threads.events.projection_lease import ProjectionLease
 from agentplane.app.threads.view.content import CommandIdConflictError, ContentStore
 from agentplane.protocol import command_pb2, event_pb2
 
@@ -19,9 +19,10 @@ from agentplane.protocol import command_pb2, event_pb2
 
 
 async def test_archived_command_admission_is_an_exact_retry_key(
-    event_logs: EventLogStore, content: ContentStore, ingestion: Ingestion, lease: ProjectionLease
+    event_logs: EventLogStore, content: ContentStore, ingestion: Ingestion, lease_for: LeaseFactory
 ) -> None:
     thread = await event_logs.open("sb-1", "s-1", SPEC)
+    lease = await lease_for(thread)
     command = command_pb2.Command(
         command_id="submit-1", submit_input=command_pb2.SubmitInput(text="persist this exact input")
     )

@@ -74,8 +74,10 @@ py_library(
         "//agentplane/harness_tests/claude:harness",
         "//agentplane/harness_tests/codex:harness",
         "//agentplane/runner:config",
+        "//agentplane/runner:model_config",
         "//agentplane/runner:protocol_pb2",
         "//util/bazel:runfiles",
+        "@pypi//httpx",
         "@pypi//protobuf",
     ],
 )

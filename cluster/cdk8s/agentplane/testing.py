@@ -58,6 +58,7 @@ from cluster.cdk8s.agentplane.environment import (
     ReplicaProfile,
 )
 from cluster.cdk8s.agentplane.grpc_channel_config import LARGE_EVENT_GRPC_CHANNEL_OPTIONS
+from cluster.cdk8s.agentplane.llm_ingress import model_configs
 from cluster.cdk8s.agentplane.namespaces import TESTING_NAMESPACE
 from cluster.cdk8s.api_resource import custom_resource, named_resource
 from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on_many
@@ -159,7 +160,7 @@ ENV = Environment(
     ),
     runner_grpc_channel_options=LARGE_EVENT_GRPC_CHANNEL_OPTIONS,
     db=DbProps(instances=1),
-    llm_ingress=LlmIngressProps(litellm_key_secret_name=_LITELLM_KEY_SECRET),
+    llm_ingress=LlmIngressProps(litellm_key_secret_name=_LITELLM_KEY_SECRET, models=model_configs(TESTING_APP_MODELS)),
     egress=EgressProps(
         ca_secret_name="agentplane-testing-egress-ca", credentials_namespace=TESTING_CREDENTIALS_NAMESPACE
     ),

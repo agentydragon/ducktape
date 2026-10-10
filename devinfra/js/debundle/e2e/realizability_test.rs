@@ -63,6 +63,67 @@ export { a };
     }
 }
 
+#[test]
+fn explicit_catchall_target_absorbs_anonymous_rebind() {
+    // The explicit claim and catchall overflow share one destination, so the
+    // anonymous callback registration must land there with its mutable binding.
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            r#"var a = null;
+Promise.resolve().then(() => { a = true; });
+console.log(a);
+export { a };
+"#,
+            vec![logical_module("foo", &[Member::new("a")])],
+        )
+        .with_unassigned_mode(unassigned_mode_catchall_file(Some("foo"))),
+    );
+    assert_entry_output(&fixture, "null\n");
+    assert_module_source(
+        &fixture.out_root,
+        "static/app/modules/foo.js",
+        &["Promise.resolve", "a = true"],
+        &[],
+    );
+}
+
+#[test]
+fn explicit_anonymous_claim_stays_out_of_catchall() {
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            r#"console.log("claimed");
+var a = 1;
+console.log("overflow", a);
+export { a };
+"#,
+            vec![
+                logical_module("foo", &[Member::new("a")]),
+                logical_module_with_anon("bar", &[], &[r#"console.log("claimed");"#]),
+            ],
+        )
+        .with_unassigned_mode(unassigned_mode_catchall_file(Some("foo"))),
+    );
+    assert_entry_output(&fixture, "claimed\noverflow 1\n");
+    assert_module_source(
+        &fixture.out_root,
+        "static/app/modules/bar.js",
+        &["claimed"],
+        &["overflow"],
+    );
+    assert_module_source(
+        &fixture.out_root,
+        "static/app/modules/foo.js",
+        &["var a"],
+        &["claimed", "overflow"],
+    );
+    assert_module_source(
+        &fixture.out_root,
+        "static/app/entry.js",
+        &["overflow"],
+        &["claimed"],
+    );
+}
+
 fn binding_names(members: &[BindingReport]) -> Vec<String> {
     members
         .iter()

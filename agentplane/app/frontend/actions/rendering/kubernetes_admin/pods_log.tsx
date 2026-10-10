@@ -1,8 +1,10 @@
 import type { JSX } from "react";
+import { Code, Text } from "@mantine/core";
 import { z } from "zod";
 
-import { Chip, CompactCall } from "../chips";
+import { Chip } from "../chips";
 import { definePreview, type ArgumentsPreview } from "../entry";
+import { kubernetesTarget } from "./resource_common";
 
 const podsLogArguments = z.strictObject({
   name: z.string().min(1),
@@ -18,14 +20,21 @@ export function canQuickApprovePodsLog(args: unknown): boolean {
 
 function Logs({ args }: { args: z.infer<typeof podsLogArguments> }): JSX.Element {
   return (
-    <CompactCall operation="Get pod logs">
-      <Chip label="pod" value={args.name} />
-      <Chip label="namespace" value={args.namespace ?? "(not specified)"} />
-      <Chip label="container" value={args.container ?? "(not specified)"} />
+    <>
+      <Chip label="container" value={args.container ?? "(default)"} />
       <Chip label="previous" value={args.previous === true ? "yes" : "no"} />
       <Chip label="tail" value={args.tail ?? 100} />
-    </CompactCall>
+    </>
   );
 }
 
+function PodsLogLabel({ args }: { args: z.infer<typeof podsLogArguments> }): JSX.Element {
+  return (
+    <Text size="sm" fw={600}>
+      View logs for <Code>{kubernetesTarget("Pod", args.name, args.namespace)}</Code>
+    </Text>
+  );
+}
+
+export const podsLogLabel: ArgumentsPreview = definePreview(podsLogArguments, PodsLogLabel);
 export const podsLogPreview: ArgumentsPreview = definePreview(podsLogArguments, Logs);
