@@ -10,14 +10,18 @@ const listSelectors = {
   fieldSelector: z.string().min(1).optional(),
   labelSelector: z.string().min(1).optional(),
 };
-const list = z.strictObject({
+const resourcesListArguments = z.strictObject({
   apiVersion: resource.apiVersion,
   kind: resource.kind,
   namespace: resource.namespace.optional(),
   ...listSelectors,
 });
 
-function Selectors({ args }: { args: z.infer<typeof list> }): JSX.Element {
+export function canQuickApproveResourcesList(args: unknown): boolean {
+  return resourcesListArguments.safeParse(args).success;
+}
+
+function Selectors({ args }: { args: z.infer<typeof resourcesListArguments> }): JSX.Element {
   return (
     <>
       {args.fieldSelector !== undefined && <Chip label="field selector" value={args.fieldSelector} />}
@@ -26,7 +30,7 @@ function Selectors({ args }: { args: z.infer<typeof list> }): JSX.Element {
   );
 }
 
-function List({ args }: { args: z.infer<typeof list> }): JSX.Element {
+function List({ args }: { args: z.infer<typeof resourcesListArguments> }): JSX.Element {
   return (
     <CompactCall operation="List resources">
       <Chip label="API" value={args.apiVersion} />
@@ -37,4 +41,4 @@ function List({ args }: { args: z.infer<typeof list> }): JSX.Element {
   );
 }
 
-export const resourcesListCompact: ArgumentsPreview = definePreview(list, List);
+export const resourcesListPane: ArgumentsPreview = definePreview(resourcesListArguments, List);

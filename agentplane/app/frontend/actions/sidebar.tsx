@@ -6,8 +6,9 @@ import { type JSX, useContext, useEffect, useMemo, useRef, useState, type Pointe
 import { Link, useLocation } from "react-router";
 
 import { serviceAccountKey } from "../client";
+import { JsonView } from "../json_view";
 import { StaleNotice } from "../stream_status";
-import { canApproveInline, compactActionArguments, renderArguments } from "./rendering/index";
+import { canApproveInline, renderPaneCollapsed, renderPaneOpened } from "./rendering/index";
 import { ActionRequestsContext } from "./requests";
 import "./sidebar.css";
 
@@ -244,10 +245,10 @@ export function ActionsSidebarSection({ onNavigate }: { onNavigate?: () => void 
           )}
           {pending.map((request) => {
             const expanded = expandedId === request.id;
-            const preview = compactActionArguments(request.action, request.arguments);
+            const collapsedPreview = renderPaneCollapsed(request.action, request.arguments);
+            const openedPreview = renderPaneOpened(request.action, request.arguments);
             const canQuickApprove =
               (request.external_grant === null || request.external_grant === undefined) &&
-              preview !== null &&
               canApproveInline(request.action, request.arguments);
             const detailsPath = `/actions/${encodeURIComponent(request.id)}`;
             const navigationState = {
@@ -285,6 +286,9 @@ export function ActionsSidebarSection({ onNavigate }: { onNavigate?: () => void 
                     <Text size="xs" lineClamp={1} title={request.title}>
                       {request.title}
                     </Text>
+                    {!expanded && collapsedPreview !== null && (
+                      <div className="agentplane-actions-sidebar-collapsed-preview">{collapsedPreview}</div>
+                    )}
                   </div>
                 </div>
                 {expanded && (
@@ -304,11 +308,7 @@ export function ActionsSidebarSection({ onNavigate }: { onNavigate?: () => void 
                         Authenticated external caller
                       </Text>
                     )}
-                    {renderArguments(request.action, request.arguments) ?? preview ?? (
-                      <Text size="xs" c="dimmed">
-                        Open full details to inspect the action arguments.
-                      </Text>
-                    )}
+                    {openedPreview ?? <JsonView value={request.arguments} />}
                     <Group justify="space-between" wrap="nowrap" gap="xs">
                       {canQuickApprove ? (
                         <Button

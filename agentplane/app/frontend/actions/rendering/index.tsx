@@ -1,88 +1,126 @@
-// How an Action's call draws for the operator. Widgets for particular Actions are registered by the
-// Action's identity `(group, name)`: one for its request (the arguments), one for its response (the
-// value its tool returned), or both. The group is the name the Action Service configures a backend
-// under, so an entry follows that name rather than the server's own. Add a module in the
-// matching group directory and a row in REGISTRY. Rendering validates the arguments and
-// falls back where no widget matches; inline approval is an independent, explicit opt-in.
+// React presentation registry for Actions. Each Action can choose a different widget for the
+// collapsed and opened Actions pane, and for full-detail arguments and results. The parallel,
+// React-free notification registry lives in ../notifications because the service worker imports it.
+// The group is the name the Action Service configures a backend under. Unknown identities or
+// payloads fall back to the host's generic view.
 import type { ReactNode } from "react";
 
 import { type CallToolResult, CallToolResultView, toolValue } from "../call_tool_result";
 import type { ActionRequestView } from "../client";
 import { renderPreview, type ArgumentsPreview } from "./entry";
-import { canApprovePullRequestInline, createPullRequestCompact } from "./github/create_pull_request";
-import { eventsListCompact } from "./kubernetes_admin/events_list";
-import { podsInNamespaceCompact, podsInNamespacePreview } from "./kubernetes_admin/pods_list_in_namespace";
-import { podsLogCompact, podsLogPreview } from "./kubernetes_admin/pods_log";
-import { resourcesDeleteCompact } from "./kubernetes_admin/resources_delete";
-import { resourcesGetCompact, resourcesGetPreview } from "./kubernetes_admin/resources_get";
-import { resourcesListCompact } from "./kubernetes_admin/resources_list";
+import { canApprovePullRequestInline, createPullRequestPane } from "./github/create_pull_request";
+import { canQuickApproveEventsList, eventsListPane } from "./kubernetes_admin/events_list";
+import {
+  canQuickApprovePodsInNamespace,
+  podsInNamespaceCollapsed,
+  podsInNamespacePreview,
+} from "./kubernetes_admin/pods_list_in_namespace";
+import { canQuickApprovePodsLog, podsLogPreview } from "./kubernetes_admin/pods_log";
+import { canQuickApproveResourcesDelete, resourcesDeletePane } from "./kubernetes_admin/resources_delete";
+import { canQuickApproveResourcesGet, resourcesGetPreview } from "./kubernetes_admin/resources_get";
+import { canQuickApproveResourcesList, resourcesListPane } from "./kubernetes_admin/resources_list";
 import { renderResultPreview, type ResultPreview } from "./result_entry";
-import { execArgumentsPreview, execResultPreview } from "./ssh/exec";
+import { execArgumentsPreview, execCollapsedPreview, execResultPreview } from "./ssh/exec";
 
 type ActionIdentity = ActionRequestView["action"];
 
-interface ActionRendering {
-  arguments?: ArgumentsPreview;
-  result?: ResultPreview;
-  /** Compact rendering is independent of whether an inline decision is safe. The schema must
-   * reject arguments the widget does not show; otherwise the strip falls back to Review. */
-  compact?: ArgumentsPreview;
-  /** Opt-in decision, based on the call content. Only consulted after compact.schema parses. */
-  canApproveInline?: (args: unknown) => boolean;
+interface ActionPresentation {
+  pane?: {
+    collapsed?: ArgumentsPreview;
+    opened?: ArgumentsPreview;
+  };
+  details?: {
+    arguments?: ArgumentsPreview;
+    result?: ResultPreview;
+  };
 }
 
 // Maps rather than object literals, so no group or Action name reaches `Object.prototype`.
-const REGISTRY: ReadonlyMap<string, ReadonlyMap<string, ActionRendering>> = new Map([
+const PRESENTATIONS: ReadonlyMap<string, ReadonlyMap<string, ActionPresentation>> = new Map([
   [
     "kubernetes_admin",
-    new Map<string, ActionRendering>([
+    new Map<string, ActionPresentation>([
       [
         "pods_list_in_namespace",
-        { arguments: podsInNamespacePreview, compact: podsInNamespaceCompact, canApproveInline: () => true },
+        {
+          pane: { collapsed: podsInNamespaceCollapsed, opened: podsInNamespacePreview },
+          details: { arguments: podsInNamespacePreview },
+        },
       ],
-      ["resources_get", { arguments: resourcesGetPreview, compact: resourcesGetCompact, canApproveInline: () => true }],
-      ["resources_list", { compact: resourcesListCompact, canApproveInline: () => true }],
-      ["resources_delete", { compact: resourcesDeleteCompact, canApproveInline: () => true }],
-      ["pods_log", { arguments: podsLogPreview, compact: podsLogCompact, canApproveInline: () => true }],
-      ["events_list", { compact: eventsListCompact, canApproveInline: () => true }],
+      ["resources_get", { pane: { opened: resourcesGetPreview }, details: { arguments: resourcesGetPreview } }],
+      ["resources_list", { pane: { opened: resourcesListPane } }],
+      ["resources_delete", { pane: { opened: resourcesDeletePane } }],
+      ["pods_log", { pane: { opened: podsLogPreview }, details: { arguments: podsLogPreview } }],
+      ["events_list", { pane: { opened: eventsListPane } }],
     ]),
   ],
   [
     "github",
-    new Map<string, ActionRendering>([
-      ["create_pull_request", { compact: createPullRequestCompact, canApproveInline: canApprovePullRequestInline }],
-    ]),
+    new Map<string, ActionPresentation>([["create_pull_request", { pane: { opened: createPullRequestPane } }]]),
   ],
   // x/ssh_mcp_server/server.py, under the group name staging configures it as.
-  ["ssh", new Map<string, ActionRendering>([["exec", { arguments: execArgumentsPreview, result: execResultPreview }]])],
+  [
+    "ssh",
+    new Map<string, ActionPresentation>([
+      [
+        "exec",
+        {
+          pane: { collapsed: execCollapsedPreview, opened: execArgumentsPreview },
+          details: { arguments: execArgumentsPreview, result: execResultPreview },
+        },
+      ],
+    ]),
+  ],
 ]);
 
-/** An Action's arguments drawn by its own widget when its schema parses them; otherwise `null`, which
- * every card shows as their JSON. The fallback is chosen here rather than by the cards, so a
- * rendering of arguments no widget takes can replace that `null` without them changing. */
-export function renderArguments(action: ActionIdentity, args: unknown): ReactNode | null {
-  const preview = REGISTRY.get(action.group)?.get(action.name)?.arguments;
+// Quick approval is deliberately a separate capability: a custom pane renderer does not grant an
+// inline decision. Each entry validates the complete Action arguments independently of its views.
+const QUICK_APPROVALS: ReadonlyMap<string, ReadonlyMap<string, (args: unknown) => boolean>> = new Map([
+  [
+    "kubernetes_admin",
+    new Map([
+      ["pods_list_in_namespace", canQuickApprovePodsInNamespace],
+      ["resources_get", canQuickApproveResourcesGet],
+      ["resources_list", canQuickApproveResourcesList],
+      ["resources_delete", canQuickApproveResourcesDelete],
+      ["pods_log", canQuickApprovePodsLog],
+      ["events_list", canQuickApproveEventsList],
+    ]),
+  ],
+  ["github", new Map([["create_pull_request", canApprovePullRequestInline]])],
+]);
+
+function presentation(action: ActionIdentity): ActionPresentation | undefined {
+  return PRESENTATIONS.get(action.group)?.get(action.name);
+}
+
+/** An Action's collapsed-pane summary; `null` leaves the shared caller title in place. */
+export function renderPaneCollapsed(action: ActionIdentity, args: unknown): ReactNode | null {
+  const preview = presentation(action)?.pane?.collapsed;
   return preview ? renderPreview(preview, args) : null;
 }
 
-/** An MCP tool's stored result drawn by the Action's own widget when its schema parses the tool's
- * value; otherwise the way the tool answered. */
-export function renderMcpResult(action: ActionIdentity, result: CallToolResult): ReactNode {
-  const preview = REGISTRY.get(action.group)?.get(action.name)?.result;
+/** An Action's opened-pane view; `null` asks the host to direct the operator to full details. */
+export function renderPaneOpened(action: ActionIdentity, args: unknown): ReactNode | null {
+  const preview = presentation(action)?.pane?.opened;
+  return preview ? renderPreview(preview, args) : null;
+}
+
+/** The pretty argument view on the full details page; Raw remains the host's shared exact-JSON view. */
+export function renderDetailsArguments(action: ActionIdentity, args: unknown): ReactNode | null {
+  const preview = presentation(action)?.details?.arguments;
+  return preview ? renderPreview(preview, args) : null;
+}
+
+/** An MCP result's action-specific details view, or the generic view of the tool's response. */
+export function renderDetailsResult(action: ActionIdentity, result: CallToolResult): ReactNode {
+  const preview = presentation(action)?.details?.result;
   const value = toolValue(result);
   const drawn = preview && value !== undefined ? renderResultPreview(preview, value) : null;
   return drawn ?? <CallToolResultView result={result} />;
 }
 
-/** Inline approval requires both an opt-in for these arguments and a compact widget whose strict
- * schema parses the complete call. A custom summary alone never grants a decision control. */
+/** Inline approval is an explicit action capability, independent of the presentation chosen. */
 export function canApproveInline(action: ActionIdentity, args: unknown): boolean {
-  const entry = REGISTRY.get(action.group)?.get(action.name);
-  return entry?.compact?.schema.safeParse(args).success === true && entry.canApproveInline?.(args) === true;
-}
-
-/** An Action's strip summary, even when it still requires opening Review before approval. */
-export function compactActionArguments(action: ActionIdentity, args: unknown): ReactNode | null {
-  const preview = REGISTRY.get(action.group)?.get(action.name)?.compact;
-  return preview ? renderPreview(preview, args) : null;
+  return QUICK_APPROVALS.get(action.group)?.get(action.name)?.(args) ?? false;
 }

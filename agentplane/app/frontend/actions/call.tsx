@@ -6,7 +6,7 @@ import { Disclosure } from "../disclosure";
 import { JsonView } from "../json_view";
 import { RawSwitch } from "../raw_switch";
 import type { ActionRequestView } from "./client";
-import { renderArguments } from "./rendering/index";
+import { renderDetailsArguments } from "./rendering/index";
 
 /** The grant fields, folded inside `RequestAuditDetails`' disclosure rather than shown
  * unconditionally: verbose per-request provenance an operator deciding needs occasionally, not on
@@ -81,7 +81,7 @@ export function ActionCall({
   /** Whether the card's result renders other than as its stored JSON. */
   prettyResult: boolean;
 }): JSX.Element {
-  const prettyArguments = renderArguments(request.action, request.arguments);
+  const prettyArguments = renderDetailsArguments(request.action, request.arguments);
   return (
     <Stack gap="sm">
       <Stack gap={2}>

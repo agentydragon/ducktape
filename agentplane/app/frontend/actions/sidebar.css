@@ -115,6 +115,16 @@
   min-width: 0;
 }
 
+.agentplane-actions-sidebar-collapsed-preview {
+  max-width: 100%;
+  overflow: hidden;
+  color: var(--mantine-color-dimmed);
+}
+
+.agentplane-actions-sidebar-collapsed-preview > * {
+  max-width: 100%;
+}
+
 .agentplane-actions-sidebar-name,
 .agentplane-actions-sidebar-details {
   display: inline-flex;

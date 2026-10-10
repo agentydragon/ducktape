@@ -120,6 +120,8 @@ it("expands a compact action preview and only offers inline approval to eligible
   };
 
   await send([pod, ssh]);
+  expect(container.textContent).toContain("Get pods");
+  expect(container.textContent).toContain("$ systemctl restart backup");
   const podDisclosure = container.querySelector<HTMLButtonElement>(`button[aria-label="Expand ${pod.title}"]`);
   if (!podDisclosure) throw new Error("missing pod action disclosure");
   await act(async () => podDisclosure.click());

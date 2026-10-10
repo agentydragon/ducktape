@@ -32,7 +32,7 @@ describe("action notification formatting", () => {
 
     expect(formatActionNotification(request)).toMatchInlineSnapshot(`
       {
-        "body": "Invoice 2026-04-18.",
+        "text": "Invoice 2026-04-18.",
         "title": "Transfer $400 to vendor · finance / transfer",
       }
     `);
@@ -48,7 +48,7 @@ describe("action notification formatting", () => {
 
     expect(formatActionNotification(request)).toMatchInlineSnapshot(`
       {
-        "body": "$ df -h · Timeout 30 s",
+        "text": "$ df -h · Timeout 30 s",
         "title": "Check disk space · SSH exec · deploy@build-01",
       }
     `);
@@ -64,7 +64,7 @@ describe("action notification formatting", () => {
 
     expect(formatActionNotification(request)).toMatchInlineSnapshot(`
       {
-        "body": "Run the disk usage check on the build host.",
+        "text": "Run the disk usage check on the build host.",
         "title": "Check disk space · ssh / exec",
       }
     `);

@@ -5,13 +5,17 @@ import { z } from "zod";
 import { definePreview, type ArgumentsPreview } from "../entry";
 
 // Unknown arguments fail closed rather than making an unshown parameter actionable.
-const podsInNamespace = z.strictObject({
+const podsInNamespaceArguments = z.strictObject({
   namespace: z.string().min(1),
   fieldSelector: z.string().min(1).optional(),
   labelSelector: z.string().min(1).optional(),
 });
 
-function PodsInNamespace({ args }: { args: z.infer<typeof podsInNamespace> }): JSX.Element {
+export function canQuickApprovePodsInNamespace(args: unknown): boolean {
+  return podsInNamespaceArguments.safeParse(args).success;
+}
+
+function PodsInNamespace({ args }: { args: z.infer<typeof podsInNamespaceArguments> }): JSX.Element {
   return (
     <Text size="sm" style={{ overflowWrap: "anywhere" }}>
       List pods in namespace <Code>{args.namespace}</Code>
@@ -31,11 +35,11 @@ function PodsInNamespace({ args }: { args: z.infer<typeof podsInNamespace> }): J
   );
 }
 
-export const podsInNamespacePreview: ArgumentsPreview = definePreview(podsInNamespace, PodsInNamespace);
+export const podsInNamespacePreview: ArgumentsPreview = definePreview(podsInNamespaceArguments, PodsInNamespace);
 
-// This is intentionally a separate widget from the expanded card: each Action owns both
-// representations. The registry separately decides if the strip offers inline approval.
-function PodsInNamespaceCompact({ args }: { args: z.infer<typeof podsInNamespace> }): JSX.Element {
+// This is intentionally a separate widget from the opened pane: each Action owns both
+// representations. Quick-approval eligibility lives in a separate capability registry.
+function PodsInNamespaceCollapsed({ args }: { args: z.infer<typeof podsInNamespaceArguments> }): JSX.Element {
   return (
     <Text size="sm" style={{ overflowWrap: "anywhere" }}>
       Get pods · namespace <Code>{args.namespace}</Code>
@@ -55,4 +59,7 @@ function PodsInNamespaceCompact({ args }: { args: z.infer<typeof podsInNamespace
   );
 }
 
-export const podsInNamespaceCompact: ArgumentsPreview = definePreview(podsInNamespace, PodsInNamespaceCompact);
+export const podsInNamespaceCollapsed: ArgumentsPreview = definePreview(
+  podsInNamespaceArguments,
+  PodsInNamespaceCollapsed
+);

@@ -4,12 +4,16 @@ import { z } from "zod";
 import { Chip, CompactCall } from "../chips";
 import { definePreview, type ArgumentsPreview } from "../entry";
 
-const events = z.strictObject({
+const eventsListArguments = z.strictObject({
   namespace: z.string().min(1).optional(),
   fieldSelector: z.string().min(1).optional(),
 });
 
-function Events({ args }: { args: z.infer<typeof events> }): JSX.Element {
+export function canQuickApproveEventsList(args: unknown): boolean {
+  return eventsListArguments.safeParse(args).success;
+}
+
+function Events({ args }: { args: z.infer<typeof eventsListArguments> }): JSX.Element {
   return (
     <CompactCall operation="List events">
       <Chip label="namespace" value={args.namespace ?? "all namespaces"} />
@@ -18,4 +22,4 @@ function Events({ args }: { args: z.infer<typeof events> }): JSX.Element {
   );
 }
 
-export const eventsListCompact: ArgumentsPreview = definePreview(events, Events);
+export const eventsListPane: ArgumentsPreview = definePreview(eventsListArguments, Events);

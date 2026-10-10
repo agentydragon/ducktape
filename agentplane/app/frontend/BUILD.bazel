@@ -263,6 +263,7 @@ ts_library(
         ":actions_requests",
         ":actions_sidebar_css",
         ":client",
+        ":json_view",
         ":stream_status",
         "//:node_modules/@mantine/core",
         "//:node_modules/@tabler/icons-react",

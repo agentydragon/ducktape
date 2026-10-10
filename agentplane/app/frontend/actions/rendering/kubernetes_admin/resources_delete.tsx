@@ -6,9 +6,16 @@ import { definePreview, type ArgumentsPreview } from "../entry";
 
 import { resource, ResourceChips } from "./resource_common";
 
-const remove = z.strictObject({ ...resource, gracePeriodSeconds: z.int().nonnegative().optional() });
+const resourcesDeleteArguments = z.strictObject({
+  ...resource,
+  gracePeriodSeconds: z.int().nonnegative().optional(),
+});
 
-function Delete({ args }: { args: z.infer<typeof remove> }): JSX.Element {
+export function canQuickApproveResourcesDelete(args: unknown): boolean {
+  return resourcesDeleteArguments.safeParse(args).success;
+}
+
+function Delete({ args }: { args: z.infer<typeof resourcesDeleteArguments> }): JSX.Element {
   return (
     <CompactCall operation="Delete resource">
       <ResourceChips args={args} />
@@ -20,4 +27,4 @@ function Delete({ args }: { args: z.infer<typeof remove> }): JSX.Element {
   );
 }
 
-export const resourcesDeleteCompact: ArgumentsPreview = definePreview(remove, Delete);
+export const resourcesDeletePane: ArgumentsPreview = definePreview(resourcesDeleteArguments, Delete);

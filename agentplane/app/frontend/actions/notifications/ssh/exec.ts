@@ -8,6 +8,6 @@ export function sshExecNotification(request: ActionRequestView): ActionNotificat
   const { command, host, timeout_seconds, user } = parsed.data;
   return {
     title: `${request.title} · SSH exec · ${user}@${host}`,
-    body: timeout_seconds == null ? `$ ${command}` : `$ ${command} · Timeout ${timeout_seconds} s`,
+    text: timeout_seconds == null ? `$ ${command}` : `$ ${command} · Timeout ${timeout_seconds} s`,
   };
 }

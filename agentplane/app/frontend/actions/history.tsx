@@ -14,7 +14,7 @@ import {
   type ActionRequestView,
   type ActionService,
 } from "./client";
-import { renderMcpResult } from "./rendering/index";
+import { renderDetailsResult } from "./rendering/index";
 import { stateLabel } from "./requests";
 
 /** The stored result: its pretty rendering unless it has none or the action is switched to Raw, and
@@ -54,7 +54,7 @@ export function ActionHistoryCard({ request, mcp }: { request: ActionRequestView
   // as the tool answered. Anything else, a sandbox group's own models or a group this page cannot
   // place, has no rendering but its JSON.
   const call = mcp && result !== null && result !== undefined ? parseCallToolResult(result) : null;
-  const prettyResult = call === null ? null : renderMcpResult(request.action, call);
+  const prettyResult = call === null ? null : renderDetailsResult(request.action, call);
   return (
     <Paper withBorder p="md">
       <Stack gap="sm">

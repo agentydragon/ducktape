@@ -84,6 +84,8 @@ async def test_sidebar_compact_pod_approval(
         await expect(section.get_by_role("button", name="Approve inspect running demo pods")).to_be_visible()
         await expect(section.get_by_role("button", name="Deny")).to_have_count(0)
     else:
+        await expect(section.get_by_text("Get pods")).to_be_visible()
+        await expect(section.get_by_text("test-apps")).to_be_visible()
         await expect(section.get_by_role("button", name="Approve inspect running demo pods")).to_have_count(0)
     await view.capture()
 

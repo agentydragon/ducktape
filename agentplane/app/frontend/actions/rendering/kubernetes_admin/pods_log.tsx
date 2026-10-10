@@ -4,7 +4,7 @@ import { z } from "zod";
 import { Chip, CompactCall } from "../chips";
 import { definePreview, type ArgumentsPreview } from "../entry";
 
-const logs = z.strictObject({
+const podsLogArguments = z.strictObject({
   name: z.string().min(1),
   namespace: z.string().min(1).optional(),
   container: z.string().min(1).optional(),
@@ -12,7 +12,11 @@ const logs = z.strictObject({
   tail: z.int().optional(),
 });
 
-function Logs({ args }: { args: z.infer<typeof logs> }): JSX.Element {
+export function canQuickApprovePodsLog(args: unknown): boolean {
+  return podsLogArguments.safeParse(args).success;
+}
+
+function Logs({ args }: { args: z.infer<typeof podsLogArguments> }): JSX.Element {
   return (
     <CompactCall operation="Get pod logs">
       <Chip label="pod" value={args.name} />
@@ -24,5 +28,4 @@ function Logs({ args }: { args: z.infer<typeof logs> }): JSX.Element {
   );
 }
 
-export const podsLogPreview: ArgumentsPreview = definePreview(logs, Logs);
-export const podsLogCompact: ArgumentsPreview = podsLogPreview;
+export const podsLogPreview: ArgumentsPreview = definePreview(podsLogArguments, Logs);

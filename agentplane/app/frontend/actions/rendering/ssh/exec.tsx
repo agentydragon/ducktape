@@ -1,6 +1,6 @@
 // The `exec` tool of the SSH MCP server (x/ssh_mcp_server/server.py): the call as the operator decides
 // it, the target and the exact command, and what came back, the exit code and the output.
-import { Badge, Group, Stack, Text } from "@mantine/core";
+import { Badge, Code, Group, Stack, Text } from "@mantine/core";
 import type { JSX } from "react";
 import type { z } from "zod";
 
@@ -20,6 +20,17 @@ function ExecArguments({ args }: PreviewProps<SshExecArguments>): JSX.Element {
       command={args.command}
       notes={args.timeout_seconds == null ? [] : [`Timeout ${args.timeout_seconds} s`]}
     />
+  );
+}
+
+function ExecCollapsed({ args }: PreviewProps<SshExecArguments>): JSX.Element {
+  return (
+    <Text size="xs" lineClamp={1}>
+      <Code>
+        {args.user}@{args.host}
+      </Code>{" "}
+      · <Code>$ {args.command}</Code>
+    </Text>
   );
 }
 
@@ -55,4 +66,5 @@ function ExecResult({ result }: ResultPreviewProps<SshExecResult>): JSX.Element 
 }
 
 export const execArgumentsPreview: ArgumentsPreview = definePreview(zSshExecArguments, ExecArguments);
+export const execCollapsedPreview: ArgumentsPreview = definePreview(zSshExecArguments, ExecCollapsed);
 export const execResultPreview: ResultPreview = defineResultPreview(zSshExecResult, ExecResult);

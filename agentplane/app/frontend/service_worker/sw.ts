@@ -80,10 +80,10 @@ self.addEventListener("push", (event) => {
         ? formatActionNotification(current)
         : {
             title: `${message.action_group} / ${message.action_name}`,
-            body: "Open Agentplane to review this Action",
+            text: "Open Agentplane to review this Action",
           };
       await self.registration.showNotification(content.title, {
-        body: content.body,
+        body: content.text,
         tag: message.action_id,
         requireInteraction: true,
         actions: current
