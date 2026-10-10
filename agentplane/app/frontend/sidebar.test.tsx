@@ -502,7 +502,7 @@ function footerButton(label: string): HTMLButtonElement {
   return found;
 }
 
-it("routes the footer icons to Sandboxes, All actions, and Settings", async () => {
+it("routes the footer icons to Sandboxes, All actions, Mosaic, and Settings", async () => {
   const { onOpenSettings } = await render([], {});
 
   await act(async () => footerButton("Sandboxes").click());
@@ -510,6 +510,9 @@ it("routes the footer icons to Sandboxes, All actions, and Settings", async () =
 
   await act(async () => footerButton("All actions").click());
   expect(location()).toBe("/actions");
+
+  await act(async () => footerButton("Mosaic preview").click());
+  expect(location()).toBe("/mosaic");
 
   await act(async () => footerButton("Settings").click());
   expect(onOpenSettings).toHaveBeenCalledOnce();

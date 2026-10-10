@@ -1,5 +1,6 @@
 import { type JSX, type ReactNode, useEffect, useRef, useState } from "react";
 import { Alert, Badge, Button, Code, Paper, Stack, Text } from "@mantine/core";
+import IconArrowUpRight from "@tabler/icons-react/dist/esm/icons/IconArrowUpRight.mjs";
 
 import { displayableError } from "../client";
 import { JsonView } from "../json_view";
@@ -40,7 +41,15 @@ function ExecutionResult({
 
 /** A decided/terminal ActionRequest, kept as a durable receipt: the call as the operator saw it
  * when deciding, then the decision it is a record of and what came of it. */
-export function ActionHistoryCard({ request, mcp }: { request: ActionRequestView; mcp: boolean }): JSX.Element {
+export function ActionHistoryCard({
+  request,
+  mcp,
+  onOpenDetails,
+}: {
+  request: ActionRequestView;
+  mcp: boolean;
+  onOpenDetails?: (request: ActionRequestView) => void;
+}): JSX.Element {
   const decision = request.decision;
   const policySet = decision?.policy_evidence?.matched.policy_set;
   const [raw, setRaw] = useState(false);
@@ -79,6 +88,19 @@ export function ActionHistoryCard({ request, mcp }: { request: ActionRequestView
           onRawChange={setRaw}
           prettyResult={prettyResult !== null}
           combinedCall={combinedCall}
+          headerActions={
+            onOpenDetails ? (
+              <Button
+                variant="subtle"
+                size="compact-xs"
+                rightSection={<IconArrowUpRight size={13} />}
+                aria-label={`Open details for ${request.title}`}
+                onClick={() => onOpenDetails(request)}
+              >
+                Details
+              </Button>
+            ) : undefined
+          }
         />
         {decision?.decision_note && <Text size="sm">{decision.decision_note}</Text>}
         {policySet && (
@@ -133,10 +155,12 @@ export function ActionHistory({
   service = actionService,
   groupService = actionGroupService,
   embedded = false,
+  onOpenDetails,
 }: {
   service?: ActionService;
   groupService?: ActionGroupService;
   embedded?: boolean;
+  onOpenDetails?: (request: ActionRequestView) => void;
 }): JSX.Element {
   const [requests, setRequests] = useState<ActionRequestView[]>([]);
   const [cursor, setCursor] = useState<string | null>(null);
@@ -229,6 +253,7 @@ export function ActionHistory({
           key={request.id}
           request={request}
           mcp={executors.kinds?.get(request.action.group) === "mcp"}
+          onOpenDetails={onOpenDetails}
         />
       ))}
       {cursor && (
