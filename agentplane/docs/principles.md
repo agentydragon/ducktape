@@ -66,6 +66,12 @@ A one-off session with unusual permissions is therefore just a different combina
 launch. Nobody has to mint a one-off agent type for it, and the backends never learn type names
 they would later have to keep honoring.
 
+This is a lesson from Haku Console, Agentplane's predecessor. It bundled its parts into big
+concepts too early and became unmaintainable. Agentplane may still, once the use cases are better
+understood, decide that a single concept such as "agent" or "trust tier" is the right shape. That
+call is deferred as long as possible, and until then bundles live where they are cheapest to pull
+out by the roots: as presets in the integration app, not in backend contracts.
+
 **Question for a proposal:** which future options does it close, and how expensive is it to back
 out of? If it is hard to reverse, is that cost stated and accepted?
 
