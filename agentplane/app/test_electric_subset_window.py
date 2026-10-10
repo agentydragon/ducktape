@@ -112,7 +112,7 @@ async def test_one_thread_shape_serves_a_moving_window(
                 Ingestion(engine, peer=history_peer, history_reader=history_client),
             )
             source = ReplicationSource()
-            thread = await event_logs.open(SANDBOX, SESSION, source.attached.spec)
+            thread = await event_logs.open(SANDBOX, SESSION)
             lease = await ingestion.acquire(thread, timedelta(minutes=2))
             assert lease is not None
             await ingestion.set_attached(thread, source.attached, lease=lease)
@@ -219,7 +219,7 @@ async def test_bodies_load_as_subsets_of_one_shape_per_field(
                 Ingestion(engine, peer=history_peer, history_reader=history_client),
             )
             source = ReplicationSource()
-            thread = await event_logs.open(SANDBOX, SESSION, source.attached.spec)
+            thread = await event_logs.open(SANDBOX, SESSION)
             lease = await ingestion.acquire(thread, timedelta(minutes=2))
             assert lease is not None
             await ingestion.set_attached(thread, source.attached, lease=lease)

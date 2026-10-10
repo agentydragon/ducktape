@@ -17,6 +17,7 @@ from agentplane.app.threads.view.content import ContentStore
 from agentplane.protocol import command_pb2, event_log_pb2
 from agentplane.runner import protocol_pb2
 from agentplane.runner.errors import RunnerError
+from agentplane.runner.harness import Harness
 
 # gazelle:include_dep @pypi//protobuf
 # gazelle:include_dep @pypi//grpcio
@@ -70,7 +71,7 @@ class RunnerBridge:
         except (ValueError, ParseError) as error:
             raise MalformedMessageError(f"invalid session overrides: {error}") from error
         public_id = created.session_id
-        thread_id = await self._event_logs.open(sandbox, public_id, created.attached.spec)
+        thread_id = await self._event_logs.open(sandbox, public_id)
         if thread_id != UUID(public_id):
             raise RunnerError("service Session ID conflicts with the retained Thread identity")
         await self._event_logs.resume_pending(thread_id)
@@ -92,7 +93,7 @@ class RunnerBridge:
             return OpenStatus(status="failed", session_id=result.session_id)
         if not result.HasField("summary"):
             return OpenStatus(status="unconfirmed", session_id=result.session_id)
-        thread_id = await self._event_logs.open(sandbox, result.session_id, result.summary.spec)
+        thread_id = await self._event_logs.open(sandbox, result.session_id)
         if thread_id != UUID(result.session_id):
             raise RunnerError("service Session ID conflicts with the retained Thread identity")
         await self._event_logs.resume_pending(thread_id)
@@ -100,9 +101,13 @@ class RunnerBridge:
         return OpenStatus(status="ready", session_id=result.session_id)
 
     async def resume_thread(
-        self, thread_id: UUID, *, expected_harness: str, expected_cwd: str
+        self, thread_id: UUID, *, expected_harness: Harness | None, expected_cwd: str | None
     ) -> protocol_pb2.Attached:
-        """Resume the native session already bound to this Thread, using its runner-owned spec."""
+        """Resume the native session already bound to this Thread, using its runner-owned spec.
+
+        The expectations are the Thread's view of its harness and workspace; None, before any
+        runner attachment is folded, leaves nothing to check the retained spec against.
+        """
         snapshot = await self._event_logs.feed_state(thread_id)
         if snapshot is not None and isinstance(snapshot.end, FeedError):
             raise RunnerError(f"runner history is rejected: {snapshot.end.message}")
@@ -123,7 +128,9 @@ class RunnerBridge:
             or not summary.spec.model
         ):
             raise RunnerError(f"runner session {runner_session.session_id!r} has no recoverable session spec")
-        if protocol_pb2.Harness.Name(summary.spec.harness) != expected_harness or summary.spec.cwd != expected_cwd:
+        if (expected_harness is not None and protocol_pb2.Harness.Name(summary.spec.harness) != expected_harness) or (
+            expected_cwd is not None and summary.spec.cwd != expected_cwd
+        ):
             raise RunnerError("runner's retained session spec does not match this Thread's harness and workspace")
         attached = await self._runners.client(runner_session.sandbox).resume(runner_session.session_id)
         # The Thread mapping already exists. Do not make runner Resume depend on archive

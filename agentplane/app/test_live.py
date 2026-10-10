@@ -66,7 +66,6 @@ from agentplane.app.threads.store import ThreadStore
 from agentplane.app.threads.summaries import AppSummaries
 from agentplane.app.threads.view.content import ContentStore
 from agentplane.history_service.client import HistoryServiceClient
-from agentplane.runner import protocol_pb2
 from agentplane.runner.harness import Harness
 from agentplane.sandbox_service.client import SandboxServiceClient
 from agentplane.sandbox_service.testing.backend import seed_runner
@@ -390,9 +389,7 @@ async def test_global_thread_stream_combines_replica_commits_and_sandbox_watch_c
             assert initial.threads == []
             assert initial.updates_connected
 
-            thread_id = await event_logs.open(
-                "runner-1", "test-global-thread", protocol_pb2.SessionSpec(harness=protocol_pb2.HARNESS_CLAUDE)
-            )
+            thread_id = await event_logs.open("runner-1", "test-global-thread")
             assert [thread.id for thread in (await _next_threads(stream)).threads] == [thread_id]
             await store.rename(thread_id, "Renamed in another app replica")
             assert (await _next_threads(stream)).threads[0].name == "Renamed in another app replica"
@@ -434,9 +431,7 @@ async def test_global_thread_stream_reports_listener_loss_then_rereads_after_rec
                     )
                 )
             assert not (await _next_threads(stream)).updates_connected
-            thread_id = await event_logs.open(
-                "runner-1", "test-during-listener-gap", protocol_pb2.SessionSpec(harness=protocol_pb2.HARNESS_CLAUDE)
-            )
+            thread_id = await event_logs.open("runner-1", "test-during-listener-gap")
             recovered = await _next_threads(stream)
             assert recovered.updates_connected
             assert [thread.id for thread in recovered.threads] == [thread_id]

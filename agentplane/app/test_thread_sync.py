@@ -42,7 +42,7 @@ async def test_materialized_revisions_replicate_with_restricted_role(
                 )
             )
             source.append(event_pb2.Event(text_delta=event_pb2.TextDelta(item_id="first", text="Hello")))
-            thread = await event_logs.open(SANDBOX, SESSION, source.attached.spec)
+            thread = await event_logs.open(SANDBOX, SESSION)
             lease = await ingestion.acquire(thread, timedelta(minutes=2))
             assert lease is not None
             await ingestion.set_attached(thread, source.attached, lease=lease)

@@ -158,7 +158,7 @@ async def thread_browser(
     certificate: BrowserCertificate,
 ) -> AsyncIterator[ThreadBrowser]:
     source = thread_source
-    thread_id = await event_logs.open(SANDBOX, SESSION, source.attached.spec)
+    thread_id = await event_logs.open(SANDBOX, SESSION)
     await store.rename(thread_id, "Browser thread")
     directory = get_required_path("_main/agentplane/app/frontend/dist/index.html").parent
     async with (

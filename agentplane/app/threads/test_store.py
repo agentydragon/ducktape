@@ -1,7 +1,7 @@
 """Operator metadata and Thread views use current production projection metadata."""
 
 from datetime import UTC, datetime
-from uuid import UUID
+from uuid import UUID, uuid4
 
 import pytest
 import pytest_bazel
@@ -9,10 +9,12 @@ from google.protobuf.json_format import MessageToDict
 from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
 
 from agentplane.app.testing.retained_history import seed_retained_session
+from agentplane.app.threads.models import EventLog
 from agentplane.app.threads.store import ThreadStore
 from agentplane.app.threads.summaries import AppSummaries
 from agentplane.protocol import event_pb2
 from agentplane.runner import protocol_pb2
+from agentplane.runner.harness import Harness
 from agentplane.thread_fold.models import ThreadCheckpoint, ThreadHistorySummary
 
 # gazelle:include_dep @pypi//protobuf
@@ -75,6 +77,31 @@ async def test_thread_turn_status_comes_from_projection_summary(engine: AsyncEng
     assert view.last_turn_status == (None if status is None else event_pb2.TurnStatus.Name(status))
     assert view.feed_status == "ended"
     assert await store.list_threads() == [view]
+
+
+async def test_harness_model_and_cwd_come_from_the_attached_runner_spec(engine: AsyncEngine) -> None:
+    attached, unattached = uuid4(), uuid4()
+    async with async_sessionmaker(engine).begin() as session:
+        # Rows as a replica on the previous image writes them, with its launch copies.
+        for thread in (attached, unattached):
+            session.add(
+                EventLog(
+                    id=thread, sandbox="one", harness=Harness.CLAUDE, model="test-launch-model", cwd="/test-launch"
+                )
+            )
+        await session.flush()
+        spec = protocol_pb2.SessionSpec(
+            harness=protocol_pb2.HARNESS_CODEX, cwd="/test-attached", model="test-attached-model"
+        )
+        session.add(ThreadHistorySummary(thread_id=attached, attached=MessageToDict(protocol_pb2.Attached(spec=spec))))
+        session.add(ThreadHistorySummary(thread_id=unattached))
+    views = {view.id: view for view in await ThreadStore(engine, AppSummaries(engine)).list_threads()}
+    assert (views[attached].harness, views[attached].model, views[attached].cwd) == (
+        Harness.CODEX,
+        "test-attached-model",
+        "/test-attached",
+    )
+    assert (views[unattached].harness, views[unattached].model, views[unattached].cwd) == (None, None, None)
 
 
 async def test_missing_projection_metadata_does_not_read_retained_raw_history(engine: AsyncEngine) -> None:

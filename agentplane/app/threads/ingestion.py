@@ -121,7 +121,7 @@ class Ingester:
                 summaries = await self._runners.client(sandbox).list_sessions()
                 for summary in summaries:
                     try:
-                        await self._event_logs.open(sandbox, summary.session_id, summary.spec)
+                        await self._event_logs.open(sandbox, summary.session_id)
                     except EventReplicationError:
                         logger.warning(
                             "session %s/%s requires explicit history reconciliation", sandbox, summary.session_id

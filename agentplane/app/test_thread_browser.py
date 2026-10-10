@@ -91,7 +91,7 @@ async def test_archived_thread_page_survives_deleted_sandbox_and_reload(
     electric: ElectricService,
     certificate: BrowserCertificate,
 ) -> None:
-    thread_id = await event_logs.open(SANDBOX, SESSION, thread_source.attached.spec)
+    thread_id = await event_logs.open(SANDBOX, SESSION)
     lease = await ingestion.acquire(thread_id, timedelta(minutes=1))
     assert lease is not None
     await ingestion.set_attached(thread_id, thread_source.attached, lease=lease)
@@ -158,7 +158,7 @@ async def _seed_navigation_threads(
                     item_completed=event_pb2.ItemCompleted(item_id=item_id, text=f"Thread {number} message {index}")
                 )
             )
-        thread = await event_logs.open(SANDBOX, source.attached.session_id, source.attached.spec)
+        thread = await event_logs.open(SANDBOX, source.attached.session_id)
         lease = await ingestion.acquire(thread, timedelta(minutes=1))
         assert lease is not None
         await ingestion.set_attached(thread, source.attached, lease=lease)
@@ -375,8 +375,8 @@ async def test_returning_to_a_thread_reads_only_what_changed_while_the_reader_wa
 async def test_projection_epoch_replacement_retires_old_requests_and_preserves_draft(
     thread_browser: ThreadBrowser,
 ) -> None:
-    page, store, source = thread_browser.page, thread_browser.store, thread_browser.source
-    thread = await thread_browser.event_logs.open(SANDBOX, SESSION, source.attached.spec)
+    page, store = thread_browser.page, thread_browser.store
+    thread = await thread_browser.event_logs.open(SANDBOX, SESSION)
     await thread_browser.start_replay()
     await expect(page.get_by_text("Test retained prefix", exact=True)).to_be_visible()
     draft = message_composer(page)
@@ -523,7 +523,7 @@ async def test_projected_browser_streams_runner_events_and_loads_evidence_lazily
             ContentStore(engine, history_reader=history_client),
         )
         try:
-            thread = await event_logs.open(SANDBOX, SESSION, source.attached.spec)
+            thread = await event_logs.open(SANDBOX, SESSION)
             await ThreadStore(engine, AppSummaries(engine)).rename(thread, "Streamed thread")
             async with (
                 source.serve() as runner_port,

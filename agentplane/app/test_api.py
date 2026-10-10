@@ -546,9 +546,11 @@ def test_thread_resume_for_regular_sandbox_reaches_the_bridge(
     async def get_thread(_thread_id: UUID) -> Any:
         return SimpleNamespace(sandbox="live", archived=False, harness=Harness.CLAUDE, cwd="/w")
 
-    calls: list[tuple[UUID, str, str]] = []
+    calls: list[tuple[UUID, Harness | None, str | None]] = []
 
-    async def resume_thread(thread: UUID, *, expected_harness: str, expected_cwd: str) -> protocol_pb2.Attached:
+    async def resume_thread(
+        thread: UUID, *, expected_harness: Harness | None, expected_cwd: str | None
+    ) -> protocol_pb2.Attached:
         calls.append((thread, expected_harness, expected_cwd))
         return protocol_pb2.Attached(session_id="regular-session")
 
@@ -557,7 +559,7 @@ def test_thread_resume_for_regular_sandbox_reaches_the_bridge(
     response = client.post(f"/threads/{thread_id}/resume")
 
     assert response.status_code == 200, response.text
-    assert calls == [(thread_id, Harness.CLAUDE.value, "/w")]
+    assert calls == [(thread_id, Harness.CLAUDE, "/w")]
 
 
 @pytest.mark.parametrize("model_catalog", [CODEX_ONLY], indirect=True)
@@ -804,9 +806,8 @@ async def test_unanswered_service_command_is_a_504_and_cancels_its_rpc(
 ) -> None:
     """Bound command admission at the public service RPC, without runner internals."""
     live_index.sandboxes["live"], live_index.pods["live"] = seed_runner(custom_objects, core_v1, "live")
-    spec = protocol_pb2.SessionSpec(harness=protocol_pb2.HARNESS_CLAUDE, cwd="/w", model="test-model")
     session_id = str(uuid4())
-    thread_id = await event_logs.open("live", session_id, spec)
+    thread_id = await event_logs.open("live", session_id)
     async with unanswered_command_service(tmp_path / "wedged-token") as (service, cancelled):
         runners = SandboxSessions(live_index, service)
         ingester = Ingester(runners=runners, event_logs=event_logs, ingestion=ingestion)
@@ -1025,9 +1026,8 @@ async def test_a_thread_is_found_by_its_session_and_renamed_in_place(
 ) -> None:
     """Over ASGI on this loop, not TestClient's thread: the store's pooled asyncpg connections
     belong to the loop that opened them."""
-    spec = protocol_pb2.SessionSpec(harness=protocol_pb2.HARNESS_CLAUDE, cwd="/w", model="test-model")
-    thread_id = str(await event_logs.open("live", "s-1", spec))
-    await event_logs.open("live", "s-2", spec)
+    thread_id = str(await event_logs.open("live", "s-1"))
+    await event_logs.open("live", "s-2")
     app = create_app(
         inventory,
         bridge,
@@ -1080,8 +1080,7 @@ async def test_a_thread_archives_and_unarchives_and_hides_from_the_default_listi
     notifications_http: httpx.AsyncClient,
     notifications_token_file: Path,
 ) -> None:
-    spec = protocol_pb2.SessionSpec(harness=protocol_pb2.HARNESS_CLAUDE, cwd="/w", model="test-model")
-    thread_id = str(await event_logs.open("live", "s-1", spec))
+    thread_id = str(await event_logs.open("live", "s-1"))
     app = create_app(
         inventory,
         bridge,
@@ -1139,7 +1138,7 @@ async def test_a_running_thread_cannot_be_archived(
 ) -> None:
     custom_objects.objects[("sandboxes", "live")], core_v1.pods["live"] = seed_runner(custom_objects, core_v1, "live")
     spec = protocol_pb2.SessionSpec(harness=protocol_pb2.HARNESS_CLAUDE, cwd="/w", model="test-model")
-    thread_id = await event_logs.open("live", "s-1", spec)
+    thread_id = await event_logs.open("live", "s-1")
 
     consulted: list[str] = []
 

@@ -906,10 +906,8 @@ async def test_resume_after_tool_completion_preserves_the_result_and_does_not_re
         assert marker.read_text().splitlines() == [token]
 
 
-async def test_thread_resume_reports_missing_runner_recovery_state(
-    app_url: str, event_logs: EventLogStore, spec: protocol_pb2.SessionSpec
-) -> None:
-    thread_id = await event_logs.open(SANDBOX, "missing-runner-session", spec)
+async def test_thread_resume_reports_missing_runner_recovery_state(app_url: str, event_logs: EventLogStore) -> None:
+    thread_id = await event_logs.open(SANDBOX, "missing-runner-session")
     async with httpx.AsyncClient(base_url=app_url, timeout=60, headers=AGENT_AUTH) as http:
         response = await http.post(f"/threads/{thread_id}/resume")
     assert response.status_code == 409
@@ -960,7 +958,7 @@ async def test_thread_command_reports_id_conflict_after_runner_admitted_before_a
     runner_client_factory: RunnerClientFactory,
 ) -> None:
     """An app prefix lag must still preserve the runner's id-conflict verdict as a 409."""
-    thread = await event_logs.open(SANDBOX, SESSION, spec)
+    thread = await event_logs.open(SANDBOX, SESSION)
     original = command_pb2.Command(
         command_id="reused-before-copy", interrupt_turn=command_pb2.InterruptTurn(turn_id="first-target")
     )
@@ -1110,11 +1108,7 @@ async def test_command_returns_runner_receipt_before_app_archive_catches_up(
     ingestion: Ingestion,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    thread = await event_logs.open(
-        SANDBOX,
-        SESSION,
-        protocol_pb2.SessionSpec(harness=protocol_pb2.HARNESS_CLAUDE, cwd="/state/work", model="bridge-model"),
-    )
+    thread = await event_logs.open(SANDBOX, SESSION)
     command = command_pb2.Command(
         command_id="ahead-of-archive", interrupt_turn=command_pb2.InterruptTurn(turn_id="target")
     )
@@ -1469,7 +1463,7 @@ async def test_open_and_resume_reply_before_archive_catches_up(
             assert summary.harness_state == protocol_pb2.HARNESS_STATE_STOPPED
     resumed = await asyncio.wait_for(
         bridge.resume_thread(
-            thread_id, expected_harness=protocol_pb2.Harness.Name(spec.harness), expected_cwd=spec.cwd
+            thread_id, expected_harness=Harness(protocol_pb2.Harness.Name(spec.harness)), expected_cwd=spec.cwd
         ),
         timeout=10,
     )

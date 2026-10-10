@@ -16,8 +16,6 @@ from agentplane.app.threads.models import EventLog
 from agentplane.app.threads.summaries import AppSummaries, FeedSnapshot, HistorySummaries
 from agentplane.history_service.client import HistoryServiceClient
 from agentplane.protocol import event_log_pb2
-from agentplane.runner import protocol_pb2
-from agentplane.runner.harness import Harness
 from agentplane.thread_fold.models import ThreadHistorySummary
 from agentplane.thread_fold.recording import EventReplicationError
 
@@ -47,7 +45,7 @@ class EventLogStore:
         self._history_reader = history_reader
         self._summaries = summaries
 
-    async def open(self, sandbox: str, session_id: str, spec: protocol_pb2.SessionSpec) -> UUID:
+    async def open(self, sandbox: str, session_id: str) -> UUID:
         """Materialize a public service Session without consulting private runner locators."""
         try:
             thread_id = UUID(session_id)
@@ -69,16 +67,7 @@ class EventLogStore:
         await self._history_reader.read_session_observations(session_id, limit=1)
         async with self._sessions.begin() as session:
             created = await session.scalar(
-                insert(EventLog)
-                .values(
-                    id=thread_id,
-                    sandbox=sandbox,
-                    harness=Harness(protocol_pb2.Harness.Name(spec.harness)),
-                    model=spec.model,
-                    cwd=spec.cwd,
-                )
-                .on_conflict_do_nothing()
-                .returning(EventLog.id)
+                insert(EventLog).values(id=thread_id, sandbox=sandbox).on_conflict_do_nothing().returning(EventLog.id)
             )
             if created is not None:
                 session.add(ThreadHistorySummary(thread_id=created))

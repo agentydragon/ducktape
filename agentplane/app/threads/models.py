@@ -20,7 +20,7 @@ from agentplane.runner.harness import Harness
 
 
 class EventLog(Base):
-    """App-side Thread identity and projected metadata for a service-owned Session."""
+    """App-side Thread identity: the link from a Thread to its service-owned Session."""
 
     # TODO(session-schema-cleanup): Rename EventLog/event_log to describe the app's
     # Session reference, not archive ownership; migrate referencing FKs together.
@@ -30,7 +30,12 @@ class EventLog(Base):
 
     id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
     sandbox: Mapped[str] = mapped_column(Text)
-    harness: Mapped[Harness] = mapped_column(
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
+    # CLEANUP(added 2026-10-10): neither written nor read; a Thread's harness, model and cwd come from
+    #   the runner spec on its fold summary. Declared only so the migration runner's schema check
+    #   matches the database. Drop the four columns in a schema migration once no replica runs an
+    #   image that writes them (images before 0028_event_log_copies_nullable).
+    harness: Mapped[Harness | None] = mapped_column(
         SqlEnum(
             Harness,
             native_enum=False,
@@ -38,16 +43,8 @@ class EventLog(Base):
             values_callable=lambda values: [item.value for item in values],
         )
     )
-    # TODO(session-schema-cleanup): Audit sandbox/harness/model/cwd as app display
-    # projections versus redundant launch metadata; retain only actual app needs,
-    # refreshed from service evidence, never as authoritative launch/routing inputs.
-    # The launch spec's model; once a runner attaches, its spec in `ThreadHistorySummary.attached`
-    # is the current one.
-    model: Mapped[str] = mapped_column(Text)
-    cwd: Mapped[str] = mapped_column(Text)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
-    # CLEANUP(added 2026-10-10): neither written nor read since `ThreadHistorySummary` carries it;
-    #   drop with the harness/model/cwd copies, once no replica runs an image that writes it.
+    model: Mapped[str | None] = mapped_column(Text)
+    cwd: Mapped[str | None] = mapped_column(Text)
     last_model_activity_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 

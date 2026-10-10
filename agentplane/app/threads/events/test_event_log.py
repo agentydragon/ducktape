@@ -13,7 +13,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
 
 from agentplane.app.testing.retained_history import seed_retained_session
-from agentplane.app.testing.thread_test_support import SPEC, event_entry
+from agentplane.app.testing.thread_test_support import event_entry
 from agentplane.app.threads.events.event_log import EventLogStore
 from agentplane.app.threads.models import EventLog
 from agentplane.app.threads.summaries import AppSummaries
@@ -114,7 +114,7 @@ async def test_concurrent_replicas_create_one_service_thread(engine: AsyncEngine
     reader.read_session_observations.return_value = history_pb2.ReadSessionObservationsResponse(last_cursor=0)
     stores = [EventLogStore(engine, summaries=AppSummaries(engine), history_reader=reader) for _ in range(2)]
     public_id = uuid4()
-    first, second = await asyncio.gather(*(store.open("sb-1", str(public_id), SPEC) for store in stores))
+    first, second = await asyncio.gather(*(store.open("sb-1", str(public_id)) for store in stores))
     assert first == second == public_id
     async with async_sessionmaker(engine)() as session:
         assert await session.scalar(select(func.count()).select_from(EventLog)) == 1
@@ -164,9 +164,7 @@ async def test_new_service_thread_has_atomic_projection_metadata_and_is_idempote
     left = EventLogStore(engine, summaries=AppSummaries(engine), history_reader=cast(HistoryServiceClient, reader))
     right = EventLogStore(engine, summaries=AppSummaries(engine), history_reader=cast(HistoryServiceClient, reader))
     public_id = uuid4()
-    left_id, right_id = await asyncio.gather(
-        left.open("sb-1", str(public_id), SPEC), right.open("sb-1", str(public_id), SPEC)
-    )
+    left_id, right_id = await asyncio.gather(left.open("sb-1", str(public_id)), right.open("sb-1", str(public_id)))
     assert left_id == public_id
     assert right_id == public_id
     assert public_id in await left.projection_sessions()
@@ -177,9 +175,7 @@ async def test_new_service_thread_has_atomic_projection_metadata_and_is_idempote
         assert row.attached is None
     # Another reader observes the same ID without resetting projection metadata.
     assert (
-        await EventLogStore(engine, summaries=AppSummaries(engine), history_reader=reader).open(
-            "sb-1", str(public_id), SPEC
-        )
+        await EventLogStore(engine, summaries=AppSummaries(engine), history_reader=reader).open("sb-1", str(public_id))
         == public_id
     )
     assert public_id in await right.projection_sessions()
@@ -190,12 +186,12 @@ async def test_failed_service_registration_does_not_create_app_thread(engine: As
     reader.read_session_observations.side_effect = ConnectionError("service unavailable")
     store = EventLogStore(engine, summaries=AppSummaries(engine), history_reader=cast(HistoryServiceClient, reader))
     with pytest.raises(ConnectionError):
-        await store.open("sb-1", str(uuid4()), SPEC)
+        await store.open("sb-1", str(uuid4()))
     async with async_sessionmaker(engine)() as session:
         assert await session.scalar(select(func.count()).select_from(EventLog)) == 0
         assert await session.scalar(select(func.count()).select_from(ThreadHistorySummary)) == 0
     with pytest.raises(EventReplicationError, match="canonical"):
-        await store.open("sb-1", "legacy-id", SPEC)
+        await store.open("sb-1", "legacy-id")
 
 
 async def test_discovery_does_not_reconstruct_missing_projection_metadata(engine: AsyncEngine) -> None:
@@ -203,7 +199,7 @@ async def test_discovery_does_not_reconstruct_missing_projection_metadata(engine
     await seed_retained_session(engine, public_id=public_id)
     reader = AsyncMock(spec=HistoryServiceClient)
     store = EventLogStore(engine, summaries=AppSummaries(engine), history_reader=cast(HistoryServiceClient, reader))
-    assert await store.open("sb-1", str(public_id), SPEC) == public_id
+    assert await store.open("sb-1", str(public_id)) == public_id
     reader.read_session_observations.assert_not_awaited()
     assert public_id not in await store.projection_sessions()
 
@@ -220,7 +216,7 @@ async def test_existing_identity_winning_registration_race_is_not_reinitialized(
 
     reader.read_session_observations.side_effect = register
     current = EventLogStore(engine, summaries=AppSummaries(engine), history_reader=cast(HistoryServiceClient, reader))
-    assert await current.open("sb-1", str(public_id), SPEC) == public_id
+    assert await current.open("sb-1", str(public_id)) == public_id
     assert public_id not in await current.projection_sessions()
     async with async_sessionmaker(engine)() as session:
         assert await session.get(EventLog, public_id) is not None
@@ -231,7 +227,7 @@ async def test_public_session_open_preserves_retained_identity(engine: AsyncEngi
     public_id = await seed_retained_session(engine)
     reader = AsyncMock(spec=HistoryServiceClient)
     current = EventLogStore(engine, summaries=AppSummaries(engine), history_reader=cast(HistoryServiceClient, reader))
-    assert await current.open("sb-1", str(public_id), SPEC) == public_id
+    assert await current.open("sb-1", str(public_id)) == public_id
     reader.read_session_observations.assert_not_awaited()
     async with async_sessionmaker(engine)() as session:
         row = await session.get(EventLog, public_id)
@@ -244,7 +240,7 @@ async def test_open_refuses_a_runner_session_id(engine: AsyncEngine) -> None:
     reader = AsyncMock(spec=HistoryServiceClient)
     current = EventLogStore(engine, summaries=AppSummaries(engine), history_reader=cast(HistoryServiceClient, reader))
     with pytest.raises(EventReplicationError, match="canonical"):
-        await current.open("sb-1", "s-retained", SPEC)
+        await current.open("sb-1", "s-retained")
 
 
 async def test_service_routes_use_public_identity(engine: AsyncEngine) -> None:
@@ -269,7 +265,7 @@ async def test_public_session_alias_cannot_cross_sandboxes(engine: AsyncEngine) 
     reader = AsyncMock(spec=HistoryServiceClient)
     current = EventLogStore(engine, summaries=AppSummaries(engine), history_reader=cast(HistoryServiceClient, reader))
     with pytest.raises(EventReplicationError, match="another sandbox"):
-        await current.open("sb-2", str(public_id), SPEC)
+        await current.open("sb-2", str(public_id))
     async with async_sessionmaker(engine)() as session:
         assert await session.scalar(select(func.count()).select_from(EventLog)) == 1
         assert await session.scalar(select(func.count()).select_from(ThreadHistorySummary)) == 0

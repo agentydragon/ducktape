@@ -16,9 +16,17 @@ class ThreadView(BaseModel):
 
     id: UUID
     sandbox: str
-    harness: Harness = Field(description="The runner protocol Harness enum member.")
-    model: str
-    cwd: str
+    harness: Harness | None = Field(
+        description="The runner protocol Harness enum member, from the last attached runner's spec; None "
+        "until the Thread's fold summary has a runner attachment."
+    )
+    model: str | None = Field(
+        description="The current model, from the last attached runner's spec; None until an attachment is folded."
+    )
+    cwd: str | None = Field(
+        description="The runner's working directory, from the last attached runner's spec; None until an "
+        "attachment is folded."
+    )
     created_at: datetime
     name: str | None = Field(description="The user-given name; None while the thread is unnamed.")
     archived: bool

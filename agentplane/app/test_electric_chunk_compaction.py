@@ -173,7 +173,7 @@ async def _followed_body(
                 Ingestion(engine, peer=history_peer, history_reader=history_client),
             )
             source = ReplicationSource()
-            thread = await event_logs.open(SANDBOX, SESSION, source.attached.spec)
+            thread = await event_logs.open(SANDBOX, SESSION)
             lease = await ingestion.acquire(thread, timedelta(minutes=2))
             assert lease is not None
             await ingestion.set_attached(thread, source.attached, lease=lease)

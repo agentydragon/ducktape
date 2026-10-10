@@ -37,7 +37,6 @@ from agentplane.app.settings import Settings
 from agentplane.app.shutdown import drain_of
 from agentplane.app.testing.history import SeededEventLogStore as EventLogStore
 from agentplane.app.testing.model_test_data import TEST_REASONING_EFFORTS
-from agentplane.app.testing.thread_test_support import SPEC
 from agentplane.app.threads.bridge import RunnerBridge
 from agentplane.app.threads.ingestion import Ingester
 from agentplane.app.threads.sessions import SandboxSessions
@@ -242,7 +241,7 @@ async def test_sigterm_ends_open_streams_fails_readiness_and_closes_the_ingester
     raw, running = seed_runner(custom_objects, core_v1, SANDBOX)
     live_index.sandboxes[SANDBOX] = raw
     live_index.pods[SANDBOX] = running
-    await event_logs.open(SANDBOX, "shutdown-session", SPEC)
+    await event_logs.open(SANDBOX, "shutdown-session")
     app = create_app(
         inventory,
         bridge,

@@ -39,7 +39,7 @@ from agentplane.thread_fold.views import ThreadViewState
 async def test_projection_resumes_existing_checkpoint_without_copying_raw_events(
     engine: AsyncEngine, event_logs: EventLogStore, ingestion: Ingestion, lease_for: LeaseFactory
 ) -> None:
-    thread = await event_logs.open("sb-1", "s-1", SPEC)
+    thread = await event_logs.open("sb-1", "s-1")
     lease = await lease_for(thread)
     first = event_entry(1, harness_started=event_pb2.HarnessStarted(resumed=False, pid=7))
     second = event_entry(2, turn_started=event_pb2.TurnStarted(turn_id="t1"))
@@ -66,7 +66,7 @@ async def test_projection_resumes_existing_checkpoint_without_copying_raw_events
 async def test_failed_projection_can_retry_without_advancing_checkpoint(
     engine: AsyncEngine, event_logs: EventLogStore, lease_for: LeaseFactory
 ) -> None:
-    thread = await event_logs.open("sb-1", "s-1", SPEC)
+    thread = await event_logs.open("sb-1", "s-1")
     lease = await lease_for(thread)
     entry = event_entry(1, harness_started=event_pb2.HarnessStarted(resumed=False, pid=7))
     reader = AsyncMock(spec=HistoryServiceClient)
@@ -91,7 +91,7 @@ async def test_failed_projection_can_retry_without_advancing_checkpoint(
 async def test_expired_owner_cannot_project(
     engine: AsyncEngine, event_logs: EventLogStore, ingestion: Ingestion, lease_for: LeaseFactory
 ) -> None:
-    thread = await event_logs.open("sb-1", "s-1", SPEC)
+    thread = await event_logs.open("sb-1", "s-1")
     lease = await lease_for(thread)
     reader = AsyncMock(spec=HistoryServiceClient)
     reader.read_session_events.return_value = history_pb2.ReadSessionEventsResponse(
@@ -113,7 +113,7 @@ async def test_expired_owner_cannot_project(
 async def test_invalid_history_does_not_advance_projection(
     engine: AsyncEngine, event_logs: EventLogStore, lease_for: LeaseFactory, case: str
 ) -> None:
-    thread = await event_logs.open("sb-1", "s-1", SPEC)
+    thread = await event_logs.open("sb-1", "s-1")
     lease = await lease_for(thread)
     entry = event_entry(1, harness_started=event_pb2.HarnessStarted(resumed=False, pid=7))
     if case == "source_sequence":
@@ -135,7 +135,7 @@ async def test_invalid_history_does_not_advance_projection(
 async def test_projection_requires_service_coverage_of_checkpoint(
     engine: AsyncEngine, event_logs: EventLogStore, ingestion: Ingestion, lease_for: LeaseFactory
 ) -> None:
-    thread = await event_logs.open("sb-1", "s-1", SPEC)
+    thread = await event_logs.open("sb-1", "s-1")
     lease = await lease_for(thread)
     await ingestion.record(
         thread, [event_entry(1, harness_started=event_pb2.HarnessStarted(resumed=False, pid=7))], lease=lease
@@ -155,7 +155,7 @@ async def test_projection_requires_service_coverage_of_checkpoint(
 async def test_supervisor_resumes_deleted_sandbox_without_runner_contact(
     engine: AsyncEngine, event_logs: EventLogStore, ingestion: Ingestion
 ) -> None:
-    thread = await event_logs.open("deleted-sandbox", "s-1", SPEC)
+    thread = await event_logs.open("deleted-sandbox", "s-1")
     reader = AsyncMock(spec=HistoryServiceClient)
     reader.read_session_events.side_effect = [
         history_pb2.ReadSessionEventsResponse(
@@ -192,7 +192,7 @@ async def test_supervisor_resumes_deleted_sandbox_without_runner_contact(
 async def test_projection_updates_activity_atomically_and_ignores_tool_output(
     engine: AsyncEngine, event_logs: EventLogStore, ingestion: Ingestion, lease_for: LeaseFactory
 ) -> None:
-    thread = await event_logs.open("sb-1", "activity", SPEC)
+    thread = await event_logs.open("sb-1", "activity")
     lease = await lease_for(thread)
     first = [
         event_entry(1, turn_started=event_pb2.TurnStarted(turn_id="turn", model=SPEC.model)),
@@ -240,9 +240,9 @@ async def test_projection_updates_activity_atomically_and_ignores_tool_output(
 async def test_thread_metadata_survives_projection_retry(
     engine: AsyncEngine, event_logs: EventLogStore, ingestion: Ingestion, lease_for: LeaseFactory
 ) -> None:
-    thread = await event_logs.open("sb-1", "summary", SPEC)
+    thread = await event_logs.open("sb-1", "summary")
     lease = await lease_for(thread)
-    sibling = await event_logs.open("sb-1", "sibling", SPEC)
+    sibling = await event_logs.open("sb-1", "sibling")
     sibling_lease = await lease_for(sibling)
     first = [
         event_entry(1, turn_started=event_pb2.TurnStarted(turn_id="one", model=SPEC.model)),
@@ -301,7 +301,7 @@ async def test_thread_metadata_survives_projection_retry(
 async def test_lifecycle_uses_only_covered_service_snapshot(
     engine: AsyncEngine, event_logs: EventLogStore, ingestion: Ingestion, lease_for: LeaseFactory
 ) -> None:
-    thread = await event_logs.open("sb-1", "s-1", SPEC)
+    thread = await event_logs.open("sb-1", "s-1")
     lease = await lease_for(thread)
     initial = runner_pb2.Attached(session_id="s-1", spec=SPEC, harness_state=runner_pb2.HARNESS_STATE_RUNNING)
     await ingestion.set_attached(thread, initial, lease=lease)
@@ -359,7 +359,7 @@ async def test_lifecycle_uses_only_covered_service_snapshot(
 async def test_unchanged_idle_projection_does_not_write_or_notify(
     engine: AsyncEngine, event_logs: EventLogStore, ingestion: Ingestion, lease_for: LeaseFactory
 ) -> None:
-    thread = await event_logs.open("sb-1", "idle", SPEC)
+    thread = await event_logs.open("sb-1", "idle")
     lease = await lease_for(thread)
     await ingestion.record(thread, [event_entry(1, harness_started=event_pb2.HarnessStarted(pid=7))], lease=lease)
     reader = AsyncMock(spec=HistoryServiceClient)
@@ -401,7 +401,7 @@ async def test_unchanged_idle_projection_does_not_write_or_notify(
 async def test_empty_page_adopts_eof_and_rolls_back_invalid_snapshot(
     engine: AsyncEngine, event_logs: EventLogStore, lease_for: LeaseFactory
 ) -> None:
-    thread = await event_logs.open("sb-1", "empty", SPEC)
+    thread = await event_logs.open("sb-1", "empty")
     lease = await lease_for(thread)
     reader = AsyncMock(spec=HistoryServiceClient)
     page = history_pb2.ReadSessionEventsResponse(
@@ -435,7 +435,7 @@ async def test_empty_page_adopts_eof_and_rolls_back_invalid_snapshot(
 async def test_deleted_history_keeps_seeded_terminal_state_without_service_snapshot(
     engine: AsyncEngine, event_logs: EventLogStore, ingestion: Ingestion, lease_for: LeaseFactory
 ) -> None:
-    thread = await event_logs.open("sb-1", "gone", SPEC)
+    thread = await event_logs.open("sb-1", "gone")
     lease = await lease_for(thread)
     await ingestion.set_attached(thread, runner_pb2.Attached(session_id="gone", spec=SPEC), lease=lease)
     await ingestion.end_feed(thread, lease=lease, error=None)
@@ -455,7 +455,7 @@ async def test_deleted_history_keeps_seeded_terminal_state_without_service_snaps
 async def test_projection_failure_retains_checkpoint_not_eof_and_recovers(
     engine: AsyncEngine, event_logs: EventLogStore, ingestion: Ingestion, lease_for: LeaseFactory
 ) -> None:
-    thread = await event_logs.open("sb-1", "projection-failure", SPEC)
+    thread = await event_logs.open("sb-1", "projection-failure")
     lease = await lease_for(thread)
     await ingestion.record(thread, [event_entry(1, harness_started=event_pb2.HarnessStarted(pid=7))], lease=lease)
     reader = AsyncMock(spec=HistoryServiceClient)
@@ -636,8 +636,8 @@ async def test_runtime_feed_metadata_requires_projection_summary(engine: AsyncEn
 async def test_coordinator_projects_sibling_owned_by_another_replica_independently(
     engine: AsyncEngine, event_logs: EventLogStore, ingestion: Ingestion, lease_for: LeaseFactory
 ) -> None:
-    first = await event_logs.open("same-sandbox", "first", SPEC)
-    second = await event_logs.open("same-sandbox", "second", SPEC)
+    first = await event_logs.open("same-sandbox", "first")
+    second = await event_logs.open("same-sandbox", "second")
     other_replica_lease = await lease_for(first)
     reader = AsyncMock(spec=HistoryServiceClient)
     reader.read_session_events.return_value = history_pb2.ReadSessionEventsResponse(

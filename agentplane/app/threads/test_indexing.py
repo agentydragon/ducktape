@@ -14,7 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 
 from agentplane.app.testing.history import ProjectedHistory as Ingestion, SeededEventLogStore as EventLogStore
 from agentplane.app.testing.projection_lease import LeaseFactory
-from agentplane.app.testing.thread_test_support import SPEC, event_entry
+from agentplane.app.testing.thread_test_support import event_entry
 from agentplane.app.threads.store import ThreadStore
 from agentplane.app.threads.view.content import ContentStore
 from agentplane.protocol import command_pb2, event_log_pb2, event_pb2
@@ -44,7 +44,7 @@ async def test_command_lookup_and_touched_projection_preload_stay_indexed_with_l
     """A real old-item update only preloads its touched rows after large frame and entity histories."""
     # This test deliberately creates 20,000 materialized entities in bounded record batches.
     # Keep the writer fence valid for that workload; this does not change the test timeout.
-    thread = await event_logs.open("sb-1", f"history-{history_size}", SPEC)
+    thread = await event_logs.open("sb-1", f"history-{history_size}")
     lease = await lease_for(thread)
     assert await ingestion.renew(lease, timedelta(minutes=10))
     command = command_pb2.Command(command_id="admission", submit_input=command_pb2.SubmitInput(text="saved"))

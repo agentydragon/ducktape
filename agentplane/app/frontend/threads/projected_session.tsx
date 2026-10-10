@@ -1084,10 +1084,16 @@ function ProjectedSessionBody({
   const selectedModel = controls?.applied_model ?? thread.model;
   const effortOptions = modelOptions.find((option) => option.model === selectedModel)?.reasoning_efforts ?? [];
   useEffect(() => {
+    const harness = thread.harness;
+    // Unknown until the Thread's summary folds a runner attachment; no model fits it yet.
+    if (harness === null) {
+      setModelOptions([]);
+      return;
+    }
     let active = true;
     void models().then(
       (catalog) => {
-        if (active) setModelOptions(modelsForHarness(catalog, thread.harness));
+        if (active) setModelOptions(modelsForHarness(catalog, harness));
       },
       (reason: unknown) => {
         if (active) setModelError(displayableError(reason));

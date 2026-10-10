@@ -65,7 +65,7 @@ async def test_killed_ingester_recovers_exact_prefix_and_browser_handoff(
 ) -> None:
     source = ReplicationSource(event_logs.peer)
     source.append(event_pb2.Event(harness_started=event_pb2.HarnessStarted(pid=123)))
-    thread_id = await event_logs.open(SANDBOX, SESSION, source.attached.spec)
+    thread_id = await event_logs.open(SANDBOX, SESSION)
     events = f"/threads/{thread_id}/events/stream"
     async with asyncio.timeout(45), source.serve() as runner_port:
         async with (

@@ -19,6 +19,7 @@ from agentplane.app.threads.summaries import AppSummaries, FeedError, FoldSummar
 from agentplane.app.threads.thread_view import ThreadView
 from agentplane.protocol import event_pb2
 from agentplane.runner import protocol_pb2
+from agentplane.runner.harness import Harness
 
 # The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.
 # gazelle:include_dep @pypi//protobuf
@@ -94,12 +95,13 @@ def _view(log: EventLog, thread: Thread | None, summary: FoldSummary | None) -> 
     attachment = summary.feed.attached if summary.feed is not None else None
     end = summary.feed.end if summary.feed is not None else None
     harness_state = attachment.harness_state if attachment is not None else protocol_pb2.HARNESS_STATE_UNSPECIFIED
+    spec = attachment.spec if attachment is not None and attachment.HasField("spec") else None
     return ThreadView(
         id=log.id,
         sandbox=log.sandbox,
-        harness=log.harness,
-        model=attachment.spec.model if attachment is not None else log.model,
-        cwd=log.cwd,
+        harness=None if spec is None else Harness(protocol_pb2.Harness.Name(spec.harness)),
+        model=None if spec is None else spec.model,
+        cwd=None if spec is None else spec.cwd,
         created_at=log.created_at,
         name=None if thread is None else thread.name,
         archived=thread is not None and thread.archived,

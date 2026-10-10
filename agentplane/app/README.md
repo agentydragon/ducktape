@@ -295,8 +295,8 @@ background tab, where browsers throttle timers, so both change on status events 
 
 The Thread composer shows an approximate age of this Thread's latest model-originated activity
 beside its send controls on wider screens, or at the scrollable Thread history tail on narrow screens.
-The app updates `event_log.last_model_activity_at` in the same fenced transaction as event
-folding, using assistant/reasoning output and generated tool calls/arguments; it ignores tool
+The fold records it on the Thread's summary in the same transaction as the events it folds, using
+assistant/reasoning output and generated tool calls/arguments; it ignores tool
 output, user input, harness bookkeeping and turn completion. A migration backfills existing
 logs. The timestamp is a **proxy** for LLM-request recency: model output can arrive well after
 an upstream request, and a request with no model output may not be represented. The UI does

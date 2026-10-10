@@ -770,7 +770,7 @@ async def resume_thread(store: Store, bridge: runner_bridge.Bridge, thread_id: U
     if thread.archived:
         raise HTTPException(status.HTTP_409_CONFLICT, "an archived Thread cannot be resumed")
     return MessageToDict(
-        await bridge.resume_thread(thread_id, expected_harness=thread.harness.value, expected_cwd=thread.cwd)
+        await bridge.resume_thread(thread_id, expected_harness=thread.harness, expected_cwd=thread.cwd)
     )
 
 
@@ -837,7 +837,9 @@ async def thread_command(
     if thread is None:
         raise ThreadNotFoundError(thread_id)
     if command.HasField("change_model") and (
-        not command.change_model.model or command.change_model.model not in catalog.harnesses[thread.harness]
+        not command.change_model.model
+        or thread.harness is None
+        or command.change_model.model not in catalog.harnesses[thread.harness]
     ):
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail="model is incompatible with this thread's harness"

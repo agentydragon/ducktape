@@ -18,7 +18,6 @@ from agentplane.history_service import protocol_pb2 as history_pb2
 from agentplane.history_service.client import HistoryServiceClient
 from agentplane.protocol import event_log_pb2
 from agentplane.runner import protocol_pb2 as runner_pb2
-from agentplane.runner.harness import Harness
 from agentplane.thread_fold.models import ThreadHistorySummary
 from agentplane.thread_fold.projection_lease import ProjectionLease
 from agentplane.thread_fold.projector import HistoryProjector, service_pages
@@ -45,7 +44,7 @@ class SeededEventLogStore(EventLogStore):
             engine, history_reader=self.reader, summaries=AppSummaries(engine) if summaries is None else summaries
         )
 
-    async def open(self, sandbox: str, session_id: str, spec: runner_pb2.SessionSpec) -> UUID:
+    async def open(self, sandbox: str, session_id: str) -> UUID:
         # Fixture aliases are deterministic public IDs, not production locator lookups.
         try:
             public_id = UUID(session_id)
@@ -59,17 +58,7 @@ class SeededEventLogStore(EventLogStore):
                 return public_id
         self.peer.open(public_id)
         async with self._sessions.begin() as session:
-            await session.execute(
-                insert(EventLog)
-                .values(
-                    id=public_id,
-                    sandbox=sandbox,
-                    harness=Harness(runner_pb2.Harness.Name(spec.harness)),
-                    model=spec.model,
-                    cwd=spec.cwd,
-                )
-                .on_conflict_do_nothing()
-            )
+            await session.execute(insert(EventLog).values(id=public_id, sandbox=sandbox).on_conflict_do_nothing())
             await session.execute(insert(ThreadHistorySummary).values(thread_id=public_id).on_conflict_do_nothing())
             await notify(session, Channel.THREADS)
         return public_id
