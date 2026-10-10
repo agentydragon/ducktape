@@ -30,9 +30,13 @@
 //! false-impurity; it never asserts purity it did not derive from a body.
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::sync::Arc;
 
+use js_ast::SourceLineIndex;
+use swc_common::Span;
 use swc_ecma_ast::ModuleItem;
 
+use crate::SourceLocation;
 use crate::facts::{compute_shadowed_globals, top_level_item_views};
 use crate::purity::{ChunkCodeGraph, Purity};
 
@@ -60,6 +64,9 @@ pub struct ModulePurityFacts<'a> {
     pub imports: BTreeMap<String, ResolvedImport>,
     /// Export name → the local binding this module re-exports under it.
     pub exports: BTreeMap<String, String>,
+    /// Origin of direct function-body reasons, if the caller retained the
+    /// source line index. Imports reuse these locations unchanged.
+    pub source: Option<(String, SourceLineIndex)>,
 }
 
 impl ModulePurityFacts<'_> {
@@ -68,10 +75,21 @@ impl ModulePurityFacts<'_> {
     /// declared-purity inputs are not consulted here (the oracle reasons about
     /// inferred body purity, and declared annotations only ever make a binding
     /// *more* pure, so omitting them keeps the verdict conservative).
-    fn build_graph(&self, imported: &BTreeMap<String, Purity>) -> ChunkCodeGraph {
+    fn build_graph(&self, imported: &BTreeMap<String, Arc<Purity>>) -> ChunkCodeGraph {
         let views = top_level_item_views(self.body);
         let shadowed = compute_shadowed_globals(&views);
-        ChunkCodeGraph::build_full(
+        let mut locate = |span: Span| {
+            let (source_path, index) = self.source.as_ref()?;
+            let (start_line, end_line, start_column) =
+                index.line_range_and_start_column_for_span(span)?;
+            Some(SourceLocation {
+                source_path: source_path.clone(),
+                start_line,
+                end_line,
+                start_column: Some(start_column),
+            })
+        };
+        ChunkCodeGraph::build_full_with_locations(
             &views,
             &shadowed,
             &BTreeSet::new(),
@@ -79,6 +97,7 @@ impl ModulePurityFacts<'_> {
             &BTreeMap::new(),
             imported,
             &BTreeSet::new(),
+            Some(&mut locate),
         )
     }
 
@@ -88,8 +107,8 @@ impl ModulePurityFacts<'_> {
     /// unresolved is omitted (stays `unknown_call`).
     fn imported_purities(
         &self,
-        export_purity: &BTreeMap<(ModuleKey, String), Purity>,
-    ) -> BTreeMap<String, Purity> {
+        export_purity: &BTreeMap<(ModuleKey, String), Arc<Purity>>,
+    ) -> BTreeMap<String, Arc<Purity>> {
         self.imports
             .iter()
             .filter_map(|(local, target)| {
@@ -115,20 +134,20 @@ impl ModulePurityFacts<'_> {
 pub fn resolve_imported_purities(
     modules: &BTreeMap<ModuleKey, ModulePurityFacts<'_>>,
     asserted_pure: &BTreeMap<ModuleKey, BTreeSet<String>>,
-) -> BTreeMap<ModuleKey, BTreeMap<String, Purity>> {
+) -> BTreeMap<ModuleKey, BTreeMap<String, Arc<Purity>>> {
     // The fixpoint state: the verdict for each *function* export. A
     // `(module, export)` pair is in this map iff `export`'s local binding is a
     // chunk-top function (so calling the import is meaningful); we seed those
     // optimistically with `Pure`. Non-function exports never enter the map, so
     // imports bound to them stay unresolved (`unknown_call`).
-    let mut export_purity: BTreeMap<(ModuleKey, String), Purity> = BTreeMap::new();
+    let mut export_purity: BTreeMap<(ModuleKey, String), Arc<Purity>> = BTreeMap::new();
     for (key, facts) in modules {
         // Build once with no resolved imports to discover which exports are
         // functions; their concrete verdict is refined by the loop below.
         let graph = facts.build_graph(&BTreeMap::new());
         for (export_name, local) in &facts.exports {
             if graph.function_purity(local).is_some() {
-                export_purity.insert((key.clone(), export_name.clone()), Purity::Pure);
+                export_purity.insert((key.clone(), export_name.clone()), Arc::new(Purity::Pure));
             }
         }
     }
@@ -147,7 +166,10 @@ pub fn resolve_imported_purities(
                 );
                 continue;
             }
-            export_purity.insert((module.clone(), export_name.clone()), Purity::Pure);
+            export_purity.insert(
+                (module.clone(), export_name.clone()),
+                Arc::new(Purity::Pure),
+            );
             pinned.insert((module.clone(), export_name.clone()));
         }
     }
@@ -159,7 +181,7 @@ pub fn resolve_imported_purities(
     // produce new demotions, so they are skipped — this bounds the total
     // rebuild work to (initial pass) + (one rebuild per demotion-affected
     // module per round) instead of (all modules × rounds).
-    let mut last_inputs: BTreeMap<&ModuleKey, BTreeMap<String, Purity>> = BTreeMap::new();
+    let mut last_inputs: BTreeMap<&ModuleKey, BTreeMap<String, Arc<Purity>>> = BTreeMap::new();
     loop {
         let mut changed = false;
         for (key, facts) in modules {
@@ -336,6 +358,7 @@ mod tests {
                 .iter()
                 .map(|(name, local)| ((*name).to_string(), (*local).to_string()))
                 .collect(),
+            source: None,
         }
     }
 

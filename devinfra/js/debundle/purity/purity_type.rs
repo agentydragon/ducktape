@@ -1,16 +1,18 @@
 use super::*;
+use std::sync::Arc;
 
 /// Two-state expression-level purity with structured reasons.
 ///
 /// `Pure` means the expression is statically provably free of
 /// observable side effects; `NotPure { reasons }` carries the
-/// list of every classifier rule that fired against the expression
-/// or one of its sub-expressions (in source order). The classifier
+/// classifier rules that fired directly in the expression and its
+/// sub-expressions (in source order). Known impure callees are linked
+/// through shared cause nodes rather than flattened into this list. The classifier
 /// previously distinguished `Impure` from `Unknown` for an internal
 /// soundness argument, but downstream consumers (owner-graph
 /// `has_side_effect`) collapsed both to "not pure"; this type
 /// matches that contract and replaces the bool with the full
-/// rationale.
+/// rationale via those links.
 ///
 /// Reasons collected by `Purity::worst` are concatenated, so a
 /// composite like `f() + g()` records both `UnknownCall` reasons
@@ -25,7 +27,7 @@ pub enum Purity {
     NotPure { reasons: Vec<PurityReason> },
 }
 
-#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PurityReason {
     pub rule: PurityRule,
     /// Resolved by `resolve_reason_locations` once the per-chunk
@@ -39,8 +41,41 @@ pub struct PurityReason {
     pub detail: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub author_guidance: Option<String>,
+    /// Report-local ID of the callee's shared cause node. Filled when a
+    /// report is assembled; older reports without this field still load.
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub cause_ref: Option<String>,
+    /// The immutable callee verdict, shared by every call site. Keeping it
+    /// out of serde prevents transitive causes from expanding on the wire.
+    #[serde(skip)]
+    pub cause: Option<Arc<Purity>>,
     #[serde(skip)]
     pub span: Span,
+}
+
+impl PartialEq for PurityReason {
+    fn eq(&self, other: &Self) -> bool {
+        self.rule == other.rule
+            && self.source_location == other.source_location
+            && self.detail == other.detail
+            && self.author_guidance == other.author_guidance
+            && self.cause_ref == other.cause_ref
+            && self.span == other.span
+            && match (&self.cause, &other.cause) {
+                (None, None) => true,
+                (Some(a), Some(b)) => Arc::ptr_eq(a, b),
+                _ => false,
+            }
+    }
+}
+
+impl Eq for PurityReason {}
+
+impl PurityReason {
+    pub(crate) fn with_cause(mut self, cause: Arc<Purity>) -> Self {
+        self.cause = Some(cause);
+        self
+    }
 }
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Serialize, Deserialize)]
@@ -163,6 +198,8 @@ impl PurityReason {
             span,
             source_location: None,
             detail,
+            cause_ref: None,
+            cause: None,
             author_guidance: match rule {
                 PurityRule::UnknownCall => Some(
                     "For a safe opaque call, use the member-level `purity: pure` annotation; for an imported fluent chain, declare `chunk_export_purity.<chunk>.fluent_exports`.".to_string(),

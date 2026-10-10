@@ -130,6 +130,19 @@ via `OwnerGraphReport::module(key)` / `is_residual(key)`. Residual-ness is
 read from the table's authoritative `residual` flag, never inferred from a
 key string.
 
+## Shared purity causes
+
+An impure known-function call has one `impure_function_call` reason at the
+call site. Its optional `cause_ref` points to an entry in the same
+`owner_graph.json` file's `purity_causes[]` table. Each entry has an `id`
+and a `purity` verdict whose reasons may point to further entries. Follow
+these links to inspect the callee's full cause chain; shared callees are
+stored once rather than copied into every caller. A direct reason's
+`source_location` names the source file where that reason arose, including
+when the call crosses chunks. The table is absent when no owner references
+an impure known-function call. Older reports without the table or
+`cause_ref` still deserialize.
+
 ## Module identity everywhere else: `ModulePath` / `ModuleRef`
 
 Every artifact outside `owner_graph.json` denotes modules by

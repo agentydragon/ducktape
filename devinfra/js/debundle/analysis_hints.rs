@@ -59,7 +59,7 @@ pub struct AnalysisHints {
     /// bindings, keyed by local binding name. Produced by the program-level
     /// oracle (`crate::cross_module_purity`); empty in strictly per-chunk
     /// paths, where imported callees stay `unknown_call`.
-    pub imported_purities: BTreeMap<String, Purity>,
+    pub imported_purities: BTreeMap<String, std::sync::Arc<Purity>>,
     /// Local binding names of this chunk that import an author-asserted
     /// fluent export (`chunk_export_purity.<chunk>.fluent_exports`,
     /// projected by `crate::cross_module_purity` onto importer locals).

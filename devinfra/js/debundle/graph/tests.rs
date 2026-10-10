@@ -129,6 +129,7 @@ mod from_report_tests {
         OwnerGraphReport {
             chunk_id: "chunk".into(),
             nodes: vec![node("owner:0", 0), node("owner:1", 1), node("owner:2", 2)],
+            purity_causes: Vec::new(),
             edges: vec![OwnerGraphEdgeReport {
                 id: "owner_edge:0".to_string(),
                 source: "owner:1".to_string(),

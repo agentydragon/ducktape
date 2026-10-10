@@ -163,15 +163,28 @@ where
         per_statement,
         top_level_await,
     } = structural;
-    let graph = ChunkCodeGraph::build_full(
-        &body,
-        &shadowed,
-        &hints.declared_pure,
-        &hints.declared_pure_new,
-        &hints.declared_pure_members,
-        &hints.imported_purities,
-        &hints.fluent_bindings,
-    );
+    let graph = {
+        let mut locate = |span| {
+            let source_path = source_path?;
+            let (start_line, end_line, start_column) = line_range_for_span(span)?;
+            Some(SourceLocation {
+                source_path: source_path.to_string(),
+                start_line,
+                end_line,
+                start_column: Some(start_column),
+            })
+        };
+        ChunkCodeGraph::build_full_with_locations(
+            &body,
+            &shadowed,
+            &hints.declared_pure,
+            &hints.declared_pure_new,
+            &hints.declared_pure_members,
+            &hints.imported_purities,
+            &hints.fluent_bindings,
+            Some(&mut locate),
+        )
+    };
     let local_effect_context =
         local_effects::LocalEffectContext::for_body(&body, hints.local_effect_policy);
     let redundant_purity_hints =

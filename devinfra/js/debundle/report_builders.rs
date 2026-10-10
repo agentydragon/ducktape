@@ -14,8 +14,8 @@ use analysis::reports::{atomic_unit_key, module_id_from_key, module_key, owner_k
 use analysis::{
     AtomicGraphReport, AtomicUnit, AtomicUnitEdgeReport, AtomicUnitReport, BindingReport, DepKind,
     EdgeRoleReport, LogicalModuleIndex, ModuleEntry, ModuleId, ModuleKey, OwnerGraphEdgeReport,
-    OwnerGraphNodeReport, OwnerGraphQuotientReport, OwnerGraphReport, QuotientEdgeReport,
-    QuotientSccReport,
+    OwnerGraphNodeReport, OwnerGraphQuotientReport, OwnerGraphReport, Purity, PurityCauseReport,
+    QuotientEdgeReport, QuotientSccReport,
 };
 
 use crate::chunk_factorization::ChunkFactorization;
@@ -50,11 +50,13 @@ pub(crate) fn build_owner_graph_report(factorization: &ChunkFactorization) -> Ow
         },
     );
     let (quotient_nodes, quotient_edges) = quotient_pair;
-    let (nodes, edges) = nodes_edges;
+    let (mut nodes, edges) = nodes_edges;
+    let purity_causes = collect_purity_causes(&mut nodes);
     let quotient_sccs = build_quotient_scc_reports(factorization, &quotient_nodes, &quotient_edges);
     OwnerGraphReport {
         chunk_id: factorization.analysis.chunk_id().to_string(),
         nodes,
+        purity_causes,
         edges,
         quotient: OwnerGraphQuotientReport {
             nodes: quotient_nodes,
@@ -62,6 +64,51 @@ pub(crate) fn build_owner_graph_report(factorization: &ChunkFactorization) -> Ow
             sccs: quotient_sccs,
         },
         atomic_graph,
+    }
+}
+
+/// Serialize the immutable call-cause DAG once per report. Each call-site
+/// reason keeps its own location and points to a shared callee verdict;
+/// traversing the table yields the full chain without duplicating it at
+/// every caller. Pointer identity is stable for the lifetime of this build,
+/// and IDs are assigned in deterministic owner/reason traversal order.
+fn collect_purity_causes(nodes: &mut [OwnerGraphNodeReport]) -> Vec<PurityCauseReport> {
+    let mut ids = HashMap::<usize, String>::new();
+    let mut causes = Vec::new();
+    for node in nodes {
+        attach_cause_refs(&mut node.purity, &mut ids, &mut causes);
+    }
+    causes
+}
+
+fn attach_cause_refs(
+    purity: &mut Purity,
+    ids: &mut HashMap<usize, String>,
+    causes: &mut Vec<PurityCauseReport>,
+) {
+    let Purity::NotPure { reasons } = purity else {
+        return;
+    };
+    for reason in reasons {
+        let Some(cause) = &reason.cause else {
+            continue;
+        };
+        let ptr = std::sync::Arc::as_ptr(cause) as usize;
+        if let Some(id) = ids.get(&ptr) {
+            reason.cause_ref = Some(id.clone());
+            continue;
+        }
+        let id = format!("purity_cause:{}", causes.len());
+        ids.insert(ptr, id.clone());
+        let index = causes.len();
+        causes.push(PurityCauseReport {
+            id: id.clone(),
+            purity: Purity::Pure,
+        });
+        let mut callee = (**cause).clone();
+        attach_cause_refs(&mut callee, ids, causes);
+        causes[index].purity = callee;
+        reason.cause_ref = Some(id);
     }
 }
 

@@ -1184,9 +1184,9 @@ fn classify_with_imported_purities(
     expr_src: &str,
     imports: &[(&str, Purity)],
 ) -> Purity {
-    let imported_purities: BTreeMap<String, Purity> = imports
+    let imported_purities: BTreeMap<String, std::sync::Arc<Purity>> = imports
         .iter()
-        .map(|(name, purity)| ((*name).to_string(), purity.clone()))
+        .map(|(name, purity)| ((*name).to_string(), std::sync::Arc::new(purity.clone())))
         .collect();
     classify_with_graph(prefix, expr_src, |body, shadowed| {
         ChunkCodeGraph::build_full(

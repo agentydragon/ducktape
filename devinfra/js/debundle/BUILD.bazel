@@ -456,6 +456,7 @@ rust_library(
     edition = "2024",
     deps = [
         ":binding_targets",
+        ":js_ast",
         ":spec",
         "@crates//:petgraph",
         "@crates//:serde",

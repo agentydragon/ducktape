@@ -5,6 +5,7 @@
 //! through calls to imported functions instead of bailing `unknown_call`.
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::sync::Arc;
 
 use analysis::cross_module_purity::{
     ModulePurityFacts, ResolvedImport, resolve_asserted_fluent_bindings,
@@ -53,7 +54,7 @@ struct ReparsedEntry {
 /// Output of the program-level purity pass, keyed by chunk name.
 pub(super) struct CrossModulePurities {
     /// Per-chunk imported-binding verdicts (`AnalysisHints::imported_purities`).
-    pub(super) bindings: BTreeMap<String, BTreeMap<String, Purity>>,
+    pub(super) bindings: BTreeMap<String, BTreeMap<String, Arc<Purity>>>,
     /// Per-chunk pure-member sets for imported namespace-like bindings,
     /// merged into `AnalysisHints::declared_pure_members`.
     pub(super) members: BTreeMap<String, BTreeMap<String, BTreeSet<String>>>,
@@ -196,20 +197,21 @@ pub(super) fn collect_cross_module_imported_purities(
             .js
             .get_file(entry_file)
             .and_then(|file| file.ast());
-        let (body, import_records, export_alias_records) =
+        let (parsed, import_records, export_alias_records) =
             match (retained_ast, reparsed.get(&chunk_artifact.chunk_id)) {
                 (Some(ast), _) => (
-                    &ast.module.body,
+                    ast,
                     chunk_artifact.analysis.imports.as_slice(),
                     chunk_artifact.analysis.export_aliases.as_slice(),
                 ),
                 (None, Some(entry)) => (
-                    &entry.parsed.module.body,
+                    &entry.parsed,
                     entry.imports.as_slice(),
                     entry.export_aliases.as_slice(),
                 ),
                 (None, None) => continue,
             };
+        let body = &parsed.module.body;
         let mut imports = BTreeMap::new();
         for import in import_records {
             // Same artifact-output resolution the specifier rewriter uses;
@@ -275,6 +277,16 @@ pub(super) fn collect_cross_module_imported_purities(
                 body,
                 imports,
                 exports,
+                source: Some((
+                    chunk_artifact
+                        .js
+                        .get_file(entry_file)
+                        .map_or_else(
+                            || chunk_artifact.analysis.source_path.clone(),
+                            |file| file.metadata.source_path.clone(),
+                        ),
+                    parsed.line_index(),
+                )),
             },
         );
     }

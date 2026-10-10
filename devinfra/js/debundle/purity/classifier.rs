@@ -621,15 +621,20 @@ pub(crate) fn classify_fluent_chain(
 /// `Expr::Call` and `OptChainBase::Call` is the null-coalesce
 /// short-circuit on the optional form, which is irrelevant for
 /// side-effect classification.
-fn known_function_call_purity(callee: &Purity, name: &str, span: Span) -> Purity {
+fn known_function_call_purity(callee: &std::sync::Arc<Purity>, name: &str, span: Span) -> Purity {
     if callee.is_pure() {
         Purity::Pure
     } else {
-        Purity::from_reason_with_detail(
-            PurityRule::ImpureFunctionCall,
-            span,
-            format!("function `{name}` has an impure body"),
-        )
+        Purity::NotPure {
+            reasons: vec![
+                PurityReason::new(
+                    PurityRule::ImpureFunctionCall,
+                    span,
+                    Some(format!("function `{name}` has an impure body")),
+                )
+                .with_cause(callee.clone()),
+            ],
+        }
     }
 }
 

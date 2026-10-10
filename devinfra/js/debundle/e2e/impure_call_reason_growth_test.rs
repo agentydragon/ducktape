@@ -2,9 +2,43 @@
 //! callee's full reason list makes a branching call graph grow exponentially.
 
 use debundle_e2e_support::*;
+use std::collections::BTreeSet;
+
+fn reachable_assignments<'a>(
+    graph: &'a analysis::OwnerGraphReport,
+    root: &'a analysis::Purity,
+) -> Vec<&'a analysis::PurityReason> {
+    let mut pending = vec![root];
+    let mut seen = BTreeSet::new();
+    let mut assignments = Vec::new();
+    while let Some(purity) = pending.pop() {
+        let analysis::Purity::NotPure { reasons } = purity else {
+            continue;
+        };
+        for reason in reasons {
+            if reason.rule == analysis::PurityRule::AssignOrUpdate {
+                assignments.push(reason);
+            }
+            if let Some(id) = &reason.cause_ref {
+                if !seen.insert(id.as_str()) {
+                    continue;
+                }
+                let cause = graph
+                    .purity_causes
+                    .iter()
+                    .find(|cause| &cause.id == id)
+                    .expect("cause reference resolves in the report");
+                pending.push(&cause.purity);
+            }
+        }
+    }
+    assignments.sort_by_key(|reason| reason.source_location.as_ref().map(|loc| loc.start_line));
+    assignments
+}
 
 const FUNCTIONS: &str = r#"function a() { globalThis.value = 1; return 0; }
-function b() { a(); a(); return 0; }
+function z() { globalThis.other = 2; return 0; }
+function b() { a(); z(); a(); return 0; }
 function c() { b(); b(); return 0; }
 function d() { c(); c(); return 0; }
 function e() { d(); d(); return 0; }
@@ -38,7 +72,19 @@ fn local_impure_call_reports_its_own_site_once() {
         "one reason at the local call site: {purity}"
     );
     assert_eq!(reasons[0]["rule"], "impure_function_call");
-    assert_eq!(reasons[0]["source_location"]["start_line"], 7);
+    assert_eq!(reasons[0]["source_location"]["start_line"], 8);
+    assert!(
+        graph.purity_causes.len() <= 7,
+        "shared causes should stay linear"
+    );
+    let assignments = reachable_assignments(&graph, &owner.purity);
+    assert_eq!(
+        assignments
+            .iter()
+            .map(|reason| reason.source_location.as_ref().unwrap().start_line)
+            .collect::<Vec<_>>(),
+        vec![1, 2],
+    );
 }
 
 #[test]
@@ -79,4 +125,21 @@ export { result };
         "static/app.js"
     );
     assert_eq!(reasons[0]["source_location"]["start_line"], 2);
+    assert!(
+        graph.purity_causes.len() <= 7,
+        "shared causes should stay linear"
+    );
+    let assignments = reachable_assignments(&graph, &owner.purity);
+    assert_eq!(
+        assignments
+            .iter()
+            .map(|reason| reason.source_location.as_ref().unwrap().start_line)
+            .collect::<Vec<_>>(),
+        vec![1, 2],
+    );
+    assert!(
+        assignments
+            .iter()
+            .all(|reason| reason.source_location.as_ref().unwrap().source_path == "static/lib.js")
+    );
 }

@@ -1,4 +1,5 @@
 use super::*;
+use std::sync::Arc;
 
 /// Chunk-wide code graph: indexes top-level bindings and answers
 /// queries the classifier needs that go beyond per-expression
@@ -42,7 +43,7 @@ pub struct ChunkCodeGraph {
     /// empty in the strictly per-chunk path, so an imported callee with
     /// no entry stays `unknown_call` as before. A body-local binding
     /// that shadows the import is not resolved through this map.
-    imported_purities: BTreeMap<String, Purity>,
+    imported_purities: BTreeMap<String, Arc<Purity>>,
     /// Bindings the author asserts are *fluent-trusted* roots
     /// (`chunk_export_purity.<chunk>.fluent_exports`, projected onto
     /// this chunk's local import bindings): every value reachable from
@@ -66,7 +67,7 @@ pub(crate) enum ChunkBinding {
     /// Chunk-top function declaration or `const f = function/arrow`.
     /// `purity` is the worst purity reachable from the body, computed
     /// by fixed-point iteration over all chunk-top functions.
-    Function { purity: Purity },
+    Function { purity: Arc<Purity> },
     /// Chunk-top binding whose value is provably a plain object/array
     /// — `const X = <plain literal>`, or `let`/`var` whose every
     /// re-bind is also a plain literal, or the TS-enum-IIFE shape
@@ -130,8 +131,31 @@ impl ChunkCodeGraph {
         declared_pure: &BTreeSet<String>,
         declared_pure_new: &BTreeSet<String>,
         declared_pure_members: &BTreeMap<String, BTreeSet<String>>,
-        imported_purities: &BTreeMap<String, Purity>,
+        imported_purities: &BTreeMap<String, Arc<Purity>>,
         fluent_bindings: &BTreeSet<String>,
+    ) -> Self {
+        Self::build_full_with_locations(
+            body,
+            shadowed,
+            declared_pure,
+            declared_pure_new,
+            declared_pure_members,
+            imported_purities,
+            fluent_bindings,
+            None,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)] // The optional resolver extends the established build_full inputs.
+    pub(crate) fn build_full_with_locations(
+        body: &[TopLevelItemView<'_>],
+        shadowed: &BTreeSet<&'static str>,
+        declared_pure: &BTreeSet<String>,
+        declared_pure_new: &BTreeSet<String>,
+        declared_pure_members: &BTreeMap<String, BTreeSet<String>>,
+        imported_purities: &BTreeMap<String, Arc<Purity>>,
+        fluent_bindings: &BTreeSet<String>,
+        mut locate: Option<&mut dyn FnMut(Span) -> Option<SourceLocation>>,
     ) -> Self {
         let functions = collect_chunk_functions(body);
         let name_to_idx: BTreeMap<&str, usize> = functions
@@ -163,7 +187,7 @@ impl ChunkCodeGraph {
                 (
                     f.name.clone(),
                     ChunkBinding::Function {
-                        purity: Purity::Pure,
+                        purity: Arc::new(Purity::Pure),
                     },
                 )
             })
@@ -193,7 +217,14 @@ impl ChunkCodeGraph {
         // (sinks — functions that don't call any chunk-top
         // function) come first, callers come later.
         for scc in tarjan_scc(&call_graph) {
-            graph.classify_scc(&scc, &functions, &callees_of, shadowed, declared_pure);
+            graph.classify_scc(
+                &scc,
+                &functions,
+                &callees_of,
+                shadowed,
+                declared_pure,
+                &mut locate,
+            );
         }
         graph
     }
@@ -209,6 +240,7 @@ impl ChunkCodeGraph {
         callees_of: &[BTreeSet<usize>],
         shadowed: &BTreeSet<&'static str>,
         declared_pure: &BTreeSet<String>,
+        locate: &mut Option<&mut dyn FnMut(Span) -> Option<SourceLocation>>,
     ) {
         let scc_set: BTreeSet<usize> = scc.iter().copied().collect();
         // Reverse adjacency restricted to this SCC: callee → callers.
@@ -223,7 +255,8 @@ impl ChunkCodeGraph {
         let mut pending: BTreeSet<usize> = scc_set;
         while let Some(&i) = pending.iter().next() {
             pending.remove(&i);
-            let new_purity = classify_function_body(&functions[i], shadowed, declared_pure, self);
+            let mut new_purity =
+                classify_function_body(&functions[i], shadowed, declared_pure, self);
             let name = &functions[i].name;
             let was_pure = self
                 .function_purity(name)
@@ -236,8 +269,19 @@ impl ChunkCodeGraph {
             // iteration), so we settle on the first NotPure
             // verdict and stop.
             if was_pure && !new_purity.is_pure() {
-                self.bindings
-                    .insert(name.clone(), ChunkBinding::Function { purity: new_purity });
+                if let Some(locate) = locate.as_deref_mut()
+                    && let Purity::NotPure { reasons } = &mut new_purity
+                {
+                    for reason in reasons {
+                        reason.source_location = locate(reason.span);
+                    }
+                }
+                self.bindings.insert(
+                    name.clone(),
+                    ChunkBinding::Function {
+                        purity: Arc::new(new_purity),
+                    },
+                );
                 if let Some(callers) = callers_in_scc.get(&i) {
                     pending.extend(callers.iter().copied());
                 }
@@ -248,7 +292,7 @@ impl ChunkCodeGraph {
     /// Purity of the chunk-local function bound to `name`, if any.
     /// Returns `None` for non-function bindings (imports, vars,
     /// classes) and for names not bound at chunk top.
-    pub(crate) fn function_purity(&self, name: &str) -> Option<&Purity> {
+    pub(crate) fn function_purity(&self, name: &str) -> Option<&Arc<Purity>> {
         match self.bindings.get(name)? {
             ChunkBinding::Function { purity } => Some(purity),
             ChunkBinding::PlainData => None,
@@ -276,7 +320,7 @@ impl ChunkCodeGraph {
 
     /// Cross-module purity verdict for an imported function binding,
     /// when the program-level oracle resolved one.
-    pub(crate) fn imported_purity(&self, name: &str) -> Option<&Purity> {
+    pub(crate) fn imported_purity(&self, name: &str) -> Option<&Arc<Purity>> {
         self.imported_purities.get(name)
     }
 

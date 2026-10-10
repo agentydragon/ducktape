@@ -84,10 +84,20 @@ pub struct BindingReport {
 pub struct OwnerGraphReport {
     pub chunk_id: String,
     pub nodes: Vec<OwnerGraphNodeReport>,
+    /// Shared callee verdicts referenced by `purity.reasons[].cause_ref`.
+    /// Each cause is emitted once, even when many owners call it.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub purity_causes: Vec<PurityCauseReport>,
     pub edges: Vec<OwnerGraphEdgeReport>,
     #[serde(rename = "module_graph")]
     pub quotient: OwnerGraphQuotientReport,
     pub atomic_graph: AtomicGraphReport,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PurityCauseReport {
+    pub id: String,
+    pub purity: Purity,
 }
 
 impl OwnerGraphReport {

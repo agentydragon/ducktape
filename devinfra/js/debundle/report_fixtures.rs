@@ -255,6 +255,7 @@ pub fn graph_of(
     OwnerGraphReport {
         chunk_id: "x".to_string(),
         nodes,
+        purity_causes: Vec::new(),
         edges,
         quotient: OwnerGraphQuotientReport {
             nodes: module_nodes,
