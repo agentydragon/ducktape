@@ -2,34 +2,18 @@
 // it, the target and the exact command, and what came back, the exit code and the output.
 import { Badge, Group, Stack, Text } from "@mantine/core";
 import type { JSX } from "react";
-import { z } from "zod";
+import type { z } from "zod";
 
 import { CodeBlock } from "../../../code_block";
 import { CommandCallView, OutputBlock } from "../../../command_view";
 import { definePreview, type ArgumentsPreview, type PreviewProps } from "../entry";
 import { defineResultPreview, type ResultPreview, type ResultPreviewProps } from "../result_entry";
+import { zSshExecArguments, zSshExecResult } from "../../schemas/ssh/exec";
 
-// The tool's input schema. Strict, because the widget draws only these: a call carrying any other
-// argument shows as its JSON, so nothing it would run with goes unseen.
-const execArguments = z.strictObject({
-  host: z.string().min(1),
-  user: z.string().min(1),
-  command: z.string().min(1),
-  timeout_seconds: z.int().min(1).nullish(),
-});
+type SshExecArguments = z.infer<typeof zSshExecArguments>;
+type SshExecResult = z.infer<typeof zSshExecResult>;
 
-// The tool's `ExecResult`.
-const execResult = z.strictObject({
-  host: z.string(),
-  user: z.string(),
-  exit_code: z.int(),
-  stdout: z.string(),
-  stderr: z.string(),
-  stdout_truncated: z.boolean(),
-  stderr_truncated: z.boolean(),
-});
-
-function ExecArguments({ args }: PreviewProps<z.infer<typeof execArguments>>): JSX.Element {
+function ExecArguments({ args }: PreviewProps<SshExecArguments>): JSX.Element {
   return (
     <CommandCallView
       target={`${args.user}@${args.host}`}
@@ -39,7 +23,7 @@ function ExecArguments({ args }: PreviewProps<z.infer<typeof execArguments>>): J
   );
 }
 
-function ExecResult({ result }: ResultPreviewProps<z.infer<typeof execResult>>): JSX.Element {
+function ExecResult({ result }: ResultPreviewProps<SshExecResult>): JSX.Element {
   return (
     <Stack gap="xs">
       <Group gap="xs">
@@ -70,5 +54,5 @@ function ExecResult({ result }: ResultPreviewProps<z.infer<typeof execResult>>):
   );
 }
 
-export const execArgumentsPreview: ArgumentsPreview = definePreview(execArguments, ExecArguments);
-export const execResultPreview: ResultPreview = defineResultPreview(execResult, ExecResult);
+export const execArgumentsPreview: ArgumentsPreview = definePreview(zSshExecArguments, ExecArguments);
+export const execResultPreview: ResultPreview = defineResultPreview(zSshExecResult, ExecResult);

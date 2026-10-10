@@ -79,7 +79,7 @@ def _compiled(spec):
         fail("%s is not a spec: a `vitest_test` compiles `*.test.ts` and `*.test.tsx` files" % spec)
     return spec.rsplit(".test.", 1)[0] + ".test.js"
 
-def vitest_test(name, srcs, config, tsconfig, deps = [], isolated_typecheck = False, **kwargs):
+def vitest_test(name, srcs, config, tsconfig, deps = [], data = [], isolated_typecheck = False, **kwargs):
     """Compiles spec files and runs them under vitest, alone.
 
     Args:
@@ -89,6 +89,7 @@ def vitest_test(name, srcs, config, tsconfig, deps = [], isolated_typecheck = Fa
         tsconfig: The shared `ts_config`, as for `ts_library`.
         deps: What the specs import, as for `ts_library`. Vitest itself, and the packages the
             environment needs, come from `config`.
+        data: Additional runtime files the specs need.
         isolated_typecheck: As for `ts_library`.
         **kwargs: Passed to the test, e.g. `size`, `timeout`, `tags`, `env`.
     """
@@ -113,7 +114,7 @@ def vitest_test(name, srcs, config, tsconfig, deps = [], isolated_typecheck = Fa
         name = name,
         args = ["run", "--config", config_name + ".mjs"] + [path_prefix + _compiled(spec) for spec in srcs],
         chdir = config_package,
-        data = [config, ":" + name + "_lib"],
+        data = [config, ":" + name + "_lib"] + data,
         **kwargs
     )
 

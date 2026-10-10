@@ -114,7 +114,7 @@ py_library(
     srcs = ["main.py"],
     data = [
         "//agentplane/app/frontend:bundle",
-        "//agentplane/app/frontend:service_worker",
+        "//agentplane/app/frontend/service_worker:service_worker_js",
     ],  # keep: the SPA and service worker the server mounts
     visibility = [
         "//agentplane/acceptance:__pkg__",

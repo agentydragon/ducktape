@@ -1,5 +1,8 @@
 import type { components } from "../api/schema";
 import { api, httpError } from "../client";
+import type { ActionRequestView } from "./types";
+
+export type { ActionRequestView } from "./types";
 
 export type ActionPolicyView = components["schemas"]["ActionPolicyView"];
 export type ActionPolicyUnavailable = components["schemas"]["ActionPolicyUnavailable"];
@@ -7,7 +10,6 @@ export type ActionPolicyBindingView = components["schemas"]["ActionPolicyBinding
 export type ActionPolicySetView = components["schemas"]["ActionPolicySetView"];
 export type EffectivePolicyView = components["schemas"]["EffectivePolicyView"];
 export type ReadyConditionView = components["schemas"]["ReadyConditionView"];
-export type ActionRequestView = components["schemas"]["ActionRequestView"];
 export type ActionHistoryPage = components["schemas"]["ActionHistoryPage"];
 export type ActionState = components["schemas"]["ActionState"];
 export type Verdict = components["schemas"]["Verdict"];

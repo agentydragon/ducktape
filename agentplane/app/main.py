@@ -50,7 +50,7 @@ from util.kubernetes import CustomObjectsClient
 # The built frontend, a runfiles data dependency of this module's library.
 # The bundle's entry; runfiles resolve files, not directories, so the mount is its parent.
 FRONTEND_INDEX = "_main/agentplane/app/frontend/dist/index.html"
-SERVICE_WORKER = "_main/agentplane/app/frontend/sw.js"
+SERVICE_WORKER = "_main/agentplane/app/frontend/service_worker/bundled/sw.js"
 
 
 logger = logging.getLogger(__name__)
