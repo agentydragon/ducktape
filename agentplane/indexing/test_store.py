@@ -147,20 +147,6 @@ async def test_search_remains_available_during_embedding(store: Store, embedder:
         await task
 
 
-async def test_initialize_renames_the_artifact_digest_column(engine: AsyncEngine, embedder: FakeEmbedder) -> None:
-    async with engine.begin() as connection:
-        await connection.exec_driver_sql("CREATE SCHEMA agentplane_index")
-        await connection.exec_driver_sql(
-            "CREATE TABLE agentplane_index.snapshots (id text PRIMARY KEY, artifact_digest text NOT NULL,"
-            " revision text NOT NULL, repository_url text NOT NULL, accepted_at timestamptz NOT NULL,"
-            " unreachable_since timestamptz)"
-        )
-    store = Store(engine, budget=DEFAULT_CHUNK_BUDGET, model_key=embedder.model_key)
-    await store.initialize()
-    await ingest(store, "A", {"a": b"alpha"})
-    assert (await store.status()).desired_tree_id == "A"
-
-
 async def test_configuration_change_rejected(store: Store, engine: AsyncEngine) -> None:
     changed = Store(engine, budget=DEFAULT_CHUNK_BUDGET, model_key="another-model")
     with pytest.raises(ValueError, match="configuration changed"):

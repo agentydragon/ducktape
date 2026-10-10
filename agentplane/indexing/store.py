@@ -156,15 +156,6 @@ class Store:
             await connection.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
             await connection.execute(text(f"CREATE SCHEMA IF NOT EXISTS {SCHEMA}"))
             await connection.run_sync(Base.metadata.create_all)
-            # CLEANUP(added 2026-09-11): drop once both deployed index databases have started
-            #   on a version with the git source (their snapshots table then has tree_id).
-            await connection.execute(
-                text(
-                    f"DO $$ BEGIN IF EXISTS (SELECT FROM information_schema.columns WHERE table_schema = '{SCHEMA}'"
-                    " AND table_name = 'snapshots' AND column_name = 'artifact_digest')"
-                    f" THEN ALTER TABLE {SCHEMA}.snapshots RENAME COLUMN artifact_digest TO tree_id; END IF; END $$"
-                )
-            )
         async with self._mutation() as session:
             state = await session.get(State, 1)
             if state is None:
