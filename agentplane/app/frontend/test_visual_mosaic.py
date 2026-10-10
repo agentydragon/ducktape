@@ -50,6 +50,7 @@ async def test_mobile_switches_one_active_pane(view: VisualPage, app: Agentplane
     await page.get_by_role("option").first.click()
     await expect(page.locator("[data-mosaic-pane-kind='thread'].is-active")).to_be_visible()
     await expect(page.locator("[data-mosaic-pane]:visible")).to_have_count(1)
+    await expect(page.locator(".agentplane-topbar-title")).to_have_text("Mosaic")
     await view.capture(name="mosaic-mobile-thread", target=page.locator("#app"))
 
 
