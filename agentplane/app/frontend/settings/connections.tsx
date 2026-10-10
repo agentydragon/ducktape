@@ -172,9 +172,7 @@ export function Connections({
           <Table.Tbody>
             {rows.map((row) => {
               const grant = currentGrant(row);
-              const unbound = row.grants.every((candidate) => candidate.status === "revoked");
-              const currentCaller = row.bound_caller ?? (unbound ? null : (grant?.caller ?? null));
-              const currentKey = currentCaller ? serviceAccountKey(currentCaller) : null;
+              const currentKey = row.bound_caller ? serviceAccountKey(row.bound_caller) : null;
               const selected = rebinding?.row.id === row.id ? rebinding.target : currentKey;
               return (
                 <Fragment key={row.id}>
@@ -191,7 +189,7 @@ export function Connections({
                       </Text>
                     </Table.Td>
                     <Table.Td>
-                      {currentCaller ? (
+                      {row.bound_caller ? (
                         <Stack gap={2}>
                           <Text className="agentplane-connection-mobile-label" size="xs" fw={600}>
                             Service account
@@ -207,11 +205,11 @@ export function Connections({
                                 value: serviceAccountKey(account),
                                 label: serviceAccountKey(account),
                               })),
-                              ...(!isEligibleCaller(currentCaller, accounts)
+                              ...(!isEligibleCaller(row.bound_caller, accounts)
                                 ? [{ value: currentKey!, label: currentKey!, disabled: true }]
                                 : []),
                             ]}
-                            disabled={busy || unbound}
+                            disabled={busy}
                             size="xs"
                             className="agentplane-connection-account-select"
                           />
@@ -224,7 +222,7 @@ export function Connections({
                           >
                             {expandedGrants === row.id ? "Hide grants" : "View grants"}
                           </Button>
-                          {!isEligibleCaller(currentCaller, accounts) && (
+                          {!isEligibleCaller(row.bound_caller, accounts) && (
                             <Text size="xs" c="orange">
                               ServiceAccount not labeled as an Action caller
                             </Text>
@@ -288,7 +286,7 @@ export function Connections({
                             color="red"
                             variant="light"
                             size="xs"
-                            disabled={busy || unbound}
+                            disabled={busy || row.grants.every((candidate) => candidate.status === "revoked")}
                             onClick={() => setUnlinking(row)}
                           >
                             Unlink
@@ -297,11 +295,11 @@ export function Connections({
                       )}
                     </Table.Td>
                   </Table.Tr>
-                  {expandedGrants === row.id && currentCaller && (
+                  {expandedGrants === row.id && row.bound_caller && (
                     <Table.Tr>
                       <Table.Td colSpan={3}>
                         <div id={`caller-grants-${row.id}`}>
-                          <CallerGrants key={currentKey} account={currentCaller} read={readGrants} />
+                          <CallerGrants key={currentKey} account={row.bound_caller} read={readGrants} />
                         </div>
                       </Table.Td>
                     </Table.Tr>

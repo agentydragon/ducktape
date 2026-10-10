@@ -181,6 +181,11 @@ def _round_trip(connection: Connection) -> None:
         row.id: row.bound_caller for row in connection.execute(text("SELECT id, bound_caller FROM external_connection"))
     }
     assert bindings == {BOUND: {"namespace": "agentplane-test", "name": "personal"}, UNBOUND: None}
+    # `0024` drops the grant's `caller`; downgrading refills it from `original_caller`.
+    command.downgrade(config, "0023_connection_binding_required")
+    grant_callers = connection.scalars(text("SELECT caller FROM external_connection_grant")).all()
+    assert grant_callers == [{"namespace": "agentplane-test", "name": "personal"}] * 2
+    command.upgrade(config, "head")
     assert _linked_access_token(connection) == ACCESS_TOKEN
     # `0018` clears a refresh failure that predates recorded errors, and the next sweep retries.
     assert connection.scalar(text("SELECT refresh_failure_action FROM mcp_oauth_token_state")) is None

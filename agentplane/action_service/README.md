@@ -49,8 +49,7 @@ ServiceAccount without issuing a new OAuth token; this increments the binding ve
 immutable original grant history in `original_caller`, and records the operator and previous/new caller
 in an `external_connection_binding_change` audit row. Migration `0022_connection_binding_change` renames
 the table created by `0021_connection_rebind`, preserving existing audit entries. Future requests from
-the existing token use the new account. The grant row's own `caller` column is neither read nor written: authority
-comes from `bound_caller`, history from `original_caller`.
+the existing token use the new account. Authority comes from `bound_caller`, history from `original_caller`.
 A revoked, missing, unlabeled or rebound original authority prevents an older unclaimed Action
 from dispatching even if another grant now acts as the same ServiceAccount: the unstarted
 Execution fails with

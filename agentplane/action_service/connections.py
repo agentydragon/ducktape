@@ -121,7 +121,8 @@ class Connection(BaseModel):
     created_at: datetime
     updated_at: datetime
     grants: list[Grant]
-    bound_caller: ServiceAccountRef | None = None
+    # None exactly when the Connection is unbound: every grant revoked.
+    bound_caller: ServiceAccountRef | None
 
 
 class ConnectionNotFoundError(Exception):

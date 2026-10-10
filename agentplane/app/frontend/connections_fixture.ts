@@ -23,5 +23,6 @@ export function sampleConnection(): Connection {
         revoked_at: null,
       },
     ],
+    bound_caller: { namespace: "agentplane-test", name: "personal" },
   };
 }

@@ -131,9 +131,6 @@ class ConnectionGrantRow(Base):
     id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True)
     connection_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey("external_connection.id"))
     revision: Mapped[int] = mapped_column(Integer)
-    # Neither read nor written; deferred so no query names it, so dropping the column cannot break a
-    # running replica.
-    caller: Mapped[dict[str, JsonValue] | None] = mapped_column(JSONB, deferred=True)
     # Immutable authorization evidence, independent of the current Connection binding.
     original_caller: Mapped[dict[str, JsonValue]] = mapped_column(JSONB)
     issuer: Mapped[str] = mapped_column(Text)

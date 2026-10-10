@@ -68,6 +68,7 @@ it("shows the most recent grant when a connection has more than one", async () =
       caller: { namespace: "agentplane-test", name: "other" },
     },
   ];
+  row.bound_caller = { namespace: "agentplane-test", name: "other" };
   const api = service();
   api.list = vi.fn(async () => [row]);
   const container = await render(api);
@@ -83,6 +84,7 @@ it("requires confirmation, permits cancelling, and preserves the row after unlin
     ...row,
     version: 3,
     grants: row.grants.map((grant) => ({ ...grant, status: "revoked" as const })),
+    bound_caller: null,
   }));
   const container = await render(api);
   await act(async () => button(container, "Unlink").click());
@@ -133,7 +135,7 @@ it("expands grants for the current caller even when its admission label is missi
   const container = await render(service(), read);
   expect(read).not.toHaveBeenCalled();
   await act(async () => button(container, "View grants").click());
-  expect(read.mock.calls[0][0]).toEqual(sampleConnection().grants[0].caller);
+  expect(read.mock.calls[0][0]).toEqual(sampleConnection().bound_caller);
   expect(container.textContent).toContain("Grants for agentplane-test/personal");
   await act(async () => button(container, "Hide grants").click());
   expect(container.textContent).not.toContain("Grants for agentplane-test/personal");
