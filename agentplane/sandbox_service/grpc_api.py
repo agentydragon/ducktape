@@ -26,6 +26,7 @@ from agentplane.sandbox_service.egress_views import BindingNotFoundError, Unknow
 from agentplane.sandbox_service.models import InventoryError, SandboxConflictError, SandboxNotFoundError
 from agentplane.sandbox_service.protocol_pb2 import Sandbox, SandboxDestination
 from agentplane.sandbox_service.provisioning import Provisioning
+from agentplane.sandbox_service.session_history.session_changes import SessionChanges
 from agentplane.sandbox_service.session_history.store import HistoryNotFoundError, Store
 from agentplane.subjects import ServiceAccountRef
 from agentplane.workload_auth.bearer import parse_bearer, sole_header
@@ -33,6 +34,8 @@ from agentplane.workload_auth.principal import WorkloadPrincipalRejectedError, W
 
 # gazelle:include_dep @pypi//protobuf
 # gazelle:include_dep @pypi//grpcio
+
+WATCH_PAGE = 256
 
 
 @dataclass(frozen=True)
@@ -44,6 +47,7 @@ class Resources:
     platform_instructions: str
     runner_admission_ack_timeout_s: float
     history: Store | None = None
+    session_changes: SessionChanges | None = None
     history_reader_accounts: frozenset[ServiceAccountRef] = frozenset()
     admission_timeout_s: float = 15
     follow_lease_s: float = 900
@@ -78,6 +82,12 @@ class Resources:
         if principal.account not in self.caller_accounts:
             await context.abort(grpc.StatusCode.PERMISSION_DENIED, "service caller not allowed")
         return principal.account
+
+    async def authenticate_history_reader(self, context: grpc.aio.ServicerContext) -> None:
+        # A public Session UUID is not itself authority. Notifications and future
+        # agent callers admitted for lifecycle may not read transcripts.
+        if await self.authenticate(context) not in self.history_reader_accounts:
+            await context.abort(grpc.StatusCode.PERMISSION_DENIED, "session history reader not allowed")
 
 
 @asynccontextmanager
@@ -142,12 +152,8 @@ class SandboxService(protocol_pb2_grpc.SandboxServiceServicer):
     async def ReadSessionEvents(
         self, request: protocol_pb2.ReadSessionEventsRequest, context: grpc.aio.ServicerContext
     ) -> protocol_pb2.ReadSessionEventsResponse:
-        # A public Session UUID is not itself authority. Notifications and future
-        # agent callers admitted for lifecycle may not read transcripts here.
         async with errors(context), asyncio.timeout(self.resources.admission_timeout_s):
-            caller = await self.resources.authenticate(context)
-            if caller not in self.resources.history_reader_accounts:
-                await context.abort(grpc.StatusCode.PERMISSION_DENIED, "session history reader not allowed")
+            await self.resources.authenticate_history_reader(context)
             if self.resources.history is None:
                 raise ConnectionError("history unavailable")
             if not 1 <= request.limit <= 1000:
@@ -162,9 +168,7 @@ class SandboxService(protocol_pb2_grpc.SandboxServiceServicer):
         self, request: protocol_pb2.ReadSessionObservationsRequest, context: grpc.aio.ServicerContext
     ) -> protocol_pb2.ReadSessionObservationsResponse:
         async with errors(context), asyncio.timeout(self.resources.admission_timeout_s):
-            caller = await self.resources.authenticate(context)
-            if caller not in self.resources.history_reader_accounts:
-                await context.abort(grpc.StatusCode.PERMISSION_DENIED, "session history reader not allowed")
+            await self.resources.authenticate_history_reader(context)
             if self.resources.history is None:
                 raise ConnectionError("history unavailable")
             last_cursor, observations = await self.resources.history.read_observations(
@@ -537,6 +541,41 @@ class SandboxService(protocol_pb2_grpc.SandboxServiceServicer):
                     attachment.cancel()
             finally:
                 await client.close()
+
+    @override
+    async def WatchSessions(  # type: ignore[override]
+        self, request: protocol_pb2.WatchSessionsRequest, context: grpc.aio.ServicerContext
+    ) -> None:
+        async with errors(context):
+            async with asyncio.timeout(self.resources.admission_timeout_s):
+                # Any allowed service caller may watch; the feed carries no transcript.
+                await self.resources.authenticate(context)
+                if self.resources.session_changes is None:
+                    raise DestinationUnavailableError("Session change notifications not configured")
+                history, changes = self.history(), self.resources.session_changes
+            loop = asyncio.get_running_loop()
+            deadline = loop.time() + self.resources.follow_lease_s
+            position = request.after_position
+            with changes.subscribe() as changed:
+                while loop.time() < deadline:
+                    changed.clear()
+                    async with asyncio.timeout(self.resources.admission_timeout_s):
+                        page = await history.read_changes(after_position=position, limit=WATCH_PAGE)
+                    for change in page:
+                        async with asyncio.timeout(self.resources.admission_timeout_s):
+                            await context.write(protocol_pb2.WatchSessionsResponse(change=change))
+                        position = change.position
+                    if len(page) == WATCH_PAGE:
+                        continue
+                    lease = asyncio.timeout_at(deadline)
+                    try:
+                        async with lease:
+                            await changed.wait()
+                    except TimeoutError:
+                        if not lease.expired():
+                            raise
+            async with asyncio.timeout(self.resources.admission_timeout_s):
+                await context.write(protocol_pb2.WatchSessionsResponse(reconnect_required=Empty()))
 
 
 def add_service(resources: Resources, server: grpc.aio.Server) -> None:

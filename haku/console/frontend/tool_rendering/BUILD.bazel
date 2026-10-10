@@ -64,7 +64,6 @@ ts_library(
         "//haku/console/frontend/tool_rendering/grants:actions",
         "//haku/console/frontend/tool_rendering/grocy:actions",
         "//haku/console/frontend/tool_rendering/haku_routine:actions",
-        "//haku/console/frontend/tool_rendering/kubectl:actions",
         "//haku/console/frontend/tool_rendering/tana:actions",
     ],
 )
@@ -144,7 +143,6 @@ ts_library(
         "//:node_modules/@types/react",
         "//:node_modules/react",
         "//:node_modules/zod",
-        "//haku/console/frontend/tool_rendering/gmail:calls",
         "//haku/console/frontend/tool_rendering/gmail:requests",
         "//haku/console/frontend/tool_rendering/gmail:responses",
         "//haku/console/frontend/tool_rendering/google_calendar:calls",
@@ -155,7 +153,6 @@ ts_library(
         "//haku/console/frontend/tool_rendering/grocy:requests",
         "//haku/console/frontend/tool_rendering/grocy:responses",
         "//haku/console/frontend/tool_rendering/haku_routine:requests",
-        "//haku/console/frontend/tool_rendering/kubectl:requests",
         "//haku/console/frontend/tool_rendering/tana:requests",
     ],
 )
@@ -171,7 +168,6 @@ filegroup(
         "//haku/console/frontend/tool_rendering/grants:tailwind_srcs",
         "//haku/console/frontend/tool_rendering/grocy:tailwind_srcs",
         "//haku/console/frontend/tool_rendering/haku_routine:tailwind_srcs",
-        "//haku/console/frontend/tool_rendering/kubectl:tailwind_srcs",
         "//haku/console/frontend/tool_rendering/tana:tailwind_srcs",
     ],
 )

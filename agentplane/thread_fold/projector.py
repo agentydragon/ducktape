@@ -14,8 +14,8 @@ from sqlalchemy import select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
+from agentplane.history_service.client import HistoryServiceClient
 from agentplane.sandbox_service import protocol_pb2
-from agentplane.sandbox_service.client import SandboxServiceClient
 from agentplane.thread_fold import projection_lease
 from agentplane.thread_fold.lifecycle import project_lifecycle
 from agentplane.thread_fold.model_activity import record_model_activity
@@ -39,7 +39,7 @@ class ProjectionProgress:
 PageReader = Callable[[UUID, int, int], Awaitable[protocol_pb2.ReadSessionEventsResponse]]
 
 
-def service_pages(client: SandboxServiceClient) -> PageReader:
+def service_pages(client: HistoryServiceClient) -> PageReader:
     async def read(session_id: UUID, after_cursor: int, limit: int) -> protocol_pb2.ReadSessionEventsResponse:
         return await client.read_session_events(str(session_id), after_cursor=after_cursor, limit=limit)
 
@@ -98,7 +98,7 @@ class HistoryProjector:
     async def _project_prefix(self, thread_id: UUID, *, lease: ProjectionLease, after: int) -> ProjectionProgress:
         page = await self._read_page(thread_id, after, 128)
         if page.last_cursor < after:
-            raise ConnectionError("Sandbox Service has not covered the app projection checkpoint")
+            raise ConnectionError("History Service has not covered the app projection checkpoint")
         if len(page.entries) > 128 or any(
             entry.cursor != after + index + 1
             or entry.cursor > page.last_cursor

@@ -60,6 +60,9 @@ class AppSettingsConfig(BaseSettings):
     sandbox_service_grpc_channel_options: dict[str, int | str] = Field(
         default_factory=dict, description="gRPC channel options for the App's connection to Sandbox Service."
     )
+    history_service_grpc_channel_options: dict[str, int | str] = Field(
+        default_factory=dict, description="gRPC channel options for the App's connection to History Service."
+    )
     egress_admin_url: HttpEndpointUrl = Field(description="The egress proxy's admin port, serving /decisions.")
     action_federation: ActionFederationSettings | None = None
 
@@ -78,9 +81,12 @@ class Settings(AppSettingsConfig):
         "so a sandbox shares a namespace with neither the app, its database, nor the rules that govern it."
     )
     sandbox_service_target: str = Field(min_length=1)
+    history_service_target: str = Field(min_length=1)
     notifications_url: HttpEndpointUrl | None = None
     notifications_token_file: Path | None = None
     sandbox_service_token_file: Path = Path("/var/run/secrets/agentplane-sandbox-service/token")
+    history_service_token_file: Path = Path("/var/run/secrets/agentplane-history-service/token")
+    history_service_request_timeout_s: float = Field(default=20, gt=0, allow_inf_nan=False)
     sandbox_service_request_timeout_s: float = Field(default=20, gt=0, allow_inf_nan=False)
     sandbox_service_lifecycle_timeout_s: float = Field(default=310, gt=0, allow_inf_nan=False)
     sandbox_service_follow_timeout_s: float = Field(default=960, gt=0, allow_inf_nan=False)

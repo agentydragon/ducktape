@@ -313,7 +313,10 @@ refactors whose intermediate states would be invalid can land in one shot:
 2. Compute the post-batch spec in memory — parsed through the same claims
    model `debundle run` loads, so `members:`, `source_matches:`,
    `annotations:`, and `anonymous_statements:` in every module stay
-   claimed.
+   claimed. Moving a `source_matches[].bindings[]` entry carries its
+   structural template and claim note. Selecting only some bindings from a
+   claim splits the claim; move atomic siblings together in one batch when
+   the gate reports that a single move would split their source statement.
 3. Run the realizability gate on the post-batch spec.
 4. If invalid: print binding-pair blame, exit non-zero, **do not modify any
    file**.

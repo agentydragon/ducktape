@@ -106,6 +106,7 @@ def config(
     models: HarnessRoutes,
     action_federation: ActionFederationSettings | None = None,
     sandbox_service_grpc_channel_options: dict[str, int | str] | None = None,
+    history_service_grpc_channel_options: dict[str, int | str] | None = None,
 ) -> AppSettingsConfig:
     cfg = settings(
         namespace=namespace,
@@ -113,6 +114,7 @@ def config(
         thread_preset_codex_model=GPT6_LUNA_RESPONSES,
         action_federation=action_federation,
         sandbox_service_grpc_channel_options=sandbox_service_grpc_channel_options,
+        history_service_grpc_channel_options=history_service_grpc_channel_options,
         action_policy_sets=[*PUBLIC_CODER_ACTION_POLICY_SETS, GITHUB_IDENTITY_READS_SET, SSH_READS_SET],
         kubernetes_grants={
             "sandbox-tool-config": RoleBindingGrant(
