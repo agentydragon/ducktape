@@ -23,8 +23,8 @@ substitutes. The design it implements is [the ADR](../docs/adr_sandbox_proxy_gat
 ## Decision
 
 - An `EgressBinding` grants by existing and unexpired: creating one is the whole act of allowing,
-  and deleting it the whole act of taking that back. A binding names its subjects as namespaced
-  ServiceAccounts and lists `EgressPolicy` names. The same name in two namespaces is two subjects. A
+  and deleting it the whole act of taking that back. A binding names one subject, a namespaced
+  ServiceAccount, and lists `EgressPolicy` names. The same name in two namespaces is two subjects. A
   subject is every Pod running as that account, so bind only an account dedicated to one workload;
   the integration app gives each sandbox an account of its own, owned by it, so deleting the sandbox
   collects the account and the bindings naming it alike.

@@ -65,7 +65,7 @@ def _index(*, expires_at: datetime | None = None, policies: list[str] | None = N
     bound = EgressBinding(
         metadata=ObjectMeta(name="b", generation=1),
         spec=BindingSpec(
-            subjects=[CALLER], policies=policies if policies is not None else ["github"], expires_at=expires_at
+            subject=CALLER, policies=policies if policies is not None else ["github"], expires_at=expires_at
         ),
     )
     return Index(

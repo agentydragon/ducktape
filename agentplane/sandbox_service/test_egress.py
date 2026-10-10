@@ -84,23 +84,27 @@ async def test_a_like_named_account_in_another_namespace_is_a_different_subject(
     egress: EgressInventory, custom_objects: FakeCustomObjectsApi
 ) -> None:
     """A subject is a namespace and a name together: an account called "live" somewhere else is not
-    this sandbox, and a binding naming both is still this sandbox's."""
+    this sandbox."""
     _seed(custom_objects)
     custom_objects.objects[("egressbindings", "elsewhere-only")] = egress_binding(
         "elsewhere-only", subjects=[{"namespace": "agentplane-elsewhere", "name": "live"}], policies=["pypi"]
     )
-    custom_objects.objects[("egressbindings", "live-and-another")] = egress_binding(
-        "live-and-another",
-        subjects=[LIVE.model_dump(), {"namespace": NAMESPACE, "name": "test-workload-sa"}],
-        policies=["pypi"],
-    )
 
     names = [view.name for view in await egress.bindings_for(LIVE)]
-    assert "elsewhere-only" not in names
-    assert "live-and-another" in names
+    assert ("live-seeded" in names, "elsewhere-only" in names) == (True, False)
 
-    both = next(view for view in await egress.bindings_for(LIVE) if view.name == "live-and-another")
-    assert both.subjects == [LIVE, ServiceAccountRef(namespace=NAMESPACE, name="test-workload-sa")]
+
+async def test_a_binding_naming_its_subject_in_the_singular_form_is_listed_for_it(
+    egress: EgressInventory, custom_objects: FakeCustomObjectsApi
+) -> None:
+    _seed(custom_objects)
+    singular = egress_binding("live-singular", subjects=[LIVE.model_dump()], policies=["pypi"])
+    singular["spec"]["subject"] = singular["spec"].pop("subjects")[0]
+    custom_objects.objects[("egressbindings", "live-singular")] = singular
+
+    (view,) = [view for view in await egress.bindings_for(LIVE) if view.name == "live-singular"]
+    assert view.subjects == [LIVE]
+    assert "live-singular" not in [view.name for view in await egress.bindings_for(OTHER)]
 
 
 async def test_a_binding_view_carries_provenance_expiry_and_policies(

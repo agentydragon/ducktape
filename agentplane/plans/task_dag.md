@@ -434,6 +434,7 @@ flowchart LR
     KUBERNETES_RBAC_POLICY_BINDINGS --> MANAGED_SA_RBAC
     BOOTSTRAP_PROGRESS_CONTRACT[Candidate: asynchronous progress API]
     SANDBOX_IDLE_EXPIRY[Candidate: delete idle Sandboxes]
+    BINDING_SUBJECT_WRITERS[Candidate once readers are live: write EgressBinding spec.subject] -. writer image live on staging .-> BINDING_SUBJECTS_RETIRE[Blocked: drop spec.subjects]
 ```
 
 ### `PC_EGRESS_CREDENTIALS` — label public-coder's Action Service caller
@@ -500,11 +501,21 @@ cover invalid signatures. Close the remaining route-wiring uncertainty with an u
 request and a private-API request through the public hostname: both must be refused, without
 creating subscriptions or inbox entries. Record the result once; no exhaustive provider matrix.
 
-### `BINDING_SUBJECT_ARITY` — singular subject shape
+### `BINDING_SUBJECT_WRITERS` — write `EgressBinding.spec.subject`
 
-**Candidate.** Align the
-binding kinds on one explicit subject before adding multi-subject use. Preserve owner/replacement
-and authorization semantics; this cleanup does not authorize broader grants.
+**Candidate once the image whose readers accept `spec.subject` is live on staging.** Every
+`EgressBinding` reader takes one subject from `spec.subject` or the legacy one-entry
+`spec.subjects`, and the CRD admits exactly one of the two. Switch the writers to `subject`: the
+Sandbox Service's grant (`sandbox_service/egress.py`) and the cdk8s `EgressBinding` construct and
+its callers, regenerating manifests. Preserve owner/replacement and authorization semantics; aligning
+on one explicit subject does not authorize multi-subject use or broader grants.
+
+### `BINDING_SUBJECTS_RETIRE` — drop the legacy `spec.subjects`
+
+**Blocked until the writers' image is live on staging** and no stored binding still uses the
+legacy form. Remove `spec.subjects` and the CRD's exactly-one-form rule, the legacy decode in
+`egress/resources.py` and the `CLEANUP` markers naming it. The app API's `BindingView.subjects`
+list can turn singular in the same change.
 
 ### `BOOTSTRAP_PROGRESS_CONTRACT` — asynchronous start/status
 

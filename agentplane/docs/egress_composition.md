@@ -19,20 +19,17 @@ exclusion. The proxy that enforces the result is <../egress/SPEC.md>; the kinds 
 - **`EgressBinding.spec.policies`** is an array of policy names, `minItems: 1` and no upper bound,
   in precedence order. A binding may name many policies and a policy may be named by many
   bindings: n:m.
-- **`EgressBinding.spec.subjects`** is an array, `minItems: 1`, each item naming one ServiceAccount
-  by namespace and name. A binding may name many accounts and an account may be named by many
-  bindings: n:m. Every Pod running as an account is that subject, so the app gives each sandbox an
-  account of its own.
+- **`EgressBinding.spec.subject`** names one ServiceAccount by namespace and name; a binding in the
+  legacy form names it as the single entry of `spec.subjects`, and the CRD admits exactly one of the
+  two. A binding names one account and an account may be named by many bindings: 1:n. Every Pod
+  running as an account is that subject, so the app gives each sandbox an account of its own.
 
 A policy on its own grants nothing; a binding grants by existing and being unexpired.
 
-### The app writes only 1×N
+### A runtime grant is owned by its sandbox
 
-`EgressInventory.grant()` (<../app/egress.py>) hardcodes a single subject: it writes one `subjects`
-entry, the account that Sandbox runs as, and hangs an `ownerReference` on the Sandbox so deleting
-the sandbox garbage-collects the grant. Every binding created at runtime is therefore one subject by N policies, and the
-schema's multi-subject side is reachable only by a hand-written or Flux-applied binding.
-Multi-subject is a seed-time shape, and nothing in the runtime path produces or exercises one.
+`EgressInventory.grant()` (<../sandbox_service/egress.py>) names the account that Sandbox runs as
+and hangs an `ownerReference` on the Sandbox, so deleting the sandbox garbage-collects the grant.
 
 The object's name comes from `metadata.generateName` with the prefix `{sandbox}-`, so the API
 server assigns it and a sandbox can be granted any number of times; a name derived from the
@@ -58,9 +55,7 @@ kind: EgressBinding
 metadata:
   generateName: researcher-
 spec:
-  subjects:
-    - sandbox:
-        name: researcher
+  subject: { namespace: agentplane-staging, name: researcher }
   policies: [github-agentydragon-agent, open-internet]
 ```
 

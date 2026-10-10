@@ -183,7 +183,7 @@ def subject_bindings(index: Index, caller: ServiceAccountRef, now: datetime) -> 
         resolution
         for name in sorted(index.bindings)
         if (resolution := resolve_binding(index, index.bindings[name], now)).active
-        and caller in resolution.binding.spec.subjects
+        and resolution.binding.spec.subject == caller
     ]
 
 

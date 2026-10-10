@@ -123,17 +123,11 @@ def policy(name: str, *rules: Rule) -> EgressPolicy:
 
 
 def binding(
-    name: str,
-    *,
-    policies: list[str],
-    subjects: list[ServiceAccountRef] | None = None,
-    expires_at: datetime | None = None,
+    name: str, *, policies: list[str], subject: ServiceAccountRef = CALLER, expires_at: datetime | None = None
 ) -> EgressBinding:
     return EgressBinding(
         metadata=ObjectMeta(name=name, generation=3),
-        spec=BindingSpec(
-            subjects=subjects if subjects is not None else [CALLER], policies=policies, expires_at=expires_at
-        ),
+        spec=BindingSpec(subject=subject, policies=policies, expires_at=expires_at),
     )
 
 
@@ -267,9 +261,7 @@ CASES = [
         "binding for another sandbox",
         index(
             policies=[policy("github", GITHUB_RULE)],
-            bindings=[
-                binding("b", policies=["github"], subjects=[ServiceAccountRef(namespace=NAMESPACE, name="other")])
-            ],
+            bindings=[binding("b", policies=["github"], subject=ServiceAccountRef(namespace=NAMESPACE, name="other"))],
         ),
         request(),
         Denied(DenyReason.NO_BINDING),
@@ -370,7 +362,7 @@ def test_the_same_name_in_another_namespace_is_a_different_subject() -> None:
     """A subject is a namespace and a name together. The proxy serves workloads from more than one
     namespace, so a binding that matched on the name alone would reach across them."""
     bound = index(
-        policies=[policy("github", GITHUB_RULE)], bindings=[binding("b", policies=["github"], subjects=[CALLER])]
+        policies=[policy("github", GITHUB_RULE)], bindings=[binding("b", policies=["github"], subject=CALLER)]
     )
     elsewhere = ServiceAccountRef(namespace="somewhere-else", name=CALLER.name)
 
@@ -603,6 +595,32 @@ def test_binding_resolution(
 ) -> None:
     result = resolve_binding(index(policies=policies, bindings=[binding_]), binding_, NOW)
     assert (result.active, result.reason, len(result.policies)) == (status, reason, resolved)
+
+
+WIRE_SUBJECT = {"namespace": NAMESPACE, "name": "sb"}
+
+
+@pytest.mark.parametrize("form", [{"subject": WIRE_SUBJECT}, {"subjects": [WIRE_SUBJECT]}])
+def test_a_binding_reads_its_one_subject_from_either_wire_form(form: dict[str, object]) -> None:
+    spec = BindingSpec.model_validate({**form, "policies": ["github"]})
+    assert (spec.subject, spec.policies) == (CALLER, ["github"])
+
+
+@pytest.mark.parametrize(
+    "form",
+    [
+        {"subject": WIRE_SUBJECT, "subjects": [WIRE_SUBJECT]},
+        {"subjects": []},
+        {"subjects": [WIRE_SUBJECT, {"namespace": NAMESPACE, "name": "other"}]},
+        {},
+    ],
+    ids=["both-forms", "empty-list", "two-subjects", "neither-form"],
+)
+def test_a_binding_without_exactly_one_subject_does_not_parse(form: dict[str, object]) -> None:
+    """A legacy list of two is refused rather than read as one of its entries, which would silently
+    drop the other's grant."""
+    with pytest.raises(ValidationError):
+        BindingSpec.model_validate({**form, "policies": ["github"]})
 
 
 @pytest.mark.parametrize(

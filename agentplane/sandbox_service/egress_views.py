@@ -164,7 +164,7 @@ def matching_bindings(
         (
             binding_view(binding, resolved)
             for binding in map(EgressBinding.model_validate, bindings)
-            if subject in binding.spec.subjects
+            if binding.spec.subject == subject
         ),
         key=lambda view: view.name,
     )
@@ -212,7 +212,7 @@ def binding_view(binding: EgressBinding, policies: dict[str, PolicyView]) -> Bin
     return BindingView(
         name=binding.metadata.name,
         from_git=FLUX_KUSTOMIZATION_LABEL in binding.metadata.labels,
-        subjects=list(binding.spec.subjects),
+        subjects=[binding.spec.subject],
         expires_at=binding.spec.expires_at,
         policies=[policies[name] for name in binding.spec.policies if name in policies],
         missing_policies=[name for name in binding.spec.policies if name not in policies],
