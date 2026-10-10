@@ -56,6 +56,9 @@ local explanation per claimed binding. Use `--target-binding` to select one
 of the group's selector-local names. Anonymous entries retain exact `match`
 versus alpha-equivalent `source_match` semantics.
 
+The command parses the entire module YAML with the same schema as the pipeline;
+an unknown field anywhere in the file is an error.
+
 A flat spec can be addressed without compiling it:
 
 ```sh
@@ -63,6 +66,8 @@ debundle spec match-selector --source-file chunk.js --spec transform.yaml \
   --selector '#/logical_modules/app/limits/source_matches/0' \
   --statements 41..42 --explain --format text
 ```
+
+The flat YAML is parsed with the pipeline's flat-spec schema before selection.
 
 JSON Pointer escapes `/` as `~1` and `~` as `~0` within a chunk or module key.
 For tree specs, address the module YAML file directly; this command does not

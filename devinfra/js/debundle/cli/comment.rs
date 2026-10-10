@@ -13,8 +13,9 @@ use anyhow::{Context, Result, anyhow, bail};
 use clap::Args as ClapArgs;
 use serde::Serialize;
 use spec::{BindingAnnotation, LogicalModule, ModulePath};
+use spec_modules::read_module_file;
 
-use crate::binding::{read_module_doc, resolve_unambiguous};
+use crate::binding::resolve_unambiguous;
 use yaml_edit::write_yaml_atomic;
 
 /// Args for `debundle bindings comment <sym> [...]`.
@@ -187,7 +188,7 @@ pub fn apply_binding_comment(
     // matches) as `bindings assign` / `bindings rename`.
     let hit = resolve_unambiguous(modules_root, sym)?;
     let file = hit.file;
-    let mut doc = read_module_doc(&file)?;
+    let mut doc = read_module_file(&file)?;
     let name = hit.name.readable().unwrap_or_else(|| hit.name.minified());
     let current = doc.annotations.get(name).and_then(|a| a.comment.clone());
     let (action, comment, dirty) = edit_comment(current, mode)?;
@@ -236,7 +237,7 @@ pub fn apply_module_comment(
     if !file.exists() {
         bail!("module YAML not found: {}", file.display());
     }
-    let mut doc = read_module_doc(&file)?;
+    let mut doc = read_module_file(&file)?;
     let (action, comment, dirty) = edit_comment(doc.comment.clone(), mode)?;
     doc.comment = comment.clone();
     let action = persist_comment(&file, &doc, action, dirty, dry_run)?;

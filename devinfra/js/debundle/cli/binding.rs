@@ -26,8 +26,8 @@ use spec::{
     BindingAnnotation, LogicalModule, Member, ModulePath, SourceMatchBinding,
     SourceMatchBindingDetail, SourceMatchClaim, is_residual_module_path,
 };
-use spec_modules::{collect_module_files, module_path_from_file};
-use yaml_edit::{read_yaml, write_yaml_atomic};
+use spec_modules::{collect_module_files, module_path_from_file, read_module_file};
+use yaml_edit::write_yaml_atomic;
 
 use crate::edit_gate::{Gate, post_edit_spec_from_docs};
 use crate::outcome::{GateOutcome, MutationOutcome};
@@ -122,16 +122,10 @@ pub fn load_module_docs(modules_root: &Path) -> Result<ModuleDocs> {
     let mut docs = BTreeMap::new();
     for file in collect_module_files(modules_root)? {
         let module_path = module_path_from_file(&file, modules_root);
-        let doc = read_module_doc(&file)?;
+        let doc = read_module_file(&file)?;
         docs.insert(module_path, (file, doc));
     }
     Ok(docs)
-}
-
-/// Normalize empty YAML and parse the same schema the pipeline consumes.
-pub(crate) fn read_module_doc(file: &Path) -> Result<LogicalModule> {
-    serde_yaml::from_value(read_yaml(file)?)
-        .with_context(|| format!("parsing module {}", file.display()))
 }
 
 /// Compare typed semantics so omitted defaults do not rewrite unrelated files.
@@ -286,7 +280,7 @@ pub fn run_bindings_list(
     let mut entries: Vec<BindingEntry> = Vec::new();
     for file in collect_module_files(modules_root)? {
         let module_path = module_path_from_file(&file, modules_root);
-        let doc = read_module_doc(&file)?;
+        let doc = read_module_file(&file)?;
         let bindings = binding_matches_in_doc(&file, &module_path, &doc);
         let orphan = bindings.len() == 1;
         entries.extend(bindings.into_iter().map(|binding| BindingEntry {

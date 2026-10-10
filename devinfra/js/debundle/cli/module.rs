@@ -30,7 +30,8 @@ use anyhow::{Context, Result, anyhow, bail};
 use clap::Args as ClapArgs;
 use peel::OutputFormat;
 use spec::LogicalModule;
-use yaml_edit::apply_yaml_edit;
+use spec_modules::read_module_file as read_module;
+use yaml_edit::write_yaml_atomic;
 
 use crate::edit_gate::{GraphEditArgs, PostEditSpec, post_delete_spec, post_edit_spec_from_docs};
 use crate::outcome::{GateOutcome, MutationOutcome, emit_gate_rejection_json, print_outcome_json};
@@ -286,7 +287,7 @@ impl MergePlan {
             .with_context(|| format!("re-encoding merged {}", target.display()))?;
         // Retain write-before-delete and the shared atomic per-file writer.
         // This does not promise a crash-atomic multi-file transaction.
-        apply_yaml_edit(target, &doc, false)?;
+        write_yaml_atomic(target, &doc)?;
         for src in &self.summary.merged_sources {
             fs::remove_file(src)
                 .with_context(|| format!("deleting merged source {}", src.display()))?;
@@ -555,13 +556,6 @@ fn resolve_module_file(root: &Path, path: &Path) -> PathBuf {
     } else {
         resolved
     }
-}
-
-/// Read a module YAML file into the typed [`LogicalModule`]. `deny_unknown_fields`
-/// makes this reject malformed modules up front — the same schema the pipeline loads.
-fn read_module(path: &Path) -> Result<LogicalModule> {
-    let text = fs::read_to_string(path).with_context(|| format!("reading {}", path.display()))?;
-    serde_yaml::from_str(&text).with_context(|| format!("parsing {}", path.display()))
 }
 
 #[derive(Default)]

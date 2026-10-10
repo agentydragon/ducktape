@@ -8,6 +8,7 @@
 //!   non-emitting binding edits.
 //! * Deserialize each file's body via the canonical `ModuleFile`
 //!   shape (members + anonymous statements).
+//! * Deserialize flat transform specs through their canonical typed schema.
 //! * Ask path-level questions like "what module path does this file
 //!   represent?".
 //!
@@ -24,7 +25,7 @@ use serde::Deserialize;
 
 use spec::{
     AnonymousStatementSelector, BindingSourceKind, Member, MemberSelectorSpec, ModulePath,
-    SourceMatchClaim, is_residual_module_path,
+    SourceMatchClaim, TransformSpec, is_residual_module_path,
 };
 
 /// The on-disk module and the logical module share one canonical schema.
@@ -112,6 +113,12 @@ pub fn read_module_file(path: &Path) -> Result<ModuleFile> {
         &fs::read_to_string(path).with_context(|| format!("reading {}", path.display()))?,
     )
     .with_context(|| format!("parsing {}", path.display()))
+}
+
+/// Read a flat transform spec with the same typed schema used by the pipeline.
+pub fn read_flat_transform_spec(path: &Path) -> Result<TransformSpec> {
+    serde_yaml::from_slice(&fs::read(path).with_context(|| format!("reading {}", path.display()))?)
+        .with_context(|| format!("parsing {}", path.display()))
 }
 
 fn read_binding_patches_file(path: &Path) -> Result<BindingPatchesFile> {

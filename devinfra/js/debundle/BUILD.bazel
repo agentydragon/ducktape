@@ -906,6 +906,7 @@ rust_library(
         ":prune_dead_imports",
         ":prune_module_exports",
         ":spec",
+        ":spec_modules",
         ":spec_tree",
         ":validate_emitted_exports",
         ":vendor",

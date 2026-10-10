@@ -4,8 +4,9 @@
 //! holed.
 
 use std::path::PathBuf;
+use std::process::Command;
 
-use debundle_e2e_support::{run_match_selector, write_text_file};
+use debundle_e2e_support::{debundler_path, run_match_selector, write_text_file};
 use serde_json::{Value, json};
 
 /// The one outcome a match-selector report carries.
@@ -32,6 +33,76 @@ fn fixture() -> (tempfile::TempDir, PathBuf) {
     let source = dir.path().join("app.js");
     write_text_file(&source, CHUNK);
     (dir, source)
+}
+
+#[test]
+fn addressed_selectors_use_the_full_typed_spec_schema() {
+    let (dir, source) = fixture();
+    let module = dir.path().join("module.yaml");
+    let claim =
+        "source_matches: [{match: 'const value = renderPanel(\"left\");', bindings: [value]}]";
+    write_text_file(&module, claim);
+    let flat = dir.path().join("flat.yaml");
+    write_text_file(
+        &flat,
+        &format!(
+            "inputs: {{input_root: ., js_list_path: files.txt}}\nlogical_modules:\n  app:\n    ui/left: {{{claim}}}\n"
+        ),
+    );
+
+    let run = |selector: &str, flat_spec: bool| {
+        let mut command = Command::new(debundler_path());
+        command
+            .args(["spec", "match-selector", "--source-file"])
+            .arg(&source)
+            .args([
+                "--selector",
+                selector,
+                "--statements",
+                "0..0",
+                "--explain",
+                "--format",
+                "json",
+            ]);
+        if flat_spec {
+            command.arg("--spec").arg(&flat);
+        }
+        command.output().unwrap()
+    };
+
+    let module_selector = format!("{}#/source_matches/0", module.display());
+    let module_result = run(&module_selector, false);
+    assert!(
+        module_result.status.success(),
+        "{}",
+        String::from_utf8_lossy(&module_result.stderr)
+    );
+    let flat_result = run("#/logical_modules/app/ui~1left/source_matches/0", true);
+    assert!(
+        flat_result.status.success(),
+        "{}",
+        String::from_utf8_lossy(&flat_result.stderr)
+    );
+
+    write_text_file(&module, &format!("{claim}\nunknown_field: true\n"));
+    let invalid_module = run(&module_selector, false);
+    assert!(!invalid_module.status.success());
+    assert!(
+        String::from_utf8_lossy(&invalid_module.stderr).contains("unknown field `unknown_field`")
+    );
+
+    write_text_file(
+        &flat,
+        &format!(
+            "{}\nunknown_field: true\n",
+            std::fs::read_to_string(&flat).unwrap()
+        ),
+    );
+    let invalid_flat = run("#/logical_modules/app/ui~1left/source_matches/0", true);
+    assert!(!invalid_flat.status.success());
+    assert!(
+        String::from_utf8_lossy(&invalid_flat.stderr).contains("unknown field `unknown_field`")
+    );
 }
 
 #[test]

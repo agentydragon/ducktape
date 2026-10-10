@@ -5,9 +5,8 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context, Result, bail, ensure};
 use serde::Serialize;
 use source_match::ExplainRangeKind;
-use spec::{
-    AnonymousStatement, AnonymousStatementSelector, SourceMatchClaim, SourceMatchIdentifierMode,
-};
+use spec::{AnonymousStatementSelector, SourceMatchIdentifierMode};
+use spec_modules::{read_flat_transform_spec, read_module_file};
 
 #[derive(Debug, Serialize)]
 pub(super) struct SelectedSelector {
@@ -70,32 +69,45 @@ pub(super) fn load_selectors(
     };
     let tokens = pointer.split('/').collect::<Vec<_>>();
     ensure!(
-        tokens.len() >= 3 && tokens[0].is_empty(),
+        tokens.first() == Some(&""),
         "selector address must be a JSON Pointer ending in /source_matches/INDEX or /anonymous_statements/INDEX"
     );
+    let module = if spec_file.is_some() {
+        ensure!(
+            tokens.len() == 6 && tokens[1] == "logical_modules",
+            "flat spec selector address must be /logical_modules/CHUNK/MODULE/source_matches/INDEX or /anonymous_statements/INDEX"
+        );
+        let chunk = decode_pointer_token(tokens[2])?;
+        let module_path = decode_pointer_token(tokens[3])?;
+        read_flat_transform_spec(&file)?
+            .logical_modules
+            .get(&chunk)
+            .and_then(|modules| modules.get(&module_path))
+            .cloned()
+            .with_context(|| {
+                format!(
+                    "selector address {}#{pointer} does not exist",
+                    file.display()
+                )
+            })?
+    } else {
+        ensure!(
+            tokens.len() == 3,
+            "module selector address must be /source_matches/INDEX or /anonymous_statements/INDEX"
+        );
+        read_module_file(&file)?
+    };
     let collection = tokens[tokens.len() - 2];
-    let index = tokens[tokens.len() - 1];
-    ensure!(
-        index.parse::<usize>().is_ok(),
-        "selector entry index must be a non-negative integer"
-    );
-    let text =
-        std::fs::read_to_string(&file).with_context(|| format!("reading {}", file.display()))?;
-    // The document may be a module file or a flat transform spec. Only the
-    // selected entry is interpreted as a typed spec object.
-    let document: serde_json::Value =
-        serde_yaml::from_str(&text).with_context(|| format!("parsing {}", file.display()))?;
-    let value = document.pointer(pointer).with_context(|| {
-        format!(
-            "selector address {}#{pointer} does not exist",
-            file.display()
-        )
-    })?;
+    let index = tokens[tokens.len() - 1]
+        .parse::<usize>()
+        .context("selector entry index must be a non-negative integer")?;
     let origin = format!("{}#{pointer}", file.display());
     match collection {
         "source_matches" => {
-            let claim: SourceMatchClaim = serde_json::from_value(value.clone())
-                .with_context(|| format!("reading source-match entry {origin}"))?;
+            let claim = module
+                .source_matches
+                .get(index)
+                .with_context(|| format!("selector address {origin} does not exist"))?;
             let members = source_match::source_match_claim_member_selectors(&origin, &claim)?;
             if let Some(target) = target_binding {
                 ensure!(
@@ -127,8 +139,10 @@ pub(super) fn load_selectors(
                 target_binding.is_none(),
                 "--target-binding cannot override an anonymous spec entry"
             );
-            let statement: AnonymousStatement = serde_json::from_value(value.clone())
-                .with_context(|| format!("reading anonymous-statement entry {origin}"))?;
+            let statement = module
+                .anonymous_statements
+                .get(index)
+                .with_context(|| format!("selector address {origin} does not exist"))?;
             let selector = statement.selector()?;
             Ok(vec![SelectedSelector {
                 origin,
@@ -140,4 +154,21 @@ pub(super) fn load_selectors(
         }
         _ => bail!("selector address must name a source_matches or anonymous_statements entry"),
     }
+}
+
+fn decode_pointer_token(token: &str) -> Result<String> {
+    let mut decoded = String::new();
+    let mut chars = token.chars();
+    while let Some(ch) = chars.next() {
+        if ch == '~' {
+            match chars.next() {
+                Some('0') => decoded.push('~'),
+                Some('1') => decoded.push('/'),
+                _ => bail!("invalid JSON Pointer escape in `{token}`"),
+            }
+        } else {
+            decoded.push(ch);
+        }
+    }
+    Ok(decoded)
 }

@@ -49,6 +49,37 @@ fn write_case(root: &Path, case: &MinimizedSelectorCase) -> (PathBuf, PathBuf) {
     (modules, source)
 }
 
+#[test]
+fn synthesizer_rejects_invalid_module_yaml() {
+    let dir = tempfile::tempdir().unwrap();
+    let source = dir.path().join("app.js");
+    write_text_file(&source, "const value = 1;");
+    let modules = dir.path().join("modules");
+    for (body, diagnostic) in [
+        ("null\n", "invalid type"),
+        (
+            "members: []\nunknown_field: true\n",
+            "unknown field `unknown_field`",
+        ),
+    ] {
+        write_text_file(&modules.join("bad.yaml"), body);
+        let output = run_debundle(&[
+            "spec",
+            "synthesize-selectors",
+            "--modules",
+            modules.to_str().unwrap(),
+            "--source-file",
+            source.to_str().unwrap(),
+            "--item",
+            "bad:value",
+        ]);
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(!output.status.success(), "accepted {body:?}");
+        assert!(stderr.contains("bad.yaml"), "{stderr}");
+        assert!(stderr.contains(diagnostic), "{stderr}");
+    }
+}
+
 fn run_case(case: &MinimizedSelectorCase) {
     let dir = tempfile::tempdir().unwrap();
     let (modules, source) = write_case(dir.path(), case);

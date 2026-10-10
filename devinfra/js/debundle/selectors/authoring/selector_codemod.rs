@@ -24,10 +24,10 @@ use serde_yaml::Value;
 use shape_index::ShapeIndex;
 use source_match::{MemberBindingMatch, ParsedSourceMatchSelector};
 use spec::{
-    SourceMatch, SourceMatchBinding, SourceMatchBindingDetail, SourceMatchClaim,
+    LogicalModule, SourceMatch, SourceMatchBinding, SourceMatchBindingDetail, SourceMatchClaim,
     SourceMatchIdentifierMode,
 };
-use spec_modules::{collect_module_files, is_module_yaml, module_path_from_file};
+use spec_modules::{collect_module_files, is_module_yaml, module_path_from_file, read_module_file};
 use swc_common::DUMMY_SP;
 use swc_ecma_ast::*;
 use swc_ecma_visit::{Visit, VisitMut, VisitMutWith, VisitWith};
@@ -284,24 +284,11 @@ fn run_selector_codemod_impl(
         summary.modules_scanned += 1;
         let candidate_start = candidates.len();
 
-        let mut doc = yaml_edit::read_yaml(&file)?;
+        let mut doc = serde_yaml::to_value(read_module_file(&file)?)?;
         let mut file_changed = false;
-        let Value::Mapping(root) = &mut doc else {
-            candidates.push(skipped_candidate(
-                &module,
-                &file,
-                0,
-                None,
-                "module YAML is not a mapping",
-            ));
-            on_module(&SelectorCodemodModuleResult {
-                module: &module,
-                file: file.display().to_string(),
-                candidates: &candidates[candidate_start..],
-                file_written: false,
-            })?;
-            continue;
-        };
+        let root = doc
+            .as_mapping_mut()
+            .expect("LogicalModule serializes as a YAML mapping");
         let selected_exports = selected_item_exports.get(&module);
         if !selected_item_exports.is_empty() && selected_exports.is_none() {
             continue;
@@ -333,8 +320,14 @@ fn run_selector_codemod_impl(
             candidates.push(candidate);
         }
 
-        let file_written =
-            config.apply && file_changed && yaml_edit::apply_yaml_edit(&file, &doc, false)?;
+        let file_written = if config.apply && file_changed {
+            let rewritten: LogicalModule = serde_yaml::from_value(doc)
+                .with_context(|| format!("validating rewritten {}", file.display()))?;
+            yaml_edit::write_yaml_atomic(&file, &serde_yaml::to_value(rewritten)?)?;
+            true
+        } else {
+            false
+        };
         if file_written {
             summary.files_written.push(file.display().to_string());
         }

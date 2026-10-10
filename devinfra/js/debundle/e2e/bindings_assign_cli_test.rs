@@ -10,6 +10,30 @@ fn module(fixture: &GraphFixture, path: &str) -> Value {
 }
 
 #[test]
+fn module_readers_agree_on_invalid_yaml() {
+    let fixture = GraphFixture::new(
+        "const a = 1; console.log(a);",
+        &[("a.yaml", "members: [{selector: {binding: {name: a}}}]")],
+    );
+    fs::write(fixture.modules.join("a.yaml"), "null\n").unwrap();
+
+    for args in [
+        &["bindings", "list"][..],
+        &["spec", "selector-debt"][..],
+        &["modules", "merge", "--target", "b", "a"][..],
+    ] {
+        let output = fixture.command(args);
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(
+            !output.status.success(),
+            "{args:?} accepted null module YAML"
+        );
+        assert!(stderr.contains("a.yaml"), "{args:?}: {stderr}");
+        assert!(stderr.contains("invalid type"), "{args:?}: {stderr}");
+    }
+}
+
+#[test]
 fn list_filters_cover_members_and_source_match_bindings() {
     let fixture = GraphFixture::new(
         "const a = 1; const b = 2; const c = 3; console.log(a + b + c);",

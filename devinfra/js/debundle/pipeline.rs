@@ -19,6 +19,7 @@ use prepare_chunks::prepare_js_chunks;
 use prune_dead_imports::prune_dead_import_specifiers;
 use prune_module_exports::prune_unimported_module_exports;
 use spec::TransformSpec;
+use spec_modules::read_flat_transform_spec;
 use spec_tree::{CompileSpecTreeOptions, compile_spec_tree};
 use validate_emitted_exports::validate_emitted_exports;
 use vendor::{
@@ -430,15 +431,9 @@ pub fn run_transform_cli(cli: &TransformCli, options: TransformRunOptions) -> Re
 
 fn load_transform_spec_source(source: &TransformSpecSource) -> Result<TransformSpec> {
     match source {
-        TransformSpecSource::Flat { path } => load_flat_transform_spec(path),
+        TransformSpecSource::Flat { path } => read_flat_transform_spec(path),
         TransformSpecSource::Tree(options) => compile_spec_tree(options),
     }
-}
-
-fn load_flat_transform_spec(spec_path: &Path) -> Result<TransformSpec> {
-    let raw = fs::read(spec_path).with_context(|| format!("reading {}", spec_path.display()))?;
-    serde_yaml::from_slice(&raw)
-        .with_context(|| format!("Failed to parse {} as YAML", spec_path.display()))
 }
 
 fn validate_transform_spec(spec: &TransformSpec) -> Result<()> {
