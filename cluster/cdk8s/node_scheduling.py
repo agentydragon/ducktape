@@ -48,3 +48,4 @@ class Placement:
 
 HIL_OVH = Placement(node_selector=HIL_OVH_NODE_SELECTOR)
 OPTIPLEX = Placement(node_selector={"kubernetes.io/hostname": "optiplex"})
+WYRM2 = Placement(node_selector={"kubernetes.io/hostname": "wyrm2"})

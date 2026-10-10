@@ -6,7 +6,7 @@ Hand-written beside the generated output: `grafana-admin-password.sops.yaml`.
 
 from __future__ import annotations
 
-from cdk8s import App, Chart, JsonPatch
+from cdk8s import ApiObjectMetadata, App, Chart, JsonPatch
 from cdk8s_plus_34 import k8s
 from flux_helm.io.fluxcd.toolkit.helm import (
     HelmReleaseSpecInstall,
@@ -17,6 +17,18 @@ from flux_helm.io.fluxcd.toolkit.helm import (
     HelmReleaseSpecUpgradeRemediation,
 )
 from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecHealthChecks
+from prometheus_operator_prometheus_crds.com.coreos.monitoring import (
+    Prometheus,
+    PrometheusSpec,
+    PrometheusSpecResources,
+    PrometheusSpecResourcesLimits,
+    PrometheusSpecResourcesRequests,
+    PrometheusSpecStorage,
+    PrometheusSpecStorageVolumeClaimTemplate,
+    PrometheusSpecStorageVolumeClaimTemplateSpec,
+    PrometheusSpecStorageVolumeClaimTemplateSpecResources,
+    PrometheusSpecStorageVolumeClaimTemplateSpecResourcesRequests,
+)
 
 from cluster.cdk8s import cilium, node_scheduling
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
@@ -28,6 +40,12 @@ OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/monitoring"
 _NAMESPACE = "monitoring"
 _HELM_REPOSITORY = "prometheus-community"
 _PROMETHEUS_PORT = 9090
+# The home-island store: a receive-only Prometheus on a home node. Home networking metrics are
+# written here as well as to Mimir, so they stay readable at home through a WAN outage and are
+# kept however long it lasts.
+HOME_PROMETHEUS_NAME = "home-island"
+# prometheus-operator's governing Service for every Prometheus in the namespace; this is the only one.
+HOME_PROMETHEUS_URL = f"http://prometheus-operated.{_NAMESPACE}.svc.cluster.local:{_PROMETHEUS_PORT}"
 
 
 def _flux_state_metrics(
@@ -494,8 +512,9 @@ def chart(app: App) -> Chart:
             pod_selector=k8s.LabelSelector(match_labels={"app.kubernetes.io/name": "prometheus"}),
             policy_types=["Ingress"],
             ingress=[
-                # Grafana: datasource queries for dashboards
-                _prometheus_ingress_rule(_NAMESPACE, {"app.kubernetes.io/name": "grafana"}),
+                # Grafana: datasource queries for dashboards. grafana-operator labels its pods
+                # `app: grafana`, not `app.kubernetes.io/name`.
+                _prometheus_ingress_rule(_NAMESPACE, {"app": "grafana"}),
                 # Alertmanager: Prometheus pushes alerts to Alertmanager; allow return traffic
                 _prometheus_ingress_rule(_NAMESPACE, {"app.kubernetes.io/name": "alertmanager"}),
                 # Gatus: health check probes
@@ -503,7 +522,46 @@ def chart(app: App) -> Chart:
             ],
         ),
     )
+    _home_prometheus(chart)
     return chart
+
+
+def _home_prometheus(chart: Chart) -> None:
+    Prometheus(
+        chart,
+        "home-prometheus",
+        metadata=ApiObjectMetadata(name=HOME_PROMETHEUS_NAME, namespace=_NAMESPACE),
+        spec=PrometheusSpec(
+            # Receive-only: no monitor or rule selectors, so it scrapes and evaluates nothing.
+            enable_remote_write_receiver=True,
+            retention="30d",
+            retention_size="8GB",
+            node_selector=node_scheduling.WYRM2.node_selector,
+            storage=PrometheusSpecStorage(
+                volume_claim_template=PrometheusSpecStorageVolumeClaimTemplate(
+                    spec=PrometheusSpecStorageVolumeClaimTemplateSpec(
+                        # Not wyrm2's root disk, which has hit ephemeral-storage evictions.
+                        storage_class_name="lvm-proxmox-ssd",
+                        access_modes=["ReadWriteOnce"],
+                        resources=PrometheusSpecStorageVolumeClaimTemplateSpecResources(
+                            requests={
+                                "storage": PrometheusSpecStorageVolumeClaimTemplateSpecResourcesRequests.from_string(
+                                    "10Gi"
+                                )
+                            }
+                        ),
+                    )
+                )
+            ),
+            resources=PrometheusSpecResources(
+                requests={
+                    "cpu": PrometheusSpecResourcesRequests.from_string("20m"),
+                    "memory": PrometheusSpecResourcesRequests.from_string("256Mi"),
+                },
+                limits={"memory": PrometheusSpecResourcesLimits.from_string("1Gi")},
+            ),
+        ),
+    )
 
 
 def monitoring_stack(

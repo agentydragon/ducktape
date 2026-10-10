@@ -5,6 +5,7 @@
 # gazelle:resolve py prometheus_operator_crds //cluster/cdk8s/providers/prometheus_operator:servicemonitor
 # gazelle:resolve py prometheus_operator_podmonitor_crds //cluster/cdk8s/providers/prometheus_operator:podmonitor
 # gazelle:resolve py prometheus_operator_prometheusrule_crds //cluster/cdk8s/providers/prometheus_operator:prometheusrule
+# gazelle:resolve py prometheus_operator_prometheus_crds //cluster/cdk8s/providers/prometheus_operator:prometheus
 # gazelle:resolve py cilium_crds //cluster/cdk8s/providers/cilium:ciliumnetworkpolicy
 # gazelle:resolve py cnpg_cluster_crds //cluster/cdk8s/providers/cnpg:cluster
 # gazelle:resolve py gateway_api_crds //cluster/cdk8s/providers/gateway_api:httproute
@@ -104,6 +105,7 @@ py_library(
         "//cluster/cdk8s:node_scheduling",
         "//cluster/cdk8s/providers/flux:helmrelease",
         "//cluster/cdk8s/providers/flux:kustomization",
+        "//cluster/cdk8s/providers/prometheus_operator:prometheus",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
     ],
@@ -201,6 +203,7 @@ py_library(
     ],
     deps = [
         ":mimir",
+        ":stack",
         "//cluster/cdk8s:cnpg",
         "//cluster/cdk8s:flux",
         "//cluster/cdk8s:gateway",

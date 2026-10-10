@@ -33,7 +33,7 @@ from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomizat
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.grafana_dashboards import DashboardFile
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
-from cluster.cdk8s.monitoring import mimir
+from cluster.cdk8s.monitoring import mimir, stack
 from cluster.cdk8s.providers.grafana_operator.grafana import Grafana
 from cluster.cdk8s.providers.grafana_operator.grafana_dashboard import GrafanaDashboard
 from cluster.cdk8s.providers.grafana_operator.grafana_datasource import GrafanaDatasource
@@ -268,6 +268,19 @@ def _datasources(chart: Chart) -> None:
                     "filterBySpanID": False,
                 },
             },
+        ),
+    )
+    _datasource(
+        chart,
+        "home-island",
+        GrafanaDatasourceSpecDatasource(
+            name="Home island (Prometheus)",
+            uid="home-island",
+            type="prometheus",
+            access="proxy",
+            url=stack.HOME_PROMETHEUS_URL,
+            is_default=False,
+            editable=True,
         ),
     )
     # The Alertmanager that Mimir's ruler sends to: its alert groups and silences in

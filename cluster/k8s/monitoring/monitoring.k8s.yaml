@@ -412,7 +412,7 @@ spec:
               kubernetes.io/metadata.name: monitoring
           podSelector:
             matchLabels:
-              app.kubernetes.io/name: grafana
+              app: grafana
       ports:
         - port: 9090
           protocol: TCP
@@ -441,3 +441,30 @@ spec:
       app.kubernetes.io/name: prometheus
   policyTypes:
     - Ingress
+---
+apiVersion: monitoring.coreos.com/v1
+kind: Prometheus
+metadata:
+  name: home-island
+  namespace: monitoring
+spec:
+  enableRemoteWriteReceiver: true
+  nodeSelector:
+    kubernetes.io/hostname: wyrm2
+  resources:
+    limits:
+      memory: 1Gi
+    requests:
+      cpu: 20m
+      memory: 256Mi
+  retention: 30d
+  retentionSize: 8GB
+  storage:
+    volumeClaimTemplate:
+      spec:
+        accessModes:
+          - ReadWriteOnce
+        resources:
+          requests:
+            storage: 10Gi
+        storageClassName: lvm-proxmox-ssd

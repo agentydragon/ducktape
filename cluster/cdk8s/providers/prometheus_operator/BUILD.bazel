@@ -2,6 +2,7 @@
 # gazelle:resolve py prometheus_operator_crds //cluster/cdk8s/providers/prometheus_operator:servicemonitor
 # gazelle:resolve py prometheus_operator_podmonitor_crds //cluster/cdk8s/providers/prometheus_operator:podmonitor
 # gazelle:resolve py prometheus_operator_prometheusrule_crds //cluster/cdk8s/providers/prometheus_operator:prometheusrule
+# gazelle:resolve py prometheus_operator_prometheus_crds //cluster/cdk8s/providers/prometheus_operator:prometheus
 
 load("//devinfra/js:cdk8s_import.bzl", "cdk8s_import")
 load("//devinfra/python:defs.bzl", "py_library", "py_test")
@@ -18,6 +19,14 @@ cdk8s_import(
     name = "podmonitor",
     crd = "@prometheus_operator_podmonitor_crd//file",
     module_name = "prometheus_operator_podmonitor_crds",
+    module_path = "com/coreos/monitoring",
+    visibility = ["//cluster/cdk8s:__subpackages__"],
+)
+
+cdk8s_import(
+    name = "prometheus",
+    crd = "@prometheus_operator_prometheus_crd//file",
+    module_name = "prometheus_operator_prometheus_crds",
     module_path = "com/coreos/monitoring",
     visibility = ["//cluster/cdk8s:__subpackages__"],
 )

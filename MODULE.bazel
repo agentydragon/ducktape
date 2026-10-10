@@ -976,6 +976,13 @@ http_file(
 )
 
 http_file(
+    name = "prometheus_operator_prometheus_crd",
+    downloaded_file_path = "monitoring.coreos.com_prometheuses.yaml",
+    sha256 = "4f581daffb3e9e5d4db8f5caaf8639ea9ee6e2eed233986bdb96c7762972f456",
+    urls = ["https://raw.githubusercontent.com/prometheus-operator/prometheus-operator/v0.94.0/example/prometheus-operator-crd/monitoring.coreos.com_prometheuses.yaml"],
+)
+
+http_file(
     name = "prometheus_operator_podmonitor_crd",
     downloaded_file_path = "monitoring.coreos.com_podmonitors.yaml",
     sha256 = "96fcdcd7f9b4e3f37d8fd1e0848d3cfd25de6691ca8412c4f5db294027574242",

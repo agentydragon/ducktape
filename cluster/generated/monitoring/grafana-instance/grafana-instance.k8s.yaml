@@ -189,6 +189,24 @@ spec:
 apiVersion: grafana.integreatly.org/v1beta1
 kind: GrafanaDatasource
 metadata:
+  name: home-island
+  namespace: monitoring
+spec:
+  datasource:
+    access: proxy
+    editable: true
+    isDefault: false
+    name: Home island (Prometheus)
+    type: prometheus
+    uid: home-island
+    url: http://prometheus-operated.monitoring.svc.cluster.local:9090
+  instanceSelector:
+    matchLabels:
+      dashboards: grafana
+---
+apiVersion: grafana.integreatly.org/v1beta1
+kind: GrafanaDatasource
+metadata:
   name: alertmanager
   namespace: monitoring
 spec:
