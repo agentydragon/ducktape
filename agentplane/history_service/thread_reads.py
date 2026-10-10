@@ -12,6 +12,8 @@ from agentplane.sandbox_service.session_history.store import HistoryNotFoundErro
 from agentplane.thread_fold.models import ThreadCheckpoint, ThreadEntity, ThreadPayloadChunk, ThreadPayloadManifest
 from agentplane.thread_fold.views import ThreadEntityView
 
+# gazelle:include_dep @pypi//protobuf
+
 MAX_ENTITIES = 200
 MAX_CHUNKS = 64
 
