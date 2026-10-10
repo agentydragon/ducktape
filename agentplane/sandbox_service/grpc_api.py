@@ -85,7 +85,7 @@ class Resources:
 
     async def authenticate_history_reader(self, context: grpc.aio.ServicerContext) -> None:
         # A public Session UUID is not itself authority. Notifications and future
-        # agent callers admitted for lifecycle may not read transcripts or the Session feed.
+        # agent callers admitted for lifecycle may not read transcripts.
         if await self.authenticate(context) not in self.history_reader_accounts:
             await context.abort(grpc.StatusCode.PERMISSION_DENIED, "session history reader not allowed")
 
@@ -548,7 +548,8 @@ class SandboxService(protocol_pb2_grpc.SandboxServiceServicer):
     ) -> None:
         async with errors(context):
             async with asyncio.timeout(self.resources.admission_timeout_s):
-                await self.resources.authenticate_history_reader(context)
+                # Any allowed service caller may watch; the feed carries no transcript.
+                await self.resources.authenticate(context)
                 if self.resources.session_changes is None:
                     raise DestinationUnavailableError("Session change notifications not configured")
                 history, changes = self.history(), self.resources.session_changes

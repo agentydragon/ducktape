@@ -40,7 +40,7 @@ service SandboxService {
   rpc ReadSessionEvents(ReadSessionEventsRequest) returns (ReadSessionEventsResponse);
   // Same reader authorization; chronological metadata without transmitting native payloads.
   rpc ReadSessionObservations(ReadSessionObservationsRequest) returns (ReadSessionObservationsResponse);
-  // Same reader authorization. Every Session, including those of deleted Sandboxes, in the
+  // Any allowed service caller. Every Session, including those of deleted Sandboxes, in the
   // order of each one's latest change, then each later change as it commits.
   rpc WatchSessions(WatchSessionsRequest) returns (stream WatchSessionsResponse);
 }

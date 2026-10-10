@@ -1009,13 +1009,7 @@ async def test_watch_sessions_resumes_after_disconnect_and_wakes_on_other_writer
         sandbox_uid=UUID(SANDBOX_UID),
         runner_session_id=f"r-{current_id}",
     )
-    configured = replace(
-        resources,
-        history=store,
-        session_changes=session_changes,
-        history_reader_accounts=frozenset({OWNER}),
-        follow_lease_s=2,
-    )
+    configured = replace(resources, history=store, session_changes=session_changes, follow_lease_s=2)
     async with service_client(configured, token_file) as remote:
         first_call = remote.stub.WatchSessions(
             protocol_pb2.WatchSessionsRequest(), metadata=await remote.metadata(), timeout=10
@@ -1052,7 +1046,7 @@ async def test_watch_sessions_resumes_after_disconnect_and_wakes_on_other_writer
         assert await resumed.code() == grpc.StatusCode.OK
 
 
-async def test_watch_sessions_requires_history_reader(
+async def test_watch_sessions_requires_allowed_caller(
     resources: Resources, token_file: Path, engine: AsyncEngine, session_changes: SessionChanges
 ) -> None:
     await Store(engine).open(
@@ -1060,10 +1054,15 @@ async def test_watch_sessions_requires_history_reader(
         sandbox_namespace=SANDBOX_NAMESPACE,
         sandbox_name=SANDBOX,
         sandbox_uid=UUID(SANDBOX_UID),
-        runner_session_id="unreadable-runner",
+        runner_session_id="unwatchable-runner",
     )
-    # OWNER is an allowed service caller but not a history reader.
-    configured = replace(resources, history=Store(engine), session_changes=session_changes)
+    # The token authenticates OWNER, which this configuration does not allow as a service caller.
+    configured = replace(
+        resources,
+        history=Store(engine),
+        session_changes=session_changes,
+        caller_accounts=frozenset({ServiceAccountRef(namespace=SANDBOX_NAMESPACE, name="allowed-service")}),
+    )
     async with service_client(configured, token_file) as remote:
         call = remote.stub.WatchSessions(protocol_pb2.WatchSessionsRequest(), metadata=await remote.metadata())
         with pytest.raises(grpc.aio.AioRpcError) as denied:
