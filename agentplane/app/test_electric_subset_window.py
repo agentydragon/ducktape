@@ -23,11 +23,11 @@ from agentplane.app.testing.electric_service import electric_service
 from agentplane.app.testing.history import ProjectedHistory as Ingestion, SeededEventLogStore as EventLogStore
 from agentplane.app.testing.history_service import HistoryService
 from agentplane.app.testing.replication_source import SANDBOX, SESSION, ReplicationSource
-from agentplane.app.threads.events.projection_lease import ProjectionLease
-from agentplane.app.threads.models import ThreadEntity
-from agentplane.app.threads.view.recording import THREAD_FOLD_EPOCH
 from agentplane.history_service.client import HistoryServiceClient
 from agentplane.protocol import event_pb2
+from agentplane.thread_fold.models import ThreadEntity
+from agentplane.thread_fold.projection_lease import ProjectionLease
+from agentplane.thread_fold.recording import THREAD_FOLD_EPOCH
 
 # gazelle:include_dep @pypi//protobuf
 

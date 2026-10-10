@@ -21,11 +21,12 @@ from agentplane.app.threads.events.debug import (
     ThreadScopeChangedError,
 )
 from agentplane.app.threads.events.event_log import ThreadNotFoundError
-from agentplane.app.threads.models import EventLog, ThreadCheckpoint, ThreadEntity, ThreadEvidence, ThreadNativeLink
-from agentplane.app.threads.view import fold
-from agentplane.app.threads.view.views import EntityKind, ThreadCommandState
+from agentplane.app.threads.models import EventLog
 from agentplane.history_service.client import HistoryServiceClient
 from agentplane.protocol import command_pb2, event_log_pb2
+from agentplane.thread_fold import fold
+from agentplane.thread_fold.models import ThreadCheckpoint, ThreadEntity, ThreadEvidence, ThreadNativeLink
+from agentplane.thread_fold.views import EntityKind, ThreadCommandState
 
 # The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.
 # gazelle:include_dep @pypi//protobuf

@@ -34,7 +34,7 @@ app.
 | P9  | Pending and optimistic commands reconcile after a lost reply.                                                                                                                              | Product behaviour                                  |
 
 **P7 is cheap.** The epoch exists for forward compatibility, not for a runtime event: nothing at
-runtime mints one. `THREAD_FOLD_EPOCH` (`threads/view/recording.py`) is stamped when a
+runtime mints one. `THREAD_FOLD_EPOCH` (`thread_fold/recording.py`) is stamped when a
 thread's fold is first created, and a later batch under a different constant raises rather than
 refolding. Only a deploy that changes the fold's output shape changes it, and under C3 the answer is
 to reset the data rather than swap it under a reader. So P7 requires only the refusal — a `410`
@@ -125,7 +125,7 @@ worth more.
   2026-09-28.
 
 **D4 is mostly given by the storage.** A body is insert-only chunks: each ingestion batch that
-appends to it writes one chunk row holding only that batch's text (`threads/view/payloads.py`).
+appends to it writes one chunk row holding only that batch's text (`thread_fold/payloads.py`).
 A design that syncs chunk rows transfers the delta, at batch rather than token granularity. What
 fails D4 is re-sending a body whole on each change. Two costs ride on each append regardless: the
 entity row whose reference moved, and a replacement, which starts a new generation and so is a new

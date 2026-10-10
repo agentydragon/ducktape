@@ -3,6 +3,6 @@
 from collections.abc import Awaitable, Callable
 from uuid import UUID
 
-from agentplane.app.threads.events.projection_lease import ProjectionLease
+from agentplane.thread_fold.projection_lease import ProjectionLease
 
 type LeaseFactory = Callable[[UUID], Awaitable[ProjectionLease]]

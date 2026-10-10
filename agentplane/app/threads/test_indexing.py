@@ -15,10 +15,10 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 from agentplane.app.testing.history import ProjectedHistory as Ingestion, SeededEventLogStore as EventLogStore
 from agentplane.app.testing.projection_lease import LeaseFactory
 from agentplane.app.testing.thread_test_support import SPEC, event_entry
-from agentplane.app.threads.models import ThreadEntity
 from agentplane.app.threads.store import ThreadStore
 from agentplane.app.threads.view.content import ContentStore
 from agentplane.protocol import command_pb2, event_log_pb2, event_pb2
+from agentplane.thread_fold.models import ThreadEntity
 from util.testing.undeclared_outputs import undeclared_outputs_dir
 
 # The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.

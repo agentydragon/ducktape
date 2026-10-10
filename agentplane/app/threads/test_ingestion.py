@@ -11,9 +11,9 @@ from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker, create_async
 
 from agentplane.app.testing.projection_lease import LeaseFactory
 from agentplane.app.testing.retained_history import seed_retained_session
-from agentplane.app.threads.events.projection_lease import ProjectionLease, ProjectionLeaseLostError, fence
 from agentplane.app.threads.ingestion import Ingestion
-from agentplane.app.threads.models import SessionProjectionLease
+from agentplane.thread_fold.models import SessionProjectionLease
+from agentplane.thread_fold.projection_lease import ProjectionLease, ProjectionLeaseLostError, fence
 
 
 @pytest.fixture

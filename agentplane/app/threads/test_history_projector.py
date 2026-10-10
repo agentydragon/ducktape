@@ -10,26 +10,24 @@ import pytest_bazel
 from sqlalchemy import event, select
 from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
 
+from agentplane.app.database_updates import notify_threads
 from agentplane.app.testing.history import ProjectedHistory as Ingestion, SeededEventLogStore as EventLogStore
 from agentplane.app.testing.projection_lease import LeaseFactory
 from agentplane.app.testing.retained_history import seed_retained_session
 from agentplane.app.testing.thread_test_support import SPEC, event_entry
-from agentplane.app.threads.events.event_log import (
-    EventLogStore as ServiceEventLogStore,
-    EventReplicationError,
-    FeedEnd,
-)
-from agentplane.app.threads.events.projection_lease import ProjectionLeaseLostError
-from agentplane.app.threads.history_projector import HistoryProjector
+from agentplane.app.threads.events.event_log import EventLogStore as ServiceEventLogStore, FeedEnd
 from agentplane.app.threads.ingestion import Ingester
-from agentplane.app.threads.models import EventLog, ThreadCheckpoint, ThreadEntity, ThreadHistorySummary
 from agentplane.app.threads.sessions import SandboxSessions
 from agentplane.app.threads.store import ThreadStore
-from agentplane.app.threads.view.views import ThreadViewState
 from agentplane.history_service.client import HistoryServiceClient
 from agentplane.protocol import event_pb2
 from agentplane.runner import protocol_pb2 as runner_pb2
 from agentplane.sandbox_service import protocol_pb2
+from agentplane.thread_fold.models import ThreadCheckpoint, ThreadEntity, ThreadHistorySummary
+from agentplane.thread_fold.projection_lease import ProjectionLeaseLostError
+from agentplane.thread_fold.projector import HistoryProjector
+from agentplane.thread_fold.recording import EventReplicationError
+from agentplane.thread_fold.views import ThreadViewState
 
 # gazelle:include_dep @pypi//protobuf
 
@@ -47,7 +45,7 @@ async def test_projection_resumes_existing_checkpoint_without_copying_raw_events
         protocol_pb2.ReadSessionEventsResponse(last_cursor=2, entries=[second]),
         protocol_pb2.ReadSessionEventsResponse(last_cursor=2),
     ]
-    projector = HistoryProjector(engine, cast(HistoryServiceClient, reader))
+    projector = HistoryProjector(engine, cast(HistoryServiceClient, reader), notify=notify_threads)
     assert (await projector.project_batch(thread, lease=lease)).through_cursor == 2
     assert (await projector.project_batch(thread, lease=lease)).through_cursor == 2
     assert reader.read_session_events.call_args.kwargs["after_cursor"] == 2
@@ -64,9 +62,9 @@ async def test_failed_projection_can_retry_without_advancing_checkpoint(
     entry = event_entry(1, harness_started=event_pb2.HarnessStarted(resumed=False, pid=7))
     reader = AsyncMock(spec=HistoryServiceClient)
     reader.read_session_events.return_value = protocol_pb2.ReadSessionEventsResponse(last_cursor=1, entries=[entry])
-    projector = HistoryProjector(engine, cast(HistoryServiceClient, reader))
+    projector = HistoryProjector(engine, cast(HistoryServiceClient, reader), notify=notify_threads)
     with (
-        patch("agentplane.app.threads.history_projector.record_thread_fold", side_effect=ValueError("fold failed")),
+        patch("agentplane.thread_fold.projector.record_thread_fold", side_effect=ValueError("fold failed")),
         pytest.raises(ValueError, match="fold failed"),
     ):
         await projector.project_batch(thread, lease=lease)
@@ -87,7 +85,9 @@ async def test_expired_owner_cannot_project(
     )
     await ingestion.release(lease)
     with pytest.raises(ProjectionLeaseLostError):
-        await HistoryProjector(engine, cast(HistoryServiceClient, reader)).project_batch(thread, lease=lease)
+        await HistoryProjector(engine, cast(HistoryServiceClient, reader), notify=notify_threads).project_batch(
+            thread, lease=lease
+        )
     async with async_sessionmaker(engine)() as session:
         assert await session.scalar(select(ThreadCheckpoint.through_cursor)) is None
 
@@ -106,7 +106,9 @@ async def test_invalid_history_does_not_advance_projection(
         last_cursor=0 if case == "beyond_watermark" else 1, entries=[] if case == "gap" else [entry]
     )
     with pytest.raises(EventReplicationError):
-        await HistoryProjector(engine, cast(HistoryServiceClient, reader)).project_batch(thread, lease=lease)
+        await HistoryProjector(engine, cast(HistoryServiceClient, reader), notify=notify_threads).project_batch(
+            thread, lease=lease
+        )
     assert await event_logs.last_cursor(thread) == 0
 
 
@@ -121,7 +123,9 @@ async def test_projection_requires_service_coverage_of_checkpoint(
     reader = AsyncMock(spec=HistoryServiceClient)
     reader.read_session_events.return_value = protocol_pb2.ReadSessionEventsResponse(last_cursor=0)
     with pytest.raises(ConnectionError, match="projection checkpoint"):
-        await HistoryProjector(engine, cast(HistoryServiceClient, reader)).project_batch(thread, lease=lease)
+        await HistoryProjector(engine, cast(HistoryServiceClient, reader), notify=notify_threads).project_batch(
+            thread, lease=lease
+        )
     assert await event_logs.last_cursor(thread) == 1
 
 
@@ -143,7 +147,7 @@ async def test_supervisor_resumes_deleted_sandbox_without_runner_contact(
             runners=cast(SandboxSessions, runners),
             event_logs=event_logs,
             ingestion=ingestion,
-            history_projector=HistoryProjector(engine, cast(HistoryServiceClient, reader)),
+            history_projector=HistoryProjector(engine, cast(HistoryServiceClient, reader), notify=notify_threads),
         )
         try:
             await coordinator.reconcile()
@@ -170,18 +174,18 @@ async def test_projection_updates_activity_atomically_and_ignores_tool_output(
     activity = event_entry(3, tool_arguments=event_pb2.ToolArguments(item_id="call", arguments_json='{"x":"y"}'))
     reader = AsyncMock(spec=HistoryServiceClient)
     reader.read_session_events.return_value = protocol_pb2.ReadSessionEventsResponse(last_cursor=3, entries=[activity])
-    projector = HistoryProjector(engine, cast(HistoryServiceClient, reader))
+    interrupted = HistoryProjector(
+        engine, cast(HistoryServiceClient, reader), notify=AsyncMock(side_effect=RuntimeError("commit interrupted"))
+    )
     # Fail after the fold and activity write: both must roll back together.
-    with (
-        patch("agentplane.app.threads.history_projector.notify", side_effect=RuntimeError("commit interrupted")),
-        pytest.raises(RuntimeError, match="commit interrupted"),
-    ):
-        await projector.project_batch(thread, lease=lease)
+    with pytest.raises(RuntimeError, match="commit interrupted"):
+        await interrupted.project_batch(thread, lease=lease)
+    projector = HistoryProjector(engine, cast(HistoryServiceClient, reader), notify=notify_threads)
     async with async_sessionmaker(engine)() as session:
         assert await session.scalar(select(ThreadCheckpoint.through_cursor)) == 2
-        assert await session.scalar(select(EventLog.last_model_activity_at)) == first[-1].event.at.ToDatetime(
-            tzinfo=UTC
-        )
+        assert await session.scalar(select(ThreadHistorySummary.last_model_activity_at)) == first[
+            -1
+        ].event.at.ToDatetime(tzinfo=UTC)
     assert (await projector.project_batch(thread, lease=lease)).through_cursor == 3
     reader.read_session_events.return_value = protocol_pb2.ReadSessionEventsResponse(
         last_cursor=4,
@@ -191,7 +195,9 @@ async def test_projection_updates_activity_atomically_and_ignores_tool_output(
     reader.read_session_events.return_value = protocol_pb2.ReadSessionEventsResponse(last_cursor=4)
     assert (await projector.project_batch(thread, lease=lease)).through_cursor == 4
     async with async_sessionmaker(engine)() as session:
-        assert await session.scalar(select(EventLog.last_model_activity_at)) == activity.event.at.ToDatetime(tzinfo=UTC)
+        assert await session.scalar(
+            select(ThreadHistorySummary.last_model_activity_at)
+        ) == activity.event.at.ToDatetime(tzinfo=UTC)
         assert await session.scalar(select(ThreadCheckpoint.through_cursor)) == 4
 
 
@@ -221,12 +227,12 @@ async def test_thread_metadata_survives_projection_retry(
         entry.event.at.CopyFrom(first[0].event.at)
     reader = AsyncMock(spec=HistoryServiceClient)
     reader.read_session_events.return_value = protocol_pb2.ReadSessionEventsResponse(last_cursor=4, entries=later)
-    projector = HistoryProjector(engine, cast(HistoryServiceClient, reader))
-    with (
-        patch("agentplane.app.threads.history_projector.notify", side_effect=RuntimeError("interrupted")),
-        pytest.raises(RuntimeError, match="interrupted"),
-    ):
-        await projector.project_batch(thread, lease=lease)
+    interrupted = HistoryProjector(
+        engine, cast(HistoryServiceClient, reader), notify=AsyncMock(side_effect=RuntimeError("interrupted"))
+    )
+    with pytest.raises(RuntimeError, match="interrupted"):
+        await interrupted.project_batch(thread, lease=lease)
+    projector = HistoryProjector(engine, cast(HistoryServiceClient, reader), notify=notify_threads)
     assert await store.get_thread(thread) == before
     await projector.project_batch(thread, lease=lease)
     after = await store.get_thread(thread)
@@ -265,7 +271,7 @@ async def test_lifecycle_uses_only_covered_service_snapshot(
         ),
     )
     reader.read_session_events.return_value = page
-    projector = HistoryProjector(engine, cast(HistoryServiceClient, reader))
+    projector = HistoryProjector(engine, cast(HistoryServiceClient, reader), notify=notify_threads)
     await projector.project_batch(thread, lease=lease)
     snapshot = await event_logs.feed_state(thread)
     assert snapshot is not None
@@ -313,15 +319,16 @@ async def test_unchanged_idle_projection_does_not_write_or_notify(
         ),
     )
     reader.read_session_events.return_value = page
-    projector = HistoryProjector(engine, cast(HistoryServiceClient, reader))
+    notify = AsyncMock()
+    projector = HistoryProjector(engine, cast(HistoryServiceClient, reader), notify=notify)
     await projector.project_batch(thread, lease=lease)
+    notify.reset_mock()
 
     statements = Mock()
     event.listen(engine.sync_engine, "before_cursor_execute", statements)
     try:
-        with patch("agentplane.app.threads.history_projector.notify", new_callable=AsyncMock) as notify:
-            await projector.project_batch(thread, lease=lease)
-            notify.assert_not_awaited()
+        await projector.project_batch(thread, lease=lease)
+        notify.assert_not_awaited()
         assert not any(
             call.args[2].lstrip().upper().startswith(("INSERT", "UPDATE", "DELETE"))
             for call in statements.call_args_list
@@ -331,12 +338,11 @@ async def test_unchanged_idle_projection_does_not_write_or_notify(
 
     # A lifecycle-only change must still reach subscribers, exactly once.
     page.feed_state.ended = True
-    with patch("agentplane.app.threads.history_projector.notify", new_callable=AsyncMock) as notify:
-        await projector.project_batch(thread, lease=lease)
-        notify.assert_awaited_once()
-        notify.reset_mock()
-        await projector.project_batch(thread, lease=lease)
-        notify.assert_not_awaited()
+    await projector.project_batch(thread, lease=lease)
+    notify.assert_awaited_once()
+    notify.reset_mock()
+    await projector.project_batch(thread, lease=lease)
+    notify.assert_not_awaited()
 
 
 async def test_empty_page_adopts_eof_and_rolls_back_invalid_snapshot(
@@ -352,7 +358,7 @@ async def test_empty_page_adopts_eof_and_rolls_back_invalid_snapshot(
         ),
     )
     reader.read_session_events.return_value = page
-    projector = HistoryProjector(engine, cast(HistoryServiceClient, reader))
+    projector = HistoryProjector(engine, cast(HistoryServiceClient, reader), notify=notify_threads)
     with pytest.raises(EventReplicationError, match="outside"):
         await projector.project_batch(thread, lease=lease)
     assert await event_logs.feed_state(thread) is None
@@ -378,7 +384,9 @@ async def test_deleted_history_keeps_seeded_terminal_state_without_service_snaps
     before = await event_logs.feed_state(thread)
     reader = AsyncMock(spec=HistoryServiceClient)
     reader.read_session_events.return_value = protocol_pb2.ReadSessionEventsResponse(last_cursor=0)
-    await HistoryProjector(engine, cast(HistoryServiceClient, reader)).project_batch(thread, lease=lease)
+    await HistoryProjector(engine, cast(HistoryServiceClient, reader), notify=notify_threads).project_batch(
+        thread, lease=lease
+    )
     assert await event_logs.feed_state(thread) == before
     assert (await ThreadStore(engine).rename(thread, "archive")).feed_status == "ended"
 
@@ -391,7 +399,7 @@ async def test_projection_failure_retains_checkpoint_not_eof_and_recovers(
     await ingestion.record(thread, [event_entry(1, harness_started=event_pb2.HarnessStarted(pid=7))], lease=lease)
     reader = AsyncMock(spec=HistoryServiceClient)
     reader.read_session_events.side_effect = ConnectionError("private backend details")
-    projector = HistoryProjector(engine, cast(HistoryServiceClient, reader))
+    projector = HistoryProjector(engine, cast(HistoryServiceClient, reader), notify=notify_threads)
     with pytest.raises(ConnectionError):
         await projector.project_batch(thread, lease=lease)
     async with async_sessionmaker(engine)() as session:
@@ -446,7 +454,7 @@ async def test_discovery_of_new_service_thread_never_starts_legacy_follow(
         runners=cast(SandboxSessions, runners),
         event_logs=logs,
         ingestion=ingestion,
-        history_projector=HistoryProjector(engine, cast(HistoryServiceClient, reader)),
+        history_projector=HistoryProjector(engine, cast(HistoryServiceClient, reader), notify=notify_threads),
     )
     try:
         await coordinator.reconcile()
@@ -471,7 +479,7 @@ async def test_sessions_without_projection_metadata_are_not_scheduled(
         runners=cast(SandboxSessions, runners),
         event_logs=logs,
         ingestion=ingestion,
-        history_projector=HistoryProjector(engine, cast(HistoryServiceClient, reader)),
+        history_projector=HistoryProjector(engine, cast(HistoryServiceClient, reader), notify=notify_threads),
     )
     try:
         await coordinator.reconcile()
@@ -517,7 +525,7 @@ async def test_coordinator_projects_sibling_owned_by_another_replica_independent
         runners=cast(SandboxSessions, runners),
         event_logs=event_logs,
         ingestion=ingestion,
-        history_projector=HistoryProjector(engine, cast(HistoryServiceClient, reader)),
+        history_projector=HistoryProjector(engine, cast(HistoryServiceClient, reader), notify=notify_threads),
     )
     try:
         await coordinator.reconcile()

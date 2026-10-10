@@ -20,7 +20,7 @@ from pydantic import TypeAdapter
 from agentplane.app.action_policy import ActionPolicyInventory
 from agentplane.app.api import create_app
 from agentplane.app.database import connect
-from agentplane.app.database_updates import DatabaseUpdates
+from agentplane.app.database_updates import DatabaseUpdates, notify_threads
 from agentplane.app.decisions import DecisionsClient
 from agentplane.app.egress_access import EgressAccess
 from agentplane.app.electric import ThreadScopeResponse
@@ -29,16 +29,16 @@ from agentplane.app.model_catalog import ModelCatalog, ModelOption
 from agentplane.app.operator_sessions import OperatorSessionStore
 from agentplane.app.threads.bridge import RunnerBridge
 from agentplane.app.threads.events.event_log import EventLogStore
-from agentplane.app.threads.history_projector import HistoryProjector
 from agentplane.app.threads.ingestion import Ingester, Ingestion
 from agentplane.app.threads.sessions import SandboxSessions
 from agentplane.app.threads.store import ThreadStore
 from agentplane.app.threads.view.content import ContentStore
-from agentplane.app.threads.view.views import ThreadEntityView
 from agentplane.history_service.client import HistoryServiceClient
 from agentplane.runner.harness import Harness
 from agentplane.sandbox_service.client import SandboxServiceClient
 from agentplane.sandbox_service.egress_views import EgressReader
+from agentplane.thread_fold.projector import HistoryProjector
+from agentplane.thread_fold.views import ThreadEntityView
 
 
 def _openapi_document(api_client: k8s_client.ApiClient) -> dict[str, Any]:
@@ -73,7 +73,7 @@ def _openapi_document(api_client: k8s_client.ApiClient) -> dict[str, Any]:
                 runners=runners,
                 event_logs=event_logs,
                 ingestion=Ingestion(engine),
-                history_projector=HistoryProjector(engine, history),
+                history_projector=HistoryProjector(engine, history, notify=notify_threads),
             ),
         ),
         ThreadStore(engine),

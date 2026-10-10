@@ -230,12 +230,34 @@ def test_session_leases_replace_sandbox_ownership_without_changing_identity(db_u
             assert not inspect(connection).has_table("sandbox_ingestion")
             assert connection.scalar(text("SELECT count(*) FROM session_projection_lease")) == 0
             assert connection.scalar(text("SELECT id FROM event_log WHERE id = :id"), {"id": thread}) == thread
+    finally:
+        engine.dispose()
+
+
+def test_model_activity_moves_onto_the_summary(db_url: str) -> None:
+    engine = create_engine(RUNNER.sync_url(db_url))
+    thread = uuid.uuid4()
+    try:
+        with engine.begin() as connection:
+            connection.execute(text("ALTER TABLE thread_history_summary DROP COLUMN last_model_activity_at"))
+            connection.execute(text("UPDATE alembic_version_app SET version_num = '0024_retire_app_raw_history'"))
             connection.execute(
-                text("INSERT INTO session_projection_lease VALUES (:id, :token, '2030-01-01T00:00:00Z')"),
-                {"id": thread, "token": token},
+                text(
+                    "INSERT INTO event_log (id, sandbox, harness, model, cwd, created_at, last_model_activity_at) "
+                    "VALUES (:id, 'sandbox', 'HARNESS_CODEX', 'model', '/', now(), '2026-09-01T12:00:00Z')"
+                ),
+                {"id": thread},
             )
-            connection.execute(text("DELETE FROM event_log WHERE id = :id"), {"id": thread})
-            assert connection.scalar(text("SELECT count(*) FROM session_projection_lease")) == 0
+            connection.execute(text("INSERT INTO thread_history_summary (thread_id) VALUES (:id)"), {"id": thread})
+        RUNNER.apply(db_url)
+        with engine.connect() as connection:
+            assert (
+                connection.scalar(
+                    text("SELECT last_model_activity_at FROM thread_history_summary WHERE thread_id = :id"),
+                    {"id": thread},
+                ).isoformat()
+                == "2026-09-01T12:00:00+00:00"
+            )
     finally:
         engine.dispose()
 

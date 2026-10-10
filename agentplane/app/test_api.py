@@ -41,7 +41,6 @@ from agentplane.app.threads.bridge import RunnerBridge
 from agentplane.app.threads.sessions import SandboxSessions
 from agentplane.app.threads.store import ThreadStore
 from agentplane.app.threads.view.content import ContentStore
-from agentplane.app.threads.view.recording import THREAD_FOLD_EPOCH
 from agentplane.protocol import command_pb2, event_log_pb2, event_pb2
 from agentplane.runner import protocol_pb2
 from agentplane.runner.harness import Harness
@@ -61,6 +60,7 @@ from agentplane.sandbox_service.testing.fake_inventory import (
     sandbox,
 )
 from agentplane.sandbox_service.testing.fake_rbac import FakeRbac
+from agentplane.thread_fold.recording import THREAD_FOLD_EPOCH
 
 # TestClient drives the app over httpx, imported inside starlette; gazelle cannot see it.
 # gazelle:include_dep @pypi//httpx
