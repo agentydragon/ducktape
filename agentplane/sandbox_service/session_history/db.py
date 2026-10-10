@@ -30,18 +30,6 @@ class SessionHistory(Base):
             postgresql_nulls_not_distinct=True,
             postgresql_where=text("runner_session_id IS NOT NULL"),
         ),
-        Index(
-            "ux_history_open_key",
-            "caller_namespace",
-            "caller_name",
-            "sandbox_namespace",
-            "sandbox_name",
-            "sandbox_uid",
-            "open_key",
-            unique=True,
-            postgresql_where=text("open_key IS NOT NULL"),
-        ),
-        Index("ux_history_change_position", "change_position", unique=True),
     )
 
     id: Mapped[UUID] = mapped_column(primary_key=True)
@@ -50,17 +38,6 @@ class SessionHistory(Base):
     # Nullable for imported records whose original Sandbox UID was not retained in app history.
     sandbox_uid: Mapped[UUID | None]
     runner_session_id: Mapped[str | None] = mapped_column(String)
-    # The Sandbox Service registry's former columns: an Open reservation and a WatchSessions
-    # position, kept on rows from before the registry moved to its own database. Nothing reads them;
-    # rows the ingesters create leave them empty.
-    # CLEANUP(added 2026-10-10): Deferred so that no query of this release names them, letting the
-    #   migration that drops them run while it still serves; delete them with that migration.
-    caller_namespace: Mapped[str | None] = mapped_column(String, deferred=True)
-    caller_name: Mapped[str | None] = mapped_column(String, deferred=True)
-    open_key: Mapped[str | None] = mapped_column(String, deferred=True)
-    open_request: Mapped[bytes | None] = mapped_column(LargeBinary, deferred=True)
-    launch_spec: Mapped[bytes | None] = mapped_column(LargeBinary, deferred=True)
-    change_position: Mapped[int | None] = mapped_column(BigInteger, deferred=True)
     source_id: Mapped[str | None] = mapped_column(String)
     last_cursor: Mapped[int] = mapped_column(BigInteger)
     # Complete SessionFeedState protobuf, absent until a runner prefix is observed.

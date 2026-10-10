@@ -13,6 +13,7 @@ filegroup(
         "//agentplane/sandbox_service/session_history/migrations/versions:0007_electric_publication.py",
         "//agentplane/sandbox_service/session_history/migrations/versions:0008_delta_settlement.py",
         "//agentplane/sandbox_service/session_history/migrations/versions:0009_history_rows_from_feed.py",
+        "//agentplane/sandbox_service/session_history/migrations/versions:0010_drop_registry_columns.py",
     ],
     visibility = ["//agentplane/sandbox_service/session_history:__pkg__"],
 )

@@ -779,7 +779,6 @@ are irreplaceable, and a node that deletes a column or row stops for the operato
 
 ```mermaid
 flowchart TD
-    HISTORY_SESSION_COLUMNS_DROP[Candidate, stops for the operator: drop registry columns from the history database]
     HISTORY_RUNNER_SESSION_ID_DROP[Blocked: drop the runner session ID from the history database]
     HISTORY_STORE_MOVE[Blocked: history store and migrations move to the History Service]
     HISTORY_WRITER_SWITCH_RETIRE[Blocked: delete the history_writer switch]
@@ -794,22 +793,11 @@ flowchart TD
     SANDBOX_LOCAL_HISTORY_RETIRE --> HISTORY_WRITER_SWITCH_RETIRE
     HISTORY_STORE_MOVE --> HISTORY_SERVICE_OWNERSHIP
     HISTORY_STORE_MOVE --> HISTORY_DATABASE_RENAME
-    HISTORY_SESSION_COLUMNS_DROP --> HISTORY_DATABASE_RENAME
     SANDBOX_LOCAL_HISTORY_RETIRE --> HISTORY_RUNNER_SESSION_ID_DROP
     HISTORY_RUNNER_SESSION_ID_DROP --> HISTORY_DATABASE_RENAME
     HISTORY_DATABASE_RENAME --> SANDBOX_DATABASE_RENAME
     APP_PROJECTOR_RETIRE --> APP_ELECTRIC_RETIRE
 ```
-
-### `HISTORY_SESSION_COLUMNS_DROP` — history keeps only history
-
-**Candidate; stops for the operator.** In the history database's `session_history` nothing reads
-the Open reservation (`caller_namespace`, `caller_name`, `open_key`, `open_request`, `launch_spec`) or
-the change position, and the model defers them so no query names them. Once the release deferring
-them serves on both environments, drop them with `ux_history_open_key`, `ux_history_change_position`
-and the history database's `session_change_position` sequence, and remove them from the model.
-Per-Session ingestion state (`source_id`, `last_cursor`, `feed_state`) and the Sandbox locator stay
-beside `session_event`.
 
 ### `HISTORY_RUNNER_SESSION_ID_DROP` — rows carry only the public ID
 
