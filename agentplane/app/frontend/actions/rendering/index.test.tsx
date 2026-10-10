@@ -2,6 +2,7 @@
 import { describe, expect, it } from "vitest";
 
 import { type CallToolResult, parseCallToolResult } from "../call_tool_result";
+import { ACTION_PRESENTATION_CATALOG } from "../presentation_catalog";
 import { mount, SSH_EXEC_ARGUMENTS, sshExec } from "../testing";
 import {
   canApproveInline,
@@ -69,6 +70,64 @@ describe("Action presentation slots", () => {
     expect(details.textContent).toContain("test-user@test-host.example");
   });
 
+  it("registers readable label, pane, and full-details views for every migrated action", async () => {
+    const argumentsFor = (group: string, name: string): Record<string, unknown> => {
+      if (group === "kubernetes_admin") {
+        if (name === "pods_list_in_namespace") return { namespace: "demo", fieldSelector: "type=Warning" };
+        if (name === "resources_get") return { apiVersion: "v1", kind: "Pod", name: "demo", namespace: "demo" };
+        if (name === "resources_delete") {
+          return { apiVersion: "v1", kind: "Pod", name: "demo", namespace: "demo", gracePeriodSeconds: 0 };
+        }
+        if (name === "resources_list")
+          return { apiVersion: "v1", kind: "Pod", namespace: "demo", labelSelector: "app=demo" };
+        if (name === "events_list") return { namespace: "demo", fieldSelector: "type=Warning" };
+        if (name === "pods_log") return { name: "demo", namespace: "demo", container: "main", tail: 20 };
+        if (name === "pods_exec")
+          return { name: "demo", namespace: "demo", container: "main", command: ["echo", "ok"] };
+        if (name === "pods_delete") return { name: "demo", namespace: "demo" };
+        return { resource: "apiVersion: v1\nkind: ConfigMap" };
+      }
+      if (group === "github") {
+        return {
+          owner: "example",
+          repo: "demo",
+          title: "Update docs",
+          head: "docs",
+          base: "devel",
+          body: "",
+          draft: true,
+          maintainer_can_modify: false,
+          reviewers: ["reviewer"],
+        };
+      }
+      if (group === "ssh" && name === "exec") return SSH_EXEC_ARGUMENTS as Record<string, unknown>;
+      const spec = ACTION_PRESENTATION_CATALOG.find(
+        (candidate) => candidate.group === group && candidate.name === name
+      );
+      return Object.fromEntries((spec?.summaryFields ?? []).map((key) => [key, "example"]));
+    };
+
+    for (const { group, name, summaryFields, resultLabel } of ACTION_PRESENTATION_CATALOG) {
+      const action = { group, name };
+      const args = argumentsFor(group, name);
+      const label = renderActionLabel(action, args);
+      const opened = renderPaneOpened(action, args);
+      const details = renderDetailsArguments(action, args);
+      expect(label).not.toBeNull();
+      expect(opened).not.toBeNull();
+      expect(details).not.toBeNull();
+      expect((await mount(label)).textContent).not.toBe("");
+      if (summaryFields !== undefined && summaryFields.length > 0) {
+        expect(renderPaneCollapsed(action, args)).not.toBeNull();
+      }
+      if (resultLabel !== undefined) {
+        const result = group === "ssh" && name === "exec" ? stored() : stored({ example: "value" });
+        const expectedLabel = group === "ssh" && name === "exec" ? "Exit 0" : resultLabel;
+        expect((await mount(renderDetailsResult(action, result))).textContent).toContain(expectedLabel);
+      }
+    }
+  });
+
   it("leaves a slot to the host when no registered widget accepts it", () => {
     expect(renderPaneCollapsed(SSH_EXEC, { ...SSH_EXEC_ARGUMENTS, test_extra: true })).toBeNull();
     expect(renderPaneOpened({ group: "test_group", name: "exec" }, SSH_EXEC_ARGUMENTS)).toBeNull();
@@ -77,8 +136,8 @@ describe("Action presentation slots", () => {
   });
 
   it.each([
-    ["resources_get", { apiVersion: "apps/v1", kind: "Deployment", name: "api" }, ["namespace: (not specified)"]],
-    ["pods_log", { name: "api-0", tail: -1 }, ["namespace: (not specified)", "container: (not specified)"]],
+    ["resources_get", { apiVersion: "apps/v1", kind: "Deployment", name: "api" }, ["API version: apps/v1"]],
+    ["pods_log", { name: "api-0", tail: -1 }, ["container: (default)", "previous: no", "tail: -1"]],
   ] as const)(
     "uses the opened-pane argument widget for %s when optional fields are omitted",
     async (name, args, visible) => {
@@ -123,37 +182,37 @@ const quickApprovalCases: Array<{ group: string; name: string; args: Record<stri
     group: "kubernetes_admin",
     name: "resources_get",
     args: { apiVersion: "apps/v1", kind: "Deployment", name: "api" },
-    visible: ["apps/v1", "Deployment", "api", "namespace: (not specified)"],
+    visible: ["API version: apps/v1"],
   },
   {
     group: "kubernetes_admin",
     name: "pods_list_in_namespace",
     args: { namespace: "prod", fieldSelector: "status.phase=Running", labelSelector: "app=web" },
-    visible: ["Get pods", "prod", "status.phase=Running", "app=web"],
+    visible: ["Filters", "status.phase=Running", "app=web"],
   },
   {
     group: "kubernetes_admin",
     name: "resources_list",
     args: { apiVersion: "v1", kind: "Pod", fieldSelector: "status.phase=Running", labelSelector: "app=web" },
-    visible: ["v1", "Pod", "all namespaces", "status.phase=Running", "app=web"],
+    visible: ["API version: v1", "status.phase=Running", "app=web"],
   },
   {
     group: "kubernetes_admin",
     name: "pods_log",
     args: { name: "api-0", container: "sidecar", previous: true, tail: -1 },
-    visible: ["api-0", "namespace: (not specified)", "sidecar", "previous: yes", "tail: -1"],
+    visible: ["sidecar", "previous: yes", "tail: -1"],
   },
   {
     group: "kubernetes_admin",
     name: "resources_delete",
     args: { apiVersion: "v1", kind: "Pod", name: "api-0", namespace: "prod", gracePeriodSeconds: 0 },
-    visible: ["Delete resource", "v1", "Pod", "api-0", "prod", "0s"],
+    visible: ["grace period: 0s"],
   },
   {
     group: "kubernetes_admin",
     name: "events_list",
     args: { namespace: "prod", fieldSelector: "type=Warning" },
-    visible: ["List events", "prod", "type=Warning"],
+    visible: ["field selector: type=Warning"],
   },
   {
     group: "github",

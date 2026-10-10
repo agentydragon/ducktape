@@ -167,6 +167,14 @@ ts_library(
     deps = [":schema"],
 )
 
+# React-free action wording shared by the pane/details renderers and service-worker notifications.
+ts_library(
+    name = "actions_presentation_catalog",
+    srcs = ["actions/presentation_catalog.ts"],
+    tsconfig = TSCONFIG,
+    deps = [":actions_types"],
+)
+
 ts_library(
     name = "actions_client",
     srcs = ["actions/client.ts"],
@@ -473,6 +481,8 @@ ts_library(
     deps = [
         ":actions_call_tool_result",
         ":actions_client",
+        ":actions_presentation_catalog",
+        ":actions_rendering_data",
         ":actions_rendering_entry",
         ":actions_rendering_github",
         ":actions_rendering_kubernetes_admin",
@@ -491,6 +501,21 @@ ts_library(
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
         "//:node_modules/react",
+    ],
+)
+
+ts_library(
+    name = "actions_rendering_data",
+    srcs = ["actions/rendering/action_data.tsx"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":actions_presentation_catalog",
+        ":actions_rendering_entry",
+        ":actions_rendering_result_entry",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+        "//:node_modules/zod",
     ],
 )
 
@@ -574,6 +599,7 @@ agentplane_vitest_test(
     srcs = ["actions/rendering/index.test.tsx"],
     deps = [
         ":actions_call_tool_result",
+        ":actions_presentation_catalog",
         ":actions_rendering",
         ":actions_testing",
         "//:node_modules/@types/react",
@@ -1289,6 +1315,7 @@ ts_library(
     tsconfig = TSCONFIG,
     deps = [
         ":actions_kubernetes_pod_list_schema",
+        ":actions_presentation_catalog",
         ":actions_types",
         ":ssh_action_schemas",
     ],
@@ -1299,6 +1326,7 @@ agentplane_vitest_test(
     srcs = ["actions/notifications/index.test.ts"],
     deps = [
         ":actions_notifications",
+        ":actions_presentation_catalog",
         ":actions_types",
         "//:node_modules/vitest",
     ],

@@ -1,7 +1,7 @@
 import type { JSX } from "react";
 import { z } from "zod";
 
-import { Chip, CompactCall } from "../chips";
+import { Chip } from "../chips";
 import { definePreview, type ArgumentsPreview } from "../entry";
 
 const podsLogArguments = z.strictObject({
@@ -18,13 +18,11 @@ export function canQuickApprovePodsLog(args: unknown): boolean {
 
 function Logs({ args }: { args: z.infer<typeof podsLogArguments> }): JSX.Element {
   return (
-    <CompactCall operation="Get pod logs">
-      <Chip label="pod" value={args.name} />
-      <Chip label="namespace" value={args.namespace ?? "(not specified)"} />
-      <Chip label="container" value={args.container ?? "(not specified)"} />
+    <>
+      <Chip label="container" value={args.container ?? "(default)"} />
       <Chip label="previous" value={args.previous === true ? "yes" : "no"} />
       <Chip label="tail" value={args.tail ?? 100} />
-    </CompactCall>
+    </>
   );
 }
 

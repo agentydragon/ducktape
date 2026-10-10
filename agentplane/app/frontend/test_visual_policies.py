@@ -133,7 +133,7 @@ async def test_sidebar_compact_pod_approval(
             "kubernetes_admin",
             "resources_delete",
             {"apiVersion": "v1", "kind": "Pod", "name": "web-0", "namespace": "apps", "gracePeriodSeconds": 0},
-            "Delete resource",
+            "Delete Pod web-0 in namespace apps",
         ),
         ("kubernetes_admin", "events_list", {"namespace": "apps", "fieldSelector": "type=Warning"}, "type=Warning"),
         (
@@ -149,6 +149,37 @@ async def test_sidebar_compact_pod_approval(
             },
             "Update docs",
         ),
+        (
+            "kubernetes_admin",
+            "pods_exec",
+            {"name": "web-0", "namespace": "apps", "container": "main", "command": ["printenv", "POD_NAME"]},
+            "printenv POD_NAME",
+        ),
+        (
+            "gmail",
+            "drafts_create",
+            {"to": ["reviewer@example.com"], "subject": "Deployment review", "body": "Please review."},
+            "reviewer@example.com",
+        ),
+        (
+            "gmail",
+            "threads_list",
+            {"q": "from:deployments@example.com", "max_results": 5},
+            "from:deployments@example.com",
+        ),
+        (
+            "google_calendar",
+            "create_event",
+            {
+                "summary": "Release review",
+                "start": "2026-10-11T10:00:00-07:00",
+                "end": "2026-10-11T10:30:00-07:00",
+                "location": "Video call",
+            },
+            "Release review",
+        ),
+        ("grocy_sf", "stock_add", {"items": [{"product_id": 27, "amount": 2, "location_id": 3}]}, "1 item"),
+        ("tana", "import_tana_paste", {"paste": "- Review deployment\n  - Check health"}, "Review deployment"),
     ],
     ids=[
         "resource-get",
@@ -158,6 +189,12 @@ async def test_sidebar_compact_pod_approval(
         "resource-delete",
         "events-list",
         "github-pr",
+        "pod-exec",
+        "gmail-draft",
+        "gmail-search",
+        "calendar-event",
+        "grocy-stock-add",
+        "tana-import",
     ],
 )
 async def test_compact_action_chips(
@@ -176,6 +213,16 @@ async def test_compact_action_chips(
     section = view.page.locator(".agentplane-actions-sidebar")
     if group == "kubernetes_admin" and name == "pods_list_in_namespace":
         title = "inspect running demo pods"
+    elif group == "gmail" and name == "drafts_create":
+        title = "review the draft email"
+    elif group == "gmail" and name == "threads_list":
+        title = "search recent deployment threads"
+    elif group == "google_calendar":
+        title = "schedule the release review"
+    elif group == "grocy_sf":
+        title = "update pantry stock"
+    elif group == "tana":
+        title = "import the deployment checklist"
     else:
         title = f"review {name.replace('_', ' ')}"
     disclosure = section.get_by_role("button", name=f"Expand {title}")
@@ -188,10 +235,10 @@ async def test_compact_action_chips(
     await expect(section.get_by_role("link", name=f"View details for {title}")).to_be_visible()
     if group == "kubernetes_admin" and name in {"resources_get", "pods_list_in_namespace", "pods_log"}:
         await expect(section.get_by_role("button", name=f"Approve {title}")).to_be_visible()
-    if group == "kubernetes_admin" and name in {"resources_get", "pods_log"}:
-        await expect(section.get_by_text("namespace: (not specified)", exact=True)).to_be_visible()
+    if group == "kubernetes_admin" and name == "resources_get":
+        await expect(section.get_by_text("Get Deployment web", exact=False)).to_be_visible()
     if group == "kubernetes_admin" and name == "pods_log":
-        await expect(section.get_by_text("container: (not specified)", exact=True)).to_be_visible()
+        await expect(section.get_by_text("container: (default)", exact=True)).to_be_visible()
     await view.capture(target=section)
 
 

@@ -1,7 +1,7 @@
 import type { JSX } from "react";
 import { z } from "zod";
 
-import { Chip, CompactCall } from "../chips";
+import { Chip } from "../chips";
 import { definePreview, type ArgumentsPreview } from "../entry";
 
 import { resource } from "./resource_common";
@@ -32,12 +32,10 @@ function Selectors({ args }: { args: z.infer<typeof resourcesListArguments> }): 
 
 function List({ args }: { args: z.infer<typeof resourcesListArguments> }): JSX.Element {
   return (
-    <CompactCall operation="List resources">
-      <Chip label="API" value={args.apiVersion} />
-      <Chip label="kind" value={args.kind} />
-      <Chip label="namespace" value={args.namespace ?? "all namespaces / ignored if cluster-scoped"} />
+    <>
+      <Chip label="API version" value={args.apiVersion} />
       <Selectors args={args} />
-    </CompactCall>
+    </>
   );
 }
 
