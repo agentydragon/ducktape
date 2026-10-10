@@ -14,6 +14,7 @@ import grpc
 from kubernetes_asyncio import client as k8s_client
 from sqlalchemy.exc import SQLAlchemyError
 
+from agentplane.history_service.protocol_pb2 import SessionFeedState
 from agentplane.protocol import event_log_pb2
 from agentplane.runner import protocol_pb2 as runner_pb2
 from agentplane.runner.client import RunnerClient
@@ -22,7 +23,6 @@ from agentplane.sandbox_service.admission_reconciliation import journal_reader
 from agentplane.sandbox_service.commands.store import SubmissionConflictError, SubmissionStore
 from agentplane.sandbox_service.destinations import DestinationResolver, DestinationUnavailableError
 from agentplane.sandbox_service.models import SandboxNotFoundError
-from agentplane.sandbox_service.protocol_pb2 import SessionFeedState
 from agentplane.sandbox_service.session_history.store import HistoryConflictError, Store
 from agentplane.sandbox_service.session_registry import HistoryLocator, SessionRegistry
 from util.agent_sandbox import OperatingMode

@@ -1,5 +1,6 @@
 load("//devinfra/python:defs.bzl", "py_library")
 
+# gazelle:resolve py agentplane.history_service.protocol_pb2 //agentplane/history_service:protocol_pb2
 # gazelle:resolve py agentplane.sandbox_service.protocol_pb2 //agentplane/sandbox_service:protocol_pb2
 # gazelle:resolve py agentplane.runner_channel.protocol_pb2 //agentplane/runner_channel:protocol_pb2
 # gazelle:resolve py agentplane.runner_channel.protocol_pb2_grpc //agentplane/runner_channel:protocol_pb2_grpc

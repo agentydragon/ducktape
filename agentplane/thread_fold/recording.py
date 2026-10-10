@@ -10,8 +10,8 @@ from sqlalchemy import delete, func, or_, select, tuple_
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from agentplane.history_service import protocol_pb2 as history_pb2
 from agentplane.protocol import event_log_pb2
-from agentplane.sandbox_service import protocol_pb2
 from agentplane.sandbox_service.settled_cursors import settled_ranges
 from agentplane.thread_fold import fold
 from agentplane.thread_fold.models import (
@@ -59,7 +59,7 @@ async def record_thread_fold(
     source_id: str,
     entries: Sequence[event_log_pb2.EventEntry],
     *,
-    settlements: Sequence[protocol_pb2.SettledDeltas],
+    settlements: Sequence[history_pb2.SettledDeltas],
     projection_epoch: str,
 ) -> None:
     checkpoint = await session.scalar(
@@ -134,7 +134,7 @@ async def record_thread_fold(
 
 
 async def _forget_settled(
-    session: AsyncSession, thread_id: UUID, projection_epoch: str, settlements: Sequence[protocol_pb2.SettledDeltas]
+    session: AsyncSession, thread_id: UUID, projection_epoch: str, settlements: Sequence[history_pb2.SettledDeltas]
 ) -> None:
     """Drop the evidence of deltas folded before their item settled; their cursors are gone.
 

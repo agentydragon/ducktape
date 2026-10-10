@@ -17,9 +17,9 @@ from agentplane.app.testing.thread_test_support import SPEC, event_entry
 from agentplane.app.threads.events.event_log import EventLogStore
 from agentplane.app.threads.models import EventLog
 from agentplane.app.threads.summaries import AppSummaries
+from agentplane.history_service import protocol_pb2 as history_pb2
 from agentplane.history_service.client import HistoryServiceClient
 from agentplane.protocol import event_pb2
-from agentplane.sandbox_service import protocol_pb2
 from agentplane.thread_fold.models import ThreadCheckpoint, ThreadHistorySummary
 from agentplane.thread_fold.recording import EventReplicationError
 
@@ -42,17 +42,17 @@ async def test_remote_history_reads_its_own_committed_prefix(engine: AsyncEngine
 
         async def read_session_observations(
             self, session_id: str, *, limit: int
-        ) -> protocol_pb2.ReadSessionObservationsResponse:
+        ) -> history_pb2.ReadSessionObservationsResponse:
             assert session_id == str(thread_id)
             assert limit == 1
-            return protocol_pb2.ReadSessionObservationsResponse(last_cursor=self.last_cursor)
+            return history_pb2.ReadSessionObservationsResponse(last_cursor=self.last_cursor)
 
         async def read_session_events(
             self, session_id: str, *, after_cursor: int = 0, limit: int = 128
-        ) -> protocol_pb2.ReadSessionEventsResponse:
+        ) -> history_pb2.ReadSessionEventsResponse:
             assert session_id == str(thread_id)
             assert limit == 1
-            return protocol_pb2.ReadSessionEventsResponse(
+            return history_pb2.ReadSessionEventsResponse(
                 last_cursor=self.last_cursor, entries=[entry] if after_cursor == 0 and self.last_cursor else []
             )
 
@@ -79,11 +79,11 @@ async def test_service_read_does_not_chase_a_growing_watermark(engine: AsyncEngi
     class Reader:
         async def read_session_events(
             self, session_id: str, *, after_cursor: int = 0, limit: int = 128
-        ) -> protocol_pb2.ReadSessionEventsResponse:
+        ) -> history_pb2.ReadSessionEventsResponse:
             calls.append(after_cursor)
             # A second page may advertise a newer head, but the call's ceiling is 2.
             end = 2 if after_cursor == 0 else 3
-            return protocol_pb2.ReadSessionEventsResponse(
+            return history_pb2.ReadSessionEventsResponse(
                 last_cursor=end,
                 entries=[event_entry(after_cursor + 1, harness_stderr=event_pb2.HarnessStderr(text="x"))],
             )
@@ -100,9 +100,9 @@ async def test_service_read_rejects_invalid_pages(engine: AsyncEngine, case: str
     class Reader:
         async def read_session_events(
             self, session_id: str, *, after_cursor: int = 0, limit: int = 128
-        ) -> protocol_pb2.ReadSessionEventsResponse:
+        ) -> history_pb2.ReadSessionEventsResponse:
             entries = [] if case != "beyond_watermark" else [event_entry(1)]
-            return protocol_pb2.ReadSessionEventsResponse(last_cursor=1 if case == "gap" else 0, entries=entries)
+            return history_pb2.ReadSessionEventsResponse(last_cursor=1 if case == "gap" else 0, entries=entries)
 
     remote = EventLogStore(engine, summaries=AppSummaries(engine), history_reader=cast(HistoryServiceClient, Reader()))
     with pytest.raises(ConnectionError):
@@ -111,7 +111,7 @@ async def test_service_read_rejects_invalid_pages(engine: AsyncEngine, case: str
 
 async def test_concurrent_replicas_create_one_service_thread(engine: AsyncEngine) -> None:
     reader = AsyncMock(spec=HistoryServiceClient)
-    reader.read_session_observations.return_value = protocol_pb2.ReadSessionObservationsResponse(last_cursor=0)
+    reader.read_session_observations.return_value = history_pb2.ReadSessionObservationsResponse(last_cursor=0)
     stores = [
         EventLogStore(engine, summaries=AppSummaries(engine), history_reader=reader, history_creator=reader)
         for _ in range(2)
@@ -139,9 +139,8 @@ async def test_service_observation_pages_do_not_require_app_raw_rows(
 ) -> None:
     thread = UUID("00000000-0000-0000-0000-000000000001")
     reader = AsyncMock(spec=HistoryServiceClient)
-    reader.read_session_observations.return_value = protocol_pb2.ReadSessionObservationsResponse(
-        last_cursor=5,
-        observations=[protocol_pb2.SessionObservation(cursor=cursor, kind="native") for cursor in cursors],
+    reader.read_session_observations.return_value = history_pb2.ReadSessionObservationsResponse(
+        last_cursor=5, observations=[history_pb2.SessionObservation(cursor=cursor, kind="native") for cursor in cursors]
     )
     remote = EventLogStore(engine, summaries=AppSummaries(engine), history_reader=cast(HistoryServiceClient, reader))
     page = await remote.observations(thread, before_cursor=before, after_cursor=after, limit=2)
@@ -156,7 +155,7 @@ async def test_service_observation_pages_do_not_require_app_raw_rows(
 
 async def test_service_observation_page_rejects_missing_entries(engine: AsyncEngine) -> None:
     reader = AsyncMock(spec=HistoryServiceClient)
-    reader.read_session_observations.return_value = protocol_pb2.ReadSessionObservationsResponse(last_cursor=5)
+    reader.read_session_observations.return_value = history_pb2.ReadSessionObservationsResponse(last_cursor=5)
     remote = EventLogStore(engine, summaries=AppSummaries(engine), history_reader=cast(HistoryServiceClient, reader))
     with pytest.raises(ConnectionError, match="invalid service observation"):
         await remote.observations(UUID("00000000-0000-0000-0000-000000000001"), limit=2)
@@ -164,7 +163,7 @@ async def test_service_observation_page_rejects_missing_entries(engine: AsyncEng
 
 async def test_new_service_thread_has_atomic_projection_metadata_and_is_idempotent(engine: AsyncEngine) -> None:
     reader = AsyncMock(spec=HistoryServiceClient)
-    reader.read_session_observations.return_value = protocol_pb2.ReadSessionObservationsResponse(last_cursor=0)
+    reader.read_session_observations.return_value = history_pb2.ReadSessionObservationsResponse(last_cursor=0)
     left = EventLogStore(
         engine,
         summaries=AppSummaries(engine),
@@ -236,11 +235,11 @@ async def test_existing_identity_winning_registration_race_is_not_reinitialized(
     public_id = uuid4()
     reader = AsyncMock(spec=HistoryServiceClient)
 
-    async def register(session_id: str, *, limit: int) -> protocol_pb2.ReadSessionObservationsResponse:
+    async def register(session_id: str, *, limit: int) -> history_pb2.ReadSessionObservationsResponse:
         assert session_id == str(public_id)
         assert limit == 1
         await seed_retained_session(engine, public_id=public_id)
-        return protocol_pb2.ReadSessionObservationsResponse(last_cursor=0)
+        return history_pb2.ReadSessionObservationsResponse(last_cursor=0)
 
     reader.read_session_observations.side_effect = register
     current = EventLogStore(
@@ -322,11 +321,11 @@ async def test_existing_identity_winning_registration_race_is_preserved(engine: 
     public_id = uuid4()
     reader = AsyncMock(spec=HistoryServiceClient)
 
-    async def register(session_id: str, *, limit: int) -> protocol_pb2.ReadSessionObservationsResponse:
+    async def register(session_id: str, *, limit: int) -> history_pb2.ReadSessionObservationsResponse:
         assert session_id == str(public_id)
         assert limit == 1
         await seed_retained_session(engine, public_id=public_id)
-        return protocol_pb2.ReadSessionObservationsResponse(last_cursor=0)
+        return history_pb2.ReadSessionObservationsResponse(last_cursor=0)
 
     reader.read_session_observations.side_effect = register
     current = EventLogStore(

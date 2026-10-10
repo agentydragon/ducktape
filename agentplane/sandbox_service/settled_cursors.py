@@ -6,13 +6,13 @@ that intersect it, and a reader treats a cursor inside one as covered, not missi
 
 from collections.abc import Iterable
 
-from agentplane.sandbox_service import protocol_pb2
+from agentplane.history_service import protocol_pb2 as history_pb2
 
 # The generated protobuf stubs need the protobuf runtime as a direct mypy dependency.
 # gazelle:include_dep @pypi//protobuf
 
 
-def settled_ranges(ranges: Iterable[protocol_pb2.CursorRange]) -> tuple[tuple[int, int], ...]:
+def settled_ranges(ranges: Iterable[history_pb2.CursorRange]) -> tuple[tuple[int, int], ...]:
     return tuple(sorted((cursor_range.first, cursor_range.last) for cursor_range in ranges))
 
 

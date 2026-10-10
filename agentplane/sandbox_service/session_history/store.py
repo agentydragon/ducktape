@@ -10,8 +10,8 @@ from sqlalchemy import delete, func, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
+from agentplane.history_service import protocol_pb2 as history_pb2
 from agentplane.protocol import event_log_pb2
-from agentplane.sandbox_service import protocol_pb2
 from agentplane.sandbox_service.commands.db import Session
 from agentplane.sandbox_service.session_history.db import (
     CHANGE_POSITION,
@@ -185,13 +185,13 @@ class Store:
                         await _settle(session, session_id, entry)
             return row.last_cursor
 
-    async def record_feed_state(self, session_id: UUID, feed: protocol_pb2.SessionFeedState) -> None:
+    async def record_feed_state(self, session_id: UUID, feed: history_pb2.SessionFeedState) -> None:
         """Record only a covered runner snapshot; delayed copiers cannot rewind it or drop a seal.
 
         The snapshot may name the runner session (a direct runner attach) or the public Session ID
         (a Sandbox Service follow); it is stored under the runner's, as either copier wrote it.
         """
-        snapshot = protocol_pb2.SessionFeedState()
+        snapshot = history_pb2.SessionFeedState()
         snapshot.CopyFrom(feed)
         async with self._sessions.begin() as session:
             row = await session.scalar(select(SessionHistory).where(SessionHistory.id == session_id).with_for_update())
@@ -209,7 +209,7 @@ class Store:
             if snapshot.HasField("sealed") and snapshot.sealed.cursor != row.last_cursor:
                 raise HistoryConflictError("seal does not end the committed history")
             if row.feed_state is not None:
-                prior = protocol_pb2.SessionFeedState.FromString(row.feed_state)
+                prior = history_pb2.SessionFeedState.FromString(row.feed_state)
                 if prior.HasField("sealed"):
                     if snapshot.HasField("sealed") and snapshot.sealed != prior.sealed:
                         raise HistoryConflictError("conflicting seals")
@@ -232,7 +232,7 @@ class Store:
 
     async def read_page(
         self, session_id: UUID, *, after_cursor: int = 0, limit: int = 128
-    ) -> protocol_pb2.ReadSessionEventsResponse:
+    ) -> history_pb2.ReadSessionEventsResponse:
         """Read prefix watermark and lifecycle from the same history-row snapshot."""
         if after_cursor < 0 or not 1 <= limit <= 1000:
             raise ValueError("invalid history page")
@@ -277,10 +277,10 @@ class Store:
                 )
                 .order_by(SessionEventSettlement.completion_cursor)
             )
-            page = protocol_pb2.ReadSessionEventsResponse(
+            page = history_pb2.ReadSessionEventsResponse(
                 last_cursor=history.last_cursor,
                 entries=[event_log_pb2.EventEntry.FromString(row.payload) for row in rows],
-                settlements=[protocol_pb2.SettledDeltas.FromString(payload) for payload in settlements],
+                settlements=[history_pb2.SettledDeltas.FromString(payload) for payload in settlements],
             )
             if history.feed_state is not None:
                 page.feed_state.ParseFromString(history.feed_state)

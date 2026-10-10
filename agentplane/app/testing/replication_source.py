@@ -9,6 +9,7 @@ from uuid import NAMESPACE_URL, uuid5
 import grpc
 
 from agentplane.app.testing.history_service import HistoryService
+from agentplane.history_service import protocol_pb2 as history_pb2
 from agentplane.protocol import command_pb2, event_log_pb2, event_pb2
 from agentplane.runner import protocol_pb2
 from agentplane.sandbox_service import protocol_pb2 as service_pb2
@@ -52,18 +53,18 @@ class ReplicationSource(HistoryService):
         )
         self.publish(self.session_id, [entry])
         self.attached.last_cursor = cursor
-        self.set_feed(self.session_id, service_pb2.SessionFeedState(attached=self.attached))
+        self.set_feed(self.session_id, history_pb2.SessionFeedState(attached=self.attached))
         return self.entries[-1]
 
     async def read_events(
-        self, request: service_pb2.ReadSessionEventsRequest, context: grpc.aio.ServicerContext
-    ) -> service_pb2.ReadSessionEventsResponse:
+        self, request: history_pb2.ReadSessionEventsRequest, context: grpc.aio.ServicerContext
+    ) -> history_pb2.ReadSessionEventsResponse:
         if self.hold_next_replay:
             self.hold_next_replay = False
             opened = Opened(request.after_cursor)
             self.opened.put_nowait(opened)
             await opened.replay.wait()
-        self.set_feed(self.session_id, service_pb2.SessionFeedState(attached=self.attached))
+        self.set_feed(self.session_id, history_pb2.SessionFeedState(attached=self.attached))
         return await super().read_events(request, context)
 
     async def submit_command(

@@ -7,6 +7,7 @@ import pytest
 import pytest_bazel
 from sqlalchemy.ext.asyncio import AsyncEngine
 
+from agentplane.history_service import protocol_pb2 as history_pb2
 from agentplane.protocol import event_log_pb2
 from agentplane.runner import protocol_pb2 as runner_pb2
 from agentplane.sandbox_service import protocol_pb2
@@ -150,7 +151,7 @@ async def test_feed_snapshot_requires_covered_bound_history_and_cannot_regress(e
     session_id = uuid4()
     await opened(store, session_id)
     assert not (await store.read_page(session_id)).HasField("feed_state")
-    feed = protocol_pb2.SessionFeedState(
+    feed = history_pb2.SessionFeedState(
         attached=runner_pb2.Attached(
             session_id="original-native-path", last_cursor=1, harness_state=runner_pb2.HARNESS_STATE_STOPPED
         )
@@ -170,7 +171,7 @@ async def test_feed_snapshot_requires_covered_bound_history_and_cannot_regress(e
     await store.append(session_id, [entry(2, resumed=True)])
     feed.attached.last_cursor = 2
     await store.record_feed_state(session_id, feed)
-    stale = protocol_pb2.SessionFeedState(
+    stale = history_pb2.SessionFeedState(
         attached=runner_pb2.Attached(session_id="original-native-path", last_cursor=1), ended=True
     )
     await store.record_feed_state(session_id, stale)
@@ -190,15 +191,15 @@ async def test_followed_snapshot_is_stored_under_runner_id_and_seal_is_sticky(en
     await opened(store, session_id)
     await store.append(session_id, [entry(1), entry(2)])
     # A Sandbox Service follow names the public Session ID; a direct runner attach the runner's.
-    followed = protocol_pb2.SessionFeedState(attached=runner_pb2.Attached(session_id=str(session_id), last_cursor=1))
+    followed = history_pb2.SessionFeedState(attached=runner_pb2.Attached(session_id=str(session_id), last_cursor=1))
     with pytest.raises(HistoryConflictError, match="seal"):
         await store.record_feed_state(
-            session_id, protocol_pb2.SessionFeedState(attached=followed.attached, sealed=protocol_pb2.Sealed(cursor=1))
+            session_id, history_pb2.SessionFeedState(attached=followed.attached, sealed=protocol_pb2.Sealed(cursor=1))
         )
     followed.sealed.cursor = 2
     await store.record_feed_state(session_id, followed)
     assert (await store.read_page(session_id)).feed_state.attached.session_id == "original-native-path"
-    direct = protocol_pb2.SessionFeedState(
+    direct = history_pb2.SessionFeedState(
         attached=runner_pb2.Attached(session_id="original-native-path", last_cursor=2)
     )
     await store.record_feed_state(session_id, direct)
@@ -207,11 +208,11 @@ async def test_followed_snapshot_is_stored_under_runner_id_and_seal_is_sticky(en
     assert stored.sealed.cursor == 2
     with pytest.raises(HistoryConflictError, match="seal"):
         await store.record_feed_state(
-            session_id, protocol_pb2.SessionFeedState(attached=direct.attached, sealed=protocol_pb2.Sealed(cursor=3))
+            session_id, history_pb2.SessionFeedState(attached=direct.attached, sealed=protocol_pb2.Sealed(cursor=3))
         )
 
 
-def settled(page: protocol_pb2.ReadSessionEventsResponse) -> list[tuple[int, int]]:
+def settled(page: history_pb2.ReadSessionEventsResponse) -> list[tuple[int, int]]:
     return [(cursor_range.first, cursor_range.last) for item in page.settlements for cursor_range in item.ranges]
 
 

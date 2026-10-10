@@ -19,6 +19,7 @@ from sqlalchemy import func, select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncEngine
 
+from agentplane.history_service.protocol_pb2 import SessionFeedState
 from agentplane.protocol import event_log_pb2
 from agentplane.runner.errors import RunnerError, StreamClosedError
 from agentplane.sandbox_service.client import (
@@ -28,7 +29,7 @@ from agentplane.sandbox_service.client import (
     SealedError,
     ServiceError,
 )
-from agentplane.sandbox_service.protocol_pb2 import SandboxDestination, Sealed, SessionChange, SessionFeedState
+from agentplane.sandbox_service.protocol_pb2 import SandboxDestination, Sealed, SessionChange
 from agentplane.sandbox_service.session_history.store import HistoryConflictError, Store
 
 # Generated stubs require the protobuf runtime as a direct mypy dependency.

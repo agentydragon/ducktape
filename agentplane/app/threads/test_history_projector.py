@@ -22,6 +22,7 @@ from agentplane.app.threads.sessions import SandboxSessions
 from agentplane.app.threads.store import ThreadStore
 from agentplane.app.threads.summaries import AppSummaries, FeedEnd
 from agentplane.app.threads.view.content import ContentStore
+from agentplane.history_service import protocol_pb2 as history_pb2
 from agentplane.history_service.client import HistoryServiceClient
 from agentplane.protocol import event_pb2
 from agentplane.runner import protocol_pb2 as runner_pb2
@@ -45,8 +46,8 @@ async def test_projection_resumes_existing_checkpoint_without_copying_raw_events
     await ingestion.record(thread, [first], lease=lease)
     reader = AsyncMock(spec=HistoryServiceClient)
     reader.read_session_events.side_effect = [
-        protocol_pb2.ReadSessionEventsResponse(last_cursor=2, entries=[second]),
-        protocol_pb2.ReadSessionEventsResponse(last_cursor=2),
+        history_pb2.ReadSessionEventsResponse(last_cursor=2, entries=[second]),
+        history_pb2.ReadSessionEventsResponse(last_cursor=2),
     ]
     projector = HistoryProjector(
         engine,
@@ -69,7 +70,7 @@ async def test_failed_projection_can_retry_without_advancing_checkpoint(
     lease = await lease_for(thread)
     entry = event_entry(1, harness_started=event_pb2.HarnessStarted(resumed=False, pid=7))
     reader = AsyncMock(spec=HistoryServiceClient)
-    reader.read_session_events.return_value = protocol_pb2.ReadSessionEventsResponse(last_cursor=1, entries=[entry])
+    reader.read_session_events.return_value = history_pb2.ReadSessionEventsResponse(last_cursor=1, entries=[entry])
     projector = HistoryProjector(
         engine,
         service_pages(cast(HistoryServiceClient, reader)),
@@ -93,7 +94,7 @@ async def test_expired_owner_cannot_project(
     thread = await event_logs.open("sb-1", "s-1", SPEC)
     lease = await lease_for(thread)
     reader = AsyncMock(spec=HistoryServiceClient)
-    reader.read_session_events.return_value = protocol_pb2.ReadSessionEventsResponse(
+    reader.read_session_events.return_value = history_pb2.ReadSessionEventsResponse(
         last_cursor=1, entries=[event_entry(1, harness_started=event_pb2.HarnessStarted(resumed=False, pid=7))]
     )
     await ingestion.release(lease)
@@ -118,7 +119,7 @@ async def test_invalid_history_does_not_advance_projection(
     if case == "source_sequence":
         entry.origin.sequence = 9
     reader = AsyncMock(spec=HistoryServiceClient)
-    reader.read_session_events.return_value = protocol_pb2.ReadSessionEventsResponse(
+    reader.read_session_events.return_value = history_pb2.ReadSessionEventsResponse(
         last_cursor=0 if case == "beyond_watermark" else 1, entries=[] if case == "gap" else [entry]
     )
     with pytest.raises(EventReplicationError):
@@ -140,7 +141,7 @@ async def test_projection_requires_service_coverage_of_checkpoint(
         thread, [event_entry(1, harness_started=event_pb2.HarnessStarted(resumed=False, pid=7))], lease=lease
     )
     reader = AsyncMock(spec=HistoryServiceClient)
-    reader.read_session_events.return_value = protocol_pb2.ReadSessionEventsResponse(last_cursor=0)
+    reader.read_session_events.return_value = history_pb2.ReadSessionEventsResponse(last_cursor=0)
     with pytest.raises(ConnectionError, match="projection checkpoint"):
         await HistoryProjector(
             engine,
@@ -157,10 +158,10 @@ async def test_supervisor_resumes_deleted_sandbox_without_runner_contact(
     thread = await event_logs.open("deleted-sandbox", "s-1", SPEC)
     reader = AsyncMock(spec=HistoryServiceClient)
     reader.read_session_events.side_effect = [
-        protocol_pb2.ReadSessionEventsResponse(
+        history_pb2.ReadSessionEventsResponse(
             last_cursor=1, entries=[event_entry(1, harness_started=event_pb2.HarnessStarted(resumed=False, pid=7))]
         ),
-        protocol_pb2.ReadSessionEventsResponse(last_cursor=1),
+        history_pb2.ReadSessionEventsResponse(last_cursor=1),
     ]
     runners = Mock(spec=SandboxSessions)
     runners.running.return_value = set()
@@ -200,7 +201,7 @@ async def test_projection_updates_activity_atomically_and_ignores_tool_output(
     await ingestion.record(thread, first, lease=lease)
     activity = event_entry(3, tool_arguments=event_pb2.ToolArguments(item_id="call", arguments_json='{"x":"y"}'))
     reader = AsyncMock(spec=HistoryServiceClient)
-    reader.read_session_events.return_value = protocol_pb2.ReadSessionEventsResponse(last_cursor=3, entries=[activity])
+    reader.read_session_events.return_value = history_pb2.ReadSessionEventsResponse(last_cursor=3, entries=[activity])
     interrupted = HistoryProjector(
         engine,
         service_pages(cast(HistoryServiceClient, reader)),
@@ -222,12 +223,12 @@ async def test_projection_updates_activity_atomically_and_ignores_tool_output(
             -1
         ].event.at.ToDatetime(tzinfo=UTC)
     assert (await projector.project_batch(thread, lease=lease)).through_cursor == 3
-    reader.read_session_events.return_value = protocol_pb2.ReadSessionEventsResponse(
+    reader.read_session_events.return_value = history_pb2.ReadSessionEventsResponse(
         last_cursor=4,
         entries=[event_entry(4, tool_output_delta=event_pb2.ToolOutputDelta(item_id="call", text="still running"))],
     )
     assert (await projector.project_batch(thread, lease=lease)).through_cursor == 4
-    reader.read_session_events.return_value = protocol_pb2.ReadSessionEventsResponse(last_cursor=4)
+    reader.read_session_events.return_value = history_pb2.ReadSessionEventsResponse(last_cursor=4)
     assert (await projector.project_batch(thread, lease=lease)).through_cursor == 4
     async with async_sessionmaker(engine)() as session:
         assert await session.scalar(
@@ -261,7 +262,7 @@ async def test_thread_metadata_survives_projection_retry(
     for entry in later:
         entry.event.at.CopyFrom(first[0].event.at)
     reader = AsyncMock(spec=HistoryServiceClient)
-    reader.read_session_events.return_value = protocol_pb2.ReadSessionEventsResponse(last_cursor=4, entries=later)
+    reader.read_session_events.return_value = history_pb2.ReadSessionEventsResponse(last_cursor=4, entries=later)
     interrupted = HistoryProjector(
         engine,
         service_pages(cast(HistoryServiceClient, reader)),
@@ -305,10 +306,10 @@ async def test_lifecycle_uses_only_covered_service_snapshot(
     initial = runner_pb2.Attached(session_id="s-1", spec=SPEC, harness_state=runner_pb2.HARNESS_STATE_RUNNING)
     await ingestion.set_attached(thread, initial, lease=lease)
     reader = AsyncMock(spec=HistoryServiceClient)
-    page = protocol_pb2.ReadSessionEventsResponse(
+    page = history_pb2.ReadSessionEventsResponse(
         last_cursor=2,
         entries=[event_entry(1, harness_started=event_pb2.HarnessStarted(pid=7))],
-        feed_state=protocol_pb2.SessionFeedState(
+        feed_state=history_pb2.SessionFeedState(
             attached=runner_pb2.Attached(
                 session_id="s-1", spec=SPEC, last_cursor=2, harness_state=runner_pb2.HARNESS_STATE_STOPPED
             ),
@@ -362,9 +363,9 @@ async def test_unchanged_idle_projection_does_not_write_or_notify(
     lease = await lease_for(thread)
     await ingestion.record(thread, [event_entry(1, harness_started=event_pb2.HarnessStarted(pid=7))], lease=lease)
     reader = AsyncMock(spec=HistoryServiceClient)
-    page = protocol_pb2.ReadSessionEventsResponse(
+    page = history_pb2.ReadSessionEventsResponse(
         last_cursor=1,
-        feed_state=protocol_pb2.SessionFeedState(
+        feed_state=history_pb2.SessionFeedState(
             attached=runner_pb2.Attached(session_id="idle", spec=SPEC, last_cursor=1)
         ),
     )
@@ -403,9 +404,9 @@ async def test_empty_page_adopts_eof_and_rolls_back_invalid_snapshot(
     thread = await event_logs.open("sb-1", "empty", SPEC)
     lease = await lease_for(thread)
     reader = AsyncMock(spec=HistoryServiceClient)
-    page = protocol_pb2.ReadSessionEventsResponse(
+    page = history_pb2.ReadSessionEventsResponse(
         last_cursor=0,
-        feed_state=protocol_pb2.SessionFeedState(
+        feed_state=history_pb2.SessionFeedState(
             attached=runner_pb2.Attached(session_id="empty", spec=SPEC, last_cursor=1), ended=True
         ),
     )
@@ -440,7 +441,7 @@ async def test_deleted_history_keeps_seeded_terminal_state_without_service_snaps
     await ingestion.end_feed(thread, lease=lease, error=None)
     before = await event_logs.feed_state(thread)
     reader = AsyncMock(spec=HistoryServiceClient)
-    reader.read_session_events.return_value = protocol_pb2.ReadSessionEventsResponse(last_cursor=0)
+    reader.read_session_events.return_value = history_pb2.ReadSessionEventsResponse(last_cursor=0)
     await HistoryProjector(
         engine,
         service_pages(cast(HistoryServiceClient, reader)),
@@ -475,7 +476,7 @@ async def test_projection_failure_retains_checkpoint_not_eof_and_recovers(
         assert "private backend" not in str(state)
     assert await event_logs.feed_state(thread) is None  # failure is not runner EOF
     reader.read_session_events.side_effect = None
-    reader.read_session_events.return_value = protocol_pb2.ReadSessionEventsResponse(last_cursor=1)
+    reader.read_session_events.return_value = history_pb2.ReadSessionEventsResponse(last_cursor=1)
     await projector.project_batch(thread, lease=lease)
     async with async_sessionmaker(engine)() as session:
         state = await session.scalar(select(ThreadEntity.state).where(ThreadEntity.entity_id == "current"))
@@ -483,7 +484,7 @@ async def test_projection_failure_retains_checkpoint_not_eof_and_recovers(
         assert ThreadViewState.model_validate(state).operational.status == "active"
         assert ThreadViewState.model_validate(state).operational.feed_error is None
     # A delayed failure report cannot overwrite a newer committed prefix.
-    reader.read_session_events.return_value = protocol_pb2.ReadSessionEventsResponse(
+    reader.read_session_events.return_value = history_pb2.ReadSessionEventsResponse(
         last_cursor=2, entries=[event_entry(2, turn_started=event_pb2.TurnStarted(turn_id="turn"))]
     )
     await projector.project_batch(thread, lease=lease)
@@ -502,8 +503,8 @@ async def test_discovery_of_new_service_thread_never_starts_legacy_follow(
 ) -> None:
     public_id = uuid4()
     reader = AsyncMock(spec=HistoryServiceClient)
-    reader.read_session_observations.return_value = protocol_pb2.ReadSessionObservationsResponse(last_cursor=0)
-    reader.read_session_events.return_value = protocol_pb2.ReadSessionEventsResponse(last_cursor=0)
+    reader.read_session_observations.return_value = history_pb2.ReadSessionObservationsResponse(last_cursor=0)
+    reader.read_session_events.return_value = history_pb2.ReadSessionEventsResponse(last_cursor=0)
     logs = ServiceEventLogStore(
         engine,
         summaries=AppSummaries(engine),
@@ -543,8 +544,8 @@ async def test_discovery_racing_open_agrees_on_the_service_id(engine: AsyncEngin
     """Discovery lists the runner session before CreateSession's reply reaches the app."""
     public_id = uuid4()
     reader = AsyncMock(spec=HistoryServiceClient)
-    reader.read_session_observations.return_value = protocol_pb2.ReadSessionObservationsResponse(last_cursor=0)
-    reader.read_session_events.return_value = protocol_pb2.ReadSessionEventsResponse(last_cursor=0)
+    reader.read_session_observations.return_value = history_pb2.ReadSessionObservationsResponse(last_cursor=0)
+    reader.read_session_events.return_value = history_pb2.ReadSessionEventsResponse(last_cursor=0)
     logs = ServiceEventLogStore(
         engine,
         summaries=AppSummaries(engine),
@@ -645,7 +646,7 @@ async def test_coordinator_projects_sibling_owned_by_another_replica_independent
     second = await event_logs.open("same-sandbox", "second", SPEC)
     other_replica_lease = await lease_for(first)
     reader = AsyncMock(spec=HistoryServiceClient)
-    reader.read_session_events.return_value = protocol_pb2.ReadSessionEventsResponse(
+    reader.read_session_events.return_value = history_pb2.ReadSessionEventsResponse(
         last_cursor=1, entries=[event_entry(1, harness_started=event_pb2.HarnessStarted(pid=7))]
     )
     runners = Mock(spec=SandboxSessions)

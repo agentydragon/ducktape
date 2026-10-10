@@ -13,9 +13,9 @@ from uuid import UUID
 
 import grpc
 
+from agentplane.history_service import protocol_pb2 as history_pb2
 from agentplane.history_service.client import HistoryServiceClient
 from agentplane.protocol import event_log_pb2
-from agentplane.sandbox_service import protocol_pb2
 
 # gazelle:include_dep @pypi//protobuf
 
@@ -23,7 +23,7 @@ from agentplane.sandbox_service import protocol_pb2
 @dataclass
 class History:
     entries: list[event_log_pb2.EventEntry] = field(default_factory=list)
-    feed: protocol_pb2.SessionFeedState | None = None
+    feed: history_pb2.SessionFeedState | None = None
 
 
 class HistoryService:
@@ -31,7 +31,7 @@ class HistoryService:
 
     def __init__(self) -> None:
         self.histories: dict[str, History] = {}
-        self.requests: list[protocol_pb2.ReadSessionEventsRequest] = []
+        self.requests: list[history_pb2.ReadSessionEventsRequest] = []
         self.failure: grpc.StatusCode | None = None
 
     def open(self, session_id: UUID) -> None:
@@ -46,19 +46,19 @@ class HistoryService:
                 continue
             history.entries.append(event_log_pb2.EventEntry.FromString(entry.SerializeToString()))
 
-    def set_feed(self, session_id: UUID, feed: protocol_pb2.SessionFeedState) -> None:
-        self.histories[str(session_id)].feed = protocol_pb2.SessionFeedState.FromString(feed.SerializeToString())
+    def set_feed(self, session_id: UUID, feed: history_pb2.SessionFeedState) -> None:
+        self.histories[str(session_id)].feed = history_pb2.SessionFeedState.FromString(feed.SerializeToString())
 
     async def read_events(
-        self, request: protocol_pb2.ReadSessionEventsRequest, context: grpc.aio.ServicerContext
-    ) -> protocol_pb2.ReadSessionEventsResponse:
-        self.requests.append(protocol_pb2.ReadSessionEventsRequest.FromString(request.SerializeToString()))
+        self, request: history_pb2.ReadSessionEventsRequest, context: grpc.aio.ServicerContext
+    ) -> history_pb2.ReadSessionEventsResponse:
+        self.requests.append(history_pb2.ReadSessionEventsRequest.FromString(request.SerializeToString()))
         if self.failure is not None:
             await context.abort(self.failure, "scripted history failure")
         if request.session_id not in self.histories:
             await context.abort(grpc.StatusCode.NOT_FOUND, "unknown session")
         history = self.histories[request.session_id]
-        response = protocol_pb2.ReadSessionEventsResponse(
+        response = history_pb2.ReadSessionEventsResponse(
             last_cursor=history.entries[-1].cursor if history.entries else 0,
             entries=[e for e in history.entries if e.cursor > request.after_cursor][: request.limit],
         )
@@ -67,8 +67,8 @@ class HistoryService:
         return response
 
     async def read_observations(
-        self, request: protocol_pb2.ReadSessionObservationsRequest, context: grpc.aio.ServicerContext
-    ) -> protocol_pb2.ReadSessionObservationsResponse:
+        self, request: history_pb2.ReadSessionObservationsRequest, context: grpc.aio.ServicerContext
+    ) -> history_pb2.ReadSessionObservationsResponse:
         if self.failure is not None:
             await context.abort(self.failure, "scripted history failure")
         if request.session_id not in self.histories:
@@ -80,10 +80,10 @@ class HistoryService:
             selected = [
                 e for e in entries if not request.HasField("before_cursor") or e.cursor < request.before_cursor
             ][-request.limit :]
-        return protocol_pb2.ReadSessionObservationsResponse(
+        return history_pb2.ReadSessionObservationsResponse(
             last_cursor=entries[-1].cursor if entries else 0,
             observations=[
-                protocol_pb2.SessionObservation(cursor=e.cursor, kind=e.event.WhichOneof("observation") or "")
+                history_pb2.SessionObservation(cursor=e.cursor, kind=e.event.WhichOneof("observation") or "")
                 for e in selected
             ],
         )
@@ -96,13 +96,13 @@ class HistoryService:
             {
                 "ReadSessionEvents": grpc.unary_unary_rpc_method_handler(
                     self.read_events,
-                    request_deserializer=protocol_pb2.ReadSessionEventsRequest.FromString,
-                    response_serializer=protocol_pb2.ReadSessionEventsResponse.SerializeToString,
+                    request_deserializer=history_pb2.ReadSessionEventsRequest.FromString,
+                    response_serializer=history_pb2.ReadSessionEventsResponse.SerializeToString,
                 ),
                 "ReadSessionObservations": grpc.unary_unary_rpc_method_handler(
                     self.read_observations,
-                    request_deserializer=protocol_pb2.ReadSessionObservationsRequest.FromString,
-                    response_serializer=protocol_pb2.ReadSessionObservationsResponse.SerializeToString,
+                    request_deserializer=history_pb2.ReadSessionObservationsRequest.FromString,
+                    response_serializer=history_pb2.ReadSessionObservationsResponse.SerializeToString,
                 ),
             },
         )

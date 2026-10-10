@@ -19,7 +19,6 @@ from agentplane.history_service.evidence import EvidenceNotFoundError, EvidenceR
 from agentplane.history_service.summaries import SummaryReader
 from agentplane.history_service.summary_changes import SummaryChanges
 from agentplane.history_service.thread_reads import PayloadNotFoundError, ThreadReader, ThreadScopeResetError
-from agentplane.sandbox_service import protocol_pb2
 from agentplane.sandbox_service.session_history.store import HistoryNotFoundError, Store
 from agentplane.subjects import ServiceAccountRef
 from agentplane.workload_auth.bearer import parse_bearer, sole_header
@@ -93,8 +92,8 @@ class HistoryService(protocol_pb2_grpc.HistoryServiceServicer):
 
     @override
     async def ReadSessionEvents(
-        self, request: protocol_pb2.ReadSessionEventsRequest, context: grpc.aio.ServicerContext
-    ) -> protocol_pb2.ReadSessionEventsResponse:
+        self, request: history_pb2.ReadSessionEventsRequest, context: grpc.aio.ServicerContext
+    ) -> history_pb2.ReadSessionEventsResponse:
         async with self.reader(context):
             return await self.resources.history.read_page(
                 UUID(request.session_id), after_cursor=request.after_cursor, limit=request.limit
@@ -102,8 +101,8 @@ class HistoryService(protocol_pb2_grpc.HistoryServiceServicer):
 
     @override
     async def ReadSessionObservations(
-        self, request: protocol_pb2.ReadSessionObservationsRequest, context: grpc.aio.ServicerContext
-    ) -> protocol_pb2.ReadSessionObservationsResponse:
+        self, request: history_pb2.ReadSessionObservationsRequest, context: grpc.aio.ServicerContext
+    ) -> history_pb2.ReadSessionObservationsResponse:
         async with self.reader(context):
             page = await self.resources.history.read_observations(
                 UUID(request.session_id),
@@ -111,12 +110,12 @@ class HistoryService(protocol_pb2_grpc.HistoryServiceServicer):
                 after_cursor=request.after_cursor if request.HasField("after_cursor") else None,
                 limit=request.limit,
             )
-            return protocol_pb2.ReadSessionObservationsResponse(
+            return history_pb2.ReadSessionObservationsResponse(
                 last_cursor=page.last_cursor,
                 observations=[
-                    protocol_pb2.SessionObservation(cursor=cursor, kind=kind) for cursor, kind in page.observations
+                    history_pb2.SessionObservation(cursor=cursor, kind=kind) for cursor, kind in page.observations
                 ],
-                settled=[protocol_pb2.CursorRange(first=first, last=last) for first, last in page.settled],
+                settled=[history_pb2.CursorRange(first=first, last=last) for first, last in page.settled],
             )
 
     @override

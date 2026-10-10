@@ -13,11 +13,11 @@ from agentplane.app.threads.ingestion import Ingester, Ingestion
 from agentplane.app.threads.models import EventLog
 from agentplane.app.threads.sessions import SandboxSessions
 from agentplane.app.threads.summaries import AppSummaries, HistorySummaries
+from agentplane.history_service import protocol_pb2 as history_pb2
 from agentplane.history_service.client import HistoryServiceClient
 from agentplane.protocol import event_log_pb2
 from agentplane.runner import protocol_pb2 as runner_pb2
 from agentplane.runner.harness import Harness
-from agentplane.sandbox_service import protocol_pb2
 from agentplane.thread_fold.models import ThreadHistorySummary
 from agentplane.thread_fold.projection_lease import ProjectionLease
 from agentplane.thread_fold.projector import HistoryProjector, service_pages
@@ -110,7 +110,7 @@ class ProjectedHistory(Ingestion):
         cursor = history.entries[-1].cursor if history.entries else 0
         pending = self._attachments.get(thread_id)
         if pending is not None and pending.last_cursor <= cursor:
-            self.peer.set_feed(thread_id, protocol_pb2.SessionFeedState(attached=pending))
+            self.peer.set_feed(thread_id, history_pb2.SessionFeedState(attached=pending))
             del self._attachments[thread_id]
         await self.project(thread_id, lease)
 
@@ -125,7 +125,7 @@ class ProjectedHistory(Ingestion):
             # Publish lifecycle metadata only when the scripted prefix covers it.
             self._attachments[thread_id] = snapshot
             return
-        self.peer.set_feed(thread_id, protocol_pb2.SessionFeedState(attached=snapshot))
+        self.peer.set_feed(thread_id, history_pb2.SessionFeedState(attached=snapshot))
         await self.project(thread_id, lease)
 
     async def end_feed(
@@ -140,7 +140,7 @@ class ProjectedHistory(Ingestion):
         feed = self.peer.histories[str(thread_id)].feed
         if feed is None:
             raise ValueError("seed an attachment before terminal state")
-        terminal = protocol_pb2.SessionFeedState.FromString(feed.SerializeToString())
+        terminal = history_pb2.SessionFeedState.FromString(feed.SerializeToString())
         terminal.ended = True
         self.peer.set_feed(thread_id, terminal)
         await self.project(thread_id, lease)

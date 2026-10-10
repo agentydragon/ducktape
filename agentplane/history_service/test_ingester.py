@@ -12,6 +12,7 @@ import pytest
 import pytest_bazel
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 
+from agentplane.history_service import protocol_pb2 as history_pb2
 from agentplane.history_service.conftest import ScriptedSandboxService, subscriber
 from agentplane.history_service.ingester import HistoryIngester, claim, logger
 from agentplane.protocol import event_log_pb2, event_pb2
@@ -83,7 +84,7 @@ class ObservedStore(Store):
             self.commits.notify()
 
     @override
-    async def record_feed_state(self, session_id: UUID, feed: protocol_pb2.SessionFeedState) -> None:
+    async def record_feed_state(self, session_id: UUID, feed: history_pb2.SessionFeedState) -> None:
         try:
             await super().record_feed_state(session_id, feed)
         finally:

@@ -11,7 +11,6 @@ import grpc
 
 from agentplane.grpc_options import grpc_channel_option_kvps
 from agentplane.history_service import protocol_pb2 as history_pb2, protocol_pb2_grpc
-from agentplane.sandbox_service import protocol_pb2
 
 # gazelle:include_dep @pypi//protobuf
 # gazelle:include_dep @pypi//grpcio
@@ -67,12 +66,12 @@ class HistoryServiceClient:
 
     async def read_session_events(
         self, session_id: str, *, after_cursor: int = 0, limit: int = 128
-    ) -> protocol_pb2.ReadSessionEventsResponse:
+    ) -> history_pb2.ReadSessionEventsResponse:
         if not session_id or after_cursor < 0 or not 1 <= limit <= 1000:
             raise ValueError("invalid session history page")
         try:
             return await self.stub.ReadSessionEvents(
-                protocol_pb2.ReadSessionEventsRequest(session_id=session_id, after_cursor=after_cursor, limit=limit),
+                history_pb2.ReadSessionEventsRequest(session_id=session_id, after_cursor=after_cursor, limit=limit),
                 metadata=await self.metadata(),
                 timeout=self.request_timeout_s,
             )
@@ -81,7 +80,7 @@ class HistoryServiceClient:
 
     async def read_session_observations(
         self, session_id: str, *, before_cursor: int | None = None, after_cursor: int | None = None, limit: int = 30
-    ) -> protocol_pb2.ReadSessionObservationsResponse:
+    ) -> history_pb2.ReadSessionObservationsResponse:
         if (
             not session_id
             or not 1 <= limit <= 200
@@ -90,7 +89,7 @@ class HistoryServiceClient:
             or (before_cursor is not None and after_cursor is not None)
         ):
             raise ValueError("invalid session observation page")
-        request = protocol_pb2.ReadSessionObservationsRequest(session_id=session_id, limit=limit)
+        request = history_pb2.ReadSessionObservationsRequest(session_id=session_id, limit=limit)
         if before_cursor is not None:
             request.before_cursor = before_cursor
         if after_cursor is not None:

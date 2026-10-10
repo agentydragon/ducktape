@@ -899,7 +899,6 @@ flowchart TD
     HISTORY_WRITER_SWITCH_RETIRE[Blocked: delete the history_writer switch]
     HISTORY_DATABASE_RENAME[Blocked: rename the sandbox_service database and role]
     SANDBOX_DATABASE_RENAME[Blocked: name the sandbox_commands database for the Sandbox Service]
-    HISTORY_PROTO_OWNERSHIP[Candidate: History Service owns its request messages]
     APP_ELECTRIC_RETIRE[Blocked: remove Electric's access to the app database]
     PROTO_DIRECTORY[Unscheduled: cross-component protos under one proto directory]
     RUNNER_OUTBOUND_CHANNEL[Outbound command delivery peers]
@@ -918,7 +917,6 @@ flowchart TD
     HISTORY_SESSION_COLUMNS_DROP --> HISTORY_DATABASE_RENAME
     HISTORY_DATABASE_RENAME --> SANDBOX_DATABASE_RENAME
     APP_PROJECTOR_RETIRE --> APP_ELECTRIC_RETIRE
-    HISTORY_PROTO_OWNERSHIP -. after proto churn settles .-> PROTO_DIRECTORY
     RUNNER_OUTBOUND_CHANNEL -. after proto churn settles .-> PROTO_DIRECTORY
 ```
 
@@ -990,12 +988,6 @@ new name would copy the log. Verify the History Service and Electric reconnect w
 `sandbox_commands` and its role and Secret to `sandbox_service` in place, as that node does, and
 point the Sandbox Service, its migration init container and `commands_database_url` at the new
 names.
-
-### `HISTORY_PROTO_OWNERSHIP` — History Service request messages
-
-**Candidate.** `history_service/protocol.proto` reuses `ducktape.agentplane.sandbox.v1` request
-and response messages for `ReadSessionEvents` and `ReadSessionObservations`, which the Sandbox
-Service no longer serves. Move them into the History Service's own package with its callers.
 
 ### `APP_ELECTRIC_RETIRE` — Electric no longer reads the app database
 

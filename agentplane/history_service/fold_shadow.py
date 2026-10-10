@@ -17,8 +17,8 @@ from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
 
+from agentplane.history_service import protocol_pb2 as history_pb2
 from agentplane.history_service.summary_changes import notify_summaries
-from agentplane.sandbox_service import protocol_pb2
 from agentplane.sandbox_service.session_history.db import SessionHistory
 from agentplane.sandbox_service.session_history.store import Store
 from agentplane.thread_fold import projection_lease
@@ -38,7 +38,7 @@ PAGE_SIZE = 128
 
 
 def history_pages(history: Store) -> PageReader:
-    async def read(session_id: UUID, after_cursor: int, limit: int) -> protocol_pb2.ReadSessionEventsResponse:
+    async def read(session_id: UUID, after_cursor: int, limit: int) -> history_pb2.ReadSessionEventsResponse:
         return await history.read_page(session_id, after_cursor=after_cursor, limit=limit)
 
     return read

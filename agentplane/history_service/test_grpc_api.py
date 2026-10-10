@@ -16,7 +16,6 @@ from agentplane.history_service.summaries import SummaryReader
 from agentplane.history_service.summary_changes import SummaryChanges, notify_summaries
 from agentplane.history_service.thread_reads import ThreadReader
 from agentplane.protocol import event_log_pb2, event_pb2
-from agentplane.sandbox_service import protocol_pb2
 from agentplane.sandbox_service.session_history.store import Store
 from agentplane.subjects import ServiceAccountRef
 from agentplane.testing.fake_apiserver import SANDBOX_NAMESPACE, TokenVerdict, fake_apiserver
@@ -105,12 +104,12 @@ async def test_reader_reads_history_of_a_deleted_sandbox(
     await history.append(session_id, [EVENT])
 
     page = await stub.ReadSessionEvents(
-        protocol_pb2.ReadSessionEventsRequest(session_id=str(session_id), limit=10), metadata=bearer(READER_TOKEN)
+        history_pb2.ReadSessionEventsRequest(session_id=str(session_id), limit=10), metadata=bearer(READER_TOKEN)
     )
     assert page.last_cursor == 1
     assert list(page.entries) == [EVENT]
     observations = await stub.ReadSessionObservations(
-        protocol_pb2.ReadSessionObservationsRequest(session_id=str(session_id), limit=10), metadata=bearer(READER_TOKEN)
+        history_pb2.ReadSessionObservationsRequest(session_id=str(session_id), limit=10), metadata=bearer(READER_TOKEN)
     )
     assert observations.last_cursor == 1
     assert [(row.cursor, row.kind) for row in observations.observations] == [(1, "harness_stderr")]
@@ -143,7 +142,7 @@ async def test_read_refusals(
 ) -> None:
     with pytest.raises(grpc.aio.AioRpcError) as refused:
         await stub.ReadSessionEvents(
-            protocol_pb2.ReadSessionEventsRequest(session_id=str(uuid4()), limit=limit), metadata=metadata
+            history_pb2.ReadSessionEventsRequest(session_id=str(uuid4()), limit=limit), metadata=metadata
         )
     assert refused.value.code() == code
 
