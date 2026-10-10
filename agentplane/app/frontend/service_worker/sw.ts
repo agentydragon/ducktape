@@ -29,18 +29,27 @@ declare global {
   }
 }
 
+async function closeActionNotification(actionId: string): Promise<void> {
+  const notifications = await self.registration.getNotifications({ tag: actionId });
+  for (const notification of notifications) notification.close();
+}
+
 self.addEventListener("push", (event) => {
   if (!event.data) return;
   const message = event.data.json() as PushMessage;
   if (message.kind === "retract") {
-    event.waitUntil(
-      self.registration.showNotification(message.outcome, {
-        tag: message.action_id,
-        silent: true,
-        requireInteraction: false,
-        data: message,
-      })
-    );
+    if (message.outcome === "allowed") {
+      event.waitUntil(closeActionNotification(message.action_id));
+    } else {
+      event.waitUntil(
+        self.registration.showNotification(message.outcome, {
+          tag: message.action_id,
+          silent: true,
+          requireInteraction: false,
+          data: message,
+        })
+      );
+    }
     return;
   }
   if (message.kind !== "show") return;
@@ -56,11 +65,15 @@ self.addEventListener("push", (event) => {
         /* Offline delivery still opens the app without offering stale decisions. */
       }
       if (current && current.state !== "decision_pending") {
-        await self.registration.showNotification(current.state.replaceAll("_", " "), {
-          tag: message.action_id,
-          silent: true,
-          data: { kind: "retract", action_id: message.action_id },
-        });
+        if (current.state === "allowed") {
+          await closeActionNotification(message.action_id);
+        } else {
+          await self.registration.showNotification(current.state.replaceAll("_", " "), {
+            tag: message.action_id,
+            silent: true,
+            data: { kind: "retract", action_id: message.action_id },
+          });
+        }
         return;
       }
       const content = current

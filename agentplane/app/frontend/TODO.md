@@ -66,3 +66,7 @@ payload reference carries `chunk_count` and no byte size, so the only bound on a
 read. A large tool output is read, and kept in memory with its thread's retained window, whether or not it is
 ever opened. Consider putting `content_bytes`, which the payload manifest already stores, on the reference so the
 client can leave bodies past a size to be read when shown, and a memory budget across the retained threads.
+
+## Multi-operator Action outcome notifications
+
+- Consider notifying when an Action is allowed if Agentplane becomes a multi-operator/multi-user system, so operators other than the approver can see that another person approved it.
