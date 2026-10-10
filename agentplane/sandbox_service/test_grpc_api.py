@@ -22,7 +22,7 @@ from agentplane.runner import protocol_pb2 as runner_pb2
 from agentplane.runner.client import RunnerClient
 from agentplane.runner.errors import RunnerError, StreamClosedError
 from agentplane.sandbox_service import protocol_pb2, wire
-from agentplane.sandbox_service.client import ReconnectRequiredError, SandboxServiceClient, ServiceError
+from agentplane.sandbox_service.client import ReconnectRequiredError, SandboxServiceClient, SealedError, ServiceError
 from agentplane.sandbox_service.commands import db as commands_db
 from agentplane.sandbox_service.commands.store import SubmissionState, SubmissionStore
 from agentplane.sandbox_service.destinations import DestinationResolver
@@ -704,6 +704,19 @@ async def test_native_eof_is_distinct_from_backend_failure(
             with pytest.raises(ServiceError) as unavailable:
                 await attachment.next_entry()
             assert unavailable.value.code == grpc.StatusCode.UNAVAILABLE
+        await connection.closed.wait()
+
+
+async def test_follow_relays_the_runner_seal(remote: SandboxServiceClient, peer: Peer) -> None:
+    peer.history["session"] = [journal_entry(cursor) for cursor in range(1, 3)]
+    async with asyncio.timeout(8):
+        attachment = await remote.runner(DESTINATION).attach("session")
+        connection = await peer.attachments.get()
+        assert [await attachment.next_entry() for _ in range(2)] == peer.history["session"]
+        connection.responses.put_nowait(runner_pb2.ServerMessage(sealed=runner_pb2.Sealed(cursor=2)))
+        with pytest.raises(SealedError) as sealed:
+            await attachment.next_entry()
+        assert sealed.value.cursor == 2
         await connection.closed.wait()
 
 

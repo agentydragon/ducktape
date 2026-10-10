@@ -193,8 +193,8 @@ Sandbox Service serves them from no copy of its own. A cursor beyond the journal
    when the follow lease expires, during replay as well as live. This is planned transport renewal,
    not native closure.
 5. Alternatively, a terminal `sealed` observation carrying the incarnation's final cursor, after
-   every entry through it. It is defined for the runner's teardown seal and not sent yet: no runner
-   journals a seal. A history copier records it as the stored feed state's `sealed`.
+   every entry through it, once the runner has sealed the Session at teardown. A history copier
+   records it as the stored feed state's `sealed`.
 
 Reconnect from the last durably committed cursor; each reconnect rereads the projected token and
 checks identity and destination again. The app flushes its buffered batch before planned renewal,

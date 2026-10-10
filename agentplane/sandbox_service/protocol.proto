@@ -244,7 +244,6 @@ message FollowSessionRequest {
 }
 
 // The runner sealed this Sandbox incarnation of the Session at teardown: its journal is final.
-// Staged: the runner seals at teardown, but this service does not relay the seal yet.
 message Sealed {
   // The incarnation's final cursor. Every entry through it precedes this frame.
   uint64 cursor = 1;
