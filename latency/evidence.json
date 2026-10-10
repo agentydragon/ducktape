@@ -10483,5 +10483,89 @@
       "sharded",
       "baseline"
     ]
+  },
+  "nixos_image_cache_followup": {
+    "date": "2026-10-10",
+    "implementation_pr": "https://github.com/agentydragon/ducktape/pull/9844",
+    "status": "PR open; publication, substitution and speedup unverified",
+    "phase_labels": [
+      "evaluation_and_planning",
+      "fetch_and_prerequisite_builds",
+      "tarball_build",
+      "docker_import",
+      "container_start_and_activation_wait",
+      "smoke_tests",
+      "cleanup"
+    ],
+    "units": "seconds",
+    "method": "GitHub log marker timestamps; cleanup ends at step completion; packaging and compression not separately profiled",
+    "runs": [
+      {
+        "run": "38028859850",
+        "url": "https://github.com/agentydragon/ducktape/actions/runs/38028859850/job/114145388771",
+        "seconds": [
+          24.47,
+          28.51,
+          180.03,
+          58.97,
+          4.66,
+          30.73,
+          2.3
+        ]
+      },
+      {
+        "run": "38033595464",
+        "url": "https://github.com/agentydragon/ducktape/actions/runs/38033595464/job/114159363147",
+        "seconds": [
+          24.44,
+          31.28,
+          191.19,
+          60.53,
+          4.32,
+          28.56,
+          1.98
+        ]
+      },
+      {
+        "run": "38043304882",
+        "url": "https://github.com/agentydragon/ducktape/actions/runs/38043304882/job/114187713998",
+        "seconds": [
+          25.48,
+          35.99,
+          228.2,
+          56.32,
+          6.67,
+          30.34,
+          7.27
+        ]
+      },
+      {
+        "run": "38046743302",
+        "url": "https://github.com/agentydragon/ducktape/actions/runs/38046743302/job/114197695839",
+        "seconds": [
+          26.52,
+          39.25,
+          223.38,
+          56.16,
+          6.49,
+          29.56,
+          7.18
+        ]
+      },
+      {
+        "run": "38092760557",
+        "url": "https://github.com/agentydragon/ducktape/actions/runs/38092760557/job/114332395853",
+        "seconds": [
+          25.81,
+          33.74,
+          158.84,
+          38.8,
+          5.89,
+          23.8,
+          7.19
+        ]
+      }
+    ],
+    "derivation": "/nix/store/2mzcg57kkk9i4qpk07niqjrhmsk20h43-tarball.drv"
   }
 }
