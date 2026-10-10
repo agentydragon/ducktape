@@ -14,6 +14,7 @@ from agentplane.protocol import event_log_pb2, event_pb2
 from agentplane.sandbox_service.session_history.store import Store
 from agentplane.thread_fold.views import EntityKind
 
+# gazelle:include_dep @pypi//protobuf
 # gazelle:include_dep //agentplane/sandbox_service/session_history:conftest
 
 pytest_plugins = ("agentplane.sandbox_service.session_history.conftest",)

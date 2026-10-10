@@ -90,6 +90,7 @@ py_test(
         "//agentplane/sandbox_service/session_history:conftest",
         "//agentplane/sandbox_service/session_history:store",
         "//agentplane/thread_fold:views",
+        "@pypi//protobuf",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
