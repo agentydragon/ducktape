@@ -60,6 +60,9 @@ jobs:
         with:
           sops_age_key: ${{ secrets.SOPS_AGE_KEY }}
 
+      - name: Run NixOS Bazel RBE integration test
+        run: devinfra/nixos_bazel_test/run.sh test
+
       - uses: ./.github/actions/setup-bazel
         with:
           buildbuddy_api_key: ${{ secrets.BUILDBUDDY_API_KEY }}
@@ -76,6 +79,3 @@ jobs:
           # since the smoke test runs bazel with --nohome_rc.
           export CREDENTIAL_RC="$HOME/.config/bazel/buildbuddy.bazelrc"
           bash devinfra/nixos_bazel_test/smoke_test.sh
-
-      - name: Run NixOS Bazel RBE integration test
-        run: devinfra/nixos_bazel_test/run.sh test
