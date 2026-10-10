@@ -96,6 +96,7 @@ it.each([
 ])(
   "returns to the originating page after a successful $verdict decision",
   async ({ verdict, resultState, buttonName }) => {
+    vi.spyOn(actionGroupService, "list").mockResolvedValue([]);
     const decide = vi.spyOn(actionService, "decide").mockImplementation(async (row) => ({
       ...row,
       ...request(resultState, 21),

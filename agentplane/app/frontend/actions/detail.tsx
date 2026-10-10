@@ -7,11 +7,26 @@ import { ActionRequestsContext, PendingActionCard } from "./requests";
 import { ActionHistoryCard } from "./history";
 import { actionGroupService } from "./client";
 
-function hasInAppReturnTo(value: unknown): boolean {
-  if (typeof value === "string") return value.startsWith("/") && !value.startsWith("//");
-  if (typeof value !== "object" || value === null || !("pathname" in value)) return false;
-  const pathname = (value as { pathname?: unknown }).pathname;
-  return typeof pathname === "string" && pathname.startsWith("/") && !pathname.startsWith("//");
+type InAppReturnTo = string | { pathname: string; search?: string; hash?: string };
+
+function inAppReturnTo(value: unknown): InAppReturnTo | null {
+  if (typeof value === "string") {
+    return value.startsWith("/") && !value.startsWith("//") ? value : null;
+  }
+  if (typeof value !== "object" || value === null || !("pathname" in value)) return null;
+  const location = value as { pathname?: unknown; search?: unknown; hash?: unknown };
+  if (
+    typeof location.pathname !== "string" ||
+    !location.pathname.startsWith("/") ||
+    location.pathname.startsWith("//")
+  ) {
+    return null;
+  }
+  return {
+    pathname: location.pathname,
+    ...(typeof location.search === "string" ? { search: location.search } : {}),
+    ...(typeof location.hash === "string" ? { hash: location.hash } : {}),
+  };
 }
 
 /** Full review page for one pending request or its durable terminal receipt. */
@@ -21,7 +36,7 @@ export function ActionRequestDetail({ requestId }: { requestId: string }): JSX.E
   const actions = useContext(ActionRequestsContext);
   const [executorKind, setExecutorKind] = useState<string | null>(null);
   const historyState = location.state as { returnTo?: unknown } | null;
-  const hasReturnTo = hasInAppReturnTo(historyState?.returnTo);
+  const returnTo = inAppReturnTo(historyState?.returnTo);
   const liveRequest = actions?.requests.find((item) => item.id === requestId);
   const cachedRequest = actions?.knownRequests.get(requestId);
   const request = liveRequest ?? cachedRequest;
@@ -71,7 +86,7 @@ export function ActionRequestDetail({ requestId }: { requestId: string }): JSX.E
   }, [detailActionGroup, detailRequestId, detailRequestState]);
 
   function goBack(): void {
-    if (hasReturnTo) {
+    if (returnTo !== null) {
       void navigate(-1);
     } else {
       void navigate("/actions", { replace: true });
@@ -110,7 +125,7 @@ export function ActionRequestDetail({ requestId }: { requestId: string }): JSX.E
             onDecide={(row, verdict) => {
               if (actions === null) return;
               void actions.decide(row, verdict).then((succeeded) => {
-                if (succeeded && hasReturnTo) goBack();
+                if (succeeded && returnTo !== null) void navigate(returnTo, { replace: true });
               });
             }}
           />
