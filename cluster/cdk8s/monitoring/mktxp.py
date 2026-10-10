@@ -1,10 +1,7 @@
-"""mktxp, the RouterOS Prometheus exporter, for the home MikroTik switch (`home_switch.py`): its
-Deployment on the home LAN node, Service and ServiceMonitor.
+"""mktxp, the RouterOS Prometheus exporter, for the home switch (`home_switch.py`).
 
-mktxp logs in as the switch's read-only `monitoring` user over api-ssl and verifies the switch's
-cluster-CA certificate. Its configuration is `mktxp.conf` and `_mktxp.conf` beside this module.
-mktxp rewrites a config file that lacks keys, so an init container copies both into a writable
-`emptyDir` together with the credentials file, the YAML mktxp reads the login from.
+mktxp rewrites its config files, so an init container copies them into a writable `emptyDir`,
+next to the credentials YAML it builds from the `monitoring` user's password.
 """
 
 from __future__ import annotations
@@ -46,8 +43,7 @@ _SERVICE = ServiceRef(name=NAME, port=_HTTP, pods=Pods(namespace=NAMESPACE, labe
 _IMAGE = "ghcr.io/akpw/mktxp:2.1.0@sha256:512ebe6c83c374147ac326c57ff9225b09df777883e772d417e5275bc6820e98"
 # The image's own user, which owns its config directory.
 _UID = 1000
-# mktxp.conf names the files under these directories. `_CONFIG_DIR` is the image's mktxp directory
-# (`$XDG_CONFIG_HOME/mktxp`).
+# mktxp.conf names files under these directories.
 _CONFIG_DIR = "/etc/mktxp"
 _CA_BUNDLE_DIR = "/etc/cluster-ca"
 _CONFIG_SOURCE_DIR = "/etc/mktxp-source"
@@ -56,7 +52,7 @@ _USERNAME = "monitoring"
 
 
 def write_config_maps(root: Path) -> list[ConfigMapArgs]:
-    """Copy mktxp's config files into `OUTPUT_DIR`; return the `configMapGenerator` entry packaging them."""
+    """Copy mktxp's config files into `OUTPUT_DIR`; return their `configMapGenerator` entry."""
     return [
         ConfigMapArgs(
             name=_CONFIG_MAP,
@@ -130,7 +126,6 @@ def _deployment(chart: Chart) -> k8s.KubeDeployment:
                             image_pull_policy="IfNotPresent",
                             command=["mktxp", "--cfg-dir", _CONFIG_DIR, "export"],
                             ports=[_HTTP.k8s_container_port()],
-                            # /metrics answers whether or not the switch does.
                             liveness_probe=tcp,
                             readiness_probe=tcp,
                             resources=k8s.ResourceRequirements(
