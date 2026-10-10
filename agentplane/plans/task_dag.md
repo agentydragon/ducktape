@@ -1046,7 +1046,6 @@ flowchart TD
     SANDBOX_SERVICE_RESOURCES_REQUIRED[Candidate: Sandbox Service wiring stops being optional]
     APP_SETTINGS_REQUIRED[Candidate: app integrations required, carrier settings moved]
     ACTION_CONNECTION_REBIND_SHIMS[Candidate: drop pre-rebind connection fallbacks]
-    RUNNER_CLIENT_TEST_HELPERS[Candidate: runner client test helpers into test support]
     RUNNER_LAUNCH_SETTINGS[Decision: runner launch settings separate from capture probes]
     WORKLOAD_AUDIENCE_DEFAULTS[Candidate: workload token audience has no code default]
     WORKLOAD_AUDIENCE_RENAME[Decision: rename the agentplane-egress audience]
@@ -1102,13 +1101,6 @@ replica", mirrors `grant.caller` and reads `original_caller or caller`. No repli
 `0021_connection_rebind` runs on either environment. A new migration backfills `original_caller`
 (and `bound_caller` for unrevoked connections) and makes `original_caller` NOT NULL; then the
 fallbacks and their legacy-replica tests go. No data is deleted.
-
-### `RUNNER_CLIENT_TEST_HELPERS` — runner client test helpers into test support
-
-**Candidate; Legacy burn-down lane.** `Attachment.send`, `interrupt`, `switch_model`,
-`switch_reasoning_effort` and `stop_runner_session` in `runner/client.py` have no production
-caller (`send` only the KubeVirt probe). Move them to `runner/testing/` as functions over
-`Attachment.command`. Rebase onto the runner channel client if it lands first.
 
 ### `RUNNER_LAUNCH_SETTINGS` — runner launch settings separate from capture probes
 

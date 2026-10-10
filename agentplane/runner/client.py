@@ -59,28 +59,8 @@ class Attachment:
         """The last source-local cursor read; a reconnecting Open follows after it."""
         return self._cursor
 
-    async def send(self, command_id: str, text: str) -> None:
-        await self.command(command_pb2.Command(command_id=command_id, submit_input=command_pb2.SubmitInput(text=text)))
-
     async def command(self, command: command_pb2.Command) -> None:
         await self._call.write(protocol_pb2.ClientMessage(command=command))
-
-    async def interrupt(self, command_id: str, turn_id: str) -> None:
-        await self.command(
-            command_pb2.Command(command_id=command_id, interrupt_turn=command_pb2.InterruptTurn(turn_id=turn_id))
-        )
-
-    async def switch_model(self, command_id: str, model: str) -> None:
-        await self.command(
-            command_pb2.Command(command_id=command_id, change_model=command_pb2.ChangeModel(model=model))
-        )
-
-    async def switch_reasoning_effort(self, command_id: str, effort: str) -> None:
-        await self.command(
-            command_pb2.Command(
-                command_id=command_id, change_reasoning_effort=command_pb2.ChangeReasoningEffort(effort=effort)
-            )
-        )
 
     async def stop_runner_session(self, command_id: str) -> None:
         await self.command(

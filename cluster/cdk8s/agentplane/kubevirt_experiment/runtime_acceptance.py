@@ -17,7 +17,7 @@ import grpc
 from cdk8s import App, Chart
 from kubernetes_asyncio import client as k8s_client, config as k8s_config
 
-from agentplane.protocol import event_log_pb2, event_pb2
+from agentplane.protocol import command_pb2, event_log_pb2, event_pb2
 from agentplane.runner import protocol_pb2
 from agentplane.runner.client import RunnerClient
 from cluster.cdk8s.agentplane.kubevirt_experiment.policy import MANAGED_LABEL, SERVICE_ACCOUNT_ANNOTATION
@@ -856,7 +856,14 @@ async def _run_turn(
             )
             if any(entry.event.WhichOneof("observation") == "harness_launch_failed" for entry in attachment.seen):
                 raise RuntimeError("native harness failed to launch; inspect the guest runner journal")
-            await _within(attachment.send(f"acceptance-{uuid4().hex[:16]}", prompt), deadline)
+            await _within(
+                attachment.command(
+                    command_pb2.Command(
+                        command_id=f"acceptance-{uuid4().hex[:16]}", submit_input=command_pb2.SubmitInput(text=prompt)
+                    )
+                ),
+                deadline,
+            )
             completed = await attachment.until(
                 lambda entry: entry.event.WhichOneof("observation") == "turn_completed", timeout_s=_remaining(deadline)
             )

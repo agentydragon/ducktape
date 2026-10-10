@@ -13,6 +13,7 @@ from agentplane.runner import protocol_pb2
 from agentplane.runner.client import RunnerClient
 from agentplane.runner.errors import RunnerError, SessionSealedError
 from agentplane.runner.testing import events
+from agentplane.runner.testing.commands import submit_input
 from agentplane.runner.testing.scripted_model import Reasoning, ScriptedModel, ShellCall, Text
 
 # The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.
@@ -25,7 +26,7 @@ async def test_reattach_resumes_from_the_cursor_without_gap_or_duplicate(
     client: RunnerClient, model: ScriptedModel, spec: protocol_pb2.SessionSpec
 ) -> None:
     first = await client.attach("reattach-1", spec=spec)
-    await first.send("input-1", "Wait with the shell, then reply.")
+    await submit_input(first, "input-1", "Wait with the shell, then reply.")
     request = await model.request()
     await model.reply(request, ShellCall("call_test_1", WAIT_COMMAND))
     await first.until(events.is_kind("tool_arguments"))
@@ -53,7 +54,7 @@ async def test_replay_from_zero_returns_the_whole_log(
     client: RunnerClient, model: ScriptedModel, spec: protocol_pb2.SessionSpec
 ) -> None:
     async with await client.attach("replay-1", spec=spec) as first:
-        await first.send("input-1", "Reply with exactly: REPLAY_SEED_OK")
+        await submit_input(first, "input-1", "Reply with exactly: REPLAY_SEED_OK")
         request = await model.request()
         await model.reply(request, Text("REPLAY_SEED_OK"))
         await first.until(events.turn_completed)
@@ -68,7 +69,7 @@ async def test_resending_a_command_id_delivers_it_once(
     client: RunnerClient, model: ScriptedModel, spec: protocol_pb2.SessionSpec
 ) -> None:
     first = await client.attach("retry-1", spec=spec)
-    await first.send("input-1", "Reply with exactly: ONCE_OK")
+    await submit_input(first, "input-1", "Reply with exactly: ONCE_OK")
     request = await model.request()
     # Claude's exact confirmation evidence is its response-side model-message start; Codex obtains
     # it at native turn start. Both have sent one upstream request before this reply, and both reach
@@ -78,7 +79,7 @@ async def test_resending_a_command_id_delivers_it_once(
     first.cancel()
 
     async with await client.attach("retry-1", after_cursor=first.cursor) as second:
-        await second.send("input-1", "Reply with exactly: ONCE_OK")
+        await submit_input(second, "input-1", "Reply with exactly: ONCE_OK")
         assert confirmed.event.harness_user_message_confirmed.origin_command_ids == ["input-1"]
         assert request.user_texts.count("Reply with exactly: ONCE_OK") == 1
         await second.until(events.turn_completed)
@@ -93,8 +94,8 @@ async def test_attachments_share_events_and_detach_independently(
         replay_cursor = first.cursor
         async with await client.attach("observers-1", after_cursor=replay_cursor) as second:
             await asyncio.gather(
-                first.send("input-1", "Reply with exactly: SECOND_OK"),
-                second.send("input-1", "Reply with exactly: SECOND_OK"),
+                submit_input(first, "input-1", "Reply with exactly: SECOND_OK"),
+                submit_input(second, "input-1", "Reply with exactly: SECOND_OK"),
             )
             request = await model.request()
             await model.reply(request, Text("SECOND_OK"))
@@ -104,7 +105,7 @@ async def test_attachments_share_events_and_detach_independently(
             events.assert_contiguous(first.seen)
             assert len(events.of_kind(first.seen, "command_admitted")) == 1
             assert request.user_texts.count("Reply with exactly: SECOND_OK") == 1
-        await first.send("input-2", "Reply with exactly: FIRST_STILL_HERE")
+        await submit_input(first, "input-2", "Reply with exactly: FIRST_STILL_HERE")
         await model.reply(await model.request(), Text("FIRST_STILL_HERE"))
         await first.until(events.turn_completed)
 
@@ -113,7 +114,7 @@ async def test_shutdown_stops_the_harness_and_open_resumes_the_conversation(
     client: RunnerClient, model: ScriptedModel, spec: protocol_pb2.SessionSpec
 ) -> None:
     first = await client.attach("shutdown-1", spec=spec)
-    await first.send("input-1", "Reply with exactly: SEED_OK")
+    await submit_input(first, "input-1", "Reply with exactly: SEED_OK")
     request = await model.request()
     await model.reply(request, Text("SEED_OK"))
     await first.until(events.turn_completed)
@@ -136,7 +137,7 @@ async def test_shutdown_stops_the_harness_and_open_resumes_the_conversation(
         started = await second.until(events.is_kind("harness_started"))
         assert started.event.harness_started.resumed
         assert second.attached.harness_state == protocol_pb2.HARNESS_STATE_RUNNING
-        await second.send("input-2", "Reply with exactly: RESUMED_OK")
+        await submit_input(second, "input-2", "Reply with exactly: RESUMED_OK")
         request = await model.request()
         assert request.user_texts == ["Reply with exactly: SEED_OK", "Reply with exactly: RESUMED_OK"]
         assert request.assistant_texts == ["SEED_OK"]
@@ -149,7 +150,7 @@ async def test_seal_stops_the_running_harness_and_ends_live_followers(
     client: RunnerClient, model: ScriptedModel, spec: protocol_pb2.SessionSpec
 ) -> None:
     first = await client.attach("seal-1", spec=spec)
-    await first.send("input-1", "Reply with exactly: SEED_OK")
+    await submit_input(first, "input-1", "Reply with exactly: SEED_OK")
     await model.reply(await model.request(), Text("SEED_OK"))
     await first.until(events.turn_completed)
     (seal,) = await client.seal()
@@ -166,7 +167,7 @@ async def test_resume_sends_the_model_the_reasoning_of_the_previous_harness(
     client: RunnerClient, model: ScriptedModel, spec: protocol_pb2.SessionSpec
 ) -> None:
     first = await client.attach("reasoning-1", spec=spec)
-    await first.send("input-1", "Reply with exactly: SEED_OK")
+    await submit_input(first, "input-1", "Reply with exactly: SEED_OK")
     await model.reply(await model.request(), Reasoning("SEED_THOUGHT"), Text("SEED_OK"))
     await first.until(events.turn_completed)
     await first.stop_runner_session("stop-1")
@@ -176,7 +177,7 @@ async def test_resume_sends_the_model_the_reasoning_of_the_previous_harness(
     async with await client.attach("reasoning-1", spec=spec, after_cursor=first.cursor) as second:
         started = await second.until(events.is_kind("harness_started"))
         assert started.event.harness_started.resumed
-        await second.send("input-2", "Reply with exactly: RESUMED_OK")
+        await submit_input(second, "input-2", "Reply with exactly: RESUMED_OK")
         request = await model.request()
         assert request.reasoning_texts == ["SEED_THOUGHT"]
         await model.reply(request, Text("RESUMED_OK"))

@@ -38,6 +38,16 @@ py_library(
 )
 
 py_library(
+    name = "commands",
+    srcs = ["commands.py"],
+    deps = [
+        "//agentplane/protocol:command_pb2",
+        "//agentplane/runner:client",
+        "@pypi//protobuf",
+    ],
+)
+
+py_library(
     name = "events",
     srcs = ["events.py"],
     deps = [

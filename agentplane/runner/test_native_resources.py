@@ -19,6 +19,7 @@ from agentplane.runner.client import RunnerClient
 from agentplane.runner.config import RunnerConfig
 from agentplane.runner.service import serve
 from agentplane.runner.testing import events
+from agentplane.runner.testing.commands import submit_input
 from agentplane.runner.testing.scripted_model import ScriptedModel, Text
 from util.testing.undeclared_outputs import undeclared_outputs_dir
 
@@ -120,7 +121,7 @@ async def test_native_history_and_resume_resources(
         async with running_client(config) as client, await client.attach(session_id, spec=spec) as attachment:
             started = await attachment.until(events.is_kind("harness_started"))
             for index in range(history_size):
-                await attachment.send(f"input-{index}", inputs[index])
+                await submit_input(attachment, f"input-{index}", inputs[index])
                 request = await model.request()
                 assert request.user_texts == inputs[: index + 1]
                 assert request.assistant_texts == outputs[:index]
@@ -138,7 +139,7 @@ async def test_native_history_and_resume_resources(
         ):
             started = await attachment.until(events.is_kind("harness_started"))
             assert started.event.harness_started.resumed
-            await attachment.send("resumed-input", inputs[-1])
+            await submit_input(attachment, "resumed-input", inputs[-1])
             request = await model.request()
             assert request.user_texts == inputs
             assert request.assistant_texts == outputs[:-1]

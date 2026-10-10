@@ -40,6 +40,7 @@ py_binary(
     env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
     deps = [
         ":vm",
+        "//agentplane/protocol:command_pb2",
         "//agentplane/protocol:event_log_pb2",
         "//agentplane/protocol:event_pb2",
         "//agentplane/runner:client",

@@ -12,6 +12,7 @@ from agentplane.protocol import event_log_pb2, event_pb2
 from agentplane.runner import protocol_pb2
 from agentplane.runner.client import Attachment, RunnerClient
 from agentplane.runner.testing import events
+from agentplane.runner.testing.commands import change_model, change_reasoning_effort, interrupt_turn, submit_input
 from agentplane.runner.testing.scripted_model import Reasoning, ScriptedModel, ShellCall, Text
 
 # The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.
@@ -26,7 +27,7 @@ async def test_one_turn_streams_reasoning_and_text(
     async with await client.attach("turn-1", spec=spec) as session:
         assert session.attached.harness_state == protocol_pb2.HARNESS_STATE_RUNNING
         assert session.attached.active_turn_id == ""
-        await session.send("input-1", "Reply with exactly: BASELINE_OK")
+        await submit_input(session, "input-1", "Reply with exactly: BASELINE_OK")
 
         request = await model.request()
         assert request.streaming
@@ -74,7 +75,7 @@ async def test_effort_change_is_confirmed_and_used_by_next_model_request(
         assert session.attached.spec.reasoning_effort == "low"
         for index, effort in enumerate(("high", "low"), start=1):
             command_id = f"effort-{index}"
-            await session.switch_reasoning_effort(command_id, effort)
+            await change_reasoning_effort(session, command_id, effort)
             admitted = await session.until(events.is_kind("command_admitted"))
             assert admitted.event.command_admitted.command.command_id == command_id
             assert admitted.event.command_admitted.command.change_reasoning_effort.effort == effort
@@ -83,7 +84,7 @@ async def test_effort_change_is_confirmed_and_used_by_next_model_request(
                 changed = await session.until(events.is_kind("reasoning_effort_changed"))
                 assert changed.event.reasoning_effort_changed.command_id == command_id
                 assert changed.event.source_sequences
-            await session.send(f"input-{index}", f"Reply with exactly: EFFORT_{index}_OK")
+            await submit_input(session, f"input-{index}", f"Reply with exactly: EFFORT_{index}_OK")
             request = await model.request()
             assert request.effort == effort
             await model.reply(request, Text(f"EFFORT_{index}_OK"))
@@ -101,7 +102,7 @@ async def test_tool_call_reports_arguments_and_result(
     client: RunnerClient, model: ScriptedModel, spec: protocol_pb2.SessionSpec
 ) -> None:
     async with await client.attach("tool-1", spec=spec) as session:
-        await session.send("input-1", "Run the tool and report TOOL_DONE.")
+        await submit_input(session, "input-1", "Run the tool and report TOOL_DONE.")
 
         request = await model.request()
         await model.reply(request, ShellCall("call_test_1", "printf TOOL_OUTPUT"))
@@ -139,7 +140,7 @@ async def test_model_connection_loss_through_runner(
 ) -> None:
     """Pin native retries, runner outcomes, and a later input in the same session."""
     async with await client.attach(f"model-failure-{partial}", spec=spec) as session:
-        await session.send("first-input", "Reply with exactly: FIRST_OK")
+        await submit_input(session, "first-input", "Reply with exactly: FIRST_OK")
         # Both pinned harness scenarios cap retries at two; see the native
         # harness_tests/*/test_connection_loss.py for the raw retry frames.
         attempts = 2 if partial else 3
@@ -162,7 +163,7 @@ async def test_model_connection_loss_through_runner(
         assert model.request_count == attempts
         assert events.of_kind(session.seen, "native")
 
-        await session.send("follow-up", "Reply with exactly: AFTER_ERROR_OK")
+        await submit_input(session, "follow-up", "Reply with exactly: AFTER_ERROR_OK")
         request = await model.request()
         assert request.user_texts[-1] == "Reply with exactly: AFTER_ERROR_OK"
         await model.reply(request, Text("AFTER_ERROR_OK"))
@@ -182,7 +183,7 @@ async def test_model_http_error_through_runner(
 ) -> None:
     """HTTP failure is a failed turn, not a lost admission or a reason to resend input."""
     async with await client.attach("http-error", spec=spec) as session:
-        await session.send("first-input", "Reply with exactly: HTTP_ERROR")
+        await submit_input(session, "first-input", "Reply with exactly: HTTP_ERROR")
         for _ in range(3):
             request = await model.request()
             assert request.user_texts[-1] == "Reply with exactly: HTTP_ERROR"
@@ -191,7 +192,7 @@ async def test_model_http_error_through_runner(
         assert failed.event.turn_completed.status == event_pb2.TURN_STATUS_FAILED
         assert len(events.of_kind(session.seen, "harness_user_message_confirmed")) == 1
         assert events.of_kind(session.seen, "native")
-        await session.send("second-input", "Reply with exactly: AFTER_HTTP_ERROR_OK")
+        await submit_input(session, "second-input", "Reply with exactly: AFTER_HTTP_ERROR_OK")
         request = await model.request()
         assert request.user_texts[-1] == "Reply with exactly: AFTER_HTTP_ERROR_OK"
         await model.reply(request, Text("AFTER_HTTP_ERROR_OK"))
@@ -210,7 +211,7 @@ async def test_failed_tool_is_reported_as_failed(
     client: RunnerClient, model: ScriptedModel, spec: protocol_pb2.SessionSpec
 ) -> None:
     async with await client.attach("tool-2", spec=spec) as session:
-        await session.send("input-1", "Run the failing tool.")
+        await submit_input(session, "input-1", "Run the failing tool.")
 
         request = await model.request()
         await model.reply(request, ShellCall("call_test_1", "sh -c 'printf failing; exit 23'"))
@@ -229,12 +230,12 @@ async def test_codex_input_during_a_turn_joins_it(
     client: RunnerClient, model: ScriptedModel, spec: protocol_pb2.SessionSpec
 ) -> None:
     async with await client.attach("join-1", spec=spec) as session:
-        await session.send("input-1", "Wait with the shell, then reply.")
+        await submit_input(session, "input-1", "Wait with the shell, then reply.")
 
         request = await model.request()
         await model.reply(request, ShellCall("call_test_1", WAIT_COMMAND))
         await session.until(events.is_kind("tool_arguments"))
-        await session.send("input-2", "Reply ONLY SECOND_INPUT_OBSERVED after your current work.")
+        await submit_input(session, "input-2", "Reply ONLY SECOND_INPUT_OBSERVED after your current work.")
         confirmed = await session.until(
             lambda entry: (
                 events.kind(entry) == "harness_user_message_confirmed"
@@ -270,13 +271,13 @@ async def test_claude_inputs_during_a_tool_are_confirmed_from_the_started_cohort
 ) -> None:
     """Claude folds active-turn inputs into its tool-result continuation, without a user echo."""
     async with await client.attach("claude-tool-input-1", spec=spec) as session:
-        await session.send("input-1", "Wait with the shell, then reply.")
+        await submit_input(session, "input-1", "Wait with the shell, then reply.")
 
         request = await model.request()
         await model.reply(request, ShellCall("call_test_1", WAIT_COMMAND))
         await session.until(events.is_kind("tool_arguments"))
-        await session.send("input-2", "Reply ONLY SECOND_INPUT_OBSERVED after your current work.")
-        await session.send("input-3", "Reply ONLY THIRD_INPUT_OBSERVED after your current work.")
+        await submit_input(session, "input-2", "Reply ONLY SECOND_INPUT_OBSERVED after your current work.")
+        await submit_input(session, "input-3", "Reply ONLY THIRD_INPUT_OBSERVED after your current work.")
 
         request = await model.request()
         assert "wait_finished" in request.tool_outputs[0].text
@@ -308,8 +309,8 @@ async def test_model_change_then_input_is_admitted_without_waiting_for_model_eff
             if harness == protocol_pb2.HARNESS_CLAUDE
             else "agentplane-switched-model"
         )
-        await attached.switch_model("switch-1", selected)
-        await attached.send("input-1", "Reply with exactly: SWITCHED_MODEL_OK")
+        await change_model(attached, "switch-1", selected)
+        await submit_input(attached, "input-1", "Reply with exactly: SWITCHED_MODEL_OK")
         request = await model.request()
         assert request.model == selected
         assert request.user_texts == ["Reply with exactly: SWITCHED_MODEL_OK"]
@@ -331,16 +332,16 @@ async def test_claude_active_turn_model_command_has_a_native_causal_outcome(
 ) -> None:
     """Claude's set-model control request can settle while a model request is still active."""
     async with await client.attach("switch-model-active-1", spec=spec) as session:
-        await session.send("input-1", "Wait; do not answer early.")
+        await submit_input(session, "input-1", "Wait; do not answer early.")
         request = await model.request()
         await model.hold(request)
         confirmed = await session.until(events.is_kind("harness_user_message_confirmed"))
         selected = "agentplane-switched/claude-haiku-4-5-20251001"
-        await session.switch_model("switch-active", selected)
+        await change_model(session, "switch-active", selected)
         admitted = await session.until(events.is_kind("command_admitted"))
         assert admitted.event.command_admitted.command.command_id == "switch-active"
 
-        await session.interrupt("interrupt-active", confirmed.event.harness_user_message_confirmed.turn_id)
+        await interrupt_turn(session, "interrupt-active", confirmed.event.harness_user_message_confirmed.turn_id)
         interrupted = await session.until(events.turn_completed)
         assert interrupted.event.turn_completed.status == event_pb2.TURN_STATUS_INTERRUPTED
 
@@ -358,20 +359,20 @@ async def test_codex_active_turn_model_command_takes_effect_on_its_next_turn_sta
 ) -> None:
     """Codex cannot select a model until its later turn/start response proves that selection."""
     async with await client.attach("switch-model-active-1", spec=spec) as session:
-        await session.send("input-1", "Wait; do not answer early.")
+        await submit_input(session, "input-1", "Wait; do not answer early.")
         request = await model.request()
         await model.hold(request)
         confirmed = await session.until(events.is_kind("harness_user_message_confirmed"))
         selected = "agentplane-switched-model"
-        await session.switch_model("switch-active", selected)
+        await change_model(session, "switch-active", selected)
         admitted = await session.until(events.is_kind("command_admitted"))
         assert admitted.event.command_admitted.command.command_id == "switch-active"
 
-        await session.interrupt("interrupt-active", confirmed.event.harness_user_message_confirmed.turn_id)
+        await interrupt_turn(session, "interrupt-active", confirmed.event.harness_user_message_confirmed.turn_id)
         interrupted = await session.until(events.turn_completed)
         assert interrupted.event.turn_completed.status == event_pb2.TURN_STATUS_INTERRUPTED
 
-        await session.send("input-2", "Reply with exactly: ACTIVE_MODEL_OK")
+        await submit_input(session, "input-2", "Reply with exactly: ACTIVE_MODEL_OK")
         request = await model.request()
         assert request.model == selected
         await model.reply(request, Text("ACTIVE_MODEL_OK"))
@@ -385,19 +386,19 @@ async def test_interrupt_ends_the_turn_as_interrupted(
     client: RunnerClient, model: ScriptedModel, spec: protocol_pb2.SessionSpec
 ) -> None:
     async with await client.attach("interrupt-1", spec=spec) as session:
-        await session.send("input-1", "Wait; do not answer early.")
+        await submit_input(session, "input-1", "Wait; do not answer early.")
 
         request = await model.request()
         await model.hold(request)
         confirmed = await session.until(events.is_kind("harness_user_message_confirmed"))
-        await session.interrupt("interrupt-1", confirmed.event.harness_user_message_confirmed.turn_id)
+        await interrupt_turn(session, "interrupt-1", confirmed.event.harness_user_message_confirmed.turn_id)
 
         done = await session.until(events.turn_completed)
         assert done.event.turn_completed.status == event_pb2.TURN_STATUS_INTERRUPTED
         assert done.event.turn_completed.interrupted_by_command_id == "interrupt-1"
         assert not events.of_kind(session.seen, "item_completed")
 
-        await session.send("input-2", "Reply with exactly: AFTER_INTERRUPT_OK")
+        await submit_input(session, "input-2", "Reply with exactly: AFTER_INTERRUPT_OK")
         request = await model.request()
         assert request.user_texts[-1] == "Reply with exactly: AFTER_INTERRUPT_OK"
         await model.reply(request, Text("AFTER_INTERRUPT_OK"))
@@ -406,7 +407,7 @@ async def test_interrupt_ends_the_turn_as_interrupted(
 
 
 async def _interrupt_and_reconcile(session: Attachment, turn_id: str) -> event_pb2.ConversationReconciled:
-    await session.interrupt("interrupt-thinking", turn_id)
+    await interrupt_turn(session, "interrupt-thinking", turn_id)
     done = await session.until(events.turn_completed)
     assert done.event.turn_completed.status == event_pb2.TURN_STATUS_INTERRUPTED
     return (await session.until(events.is_kind("conversation_reconciled"))).event.conversation_reconciled
@@ -427,7 +428,7 @@ async def test_claude_interrupt_right_after_thinking_reports_it_absent_and_does_
     """Claude keeps a thinking block only beside another block of its message, which the interrupt
     came too early to write; `harness_tests/claude/test_turns.py` pins that on the real binary."""
     async with await client.attach("interrupt-thinking-1", spec=spec) as session:
-        await session.send("input-1", "Think, then answer.")
+        await submit_input(session, "input-1", "Think, then answer.")
         await model.hold_through(
             await model.request(),
             [Reasoning("DROPPED_THOUGHT"), Text("NEVER_SENT")],
@@ -440,7 +441,7 @@ async def test_claude_interrupt_right_after_thinking_reports_it_absent_and_does_
 
         (thought,) = events.items(session.seen, event_pb2.ITEM_KIND_REASONING)
         assert _dispositions(reconciled) == {thought: event_pb2.RECOVERY_DISPOSITION_ABSENT}
-        await session.send("input-2", "Reply with exactly: AFTER_INTERRUPT_OK")
+        await submit_input(session, "input-2", "Reply with exactly: AFTER_INTERRUPT_OK")
         request = await model.request()
         assert request.reasoning_texts == []
         await model.reply(request, Text("AFTER_INTERRUPT_OK"))
@@ -452,7 +453,7 @@ async def test_claude_interrupt_after_thinking_and_some_text_keeps_the_thinking(
     client: RunnerClient, model: ScriptedModel, spec: protocol_pb2.SessionSpec
 ) -> None:
     async with await client.attach("interrupt-thinking-2", spec=spec) as session:
-        await session.send("input-1", "Think, then answer.")
+        await submit_input(session, "input-1", "Think, then answer.")
         await model.hold_through(
             await model.request(),
             [Reasoning("KEPT_THOUGHT"), Text("PARTIAL_ANSWER")],
@@ -465,7 +466,7 @@ async def test_claude_interrupt_after_thinking_and_some_text_keeps_the_thinking(
 
         (thought,) = events.items(session.seen, event_pb2.ITEM_KIND_REASONING)
         assert _dispositions(reconciled)[thought] == event_pb2.RECOVERY_DISPOSITION_RETAINED
-        await session.send("input-2", "Reply with exactly: AFTER_INTERRUPT_OK")
+        await submit_input(session, "input-2", "Reply with exactly: AFTER_INTERRUPT_OK")
         request = await model.request()
         assert request.reasoning_texts == ["KEPT_THOUGHT"]
         await model.reply(request, Text("AFTER_INTERRUPT_OK"))
@@ -477,7 +478,7 @@ async def test_claude_interrupt_after_thinking_and_a_tool_call_keeps_the_thinkin
     client: RunnerClient, model: ScriptedModel, spec: protocol_pb2.SessionSpec
 ) -> None:
     async with await client.attach("interrupt-thinking-3", spec=spec) as session:
-        await session.send("input-1", "Think, then run the shell.")
+        await submit_input(session, "input-1", "Think, then run the shell.")
         # Only shell builtins: the harness's tool environment has no external commands.
         await model.reply(
             await model.request(), Reasoning("KEPT_THOUGHT"), ShellCall("call_test_1", "while :; do :; done")
@@ -489,7 +490,7 @@ async def test_claude_interrupt_after_thinking_and_a_tool_call_keeps_the_thinkin
 
         (thought,) = events.items(session.seen, event_pb2.ITEM_KIND_REASONING)
         assert _dispositions(reconciled)[thought] == event_pb2.RECOVERY_DISPOSITION_RETAINED
-        await session.send("input-2", "Reply with exactly: AFTER_INTERRUPT_OK")
+        await submit_input(session, "input-2", "Reply with exactly: AFTER_INTERRUPT_OK")
         request = await model.request()
         assert request.reasoning_texts == ["KEPT_THOUGHT"]
         await model.reply(request, Text("AFTER_INTERRUPT_OK"))
