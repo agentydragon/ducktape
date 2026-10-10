@@ -47,6 +47,20 @@ receive the resolved concrete configuration and never see a preset name ([launch
 "profile", "tier" or "role"), can a user still see and change each part separately, and does
 any authority attach to the name rather than to the parts?
 
+## Keep options open; avoid hard-to-reverse choices
+
+Prefer the design that leaves the most choices available later, and be wary of one that is hard
+to undo once it lands. A convenient abstraction that bakes a decision into the contract costs
+more than it saves when the decision turns out wrong.
+
+For example, an "agent of type X" is only an integration-app preset over the separate parts above.
+A one-off session with unusual permissions is therefore just a different combination chosen at
+launch. Nobody has to mint a one-off agent type for it, and the backends never learn type names
+they would later have to keep honoring.
+
+**Question for a proposal:** which future options does it close, and how expensive is it to back
+out of? If it is hard to reverse, is that cost stated and accepted?
+
 ## Keep the information; make dropping it a decision
 
 What crossed a boundary is retained as it crossed, so a later reader can see what actually
