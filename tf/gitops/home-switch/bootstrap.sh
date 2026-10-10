@@ -12,8 +12,8 @@ set -euo pipefail
 
 admin="${1:-admin}"
 repo=$(git rev-parse --show-toplevel)
-switch="${2:-$(jq -r .switch "$repo/home-lan.json")}"
-lan_cidr=$(jq -r .network "$repo/home-lan.json")
+switch="${2:-$(jq -r .switch "$repo/cluster/generated/home-lan.json")}"
+lan_cidr=$(jq -r .network "$repo/cluster/generated/home-lan.json")
 # Secret name: keep in sync with data.kubernetes_secret_v1.tofu in main.tf.
 password_file="$repo/cluster/k8s/home-switch/tofu-password.sops.yaml"
 

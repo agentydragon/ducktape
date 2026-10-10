@@ -255,10 +255,9 @@ py_test(
 py_library(
     name = "home_lan",
     srcs = ["home_lan.py"],
-    data = ["//:home-lan.json"],
     visibility = ["//cluster/cdk8s:__subpackages__"],
     deps = [
-        "//util/bazel:runfiles",
+        ":manifest_roots",
         "@pypi//pydantic",
     ],
 )
@@ -1429,6 +1428,7 @@ py_library(
         ":ha_mcp",
         ":haku_egress_proxy",
         ":headlamp",
+        ":home_lan",
         ":hubble_ui",
         ":keda",
         ":kube_api_proxy",

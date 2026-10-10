@@ -1,14 +1,14 @@
 # Home LAN
 
 `192.168.1.0/24` behind the AT&T BGW320 gateway. Addresses that something depends on, and who owns
-each; read from the gateway's Subnets & DHCP and IP Allocation pages on 2026-10-10. The repo reads
-every fixed address below from `home-lan.json`; change one there.
+each; read from the gateway's Subnets & DHCP and IP Allocation pages on 2026-10-10. Every fixed
+address below is declared in `cluster/cdk8s/home_lan.py`; change one there and regenerate.
 
 | Address                        | What                                     | Owner                                                                                       |
 | ------------------------------ | ---------------------------------------- | ------------------------------------------------------------------------------------------- |
 | `192.168.1.254`                | AT&T BGW320 gateway, web UI              | Gateway default                                                                             |
 | `192.168.1.64`-`192.168.1.253` | Gateway DHCP pool, 1-day leases          | Gateway Subnets & DHCP page (not in the repo)                                               |
-| `192.168.1.10`                 | `optiplex`, fixed alias beside its lease | `lan_address` in `cluster/terraform/main/home-nodes.tf`, from `home-lan.json`               |
+| `192.168.1.10`                 | `optiplex`, fixed alias beside its lease | `lan_address` in `cluster/terraform/main/home-nodes.tf`, from `home_lan.py`                 |
 | `192.168.1.100`                | MikroTik CRS310 switch                   | Gateway IP Allocation "Fixed Allocation" (not in the repo); `tf/gitops/home-switch` uses it |
 
 Addresses outside the pool and not listed here are free for fixed assignments. DHCP-leased hosts

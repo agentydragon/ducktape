@@ -39,6 +39,7 @@ from cluster.cdk8s import (
     ha_mcp,
     haku_egress_proxy,
     headlamp,
+    home_lan,
     hubble_ui,
     keda,
     kube_api_proxy,
@@ -254,6 +255,7 @@ from util.bazel.workspace import get_build_workspace_directory
 def generate_manifests(root: Path) -> None:
     """Write every converted directory's generated manifests under ``root``."""
     write_generated_readme(root)
+    home_lan.write_manifests(root)
     mesh = nebula_mesh.load(get_required_path("_main/nebula-mesh.json"))
     agentplane_staging_resource_chart = agentplane_generation.write_environment_manifests(
         root, staging.ENV, staging.chart

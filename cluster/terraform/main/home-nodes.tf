@@ -6,8 +6,8 @@
 # operator step documented in cluster/docs/optiplex_provisioning.md.
 
 locals {
-  # Fixed home LAN addresses (SSOT): ../../../home-lan.json
-  home_lan = jsondecode(file("${path.module}/../../../home-lan.json"))
+  # Fixed home LAN addresses, rendered from cluster/cdk8s/home_lan.py.
+  home_lan = jsondecode(file("${path.module}/../../generated/home-lan.json"))
 
   # Keyed by host name; the Nebula IP is the mesh roster's (local.nebula_hosts, nebula.tf).
   home_node_provisioning = {
