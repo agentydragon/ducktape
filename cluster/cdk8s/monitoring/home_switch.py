@@ -1,11 +1,13 @@
 """The home MikroTik switch (CRS310): the `tf/gitops/home-switch` Terraform, and what it installs
 on the switch.
 
-ESO mints two RouterOS passwords, held nowhere but here and on the switch:
+Two RouterOS passwords, held nowhere but here and on the switch:
 
 - `tofu`: the full-access user the Terraform logs in as. `tf/gitops/home-switch/bootstrap.sh`
-  creates it on the switch, once per factory reset.
+  creates it on the switch with a fresh password, which it writes to this directory's
+  `tofu-password.sops.yaml`; re-running it rotates the password.
 - `monitoring`: the read-only user the Terraform manages, which a RouterOS exporter will log in as.
+  ESO mints it.
 
 cert-manager issues the switch's api-ssl/www-ssl certificate from the cluster CA, so clients
 verify it against the CA bundle: the Terraform installs and renews `home-switch-tls`, and
@@ -29,15 +31,16 @@ from cluster.cdk8s.cert_manager import cluster_ca
 from cluster.cdk8s.external_secrets.minted_secret import mint_bearer_secret
 from cluster.cdk8s.fleet_rules import add_fleet_rules
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
-from cluster.cdk8s.manifest_roots import GENERATED_ROOT
+from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.providers.cert_manager.certificate import Certificate, CertificatePrivateKey
 from cluster.cdk8s.secret_ref import SecretKey, SecretRef
 
 NAME = "home-switch"
 NAMESPACE = "monitoring"
-OUTPUT_DIR = f"{GENERATED_ROOT}/monitoring/{NAME}"
+OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/{NAME}"
+# Written by tf/gitops/home-switch/bootstrap.sh, which names the Secret `home-switch-tofu-password`.
+TOFU_PASSWORD_FILE = "tofu-password.sops.yaml"
 # tf/gitops/home-switch/main.tf and bootstrap.sh read these Secrets and keys by name.
-TOFU_PASSWORD = SecretRef(namespace=NAMESPACE, name="home-switch-tofu").key("password")
 MONITORING_PASSWORD = SecretRef(namespace=NAMESPACE, name="home-switch-monitoring").key("password")
 TLS_SECRET = "home-switch-tls"
 BOOTSTRAP_TLS_SECRET = "home-switch-bootstrap-tls"
@@ -63,12 +66,6 @@ def _mint(chart: Chart, id: str, key: SecretKey, description: str) -> None:
 
 def chart(app: App) -> Chart:
     chart = Chart(app, NAME, disable_resource_name_hashes=True)
-    _mint(
-        chart,
-        "tofu-password",
-        TOFU_PASSWORD,
-        "Password of the home switch's full-access RouterOS user tf/gitops/home-switch logs in as.",
-    )
     _mint(
         chart,
         "monitoring-password",

@@ -9,11 +9,11 @@ locals {
   lan_cidr = "192.168.1.0/24"
 }
 
-# Passwords minted by ESO, certificate issued by cert-manager from the cluster CA, all in
-# cluster/cdk8s/monitoring/home_switch.py.
+# The tofu password is written by bootstrap.sh (SOPS), the monitoring password minted by ESO, and
+# the certificate issued by cert-manager from the cluster CA: cluster/cdk8s/monitoring/home_switch.py.
 data "kubernetes_secret_v1" "tofu" {
   metadata {
-    name      = "home-switch-tofu"
+    name      = "home-switch-tofu-password"
     namespace = "monitoring"
   }
 }

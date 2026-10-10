@@ -75,6 +75,7 @@ cluster/k8s/monitoring/kustomization.yaml linguist-generated=true
 cluster/k8s/cli-proxy-api/kustomization.yaml linguist-generated=true
 cluster/k8s/matrix/kustomization.yaml linguist-generated=true
 cluster/k8s/user-agentydragon/kustomization.yaml linguist-generated=true
+cluster/k8s/home-switch/kustomization.yaml linguist-generated=true
 cluster/k8s/ssh-mcp/kustomization.yaml linguist-generated=true
 cluster/k8s/agents/alloy-otlp-bearer/kustomization.yaml linguist-generated=true
 cluster/parked/haku-openclaw-spike/backup/kustomization.yaml linguist-generated=true

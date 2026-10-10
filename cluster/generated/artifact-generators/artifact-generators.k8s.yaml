@@ -667,8 +667,8 @@ spec:
       name: monitoring-gateway-probe
       originRevision: "@repo"
     - copy:
-        - from: "@repo/cluster/generated/monitoring/home-switch/**"
-          to: "@artifact/cluster/generated/monitoring/home-switch/"
+        - from: "@repo/cluster/k8s/home-switch/**"
+          to: "@artifact/cluster/k8s/home-switch/"
       name: monitoring-home-switch
       originRevision: "@repo"
     - copy:
