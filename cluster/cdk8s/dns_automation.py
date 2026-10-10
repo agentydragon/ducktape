@@ -7,6 +7,7 @@ from cdk8s_plus_34 import k8s
 from external_secrets_crds.io.external_secrets import ExternalSecretSpecTargetCreationPolicy
 from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecHealthChecks
 from pydantic import BaseModel, ConfigDict
+from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
 from cluster.cdk8s import external_creds, terraform
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
@@ -14,6 +15,7 @@ from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, remote_data
 
 OUTPUT_DIR = f"{GENERATED_ROOT}/dns-automation"
+TF_MODULE = "dns-records"
 _NAMESPACE = "flux-system"
 _CREDENTIALS_SECRET = "aws-route53-credentials"
 _CREDENTIALS_SOURCE = "aws-route53-dns-automation-credentials"
@@ -27,9 +29,9 @@ class DnsRecordsVars(BaseModel):
     route53_zone_id: str
 
 
-def chart(app: App) -> Chart:
+def chart(app: App, module: ArtifactGeneratorSpecArtifacts) -> Chart:
     """Route 53 domain delegation for allegedly.works (tf/gitops/dns-records)."""
-    chart = Chart(app, "dns-records", disable_resource_name_hashes=True)
+    chart = Chart(app, TF_MODULE, disable_resource_name_hashes=True)
     # Consumer-owned identity for reading approved canonical credentials.
     k8s.KubeServiceAccount(
         chart, "external-creds-reader", metadata=k8s.ObjectMeta(name="external-creds-reader", namespace=_NAMESPACE)
@@ -49,7 +51,7 @@ def chart(app: App) -> Chart:
     terraform.gitops_terraform(
         chart,
         "terraform",
-        name="dns-records",
+        module=module,
         variables=DnsRecordsVars(route53_zone_id="Z02901943N8ZFQFOD9P5I"),
         interval="2h",
         env_from=[terraform.secret_env_from(_CREDENTIALS_SECRET)],
@@ -69,7 +71,7 @@ def dns_automation(
             KustomizationSpecHealthChecks(
                 api_version="infra.contrib.fluxcd.io/v1alpha2",
                 kind="Terraform",
-                name="dns-records",
+                name=TF_MODULE,
                 namespace="flux-system",
             )
         ],

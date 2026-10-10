@@ -28,8 +28,8 @@ spec:
           memory: 512Mi
   serviceAccountName: tf-runner
   sourceRef:
-    kind: GitRepository
-    name: ducktape
+    kind: ExternalArtifact
+    name: tf-gitops-sso-providers
     namespace: ducktape-flux
   storeReadablePlan: human
 ---
@@ -63,8 +63,8 @@ spec:
           memory: 512Mi
   serviceAccountName: tf-runner
   sourceRef:
-    kind: GitRepository
-    name: ducktape
+    kind: ExternalArtifact
+    name: tf-gitops-agent-machine-access
     namespace: ducktape-flux
   storeReadablePlan: human
 ---
@@ -98,8 +98,8 @@ spec:
           memory: 512Mi
   serviceAccountName: tf-runner
   sourceRef:
-    kind: GitRepository
-    name: ducktape
+    kind: ExternalArtifact
+    name: tf-gitops-gatus-sso
     namespace: ducktape-flux
   storeReadablePlan: human
 ---
@@ -133,6 +133,6 @@ spec:
           memory: 512Mi
   serviceAccountName: tf-runner
   sourceRef:
-    kind: GitRepository
-    name: ducktape
+    kind: ExternalArtifact
+    name: tf-gitops-alloy-otlp-bearer-token
     namespace: ducktape-flux

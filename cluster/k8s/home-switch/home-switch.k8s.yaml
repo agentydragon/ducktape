@@ -89,8 +89,8 @@ spec:
           name: cluster-ca
   serviceAccountName: tf-runner
   sourceRef:
-    kind: GitRepository
-    name: ducktape
+    kind: ExternalArtifact
+    name: tf-gitops-home-switch
     namespace: ducktape-flux
   storeReadablePlan: human
   vars:

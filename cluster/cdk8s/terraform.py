@@ -1,14 +1,23 @@
 """Ducktape's tofu-controller `Terraform` CRs, built on `providers/tofu_controller`. Each one runs
 as `tf-runner` in flux-system and keeps its state in the OVH tofu-state Postgres. `gitops_terraform`
-builds the one for each `tf/gitops/<name>` module."""
+builds the one for each `tf/gitops/<name>` module, reading the module's own artifact
+(`gitops_module`).
+
+tofu-controller replans whenever its source's artifact revision moves. The `ducktape`
+GitRepository's revision is the `devel` commit, so a CR reading it would replan on every
+commit to the repository; an ArtifactGenerator artifact's revision is the digest of what it
+packages, so a CR reading its module's artifact replans only when that module changes, its own
+spec changes, or its interval fires."""
 
 from __future__ import annotations
 
+import posixpath
 from collections.abc import Mapping, Sequence
 
 from cdk8s import ApiObjectMetadata
 from constructs import Construct
 from pydantic import BaseModel
+from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 from tofu_controller.io.fluxcd.contrib.infra import (
     TerraformV1Alpha2SpecBackendConfig,
     TerraformV1Alpha2SpecDependsOn,
@@ -30,6 +39,8 @@ from tofu_controller.io.fluxcd.contrib.infra import (
 )
 
 from cluster.cdk8s import ducktape_flux, flux
+from cluster.cdk8s.artifact_generators import artifact
+from cluster.cdk8s.flux import artifact_directory
 from cluster.cdk8s.providers.tofu_controller.terraform import Terraform
 from cluster.cdk8s.secret_ref import SecretKey, SecretRef
 from cluster.cdk8s.tofu_state import db
@@ -48,6 +59,11 @@ _RUNNER_RESOURCES = TerraformV1Alpha2SpecRunnerPodTemplateSpecResources(
         "memory": TerraformV1Alpha2SpecRunnerPodTemplateSpecResourcesRequests.from_string("512Mi"),
     }
 )
+
+
+def gitops_module(name: str) -> ArtifactGeneratorSpecArtifacts:
+    """The artifact packaging the `tf/gitops/<name>` module, which its `gitops_terraform` CR reads."""
+    return artifact(f"tf-gitops-{name}", f"{ducktape_flux.TF_GITOPS_ROOT}/{name}")
 
 
 def secret_env(name: str, key: SecretKey) -> TerraformV1Alpha2SpecRunnerPodTemplateSpecEnv:
@@ -131,7 +147,7 @@ def gitops_terraform(
     scope: Construct,
     id: str,
     *,
-    name: str,
+    module: ArtifactGeneratorSpecArtifacts,
     variables: BaseModel | None,
     interval: str = "15m",
     depends_on: Sequence[Terraform] = (),
@@ -144,11 +160,11 @@ def gitops_terraform(
     volumes: Sequence[TerraformV1Alpha2SpecRunnerPodTemplateSpecVolumes] = (),
     volume_mounts: Sequence[TerraformV1Alpha2SpecRunnerPodTemplateSpecVolumeMounts] = (),
 ) -> Terraform:
-    """The `tf/gitops/<name>` module, run from the `ducktape` GitRepository and, unless
+    """The module `module` packages (`gitops_module`), run from that artifact and, unless
     `auto_apply=False`, auto-approved. Without auto-apply each run plans and waits for a person to
     set `approvePlan` to that plan's id, so drift is reported but nothing changes unasked.
-    `name` is the module directory and, underscored, its state schema unless `schema` names the
-    one its state already lives in.
+    The module directory's name is the CR's name and, underscored, its state schema unless
+    `schema` names the one its state already lives in.
 
     `variables` models the module's variables.tf (None: set none); each field is written
     structurally into the runner's tfvars, so a nested map arrives as a Terraform
@@ -165,17 +181,17 @@ def gitops_terraform(
     some nodes can (a device on the home LAN). `volumes` and `volume_mounts` add files to the
     runner pod, such as a CA bundle a provider verifies against.
     """
+    directory = artifact_directory(module)
+    name = posixpath.basename(directory)
     return tofu_state_terraform(
         scope,
         id,
         name=name,
         schema=schema or name.replace("-", "_"),
         source_ref=TerraformV1Alpha2SpecSourceRef(
-            kind=TerraformV1Alpha2SpecSourceRefKind.GIT_REPOSITORY,
-            name=ducktape_flux.SOURCE_NAME,
-            namespace=flux.NAMESPACE,
+            kind=TerraformV1Alpha2SpecSourceRefKind.EXTERNAL_ARTIFACT, name=module.name, namespace=flux.NAMESPACE
         ),
-        path=f"./{ducktape_flux.TF_GITOPS_ROOT}/{name}",
+        path=f"./{directory}",
         interval=interval,
         approve_plan="auto" if auto_apply else None,
         store_readable_plan=store_readable_plan,

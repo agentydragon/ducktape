@@ -38,8 +38,8 @@ spec:
           memory: 512Mi
   serviceAccountName: tf-runner
   sourceRef:
-    kind: GitRepository
-    name: ducktape
+    kind: ExternalArtifact
+    name: tf-gitops-forgejo-images
     namespace: ducktape-flux
   vars:
     - name: webhook_host

@@ -33,8 +33,8 @@ spec:
           memory: 512Mi
   serviceAccountName: tf-runner
   sourceRef:
-    kind: GitRepository
-    name: ducktape
+    kind: ExternalArtifact
+    name: tf-gitops-litellm-keys
     namespace: ducktape-flux
   vars:
     - name: model_lanes

@@ -59,6 +59,7 @@ from cluster.cdk8s import (
     reloader,
     talos_cloud_controller_manager,
     tana_mcp,
+    terraform,
     user_agentydragon,
     valkey,
     vector_talos_logs,
@@ -608,12 +609,13 @@ def generate_manifests(root: Path) -> None:
         flux_image_automation_ghcr_kustomization,
     )
     monitoring_home_switch_artifact = artifact("monitoring-home-switch", monitoring_home_switch.OUTPUT_DIR)
+    home_switch_module = terraform.gitops_module(monitoring_home_switch.NAME)
     monitoring_home_switch_kustomization = monitoring_home_switch.home_switch(
         flux_chart,
         write_directory(
             root,
             monitoring_home_switch_artifact,
-            monitoring_home_switch.chart,
+            functools.partial(monitoring_home_switch.chart, module=home_switch_module),
             siblings=[monitoring_home_switch.TOFU_PASSWORD_FILE],
         ),
         cert_manager_kustomization,
@@ -737,9 +739,12 @@ def generate_manifests(root: Path) -> None:
         flux_chart, kyverno_kustomization, tofu_controller_kustomization
     )
     dns_automation_artifact = artifact("dns-automation", dns_automation.OUTPUT_DIR)
+    dns_records_module = terraform.gitops_module(dns_automation.TF_MODULE)
     dns_automation.dns_automation(
         flux_chart,
-        write_directory(root, dns_automation_artifact, dns_automation.chart),
+        write_directory(
+            root, dns_automation_artifact, functools.partial(dns_automation.chart, module=dns_records_module)
+        ),
         tofu_controller_kustomization,
         external_secrets_operator_kustomization,
     )
@@ -815,34 +820,61 @@ def generate_manifests(root: Path) -> None:
         user_agentydragon_kustomization,
     )
     authentik_tf_artifact = artifact(authentik_tf.NAME, authentik_tf.OUTPUT_DIR)
+    sso_providers_module = terraform.gitops_module(sso_providers.NAME)
+    agent_machine_access_module = terraform.gitops_module(agent_machine_access.NAME)
+    gatus_sso_module = terraform.gitops_module(gatus_sso.NAME)
+    alloy_otlp_bearer_token_module = terraform.gitops_module(alloy_otlp_bearer_token.NAME)
     authentik_tf.authentik_tf(
         flux_chart,
         write_directory(
             root,
             authentik_tf_artifact,
-            sso_providers.chart,
-            agent_machine_access.chart,
-            gatus_sso.chart,
-            alloy_otlp_bearer_token.chart,
+            functools.partial(sso_providers.chart, module=sso_providers_module),
+            functools.partial(agent_machine_access.chart, module=agent_machine_access_module),
+            functools.partial(gatus_sso.chart, module=gatus_sso_module),
+            functools.partial(alloy_otlp_bearer_token.chart, module=alloy_otlp_bearer_token_module),
         ),
         tofu_controller_kustomization,
     )
     github_tf_artifact = artifact(github_tf.NAME, github_tf.OUTPUT_DIR)
+    github_branch_protection_module = terraform.gitops_module(github_branch_protection.NAME)
+    github_secrets_sync_module = terraform.gitops_module(github_secrets_sync_gitops_module.NAME)
+    flux_webhook_token_module = terraform.gitops_module(flux_webhook_token.NAME)
     github_tf.github_tf(
         flux_chart,
         write_directory(
             root,
             github_tf_artifact,
-            github_branch_protection.chart,
-            github_secrets_sync_gitops_module.chart,
-            flux_webhook_token.chart,
+            functools.partial(github_branch_protection.chart, module=github_branch_protection_module),
+            functools.partial(github_secrets_sync_gitops_module.chart, module=github_secrets_sync_module),
+            functools.partial(flux_webhook_token.chart, module=flux_webhook_token_module),
         ),
         tofu_controller_kustomization,
     )
     forgejo_gitops_artifact = artifact(forgejo_gitops_modules.NAME, forgejo_gitops_modules.OUTPUT_DIR)
+    forgejo_claude_module = terraform.gitops_module("forgejo-claude")
+    haku_state_module = terraform.gitops_module("haku-state")
+    budget_ledger_module = terraform.gitops_module("budget-ledger")
+    cpap_data_module = terraform.gitops_module("cpap-data")
+    forgejo_agentydragon_repos_module = terraform.gitops_module("forgejo-agentydragon-repos")
+    forgejo_agentydragon_module = terraform.gitops_module("forgejo-agentydragon")
+    finance_agent_module = terraform.gitops_module("finance-agent")
     forgejo_gitops_modules.forgejo_gitops(
         flux_chart,
-        write_directory(root, forgejo_gitops_artifact, forgejo_gitops_modules.chart),
+        write_directory(
+            root,
+            forgejo_gitops_artifact,
+            functools.partial(
+                forgejo_gitops_modules.chart,
+                claude=forgejo_claude_module,
+                haku_state=haku_state_module,
+                budget_ledger=budget_ledger_module,
+                cpap_data=cpap_data_module,
+                agentydragon_repos=forgejo_agentydragon_repos_module,
+                agentydragon=forgejo_agentydragon_module,
+                finance_agent=finance_agent_module,
+            ),
+        ),
         tofu_controller_kustomization,
     )
     monitoring_stack_artifact = artifact("monitoring-stack", monitoring_stack.OUTPUT_DIR)
@@ -1056,10 +1088,16 @@ def generate_manifests(root: Path) -> None:
         flux_chart, haku_cloud_agent_artifact, external_secrets_operator_kustomization, tofu_controller_kustomization
     )
     forgejo_images_artifact = artifact("forgejo-images", forgejo_images.OUTPUT_DIR)
+    forgejo_images_module = terraform.gitops_module(forgejo_images.NAME)
     forgejo_images.forgejo_images(
         flux_chart,
         # The SOPS sibling (the tenant's canonical registry credential) turns on Flux decryption.
-        write_directory(root, forgejo_images_artifact, forgejo_images.chart, siblings=["registry-creds.sops.yaml"]),
+        write_directory(
+            root,
+            forgejo_images_artifact,
+            functools.partial(forgejo_images.chart, module=forgejo_images_module),
+            siblings=["registry-creds.sops.yaml"],
+        ),
         external_secrets_operator_kustomization,
         tofu_controller_kustomization,
     )
@@ -1480,10 +1518,14 @@ def generate_manifests(root: Path) -> None:
     haku_workloads_artifact = artifact("haku-workloads", haku_workloads.OUTPUT_DIR)
     haku_workloads.haku_workloads(flux_chart, write_directory(root, haku_workloads_artifact, haku_workloads.chart))
     litellm_keys_tf_artifact = artifact("litellm-keys-tf", litellm_keys.OUTPUT_DIR)
+    litellm_keys_module = terraform.gitops_module(litellm_keys.TF_MODULE)
     litellm_keys.litellm_keys_tf(
         flux_chart,
         write_directory(
-            root, litellm_keys_tf_artifact, litellm_keys.keys_chart, siblings=["litellm-clients-sops-age-key.sops.yaml"]
+            root,
+            litellm_keys_tf_artifact,
+            functools.partial(litellm_keys.keys_chart, module=litellm_keys_module),
+            siblings=["litellm-clients-sops-age-key.sops.yaml"],
         ),
         tofu_controller_kustomization,
     )
@@ -1788,6 +1830,24 @@ def generate_manifests(root: Path) -> None:
             vm_images_publisher_artifact,
             vpa_artifact,
             website_artifact,
+            home_switch_module,
+            dns_records_module,
+            sso_providers_module,
+            agent_machine_access_module,
+            gatus_sso_module,
+            alloy_otlp_bearer_token_module,
+            github_branch_protection_module,
+            github_secrets_sync_module,
+            flux_webhook_token_module,
+            forgejo_claude_module,
+            haku_state_module,
+            budget_ledger_module,
+            cpap_data_module,
+            forgejo_agentydragon_repos_module,
+            forgejo_agentydragon_module,
+            finance_agent_module,
+            forgejo_images_module,
+            litellm_keys_module,
         ],
         flux_system=[external_creds_artifact],
     )

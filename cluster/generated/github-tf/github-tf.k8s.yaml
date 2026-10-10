@@ -28,8 +28,8 @@ spec:
           memory: 512Mi
   serviceAccountName: tf-runner
   sourceRef:
-    kind: GitRepository
-    name: ducktape
+    kind: ExternalArtifact
+    name: tf-gitops-github-branch-protection
     namespace: ducktape-flux
 ---
 apiVersion: infra.contrib.fluxcd.io/v1alpha2
@@ -62,8 +62,8 @@ spec:
           memory: 512Mi
   serviceAccountName: tf-runner
   sourceRef:
-    kind: GitRepository
-    name: ducktape
+    kind: ExternalArtifact
+    name: tf-gitops-github-secrets-sync
     namespace: ducktape-flux
 ---
 apiVersion: infra.contrib.fluxcd.io/v1alpha2
@@ -96,6 +96,6 @@ spec:
           memory: 512Mi
   serviceAccountName: tf-runner
   sourceRef:
-    kind: GitRepository
-    name: ducktape
+    kind: ExternalArtifact
+    name: tf-gitops-flux-webhook-token
     namespace: ducktape-flux

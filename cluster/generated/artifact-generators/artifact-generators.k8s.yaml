@@ -785,6 +785,96 @@ spec:
           to: "@artifact/cluster/generated/website/"
       name: website
       originRevision: "@repo"
+    - copy:
+        - from: "@repo/tf/gitops/home-switch/**"
+          to: "@artifact/tf/gitops/home-switch/"
+      name: tf-gitops-home-switch
+      originRevision: "@repo"
+    - copy:
+        - from: "@repo/tf/gitops/dns-records/**"
+          to: "@artifact/tf/gitops/dns-records/"
+      name: tf-gitops-dns-records
+      originRevision: "@repo"
+    - copy:
+        - from: "@repo/tf/gitops/sso-providers/**"
+          to: "@artifact/tf/gitops/sso-providers/"
+      name: tf-gitops-sso-providers
+      originRevision: "@repo"
+    - copy:
+        - from: "@repo/tf/gitops/agent-machine-access/**"
+          to: "@artifact/tf/gitops/agent-machine-access/"
+      name: tf-gitops-agent-machine-access
+      originRevision: "@repo"
+    - copy:
+        - from: "@repo/tf/gitops/gatus-sso/**"
+          to: "@artifact/tf/gitops/gatus-sso/"
+      name: tf-gitops-gatus-sso
+      originRevision: "@repo"
+    - copy:
+        - from: "@repo/tf/gitops/alloy-otlp-bearer-token/**"
+          to: "@artifact/tf/gitops/alloy-otlp-bearer-token/"
+      name: tf-gitops-alloy-otlp-bearer-token
+      originRevision: "@repo"
+    - copy:
+        - from: "@repo/tf/gitops/github-branch-protection/**"
+          to: "@artifact/tf/gitops/github-branch-protection/"
+      name: tf-gitops-github-branch-protection
+      originRevision: "@repo"
+    - copy:
+        - from: "@repo/tf/gitops/github-secrets-sync/**"
+          to: "@artifact/tf/gitops/github-secrets-sync/"
+      name: tf-gitops-github-secrets-sync
+      originRevision: "@repo"
+    - copy:
+        - from: "@repo/tf/gitops/flux-webhook-token/**"
+          to: "@artifact/tf/gitops/flux-webhook-token/"
+      name: tf-gitops-flux-webhook-token
+      originRevision: "@repo"
+    - copy:
+        - from: "@repo/tf/gitops/forgejo-claude/**"
+          to: "@artifact/tf/gitops/forgejo-claude/"
+      name: tf-gitops-forgejo-claude
+      originRevision: "@repo"
+    - copy:
+        - from: "@repo/tf/gitops/haku-state/**"
+          to: "@artifact/tf/gitops/haku-state/"
+      name: tf-gitops-haku-state
+      originRevision: "@repo"
+    - copy:
+        - from: "@repo/tf/gitops/budget-ledger/**"
+          to: "@artifact/tf/gitops/budget-ledger/"
+      name: tf-gitops-budget-ledger
+      originRevision: "@repo"
+    - copy:
+        - from: "@repo/tf/gitops/cpap-data/**"
+          to: "@artifact/tf/gitops/cpap-data/"
+      name: tf-gitops-cpap-data
+      originRevision: "@repo"
+    - copy:
+        - from: "@repo/tf/gitops/forgejo-agentydragon-repos/**"
+          to: "@artifact/tf/gitops/forgejo-agentydragon-repos/"
+      name: tf-gitops-forgejo-agentydragon-repos
+      originRevision: "@repo"
+    - copy:
+        - from: "@repo/tf/gitops/forgejo-agentydragon/**"
+          to: "@artifact/tf/gitops/forgejo-agentydragon/"
+      name: tf-gitops-forgejo-agentydragon
+      originRevision: "@repo"
+    - copy:
+        - from: "@repo/tf/gitops/finance-agent/**"
+          to: "@artifact/tf/gitops/finance-agent/"
+      name: tf-gitops-finance-agent
+      originRevision: "@repo"
+    - copy:
+        - from: "@repo/tf/gitops/forgejo-images/**"
+          to: "@artifact/tf/gitops/forgejo-images/"
+      name: tf-gitops-forgejo-images
+      originRevision: "@repo"
+    - copy:
+        - from: "@repo/tf/gitops/litellm-keys/**"
+          to: "@artifact/tf/gitops/litellm-keys/"
+      name: tf-gitops-litellm-keys
+      originRevision: "@repo"
   sources:
     - alias: repo
       kind: GitRepository

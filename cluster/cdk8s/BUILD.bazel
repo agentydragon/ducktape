@@ -729,6 +729,7 @@ py_library(
     visibility = ["//cluster/cdk8s/authentik:__pkg__"],
     deps = [
         ":terraform",
+        "//cluster/cdk8s/providers/source_watcher:artifactgenerator",
         "//cluster/cdk8s/providers/tofu_controller:terraform",
         "@pypi//cdk8s",
     ],
@@ -739,6 +740,7 @@ py_library(
     srcs = ["github_branch_protection.py"],
     deps = [
         ":terraform",
+        "//cluster/cdk8s/providers/source_watcher:artifactgenerator",
         "@pypi//cdk8s",
     ],
 )
@@ -843,6 +845,7 @@ py_library(
         "//cluster/cdk8s/providers/external_secrets:external_secret",
         "//cluster/cdk8s/providers/external_secrets:externalsecret",
         "//cluster/cdk8s/providers/flux:kustomization",
+        "//cluster/cdk8s/providers/source_watcher:artifactgenerator",
         "//cluster/scripts:nebula_mesh",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
@@ -898,9 +901,11 @@ py_library(
     srcs = ["terraform.py"],
     visibility = ["//cluster/cdk8s:__subpackages__"],
     deps = [
+        ":artifact_generators",
         ":ducktape_flux",
         ":flux",
         ":secret_ref",
+        "//cluster/cdk8s/providers/source_watcher:artifactgenerator",
         "//cluster/cdk8s/providers/tofu_controller:terraform",
         "//cluster/cdk8s/providers/tofu_controller:tofu_controller_terraform",
         "//cluster/cdk8s/tofu_state:db",
@@ -1438,6 +1443,7 @@ py_library(
         ":reflector",
         ":reloader",
         ":talos_cloud_controller_manager",
+        ":terraform",
         ":user_agentydragon",
         ":valkey",
         ":vector_talos_logs",

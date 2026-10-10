@@ -64,8 +64,8 @@ spec:
           memory: 512Mi
   serviceAccountName: tf-runner
   sourceRef:
-    kind: GitRepository
-    name: ducktape
+    kind: ExternalArtifact
+    name: tf-gitops-dns-records
     namespace: ducktape-flux
   vars:
     - name: route53_zone_id

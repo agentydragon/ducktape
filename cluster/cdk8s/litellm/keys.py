@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from cdk8s import App, Chart
 from pydantic import BaseModel, ConfigDict, Field, field_serializer
+from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
 from cluster.cdk8s import terraform
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
@@ -17,6 +18,7 @@ from cluster.cdk8s.secret_ref import SecretRef
 from model_catalog.policies import KEY_MODEL_LANES, ModelLaneRoutes
 
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/litellm/keys-tf"
+TF_MODULE = "litellm-keys"
 
 
 class KeysVars(BaseModel):
@@ -40,16 +42,16 @@ class KeysVars(BaseModel):
         }
 
 
-def keys_chart(app: App) -> Chart:
+def keys_chart(app: App, module: ArtifactGeneratorSpecArtifacts) -> Chart:
     """Mints the agent and laptop-client LiteLLM virtual keys (tf/gitops/litellm-keys).
     Needs the SOPS-managed master key and a serving LiteLLM with its virtual-key DB;
     tofu-controller retries on its interval until LiteLLM is up.
     """
-    chart = Chart(app, "litellm-keys", disable_resource_name_hashes=True)
+    chart = Chart(app, TF_MODULE, disable_resource_name_hashes=True)
     terraform.gitops_terraform(
         chart,
         "terraform",
-        name="litellm-keys",
+        module=module,
         variables=KeysVars(model_lanes=KEY_MODEL_LANES),
         env=[
             # The narrow SOPS age private key (litellm-clients-sops-age-key.sops.yaml

@@ -24,6 +24,7 @@ from external_secrets_crds.io.external_secrets import (
 )
 from flux_receiver_crds.io.fluxcd.toolkit.notification import ReceiverSpecSecretRef, ReceiverSpecType
 from pydantic import BaseModel, ConfigDict
+from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
 from cluster.cdk8s import namespaces, terraform
 from cluster.cdk8s.external_secrets.minted_secret import mint_bearer_secret
@@ -56,7 +57,7 @@ class ForgejoImagesVars(BaseModel):
     webhook_token_secret: str
 
 
-def chart(app: App) -> Chart:
+def chart(app: App, module: ArtifactGeneratorSpecArtifacts) -> Chart:
     chart = Chart(app, NAME, disable_resource_name_hashes=True)
     namespaces.namespace(
         chart,
@@ -73,7 +74,7 @@ def chart(app: App) -> Chart:
     terraform.gitops_terraform(
         chart,
         "terraform",
-        name=NAME,
+        module=module,
         variables=ForgejoImagesVars(
             webhook_host=WEBHOOK_HOST,
             receiver_name=RECEIVER_NAME,

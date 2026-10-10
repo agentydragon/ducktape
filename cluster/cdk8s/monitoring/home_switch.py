@@ -19,6 +19,7 @@ from __future__ import annotations
 from cdk8s import ApiObjectMetadata, App, Chart
 from external_secrets_crds.io.external_secrets import ExternalSecretSpecTargetCreationPolicy
 from pydantic import BaseModel, ConfigDict, Field
+from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 from tofu_controller.io.fluxcd.contrib.infra import (
     TerraformV1Alpha2SpecRunnerPodTemplateSpecVolumeMounts,
     TerraformV1Alpha2SpecRunnerPodTemplateSpecVolumes,
@@ -82,7 +83,7 @@ def _mint(chart: Chart, id: str, key: SecretKey, description: str) -> None:
     )
 
 
-def chart(app: App) -> Chart:
+def chart(app: App, module: ArtifactGeneratorSpecArtifacts) -> Chart:
     chart = Chart(app, NAME, disable_resource_name_hashes=True)
     _mint(
         chart,
@@ -104,7 +105,7 @@ def chart(app: App) -> Chart:
     terraform.gitops_terraform(
         chart,
         "terraform",
-        name=NAME,
+        module=module,
         variables=HomeSwitchVars(
             switch_address=_SWITCH_ADDRESS,
             lan_cidr=_LAN_CIDR,

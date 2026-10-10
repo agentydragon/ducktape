@@ -28,8 +28,8 @@ spec:
           memory: 512Mi
   serviceAccountName: tf-runner
   sourceRef:
-    kind: GitRepository
-    name: ducktape
+    kind: ExternalArtifact
+    name: tf-gitops-forgejo-claude
     namespace: ducktape-flux
 ---
 apiVersion: infra.contrib.fluxcd.io/v1alpha2
@@ -64,8 +64,8 @@ spec:
           memory: 512Mi
   serviceAccountName: tf-runner
   sourceRef:
-    kind: GitRepository
-    name: ducktape
+    kind: ExternalArtifact
+    name: tf-gitops-haku-state
     namespace: ducktape-flux
 ---
 apiVersion: infra.contrib.fluxcd.io/v1alpha2
@@ -101,8 +101,8 @@ spec:
           memory: 512Mi
   serviceAccountName: tf-runner
   sourceRef:
-    kind: GitRepository
-    name: ducktape
+    kind: ExternalArtifact
+    name: tf-gitops-budget-ledger
     namespace: ducktape-flux
 ---
 apiVersion: infra.contrib.fluxcd.io/v1alpha2
@@ -138,8 +138,8 @@ spec:
           memory: 512Mi
   serviceAccountName: tf-runner
   sourceRef:
-    kind: GitRepository
-    name: ducktape
+    kind: ExternalArtifact
+    name: tf-gitops-cpap-data
     namespace: ducktape-flux
 ---
 apiVersion: infra.contrib.fluxcd.io/v1alpha2
@@ -174,8 +174,8 @@ spec:
           memory: 512Mi
   serviceAccountName: tf-runner
   sourceRef:
-    kind: GitRepository
-    name: ducktape
+    kind: ExternalArtifact
+    name: tf-gitops-forgejo-agentydragon-repos
     namespace: ducktape-flux
 ---
 apiVersion: infra.contrib.fluxcd.io/v1alpha2
@@ -208,8 +208,8 @@ spec:
           memory: 512Mi
   serviceAccountName: tf-runner
   sourceRef:
-    kind: GitRepository
-    name: ducktape
+    kind: ExternalArtifact
+    name: tf-gitops-forgejo-agentydragon
     namespace: ducktape-flux
 ---
 apiVersion: infra.contrib.fluxcd.io/v1alpha2
@@ -244,6 +244,6 @@ spec:
           memory: 512Mi
   serviceAccountName: tf-runner
   sourceRef:
-    kind: GitRepository
-    name: ducktape
+    kind: ExternalArtifact
+    name: tf-gitops-finance-agent
     namespace: ducktape-flux
