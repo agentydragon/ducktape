@@ -30,7 +30,9 @@ POSTGRES_PORT = 5432
 
 # The logical databases services own on the shared Cluster; the initdb-owned
 # "app"/trajectory database needs no Database/role of its own.
-_ROLE_NAMES = ["actions", "egress", "notifications", "sandbox_service"]
+# `sandbox_commands` holds the Sandbox Service's command admission; `sandbox_service` holds
+# Session history only, so it can pass to the History Service whole.
+_ROLE_NAMES = ["actions", "egress", "notifications", "sandbox_commands", "sandbox_service"]
 _ELECTRIC_ROLE = "electric"
 
 

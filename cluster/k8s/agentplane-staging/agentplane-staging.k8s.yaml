@@ -133,6 +133,46 @@ spec:
 apiVersion: generators.external-secrets.io/v1alpha1
 kind: Password
 metadata:
+  name: postgres-sandbox-commands-generator
+  namespace: agentplane-staging
+spec:
+  allowRepeat: true
+  digits: 8
+  length: 40
+  noUpper: false
+  symbols: 0
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: postgres-sandbox-commands
+  namespace: agentplane-staging
+spec:
+  dataFrom:
+    - sourceRef:
+        generatorRef:
+          apiVersion: generators.external-secrets.io/v1alpha1
+          kind: Password
+          name: postgres-sandbox-commands-generator
+  refreshInterval: 8760h
+  target:
+    name: postgres-sandbox-commands
+    template:
+      data:
+        dbname: sandbox_commands
+        host: postgres-rw.agentplane-staging.svc
+        password: "{{ .password }}"
+        port: "5432"
+        uri: postgresql://sandbox_commands:{{ .password }}@postgres-rw.agentplane-staging.svc:5432/sandbox_commands
+        username: sandbox_commands
+      metadata:
+        labels:
+          cnpg.io/reload: "true"
+      type: kubernetes.io/basic-auth
+---
+apiVersion: generators.external-secrets.io/v1alpha1
+kind: Password
+metadata:
   name: postgres-sandbox-service-generator
   namespace: agentplane-staging
 spec:
@@ -250,6 +290,11 @@ spec:
           name: postgres-notifications
       - ensure: present
         login: true
+        name: sandbox_commands
+        passwordSecret:
+          name: postgres-sandbox-commands
+      - ensure: present
+        login: true
         name: sandbox_service
         passwordSecret:
           name: postgres-sandbox-service
@@ -307,6 +352,18 @@ spec:
   databaseReclaimPolicy: delete
   name: notifications
   owner: notifications
+---
+apiVersion: postgresql.cnpg.io/v1
+kind: Database
+metadata:
+  name: sandbox-commands
+  namespace: agentplane-staging
+spec:
+  cluster:
+    name: postgres
+  databaseReclaimPolicy: delete
+  name: sandbox_commands
+  owner: sandbox_commands
 ---
 apiVersion: postgresql.cnpg.io/v1
 kind: Database

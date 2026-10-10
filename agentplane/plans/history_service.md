@@ -22,7 +22,7 @@ flowchart LR
     Runner -- one outbound WS: commands in, journal out --> SS
     HS -- WatchSessions, FollowSession, holds --> SS
     HS --> HSDB
-    SS --> SSDB[(sandbox_service database: command admission)]
+    SS --> SSDB[(sandbox_commands database: command admission)]
 ```
 
 | Component       | Owns                                                                                                                                                                               | Does not own                       |
@@ -51,7 +51,7 @@ Properties the target keeps:
   Session in a new Sandbox ([task DAG section 8](task_dag.md#8-sessions-that-outlive-their-sandbox))
   needs no change here.
 - **No reads of runners from the History Service:** it reads only through the Sandbox Service, so the locator ↔ Sandbox identity check stays where the authenticated runner channel
-  terminates. This answers the open question in `SERVICE_BOUNDARIES`.
+  terminates.
 
 ## Facts the order rests on
 
@@ -78,7 +78,7 @@ Properties the target keeps:
 ## Decided (operator, 2026-10-10 PDT)
 
 - **Store placement:** the History Service takes over the existing `sandbox_service` database and
-  role; the Sandbox Service gets a new database for command admission. A `TODO` at the database
+  role; the Sandbox Service gets a new `sandbox_commands` database for command admission. A `TODO` at the database
   declaration records that the name is then a misnomer. Rejected: a new database with a one-off
   copy of `session_event`, which is a second migration like the one just finished; its one
   advantage, returning disk by dropping the old copy, `pg_repack` also gives in place.
