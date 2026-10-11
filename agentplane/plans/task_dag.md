@@ -351,27 +351,13 @@ flowchart LR
     SANDBOX_VM_ISOLATION --> LOCAL_BAZEL[Blocked: bounded local Bazel client in VM]
 ```
 
-### `RUNNER_INBOUND_RETIRE` — remove inbound runner access
+### `RUNNER_INBOUND_RETIRE` — remove the runner's inbound server
 
-**Blocked on `KUBEVIRT_GUEST_CONTROL`.** Remove
-`Attach` command submission, the pull ingester, the runner control port and its network policy.
-With no inbound route left, the `runner_connection` table goes (a drop migration the operator
-merges) together with the routing check on its operations in `SubmitCommand`. Capability
-negotiation goes on both sides: `ControlOperation`, the runner's `CAPABILITIES`,
-`Hello`/`Welcome.capabilities`, `ConnectionStore.record_operations`/`read_operations` and every
-`control_routed` or inbound branch in the gateway. The legacy
-caller-chosen runner Session ID path goes too, as does the client's fallback to the service when a
-Sandbox has no control Service (the `CLEANUP` tombstone in `sandbox_service/client.py`), as do the
-runner SPEC's and Sandbox Service README's notes on the unauthenticated inbound listener.
-
-Also inbound-only, so deleted here: teardown's inbound seal branch and `_stop_legacy` for runner
-images without `Seal`; `SubmitCommandRequest.follow` with the client's `command(after_cursor=...)`
-and the app's `last_cursor` lookup for it, read only by the relay; the `runner_grpc_channel_options`
-setting and `Environment` field; `protocol.v1.Follow` once nothing sends `Open.follow`;
-`register_attached_sessions` in `runner_gateway/testing`, which registers Sessions tests open
-over `Attach`; and the runner's own gRPC server, its `--listen` flag and the
-`Runner` service RPCs the channel duplicates. The Sandbox Service README, which still describes
-the relay as its foundation, is rewritten for the channel.
+**Blocked on `KUBEVIRT_GUEST_CONTROL`.** Hosted runners take every call over the control stream and
+admit no connections; the KubeVirt experiment's guest is the last caller of the runner's own gRPC
+server. Delete that server, its `--listen` flag, the `Runner` service RPCs the channel duplicates
+and `protocol.v1.Follow` with `Open.follow`, and its client `runner/client.py`, test-only now, with
+the app's `OpenTimeoutError` handler.
 
 ### `VM_CONTROL_NETWORKING` — integrate the reviewed connection direction
 
@@ -774,22 +760,12 @@ tombstones with a verifiable condition in code (`keepingOffset` in
 
 ```mermaid
 flowchart TD
-    RUNNER_SESSION_RECORD_SHIMS[Candidate: drop runner session record compatibility]
     ACTION_EXECUTION_AUDIT_TRIM[Decision: execution reconciliation columns]
     REFACTOR_COHERENCE_AUDIT[Blocked: whole-refactor coherence audit]
     RUNNER_INBOUND_RETIRE[Retire inbound runner access] --> REFACTOR_COHERENCE_AUDIT
     HISTORY_SERVICE_OWNERSHIP[History Service ownership] --> REFACTOR_COHERENCE_AUDIT
-    RUNNER_SESSION_RECORD_SHIMS --> REFACTOR_COHERENCE_AUDIT
     COHERENCE_REFACTORS[Section 12 coherence refactors] --> REFACTOR_COHERENCE_AUDIT
 ```
-
-### `RUNNER_SESSION_RECORD_SHIMS` — drop runner session record compatibility
-
-**Candidate; Runner dial-out lane.** The runner's `SessionRecord` reads `session.json` written by
-older images: `context_budget_resolved` (False only for records from before budget resolution,
-2026-10-10 PDT) re-resolves the budget at Open, and `instructions` and `event_source_id` have
-defaults that fill records predating them. No live Sandbox predates them. Delete the flag and its
-Open branch, make both fields required, and have `from_spec` set `event_source_id` explicitly.
 
 ### `ACTION_EXECUTION_AUDIT_TRIM` — execution reconciliation columns
 
@@ -837,19 +813,11 @@ flowchart TD
     POD_INCARNATION[Decision: a Pod is the incarnation]
     SEAL_FINALIZER[Unscheduled: seal as a finalizer on every delete]
     COMMAND_RECORDS_RETIRE[Unscheduled: drop command submission records]
-    SESSION_ID_MINT_RETIRE[Blocked: clients always name the Session ID]
+    RESUME_BY_SESSION_ID[Unscheduled: resume a Session by its ID alone]
     LOOKUP_SESSION_RETIRE[Candidate: Session status from history, no Open reservation]
     AGENTPLANE_SANDBOX_RESOURCE -. to seal a suspended Sandbox on delete .-> SEAL_FINALIZER
     POD_INCARNATION -. if chosen, rewrites .-> SESSION_STATE_VOLUME_DESIGN[State volume design]
 ```
-
-### `SESSION_ID_MINT_RETIRE` — clients always name the Session ID
-
-**Blocked on the deployed app sending `session_id` on every create.** `CreateSessionRequest.session_id` becomes required. The Runner Gateway stops
-minting IDs and handing the runner an `r-` locator (the `CLEANUP` tombstones in `grpc_api.py`'s
-`CreateSession` and `session_registry.py`), and the app stops sending the ID again as
-`idempotency_key` for older Sandbox Services. The gateway's `session.runner_session_id` then always
-equals the Session ID; drop it and its place in `ux_session_runner_locator` (stops for the operator).
 
 ### `LOOKUP_SESSION_RETIRE` — Session status from history, no Open reservation
 
@@ -869,6 +837,13 @@ into the gateway's proto and give the gateway its own client. `FrozenLaunch` lea
 Sandbox Service proto for a gateway-private message, `sandbox_service/wire.py` splits between
 gateway and client, the client's `Runner` handle is renamed, its `command_admission_timeout_s`
 stops being nullable, and the Notification Service's `SandboxServiceSettings` splits too.
+
+### `RESUME_BY_SESSION_ID` — resume a Session by its ID alone
+
+**Unscheduled.** Commands reach the gateway by Session ID alone (operator, 2026-10-11).
+`ResumeSession` still names the Sandbox, because only the replica holding its runner connection
+serves it and the client reaches that replica through the Sandbox's control Service. Resume by
+Session ID needs the gateway to forward to the holder itself.
 
 ### `AGENTPLANE_SANDBOX_RESOURCE` — our own Sandbox resource
 

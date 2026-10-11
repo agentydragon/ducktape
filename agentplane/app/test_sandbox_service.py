@@ -40,7 +40,7 @@ async def cluster() -> AsyncIterator[Cluster]:
 
 @pytest.fixture
 def register_attached_sessions() -> bool:
-    # The History Service ingester writes the history; the app only reads it.
+    # The runner pushes its history to the History Service ingress; the app only reads it.
     return True
 
 
@@ -65,7 +65,7 @@ async def test_production_bridge_archives_native_evidence_across_bounded_service
 ) -> None:
     async with (
         authenticated_service(
-            cluster, runner, tmp_path / "service-token", database_url=service_history_db_url
+            cluster, runner.runner, tmp_path / "service-token", database_url=service_history_db_url
         ) as remote,
         ingest(service_history_db_url, runner.runner),
     ):
@@ -124,7 +124,7 @@ async def test_stopped_service_never_falls_back_to_reachable_runner(
     cluster: Cluster, live_index: LiveIndex, tmp_path: Path, runner: RunnerHandle, service_history_db_url: str
 ) -> None:
     async with authenticated_service(
-        cluster, runner, tmp_path / "service-token", database_url=service_history_db_url
+        cluster, runner.runner, tmp_path / "service-token", database_url=service_history_db_url
     ) as remote:
         directory = SandboxSessions(live_index, remote)
         assert await directory.client(SANDBOX).list_sessions() == []

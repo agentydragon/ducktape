@@ -25,8 +25,8 @@ from agentplane.workload_auth.principal import WorkloadPrincipalResolver
 
 async def serve(settings: Settings) -> None:
     url = make_url(settings.database_url).set(drivername="postgresql+asyncpg")
-    # The migration init container creates these tables; the ingress and the fold write through
-    # their own engines, and reads never write.
+    # The migration init container owns the schema; the ingress and the fold write through their own
+    # engines, and reads never write.
     engine = create_async_engine(
         url, pool_size=4, max_overflow=2, connect_args={"server_settings": {"default_transaction_read_only": "on"}}
     )

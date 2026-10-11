@@ -1,7 +1,7 @@
 """Scripted runner history and Runner Gateway peer for app process and browser recovery tests.
 
-`ingesting` copies what a test appends into the history database, as the History Service ingester
-copies a runner's journal; its first copy waits for the test to release the `opened` replay.
+`ingesting` copies what a test appends into the history database, as the History ingress takes
+a runner's pushed journal; its first copy waits for the test to release the `opened` replay.
 """
 
 import asyncio

@@ -9,6 +9,8 @@ exports_files([
     "0006_connection_lease.py",
     "0007_redelivery.py",
     "0008_drop_session_feed.py",
+    "0009_drop_runner_connection.py",
+    "0010_drop_session_runner_locator.py",
 ])
 
 py_library(
@@ -77,6 +79,24 @@ py_library(
 py_library(
     name = "0008_drop_session_feed",
     srcs = ["0008_drop_session_feed.py"],
+    deps = [
+        "@pypi//alembic",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
+    name = "0009_drop_runner_connection",
+    srcs = ["0009_drop_runner_connection.py"],
+    deps = [
+        "@pypi//alembic",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
+    name = "0010_drop_session_runner_locator",
+    srcs = ["0010_drop_session_runner_locator.py"],
     deps = [
         "@pypi//alembic",
         "@pypi//sqlalchemy",

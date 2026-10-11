@@ -3,10 +3,11 @@ authority."""
 
 import asyncio
 import json
+import logging
 from base64 import urlsafe_b64decode, urlsafe_b64encode
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime
 from typing import override
 from uuid import UUID
@@ -25,12 +26,10 @@ from agentplane.proto import (
     runner_pb2,
     sandbox_service_pb2,
 )
-from agentplane.proto.sandbox_service_pb2 import SandboxDestination
-from agentplane.runner.client import RunnerClient
-from agentplane.runner.errors import OpenTimeoutError, RunnerError, StreamClosedError
+from agentplane.proto.sandbox_service_pb2 import SandboxBinding, SandboxDestination
+from agentplane.runner.errors import RunnerError
 from agentplane.runner_gateway import session_lifecycle
 from agentplane.runner_gateway.command_delivery import CommandDelivery, CommandRefusedError
-from agentplane.runner_gateway.command_relay import admit_running_command
 from agentplane.runner_gateway.commands.store import (
     CommandSubmission,
     Submission,
@@ -41,11 +40,10 @@ from agentplane.runner_gateway.commands.store import (
     submit_command,
 )
 from agentplane.runner_gateway.lifecycle_control import ConnectionNotHeldError, ControlRefusedError, LifecycleControl
-from agentplane.runner_gateway.runner_control import ControlOperation
 from agentplane.runner_gateway.sealing import SEAL_S, Sealing
 from agentplane.runner_gateway.session_registry import SessionNotFoundError, SessionRegistry
 from agentplane.sandbox_service import wire
-from agentplane.sandbox_service.destinations import DestinationResolver, DestinationUnavailableError, RunnerEndpoint
+from agentplane.sandbox_service.destinations import DestinationResolver, DestinationUnavailableError
 from agentplane.sandbox_service.models import InventoryError, SandboxNotFoundError
 from agentplane.subjects import ServiceAccountRef
 from agentplane.workload_auth.grpc_caller import authenticate
@@ -53,6 +51,8 @@ from agentplane.workload_auth.principal import WorkloadPrincipalRejectedError, W
 
 # gazelle:include_dep @pypi//protobuf
 # gazelle:include_dep @pypi//grpcio
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -68,12 +68,10 @@ class Resources:
     submissions: SubmissionStore
     delivery: CommandDelivery
     control: LifecycleControl
-    # The Sandbox Service's account, which alone may seal a Sandbox for teardown; none where the
-    # Sandbox Service seals in-process.
-    sealer_accounts: frozenset[ServiceAccountRef] = frozenset()
-    admission_timeout_s: float = 15
-    lifecycle_timeout_s: float = 300
-    runner_grpc_channel_options: dict[str, int | str] = field(default_factory=dict)
+    # The Sandbox Service's account, which alone may seal a Sandbox for teardown.
+    sealer_accounts: frozenset[ServiceAccountRef]
+    admission_timeout_s: float
+    lifecycle_timeout_s: float
 
     def __post_init__(self) -> None:
         if min(self.admission_timeout_s, self.runner_admission_ack_timeout_s, self.lifecycle_timeout_s) <= 0:
@@ -86,13 +84,7 @@ class Resources:
 
     @property
     def sealing(self) -> Sealing:
-        return Sealing(
-            self.destinations,
-            self.sessions,
-            connections=self.delivery.connections,
-            control=self.control,
-            runner_grpc_channel_options=self.runner_grpc_channel_options,
-        )
+        return Sealing(self.sessions, control=self.control)
 
 
 @asynccontextmanager
@@ -120,30 +112,22 @@ async def errors(context: grpc.aio.ServicerContext) -> AsyncIterator[None]:
         await context.abort(grpc.StatusCode.FAILED_PRECONDITION, "runner rejected session or bootstrap state")
     except ValueError, ParseError:
         await context.abort(grpc.StatusCode.INVALID_ARGUMENT, "invalid service request")
-    except TimeoutError, OpenTimeoutError:
+    except TimeoutError:
         await context.abort(
             grpc.StatusCode.DEADLINE_EXCEEDED, "service deadline expired; mutation outcome may be uncertain"
         )
-    except InventoryError, RunnerError, StreamClosedError:
+    except InventoryError, RunnerError:
         await context.abort(grpc.StatusCode.FAILED_PRECONDITION, "runner or sandbox state refused the request")
     except DestinationUnavailableError, ConnectionError, k8s_client.ApiException, SQLAlchemyError:
         await context.abort(grpc.StatusCode.UNAVAILABLE, "destination unavailable; no offline admission")
-    except grpc.RpcError as error:
-        if isinstance(error, grpc.aio.AioRpcError):
-            if error.code() == grpc.StatusCode.INVALID_ARGUMENT:
-                await context.abort(grpc.StatusCode.INVALID_ARGUMENT, "runner rejected invalid request")
-            if error.code() in (grpc.StatusCode.FAILED_PRECONDITION, grpc.StatusCode.NOT_FOUND):
-                await context.abort(grpc.StatusCode.FAILED_PRECONDITION, "runner rejected session or bootstrap state")
-        await context.abort(grpc.StatusCode.UNAVAILABLE, "runner unavailable; mutation outcome may be uncertain")
 
 
-def public_session_id(session_id: str) -> UUID | None:
-    """The service-owned Session ID, or None for a legacy caller-chosen runner ID."""
-    try:
-        parsed = UUID(session_id)
-    except ValueError:
-        return None
-    return parsed if str(parsed) == session_id else None
+def parse_session_id(session_id: str) -> UUID:
+    """A public Session ID, in its canonical form only."""
+    parsed = UUID(session_id)
+    if str(parsed) != session_id:
+        raise ValueError("session ID must be a canonical UUID")
+    return parsed
 
 
 SUBMISSION_STATES = {
@@ -178,11 +162,12 @@ def read_page_token(token: str) -> tuple[datetime, str]:
 
 
 class RunnerGateway(runner_gateway_pb2_grpc.RunnerGatewayServicer):
+    """Every request travels over the Sandbox's runner control stream. Lifecycle requests are served
+    only by the replica holding that connection; any other refuses before acting, and the caller
+    retries through the control Service. Commands reach the holder through command delivery."""
+
     def __init__(self, resources: Resources) -> None:
         self.resources = resources
-
-    def _runner_client(self, target: str) -> RunnerClient:
-        return RunnerClient(target, channel_options=self.resources.runner_grpc_channel_options)
 
     @asynccontextmanager
     async def request(
@@ -192,63 +177,50 @@ class RunnerGateway(runner_gateway_pb2_grpc.RunnerGatewayServicer):
             await self.resources.authenticate(context)
             yield
 
-    @asynccontextmanager
-    async def runner(
-        self, destination: SandboxDestination, *, writes: bool
-    ) -> AsyncIterator[tuple[RunnerClient, RunnerEndpoint]]:
-        endpoint = await self.resources.destinations.resolve(destination, writes=writes)
-        # TODO: runner RPC authentication/TLS. V1 relies on the deployment network boundary.
-        async with self._runner_client(endpoint.target) as client:
-            yield client, endpoint
-
-    async def lifecycle_routed(self, destination: SandboxDestination) -> bool:
-        """Whether the Sandbox's lifecycle requests travel over its runner control stream, which they do for
-        good once a connection agreed `lifecycle`. Only the replica holding that connection serves
-        them; any other refuses before acting, and the caller retries through the control Service."""
-        sandbox_uid = UUID(destination.sandbox_uid)
-        if ControlOperation.LIFECYCLE not in await self.resources.delivery.connections.read_operations(sandbox_uid):
-            return False
-        if self.resources.control.holder(sandbox_uid) is None:
+    async def held(self, destination: SandboxDestination, *, writes: bool) -> SandboxBinding | None:
+        """Verify the incarnation and its owner, and that this replica holds its runner connection.
+        Returns the Sandbox's binding."""
+        binding = await self.resources.destinations.resolve(destination, writes=writes)
+        if self.resources.control.holder(UUID(destination.sandbox_uid)) is None:
             raise ConnectionNotHeldError("another replica holds this Sandbox's runner connection")
-        return True
+        return binding
 
     async def list_runner_sessions(self, destination: SandboxDestination) -> list[runner_pb2.SessionSummary]:
-        if await self.lifecycle_routed(destination):
-            # Verifies the incarnation and its owner, as the inbound path's runner lookup does.
-            await self.resources.destinations.resolve(destination, writes=False)
-            listing = control_pb2.ControlRequest(list_sessions=runner_pb2.ListSessionsRequest())
-            result = await self.resources.control.request(UUID(destination.sandbox_uid), listing)
-            return list(result.list_sessions.sessions)
-        async with self.runner(destination, writes=False) as (client, _):
-            return await client.list_sessions()
+        await self.held(destination, writes=False)
+        listing = control_pb2.ControlRequest(list_sessions=runner_pb2.ListSessionsRequest())
+        result = await self.resources.control.request(UUID(destination.sandbox_uid), listing)
+        return list(result.list_sessions.sessions)
 
     @override
     async def ListSessions(
         self, request: sandbox_service_pb2.SandboxRequest, context: grpc.aio.ServicerContext
     ) -> runner_pb2.ListSessionsResponse:
         async with self.request(context):
-            sessions = await self.list_runner_sessions(request.destination)
-            for summary in sessions:
-                public_id = await self.resources.sessions.session_id(
+            sessions = []
+            for summary in await self.list_runner_sessions(request.destination):
+                public_id = await self.resources.sessions.public_id(
+                    summary.session_id,
                     sandbox_namespace=self.resources.destinations.inventory.namespace,
                     sandbox_name=request.destination.sandbox,
                     sandbox_uid=UUID(request.destination.sandbox_uid),
-                    runner_session_id=summary.session_id,
                 )
-                if public_id is not None:
-                    summary.session_id = str(public_id)
+                if public_id is None:
+                    logger.warning("runner Session %s has no registered Session; not listed", summary.session_id)
+                    continue
+                summary.session_id = str(public_id)
+                sessions.append(summary)
             return runner_pb2.ListSessionsResponse(sessions=sessions)
 
     async def runner_session_id(self, destination: sandbox_service_pb2.SessionDestination) -> str:
-        """Keep physical runner identifiers behind this service, including on follow."""
-        if (session_id := public_session_id(destination.session_id)) is None:
-            return destination.session_id  # legacy caller-chosen runner ID
-        return await self.resources.sessions.runner_id(
+        """The runner's ID for a Session registered in the destination's Sandbox incarnation."""
+        session_id = parse_session_id(destination.session_id)
+        await self.resources.sessions.require(
             session_id,
             sandbox_namespace=self.resources.destinations.inventory.namespace,
             sandbox_name=destination.sandbox.sandbox,
             sandbox_uid=UUID(destination.sandbox.sandbox_uid),
         )
+        return str(session_id)
 
     @override
     async def CreateSession(
@@ -258,14 +230,11 @@ class RunnerGateway(runner_gateway_pb2_grpc.RunnerGatewayServicer):
             caller = await self.resources.authenticate(context)
             if len(request.idempotency_key) > 128 or len(request.setup_script) > 65_536:
                 raise ValueError("Open key or setup script is too long")
-            # CLEANUP(added 2026-10-11): Require session_id, and stop minting here, once the deployed
-            #   app sends it on every CreateSession (agentplane/sandbox_service/client.py's create).
-            client_id = public_session_id(request.session_id) if request.session_id else None
-            if request.session_id and client_id is None:
-                raise ValueError("session ID must be a UUID")
+            if not request.session_id:
+                raise ValueError("session ID is required")
+            client_id = parse_session_id(request.session_id)
             overrides = wire.launch_overrides(request)
-            endpoint = await self.resources.destinations.resolve(request.sandbox, writes=True)
-            control_routed = await self.lifecycle_routed(request.sandbox)
+            binding = await self.held(request.sandbox, writes=True)
             sandbox_uid = UUID(request.sandbox.sandbox_uid)
 
             def freeze(session_id: UUID) -> bytes:
@@ -279,20 +248,20 @@ class RunnerGateway(runner_gateway_pb2_grpc.RunnerGatewayServicer):
                 spec = session_lifecycle.launch_spec(
                     destination,
                     effective_overrides,
-                    binding=endpoint.binding,
+                    binding=binding,
                     platform_instructions=self.resources.platform_instructions,
                     sandbox_namespace=self.resources.destinations.inventory.namespace,
                 )
                 setup_script = (
                     request.setup_script
                     if request.HasField("setup_script")
-                    else endpoint.binding.session_defaults.setup_script
-                    if endpoint.binding is not None and endpoint.binding.session_defaults.HasField("setup_script")
+                    else binding.session_defaults.setup_script
+                    if binding is not None and binding.session_defaults.HasField("setup_script")
                     else None
                 )
                 launch = sandbox_service_pb2.FrozenLaunch(
-                    open=runner_pb2.Open(session_id=str(session_id) if client_id else f"r-{session_id}", spec=spec),
-                    bootstrap=endpoint.binding.bootstrap if endpoint.binding is not None else "",
+                    open=runner_pb2.Open(session_id=str(session_id), spec=spec),
+                    bootstrap=binding.bootstrap if binding is not None else "",
                 )
                 if setup_script is not None:
                     launch.open.setup_script = setup_script
@@ -311,25 +280,14 @@ class RunnerGateway(runner_gateway_pb2_grpc.RunnerGatewayServicer):
             )
             launch = sandbox_service_pb2.FrozenLaunch.FromString(reservation.launch_spec)
             public_id = str(reservation.session_id)
-            setup_script = launch.open.setup_script if launch.open.HasField("setup_script") else None
-            if control_routed:
-                attachment = await session_lifecycle.open_control_session(
-                    self.resources.control,
-                    sandbox_uid,
-                    launch.open.session_id,
-                    launch.open.spec,
-                    bootstrap=launch.bootstrap,
-                    setup_script=setup_script,
-                )
-            else:
-                async with self._runner_client(endpoint.target) as client:
-                    attachment = await session_lifecycle.open_session(
-                        client,
-                        launch.open.session_id,
-                        launch.open.spec,
-                        bootstrap=launch.bootstrap,
-                        setup_script=setup_script,
-                    )
+            attachment = await session_lifecycle.open_session(
+                self.resources.control,
+                sandbox_uid,
+                launch.open.session_id,
+                launch.open.spec,
+                bootstrap=launch.bootstrap,
+                setup_script=launch.open.setup_script if launch.open.HasField("setup_script") else None,
+            )
             attachment.session_id = public_id
             return sandbox_service_pb2.CreateSessionResponse(session_id=public_id, attached=attachment)
 
@@ -353,46 +311,17 @@ class RunnerGateway(runner_gateway_pb2_grpc.RunnerGatewayServicer):
             if public_id is None:
                 return sandbox_service_pb2.LookupSessionResponse()
             result = sandbox_service_pb2.LookupSessionResponse(session_id=str(public_id))
-            runner_session_id = await self.resources.sessions.runner_id(
-                public_id,
-                sandbox_namespace=self.resources.destinations.inventory.namespace,
-                sandbox_name=request.sandbox.sandbox,
-                sandbox_uid=UUID(request.sandbox.sandbox_uid),
-            )
-            # DB reservation precedes runner Open. Inventory includes sessions whose
-            # native handshake failed: a retained spec is not proof of a successful Open.
-            async with self.runner(request.sandbox, writes=False) as (client, _):
-                for summary in await client.list_sessions():
-                    if summary.session_id != runner_session_id:
-                        continue
-                    if summary.setup_state in (runner_pb2.SETUP_STATE_FAILED, runner_pb2.SETUP_STATE_INTERRUPTED):
-                        result.failed = True
-                    elif summary.harness_state == runner_pb2.HARNESS_STATE_RUNNING:
-                        result.summary.CopyFrom(summary)
-                    elif summary.last_cursor:
-                        # Observe the retained journal without a spec: this cannot restart
-                        # the harness or replay bootstrap. A stopped session may have
-                        # successfully run before stopping; an early exit may not.
-                        attachment = await client.attach(summary.session_id)
-                        try:
-                            while True:
-                                entry = await attachment.next_entry()
-                                kind = entry.event.WhichOneof("observation")
-                                if kind == "harness_started":
-                                    result.summary.CopyFrom(summary)
-                                    break
-                                if kind in ("harness_exited", "harness_launch_failed", "setup_interrupted") or (
-                                    kind == "setup_finished" and entry.event.setup_finished.exit_code != 0
-                                ):
-                                    result.failed = True
-                                    break
-                                if entry.cursor >= summary.last_cursor:
-                                    break
-                        finally:
-                            attachment.cancel()
-                    if result.HasField("summary"):
-                        result.summary.session_id = str(public_id)
-                    break
+            # DB reservation precedes runner Open, and a retained spec is not proof of a successful
+            # Open: only the Session's first launch outcome is. A stopped Session may have run before.
+            for summary in await self.list_runner_sessions(request.sandbox):
+                if summary.session_id != str(public_id):
+                    continue
+                if summary.launch_outcome == runner_pb2.LAUNCH_OUTCOME_STARTED:
+                    result.summary.CopyFrom(summary)
+                    result.summary.session_id = str(public_id)
+                elif summary.launch_outcome == runner_pb2.LAUNCH_OUTCOME_FAILED:
+                    result.failed = True
+                break
             return result
 
     @override
@@ -403,17 +332,11 @@ class RunnerGateway(runner_gateway_pb2_grpc.RunnerGatewayServicer):
             destination = request.destination
             if not destination.session_id:
                 raise ValueError("session ID is required")
-            if await self.lifecycle_routed(destination.sandbox):
-                # Verifies the incarnation, its owner and that it is not being torn down.
-                await self.resources.destinations.resolve(destination.sandbox, writes=True)
-                result = await session_lifecycle.resume_control_session(
-                    self.resources.control,
-                    UUID(destination.sandbox.sandbox_uid),
-                    await self.runner_session_id(destination),
-                )
-            else:
-                async with self.runner(destination.sandbox, writes=True) as (client, _):
-                    result = await session_lifecycle.resume_session(client, await self.runner_session_id(destination))
+            # Refuses a Sandbox being torn down.
+            await self.held(destination.sandbox, writes=True)
+            result = await session_lifecycle.resume_session(
+                self.resources.control, UUID(destination.sandbox.sandbox_uid), await self.runner_session_id(destination)
+            )
             result.session_id = destination.session_id
             return result
 
@@ -423,87 +346,40 @@ class RunnerGateway(runner_gateway_pb2_grpc.RunnerGatewayServicer):
     ) -> event_log_pb2.EventEntry:
         async with errors(context), asyncio.timeout(self.resources.runner_admission_ack_timeout_s):
             caller = await self.resources.authenticate(context)
-            destination = request.destination
-            if not destination.session_id:
-                raise ValueError("session ID is required")
+            public_id = parse_session_id(request.session_id)
             submission = CommandSubmission(command=request.command)
-            # Resolving the public ID binds the Session to this Sandbox incarnation before anything
-            # is persisted for it.
-            runner_session_id = await self.runner_session_id(destination)
-            public_id = public_session_id(destination.session_id)
-            # Once a runner of this Sandbox has agreed commands over the control stream, they never fall
-            # back to the relay.
-            control_routed = ControlOperation.COMMANDS in (
-                await self.resources.delivery.connections.read_operations(UUID(destination.sandbox.sandbox_uid))
+            # Nothing is persisted for a Session whose Sandbox incarnation is gone or going.
+            placement = await self.resources.sessions.placement(public_id)
+            await self.resources.destinations.resolve_incarnation(
+                placement.sandbox_name, placement.sandbox_uid, writes=True
             )
-            if public_id is None:
-                if control_routed:
-                    raise DestinationUnavailableError("a control-routed Sandbox takes public Session IDs only")
-                # CLEANUP(added 2026-10-10): Remove the relay-only path once no Session opened with a
-                # caller-chosen runner ID remains on staging.
-                async with self.runner(destination.sandbox, writes=True) as (client, _):
-                    return await admit_running_command(
-                        client,
-                        runner_session_id,
-                        submission.copy_command(),
-                        after_cursor=request.follow.after_cursor,
-                        timeout_s=self.resources.runner_admission_ack_timeout_s,
-                    )
-            submissions = self.resources.submissions
+            delivery = self.resources.delivery
 
-            if control_routed:
-                delivery = self.resources.delivery
-                # Verifies the incarnation and its owner, as the relay's runner lookup does.
-                await self.resources.destinations.resolve(destination.sandbox, writes=True)
+            async def dispatch(command: command_pb2.Command) -> event_log_pb2.EventEntry:
+                return await delivery.deliver(
+                    sandbox_uid=placement.sandbox_uid,
+                    session_id=public_id,
+                    command_id=command.command_id,
+                    runner_session_id=str(public_id),
+                    deadline_s=min(self.resources.runner_admission_ack_timeout_s, 60),
+                )
 
-                async def dispatch(command: command_pb2.Command) -> event_log_pb2.EventEntry:
-                    return await delivery.deliver(
-                        sandbox_uid=UUID(destination.sandbox.sandbox_uid),
-                        session_id=public_id,
-                        command_id=command.command_id,
-                        runner_session_id=runner_session_id,
-                        deadline_s=min(self.resources.runner_admission_ack_timeout_s, 60),
-                    )
+            return await submit_command(
+                self.resources.submissions, public_id, submission, caller=caller, dispatch=dispatch
+            )
 
-            else:
-
-                async def dispatch(command: command_pb2.Command) -> event_log_pb2.EventEntry:
-                    # The caller picks a follow cursor before any earlier admission of this command,
-                    # so a retry finds the original receipt in the replay.
-                    async with self.runner(destination.sandbox, writes=True) as (client, _):
-                        return await admit_running_command(
-                            client,
-                            runner_session_id,
-                            command,
-                            after_cursor=request.follow.after_cursor,
-                            timeout_s=self.resources.runner_admission_ack_timeout_s,
-                        )
-
-            return await submit_command(submissions, public_id, submission, caller=caller, dispatch=dispatch)
-
-    async def checked_public_session(self, destination: sandbox_service_pb2.SessionDestination) -> UUID:
-        """The public Session ID of this Sandbox incarnation. Its submissions outlive the Sandbox, so
-        the owner is checked only while the incarnation exists."""
-        sandbox = destination.sandbox
-        if not all((sandbox.sandbox, sandbox.sandbox_uid, sandbox.owner.namespace, sandbox.owner.name)):
-            raise ValueError("Sandbox name, UID, and owner are required")
-        if (session_id := public_session_id(destination.session_id)) is None:
-            raise ValueError("a public Session ID is required")
-        await self.runner_session_id(destination)
-        try:
-            view = await self.resources.destinations.inventory.get(sandbox.sandbox)
-        except SandboxNotFoundError:
-            return session_id
-        if view.uid == sandbox.sandbox_uid and view.service_account != sandbox.owner:
-            raise SandboxNotFoundError(sandbox.sandbox)
-        return session_id
+    async def registered_session(self, session_id: str) -> UUID:
+        """A registered public Session ID. Its submissions outlive its Sandbox."""
+        public_id = parse_session_id(session_id)
+        await self.resources.sessions.placement(public_id)
+        return public_id
 
     @override
     async def GetCommand(
         self, request: sandbox_service_pb2.GetCommandRequest, context: grpc.aio.ServicerContext
     ) -> sandbox_service_pb2.CommandStatus:
         async with self.request(context):
-            session_id = await self.checked_public_session(request.destination)
+            session_id = await self.registered_session(request.session_id)
             if not 1 <= len(request.command_id) <= 128:
                 raise ValueError("command ID must contain 1 to 128 characters")
             return command_status(await self.resources.submissions.read(session_id, request.command_id))
@@ -513,7 +389,7 @@ class RunnerGateway(runner_gateway_pb2_grpc.RunnerGatewayServicer):
         self, request: sandbox_service_pb2.ListCommandsRequest, context: grpc.aio.ServicerContext
     ) -> sandbox_service_pb2.ListCommandsResponse:
         async with self.request(context):
-            session_id = await self.checked_public_session(request.destination)
+            session_id = await self.registered_session(request.session_id)
             if request.page_size > 1000:
                 raise ValueError("page size must not exceed 1000")
             limit = request.page_size or 100

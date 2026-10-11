@@ -1,4 +1,4 @@
-"""The Sandbox Service's command admission schema, applied by its own migration lock."""
+"""The Runner Gateway's command admission schema, applied by its own migration lock."""
 
 from pathlib import Path
 

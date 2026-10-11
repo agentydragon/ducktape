@@ -2,7 +2,7 @@
 
 The service uses [protobuf/gRPC](../proto/sandbox_service.proto). Its standalone entry point serves this API;
 HTTP is limited to a health probe. The integration app retains its browser-facing HTTP API.
-There is no transparent runner `Attach` tunnel or caller-supplied runner URL.
+There is no transparent runner tunnel or caller-supplied runner URL.
 
 Production callers and service acceptance tests use this same gRPC interface; there is no separate
 HTTP service adapter.
@@ -25,7 +25,7 @@ It is two gRPC services, each its own server and image:
 Every RPC requires one `authorization: Bearer …` metadata value. The shared workload-principal
 resolver performs TokenReview for the configured audience and allowed ServiceAccount namespaces.
 Missing, invalid, duplicate, or revoked credentials are refused. The Python client rereads its
-projected token file on every RPC, including follow reconnects.
+projected token file on every RPC.
 
 A `SandboxDestination` contains the owner ServiceAccount (namespace/name), Sandbox name, and
 Sandbox UID. A `SessionDestination` wraps that destination and adds an explicit runner session ID.
@@ -36,10 +36,9 @@ not grant access. There is no separate manager/delivery tier or inferred Thread 
 Listed services can operate across owners, but must still supply the verified destination owner/UID.
 
 Resolution checks the stored Sandbox account, UID, operating mode, provisioning/grant facts, and current
-ready Pod's identity and controller ownership before selecting its endpoint. Name reuse with a new UID
-is refused. A successor Pod under the same Sandbox may replace the endpoint. These are Kubernetes
-association checks, not cryptographic runner authentication: the inbound runner RPC relies on
-network isolation until the [runner control stream](../docs/runner_control.md) replaces it.
+ready Pod's identity and controller ownership. Name reuse with a new UID is refused. The runner itself
+is reached only over the [runner control stream](../docs/runner_control.md) it dialed with a Pod-bound
+token.
 
 ## Inventory and explicit sandbox lifecycle
 
@@ -110,51 +109,44 @@ The Sandbox Service keeps no Session history; the [History Service](../history_s
 copies each runner's Events and serves reads. Legacy rows without a known Sandbox UID stay
 registered but are not followed until their binding is established by a verified handoff.
 
-- `ListSessions`: Sandbox destination; maps every registered runner ID (the public ID itself,
-  `r-<uuid>` or an imported legacy one) to its public Session ID in the returned summaries.
-  Unregistered runner sessions keep their runner IDs.
+- `ListSessions`: Sandbox destination; the runner's Sessions registered in this Sandbox
+  incarnation. Runner sessions the registry does not know are left out.
 - `CreateSession`: explicit Open with Sandbox destination, the client's fresh Session UUID,
   an optional caller-scoped idempotency key, and selected overrides. The UUID is the public
   Session ID and the runner's Session ID alike. The Session and its effective launch settings are
   committed before runner contact; the Service returns the UUID and an attachment snapshot with it.
   A `{session_id}` placeholder in a selected `cwd` override is expanded to that UUID, just like
   the stored default cwd. Concurrent or response-lost retries with the same UUID use the original
-  settings; the same UUID with changed inputs, another caller or another Sandbox is rejected. A
-  request without a UUID (a client predating them) is reserved by its key alone: the Service mints
-  the public ID and gives the runner `r-<public ID>`. `ResumeSession` and `SubmitCommand`
-  accept the public ID and resolve it to the retained runner ID within the pinned
-  Sandbox UID. Neither the UUID nor the key applies to runner-discovered native child sessions. The
+  settings; the same UUID with changed inputs, another caller or another Sandbox is rejected; a
+  request without one is invalid. `ResumeSession` accepts the public ID of a Session registered
+  within the pinned Sandbox UID. Neither the UUID nor the key applies to runner-discovered native child sessions. The
   app opens every new Thread through it, with its Session ID as the key too.
 - `LookupSession`: read-only reconciliation by authenticated caller, current Sandbox name/UID
   and opaque Open key. Returns no public ID for an absent reservation, or the public ID
   without runner confirmation for a reserved Open. A runner summary is present only when
-  a running native session or its retained `HarnessStarted` Event proves Open succeeded,
-  including a session that stopped later. Inventory alone can also contain a failed
-  native handshake. A terminal setup/launch failure before any successful start sets
-  `failed` without a summary; an in-flight Open stays unconfirmed. The summary includes
-  the frozen spec and is intended for the trusted app, **not** for browsers. Lookup
-  observes the runner journal without supplying a spec, restarting a harness, or
-  rerunning bootstrap.
+  the runner reports the Session's first launch outcome as started, including a session that
+  stopped later; its retained spec alone does not prove Open succeeded. A first outcome of failed
+  (setup or launch failed before any start) sets `failed` without a summary; an in-flight Open
+  stays unconfirmed. The summary includes the frozen spec and is intended for the trusted app,
+  **not** for browsers. Lookup only lists the runner's sessions, without supplying a spec,
+  restarting a harness, or rerunning bootstrap.
 - `CreateSession`'s bootstrap
   and setup use the runner's existing idempotence; the response is the native attachment snapshot, not
   a claim that all setup or a model turn has completed.
 - `ResumeSession`: uses exactly the runner-retained spec, without applying today's defaults/instructions
   or rerunning setup. Missing sessions and failed/interrupted setup are refused.
-- `SubmitCommand`: forwards an unchanged common-protocol `Command` only to a running harness and returns
-  the original `EventEntry` containing its exact matching `CommandAdmitted`. For a public Session ID the
-  submission is recorded in the `sandbox_commands` database before the runner is contacted, keyed by
+- `SubmitCommand`: names the public Session ID alone; the gateway routes it to the Sandbox
+  incarnation the Session was opened in, and refuses one that is gone or being torn down. It forwards
+  an unchanged common-protocol `Command` only to a running harness and returns the original
+  `EventEntry` containing its exact matching `CommandAdmitted`. The submission is recorded in the `sandbox_commands` database before the runner is contacted, keyed by
   Session and command ID with the caller's identity. An exact retry by the same caller returns the
   retained receipt without contacting the runner once the admission is known; a different command or
   caller under the same ID is `ALREADY_EXISTS`. A submission whose reply was lost is settled only by
   delivering it again: an exact retry sends the same command, and the runner answers a command it
   already journaled with its original receipt. Nothing reads the runner journal or delivers it again in
-  the background, so a submission nobody retries stays `PENDING_ADMISSION`. On the inbound relay the
-  receipt is found by replaying the journal after `follow`, so the caller names a cursor before the
-  command's possible admission; a stopped harness is refused there before any replay. For a legacy
-  caller-chosen runner ID nothing is recorded. Once a Sandbox's runner has agreed `commands` on the
-  [runner control stream](../docs/runner_control.md), the Sandbox receives its commands only over it,
-  through the submission's dispatch attempt. Such a Sandbox takes public Session IDs only, and with no
-  live runner connection the call is `UNAVAILABLE` rather than relayed. A runner refusal returns
+  the background, so a submission nobody retries stays `PENDING_ADMISSION`. The command reaches the
+  runner over its [runner control stream](../docs/runner_control.md), through the submission's dispatch
+  attempt; with no live runner connection the call is `UNAVAILABLE`. A runner refusal returns
   `FAILED_PRECONDITION` (`ALREADY_EXISTS` for a conflicting command, `INVALID_ARGUMENT` for an
   invalid one) and leaves the submission pending; an exact retry reopens the attempt and is answered
   with the original receipt even after the harness stopped or its journal was sealed. A recorded
@@ -167,10 +159,10 @@ registered but are not followed until their binding is established by a verified
   reconnects, learns the outcome; a pending command is settled only by an exact retry or a late
   receipt for a delivery already sent, and `PENDING_ADMISSION` does not say whether the runner
   journaled it. Admission is the runner journaling the command, not the harness acting on
-  it. The Session must belong to the named Sandbox incarnation, whose owner is checked while it
-  exists; the submissions outlive it. `ListCommands` pages in acceptance order and filters by state.
+  it. They name the public Session ID alone, and answer after its Sandbox is gone: the
+  submissions outlive it. `ListCommands` pages in acceptance order and filters by state.
 
-Read/follow/command RPCs never provision, resume, or wake a Sandbox or harness.
+Session listing and command RPCs never provision, resume, or wake a Sandbox or harness.
 
 ### Launch overrides and field presence
 

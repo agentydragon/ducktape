@@ -49,7 +49,7 @@ def resources(cluster: Cluster, runner: RunnerHandle, engine: AsyncEngine) -> Re
     return build_resources(
         engine,
         principals=cluster.build_principal_resolver(AUDIENCE),
-        destinations=DestinationResolver(cluster.inventory, k8s_client.CoreV1Api(cluster.api), runner.port),
+        destinations=DestinationResolver(cluster.inventory, k8s_client.CoreV1Api(cluster.api)),
         caller_accounts=frozenset({OWNER}),
         platform_instructions="Test backend-owned guidance.",
     )
@@ -72,15 +72,15 @@ async def inspect(runner: Runner, session_id: str) -> runner_pb2.SessionSummary:
 
 
 async def complete_turn(
-    runner: Runner, journal: RunnerClient, model: ScriptedModel, session_id: str, command_id: str
+    remote: SandboxServiceClient, journal: RunnerClient, model: ScriptedModel, session_id: str, command_id: str
 ) -> list[event_log_pb2.EventEntry]:
     command = command_pb2.Command(command_id=command_id, submit_input=command_pb2.SubmitInput(text="Reply: GRPC_OK"))
-    receipt = await runner.command(session_id, command, after_cursor=0)
+    receipt = await remote.command(session_id, command)
     assert receipt.event.command_admitted.command == command
     assert receipt.origin.source_id
     assert receipt.origin.sequence > 0
     # Neither admission nor exact receipt replay waits for model completion.
-    assert await runner.command(session_id, command, after_cursor=0) == receipt
+    assert await remote.command(session_id, command) == receipt
     request = await model.request()
     assert "Test backend-owned guidance." in request.system_text
     assert "Test task guidance." in request.system_text
@@ -148,9 +148,9 @@ async def test_launch_delivery_and_restart_preserve_evidence_and_configuration(
         assert changed.value.code == grpc.StatusCode.INVALID_ARGUMENT
         assert bootstrap_marker.read_text() == "B"
         assert setup_marker.read_text() == "S"
-        entries = await complete_turn(runner, client, model, session, "grpc-notice")
+        entries = await complete_turn(remote, client, model, session, "grpc-notice")
         stop = command_pb2.Command(command_id="grpc-stop", stop_runner_session=command_pb2.StopRunnerSession())
-        await runner.command(session, stop, after_cursor=entries[-1].cursor)
+        await remote.command(session, stop)
         tail = await client.attach(session, after_cursor=entries[-1].cursor)
         try:
             async with asyncio.timeout(20):
@@ -163,10 +163,8 @@ async def test_launch_delivery_and_restart_preserve_evidence_and_configuration(
         finally:
             tail.cancel()
         with pytest.raises(RunnerError):
-            await runner.command(
-                session,
-                command_pb2.Command(command_id="no-wake", submit_input=command_pb2.SubmitInput(text="no wake")),
-                after_cursor=0,
+            await remote.command(
+                session, command_pb2.Command(command_id="no-wake", submit_input=command_pb2.SubmitInput(text="no wake"))
             )
         assert (await inspect(runner, session)).harness_state == runner_pb2.HARNESS_STATE_STOPPED
         # Observe the stopped journal too: rejected delivery added no admission and did not wake it.
@@ -192,7 +190,7 @@ async def test_launch_delivery_and_restart_preserve_evidence_and_configuration(
         resumed = await runner.resume(session)
         assert resumed.spec == opened.spec
         assert resumed.harness_state == runner_pb2.HARNESS_STATE_RUNNING
-        await complete_turn(runner, client, model, session, "grpc-resumed")
+        await complete_turn(restarted, client, model, session, "grpc-resumed")
         assert (await runner.list_sessions())[0].spec == opened.spec
         with pytest.raises(RunnerError):
             await runner.create(
@@ -206,10 +204,9 @@ async def test_observe_command_and_resume_do_not_create_unknown_session(remote: 
     runner = remote.runner(DESTINATION)
     unknown = str(uuid4())
     with pytest.raises(ServiceError) as commanded:
-        await runner.command(
+        await remote.command(
             unknown,
             command_pb2.Command(command_id="unknown-notice", submit_input=command_pb2.SubmitInput(text="no creation")),
-            after_cursor=0,
         )
     assert commanded.value.code == grpc.StatusCode.NOT_FOUND
     with pytest.raises(ServiceError) as resumed:

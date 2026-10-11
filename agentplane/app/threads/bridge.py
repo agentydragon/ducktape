@@ -171,7 +171,8 @@ class RunnerBridge:
         """
         if admitted := await self._content.admitted_command(thread_id, command):
             return admitted
-        sandbox = await self._session_sandbox(thread_id)
+        if not await self._event_logs.exists(thread_id):
+            raise ThreadNotFoundError(thread_id)
         snapshot = await self._event_logs.feed_state(thread_id)
         if snapshot is not None and isinstance(snapshot.end, FeedError):
             raise RunnerError(f"runner history is rejected: {snapshot.end.message}")
@@ -179,16 +180,15 @@ class RunnerBridge:
         # the prefix preceding it. The response does not wait for that copy.
         await self._ingester.start()
         try:
-            return await self._command(
-                sandbox, str(thread_id), command, after_cursor=await self._event_logs.last_cursor(thread_id)
-            )
+            return await self._runners.service.command(str(thread_id), command)
         except TimeoutError as error:
             raise RunnerAdmissionTimeoutError(command.command_id) from error
 
     async def command_status(self, thread_id: UUID, command_id: str) -> CommandStatus:
         """What the Sandbox Service retained for the command, without contacting the runner."""
-        sandbox = await self._session_sandbox(thread_id)
-        status = await self._runners.client(sandbox).get_command(str(thread_id), command_id)
+        if not await self._event_logs.exists(thread_id):
+            raise ThreadNotFoundError(thread_id)
+        status = await self._runners.service.get_command(str(thread_id), command_id)
         return CommandStatus(
             state=_COMMAND_STATES[status.state],
             admission=MessageToDict(status.admission) if status.HasField("admission") else None,
@@ -199,11 +199,6 @@ class RunnerBridge:
         if not await self._event_logs.exists(thread_id):
             raise ThreadNotFoundError(thread_id)
         return await self._runners.sandbox_of(thread_id)
-
-    async def _command(
-        self, sandbox: str, session_id: str, command: command_pb2.Command, *, after_cursor: int
-    ) -> event_log_pb2.EventEntry:
-        return await self._runners.client(sandbox).command(session_id, command, after_cursor=after_cursor)
 
 
 def _parse[M: command_pb2.Command | runner_pb2.SessionSpec](message: M, body: dict[str, object]) -> M:

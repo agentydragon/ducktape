@@ -293,11 +293,6 @@ def sandbox_rbac() -> FakeRbac:
 
 
 @pytest.fixture
-def sandbox_runner_port() -> int:
-    return 1
-
-
-@pytest.fixture
 def sandbox_endpoint(
     custom_objects: FakeCustomObjectsApi,
     core_v1: FakeCoreV1Api,
@@ -305,9 +300,7 @@ def sandbox_endpoint(
     sandbox_grants: dict[str, KubernetesGrant],
     sandbox_rbac: FakeRbac,
     tmp_path: Path,
-    sandbox_runner_port: int,
     service_history_db_url: str,
-    register_attached_sessions: bool,
 ) -> Iterator[Endpoint]:
     with backend(
         custom_objects,
@@ -316,9 +309,7 @@ def sandbox_endpoint(
         default_policies=default_egress_policies,
         grants=sandbox_grants,
         rbac=sandbox_rbac,
-        runner_port=sandbox_runner_port,
         database_url=service_history_db_url,
-        register_attached=register_attached_sessions,
     ) as endpoint:
         yield endpoint
 

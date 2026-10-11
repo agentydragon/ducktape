@@ -215,7 +215,7 @@ class Runner:
                     state_owner_descriptor=self._state_owner.descriptor,
                     make_adapter=make_adapter,
                 )
-                await self.sessions[session_id].load_setup_state()
+                await self.sessions[session_id].load_prefix_state()
                 for loaded in self.session_loaded:
                     loaded(self.sessions[session_id])
             return self.sessions[session_id]
@@ -326,18 +326,6 @@ class Runner:
     async def _start(self, session: Session) -> None:
         """Start the harness of a session whose setup allows it; one still in setup starts when the
         setup succeeds."""
-        if not session.record.context_budget_resolved:
-            try:
-                model_config = await self.config.resolve_model_config(
-                    harness=session.record.harness, model=session.record.model
-                )
-            except ModelConfigLookupError as error:
-                raise OpenError(str(error)) from error
-            session.record.total_context_budget_tokens = (
-                model_config.total_context_budget_tokens if model_config is not None else None
-            )
-            session.record.context_budget_resolved = True
-            self.store.write(session.session_id, session.record)
         if self.store.sealed:
             # Sealing began meanwhile and may have listed the store before it held this session.
             await session.seal()
@@ -412,6 +400,7 @@ class Runner:
                 harness_state=runner_pb2.HARNESS_STATE_RUNNING if session.running else runner_pb2.HARNESS_STATE_STOPPED,
                 active_turn_id=session.journal.recovery_state.active_turn_id,
                 setup_state=session.setup_state,
+                launch_outcome=session.launch_outcome,
             )
             for session in sorted(self.sessions.values(), key=lambda session: session.session_id)
         ]

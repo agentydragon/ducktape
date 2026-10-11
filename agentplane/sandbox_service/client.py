@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import logging
 from collections.abc import Awaitable, Callable, Mapping
 from pathlib import Path
 from types import TracebackType
@@ -31,8 +30,6 @@ from agentplane.sandbox_service.models import SandboxNotFoundError
 
 # gazelle:include_dep @pypi//protobuf
 # gazelle:include_dep @pypi//grpcio
-
-logger = logging.getLogger(__name__)
 
 
 class ServiceError(ConnectionError):
@@ -161,24 +158,14 @@ class SandboxServiceClient:
         """Call the replica holding the Sandbox's runner connection, through its control Service, on a
         connection dialed for this call alone: a replica that no longer holds it refuses with
         UNAVAILABLE, and the caller's retry resolves the control Service again."""
-        if self.control_target is not None:
-            async with self.dial(
-                self.control_target.format(sandbox=destination.sandbox, namespace=destination.owner.namespace)
-            ) as channel:
-                try:
-                    return await self.gateway_unary(
-                        call(runner_gateway_pb2_grpc.RunnerGatewayStub(channel)), request, timeout_s=timeout_s
-                    )
-                except ServiceError as error:
-                    if error.code != grpc.StatusCode.UNAVAILABLE:
-                        raise
-                    # CLEANUP(added 2026-10-11): Call through the control Service alone once no live
-                    # Sandbox's runner lacks the control stream. Until then a Sandbox whose runner never
-                    # connected has no control Service. Any replica serves its inbound route and refuses a
-                    # control-routed Sandbox before acting unless it holds the connection, so this retry
-                    # never takes such a Sandbox's operation another way.
-                    logger.debug("Sandbox %s: control Service unavailable, calling the gateway", destination.sandbox)
-        return await self.gateway_unary(call(self.gateway), request, timeout_s=timeout_s)
+        if self.control_target is None:
+            return await self.gateway_unary(call(self.gateway), request, timeout_s=timeout_s)
+        async with self.dial(
+            self.control_target.format(sandbox=destination.sandbox, namespace=destination.owner.namespace)
+        ) as channel:
+            return await self.gateway_unary(
+                call(runner_gateway_pb2_grpc.RunnerGatewayStub(channel)), request, timeout_s=timeout_s
+            )
 
     async def list_sandboxes(self) -> list[Sandbox]:
         result = await self.unary(self.stub.ListSandboxes, Empty())
@@ -235,6 +222,23 @@ class SandboxServiceClient:
     ) -> list[runner_gateway_pb2.SessionSandbox]:
         """Every Session in a Sandbox whose name `request` matches, deleted Sandboxes included."""
         return list((await self.unary(self.gateway.FindSessions, request)).sessions)
+    async def command(self, session_id: str, command: command_pb2.Command) -> event_log_pb2.EventEntry:
+        """Submit to a public Session; the Runner Gateway routes it to the Sandbox the Session runs in."""
+        if self.command_admission_timeout_s is None:
+            raise ValueError("SubmitCommand requires an explicit client deadline")
+        receipt = await self.gateway_unary(
+            self.gateway.SubmitCommand,
+            sandbox_service_pb2.SubmitCommandRequest(session_id=session_id, command=command),
+            timeout_s=self.command_admission_timeout_s,
+        )
+        if not receipt.event.HasField("command_admitted") or receipt.event.command_admitted.command != command:
+            raise ConnectionError("Sandbox Service did not return the exact command admission")
+        return receipt
+
+    async def get_command(self, session_id: str, command_id: str) -> sandbox_service_pb2.CommandStatus:
+        return await self.gateway_unary(
+            self.gateway.GetCommand, sandbox_service_pb2.GetCommandRequest(session_id=session_id, command_id=command_id)
+        )
 
     def runner(self, destination: SandboxDestination) -> Runner:
         return Runner(self, destination)
@@ -275,9 +279,7 @@ class Runner:
     async def create(
         self, *, session_id: UUID, spec: dict[str, object], setup_script: str | None = None
     ) -> sandbox_service_pb2.CreateSessionResponse:
-        """Open the Session the caller minted `session_id` for; a retry passes the same ID and inputs.
-        The response's Session ID is authoritative: a Sandbox Service that predates client-minted IDs
-        mints its own."""
+        """Open the Session the caller minted `session_id` for; a retry passes the same ID and inputs."""
         return await self.service.held_unary(
             self.destination,
             lambda stub: stub.CreateSession,
@@ -308,31 +310,4 @@ class Runner:
                 destination=sandbox_service_pb2.SessionDestination(sandbox=self.destination, session_id=session_id)
             ),
             timeout_s=self.service.lifecycle_timeout_s,
-        )
-
-    async def command(
-        self, session_id: str, command: command_pb2.Command, *, after_cursor: int
-    ) -> event_log_pb2.EventEntry:
-        if self.service.command_admission_timeout_s is None:
-            raise ValueError("SubmitCommand requires an explicit client deadline")
-        receipt = await self.service.gateway_unary(
-            self.service.gateway.SubmitCommand,
-            sandbox_service_pb2.SubmitCommandRequest(
-                destination=sandbox_service_pb2.SessionDestination(sandbox=self.destination, session_id=session_id),
-                command=command,
-                follow=event_log_pb2.Follow(after_cursor=after_cursor),
-            ),
-            timeout_s=self.service.command_admission_timeout_s,
-        )
-        if not receipt.event.HasField("command_admitted") or receipt.event.command_admitted.command != command:
-            raise ConnectionError("Sandbox Service did not return the exact command admission")
-        return receipt
-
-    async def get_command(self, session_id: str, command_id: str) -> sandbox_service_pb2.CommandStatus:
-        return await self.service.gateway_unary(
-            self.service.gateway.GetCommand,
-            sandbox_service_pb2.GetCommandRequest(
-                destination=sandbox_service_pb2.SessionDestination(sandbox=self.destination, session_id=session_id),
-                command_id=command_id,
-            ),
         )

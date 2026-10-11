@@ -98,30 +98,43 @@ class Session:
             if record.setup_script_sha256 is not None
             else runner_pb2.SETUP_STATE_NOT_REQUIRED
         )
+        self.launch_outcome = runner_pb2.LAUNCH_OUTCOME_PENDING
         self._setup_task: asyncio.Task[None] | None = None
 
-    async def load_setup_state(self) -> None:
-        """Recover the one-shot setup result from the durable prefix, not process memory."""
-        if self.record.setup_script_sha256 is None:
-            return
+    async def load_prefix_state(self) -> None:
+        """Recover the one-shot setup result and the launch outcome from the durable prefix, not
+        process memory."""
         cursor = 0
-        while True:
+        while self.setup_state == runner_pb2.SETUP_STATE_RUNNING or (
+            self.launch_outcome == runner_pb2.LAUNCH_OUTCOME_PENDING
+        ):
             entries = await self.journal.since(cursor, limit=128)
             if not entries:
                 return
             for entry in entries:
                 cursor = entry.cursor
-                kind = entry.event.WhichOneof("observation")
-                if kind == "setup_finished":
-                    self.setup_state = (
-                        runner_pb2.SETUP_STATE_SUCCEEDED
-                        if entry.event.setup_finished.exit_code == 0
-                        else runner_pb2.SETUP_STATE_FAILED
-                    )
-                    return
-                if kind == "setup_interrupted":
-                    self.setup_state = runner_pb2.SETUP_STATE_INTERRUPTED
-                    return
+                self._apply_prefix(entry)
+
+    def _apply_prefix(self, entry: event_log_pb2.EventEntry) -> None:
+        """The setup and launch outcomes `entry` settles, each only the first time."""
+        event = entry.event
+        kind = event.WhichOneof("observation")
+        failed = kind in ("harness_launch_failed", "harness_exited", "setup_interrupted") or (
+            kind == "setup_finished" and event.setup_finished.exit_code != 0
+        )
+        if self.launch_outcome == runner_pb2.LAUNCH_OUTCOME_PENDING and (kind == "harness_started" or failed):
+            self.launch_outcome = (
+                runner_pb2.LAUNCH_OUTCOME_STARTED if kind == "harness_started" else runner_pb2.LAUNCH_OUTCOME_FAILED
+            )
+        if self.setup_state == runner_pb2.SETUP_STATE_RUNNING:
+            if kind == "setup_finished":
+                self.setup_state = (
+                    runner_pb2.SETUP_STATE_SUCCEEDED
+                    if event.setup_finished.exit_code == 0
+                    else runner_pb2.SETUP_STATE_FAILED
+                )
+            elif kind == "setup_interrupted":
+                self.setup_state = runner_pb2.SETUP_STATE_INTERRUPTED
 
     def start_setup(self, script: str) -> None:
         if self.setup_state != runner_pb2.SETUP_STATE_RUNNING or self._setup_task is not None:
@@ -202,15 +215,8 @@ class Session:
             terminal_command_ids=terminal_command_ids,
             native_correlation=native_correlation,
         )
+        self._apply_prefix(entry)
         match entry.event.WhichOneof("observation"):
-            case "setup_finished":
-                self.setup_state = (
-                    runner_pb2.SETUP_STATE_SUCCEEDED
-                    if entry.event.setup_finished.exit_code == 0
-                    else runner_pb2.SETUP_STATE_FAILED
-                )
-            case "setup_interrupted":
-                self.setup_state = runner_pb2.SETUP_STATE_INTERRUPTED
             case "harness_started":
                 self.harness_running = True
             case "harness_lost" | "harness_exited":

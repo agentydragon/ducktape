@@ -17,7 +17,6 @@ from agent_sandbox_sandboxtemplate_crds.io.x_k8s.agents.extensions import (
     SandboxTemplateSpecPodTemplateMetadata,
     SandboxTemplateSpecPodTemplateSpecContainers,
     SandboxTemplateSpecPodTemplateSpecContainersEnv,
-    SandboxTemplateSpecPodTemplateSpecContainersPorts,
     SandboxTemplateSpecPodTemplateSpecContainersResources,
     SandboxTemplateSpecPodTemplateSpecContainersResourcesLimits,
     SandboxTemplateSpecPodTemplateSpecContainersResourcesRequests,
@@ -37,10 +36,10 @@ from constructs import Construct
 
 from agentplane.action_service.sandbox.binding import DESCRIPTION_ANNOTATION
 from cluster.cdk8s import cilium
-from cluster.cdk8s.agentplane import egress, llm_ingress, runner_gateway, sandbox_pod
+from cluster.cdk8s.agentplane import egress, llm_ingress, sandbox_pod
 from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.providers.agent_sandbox.sandbox_template import SandboxTemplate
-from cluster.cdk8s.providers.cilium.network_policy import NetworkPolicy
+from cluster.cdk8s.providers.cilium.network_policy import NetworkPolicy, isolate_ingress
 from cluster.cdk8s.service_ref import Pods
 
 # Every runner template's Pod name label, and the runners' ServiceAccount and fence.
@@ -71,15 +70,14 @@ class RunnerSandbox(Construct):
         ServiceAccount(
             self, "serviceaccount", metadata=ApiObjectMetadata(name=NAME, namespace=namespace), automount_token=False
         )
-        # Runner Pods reach DNS and the egress proxy's listener, which the sidecar
-        # relays to; only the Runner Gateway can connect to the control port.
-        # TODO: replace network-only runner authentication with authenticated transport.
+        # Runner Pods accept no connections; they reach DNS and the egress proxy's listener, which the
+        # sidecar relays to, and dial the Runner Gateway through that proxy.
         NetworkPolicy(
             self,
             "networkpolicy",
             metadata=ApiObjectMetadata(name=NAME, namespace=namespace),
             endpoint_selector=pods(namespace).selector,
-            ingress=[runner_gateway.service(namespace).pods.admit(runner_gateway.RUNNER_PORT)],
+            ingress=isolate_ingress(),
             egress=[cilium.dns_egress(), egress.proxy(namespace).egress()],
         )
         RunnerTemplate(
@@ -142,8 +140,6 @@ class RunnerTemplate(Construct):
         args = [
             "--state-dir",
             _STATE_DIR,
-            "--listen",
-            f"0.0.0.0:{runner_gateway.RUNNER_PORT}",
             # Where the runner image (agentplane/runner/image.nix) links nixpkgs' harnesses.
             "--claude-binary",
             "/bin/claude",
@@ -165,11 +161,6 @@ class RunnerTemplate(Construct):
             # The runner works in absolute paths. This is for a command exec'd in: the sandbox
             # Actions' `runner` boxes start there unless the caller names a directory.
             working_dir=_STATE_DIR,
-            ports=[
-                SandboxTemplateSpecPodTemplateSpecContainersPorts(
-                    name="runner", container_port=runner_gateway.RUNNER_PORT
-                )
-            ],
             security_context=sandbox_pod.workload_security_context(),
             env=sandbox_pod.workload_environment(
                 self.env,

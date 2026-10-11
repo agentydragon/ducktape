@@ -1,4 +1,4 @@
-"""Runner observation errors shared by the direct transport and Sandbox Service client."""
+"""Runner observation errors shared by the direct transport and the Runner Gateway's client."""
 
 
 class RunnerError(Exception):

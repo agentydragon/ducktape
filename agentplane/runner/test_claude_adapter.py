@@ -7,6 +7,7 @@ import json
 from collections.abc import AsyncIterator
 from pathlib import Path
 from typing import cast
+from uuid import uuid4
 
 import pytest
 import pytest_bazel
@@ -45,6 +46,8 @@ class RecordedSession:
             cwd="/workspace",
             model="agentplane-test/claude-haiku-4-5-20251001",
             reasoning_effort="low",
+            instructions="",
+            event_source_id=uuid4(),
         )
         self.active_turn_id = "turn-1"
         self.native: list[BaseModel] = []
