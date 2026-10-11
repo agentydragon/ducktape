@@ -1136,7 +1136,7 @@ data:
     projected_token_audiences:
       - https://localhost:7445
       - agentplane-notifications
-      - agentplane-runner-channel
+      - agentplane-runner-control
 immutable: false
 ---
 apiVersion: apps/v1
@@ -2835,15 +2835,15 @@ data:
     kubernetes_cluster_binding_cleanup: true
     runner_grpc_channel_options:
       grpc.max_receive_message_length: 33554432
-    runner_channel_audience: agentplane-runner-channel
+    runner_control_audience: agentplane-runner-control
     port: 8080
-    runner_channel_port: 8082
+    runner_control_port: 8082
     health_port: 8081
     runner_port: 7000
     runner_control:
       target: agentplane-sandbox-service.agentplane-staging.svc.cluster.local:8082
-      bearer: agentplane-credential-agentplane-runner-channel
-      egress_policy: runner-channel
+      bearer: agentplane-credential-agentplane-runner-control
+      egress_policy: runner-control
 immutable: false
 ---
 apiVersion: apps/v1
@@ -2902,7 +2902,7 @@ spec:
               name: grpc
               protocol: TCP
             - containerPort: 8082
-              name: runner-channel
+              name: runner-control
               protocol: TCP
             - containerPort: 8081
               name: health
@@ -2995,7 +2995,7 @@ spec:
       port: 8080
       protocol: TCP
       targetPort: 8080
-    - name: runner-channel
+    - name: runner-control
       port: 8082
       protocol: TCP
       targetPort: 8082
@@ -3078,13 +3078,13 @@ spec:
 apiVersion: agentplane.allegedly.works/v1alpha1
 kind: EgressCredential
 metadata:
-  name: agentplane-runner-channel
+  name: agentplane-runner-control
   namespace: agentplane-staging
 spec:
-  description: The calling Sandbox Pod's short-lived, Pod-bound identity minted only for its runner's channel to the Sandbox Service. It conveys no other authority.
+  description: The calling Sandbox Pod's short-lived, Pod-bound identity minted only for its runner's control stream to the Sandbox Service. It conveys no other authority.
   source:
     projectedWorkloadToken:
-      audience: agentplane-runner-channel
+      audience: agentplane-runner-control
   targets:
     - header: Authorization
       method: schemeToken
@@ -3093,7 +3093,7 @@ spec:
 apiVersion: agentplane.allegedly.works/v1alpha1
 kind: EgressPolicy
 metadata:
-  name: runner-channel
+  name: runner-control
   namespace: agentplane-staging
 spec:
   rules:
@@ -3102,15 +3102,15 @@ spec:
       methods:
         - POST
       paths:
-        - /agentplane.proto.runner_channel.RunnerChannel/Connect
+        - /agentplane.proto.runner_control.RunnerControl/Connect
       clusterInternal: true
       credentialRef:
-        name: agentplane-runner-channel
+        name: agentplane-runner-control
 ---
 apiVersion: cilium.io/v2
 kind: CiliumNetworkPolicy
 metadata:
-  name: agentplane-sandbox-service-runner-channel-proxy
+  name: agentplane-sandbox-service-runner-control-proxy
   namespace: agentplane-staging
 spec:
   egress:
@@ -5563,7 +5563,7 @@ spec:
             - name: AGENTPLANE_EGRESS_SIDECAR_TOKEN_FILE
               value: /var/run/agentplane-egress/token
             - name: AGENTPLANE_EGRESS_SIDECAR_AUDIENCE_TOKEN_FILES
-              value: '{"https://localhost:7445": "/var/run/agentplane-egress/kubernetes-token", "agentplane-notifications": "/var/run/agentplane-egress/notifications-token", "agentplane-runner-channel": "/var/run/agentplane-egress/runner-channel-token"}'
+              value: '{"https://localhost:7445": "/var/run/agentplane-egress/kubernetes-token", "agentplane-notifications": "/var/run/agentplane-egress/notifications-token", "agentplane-runner-control": "/var/run/agentplane-egress/runner-control-token"}'
           image: git.allegedly.works/ducktape-ci/agentplane-egress-sidecar:unset
           name: egress-sidecar
           readinessProbe:
@@ -5625,9 +5625,9 @@ spec:
                   expirationSeconds: 600
                   path: notifications-token
               - serviceAccountToken:
-                  audience: agentplane-runner-channel
+                  audience: agentplane-runner-control
                   expirationSeconds: 600
-                  path: runner-channel-token
+                  path: runner-control-token
   volumeClaimTemplates:
     - metadata:
         name: state
@@ -6968,7 +6968,7 @@ spec:
             - name: AGENTPLANE_EGRESS_SIDECAR_TOKEN_FILE
               value: /var/run/agentplane-egress/token
             - name: AGENTPLANE_EGRESS_SIDECAR_AUDIENCE_TOKEN_FILES
-              value: '{"https://localhost:7445": "/var/run/agentplane-egress/kubernetes-token", "agentplane-notifications": "/var/run/agentplane-egress/notifications-token", "agentplane-runner-channel": "/var/run/agentplane-egress/runner-channel-token"}'
+              value: '{"https://localhost:7445": "/var/run/agentplane-egress/kubernetes-token", "agentplane-notifications": "/var/run/agentplane-egress/notifications-token", "agentplane-runner-control": "/var/run/agentplane-egress/runner-control-token"}'
           image: git.allegedly.works/ducktape-ci/agentplane-egress-sidecar:unset
           name: egress-sidecar
           readinessProbe:
@@ -7030,9 +7030,9 @@ spec:
                   expirationSeconds: 600
                   path: notifications-token
               - serviceAccountToken:
-                  audience: agentplane-runner-channel
+                  audience: agentplane-runner-control
                   expirationSeconds: 600
-                  path: runner-channel-token
+                  path: runner-control-token
         - name: buildbuddy-api-key
           secret:
             defaultMode: 288
@@ -7185,7 +7185,7 @@ spec:
             - name: AGENTPLANE_EGRESS_SIDECAR_TOKEN_FILE
               value: /var/run/agentplane-egress/token
             - name: AGENTPLANE_EGRESS_SIDECAR_AUDIENCE_TOKEN_FILES
-              value: '{"https://localhost:7445": "/var/run/agentplane-egress/kubernetes-token", "agentplane-notifications": "/var/run/agentplane-egress/notifications-token", "agentplane-runner-channel": "/var/run/agentplane-egress/runner-channel-token"}'
+              value: '{"https://localhost:7445": "/var/run/agentplane-egress/kubernetes-token", "agentplane-notifications": "/var/run/agentplane-egress/notifications-token", "agentplane-runner-control": "/var/run/agentplane-egress/runner-control-token"}'
           image: git.allegedly.works/ducktape-ci/agentplane-egress-sidecar:unset
           name: egress-sidecar
           readinessProbe:
@@ -7246,9 +7246,9 @@ spec:
                   expirationSeconds: 600
                   path: notifications-token
               - serviceAccountToken:
-                  audience: agentplane-runner-channel
+                  audience: agentplane-runner-control
                   expirationSeconds: 600
-                  path: runner-channel-token
+                  path: runner-control-token
 ---
 apiVersion: extensions.agents.x-k8s.io/v1beta1
 kind: SandboxTemplate
@@ -7344,7 +7344,7 @@ spec:
             - name: AGENTPLANE_EGRESS_SIDECAR_TOKEN_FILE
               value: /var/run/agentplane-egress/token
             - name: AGENTPLANE_EGRESS_SIDECAR_AUDIENCE_TOKEN_FILES
-              value: '{"https://localhost:7445": "/var/run/agentplane-egress/kubernetes-token", "agentplane-notifications": "/var/run/agentplane-egress/notifications-token", "agentplane-runner-channel": "/var/run/agentplane-egress/runner-channel-token"}'
+              value: '{"https://localhost:7445": "/var/run/agentplane-egress/kubernetes-token", "agentplane-notifications": "/var/run/agentplane-egress/notifications-token", "agentplane-runner-control": "/var/run/agentplane-egress/runner-control-token"}'
           image: git.allegedly.works/ducktape-ci/agentplane-egress-sidecar:unset
           name: egress-sidecar
           readinessProbe:
@@ -7405,9 +7405,9 @@ spec:
                   expirationSeconds: 600
                   path: notifications-token
               - serviceAccountToken:
-                  audience: agentplane-runner-channel
+                  audience: agentplane-runner-control
                   expirationSeconds: 600
-                  path: runner-channel-token
+                  path: runner-control-token
         - emptyDir:
             sizeLimit: 20Gi
           name: home
