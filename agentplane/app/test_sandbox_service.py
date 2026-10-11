@@ -1,7 +1,9 @@
 """The production app directory/bridge/archive against authenticated Sandbox Service and History Service gRPC."""
 
+import json
 import logging
 from collections.abc import AsyncIterator
+from difflib import unified_diff
 from pathlib import Path
 from uuid import UUID, uuid4
 
@@ -34,36 +36,28 @@ from agentplane.sandbox_service.testing.kubernetes import SANDBOX, Cluster, auth
 from agentplane.testing.fake_apiserver import SANDBOX_NAMESPACE
 from agentplane.thread_fold.views import EntityKind
 from util.agent_sandbox import SANDBOXES_PLURAL
+from util.testing.undeclared_outputs import undeclared_outputs_dir
 
 # gazelle:include_dep @pypi//protobuf
 # gazelle:include_dep @pypi//asyncpg
 # gazelle:include_dep @pypi//grpcio
 
 
-def _thread_view_differences(history: list[ThreadView], app: list[ThreadView]) -> str:
-    """Show every field that differs when the two projections disagree."""
-    history_by_id = {view.id: view.model_dump(mode="python") for view in history}
-    app_by_id = {view.id: view.model_dump(mode="python") for view in app}
-    history_ids = [view.id for view in history]
-    app_ids = [view.id for view in app]
-    differences = [f"thread order: history={history_ids!r}, app={app_ids!r}"] if history_ids != app_ids else []
-
-    for thread_id in history_ids:
-        if thread_id not in app_by_id:
-            differences.append(f"{thread_id}: present in history projection only")
-            continue
-        history_fields = history_by_id[thread_id]
-        app_fields = app_by_id[thread_id]
-        differences.extend(
-            f"{thread_id}.{field}: history={history_fields[field]!r}, app={app_fields[field]!r}"
-            for field in history_fields
-            if history_fields[field] != app_fields[field]
+def _thread_view_differences(history: list[ThreadView], app: list[ThreadView], output_dir: Path) -> str:
+    """Capture both projections and show their JSON diff when parity fails."""
+    history_json = json.dumps([view.model_dump(mode="json") for view in history], indent=2, sort_keys=True) + "\n"
+    app_json = json.dumps([view.model_dump(mode="json") for view in app], indent=2, sort_keys=True) + "\n"
+    output_dir.mkdir(parents=True, exist_ok=True)
+    (output_dir / "history.json").write_text(history_json)
+    (output_dir / "app.json").write_text(app_json)
+    return "".join(
+        unified_diff(
+            history_json.splitlines(keepends=True),
+            app_json.splitlines(keepends=True),
+            fromfile="history.json",
+            tofile="app.json",
         )
-    differences.extend(
-        f"{thread_id}: present in app projection only" for thread_id in app_ids if thread_id not in history_by_id
     )
-
-    return "ThreadView projections differ:\n" + "\n".join(differences)
 
 
 @pytest.fixture
@@ -214,7 +208,9 @@ async def test_history_service_reads_match_the_app_projection(
         folded_content = HistoryContentStore(engine, history_reader=history)
         history_threads = await ThreadStore(engine, folded).list_threads()
         app_threads = await ThreadStore(engine, app).list_threads()
-        assert history_threads == app_threads, _thread_view_differences(history_threads, app_threads)
+        assert history_threads == app_threads, _thread_view_differences(
+            history_threads, app_threads, undeclared_outputs_dir() / tmp_path.name
+        )
         assert await folded_logs.feed_state(thread) == await event_logs.feed_state(thread)
         app_scope = await content.current_scope(thread)
         folded_scope = await folded_content.current_scope(thread)

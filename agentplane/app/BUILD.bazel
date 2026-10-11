@@ -1341,6 +1341,7 @@ py_test(
         "//agentplane/testing:fake_apiserver",
         "//agentplane/thread_fold:views",
         "//util:agent_sandbox",
+        "//util/testing:undeclared_outputs",
         "@pypi//asyncpg",
         "@pypi//grpcio",
         "@pypi//kubernetes_asyncio",
