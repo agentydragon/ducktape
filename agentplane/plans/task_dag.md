@@ -751,7 +751,7 @@ are irreplaceable, and a node that deletes a column or row stops for the operato
 flowchart TD
     HISTORY_SANDBOX_LOCATOR_DROP[Blocked: drop the Sandbox locator from the history database]
     HISTORY_STORE_MOVE[Candidate: history store and migrations move to the History Service]
-    HISTORY_WRITER_SWITCH_RETIRE[Candidate: delete the history_writer switch]
+    HISTORY_WRITER_SWITCH_RETIRE[Blocked: delete the history_writer switch]
     HISTORY_DATABASE_RENAME[Blocked: rename the sandbox_service database and role]
     SANDBOX_DATABASE_RENAME[Blocked: name the sandbox_commands database for the Sandbox Service]
     APP_ELECTRIC_RETIRE[Blocked: remove Electric's access to the app database]
@@ -788,7 +788,10 @@ Session registry rather than with the store, unless `FOLLOW_PATH_RETIRE` has del
 
 ### `HISTORY_WRITER_SWITCH_RETIRE` — one ingester, no switch
 
-**Candidate.** Delete `Environment.history_writer` and the History Service's `ingester.enabled`.
+**Blocked on the History Service image that defaults `ingester.enabled` to true.** Then, in one
+change, delete `Environment.history_writer` (its `SANDBOX_SERVICE` value has no ingester behind it
+since the Sandbox Service's was deleted), the manifest's `ingester.enabled` and the field itself. Not
+before: the old image reads a missing key as off and stops copying journals until it rolls.
 
 ### `HISTORY_DATABASE_RENAME` — name the database for its owner
 
