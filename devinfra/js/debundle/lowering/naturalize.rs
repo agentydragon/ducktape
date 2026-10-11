@@ -12,13 +12,16 @@
 //!
 //! - **Free sources** (return-object aliases of names the deriving
 //!   function does not bind — typically source-chunk import aliases)
-//!   rewrite references of top-level bindings. They flow into the
-//!   returned merged map because `plan_module_reference_needs`
-//!   reverse-resolves the post-rename name through it to emit the
-//!   runtime reimport (`import { t as options }`), and they keep the
+//!   rewrite references of top-level bindings. Their inverse projection
+//!   lets export growth and import planning resolve the original binding
+//!   while emitting the readable local name, and they keep the
 //!   module-global target-uniqueness rule
 //!   (`rename_ledger::merge_module_renames`, applied at seal) — two of
-//!   them onto one target would collide in module scope.
+//!   them onto one target would collide in module scope. A target already
+//!   referenced in the original body is skipped because rewriting onto it
+//!   would merge distinct references. A source declared in the peeled
+//!   module is skipped because the function-local rewrite would leave its
+//!   declaration under the original name.
 //!
 //! - **Bound sources** (destructured params, constructor
 //!   `this.x = param` assignments, return-object aliases of the
@@ -67,17 +70,26 @@ use swc_ecma_visit::{Visit, VisitMut, VisitMutWith, VisitWith};
 /// families need different maps (see the ledger module doc's
 /// "Boundaries that validate at application").
 pub(super) struct NaturalizedRenames {
-    /// Plan-driven + surviving free heuristics, original → readable. The
-    /// reverse lookup for bridging post-rename body syms back to
-    /// pre-rename fact-table keys (`RuntimeImportLookup`).
-    pub(super) merged: BTreeMap<String, String>,
+    /// Plan-driven + surviving free heuristics, readable → original.
+    /// The body uses readable names, while source binding and import
+    /// tables are keyed by the original Ids.
+    pub(super) original_by_renamed: BTreeMap<String, String>,
     /// Plan-driven (explicit) renames only — the renames that actually
     /// rename a top-level declaration module-wide. The ONLY map export
     /// locals and binding-comment keys may be remapped through: heuristic
     /// entries never rename a top-level declaration, so mapping a
-    /// top-level name through `merged` can remap an export/comment whose
-    /// declaration kept its name.
+    /// top-level name through the full rename map can remap an
+    /// export/comment whose declaration kept its name.
     pub(super) explicit: BTreeMap<String, String>,
+}
+
+impl NaturalizedRenames {
+    pub(super) fn original_id(&self, emitted: &Id) -> Id {
+        self.original_by_renamed
+            .get(emitted.0.as_ref())
+            .map(|original| (original.as_str().into(), emitted.1))
+            .unwrap_or_else(|| emitted.clone())
+    }
 }
 
 /// One naturalization result: facts are collected from this exact post-rename
@@ -96,8 +108,19 @@ impl NaturalizedModuleBody {
         plan_driven: BTreeMap<String, String>,
         chunk_top_level_mark: swc_common::Mark,
     ) -> Result<Self> {
-        let renames =
-            naturalize_module_body(&mut body, plan, module, plan_driven, chunk_top_level_mark)?;
+        let original_references = crate::body_facts::collect_module_body_facts(&body)
+            .referenced_idents
+            .into_iter()
+            .map(|id| id.0.to_string())
+            .collect();
+        let renames = naturalize_module_body(
+            &mut body,
+            plan,
+            module,
+            plan_driven,
+            chunk_top_level_mark,
+            &original_references,
+        )?;
         let facts = crate::body_facts::collect_module_body_facts(&body);
         Ok(Self {
             body,
@@ -152,6 +175,7 @@ fn naturalize_module_body(
     module: ModuleId,
     plan_driven: BTreeMap<String, String>,
     chunk_top_level_mark: swc_common::Mark,
+    original_references: &BTreeSet<String>,
 ) -> Result<NaturalizedRenames> {
     // Occupancy facts for seal-time target validation, computed against
     // the pre-rename body (intents are keyed by original names).
@@ -183,6 +207,19 @@ fn naturalize_module_body(
     let mut free_heuristic = BTreeMap::<String, String>::new();
     for aliases in per_function_free {
         for (from, to) in aliases {
+            // Free-source aliases are applied only inside the deriving
+            // function. If this module also declares the source, its
+            // declaration would keep `from` while the function reads `to`.
+            if root_names.contains(&from) {
+                continue;
+            }
+            // The return-object key is not a reference, but another use of
+            // this target name may already denote a different binding (or a
+            // global). Rewriting the source onto that name would erase the
+            // distinction before reference planning can recover it.
+            if original_references.contains(&to) {
+                continue;
+            }
             ledger.submit(RenameIntent {
                 scope: RenameScope::Module(module),
                 from: top_level_id(&from, chunk_top_level_mark),
@@ -301,7 +338,11 @@ fn naturalize_module_body(
     }
 
     Ok(NaturalizedRenames {
-        merged: sealed.module_renames_by_name(module),
+        original_by_renamed: sealed
+            .module_renames_by_name(module)
+            .into_iter()
+            .map(|(original, renamed)| (renamed, original))
+            .collect(),
         explicit,
     })
 }

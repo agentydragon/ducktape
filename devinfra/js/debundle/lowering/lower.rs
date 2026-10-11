@@ -391,7 +391,7 @@ pub(super) fn lower_chunk(inputs: LowerChunkInputs<'_>) -> Result<LoweredChunk> 
         pre_existing_public_export_names.iter().cloned(),
     );
     auto_grown_residual_exports(
-        naturalized_modules.iter().map(|module| &module.facts),
+        naturalized_modules.iter(),
         &ExportGrowthFacts {
             declaration_by_name,
             binding_assignment,

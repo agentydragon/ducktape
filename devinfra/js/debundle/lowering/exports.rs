@@ -2,8 +2,8 @@
 //! duplicates, auto-grow residual exports for cross-module references,
 //! and convert binding maps into `export { ... }` ModuleItems.
 
-use crate::body_facts::ModuleBodyFacts;
 use crate::chunk_ast::{TopLevelDecl, binding_names};
+use crate::naturalize::NaturalizedModuleBody;
 use crate::plans::MemberRequest;
 use crate::rename_ledger::{RenameIntent, RenameLedger, RenameOrigin, RenameScope};
 use analysis::{BindingKind, top_level_id};
@@ -391,7 +391,7 @@ pub(super) struct ExportGrowthFacts<'a> {
 }
 
 pub(super) fn auto_grown_residual_exports<'a>(
-    body_facts_by_module: impl IntoIterator<Item = &'a ModuleBodyFacts>,
+    modules: impl IntoIterator<Item = &'a NaturalizedModuleBody>,
     facts: &ExportGrowthFacts<'_>,
     chunk_top_level_mark: swc_common::Mark,
     ledger: &mut RenameLedger,
@@ -405,23 +405,24 @@ pub(super) fn auto_grown_residual_exports<'a>(
     let mut needed = BTreeSet::<String>::new();
     // `body_facts_by_module` is precomputed once upstream (see
     // `lower_chunk`); both this auto-grow pass and the per-plan
-    // reference resolver read the same `ModuleBodyFacts`, so the
-    // body walk is paid exactly once per moved module.
-    for facts in body_facts_by_module {
+    // reference resolver read the same post-naturalization `ModuleBodyFacts`.
+    for module in modules {
+        let facts = &module.facts;
         for id in &facts.referenced_idents {
             if facts.provided_locals.contains(id) {
                 continue;
             }
-            if binding_assignment.contains_key(id) {
+            let original_id = module.renames.original_id(id);
+            if binding_assignment.contains_key(&original_id) {
                 continue;
             }
-            if !declaration_by_name.contains_key(id) {
+            if !declaration_by_name.contains_key(&original_id) {
                 continue;
             }
-            if pre_existing_entry_exports.contains(id) {
+            if pre_existing_entry_exports.contains(&original_id) {
                 continue;
             }
-            needed.insert(id.0.as_ref().to_string());
+            needed.insert(original_id.0.to_string());
         }
     }
     // The ledger's `EntryPublicExports` taken-name set holds every

@@ -11,9 +11,8 @@ pub(crate) struct RuntimeImportFacts {
     /// import site) to the `RuntimeImportInfo` describing where it came
     /// from. Keyed by the **pre-rename** `Id` because the map is built
     /// before any naturalizer pass runs; `plan_module_reference_needs`
-    /// bridges the rename via the sealed rename map's inverse projection
-    /// (`RuntimeImportLookup::original_by_renamed`) when the body has
-    /// been renamed.
+    /// bridges the rename via `NaturalizedRenames::original_id` when
+    /// the body has been renamed.
     pub(crate) imports: HashMap<Id, RuntimeImportInfo>,
 }
 

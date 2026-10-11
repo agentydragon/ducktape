@@ -7,7 +7,7 @@
 //! [`SealedRenames`], and one post-seal executor pass per scope unit is
 //! the only mutation of that unit's AST. No pass invents a rename after
 //! seal; consumers that bridge pre- and post-rename names consult the
-//! sealed maps (e.g. `RuntimeImportLookup::original_by_renamed`, the
+//! sealed maps (e.g. `NaturalizedRenames::original_by_renamed`, the
 //! inverse projection — injective by seal's target-collision rules).
 //! There is no pre-seal trial application: capture facts reach seal from
 //! read-only walks of the **un-renamed** body. This makes the
@@ -145,11 +145,13 @@
 //! - **Free-alias function-local application**: free-source
 //!   return-object aliases rewrite references function-locally while
 //!   their intents live at `Module` scope (they join the module-wide
-//!   merged map so runtime-import planning can reverse-resolve them).
+//!   merged map so export growth and import planning can resolve them).
 //!   The module-level occupancy of their targets is deliberately not
-//!   checked; the deriving subtree's bound-name rule — applied at seal
-//!   to their `Function`-scope copies — is the capture guard. This is
-//!   also why `NaturalizedRenames` keeps its `merged` / `explicit`
+//!   checked; a pre-naturalization reference check rejects targets already
+//!   used by another source reference, and the deriving subtree's bound-name
+//!   rule — applied at seal to their `Function`-scope copies — guards local
+//!   capture. This is also why `NaturalizedRenames` keeps its inverse /
+//!   `explicit`
 //!   split: export locals and binding-comment keys may remap only
 //!   through renames that actually rename a top-level declaration.
 //!
@@ -1035,8 +1037,8 @@ impl SealedRenames {
     }
 
     /// One module's renames projected to bare names, sorted — plan-driven
-    /// and surviving free-source heuristics merged (pre-ledger: the
-    /// `NaturalizedRenames::merged` map).
+    /// and surviving free-source heuristics merged. The naturalizer inverts
+    /// this map into `NaturalizedRenames::original_by_renamed`.
     pub fn module_renames_by_name(&self, module: ModuleId) -> BTreeMap<String, String> {
         self.scope_renames_by_name(&RenameScope::Module(module))
     }

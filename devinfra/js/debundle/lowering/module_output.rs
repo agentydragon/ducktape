@@ -12,7 +12,7 @@ use super::scope_names::collect_local_binding_names;
 use crate::exports::{export_named_for_bindings, omit_existing_local_exports};
 use crate::imports::{
     ArtifactSourceImportResolutionCache, EntryExport, ImportLocalRenameSink, ModuleReferenceNeeds,
-    PlannedVendorReimports, RuntimeImportFacts, RuntimeImportLookup, VendorReimportOracle,
+    PlannedVendorReimports, RuntimeImportFacts, SourceReferenceLookup, VendorReimportOracle,
     cross_module_imports_for_plan, final_module_exports, group_specifiers_into_import_decls,
     imported_binding_named_specifier, phantom_side_effect_imports, plan_module_reference_needs,
     plan_vendor_reimports, residual_entry_imports_for_moved_body,
@@ -118,13 +118,9 @@ pub(super) fn emit_module(inputs: ModuleEmissionInputs<'_>) -> Result<LoweredMod
         declaration_by_name,
         binding_assignment,
         entry_exports_by_original_local,
-        RuntimeImportLookup {
-            imports: runtime_import_facts,
-            original_by_renamed: local_renames
-                .merged
-                .iter()
-                .map(|(pre, post)| (post.clone(), pre.clone()))
-                .collect(),
+        SourceReferenceLookup {
+            runtime_imports: runtime_import_facts,
+            renames: &local_renames,
         },
     );
     // Import-local mints for this plan's body flow through a per-plan
