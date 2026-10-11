@@ -1,4 +1,4 @@
-"""Native runner fixtures, with no integration app or app database."""
+"""Fake Kubernetes fixtures, with no integration app or app database."""
 
 from collections.abc import AsyncIterator
 from typing import cast
@@ -6,7 +6,6 @@ from typing import cast
 import pytest
 from kubernetes_asyncio import client as k8s_client
 
-from agentplane.runner.testing.fixtures import client, config, endpoint, harness, model, runner, spec, workspace
 from agentplane.sandbox_service.egress import EgressInventory
 from agentplane.sandbox_service.inventory import SandboxInventory
 from agentplane.sandbox_service.testing.fake_inventory import (

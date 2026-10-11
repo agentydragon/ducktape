@@ -25,7 +25,7 @@ from agentplane.sandbox_service.egress import EgressInventory
 from agentplane.sandbox_service.inventory import SandboxInventory
 from agentplane.sandbox_service.kubernetes_bindings import KubernetesBindings
 from agentplane.sandbox_service.kubernetes_views import MANAGED_LABEL, SANDBOX_BINDING_ANNOTATION
-from agentplane.sandbox_service.protocol_pb2 import SandboxBinding
+from agentplane.sandbox_service.protocol_pb2 import SandboxBinding, SandboxDestination, ServiceAccount
 from agentplane.sandbox_service.provisioning import Provisioning
 from agentplane.sandbox_service.runner_endpoints import RunnerEndpoints
 from agentplane.sandbox_service.session_history.session_changes import SessionChanges
@@ -42,6 +42,10 @@ from util.kubernetes import CustomObjectsClient
 SANDBOX = "test-runner"
 SANDBOX_UID = "40e373bd-2742-43de-8d1c-1ef97c4d4801"
 ACCOUNT = "test-runner-account"
+OWNER = ServiceAccountRef(namespace=SANDBOX_NAMESPACE, name=ACCOUNT)
+DESTINATION = SandboxDestination(
+    owner=ServiceAccount(namespace=OWNER.namespace, name=OWNER.name), sandbox=SANDBOX, sandbox_uid=SANDBOX_UID
+)
 
 
 @dataclass

@@ -28,14 +28,12 @@ from agentplane.runner_gateway.commands.store import SubmissionStore
 from agentplane.runner_gateway.connection_records import ConnectionLeases
 from agentplane.runner_gateway.grpc_api import Resources
 from agentplane.runner_gateway.session_registry import SessionRegistry
-from agentplane.sandbox_service import protocol_pb2
 from agentplane.sandbox_service.client import Runner, SandboxServiceClient, ServiceError
 from agentplane.sandbox_service.destinations import DestinationResolver
-from agentplane.sandbox_service.protocol_pb2 import SandboxBinding, SandboxDestination, SessionDefaults
+from agentplane.sandbox_service.protocol_pb2 import SandboxBinding, SessionDefaults
 from agentplane.sandbox_service.session_history.session_changes import SessionChanges
 from agentplane.sandbox_service.testing.grpc_service import service_client
-from agentplane.sandbox_service.testing.kubernetes import ACCOUNT, SANDBOX, SANDBOX_UID, Cluster
-from agentplane.subjects import ServiceAccountRef
+from agentplane.sandbox_service.testing.kubernetes import DESTINATION, OWNER, SANDBOX_UID, Cluster
 from agentplane.testing.fake_apiserver import SANDBOX_NAMESPACE, TokenVerdict
 from agentplane.workload_auth.principal import WorkloadPrincipalResolver
 
@@ -47,12 +45,6 @@ pytest_plugins = ("agentplane.sandbox_service.session_history.conftest",)
 
 TOKEN = "test-native-grpc-token"
 AUDIENCE = "test-native-grpc"
-OWNER = ServiceAccountRef(namespace=SANDBOX_NAMESPACE, name=ACCOUNT)
-DESTINATION = SandboxDestination(
-    owner=protocol_pb2.ServiceAccount(namespace=OWNER.namespace, name=OWNER.name),
-    sandbox=SANDBOX,
-    sandbox_uid=SANDBOX_UID,
-)
 # Names no Session: a caller-chosen runner ID the service relays as given.
 SESSION = "grpc-session"
 

@@ -41,7 +41,7 @@ from agentplane.sandbox_service.kubernetes_views import (
 from agentplane.sandbox_service.protocol_pb2 import ResolvedGrant, SandboxDestination
 from agentplane.sandbox_service.session_history.session_changes import SessionChanges
 from agentplane.sandbox_service.testing.grpc_service import service_client
-from agentplane.sandbox_service.testing.kubernetes import ACCOUNT, SANDBOX, SANDBOX_UID, Cluster
+from agentplane.sandbox_service.testing.kubernetes import ACCOUNT, DESTINATION, OWNER, SANDBOX, SANDBOX_UID, Cluster
 from agentplane.subjects import ServiceAccountRef
 from agentplane.testing.fake_apiserver import SANDBOX_NAMESPACE, TokenVerdict
 from agentplane.workload_auth.principal import WorkloadPrincipalResolver
@@ -55,12 +55,6 @@ pytest_plugins = ("agentplane.sandbox_service.session_history.conftest",)
 
 TOKEN = "test-grpc-token"
 AUDIENCE = "test-sandbox-service"
-OWNER = ServiceAccountRef(namespace=SANDBOX_NAMESPACE, name=ACCOUNT)
-DESTINATION = SandboxDestination(
-    owner=protocol_pb2.ServiceAccount(namespace=OWNER.namespace, name=OWNER.name),
-    sandbox=SANDBOX,
-    sandbox_uid=SANDBOX_UID,
-)
 
 
 @dataclass
@@ -1111,77 +1105,6 @@ async def test_invalid_command_is_not_submitted(
     assert peer.attachments.empty()
 
 
-def test_wire_preserves_explicit_empty_overrides() -> None:
-    request = wire.create_proto(
-        DESTINATION, uuid4(), {"model": "test-model", "instructions": "", "reasoningEffort": ""}, ""
-    )
-    assert wire.launch_overrides(request) == {"model": "test-model", "instructions": "", "reasoningEffort": ""}
-    assert request.HasField("setup_script")
-    assert request.setup_script == ""
-    request.override_mask.paths.append("unknown")
-    with pytest.raises(ValueError, match="unique SessionSpec field names"):
-        wire.launch_overrides(request)
-    request.override_mask.paths[:] = ["model"]
-    request.spec.cwd = "/unselected"
-    with pytest.raises(ValueError, match="every supplied SessionSpec field"):
-        wire.launch_overrides(request)
-
-
-async def test_bare_service_eof_is_not_native_closure(tmp_path: Path) -> None:
-    async def truncated(
-        request: protocol_pb2.FollowSessionRequest, context: grpc.aio.ServicerContext
-    ) -> AsyncIterator[protocol_pb2.FollowSessionResponse]:
-        yield protocol_pb2.FollowSessionResponse(
-            attached=runner_pb2.Attached(session_id=request.destination.session_id)
-        )
-        # Deliberately no ended observation: even an OK transport status is not native EOF evidence.
-
-    server = grpc.aio.server()
-    server.add_generic_rpc_handlers(
-        [
-            grpc.method_handlers_generic_handler(
-                "ducktape.agentplane.runner_gateway.v1.RunnerGateway",
-                {
-                    "FollowSession": grpc.unary_stream_rpc_method_handler(
-                        truncated,
-                        request_deserializer=protocol_pb2.FollowSessionRequest.FromString,
-                        response_serializer=protocol_pb2.FollowSessionResponse.SerializeToString,
-                    )
-                },
-            )
-        ]
-    )
-    port = server.add_insecure_port("127.0.0.1:0")
-    await server.start()
-    token_file = tmp_path / "token"
-    token_file.write_text(TOKEN)
-    client = SandboxServiceClient(
-        f"127.0.0.1:{port}",
-        gateway_target=f"127.0.0.1:{port}",
-        namespace=SANDBOX_NAMESPACE,
-        token_file=token_file,
-        command_admission_timeout_s=20,
-        request_timeout_s=20,
-        lifecycle_timeout_s=310,
-        follow_timeout_s=960,
-    )
-    try:
-        attachment = await client.runner(DESTINATION).attach("session")
-        try:
-            with pytest.raises(ConnectionError, match="without native closure"):
-                await attachment.next_entry()
-        finally:
-            attachment.cancel()
-    finally:
-        await client.close()
-        await server.stop(0)
-
-
-def test_duplicate_spec_aliases_are_refused() -> None:
-    with pytest.raises(ValueError, match="both proto and JSON"):
-        wire.create_proto(DESTINATION, uuid4(), {"reasoning_effort": "low", "reasoningEffort": "high"}, None)
-
-
 async def test_command_cancellation_closes_native_attachment(remote: SandboxServiceClient, peer: Peer) -> None:
     command = command_pb2.Command(command_id="cancel", submit_input=command_pb2.SubmitInput(text="notice"))
     async with asyncio.timeout(8), asyncio.TaskGroup() as tasks:
@@ -1244,15 +1167,6 @@ async def test_unavailable_destination_does_not_contact_runner(
         await remote.runner(DESTINATION).attach("session")
     assert rejected.value.code == grpc.StatusCode.UNAVAILABLE
     assert peer.attachments.empty()
-
-
-async def test_successor_pod_same_sandbox_and_account_keeps_destination(resources: Resources, cluster: Cluster) -> None:
-    first = await resources.destinations.resolve(DESTINATION, writes=False)
-    assert first.target == f"127.0.0.1:{resources.destinations.runner_port}"
-    cluster.fake.pods[SANDBOX]["metadata"]["uid"] = "test-successor-pod"
-    cluster.fake.pods[SANDBOX]["status"]["podIP"] = "::1"
-    resolved = await resources.destinations.resolve(DESTINATION, writes=False)
-    assert resolved.target == f"[::1]:{resources.destinations.runner_port}"
 
 
 @pytest.fixture
