@@ -254,6 +254,33 @@ export { value, factory, mounted };
 }
 
 #[test]
+fn fresh_function_data_property_write_keeps_returned_body_deferred() {
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            r#"const value = 1;
+function factory(callback) {
+  function wrapper() { return callback(); }
+  wrapper.label = "wrapper";
+  return Object.assign(wrapper, { reader: () => 0 });
+}
+const mounted = factory(() => value);
+console.log(mounted());
+export { value, factory, mounted };
+"#,
+            vec![logical_module(
+                "mount",
+                &[
+                    Member::new("factory").with_purity(MemberPurity::Pure),
+                    Member::new("mounted"),
+                ],
+            )],
+        )
+        .with_unassigned_mode(unassigned_mode_inline()),
+    );
+    assert_preserved_entry_output(&fixture, "1\n");
+}
+
+#[test]
 fn object_assign_getter_still_constrains_order() {
     expect_cycle_rejection(
         FixtureOpts::new(
@@ -317,6 +344,83 @@ export { value, factory, mounted };
             vec![logical_module(
                 "mount",
                 &[Member::new("factory"), Member::new("mounted")],
+            )],
+        )
+        .with_unassigned_mode(unassigned_mode_inline()),
+        &["mount", "anon_residual_sentinel"],
+    );
+}
+
+#[test]
+fn called_helper_can_install_a_setter_before_object_assign() {
+    expect_cycle_rejection(
+        FixtureOpts::new(
+            r#"const value = 1;
+function install(wrapper) {
+  wrapper.__proto__ = { set item(next) { globalThis.seen = value + next; } };
+}
+function factory() {
+  function wrapper() {}
+  install(wrapper);
+  return Object.assign(wrapper, { item: 0 });
+}
+const mounted = factory();
+console.log(globalThis.seen);
+export { value, install, factory, mounted };
+"#,
+            vec![logical_module(
+                "mount",
+                &[
+                    Member::new("install"),
+                    Member::new("factory"),
+                    Member::new("mounted"),
+                ],
+            )],
+        )
+        .with_unassigned_mode(unassigned_mode_inline()),
+        &["mount", "anon_residual_sentinel"],
+    );
+}
+
+#[test]
+fn object_assign_source_can_replace_target_prototype() {
+    expect_cycle_rejection(
+        FixtureOpts::new(
+            r#"const value = 1;
+function factory() {
+  function wrapper() {}
+  Object.assign(wrapper, { ["__proto__"]: { set item(next) { globalThis.seen = value + next; } } });
+  return Object.assign(wrapper, { item: 0 });
+}
+const mounted = factory();
+console.log(globalThis.seen);
+export { value, factory, mounted };
+"#,
+            vec![logical_module(
+                "mount",
+                &[Member::new("factory"), Member::new("mounted")],
+            )],
+        )
+        .with_unassigned_mode(unassigned_mode_inline()),
+        &["mount", "anon_residual_sentinel"],
+    );
+}
+
+#[test]
+fn top_level_object_assign_can_call_a_setter_from_an_earlier_statement() {
+    expect_cycle_rejection(
+        FixtureOpts::new(
+            r#"const value = 1;
+function wrapper() {}
+wrapper.__proto__ = { set item(next) { globalThis.seen = value + next; } };
+const mounted = Object.assign(wrapper, { item: 0 });
+console.log(globalThis.seen);
+export { value, wrapper, mounted };
+"#,
+            vec![logical_module_with_anon(
+                "mount",
+                &[Member::new("wrapper"), Member::new("mounted")],
+                &["wrapper.__proto__ = { set item(next) { globalThis.seen = value + next; } };"],
             )],
         )
         .with_unassigned_mode(unassigned_mode_inline()),

@@ -133,7 +133,29 @@ struct Call {
     args: Vec<ValueExpr>,
     is_new: bool,
     caller: Option<u32>,
+    owner: StatementOrdinal,
     plain_object_sources: bool,
+}
+
+fn plain_assign_source_property(property: &PropOrSpread) -> bool {
+    let PropOrSpread::Prop(property) = property else {
+        return false;
+    };
+    let name = match property.as_ref() {
+        Prop::KeyValue(pair) => &pair.key,
+        Prop::Shorthand(ident) => return ident.sym.as_ref() != "__proto__",
+        _ => return false,
+    };
+    match name {
+        PropName::Ident(ident) => ident.sym.as_ref() != "__proto__",
+        PropName::Str(string) => string.value.to_string_lossy() != "__proto__",
+        PropName::Num(_) | PropName::BigInt(_) => true,
+        PropName::Computed(computed) => match computed.expr.unwrap_parens() {
+            Expr::Lit(Lit::Str(string)) => string.value.to_string_lossy() != "__proto__",
+            Expr::Lit(Lit::Num(_)) | Expr::Lit(Lit::BigInt(_)) => true,
+            _ => false,
+        },
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -146,6 +168,10 @@ struct Callable {
     local_assignments: Vec<(Id, ValueExpr)>,
     returns: Vec<ValueExpr>,
     local_functions: BTreeSet<Id>,
+    literal_captures: BTreeSet<Id>,
+    escaped_bindings: BTreeSet<Id>,
+    member_writes: Vec<(Id, String)>,
+    dynamic_property_effect: bool,
     opaque: bool,
     generator: bool,
 }
@@ -161,6 +187,10 @@ impl Default for Callable {
             local_assignments: Vec::new(),
             returns: Vec::new(),
             local_functions: BTreeSet::new(),
+            literal_captures: BTreeSet::new(),
+            escaped_bindings: BTreeSet::new(),
+            member_writes: Vec::new(),
+            dynamic_property_effect: false,
             opaque: false,
             generator: false,
         }
@@ -172,6 +202,7 @@ struct ExecutionIndex {
     current: Option<u32>,
     past_await: bool,
     may_skip_await_depth: u32,
+    literal_depth: u32,
     callables: BTreeMap<u32, Callable>,
     top_calls: Vec<Vec<Call>>,
     top_assignments: Vec<Vec<(Id, ValueExpr)>>,
@@ -185,6 +216,7 @@ impl Default for ExecutionIndex {
             current: None,
             past_await: false,
             may_skip_await_depth: 0,
+            literal_depth: 0,
             callables: BTreeMap::new(),
             top_calls: Vec::new(),
             top_assignments: Vec::new(),
@@ -204,6 +236,7 @@ impl ExecutionIndex {
             index.owner = StatementOrdinal(ordinal);
             index.past_await = false;
             index.may_skip_await_depth = 0;
+            index.literal_depth = 0;
             item.as_module_item().visit_with(&mut index);
         }
         index
@@ -248,6 +281,36 @@ impl ExecutionIndex {
         }
     }
 
+    fn mark_dynamic_property_effect(&mut self) {
+        if !self.past_await
+            && let Some(key) = self.current
+        {
+            self.callables
+                .get_mut(&key)
+                .unwrap()
+                .dynamic_property_effect = true;
+        }
+    }
+
+    fn record_member_write(&mut self, member: &MemberExpr) {
+        if self.past_await {
+            return;
+        }
+        if let (Some(key), Expr::Ident(object), Some(property)) = (
+            self.current,
+            member.obj.unwrap_parens(),
+            static_prop(&member.prop),
+        ) {
+            self.callables
+                .get_mut(&key)
+                .unwrap()
+                .member_writes
+                .push((object.to_id(), property));
+        } else {
+            self.mark_dynamic_property_effect();
+        }
+    }
+
     fn visit_may_skip<N: VisitWith<Self>>(&mut self, node: &N) {
         let before = self.past_await;
         self.may_skip_await_depth += 1;
@@ -258,6 +321,18 @@ impl ExecutionIndex {
 }
 
 impl Visit for ExecutionIndex {
+    fn visit_object_lit(&mut self, object: &ObjectLit) {
+        self.literal_depth += 1;
+        object.visit_children_with(self);
+        self.literal_depth -= 1;
+    }
+
+    fn visit_array_lit(&mut self, array: &ArrayLit) {
+        self.literal_depth += 1;
+        array.visit_children_with(self);
+        self.literal_depth -= 1;
+    }
+
     fn visit_fn_decl(&mut self, declaration: &FnDecl) {
         if let Some(key) = self.current {
             let callable = self.callables.get_mut(&key).unwrap();
@@ -363,11 +438,11 @@ impl Visit for ExecutionIndex {
         if !self.past_await
             && let Some(key) = self.current
         {
-            self.callables
-                .get_mut(&key)
-                .unwrap()
-                .reads
-                .insert(ident.to_id());
+            let callable = self.callables.get_mut(&key).unwrap();
+            callable.reads.insert(ident.to_id());
+            if self.literal_depth > 0 {
+                callable.literal_captures.insert(ident.to_id());
+            }
         }
     }
 
@@ -409,24 +484,61 @@ impl Visit for ExecutionIndex {
         } else if let AssignTarget::Simple(SimpleAssignTarget::Ident(binding)) = &assignment.left {
             self.top_assignments[self.owner.0]
                 .push((binding.id.to_id(), ValueExpr::from_expr(&assignment.right)));
-        } else if matches!(&assignment.left, AssignTarget::Pat(_)) {
-            self.mark_opaque();
+        } else if let AssignTarget::Simple(SimpleAssignTarget::Member(member)) = &assignment.left {
+            if let Some(key) = self.current {
+                ValueExpr::from_expr(&assignment.right)
+                    .bindings(&mut self.callables.get_mut(&key).unwrap().escaped_bindings);
+            }
+            if assignment.op == AssignOp::Assign {
+                self.record_member_write(member);
+            } else {
+                self.mark_dynamic_property_effect();
+            }
+        } else {
+            self.mark_dynamic_property_effect();
         }
     }
 
     fn visit_update_expr(&mut self, expression: &UpdateExpr) {
         expression.visit_children_with(self);
+        if matches!(expression.arg.unwrap_parens(), Expr::Member(_)) {
+            self.mark_dynamic_property_effect();
+        }
         self.mark_opaque();
+    }
+
+    fn visit_unary_expr(&mut self, expression: &UnaryExpr) {
+        expression.visit_children_with(self);
+        if expression.op == UnaryOp::Delete
+            && matches!(expression.arg.unwrap_parens(), Expr::Member(_))
+        {
+            self.mark_dynamic_property_effect();
+        }
     }
 
     fn visit_return_stmt(&mut self, ret: &ReturnStmt) {
         ret.visit_children_with(self);
         if let (Some(key), Some(arg)) = (self.current, &ret.arg) {
+            if let ValueExpr::Binding(id) = ValueExpr::from_expr(arg) {
+                self.callables
+                    .get_mut(&key)
+                    .unwrap()
+                    .escaped_bindings
+                    .insert(id);
+            }
             self.callables
                 .get_mut(&key)
                 .unwrap()
                 .returns
                 .push(ValueExpr::from_expr(arg));
+        }
+    }
+
+    fn visit_throw_stmt(&mut self, thrown: &ThrowStmt) {
+        thrown.visit_children_with(self);
+        if let Some(key) = self.current {
+            ValueExpr::from_expr(&thrown.arg)
+                .bindings(&mut self.callables.get_mut(&key).unwrap().escaped_bindings);
         }
     }
 
@@ -445,11 +557,12 @@ impl Visit for ExecutionIndex {
                     .collect(),
                 is_new: false,
                 caller: self.current,
-                plain_object_sources: call.args.len() > 1 && call.args.iter().skip(1).all(|arg| {
-                    matches!(arg.expr.unwrap_parens(), Expr::Object(object) if object.props.iter().all(|prop| {
-                        matches!(prop, PropOrSpread::Prop(prop) if matches!(prop.as_ref(), Prop::KeyValue(_) | Prop::Shorthand(_)))
-                    }))
-                }),
+                owner: self.owner,
+                plain_object_sources: call.args.len() > 1
+                    && call.args.iter().skip(1).all(|arg| {
+                        matches!(arg.expr.unwrap_parens(), Expr::Object(object)
+                            if object.props.iter().all(plain_assign_source_property))
+                    }),
             });
         } else {
             self.mark_opaque();
@@ -490,6 +603,7 @@ impl Visit for ExecutionIndex {
                 .collect(),
             is_new: true,
             caller: self.current,
+            owner: self.owner,
             plain_object_sources: false,
         });
     }
@@ -521,19 +635,75 @@ struct Outcome {
     effects: SynchronousCalls,
     returns: Values,
     complete: bool,
+    executed_owners: BTreeSet<StatementOrdinal>,
+    unknown_call: bool,
 }
 
 struct Executor<'a> {
     index: &'a ExecutionIndex,
+    facts: &'a [StatementFacts],
     flow: &'a ChunkValueFlow,
     shadowed: &'a BTreeSet<&'static str>,
     top_bindings: BTreeSet<Id>,
+    binding_owner: BTreeMap<Id, StatementOrdinal>,
+    prior_effect_owners: BTreeSet<StatementOrdinal>,
+    prior_unknown_call: bool,
     mutable_captures: BTreeSet<Id>,
     active: BTreeSet<(u32, Vec<Values>, Context)>,
     cache: BTreeMap<(u32, Vec<Values>, Context), Outcome>,
 }
 
 impl Executor<'_> {
+    fn safe_object_assign_target(&self, call: &Call, id: &Id) -> bool {
+        if call.is_new
+            || !call.plain_object_sources
+            || !matches!(call.args.first(), Some(ValueExpr::Binding(target)) if target == id)
+        {
+            return false;
+        }
+        let ValueExpr::Member(object, Some(property)) = &call.callee else {
+            return false;
+        };
+        matches!(object.as_ref(), ValueExpr::Binding(object_id)
+            if object_id.0.as_ref() == "Object"
+                && !self.flow.is_declared(object_id)
+                && !self.shadowed.contains("Object")
+                && property == "assign")
+    }
+
+    fn stable_fresh_function_target(&self, key: u32, callable: &Callable, id: &Id) -> bool {
+        callable.local_functions.contains(id)
+            && !callable.rebinds.contains(id)
+            && !callable.literal_captures.contains(id)
+            && !callable.escaped_bindings.contains(id)
+            && !callable.dynamic_property_effect
+            && callable
+                .member_writes
+                .iter()
+                .all(|(receiver, property)| receiver != id || property != "__proto__")
+            && !callable.local_assignments.iter().any(|(target, value)| {
+                if target == id {
+                    return false;
+                }
+                let mut mentioned = BTreeSet::new();
+                value.bindings(&mut mentioned);
+                mentioned.contains(id)
+            })
+            && !self
+                .index
+                .callables
+                .iter()
+                .any(|(other, nested)| *other != key && nested.reads.contains(id))
+            && !callable.calls.iter().any(|call| {
+                let mut mentioned = BTreeSet::new();
+                call.callee.bindings(&mut mentioned);
+                for arg in &call.args {
+                    arg.bindings(&mut mentioned);
+                }
+                mentioned.contains(id) && !self.safe_object_assign_target(call, id)
+            })
+    }
+
     fn evaluate(&mut self, expr: &ValueExpr, env: &Context, captures: &Context) -> Values {
         match expr {
             ValueExpr::Binding(id) => env.get(id).cloned().unwrap_or_else(|| {
@@ -647,6 +817,7 @@ impl Executor<'_> {
             complete: true,
             ..Outcome::default()
         };
+        outcome.executed_owners.insert(callable.owner);
         if callable.generator {
             // Generator parameter initializers run at call time, although
             // the body waits for the first iteration. Their effects are not
@@ -700,6 +871,7 @@ impl Executor<'_> {
             .collect();
         if targets.is_empty() {
             outcome.complete = false;
+            outcome.unknown_call = true;
         }
         for target in targets {
             match target {
@@ -707,22 +879,68 @@ impl Executor<'_> {
                     if !call.is_new
                         && call.plain_object_sources
                         && matches!(call.args.first(), Some(ValueExpr::Binding(id)) if call.caller
-                        .and_then(|caller| self.index.callables.get(&caller))
-                        .is_some_and(|caller| caller.local_functions.contains(id)
-                            && !caller.rebinds.contains(id))) => {}
+                        .and_then(|caller| self.index.callables.get(&caller).map(|body| (caller, body)))
+                        .is_some_and(|(caller, body)| self.stable_fresh_function_target(caller, body, id))) =>
+                    {}
+                AbstractValue::ObjectAssign if !call.is_new => {
+                    // Once the target's descriptor/prototype integrity is
+                    // unproven, copying a property may synchronously call a
+                    // setter. Include nested lazy bodies of owners that ran
+                    // before this call, as well as the owners of the source
+                    // and target values. The first-order fallback excludes
+                    // those bodies because merely creating a closure does
+                    // not execute it.
+                    let mut possible_accessors = outcome.executed_owners.clone();
+                    possible_accessors.insert(call.owner);
+                    if call.caller.is_none() {
+                        possible_accessors.extend(self.prior_effect_owners.iter().copied());
+                    }
+                    for arg in &call.args {
+                        let mut bindings = BTreeSet::new();
+                        arg.bindings(&mut bindings);
+                        possible_accessors.extend(
+                            bindings
+                                .iter()
+                                .filter_map(|id| self.binding_owner.get(id).copied()),
+                        );
+                    }
+                    if outcome.unknown_call || (call.caller.is_none() && self.prior_unknown_call) {
+                        possible_accessors.extend(self.facts.iter().map(|fact| fact.ordinal));
+                    }
+                    for owner in possible_accessors {
+                        outcome.effects.reads.extend(
+                            self.facts[owner.0]
+                                .reads
+                                .lazy
+                                .iter()
+                                .filter(|id| self.top_bindings.contains(*id))
+                                .cloned()
+                                .map(|id| (id, owner)),
+                        );
+                    }
+                    outcome.complete = false;
+                    outcome.unknown_call = true;
+                }
                 AbstractValue::Origin(ValueOrigin::Function(key)) if !call.is_new => {
                     let nested = self.invoke(key, args.clone(), &Context::new());
                     outcome.effects.reads.extend(nested.effects.reads);
                     outcome.effects.rebinds.extend(nested.effects.rebinds);
+                    outcome.executed_owners.extend(nested.executed_owners);
+                    outcome.unknown_call |= nested.unknown_call;
                     outcome.complete &= nested.complete;
                 }
                 AbstractValue::Closure(key, captured) if !call.is_new => {
                     let nested = self.invoke(key, args.clone(), &captured);
                     outcome.effects.reads.extend(nested.effects.reads);
                     outcome.effects.rebinds.extend(nested.effects.rebinds);
+                    outcome.executed_owners.extend(nested.executed_owners);
+                    outcome.unknown_call |= nested.unknown_call;
                     outcome.complete &= nested.complete;
                 }
-                _ => outcome.complete = false,
+                _ => {
+                    outcome.complete = false;
+                    outcome.unknown_call = true;
+                }
             }
         }
     }
@@ -770,12 +988,19 @@ pub(crate) fn annotate_synchronous_calls(
     }
     let mut executor = Executor {
         index: &index,
+        facts,
         flow,
         shadowed,
         top_bindings: facts
             .iter()
             .flat_map(|fact| fact.declared.iter().cloned())
             .collect(),
+        binding_owner: facts
+            .iter()
+            .flat_map(|fact| fact.declared.iter().cloned().map(|id| (id, fact.ordinal)))
+            .collect(),
+        prior_effect_owners: BTreeSet::new(),
+        prior_unknown_call: false,
         mutable_captures: index
             .callables
             .values()
@@ -786,8 +1011,9 @@ pub(crate) fn annotate_synchronous_calls(
     };
     let mut top_env = Context::new();
     let mut top_captures = Context::new();
+    let mut effects = Vec::with_capacity(facts.len());
     for (fact, (calls, assignments)) in facts
-        .iter_mut()
+        .iter()
         .zip(index.top_calls.iter().zip(&index.top_assignments))
     {
         let mut outcome = Outcome {
@@ -798,9 +1024,14 @@ pub(crate) fn annotate_synchronous_calls(
             executor.execute_call(call, &top_env, &top_captures, &mut outcome);
         }
         outcome.complete &= !index.opaque_top.contains(&fact.ordinal);
-        if outcome.complete {
-            fact.synchronous_calls = Some(outcome.effects);
+        outcome.effects.complete = outcome.complete;
+        let mut prior_effect_owners = outcome.executed_owners.clone();
+        if !fact.purity.is_pure() {
+            prior_effect_owners.insert(fact.ordinal);
         }
+        executor.prior_effect_owners.extend(prior_effect_owners);
+        executor.prior_unknown_call |= outcome.unknown_call;
+        effects.push(outcome.effects);
         for (id, expression) in assignments {
             if !needed.contains(id) {
                 continue;
@@ -814,5 +1045,8 @@ pub(crate) fn annotate_synchronous_calls(
             }
             top_env.entry(id.clone()).or_default().extend(values);
         }
+    }
+    for (fact, effect) in facts.iter_mut().zip(effects) {
+        fact.synchronous_calls = Some(effect);
     }
 }

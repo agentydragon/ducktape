@@ -713,6 +713,19 @@ separate argument environments. The pass memoizes call contexts and caps its
 work; recursive or unknown targets, unsupported syntax, and mutable captures
 fall back conservatively.
 
+The `Object.assign` fast path requires static data-property source keys that
+cannot be `__proto__`, and an unrebound local function target whose descriptor
+and prototype have not been changed or exposed to another callable. Static
+ordinary data-property writes on that fresh function retain the proof under
+A11. When the proof fails, copying may run a setter or Proxy trap. The pass
+keeps any reads it proved, adds the normal unresolved-call fallback, and
+conservatively promotes nested lazy reads of owners already executed while
+constructing the target and source values. For a top-level call it also keeps
+such reads from earlier effectful statements, which may have installed an
+accessor. An earlier unknown call expands that last set to the whole chunk.
+This broader promotion is confined to the unproved intrinsic call; creating a
+returned closure alone does not trigger it.
+
 For statements without a complete call-site result, `promote_at_init_calls`
 uses its SCC closure: it builds the call graph among chunk-declared, resolvable
 callees from first-order lazy calls, takes its SCCs, and closes each SCC's

@@ -87,8 +87,8 @@ pub struct StatementFacts {
     /// bodies remain lazy until invoked by that constructor or another call.
     pub(crate) constructor: Option<ConstructorFacts>,
     /// Effects of function bodies that can run while this statement evaluates.
-    /// `None` means the call analysis could not bound every target and the
-    /// conservative unresolved-call path must be used.
+    /// Proven effects are retained even when some targets remain unresolved;
+    /// `complete` decides whether the conservative fallback also runs.
     pub(crate) synchronous_calls: Option<SynchronousCalls>,
     /// Bindings referenced in the callee or arguments of at-init
     /// calls promotion can't follow (member calls `api.read()`,
@@ -153,6 +153,7 @@ pub struct StatementFacts {
 pub(crate) struct SynchronousCalls {
     pub reads: BTreeSet<(Id, StatementOrdinal)>,
     pub rebinds: BTreeSet<(Id, StatementOrdinal)>,
+    pub complete: bool,
 }
 
 impl StatementFacts {

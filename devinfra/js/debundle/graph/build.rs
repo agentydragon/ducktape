@@ -710,7 +710,9 @@ fn promote_at_init_calls(
                         .promoted_at_init(callee_owner),
                 ));
             }
-            continue;
+            if synchronous.complete {
+                continue;
+            }
         }
         if stmt.calls.eager.is_empty()
             && stmt.at_init_unresolved_sources.is_empty()

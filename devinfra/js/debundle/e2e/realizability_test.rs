@@ -690,14 +690,16 @@ export { consume };
             .report_root
             .join("static/app/modules/domain/index.json"),
     );
-    assert_eq!(domain["incoming"]["edge_count"], 2);
+    // The known synchronous read and the unresolved-call fallback retain
+    // separate evidence for the residual caller's dependency on Value.
+    assert_eq!(domain["incoming"]["edge_count"], 3);
     assert_eq!(
         pair_list_get(
             &domain["incoming"]["symbols"],
             "static/app/modules/domain/value.js#Value",
         )
         .expect("incoming symbols entry"),
-        2,
+        3,
     );
     assert_eq!(
         pair_list_get(
@@ -713,7 +715,7 @@ export { consume };
             "static/app/modules/residual/unhandled.js",
         )
         .expect("incoming files unhandled entry"),
-        1,
+        2,
     );
 
     let modules: serde_json::Value =
