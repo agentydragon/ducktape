@@ -26,18 +26,6 @@ class Session(Base):
 
     __tablename__ = "session"
     __table_args__ = (
-        # A runner locator is a physical binding, not a durable identity. Imported locators with
-        # no Sandbox UID still cannot be claimed twice.
-        Index(
-            "ux_session_runner_locator",
-            "sandbox_namespace",
-            "sandbox_name",
-            "sandbox_uid",
-            "runner_session_id",
-            unique=True,
-            postgresql_nulls_not_distinct=True,
-            postgresql_where=text("runner_session_id IS NOT NULL"),
-        ),
         Index(
             "ux_session_open_key",
             "caller_namespace",
@@ -56,10 +44,6 @@ class Session(Base):
     sandbox_name: Mapped[str] = mapped_column(String)
     # Absent for imported Sessions whose original Sandbox UID was not retained in app history.
     sandbox_uid: Mapped[UUID | None]
-    # CLEANUP(added 2026-10-11): Drop with `ux_session_runner_locator` once the operator merges the
-    #   SESSION_ID_MINT_RETIRE drop PR; nothing reads or writes it, since the runner's Session ID is the
-    #   Session ID.
-    runner_session_id: Mapped[str | None] = mapped_column(String)
     # The caller provides an opaque key, never a runner session ID. Absent for imported Sessions.
     caller_namespace: Mapped[str | None] = mapped_column(String)
     caller_name: Mapped[str | None] = mapped_column(String)
