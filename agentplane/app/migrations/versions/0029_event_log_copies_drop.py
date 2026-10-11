@@ -1,15 +1,18 @@
 """Drop the `event_log` launch copies; a Thread's harness, model, cwd and model activity live on its
 fold summary."""
 
+from typing import Any
+
 import sqlalchemy as sa
 from alembic import op
+from sqlalchemy.types import TypeEngine
 
 revision = "0029_event_log_copies_drop"
 down_revision = "0028_event_log_copies_nullable"
 branch_labels = None
 depends_on = None
 
-COPIES = {
+COPIES: dict[str, TypeEngine[Any]] = {
     "harness": sa.String(length=14),
     "model": sa.Text(),
     "cwd": sa.Text(),
