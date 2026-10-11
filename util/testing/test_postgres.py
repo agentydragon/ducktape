@@ -4,6 +4,7 @@ import pytest
 import pytest_bazel
 from sqlalchemy import create_engine, text
 from sqlalchemy.engine import make_url
+from sqlalchemy.exc import DBAPIError
 from testcontainers.postgres import PostgresContainer
 
 from util.testing.postgres import DatabaseClones, DatabaseNames, PostgresDatabaseTemplate
@@ -151,6 +152,24 @@ def test_database_clones_allocate_isolated_databases_and_clean_up(admin_url: str
 
         assert all(not _database_exists(admin_url, name) for name in clone_names)
     assert not _database_exists(admin_url, "template_helper_owner_test")
+
+
+def test_failed_extension_setup_drops_the_unentered_template(admin_url: str) -> None:
+    name = "template_helper_missing_extension"
+    with (
+        pytest.raises(DBAPIError, match=r"extension .* is not available"),
+        PostgresDatabaseTemplate(admin_url, name, extensions=("pgcrypto", "missing_test_extension")),
+    ):
+        pytest.fail("A template with an unavailable extension must not open")
+    assert not _database_exists(admin_url, name)
+
+
+def test_failed_duplicate_creation_keeps_the_existing_database(admin_url: str) -> None:
+    name = "template_helper_existing_database"
+    with PostgresDatabaseTemplate(admin_url, name):
+        with pytest.raises(DBAPIError, match="already exists"), PostgresDatabaseTemplate(admin_url, name):
+            pytest.fail("A duplicate database must not open")
+        assert _database_exists(admin_url, name)
 
 
 if __name__ == "__main__":
