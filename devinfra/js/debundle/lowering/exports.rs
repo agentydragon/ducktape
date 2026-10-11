@@ -266,13 +266,20 @@ fn reject_duplicate_field(
     Ok(())
 }
 
-pub(super) fn export_named_for_bindings(bindings: &BTreeMap<String, String>) -> ModuleItem {
+pub(super) fn export_named_for_bindings(
+    bindings: &BTreeMap<String, String>,
+    top_level_mark: swc_common::Mark,
+) -> ModuleItem {
     named_export_module_item(
         bindings
             .iter()
             .map(|(local, exported)| {
                 named_export_specifier(
-                    ModuleExportName::Ident(Ident::new_no_ctxt(local.clone().into(), DUMMY_SP)),
+                    ModuleExportName::Ident(Ident::new(
+                        local.clone().into(),
+                        DUMMY_SP,
+                        swc_common::SyntaxContext::empty().apply_mark(top_level_mark),
+                    )),
                     (local != exported).then(|| {
                         ModuleExportName::Ident(Ident::new_no_ctxt(
                             exported.clone().into(),
@@ -326,6 +333,7 @@ pub(super) fn entry_exports_for_moved_bindings(
     declarations: &[TopLevelDecl],
     binding_assignment: &HashMap<Id, usize>,
     entry_renames: &BTreeMap<String, String>,
+    top_level_mark: swc_common::Mark,
 ) -> Vec<ModuleItem> {
     let mut exports = BTreeMap::<String, String>::new();
     for decl in declarations.iter().filter(|decl| decl.exported) {
@@ -342,7 +350,7 @@ pub(super) fn entry_exports_for_moved_bindings(
     if exports.is_empty() {
         Vec::new()
     } else {
-        vec![export_named_for_bindings(&exports)]
+        vec![export_named_for_bindings(&exports, top_level_mark)]
     }
 }
 

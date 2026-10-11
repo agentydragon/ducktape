@@ -46,7 +46,8 @@
 //! module-wide walk + `SealedScopeRenameApplier`), whose application
 //! sites only `debug_assert!` seal's no-capture guarantee.
 
-use swc_common::{Span, SyntaxContext};
+use swc_atoms::Atom;
+use swc_common::Span;
 
 use super::scope_names::{collect_nested_binding_names, collect_occupied_local_names};
 use crate::plans::ModulePlan;
@@ -202,7 +203,7 @@ fn naturalize_module_body(
     // silent last-write-wins — are a seal-time conflict.
     let mut per_function_free = Vec::<BTreeMap<String, String>>::new();
     for item in body.iter() {
-        collect_free_alias_renames_from_item(item, &mut per_function_free);
+        collect_free_alias_renames_from_item(item, chunk_top_level_mark, &mut per_function_free);
     }
     let mut free_heuristic = BTreeMap::<String, String>::new();
     for aliases in per_function_free {
@@ -272,12 +273,16 @@ fn naturalize_module_body(
     // clone walk performs (see the ledger module doc's "Derive clone").
     let mut derive_body = body.to_vec();
     let mut plan_captured = BTreeSet::new();
-    if plan_driven.is_empty() {
+    let plan_driven_by_id: BTreeMap<Id, Atom> = plan_driven
+        .iter()
+        .map(|(from, to)| (top_level_id(from, chunk_top_level_mark), to.as_str().into()))
+        .collect();
+    if plan_driven_by_id.is_empty() {
         for item in derive_body.iter_mut() {
             item.visit_mut_with(&mut ShorthandNaturalizer);
         }
     } else {
-        let mut naturalizer = RenameAndShorthandNaturalizer::new(&plan_driven);
+        let mut naturalizer = RenameAndShorthandNaturalizer::new(&plan_driven_by_id);
         for item in derive_body.iter_mut() {
             item.visit_mut_with(&mut naturalizer);
         }
@@ -287,6 +292,7 @@ fn naturalize_module_body(
     let mut deriver = ScopedHeuristicNaturalizer {
         free_allowed: &free_effective,
         reserved: &reserved,
+        chunk_top_level_mark,
         ledger: &mut ledger,
         occupancy: &mut occupancy,
     };
@@ -313,16 +319,17 @@ fn naturalize_module_body(
     // (children first), so each scope's map applies to the same
     // intermediate tree state the derivation validated against.
     let explicit = sealed.module_explicit_renames_by_name(module);
+    let explicit_by_id = sealed.module_explicit_renames(module);
     debug_assert_eq!(
         explicit, plan_driven,
         "sealed module-wide explicit renames diverged from the candidate map the derive clone applied",
     );
-    if explicit.is_empty() {
+    if explicit_by_id.is_empty() {
         for item in body.iter_mut() {
             item.visit_mut_with(&mut ShorthandNaturalizer);
         }
     } else {
-        let mut naturalizer = RenameAndShorthandNaturalizer::new(&explicit);
+        let mut naturalizer = RenameAndShorthandNaturalizer::new(&explicit_by_id);
         for item in body.iter_mut() {
             item.visit_mut_with(&mut naturalizer);
         }
@@ -374,6 +381,7 @@ struct ScopedHeuristicNaturalizer<'a> {
     /// Module-wide rename sources and targets (plan-driven + free); a
     /// scope-local rename must not target any of them.
     reserved: &'a BTreeSet<String>,
+    chunk_top_level_mark: swc_common::Mark,
     /// Sink for the per-scope raw candidates (Function-scope intents).
     ledger: &'a mut RenameLedger,
     /// Sink for each deriving subtree's name facts; passed to seal so it
@@ -391,9 +399,10 @@ struct SealedScopeRenameApplier<'a> {
 }
 
 impl SealedScopeRenameApplier<'_> {
-    fn scope_map(&self, span: Span) -> BTreeMap<String, String> {
+    fn scope_map(&self, span: Span) -> BTreeMap<Id, Atom> {
         self.sealed
-            .scope_renames_by_name(&RenameScope::Function(span.into()))
+            .scope_renames(&RenameScope::Function(span.into()))
+            .unwrap_or_default()
     }
 }
 
@@ -514,10 +523,10 @@ where
 /// function/arrow bodies). Return-object aliases of these names are
 /// scope-local renames; `rename_root_stmts` treats the root declarations
 /// as rename targets, so the declaration and its references move together.
-fn function_root_binding_names(function: &Function) -> BTreeSet<String> {
-    let mut names = BTreeSet::new();
+fn function_root_binding_ids(function: &Function) -> BTreeMap<String, Id> {
+    let mut names = BTreeMap::new();
     for param in &function.params {
-        collect_pat_binding_names(&param.pat, &mut names);
+        collect_pat_binding_ids(&param.pat, &mut names);
     }
     let Some(body) = function.body.as_ref() else {
         return names;
@@ -526,14 +535,14 @@ fn function_root_binding_names(function: &Function) -> BTreeSet<String> {
         match stmt {
             Stmt::Decl(Decl::Var(var)) => {
                 for declarator in &var.decls {
-                    collect_pat_binding_names(&declarator.name, &mut names);
+                    collect_pat_binding_ids(&declarator.name, &mut names);
                 }
             }
             Stmt::Decl(Decl::Fn(function)) => {
-                names.insert(function.ident.sym.to_string());
+                names.insert(function.ident.sym.to_string(), function.ident.to_id());
             }
             Stmt::Decl(Decl::Class(class)) => {
-                names.insert(class.ident.sym.to_string());
+                names.insert(class.ident.sym.to_string(), class.ident.to_id());
             }
             _ => {}
         }
@@ -541,26 +550,26 @@ fn function_root_binding_names(function: &Function) -> BTreeSet<String> {
     names
 }
 
-fn collect_pat_binding_names(pat: &Pat, out: &mut BTreeSet<String>) {
+fn collect_pat_binding_ids(pat: &Pat, out: &mut BTreeMap<String, Id>) {
     match pat {
         Pat::Ident(ident) => {
-            out.insert(ident.id.sym.to_string());
+            out.insert(ident.id.sym.to_string(), ident.id.to_id());
         }
-        Pat::Rest(rest) => collect_pat_binding_names(&rest.arg, out),
-        Pat::Assign(assign) => collect_pat_binding_names(&assign.left, out),
+        Pat::Rest(rest) => collect_pat_binding_ids(&rest.arg, out),
+        Pat::Assign(assign) => collect_pat_binding_ids(&assign.left, out),
         Pat::Array(array) => {
             for elem in array.elems.iter().flatten() {
-                collect_pat_binding_names(elem, out);
+                collect_pat_binding_ids(elem, out);
             }
         }
         Pat::Object(object) => {
             for prop in &object.props {
                 match prop {
-                    ObjectPatProp::KeyValue(kv) => collect_pat_binding_names(&kv.value, out),
+                    ObjectPatProp::KeyValue(kv) => collect_pat_binding_ids(&kv.value, out),
                     ObjectPatProp::Assign(assign) => {
-                        out.insert(assign.key.id.sym.to_string());
+                        out.insert(assign.key.id.sym.to_string(), assign.key.id.to_id());
                     }
-                    ObjectPatProp::Rest(rest) => collect_pat_binding_names(&rest.arg, out),
+                    ObjectPatProp::Rest(rest) => collect_pat_binding_ids(&rest.arg, out),
                 }
             }
         }
@@ -571,26 +580,37 @@ fn collect_pat_binding_names(pat: &Pat, out: &mut BTreeSet<String>) {
 impl ScopedHeuristicNaturalizer<'_> {
     /// Record one deriving scope's raw candidates as Function-scope
     /// intents together with the subtree facts seal validates them
-    /// against. The sources are function-local bindings whose hygiene
-    /// context the string-keyed derivation never resolves; the
-    /// string-era key is encoded as the empty `SyntaxContext` (the
-    /// sealed by-name projection is what the apply pass consumes; see
-    /// the ledger module doc's hygiene-boundary section).
+    /// against. Function-local sources use their actual binding Ids;
+    /// surviving free aliases use the source chunk's top-level Id.
     fn submit_scope_intents(
         &mut self,
         span: Span,
         bound: &BTreeMap<String, String>,
         free: &BTreeMap<String, String>,
+        root_ids: &BTreeMap<String, Id>,
         facts: SubtreeNameFacts,
     ) {
         if bound.is_empty() && free.is_empty() {
             return;
         }
         let scope = RenameScope::Function(span.into());
-        for (from, to) in free.iter().chain(bound.iter()) {
+        for (from, to) in free {
             self.ledger.submit(RenameIntent {
                 scope,
-                from: (from.as_str().into(), SyntaxContext::empty()),
+                from: top_level_id(from, self.chunk_top_level_mark),
+                to: to.as_str().into(),
+                origin: RenameOrigin::Heuristic {
+                    contributor: SCOPED_HEURISTIC_CONTRIBUTOR,
+                },
+            });
+        }
+        for (from, to) in bound {
+            self.ledger.submit(RenameIntent {
+                scope,
+                from: root_ids
+                    .get(from)
+                    .expect("bound heuristic source has a root binding")
+                    .clone(),
                 to: to.as_str().into(),
                 origin: RenameOrigin::Heuristic {
                     contributor: SCOPED_HEURISTIC_CONTRIBUTOR,
@@ -604,6 +624,23 @@ impl ScopedHeuristicNaturalizer<'_> {
                 mentions: facts.mentions,
             },
         );
+    }
+
+    fn typed_scope_renames(
+        &self,
+        renames: &BTreeMap<String, String>,
+        root_ids: &BTreeMap<String, Id>,
+    ) -> BTreeMap<Id, Atom> {
+        renames
+            .iter()
+            .map(|(from, to)| {
+                let id = root_ids
+                    .get(from)
+                    .cloned()
+                    .unwrap_or_else(|| top_level_id(from, self.chunk_top_level_mark));
+                (id, to.as_str().into())
+            })
+            .collect()
     }
 
     /// Per-scope safety checks for bound-source renames. A rename fires
@@ -654,11 +691,14 @@ impl ScopedHeuristicNaturalizer<'_> {
         if aliases.is_empty() {
             return;
         }
-        let root_bound = function_root_binding_names(function);
-        for (from, to) in aliases {
-            if root_bound.contains(&from) {
+        let root_bound = function_root_binding_ids(function);
+        for (from, (to, source_id)) in aliases {
+            if root_bound.get(&from) == Some(&source_id) {
                 bound.insert(from, to);
-            } else if !facts.bound.contains(&from) && self.free_allowed.get(&from) == Some(&to) {
+            } else if source_id == top_level_id(&from, self.chunk_top_level_mark)
+                && !facts.bound.contains(&from)
+                && self.free_allowed.get(&from) == Some(&to)
+            {
                 free.insert(from, to);
             }
         }
@@ -700,6 +740,7 @@ impl VisitMut for ScopedHeuristicNaturalizer<'_> {
         // the facts collected below then see the post-rename subtree.
         function.visit_mut_children_with(self);
         let facts = collect_subtree_name_facts(&*function);
+        let root_ids = function_root_binding_ids(function);
         let mut bound = BTreeMap::new();
         for param in &function.params {
             collect_naturalization_renames_from_pattern(&param.pat, &mut bound);
@@ -720,7 +761,7 @@ impl VisitMut for ScopedHeuristicNaturalizer<'_> {
             .map(|(from, to)| (from.clone(), to.clone()))
             .collect();
         local.extend(self.validated_bound(bound.clone(), &facts));
-        self.submit_scope_intents(function.span, &bound, &free, facts);
+        self.submit_scope_intents(function.span, &bound, &free, &root_ids, facts);
         if local.is_empty() {
             return;
         }
@@ -729,7 +770,8 @@ impl VisitMut for ScopedHeuristicNaturalizer<'_> {
         // it. Drive past the root param/block scope (visiting params and the
         // body's statements directly) so the own-binding isn't treated as a
         // shadow; nested subtrees still suppress.
-        let mut renamer = RenameAndShorthandNaturalizer::new(&local);
+        let typed_local = self.typed_scope_renames(&local, &root_ids);
+        let mut renamer = RenameAndShorthandNaturalizer::new(&typed_local);
         function.params.visit_mut_with(&mut renamer);
         if let Some(body) = function.body.as_mut() {
             rename_root_stmts(&mut renamer, &mut body.stmts);
@@ -739,16 +781,21 @@ impl VisitMut for ScopedHeuristicNaturalizer<'_> {
     fn visit_mut_arrow_expr(&mut self, arrow: &mut ArrowExpr) {
         arrow.visit_mut_children_with(self);
         let facts = collect_subtree_name_facts(&*arrow);
+        let mut root_ids = BTreeMap::new();
+        for param in &arrow.params {
+            collect_pat_binding_ids(param, &mut root_ids);
+        }
         let mut bound = BTreeMap::new();
         for param in &arrow.params {
             collect_naturalization_renames_from_pattern(param, &mut bound);
         }
         let local = self.validated_bound(bound.clone(), &facts);
-        self.submit_scope_intents(arrow.span, &bound, &BTreeMap::new(), facts);
+        self.submit_scope_intents(arrow.span, &bound, &BTreeMap::new(), &root_ids, facts);
         if local.is_empty() {
             return;
         }
-        let mut renamer = RenameAndShorthandNaturalizer::new(&local);
+        let typed_local = self.typed_scope_renames(&local, &root_ids);
+        let mut renamer = RenameAndShorthandNaturalizer::new(&typed_local);
         arrow.params.visit_mut_with(&mut renamer);
         match &mut *arrow.body {
             ArrowFunctionBody::FunctionBody(body) => {
@@ -761,14 +808,21 @@ impl VisitMut for ScopedHeuristicNaturalizer<'_> {
     fn visit_mut_constructor(&mut self, constructor: &mut Constructor) {
         constructor.visit_mut_children_with(self);
         let facts = collect_subtree_name_facts(&*constructor);
+        let mut root_ids = BTreeMap::new();
+        for param in &constructor.params {
+            if let ParamOrTsParamProp::Param(param) = param {
+                collect_pat_binding_ids(&param.pat, &mut root_ids);
+            }
+        }
         let mut bound = BTreeMap::new();
         collect_naturalization_renames_from_constructor(constructor, &mut bound);
         let local = self.validated_bound(bound.clone(), &facts);
-        self.submit_scope_intents(constructor.span, &bound, &BTreeMap::new(), facts);
+        self.submit_scope_intents(constructor.span, &bound, &BTreeMap::new(), &root_ids, facts);
         if local.is_empty() {
             return;
         }
-        let mut renamer = RenameAndShorthandNaturalizer::new(&local);
+        let typed_local = self.typed_scope_renames(&local, &root_ids);
+        let mut renamer = RenameAndShorthandNaturalizer::new(&typed_local);
         for param in &mut constructor.params {
             param.visit_mut_with(&mut renamer);
         }
@@ -787,14 +841,19 @@ impl VisitMut for ScopedHeuristicNaturalizer<'_> {
 /// per-function ledger intents.
 fn collect_free_alias_renames_from_item(
     item: &ModuleItem,
+    chunk_top_level_mark: swc_common::Mark,
     per_function: &mut Vec<BTreeMap<String, String>>,
 ) {
     match item {
         ModuleItem::Stmt(Stmt::Decl(decl)) => {
-            collect_free_alias_renames_from_decl(decl, per_function)
+            collect_free_alias_renames_from_decl(decl, chunk_top_level_mark, per_function)
         }
         ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(export_decl)) => {
-            collect_free_alias_renames_from_decl(&export_decl.decl, per_function);
+            collect_free_alias_renames_from_decl(
+                &export_decl.decl,
+                chunk_top_level_mark,
+                per_function,
+            );
         }
         _ => {}
     }
@@ -802,16 +861,25 @@ fn collect_free_alias_renames_from_item(
 
 fn collect_free_alias_renames_from_decl(
     decl: &Decl,
+    chunk_top_level_mark: swc_common::Mark,
     per_function: &mut Vec<BTreeMap<String, String>>,
 ) {
     match decl {
         Decl::Fn(function) => {
-            collect_free_alias_renames_from_function(&function.function, per_function);
+            collect_free_alias_renames_from_function(
+                &function.function,
+                chunk_top_level_mark,
+                per_function,
+            );
         }
         Decl::Var(var) => {
             for declarator in &var.decls {
                 if let Some(Expr::Fn(function)) = declarator.init.as_deref() {
-                    collect_free_alias_renames_from_function(&function.function, per_function);
+                    collect_free_alias_renames_from_function(
+                        &function.function,
+                        chunk_top_level_mark,
+                        per_function,
+                    );
                 }
             }
         }
@@ -821,6 +889,7 @@ fn collect_free_alias_renames_from_decl(
 
 fn collect_free_alias_renames_from_function(
     function: &Function,
+    chunk_top_level_mark: swc_common::Mark,
     per_function: &mut Vec<BTreeMap<String, String>>,
 ) {
     let Some(body) = function.body.as_ref() else {
@@ -834,7 +903,10 @@ fn collect_free_alias_renames_from_function(
     let facts = collect_subtree_name_facts(function);
     let renames: BTreeMap<String, String> = aliases
         .into_iter()
-        .filter(|(from, _)| !facts.bound.contains(from))
+        .filter(|(from, (_, id))| {
+            !facts.bound.contains(from) && *id == top_level_id(from, chunk_top_level_mark)
+        })
+        .map(|(from, (to, _))| (from, to))
         .collect();
     if !renames.is_empty() {
         per_function.push(renames);
@@ -900,7 +972,7 @@ pub(super) fn collect_naturalization_renames_from_pattern(
 
 pub(super) fn collect_return_object_alias_renames(
     stmts: &[Stmt],
-    renames: &mut BTreeMap<String, String>,
+    renames: &mut BTreeMap<String, (String, Id)>,
 ) {
     for stmt in stmts {
         match stmt {
@@ -917,7 +989,7 @@ pub(super) fn collect_return_object_alias_renames(
                             let from = value.sym.to_string();
                             let to = key.sym.to_string();
                             if from != to && is_binding_identifier(&to) {
-                                renames.insert(from, to);
+                                renames.insert(from, (to, value.to_id()));
                             }
                         }
                     }

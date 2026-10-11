@@ -64,3 +64,16 @@ export { makeResult };
 
     assert_entry_output(&fixture, "foo\n");
 }
+
+#[test]
+fn return_object_does_not_rename_unresolved_global() {
+    let fixture = run_fixture(FixtureOpts::new(
+        r#"function factory() { return { logger: console }; }
+console.log(factory().logger === console);
+export { factory };
+"#,
+        vec![logical_module("factory", &[Member::new("factory")])],
+    ));
+
+    assert_entry_output(&fixture, "true\n");
+}
