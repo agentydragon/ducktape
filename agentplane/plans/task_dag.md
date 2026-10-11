@@ -582,7 +582,6 @@ flowchart TD
     SANDBOX_LOCAL_HISTORY_RETIRE[Candidate: delete Sandbox Service ingester and store]
     APP_PROJECTOR_RETIRE[Candidate: delete app projector code]
     APP_PROJECTION_RETIRE[Blocked: drop app projection tables]
-    APP_EVENT_LOG_COPIES_RETIRE[Candidate: drop event_log launch copies]
     HISTORY_SERVICE_OWNERSHIP[Capstone: History Service owns log and fold]
     SESSION_EVENT_RETENTION_ENABLE[Candidate, needs operator go-ahead: enable delta settlement and re-measure]
     SESSION_EVENT_COMPACTION_PLAN[Decision: approve compaction of stored history]
@@ -591,7 +590,6 @@ flowchart TD
     APP_ALEMBIC_SQUASH[Baseline final app schema]
     THREAD_READ_POLICY[Scoped archive reads]
     APP_PROJECTOR_RETIRE --> APP_PROJECTION_RETIRE
-    APP_EVENT_LOG_COPIES_RETIRE --> HISTORY_SERVICE_OWNERSHIP
     APP_PROJECTION_RETIRE --> HISTORY_SERVICE_OWNERSHIP
     SANDBOX_LOCAL_HISTORY_RETIRE --> HISTORY_SERVICE_OWNERSHIP
     SESSION_EVENT_RETENTION_ENABLE --> SESSION_EVENT_COMPACTION_PLAN
@@ -622,15 +620,6 @@ leases' code, the `thread_reads` switch and the app's Electric deployment. Retai
 
 **Blocked on projector retirement.** An explicit deletion PR for the app projection tables and
 leases. The data is derived and rebuildable from the raw log.
-
-### `APP_EVENT_LOG_COPIES_RETIRE` — drop the app's launch copies
-
-**Candidate; decided by the operator, 2026-10-10 PDT.** The app reads
-harness, cwd, model and last model activity from the History Service summary (the attached runner
-spec; absent until a runner attachment is folded), then an explicit schema PR drops those `event_log`
-columns, leaving it the Thread → Session link. `event_log.last_model_activity_at` is already
-neither written nor read (its CLEANUP tombstone) and drops in the same migration. `APP_SESSION_SCHEMA_RENAME` renames the same
-table; either may land first, and the second rebases its migration.
 
 ### `HISTORY_SERVICE_OWNERSHIP` — capstone
 

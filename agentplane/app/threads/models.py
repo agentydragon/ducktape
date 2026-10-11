@@ -11,12 +11,11 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from uuid import UUID, uuid4
 
-from sqlalchemy import Boolean, DateTime, Enum as SqlEnum, ForeignKey, Text, text
+from sqlalchemy import Boolean, DateTime, ForeignKey, Text, text
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column
 
 from agentplane.app.database import Base
-from agentplane.runner.harness import Harness
 
 
 class EventLog(Base):
@@ -31,21 +30,6 @@ class EventLog(Base):
     id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
     sandbox: Mapped[str] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
-    # CLEANUP(added 2026-10-10): neither written nor read; a Thread's harness, model and cwd come from
-    #   the runner spec on its fold summary. Declared only so the migration runner's schema check
-    #   matches the database. Drop the four columns in a schema migration once no replica runs an
-    #   image that writes them (images before 0028_event_log_copies_nullable).
-    harness: Mapped[Harness | None] = mapped_column(
-        SqlEnum(
-            Harness,
-            native_enum=False,
-            create_constraint=False,
-            values_callable=lambda values: [item.value for item in values],
-        )
-    )
-    model: Mapped[str | None] = mapped_column(Text)
-    cwd: Mapped[str | None] = mapped_column(Text)
-    last_model_activity_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class Thread(Base):

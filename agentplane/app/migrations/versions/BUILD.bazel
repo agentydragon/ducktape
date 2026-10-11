@@ -30,6 +30,7 @@ exports_files(
         "0026_fold_keys_drop.py",
         "0027_summary_first_event.py",
         "0028_event_log_copies_nullable.py",
+        "0029_event_log_copies_drop.py",
     ],
     visibility = ["//agentplane/app/migrations:__pkg__"],
 )
@@ -241,6 +242,15 @@ py_library(
 py_library(
     name = "0028_event_log_copies_nullable",
     srcs = ["0028_event_log_copies_nullable.py"],
+    deps = [
+        "@pypi//alembic",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
+    name = "0029_event_log_copies_drop",
+    srcs = ["0029_event_log_copies_drop.py"],
     deps = [
         "@pypi//alembic",
         "@pypi//sqlalchemy",

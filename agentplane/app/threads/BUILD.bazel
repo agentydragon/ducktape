@@ -7,7 +7,6 @@ py_library(
     srcs = ["models.py"],
     deps = [
         "//agentplane/app:database",
-        "//agentplane/runner:harness",
         "@pypi//sqlalchemy",
     ],
 )

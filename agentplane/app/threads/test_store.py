@@ -82,13 +82,8 @@ async def test_thread_turn_status_comes_from_projection_summary(engine: AsyncEng
 async def test_harness_model_and_cwd_come_from_the_attached_runner_spec(engine: AsyncEngine) -> None:
     attached, unattached = uuid4(), uuid4()
     async with async_sessionmaker(engine).begin() as session:
-        # Rows as a replica on the previous image writes them, with its launch copies.
         for thread in (attached, unattached):
-            session.add(
-                EventLog(
-                    id=thread, sandbox="one", harness=Harness.CLAUDE, model="test-launch-model", cwd="/test-launch"
-                )
-            )
+            session.add(EventLog(id=thread, sandbox="one"))
         await session.flush()
         spec = protocol_pb2.SessionSpec(
             harness=protocol_pb2.HARNESS_CODEX, cwd="/test-attached", model="test-attached-model"

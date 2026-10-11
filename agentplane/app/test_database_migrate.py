@@ -44,6 +44,16 @@ def _restore_raw_history_schema(connection: Connection) -> None:
     )
 
 
+def _restore_launch_copies(connection: Connection) -> None:
+    """The `event_log` launch copies that migrations before `0029_event_log_copies_drop` expect."""
+    connection.execute(
+        text(
+            "ALTER TABLE event_log ADD COLUMN harness varchar(14), ADD COLUMN model text, ADD COLUMN cwd text, "
+            "ADD COLUMN last_model_activity_at timestamptz"
+        )
+    )
+
+
 def test_raw_history_retirement_preserves_current_state(db_url: str) -> None:
     engine = create_engine(RUNNER.sync_url(db_url))
     thread, token = uuid.uuid4(), uuid.uuid4()
@@ -64,6 +74,7 @@ def test_raw_history_retirement_preserves_current_state(db_url: str) -> None:
                         "FOR EACH ROW EXECUTE FUNCTION reject_fenced_app_ingestion()"
                     )
                 )
+            _restore_launch_copies(connection)
             connection.execute(text("UPDATE alembic_version_app SET version_num = '0023_drop_app_runner_locator'"))
             connection.execute(
                 text(
@@ -169,6 +180,7 @@ def test_drop_locator_preserves_identity_and_checkpoint(db_url: str) -> None:
         with engine.begin() as connection:
             connection.execute(text("ALTER TABLE event_log ADD COLUMN session_id text"))
             connection.execute(text("ALTER TABLE event_log ADD UNIQUE (sandbox, session_id)"))
+            _restore_launch_copies(connection)
             connection.execute(text("UPDATE alembic_version_app SET version_num = '0022_session_projection_lease'"))
             connection.execute(
                 text(
@@ -212,6 +224,7 @@ def test_session_leases_replace_sandbox_ownership_without_changing_identity(db_u
                     "expires_at timestamptz NOT NULL)"
                 )
             )
+            _restore_launch_copies(connection)
             connection.execute(text("UPDATE alembic_version_app SET version_num = '0021_projected_feed_state'"))
             connection.execute(
                 text("INSERT INTO sandbox_ingestion VALUES ('retained-sandbox', :token, '2030-01-01T00:00:00Z')"),
@@ -240,6 +253,7 @@ def test_model_activity_moves_onto_the_summary(db_url: str) -> None:
     try:
         with engine.begin() as connection:
             connection.execute(text("ALTER TABLE thread_history_summary DROP COLUMN last_model_activity_at"))
+            _restore_launch_copies(connection)
             connection.execute(text("UPDATE alembic_version_app SET version_num = '0024_retire_app_raw_history'"))
             connection.execute(
                 text(
@@ -294,7 +308,7 @@ def test_model_activity_backfills_existing_threads_without_counting_tool_output(
         with engine.begin() as connection:
             _restore_raw_history_schema(connection)
             # Simulate the previous head with a retained Thread and historical event prefix.
-            connection.execute(text("ALTER TABLE event_log DROP COLUMN last_model_activity_at"))
+            _restore_launch_copies(connection)
             connection.execute(text("UPDATE alembic_version_app SET version_num = '0017_event_turn_completed_index'"))
             connection.execute(
                 text(
@@ -303,6 +317,8 @@ def test_model_activity_backfills_existing_threads_without_counting_tool_output(
                 ),
                 {"thread": thread},
             )
+            # 0025 carries the backfilled activity onto the summary before 0029 drops the column.
+            connection.execute(text("INSERT INTO thread_history_summary (thread_id) VALUES (:id)"), {"id": thread})
             for cursor, stored_kind, stored_payload in [
                 (1, "item_started", json.dumps({"event": {"itemStarted": {"kind": "ITEM_KIND_TOOL_CALL"}}})),
                 (2, kind, payload),
@@ -326,7 +342,8 @@ def test_model_activity_backfills_existing_threads_without_counting_tool_output(
         with engine.connect() as connection:
             assert (
                 connection.scalar(
-                    text("SELECT last_model_activity_at FROM event_log WHERE id = :thread"), {"thread": thread}
+                    text("SELECT last_model_activity_at FROM thread_history_summary WHERE thread_id = :thread"),
+                    {"thread": thread},
                 ).isoformat()
                 == f"2026-09-01T12:00:0{2 if is_activity else 1}+00:00"
             )
@@ -347,6 +364,7 @@ def _migrate_from_0015(db_url: str, column_type: str, stored: list[str]) -> list
                     f'ALTER TABLE thread_payload_chunk ALTER COLUMN "text" TYPE {column_type} USING "text"::{column_type}'
                 )
             )
+            _restore_launch_copies(connection)
             connection.execute(text("UPDATE alembic_version_app SET version_num = '0015_event_payload_json'"))
             connection.execute(
                 text(
