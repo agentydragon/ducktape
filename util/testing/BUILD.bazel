@@ -66,6 +66,7 @@ py_library(
     visibility = ["//visibility:public"],
     deps = [
         "//util:db_migrations",
+        "//util:db_url",
         "@pypi//asyncpg",
         "@pypi//psycopg",
         "@pypi//psycopg2_binary",

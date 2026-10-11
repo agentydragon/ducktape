@@ -59,6 +59,7 @@ from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import create_async_engine
 
 from util.db_migrations import MigrationRunner
+from util.db_url import render_postgresql_url
 
 # The dialect is chosen by the admin_url scheme the caller passes (sync callers use
 # the postgresql:// default -> psycopg2, async callers postgresql+asyncpg://);
@@ -114,7 +115,7 @@ class DatabaseClones:
     def clone(self, template: PostgresDatabaseTemplate, *, drivername: str) -> str:
         """Create and register a writable clone, returning its URL with the requested driver."""
         url = self._stack.enter_context(template.clone(self._names()))
-        return make_url(url).set(drivername=drivername).render_as_string(hide_password=False)
+        return render_postgresql_url(url, drivername)
 
 
 def _database_url(admin_url: str, db_name: str) -> str:
