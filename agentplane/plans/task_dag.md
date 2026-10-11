@@ -324,7 +324,6 @@ journal.
 
 ```mermaid
 flowchart LR
-    RUNNER_CONNECTION_RECORDS[Candidate: connection records in Kubernetes]
     RUNNER_OUTBOUND_SPOOL[Candidate: serve follows over the channel]
     RUNNER_OUTBOUND_LIFECYCLE[Candidate: lifecycle requests over the channel]
     RUNNER_OUTBOUND_ROLLOUT[Blocked: every template dials out]
@@ -334,8 +333,6 @@ flowchart LR
     VM_EGRESS[Candidate: production admission and egress integration]
     VM_PROCESS_ISOLATION[Blocked: harness/process resource boundary]
     VM_LIFECYCLE[Blocked: integrated lifecycle]
-    RUNNER_CONNECTION_RECORDS --> RUNNER_OUTBOUND_SPOOL
-    RUNNER_CONNECTION_RECORDS --> RUNNER_OUTBOUND_LIFECYCLE
     RUNNER_OUTBOUND_LIFECYCLE --> VM_CONTROL_NETWORKING
     RUNNER_OUTBOUND_SPOOL --> VM_CONTROL_NETWORKING
     RUNNER_OUTBOUND_SPOOL --> RUNNER_OUTBOUND_ROLLOUT
@@ -354,17 +351,9 @@ flowchart LR
     SANDBOX_VM_ISOLATION --> LOCAL_BAZEL[Blocked: bounded local Bazel client in VM]
 ```
 
-### `RUNNER_CONNECTION_RECORDS` — connection records in Kubernetes
-
-**Candidate; design in [runner channel](../docs/runner_channel.md#connection-records-in-kubernetes).**
-Replace `runner_connection` rows with a per-Sandbox Lease, and have the connection's owner write the
-Sandbox's headless control Service and EndpointSlice, epoch-guarded; replicas read Leases from an
-informer. RBAC first, in the same image release, and manifests only once that image is published.
-The table itself goes with `RUNNER_INBOUND_RETIRE`.
-
 ### `RUNNER_OUTBOUND_SPOOL` — serve follows over the channel
 
-**Blocked on connection records; the runner side is built.** The Sandbox Service agrees `events`,
+**Candidate; the runner side is built.** The Sandbox Service agrees `events`,
 serves `FollowSession` over the owner's `Follow` streams with subscribers dialing the control
 Service, and moves its admission reconciliation onto locally held follows, advancing its cursor
 only after each commit. Test reconnect, checkpoint rollback and slow readers; never read a
@@ -372,7 +361,7 @@ transport cancellation as harness cancellation.
 
 ### `RUNNER_OUTBOUND_LIFECYCLE` — lifecycle requests over the channel
 
-**Blocked on connection records.** Implement the explicit `ListSessions`, `Initialize`,
+**Candidate.** Implement the explicit `ListSessions`, `Initialize`,
 `OpenSession`, `ResumeSession` and `Seal` control requests on both peers and move every remaining inbound caller onto them
 ([runner channel](../docs/runner_channel.md)). Only
 `OpenSession` and `ResumeSession` start a harness.

@@ -184,9 +184,9 @@ make the Sandbox Service store history.
 
 ## Connection records in Kubernetes
 
-Status: **accepted (operator, 2026-10-10 PDT), not built.** It replaces the `runner_connection` table, the
-`Connection ownership and fencing` table below and Postgres-based liveness; command submissions
-and dispatch attempts stay in Postgres.
+Status: **built in the Sandbox Service.** These records hold connection ownership and liveness
+(§ Connection ownership and fencing); agreed operations, command submissions and dispatch attempts
+stay in Postgres.
 
 Per Sandbox, all in the Sandbox's namespace and owned by the `Sandbox`, so deleting it removes them:
 
