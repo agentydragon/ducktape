@@ -1,7 +1,7 @@
 """Scripted Session history in a history database, folded by the History Service's own fold.
 
 A consumer under test reads it only through the History Service (`backend`), as in production.
-Tests write a Session's entries and feed state here, as the History Service ingester would, and
+Tests write a Session's entries and feed state here, as the History ingress would, and
 each write folds before it returns.
 """
 

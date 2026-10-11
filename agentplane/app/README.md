@@ -110,8 +110,8 @@ records, a rejection it shows as refused, and a command still pending admission 
 stored by the service but not yet seen admitted by the runner. That is neither proof the runner never
 saw it nor a promise it will, so the command keeps Retry and never Cancel.
 
-The app copies no runner events and folds none. The history ingester `history_writer` names archives
-each Session's events and the History Service folds them under per-Session leases
+The app copies no runner events and folds none. Each runner pushes its Sessions' events to the
+History ingress, and the History Service folds them under per-Session leases
 ([History Service](../history_service/README.md)); the app reads both through the History Service.
 
 Sandbox discovery and runner addresses use the existing Kubernetes list/watch cache, including

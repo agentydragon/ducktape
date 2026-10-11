@@ -26,7 +26,7 @@ OTHER_REPLICA = ConnectionHolder(pod_name="test-other-replica", pod_ip="192.0.2.
 
 
 @asynccontextmanager
-async def serve_channel(
+async def serve_replica_control(
     cluster: Cluster,
     holder: ConnectionHolder,
     *,
@@ -34,6 +34,7 @@ async def serve_channel(
     control: LifecycleControl,
     timing: ControlTiming,
 ) -> AsyncIterator[runner_control_pb2_grpc.RunnerControlAsyncStub]:
+    """Serve `holder`'s control listener, and yield a stub that dials it as the Sandbox's runner."""
     cluster.fake.tokens[RUNNER_TOKEN] = TokenVerdict(
         username=f"system:serviceaccount:{SANDBOX_NAMESPACE}:{ACCOUNT}",
         pod_name=SANDBOX,

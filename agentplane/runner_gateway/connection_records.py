@@ -34,7 +34,7 @@ CONNECTION_LABEL = f"{GROUP}/runner-connection"
 LEASE_DURATION_S = 30
 CONTROL_PORT = "grpc"
 # A selector-less Service gets no controller-managed slices; this names the slice's writer instead.
-_SLICE_MANAGER = "agentplane-sandbox-service"
+_SLICE_MANAGER = "agentplane-runner-gateway"
 # Concurrent accepts and renewals on one Sandbox conflict on `resourceVersion`; each retry re-reads.
 _CONFLICT_ATTEMPTS = 5
 

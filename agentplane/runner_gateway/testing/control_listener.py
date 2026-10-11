@@ -49,7 +49,6 @@ async def serve_runner_control(
             principals=principals,
             inventory=inventory,
             core=core,
-            connections=delivery.connections,
             records=records,
             delivery=delivery,
             control=control,

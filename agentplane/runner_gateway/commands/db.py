@@ -1,4 +1,4 @@
-"""The Sandbox Service's own schema, in the `sandbox_commands` database: its Session registry,
+"""The Runner Gateway's own schema, in the `sandbox_commands` database: its Session registry,
 command admission and runner connections.
 
 Session history lives in another database, keyed by the same public Session ID with no foreign key.
@@ -8,7 +8,6 @@ from datetime import datetime
 from uuid import UUID
 
 from sqlalchemy import BigInteger, CheckConstraint, DateTime, Index, LargeBinary, String, UniqueConstraint, func, text
-from sqlalchemy.dialects.postgresql import ARRAY
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 from agentplane.proto import command_pb2, event_log_pb2, runner_control_pb2 as control_pb2
@@ -22,22 +21,11 @@ class Base(DeclarativeBase):
 
 
 class Session(Base):
-    """A public Session: its runner locator in one Sandbox incarnation and its Open reservation."""
+    """A public Session in one Sandbox incarnation, which is also the runner's Session ID, and its Open
+    reservation."""
 
     __tablename__ = "session"
     __table_args__ = (
-        # A runner locator is a physical binding, not a durable identity. Imported locators with
-        # no Sandbox UID still cannot be claimed twice.
-        Index(
-            "ux_session_runner_locator",
-            "sandbox_namespace",
-            "sandbox_name",
-            "sandbox_uid",
-            "runner_session_id",
-            unique=True,
-            postgresql_nulls_not_distinct=True,
-            postgresql_where=text("runner_session_id IS NOT NULL"),
-        ),
         Index(
             "ux_session_open_key",
             "caller_namespace",
@@ -56,7 +44,6 @@ class Session(Base):
     sandbox_name: Mapped[str] = mapped_column(String)
     # Absent for imported Sessions whose original Sandbox UID was not retained in app history.
     sandbox_uid: Mapped[UUID | None]
-    runner_session_id: Mapped[str | None] = mapped_column(String)
     # The caller provides an opaque key, never a runner session ID. Absent for imported Sessions.
     caller_namespace: Mapped[str | None] = mapped_column(String)
     caller_name: Mapped[str | None] = mapped_column(String)
@@ -119,21 +106,3 @@ class CommandSubmission(Base):
     attempt_refusal: Mapped[control_pb2.CommandRefused | None] = mapped_column(
         ProtobufColumn(control_pb2.CommandRefused)
     )
-
-
-class RunnerConnection(Base):
-    """The control operations a Sandbox's runner connections have agreed."""
-
-    __tablename__ = "runner_connection"
-    __table_args__ = (CheckConstraint("connection_epoch > 0", name="connection_epoch_positive"),)
-
-    sandbox_uid: Mapped[UUID] = mapped_column(primary_key=True)
-    # Unread and no longer written: the Sandbox's Lease holds the connection. They go with the table.
-    pod_uid: Mapped[str | None] = mapped_column(String)
-    connection_epoch: Mapped[int | None] = mapped_column(BigInteger)
-    owner_replica: Mapped[str | None] = mapped_column(String)
-    runner_boot_id: Mapped[str | None] = mapped_column(String)
-    last_seen_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
-    # Every control operation a connection of this Sandbox has agreed in its handshake. It only
-    # grows, so once a runner carries an operation over the control stream it never falls back inbound.
-    operations: Mapped[list[str]] = mapped_column(ARRAY(String))

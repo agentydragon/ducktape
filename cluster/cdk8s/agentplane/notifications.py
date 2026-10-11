@@ -22,6 +22,7 @@ from agentplane.workload_auth.audience import WORKLOAD_TOKEN_AUDIENCE
 from cluster.cdk8s import cilium, node_scheduling, pod_policy
 from cluster.cdk8s.agentplane import database
 from cluster.cdk8s.agentplane.environment import Environment
+from cluster.cdk8s.agentplane.grpc_channel_config import LARGE_EVENT_GRPC_CHANNEL_OPTIONS
 from cluster.cdk8s.agentplane.migrate_container import migrate_init_container
 from cluster.cdk8s.agentplane.pod_disruption_budget import add_pod_disruption_budget
 from cluster.cdk8s.forgejo_registry.chart import forgejo_images_creds_secret_ref
@@ -118,13 +119,13 @@ class Notifications(Construct):
                     "target": f"{sandboxes.fqdn}:{sandboxes.port.number}",
                     "gateway_target": f"{gateway.fqdn}:{gateway.port.number}",
                     "control_target": gateway_control_target,
-                    "grpc_channel_options": env.app_config.sandbox_service_grpc_channel_options,
+                    "grpc_channel_options": LARGE_EVENT_GRPC_CHANNEL_OPTIONS,
                     "token_file": "/var/run/secrets/notifications/sandboxes",
                     "gateway_token_file": "/var/run/secrets/notifications/gateway",
                 },
                 "history_service": {
                     "target": f"{history.fqdn}:{history.pod_port}",
-                    "grpc_channel_options": env.app_config.history_service_grpc_channel_options,
+                    "grpc_channel_options": LARGE_EVENT_GRPC_CHANNEL_OPTIONS,
                     "token_file": "/var/run/secrets/notifications/history",
                 },
                 "github": {"app_id": github.app_id} if github is not None else None,

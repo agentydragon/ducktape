@@ -82,7 +82,7 @@ Thread-page projection. Their cross-layer contract is [Thread, runner, and harne
 
 ## Runner control stream
 
-- Given `--control-target`, the runner also dials the Sandbox Service's
+- Given `--control-target`, the runner also dials the Runner Gateway's
   [runner control stream](../docs/runner_control.md) and keeps one `Connect` stream for as long as it runs,
   reconnecting on a fresh connection after any loss. It offers `commands` and `lifecycle`.
 - A delivered command is admitted exactly as an `Attach` command is, and answered from the journal:
@@ -336,10 +336,9 @@ hooks off, so the runner's own handling of it is read off the harnesses' schemas
 
 - Read-only authorization for follower attachments; every attachment may issue commands.
 - Log compaction or retention; a session log grows for the session's lifetime.
-- Caller authentication and transport security on the inbound listener. It is plaintext (loopback
-  by default; hosted deployments bind on the Pod network, where Cilium admits only the Sandbox
-  Service). The [runner control stream](../docs/runner_control.md), whose every connection is
-  authenticated, replaces this route rather than securing it.
+- Caller authentication and transport security on the inbound listener. It is plaintext and binds
+  loopback by default; hosted runners keep that default and take every call over the
+  [runner control stream](../docs/runner_control.md), whose every connection is authenticated.
 - Determining whether an incomplete tool call caused side effects outside the harness process group.
 - Duplicate-free recovery when native execution precedes durable runner evidence.
 

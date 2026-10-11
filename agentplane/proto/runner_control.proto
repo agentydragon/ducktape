@@ -1,4 +1,4 @@
-// The runner-initiated control stream to the Sandbox Service; contract in
+// The runner-initiated control stream to the Runner Gateway; contract in
 // agentplane/docs/runner_control.md. An incompatible change rides a clean cutover: the operator
 // retires every Sandbox on the old protocol.
 syntax = "proto3";
@@ -35,15 +35,14 @@ message ServiceFrame {
 
 message Hello {
   string runner_boot_id = 1;  // random per runner process start
-  // A peer uses a frame kind or RPC only after both sides listed it.
-  repeated string capabilities = 2;
-  reserved 3;
-  reserved "runner_version";
+  reserved 2, 3;
+  reserved "capabilities", "runner_version";
 }
 
 message Welcome {
   uint64 connection_epoch = 1;
-  repeated string capabilities = 2;  // what the service will use on this connection
+  reserved 2;
+  reserved "capabilities";
 }
 
 // The runner deduplicates on `command.command_id` within a session, so redelivery is safe.

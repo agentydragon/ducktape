@@ -6,6 +6,7 @@ import asyncio
 from collections.abc import Sequence
 from pathlib import Path
 from typing import Any, cast
+from uuid import uuid4
 
 import pytest_bazel
 from pydantic import BaseModel
@@ -30,7 +31,14 @@ class RecordedSession:
     """The runner seam CodexAdapter uses, recording what it is asked to record, in order."""
 
     def __init__(self) -> None:
-        self.record = SessionRecord(harness=Harness.CODEX, cwd="/workspace", model="gpt-5.4", reasoning_effort="low")
+        self.record = SessionRecord(
+            harness=Harness.CODEX,
+            cwd="/workspace",
+            model="gpt-5.4",
+            reasoning_effort="low",
+            instructions="",
+            event_source_id=uuid4(),
+        )
         self.active_turn_id = ""
         self.native: list[BaseModel] = []
         self.requested = asyncio.Event()

@@ -61,8 +61,6 @@ NAME = "agentplane-runner-gateway"
 TOKEN_AUDIENCE = "agentplane-runner-gateway"
 _LABELS = {"app.kubernetes.io/name": NAME}
 _IMAGE = "git.allegedly.works/ducktape-ci/agentplane-runner-gateway"
-# The port every runner listens on (app.py's SandboxTemplate); this service dials it.
-RUNNER_PORT = 7000
 KUBERNETES_ADMIN_INSTRUCTIONS = (
     Path(__file__).with_name("kubernetes_admin_instructions.md").read_text(encoding="utf-8").strip()
 )
@@ -154,11 +152,9 @@ class RunnerGateway(Construct):
                     ),
                     KUBERNETES_ADMIN_INSTRUCTIONS,
                 ),
-                "runner_grpc_channel_options": dict(env.runner_grpc_channel_options),
                 "runner_control_audience": RUNNER_CONTROL_AUDIENCE,
                 "port": endpoint.port.number,
                 "runner_control_port": control.pod_port,
-                "runner_port": RUNNER_PORT,
             },
             path="/etc/agentplane-runner-gateway/config.yaml",
             supplied=[("commands_database_url",), ("pod_ip",)],
@@ -236,7 +232,6 @@ class RunnerGateway(Construct):
                     {"k8s:io.kubernetes.pod.namespace": env.namespace, "k8s:cnpg.io/cluster": "postgres"},
                     database.POSTGRES_PORT,
                 ),
-                EgressRule.to_endpoints(cilium.endpoint_labels(env.namespace, "agentplane-runner"), RUNNER_PORT),
             ],
         )
         self._add_runner_control_egress(control)

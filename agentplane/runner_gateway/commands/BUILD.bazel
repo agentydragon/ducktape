@@ -111,15 +111,6 @@ oci_image(
 )
 
 py_library(
-    name = "connections",
-    srcs = ["connections.py"],
-    deps = [
-        ":db",
-        "@pypi//sqlalchemy",
-    ],
-)
-
-py_library(
     name = "dispatch",
     srcs = ["dispatch.py"],
     deps = [

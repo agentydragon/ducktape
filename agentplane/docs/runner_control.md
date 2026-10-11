@@ -4,12 +4,11 @@ Status: **accepted design, deployed.** The Runner Gateway's
 control listener (`runner_gateway/runner_control.py`), reachable through the egress proxy,
 authenticates, fences and keeps connections alive, and delivers dispatch attempts
 (`runner_gateway/command_delivery.py`) for Sandboxes routed to it. The runner dials it when started
-with `--control-target` (`runner/control.py`), which the Sandbox Service passes to every new
-Sandbox's runner (`runner_control`). A Sandbox created before that is still reached through the
-inbound `Attach` RPC, which Cilium admits only from the Runner Gateway. This is the contract the
-runner-initiated replacement implements. It covers command delivery, authentication, connection ownership and
-dispatch attempts, lifecycle requests (built: a runner that agrees `lifecycle` is listed, opened,
-resumed and sealed over the control stream), and the push of Events to the runner's ingress.
+with `--control-target` (`runner/control.py`), which the Sandbox Service passes to every Sandbox's
+runner (`runner_control`); runner Pods admit no connections. This is the contract it implements. It
+covers command delivery, authentication, connection ownership and dispatch attempts, lifecycle
+requests (listing, opening, resuming and sealing Sessions), and the push of Events to the runner's
+ingress.
 
 ## Shape
 
@@ -45,12 +44,10 @@ message ServiceFrame {
 
 message Hello {
   string runner_boot_id = 1;          // random per runner process start
-  repeated string capabilities = 2;   // "commands", "lifecycle"
 }
 
 message Welcome {
   uint64 connection_epoch = 1;
-  repeated string capabilities = 2;   // what the service will use on this connection
 }
 
 // The runner deduplicates on `command.command_id` within a session, so redelivery is safe.
@@ -87,15 +84,13 @@ message Heartbeat {}
 - **Versioning.** The proto is `agentplane/proto/runner_control.proto`, package
   `agentplane.proto.runner_control`. An incompatible change, a rename included, rides a clean
   cutover: the operator retires every Sandbox on the old protocol, and no dual path is served.
-  Additive frame kinds and RPCs are capabilities: a peer uses one only after both sides listed it
-  in `Hello`/`Welcome`. A frame of a kind the receiver did not agree to fails the stream, and an
-  RPC the service does not implement returns `UNIMPLEMENTED`, so a skew shows up at first use
-  rather than as silently dropped work. Rolling either side is safe because capabilities
-  are negotiated per connection.
+  Nothing is negotiated: every connection carries commands and lifecycle requests. A frame of a
+  kind the receiver does not know fails the stream, and an RPC the service does not implement
+  returns `UNIMPLEMENTED`, so a skew shows up at first use rather than as silently dropped work; a
+  new frame kind lands in its receiver before any sender uses it.
 - **Later streams bind to the epoch.** Every RPC other than `Connect` carries the connection epoch
   from `Welcome` in metadata and is refused once that epoch is superseded.
-- **Message size.** gRPC's default 4 MiB per message, the same limit the `Attach` path has today,
-  so no command that is deliverable now becomes undeliverable.
+- **Message size.** gRPC's default 4 MiB per message.
 - **Receipts are facts.** A receipt reports the runner journal. Re-delivering a command already
   journaled with the same payload returns its existing `CommandAdmitted` entry, which the runner
   already guarantees by deduplicating on `command_id`. The service never infers admission from a
@@ -266,8 +261,8 @@ endpoints: [{ addresses: [<owning replica's Pod IP>] }]
 ports: [{ name: grpc, port: 8080 }]
 ```
 
-No routing record is kept: once every runner dials out, as the operator decided for a clean cutover
-(2026-10-10 PDT), nothing is routed inbound. Agent-sandbox already names a Service after the
+No routing record is kept: every runner dials out, as the operator decided for a clean cutover
+(2026-10-10 PDT), so nothing is routed inbound. Agent-sandbox already names a Service after the
 Sandbox, hence `-control`.
 
 - **Accepting a connection.** After authenticating `Hello`, the replica updates the Lease with the
@@ -289,19 +284,15 @@ Sandbox, hence `-control`.
 
 ## Lifecycle operations
 
-Status: **accepted (operator, 2026-10-10 PDT); built for the `ListSessions`, `CreateSession` and
-`ResumeSession` RPCs and teardown sealing.** The Runner Gateway agrees `lifecycle` and sends those
-callers' requests over the control stream (`runner_gateway/lifecycle_control.py`); `LookupSession` still
-reads Sessions through the inbound API, and so does every Sandbox whose runner never agreed
-`lifecycle`. A runner refuses `OpenSession` for a Session it created but could not
+Status: **built.** The Runner Gateway sends every Session call and teardown's seal over the control
+stream (`runner_gateway/lifecycle_control.py`); `LookupSession` reads the first launch outcome each
+Session's summary carries in the runner's listing. A runner refuses `OpenSession` for a Session it created but could not
 start with `FAILED`; asked again, it confirms the stopped Session, so `CreateSession` follows an
 `OpenSession` that confirms a stopped harness with `ResumeSession`. The App and the Notification
 Service reach the holder through the control Service (`control_target`); a client without it calls
-the Runner Gateway's own Service, where only the holder's replica serves a control-routed Sandbox.
+the Runner Gateway's own Service, where only the holder's replica serves the Sandbox.
 
-A runner that lists `lifecycle` in `Hello` takes every remaining inbound call over `Connect` as a
-control request. Each request names an explicit verb; nothing is inferred from which fields are
-present, unlike `Attach`, where any matching spec restarts a stopped harness.
+Each control request names an explicit verb; nothing is inferred from which fields are present.
 
 ```protobuf
 message ServiceFrame {
@@ -343,14 +334,14 @@ stream sends control requests: callers reach it through the Sandbox's control Se
 ([Connection records](#connection-records-in-kubernetes)), and background work such as sealing runs on the replica holding the Lease. Requests are bounded by the
 calling RPC's deadline, like dispatch attempts, and a reconnect replays none of them.
 
-| Inbound caller (Runner Gateway)                      | Control operation                                             |
-| ---------------------------------------------------- | ------------------------------------------------------------- |
-| `ListSessions` RPC                                   | `ListSessions` (built)                                        |
-| `CreateSession` (`Initialize`, then `Attach` + spec) | `Initialize`, then `OpenSession` (built) with the client's ID |
-| `ResumeSession` (`Attach` + retained spec)           | `ResumeSession` (built)                                       |
-| `LookupSession` (journal scan from cursor 0)         | none: a retried create confirms the client's Session ID       |
-| `Teardown` sealing (`Seal`)                          | `Seal` (built), repeated until every Session is flushed       |
-| `SubmitCommand` relay                                | `DeliverCommand` (built)                                      |
+| Runner Gateway caller | Control operation                                     |
+| --------------------- | ----------------------------------------------------- |
+| `ListSessions` RPC    | `ListSessions`                                        |
+| `CreateSession`       | `Initialize`, then `OpenSession` with the client's ID |
+| `ResumeSession`       | `ResumeSession`                                       |
+| `LookupSession`       | `ListSessions`, reading each first launch outcome     |
+| `Teardown` sealing    | `Seal`, repeated until every Session is flushed       |
+| `SubmitCommand`       | `DeliverCommand`                                      |
 
 The VM experiment's runtime acceptance drives the guest runner directly through a port-forward and
 moves with the selected VM control path.
@@ -441,20 +432,6 @@ already rewrite the runner's journal on the shared volume or kill the runner. Th
 therefore authenticates the Sandbox incarnation and claims no process isolation. Distinguishing
 the runner from agent processes needs a resource boundary inside the Sandbox, such as a VM guest
 that keeps the runner outside the agent's reach.
-
-## Route selection
-
-The runner says which operations it carries over the control stream in `Hello`, and `Welcome` agrees the
-ones the service also supports. The Runner Gateway records every operation any connection of the
-Sandbox has agreed, and the set only grows: once an operation has been agreed, that Sandbox's
-operation is control-routed for good, whether or not a connection exists right now. Routing is
-never inferred per request from whether a connection happens to be live.
-
-For a control-routed operation with no current connection, the service reports the destination
-unavailable. It never falls back to `Attach`, and the inbound route never takes over a command
-whose control-stream delivery was ambiguous. Operations no connection has agreed keep their inbound route,
-so an old runner that never dials out keeps working unchanged. Events are not a routed operation: a
-runner with an ingress pushes them, and an older runner's are read through `Attach`.
 
 ## Connection ownership and fencing
 
