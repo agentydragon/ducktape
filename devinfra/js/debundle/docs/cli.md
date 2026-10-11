@@ -401,6 +401,10 @@ structural selector can be synthesized or that the final edit passes the gate.
 selectors. It requires `--graph`, `--modules`, and `--source-root` (or their
 environment variables), and accepts a JSON batch of this shape:
 
+Bindings from one multi-declarator statement are synthesized as one shared
+selector. References between selected declarators use their requested readable
+names in that selector.
+
 ```json
 [
   {

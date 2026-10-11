@@ -429,6 +429,9 @@ fn exact_declaration_item(
             let mut found = BTreeSet::new();
             for declarator in &mut var.decls {
                 rename_pattern_targets(&mut declarator.name, targets, &mut found);
+                if let Some(init) = &mut declarator.init {
+                    rename_selected_initializer_uses(init, targets);
+                }
             }
             if found.len() != targets.len() {
                 return None;
@@ -438,6 +441,51 @@ fn exact_declaration_item(
         _ => return None,
     };
     Some(ModuleItem::Stmt(Stmt::Decl(renamed)))
+}
+
+/// Keep references between selected declarators consistent with their
+/// selector-local binding names. The source-match proof checks the resulting
+/// identity relation. Nested functions have their own bindings and are left
+/// alone when no scope analysis is available here.
+fn rename_selected_initializer_uses(init: &mut Expr, targets: &[SynthesizedTargetBinding]) {
+    struct Renamer<'a> {
+        targets: &'a [SynthesizedTargetBinding],
+    }
+    impl Renamer<'_> {
+        fn replacement(&self, name: &str) -> Option<&str> {
+            self.targets
+                .iter()
+                .find(|target| target.runtime_binding == name)
+                .map(|target| target.selector_local.as_str())
+        }
+    }
+    impl VisitMut for Renamer<'_> {
+        fn visit_mut_expr(&mut self, expr: &mut Expr) {
+            match expr {
+                Expr::Ident(ident) => {
+                    if let Some(replacement) = self.replacement(ident.sym.as_ref()) {
+                        *ident = crate::render::ident_node(replacement);
+                    }
+                }
+                Expr::Arrow(_) | Expr::Fn(_) | Expr::Class(_) => {}
+                _ => expr.visit_mut_children_with(self),
+            }
+        }
+
+        fn visit_mut_prop(&mut self, prop: &mut Prop) {
+            if let Prop::Shorthand(ident) = prop
+                && let Some(replacement) = self.replacement(ident.sym.as_ref())
+            {
+                *prop = Prop::KeyValue(KeyValueProp {
+                    key: PropName::Ident(IdentName::new(ident.sym.clone(), ident.span)),
+                    value: Box::new(Expr::Ident(crate::render::ident_node(replacement))),
+                });
+            } else {
+                prop.visit_mut_children_with(self);
+            }
+        }
+    }
+    init.visit_mut_with(&mut Renamer { targets });
 }
 
 /// Rename only binding positions. An object-pattern shorthand is converted to
@@ -816,6 +864,19 @@ fn render_var_slots(
 ) -> Result<String> {
     let mut decls: Vec<VarDeclarator> = Vec::new();
     let mut skipped_run = false;
+    let selected_targets = var
+        .decls
+        .iter()
+        .filter_map(|candidate| {
+            let runtime_binding = single_ident_pat_name(&candidate.name)?;
+            let selector_local = export_for(runtime_binding)?;
+            Some(SynthesizedTargetBinding {
+                export_name: selector_local.clone(),
+                runtime_binding: runtime_binding.to_owned(),
+                selector_local,
+            })
+        })
+        .collect::<Vec<_>>();
     for (idx, declarator) in var.decls.iter().enumerate() {
         if !target_slots.contains(&idx) {
             skipped_run = true;
@@ -831,6 +892,7 @@ fn render_var_slots(
         holed.name = named_pat(&export_for(name).expect("target declarator has an export"));
         holed.init = declarator.init.as_ref().map(|init| {
             let mut holed_init = hole_var_init_padded(init, kept);
+            rename_selected_initializer_uses(&mut holed_init, &selected_targets);
             if !regex_anchors.is_empty() {
                 holed_init.visit_mut_with(&mut RegexAnchorSubstitution {
                     patterns: regex_anchors,

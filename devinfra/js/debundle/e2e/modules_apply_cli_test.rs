@@ -9,6 +9,57 @@ use std::fs;
 use std::process::Command;
 
 #[test]
+fn applies_renamed_multi_declarator_with_cross_initializer_reference() {
+    let fixture = GraphFixture::new("var a = 1000, b = 15, c = b + 5;\n", &[]);
+    let report = fixture.json(&["modules", "propose"]);
+    let names = [
+        ("a", "fooDeadline"),
+        ("b", "fooDelays"),
+        ("c", "fooTotalDelay"),
+    ];
+    let requests = report["proposals"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(|row| {
+            let bindings = row["binding_ids"].as_array()?;
+            let readable_names = names
+                .iter()
+                .filter(|(binding, _)| bindings.contains(&json!(binding)))
+                .map(|(binding, name)| ((*binding).to_owned(), json!(name)))
+                .collect::<serde_json::Map<String, serde_json::Value>>();
+            (!readable_names.is_empty()).then(|| {
+                json!({
+                    "proposal_id": row["proposed_module_id"],
+                    "owner_ids": row["owner_ids"],
+                    "module": "foo/delays",
+                    "readable_names": readable_names,
+                })
+            })
+        })
+        .collect::<Vec<_>>();
+    assert!(!requests.is_empty());
+    let temp = tempfile::tempdir().unwrap();
+    let batch = temp.path().join("apply.json");
+    fs::write(&batch, serde_json::to_vec(&requests).unwrap()).unwrap();
+    fixture.assert_success(&["modules", "apply", "--batch", batch.to_str().unwrap()]);
+    let yaml = fs::read_to_string(fixture.modules.join("foo/delays.yaml")).unwrap();
+    assert!(yaml.contains("fooDeadline"), "{yaml}");
+    assert!(yaml.contains("fooDelays"), "{yaml}");
+    assert!(yaml.contains("fooTotalDelay"), "{yaml}");
+    assert!(!yaml.contains("local: a\n"), "{yaml}");
+    assert!(!yaml.contains("local: b\n"), "{yaml}");
+    assert!(!yaml.contains("local: c\n"), "{yaml}");
+    let spec: serde_yaml::Value = serde_yaml::from_str(&yaml).unwrap();
+    let selector = spec["source_matches"][0]["match"].as_str().unwrap();
+    assert!(selector.contains("fooDeadline"), "{selector}");
+    assert!(selector.contains("fooDelays"), "{selector}");
+    assert!(selector.contains("fooTotalDelay"), "{selector}");
+    assert!(!selector.contains("= b +"), "{selector}");
+    fixture.assert_runs("");
+}
+
+#[test]
 fn apply_ignores_modules_owned_by_other_chunks() {
     let run = run_tree_fixture(
         &TreeFixture {
