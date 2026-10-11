@@ -197,11 +197,11 @@ class RunnerGateway(runner_gateway_pb2_grpc.RunnerGatewayServicer):
         async with self.request(context):
             sessions = []
             for summary in await self.list_runner_sessions(request.destination):
-                public_id = await self.resources.sessions.session_id(
+                public_id = await self.resources.sessions.public_id(
+                    summary.session_id,
                     sandbox_namespace=self.resources.destinations.inventory.namespace,
                     sandbox_name=request.destination.sandbox,
                     sandbox_uid=UUID(request.destination.sandbox_uid),
-                    runner_session_id=summary.session_id,
                 )
                 if public_id is None:
                     logger.warning("runner Session %s has no registered Session; not listed", summary.session_id)
@@ -211,13 +211,15 @@ class RunnerGateway(runner_gateway_pb2_grpc.RunnerGatewayServicer):
             return runner_pb2.ListSessionsResponse(sessions=sessions)
 
     async def runner_session_id(self, destination: sandbox_service_pb2.SessionDestination) -> str:
-        """Keep physical runner identifiers behind this service."""
-        return await self.resources.sessions.runner_id(
-            parse_session_id(destination.session_id),
+        """The runner's ID for a Session registered in the destination's Sandbox incarnation."""
+        session_id = parse_session_id(destination.session_id)
+        await self.resources.sessions.require(
+            session_id,
             sandbox_namespace=self.resources.destinations.inventory.namespace,
             sandbox_name=destination.sandbox.sandbox,
             sandbox_uid=UUID(destination.sandbox.sandbox_uid),
         )
+        return str(session_id)
 
     @override
     async def CreateSession(
@@ -227,9 +229,9 @@ class RunnerGateway(runner_gateway_pb2_grpc.RunnerGatewayServicer):
             caller = await self.resources.authenticate(context)
             if len(request.idempotency_key) > 128 or len(request.setup_script) > 65_536:
                 raise ValueError("Open key or setup script is too long")
-            # CLEANUP(added 2026-10-11): Require session_id, and stop minting here, once the deployed
-            #   app sends it on every CreateSession (agentplane/sandbox_service/client.py's create).
-            client_id = parse_session_id(request.session_id) if request.session_id else None
+            if not request.session_id:
+                raise ValueError("session ID is required")
+            client_id = parse_session_id(request.session_id)
             overrides = wire.launch_overrides(request)
             binding = await self.held(request.sandbox, writes=True)
             sandbox_uid = UUID(request.sandbox.sandbox_uid)
@@ -257,7 +259,7 @@ class RunnerGateway(runner_gateway_pb2_grpc.RunnerGatewayServicer):
                     else None
                 )
                 launch = sandbox_service_pb2.FrozenLaunch(
-                    open=runner_pb2.Open(session_id=str(session_id) if client_id else f"r-{session_id}", spec=spec),
+                    open=runner_pb2.Open(session_id=str(session_id), spec=spec),
                     bootstrap=binding.bootstrap if binding is not None else "",
                 )
                 if setup_script is not None:
@@ -308,16 +310,10 @@ class RunnerGateway(runner_gateway_pb2_grpc.RunnerGatewayServicer):
             if public_id is None:
                 return sandbox_service_pb2.LookupSessionResponse()
             result = sandbox_service_pb2.LookupSessionResponse(session_id=str(public_id))
-            runner_session_id = await self.resources.sessions.runner_id(
-                public_id,
-                sandbox_namespace=self.resources.destinations.inventory.namespace,
-                sandbox_name=request.sandbox.sandbox,
-                sandbox_uid=UUID(request.sandbox.sandbox_uid),
-            )
             # DB reservation precedes runner Open, and a retained spec is not proof of a successful
             # Open: only the Session's first launch outcome is. A stopped Session may have run before.
             for summary in await self.list_runner_sessions(request.sandbox):
-                if summary.session_id != runner_session_id:
+                if summary.session_id != str(public_id):
                     continue
                 if summary.launch_outcome == runner_pb2.LAUNCH_OUTCOME_STARTED:
                     result.summary.CopyFrom(summary)

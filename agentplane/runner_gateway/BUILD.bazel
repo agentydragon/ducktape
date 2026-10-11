@@ -147,7 +147,6 @@ py_test(
         ":conftest",
         ":session_registry",
         "//:conftest",
-        "//agentplane/runner_gateway/testing:sessions",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",

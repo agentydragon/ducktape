@@ -151,15 +151,10 @@ async def wait_attempt_lapsed(engine: AsyncEngine, session_id: UUID, command_id:
                 )
 
 
-async def register(engine: AsyncEngine, session_id: UUID, runner_session_id: str) -> None:
+async def register(engine: AsyncEngine, session_id: UUID) -> None:
     """Register a Session on the fake cluster's Sandbox."""
     await register_session(
-        engine,
-        session_id,
-        sandbox_namespace=SANDBOX_NAMESPACE,
-        sandbox_name=SANDBOX,
-        sandbox_uid=UUID(SANDBOX_UID),
-        runner_session_id=runner_session_id,
+        engine, session_id, sandbox_namespace=SANDBOX_NAMESPACE, sandbox_name=SANDBOX, sandbox_uid=UUID(SANDBOX_UID)
     )
 
 
@@ -275,15 +270,14 @@ async def test_public_session_command_survives_a_lost_reply(
     submissions: SubmissionStore,
 ) -> None:
     session_id = uuid4()
-    physical = f"r-{session_id}"
-    await register(engine, session_id, physical)
+    await register(engine, session_id)
     command = command_pb2.Command(command_id="durable", submit_input=command_pb2.SubmitInput(text="hi"))
     async with asyncio.timeout(10), service_client(resources, token_file, cluster.provisioning) as remote:
         runner = remote.runner(DESTINATION)
         with pytest.raises(TimeoutError):
             await runner.command(str(session_id), command)
         lost = await peer.delivery()
-        assert (lost.session_id, lost.command) == (physical, command)
+        assert (lost.session_id, lost.command) == (str(session_id), command)
         # Without the runner's receipt the submission stays pending.
         assert (await submissions.read(session_id, "durable")).state == SubmissionState.PENDING_ADMISSION
         await wait_attempt_lapsed(engine, session_id, "durable")
@@ -313,7 +307,7 @@ async def test_command_status_reads_retained_submissions_without_the_runner(
     submissions: SubmissionStore,
 ) -> None:
     session_id = uuid4()
-    await register(engine, session_id, f"r-{session_id}")
+    await register(engine, session_id)
     commands = {
         name: command_pb2.Command(command_id=name, submit_input=command_pb2.SubmitInput(text=name))
         for name in ("admitted", "pending", "rejected")
@@ -385,7 +379,7 @@ async def test_lookup_open_scopes_reservation_and_waits_for_runner_confirmation(
         runner = remote.runner(DESTINATION)
         assert not (await runner.lookup(idempotency_key="lookup-key")).session_id
         reserved = await sessions.reserve(
-            session_id=None,
+            session_id=uuid4(),
             caller_namespace=OWNER.namespace,
             caller_name=OWNER.name,
             sandbox_namespace=SANDBOX_NAMESPACE,
@@ -452,33 +446,10 @@ async def test_lookup_reads_the_runners_launch_outcome(
     assert peer.requests.empty()  # looking up never reopens
 
 
-async def test_open_without_a_client_session_id_mints_one_and_survives_a_lost_response(
-    resources: Resources, token_file: Path, peer: Peer, cluster: Cluster
-) -> None:
-    """A client predating client-minted Session IDs names only its Open key."""
-    request = sandbox_service_pb2.CreateSessionRequest(
-        sandbox=DESTINATION,
-        idempotency_key="lost-response",
-        spec=runner_pb2.SessionSpec(harness=runner_pb2.HARNESS_CODEX, cwd="/state", model="test-model"),
-    )
-    request.override_mask.paths.extend(["harness", "cwd", "model"])
-    async with service_client(resources, token_file, cluster.provisioning) as remote:
-        call = remote.gateway.CreateSession(request, metadata=await remote.metadata(), timeout=10)
-        first = await peer.request()
-        call.cancel()  # reply unknown to caller, reservation and runner request already committed
-        with pytest.raises((asyncio.CancelledError, grpc.aio.AioRpcError)):
-            await call
-        recovering = remote.gateway.CreateSession(request, metadata=await remote.metadata(), timeout=5)
-        second = await peer.open()
-        recovered = await recovering
-    assert second == first.open
-    assert recovered.attached.session_id == recovered.session_id
-    assert second.session_id == f"r-{recovered.session_id}"
-
-
-async def test_open_refuses_a_session_id_that_is_not_a_uuid(resources: Resources, token_file: Path) -> None:
+@pytest.mark.parametrize("session_id", ["", "r-not-a-uuid"])
+async def test_open_requires_a_client_session_id(resources: Resources, token_file: Path, session_id: str) -> None:
     request = wire.create_proto(DESTINATION, uuid4(), {"harness": "HARNESS_CODEX", "cwd": "/state", "model": "m"}, None)
-    request.session_id = "r-not-a-uuid"
+    request.session_id = session_id
     async with service_client(resources, token_file) as remote:
         with pytest.raises(grpc.aio.AioRpcError) as refused:
             await remote.gateway.CreateSession(request, metadata=await remote.metadata(), timeout=5)
@@ -510,7 +481,7 @@ async def test_command_uses_runner_ack_budget_not_unary_request_budget(
     ) as remote:
         remote.request_timeout_s = 0.1  # The client also must not use its short generic RPC deadline.
         session_id = uuid4()
-        await register(engine, session_id, f"r-{session_id}")
+        await register(engine, session_id)
         submitted = asyncio.create_task(remote.runner(DESTINATION).command(str(session_id), command))
         delivered = await peer.delivery()
         await asyncio.sleep(0.2)
@@ -618,7 +589,7 @@ async def test_open_and_resume_refuse_unready_grants_without_app(
     pending_launch: bool,
 ) -> None:
     session_id = uuid4()
-    await register(engine, session_id, f"r-{session_id}")
+    await register(engine, session_id)
     annotations = cluster.fake.objects[SANDBOXES_PLURAL][SANDBOX]["metadata"].setdefault("annotations", {})
     if pending_launch:
         annotations[PROVISIONING_ANNOTATION] = "{}"

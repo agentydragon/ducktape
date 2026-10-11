@@ -225,9 +225,7 @@ class Runner:
     async def create(
         self, *, session_id: UUID, spec: dict[str, object], setup_script: str | None = None
     ) -> sandbox_service_pb2.CreateSessionResponse:
-        """Open the Session the caller minted `session_id` for; a retry passes the same ID and inputs.
-        The response's Session ID is authoritative: a Sandbox Service that predates client-minted IDs
-        mints its own."""
+        """Open the Session the caller minted `session_id` for; a retry passes the same ID and inputs."""
         return await self.service.held_unary(
             self.destination,
             lambda stub: stub.CreateSession,

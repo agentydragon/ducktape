@@ -218,12 +218,7 @@ async def test_a_created_running_session_is_not_resumed(holder: Replica, token_f
 async def test_listing_and_resuming_go_over_the_channel(holder: Replica, engine: AsyncEngine, token_file: Path) -> None:
     public_id = uuid4()
     await register_session(
-        engine,
-        public_id,
-        sandbox_namespace=SANDBOX_NAMESPACE,
-        sandbox_name=SANDBOX,
-        sandbox_uid=UUID(SANDBOX_UID),
-        runner_session_id="test-runner-session",
+        engine, public_id, sandbox_namespace=SANDBOX_NAMESPACE, sandbox_name=SANDBOX, sandbox_uid=UUID(SANDBOX_UID)
     )
     async with connected(holder) as call, client(token_file, holder.api, control_target=None) as service:
         runner = service.runner(DESTINATION)
@@ -231,13 +226,13 @@ async def test_listing_and_resuming_go_over_the_channel(holder: Replica, engine:
         listed = await next_request(call)
         assert listed.WhichOneof("verb") == "list_sessions"
         result = runner_control_pb2.ControlResult(request_id=listed.request_id)
-        result.list_sessions.sessions.add(session_id="test-runner-session", last_cursor=7)
+        result.list_sessions.sessions.add(session_id=str(public_id), last_cursor=7)
         await answer(call, result)
         assert [(row.session_id, row.last_cursor) for row in await listing] == [(str(public_id), 7)]
 
         resuming = asyncio.create_task(runner.resume(str(public_id)))
         resume = await next_request(call)
-        assert resume.resume.session_id == "test-runner-session"
+        assert resume.resume.session_id == str(public_id)
         await answer(
             call,
             runner_control_pb2.ControlResult(
@@ -313,12 +308,7 @@ async def test_teardown_seals_over_the_holders_connection(
 ) -> None:
     public_id = uuid4()
     await register_session(
-        engine,
-        public_id,
-        sandbox_namespace=SANDBOX_NAMESPACE,
-        sandbox_name=SANDBOX,
-        sandbox_uid=UUID(SANDBOX_UID),
-        runner_session_id="test-runner-session",
+        engine, public_id, sandbox_namespace=SANDBOX_NAMESPACE, sandbox_name=SANDBOX, sandbox_uid=UUID(SANDBOX_UID)
     )
     cluster.fake.objects[SANDBOXES_PLURAL][SANDBOX]["spec"]["operatingMode"] = OperatingMode.SUSPENDED
     view = await cluster.inventory.get(SANDBOX)
@@ -338,7 +328,7 @@ async def test_teardown_seals_over_the_holders_connection(
         sealed = await next_request(call)
         assert sealed.WhichOneof("verb") == "seal"
         result = runner_control_pb2.ControlResult(request_id=sealed.request_id)
-        result.seal.sessions.add(session_id="test-runner-session", cursor=3)
+        result.seal.sessions.add(session_id=str(public_id), cursor=3)
         await answer(call, result)
         # The holder's answer reached the Sandbox Service, which waits for the ingress.
         with pytest.raises(SealNotFlushedError):

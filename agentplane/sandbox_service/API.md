@@ -109,20 +109,17 @@ The Sandbox Service keeps no Session history; the [History Service](../history_s
 copies each runner's Events and serves reads. Legacy rows without a known Sandbox UID stay
 registered but are not followed until their binding is established by a verified handoff.
 
-- `ListSessions`: Sandbox destination; maps every registered runner ID (the public ID itself,
-  `r-<uuid>` or an imported legacy one) to its public Session ID in the returned summaries.
-  Runner sessions the registry does not know are left out.
+- `ListSessions`: Sandbox destination; the runner's Sessions registered in this Sandbox
+  incarnation. Runner sessions the registry does not know are left out.
 - `CreateSession`: explicit Open with Sandbox destination, the client's fresh Session UUID,
   an optional caller-scoped idempotency key, and selected overrides. The UUID is the public
   Session ID and the runner's Session ID alike. The Session and its effective launch settings are
   committed before runner contact; the Service returns the UUID and an attachment snapshot with it.
   A `{session_id}` placeholder in a selected `cwd` override is expanded to that UUID, just like
   the stored default cwd. Concurrent or response-lost retries with the same UUID use the original
-  settings; the same UUID with changed inputs, another caller or another Sandbox is rejected. A
-  request without a UUID (a client predating them) is reserved by its key alone: the Service mints
-  the public ID and gives the runner `r-<public ID>`. `ResumeSession` and `SubmitCommand`
-  accept the public ID and resolve it to the retained runner ID within the pinned
-  Sandbox UID. Neither the UUID nor the key applies to runner-discovered native child sessions. The
+  settings; the same UUID with changed inputs, another caller or another Sandbox is rejected; a
+  request without one is invalid. `ResumeSession` and `SubmitCommand`
+  accept the public ID of a Session registered within the pinned Sandbox UID. Neither the UUID nor the key applies to runner-discovered native child sessions. The
   app opens every new Thread through it, with its Session ID as the key too.
 - `LookupSession`: read-only reconciliation by authenticated caller, current Sandbox name/UID
   and opaque Open key. Returns no public ID for an absent reservation, or the public ID
