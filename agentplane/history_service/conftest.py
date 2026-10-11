@@ -12,13 +12,15 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import override
 
 import grpc
 import pytest
 from google.protobuf.empty_pb2 import Empty
 
 from agentplane.proto import event_log_pb2, runner_pb2
-from agentplane.sandbox_service import protocol_pb2
+from agentplane.runner_gateway import protocol_pb2_grpc as gateway_pb2_grpc
+from agentplane.sandbox_service import protocol_pb2, protocol_pb2_grpc
 from agentplane.sandbox_service.client import SandboxServiceClient
 
 # gazelle:include_dep @pypi//protobuf
@@ -44,7 +46,9 @@ class Follow:
     holders: frozenset[str]
 
 
-class ScriptedSandboxService:
+class ScriptedSandboxService(protocol_pb2_grpc.SandboxServiceServicer, gateway_pb2_grpc.RunnerGatewayServicer):
+    """Scripts only the subscriber's calls; anything else answers UNIMPLEMENTED."""
+
     def __init__(self, *, lease_s: float) -> None:
         self.lease_s = lease_s
         self.journals: dict[str, Journal] = {}
@@ -81,7 +85,8 @@ class ScriptedSandboxService:
         self.journals[session_id].sealed = True
         self._notify()
 
-    async def watch(
+    @override
+    async def WatchSessions(
         self, request: protocol_pb2.WatchSessionsRequest, context: grpc.aio.ServicerContext
     ) -> AsyncIterator[protocol_pb2.WatchSessionsResponse]:
         self.watch_peers.put_nowait(context.peer())
@@ -114,7 +119,8 @@ class ScriptedSandboxService:
         assert journal is not None
         return journal
 
-    async def place_hold(
+    @override
+    async def PlaceHold(
         self, request: protocol_pb2.HoldRequest, context: grpc.aio.ServicerContext
     ) -> protocol_pb2.Hold:
         journal = await self.journal(request.destination, context)
@@ -122,7 +128,8 @@ class ScriptedSandboxService:
             request.holder, protocol_pb2.Hold(session_id=request.destination.session_id, holder=request.holder)
         )
 
-    async def confirm_hold(
+    @override
+    async def ConfirmHold(
         self, request: protocol_pb2.ConfirmHoldRequest, context: grpc.aio.ServicerContext
     ) -> protocol_pb2.Hold:
         journal = await self.journal(request.destination, context)
@@ -136,7 +143,8 @@ class ScriptedSandboxService:
         self.confirmations.put_nowait(snapshot)
         return hold
 
-    async def follow(
+    @override
+    async def FollowSession(
         self, request: protocol_pb2.FollowSessionRequest, context: grpc.aio.ServicerContext
     ) -> AsyncIterator[protocol_pb2.FollowSessionResponse]:
         [bearer] = [value for key, value in context.invocation_metadata() or () if key == "authorization"]
@@ -175,41 +183,8 @@ class ScriptedSandboxService:
     @asynccontextmanager
     async def serve(self) -> AsyncIterator[str]:
         server = grpc.aio.server()
-        # Only the subscriber's calls; anything else fails UNIMPLEMENTED.
-        server.add_generic_rpc_handlers(
-            [
-                grpc.method_handlers_generic_handler(
-                    "ducktape.agentplane.runner_gateway.v1.RunnerGateway",
-                    {
-                        "WatchSessions": grpc.unary_stream_rpc_method_handler(
-                            self.watch,
-                            request_deserializer=protocol_pb2.WatchSessionsRequest.FromString,
-                            response_serializer=protocol_pb2.WatchSessionsResponse.SerializeToString,
-                        ),
-                        "FollowSession": grpc.unary_stream_rpc_method_handler(
-                            self.follow,
-                            request_deserializer=protocol_pb2.FollowSessionRequest.FromString,
-                            response_serializer=protocol_pb2.FollowSessionResponse.SerializeToString,
-                        ),
-                    },
-                ),
-                grpc.method_handlers_generic_handler(
-                    "ducktape.agentplane.sandbox.v1.SandboxService",
-                    {
-                        "PlaceHold": grpc.unary_unary_rpc_method_handler(
-                            self.place_hold,
-                            request_deserializer=protocol_pb2.HoldRequest.FromString,
-                            response_serializer=protocol_pb2.Hold.SerializeToString,
-                        ),
-                        "ConfirmHold": grpc.unary_unary_rpc_method_handler(
-                            self.confirm_hold,
-                            request_deserializer=protocol_pb2.ConfirmHoldRequest.FromString,
-                            response_serializer=protocol_pb2.Hold.SerializeToString,
-                        ),
-                    },
-                ),
-            ]
-        )
+        protocol_pb2_grpc.add_SandboxServiceServicer_to_server(self, server)
+        gateway_pb2_grpc.add_RunnerGatewayServicer_to_server(self, server)
         port = server.add_insecure_port("127.0.0.1:0")
         await server.start()
         try:

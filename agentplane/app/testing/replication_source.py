@@ -4,13 +4,15 @@ import asyncio
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
+from typing import override
 from uuid import NAMESPACE_URL, uuid5
 
 import grpc
 
 from agentplane.app.testing.history_service import HistoryService
-from agentplane.history_service import protocol_pb2 as history_pb2
+from agentplane.history_service import protocol_pb2 as history_pb2, protocol_pb2_grpc as history_pb2_grpc
 from agentplane.proto import command_pb2, event_log_pb2, event_pb2, runner_pb2
+from agentplane.runner_gateway import protocol_pb2_grpc as gateway_pb2_grpc
 from agentplane.sandbox_service import protocol_pb2 as service_pb2
 
 # gazelle:include_dep @pypi//protobuf
@@ -26,7 +28,7 @@ class Opened:
     replay: asyncio.Event = field(default_factory=asyncio.Event)
 
 
-class ReplicationSource(HistoryService):
+class ReplicationSource(HistoryService, gateway_pb2_grpc.RunnerGatewayServicer):
     def __init__(self, peer: HistoryService | None = None) -> None:
         super().__init__()
         if peer is not None:
@@ -55,7 +57,8 @@ class ReplicationSource(HistoryService):
         self.set_feed(self.session_id, history_pb2.SessionFeedState(attached=self.attached))
         return self.entries[-1]
 
-    async def read_events(
+    @override
+    async def ReadSessionEvents(
         self, request: history_pb2.ReadSessionEventsRequest, context: grpc.aio.ServicerContext
     ) -> history_pb2.ReadSessionEventsResponse:
         if self.hold_next_replay:
@@ -64,9 +67,10 @@ class ReplicationSource(HistoryService):
             self.opened.put_nowait(opened)
             await opened.replay.wait()
         self.set_feed(self.session_id, history_pb2.SessionFeedState(attached=self.attached))
-        return await super().read_events(request, context)
+        return await super().ReadSessionEvents(request, context)
 
-    async def submit_command(
+    @override
+    async def SubmitCommand(
         self, request: service_pb2.SubmitCommandRequest, context: grpc.aio.ServicerContext
     ) -> event_log_pb2.EventEntry:
         command = request.command
@@ -79,7 +83,8 @@ class ReplicationSource(HistoryService):
         self._admissions[command.command_id] = entry
         return entry
 
-    async def list_sessions(
+    @override
+    async def ListSessions(
         self, request: service_pb2.SandboxRequest, context: grpc.aio.ServicerContext
     ) -> runner_pb2.ListSessionsResponse:
         return runner_pb2.ListSessionsResponse(
@@ -97,26 +102,8 @@ class ReplicationSource(HistoryService):
     @asynccontextmanager
     async def serve(self) -> AsyncIterator[int]:
         server = grpc.aio.server()
-        server.add_generic_rpc_handlers(
-            [
-                self.handler(),
-                grpc.method_handlers_generic_handler(
-                    "ducktape.agentplane.runner_gateway.v1.RunnerGateway",
-                    {
-                        "SubmitCommand": grpc.unary_unary_rpc_method_handler(
-                            self.submit_command,
-                            request_deserializer=service_pb2.SubmitCommandRequest.FromString,
-                            response_serializer=event_log_pb2.EventEntry.SerializeToString,
-                        ),
-                        "ListSessions": grpc.unary_unary_rpc_method_handler(
-                            self.list_sessions,
-                            request_deserializer=service_pb2.SandboxRequest.FromString,
-                            response_serializer=runner_pb2.ListSessionsResponse.SerializeToString,
-                        ),
-                    },
-                ),
-            ]
-        )
+        history_pb2_grpc.add_HistoryServiceServicer_to_server(self, server)
+        gateway_pb2_grpc.add_RunnerGatewayServicer_to_server(self, server)
         port = server.add_insecure_port("127.0.0.1:0")
         await server.start()
         try:

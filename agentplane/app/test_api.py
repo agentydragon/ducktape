@@ -8,7 +8,7 @@ from collections.abc import AsyncIterator, Iterator
 from contextlib import asynccontextmanager
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Any, cast
+from typing import Any, cast, override
 from uuid import UUID, uuid4
 
 import grpc
@@ -42,6 +42,7 @@ from agentplane.app.threads.store import ThreadStore
 from agentplane.app.threads.view.content import ContentStore
 from agentplane.proto import event_log_pb2, runner_pb2
 from agentplane.runner.harness import Harness
+from agentplane.runner_gateway import protocol_pb2_grpc as gateway_pb2_grpc
 from agentplane.sandbox_service import protocol_pb2 as service_pb2
 from agentplane.sandbox_service.client import SandboxServiceClient
 from agentplane.sandbox_service.kubernetes_grants import KubernetesGrant, RoleBindingGrant, RoleRef
@@ -747,30 +748,20 @@ def test_a_runner_that_does_not_answer_is_a_503(
 async def unanswered_command_service(
     token_file: Path,
 ) -> AsyncIterator[tuple[SandboxServiceClient, asyncio.Queue[str]]]:
+    class UnansweredGateway(gateway_pb2_grpc.RunnerGatewayServicer):
+        @override
+        async def SubmitCommand(
+            self, request: service_pb2.SubmitCommandRequest, context: grpc.aio.ServicerContext
+        ) -> event_log_pb2.EventEntry:
+            try:
+                await asyncio.Event().wait()
+            finally:
+                cancelled.put_nowait(request.destination.session_id)
+            raise AssertionError("the command is never answered")
+
     cancelled: asyncio.Queue[str] = asyncio.Queue()
-
-    async def submit(request: service_pb2.SubmitCommandRequest, context: grpc.aio.ServicerContext) -> None:
-        del context
-        try:
-            await asyncio.Event().wait()
-        finally:
-            cancelled.put_nowait(request.destination.session_id)
-
     server = grpc.aio.server()
-    server.add_generic_rpc_handlers(
-        [
-            grpc.method_handlers_generic_handler(
-                "ducktape.agentplane.runner_gateway.v1.RunnerGateway",
-                {
-                    "SubmitCommand": grpc.unary_unary_rpc_method_handler(
-                        submit,
-                        request_deserializer=service_pb2.SubmitCommandRequest.FromString,
-                        response_serializer=event_log_pb2.EventEntry.SerializeToString,
-                    )
-                },
-            )
-        ]
-    )
+    gateway_pb2_grpc.add_RunnerGatewayServicer_to_server(UnansweredGateway(), server)
     port = server.add_insecure_port("127.0.0.1:0")
     await asyncio.to_thread(token_file.write_text, "test-app-command-peer")
     service = SandboxServiceClient(

@@ -81,10 +81,12 @@ py_library(
     deps = [
         ":history_service",
         "//agentplane/history_service:protocol_pb2",
+        "//agentplane/history_service:protocol_pb2_grpc",
         "//agentplane/proto:command_pb2",
         "//agentplane/proto:event_log_pb2",
         "//agentplane/proto:event_pb2",
         "//agentplane/proto:runner_pb2",
+        "//agentplane/runner_gateway:protocol_pb2_grpc",
         "//agentplane/sandbox_service:protocol_pb2",
         "@pypi//grpcio",
         "@pypi//protobuf",
@@ -193,6 +195,7 @@ py_library(
         "//agentplane/app/threads/events:event_log",
         "//agentplane/history_service:client",
         "//agentplane/history_service:protocol_pb2",
+        "//agentplane/history_service:protocol_pb2_grpc",
         "//agentplane/proto:event_log_pb2",
         "//agentplane/proto:runner_pb2",
         "//agentplane/thread_fold:models",
@@ -210,6 +213,7 @@ py_library(
     deps = [
         "//agentplane/history_service:client",
         "//agentplane/history_service:protocol_pb2",
+        "//agentplane/history_service:protocol_pb2_grpc",
         "//agentplane/proto:event_log_pb2",
         "@pypi//grpcio",
         "@pypi//protobuf",

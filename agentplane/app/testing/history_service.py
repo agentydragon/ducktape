@@ -9,12 +9,13 @@ from collections.abc import AsyncIterator, Sequence
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import override
 from uuid import UUID
 
 import grpc
 from google.protobuf.empty_pb2 import Empty
 
-from agentplane.history_service import protocol_pb2 as history_pb2
+from agentplane.history_service import protocol_pb2 as history_pb2, protocol_pb2_grpc
 from agentplane.history_service.client import HistoryServiceClient
 from agentplane.proto import event_log_pb2
 
@@ -27,8 +28,9 @@ class History:
     feed: history_pb2.SessionFeedState | None = None
 
 
-class HistoryService:
-    """A programmable peer, not an alternate implementation of durable ingestion."""
+class HistoryService(protocol_pb2_grpc.HistoryServiceServicer):
+    """A programmable peer, not an alternate implementation of durable ingestion. RPCs it does not
+    script answer UNIMPLEMENTED rather than silently reaching a real backend."""
 
     def __init__(self) -> None:
         self.histories: dict[str, History] = {}
@@ -66,7 +68,8 @@ class HistoryService:
         for changed in self._history_waiters:
             changed.set()
 
-    async def read_events(
+    @override
+    async def ReadSessionEvents(
         self, request: history_pb2.ReadSessionEventsRequest, context: grpc.aio.ServicerContext
     ) -> history_pb2.ReadSessionEventsResponse:
         self.requests.append(history_pb2.ReadSessionEventsRequest.FromString(request.SerializeToString()))
@@ -83,7 +86,8 @@ class HistoryService:
             response.feed_state.CopyFrom(history.feed)
         return response
 
-    async def read_observations(
+    @override
+    async def ReadSessionObservations(
         self, request: history_pb2.ReadSessionObservationsRequest, context: grpc.aio.ServicerContext
     ) -> history_pb2.ReadSessionObservationsResponse:
         if self.failure is not None:
@@ -105,8 +109,9 @@ class HistoryService:
             ],
         )
 
-    async def watch_history(
-        self, request: history_pb2.WatchSessionHistoryRequest, _context: grpc.aio.ServicerContext
+    @override
+    async def WatchSessionHistory(
+        self, request: history_pb2.WatchSessionHistoryRequest, context: grpc.aio.ServicerContext
     ) -> AsyncIterator[history_pb2.WatchSessionHistoryResponse]:
         changed = asyncio.Event()
         self._history_waiters.add(changed)
@@ -119,34 +124,10 @@ class HistoryService:
         finally:
             self._history_waiters.discard(changed)
 
-    def handler(self) -> grpc.GenericRpcHandler:
-        # Register only the public methods this fixture controls. Unscripted RPCs
-        # fail UNIMPLEMENTED rather than silently reaching a real backend.
-        return grpc.method_handlers_generic_handler(
-            "ducktape.agentplane.history.v1.HistoryService",
-            {
-                "ReadSessionEvents": grpc.unary_unary_rpc_method_handler(
-                    self.read_events,
-                    request_deserializer=history_pb2.ReadSessionEventsRequest.FromString,
-                    response_serializer=history_pb2.ReadSessionEventsResponse.SerializeToString,
-                ),
-                "ReadSessionObservations": grpc.unary_unary_rpc_method_handler(
-                    self.read_observations,
-                    request_deserializer=history_pb2.ReadSessionObservationsRequest.FromString,
-                    response_serializer=history_pb2.ReadSessionObservationsResponse.SerializeToString,
-                ),
-                "WatchSessionHistory": grpc.unary_stream_rpc_method_handler(
-                    self.watch_history,
-                    request_deserializer=history_pb2.WatchSessionHistoryRequest.FromString,
-                    response_serializer=history_pb2.WatchSessionHistoryResponse.SerializeToString,
-                ),
-            },
-        )
-
     @asynccontextmanager
     async def connect(self, token_file: Path) -> AsyncIterator[HistoryServiceClient]:
         server = grpc.aio.server()
-        server.add_generic_rpc_handlers([self.handler()])
+        protocol_pb2_grpc.add_HistoryServiceServicer_to_server(self, server)
         port = server.add_insecure_port("127.0.0.1:0")
         await asyncio.to_thread(token_file.write_text, "test-app-history-peer")
         client = HistoryServiceClient(f"127.0.0.1:{port}", token_file=token_file, request_timeout_s=10)
