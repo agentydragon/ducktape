@@ -15,6 +15,7 @@ from agentplane.sandbox_service.testing.delta_spans import claude_text
 from agentplane.thread_fold.models import ThreadEvidence, ThreadNativeLink
 
 # gazelle:include_dep //agentplane/history_service/storage:conftest
+# gazelle:include_dep @pypi//protobuf
 
 pytest_plugins = ("agentplane.history_service.storage.conftest",)
 

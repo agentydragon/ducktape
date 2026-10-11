@@ -83,12 +83,14 @@ async def compact_session(engine: AsyncEngine, session_id: UUID, *, apply: bool,
                     continue
                 for cursor_range in settled.ranges:
                     result.cursors += cursor_range.last - cursor_range.first + 1
-                    result.payload_bytes += await session.scalar(
-                        select(func.coalesce(func.sum(func.length(SessionEvent.payload)), 0)).where(
-                            SessionEvent.session_id == session_id,
-                            SessionEvent.cursor.between(cursor_range.first, cursor_range.last),
+                    result.payload_bytes += (
+                        await session.execute(
+                            select(func.coalesce(func.sum(func.length(SessionEvent.payload)), 0)).where(
+                                SessionEvent.session_id == session_id,
+                                SessionEvent.cursor.between(cursor_range.first, cursor_range.last),
+                            )
                         )
-                    )
+                    ).scalar_one()
                 result.items += 1
                 if apply:
                     await record_settlement(session, session_id, cursor, settled)

@@ -134,6 +134,7 @@ py_test(
         "//agentplane/proto:event_log_pb2",
         "//agentplane/sandbox_service/testing:delta_spans",
         "//agentplane/thread_fold:models",
+        "@pypi//protobuf",
         "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
     ],
