@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import re
-from collections.abc import Callable, Iterator, Sequence
+from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
 from hashlib import sha256
 
@@ -153,19 +153,10 @@ class PostgresDatabaseTemplate:
         return _database_url(self.admin_url, self.template_name)
 
     @contextmanager
-    def clone(self, db_name: str, *, before_drop: Callable[[str], None] | None = None) -> Iterator[str]:
-        """Yield an isolated writable copy, then clean up resources and drop it.
-
-        ``before_drop`` is for database-scoped external resources such as an inactive logical
-        replication slot. It runs while the clone still exists; the database is dropped even if
-        the callback fails.
-        """
+    def clone(self, db_name: str) -> Iterator[str]:
+        """Yield an isolated writable copy, then drop it."""
         url = create_database_sync(self.admin_url, db_name, template=self.template_name)
         try:
             yield url
         finally:
-            try:
-                if before_drop is not None:
-                    before_drop(db_name)
-            finally:
-                force_drop_database_sync(self.admin_url, db_name)
+            force_drop_database_sync(self.admin_url, db_name)

@@ -50,13 +50,7 @@ def test_template_clones_keep_schema_extensions_and_isolate_writes(admin_url: st
         finally:
             engine.dispose()
 
-        callback_names: list[str] = []
-
-        def before_drop(db_name: str) -> None:
-            assert _database_exists(admin_url, db_name)
-            callback_names.append(db_name)
-
-        with template.clone("template_helper_clone_one", before_drop=before_drop) as clone_one_url:
+        with template.clone("template_helper_clone_one") as clone_one_url:
             clone_url = make_url(clone_one_url)
             assert clone_url.drivername == "postgresql+psycopg"
             assert clone_url.query["application_name"] == "postgres-template-helper"
@@ -71,7 +65,6 @@ def test_template_clones_keep_schema_extensions_and_isolate_writes(admin_url: st
             finally:
                 engine.dispose()
 
-        assert callback_names == ["template_helper_clone_one"]
         assert not _database_exists(admin_url, "template_helper_clone_one")
 
         with template.clone("template_helper_clone_two") as clone_two_url:
