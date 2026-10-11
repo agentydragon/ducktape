@@ -147,8 +147,6 @@ py_test(
         "//agentplane/proto:event_log_pb2",
         "//agentplane/proto:runner_channel_pb2",
         "//agentplane/proto:runner_channel_pb2_grpc",
-        "//agentplane/proto:command_pb2",
-        "//agentplane/proto:event_log_pb2",
         "//agentplane/runner_gateway/commands:connections",
         "//agentplane/runner_gateway/commands:dispatch",
         "//agentplane/runner_gateway/commands:store",
