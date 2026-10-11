@@ -957,7 +957,11 @@ def test_binding_revocation(client: TestClient) -> None:
 
 
 def test_policies_lists_the_namespace_for_the_create_form(client: TestClient) -> None:
-    assert {policy["name"] for policy in client.get("/egress/policies").json()} == {"github", "pypi"}
+    assert {policy["name"] for policy in client.get("/egress/policies").json()} == {
+        "github",
+        "pypi",
+        *RUNNER_ENDPOINTS.egress_policies(),
+    }
 
 
 def test_presets_publish_editable_sandbox_and_session_defaults(client: TestClient) -> None:
