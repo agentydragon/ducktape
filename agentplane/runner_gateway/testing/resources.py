@@ -24,11 +24,12 @@ def build_resources(
     destinations: DestinationResolver,
     caller_accounts: frozenset[ServiceAccountRef],
     platform_instructions: str,
+    runner_admission_ack_timeout_s: float = 1,
 ) -> Resources:
     # Shared, as in production: delivery and control must agree on which replica holds a runner.
     leases = ConnectionLeases()
     return Resources(
-        runner_admission_ack_timeout_s=1,
+        runner_admission_ack_timeout_s=runner_admission_ack_timeout_s,
         principals=principals,
         destinations=destinations,
         caller_accounts=caller_accounts,

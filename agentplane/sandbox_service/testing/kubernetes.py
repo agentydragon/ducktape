@@ -140,6 +140,9 @@ async def authenticated_service(
                 destinations=DestinationResolver(cluster.inventory, k8s_client.CoreV1Api(cluster.api), runner_port),
                 caller_accounts=frozenset({manager}),
                 platform_instructions=platform_instructions,
+                # Native acceptance uses production's admission budget, including delivery's
+                # two-second recheck. The gateway unit fixture keeps its one-second default.
+                runner_admission_ack_timeout_s=15,
             ),
             follow_lease_s=1,
         )
