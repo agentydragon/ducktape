@@ -982,7 +982,9 @@ seals through the gateway's `SealSandbox`. The code split lands first, with the 
 still serving both from one Deployment while `gateway_target` is unset; the manifest PR, after the
 `agentplane-runner-gateway` image publishes, deploys the gateway, points clients' `gateway_target`
 at it and deletes that combined mode (`CombinedSettings`, `serve_combined`, the gateway's legacy
-service name).
+service name). The same PR, or its follow-up once that image serves, makes each client's gateway
+target setting required and deletes its fallback to the Sandbox Service target (app, History
+Service, notification service), so no caller equivocates between the two.
 
 ### `GATEWAY_CLIENT_SPLIT` — Session messages and client move to the gateway
 
