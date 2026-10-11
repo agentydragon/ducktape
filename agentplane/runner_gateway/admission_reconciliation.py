@@ -19,11 +19,11 @@ from agentplane.grpc_options import grpc_channel_option_kvps
 from agentplane.protocol import event_log_pb2
 from agentplane.runner.client import RunnerClient
 from agentplane.runner.errors import RunnerError, StreamClosedError
-from agentplane.sandbox_service.commands.store import SubmissionConflictError, SubmissionStore
+from agentplane.runner_gateway.commands.store import SubmissionConflictError, SubmissionStore
+from agentplane.runner_gateway.session_registry import HistoryLocator, SessionRegistry
 from agentplane.sandbox_service.destinations import DestinationResolver, DestinationUnavailableError
 from agentplane.sandbox_service.models import SandboxNotFoundError
 from agentplane.sandbox_service.protocol_pb2 import SandboxDestination
-from agentplane.sandbox_service.session_registry import HistoryLocator, SessionRegistry
 from util.agent_sandbox import OperatingMode
 
 # Generated stubs require the protobuf runtime as a direct mypy dependency.

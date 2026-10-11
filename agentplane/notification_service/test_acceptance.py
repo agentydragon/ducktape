@@ -36,8 +36,8 @@ from agentplane.protocol import command_pb2, event_log_pb2
 from agentplane.runner import protocol_pb2
 from agentplane.runner.testing.fixtures import RunnerHandle
 from agentplane.runner.testing.scripted_model import ScriptedModel, Text
+from agentplane.runner_gateway.instructions import render_platform_instructions
 from agentplane.sandbox_service.client import Runner
-from agentplane.sandbox_service.instructions import render_platform_instructions
 from agentplane.sandbox_service.protocol_pb2 import SandboxDestination, ServiceAccount
 from agentplane.sandbox_service.session_history.history_changes import HistoryChanges
 from agentplane.sandbox_service.testing.kubernetes import (

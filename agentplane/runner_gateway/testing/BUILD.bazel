@@ -1,0 +1,16 @@
+load("//devinfra/python:defs.bzl", "py_library")
+
+package(
+    default_testonly = True,
+    default_visibility = ["//agentplane:__subpackages__"],
+)
+
+py_library(
+    name = "sessions",
+    srcs = ["sessions.py"],
+    deps = [
+        "//agentplane/runner_gateway:session_registry",
+        "//agentplane/runner_gateway/commands:db",
+        "@pypi//sqlalchemy",
+    ],
+)

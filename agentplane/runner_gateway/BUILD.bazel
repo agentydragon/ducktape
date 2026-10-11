@@ -1,0 +1,224 @@
+load("//devinfra/python:defs.bzl", "py_library", "py_test")
+
+package(default_visibility = ["//agentplane:__subpackages__"])
+
+# gazelle:resolve py agentplane.sandbox_service.protocol_pb2 //agentplane/sandbox_service:protocol_pb2
+# gazelle:resolve py agentplane.sandbox_service.protocol_pb2_grpc //agentplane/sandbox_service:protocol_pb2_grpc
+# gazelle:resolve py agentplane.runner.protocol_pb2 //agentplane/runner:protocol_pb2
+# gazelle:resolve py agentplane.protocol.command_pb2 //agentplane/protocol:command_pb2
+# gazelle:resolve py agentplane.protocol.event_pb2 //agentplane/protocol:event_pb2
+# gazelle:resolve py agentplane.protocol.event_log_pb2 //agentplane/protocol:event_log_pb2
+
+py_library(
+    name = "runner_channel",
+    srcs = ["runner_channel.py"],
+    deps = [
+        ":channel_control",
+        ":channel_delivery",
+        ":connection_records",
+        "//agentplane/runner_channel:protocol_pb2",
+        "//agentplane/runner_channel:protocol_pb2_grpc",
+        "//agentplane/runner_gateway/commands:connections",
+        "//agentplane/runner_gateway/commands:dispatch",
+        "//agentplane/runner_gateway/commands:store",
+        "//agentplane/sandbox_service:inventory",
+        "//agentplane/sandbox_service:models",
+        "//agentplane/workload_auth:bearer",
+        "//agentplane/workload_auth:principal",
+        "//util:agent_sandbox",
+        "@pypi//grpcio",
+        "@pypi//kubernetes_asyncio",
+        "@pypi//protobuf",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
+    name = "channel_control",
+    srcs = ["channel_control.py"],
+    deps = [
+        ":connection_records",
+        "//agentplane/runner:errors",
+        "//agentplane/runner_channel:protocol_pb2",
+        "//agentplane/sandbox_service:destinations",
+        "@pypi//grpcio",
+        "@pypi//protobuf",
+    ],
+)
+
+py_library(
+    name = "channel_delivery",
+    srcs = ["channel_delivery.py"],
+    deps = [
+        ":connection_records",
+        "//agentplane/postgres:listener",
+        "//agentplane/protocol:event_log_pb2",
+        "//agentplane/runner_channel:protocol_pb2",
+        "//agentplane/runner_gateway/commands:connections",
+        "//agentplane/runner_gateway/commands:dispatch",
+        "//agentplane/sandbox_service:destinations",
+        "@pypi//protobuf",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
+    name = "connection_records",
+    srcs = ["connection_records.py"],
+    deps = [
+        "//util:agent_sandbox",
+        "//util:kubernetes_watch",
+        "@pypi//kubernetes_asyncio",
+        "@pypi//more_itertools",
+        "@pypi//tenacity",
+    ],
+)
+
+py_library(
+    name = "session_registry",
+    srcs = ["session_registry.py"],
+    deps = [
+        "//agentplane/runner_gateway/commands:db",
+        "//agentplane/sandbox_service:protocol_pb2",
+        "//agentplane/sandbox_service/session_history:session_changes",
+        "@pypi//protobuf",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
+    name = "session_lifecycle",
+    srcs = ["session_lifecycle.py"],
+    deps = [
+        ":channel_control",
+        ":instructions",
+        "//agentplane/runner:client",
+        "//agentplane/runner:errors",
+        "//agentplane/runner:protocol_pb2",
+        "//agentplane/runner_channel:protocol_pb2",
+        "//agentplane/sandbox_service:protocol_pb2",
+        "@pypi//protobuf",
+    ],
+)
+
+py_library(
+    name = "command_relay",
+    srcs = ["command_relay.py"],
+    deps = [
+        "//agentplane/protocol:command_pb2",
+        "//agentplane/protocol:event_log_pb2",
+        "//agentplane/runner:client",
+        "//agentplane/runner:errors",
+        "//agentplane/runner:protocol_pb2",
+        "@pypi//protobuf",
+    ],
+)
+
+py_library(
+    name = "admission_reconciliation",
+    srcs = ["admission_reconciliation.py"],
+    deps = [
+        ":session_registry",
+        "//agentplane:grpc_options",
+        "//agentplane/protocol:event_log_pb2",
+        "//agentplane/runner:client",
+        "//agentplane/runner:errors",
+        "//agentplane/runner_gateway/commands:store",
+        "//agentplane/sandbox_service:destinations",
+        "//agentplane/sandbox_service:models",
+        "//agentplane/sandbox_service:protocol_pb2",
+        "//util:agent_sandbox",
+        "@pypi//grpcio",
+        "@pypi//kubernetes_asyncio",
+        "@pypi//protobuf",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
+    name = "instructions",
+    srcs = ["instructions.py"],
+    data = ["agent_instructions.j2"],  # explicit deployment config renders this shared instruction template
+    visibility = [
+        "//agentplane:__subpackages__",
+        "//cluster/cdk8s/agentplane:__subpackages__",
+    ],
+    deps = [
+        "//util/bazel:runfiles",
+        "@pypi//jinja2",
+    ],
+)
+
+py_test(
+    name = "test_runner_channel",
+    size = "medium",
+    srcs = ["test_runner_channel.py"],
+    requires_docker = True,
+    deps = [
+        ":channel_control",
+        ":channel_delivery",
+        ":conftest",
+        ":connection_records",
+        ":runner_channel",
+        "//:conftest",
+        "//agentplane:subjects",
+        "//agentplane/protocol:command_pb2",
+        "//agentplane/protocol:event_log_pb2",
+        "//agentplane/runner_channel:protocol_pb2",
+        "//agentplane/runner_channel:protocol_pb2_grpc",
+        "//agentplane/runner_gateway/commands:conftest",
+        "//agentplane/runner_gateway/commands:connections",
+        "//agentplane/runner_gateway/commands:dispatch",
+        "//agentplane/runner_gateway/commands:store",
+        "//agentplane/sandbox_service:destinations",
+        "//agentplane/sandbox_service/testing:kubernetes",
+        "//agentplane/testing:fake_apiserver",
+        "//agentplane/workload_auth:principal",
+        "//util:agent_sandbox",
+        "@pypi//grpcio",
+        "@pypi//kubernetes_asyncio",
+        "@pypi//protobuf",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_test(
+    name = "test_session_registry",
+    size = "medium",
+    srcs = ["test_session_registry.py"],
+    requires_docker = True,
+    deps = [
+        ":conftest",
+        ":session_registry",
+        "//:conftest",
+        "//agentplane/runner_gateway/commands:conftest",
+        "//agentplane/runner_gateway/testing:sessions",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_test(
+    name = "test_instructions",
+    srcs = ["test_instructions.py"],
+    deps = [
+        ":conftest",
+        ":instructions",
+        ":session_lifecycle",
+        "//:conftest",
+        "//agentplane/runner:protocol_pb2",
+        "//agentplane/sandbox_service:protocol_pb2",
+        "@pypi//protobuf",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
+    name = "conftest",
+    testonly = True,
+    srcs = ["conftest.py"],
+    deps = ["//agentplane/sandbox_service:conftest"],
+)

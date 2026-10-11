@@ -4,7 +4,7 @@ from jinja2 import StrictUndefined, Template
 
 from util.bazel.runfiles import get_required_path, own_repo_rlocation
 
-PLATFORM_INSTRUCTIONS_TEMPLATE = "agentplane/sandbox_service/agent_instructions.j2"
+PLATFORM_INSTRUCTIONS_TEMPLATE = "agentplane/runner_gateway/agent_instructions.j2"
 
 
 def render_platform_instructions(

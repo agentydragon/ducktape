@@ -34,7 +34,7 @@ Source inspection at `c38998b5` found a browser outbox, not an app database comm
 See [browser recovery](../app/frontend/threads/local_commands.ts),
 [submission/retry](../app/frontend/threads/thread_commands.tsx),
 [app relay](../app/threads/bridge.py), [archive lookup](../app/threads/view/content.py),
-[service relay](../sandbox_service/command_relay.py) and [runner journal](../runner/journal.py).
+[service relay](../runner_gateway/command_relay.py) and [runner journal](../runner/journal.py).
 These are source findings, not proof of the deployed version. Do not add an app queue drain or
 retirement phase based on the earlier assumption that such a backend queue existed. Keep browser
 recovery for requests that never reached the service; reconcile its handoff with service receipts.
@@ -98,7 +98,7 @@ attempt, with its precise deadline/ownership semantics reviewed before channel i
 or a missed notification must not turn into an offline pending-command drain. Expiry/cancellation
 cannot retract a command already sent; persist and reconcile late admission receipts.
 
-The admission store (`sandbox_service/commands/`) persists submissions in the `sandbox_commands`
+The admission store (`runner_gateway/commands/`) persists submissions in the `sandbox_commands`
 database with its own per-Session reconciliation cursor, since history lives in another database
 with no shared transaction. `SubmitCommand` records public-Session commands there, and admission
 reconciliation settles pending ones from the runner journal, independent of history ingestion. New inbound RPC prototypes are not a

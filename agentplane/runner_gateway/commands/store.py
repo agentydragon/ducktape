@@ -19,7 +19,7 @@ from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 from agentplane.protocol import command_pb2, event_log_pb2
-from agentplane.sandbox_service.commands import db
+from agentplane.runner_gateway.commands import db
 from agentplane.subjects import ServiceAccountRef
 
 # gazelle:include_dep @pypi//protobuf

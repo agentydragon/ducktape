@@ -1,0 +1,24 @@
+load("//devinfra/python:defs.bzl", "py_library")
+
+filegroup(
+    name = "files",
+    srcs = [
+        "env.py",
+        "//agentplane/runner_gateway/commands/migrations/versions:0001_command_admission.py",
+        "//agentplane/runner_gateway/commands/migrations/versions:0002_runner_connection.py",
+        "//agentplane/runner_gateway/commands/migrations/versions:0003_submission_attempt.py",
+        "//agentplane/runner_gateway/commands/migrations/versions:0004_session.py",
+        "//agentplane/runner_gateway/commands/migrations/versions:0005_pending_submission_index.py",
+        "//agentplane/runner_gateway/commands/migrations/versions:0006_connection_lease.py",
+    ],
+    visibility = ["//agentplane/runner_gateway/commands:__pkg__"],
+)
+
+py_library(
+    name = "env",
+    srcs = ["env.py"],
+    deps = [
+        "//agentplane/runner_gateway/commands:db",
+        "@pypi//alembic",
+    ],
+)

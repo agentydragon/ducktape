@@ -19,12 +19,12 @@ from kubernetes_asyncio import client as k8s_client
 from sqlalchemy.exc import SQLAlchemyError
 
 from agentplane.runner_channel import protocol_pb2, protocol_pb2_grpc
-from agentplane.sandbox_service.channel_control import ChannelControl, ControlConnection
-from agentplane.sandbox_service.channel_delivery import ChannelDelivery
-from agentplane.sandbox_service.commands.connections import ConnectionStore
-from agentplane.sandbox_service.commands.dispatch import CommandKey, ReceiptMismatchError
-from agentplane.sandbox_service.commands.store import SubmissionConflictError
-from agentplane.sandbox_service.connection_records import ConnectionRecords, ConnectionSupersededError, RecordOwner
+from agentplane.runner_gateway.channel_control import ChannelControl, ControlConnection
+from agentplane.runner_gateway.channel_delivery import ChannelDelivery
+from agentplane.runner_gateway.commands.connections import ConnectionStore
+from agentplane.runner_gateway.commands.dispatch import CommandKey, ReceiptMismatchError
+from agentplane.runner_gateway.commands.store import SubmissionConflictError
+from agentplane.runner_gateway.connection_records import ConnectionRecords, ConnectionSupersededError, RecordOwner
 from agentplane.sandbox_service.inventory import SandboxInventory
 from agentplane.sandbox_service.models import SandboxNotFoundError
 from agentplane.workload_auth.bearer import parse_bearer, sole_header

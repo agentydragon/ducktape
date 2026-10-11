@@ -36,7 +36,7 @@ from cdk8s_plus_34 import (
 from constructs import Construct
 
 from agentplane.egress.resources import placeholder_of
-from agentplane.sandbox_service.instructions import combine_instructions, render_platform_instructions
+from agentplane.runner_gateway.instructions import combine_instructions, render_platform_instructions
 from agentplane.sandbox_service.kubernetes_grants import ClusterRoleBindingGrant, RoleBindingGrant
 from agentplane.sandbox_service.runner_endpoints import RunnerEndpoint
 from agentplane.sandbox_service.settings import CONFIG_FILE_ENV, RUNNER_CHANNEL_AUDIENCE, Settings

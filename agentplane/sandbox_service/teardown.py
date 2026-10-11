@@ -18,12 +18,12 @@ from agentplane.grpc_options import grpc_channel_option_kvps
 from agentplane.runner import protocol_pb2 as runner_pb2
 from agentplane.runner.client import RunnerClient
 from agentplane.runner_channel import protocol_pb2 as channel_pb2
-from agentplane.sandbox_service.channel_control import ChannelControl, ConnectionNotHeldError
-from agentplane.sandbox_service.commands.connections import ConnectionStore
+from agentplane.runner_gateway.channel_control import ChannelControl, ConnectionNotHeldError
+from agentplane.runner_gateway.commands.connections import ConnectionStore
+from agentplane.runner_gateway.runner_channel import ChannelOperation
+from agentplane.runner_gateway.session_registry import SessionRegistry
 from agentplane.sandbox_service.destinations import DestinationResolver
 from agentplane.sandbox_service.protocol_pb2 import Sandbox, SandboxDestination, TeardownPhase
-from agentplane.sandbox_service.runner_channel import ChannelOperation
-from agentplane.sandbox_service.session_registry import SessionRegistry
 
 # gazelle:include_dep @pypi//protobuf
 
