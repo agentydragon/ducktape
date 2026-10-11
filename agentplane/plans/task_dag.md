@@ -343,6 +343,7 @@ flowchart LR
     CLIENT_SESSION_IDS[Clients mint Session IDs] --> RUNNER_OUTBOUND_ROLLOUT
     SEAL_ON_INGRESS_ACK[Seal waits on the ingress acknowledgement] --> RUNNER_OUTBOUND_ROLLOUT
     PROTO_DIRECTORY[Protos under agentplane/proto] --> RUNNER_OUTBOUND_ROLLOUT
+    RUNNER_CONTROL_RENAME[Name the runner's control endpoint control] --> RUNNER_OUTBOUND_ROLLOUT
     RUNNER_OUTBOUND_ROLLOUT --> LEGACY_SANDBOX_RETIRE[Blocked: operator deletes every pre-cutover Sandbox]
     LEGACY_SANDBOX_RETIRE --> RUNNER_INBOUND_RETIRE[Blocked: retire inbound runner access]
     VM_PROVIDER --> VM_CONTROL_NETWORKING
@@ -387,6 +388,13 @@ merges) together with the routing check on its operations in `SubmitCommand`, le
 `Hello`/`Welcome` capabilities to negotiate only what a connection carries. The legacy caller-chosen runner Session ID
 path goes too, as do the runner SPEC's and Sandbox Service README's notes on the unauthenticated
 inbound listener.
+
+Also inbound-only, so deleted here: teardown's inbound seal branch and `_stop_legacy` for runner
+images without `Seal`; `SubmitCommandRequest.follow` with the client's `command(after_cursor=...)`
+and the app's `last_cursor` lookup for it, read only by the relay; the `runner_grpc_channel_options`
+setting and `Environment` field; and the runner's own gRPC server, its `--listen` flag and the
+`Runner` service RPCs the channel duplicates. The Sandbox Service README, which still describes
+the relay as its foundation, is rewritten for the channel.
 
 ### `VM_CONTROL_NETWORKING` — integrate the reviewed connection direction
 
@@ -786,8 +794,8 @@ flowchart TD
 Service's and the History Service's) follow by `runner_session_id`. Under the ingress, Sessions
 arrive under their client-minted public ID, which is also the runner's. Then the column only names
 feed snapshots stored before ingesters wrote them under the public ID: rewrite those snapshots
-under the public ID, then drop the column with `ux_history_runner_locator`, together with the
-follower-only ingestion state (`source_id`, `feed_state`). Stops for the operator.
+under the public ID, then drop the column with `ux_history_runner_locator`. `feed_state` stays:
+the ingress writes it and the fold and app bridge read it. Stops for the operator.
 
 ### `HISTORY_STORE_MOVE` — the history store belongs to the History Service
 
@@ -843,11 +851,11 @@ names until every client calls the new one.
 
 Dead code, finished gates, compatibility shims and stale names found by the 2026-10-10 PDT audit of
 devel. A gate counts as legacy once its rollout is finished on both testing and staging or nothing
-reads it; mid-rollout gates (shadow fold, read cutover, the Sandbox Service's `Recreate`,
-`history_writer`, delta settlement) stay with their own nodes above. Lane named per node; leftovers
-of in-flight work belong to the lane already changing that code. Upstream-gated tombstones with a
-verifiable condition in code (`keepingOffset` in `thread_store.tsx`, the jsdom pragma in
-`markdown.test.tsx`) need no node.
+reads it; mid-rollout gates (read cutover, the Sandbox Service's `Recreate`, `history_writer`,
+delta settlement) stay with their own nodes above. Lane named per node; leftovers of in-flight work
+belong to the lane already changing that code. Upstream-gated tombstones with a verifiable condition
+in code (`keepingOffset` in `thread_store.tsx`, the jsdom pragma in `markdown.test.tsx`) need no
+node.
 
 ```mermaid
 flowchart TD
@@ -855,6 +863,15 @@ flowchart TD
     RUNNER_SESSION_RECORD_SHIMS[Blocked: drop runner session record compatibility]
     LEGACY_SANDBOX_RETIRE[Retire pre-dial-out Sandboxes]
     LEGACY_SANDBOX_RETIRE --> RUNNER_SESSION_RECORD_SHIMS
+    HISTORY_FOLD_ALWAYS_ON[Candidate in part: the History Service always folds]
+    APP_PROJECTOR_RETIRE[Delete app projector] --> HISTORY_FOLD_ALWAYS_ON
+    ACTION_EXECUTION_AUDIT_TRIM[Decision: execution reconciliation columns]
+    REFACTOR_COHERENCE_AUDIT[Blocked: whole-refactor coherence audit]
+    FOLLOW_PATH_RETIRE[Delete following, WatchSessions and holds] --> REFACTOR_COHERENCE_AUDIT
+    RUNNER_INBOUND_RETIRE[Retire inbound runner access] --> REFACTOR_COHERENCE_AUDIT
+    SANDBOX_SERVICE_DEPLOYMENT_SPLIT[Sandbox Service and Runner Gateway split] --> REFACTOR_COHERENCE_AUDIT
+    HISTORY_SERVICE_OWNERSHIP[History Service ownership] --> REFACTOR_COHERENCE_AUDIT
+    RUNNER_SESSION_RECORD_SHIMS --> REFACTOR_COHERENCE_AUDIT
 ```
 
 ### `RUNNER_SESSION_RECORD_SHIMS` — drop runner session record compatibility
@@ -874,6 +891,36 @@ frontend reads `requested_value` with a `.default(null)` because the app's own f
 still holds Command rows written before the field existed, and `thread_reads: APP` serves them;
 once that switch is gone, only the History Service fold (rebuilt in `history-v1`, every row
 carrying the field) is read and the default can go. Code only.
+
+### `HISTORY_FOLD_ALWAYS_ON` — the History Service always folds
+
+**Candidate for the failure half; the rest blocked on app projector retirement. Legacy burn-down
+lane.** Both environments set `fold_shadow` and read Threads from the History Service fold, yet the
+setting defaults to off, and the fold runs as a side task whose crash is only logged while
+`/healthz` stays OK, so Thread reads silently stop advancing; the ingester, by contrast, ends the
+process. Now: a fold failure fails the health check or the process. After `APP_PROJECTOR_RETIRE`
+deletes `thread_reads`: delete `Settings.fold_shadow` and `Environment.fold_shadow`, and rename
+`fold_shadow.py`/`FoldShadow` and their "shadow" comments for what the fold is.
+
+### `ACTION_EXECUTION_AUDIT_TRIM` — execution reconciliation columns
+
+**Decision; drops columns, so the operator decides.** `ExecutionRow.reconciled_by` and
+`reconciliation_source` in `action_service/db.py` are written but read only by a test, and
+`ReconciliationSource` has one member. Either expose `reconciled_by` in the execution view, or
+drop both columns and the enum.
+
+### `REFACTOR_COHERENCE_AUDIT` — the refactor reads as one design
+
+**Blocked on the cutover's retirements and the split**, which remove the transitional pieces the
+other nodes name. Sweep devel for unused modules, functions, settings, proto fields, tables and
+columns; one name per concept across code, settings, manifests, protos and docs (Sandbox Service,
+Runner Gateway, History Service, ingress, control; Session for the raw stream, Thread for its
+projection; no "hub", "follow" or "shadow" left); READMEs, `SPEC.md` files and `docs/` describing
+the code as it is, without cutover narration; no compatibility branch, optional-with-fallback
+setting or `CLEANUP` tombstone whose condition is met. Known now: the cutover guards in
+`cluster/cdk8s/agentplane/test_sandbox_service.py` (a "removed stays removed" assertion, and a test
+defined after `__main__`), and the test-only `PostgresListener.wait_until_disconnected`. Findings
+are fixed in PRs of their own; this node leaves with the last of them.
 
 ## 11. Runner ingress and control split
 
@@ -897,6 +944,8 @@ flowchart TD
     POD_INCARNATION[Decision: a Pod is the incarnation]
     SEAL_FINALIZER[Blocked: seal as a finalizer on every delete]
     COMMAND_RECORDS_RETIRE[Unscheduled: drop command submission records]
+    RUNNER_CONTROL_RENAME[Candidate: name the runner's control endpoint control]
+    RUNNER_CONTROL_RENAME --> RUNNER_OUTBOUND_ROLLOUT
     CLIENT_SESSION_IDS --> RUNNER_OUTBOUND_ROLLOUT
     CLIENT_SESSION_IDS --> RUNNER_INBOUND_RETIRE[Retire inbound runner access]
     SEAL_ON_INGRESS_ACK --> RUNNER_OUTBOUND_ROLLOUT
@@ -935,6 +984,13 @@ the follower (`history_service.testing.backend.ingest`, used by the app and Noti
 acceptance tests) push through the ingress instead. Stops for the operator before dropping
 stored registry or history columns.
 
+Also follow-only, so deleted here: the History Service's `SandboxServiceSettings` and
+`IngesterSettings` (with the duplicate `ingester.settle_deltas`), its `sandbox_service` config block
+and token volume in cdk8s, and its caller account on the Sandbox Service; `follow_lease_s` and
+`SessionChanges`; the client's `follow_timeout_s` and `Attachment` with the app's
+`sandbox_service_follow_timeout_s` and the Notification Service's `follow_timeout_s`; and
+`protocol.v1.Follow` once nothing sends `Open.follow`.
+
 ### `SANDBOX_SERVICE_DEPLOYMENT_SPLIT` — controller and hub as separate Deployments
 
 **Candidate; operator, 2026-10-10 PDT.** The Sandbox Service stays one service and one API owner
@@ -942,6 +998,15 @@ stored registry or history columns.
 single active controller holding the RBAC, ServiceAccount and egress grant permissions, and the
 replicated runner-facing hub with only Lease and EndpointSlice writes, so a hub bug cannot reach
 the controller's credentials.
+
+### `RUNNER_CONTROL_RENAME` — name the runner's control endpoint "control"
+
+**Candidate; rides the clean cutover with `PROTO_DIRECTORY`.** Settings and `RunnerEndpoints` say
+`runner_control`, everything else says "channel": the runner's `--channel-target` and
+`--channel-bearer` flags, the `runner_channel_port` and `runner_channel_audience` settings, the
+`agentplane-runner-channel` audience, the `runner-channel` EgressPolicy, the `runner_channel`
+package and `docs/runner_channel.md`. Flags, audience and package cross the runner image boundary,
+so rename them all before `RUNNER_OUTBOUND_ROLLOUT`.
 
 ### `AGENTPLANE_SANDBOX_RESOURCE` — our own Sandbox resource
 
