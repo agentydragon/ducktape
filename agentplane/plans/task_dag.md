@@ -586,7 +586,6 @@ flowchart TD
     HISTORY_SERVICE_OWNERSHIP -. enforce at the final owner .-> THREAD_READ_POLICY
 ```
 
-
 ### `APP_PROJECTION_RETIRE` — drop the app projection
 
 **Blocked on the app projector's deletion rolling out to staging.** An explicit deletion PR for the app projection tables and
