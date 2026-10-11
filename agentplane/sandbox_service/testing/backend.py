@@ -23,9 +23,9 @@ from agentplane.sandbox_service.inventory import SandboxInventory
 from agentplane.sandbox_service.kubernetes_bindings import KubernetesBindings
 from agentplane.sandbox_service.kubernetes_grants import KubernetesGrant
 from agentplane.sandbox_service.provisioning import Provisioning
-from agentplane.sandbox_service.runner_endpoints import RunnerEndpoints
 from agentplane.sandbox_service.testing.fake_inventory import (
     NAMESPACE,
+    RUNNER_ENDPOINTS,
     FakeCoreV1Api,
     FakeCustomObjectsApi,
     pod,
@@ -86,6 +86,7 @@ def backend(
     platform_instructions: str = "Test backend guidance.",
 ) -> Iterator[Endpoint]:
     token_file.write_text(TOKEN)
+    custom_objects.add_runner_endpoint_policies()
     custom = cast(CustomObjectsClient, custom_objects)
     core_api = cast(k8s_client.CoreV1Api, core)
     inventory = SandboxInventory(namespace=NAMESPACE, custom_objects=custom, core_v1=core_api)
@@ -100,7 +101,7 @@ def backend(
             ActionPolicyBindings(namespace=NAMESPACE, custom_objects=custom),
             grants if grants is not None else {},
             bindings,
-            RunnerEndpoints(control=None, ingress=None),
+            RUNNER_ENDPOINTS,
         )
         resources = build_resources(
             engine,

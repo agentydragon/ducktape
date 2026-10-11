@@ -16,9 +16,14 @@ from kubernetes_asyncio import client as k8s_client
 
 from agentplane.sandbox_service.egress_views import FLUX_KUSTOMIZATION_LABEL
 from agentplane.sandbox_service.kubernetes_views import MANAGED_LABEL
+from agentplane.sandbox_service.runner_endpoints import RunnerEndpoint, RunnerEndpoints
 
 NAMESPACE = "agentplane-test"
 TEMPLATE = "agentplane-test-runner"
+RUNNER_ENDPOINTS = RunnerEndpoints(
+    control=RunnerEndpoint(target="test-gateway.test:8082", bearer="test-control-bearer", egress_policy="test-control"),
+    ingress=RunnerEndpoint(target="test-history.test:8083", bearer="test-history-bearer", egress_policy="test-history"),
+)
 _FAKE_API_CLIENTS: set[k8s_client.ApiClient] = set()
 
 
@@ -70,6 +75,13 @@ class FakeCustomObjectsApi:
         }
         self.patches: list[tuple[str, str, dict[str, Any]]] = []
         self.deleted: list[tuple[str, str]] = []
+
+    def add_runner_endpoint_policies(self) -> None:
+        """The egress policies the deployment applies beside `RUNNER_ENDPOINTS`, which every Sandbox is granted."""
+        for endpoint in (RUNNER_ENDPOINTS.control, RUNNER_ENDPOINTS.ingress):
+            self.objects[("egresspolicies", endpoint.egress_policy)] = egress_policy(
+                endpoint.egress_policy, [{"hosts": [endpoint.target.partition(":")[0]]}]
+            )
 
     async def list_namespaced_custom_object(
         self, group: str, version: str, namespace: str, plural: str, *, label_selector: str = ""

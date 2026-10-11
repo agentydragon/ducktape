@@ -21,7 +21,7 @@ from agentplane.sandbox_service.inventory import SandboxInventory
 from agentplane.sandbox_service.kubernetes_bindings import KubernetesBindings
 from agentplane.sandbox_service.kubernetes_views import MANAGED_LABEL, SANDBOX_BINDING_ANNOTATION
 from agentplane.sandbox_service.provisioning import Provisioning
-from agentplane.sandbox_service.runner_endpoints import RunnerEndpoints
+from agentplane.sandbox_service.testing.fake_inventory import RUNNER_ENDPOINTS
 from agentplane.subjects import ServiceAccountRef
 from agentplane.testing.fake_apiserver import SANDBOX_NAMESPACE, FakeApiServer, TokenVerdict, fake_apiserver, pod_for
 from agentplane.workload_auth.principal import WorkloadPrincipalResolver
@@ -107,7 +107,7 @@ async def kubernetes() -> AsyncIterator[Cluster]:
                     ActionPolicyBindings(namespace=SANDBOX_NAMESPACE, custom_objects=custom),
                     {},
                     KubernetesBindings(inventory, k8s_client.RbacAuthorizationV1Api(api)),
-                    RunnerEndpoints(control=None, ingress=None),
+                    RUNNER_ENDPOINTS,
                 ),
             )
 

@@ -43,11 +43,11 @@ class TemplateSetsRunnerEndpointsError(InventoryError):
 class RunnerEndpoints:
     """What every new Sandbox's runner is started with."""
 
-    control: RunnerEndpoint | None
-    ingress: RunnerEndpoint | None
+    control: RunnerEndpoint
+    ingress: RunnerEndpoint
 
     def egress_policies(self) -> list[str]:
-        return [endpoint.egress_policy for endpoint in (self.control, self.ingress) if endpoint is not None]
+        return [self.control.egress_policy, self.ingress.egress_policy]
 
     def require_unreserved(self, picked: Sequence[str]) -> None:
         """Endpoint egress policies come with their endpoint; no request picks one."""
@@ -57,12 +57,7 @@ class RunnerEndpoints:
 
     def point(self, pod_template: dict[str, object]) -> dict[str, object]:
         """The template's Pod with these endpoints on its runner's command line."""
-        args = [
-            *(_flags(_CONTROL_FLAGS, self.control) if self.control is not None else []),
-            *(_flags(_INGRESS_FLAGS, self.ingress) if self.ingress is not None else []),
-        ]
-        if not args:
-            return pod_template
+        args = [*_flags(_CONTROL_FLAGS, self.control), *_flags(_INGRESS_FLAGS, self.ingress)]
         spec = cast(dict[str, object], pod_template.get("spec", {}))
         containers = cast(list[dict[str, object]], spec.get("containers", []))
         runners = [index for index, container in enumerate(containers) if container.get("name") == RUNNER_CONTAINER]

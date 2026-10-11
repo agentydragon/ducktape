@@ -36,17 +36,10 @@ class Settings(BaseSettings):
     kubernetes_grants: dict[str, KubernetesGrant] = Field(default_factory=dict)
     kubernetes_binding_cleanup_namespaces: set[str] = Field(default_factory=set)
     kubernetes_cluster_binding_cleanup: bool = False
-    # CLEANUP(added 2026-10-11): require `runner_control` and `runner_ingress` once both environments'
-    #   Sandbox Service config sets them and no SandboxTemplate passes --control-target.
-    runner_control: RunnerEndpoint | None = Field(
-        default=None,
-        description="The Runner Gateway endpoint every new Sandbox's runner dials for its control stream. "
-        "Unset, runners dial whatever their template names.",
+    runner_control: RunnerEndpoint = Field(
+        description="The Runner Gateway endpoint every new Sandbox's runner dials for its control stream."
     )
-    runner_ingress: RunnerEndpoint | None = Field(
-        default=None,
-        description="The ingress every new Sandbox's runner pushes its Events to. Unset, runners start without one.",
-    )
+    runner_ingress: RunnerEndpoint = Field(description="The ingress every new Sandbox's runner pushes its Events to.")
     gateway_target: str = Field(min_length=1, description="The Runner Gateway's Service, as `host:port`.")
     control_target: str = Field(
         min_length=1,

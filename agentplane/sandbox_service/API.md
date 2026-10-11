@@ -63,8 +63,7 @@ The same service-caller allowlist gates every RPC. Provisioning is always enable
   `--control-target`/`--control-bearer`, and grants each endpoint's `egress_policy` with the launch
   policies ([Event ingress](../docs/runner_control.md#event-ingress)); the request chooses neither.
   A template whose runner already passes one of those flags is refused. No request may pick an
-  endpoint's egress policy, at creation or through `GrantEgress`. An unset setting leaves that
-  endpoint off.
+  endpoint's egress policy, at creation or through `GrantEgress`.
 - `GrantEgress`: UID-pinned Sandbox destination and egress policy names; returns the created binding name.
   `RevokeEgress`: binding name; retains the refusal to delete Git-owned bindings. Both require the
   same service-caller authorization as other operations.

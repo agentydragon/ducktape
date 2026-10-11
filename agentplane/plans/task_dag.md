@@ -322,14 +322,13 @@ journal.
 
 ```mermaid
 flowchart LR
-    RUNNER_OUTBOUND_ROLLOUT[Candidate: runner endpoints required]
     VM_CONTROL_NETWORKING[Blocked: integrate selected VM control path]
     VM_IMAGE[Candidate: packaged guest and storage]
     VM_PROVIDER[Candidate: production provider and API]
     VM_EGRESS[Candidate: production admission and egress integration]
     VM_PROCESS_ISOLATION[Blocked: harness/process resource boundary]
     VM_LIFECYCLE[Blocked: integrated lifecycle]
-    RUNNER_OUTBOUND_ROLLOUT --> LEGACY_SANDBOX_RETIRE[Blocked: operator deletes every pre-cutover Sandbox]
+    LEGACY_SANDBOX_RETIRE[Operator: delete every pre-push Sandbox]
     LEGACY_SANDBOX_RETIRE --> RUNNER_INBOUND_RETIRE[Blocked: retire inbound runner access]
     KUBEVIRT_GUEST_CONTROL[KubeVirt guest dials out] --> RUNNER_INBOUND_RETIRE
     VM_PROVIDER --> VM_CONTROL_NETWORKING
@@ -344,19 +343,13 @@ flowchart LR
     SANDBOX_VM_ISOLATION --> LOCAL_BAZEL[Blocked: bounded local Bazel client in VM]
 ```
 
-### `RUNNER_OUTBOUND_ROLLOUT` — runner endpoints required
+### `LEGACY_SANDBOX_RETIRE` — delete pre-push Sandboxes
 
-**Candidate.** Both environments' Sandbox Service config sets `runner_control` and `runner_ingress`,
-so every new runner pushes its Events and holds its control stream. Make both required settings
-(the `CLEANUP` tombstone in `sandbox_service/settings.py`). Pre-cutover Sandboxes are not upgraded:
-a clean cutover (operator, 2026-10-10 PDT).
-
-### `LEGACY_SANDBOX_RETIRE` — delete pre-cutover Sandboxes
-
-**Blocked on the rollout; the operator's step.** The operator chose a clean cutover (2026-10-10
-PDT) and deletes every Sandbox created before it through `DeleteSandbox`, so each runner seals its
-journals and retention holds keep it until the History Service has archived them. Exit: no live
-Sandbox's runner lacks the control stream.
+**The operator's step.** Every Sandbox created since both environments' Sandbox Service config set
+`runner_control` and `runner_ingress` (2026-10-11) pushes its Events and holds its control stream. The operator chose a clean cutover (2026-10-10 PDT) and deletes every
+Sandbox created before that through `DeleteSandbox`, so each runner seals its journals and
+retention holds keep it until the History Service has archived them. Exit: no live Sandbox's runner
+lacks the `--ingress-target` and `--control-target` flags.
 
 Pre-cutover Sandboxes are still archived the old way: the History Service follows them through the
 Sandbox Service and holds them until the seal, which is why `FOLLOW_PATH_RETIRE` waits for this
@@ -881,8 +874,7 @@ nodes and section 9 are unaffected.
 
 ```mermaid
 flowchart TD
-    RUNNER_OUTBOUND_ROLLOUT[Every template dials out]
-    LEGACY_SANDBOX_RETIRE[Retire pre-cutover Sandboxes]
+    LEGACY_SANDBOX_RETIRE[Retire pre-push Sandboxes]
     FOLLOW_PATH_RETIRE[Blocked: delete following, WatchSessions and holds]
     GATEWAY_CLIENT_SPLIT[Unscheduled: Session messages and client move to the gateway]
     AGENTPLANE_SANDBOX_RESOURCE[Decision: our own Sandbox resource]
@@ -892,8 +884,6 @@ flowchart TD
     SESSION_ID_MINT_RETIRE[Blocked: clients always name the Session ID]
     LOOKUP_SESSION_RETIRE[Candidate: Session status from history, no Open reservation]
     HISTORY_INGRESS_SAME_BINARY[Candidate: the History Service binary serves the ingress]
-    HISTORY_INGRESS_SAME_BINARY -. before runners point at the ingress .-> RUNNER_OUTBOUND_ROLLOUT
-    RUNNER_OUTBOUND_ROLLOUT --> LEGACY_SANDBOX_RETIRE
     LEGACY_SANDBOX_RETIRE --> FOLLOW_PATH_RETIRE
     AGENTPLANE_SANDBOX_RESOURCE -. to seal a suspended Sandbox on delete .-> SEAL_FINALIZER
     POD_INCARNATION -. if chosen, rewrites .-> SESSION_STATE_VOLUME_DESIGN[State volume design]
@@ -914,8 +904,9 @@ minting IDs and handing the runner an `r-` locator (the `CLEANUP` tombstones in 
 and Deployment (`history_service/ingress_main.py`, `:ingress_image`, `IngressSettings`,
 `agentplane-history-ingress`); the operator wants it served by the History Service's own binary.
 Open: whether they also share one Deployment, or keep separate Deployments of the one image (the
-ingress takes untrusted input). Preferably lands before `RUNNER_OUTBOUND_ROLLOUT`, while no runner
-pushes to the ingress yet.
+ingress takes untrusted input). Runners created since 2026-10-11 dial `agentplane-history-ingress`
+by that Service name, fixed at creation, so the Service keeps its name and selects whichever Pods
+serve the ingress.
 
 ### `LOOKUP_SESSION_RETIRE` — Session status from history, no Open reservation
 

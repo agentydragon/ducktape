@@ -32,9 +32,9 @@ from agentplane.sandbox_service.kubernetes_grants import (
     resolve_grants,
 )
 from agentplane.sandbox_service.kubernetes_views import KUBERNETES_GRANTS_ANNOTATION, sandbox_view
-from agentplane.sandbox_service.runner_endpoints import RunnerEndpoints
 from agentplane.sandbox_service.testing.fake_inventory import (
     NAMESPACE,
+    RUNNER_ENDPOINTS,
     TEMPLATE,
     FakeCoreV1Api,
     FakeCustomObjectsApi,
@@ -62,7 +62,7 @@ async def _sandbox(
     view = await inventory.create(
         CreateSandboxRequest(name=name, template=TEMPLATE, kubernetes_grants=names),
         caller=ServiceAccountRef(namespace=NAMESPACE, name="test-caller"),
-        endpoints=RunnerEndpoints(control=None, ingress=None),
+        endpoints=RUNNER_ENDPOINTS,
         annotations={
             KUBERNETES_GRANTS_ANNOTATION: json.dumps(
                 [MessageToDict(grant, preserving_proto_field_name=True) for grant in selected]

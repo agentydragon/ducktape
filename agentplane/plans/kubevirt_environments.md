@@ -14,8 +14,8 @@ The guest runner dials the Runner Gateway over the [runner control stream](../do
 through the same egress relay its LLM and Action traffic needs, so no guest runner service has to
 be exposed or routed. It does not remove that relay or its credential boundary. Diagrams below show
 the inbound-control baseline that the control stream replaces. `VM_CONTROL_NETWORKING` states which
-guest ports, endpoint discovery and network policies go away; new container Sandboxes move under
-`RUNNER_OUTBOUND_ROLLOUT`. Image/storage and process-boundary work can proceed independently. The
+guest ports, endpoint discovery and network policies go away; new container Sandboxes already dial
+out. Image/storage and process-boundary work can proceed independently. The
 control stream neither removes the runner journal nor chooses central command admission.
 
 ## Proposed shape
@@ -280,8 +280,6 @@ environments and the Sandbox Service extraction's staging-preservation requireme
 
 The [DAG VM lane](task_dag.md#4-vm-environment-phases) now sequences these separately:
 
-- `RUNNER_OUTBOUND_ROLLOUT`: makes outbound delivery, which keeps command/Event semantics, the
-  default for new container Sandboxes.
 - `VM_CONTROL_NETWORKING`: wire the guest runner's outbound channel on the VM network after the
   provider. Gate integrated VM lifecycle on this path.
 - `VM_IMAGE`: digest-pinned guest and bounded retained storage, tested with both harnesses.

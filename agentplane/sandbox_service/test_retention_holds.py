@@ -20,8 +20,7 @@ from agentplane.sandbox_service.inventory import SandboxInventory
 from agentplane.sandbox_service.kubernetes_bindings import KubernetesBindings
 from agentplane.sandbox_service.models import SandboxNotFoundError
 from agentplane.sandbox_service.provisioning import Provisioning
-from agentplane.sandbox_service.runner_endpoints import RunnerEndpoints
-from agentplane.sandbox_service.testing.fake_inventory import NAMESPACE, FakeCustomObjectsApi, sandbox
+from agentplane.sandbox_service.testing.fake_inventory import NAMESPACE, RUNNER_ENDPOINTS, FakeCustomObjectsApi, sandbox
 from agentplane.sandbox_service.testing.fake_rbac import FakeRbac
 from agentplane.sandbox_service.testing.grpc_service import CALLER_TOKEN, service_client
 from agentplane.sandbox_service.testing.kubernetes import Cluster
@@ -100,7 +99,7 @@ async def api(
         ActionPolicyBindings(namespace=NAMESPACE, custom_objects=custom),
         {},
         KubernetesBindings(inventory, cast(k8s_client.RbacAuthorizationV1Api, FakeRbac())),
-        RunnerEndpoints(control=None, ingress=None),
+        RUNNER_ENDPOINTS,
     )
     resources = Resources(
         principals=cluster.build_principal_resolver(AUDIENCE),

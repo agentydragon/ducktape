@@ -26,9 +26,9 @@ from agentplane.sandbox_service.kubernetes_bindings import KubernetesBindings
 from agentplane.sandbox_service.kubernetes_grants import RoleBindingGrant, RoleRef
 from agentplane.sandbox_service.kubernetes_views import SANDBOX_BINDING_ANNOTATION
 from agentplane.sandbox_service.provisioning import Provisioning
-from agentplane.sandbox_service.runner_endpoints import RunnerEndpoint, RunnerEndpoints
 from agentplane.sandbox_service.testing.fake_inventory import (
     NAMESPACE,
+    RUNNER_ENDPOINTS,
     TEMPLATE,
     FakeCoreV1Api,
     FakeCustomObjectsApi,
@@ -48,8 +48,6 @@ from util.kubernetes import CustomObjectsClient
 
 ADMIN = ServiceAccountRef(namespace=SANDBOX_NAMESPACE, name="test-provisioner")
 AUDIENCE = "test-provisioning"
-CONTROL = RunnerEndpoint(target="test-gateway.test:8082", bearer="test-control-bearer", egress_policy="test-control")
-HISTORY = RunnerEndpoint(target="test-history.test:8083", bearer="test-history-bearer", egress_policy="test-history")
 
 
 class FaultyObjects(FakeCustomObjectsApi):
@@ -74,15 +72,12 @@ class Case:
 @pytest.fixture
 def case() -> Case:
     custom, core, rbac = FaultyObjects(), FakeCoreV1Api(), FakeRbac()
+    custom.add_runner_endpoint_policies()
     inventory = SandboxInventory(
         namespace=NAMESPACE, custom_objects=cast(CustomObjectsClient, custom), core_v1=cast(k8s_client.CoreV1Api, core)
     )
     custom.objects[("egresspolicies", "test-basic")] = egress_policy("test-basic", [{"hosts": ["example.test"]}])
     custom.objects[("actionpolicysets", "test-actions")] = action_policy_set("test-actions")
-    for endpoint in (CONTROL, HISTORY):
-        custom.objects[("egresspolicies", endpoint.egress_policy)] = egress_policy(
-            endpoint.egress_policy, [{"hosts": [endpoint.target.partition(":")[0]]}]
-        )
     return Case(
         Provisioning(
             inventory,
@@ -96,7 +91,7 @@ def case() -> Case:
                 )
             },
             KubernetesBindings(inventory, cast(k8s_client.RbacAuthorizationV1Api, rbac)),
-            RunnerEndpoints(control=CONTROL, ingress=HISTORY),
+            RUNNER_ENDPOINTS,
         ),
         custom,
         core,
@@ -378,31 +373,27 @@ async def test_create_points_the_runner_at_its_endpoints_and_grants_their_egress
     await case.service.create(CreateSandboxRequest(name="test", template=TEMPLATE), caller=ADMIN)
     assert _runner_args(case, "test") == [
         "--control-target",
-        CONTROL.target,
+        RUNNER_ENDPOINTS.control.target,
         "--control-bearer",
-        CONTROL.bearer,
+        RUNNER_ENDPOINTS.control.bearer,
         "--ingress-target",
-        HISTORY.target,
+        RUNNER_ENDPOINTS.ingress.target,
         "--ingress-bearer",
-        HISTORY.bearer,
+        RUNNER_ENDPOINTS.ingress.bearer,
     ]
     await case.service.reconcile_once()
-    assert _granted(case) == [CONTROL.egress_policy, HISTORY.egress_policy, "test-basic"]
-
-
-async def test_an_unset_ingress_starts_the_runner_without_one(case: Case) -> None:
-    unconfigured = replace(case.service, endpoints=RunnerEndpoints(control=CONTROL, ingress=None))
-    await unconfigured.create(CreateSandboxRequest(name="test", template=TEMPLATE), caller=ADMIN)
-    assert _runner_args(case, "test") == ["--control-target", CONTROL.target, "--control-bearer", CONTROL.bearer]
-    await unconfigured.reconcile_once()
-    assert _granted(case) == [CONTROL.egress_policy, "test-basic"]
+    assert _granted(case) == [
+        RUNNER_ENDPOINTS.control.egress_policy,
+        RUNNER_ENDPOINTS.ingress.egress_policy,
+        "test-basic",
+    ]
 
 
 @pytest.mark.parametrize(
     "spec",
     [
-        CreateSandboxRequest(name="test", template=TEMPLATE, egress_policies=[HISTORY.egress_policy]),
-        CreateSandboxRequest(name="test", template=TEMPLATE, egress_policies=[CONTROL.egress_policy]),
+        CreateSandboxRequest(name="test", template=TEMPLATE, egress_policies=[RUNNER_ENDPOINTS.ingress.egress_policy]),
+        CreateSandboxRequest(name="test", template=TEMPLATE, egress_policies=[RUNNER_ENDPOINTS.control.egress_policy]),
     ],
     ids=["picks-ingress-policy", "picks-control-policy"],
 )
@@ -420,7 +411,7 @@ async def test_endpoint_egress_cannot_be_granted_afterwards(api: SandboxServiceC
     view = await api.create(CreateSandboxRequest(name="test", template=TEMPLATE))
     before = dict(case.custom.objects)
     with pytest.raises(ServiceError) as rejected:
-        await api.grant_egress(view, [HISTORY.egress_policy])
+        await api.grant_egress(view, [RUNNER_ENDPOINTS.ingress.egress_policy])
     assert rejected.value.code == grpc.StatusCode.INVALID_ARGUMENT
     assert case.custom.objects == before
 
