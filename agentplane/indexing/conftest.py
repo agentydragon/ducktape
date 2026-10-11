@@ -8,7 +8,6 @@ import pygit2
 import pytest
 import pytest_asyncio
 from pygit2.enums import FileMode
-from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 
 from agentplane.indexing.store import Store
@@ -18,7 +17,7 @@ from third_party.containers import pgvector_pg18
 from util.oci import OciImage
 from util.testing.postgres import DatabaseClones, PostgresDatabaseTemplate
 from util.testing.postgres_fixtures import database_clones, database_names, postgres_admin_url, postgres_container
-from util.testing.sqlalchemy_engines import managed_async_engine
+from util.testing.sqlalchemy_engines import managed_async_engine, postgres_async_engine
 
 # gazelle:include_dep @pypi//asyncpg
 # The template admin URL uses the psycopg dialect, which SQLAlchemy loads at runtime.
@@ -49,9 +48,7 @@ async def initialized_index_database_template(
         "agentplane_index_initialized_template",
         template=empty_index_database_template.template_name,
     ) as template:
-        async with managed_async_engine(
-            create_async_engine(make_url(template.url).set(drivername="postgresql+asyncpg"))
-        ) as opened:
+        async with postgres_async_engine(template.url) as opened:
             await Store(opened, budget=DEFAULT_CHUNK_BUDGET, model_key=FakeEmbedder().model_key).initialize()
         yield template
 

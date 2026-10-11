@@ -345,5 +345,8 @@ py_library(
     testonly = True,
     srcs = ["sqlalchemy_engines.py"],
     visibility = ["//visibility:public"],
-    deps = ["@pypi//sqlalchemy"],
+    deps = [
+        "@pypi//asyncpg",
+        "@pypi//sqlalchemy",
+    ],
 )

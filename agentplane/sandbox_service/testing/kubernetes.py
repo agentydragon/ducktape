@@ -8,8 +8,6 @@ from pathlib import Path
 from typing import cast
 
 from kubernetes_asyncio import client as k8s_client
-from sqlalchemy.engine import make_url
-from sqlalchemy.ext.asyncio import create_async_engine
 
 from agentplane.runner_gateway.testing.grpc_service import service_client
 from agentplane.runner_gateway.testing.resources import build_resources
@@ -29,9 +27,8 @@ from agentplane.testing.fake_apiserver import SANDBOX_NAMESPACE, FakeApiServer, 
 from agentplane.workload_auth.principal import WorkloadPrincipalResolver
 from util.agent_sandbox import SANDBOX_API, SANDBOXES_PLURAL
 from util.kubernetes import CustomObjectsClient
-from util.testing.sqlalchemy_engines import managed_async_engine
+from util.testing.sqlalchemy_engines import postgres_async_engine
 
-# gazelle:include_dep @pypi//asyncpg
 # gazelle:include_dep @pypi//protobuf
 
 SANDBOX = "test-runner"
@@ -135,9 +132,7 @@ async def authenticated_service(
         pod_uid="test-app-pod-uid",
         audiences=(audience,),
     )
-    async with managed_async_engine(
-        create_async_engine(make_url(database_url).set(drivername="postgresql+asyncpg"))
-    ) as engine:
+    async with postgres_async_engine(database_url) as engine:
         resources = replace(
             build_resources(
                 engine,

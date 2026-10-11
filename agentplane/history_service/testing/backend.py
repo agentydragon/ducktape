@@ -30,7 +30,7 @@ from agentplane.history_service.thread_reads import ThreadReader
 from agentplane.sandbox_service.client import SandboxServiceClient
 from agentplane.subjects import ServiceAccountRef
 from agentplane.workload_auth.principal import POD_NAME_CLAIM, POD_UID_CLAIM, WorkloadPrincipalResolver
-from util.testing.sqlalchemy_engines import managed_async_engine
+from util.testing.sqlalchemy_engines import managed_async_engine, postgres_async_engine
 
 # The asyncpg dialect is loaded by SQLAlchemy from the driver name.
 # gazelle:include_dep @pypi//asyncpg
@@ -102,9 +102,7 @@ async def history_service(
 @asynccontextmanager
 async def ingest(database_url: str, sandboxes: SandboxServiceClient) -> AsyncIterator[None]:
     """Copy every Session `sandboxes` reports into the history database, as the deployed ingester does."""
-    async with managed_async_engine(
-        create_async_engine(make_url(database_url).set(drivername="postgresql+asyncpg"))
-    ) as engine:
+    async with postgres_async_engine(database_url) as engine:
         task = asyncio.create_task(
             HistoryIngester(Store(engine), engine, sandboxes, concurrency=4, retry_interval_s=0.05).run()
         )
@@ -121,9 +119,7 @@ async def fold_history(database_url: str) -> None:
 
     The composed History + Commands test database template already contains the projection tables.
     """
-    async with managed_async_engine(
-        create_async_engine(make_url(database_url).set(drivername="postgresql+asyncpg"))
-    ) as engine:
+    async with postgres_async_engine(database_url) as engine:
         shadow = FoldShadow(engine=engine, history=Store(engine), concurrency=1)
         try:
             while (await shadow.cycle()).behind:
@@ -135,9 +131,7 @@ async def fold_history(database_url: str) -> None:
 async def announce_fold_commit(database_url: str) -> None:
     """Commit the notice a fold commit sends, without folding anything."""
     async with (
-        managed_async_engine(
-            create_async_engine(make_url(database_url).set(drivername="postgresql+asyncpg"))
-        ) as engine,
+        postgres_async_engine(database_url) as engine,
         engine.begin() as connection,
         AsyncSession(bind=connection) as session,
     ):
@@ -147,9 +141,7 @@ async def announce_fold_commit(database_url: str) -> None:
 async def announce_history_change(database_url: str) -> None:
     """Commit a raw-history invalidation for app watch tests."""
     async with (
-        managed_async_engine(
-            create_async_engine(make_url(database_url).set(drivername="postgresql+asyncpg"))
-        ) as engine,
+        postgres_async_engine(database_url) as engine,
         engine.begin() as connection,
         AsyncSession(bind=connection) as session,
     ):
