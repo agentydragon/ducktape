@@ -96,8 +96,8 @@ flowchart TB
   written by the History ingress and the History Service's fold), `actions`, `egress` and `notifications`. Only
   the history database is drawn. A second Electric over the `app` database still runs, but
   staging's app reads Threads through the history one.
-- **Sandbox Service and Runner Gateway.** The Sandbox Service owns Sandbox lifecycle, grants,
-  retention holds and teardown; the Runner Gateway owns everything that talks to a runner: Sessions,
+- **Sandbox Service and Runner Gateway.** The Sandbox Service owns Sandbox lifecycle, grants
+  and teardown; the Runner Gateway owns everything that talks to a runner: Sessions,
   commands and the runner control stream. They run as separate Deployments with their own accounts,
   and the Sandbox Service seals a Sandbox through the gateway before deleting it.
 

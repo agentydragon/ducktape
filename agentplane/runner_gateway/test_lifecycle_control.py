@@ -34,7 +34,7 @@ from agentplane.runner_gateway.testing.runner_control import OTHER_REPLICA, REPL
 from agentplane.runner_gateway.testing.sessions import register_session
 from agentplane.sandbox_service.client import SandboxServiceClient, ServiceError
 from agentplane.sandbox_service.destinations import DestinationResolver
-from agentplane.sandbox_service.teardown import GatewaySealing, Teardown
+from agentplane.sandbox_service.teardown import GatewaySealing, SealNotFlushedError, Teardown
 from agentplane.sandbox_service.testing.grpc_service import CALLER_TOKEN, connect
 from agentplane.sandbox_service.testing.kubernetes import DESTINATION, SANDBOX, SANDBOX_UID, Cluster
 from agentplane.subjects import ServiceAccountRef
@@ -342,8 +342,10 @@ async def test_teardown_seals_over_the_holders_connection(
         result = runner_control_pb2.ControlResult(request_id=sealed.request_id)
         result.seal.sessions.add(session_id="test-runner-session", cursor=3)
         await answer(call, result)
-        await advancing
-    assert (await cluster.inventory.get(SANDBOX)).teardown == TeardownPhase.TEARDOWN_PHASE_SEALED
+        # The holder's answer reached the Sandbox Service, which waits for the ingress.
+        with pytest.raises(SealNotFlushedError):
+            await advancing
+    assert (await cluster.inventory.get(SANDBOX)).teardown == TeardownPhase.TEARDOWN_PHASE_SEALING
 
 
 async def test_a_refusal_carries_its_reason(holder: Replica) -> None:

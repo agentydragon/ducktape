@@ -11,7 +11,7 @@ import "google/protobuf/field_mask.proto";
 import "google/protobuf/struct.proto";
 import "google/protobuf/timestamp.proto";
 
-// Sandboxes, their grants and retention holds. The Sandbox Service alone holds the
+// Sandboxes and their grants. The Sandbox Service alone holds the
 // RBAC, ServiceAccount and egress grant permissions; the Runner Gateway serves Sessions.
 service SandboxService {
   rpc ListSandboxes(google.protobuf.Empty) returns (ListSandboxesResponse);
@@ -22,25 +22,14 @@ service SandboxService {
   rpc SuspendSandbox(SandboxRequest) returns (google.protobuf.Empty);
   rpc ResumeSandbox(SandboxRequest) returns (google.protobuf.Empty);
   // Starts teardown of a suspended Sandbox and returns; refused while it runs (FAILED_PRECONDITION).
-  // The service seals every Session, then deletes the Sandbox once every retention hold is
-  // satisfied. GetSandbox reports the teardown phase; ListHolds names the holds it waits on.
+  // The service seals every Session, then deletes the Sandbox once the runner's ingress has
+  // acknowledged every seal. GetSandbox reports the teardown phase.
   rpc DeleteSandbox(SandboxRequest) returns (google.protobuf.Empty);
   rpc ListTemplates(google.protobuf.Empty) returns (ListTemplatesResponse);
 
   rpc GrantEgress(GrantEgressRequest) returns (GrantEgressResponse);
   rpc RevokeEgress(RevokeEgressRequest) returns (google.protobuf.Empty);
 
-  // Retention holds: "do not delete this Sandbox until I have confirmed its Session through the
-  // seal". Idempotent per (Session, holder); placing an existing hold keeps its confirmation.
-  // Refused once the Sandbox's deletion has been committed.
-  rpc PlaceHold(HoldRequest) returns (Hold);
-  // Advances the holder's confirmed cursor; a lower cursor than the stored one changes nothing.
-  rpc ConfirmHold(ConfirmHoldRequest) returns (Hold);
-  // Idempotent. Any permitted caller may release any hold; this is how the operator clears a
-  // stale one, since holds never expire.
-  rpc ReleaseHold(HoldRequest) returns (google.protobuf.Empty);
-  // Every hold on the incarnation, with its confirmed and seal cursors.
-  rpc ListHolds(SandboxRequest) returns (ListHoldsResponse);
 }
 
 message ServiceAccount {
@@ -102,33 +91,6 @@ message LookupSessionResponse {
   // A reserved but still in-flight Open leaves both summary and failed unset.
   bool failed = 3;
 }
-
-// Names one Session of one Sandbox incarnation; the hold belongs to that incarnation.
-message HoldRequest {
-  SessionDestination destination = 1;
-  // Stable caller-chosen name, e.g. "history". It and the session ID are at most 128 characters.
-  string holder = 2;
-}
-
-message ConfirmHoldRequest {
-  SessionDestination destination = 1;
-  string holder = 2;
-  // The last cursor the holder has durably committed.
-  uint64 through_cursor = 3;
-}
-
-// A hold is satisfied once seal_cursor is set and confirmed_through >= seal_cursor. Until then it
-// blocks DeleteSandbox. A seal ends the Session's incarnation in this Sandbox, not the Session.
-message Hold {
-  string session_id = 1;
-  string holder = 2;
-  // 0 before the holder's first confirmation.
-  uint64 confirmed_through = 3;
-  // The Session's final cursor in this incarnation, once the runner has sealed it.
-  optional uint64 seal_cursor = 4;
-}
-
-message ListHoldsResponse { repeated Hold holds = 1; }
 
 // Internal frozen launch snapshot, committed before contacting the runner.
 message FrozenLaunch {
@@ -271,16 +233,15 @@ message Sandbox {
 }
 
 // How far DeleteSandbox has got. A Sandbox being torn down takes no new Sessions or commands and
-// cannot be suspended or resumed; its Sessions can still be followed and read.
+// cannot be suspended or resumed; its Sessions can still be read.
 enum TeardownPhase {
   TEARDOWN_PHASE_UNSPECIFIED = 0;
-  // Running again so that its runner can seal every Session. Stays here while the runner is
-  // unreachable, for the operator to decide. A runner pushing to an ingress is deleted from here
-  // once the ingress has acknowledged every seal.
+  // Running again so that its runner can seal every Session, and deleted once its ingress has
+  // acknowledged every seal. Stays here while the runner is unreachable or the ingress has not
+  // acknowledged, for the operator to decide.
   TEARDOWN_PHASE_SEALING = 1;
-  // Sealed and suspended, for a runner that pushes to no ingress. Deleted once every retention hold
-  // has confirmed through its seal.
-  TEARDOWN_PHASE_SEALED = 2;
+  reserved 2;
+  reserved "TEARDOWN_PHASE_SEALED";
 }
 message ListSandboxesResponse { repeated Sandbox sandboxes = 1; }
 message ListTemplatesResponse { repeated string templates = 1; }

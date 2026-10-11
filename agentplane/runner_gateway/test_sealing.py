@@ -1,5 +1,5 @@
-"""Teardown's seal against a scripted runner reached through its inbound API: each Session is named as
-retention holders name it, and a runner without Seal has its harnesses stopped instead."""
+"""Teardown's seal against a scripted runner reached through its inbound API: each Session is named by
+its public Session ID, and a runner without Seal has its harnesses stopped instead."""
 
 from collections.abc import AsyncIterator
 from dataclasses import dataclass, field

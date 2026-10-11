@@ -539,8 +539,7 @@ unless the operator reviews a change. Separate Sandbox initialization from per-s
 **Candidate.** Draft [#7859](https://github.com/agentydragon/ducktape/pull/7859)
 expires idle Sandboxes (`TODO(sandbox-lifetime)` in `action_service/sandbox/inventory.py`). Deleting
 one goes through [teardown](../sandbox_service/API.md#teardown), which waits until history is
-archived through the seal (the ingress acknowledgement, or a retention hold for a runner that pushes
-to no ingress).
+archived through the seal (the ingress acknowledgement).
 
 ## 7. History Service extraction and delta settlement
 
@@ -733,7 +732,7 @@ flowchart TD
     ACTION_SANDBOX_DESIGN --> ACTION_SANDBOX_PROVISIONING
     APP_PROJECTOR_RETIRE[Delete app projector]
     HISTORY_SERVICE_OWNERSHIP[History Service ownership]
-    FOLLOW_PATH_RETIRE[Delete holds and follow leftovers] --> HISTORY_SANDBOX_LOCATOR_DROP
+    FOLLOW_PATH_RETIRE[Delete follow leftovers] --> HISTORY_SANDBOX_LOCATOR_DROP
     HISTORY_SANDBOX_LOCATOR_DROP --> HISTORY_DATABASE_RENAME
     APP_PROJECTOR_RETIRE --> APP_ELECTRIC_RETIRE
 ```
@@ -820,7 +819,7 @@ flowchart TD
     APP_PROJECTOR_RETIRE --> APP_THREAD_VIEW_CLEANUP
     ACTION_EXECUTION_AUDIT_TRIM[Decision: execution reconciliation columns]
     REFACTOR_COHERENCE_AUDIT[Blocked: whole-refactor coherence audit]
-    FOLLOW_PATH_RETIRE[Delete holds and follow leftovers] --> REFACTOR_COHERENCE_AUDIT
+    FOLLOW_PATH_RETIRE[Delete follow leftovers] --> REFACTOR_COHERENCE_AUDIT
     RUNNER_INBOUND_RETIRE[Retire inbound runner access] --> REFACTOR_COHERENCE_AUDIT
     HISTORY_SERVICE_OWNERSHIP[History Service ownership] --> REFACTOR_COHERENCE_AUDIT
     RUNNER_SESSION_RECORD_SHIMS --> REFACTOR_COHERENCE_AUDIT
@@ -896,7 +895,7 @@ nodes and section 9 are unaffected.
 
 ```mermaid
 flowchart TD
-    FOLLOW_PATH_RETIRE[Under way: delete holds and follow leftovers]
+    FOLLOW_PATH_RETIRE[Under way: delete follow leftovers]
     GATEWAY_CLIENT_SPLIT[Unscheduled: Session messages and client move to the gateway]
     AGENTPLANE_SANDBOX_RESOURCE[Decision: our own Sandbox resource]
     POD_INCARNATION[Decision: a Pod is the incarnation]
@@ -937,21 +936,15 @@ API, the Open reservation and the Open key go, with the gateway `session` column
 `open_request`, `launch_spec`, `caller_namespace`, `caller_name` and `ux_session_open_key` (stops for
 the operator before the drop).
 
-### `FOLLOW_PATH_RETIRE` — delete holds and follow leftovers
+### `FOLLOW_PATH_RETIRE` — delete follow leftovers
 
-**Under way.** Nothing follows Sessions any more: the History Service's ingester, `FollowSession`,
-`WatchSessions` and its change feed are gone. Delete the hold API and `retention-holds`
-annotation, and with them `SessionSummary`'s Sandbox fields. The history columns the follower
-filled are dropped by `HISTORY_SANDBOX_LOCATOR_DROP`. Stops for the operator before dropping
-stored registry columns.
-
-Also follow-only, so deleted here: `protocol.v1.Follow` once nothing sends `Open.follow`;
-`Store.read`; `SessionFeedState.ended` with its merge in `record_feed_state` (the fold derives the
-end from a stopped harness); and `register_attached_sessions` in `sandbox_service/testing`.
-
-With the holds goes teardown's path for a runner that pushes nothing: `SealResponse.pushes`,
-`TEARDOWN_PHASE_SEALED`, `SandboxInventory.record_seal` and `delete_if_released`. Every teardown
-then waits for every seal to be `flushed`.
+**Under way.** Nothing follows Sessions or holds Sandboxes any more: the History Service's
+ingester, `FollowSession`, `WatchSessions` and its change feed, the retention holds and teardown's
+path for a runner that pushes nothing are gone. Left: `SessionSummary`'s Sandbox fields (the history
+columns the follower filled are dropped by `HISTORY_SANDBOX_LOCATOR_DROP`); `protocol.v1.Follow`
+once nothing sends `Open.follow`; `Store.read`; `SessionFeedState.ended` with its merge in
+`record_feed_state` (the fold derives the end from a stopped harness); and
+`register_attached_sessions` in `sandbox_service/testing`.
 
 ### `GATEWAY_CLIENT_SPLIT` — Session messages and client move to the gateway
 
