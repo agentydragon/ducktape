@@ -52,6 +52,9 @@ def resources(cluster: Cluster, runner: RunnerHandle, engine: AsyncEngine) -> Re
         destinations=DestinationResolver(cluster.inventory, k8s_client.CoreV1Api(cluster.api)),
         caller_accounts=frozenset({OWNER}),
         platform_instructions="Test backend-owned guidance.",
+        # A real runner answers here, so admission needs room for delivery's two-second recheck:
+        # under one second, a single missed dispatch wakeup or control-stream reconnect fails it.
+        runner_admission_ack_timeout_s=15,
     )
 
 
