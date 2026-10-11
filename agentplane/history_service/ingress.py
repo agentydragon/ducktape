@@ -25,7 +25,6 @@ from agentplane.history_service.storage.store import (
     WriterMismatchError,
 )
 from agentplane.proto import event_log_pb2, runner_ingress_pb2, runner_ingress_pb2_grpc, runner_pb2
-from agentplane.proto.sandbox_service_pb2 import Sealed
 from agentplane.workload_auth.grpc_caller import resolve_caller
 from agentplane.workload_auth.principal import WorkloadPrincipalRejectedError, WorkloadPrincipalResolver
 
@@ -146,9 +145,7 @@ class _Journal:
         if sealed.cursor != (self.sent if self.sent is not None else self.committed):
             raise RefusedError(grpc.StatusCode.INVALID_ARGUMENT, "the seal does not follow the last entry")
         await self.commit()
-        await self.history.record_feed_state(
-            self.session_id, SessionFeedState(attached=self.announce, sealed=Sealed(cursor=sealed.cursor))
-        )
+        await self.history.record_feed_state(self.session_id, SessionFeedState(attached=self.announce, sealed=sealed))
 
 
 class RunnerIngressService(runner_ingress_pb2_grpc.RunnerIngressServicer):

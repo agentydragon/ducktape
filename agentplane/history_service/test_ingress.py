@@ -158,9 +158,7 @@ async def test_entries_are_acknowledged_after_commit_and_the_seal_ends_the_journ
         await call.send(*entries(3), sealed(3))
         await call.acknowledged(3, sealed=True)
         assert await call.call.read() is grpc.aio.EOF
-    store = Store(engine)
-    assert (await store.checkpoint(session_id)).sealed
-    page = await store.read_page(session_id, after_cursor=0, limit=10)
+    page = await Store(engine).read_page(session_id, after_cursor=0, limit=10)
     assert (page.feed_state.attached.last_cursor, page.feed_state.sealed.cursor) == (2, 3)
 
 

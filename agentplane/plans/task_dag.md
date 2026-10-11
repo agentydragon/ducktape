@@ -1059,7 +1059,6 @@ flowchart TD
         SANDBOX_DEAD_CODE[Candidate: delete KubernetesBindings.run]
         RUNNER_ERRORS_REHOME[Blocked: errors beside the client that raises them]
         HISTORY_LIST_SUMMARIES_RETIRE[Candidate: delete ListSessionSummaries]
-        HISTORY_FEED_STATE_TRIM[Candidate: feed state without the Sandbox proto]
         HISTORY_GRPC_CONFORM[Candidate: the History Service follows grpc_services.md]
         THREAD_FOLD_SINGLE_OWNER[Blocked: the fold has one owner]
         SETTLE_DELTAS_ALWAYS_ON[Delta settlement always on]
@@ -1185,12 +1184,6 @@ its own error type.
 **Candidate.** No production caller since #9827, and its Sandbox filter never matches ingress-only
 Sessions. Delete the RPC and its messages, `SessionSummaryPageToken`, the client method,
 `SummaryReader.list_page` with `_token`/`_after`, their tests and the README paragraph.
-
-### `HISTORY_FEED_STATE_TRIM` — feed state without the Sandbox proto
-
-**Candidate.** `SessionFeedState.sealed` is typed `sandbox_service.Sealed`, the History Service's
-only reason to import that proto; `runner.Sealed` has the same `uint64 cursor = 1`, so the retype is
-wire-compatible with stored rows. Delete the test-only `Store.checkpoint` too.
 
 ### `HISTORY_GRPC_CONFORM` — the History Service follows grpc_services.md
 

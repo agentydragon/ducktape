@@ -23,8 +23,8 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 
 from agentplane.history_service.protocol_pb2 import SessionFeedState
 from agentplane.history_service.storage.store import HistoryConflictError, Store
-from agentplane.proto import event_log_pb2
-from agentplane.proto.sandbox_service_pb2 import SandboxDestination, Sealed, SessionChange
+from agentplane.proto import event_log_pb2, runner_pb2
+from agentplane.proto.sandbox_service_pb2 import SandboxDestination, SessionChange
 from agentplane.runner.errors import RunnerError, StreamClosedError
 from agentplane.sandbox_service.client import (
     Attachment,
@@ -234,7 +234,7 @@ class HistoryIngester:
                 if sealed.cursor != cursor:
                     raise HistoryConflictError(f"seal at {sealed.cursor} does not follow entry {cursor}") from sealed
                 await self.store.record_feed_state(
-                    session_id, SessionFeedState(attached=attachment.attached, sealed=Sealed(cursor=cursor))
+                    session_id, SessionFeedState(attached=attachment.attached, sealed=runner_pb2.Sealed(cursor=cursor))
                 )
                 # Only a confirmation at the seal changes the deletion gate, so earlier batches skip
                 # the Kubernetes write.

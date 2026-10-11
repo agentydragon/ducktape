@@ -146,13 +146,6 @@ class Store:
                 await notify_history(session)
             return _checkpoint(row)
 
-    async def checkpoint(self, session_id: UUID) -> Checkpoint:
-        async with self._sessions() as session:
-            row = await session.get(SessionHistory, session_id)
-            if row is None:
-                raise HistoryNotFoundError(session_id)
-            return _checkpoint(row)
-
     async def append(self, session_id: UUID, entries: Sequence[event_log_pb2.EventEntry]) -> int:
         """Replay exact duplicates or extend the prefix; serialize concurrent writers by Session ID.
 

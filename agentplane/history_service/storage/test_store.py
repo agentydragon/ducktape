@@ -17,7 +17,7 @@ from agentplane.history_service.storage.store import (
     Writer,
     WriterMismatchError,
 )
-from agentplane.proto import event_log_pb2, event_pb2, runner_pb2, sandbox_service_pb2
+from agentplane.proto import event_log_pb2, event_pb2, runner_pb2
 from agentplane.sandbox_service.testing.delta_spans import claude_text
 
 # gazelle:include_dep @pypi//protobuf
@@ -258,8 +258,7 @@ async def test_followed_snapshot_is_stored_under_runner_id_and_seal_is_sticky(en
     followed = history_pb2.SessionFeedState(attached=runner_pb2.Attached(session_id=str(session_id), last_cursor=1))
     with pytest.raises(HistoryConflictError, match="seal"):
         await store.record_feed_state(
-            session_id,
-            history_pb2.SessionFeedState(attached=followed.attached, sealed=sandbox_service_pb2.Sealed(cursor=1)),
+            session_id, history_pb2.SessionFeedState(attached=followed.attached, sealed=runner_pb2.Sealed(cursor=1))
         )
     followed.sealed.cursor = 2
     await store.record_feed_state(session_id, followed)
@@ -273,8 +272,7 @@ async def test_followed_snapshot_is_stored_under_runner_id_and_seal_is_sticky(en
     assert stored.sealed.cursor == 2
     with pytest.raises(HistoryConflictError, match="seal"):
         await store.record_feed_state(
-            session_id,
-            history_pb2.SessionFeedState(attached=direct.attached, sealed=sandbox_service_pb2.Sealed(cursor=3)),
+            session_id, history_pb2.SessionFeedState(attached=direct.attached, sealed=runner_pb2.Sealed(cursor=3))
         )
 
 
