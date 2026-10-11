@@ -51,11 +51,9 @@ py_library(
         "//agentplane/testing:electric_role",
         "//util/testing:postgres",
         "//util/testing:postgres_fixtures",
-        "//util/testing:sqlalchemy_engines",
         "@pypi//asyncpg",
         "@pypi//psycopg",
         "@pypi//pytest",
-        "@pypi//sqlalchemy",
     ],
 )
 

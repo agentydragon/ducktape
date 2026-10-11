@@ -6,8 +6,7 @@ from collections.abc import AsyncGenerator
 
 import pytest
 import pytest_asyncio
-from sqlalchemy.engine import make_url
-from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 from haku.recall_index.fake_embedder import FakeEmbedder
 from haku.recall_index.store import ensure_schema
@@ -15,7 +14,7 @@ from third_party.containers import pgvector_pg18
 from util.oci import OciImage
 from util.testing.postgres import DatabaseClones, PostgresDatabaseTemplate
 from util.testing.postgres_fixtures import database_clones, database_names, postgres_admin_url, postgres_container
-from util.testing.sqlalchemy_engines import managed_async_engine
+from util.testing.sqlalchemy_engines import postgres_async_engine
 
 # Fixtures build postgresql+asyncpg:// engines; SQLAlchemy loads the dialect's
 # driver at runtime, so gazelle cannot see the dependency.
@@ -33,9 +32,7 @@ def postgres_image() -> OciImage:
 async def recall_index_database_template(postgres_admin_url: str) -> AsyncGenerator[PostgresDatabaseTemplate]:
     """Create the pgvector schema once; each test gets a writable database clone."""
     with PostgresDatabaseTemplate(postgres_admin_url, "recall_index_template", extensions=("vector",)) as template:
-        async with managed_async_engine(
-            create_async_engine(make_url(template.url).set(drivername="postgresql+asyncpg"))
-        ) as engine:
+        async with postgres_async_engine(template.url) as engine:
             await ensure_schema(engine)
         yield template
 
@@ -46,7 +43,7 @@ async def engine(
 ) -> AsyncGenerator[AsyncEngine]:
     """An engine on a fresh, writable clone of the initialized schema."""
     url = database_clones.clone(recall_index_database_template, drivername="postgresql+asyncpg")
-    async with managed_async_engine(create_async_engine(make_url(url))) as opened:
+    async with postgres_async_engine(url) as opened:
         yield opened
 
 

@@ -6,7 +6,6 @@ from typing import cast
 
 import pytest
 from kubernetes_asyncio import client as k8s_client
-from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 
 from agentplane.sandbox_service.egress import EgressInventory
 from agentplane.sandbox_service.inventory import SandboxInventory
@@ -24,11 +23,11 @@ from util.testing.postgres import DatabaseClones, PostgresDatabaseTemplate
 from util.testing.postgres_fixtures import (
     database_clones,
     database_names,
+    engine,
     postgres_admin_url,
     postgres_container,
     postgres_image,
 )
-from util.testing.sqlalchemy_engines import managed_async_engine
 
 
 @pytest.fixture(autouse=True)
@@ -77,9 +76,3 @@ def token_file(tmp_path: Path) -> Path:
 @pytest.fixture
 def db_url(service_database_template: PostgresDatabaseTemplate, database_clones: DatabaseClones) -> str:
     return database_clones.clone(service_database_template, drivername="postgresql+asyncpg")
-
-
-@pytest.fixture
-async def engine(db_url: str) -> AsyncIterator[AsyncEngine]:
-    async with managed_async_engine(create_async_engine(db_url)) as engine:
-        yield engine
