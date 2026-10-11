@@ -711,9 +711,11 @@ The migrate env `AGENTPLANE_SANDBOX_SERVICE_DATABASE_URL` (pinned in
 **Candidate.** `sandbox_commands` holds the Runner Gateway's Session registry and command
 admission; the Sandbox Service has no database. Rename it and its role and Secret for the gateway
 in place, as `HISTORY_DATABASE_RENAME` does, and point the Runner Gateway, its migration init
-container and `commands_database_url` at the new names. Its migrate image
-`agentplane-sandbox-commands-migrate`, env `AGENTPLANE_SANDBOX_SERVICE_COMMANDS_DATABASE_URL` and
-`database.py`'s comment on `sandbox_commands` follow.
+container and `commands_database_url` at the new names. Env
+`AGENTPLANE_SANDBOX_SERVICE_COMMANDS_DATABASE_URL` and `database.py`'s comment on
+`sandbox_commands` follow. Independently of the rename, once Flux pins a real
+`agentplane-runner-gateway-migrate` tag in both image-pins files, the init container switches to
+that image and `agentplane-sandbox-commands-migrate` goes (the `image_automation.py` CLEANUP).
 
 ### `ACTION_SANDBOX_DESIGN` — Action Service Sandboxes through the Sandbox Service
 
@@ -948,6 +950,9 @@ for the gateway's command records (`bridge.py`, `api.py`, a settings description
 `cluster/cdk8s/agentplane/kubevirt_experiment`, pins an inbound `listen` with no control or ingress
 target, so `RUNNER_INBOUND_RETIRE` would strand it. Give `GuestConfig` both targets; retiring the
 experiment instead also orphans the VM-only `RunnerConfig` fields and `cgroups.py`.
+The experiment also sits outside `x/` and still models the inbound port: the VM's port 7000, its
+NetworkPolicy and `runtime_acceptance`'s port-forward and `listen`. Whichever way this goes, those
+go with it (or the directory moves under `x/`).
 
 ### `RUNNER_CORE_SPLIT` — runner core out of the inbound servicer
 
