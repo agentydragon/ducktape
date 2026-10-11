@@ -25,7 +25,7 @@ from agentplane.action_service.service import ActionService
 from agentplane.action_service.testing.callers import admitted_callers
 from agentplane.action_service.testing.fixtures import RecordingExecutor
 from agentplane.action_service.updates import ActionUpdates
-from agentplane.history_service.testing.backend import history_service
+from agentplane.history_service.testing.backend import history_service, ingest
 from agentplane.notification_service.api import create_app
 from agentplane.notification_service.db import Inbox
 from agentplane.notification_service.service import Service
@@ -129,6 +129,7 @@ async def test_listen_deliver_read_ack_and_recover_lost_response_without_app(
                         notifications_service_url="http://notifications.test",
                     ),
                 ) as remote,
+                ingest(sandbox_service_db_url, remote),
                 history_service(sandbox_service_db_url, tmp_path / "history-token") as history,
                 history_changes.listener.listen(),
             ):
