@@ -8,6 +8,11 @@ from testcontainers.postgres import PostgresContainer
 
 from util.testing.postgres import PostgresDatabaseTemplate
 
+# SQLAlchemy loads this driver from the explicit URL scheme below.
+# gazelle:include_dep @pypi//psycopg
+# pytest loads the shared container fixture as a plugin.
+# gazelle:include_dep //util/testing:postgres_fixtures
+
 pytest_plugins = ["util.testing.postgres_fixtures"]
 
 
