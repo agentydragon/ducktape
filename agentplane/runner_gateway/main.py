@@ -19,13 +19,13 @@ from agentplane.runner_gateway.command_delivery import CommandDelivery
 from agentplane.runner_gateway.commands.dispatch import DispatchStore
 from agentplane.runner_gateway.commands.store import SubmissionStore
 from agentplane.runner_gateway.connection_records import ConnectionHolder, ConnectionLeases, ConnectionRecords
+from agentplane.runner_gateway.destinations import DestinationResolver
 from agentplane.runner_gateway.grpc_api import Resources, add_service
 from agentplane.runner_gateway.lifecycle_control import LifecycleControl
 from agentplane.runner_gateway.runner_control import ControlTiming, RunnerControlService
 from agentplane.runner_gateway.session_registry import SessionRegistry
 from agentplane.runner_gateway.settings import Settings
-from agentplane.sandbox_service.destinations import DestinationResolver
-from agentplane.sandbox_service.inventory import SandboxInventory
+from agentplane.sandbox_service.reader import SandboxReader
 from agentplane.workload_auth.principal import WorkloadPrincipalResolver
 from util.kubernetes import CustomObjectsClient
 
@@ -46,14 +46,14 @@ async def gateway(
 ) -> AsyncIterator[Resources]:
     """Serve `RunnerGateway` on `server`, and runner control stream connections on their own listener."""
     core = k8s_client.CoreV1Api(api)
-    inventory = SandboxInventory(
+    sandboxes = SandboxReader(
         namespace=settings.sandbox_namespace,
         core_v1=core,
         custom_objects=cast(CustomObjectsClient, k8s_client.CustomObjectsApi(api)),
     )
     sessions = SessionRegistry(commands_engine)
     submissions = SubmissionStore(commands_engine)
-    destinations = DestinationResolver(inventory, core)
+    destinations = DestinationResolver(sandboxes, core)
     leases = ConnectionLeases()
     timing = ControlTiming()
     control = LifecycleControl(leases)
@@ -92,7 +92,7 @@ async def gateway(
                 audience=settings.runner_control_audience,
                 allowed_service_account_namespaces={settings.sandbox_namespace},
             ),
-            inventory=inventory,
+            sandboxes=sandboxes,
             core=core,
             records=ConnectionRecords(
                 api,

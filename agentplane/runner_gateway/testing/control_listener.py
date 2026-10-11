@@ -18,7 +18,7 @@ from agentplane.runner_gateway.connection_records import ConnectionHolder, Conne
 from agentplane.runner_gateway.grpc_api import Resources
 from agentplane.runner_gateway.lifecycle_control import LifecycleControl
 from agentplane.runner_gateway.runner_control import ControlTiming, RunnerControlService
-from agentplane.sandbox_service.inventory import SandboxInventory
+from agentplane.sandbox_service.reader import SandboxReader
 from agentplane.workload_auth.principal import WorkloadPrincipalResolver
 
 # The control servicer stub names its messages; mypy reads stubs only from direct deps.
@@ -35,7 +35,7 @@ HOLDER = ConnectionHolder(pod_name="test-gateway", pod_ip="192.0.2.10", port=180
 async def serve_runner_control(
     *,
     principals: WorkloadPrincipalResolver,
-    inventory: SandboxInventory,
+    sandboxes: SandboxReader,
     core: k8s_client.CoreV1Api,
     records: ConnectionRecords,
     delivery: CommandDelivery,
@@ -47,7 +47,7 @@ async def serve_runner_control(
     runner_control_pb2_grpc.add_RunnerControlServicer_to_server(
         RunnerControlService(
             principals=principals,
-            inventory=inventory,
+            sandboxes=sandboxes,
             core=core,
             records=records,
             delivery=delivery,
@@ -80,20 +80,20 @@ async def control_plane(
     """What the gateway process runs beside `resources` for runners to dial: the control listener,
     its Postgres wakeups and its Lease watch, keeping connection records through `api`. Yields the
     listener's target."""
-    inventory = resources.destinations.inventory
+    sandboxes = resources.destinations.sandboxes
     async with (
         resources.delivery.listener.listen(),
         background(
             resources.delivery.leases.watch(
-                k8s_client.CoordinationV1Api(api), inventory.namespace, resync_seconds=60
+                k8s_client.CoordinationV1Api(api), sandboxes.namespace, resync_seconds=60
             ).run(),
             name="runner-connection-leases",
         ),
         serve_runner_control(
             principals=principals,
-            inventory=inventory,
+            sandboxes=sandboxes,
             core=resources.destinations.core,
-            records=ConnectionRecords(api, namespace=inventory.namespace, holder=HOLDER),
+            records=ConnectionRecords(api, namespace=sandboxes.namespace, holder=HOLDER),
             delivery=resources.delivery,
             control=resources.control,
         ) as port,

@@ -14,12 +14,12 @@ from uuid import UUID
 from anyio.from_thread import start_blocking_portal
 from kubernetes_asyncio import client as k8s_client
 
+from agentplane.runner_gateway.destinations import DestinationResolver
 from agentplane.runner_gateway.testing.control_listener import control_plane, wait_connected
 from agentplane.runner_gateway.testing.grpc_service import service
 from agentplane.runner_gateway.testing.resources import build_resources
 from agentplane.sandbox_service.action_policy import ActionPolicyBindings
 from agentplane.sandbox_service.client import SandboxServiceClient
-from agentplane.sandbox_service.destinations import DestinationResolver
 from agentplane.sandbox_service.egress import EgressInventory
 from agentplane.sandbox_service.inventory import SandboxInventory
 from agentplane.sandbox_service.kubernetes_bindings import KubernetesBindings

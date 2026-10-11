@@ -17,7 +17,6 @@ from typing import Any, cast
 
 from google.protobuf.json_format import MessageToDict
 from kubernetes_asyncio import client as k8s_client
-from kubernetes_asyncio.client import CoreV1Api
 from pydantic import BaseModel, ConfigDict, Field
 from tenacity import retry, retry_if_exception, stop_after_attempt
 
@@ -43,11 +42,11 @@ from agentplane.sandbox_service.models import (
     SandboxRunningError,
     SandboxTearingDownError,
 )
+from agentplane.sandbox_service.reader import SandboxReader
 from agentplane.sandbox_service.runner_endpoints import RunnerEndpoints
 from agentplane.sandbox_service.session_config import LaunchGrants
 from agentplane.subjects import ServiceAccountRef
 from util.agent_sandbox import EXTENSIONS_API, SANDBOX_API, SANDBOXES_PLURAL, TEMPLATES_PLURAL, OperatingMode
-from util.kubernetes import CustomObjectsClient
 
 _MERGE_PATCH = "application/merge-patch+json"
 
@@ -100,16 +99,7 @@ class _ResourceList(BaseModel):
     items: list[dict[str, object]]
 
 
-class SandboxInventory:
-    def __init__(self, *, namespace: str, custom_objects: CustomObjectsClient, core_v1: CoreV1Api):
-        self._namespace = namespace
-        self._custom_objects = custom_objects
-        self._core_v1 = core_v1
-
-    @property
-    def namespace(self) -> str:
-        return self._namespace
-
+class SandboxInventory(SandboxReader):
     @property
     def sandbox_list(self) -> Callable[..., Awaitable[dict[str, Any]]]:
         """Use the same Kubernetes list API for a resourceVersion-based watch."""
@@ -134,12 +124,6 @@ class SandboxInventory:
         # kubernetes_asyncio exposes this runtime attribute but omits it from generated SDK stubs.
         api_client = self._core_v1.api_client  # type: ignore[attr-defined]
         return sandbox_views(_ResourceList.model_validate(sandboxes_page).items, pods.items, api_client=api_client)
-
-    async def get(self, name: str) -> Sandbox:
-        sandbox = await self._sandbox(name)
-        # kubernetes_asyncio exposes this runtime attribute but omits it from generated SDK stubs.
-        api_client = self._core_v1.api_client  # type: ignore[attr-defined]
-        return sandbox_view(sandbox, await self._pod(name), api_client=api_client)
 
     async def create(
         self,
@@ -416,29 +400,6 @@ class SandboxInventory:
         await self._custom_objects.patch_namespaced_custom_object(
             *SANDBOX_API, self._namespace, SANDBOXES_PLURAL, name, patch, _content_type=_MERGE_PATCH
         )
-
-    async def _sandbox(self, name: str) -> SandboxResource:
-        """The named Sandbox, only if it is Agentplane's: an unmanaged one is not in this inventory."""
-        try:
-            raw = await self._custom_objects.get_namespaced_custom_object(
-                *SANDBOX_API, self._namespace, SANDBOXES_PLURAL, name
-            )
-        except k8s_client.ApiException as error:
-            if error.status == 404:
-                raise SandboxNotFoundError(name) from error
-            raise
-        sandbox = SandboxResource.model_validate(raw)
-        if sandbox.metadata.labels.get(MANAGED_LABEL) != "true":
-            raise SandboxNotFoundError(name)
-        return sandbox
-
-    async def _pod(self, name: str) -> k8s_client.V1Pod | None:
-        try:
-            return await self._core_v1.read_namespaced_pod(name, self._namespace)
-        except k8s_client.ApiException as error:
-            if error.status == 404:
-                return None
-            raise
 
 
 # The projection, over objects however they were obtained: one request's list, or the copy

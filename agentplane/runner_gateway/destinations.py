@@ -6,8 +6,8 @@ from uuid import UUID
 from kubernetes_asyncio import client as k8s_client
 
 from agentplane.proto.sandbox_service_pb2 import Sandbox, SandboxBinding, SandboxDestination, TeardownPhase
-from agentplane.sandbox_service.inventory import SandboxInventory
 from agentplane.sandbox_service.models import SandboxNotFoundError, SandboxTearingDownError
+from agentplane.sandbox_service.reader import SandboxReader
 from util.agent_sandbox import SANDBOX_API, OperatingMode
 
 
@@ -17,23 +17,18 @@ class DestinationUnavailableError(Exception):
 
 @dataclass(frozen=True)
 class DestinationResolver:
-    inventory: SandboxInventory
+    sandboxes: SandboxReader
     core: k8s_client.CoreV1Api
 
     async def resolve(self, destination: SandboxDestination, *, writes: bool) -> SandboxBinding | None:
         """The Sandbox's binding, once its runner Pod is running and ready. `writes`: the caller may
         create, resume or command a Session, which a Sandbox being torn down refuses. Listing its
         Sessions stays possible until it is deleted."""
-        if not all((destination.sandbox, destination.sandbox_uid, destination.owner.namespace, destination.owner.name)):
-            raise ValueError("Sandbox name, UID, and owner are required")
-        view = await self.inventory.get(destination.sandbox)
-        if view.uid != destination.sandbox_uid or view.service_account != destination.owner:
-            raise SandboxNotFoundError(destination.sandbox)
-        return await self._ready(view, writes=writes)
+        return await self._ready(await self.sandboxes.incarnation(destination), writes=writes)
 
     async def resolve_incarnation(self, name: str, uid: UUID, *, writes: bool) -> SandboxBinding | None:
         """`resolve` for a Sandbox incarnation the Runner Gateway's own registry names."""
-        view = await self.inventory.get(name)
+        view = await self.sandboxes.get(name)
         if view.uid != str(uid):
             raise SandboxNotFoundError(name)
         return await self._ready(view, writes=writes)
@@ -50,7 +45,7 @@ class DestinationResolver:
         ):
             raise DestinationUnavailableError
         try:
-            pod = await self.core.read_namespaced_pod(view.name, self.inventory.namespace)
+            pod = await self.core.read_namespaced_pod(view.name, self.sandboxes.namespace)
         except k8s_client.ApiException as error:
             if error.status == 404:
                 raise DestinationUnavailableError from error
@@ -59,7 +54,7 @@ class DestinationResolver:
         if (
             metadata is None
             or metadata.name != view.name
-            or metadata.namespace != self.inventory.namespace
+            or metadata.namespace != self.sandboxes.namespace
             or not metadata.uid
             or metadata.deletion_timestamp is not None
             or spec is None

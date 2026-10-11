@@ -46,7 +46,7 @@ async def service_client(
         connect(
             target,
             token_file,
-            namespace=resources.destinations.inventory.namespace,
+            namespace=resources.destinations.sandboxes.namespace,
             command_admission_timeout_s=resources.runner_admission_ack_timeout_s + 10,
         ) as client,
     ):

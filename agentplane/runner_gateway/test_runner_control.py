@@ -25,10 +25,10 @@ from agentplane.runner_gateway.connection_records import (
     ConnectionLeases,
     RecordOwner,
 )
+from agentplane.runner_gateway.destinations import DestinationUnavailableError
 from agentplane.runner_gateway.lifecycle_control import LifecycleControl
 from agentplane.runner_gateway.runner_control import ControlTiming
 from agentplane.runner_gateway.testing.runner_control import OTHER_REPLICA, REPLICA, RUNNER_TOKEN, serve_replica_control
-from agentplane.sandbox_service.destinations import DestinationUnavailableError
 from agentplane.sandbox_service.testing.kubernetes import ACCOUNT, SANDBOX, SANDBOX_UID, Cluster
 from agentplane.subjects import ServiceAccountRef
 from agentplane.testing.fake_apiserver import SANDBOX_NAMESPACE
