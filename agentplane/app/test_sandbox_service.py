@@ -23,6 +23,7 @@ from agentplane.app.threads.events.debug import ThreadScopeChangedError
 from agentplane.app.threads.sessions import SandboxSessions
 from agentplane.app.threads.store import ThreadStore
 from agentplane.app.threads.summaries import AppSummaries, HistorySummaries
+from agentplane.app.threads.thread_view import ThreadView
 from agentplane.app.threads.view.content import ContentStore, HistoryContentStore
 from agentplane.history_service.testing.backend import fold_history, history_service, ingest
 from agentplane.proto import command_pb2, runner_pb2
@@ -37,6 +38,32 @@ from util.agent_sandbox import SANDBOXES_PLURAL
 # gazelle:include_dep @pypi//protobuf
 # gazelle:include_dep @pypi//asyncpg
 # gazelle:include_dep @pypi//grpcio
+
+
+def _thread_view_differences(history: list[ThreadView], app: list[ThreadView]) -> str:
+    """Show every field that differs when the two projections disagree."""
+    history_by_id = {view.id: view.model_dump(mode="python") for view in history}
+    app_by_id = {view.id: view.model_dump(mode="python") for view in app}
+    history_ids = [view.id for view in history]
+    app_ids = [view.id for view in app]
+    differences = [f"thread order: history={history_ids!r}, app={app_ids!r}"] if history_ids != app_ids else []
+
+    for thread_id in history_ids:
+        if thread_id not in app_by_id:
+            differences.append(f"{thread_id}: present in history projection only")
+            continue
+        history_fields = history_by_id[thread_id]
+        app_fields = app_by_id[thread_id]
+        differences.extend(
+            f"{thread_id}.{field}: history={history_fields[field]!r}, app={app_fields[field]!r}"
+            for field in history_fields
+            if history_fields[field] != app_fields[field]
+        )
+    differences.extend(
+        f"{thread_id}: present in app projection only" for thread_id in app_ids if thread_id not in history_by_id
+    )
+
+    return "ThreadView projections differ:\n" + "\n".join(differences)
 
 
 @pytest.fixture
@@ -141,6 +168,7 @@ async def test_history_service_reads_match_the_app_projection(
 ) -> None:
     """Both folds over one retained history: every Thread read must agree but the epoch it names."""
     engine = event_logs.engine
+    app = AppSummaries(engine)
     async with (
         authenticated_service(
             cluster, runner.port, tmp_path / "service-token", database_url=service_history_db_url
@@ -174,14 +202,16 @@ async def test_history_service_reads_match_the_app_projection(
                     await fold_history(service_history_db_url)
                     assert await event_logs.last_cursor(thread) == archived[-1].cursor
                     assert (await folded.get(thread)).folded_through == archived[-1].cursor
+                    assert await app.folded_through(thread) == archived[-1].cursor
         finally:
             await ingester.close()
             await directory.close()
 
-        app = AppSummaries(engine)
         folded_logs = EventLogStore(engine, peer=event_logs.peer, history_reader=history, summaries=folded)
         folded_content = HistoryContentStore(engine, history_reader=history)
-        assert await ThreadStore(engine, folded).list_threads() == await ThreadStore(engine, app).list_threads()
+        history_threads = await ThreadStore(engine, folded).list_threads()
+        app_threads = await ThreadStore(engine, app).list_threads()
+        assert history_threads == app_threads, _thread_view_differences(history_threads, app_threads)
         assert await folded_logs.feed_state(thread) == await event_logs.feed_state(thread)
         app_scope = await content.current_scope(thread)
         folded_scope = await folded_content.current_scope(thread)

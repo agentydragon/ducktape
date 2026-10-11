@@ -1328,6 +1328,7 @@ py_test(
         "//agentplane/app/threads:sessions",
         "//agentplane/app/threads:store",
         "//agentplane/app/threads:summaries",
+        "//agentplane/app/threads:thread_view",
         "//agentplane/app/threads/events:debug",
         "//agentplane/app/threads/view:content",
         "//agentplane/history_service/testing:backend",
