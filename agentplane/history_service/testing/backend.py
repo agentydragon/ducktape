@@ -1,7 +1,7 @@
 """Serve the real History Service over a history database for consumer tests.
 
 The schema belongs to the Sandbox Service fixture that creates the database. `ingest` writes it as
-production does, following that fixture's Sandbox Service; the server only reads it, in read-only
+production does, a runner pushing to the ingress; the server only reads it, in read-only
 transactions as in production.
 """
 
@@ -21,12 +21,15 @@ from agentplane.history_service.client import HistoryServiceClient
 from agentplane.history_service.evidence import EvidenceReader
 from agentplane.history_service.fold_runner import FoldRunner
 from agentplane.history_service.grpc_api import Resources, add_service
-from agentplane.history_service.ingester import HistoryIngester
+from agentplane.history_service.ingress import Resources as IngressResources, Timing, add_ingress
+from agentplane.history_service.storage.history_changes import HistoryChanges, notify_history
 from agentplane.history_service.storage.store import Store
 from agentplane.history_service.summaries import SummaryReader
 from agentplane.history_service.summary_changes import SummaryChanges, notify_summaries
 from agentplane.history_service.thread_reads import ThreadReader
-from agentplane.sandbox_service.client import SandboxServiceClient
+from agentplane.runner.control import ControlTiming
+from agentplane.runner.ingress import IngressPusher
+from agentplane.runner.service import Runner
 from agentplane.subjects import ServiceAccountRef
 from agentplane.workload_auth.principal import POD_NAME_CLAIM, POD_UID_CLAIM, WorkloadPrincipalResolver
 from util.testing.sqlalchemy_engines import managed_async_engine
@@ -37,19 +40,32 @@ from util.testing.sqlalchemy_engines import managed_async_engine
 TOKEN = "test-app-history-service-token"  # a test literal, not a real credential
 AUDIENCE = "test-app-history-service"
 READER = ServiceAccountRef(namespace="test-history-namespace", name="test-history-reader")
+WRITER_TOKEN = "test-runner-ingress-token"  # a test literal, not a real credential
+WRITER_AUDIENCE = "test-runner-ingress"
+WRITER = ServiceAccountRef(namespace="test-sandbox-namespace", name="test-sandbox-runner")
 
 
 class Authentication:
+    """Token reviews for one ServiceAccount, presenting one token for one audience."""
+
+    def __init__(self, *, token: str, audience: str, account: ServiceAccountRef) -> None:
+        self.token = token
+        self.audience = audience
+        self.account = account
+
     async def create_token_review(self, body: k8s_client.V1TokenReview) -> k8s_client.V1TokenReview:
         return k8s_client.V1TokenReview(
             spec=body.spec,
             status=k8s_client.V1TokenReviewStatus(
-                authenticated=body.spec.token == TOKEN,
-                audiences=[AUDIENCE],
+                authenticated=body.spec.token == self.token,
+                audiences=[self.audience],
                 user=k8s_client.V1UserInfo(
-                    username=f"system:serviceaccount:{READER.namespace}:{READER.name}",
-                    uid="test-app-account-uid",
-                    extra={POD_NAME_CLAIM: ["test-app-pod"], POD_UID_CLAIM: ["test-app-pod-uid"]},
+                    username=f"system:serviceaccount:{self.account.namespace}:{self.account.name}",
+                    uid=f"{self.account.name}-uid",
+                    extra={
+                        POD_NAME_CLAIM: [f"{self.account.name}-pod"],
+                        POD_UID_CLAIM: [f"{self.account.name}-pod-uid"],
+                    },
                 ),
             ),
         )
@@ -78,7 +94,9 @@ async def history_service(
         add_service(
             Resources(
                 principals=WorkloadPrincipalResolver(
-                    authentication=cast(k8s_client.AuthenticationV1Api, Authentication()),
+                    authentication=cast(
+                        k8s_client.AuthenticationV1Api, Authentication(token=TOKEN, audience=AUDIENCE, account=READER)
+                    ),
                     audience=AUDIENCE,
                     allowed_service_account_namespaces={READER.namespace},
                 ),
@@ -103,18 +121,41 @@ async def history_service(
 
 
 @asynccontextmanager
-async def ingest(database_url: str, sandboxes: SandboxServiceClient) -> AsyncIterator[None]:
-    """Copy every Session `sandboxes` reports into the history database, as the deployed ingester does."""
+async def ingest(database_url: str, runner: Runner) -> AsyncIterator[None]:
+    """Push every Session `runner` journals into the history database through the ingress, as a
+    deployed runner does."""
     async with _history_engine(database_url) as engine:
-        task = asyncio.create_task(
-            HistoryIngester(Store(engine), engine, sandboxes, concurrency=4, retry_interval_s=0.05).run()
+        server = grpc.aio.server()
+        add_ingress(
+            IngressResources(
+                principals=WorkloadPrincipalResolver(
+                    authentication=cast(
+                        k8s_client.AuthenticationV1Api,
+                        Authentication(token=WRITER_TOKEN, audience=WRITER_AUDIENCE, account=WRITER),
+                    ),
+                    audience=WRITER_AUDIENCE,
+                    allowed_service_account_namespaces={WRITER.namespace},
+                ),
+                history=Store(engine),
+                timing=Timing(),
+            ),
+            server,
         )
-        try:
-            yield
-        finally:
-            task.cancel()
-            with suppress(asyncio.CancelledError):
-                await task
+        async with serving(server, "127.0.0.1:0", grace_s=0) as port:
+            task = asyncio.create_task(
+                IngressPusher(
+                    runner,
+                    target=f"127.0.0.1:{port}",
+                    bearer=WRITER_TOKEN,
+                    timing=ControlTiming(backoff_initial_s=0.05, backoff_max_s=0.5),
+                ).run()
+            )
+            try:
+                yield
+            finally:
+                task.cancel()
+                with suppress(asyncio.CancelledError):
+                    await task
 
 
 async def fold_history(database_url: str) -> None:

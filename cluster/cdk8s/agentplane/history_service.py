@@ -1,6 +1,6 @@
 """The History Service: takes the Session journals runners push (agentplane/docs/runner_control.md
-§ Event ingress), follows the rest through the Runner Gateway, and serves retained history from the
-`sandbox_service` database, whose schema its init container migrates.
+§ Event ingress), and serves and folds retained history from the `sandbox_service` database, whose
+schema its init container migrates.
 
 Runners reach the ingress listener only through the egress proxy, which swaps the placeholder
 bearer for the Pod's own token for the ingress audience. It takes untrusted input, so it listens
@@ -32,7 +32,6 @@ NAME = "agentplane-history-service"
 TOKEN_AUDIENCE = "agentplane-history-service"
 _LABELS = {"app.kubernetes.io/name": NAME}
 _IMAGE = "git.allegedly.works/ducktape-ci/agentplane-history-service"
-_SERVICE_TOKEN_DIR = "/var/run/secrets/history-service"
 # The policy a Sandbox's runner reaches the ingress under, and the credential it substitutes.
 EGRESS_POLICY = "runner-ingress"
 _CREDENTIAL = "agentplane-runner-ingress"
@@ -63,18 +62,7 @@ def runner_ingress_endpoint(namespace: str) -> RunnerEndpoint:
 
 
 class HistoryService(Construct):
-    def __init__(
-        self,
-        scope: Construct,
-        id: str,
-        env: Environment,
-        *,
-        callers: dict[ServiceAccountRef, Pods],
-        sandboxes: ServiceRef,
-        sandboxes_audience: str,
-        gateway: ServiceRef,
-        gateway_audience: str,
-    ) -> None:
+    def __init__(self, scope: Construct, id: str, env: Environment, *, callers: dict[ServiceAccountRef, Pods]) -> None:
         super().__init__(scope, id)
         endpoint = service(env.namespace)
         ingress = ingress_service(env.namespace)
@@ -98,14 +86,6 @@ class HistoryService(Construct):
                 ],
                 "token_audience": TOKEN_AUDIENCE,
                 "port": endpoint.port.number,
-                "sandbox_service": {
-                    "target": f"{sandboxes.fqdn}:{sandboxes.pod_port}",
-                    "gateway_target": f"{gateway.fqdn}:{gateway.pod_port}",
-                    "token_file": f"{_SERVICE_TOKEN_DIR}/sandboxes",
-                    "gateway_token_file": f"{_SERVICE_TOKEN_DIR}/gateway",
-                    "grpc_channel_options": env.app_config.sandbox_service_grpc_channel_options,
-                },
-                "ingester": {"settle_deltas": env.settle_deltas},
                 "ingress": {
                     "token_audience": RUNNER_INGRESS_AUDIENCE,
                     # Sandboxes run in the environment's own namespace.
@@ -144,10 +124,6 @@ class HistoryService(Construct):
             ),
         )
         config.mount_into(workload.container, env=CONFIG_FILE_ENV)
-        # For the ingester's Sandbox Service and Runner Gateway calls.
-        workload.project_tokens(
-            "service-tokens", _SERVICE_TOKEN_DIR, {"sandboxes": sandboxes_audience, "gateway": gateway_audience}
-        )
         proxy = egress.proxy(env.namespace)
         NetworkPolicy(
             self,
@@ -155,13 +131,7 @@ class HistoryService(Construct):
             metadata=ApiObjectMetadata(name=NAME, namespace=env.namespace),
             endpoint_selector=endpoint.pods.selector,
             ingress=[*(pods.admit(endpoint.pod_port) for pods in callers.values()), proxy.pods.admit(ingress.pod_port)],
-            egress=[
-                cilium.dns_egress(),
-                EgressRule.to_entities(Entity.KUBE_APISERVER),
-                sandboxes.egress(),
-                gateway.egress(),
-                database.egress(env.namespace),
-            ],
+            egress=[cilium.dns_egress(), EgressRule.to_entities(Entity.KUBE_APISERVER), database.egress(env.namespace)],
         )
         egress.add_runner_egress(
             self,

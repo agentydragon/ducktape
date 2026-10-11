@@ -844,7 +844,7 @@ nodes and section 9 are unaffected.
 
 ```mermaid
 flowchart TD
-    FOLLOW_PATH_RETIRE[Candidate: delete following, WatchSessions and holds]
+    FOLLOW_PATH_RETIRE[Under way: delete following, WatchSessions and holds]
     GATEWAY_CLIENT_SPLIT[Unscheduled: Session messages and client move to the gateway]
     AGENTPLANE_SANDBOX_RESOURCE[Decision: our own Sandbox resource]
     POD_INCARNATION[Decision: a Pod is the incarnation]
@@ -876,19 +876,14 @@ the operator before the drop).
 
 ### `FOLLOW_PATH_RETIRE` — delete following, WatchSessions and holds
 
-**Candidate.** Delete `FollowSession`,
-`WatchSessions` and its change feed (the gateway's `session.change_position`, its index and the
-`session_change_position` sequence), the History Service follower ingester, and the hold API and
-`retention-holds` annotation. With the follower go `Store.record_session` and `SessionSummary`'s
-Sandbox fields; tests that copy history with the follower
-(`history_service.testing.backend.ingest`, used by the app and Notification Service acceptance
-tests) push through the ingress instead. The history columns the follower filled are dropped by
-`HISTORY_SANDBOX_LOCATOR_DROP`. Stops for the operator before dropping stored registry columns.
+**Under way.** The History Service no longer follows (its ingester, settings and caller accounts are
+gone). Delete `FollowSession`, `WatchSessions` and its change feed (the gateway's
+`session.change_position`, its index and the `session_change_position` sequence), and the hold API
+and `retention-holds` annotation, and with them `SessionSummary`'s Sandbox fields. The history
+columns the follower filled are dropped by `HISTORY_SANDBOX_LOCATOR_DROP`. Stops for the operator
+before dropping stored registry columns.
 
-Also follow-only, so deleted here: the History Service's `SandboxServiceSettings` and
-`IngesterSettings` (with the duplicate `ingester.settle_deltas`), its `sandbox_service` config block
-and token volume in cdk8s, and its caller account on the Sandbox Service; `follow_lease_s` and
-`SessionChanges`; the client's `follow_timeout_s` and `Attachment` with the app's
+Also follow-only, so deleted here: `follow_lease_s` and `SessionChanges`; the client's `follow_timeout_s` and `Attachment` with the app's
 `sandbox_service_follow_timeout_s` and the Notification Service's `follow_timeout_s`;
 `protocol.v1.Follow` once nothing sends `Open.follow`; `Store.read`; `SessionFeedState.ended` with
 its merge in `record_feed_state`, `FEED_STATUS_ENDED` and the app's `resume_pending` mask; and
