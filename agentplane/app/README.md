@@ -1,9 +1,9 @@
 # Agentplane integration app
 
-The human-facing frontend over Agentplane's services: a FastAPI service that reaches sandboxes and
-runner sessions through the Sandbox Service, reads their archived Session history and Threads (each
-Session's conversation projection) from the History Service, and synchronizes selected rows and
-content to the browser through authenticated Electric endpoints. It also presents Actions, operator
+The human-facing frontend over Agentplane's services: a FastAPI service that reaches sandboxes
+through the Sandbox Service and runner sessions through the Runner Gateway, reads their archived
+Session history and Threads (each Session's conversation projection) from the History Service, and
+synchronizes selected rows and content to the browser through authenticated Electric endpoints. It also presents Actions, operator
 decisions and Connection consent.
 The staging instance lives in `cluster/k8s/agentplane-staging/`.
 
@@ -15,9 +15,10 @@ attachments, and app-only provisioning or prompt/bootstrap state, including in v
 [service dependency rule](../docs/service_boundaries.md).
 
 Backend responsibilities needed by another service move to an independent owner, not a temporary
-app endpoint. The [Sandbox Service](../sandbox_service/README.md) owns sandbox lifecycle and
-runner-session control and following; the [History Service](../history_service/README.md) owns
-the Session Event archive and its Thread fold; the app is a client of both.
+app endpoint. The [Sandbox Service](../sandbox_service/README.md) owns sandbox lifecycle; the
+[Runner Gateway](../runner_gateway/README.md) owns runner Sessions and commands; the
+[History Service](../history_service/README.md) owns the Session Event archive and its Thread fold;
+the app is a client of all three.
 Notifications depends on that backend and Actions, not this app. The app's thread projections are
 its own state, and like any state the app holds they are candidates to move into a dedicated
 service ([principles](../docs/principles.md#composable-services-not-a-platform-you-sign-up-for-whole)).
@@ -38,8 +39,8 @@ bbr test //agentplane/app/...
 - `presets.py`: app-owned `SandboxPreset` and `ThreadPreset` configuration and concrete launch
   resolution. Preset names stop at the app boundary; Kubernetes and the runner receive resolved
   fields.
-- Sandbox provisioning, grants, and runner control are owned by `../sandbox_service/` and reached
-  through its authenticated gRPC client. The app retains read-only Kubernetes projections for UI updates.
+- Sandbox provisioning and grants are owned by `../sandbox_service/`, Sessions and commands by
+  `../runner_gateway/`; both are reached through the authenticated `SandboxServiceClient`. The app retains read-only Kubernetes projections for UI updates.
 - `egress.py`: read-only egress-policy/binding projections for the UI, with mutations delegated to Sandbox
   Service. Bindings remain desired-state grants, with expiry/revocation per binding and Flux-owned
   bindings protected from app revocation ([composition](../docs/egress_composition.md)).
@@ -52,8 +53,8 @@ bbr test //agentplane/app/...
   payload chunks, evidence) is the History Service's, read over its gRPC API (`summaries.py`,
   `view/`) or replicated by Electric from its database; `summary_watch.py` turns its fold commits into
   `Channel.THREADS` wake-ups. `store.py` (`ThreadStore`) composes the two. `ingestion.py`'s `Ingester`
-  only discovers the running sandboxes' Sessions and opens a Thread for each; the Sandbox Service
-  archives their events.
+  only discovers the running sandboxes' Sessions and opens a Thread for each; runners push their
+  events to the History Service.
 - `threads/bridge.py`: browser-facing composition of session operations with archive synchronization.
   `threads/sessions.py` selects explicit destinations from the app's live index and caches Sandbox
   Service clients. Neither opens direct runner connections or owns lifecycle implementation.
@@ -94,31 +95,35 @@ bbr test //agentplane/app/...
 
 ## Live views
 
-### Replica-safe runner delivery
+### Replica-safe command delivery
 
-Every app replica can send commands through an independent runner attachment. Generated `Command`
-payloads go to `POST /threads/{id}/commands` with stable command ids. The runner serializes admission
-and deduplicates retries. HTTP success returns the runner's exact, durable `CommandAdmitted`
-receipt; it does not wait for the app archive to catch up and does not claim native execution. The Thread event stream and
-projected sync publish the archived entry and eventual outcome. Once the archive has caught up,
-identical retries return that entry before contacting the runner; until then the runner deduplicates
-the same id and payload, rejecting conflicting reuse. There is no database command queue.
+Any app replica relays `POST /threads/{id}/commands` (generated `Command` payloads with stable
+command ids) to the Runner Gateway's `SubmitCommand`, which records the submission in its
+`sandbox_commands` database and delivers it over the runner control stream
+([command admission](../runner_gateway/API.md#sessions-and-commands)). The runner serializes
+admission and deduplicates retries. HTTP success returns the runner's exact, durable
+`CommandAdmitted` receipt; it does not wait for the History Service to fold it and does not claim
+native execution. The Thread event stream and projected sync publish the archived entry and
+eventual outcome. Once the History Service has folded the admission, identical retries return that
+entry without contacting the gateway; until then the gateway and runner deduplicate the same id and
+payload, rejecting conflicting reuse. The app keeps no command queue.
 
-`GET /threads/{id}/commands/{command_id}` reads what the Sandbox Service retained for a command
+`GET /threads/{id}/commands/{command_id}` reads what the Runner Gateway retained for a command
 without contacting the runner. After an unconfirmed delivery the browser asks it: an admission it
 records, a rejection it shows as refused, and a command still pending admission gets its own light,
 stored by the service but not yet seen admitted by the runner. That is neither proof the runner never
 saw it nor a promise it will, so the command keeps Retry and never Cancel.
 
 The app copies no runner events and folds none. Each runner pushes its Sessions' events to the
-History ingress, and the History Service folds them under per-Session leases
+History Service's ingress, and the History Service folds them under per-Session leases
 ([History Service](../history_service/README.md)); the app reads both through the History Service.
 
-Sandbox discovery and runner addresses use the existing Kubernetes list/watch cache, including
+Sandbox discovery uses the existing Kubernetes list/watch cache, including
 relist recovery; watch changes wake reconciliation. The timer discovers sessions
 via runner `ListSessions`, which currently has no watch RPC. Merely observing a stopped session
-does not restart its harness. Explicit Open starts/resumes it and waits for ingestion to catch up
-before returning, so a resumed browser does not read the previous harness's terminal state. On a
+does not restart its harness. Explicit Open starts or resumes it without waiting for its history;
+a confirmed resume masks the feed's earlier end, so a resumed browser does not read the previous
+harness's terminal state. On a
 Thread page, **Resume harness** opens that Thread's existing runner session using its retained
 runner-owned spec; it cannot create a new Thread or substitute another harness.
 
@@ -159,7 +164,7 @@ remaining acceptance gates.
 
 Sidebar entries remain navigable after Sandbox deletion. Availability comes from the separate
 live inventory snapshot; suspended/deleted Sandboxes disable runner controls. Unfinished
-retained items are labelled incomplete rather than actively streaming. The Sandbox Service
+retained items are labelled incomplete rather than actively streaming. The Runner Gateway
 owns runner attachment; loading a thread never rebuilds its history.
 
 `test_thread_browser.py` loads the built SPA in hermetic Chromium against real application
@@ -227,12 +232,11 @@ and both are cryptographic:
   ```
 
 Nothing is inferred from a request header, and nothing in front of the app authenticates for it:
-the gateway routes straight to the Service. The app used to sit behind an Authentik forward-auth
-outpost and trust the `x-authentik-username` it set, on the grounds that the outpost was the only
-way in. The API server's service proxy was the other way in and it forwards caller-supplied
-headers, so anyone with `services/proxy` on the Service could grant themselves egress.
-Owning the login also drops the outpost's 15-second stall on every SSE stream, whose response
-writer implements no `Flush()`.
+the gateway routes straight to the Service. A header set by an authenticating proxy, such as an
+Authentik forward-auth outpost's `x-authentik-username`, cannot be trusted: the API server's service
+proxy also reaches the Service and forwards caller-supplied headers, so anyone with `services/proxy`
+on it could grant themselves egress. The outpost would also stall every SSE stream for 15 seconds,
+since its response writer implements no `Flush()`.
 
 ## Sidebar inventory updates
 
@@ -280,8 +284,8 @@ logs. The timestamp is a **proxy** for LLM-request recency: model output can arr
 an upstream request, and a request with no model output may not be represented. The UI does
 not report a provider request time or a cache hit. The value remains meaningful during a
 long-running tool or an active turn, and is unknown when no qualifying event was observed.
-Ingress-side measurement, if needed, is [deferred](plans/task_freezer.md#llm_ingress_request_recency--direct-outbound-request-timing)
-because ingress can authenticate a Sandbox, but not distinguish its co-resident Threads.
+There is no ingress-side measurement: ingress can authenticate a Sandbox, but not distinguish its
+co-resident Threads.
 
 ## Shutdown
 
@@ -445,7 +449,7 @@ linked to.
 Before opening a session on a bound Sandbox, the app sends the SandboxPreset's configured bootstrap
 content to the runner under a stable preset identity. The runner executes it idempotently on the
 persistent state volume; a failure refuses the session open. The existing full `SessionSpec` API is
-available when no preset is selected. The app composes no instructions: the Sandbox Service prepends its
+available when no preset is selected. The app composes no instructions: the Runner Gateway prepends its
 configured platform instructions to every launch's preset or task instructions, including direct
 `SessionSpec` API launches ([API.md](../runner_gateway/API.md#launch-overrides-and-field-presence)). The
 shared block teaches agents the platform's egress and Actions Service protocol and how to query their
@@ -458,7 +462,7 @@ the Thread event stream and starts the harness only after setup succeeds. A fail
 readable Thread and workspace but cannot rerun setup under the same session id. The Sandbox page
 uses the configured cwd template instead of replacing it with a hardcoded workspace path.
 
-A new Thread's id is the public Session ID the browser mints and the Sandbox Service's
+A new Thread's id is the public Session ID the browser mints and the Runner Gateway's
 `CreateSession` confirms; `{session_id}` in a cwd resolves server-side. The browser sends a fresh
 Session ID with the original overrides once and keeps only that ID in `sessionStorage`, never the
 spec or setup script, so it cannot retry the create. After a lost reply or a reload it never re-sends

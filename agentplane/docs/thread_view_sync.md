@@ -34,8 +34,8 @@ owes the browser, with IDs; the list below is the whole view's.
   the accumulated value. Tool results update the invocation they identify.
 - Reads cost the requested items and selected content, independent of total conversation
   length apart from indexed lookup. A count limit does not promise a response byte bound.
-- The runner persists semantic batches before forwarding them; the app commits projected
-  state before publication to browsers. Multiple replicas and listeners share committed
+- The runner persists entries before pushing them; the History Service commits them, and its
+  fold commits projected state, before publication to browsers. Multiple replicas and listeners share committed
   state. Disconnecting a reader does not interrupt execution.
 - A reader learns of changes over a held request or a stream (long poll, SSE, WebSocket),
   never by asking again on a timer. Only a failed request waits before the next.
@@ -248,8 +248,8 @@ should select an engine before proposing a custom REST/SSE fallback.
 
 ```mermaid
 flowchart LR
-    runner[Runner event stream] --> sandbox[Sandbox Service archive]
-    sandbox --> history[History Service fold]
+    runner[Runner event stream] -->|push| archive[History Service ingress and archive]
+    archive --> history[History Service fold]
     history --> pg[(History DB conversation state)]
     pg --> electric[Electric sync service]
     electric --> proxy[Python app authorization proxy]
@@ -257,8 +257,8 @@ flowchart LR
     client --> react[React conversation view]
 ```
 
-The Sandbox Service archives runner events in the history DB; the History Service folds
-them there in ordinary PostgreSQL transactions. Electric runs as a separate service,
+Each runner pushes its events to the History Service's ingress, which archives them in the
+history DB; the History Service's fold folds them there in ordinary PostgreSQL transactions. Electric runs as a separate service,
 consumes committed changes through logical replication, and serves selected data over HTTP. Its TypeScript client feeds the browser's thread store,
 which renders projected records without folding raw harness events again.
 
@@ -266,7 +266,7 @@ The app proxy authenticates callers and fixes the permitted conversation predica
 tables and columns. Client-supplied sync parameters must not widen those permissions,
 including subset query bodies. Proxy replicas share authorization state and the same
 Electric endpoint; browser sessions must not require replica affinity. Commands continue
-through the app's existing admission API. The proxy does not own another conversation
+through the app's command API to the Runner Gateway. The proxy does not own another conversation
 cache or implement snapshot/live reconciliation.
 
 ### Server memory ownership
@@ -320,15 +320,16 @@ return a whole selected value irrespective of storage chunk boundaries.
 The target durability path is:
 
 ```text
-harness output -> runner commits semantic batch -> runner forwards batch
-               -> app commits content + projection + ingestion checkpoint
+harness output -> runner commits entries -> runner pushes them to the History Service ingress
+               -> ingress commits raw entries + Session checkpoint, then acknowledges
+               -> fold commits content + projection + fold checkpoint
                -> sync engine publishes committed state -> browser
 ```
 
 Batching amortizes commits without requiring provisional browser text. Runner-process or
-app-replica crashes replay from committed checkpoints. An uncommitted runner batch has not
-been forwarded. Permanent runner-volume loss can lose observations not yet copied to the
-app; app-committed content survives under the app database's storage guarantee. Output the
+History Service crashes replay from committed checkpoints. An uncommitted runner entry has not
+been pushed. Permanent runner-volume loss can lose observations the ingress has not yet
+acknowledged; committed history survives under the history database's storage guarantee. Output the
 runner never received is outside this guarantee. Measure commit latency on actual storage
 before relaxing publication durability.
 
@@ -413,7 +414,7 @@ Initially retain all current Events. Before allowing capture to be disabled, mak
 semantic journal/checkpoints sufficient for projection and recovery without native frames.
 The existing dense Event stream mixes native and semantic observations: simply dropping
 Native rows would violate its contiguous-prefix checks. Define a semantic replication
-sequence/checkpoint and independent raw identities at that cutover; missing capture must
+sequence/checkpoint and independent raw identities first; missing capture must
 not look like a corrupted semantic stream. Keep native resume artifacts under their own
 ownership, separate from debug capture.
 
@@ -457,8 +458,8 @@ Required evidence before accepting the integrated implementation:
 - Projection parity over different batch boundaries, including parallel tools finishing in
   reverse order, authoritative replacement, independent content fields, unknown observations,
   command outcomes and interruption. Invalid batches publish no partial state.
-- Transaction/crash tests for source/checkpoint validation, duplicate delivery and app-replica
-  takeover. Notifications lost across reconnect cannot lose committed data.
+- Transaction/crash tests for source/checkpoint validation, duplicate delivery and History
+  Service replica takeover. Notifications lost across reconnect cannot lose committed data.
 - Real sync-engine/browser tests for history/live races, content selection, expired handles,
   large individual bodies, unsubscribe/refetch, auth and old subscription callbacks.
 - Scale comparisons over orders of magnitude of history: initial queries and reconnect fetch
@@ -481,15 +482,7 @@ revisit must show current revisions, and drafts and the visible scroll anchor mu
 
 ## Implementation boundaries
 
-Review the conversation model and requirements first. The pure incremental projector and its
-semantic tests are a separate change. Evaluate the existing sync integration independently
-of that server fold, then implement transactional materialization and integrate the browser.
-Tail loading, history paging, content selection and reconnect must all be exercised before
-cutover. Remove the obsolete full-history browser reducer at that cutover.
-
-Optional raw capture and journal compaction follow durable semantic storage. This document
-changes no running runner, database schema, command queue, transport or capture policy.
-The parked Connect and gRPC-Web experiments remain reference material; no transport migration
+Optional raw capture and journal compaction follow durable semantic storage. The parked Connect and gRPC-Web experiments remain reference material; no transport migration
 is required to choose the domain model or the sync engine.
 
 ## Transport experiments

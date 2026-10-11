@@ -20,8 +20,8 @@ run as different processes. Admit Sessions with incompatible trust or credential
 only into separate Sandboxes. No sandboxing-within-a-Sandbox is planned; a future change to this
 boundary would require its own isolation mechanism and a separate security review, not a new
 Session label or archive ACL. Scoped archive reads can restrict _external_ callers, but cannot
-isolate co-resident processes. See the [scoped-read proposal](scoped_session_reads.md#sandbox-trust-boundary)
-and its [placement enforcement task](../plans/task_dag.md#sandbox_compartment_boundary--enforce-sandbox-placement-boundary).
+isolate co-resident processes. Nothing enforces compatible placement yet; a scoped-read policy would
+need it at Open, adoption and replacement.
 
 ## Product requirements
 
@@ -33,7 +33,7 @@ able to trust what the page says:
   output are different facts. A model picker changes its applied value only on
   evidence of application; an interrupt request is not yet a stopped turn.
 - The runner continues executing and recording while the app is unavailable.
-- The app retains copied history after the Sandbox is deleted.
+- The History Service retains history after the Sandbox is deleted.
 - Native traffic remains inspectable on demand even when normal conversation sync omits it.
   The initial design retains it losslessly; optional retention controls are a separate,
   deferred contract, never an implicit consequence of filtered delivery.
@@ -55,7 +55,8 @@ tables are `thread_*` in the History Service too, although they are keyed by pub
 ```mermaid
 flowchart LR
     F[Frontend] -->|Command| A[App]
-    A -->|same Command| R[Runner journal and scheduler]
+    A -->|same Command| G[Runner Gateway]
+    G -->|runner control stream| R[Runner journal and scheduler]
     R --> C[Claude adapter]
     R --> D[Codex adapter]
     C <--> H1[Claude native process]
@@ -63,11 +64,11 @@ flowchart LR
     C -->|native traffic and derived Events| E[Runner Event log]
     D -->|native traffic and derived Events| E
     R -->|admission and recovery Events| E
-    E -->|copy exact entries| P[App PostgreSQL history]
-    P -->|exact replay / Raw evidence| F
-    P -->|deterministic materialized projection| V[App conversation read model]
-    V -->|assembled, plus what an operator sets| T[Thread]
-    V -->|Electric snapshot and changes| F
+    E -->|push exact entries| P[History Service archive]
+    P -->|exact replay / Raw evidence, through the app| F
+    P -->|deterministic fold| V[History Service conversation read model]
+    V -->|assembled, plus what an operator sets in the app| T[Thread]
+    V -->|Electric snapshot and changes, through the app| F
     K[Kubernetes Sandbox state] -->|operational snapshot| A
     A -->|operational snapshot| F
 ```
@@ -89,25 +90,25 @@ The normal conversation view reads the materialized Thread projection through th
 [conversation-view sync](thread_view_sync.md). The exact archive remains available for replay and
 Raw evidence; the projection does not change runner Events or command admission.
 
-| Representation                       | Authority and identity                                                                                                                                             | Ordering                                                                                            |
-| ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------- |
-| Native conversation                  | The selected harness; native ids and resume artifacts                                                                                                              | Harness-defined; not portable between Claude and Codex                                              |
-| Thread                               | Assembled from one Event log: the conversation view projected from its Events, under the log's id and stable URL, plus the name and archive state an operator sets | Its Event log's sequence, as the conversation view presents it                                      |
-| Runner session / harness incarnation | Attachment and execution provenance within an Event log                                                                                                            | Does not create a new conversation or a new Event counter                                           |
-| Runner command journal               | Exact immutable `Command`, identified by `command_id` within its execution scope                                                                                   | Serialized admission; operation-specific execution                                                  |
-| Runner Event log and app copy        | Runner appends; the app keys the copy, with its static Sandbox association, by the public Session ID and persists the same `EventEntry`                            | One sequence per log across supported harness incarnations; app and browser track consumed prefixes |
-| Sandbox and bootstrap state          | Kubernetes desired/observed objects; bootstrap's own log                                                                                                           | Separate operational state, with its own provenance                                                 |
-| Conversation view                    | Pure projection of runner Events                                                                                                                                   | Cards anchored to their causal Event; streaming may compact several Events                          |
+| Representation                       | Authority and identity                                                                                                                                             | Ordering                                                                                       |
+| ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------- |
+| Native conversation                  | The selected harness; native ids and resume artifacts                                                                                                              | Harness-defined; not portable between Claude and Codex                                         |
+| Thread                               | Assembled from one Event log: the conversation view projected from its Events, under the log's id and stable URL, plus the name and archive state an operator sets | Its Event log's sequence, as the conversation view presents it                                 |
+| Runner session / harness incarnation | Attachment and execution provenance within an Event log                                                                                                            | Does not create a new conversation or a new Event counter                                      |
+| Runner command journal               | Exact immutable `Command`, identified by `command_id` within its execution scope                                                                                   | Serialized admission; operation-specific execution                                             |
+| Runner Event log and history copy    | Runner appends and pushes; the History Service keys the copy by the public Session ID, bound to the pushing ServiceAccount, and persists the same `EventEntry`     | One sequence per log across supported harness incarnations; history and browser track prefixes |
+| Sandbox and bootstrap state          | Kubernetes desired/observed objects; bootstrap's own log                                                                                                           | Separate operational state, with its own provenance                                            |
+| Conversation view                    | Pure projection of runner Events                                                                                                                                   | Cards anchored to their causal Event; streaming may compact several Events                     |
 
 One Sandbox can host multiple Threads. A Thread may resume through several harness
 processes on that Sandbox. Current runner storage calls its durable, resumable container
 a “session”; it already spans process restarts. That existing name does not establish
-the target product Thread/incarnation relationship. The Sandbox Service's Session registry holds
+the target product Thread/incarnation relationship. The Runner Gateway's Session registry holds
 the mapping, without duplicating the log's static Sandbox on each association.
 
 A Thread is a view/fold of one durable logical Session's Event log, with its own
-operator-set presentation; it is not a second execution source. Its id is the Sandbox
-Service's public Session UUID: `CreateSession` reserves it before runner contact, and the app
+operator-set presentation; it is not a second execution source. Its id is the Runner
+Gateway's public Session UUID: `CreateSession` reserves it before runner contact, and the app
 materializes the Thread under it from the Open reply, an Open-key lookup, or `ListSessions`
 discovery, whichever comes first. A suspend/resume on retained storage reuses that Session ID,
 native conversation, and Event sequence; a fresh harness process is an incarnation,
@@ -129,17 +130,17 @@ Resume and command take the public ID, and replay reads the History Service by t
 whose Sandbox UID was never recorded stays readable but cannot be resumed or polled. Each Session
 keeps one Event counter, the runner's cursor, contiguous from 1 in the history archive.
 
-A runner's Event sequence goes into a Thread but is not itself the Thread. The app creates
-the Event log under the public Session ID and copies the runner's Events into it, along
-with the feed state. The Thread is assembled from that log: its conversation view is projected
-from the Events, under the log's id, and it adds what an operator sets (a name, and whether it is
-archived). A Thread exists exactly when its log does, so ingestion never has to create one.
+A runner's Event sequence goes into a Thread but is not itself the Thread. The runner pushes
+the Session's Events, with its feed state, to the History Service's ingress, which stores them
+under the public Session ID and folds the conversation view from them. The Thread is assembled
+from that log: the History Service's conversation view under the log's id, plus what an operator
+sets in the app (a name, and whether it is archived).
 
 ## What storage guarantees
 
 The runner already has a command journal, Event log, and native resume artifacts.
 These serve different purposes: retaining requested work, replaying observed facts,
-and restoring the harness's own conversation. The app's PostgreSQL copy supplies
+and restoring the harness's own conversation. The History Service's copy supplies
 history while a runner is unreachable and after its Sandbox has gone away.
 
 ### Command protocol: intent, admission, then outcome
@@ -178,21 +179,21 @@ for the batch's durability fence. Losing an already published tail can otherwise
 reuse cursors for different facts. The runner commits every public entry through
 its SQLite durability fence.
 
-The app ingester commits copied entries and advances its contiguous checkpoint in the
-same transaction. Duplicate entries must agree in payload and provenance; a key conflict
-must not silently hide a different Event. Notify browsers only after commit. Lost
-notifications trigger rereads, not loss of history.
+The History Service's ingress commits pushed entries and advances the Session's contiguous
+checkpoint in the same transaction, and acknowledges only after commit. Duplicate entries must
+agree in payload and provenance; a conflicting entry is refused, never hidden. Readers are woken
+only after commit. Lost wake-ups trigger rereads, not loss of history.
 
-App restart or temporary app unavailability does not stop a runner. Runner-local
-storage permits independent progress followed by catch-up. Storage exhaustion must
+Neither the app nor the History Service being unavailable stops a runner. Runner-local
+storage permits independent progress, and the push resumes after the last acknowledged cursor. Storage exhaustion must
 surface explicitly and stop accepting more work before the runner cannot record it;
 silently trimming unreplicated history violates this contract.
 
 ### One Event high-water mark per log across harness sessions
 
 There is one runner-owned sequence per Event log, and so per Thread, continued from
-its durable journal through supported runner/harness restarts. The app checkpoint says
-how much it has copied; the browser checkpoint says how much it has consumed. They are
+its durable journal through supported runner/harness restarts. The History Service's checkpoint
+says how much it has stored; the browser checkpoint says how much it has consumed. They are
 positions in the same sequence, not additional Event counters.
 
 Only one runner writer may own a log's journal at a time. Local storage ownership
@@ -201,16 +202,16 @@ retries commands. Fencing the copy into PostgreSQL does not fence native executi
 two runners writing the same log.
 
 A copied high-water mark alone cannot recover lost runner state. The runner might
-have emitted an unreplicated suffix while the app was offline. Starting a replacement
-at “app high-water mark + 1” could reuse those positions and says nothing about lost
+have emitted an unpushed suffix while the History Service was unreachable. Starting a replacement
+at “history high-water mark + 1” could reuse those positions and says nothing about lost
 commands or native history. Restore the authoritative journal and recovery state
-before continuation. If that is impossible, retain the app's known prefix and report
+before continuation. If that is impossible, retain the known history prefix and report
 the unavailable history/recovery; do not silently manufacture continuous history.
 
 ### Storage loss and Sandbox lifecycle
 
 Process restart with a surviving state volume is the supported recovery foundation.
-Total loss of that volume while the app lacks its tail is a different failure class;
+Total loss of that volume while the History Service lacks its tail is a different failure class;
 an app outbox can preserve input text but cannot recreate missing output or native
 resume artifacts.
 
@@ -219,16 +220,16 @@ path. Kubernetes readiness does not prove native resume. The checked-in Sandbox
 operating model removes the Pod on suspension and keeps its workspace PVC; processes
 must be re-established. Verify the actual template's state mount and harness artifacts.
 
-Managed deletion needs an explicit preservation rule: quiesce writers, drain output,
-and copy the final durable runner prefix before releasing its storage. If the runner
-is unreachable, retain the storage or explicitly report an incomplete archive.
-Externally deleting the only remaining storage while the app is behind cannot carry
-a no-loss guarantee. A Thread's archived page still displays the history the app has.
+Managed deletion seals first: [teardown](../sandbox_service/API.md#teardown) fences new work, seals
+every Session, and deletes the Sandbox only once the History Service's ingress has acknowledged
+every seal. While the runner is unreachable the Sandbox stays sealing. Externally deleting the only
+remaining storage while the History Service is behind cannot carry a no-loss guarantee. A Thread's
+archived page still displays the history the History Service has.
 
 ## Queue placement decision
 
 **Current implementation slice:** require a reachable runner for submission and
-make runner admission, app archival, replay, and UI state trustworthy first. Retain
+make runner admission, history archival, replay, and UI state trustworthy first. Retain
 the app outbox as a deferred option for “submit while unavailable,” including combined
 Sandbox + Thread + first input. Its additional availability promise remains a future
 product decision.
@@ -239,7 +240,7 @@ runner's native recovery obligations.
 
 |                                       | Runner admission first                                     | App outbox before runner admission                                                      |
 | ------------------------------------- | ---------------------------------------------------------- | --------------------------------------------------------------------------------------- |
-| Earliest server promise               | Runner admission archived by app                           | App command transaction commits                                                         |
+| Earliest server promise               | Runner admission receipt                                   | App command transaction commits                                                         |
 | Runner unavailable                    | Preserve draft, show unavailable; no server-queued command | App owns delivery and shows waiting for runner                                          |
 | Tab closes after saved confirmation   | Runner continues; app has the input                        | Reconciler continues even if no runner exists yet                                       |
 | Authoritative pending runner commands | Fold `CommandAdmitted` and outcomes                        | Same runner fold, plus app commands without observed runner admission                   |
@@ -266,25 +267,20 @@ E(41, command_admitted { command: M }) = EventEntry {
 }
 ```
 
-`E(n, observation)` always carries the full envelope above. In this direct-copy
-design, `origin.sequence` and `cursor` have the same value; they do not advance
-independently. `ClientMessage { command: M }` and
-`ServerMessage { event_entry: E(...) }` are the existing gRPC wrappers, elided
-after their first use. HTTP/SSE carry the same generated payload in protobuf JSON.
-Attachment setup is omitted where a stream is already open: each new gRPC attachment
-starts with `Open` and receives `Attached` before commands/replay. The app's command
-relay and its independent ingester may use different attachments.
-Thread URLs and HTTP command responses containing the exact archived admission are implemented.
-The `thread_id` selector on runner `Open` remains proposed; current `Open` only selects
-`session_id`. Native sketches omit unrelated request fields.
+`E(n, observation)` always carries the full envelope above. `origin.sequence` and `cursor`
+have the same value; they do not advance independently. The app submits through the Runner
+Gateway's `SubmitCommand`, which reaches the runner over its control stream and returns the
+`CommandAdmitted` entry; the runner pushes every entry to the History Service with
+`RunnerIngress.Push`, whose first frame announces the Session's `Attached` snapshot. HTTP/SSE
+carry the same generated payload in protobuf JSON. Native sketches omit unrelated request fields.
 
 ### Runner admission first
 
-The browser retains a command id and payload before sending. The app relays it to the
-runner; the product reports “saved” after the contiguous PostgreSQL copy contains the
-runner's `CommandAdmitted` for that exact command. Since that Event contains the full
-command, the saved input and pending controls survive reload and Sandbox deletion
-without an app delivery queue. The current bridge implements this archived-admission response
+The browser retains a command id and payload before sending. The app relays it through the
+Runner Gateway; the product reports “saved” when the response carries the runner's durable
+`CommandAdmitted` for that exact command. That entry contains the full command and reaches the
+History Service through the runner's push, so the saved input and pending controls survive reload
+and Sandbox deletion without an app delivery queue. The bridge implements this admission response
 boundary; browser-local recovery and pending presentation are separate acceptance work.
 
 A timeout preserves the browser's local submission as “awaiting saved confirmation.”
@@ -299,29 +295,38 @@ Retry into a replacement scope requires the separate successor-delivery decision
 ```mermaid
 sequenceDiagram
     participant F as Frontend
-    participant A as App and PostgreSQL
+    participant A as App
+    participant G as Runner Gateway
     participant R as Runner and journal
+    participant HS as History Service
     participant H as Codex harness
     F->>A: POST /threads/T/commands<br/>M = Command {command_id:M, change_model:{model:new-model}}
-    A->>R: ClientMessage {command:M}
+    A->>G: SubmitCommand {session_id:T, command:M}
+    G->>R: M over the control stream
     R->>R: Persist M
-    R-->>A: ServerMessage {event_entry:E(41, command_admitted{command:M})}
-    A->>A: Commit E41
-    A-->>F: HTTP 200, E41<br/>SSE id:41, data:E41
+    R-->>G: E(41, command_admitted{command:M})
+    G-->>A: E41
+    A-->>F: HTTP 200, E41
+    R->>HS: Push E41
+    HS->>HS: Commit E41, fold
+    A-->>F: SSE id:41, data:E41
     Note over F,H: Picker still shows applied old model. M is pending
     F->>A: POST /threads/T/commands<br/>I = Command {command_id:I, submit_input:{text:Continue the task}}
-    A->>R: ClientMessage {command:I}
+    A->>G: SubmitCommand {session_id:T, command:I}
+    G->>R: I
     R->>R: Persist I
-    R-->>A: E(42, command_admitted{command:I})
-    A->>A: Commit E42
-    A-->>F: HTTP 200, E42<br/>SSE id:42, data:E42
+    R-->>G: E(42, command_admitted{command:I})
+    G-->>A: E42
+    A-->>F: HTTP 200, E42
+    R->>HS: Push E42
+    A-->>F: SSE id:42, data:E42
     Note over R,H: Runner schedules when the native turn can start
     R->>H: method:turn/start, id:rpc-9<br/>params:{threadId:native-T, model:new-model,<br/>input:[{type:text, text:Continue the task}]}
     H-->>R: id:rpc-9, result:{turn:{id:turn-8, ...}}
     R->>R: Persist native evidence and causal outcomes
-    R-->>A: E(n, model_changed{command_id:M, model:new-model, ...})
-    R-->>A: E(m, harness_user_message_confirmed{<br/>origin_command_ids:[I], harness_message_id:turn-8,<br/>turn_id:turn-8, text:Continue the task})
-    A->>A: Commit Events
+    R->>HS: Push E(n, model_changed{command_id:M, model:new-model, ...})
+    R->>HS: Push E(m, harness_user_message_confirmed{<br/>origin_command_ids:[I], harness_message_id:turn-8,<br/>turn_id:turn-8, text:Continue the task})
+    HS->>HS: Commit Events, fold
     A-->>F: SSE id:n, data:E(n, ...)<br/>intermediate Events, then E(m, ...)
 ```
 
@@ -342,36 +347,33 @@ if added, preserves required admission order without waiting for each command's 
 The app atomically saves an immutable `Command` and its target before promising
 delivery. Existing Threads need only the command; combined creation also needs a
 Thread id, resolved Sandbox target, and runner-opening intent. Presets are resolved
-editable fields, not another runtime identity. Kubernetes owns Sandbox lifecycle.
+editable fields, not another runtime identity. The Sandbox Service owns Sandbox lifecycle.
 
 ```mermaid
 sequenceDiagram
     participant F as Frontend
     participant A as App and PostgreSQL
-    participant K as Kubernetes
-    participant R as Runner and journal
+    participant S as Sandbox Service
+    participant G as Runner Gateway and runner
+    participant HS as History Service
     F->>A: Proposed create request:<br/>{sandbox_target:resolved fields, initial_command:C}
     A->>A: Commit Thread, target, C
     A-->>F: Proposed HTTP 201 after commit:<br/>{thread_id:T, command:C}
     Note over F,A: Browser may close here
-    A->>K: Create/find Sandbox with stable identity
-    K-->>A: Watch object:{metadata:{uid:U, resourceVersion:V}, status:...}
-    A->>R: Initialize {script:resolved bootstrap, after_sequence:0}
-    R-->>A: InitializationEvent {sequence:B, result:{exit_code:0, ...}}
-    A->>R: Open {thread_id:T, session_id:S, spec:resolved fields,<br/>follow:{after_cursor:0}}
-    R-->>A: Attached {session_id:S, last_cursor:N, ...}<br/>then replay
-    A->>R: ClientMessage {command:C}
-    R->>R: Persist C
-    R-->>A: E(n, command_admitted{command:C})
-    A->>A: Copy Event and derive delivery satisfied
-    R-->>A: E(m, harness_user_message_confirmed{<br/>origin_command_ids:[C], text:Inspect this workspace, ...})
-    A->>A: Copy Events
-    F->>A: GET Thread T, Follow {after_cursor:0}, refresh pending and Sandbox state
-    A-->>F: C in app intent, exact E1..Em,<br/>separate operational snapshot
+    A->>S: CreateSandbox with stable name and resolved fields
+    S-->>A: Sandbox {uid:U, ...}
+    A->>G: CreateSession {destination:U, session_id:T, spec:resolved fields, bootstrap}
+    G-->>A: Attached {session_id:T, ...}
+    A->>G: SubmitCommand {session_id:T, command:C}
+    G-->>A: E(n, command_admitted{command:C})
+    A->>A: Derive delivery satisfied
+    G->>HS: Runner pushes E1..Em, including<br/>E(m, harness_user_message_confirmed{origin_command_ids:[C], ...})
+    F->>A: GET Thread T, refresh pending and Sandbox state
+    A-->>F: C in app intent, exact E1..Em from the History Service,<br/>separate operational snapshot
 ```
 
 “Saved by app, runner admission not observed” is an app fact. It does not appear in
-an exact forwarded runner log. The command ledger is sufficient to reconstruct it;
+the runner's Event log. The command ledger is sufficient to reconstruct it;
 a dispatch attempt remains diagnostic and a lost response does not establish failure.
 A reconciler retries stable ids to the same journal and stops retrying on admission.
 
@@ -384,64 +386,69 @@ calling it authoritative.
 
 ## Reconnect and catch-up
 
-### App restarts while the runner continues
+### The push breaks while the runner continues
 
 ```mermaid
 sequenceDiagram
-    participant A1 as App replica A
-    participant DB as PostgreSQL
     participant R as Runner
-    participant A2 as App replica B
+    participant HS as History Service
+    participant DB as History PostgreSQL
+    participant A as App
     participant F as Frontend
-    A1->>DB: INSERT E1..E80 and checkpoint=80, COMMIT
-    Note over A1: Replica crashes
+    R->>HS: Push {announce:Attached}, E1..E80
+    HS->>DB: INSERT E1..E80 and checkpoint=80, COMMIT
+    HS-->>R: Acknowledgement {cursor:80}
+    Note over R,HS: Push call breaks
     R->>R: Keep running, persist E81 through E90
-    A2->>DB: Acquire fenced ingestion lease, read E80
-    A2->>R: Open {thread_id:T, session_id:S,<br/>follow:{after_cursor:80}}
-    R-->>A2: Attached {last_cursor:90, ...}<br/>exact E81..E90, then live
-    A2->>DB: INSERT E81..E90 and checkpoint=90, COMMIT
-    DB-->>A2: NOTIFY (wake-up only)
-    F->>A2: GET /threads/T/events/stream?after=75
-    A2->>DB: Read entries with cursor greater than 75
-    DB-->>A2: E76..E90
-    A2-->>F: SSE id:76, data:E76 ... id:90, data:E90
-    Note over A2,F: Notification loss is repaired by durable reread
+    R->>HS: Push {announce:Attached{last_cursor:90}}, any replica
+    HS-->>R: Acknowledgement {cursor:80}
+    R->>HS: E81..E90
+    HS->>DB: INSERT E81..E90 and checkpoint=90, COMMIT
+    HS-->>A: Wake-up only
+    F->>A: GET /threads/T/events/stream?after=75
+    A->>HS: Read entries with cursor greater than 75
+    HS-->>A: E76..E90
+    A-->>F: SSE id:76, data:E76 ... id:90, data:E90
+    Note over A,F: Wake-up loss is repaired by durable reread
 ```
 
-Several app replicas may relay commands; one fenced ingestion owner per Sandbox
-copies all its Threads. The relay need not be the ingester. Lease handoff must fence
-writes in the same transaction as copying. No database transaction spans a network call.
+Any app replica may relay commands and serve any Thread; none copies history. The ingress
+serializes concurrent pushes for one Session in the transaction that appends them, so any History
+Service replica serves any push, and the fold runs under per-Session leases. No database
+transaction spans a network call.
 
 ### Browser loses a submit response, then reloads
 
 ```mermaid
 sequenceDiagram
     participant F as Frontend
-    participant A as App and PostgreSQL
+    participant A as App
+    participant G as Runner Gateway
     participant R as Runner
+    participant HS as History Service
     F->>F: Persist local Command C and id
     F->>A: POST /threads/T/commands, Command C
-    A->>R: ClientMessage {command:C}
+    A->>G: SubmitCommand {command:C}
+    G->>G: Record submission
+    G->>R: C over the control stream
     R->>R: Persist C once
-    R-->>A: E(101, command_admitted{command:C})
-    opt App ingestion commits before the connection is lost
-        A->>A: Commit E101
-    end
+    R-->>G: E(101, command_admitted{command:C})
+    G->>G: Record admission
+    G-->>A: E101
     A--xF: Connection lost before saved confirmation reaches browser
     Note over F: Reload
     F->>A: GET /threads/T/events/stream?after=100
-    alt Admission is in app copy
+    alt The History Service has E101
         A-->>F: SSE id:101, data:E(101, command_admitted{command:C})
         F->>F: Match C, retire local submission
-    else App ingestion has not yet committed E101
+    else The push has not yet delivered E101
         A-->>F: Current prefix through E100, keep following
         F->>A: POST same Command C to same Thread/execution scope
-        A->>R: ClientMessage {command:C}
-        R->>R: Deduplicate, no second native dispatch
-        A->>R: Independent ingester attachment:<br/>Open {..., follow:{after_cursor:100}}
-        R-->>A: Original E101 and later Events
-        A->>A: Commit E101
-        A-->>F: HTTP 200 with E101, SSE id:101 with same E101
+        A->>G: SubmitCommand {command:C}
+        G-->>A: Retained E101, without contacting the runner
+        A-->>F: HTTP 200 with E101
+        R->>HS: Push E101 and later Events
+        A-->>F: SSE id:101 with same E101
     end
 ```
 
@@ -455,7 +462,8 @@ the authoritative transport of history.
 
 ```mermaid
 sequenceDiagram
-    participant A as App
+    participant A as App and Runner Gateway
+    participant HS as History Service
     participant R1 as Old runner
     participant S as Runner state volume
     participant R2 as Replacement runner
@@ -464,17 +472,18 @@ sequenceDiagram
     Note over R1: Runner process dies
     R2->>S: Obtain exclusive ownership, recover journal and Event prefix
     R2->>S: Append observed loss/recovery Events after N
-    A->>R2: Open {thread_id:T, session_id:S,<br/>follow:{after_cursor:K}}
-    R2-->>A: Attached {last_cursor:N+loss-events, ...}<br/>E(K+1) onward
-    A->>R2: Explicit Open {thread_id:T, session_id:S, spec:stored spec, ...}
+    R2->>HS: Push {announce:Attached{last_cursor:N+loss-events}}
+    HS-->>R2: Acknowledgement {cursor:K}
+    R2->>HS: E(K+1) onward
+    A->>R2: ResumeSession {session_id:T}: stored spec
     R2->>H: Claude argv --resume native-id, or<br/>Codex method:thread/resume, params:{threadId:native-id}
     H-->>R2: Native initialization/resume response with native-id
     R2->>S: Record evidence, reconcile only proven-safe commands
 ```
 
 A harness-only crash follows the same evidence rules without replacing the runner.
-An app outage by itself never triggers native resume. An attachment disconnect is
-not a harness stop. Sharing a Thread id and counter does not prove native continuation.
+An app or History Service outage by itself never triggers native resume. A broken control
+stream or push is not a harness stop. Sharing a Thread id and counter does not prove native continuation.
 
 ## Timeline, pending queue, and operational state
 
@@ -510,20 +519,19 @@ consumed cursors. Pending commands remain above the composer, separate from conf
 
 ### Shared vocabulary does not require a fabricated single history
 
-Both app and runner can serve the same followable runner Event log, preserving cursor,
-origin, and payload. They serve different retained prefixes of it. Operational snapshots
+The runner and the History Service hold the same runner Event log, preserving cursor,
+origin, and payload, as different retained prefixes of it. Operational snapshots
 already have a separate app source; those are useful state even without a lifecycle
 audit log. History/audit, if desired, must persist observations with their source and
 cannot be reconstructed exactly from Kubernetes' current snapshot.
 
-The current runner `Attached` snapshot is another distinct observation: its `last_cursor`
-can exceed the app's copied prefix while replay catches up. The app persists that snapshot
-before the missing Events. Report its runner provenance and as-of cursor separately; do not
-seed or overwrite a conversation or pending-command reducer with state from beyond its
-copied prefix. The current transport's `attached` frame is not a replay checkpoint.
+The runner's `Attached` snapshot is another distinct observation: its `last_cursor`
+can exceed the History Service's stored prefix while the push catches up. Report its runner
+provenance and as-of cursor separately; do not seed or overwrite a conversation or
+pending-command reducer with state from beyond its stored prefix.
 
-For an app queue, its pending snapshot can join command records and copied Events in
-one PostgreSQL read, reporting the included runner cursor. Reconnect refreshes that
+For an app queue, its pending snapshot joins app command records with the History Service's
+Events, reporting the included runner cursor. Reconnect refreshes that
 snapshot; a second append-only browser command feed is not inherently required. The
 frontend still consumes generated Commands and Events, not guessed delivery statuses.
 
@@ -558,16 +566,16 @@ available; optional archive-retention changes require a separate, explicit contr
 | Boundary to test                            | Required evidence                                                                                                                                      |
 | ------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | Native adaptation                           | Separate Claude/Codex scripted tests assert exact relevant model request contents and input cohorts, not just natural-language prompt instructions     |
-| Admission and relay loss                    | Crash before admission and after admission before app copy; preserve id/text, deduplicate same id, reject changed payload, recover across replicas     |
+| Admission and relay loss                    | Crash before admission and after admission before the push; preserve id/text, deduplicate same id, reject changed payload, recover across replicas     |
 | Native execution before outcome persistence | Kill real harness/runner at that exact window; prove how history/correlation prevents duplicate LLM input or explicitly gate automatic recovery        |
 | Command outcome and public Event commit     | Commit or roll back the exact outcome and Event together; multi-input coalesced receipts settle every origin atomically                                |
 | Streaming durability                        | Kill process and exercise unsynced-storage loss; published Native/delta entries never disappear or reuse their cursor                                  |
 | Model and interrupt scheduling              | Codex pending model plus next input makes progress; applied UI state waits for effect; interrupt does not block behind input completion                |
 | Queued input interrupted                    | Each input is confirmed, dropped with evidence, or demonstrably retained for later processing; no inferred queue fate                                  |
 | Long tool interrupted                       | Pin partial output, process abortion, tool result, and the fate of queued inputs on the next prompt, separately per harness                            |
-| App/browser reconnect                       | Competing ingesters, stale lease owner, lost wakeup, reload after lost submit response, and replay/live handoff converge on the same durable prefix    |
-| Suspend/resume and deletion                 | Real state mount survives intended Pod replacement; native resume is evidenced; final archive is copied before managed storage removal                 |
-| Writer replacement                          | Fence old runner, continue the same Event journal, preserve native references; missing journal cannot be replaced by an app checkpoint                 |
+| Push/browser reconnect                      | Concurrent pushes, fold lease handoff, lost wakeup, reload after lost submit response, and replay/live handoff converge on the same durable prefix     |
+| Suspend/resume and deletion                 | Real state mount survives intended Pod replacement; native resume is evidenced; final archive is acknowledged before managed storage removal           |
+| Writer replacement                          | Fence old runner, continue the same Event journal, preserve native references; missing journal cannot be replaced by a history checkpoint              |
 | Normal/Raw UI                               | Streaming, grouped inputs, admission without effect, failed/no-op, suspended/deleted Sandbox, local unconfirmed submission, and additive native detail |
 
 ### Deferred: commands unsettled across successor sessions
@@ -595,7 +603,7 @@ The [current runner specification](../runner/SPEC.md) exposes a session-scoped S
 journal with atomic command/Event commits and publication after the storage fence.
 The target runner Thread identity/cursor change and native crash recovery need implementation
 and integration evidence. Canonical Thread pages replay the archived prefix without a live runner;
-the app's saved-response boundary waits for archived admission, not command effect. An app outbox is a separate decision about accepting work
+the app's saved-response boundary is the runner's admission receipt, not command effect. An app outbox is a separate decision about accepting work
 before the runner can; it does not satisfy those gates by existing.
 
 No cross-harness transcript portability, inferred native effects, or old-protocol
