@@ -287,8 +287,7 @@ Status: **built.** The Runner Gateway sends every Session call and teardown's se
 stream (`runner_gateway/lifecycle_control.py`). A runner refuses `OpenSession` for a Session it created but could not
 start with `FAILED`; asked again, it confirms the stopped Session, so `CreateSession` follows an
 `OpenSession` that confirms a stopped harness with `ResumeSession`. The App and the Notification
-Service reach the holder through the control Service (`control_target`); a client without it calls
-the Runner Gateway's own Service, where only the holder's replica serves the Sandbox.
+Service reach the holder through the control Service (`control_target`, a required setting).
 
 Each control request names an explicit verb; nothing is inferred from which fields are present.
 
