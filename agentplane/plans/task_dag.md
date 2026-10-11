@@ -368,9 +368,7 @@ flowchart LR
 admit no connections; the KubeVirt experiment's guest is the last caller of the runner's own gRPC
 server. Delete that server, its `--listen` flag, the `Runner` service RPCs the channel duplicates
 and `protocol.v1.Follow` with `Open.follow`, and its client `runner/client.py`, test-only now, with
-the app's `OpenTimeoutError` handler. The `runner_connection` table's drop migration is its
-own PR for the operator to merge; the model's `CLEANUP` tombstone in
-`runner_gateway/commands/db.py` goes with it.
+the app's `OpenTimeoutError` handler.
 
 ### `VM_CONTROL_NETWORKING` — integrate the reviewed connection direction
 
