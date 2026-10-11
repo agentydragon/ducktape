@@ -158,17 +158,13 @@ key.
 
 ## Delivery: durable events and bounded waits
 
-The durable Action event sequence (`action_event`, exposed at `.../events`) is the first-slice
+The durable Action event sequence (`action_event`, exposed at `.../events`) is the
 result-delivery surface. `after_sequence` is the last sequence number the caller already holds;
 polling with it is a cheap, idempotent no-op once no new events exist, so a caller can safely poll
 from submission to a terminal state without missing or duplicating a transition.
 
-An earlier `action_outbox` table recorded a pending-decision delivery reference for a future push
-notifier. Nothing ever drained it — no consumer was wired into `main.py` — and it duplicated data
-already in `action_event`/`action_request`, so it has been dropped (migration
-`0004_drop_action_outbox`). The `.../events` polling surface above is not a prerequisite on the
-later Event & Notification Hub, which is expected to consume the Action event sequence directly
-rather than an outbox.
+The [Notification service](../notification_service/README.md) consumes this sequence directly,
+through the same `.../events` reads.
 
 `waits.ActionWaiter` provides bounded, notification-driven receipt reads for transports that offer
 waiting. `WaitOptions` defaults to immediate reads and caps waits at 30 seconds, with `decision`

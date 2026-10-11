@@ -43,7 +43,7 @@ class Source:
 
 
 APP = Source(name="agentplane-electric", database="app", stream_id="agentplane_conversation")
-# The History Service fold; the app's proxy can reach it before any reader is pointed at it.
+# The History Service fold; an environment whose `thread_reads` is `HISTORY_SERVICE` points the app at it.
 HISTORY = Source(name="agentplane-electric-history", database="sandbox_service", stream_id="agentplane_history")
 
 

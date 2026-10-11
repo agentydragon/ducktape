@@ -12,8 +12,7 @@ See [the dependency rule](docs/service_boundaries.md).
 - The app calls independent services; those services do not call back into the app to operate.
   This includes v1, startup, background recovery, provisioning, and backend-required prompt/context
   construction. Operator approval still belongs to its backend authority; the app presents it.
-- Notification v1 depends on the minimum Sandbox Service extraction, not the integration app.
-  The Sandbox Service owns sandbox lifecycle and access to runner sessions; notifications owns
+- The Sandbox Service owns sandbox lifecycle and access to runner sessions; notifications owns
   subscriptions/inboxes, and runners own native execution and canonical command/Event evidence.
 - Current backend responsibilities inside the app are extraction work, not a precedent for new
   dependencies. Distinguish planned boundaries from what is already implemented.
@@ -32,10 +31,10 @@ itself is still a new migration, and the migrate step fails the rollout when the
 from the models. The limits in the root [`AGENTS.md`](../AGENTS.md) § Refactoring
 (person-authored data, roll-safety) still bind.
 
-## Preserve staging data during the Sandbox Service extraction
+## Preserve staging data during service extractions
 
-For this extraction, data-preserving migration is the default despite the disposable-state rule
-above. Inventory existing state, retain identities/history and runner
+When ownership of state moves between services, data-preserving migration is the default despite
+the disposable-state rule above. Inventory existing state, retain identities/history and runner
 storage where feasible, and validate backup/restore and the cutover before changing staging.
 Do not drop/recreate staging databases, sandboxes, volumes, or session state as a shortcut. If
 preservation cannot be achieved, explain the exact loss/disruption and obtain operator approval

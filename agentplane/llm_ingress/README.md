@@ -8,9 +8,9 @@ server-held virtual key.
 
 The forwarded byte body, status, error body, and streamed chunks are not translated. Verified
 identity is attached only through LiteLLM's documented `x-litellm-spend-logs-metadata` JSON header
-(deployed `litellm/litellm:1.100.0`, the `tana-litellm-proxy` image, `tana/litellm_proxy/BUILD.bazel`). That version
-consumes the header (`_get_spend_logs_metadata_from_request_headers`) in its common request
-setup used by both native `/v1/messages` and `/v1/responses`, including their streaming paths. The
+(the deployed `tana-litellm-proxy` image, `tana/litellm_proxy/BUILD.bazel`, layered on the
+`litellm_upstream` pin in `MODULE.bazel`). That version consumes the header
+(`_get_spend_logs_metadata_from_request_headers`) in its common request setup used by both native `/v1/messages` and `/v1/responses`, including their streaming paths. The
 authoritative metadata object is:
 
 ```json
@@ -19,9 +19,7 @@ authoritative metadata object is:
   "agentplane.service_account": "...",
   "agentplane.service_account_subject": "...",
   "agentplane.pod_name": "...",
-  "agentplane.pod_uid": "...",
-  "agentplane.sandbox_name": "...",
-  "agentplane.sandbox_uid": "..."
+  "agentplane.pod_uid": "..."
 }
 ```
 

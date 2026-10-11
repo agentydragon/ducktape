@@ -255,7 +255,7 @@ _HOME_ASSISTANT_READS_ACTIONS = [
     # keep-sorted end
 ]
 
-# Gmail's generated read-only surface (haku/console/tools/gmail.py's _GMAIL_READ_TOOLS); writes
+# Gmail's generated read-only surface (x/google_mcp_server/gmail.py's _GMAIL_READ_TOOLS); writes
 # (drafts_create/update/delete, threads_modify_labels, labels_create/patch/delete,
 # filters_create/delete) stay on the human path.
 _GMAIL_READS_ACTIONS = [
@@ -272,7 +272,7 @@ _GMAIL_READS_ACTIONS = [
     # keep-sorted end
 ]
 
-# Google Calendar's read-only surface (haku/console/tools/google_calendar.py); create_event
+# Google Calendar's read-only surface (x/google_mcp_server/google_calendar.py); create_event
 # stays on the human path.
 _GOOGLE_CALENDAR_READS_ACTIONS = ["get_event", "list_event_instances", "list_events"]
 

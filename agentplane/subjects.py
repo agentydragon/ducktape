@@ -4,11 +4,8 @@ A subject is a Kubernetes ServiceAccount: the one a workload's Pod runs as, whic
 egress proxy and the Action Service authenticate it by. `EgressBinding` and `ActionPolicyBinding`
 carry this model's JSON schema as their subject, spliced in by `bb run //agentplane/crds:generate_bin`.
 
-A Sandbox was a subject too, resolved by following a Pod to the Sandbox that owns it. That reach
-only ever existed for workloads this cluster provisions, so an agent hosted anywhere else could not
-be a subject at all. Every sandbox now runs as a ServiceAccount of its own, which leaves one kind of
-subject and no owner to follow. A Sandbox is still an identity -- `llm_ingress` attributes model
-calls to one -- but nothing authorizes against it.
+Every sandbox runs as a ServiceAccount of its own, so a binding names no Sandbox and follows no Pod
+owner, and an agent hosted outside this cluster is a subject on the same terms as one inside it.
 """
 
 from __future__ import annotations
