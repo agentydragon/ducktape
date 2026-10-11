@@ -47,12 +47,155 @@ fn applies_fresh_proposal_with_a_structural_selector() {
         "--size-cap-lines",
         "1",
     ];
-    fixture.assert_success(&[&args[..], &["--dry-run"]].concat());
+    let dry_run = fixture.json(&[&args[..], &["--dry-run"]].concat());
+    assert_eq!(dry_run["selector_reviews"][0]["kind"], "source_match");
+    assert_eq!(dry_run["selector_reviews"][0]["origin"], "synthesized");
+    assert_eq!(
+        dry_run["selector_reviews"][0]["binding_ids"],
+        json!(["provider"])
+    );
+    assert!(dry_run["selector_reviews"][0]["claim"]["match"].is_string());
+    assert!(
+        dry_run["selector_reviews"][0]["review_warnings"]
+            .as_array()
+            .is_some_and(|warnings| !warnings.is_empty())
+    );
+    let text = fixture.command(&[&args[..], &["--dry-run", "--format", "text"]].concat());
+    assert!(text.status.success(), "{text:?}");
+    let text = String::from_utf8_lossy(&text.stdout);
+    assert!(text.contains("source_match"), "{text}");
+    assert!(text.contains("review_warnings"), "{text}");
     assert!(!fixture.modules.join("services/provider.yaml").exists());
     fixture.assert_success(&args);
     let yaml = fs::read_to_string(fixture.modules.join("services/provider.yaml")).unwrap();
     assert!(yaml.contains("source_matches:"), "{yaml}");
     assert!(!yaml.contains("provider"), "{yaml}");
+    fixture.assert_runs("4\n");
+}
+
+#[test]
+fn applies_reviewed_source_match_instead_of_synthesized_one() {
+    let (fixture, mut request) = provider_fixture();
+    request["selectors"] = json!({
+        "provider": {
+            "kind": "source_match",
+            "selector": {
+                "match": "const Target = { value: 4 };",
+                "bindings": [{"local": "Target", "name": "Provider"}]
+            }
+        }
+    });
+    let temp = tempfile::tempdir().unwrap();
+    let batch = temp.path().join("apply.json");
+    fs::write(&batch, serde_json::to_vec(&json!([request])).unwrap()).unwrap();
+    let args = [
+        "modules",
+        "apply",
+        "--batch",
+        batch.to_str().unwrap(),
+        "--size-cap-lines",
+        "1",
+    ];
+    let preview = fixture.json(&[&args[..], &["--dry-run"]].concat());
+    assert_eq!(preview["selector_reviews"][0]["origin"], "provided");
+    assert_eq!(
+        preview["selector_reviews"][0]["claim"]["match"],
+        "const Target = { value: 4 };"
+    );
+    fixture.assert_success(&args);
+    let yaml = fs::read_to_string(fixture.modules.join("services/provider.yaml")).unwrap();
+    assert!(yaml.contains("const Target = { value: 4 };"), "{yaml}");
+    fixture.assert_runs("4\n");
+}
+
+#[test]
+fn rejects_reviewed_selector_that_claims_a_different_binding() {
+    let fixture = GraphFixture::new(
+        "const provider = { value: 4 };\nconst other = { value: 5 };\nconsole.log(provider.value);",
+        &[],
+    );
+    let report = fixture.json(&["modules", "propose", "--size-cap-lines", "1"]);
+    let proposal = report["proposals"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|row| {
+            row["binding_ids"]
+                .as_array()
+                .is_some_and(|bindings| bindings.iter().any(|binding| binding == "provider"))
+        })
+        .expect("a provider proposal");
+    let request = json!({
+        "proposal_id": proposal["proposed_module_id"],
+        "owner_ids": proposal["owner_ids"],
+        "module": "services/provider",
+        "readable_names": {"provider": "Provider"},
+        "selectors": {"provider": {"kind": "source_match", "selector": {
+            "match": "const Target = { value: 5 };",
+            "bindings": [{"local": "Target", "name": "Provider"}]
+        }}}
+    });
+    let temp = tempfile::tempdir().unwrap();
+    let batch = temp.path().join("apply.json");
+    fs::write(&batch, serde_json::to_vec(&json!([request])).unwrap()).unwrap();
+    fixture.assert_rejected_unchanged(
+        &[
+            "modules",
+            "apply",
+            "--batch",
+            batch.to_str().unwrap(),
+            "--size-cap-lines",
+            "1",
+        ],
+        &["resolved binding", "expected \"provider\""],
+    );
+}
+
+#[test]
+fn applies_reviewed_relational_selector() {
+    let fixture = GraphFixture::new(
+        "const anchor = { value: 4 };\nconst alias = anchor;\nconsole.log(alias.value);\nexport { anchor, alias };",
+        &[(
+            "services/anchor.yaml",
+            "members: [{name: Anchor, selector: {binding: {name: anchor}}}]\n",
+        )],
+    );
+    let report = fixture.json(&["modules", "propose", "--size-cap-lines", "1"]);
+    let proposal = report["proposals"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|row| {
+            row["binding_ids"]
+                .as_array()
+                .is_some_and(|bindings| bindings.iter().any(|binding| binding == "alias"))
+        })
+        .expect("an alias proposal");
+    let request = json!({
+        "proposal_id": proposal["proposed_module_id"],
+        "owner_ids": proposal["owner_ids"],
+        "module": "services/alias",
+        "readable_names": {"alias": "Alias"},
+        "selectors": {"alias": {"kind": "relational", "selector": {
+            "cross_ref": {"aliases": "Anchor"}
+        }}}
+    });
+    let temp = tempfile::tempdir().unwrap();
+    let batch = temp.path().join("apply.json");
+    fs::write(&batch, serde_json::to_vec(&json!([request])).unwrap()).unwrap();
+    let args = [
+        "modules",
+        "apply",
+        "--batch",
+        batch.to_str().unwrap(),
+        "--size-cap-lines",
+        "1",
+    ];
+    let preview = fixture.json(&[&args[..], &["--dry-run"]].concat());
+    assert_eq!(preview["selector_reviews"][0]["kind"], "relational");
+    fixture.assert_success(&args);
+    let yaml = fs::read_to_string(fixture.modules.join("services/alias.yaml")).unwrap();
+    assert!(yaml.contains("cross_ref:"), "{yaml}");
     fixture.assert_runs("4\n");
 }
 

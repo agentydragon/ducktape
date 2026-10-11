@@ -34,6 +34,8 @@ pub struct SourceClaimSet<'a> {
 pub struct ResolvedSourceClaims {
     /// Chunk-top binding names claimed by source or relational selectors.
     pub bindings: BTreeSet<String>,
+    /// The resolved source binding for each non-name-pin member's readable name.
+    pub member_bindings: BTreeMap<String, String>,
     pub anonymous_owners: BTreeSet<OwnerId>,
 }
 
@@ -248,7 +250,7 @@ fn claim_entity(
                 })?;
             set.claims.anonymous_owners.insert(owner);
         }
-        EntityIndex::Member(_) => {
+        EntityIndex::Member(index) => {
             let Outcome::Resolved {
                 binding: Some(binding),
                 ..
@@ -257,6 +259,9 @@ fn claim_entity(
                 unreachable!("a resolved member names its binding");
             };
             set.claims.bindings.insert(binding.clone());
+            set.claims
+                .member_bindings
+                .insert(module.members[index].export_name.clone(), binding.clone());
         }
     }
     Ok(())

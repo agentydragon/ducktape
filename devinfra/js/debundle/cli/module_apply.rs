@@ -13,7 +13,7 @@ use serde::{Deserialize, Serialize};
 use spec::LogicalModule;
 
 use crate::binding::{apply_doc_changes, canonical_module_path, load_module_docs, matches_in_docs};
-use crate::edit_gate::{Gate, post_edit_spec_from_docs};
+use crate::edit_gate::{ExpectedResolvedMember, Gate, post_edit_spec_from_docs};
 use crate::outcome::{MutationOutcome, emit_gate_rejection_json, print_outcome_json};
 
 #[derive(Debug, Args)]
@@ -50,6 +50,44 @@ struct ApplyRequest {
     owner_ids: Vec<String>,
     module: String,
     readable_names: BTreeMap<String, String>,
+    /// Optional per-binding author choice. Omitted bindings use synthesis.
+    #[serde(default)]
+    selectors: BTreeMap<String, ApplySelectorOverride>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(tag = "kind", content = "selector", rename_all = "snake_case")]
+enum ApplySelectorOverride {
+    SourceMatch(spec::SourceMatchClaim),
+    Relational(Box<spec::MemberSelector>),
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "snake_case")]
+enum SelectorOrigin {
+    Synthesized,
+    Provided,
+}
+
+#[derive(Serialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+enum SelectorReview {
+    SourceMatch {
+        module: String,
+        source_file: PathBuf,
+        binding_ids: Vec<String>,
+        origin: SelectorOrigin,
+        claim: spec::SourceMatchClaim,
+        review_warnings: Vec<&'static str>,
+    },
+    Relational {
+        module: String,
+        source_file: PathBuf,
+        binding_id: String,
+        readable_name: String,
+        selector: Box<spec::MemberSelector>,
+        review_warnings: Vec<&'static str>,
+    },
 }
 
 #[derive(Serialize)]
@@ -58,6 +96,7 @@ struct ApplyOutcome {
     outcome: MutationOutcome,
     proposals_applied: usize,
     bindings_claimed: usize,
+    selector_reviews: Vec<SelectorReview>,
 }
 
 pub fn run_modules_apply(args: ModulesApplyArgs) -> Result<()> {
@@ -88,6 +127,9 @@ pub fn run_modules_apply(args: ModulesApplyArgs) -> Result<()> {
     let mut selected_names = BTreeSet::new();
     let mut pending_by_source: BTreeMap<PathBuf, BTreeMap<String, BTreeMap<String, String>>> =
         BTreeMap::new();
+    let mut provided = Vec::new();
+    let mut expected = Vec::new();
+    let mut selector_reviews = Vec::new();
     let mut bindings_claimed = 0;
 
     for request in &requests {
@@ -172,12 +214,27 @@ pub fn run_modules_apply(args: ModulesApplyArgs) -> Result<()> {
                         bail!("binding name {spelling:?} is already claimed in YAML");
                     }
                 }
-                pending_by_source
-                    .entry(source.clone())
-                    .or_default()
-                    .entry(destination.clone())
-                    .or_default()
-                    .insert(name, readable.clone());
+                expected.push(ExpectedResolvedMember {
+                    module_path: args.modules_root.join(format!("{destination}.yaml")),
+                    export_name: readable.clone(),
+                    binding_name: name.clone(),
+                });
+                if let Some(selector) = request.selectors.get(&name) {
+                    provided.push((
+                        source.clone(),
+                        destination.clone(),
+                        name,
+                        readable.clone(),
+                        selector.clone(),
+                    ));
+                } else {
+                    pending_by_source
+                        .entry(source.clone())
+                        .or_default()
+                        .entry(destination.clone())
+                        .or_default()
+                        .insert(name, readable.clone());
+                }
                 bindings_claimed += 1;
             }
         }
@@ -194,10 +251,15 @@ pub fn run_modules_apply(args: ModulesApplyArgs) -> Result<()> {
                 supplied
             );
         }
+        for binding in request.selectors.keys() {
+            if !residual_bindings.contains(binding) {
+                bail!("selector override for {binding:?} is not in the selected proposal");
+            }
+        }
     }
 
-    for (source, modules) in pending_by_source {
-        let claims = selector_codemod::synthesize_residual_claims_for_modules(&source, &modules)
+    for (source, modules) in &pending_by_source {
+        let claims = selector_codemod::synthesize_residual_claims_for_modules(source, modules)
             .with_context(|| format!("synthesizing selectors for {}", source.display()))?;
         for (destination, claims) in claims {
             let (_, doc) = docs.entry(destination.clone()).or_insert_with(|| {
@@ -206,7 +268,92 @@ pub fn run_modules_apply(args: ModulesApplyArgs) -> Result<()> {
                     LogicalModule::default(),
                 )
             });
-            doc.source_matches.extend(claims);
+            for claim in claims {
+                let binding_ids = claim
+                    .bindings
+                    .iter()
+                    .map(|binding| {
+                        modules[&destination]
+                            .iter()
+                            .find(|(_, readable)| readable.as_str() == binding.name())
+                            .map(|(runtime, _)| runtime.clone())
+                            .with_context(|| {
+                                format!(
+                                    "synthesized selector has unexpected export {}",
+                                    binding.name()
+                                )
+                            })
+                    })
+                    .collect::<Result<Vec<_>>>()?;
+                selector_reviews.push(SelectorReview::SourceMatch {
+                    module: destination.clone(),
+                    source_file: source.clone(),
+                    binding_ids,
+                    origin: SelectorOrigin::Synthesized,
+                    claim: claim.clone(),
+                    review_warnings: vec![
+                        "Uniqueness is proven for this source snapshot; review retained literals and property names as rebuild anchors.",
+                    ],
+                });
+                doc.source_matches.push(claim);
+            }
+        }
+    }
+
+    for (source, destination, runtime, readable, choice) in provided {
+        let (_, doc) = docs.entry(destination.clone()).or_insert_with(|| {
+            (
+                args.modules_root.join(format!("{destination}.yaml")),
+                LogicalModule::default(),
+            )
+        });
+        match choice {
+            ApplySelectorOverride::SourceMatch(claim) => {
+                let [binding] = claim.bindings.as_slice() else {
+                    bail!("source_match override for {runtime:?} must claim exactly one binding");
+                };
+                if binding.name() != readable {
+                    bail!(
+                        "source_match override for {runtime:?} exports {:?}, expected {readable:?}",
+                        binding.name()
+                    );
+                }
+                if binding.local() == runtime && readable != runtime {
+                    bail!(
+                        "source_match override for {runtime:?} retains its minified local name; use a neutral selector-local name"
+                    );
+                }
+                selector_reviews.push(SelectorReview::SourceMatch {
+                    module: destination,
+                    source_file: source,
+                    binding_ids: vec![runtime],
+                    origin: SelectorOrigin::Provided,
+                    claim: claim.clone(),
+                    review_warnings: vec![
+                        "Uniqueness is proven for this source snapshot; review retained literals and property names as rebuild anchors.",
+                    ],
+                });
+                doc.source_matches.push(claim);
+            }
+            ApplySelectorOverride::Relational(selector) => {
+                if matches!(selector.selected()?, spec::MemberSelectorSpec::Binding(_)) {
+                    bail!("relational override for {runtime:?} cannot use a binding name pin");
+                }
+                selector_reviews.push(SelectorReview::Relational {
+                    module: destination,
+                    source_file: source,
+                    binding_id: runtime,
+                    readable_name: readable.clone(),
+                    selector: selector.clone(),
+                    review_warnings: vec![
+                        "Review the referenced member and exact key names as rebuild anchors.",
+                    ],
+                });
+                doc.members.push(spec::Member {
+                    name: Some(readable),
+                    selector: *selector,
+                });
+            }
         }
     }
 
@@ -215,9 +362,11 @@ pub fn run_modules_apply(args: ModulesApplyArgs) -> Result<()> {
         graph: &args.graph,
         source_root: Some(&args.source_root),
     };
-    if let Err(err) = gate.check(&args.modules_root, || {
-        post_edit_spec_from_docs(&docs, &deleted)
-    }) {
+    if let Err(err) = gate.check_expected(
+        &args.modules_root,
+        || post_edit_spec_from_docs(&docs, &deleted),
+        &expected,
+    ) {
         emit_gate_rejection_json("apply", args.format, &err);
         return Err(err);
     }
@@ -233,15 +382,21 @@ pub fn run_modules_apply(args: ModulesApplyArgs) -> Result<()> {
         },
         proposals_applied: requests.len(),
         bindings_claimed,
+        selector_reviews,
     };
     match OutputFormat::resolve(args.format) {
-        OutputFormat::Text => println!(
-            "{}: {} proposal(s), {} binding(s), {} file(s)",
-            out.outcome.action,
-            out.proposals_applied,
-            out.bindings_claimed,
-            out.outcome.files_written.len()
-        ),
+        OutputFormat::Text => {
+            println!(
+                "{}: {} proposal(s), {} binding(s), {} file(s)",
+                out.outcome.action,
+                out.proposals_applied,
+                out.bindings_claimed,
+                out.outcome.files_written.len()
+            );
+            for review in &out.selector_reviews {
+                println!("{}", serde_yaml::to_string(review)?.trim_end());
+            }
+        }
         format => print_outcome_json(&out, format)?,
     }
     Ok(())

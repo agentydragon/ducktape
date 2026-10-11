@@ -409,8 +409,37 @@ readable name for every residual binding in that row. For extension rows the
 destination must equal `extends_module_id`. Use the same `--size-cap-lines`
 value as `modules propose` if it was overridden. The command rejects stale
 owner sets, merges, anonymous-owner rows, unprovable or name-pinned selectors,
-and failed post-edit gates before writing any YAML. `--dry-run` reports the
-same validation and planned files without writing the spec.
+and failed post-edit gates before writing any YAML. `--dry-run --format json`
+reports each selector in `selector_reviews`, including its source-match claim
+or relational selector, provenance, and rebuild-anchor review warning. It
+reports planned files without writing the spec. Uniqueness is proved against
+the current source snapshot; review the retained literals and property names
+before applying. Omit a proposal from the batch to leave it in residual.
+
+Optional `selectors` entries choose a reviewed selector for a binding; bindings
+without an entry use synthesis. A `source_match` entry uses the normal
+`source_matches:` claim shape and must name exactly one binding. A `relational`
+entry uses the normal `members[].selector` shape (for example `cross_ref` or
+`reads_member`); name pins are rejected. Each chosen selector must resolve to
+the requested source binding, not merely to some unique declaration:
+
+```json
+{
+  "proposal_id": "auto_partition_0007",
+  "owner_ids": ["owner-id-from-the-reviewed-row"],
+  "module": "services/provider",
+  "readable_names": { "a": "Provider" },
+  "selectors": {
+    "a": {
+      "kind": "source_match",
+      "selector": {
+        "match": "const Provider = { value: 4 };",
+        "bindings": [{ "local": "Provider", "name": "Provider" }]
+      }
+    }
+  }
+}
+```
 
 ## Rejection diagnostics
 

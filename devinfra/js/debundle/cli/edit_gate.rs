@@ -154,13 +154,35 @@ impl<'a> Gate<'a> {
         modules_root: &Path,
         post_spec: impl FnOnce() -> Result<PostEditSpec>,
     ) -> Result<()> {
+        self.check_expected(modules_root, post_spec, &[])
+    }
+
+    /// Check the gate and prove newly authored selectors still claim the
+    /// binding their edit intended, not merely some unique declaration.
+    pub fn check_expected(
+        &self,
+        modules_root: &Path,
+        post_spec: impl FnOnce() -> Result<PostEditSpec>,
+        expected: &[ExpectedResolvedMember],
+    ) -> Result<()> {
         match self {
-            Self::Run { graph, source_root } => {
-                gate_post_edit_partition(graph, modules_root, *source_root, &post_spec()?)
-            }
+            Self::Run { graph, source_root } => gate_post_edit_partition_with_expected(
+                graph,
+                modules_root,
+                *source_root,
+                &post_spec()?,
+                expected,
+            ),
             Self::Skip => Ok(()),
         }
     }
+}
+
+#[derive(Debug, Clone)]
+pub struct ExpectedResolvedMember {
+    pub module_path: PathBuf,
+    pub export_name: String,
+    pub binding_name: String,
 }
 
 /// Machine-readable projection of a realizability-gate rejection.
@@ -326,6 +348,22 @@ pub fn gate_post_edit_partition(
     source_root: Option<&Path>,
     post_spec: &PostEditSpec,
 ) -> Result<()> {
+    gate_post_edit_partition_with_expected(
+        owner_graph_path,
+        modules_root,
+        source_root,
+        post_spec,
+        &[],
+    )
+}
+
+fn gate_post_edit_partition_with_expected(
+    owner_graph_path: &Path,
+    modules_root: &Path,
+    source_root: Option<&Path>,
+    post_spec: &PostEditSpec,
+    expected: &[ExpectedResolvedMember],
+) -> Result<()> {
     let owner_graph_report = crate::load_owner_graph_report(owner_graph_path)?;
 
     // The gate algorithm walks edges + partition, not declared sets:
@@ -371,6 +409,27 @@ pub fn gate_post_edit_partition(
         source_root,
         &claim_sets,
     )?;
+    for target in expected {
+        let module_idx = post_spec
+            .modules
+            .iter()
+            .position(|module| module.path == target.module_path)
+            .with_context(|| {
+                format!("expected module {} is absent", target.module_path.display())
+            })?;
+        let actual = resolved_claims[module_idx]
+            .member_bindings
+            .get(&target.export_name);
+        if actual != Some(&target.binding_name) {
+            bail!(
+                "selector for {} in {} resolved binding {:?}, expected {:?}",
+                target.export_name,
+                target.module_path.display(),
+                actual,
+                target.binding_name,
+            );
+        }
+    }
 
     // ModuleId assignment: residual at logical:0, every surviving
     // spec module gets a fresh logical:N starting at 1. The path map
