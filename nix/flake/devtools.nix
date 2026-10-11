@@ -20,6 +20,7 @@ let
     buildBuddyRunnerPackages.bb
     ducktapePkgs.bbr
     ducktapePkgs.ducktape-git-hooks
+    ducktapePkgs.gazelle
     pkgs.pre-commit
     pkgs.python3Packages.pre-commit-hooks
     buildBuddyRunnerPackages.bazelisk
@@ -82,9 +83,6 @@ let
   # own smaller package set above.
   devToolsCommon = [
     ducktapePkgs.bbapi
-    # Repo-configured Gazelle; `gazelle` / `gazelle -mode=diff` from a
-    # checkout regenerate Python BUILD files without Bazel.
-    ducktapePkgs.gazelle
     ducktapePkgs.skills
     pkgs.openssl
     # Codex setup materializes kubeconfig via devinfra/k8s/kubeconfig.py;

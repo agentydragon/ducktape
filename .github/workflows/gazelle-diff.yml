@@ -2,14 +2,9 @@
 # so a run over a converged tree is a no-op and any diff or unresolvable import
 # here means the PR hand-edited managed rules or skipped the gazelle run.
 #
-# Deliberately its own workflow on a plain runner, run unconditionally like the
-# pre-commit checks: `nix profile install .#gazelle` puts the released binary on
-# PATH — the flake's `artifacts.gazelle` fetchurl carries the pin's sha256
-# (nix/artifact-pins.json), so nix is the download and the digest check in one,
-# with no secrets and no substituter beyond cache.nixos.org — no Bazel, no
-# BuildBuddy, and a red drift check neither blocks nor delays bazel-ci. A PR
-# that changes the binary itself (plugin bump, patch) is still checked with the
-# released binary; the devel run after merge is the authoritative one.
+# Transitional duplicate of the pre-commit Gazelle hook. Keep this check until
+# tf/gitops/github-branch-protection has reconciled removal of the standalone
+# required-check entry; then remove this workflow.
 name: Gazelle diff
 "on":
   pull_request: {}

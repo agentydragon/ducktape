@@ -44,6 +44,14 @@ repos:
         always_run: true
         args: [--branch, devel, --branch, main]
 
+      # Check the complete BUILD graph even when pre-commit receives only changed files.
+      - id: gazelle
+        name: Gazelle drift
+        entry: gazelle --mode=diff
+        language: system
+        pass_filenames: false
+        always_run: true
+
       - id: trailing-whitespace
         name: trim trailing whitespace
         entry: trailing-whitespace-fixer

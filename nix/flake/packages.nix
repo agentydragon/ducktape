@@ -128,7 +128,7 @@ ducktapePkgs
   # rustfmt retains rustc -> LLVM and cargo -> cargo-bootstrap -> rustc-bootstrap.
   runner-ducktape-tools = pkgs.buildEnv {
     name = "runner-ducktape-tools";
-    paths = preCommitPackages ++ [ ducktapePkgs.gazelle ];
+    paths = preCommitPackages;
     pathsToLink = [ "/bin" ];
   };
   # Same runner and harnesses, with the shared repository hook/build clients preinstalled.

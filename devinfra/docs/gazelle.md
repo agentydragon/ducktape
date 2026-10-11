@@ -65,12 +65,14 @@ Import validation is on; every escape is explicit and local:
 
 ## Drift check
 
-`.github/workflows/gazelle-diff.yml` runs the released gazelle binary in
-`--mode=diff` on every PR and devel push, unconditionally — like the pre-commit
-checks. It is deliberately its own signal on a plain runner:
-`nix profile install .#gazelle` puts the pinned binary on PATH (the flake's
-`artifacts.gazelle` fetchurl verifies its digest) — no Bazel, no BuildBuddy —
-and a red drift check neither blocks nor delays bazel-ci.
+The `gazelle` pre-commit hook runs the released binary with `--mode=diff` over the
+whole repository, including when other hooks receive only changed files. The
+binary is included in `.#precommit`; CI shares checkout and Nix setup with the
+other pre-commit checks. It needs no Bazel invocation or BuildBuddy connection.
+
+The separate `.github/workflows/gazelle-diff.yml` temporarily remains while the
+GitOps ruleset drops its old `Gazelle diff` required-check entry. Remove that
+workflow only after the live ruleset has reconciled.
 
 The binary is the ordinary artifact pipeline: `//devinfra:gazelle_python_binary`
 is a row in <../ci/artifact_targets.json>, released from devel pushes and pinned

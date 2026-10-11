@@ -12,9 +12,9 @@
 # `enforcement = "active"`. NOTE: this account's plan does not support
 # "evaluate" (dry-run) enforcement — GitHub returns 422 "Enforcement evaluate
 # option is not supported on this plan. Please upgrade to Enterprise" — so we
-# go straight to active. The four required check contexts were verified as
+# go straight to active. The required check contexts were verified as
 # exact matches against real PR heads (`bazel-ci / Test & Build`,
-# `Pre-commit checks`, `Gazelle diff`, and `Build artifacts + imports check`),
+# `Pre-commit checks`, and `Build artifacts + imports check`),
 # and the bypass actors match the previously-active main-only ruleset, so the
 # active config is proven.
 #
@@ -101,9 +101,6 @@ resource "github_repository_ruleset" "default_branch_protection" {
       }
       required_check {
         context = "Pre-commit checks"
-      }
-      required_check {
-        context = "Gazelle diff"
       }
       required_check {
         context = "Build artifacts + imports check"

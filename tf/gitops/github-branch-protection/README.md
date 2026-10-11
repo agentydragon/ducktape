@@ -10,7 +10,6 @@ This Terraform module manages branch protection for
 - Required checks are exact GitHub check-run names:
   - `bazel-ci / Test & Build`
   - `Pre-commit checks`
-  - `Gazelle diff`
   - `Build artifacts + imports check`
 - Deletion, force-push, and non-linear history are blocked.
 - Pull requests are required so required checks can run, but the solo-repo
@@ -20,6 +19,12 @@ The module runs from Flux at `cluster/generated/github-tf/` and
 authenticates with `flux-system/github-secrets-sync-pat`. That PAT needs
 GitHub Administration read/write because GitHub exposes rulesets under the
 repository-administration API.
+
+## Gazelle check transition
+
+Keep `.github/workflows/gazelle-diff.yml` until this module has reconciled and the
+live ruleset no longer requires `Gazelle diff`. The pre-commit hook provides the
+replacement gate; only then remove the redundant workflow.
 
 ## Bypass Actors
 
@@ -62,8 +67,8 @@ access control plus the `ducktape-automation` App for GitOps writes.
 
 ## Remaining Cleanup
 
-- The ruleset now requires all four independent PR merge gates. `Gazelle diff`
-  catches generated BUILD-file drift, while `Build artifacts + imports check`
+- `Pre-commit checks` includes Gazelle generated BUILD-file drift checking.
+  `Build artifacts + imports check`
   (the `Nix wheel check` workflow's job name; see
   <../../../.github/workflows/nix-wheel-check.yml>) catches Nix artifact and
   import drift.
