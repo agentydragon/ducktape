@@ -989,7 +989,6 @@ flowchart TD
         SERVICE_SETTINGS_BASE[Candidate: one config-file settings base]
         SERVICE_PROCESS_MODULE[Blocked: one service process module]
         GRPC_HEALTH_PROBES[Blocked: probes use gRPC health]
-        REQUIRED_SERVICE_WIRING[Candidate: no footgun defaults on service wiring]
         SERVICE_DOCS_GATEWAY[Candidate: docs give the Runner Gateway its jobs]
         GATEWAY_NAME_SWEEP[Candidate: code says Runner Gateway for the gateway]
         SERVICE_DOCS_NARRATION_TRIM[Candidate: no changelogs in service docs]
@@ -1061,14 +1060,6 @@ line; the History Service's two "ports must differ" checks go with it.
 **Blocked on #9977**, which serves `grpc.health.v1` but keeps HTTP `/healthz` on 8081. Point the
 cdk8s probes at gRPC health and delete the `_HEALTH` ports and `health_port` settings, unless #9977
 schedules it itself.
-
-### `REQUIRED_SERVICE_WIRING` — no footgun defaults on service wiring
-
-**Candidate.** Both services' `Resources` default timeouts that copy the Settings defaults, and the
-gateway's defaults `sealer_accounts=frozenset()` and its channel options; only test builders rely on
-them (`sandbox_service/grpc_api.py:40`, `runner_gateway/grpc_api.py:77`). Make them required, as
-`launch_spec(sandbox_namespace=)` and `SandboxInventory.suspend`/`resume(uid=)` whose `None`
-branches only tests take.
 
 ### `SERVICE_DOCS_GATEWAY` — docs give the Runner Gateway its jobs
 

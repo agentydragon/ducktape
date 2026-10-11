@@ -67,11 +67,10 @@ class Resources:
     submissions: SubmissionStore
     delivery: CommandDelivery
     control: LifecycleControl
-    # The Sandbox Service's account, which alone may seal a Sandbox for teardown; none where the
-    # Sandbox Service seals in-process.
-    sealer_accounts: frozenset[ServiceAccountRef] = frozenset()
-    admission_timeout_s: float = 15
-    lifecycle_timeout_s: float = 300
+    # The Sandbox Service's account, which alone may seal a Sandbox for teardown.
+    sealer_accounts: frozenset[ServiceAccountRef]
+    admission_timeout_s: float
+    lifecycle_timeout_s: float
 
     def __post_init__(self) -> None:
         if min(self.admission_timeout_s, self.runner_admission_ack_timeout_s, self.lifecycle_timeout_s) <= 0:

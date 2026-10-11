@@ -59,6 +59,7 @@ async def test_stored_binding_is_read_without_mutation(cluster: Cluster, raw: st
             {},
             binding=binding,
             platform_instructions="",
+            sandbox_namespace=cluster.inventory.namespace,
         )
         assert spec.cwd == "/state/retained-session"
     assert cluster.fake.objects == before

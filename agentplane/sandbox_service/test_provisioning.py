@@ -111,6 +111,8 @@ async def api(case: Case, cluster: Cluster, token_file: Path) -> AsyncIterator[S
         principals=cluster.build_principal_resolver(AUDIENCE),
         provisioning=case.service,
         caller_accounts=frozenset({ADMIN}),
+        admission_timeout_s=15,
+        lifecycle_timeout_s=300,
     )
     async with service_client(resources, token_file) as client:
         yield client

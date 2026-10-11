@@ -26,10 +26,13 @@ def build_resources(
     # Shared, as in production: delivery and control must agree on which replica holds a runner.
     leases = ConnectionLeases()
     return Resources(
+        admission_timeout_s=15,
         runner_admission_ack_timeout_s=1,
+        lifecycle_timeout_s=300,
         principals=principals,
         destinations=destinations,
         caller_accounts=caller_accounts,
+        sealer_accounts=frozenset(),
         platform_instructions=platform_instructions,
         sessions=SessionRegistry(engine),
         submissions=SubmissionStore(engine),

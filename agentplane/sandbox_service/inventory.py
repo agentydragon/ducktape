@@ -334,10 +334,10 @@ class SandboxInventory:
                 name, {"metadata": {"finalizers": [item for item in sandbox.metadata.finalizers if item != finalizer]}}
             )
 
-    async def suspend(self, name: str, *, uid: str | None = None) -> None:
+    async def suspend(self, name: str, *, uid: str) -> None:
         await self._set_operating_mode(name, OperatingMode.SUSPENDED, uid=uid)
 
-    async def resume(self, name: str, *, uid: str | None = None) -> None:
+    async def resume(self, name: str, *, uid: str) -> None:
         await self._set_operating_mode(name, OperatingMode.RUNNING, uid=uid)
 
     @_retry_on_conflict
@@ -386,7 +386,7 @@ class SandboxInventory:
         )
 
     @_retry_on_conflict
-    async def _set_operating_mode(self, name: str, mode: OperatingMode, *, uid: str | None = None) -> None:
+    async def _set_operating_mode(self, name: str, mode: OperatingMode, *, uid: str) -> None:
         sandbox = await self._mutable_sandbox(name, uid=uid)
         if sandbox.teardown != TeardownPhase.TEARDOWN_PHASE_UNSPECIFIED:
             raise SandboxTearingDownError(name)
@@ -399,9 +399,9 @@ class SandboxInventory:
             },
         )
 
-    async def _mutable_sandbox(self, name: str, *, uid: str | None) -> SandboxResource:
+    async def _mutable_sandbox(self, name: str, *, uid: str) -> SandboxResource:
         """Require the named incarnation to have finished initialization before lifecycle changes."""
-        sandbox = await self._sandbox(name) if uid is None else await self._incarnation(name, uid=uid)
+        sandbox = await self._incarnation(name, uid=uid)
         if INITIALIZING in sandbox.metadata.annotations:
             raise SandboxConflictError(name)
         return sandbox

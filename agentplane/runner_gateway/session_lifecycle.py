@@ -21,7 +21,7 @@ def launch_spec(
     *,
     binding: SandboxBinding | None,
     platform_instructions: str,
-    sandbox_namespace: str | None = None,
+    sandbox_namespace: str,
 ) -> runner_pb2.SessionSpec:
     defaults = binding.session_defaults if binding is not None and binding.HasField("session_defaults") else None
     values = MessageToDict(defaults) if defaults is not None else {}
@@ -35,17 +35,16 @@ def launch_spec(
         f"{MessageToJson(destination, preserving_proto_field_name=True)}\n"
         "Use these identifiers when addressing this session; they are not credentials."
     )
-    if sandbox_namespace is not None:
-        context += "\nYour explicit notification destination is:\n" + json.dumps(
-            {
-                "destination_ref": {
-                    "namespace": sandbox_namespace,
-                    "name": destination.sandbox.sandbox,
-                    "uid": destination.sandbox.sandbox_uid,
-                },
-                "session_id": destination.session_id,
-            }
-        )
+    context += "\nYour explicit notification destination is:\n" + json.dumps(
+        {
+            "destination_ref": {
+                "namespace": sandbox_namespace,
+                "name": destination.sandbox.sandbox,
+                "uid": destination.sandbox.sandbox_uid,
+            },
+            "session_id": destination.session_id,
+        }
+    )
     spec.instructions = combine_instructions(combine_instructions(platform_instructions, context), spec.instructions)
     return spec
 
