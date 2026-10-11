@@ -48,7 +48,6 @@ py_library(
     srcs = ["conftest.py"],
     deps = [
         ":database_migrate",
-        "//util/testing:postgres",
         "//util/testing:postgres_fixtures",
         "@pypi//asyncpg",
         "@pypi//psycopg",

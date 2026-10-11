@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import AsyncIterator, Callable, Iterator, Mapping
+from collections.abc import AsyncIterator, Callable, Mapping
 from datetime import timedelta
 from typing import Any, cast
 
@@ -38,8 +38,13 @@ from agentplane.testing.fake_apiserver import (
     secret,
 )
 from util.kubernetes import CustomObjectsClient
-from util.testing.postgres import DatabaseClones, PostgresDatabaseTemplate, migrated_database_template
-from util.testing.postgres_fixtures import database_clones, database_names, postgres_admin_url, postgres_container
+from util.testing.postgres_fixtures import (
+    database_clones,
+    database_names,
+    migrated_database_fixtures,
+    postgres_admin_url,
+    postgres_container,
+)
 
 AUDIENCE = "agentplane-egress-test"
 UPSTREAM_HOST = "localhost"
@@ -155,15 +160,9 @@ async def api_client(fake: FakeApiServer) -> AsyncIterator[ApiClient]:
         yield api
 
 
-@pytest.fixture(scope="session")
-def history_database_template(postgres_admin_url: str) -> Iterator[PostgresDatabaseTemplate]:
-    with migrated_database_template(postgres_admin_url, "egress_history_template", RUNNER) as template:
-        yield template
-
-
-@pytest.fixture
-def history_db_url(history_database_template: PostgresDatabaseTemplate, database_clones: DatabaseClones) -> str:
-    return database_clones.clone(history_database_template, drivername="postgresql+asyncpg")
+database_template, history_db_url = migrated_database_fixtures(
+    RUNNER, drivername="postgresql+asyncpg", url_name="history_db_url"
+)
 
 
 @pytest.fixture
