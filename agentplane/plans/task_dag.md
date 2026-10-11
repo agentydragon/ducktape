@@ -750,7 +750,7 @@ are irreplaceable, and a node that deletes a column or row stops for the operato
 
 ```mermaid
 flowchart TD
-    HISTORY_RUNNER_SESSION_ID_DROP[Blocked: drop the runner session ID from the history database]
+    HISTORY_SANDBOX_LOCATOR_DROP[Blocked: drop the Sandbox locator from the history database]
     HISTORY_STORE_MOVE[Candidate: history store and migrations move to the History Service]
     HISTORY_WRITER_SWITCH_RETIRE[Candidate: delete the history_writer switch]
     HISTORY_DATABASE_RENAME[Blocked: rename the sandbox_service database and role]
@@ -761,20 +761,21 @@ flowchart TD
     HISTORY_SERVICE_OWNERSHIP[History Service ownership]
     HISTORY_STORE_MOVE --> HISTORY_SERVICE_OWNERSHIP
     HISTORY_STORE_MOVE --> HISTORY_DATABASE_RENAME
-    FOLLOW_PATH_RETIRE[Delete following, WatchSessions and holds] --> HISTORY_RUNNER_SESSION_ID_DROP
-    HISTORY_RUNNER_SESSION_ID_DROP --> HISTORY_DATABASE_RENAME
+    FOLLOW_PATH_RETIRE[Delete following, WatchSessions and holds] --> HISTORY_SANDBOX_LOCATOR_DROP
+    HISTORY_SANDBOX_LOCATOR_DROP --> HISTORY_DATABASE_RENAME
     HISTORY_DATABASE_RENAME --> SANDBOX_DATABASE_RENAME
     APP_PROJECTOR_RETIRE --> APP_ELECTRIC_RETIRE
 ```
 
-### `HISTORY_RUNNER_SESSION_ID_DROP` — rows carry only the public ID
+### `HISTORY_SANDBOX_LOCATOR_DROP` — rows name only their Session and writer
 
-**Blocked on the follow path's retirement**, because both follower ingesters (the Sandbox
-Service's and the History Service's) follow by `runner_session_id`. Under the ingress, Sessions
-arrive under their client-minted public ID, which is also the runner's. Then the column only names
-feed snapshots stored before ingesters wrote them under the public ID: rewrite those snapshots
-under the public ID, then drop the column with `ux_history_runner_locator`, together with the
-follower-only ingestion state (`source_id`, `feed_state`). Stops for the operator.
+**Blocked on the follow path's retirement**, because the followers address Sessions by Sandbox and
+`runner_session_id`. Under the ingress, a Session arrives under its client-minted public ID, which
+is also the runner's, and its row names the writer that pushed it. The Sandbox locator columns
+(`sandbox_namespace`, `sandbox_name`, `sandbox_uid`) and `runner_session_id` then only describe
+rows the followers wrote, and `source_id` is never set. Rewrite feed snapshots stored under a
+runner session ID under the public ID, then drop those columns with `ux_history_runner_locator`.
+Stops for the operator.
 
 ### `HISTORY_STORE_MOVE` — the history store belongs to the History Service
 
@@ -961,13 +962,11 @@ that cannot report keeps the Sandbox in sealing for the operator, as today.
 
 **Blocked on legacy Sandbox retirement.** Delete `FollowSession`,
 `WatchSessions` and its change feed, the History Service follower ingester, and the hold API and
-`retention-holds` annotation. With the follower go its traces in the history store:
-`Store.record_session`, and the Sandbox locator columns (`sandbox_namespace`, `sandbox_name`,
-`sandbox_uid`, `runner_session_id`, `source_id`, `ux_history_runner_locator`), so every Session row
-names only its writer and `SessionSummary` drops its Sandbox fields. Tests that copy history with
-the follower (`history_service.testing.backend.ingest`, used by the app and Notification Service
-acceptance tests) push through the ingress instead. Stops for the operator before dropping
-stored registry or history columns.
+`retention-holds` annotation. With the follower go `Store.record_session` and `SessionSummary`'s
+Sandbox fields; tests that copy history with the follower
+(`history_service.testing.backend.ingest`, used by the app and Notification Service acceptance
+tests) push through the ingress instead. The history columns the follower filled are dropped by
+`HISTORY_SANDBOX_LOCATOR_DROP`. Stops for the operator before dropping stored registry columns.
 
 Also follow-only, so deleted here: the History Service's `SandboxServiceSettings` and
 `IngesterSettings` (with the duplicate `ingester.settle_deltas`), its `sandbox_service` config block
