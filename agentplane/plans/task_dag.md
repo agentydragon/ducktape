@@ -863,7 +863,7 @@ flowchart TD
     RUNNER_SESSION_RECORD_SHIMS[Blocked: drop runner session record compatibility]
     LEGACY_SANDBOX_RETIRE[Retire pre-dial-out Sandboxes]
     LEGACY_SANDBOX_RETIRE --> RUNNER_SESSION_RECORD_SHIMS
-    HISTORY_FOLD_ALWAYS_ON[Candidate in part: the History Service always folds]
+    HISTORY_FOLD_ALWAYS_ON[Blocked: the History Service always folds]
     APP_PROJECTOR_RETIRE[Delete app projector] --> HISTORY_FOLD_ALWAYS_ON
     ACTION_EXECUTION_AUDIT_TRIM[Decision: execution reconciliation columns]
     REFACTOR_COHERENCE_AUDIT[Blocked: whole-refactor coherence audit]
@@ -894,13 +894,13 @@ carrying the field) is read and the default can go. Code only.
 
 ### `HISTORY_FOLD_ALWAYS_ON` — the History Service always folds
 
-**Candidate for the failure half; the rest blocked on app projector retirement. Legacy burn-down
-lane.** Both environments set `fold_shadow` and read Threads from the History Service fold, yet the
-setting defaults to off, and the fold runs as a side task whose crash is only logged while
-`/healthz` stays OK, so Thread reads silently stop advancing; the ingester, by contrast, ends the
-process. Now: a fold failure fails the health check or the process. After `APP_PROJECTOR_RETIRE`
-deletes `thread_reads`: delete `Settings.fold_shadow` and `Environment.fold_shadow`, and rename
-`fold_shadow.py`/`FoldShadow` and their "shadow" comments for what the fold is.
+**Blocked on app projector retirement; Legacy burn-down lane.** Both environments set `fold_shadow`
+and read Threads from the History Service fold, yet the setting defaults to off. After
+`APP_PROJECTOR_RETIRE` deletes `thread_reads`, delete `Settings.fold_shadow` and
+`Environment.fold_shadow`, and rename `fold_shadow.py`/`FoldShadow` and their "shadow" comments for
+what the fold is. A fold that stops on an unexpected error is only logged, by design, so raw reads
+keep serving ([Thread view sync](../docs/thread_view_sync.md)); give that state a signal an operator
+sees (a metric or a status the read API reports) without ending the process.
 
 ### `ACTION_EXECUTION_AUDIT_TRIM` — execution reconciliation columns
 
