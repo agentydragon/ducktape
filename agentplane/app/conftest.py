@@ -31,7 +31,7 @@ from agentplane.app.testing.replication_source import Placements
 from agentplane.app.testing.thread_test_support import SPEC, Replica, event_entry
 from agentplane.app.threads.bridge import RunnerBridge
 from agentplane.app.threads.history_watch import HistoryWatch
-from agentplane.app.threads.ingestion import Ingester
+from agentplane.app.threads.session_discovery import SessionDiscovery
 from agentplane.app.threads.sessions import SandboxSessions
 from agentplane.app.threads.store import ThreadStore
 from agentplane.app.threads.summaries import Summaries
@@ -265,10 +265,10 @@ def runners(live_index: LiveIndex, inventory: SandboxServiceClient) -> SandboxSe
 
 
 @pytest.fixture
-async def ingester(runners: SandboxSessions, event_logs: EventLogStore) -> AsyncIterator[Ingester]:
-    ingester = Ingester(runners=runners, event_logs=event_logs)
-    yield ingester
-    await ingester.close()
+async def discovery(runners: SandboxSessions, event_logs: EventLogStore) -> AsyncIterator[SessionDiscovery]:
+    discovery = SessionDiscovery(runners=runners, event_logs=event_logs)
+    yield discovery
+    await discovery.close()
 
 
 @pytest.fixture
@@ -276,10 +276,10 @@ def bridge(
     runners: SandboxSessions,
     event_logs: EventLogStore,
     content: ContentStore,
-    ingester: Ingester,
+    discovery: SessionDiscovery,
     database_updates: Wakeups,
 ) -> RunnerBridge:
-    return RunnerBridge(runners=runners, event_logs=event_logs, content=content, ingester=ingester)
+    return RunnerBridge(runners=runners, event_logs=event_logs, content=content, discovery=discovery)
 
 
 @pytest.fixture

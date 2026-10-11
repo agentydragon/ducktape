@@ -17,14 +17,9 @@ CALLER_TOKEN = "test-caller-token"
 
 
 def connect(
-    target: str,
-    token_file: Path,
-    *,
-    namespace: str,
-    command_admission_timeout_s: float | None,
-    control_target: str | None = None,
+    target: str, token_file: Path, *, namespace: str, command_admission_timeout_s: float | None, control_target: str
 ) -> SandboxServiceClient:
-    """The client of both services at one target."""
+    """The client of both services at one target, with the control Service at `control_target`."""
     return SandboxServiceClient(
         target,
         gateway_target=target,
@@ -49,6 +44,7 @@ async def service_client(resources: grpc_api.Resources, token_file: Path) -> Asy
             token_file,
             namespace=resources.provisioning.inventory.namespace,
             command_admission_timeout_s=20,
+            control_target=f"127.0.0.1:{port}",
         ) as client,
     ):
         yield client

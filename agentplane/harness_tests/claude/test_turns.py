@@ -10,7 +10,7 @@ import pytest_bazel
 from tenacity import AsyncRetrying, retry_if_exception_type, stop_after_delay, wait_fixed
 
 from agentplane.harness_tests.claude import anthropic_sse as sse, frames
-from agentplane.harness_tests.claude.harness import MODEL, ClaudeHarness
+from agentplane.harness_tests.claude.harness import MODEL, ClaudeLauncher
 from agentplane.harness_tests.claude.messages import AnthropicMessages
 from agentplane.native.async_process import NativeProcessEofError
 from agentplane.native.claude import async_run, wire
@@ -41,7 +41,7 @@ async def _until(condition: Callable[[], bool]) -> None:
             assert condition()
 
 
-def _transcript(claude: ClaudeHarness) -> str:
+def _transcript(claude: ClaudeLauncher) -> str:
     (path,) = (claude.config / "projects").glob(f"*/{CRASHED_SESSION}.jsonl")
     return path.read_text()
 
@@ -56,7 +56,7 @@ async def _thinking_completed(run: async_run.ClaudeRun) -> None:
             return
 
 
-async def _seed_crashed_session(claude: ClaudeHarness, anthropic_messages: AnthropicMessages) -> wire.ResultFrame:
+async def _seed_crashed_session(claude: ClaudeLauncher, anthropic_messages: AnthropicMessages) -> wire.ResultFrame:
     """Complete one turn under CRASHED_SESSION for the crash/resume tests below to build on."""
     async with claude.start(anthropic_messages, session_id=CRASHED_SESSION) as seeded:
         seed_prompt = await seeded.send(SEED_INPUT)
@@ -68,7 +68,7 @@ async def _seed_crashed_session(claude: ClaudeHarness, anthropic_messages: Anthr
     return seed
 
 
-async def test_baseline_turn(claude: ClaudeHarness, anthropic_messages: AnthropicMessages) -> None:
+async def test_baseline_turn(claude: ClaudeLauncher, anthropic_messages: AnthropicMessages) -> None:
     async with claude.start(anthropic_messages) as run:
         prompt = await run.send("Reply with exactly: CAPTURE_BASELINE_OK")
 
@@ -92,7 +92,7 @@ async def test_baseline_turn(claude: ClaudeHarness, anthropic_messages: Anthropi
 
 
 async def test_idle_resume_replays_the_transcript_from_disk(
-    claude: ClaudeHarness, anthropic_messages: AnthropicMessages
+    claude: ClaudeLauncher, anthropic_messages: AnthropicMessages
 ) -> None:
     async with claude.start(anthropic_messages) as first:
         prompt = await first.send("Reply with exactly: IDLE_RESUME_SEED_OK")
@@ -116,7 +116,7 @@ async def test_idle_resume_replays_the_transcript_from_disk(
 
 
 async def test_resume_after_an_interrupted_partial_turn_replays_only_completed_model_history(
-    claude: ClaudeHarness, anthropic_messages: AnthropicMessages
+    claude: ClaudeLauncher, anthropic_messages: AnthropicMessages
 ) -> None:
     """Claude emits a partial turn and marker but does not replay them to a fresh model request.
 
@@ -162,7 +162,7 @@ async def test_resume_after_an_interrupted_partial_turn_replays_only_completed_m
 
 
 async def test_resume_after_interrupt_then_crash_drops_retained_queued_inputs(
-    claude: ClaudeHarness, anthropic_messages: AnthropicMessages
+    claude: ClaudeLauncher, anthropic_messages: AnthropicMessages
 ) -> None:
     """A plain interrupt's reported survivors are process-local, not resumed history.
 
@@ -209,7 +209,7 @@ async def test_resume_after_interrupt_then_crash_drops_retained_queued_inputs(
 
 
 async def test_crash_before_a_completed_turn_leaves_claudes_session_unresumable(
-    claude: ClaudeHarness, anthropic_messages: AnthropicMessages
+    claude: ClaudeLauncher, anthropic_messages: AnthropicMessages
 ) -> None:
     """An in-flight request alone has no durable Claude conversation to resume."""
     async with claude.start(anthropic_messages, session_id=CRASHED_SESSION) as first:
@@ -228,7 +228,7 @@ async def test_crash_before_a_completed_turn_leaves_claudes_session_unresumable(
 
 
 async def test_resume_after_crash_replays_completed_history_but_drops_active_and_queued_input(
-    claude: ClaudeHarness, anthropic_messages: AnthropicMessages
+    claude: ClaudeLauncher, anthropic_messages: AnthropicMessages
 ) -> None:
     """A killed resumed process retains prior durable history, not its active turn or queue."""
     await _seed_crashed_session(claude, anthropic_messages)
@@ -257,7 +257,7 @@ async def test_resume_after_crash_replays_completed_history_but_drops_active_and
 
 
 async def test_thinking_ahead_of_a_tool_killed_mid_run_is_saved_but_not_replayed(
-    claude: ClaudeHarness, anthropic_messages: AnthropicMessages
+    claude: ClaudeLauncher, anthropic_messages: AnthropicMessages
 ) -> None:
     """The transcript holds the thinking block as an entry of its own under the id of its message,
     yet the resume loads neither it nor the tool call: a message left holding only thinking is
@@ -294,7 +294,7 @@ async def test_thinking_ahead_of_a_tool_killed_mid_run_is_saved_but_not_replayed
 
 
 async def test_thinking_interrupted_before_any_answer_is_not_sent_again_even_in_the_same_process(
-    claude: ClaudeHarness, anthropic_messages: AnthropicMessages
+    claude: ClaudeLauncher, anthropic_messages: AnthropicMessages
 ) -> None:
     """An interrupt after a completed thinking block and before the next block leaves a message
     holding only thinking. Claude drops it from the next request of the live process and of a
@@ -346,7 +346,7 @@ async def test_thinking_interrupted_before_any_answer_is_not_sent_again_even_in_
     ],
 )
 async def test_thinking_beside_a_block_interrupted_before_it_was_written_is_not_sent_again(
-    claude: ClaudeHarness, anthropic_messages: AnthropicMessages, answer: sse.Block, cut_kind: str, cut_nth: int
+    claude: ClaudeLauncher, anthropic_messages: AnthropicMessages, answer: sse.Block, cut_kind: str, cut_nth: int
 ) -> None:
     """The block never reaches Claude's context, so its message holds only the thinking: dropped."""
     async with claude.start(anthropic_messages) as run:

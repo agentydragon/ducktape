@@ -16,9 +16,9 @@ from agentplane.history_service.fold.model_activity import record_model_activity
 from agentplane.history_service.fold.models import ThreadCheckpoint, ThreadHistorySummary
 from agentplane.history_service.fold.projection_lease import ProjectionLease, ProjectionLeaseLostError
 from agentplane.history_service.fold.recording import EventReplicationError, record_thread_fold, set_operational
+from agentplane.history_service.settled_cursors import next_stored, settled_ranges
 from agentplane.history_service.storage.store import Store
 from agentplane.postgres.wakeups import notify
-from agentplane.sandbox_service.settled_cursors import next_stored, settled_ranges
 
 # gazelle:include_dep @pypi//protobuf
 

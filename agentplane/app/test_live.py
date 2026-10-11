@@ -56,7 +56,7 @@ from agentplane.app.testing.model_test_data import TEST_REASONING_EFFORTS
 from agentplane.app.testing.thread_test_support import Replica
 from agentplane.app.threads.bridge import RunnerBridge
 from agentplane.app.threads.events import event_log
-from agentplane.app.threads.ingestion import Ingester
+from agentplane.app.threads.session_discovery import SessionDiscovery
 from agentplane.app.threads.sessions import SandboxSessions
 from agentplane.app.threads.store import ThreadStore
 from agentplane.app.threads.summaries import Summaries
@@ -328,7 +328,7 @@ def app(
         runners=runners,
         event_logs=event_logs,
         content=content,
-        ingester=Ingester(runners=runners, event_logs=event_logs),
+        discovery=SessionDiscovery(runners=runners, event_logs=event_logs),
     )
     return create_app(
         inventory,

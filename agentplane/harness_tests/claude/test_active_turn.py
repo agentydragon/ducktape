@@ -7,7 +7,7 @@ import asyncio
 import pytest_bazel
 
 from agentplane.harness_tests.claude import anthropic_sse as sse, frames
-from agentplane.harness_tests.claude.harness import MODEL, ClaudeHarness
+from agentplane.harness_tests.claude.harness import MODEL, ClaudeLauncher
 from agentplane.harness_tests.claude.messages import AnthropicMessages
 from agentplane.native.claude import wire
 
@@ -27,7 +27,7 @@ SELECTED_MODEL = "agentplane-switched/claude-haiku-4-5-20251001"
 
 
 async def test_queued_inputs_coalesce_into_one_native_user_message(
-    claude: ClaudeHarness, anthropic_messages: AnthropicMessages
+    claude: ClaudeLauncher, anthropic_messages: AnthropicMessages
 ) -> None:
     """Claude batches compatible queued prompts with newlines, retaining the last frame UUID.
 
@@ -93,7 +93,7 @@ async def test_queued_inputs_coalesce_into_one_native_user_message(
 
 
 async def test_interrupt_cancels_each_queued_input_before_native_message(
-    claude: ClaudeHarness, anthropic_messages: AnthropicMessages
+    claude: ClaudeLauncher, anthropic_messages: AnthropicMessages
 ) -> None:
     """An interrupt with cancel_queued drops every queued input before it reaches the model.
 
@@ -142,7 +142,7 @@ async def test_interrupt_cancels_each_queued_input_before_native_message(
 
 
 async def test_plain_interrupt_preserves_queued_inputs_for_the_next_native_request(
-    claude: ClaudeHarness, anthropic_messages: AnthropicMessages
+    claude: ClaudeLauncher, anthropic_messages: AnthropicMessages
 ) -> None:
     """The runner's normal Claude interrupt aborts only the active turn, not queued input.
 
@@ -184,7 +184,7 @@ async def test_plain_interrupt_preserves_queued_inputs_for_the_next_native_reque
 
 
 async def test_runtime_effort_control_changes_next_anthropic_request(
-    claude: ClaudeHarness, anthropic_messages: AnthropicMessages
+    claude: ClaudeLauncher, anthropic_messages: AnthropicMessages
 ) -> None:
     selected_model = "agentplane-test/claude-opus-4-6"
     async with claude.start(anthropic_messages, model=selected_model) as run:
@@ -206,7 +206,7 @@ async def test_runtime_effort_control_changes_next_anthropic_request(
 
 
 async def test_set_model_during_an_active_turn_controls_the_next_model_request(
-    claude: ClaudeHarness, anthropic_messages: AnthropicMessages
+    claude: ClaudeLauncher, anthropic_messages: AnthropicMessages
 ) -> None:
     async with claude.start(anthropic_messages) as run:
         initial = await run.send("Wait; do not answer early.")
@@ -231,7 +231,7 @@ async def test_set_model_during_an_active_turn_controls_the_next_model_request(
 
 
 async def test_inputs_during_a_tool_coalesce_into_the_tool_result(
-    claude: ClaudeHarness, anthropic_messages: AnthropicMessages
+    claude: ClaudeLauncher, anthropic_messages: AnthropicMessages
 ) -> None:
     """Claude has no steering frame: active-turn inputs join the current tool result as one
     newline-joined native cohort rather than becoming their own user messages."""
@@ -286,7 +286,7 @@ async def test_inputs_during_a_tool_coalesce_into_the_tool_result(
 
 
 async def test_interrupt_aborts_the_in_flight_model_call(
-    claude: ClaudeHarness, anthropic_messages: AnthropicMessages
+    claude: ClaudeLauncher, anthropic_messages: AnthropicMessages
 ) -> None:
     async with claude.start(anthropic_messages) as run:
         prompt = await run.send("Wait with the shell; do not answer early.")

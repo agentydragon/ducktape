@@ -7,13 +7,13 @@ import asyncio
 import pytest_bazel
 
 from agentplane.harness_tests.claude import anthropic_sse as sse
-from agentplane.harness_tests.claude.harness import MODEL, ClaudeHarness
+from agentplane.harness_tests.claude.harness import MODEL, ClaudeLauncher
 from agentplane.harness_tests.claude.messages import AnthropicMessages
 from agentplane.native.claude.scenarios import SYSTEM_PROMPT
 
 
 async def test_manual_compact_keeps_standing_prompt_afterwards_and_on_resume(
-    claude: ClaudeHarness, anthropic_messages: AnthropicMessages
+    claude: ClaudeLauncher, anthropic_messages: AnthropicMessages
 ) -> None:
     async with claude.start(anthropic_messages, hooks=True, slash_commands=True) as first:
         # /compact refuses a one-message session without ever contacting the model.

@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from agentplane.harness_tests.claude.harness import ClaudeHarness
+from agentplane.harness_tests.claude.harness import ClaudeLauncher
 from agentplane.harness_tests.claude.messages import AnthropicMessages
 from util.bazel.runfiles import get_required_path
 
@@ -17,10 +17,10 @@ async def anthropic_messages() -> AsyncGenerator[AnthropicMessages]:
 
 
 @pytest.fixture
-def claude(workspace: Path, native_logs: Path, base_environment: dict[str, str], tmp_path: Path) -> ClaudeHarness:
+def claude(workspace: Path, native_logs: Path, base_environment: dict[str, str], tmp_path: Path) -> ClaudeLauncher:
     config = tmp_path / ".claude"
     config.mkdir()
-    return ClaudeHarness(
+    return ClaudeLauncher(
         workspace=workspace,
         logs=native_logs,
         config=config,

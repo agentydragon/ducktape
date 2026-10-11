@@ -12,7 +12,7 @@ from typing import cast
 from more_itertools import unique_everseen
 from pydantic import BaseModel, ConfigDict, Field
 
-from agentplane.sandbox_service.models import InventoryError
+from agentplane.sandbox_service.errors import InventoryError
 
 # The SandboxTemplate container the runner runs in.
 RUNNER_CONTAINER = "runner"

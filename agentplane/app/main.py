@@ -34,7 +34,7 @@ from agentplane.app.shutdown import Drain, drain_of
 from agentplane.app.threads.bridge import RunnerBridge
 from agentplane.app.threads.events.event_log import EventLogStore
 from agentplane.app.threads.history_watch import HistoryWatch
-from agentplane.app.threads.ingestion import Ingester
+from agentplane.app.threads.session_discovery import SessionDiscovery
 from agentplane.app.threads.sessions import SandboxSessions
 from agentplane.app.threads.store import ThreadStore
 from agentplane.app.threads.summaries import Summaries
@@ -153,8 +153,8 @@ async def async_main(settings: Settings) -> None:
         store = ThreadStore(engine, summaries, gateway=inventory)
         event_logs = EventLogStore(engine, history_reader=history, summaries=summaries)
         runners = SandboxSessions(live, inventory)
-        ingester = Ingester(runners=runners, event_logs=event_logs)
-        bridge = RunnerBridge(runners=runners, event_logs=event_logs, content=content, ingester=ingester)
+        discovery = SessionDiscovery(runners=runners, event_logs=event_logs)
+        bridge = RunnerBridge(runners=runners, event_logs=event_logs, content=content, discovery=discovery)
 
         app = create_app(
             inventory,
@@ -200,14 +200,14 @@ async def async_main(settings: Settings) -> None:
                     ),
                     drain_of(app),
                 ),
-                ingester=ingester,
+                discovery=discovery,
                 database_updates=database_updates,
                 engine=engine,
             )
 
 
 async def serve_then_close(
-    server: uvicorn.Server, *, ingester: Ingester, database_updates: Wakeups, engine: AsyncEngine
+    server: uvicorn.Server, *, discovery: SessionDiscovery, database_updates: Wakeups, engine: AsyncEngine
 ) -> None:
     """Serve until told to exit, then let go in the order the budgets assume: Uvicorn's graceful-shutdown
     timeout bounds the requests and streams still open, and stopping discovery and closing the runner
@@ -215,10 +215,10 @@ async def serve_then_close(
     try:
         async with database_updates.listener.listen():
             try:
-                await ingester.start()
+                await discovery.start()
                 await server.serve()
             finally:
-                await ingester.close()
+                await discovery.close()
     finally:
         await engine.dispose()
 

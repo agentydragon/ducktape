@@ -14,9 +14,9 @@ from agentplane.app.threads.events.debug import ArchivedObservation, ArchivedObs
 from agentplane.app.threads.models import EventLog
 from agentplane.app.threads.summaries import FeedSnapshot, Summaries
 from agentplane.history_service.client import HistoryServiceClient
+from agentplane.history_service.settled_cursors import next_stored, settled_ranges
 from agentplane.postgres.wakeups import notify
 from agentplane.proto import event_log_pb2
-from agentplane.sandbox_service.settled_cursors import next_stored, settled_ranges
 
 # The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.
 # gazelle:include_dep @pypi//protobuf

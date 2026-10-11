@@ -8,7 +8,7 @@ import pytest_bazel
 from fastmcp import FastMCP
 
 from agentplane.harness_tests.claude import anthropic_sse as sse, frames
-from agentplane.harness_tests.claude.harness import MODEL, ClaudeHarness
+from agentplane.harness_tests.claude.harness import MODEL, ClaudeLauncher
 from agentplane.harness_tests.claude.messages import AnthropicMessages
 from agentplane.native.claude.mcp import DriverMcpServer
 
@@ -30,7 +30,7 @@ DRIVER = DriverMcpServer("driver", _build_server())
 
 
 async def test_driver_hosted_tool_is_declared_and_called(
-    claude: ClaudeHarness, anthropic_messages: AnthropicMessages
+    claude: ClaudeLauncher, anthropic_messages: AnthropicMessages
 ) -> None:
     async with claude.start(anthropic_messages, driver_tools=DRIVER) as run:
         prompt = await run.send("Use the echo tool on 'hi' and report the result.")
@@ -57,7 +57,7 @@ async def test_driver_hosted_tool_is_declared_and_called(
 
 
 async def test_unknown_driver_tool_call_reaches_the_model_as_an_error(
-    claude: ClaudeHarness, anthropic_messages: AnthropicMessages
+    claude: ClaudeLauncher, anthropic_messages: AnthropicMessages
 ) -> None:
     """The scenario never registers `fail`, so the model naming it exercises `DriverMcpServer`'s own
     unknown-tool error path rather than actually calling anything."""

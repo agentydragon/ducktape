@@ -28,7 +28,7 @@ from agentplane.app.model_catalog import ModelCatalog, ModelOption
 from agentplane.app.operator_sessions import OperatorSessionStore
 from agentplane.app.threads.bridge import RunnerBridge
 from agentplane.app.threads.events.event_log import EventLogStore
-from agentplane.app.threads.ingestion import Ingester
+from agentplane.app.threads.session_discovery import SessionDiscovery
 from agentplane.app.threads.sessions import SandboxSessions
 from agentplane.app.threads.store import ThreadStore
 from agentplane.app.threads.summaries import Summaries
@@ -47,6 +47,7 @@ def _openapi_document(api_client: k8s_client.ApiClient) -> dict[str, Any]:
     inventory = SandboxServiceClient(
         "schema.invalid:8080",
         gateway_target="schema.invalid:8080",
+        control_target="schema.invalid:8080",
         namespace="schema",
         token_file=Path("/schema-unused-token"),
         gateway_token_file=Path("/schema-unused-token"),
@@ -72,7 +73,7 @@ def _openapi_document(api_client: k8s_client.ApiClient) -> dict[str, Any]:
             runners=runners,
             event_logs=event_logs,
             content=content,
-            ingester=Ingester(runners=runners, event_logs=event_logs),
+            discovery=SessionDiscovery(runners=runners, event_logs=event_logs),
         ),
         ThreadStore(engine, summaries, gateway=inventory),
         ModelCatalog(

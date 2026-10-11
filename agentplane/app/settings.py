@@ -69,11 +69,11 @@ class Settings(AppSettingsConfig):
     runner_gateway_target: str = Field(
         min_length=1, description="The Runner Gateway's gRPC host:port, serving Sessions."
     )
-    sandbox_service_control_target: str | None = Field(
-        default=None,
+    sandbox_service_control_target: str = Field(
+        min_length=1,
         description="Each Sandbox's control Service, a template of `{sandbox}` and `{namespace}` such as "
         "`{sandbox}-control.{namespace}.svc:8080`. Lifecycle calls go there, to the replica holding the "
-        "runner connection. Unset sends them to the Runner Gateway target.",
+        "runner connection.",
     )
     history_service_target: str = Field(min_length=1)
     notifications_url: HttpEndpointUrl
@@ -90,7 +90,7 @@ class Settings(AppSettingsConfig):
         default=20,
         gt=0,
         allow_inf_nan=False,
-        description="Seconds the app waits for the Sandbox Service to return the runner's durable "
+        description="Seconds the app waits for the Runner Gateway to return the runner's durable "
         "command admission receipt. Keep above its runner_admission_ack_timeout_s setting.",
     )
     host: str = Field(default="127.0.0.1", description="Bind address.")

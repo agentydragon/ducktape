@@ -26,7 +26,7 @@ from agentplane.proto import (
 from agentplane.proto.sandbox_service_pb2 import CreateSandboxRequest, Sandbox, SandboxDestination
 from agentplane.runner.errors import RunnerError
 from agentplane.sandbox_service import wire
-from agentplane.sandbox_service.models import SandboxNotFoundError
+from agentplane.sandbox_service.errors import SandboxNotFoundError
 
 # gazelle:include_dep @pypi//protobuf
 # gazelle:include_dep @pypi//grpcio
@@ -41,14 +41,14 @@ class ServiceError(ConnectionError):
 def _raise(error: grpc.aio.AioRpcError) -> Never:
     # Do not include upstream details: they may contain credentials or native output.
     if error.code() == grpc.StatusCode.DEADLINE_EXCEEDED:
-        raise TimeoutError("Sandbox Service outcome uncertain; reconcile using unchanged identifiers") from error
+        raise TimeoutError("outcome uncertain; reconcile using unchanged identifiers") from error
     if error.code() == grpc.StatusCode.FAILED_PRECONDITION:
-        raise RunnerError("Sandbox Service refused the requested session or resource state") from error
+        raise RunnerError("the service refused the requested session or resource state") from error
     raise ServiceError(error.code()) from error
 
 
 async def _bearer(token_file: Path) -> tuple[tuple[str, str], ...]:
-    # Projected tokens rotate. Read for every RPC, including follow reconnects.
+    # Projected tokens rotate. Read for every RPC.
     token = (await asyncio.to_thread(token_file.read_text)).strip()
     return (("authorization", f"Bearer {token}"),)
 
@@ -75,7 +75,7 @@ class SandboxServiceClient:
         command_admission_timeout_s: float | None,
         request_timeout_s: float,
         lifecycle_timeout_s: float,
-        control_target: str | None = None,
+        control_target: str,
     ) -> None:
         if min(request_timeout_s, lifecycle_timeout_s) <= 0 or (
             command_admission_timeout_s is not None and command_admission_timeout_s <= 0
@@ -92,8 +92,7 @@ class SandboxServiceClient:
         self.command_admission_timeout_s = command_admission_timeout_s
         self.lifecycle_timeout_s = lifecycle_timeout_s
         # A Sandbox's control Service, which names the replica holding its runner connection, as a
-        # template of `{sandbox}` and `{namespace}`: `{sandbox}-control.{namespace}.svc:8080`. None
-        # sends every gateway call to `gateway_target`.
+        # template of `{sandbox}` and `{namespace}`: `{sandbox}-control.{namespace}.svc:8080`.
         self.control_target = control_target
         self._channel: grpc.aio.Channel | None = None
         self._stub: sandbox_service_pb2_grpc.SandboxServiceAsyncStub | None = None
@@ -154,8 +153,6 @@ class SandboxServiceClient:
         """Call the replica holding the Sandbox's runner connection, through its control Service, on a
         connection dialed for this call alone: a replica that no longer holds it refuses with
         UNAVAILABLE, and the caller's retry resolves the control Service again."""
-        if self.control_target is None:
-            return await self.gateway_unary(call(self.gateway), request, timeout_s=timeout_s)
         async with self.dial(
             self.control_target.format(sandbox=destination.sandbox, namespace=destination.owner.namespace)
         ) as channel:
@@ -229,7 +226,7 @@ class SandboxServiceClient:
             timeout_s=self.command_admission_timeout_s,
         )
         if not receipt.event.HasField("command_admitted") or receipt.event.command_admitted.command != command:
-            raise ConnectionError("Sandbox Service did not return the exact command admission")
+            raise ConnectionError("Runner Gateway did not return the exact command admission")
         return receipt
 
     async def get_command(self, session_id: str, command_id: str) -> sandbox_service_pb2.CommandStatus:

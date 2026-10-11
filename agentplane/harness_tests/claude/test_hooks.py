@@ -9,14 +9,16 @@ from __future__ import annotations
 import pytest_bazel
 
 from agentplane.harness_tests.claude import anthropic_sse as sse, frames
-from agentplane.harness_tests.claude.harness import MODEL, ClaudeHarness
+from agentplane.harness_tests.claude.harness import MODEL, ClaudeLauncher
 from agentplane.harness_tests.claude.messages import AnthropicMessages
 from agentplane.native.claude import scenarios
 
 PROBE = "printf 'PROBE_OK\\n'"
 
 
-async def test_pretooluse_allow_lets_the_tool_run(claude: ClaudeHarness, anthropic_messages: AnthropicMessages) -> None:
+async def test_pretooluse_allow_lets_the_tool_run(
+    claude: ClaudeLauncher, anthropic_messages: AnthropicMessages
+) -> None:
     async with claude.start(anthropic_messages, hooks=True) as run:
         prompt = await run.send("Use the shell probe and report PROBE_DONE.")
 
@@ -45,7 +47,7 @@ async def test_pretooluse_allow_lets_the_tool_run(claude: ClaudeHarness, anthrop
 
 
 async def test_pretooluse_deny_blocks_the_tool_and_the_model_sees_why(
-    claude: ClaudeHarness, anthropic_messages: AnthropicMessages
+    claude: ClaudeLauncher, anthropic_messages: AnthropicMessages
 ) -> None:
     async with claude.start(anthropic_messages, hooks=True, deny_tools=True) as run:
         prompt = await run.send("Use the shell probe and report the outcome.")

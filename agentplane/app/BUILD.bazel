@@ -8,11 +8,9 @@ package(default_visibility = [
     "//agentplane/app:__subpackages__",
 ])
 
-# gazelle:resolve py agentplane.runner.client //agentplane/runner:client_for_testing
 # gazelle:resolve py agentplane.proto.command_pb2 //agentplane/proto:command_pb2
 # gazelle:resolve py agentplane.proto.event_pb2 //agentplane/proto:event_pb2
 # gazelle:resolve py agentplane.proto.event_log_pb2 //agentplane/proto:event_log_pb2
-# gazelle:resolve py httpx_sse @pypi//httpx_sse
 
 # No test here is small, and none of that is about the tests being slow: on the CI executor image
 # they are killed at a small target's 60s with the budget spent fetching inputs rather than running
@@ -81,8 +79,8 @@ py_library(
         "//agentplane/sandbox_service:action_policy_views",
         "//agentplane/sandbox_service:client",
         "//agentplane/sandbox_service:egress_views",
+        "//agentplane/sandbox_service:errors",
         "//agentplane/sandbox_service:kubernetes_grants",
-        "//agentplane/sandbox_service:models",
         "@pypi//fastapi",
         "@pypi//grpcio",
         "@pypi//httpx",
@@ -139,7 +137,7 @@ py_library(
         "//agentplane:service_process",
         "//agentplane/app/threads:bridge",
         "//agentplane/app/threads:history_watch",
-        "//agentplane/app/threads:ingestion",
+        "//agentplane/app/threads:session_discovery",
         "//agentplane/app/threads:sessions",
         "//agentplane/app/threads:store",
         "//agentplane/app/threads:summaries",
@@ -181,7 +179,7 @@ py_library(
         "//agentplane/app/testing:thread_test_support",
         "//agentplane/app/threads:bridge",
         "//agentplane/app/threads:history_watch",
-        "//agentplane/app/threads:ingestion",
+        "//agentplane/app/threads:session_discovery",
         "//agentplane/app/threads:sessions",
         "//agentplane/app/threads:store",
         "//agentplane/app/threads:summaries",
@@ -302,7 +300,7 @@ py_test(
         "//agentplane/app/testing:history",
         "//agentplane/app/testing:model_test_data",
         "//agentplane/app/threads:bridge",
-        "//agentplane/app/threads:ingestion",
+        "//agentplane/app/threads:session_discovery",
         "//agentplane/app/threads:sessions",
         "//agentplane/app/threads:store",
         "//agentplane/app/threads/view:content",
@@ -373,7 +371,7 @@ py_test(
         "//agentplane/app/testing:history",
         "//agentplane/app/testing:model_test_data",
         "//agentplane/app/threads:bridge",
-        "//agentplane/app/threads:ingestion",
+        "//agentplane/app/threads:session_discovery",
         "//agentplane/app/threads:sessions",
         "//agentplane/app/threads:store",
         "//agentplane/app/threads:summaries",
@@ -425,7 +423,7 @@ py_library(
         ":operator_sessions",
         "//agentplane:kubernetes_watch",
         "//agentplane/app/threads:bridge",
-        "//agentplane/app/threads:ingestion",
+        "//agentplane/app/threads:session_discovery",
         "//agentplane/app/threads:sessions",
         "//agentplane/app/threads:store",
         "//agentplane/app/threads:summaries",
@@ -542,7 +540,7 @@ py_test(
         "//agentplane/app/testing:history",
         "//agentplane/app/testing:model_test_data",
         "//agentplane/app/threads:bridge",
-        "//agentplane/app/threads:ingestion",
+        "//agentplane/app/threads:session_discovery",
         "//agentplane/app/threads:store",
         "//agentplane/app/threads/view:content",
         "//agentplane/egress:decisions_client",
@@ -699,7 +697,7 @@ py_test(
         "//agentplane/app/testing:model_test_data",
         "//agentplane/app/testing:thread_test_support",
         "//agentplane/app/threads:bridge",
-        "//agentplane/app/threads:ingestion",
+        "//agentplane/app/threads:session_discovery",
         "//agentplane/app/threads:sessions",
         "//agentplane/app/threads:store",
         "//agentplane/app/threads:summaries",
@@ -1277,7 +1275,7 @@ py_test(
         "//:conftest",
         "//agentplane/app/testing:history",
         "//agentplane/app/threads:bridge",
-        "//agentplane/app/threads:ingestion",
+        "//agentplane/app/threads:session_discovery",
         "//agentplane/app/threads:sessions",
         "//agentplane/app/threads/view:content",
         "//agentplane/history_service/testing:backend",

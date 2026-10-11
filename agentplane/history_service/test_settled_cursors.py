@@ -1,7 +1,7 @@
 import pytest
 import pytest_bazel
 
-from agentplane.sandbox_service.settled_cursors import next_stored
+from agentplane.history_service.settled_cursors import next_stored
 
 # Adjacent ranges from two settlements, and a lone settled cursor.
 SETTLED = ((3, 5), (6, 8), (11, 11))

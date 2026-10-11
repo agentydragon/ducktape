@@ -8,7 +8,7 @@ import pytest
 import pytest_bazel
 
 from agentplane.harness_tests.claude import anthropic_sse as sse, frames
-from agentplane.harness_tests.claude.harness import MODEL, ClaudeHarness
+from agentplane.harness_tests.claude.harness import MODEL, ClaudeLauncher
 from agentplane.harness_tests.claude.messages import AnthropicMessages
 
 PROBE_FAILURE = (
@@ -17,7 +17,7 @@ PROBE_FAILURE = (
 
 
 async def test_parallel_shell_tools_report_both_streams_and_exit_codes(
-    claude: ClaudeHarness, anthropic_messages: AnthropicMessages
+    claude: ClaudeLauncher, anthropic_messages: AnthropicMessages
 ) -> None:
     async with claude.start(anthropic_messages) as run:
         prompt = await run.send("Use the shell probe and report its outcomes.")
@@ -62,7 +62,7 @@ async def test_parallel_shell_tools_report_both_streams_and_exit_codes(
 
 
 async def test_file_edit_round_trip_changes_the_workspace(
-    claude: ClaudeHarness, anthropic_messages: AnthropicMessages
+    claude: ClaudeLauncher, anthropic_messages: AnthropicMessages
 ) -> None:
     editable = claude.workspace / "editable.txt"
     editable.write_text("before\n")
@@ -113,7 +113,7 @@ async def test_file_edit_round_trip_changes_the_workspace(
 
 
 async def test_subagent_tool_frames_are_correlated_with_the_parent_call(
-    claude: ClaudeHarness, anthropic_messages: AnthropicMessages
+    claude: ClaudeLauncher, anthropic_messages: AnthropicMessages
 ) -> None:
     """The pinned Agent launches asynchronously; parent completion does not finish the child."""
     async with claude.start(anthropic_messages, subagents=True) as run:
@@ -218,7 +218,7 @@ async def test_subagent_tool_frames_are_correlated_with_the_parent_call(
 
 @pytest.mark.parametrize("resume_parent", [False, True])
 async def test_send_message_resumes_a_completed_child_and_task_output_reads_its_result(
-    claude: ClaudeHarness, anthropic_messages: AnthropicMessages, resume_parent: bool
+    claude: ClaudeLauncher, anthropic_messages: AnthropicMessages, resume_parent: bool
 ) -> None:
     """A SendMessage receipt is not child completion; TaskOutput reads the later result."""
     async with claude.start(anthropic_messages, subagents=True) as run:

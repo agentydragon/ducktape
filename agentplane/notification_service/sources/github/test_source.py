@@ -1181,6 +1181,7 @@ actions:
 sandbox_service:
   target: sandboxes:8080
   gateway_target: gateway:8080
+  control_target: "{sandbox}-control.{namespace}.test:8080"
   token_file: /tokens/sandboxes
   gateway_token_file: /tokens/gateway
 history_service:
