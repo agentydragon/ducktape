@@ -2,6 +2,7 @@
 
 from collections.abc import AsyncIterator
 from pathlib import Path
+from typing import override
 
 import grpc
 import pytest
@@ -21,7 +22,8 @@ TOKEN = "test-grpc-token"
 
 
 class TruncatedGateway(UnimplementedRunnerGateway):
-    async def FollowSession(  # noqa: N802  # gRPC names servicer methods after the RPC
+    @override
+    async def FollowSession(
         self, request: protocol_pb2.FollowSessionRequest, context: grpc.aio.ServicerContext
     ) -> AsyncIterator[protocol_pb2.FollowSessionResponse]:
         yield protocol_pb2.FollowSessionResponse(

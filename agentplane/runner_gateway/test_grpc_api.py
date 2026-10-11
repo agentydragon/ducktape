@@ -6,6 +6,7 @@ from collections.abc import AsyncIterator
 from contextlib import suppress
 from dataclasses import dataclass, field, replace
 from pathlib import Path
+from typing import override
 from uuid import UUID, uuid4
 
 import grpc
@@ -72,7 +73,8 @@ class Peer(UnimplementedRunner):
         self.replay_paused_after: int | None = None
         self.replay_released = asyncio.Event()
 
-    async def ListSessions(  # noqa: N802  # gRPC names servicer methods after the RPC
+    @override
+    async def ListSessions(
         self, request: runner_pb2.ListSessionsRequest, context: grpc.aio.ServicerContext
     ) -> runner_pb2.ListSessionsResponse:
         return runner_pb2.ListSessionsResponse(
@@ -88,7 +90,8 @@ class Peer(UnimplementedRunner):
             ]
         )
 
-    async def Attach(  # noqa: N802  # gRPC names servicer methods after the RPC
+    @override
+    async def Attach(
         self, requests: AsyncIterator[runner_pb2.ClientMessage], context: grpc.aio.ServicerContext
     ) -> AsyncIterator[runner_pb2.ServerMessage]:
         first = await anext(requests)

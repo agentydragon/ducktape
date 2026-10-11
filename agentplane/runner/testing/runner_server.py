@@ -2,6 +2,7 @@
 
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from typing import override
 
 import grpc
 
@@ -14,26 +15,28 @@ class UnimplementedRunner(runner_pb2_grpc.RunnerServicer):
     """Answers every RPC UNIMPLEMENTED, as a runner that predates it would. The generated stub marks
     each RPC abstract, so a fake subclasses this and overrides only the RPCs its test drives."""
 
-    async def Attach(  # noqa: N802  # gRPC names servicer methods after the RPC
+    @override
+    async def Attach(
         self, requests: AsyncIterator[runner_pb2.ClientMessage], context: grpc.aio.ServicerContext
     ) -> AsyncIterator[runner_pb2.ServerMessage]:
         await context.abort(grpc.StatusCode.UNIMPLEMENTED, "the fake runner does not serve Attach")
         yield  # Unreachable; makes this the streaming handler gRPC calls.
 
-    async def Initialize(  # noqa: N802  # gRPC names servicer methods after the RPC
+    @override
+    async def Initialize(
         self, request: runner_pb2.InitializeRequest, context: grpc.aio.ServicerContext
     ) -> AsyncIterator[runner_pb2.InitializationEvent]:
         await context.abort(grpc.StatusCode.UNIMPLEMENTED, "the fake runner does not serve Initialize")
         yield  # Unreachable; makes this the streaming handler gRPC calls.
 
-    async def ListSessions(  # noqa: N802  # gRPC names servicer methods after the RPC
+    @override
+    async def ListSessions(
         self, request: runner_pb2.ListSessionsRequest, context: grpc.aio.ServicerContext
     ) -> runner_pb2.ListSessionsResponse:
         await context.abort(grpc.StatusCode.UNIMPLEMENTED, "the fake runner does not serve ListSessions")
 
-    async def Seal(  # noqa: N802  # gRPC names servicer methods after the RPC
-        self, request: runner_pb2.SealRequest, context: grpc.aio.ServicerContext
-    ) -> runner_pb2.SealResponse:
+    @override
+    async def Seal(self, request: runner_pb2.SealRequest, context: grpc.aio.ServicerContext) -> runner_pb2.SealResponse:
         await context.abort(grpc.StatusCode.UNIMPLEMENTED, "the fake runner does not serve Seal")
 
 

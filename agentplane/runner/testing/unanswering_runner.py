@@ -3,6 +3,7 @@
 import asyncio
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from typing import override
 
 import grpc
 
@@ -17,7 +18,8 @@ class UnansweringRunner(UnimplementedRunner):
     def __init__(self) -> None:
         self.cancelled: asyncio.Queue[str] = asyncio.Queue()
 
-    async def Attach(  # noqa: N802  # gRPC names servicer methods after the RPC
+    @override
+    async def Attach(
         self, requests: AsyncIterator[runner_pb2.ClientMessage], context: grpc.aio.ServicerContext
     ) -> AsyncIterator[runner_pb2.ServerMessage]:
         del context
@@ -30,7 +32,8 @@ class UnansweringRunner(UnimplementedRunner):
             raise
         yield runner_pb2.ServerMessage()  # Never reached; makes this the streaming handler gRPC calls.
 
-    async def ListSessions(  # noqa: N802  # gRPC names servicer methods after the RPC
+    @override
+    async def ListSessions(
         self, request: runner_pb2.ListSessionsRequest, context: grpc.aio.ServicerContext
     ) -> runner_pb2.ListSessionsResponse:
         """None, so an app ingester that discovers sessions here opens no feeds of its own."""

@@ -4,7 +4,7 @@ runner pushes to an ingress, which gates it on every seal being flushed instead.
 
 from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
-from typing import Any, cast
+from typing import Any, cast, override
 from uuid import UUID, uuid4
 
 import grpc
@@ -53,9 +53,8 @@ class ScriptedRunner(UnimplementedRunner):
     stopped: list[tuple[str, int]] = field(default_factory=list)
     port: int = 0
 
-    async def Seal(  # noqa: N802  # gRPC names servicer methods after the RPC
-        self, request: runner_pb2.SealRequest, context: grpc.aio.ServicerContext
-    ) -> runner_pb2.SealResponse:
+    @override
+    async def Seal(self, request: runner_pb2.SealRequest, context: grpc.aio.ServicerContext) -> runner_pb2.SealResponse:
         if self.seals is None:
             await context.abort(grpc.StatusCode.UNIMPLEMENTED, "test runner predates Seal")
         return runner_pb2.SealResponse(
@@ -66,7 +65,8 @@ class ScriptedRunner(UnimplementedRunner):
             pushes=self.pushes,
         )
 
-    async def ListSessions(  # noqa: N802  # gRPC names servicer methods after the RPC
+    @override
+    async def ListSessions(
         self, request: runner_pb2.ListSessionsRequest, context: grpc.aio.ServicerContext
     ) -> runner_pb2.ListSessionsResponse:
         return runner_pb2.ListSessionsResponse(
@@ -76,7 +76,8 @@ class ScriptedRunner(UnimplementedRunner):
             ]
         )
 
-    async def Attach(  # noqa: N802  # gRPC names servicer methods after the RPC
+    @override
+    async def Attach(
         self, requests: AsyncIterator[runner_pb2.ClientMessage], context: grpc.aio.ServicerContext
     ) -> AsyncIterator[runner_pb2.ServerMessage]:
         opened = (await anext(requests)).open
