@@ -10987,5 +10987,1125 @@
       ],
       "next_independent_investigation": "Separate cold flake-source fetch/unpack from evaluation and compare a narrow source cache restore against fresh fetching"
     }
+  },
+  "postgres_template_followup": {
+    "observed_at_utc": "2026-10-11T08:17:32.341510+00:00",
+    "source_devel_commit": "7726059851ac1fa9dc23dece1e27d01f92dc54bd",
+    "measurement": {
+      "pr": 9925,
+      "head_sha": "7b0a5cf90874395318bd7c7cccb4534f5220ff01",
+      "tested_merge_sha": "0f6fb87db88c681c7b53543d6693a68ca26e9e98",
+      "github_run": 38122989876,
+      "github_job": 114421388578,
+      "workflow_job_start": "2026-10-11T07:55:13Z",
+      "workflow_job_end": "2026-10-11T08:03:10Z",
+      "remote_step_ms": 462451,
+      "test_invocation": "4da16526-dbf4-5f4b-a368-5385137fcef7",
+      "test_invocation_duration_s": 401.897,
+      "test_pattern": "//agentplane/acceptance:agent and 1952 more",
+      "configured_targets": 11763,
+      "test_targets_passed": 471,
+      "test_targets_executed": 206,
+      "test_targets_cached": 265,
+      "test_runner_actions_total": 222,
+      "test_runner_link_type_1_direct": 185,
+      "test_runner_link_type_2_shared_linked": 37,
+      "pre_template_baseline": {
+        "from": "2026-10-11T04:00:00Z",
+        "to": "2026-10-11T04:36:00Z"
+      },
+      "pre_template_test_actions": 1806,
+      "pre_template_jobs": 48,
+      "pre_template_target_labels": 177,
+      "browser_case_comparison": {
+        "target": "//agentplane/app:test_thread_browser",
+        "baseline_invocation": "3cd188db-ce91-5426-bb8c-35ffbd88cf90",
+        "current_invocation": "4da16526-dbf4-5f4b-a368-5385137fcef7",
+        "baseline_shards": 8,
+        "current_shards": 16,
+        "baseline_xml_unique_testcases": 44,
+        "current_xml_unique_testcases": 44,
+        "baseline_xml_failures": 1,
+        "current_xml_failures": 0,
+        "baseline_testcase_time_sum_s": 884.369,
+        "current_testcase_time_sum_s": 944.339,
+        "caveat": "Historical XML covers the same 44 unique cases but one shard failed. The associated baseline GitHub job (114384212115) reported test_thread_browser FAILED in 1 of 8 shards (and test_bridge failed in 1 of 2). Current has 16 shards and all 44 cases pass. The different shard count and baseline failure make wall-time changes unsuitable as a template-savings estimate.",
+        "window_browser": {
+          "target": "//agentplane/app:test_thread_window_browser",
+          "baseline_shards": 1,
+          "current_shards": 1,
+          "baseline_unique_testcases": 6,
+          "current_unique_testcases": 6,
+          "baseline_xml_testcase_duration_sum_s": 202.547,
+          "current_xml_testcase_duration_sum_s": 84.386,
+          "baseline_historical_direct_action_median_s": 211.562,
+          "baseline_historical_direct_action_count": 19,
+          "baseline_historical_direct_action_max_s": 246.521,
+          "current_direct_action_s": 104.635,
+          "caveat": "Same six cases and unsharded target, but a single current observation versus a 19-action historical median; source and runner conditions differ, so this is not causal attribution to DB templates."
+        }
+      },
+      "baseline_direct_test_runner_actions": 1803,
+      "baseline_linked_test_runner_actions": 3,
+      "baseline_all_test_runner_actions": 1806,
+      "matched_agentplane_service_target_labels": 53,
+      "agentplane_target_comparison_scope": "Agentplane app, threads, history, sandbox, and notification target labels selected by namespace; includes tests that may not consume the changed DB fixture. Use as observational context only."
+    },
+    "scheduling": {
+      "invocation_id": "4da16526-dbf4-5f4b-a368-5385137fcef7",
+      "test_elapsed_seconds": 401.897,
+      "reported_action_critical_path_seconds": 176.18,
+      "reported_critical_path_test": "//props/agents/critic_dev/optimize:test_e2e",
+      "last_finishing_test": "//agentplane/app:test_bridge shard 2/2",
+      "spans": [
+        {
+          "name": "RunfilesTree props/agents/critic_dev/optimize/test_e2e.runfiles",
+          "start_seconds": 9.563932,
+          "duration_seconds": 0.184508,
+          "end_seconds": 9.74844
+        },
+        {
+          "name": "RunfilesTree agentplane/app/test_bridge.runfiles",
+          "start_seconds": 198.722163,
+          "duration_seconds": 0.038954,
+          "end_seconds": 198.761117
+        },
+        {
+          "name": "Testing //props/agents/critic_dev/optimize:test_e2e",
+          "start_seconds": 30.217178,
+          "duration_seconds": 171.491492,
+          "end_seconds": 201.70867
+        },
+        {
+          "name": "Testing //agentplane/app:test_bridge (shard 1 of 2)",
+          "start_seconds": 237.230645,
+          "duration_seconds": 117.040201,
+          "end_seconds": 354.270846
+        },
+        {
+          "name": "Testing //agentplane/app:test_bridge (shard 2 of 2)",
+          "start_seconds": 237.391694,
+          "duration_seconds": 164.353667,
+          "end_seconds": 401.745361
+        }
+      ],
+      "active_action_processing_samples": [
+        {
+          "offset_seconds": 30,
+          "active": 50,
+          "mnemonics": {
+            "mypy": 40,
+            "TestRunner": 5,
+            "Tar": 5
+          }
+        },
+        {
+          "offset_seconds": 60,
+          "active": 50,
+          "mnemonics": {
+            "mypy": 28,
+            "Tar": 3,
+            "TestRunner": 19
+          }
+        },
+        {
+          "offset_seconds": 90,
+          "active": 50,
+          "mnemonics": {
+            "mypy": 27,
+            "TestRunner": 23
+          }
+        },
+        {
+          "offset_seconds": 120,
+          "active": 50,
+          "mnemonics": {
+            "mypy": 21,
+            "TestRunner": 29
+          }
+        },
+        {
+          "offset_seconds": 150,
+          "active": 50,
+          "mnemonics": {
+            "RunfilesTree": 1,
+            "TestRunner": 37,
+            "mypy": 12
+          }
+        },
+        {
+          "offset_seconds": 180,
+          "active": 50,
+          "mnemonics": {
+            "TestRunner": 43,
+            "mypy": 7
+          }
+        },
+        {
+          "offset_seconds": 210,
+          "active": 50,
+          "mnemonics": {
+            "mypy": 12,
+            "TestRunner": 38
+          }
+        },
+        {
+          "offset_seconds": 230,
+          "active": 50,
+          "mnemonics": {
+            "TestRunner": 47,
+            "mypy": 3
+          }
+        },
+        {
+          "offset_seconds": 237,
+          "active": 50,
+          "mnemonics": {
+            "TestRunner": 49,
+            "mypy": 1
+          }
+        },
+        {
+          "offset_seconds": 250,
+          "active": 50,
+          "mnemonics": {
+            "TestRunner": 50
+          }
+        },
+        {
+          "offset_seconds": 300,
+          "active": 10,
+          "mnemonics": {
+            "TestRunner": 10
+          }
+        },
+        {
+          "offset_seconds": 350,
+          "active": 2,
+          "mnemonics": {
+            "TestRunner": 2
+          }
+        }
+      ],
+      "interpretation": "The reported dependency critical path is not the elapsed completion path. Bridge shard 2 finishes last. Fifty action-processing spans overlap in sampled offsets through250s, consistent with the jobs50 limit; the profile alone does not establish when all bridge inputs became ready or savings from changing scheduling."
+    },
+    "final_checks": {
+      "head_sha": "7b0a5cf90874395318bd7c7cccb4534f5220ff01",
+      "merge_sha": "b24714540e8ad89d7b61b27cec69ba970a40c026",
+      "checks": [
+        {
+          "name": "PR visual diffs",
+          "status": "completed",
+          "conclusion": "neutral",
+          "html_url": "https://github.com/agentydragon/ducktape/runs/114423699434",
+          "completed_at": "2026-10-11T08:08:27Z"
+        },
+        {
+          "name": "push-images",
+          "status": "completed",
+          "conclusion": "skipped",
+          "html_url": "https://github.com/agentydragon/ducktape/actions/runs/38122989876/job/114422788687",
+          "completed_at": "2026-10-11T08:03:10Z"
+        },
+        {
+          "name": "release",
+          "status": "completed",
+          "conclusion": "skipped",
+          "html_url": "https://github.com/agentydragon/ducktape/actions/runs/38122989876/job/114422788338",
+          "completed_at": "2026-10-11T08:03:10Z"
+        },
+        {
+          "name": "PR visual review",
+          "status": "completed",
+          "conclusion": "success",
+          "html_url": "https://github.com/agentydragon/ducktape/runs/114421543757",
+          "completed_at": "2026-10-11T08:08:32Z"
+        },
+        {
+          "name": "Pre-commit checks",
+          "status": "completed",
+          "conclusion": "success",
+          "html_url": "https://github.com/agentydragon/ducktape/actions/runs/38122989692/job/114421433703",
+          "completed_at": "2026-10-11T07:56:37Z"
+        },
+        {
+          "name": "nix-wheel-check",
+          "status": "completed",
+          "conclusion": "skipped",
+          "html_url": "https://github.com/agentydragon/ducktape/actions/runs/38122988597/job/114421413954",
+          "completed_at": "2026-10-11T07:55:04Z"
+        },
+        {
+          "name": "github.event.pull_request.head.repo.full_name != github.repository &&\n    'Build artifacts + imports check' ||\n    'Fork Nix check not applicable'",
+          "status": "completed",
+          "conclusion": "skipped",
+          "html_url": "https://github.com/agentydragon/ducktape/actions/runs/38122988597/job/114421411774",
+          "completed_at": "2026-10-11T07:55:04Z"
+        },
+        {
+          "name": "Build artifacts + imports check",
+          "status": "completed",
+          "conclusion": "success",
+          "html_url": "https://github.com/agentydragon/ducktape/actions/runs/38122989660/job/114421396942",
+          "completed_at": "2026-10-11T07:56:48Z"
+        },
+        {
+          "name": "bazel-ci / Test & Build",
+          "status": "completed",
+          "conclusion": "success",
+          "html_url": "https://github.com/agentydragon/ducktape/actions/runs/38122989876/job/114421388578",
+          "completed_at": "2026-10-11T08:03:10Z"
+        },
+        {
+          "name": "bazel-ci",
+          "status": "completed",
+          "conclusion": "skipped",
+          "html_url": "https://github.com/agentydragon/ducktape/actions/runs/38122988597/job/114421387104",
+          "completed_at": "2026-10-11T07:55:04Z"
+        },
+        {
+          "name": "Resolve PR merge commit",
+          "status": "completed",
+          "conclusion": "skipped",
+          "html_url": "https://github.com/agentydragon/ducktape/actions/runs/38122988597/job/114421386661",
+          "completed_at": "2026-10-11T07:55:04Z"
+        }
+      ]
+    },
+    "baseline_inventory": {
+      "window": {
+        "from": "2026-10-11T04:00:00Z",
+        "to": "2026-10-11T04:36:00Z"
+      },
+      "selection": "48 completed successful or failed Bazel jobs overlapping window, 44 PR and 4 push; actions cover full jobs, not clipped intervals; cancelled/in-progress excluded",
+      "targets": 177,
+      "test_actions": 1806,
+      "ranking": "maximum observed TestRunner process seconds",
+      "direct_actions": 1803,
+      "linked_actions_excluded": 3
+    },
+    "comparison": {
+      "before_source": "Historical 48-job audit, direct execution records; baseline metadata and browser invocation are included in this follow-up",
+      "after_source": "exact #9925 test invocation; direct TestRunner execution records only; one run",
+      "limits": "Different source revisions, workers and selected workloads; one current invocation. Namespace-selected labels are not a verified fixture-only cohort. No isolated causal effect.",
+      "comparisons": [
+        {
+          "target": "//agentplane/app/threads/events:test_event_log",
+          "before_n": 16,
+          "before_median_seconds": 48.89322865009308,
+          "before_max_seconds": 54.35871410369873,
+          "after_n": 1,
+          "after_median_seconds": 44.194928,
+          "after_max_seconds": 44.194928,
+          "delta_after_vs_before_median_seconds": -4.698300650093081,
+          "linked_actions": 0,
+          "terminal_cached": false
+        },
+        {
+          "target": "//agentplane/app/threads/events:test_stream",
+          "before_n": 16,
+          "before_median_seconds": 18.91580557823181,
+          "before_max_seconds": 21.598428964614868,
+          "after_n": 1,
+          "after_median_seconds": 20.481356,
+          "after_max_seconds": 20.481356,
+          "delta_after_vs_before_median_seconds": 1.5655504217681901,
+          "linked_actions": 0,
+          "terminal_cached": false
+        },
+        {
+          "target": "//agentplane/app/threads/view:test_content",
+          "before_n": 15,
+          "before_median_seconds": 35.44334006309509,
+          "before_max_seconds": 40.11477994918823,
+          "after_n": 1,
+          "after_median_seconds": 36.714864,
+          "after_max_seconds": 36.714864,
+          "delta_after_vs_before_median_seconds": 1.2715239369049058,
+          "linked_actions": 0,
+          "terminal_cached": false
+        },
+        {
+          "target": "//agentplane/app/threads/view:test_recording",
+          "before_n": 15,
+          "before_median_seconds": 29.6826388835907,
+          "before_max_seconds": 34.26538705825806,
+          "after_n": 1,
+          "after_median_seconds": 43.578159,
+          "after_max_seconds": 43.578159,
+          "delta_after_vs_before_median_seconds": 13.895520116409301,
+          "linked_actions": 0,
+          "terminal_cached": false
+        },
+        {
+          "target": "//agentplane/app/threads:test_history_projector",
+          "before_n": 11,
+          "before_median_seconds": 38.90036702156067,
+          "before_max_seconds": 41.417367935180664,
+          "after_n": 1,
+          "after_median_seconds": 24.521548,
+          "after_max_seconds": 24.521548,
+          "delta_after_vs_before_median_seconds": -14.37881902156067,
+          "linked_actions": 0,
+          "terminal_cached": false
+        },
+        {
+          "target": "//agentplane/app/threads:test_history_watch",
+          "before_n": 16,
+          "before_median_seconds": 44.78981804847717,
+          "before_max_seconds": 55.77804112434387,
+          "after_n": 1,
+          "after_median_seconds": 43.588932,
+          "after_max_seconds": 43.588932,
+          "delta_after_vs_before_median_seconds": -1.200886048477173,
+          "linked_actions": 0,
+          "terminal_cached": false
+        },
+        {
+          "target": "//agentplane/app/threads:test_indexing",
+          "before_n": 16,
+          "before_median_seconds": 41.58927798271179,
+          "before_max_seconds": 47.43674111366272,
+          "after_n": 1,
+          "after_median_seconds": 38.523987,
+          "after_max_seconds": 38.523987,
+          "delta_after_vs_before_median_seconds": -3.065290982711794,
+          "linked_actions": 0,
+          "terminal_cached": false
+        },
+        {
+          "target": "//agentplane/app/threads:test_ingestion",
+          "before_n": 12,
+          "before_median_seconds": 44.085893988609314,
+          "before_max_seconds": 55.08890891075134,
+          "after_n": 1,
+          "after_median_seconds": 42.951599,
+          "after_max_seconds": 42.951599,
+          "delta_after_vs_before_median_seconds": -1.1342949886093123,
+          "linked_actions": 0,
+          "terminal_cached": false
+        },
+        {
+          "target": "//agentplane/app/threads:test_store",
+          "before_n": 16,
+          "before_median_seconds": 60.35064196586609,
+          "before_max_seconds": 73.70819401741028,
+          "after_n": 1,
+          "after_median_seconds": 57.040385,
+          "after_max_seconds": 57.040385,
+          "delta_after_vs_before_median_seconds": -3.3102569658660883,
+          "linked_actions": 0,
+          "terminal_cached": false
+        },
+        {
+          "target": "//agentplane/app:test_action_api",
+          "before_n": 19,
+          "before_median_seconds": 99.60924005508423,
+          "before_max_seconds": 112.29806709289551,
+          "after_n": 1,
+          "after_median_seconds": 76.613261,
+          "after_max_seconds": 76.613261,
+          "delta_after_vs_before_median_seconds": -22.995979055084234,
+          "linked_actions": 0,
+          "terminal_cached": false
+        },
+        {
+          "target": "//agentplane/app:test_action_federation",
+          "before_n": 16,
+          "before_median_seconds": 28.58806848526001,
+          "before_max_seconds": 38.83315396308899,
+          "after_n": 1,
+          "after_median_seconds": 36.886891,
+          "after_max_seconds": 36.886891,
+          "delta_after_vs_before_median_seconds": 8.298822514739989,
+          "linked_actions": 0,
+          "terminal_cached": false
+        },
+        {
+          "target": "//agentplane/app:test_action_policy",
+          "before_n": 16,
+          "before_median_seconds": 24.989009976387024,
+          "before_max_seconds": 27.16978907585144,
+          "after_n": 1,
+          "after_median_seconds": 24.324103,
+          "after_max_seconds": 24.324103,
+          "delta_after_vs_before_median_seconds": -0.664906976387023,
+          "linked_actions": 0,
+          "terminal_cached": false
+        },
+        {
+          "target": "//agentplane/app:test_action_stream",
+          "before_n": 19,
+          "before_median_seconds": 30.649060010910034,
+          "before_max_seconds": 32.563313007354736,
+          "after_n": 1,
+          "after_median_seconds": 25.6579,
+          "after_max_seconds": 25.6579,
+          "delta_after_vs_before_median_seconds": -4.991160010910033,
+          "linked_actions": 0,
+          "terminal_cached": false
+        },
+        {
+          "target": "//agentplane/app:test_api",
+          "before_n": 18,
+          "before_median_seconds": 66.30589544773102,
+          "before_max_seconds": 85.83909296989441,
+          "after_n": 1,
+          "after_median_seconds": 51.492902,
+          "after_max_seconds": 51.492902,
+          "delta_after_vs_before_median_seconds": -14.812993447731017,
+          "linked_actions": 0,
+          "terminal_cached": false
+        },
+        {
+          "target": "//agentplane/app:test_auth_routes",
+          "before_n": 18,
+          "before_median_seconds": 53.366058468818665,
+          "before_max_seconds": 58.129984855651855,
+          "after_n": 1,
+          "after_median_seconds": 46.7095,
+          "after_max_seconds": 46.7095,
+          "delta_after_vs_before_median_seconds": -6.656558468818666,
+          "linked_actions": 0,
+          "terminal_cached": false
+        },
+        {
+          "target": "//agentplane/app:test_bridge",
+          "before_n": 41,
+          "before_median_seconds": 146.01766920089722,
+          "before_max_seconds": 193.75153279304504,
+          "after_n": 2,
+          "after_median_seconds": 138.1753395,
+          "after_max_seconds": 163.552731,
+          "delta_after_vs_before_median_seconds": -7.84232970089721,
+          "linked_actions": 0,
+          "terminal_cached": false
+        },
+        {
+          "target": "//agentplane/app:test_consent",
+          "before_n": 16,
+          "before_median_seconds": 39.08333742618561,
+          "before_max_seconds": 42.619012117385864,
+          "after_n": 1,
+          "after_median_seconds": 42.363153,
+          "after_max_seconds": 42.363153,
+          "delta_after_vs_before_median_seconds": 3.279815573814389,
+          "linked_actions": 0,
+          "terminal_cached": false
+        },
+        {
+          "target": "//agentplane/app:test_database_migrate",
+          "before_n": 16,
+          "before_median_seconds": 53.69473195075989,
+          "before_max_seconds": 61.36233997344971,
+          "after_n": 1,
+          "after_median_seconds": 51.265282,
+          "after_max_seconds": 51.265282,
+          "delta_after_vs_before_median_seconds": -2.4294499507598886,
+          "linked_actions": 0,
+          "terminal_cached": false
+        },
+        {
+          "target": "//agentplane/app:test_database_updates",
+          "before_n": 15,
+          "before_median_seconds": 27.701510190963745,
+          "before_max_seconds": 33.128687143325806,
+          "after_n": 1,
+          "after_median_seconds": 24.675991,
+          "after_max_seconds": 24.675991,
+          "delta_after_vs_before_median_seconds": -3.0255191909637453,
+          "linked_actions": 0,
+          "terminal_cached": false
+        },
+        {
+          "target": "//agentplane/app:test_electric",
+          "before_n": 16,
+          "before_median_seconds": 50.04496157169342,
+          "before_max_seconds": 70.63659286499023,
+          "after_n": 1,
+          "after_median_seconds": 74.486184,
+          "after_max_seconds": 74.486184,
+          "delta_after_vs_before_median_seconds": 24.441222428306574,
+          "linked_actions": 0,
+          "terminal_cached": false
+        },
+        {
+          "target": "//agentplane/app:test_electric_chunk_compaction",
+          "before_n": 16,
+          "before_median_seconds": 46.28180742263794,
+          "before_max_seconds": 62.94685101509094,
+          "after_n": 1,
+          "after_median_seconds": 31.186956,
+          "after_max_seconds": 31.186956,
+          "delta_after_vs_before_median_seconds": -15.09485142263794,
+          "linked_actions": 0,
+          "terminal_cached": false
+        },
+        {
+          "target": "//agentplane/app:test_electric_subset_window",
+          "before_n": 16,
+          "before_median_seconds": 28.02475666999817,
+          "before_max_seconds": 31.14535117149353,
+          "after_n": 1,
+          "after_median_seconds": 29.471582,
+          "after_max_seconds": 29.471582,
+          "delta_after_vs_before_median_seconds": 1.4468253300018326,
+          "linked_actions": 0,
+          "terminal_cached": false
+        },
+        {
+          "target": "//agentplane/app:test_electric_wal_recovery",
+          "before_n": 16,
+          "before_median_seconds": 53.0684175491333,
+          "before_max_seconds": 58.3647780418396,
+          "after_n": 1,
+          "after_median_seconds": 31.228992,
+          "after_max_seconds": 31.228992,
+          "delta_after_vs_before_median_seconds": -21.8394255491333,
+          "linked_actions": 0,
+          "terminal_cached": false
+        },
+        {
+          "target": "//agentplane/app:test_history_boundary",
+          "before_n": 12,
+          "before_median_seconds": 19.672605514526367,
+          "before_max_seconds": 24.163998126983643,
+          "after_n": 1,
+          "after_median_seconds": 19.207854,
+          "after_max_seconds": 19.207854,
+          "delta_after_vs_before_median_seconds": -0.4647515145263661,
+          "linked_actions": 0,
+          "terminal_cached": false
+        },
+        {
+          "target": "//agentplane/app:test_live",
+          "before_n": 19,
+          "before_median_seconds": 73.46718907356262,
+          "before_max_seconds": 92.25828003883362,
+          "after_n": 1,
+          "after_median_seconds": 45.833847,
+          "after_max_seconds": 45.833847,
+          "delta_after_vs_before_median_seconds": -27.633342073562623,
+          "linked_actions": 0,
+          "terminal_cached": false
+        },
+        {
+          "target": "//agentplane/app:test_main",
+          "before_n": 19,
+          "before_median_seconds": 33.543347120285034,
+          "before_max_seconds": 40.94437313079834,
+          "after_n": 1,
+          "after_median_seconds": 47.212306,
+          "after_max_seconds": 47.212306,
+          "delta_after_vs_before_median_seconds": 13.668958879714964,
+          "linked_actions": 0,
+          "terminal_cached": false
+        },
+        {
+          "target": "//agentplane/app:test_operator_sessions",
+          "before_n": 18,
+          "before_median_seconds": 45.496527910232544,
+          "before_max_seconds": 58.23393893241882,
+          "after_n": 1,
+          "after_median_seconds": 33.049168,
+          "after_max_seconds": 33.049168,
+          "delta_after_vs_before_median_seconds": -12.447359910232542,
+          "linked_actions": 0,
+          "terminal_cached": false
+        },
+        {
+          "target": "//agentplane/app:test_presets",
+          "before_n": 15,
+          "before_median_seconds": 23.973443031311035,
+          "before_max_seconds": 26.365363121032715,
+          "after_n": 1,
+          "after_median_seconds": 20.426662,
+          "after_max_seconds": 20.426662,
+          "delta_after_vs_before_median_seconds": -3.546781031311035,
+          "linked_actions": 0,
+          "terminal_cached": false
+        },
+        {
+          "target": "//agentplane/app:test_replication_process",
+          "before_n": 15,
+          "before_median_seconds": 52.36367392539978,
+          "before_max_seconds": 53.99319291114807,
+          "after_n": 1,
+          "after_median_seconds": 62.056451,
+          "after_max_seconds": 62.056451,
+          "delta_after_vs_before_median_seconds": 9.692777074600222,
+          "linked_actions": 0,
+          "terminal_cached": false
+        },
+        {
+          "target": "//agentplane/app:test_sandbox_models",
+          "before_n": 16,
+          "before_median_seconds": 19.442550539970398,
+          "before_max_seconds": 22.443400859832764,
+          "after_n": 1,
+          "after_median_seconds": 18.224942,
+          "after_max_seconds": 18.224942,
+          "delta_after_vs_before_median_seconds": -1.2176085399703993,
+          "linked_actions": 0,
+          "terminal_cached": false
+        },
+        {
+          "target": "//agentplane/app:test_sandbox_service",
+          "before_n": 16,
+          "before_median_seconds": 53.914772033691406,
+          "before_max_seconds": 60.7015700340271,
+          "after_n": 1,
+          "after_median_seconds": 47.316944,
+          "after_max_seconds": 47.316944,
+          "delta_after_vs_before_median_seconds": -6.597828033691407,
+          "linked_actions": 0,
+          "terminal_cached": false
+        },
+        {
+          "target": "//agentplane/app:test_shutdown",
+          "before_n": 16,
+          "before_median_seconds": 17.69113039970398,
+          "before_max_seconds": 18.9194757938385,
+          "after_n": 1,
+          "after_median_seconds": 18.098153,
+          "after_max_seconds": 18.098153,
+          "delta_after_vs_before_median_seconds": 0.40702260029602044,
+          "linked_actions": 0,
+          "terminal_cached": false
+        },
+        {
+          "target": "//agentplane/app:test_thread_browser",
+          "before_n": 157,
+          "before_median_seconds": 119.5468339920044,
+          "before_max_seconds": 207.72625207901,
+          "after_n": 16,
+          "after_median_seconds": 75.421932,
+          "after_max_seconds": 140.429403,
+          "delta_after_vs_before_median_seconds": -44.124901992004396,
+          "linked_actions": 0,
+          "terminal_cached": false
+        },
+        {
+          "target": "//agentplane/app:test_thread_debug",
+          "before_n": 19,
+          "before_median_seconds": 41.008522033691406,
+          "before_max_seconds": 49.457667112350464,
+          "after_n": 1,
+          "after_median_seconds": 44.178125,
+          "after_max_seconds": 44.178125,
+          "delta_after_vs_before_median_seconds": 3.169602966308595,
+          "linked_actions": 0,
+          "terminal_cached": false
+        },
+        {
+          "target": "//agentplane/app:test_thread_sync",
+          "before_n": 19,
+          "before_median_seconds": 66.62864708900452,
+          "before_max_seconds": 73.8554379940033,
+          "after_n": 1,
+          "after_median_seconds": 64.718804,
+          "after_max_seconds": 64.718804,
+          "delta_after_vs_before_median_seconds": -1.9098430890045108,
+          "linked_actions": 0,
+          "terminal_cached": false
+        },
+        {
+          "target": "//agentplane/app:test_thread_window_browser",
+          "before_n": 19,
+          "before_median_seconds": 211.56198596954346,
+          "before_max_seconds": 246.5206241607666,
+          "after_n": 1,
+          "after_median_seconds": 104.635065,
+          "after_max_seconds": 104.635065,
+          "delta_after_vs_before_median_seconds": -106.92692096954346,
+          "linked_actions": 0,
+          "terminal_cached": false
+        },
+        {
+          "target": "//agentplane/history_service:test_grpc_api",
+          "before_n": 8,
+          "before_median_seconds": 39.84643507003784,
+          "before_max_seconds": 45.95490097999573,
+          "after_n": 1,
+          "after_median_seconds": 39.455185,
+          "after_max_seconds": 39.455185,
+          "delta_after_vs_before_median_seconds": -0.3912500700378416,
+          "linked_actions": 0,
+          "terminal_cached": false
+        },
+        {
+          "target": "//agentplane/history_service:test_ingester",
+          "before_n": 7,
+          "before_median_seconds": 34.075515031814575,
+          "before_max_seconds": 42.04683184623718,
+          "after_n": 1,
+          "after_median_seconds": 32.633016,
+          "after_max_seconds": 32.633016,
+          "delta_after_vs_before_median_seconds": -1.4424990318145774,
+          "linked_actions": 0,
+          "terminal_cached": false
+        },
+        {
+          "target": "//agentplane/history_service:test_ingress",
+          "before_n": 7,
+          "before_median_seconds": 48.557077169418335,
+          "before_max_seconds": 57.68851613998413,
+          "after_n": 1,
+          "after_median_seconds": 23.965434,
+          "after_max_seconds": 23.965434,
+          "delta_after_vs_before_median_seconds": -24.591643169418337,
+          "linked_actions": 0,
+          "terminal_cached": false
+        },
+        {
+          "target": "//agentplane/notification_service:test_acceptance",
+          "before_n": 10,
+          "before_median_seconds": 122.76834809780121,
+          "before_max_seconds": 126.26178789138794,
+          "after_n": 1,
+          "after_median_seconds": 125.052435,
+          "after_max_seconds": 125.052435,
+          "delta_after_vs_before_median_seconds": 2.284086902198794,
+          "linked_actions": 0,
+          "terminal_cached": false
+        },
+        {
+          "target": "//agentplane/sandbox_service:test_action_policy",
+          "before_n": 8,
+          "before_median_seconds": 20.784003496170044,
+          "before_max_seconds": 22.703820943832397,
+          "after_n": 1,
+          "after_median_seconds": 22.634232,
+          "after_max_seconds": 22.634232,
+          "delta_after_vs_before_median_seconds": 1.8502285038299568,
+          "linked_actions": 0,
+          "terminal_cached": false
+        },
+        {
+          "target": "//agentplane/sandbox_service:test_client",
+          "before_n": 2,
+          "before_median_seconds": 11.688963890075684,
+          "before_max_seconds": 12.194853782653809,
+          "after_n": 1,
+          "after_median_seconds": 12.230885,
+          "after_max_seconds": 12.230885,
+          "delta_after_vs_before_median_seconds": 0.5419211099243171,
+          "linked_actions": 0,
+          "terminal_cached": false
+        },
+        {
+          "target": "//agentplane/sandbox_service:test_controller",
+          "before_n": 8,
+          "before_median_seconds": 17.848725080490112,
+          "before_max_seconds": 18.750530004501343,
+          "after_n": 1,
+          "after_median_seconds": 21.499997,
+          "after_max_seconds": 21.499997,
+          "delta_after_vs_before_median_seconds": 3.651271919509888,
+          "linked_actions": 0,
+          "terminal_cached": false
+        },
+        {
+          "target": "//agentplane/sandbox_service:test_destinations",
+          "before_n": 2,
+          "before_median_seconds": 19.515150547027588,
+          "before_max_seconds": 21.53960394859314,
+          "after_n": 1,
+          "after_median_seconds": 19.270223,
+          "after_max_seconds": 19.270223,
+          "delta_after_vs_before_median_seconds": -0.24492754702758646,
+          "linked_actions": 0,
+          "terminal_cached": false
+        },
+        {
+          "target": "//agentplane/sandbox_service:test_egress",
+          "before_n": 9,
+          "before_median_seconds": 15.252094030380249,
+          "before_max_seconds": 16.755985975265503,
+          "after_n": 1,
+          "after_median_seconds": 14.388669,
+          "after_max_seconds": 14.388669,
+          "delta_after_vs_before_median_seconds": -0.8634250303802489,
+          "linked_actions": 0,
+          "terminal_cached": false
+        },
+        {
+          "target": "//agentplane/sandbox_service:test_inventory",
+          "before_n": 8,
+          "before_median_seconds": 16.488396048545837,
+          "before_max_seconds": 19.16505193710327,
+          "after_n": 1,
+          "after_median_seconds": 15.317768,
+          "after_max_seconds": 15.317768,
+          "delta_after_vs_before_median_seconds": -1.1706280485458382,
+          "linked_actions": 0,
+          "terminal_cached": false
+        },
+        {
+          "target": "//agentplane/sandbox_service:test_inventory_mutations",
+          "before_n": 9,
+          "before_median_seconds": 22.87114119529724,
+          "before_max_seconds": 29.511661052703857,
+          "after_n": 1,
+          "after_median_seconds": 14.922304,
+          "after_max_seconds": 14.922304,
+          "delta_after_vs_before_median_seconds": -7.948837195297241,
+          "linked_actions": 0,
+          "terminal_cached": false
+        },
+        {
+          "target": "//agentplane/sandbox_service:test_kubernetes_bindings",
+          "before_n": 9,
+          "before_median_seconds": 14.91560697555542,
+          "before_max_seconds": 17.02645492553711,
+          "after_n": 1,
+          "after_median_seconds": 14.631484,
+          "after_max_seconds": 14.631484,
+          "delta_after_vs_before_median_seconds": -0.28412297555541954,
+          "linked_actions": 0,
+          "terminal_cached": false
+        },
+        {
+          "target": "//agentplane/sandbox_service:test_provisioning",
+          "before_n": 9,
+          "before_median_seconds": 34.87203788757324,
+          "before_max_seconds": 36.48758506774902,
+          "after_n": 1,
+          "after_median_seconds": 12.395076,
+          "after_max_seconds": 12.395076,
+          "delta_after_vs_before_median_seconds": -22.476961887573243,
+          "linked_actions": 0,
+          "terminal_cached": false
+        },
+        {
+          "target": "//agentplane/sandbox_service:test_retention_holds",
+          "before_n": 9,
+          "before_median_seconds": 35.05171799659729,
+          "before_max_seconds": 45.75793099403381,
+          "after_n": 1,
+          "after_median_seconds": 12.389213,
+          "after_max_seconds": 12.389213,
+          "delta_after_vs_before_median_seconds": -22.662504996597292,
+          "linked_actions": 0,
+          "terminal_cached": false
+        },
+        {
+          "target": "//agentplane/sandbox_service:test_settled_cursors",
+          "before_n": 10,
+          "before_median_seconds": 15.713731527328491,
+          "before_max_seconds": 18.29116988182068,
+          "after_n": 1,
+          "after_median_seconds": 14.533809,
+          "after_max_seconds": 14.533809,
+          "delta_after_vs_before_median_seconds": -1.1799225273284915,
+          "linked_actions": 0,
+          "terminal_cached": false
+        },
+        {
+          "target": "//agentplane/sandbox_service:test_teardown",
+          "before_n": 9,
+          "before_median_seconds": 38.61190390586853,
+          "before_max_seconds": 42.792222023010254,
+          "after_n": 1,
+          "after_median_seconds": 25.615265,
+          "after_max_seconds": 25.615265,
+          "delta_after_vs_before_median_seconds": -12.99663890586853,
+          "linked_actions": 0,
+          "terminal_cached": false
+        },
+        {
+          "target": "//agentplane/sandbox_service:test_wire",
+          "before_n": 2,
+          "before_median_seconds": 18.469130516052246,
+          "before_max_seconds": 19.091130018234253,
+          "after_n": 1,
+          "after_median_seconds": 19.541729,
+          "after_max_seconds": 19.541729,
+          "delta_after_vs_before_median_seconds": 1.072598483947754,
+          "linked_actions": 0,
+          "terminal_cached": false
+        }
+      ]
+    },
+    "top20": [
+      {
+        "rank": "1",
+        "target": "//props/agents/critic_dev/optimize:test_e2e",
+        "max_direct_test_runner_s": "170.504",
+        "direct_action_shards": "1",
+        "linked_action_records": "0",
+        "terminal_cache_marker": "executed"
+      },
+      {
+        "rank": "2",
+        "target": "//agentplane/app:test_bridge",
+        "max_direct_test_runner_s": "163.553",
+        "direct_action_shards": "2",
+        "linked_action_records": "0",
+        "terminal_cache_marker": "executed"
+      },
+      {
+        "rank": "3",
+        "target": "//props/agents/critic_dev:test_e2e",
+        "max_direct_test_runner_s": "162.600",
+        "direct_action_shards": "1",
+        "linked_action_records": "0",
+        "terminal_cache_marker": "executed"
+      },
+      {
+        "rank": "4",
+        "target": "//props/agents/critic_dev/recipes:test_build_critic_e2e",
+        "max_direct_test_runner_s": "161.633",
+        "direct_action_shards": "1",
+        "linked_action_records": "0",
+        "terminal_cache_marker": "executed"
+      },
+      {
+        "rank": "5",
+        "target": "//agentplane/app:test_thread_browser",
+        "max_direct_test_runner_s": "140.429",
+        "direct_action_shards": "16",
+        "linked_action_records": "0",
+        "terminal_cache_marker": "executed"
+      },
+      {
+        "rank": "6",
+        "target": "//agentplane/notification_service:test_acceptance",
+        "max_direct_test_runner_s": "125.052",
+        "direct_action_shards": "1",
+        "linked_action_records": "0",
+        "terminal_cache_marker": "executed"
+      },
+      {
+        "rank": "7",
+        "target": "//props/agents/critic:test_e2e",
+        "max_direct_test_runner_s": "116.757",
+        "direct_action_shards": "1",
+        "linked_action_records": "0",
+        "terminal_cache_marker": "executed"
+      },
+      {
+        "rank": "8",
+        "target": "//agentplane/app:test_thread_window_browser",
+        "max_direct_test_runner_s": "104.635",
+        "direct_action_shards": "1",
+        "linked_action_records": "0",
+        "terminal_cache_marker": "executed"
+      },
+      {
+        "rank": "9",
+        "target": "//props/agents/critic_dev/improve:test_e2e",
+        "max_direct_test_runner_s": "100.267",
+        "direct_action_shards": "1",
+        "linked_action_records": "0",
+        "terminal_cache_marker": "executed"
+      },
+      {
+        "rank": "10",
+        "target": "//props/agents/critic_dev/recipes:test_recipes",
+        "max_direct_test_runner_s": "100.140",
+        "direct_action_shards": "1",
+        "linked_action_records": "0",
+        "terminal_cache_marker": "executed"
+      },
+      {
+        "rank": "11",
+        "target": "//props/agents/grader:test_e2e_clustering",
+        "max_direct_test_runner_s": "95.239",
+        "direct_action_shards": "1",
+        "linked_action_records": "0",
+        "terminal_cache_marker": "executed"
+      },
+      {
+        "rank": "12",
+        "target": "//props/agents/grader:test_e2e_report_failure",
+        "max_direct_test_runner_s": "94.520",
+        "direct_action_shards": "1",
+        "linked_action_records": "0",
+        "terminal_cache_marker": "executed"
+      },
+      {
+        "rank": "13",
+        "target": "//props/agents/grader:test_e2e",
+        "max_direct_test_runner_s": "92.827",
+        "direct_action_shards": "1",
+        "linked_action_records": "0",
+        "terminal_cache_marker": "executed"
+      },
+      {
+        "rank": "14",
+        "target": "//haku/console/identity:test_authorization",
+        "max_direct_test_runner_s": "76.656",
+        "direct_action_shards": "1",
+        "linked_action_records": "0",
+        "terminal_cache_marker": "executed"
+      },
+      {
+        "rank": "15",
+        "target": "//agentplane/app:test_action_api",
+        "max_direct_test_runner_s": "76.613",
+        "direct_action_shards": "1",
+        "linked_action_records": "0",
+        "terminal_cache_marker": "executed"
+      },
+      {
+        "rank": "16",
+        "target": "//agentplane/app:test_electric",
+        "max_direct_test_runner_s": "74.486",
+        "direct_action_shards": "1",
+        "linked_action_records": "0",
+        "terminal_cache_marker": "executed"
+      },
+      {
+        "rank": "17",
+        "target": "//props/db/sync:test_sync_occurrence_update",
+        "max_direct_test_runner_s": "71.397",
+        "direct_action_shards": "1",
+        "linked_action_records": "0",
+        "terminal_cache_marker": "executed"
+      },
+      {
+        "rank": "18",
+        "target": "//props/specimens/ducktape/2025-11-26-00:test_specimen",
+        "max_direct_test_runner_s": "68.606",
+        "direct_action_shards": "1",
+        "linked_action_records": "0",
+        "terminal_cache_marker": "executed"
+      },
+      {
+        "rank": "19",
+        "target": "//haku/console:test_app",
+        "max_direct_test_runner_s": "68.587",
+        "direct_action_shards": "1",
+        "linked_action_records": "0",
+        "terminal_cache_marker": "executed"
+      },
+      {
+        "rank": "20",
+        "target": "//finance/plaid/spend/gnome:test_render",
+        "max_direct_test_runner_s": "67.517",
+        "direct_action_shards": "1",
+        "linked_action_records": "0",
+        "terminal_cache_marker": "executed"
+      }
+    ],
+    "limitations": [
+      "Single after invocation; no isolated same-source causal estimate",
+      "Baseline contains failures/retries and varying workload/worker warmth",
+      "Ranking excludes linked execution records and cached verdicts; no unique aggregate compute attribution across invocations",
+      "Reported dependency critical path differs from the actual final completion path"
+    ],
+    "props_optimizer_log": {
+      "pytest_cases": 1,
+      "pytest_seconds": 150.767,
+      "testcase_seconds": 145.612,
+      "process_seconds": 170.504
+    },
+    "report_validation": {
+      "desktop_width": 1440,
+      "phone_width": 393,
+      "changed_section_rendered": true,
+      "horizontal_table_overflow_contained": true
+    }
   }
 }

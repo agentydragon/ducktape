@@ -4,7 +4,7 @@
   "window_end_utc": "2026-10-10T21:39:59Z",
   "published_at_utc": "2026-10-10T22:13:09.455258+00:00",
   "attribution": "not collected",
-  "followup_updated_at_utc": "2026-10-11T03:57:54.505504+00:00",
+  "followup_updated_at_utc": "2026-10-11T08:17:32.343013+00:00",
   "mypy_followup_source_commit": "f3dac4506c7ae9d419832032a251247eec5b736d",
   "implementation_followup_prs": [
     9873,
@@ -14,5 +14,12 @@
     9886,
     9890,
     9901
-  ]
+  ],
+  "postgres_template_followup": {
+    "pr": 9925,
+    "head": "7b0a5cf90874395318bd7c7cccb4534f5220ff01",
+    "merge": "b24714540e8ad89d7b61b27cec69ba970a40c026",
+    "test_invocation": "4da16526-dbf4-5f4b-a368-5385137fcef7",
+    "source_devel_commit": "7726059851ac1fa9dc23dece1e27d01f92dc54bd"
+  }
 }
