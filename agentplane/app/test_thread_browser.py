@@ -29,7 +29,6 @@ from playwright.async_api import (
 from sqlalchemy import select, update
 
 from agentplane.app.testing import thread_view_marks
-from agentplane.app.testing.electric_service import ElectricService
 from agentplane.app.testing.history import SeededEventLogStore as EventLogStore
 from agentplane.app.testing.http2_proxy import BrowserCertificate, http2_proxy
 from agentplane.app.testing.replication_process import app_process
@@ -64,6 +63,7 @@ from agentplane.history_service.fold.models import (
     ThreadPayloadManifest,
 )
 from agentplane.history_service.fold.views import ThreadFeedErrorState, ThreadOperationalState, ThreadViewState
+from agentplane.history_service.testing.electric_service import ElectricService
 from agentplane.history_service.testing.history import History
 from agentplane.postgres.wakeups import notify
 from agentplane.proto import command_pb2, event_log_pb2, event_pb2

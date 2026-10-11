@@ -11,7 +11,6 @@ import pytest_bazel
 from playwright.async_api import Page, Request, Route, TimeoutError as PlaywrightTimeoutError, expect
 
 from agentplane.app.testing import thread_view_marks
-from agentplane.app.testing.electric_service import ElectricService
 from agentplane.app.testing.replication_source import Placements
 from agentplane.app.testing.thread_browser import (
     ThreadBrowser,
@@ -22,6 +21,7 @@ from agentplane.app.testing.thread_browser import (
     message_composer,
     wheel_and_capture_anchor_at_scrollend,
 )
+from agentplane.history_service.testing.electric_service import ElectricService
 from agentplane.proto import event_log_pb2, event_pb2
 from agentplane.sandbox_service.client import SandboxServiceClient
 from util.testing.undeclared_outputs import undeclared_outputs_dir

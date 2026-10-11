@@ -20,7 +20,7 @@ would be for.
 2. **Electric's server memory** under history growth, a restart and a stalled reader is still an
    adoption gate (<../../docs/thread_view_sync.md> § Server memory ownership). Probes exist on the
    parked spike PR #7490 (`shape_history_memory_test`, `shape_stalled_reader_test`,
-   `shape_capacity_test`); they need rewriting against `testing/electric_service.py` and the thread
+   `shape_capacity_test`); they need rewriting against `history_service/testing/electric_service.py` and the thread
    tables.
 3. **Compacting completed bodies (D5).** A body completed with the text that streamed keeps the
    generation it streamed in: one chunk per appending batch and one manifest per revision.

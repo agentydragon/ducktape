@@ -18,11 +18,11 @@ import httpx
 import pytest_bazel
 from sqlalchemy import select
 
-from agentplane.app.testing.electric_service import electric_service
 from agentplane.app.testing.history import fixture_session_id
 from agentplane.app.testing.replication_source import SANDBOX, SESSION, Placements, ReplicationSource
 from agentplane.history_service.fold.models import ThreadEntity
 from agentplane.history_service.fold_runner import FOLD_EPOCH
+from agentplane.history_service.testing.electric_service import electric_service
 from agentplane.history_service.testing.history import History
 from agentplane.proto import event_pb2
 

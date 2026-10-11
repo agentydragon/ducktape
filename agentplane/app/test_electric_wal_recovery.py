@@ -13,9 +13,9 @@ import asyncpg
 import httpx
 import pytest_bazel
 
-from agentplane.app.testing.electric_service import ElectricService, electric_service
 from agentplane.app.testing.history import fixture_session_id
 from agentplane.app.testing.replication_source import SANDBOX, SESSION, Placements, ReplicationSource
+from agentplane.history_service.testing.electric_service import ElectricService, electric_service
 from agentplane.history_service.testing.history import History
 from agentplane.proto import event_pb2
 from util.db_url import render_postgresql_url
