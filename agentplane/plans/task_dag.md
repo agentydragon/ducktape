@@ -869,18 +869,10 @@ flowchart TD
     POD_INCARNATION[Decision: a Pod is the incarnation]
     SEAL_FINALIZER[Unscheduled: seal as a finalizer on every delete]
     COMMAND_RECORDS_RETIRE[Unscheduled: drop command submission records]
-    SESSION_ID_MINT_RETIRE[Candidate: drop the runner Session ID column]
     LOOKUP_SESSION_RETIRE[Candidate: Session status from history, no Open reservation]
     AGENTPLANE_SANDBOX_RESOURCE -. to seal a suspended Sandbox on delete .-> SEAL_FINALIZER
     POD_INCARNATION -. if chosen, rewrites .-> SESSION_STATE_VOLUME_DESIGN[State volume design]
 ```
-
-### `SESSION_ID_MINT_RETIRE` — clients always name the Session ID
-
-**Candidate; operator's go-ahead for the drop.** The runner's Session ID is the Session ID, and
-nothing reads or writes the gateway's `session.runner_session_id`; drop it and
-`ux_session_runner_locator` (the `CLEANUP` in `commands/db.py`; stops for the operator). The app's
-`idempotency_key` on create goes with `LOOKUP_SESSION_RETIRE`, which retires its only reader.
 
 ### `LOOKUP_SESSION_RETIRE` — Session status from history, no Open reservation
 

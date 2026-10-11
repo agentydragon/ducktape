@@ -505,8 +505,7 @@ unresolved record, not guessed identity or automatic retry of old work.
 #### Root creation and today's service IDs
 
 `RunnerGateway.CreateSession` takes a client-minted UUID, which is the Session's public ID, its runner Session ID
-and the ID it is announced under on the ingress. Sessions created before clients minted the UUID run
-under the runner ID `r-<uuid>`, until `SESSION_ID_MINT_RETIRE`. See
+and the ID it is announced under on the ingress. See
 [`proto/runner_gateway.proto`](../proto/runner_gateway.proto).
 
 Build on that rather than introducing another creation queue or replacing the API with the
