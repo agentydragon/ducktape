@@ -1,6 +1,7 @@
 """The runner's channel peer against a scripted Sandbox Service: delivered commands are admitted once
 and answered from the journal, refusals name their cause, follows stream the journal on their own
-RPCs and end without touching the harness, and a lost connection is replaced by a fresh one."""
+RPCs and end without touching the harness, lifecycle requests start a harness only when they say so,
+and a lost connection is replaced by a fresh one."""
 
 import asyncio
 from collections.abc import AsyncIterator, Callable, Mapping
@@ -10,6 +11,7 @@ from pathlib import Path
 from typing import Any, cast, override
 
 import grpc
+import httpx
 import pytest
 import pytest_bazel
 from google.protobuf import empty_pb2
@@ -18,9 +20,11 @@ from agentplane.protocol import command_pb2, event_pb2
 from agentplane.runner import protocol_pb2
 from agentplane.runner.adapter import HarnessAdapter
 from agentplane.runner.channel import EPOCH_METADATA, FOLLOW_LIMIT, FOLLOW_METADATA, ChannelTiming, RunnerChannelClient
-from agentplane.runner.config import RunnerConfig
+from agentplane.runner.config import ClaudeLaunch, RunnerConfig
 from agentplane.runner.harness_process import HarnessProcess
+from agentplane.runner.model_config import HttpModelConfigResolver
 from agentplane.runner.service import Runner
+from agentplane.runner.session import Session
 from agentplane.runner.store import SessionRecord
 from agentplane.runner_channel import protocol_pb2 as channel_pb2, protocol_pb2_grpc
 
@@ -28,9 +32,11 @@ from agentplane.runner_channel import protocol_pb2 as channel_pb2, protocol_pb2_
 
 RUNNING = "test-running-session"
 STOPPED = "test-stopped-session"
+FAILED_SETUP = "test-failed-setup-session"
 SPEC = protocol_pb2.SessionSpec(harness=protocol_pb2.HARNESS_CLAUDE, cwd="/test-workspace", model="test-model")
 TIMING = ChannelTiming(heartbeat_s=0.1, liveness_s=0.5, backoff_initial_s=0.01, backoff_max_s=0.05)
 Reason = channel_pb2.CommandRefused
+Refused = channel_pb2.ControlRefused
 
 
 class RecordingAdapter(HarnessAdapter):
@@ -73,7 +79,11 @@ ENDED = Ended.ENDED
 
 
 class RunningProcess:
-    running = True
+    def __init__(self) -> None:
+        self.running = True
+
+    async def stop(self) -> None:
+        self.running = False
 
 
 @dataclass
@@ -90,7 +100,8 @@ class ScriptedService(protocol_pb2_grpc.RunnerChannelServicer):
     peers: list[str] = field(default_factory=list)
     authorizations: list[str] = field(default_factory=list)
     receipts: asyncio.Queue[channel_pb2.CommandReceipt] = field(default_factory=asyncio.Queue)
-    capabilities: list[str] = field(default_factory=lambda: ["commands", "events"])
+    control_results: asyncio.Queue[channel_pb2.ControlResult] = field(default_factory=asyncio.Queue)
+    capabilities: list[str] = field(default_factory=lambda: ["commands", "events", "lifecycle"])
     # Each connection's send queue, holding its scripted frames, for the test to push more to.
     connected: asyncio.Queue[asyncio.Queue[channel_pb2.ServiceFrame | grpc.StatusCode]] = field(
         default_factory=asyncio.Queue
@@ -129,6 +140,8 @@ class ScriptedService(protocol_pb2_grpc.RunnerChannelServicer):
             async for frame in request_iterator:
                 if frame.HasField("receipt"):
                     await self.receipts.put(frame.receipt)
+                if frame.HasField("control_result"):
+                    await self.control_results.put(frame.control_result)
                 await pushed.put(channel_pb2.ServiceFrame(heartbeat=channel_pb2.Heartbeat()))
 
         receiving = asyncio.create_task(receive())
@@ -156,17 +169,49 @@ class ScriptedService(protocol_pb2_grpc.RunnerChannelServicer):
 
 @pytest.fixture
 async def runner(tmp_path: Path) -> AsyncIterator[Runner]:
-    runner = Runner(RunnerConfig(state_dir=tmp_path / "state", harness_environment={}))
+    runner = Runner(
+        RunnerConfig(
+            state_dir=tmp_path / "state",
+            model_config_resolver=HttpModelConfigResolver(
+                transport=httpx.MockTransport(
+                    lambda _request: httpx.Response(404, json={"detail": "no configuration for model"})
+                )
+            ),
+            # Never launched: `started` stands in for the harness.
+            claude=ClaudeLaunch(
+                binary=tmp_path / "test-unlaunched-harness",
+                base_url="http://agentplane-test-endpoint.invalid",
+                auth_token="test-token",
+            ),
+        )
+    )
     for session_id in (RUNNING, STOPPED):
         runner.store.write(session_id, SessionRecord.from_spec(SPEC))
-    running = await runner._load(RUNNING)
+        # As a started runner holds every stored session.
+        await runner._load(session_id)
+    running = runner.sessions[RUNNING]
     running.adapter = RecordingAdapter()
     running.process = cast(HarnessProcess, RunningProcess())
+    runner.store.write(FAILED_SETUP, SessionRecord.from_spec(SPEC, setup_script="exit 1"))
+    await (await runner._load(FAILED_SETUP)).emit(event_pb2.SetupFinished(exit_code=1), sources=[])
     try:
         yield runner
     finally:
-        running.process = None
         await runner.stop()
+
+
+@pytest.fixture
+def started(monkeypatch: pytest.MonkeyPatch) -> list[str]:
+    """The sessions whose harness the runner started, in order. Starting one marks it running."""
+    started: list[str] = []
+
+    async def start(session: Session) -> None:
+        if not session.running:
+            started.append(session.session_id)
+            session.adapter, session.process = RecordingAdapter(), cast(HarnessProcess, RunningProcess())
+
+    monkeypatch.setattr(Session, "ensure_running", start)
+    return started
 
 
 @pytest.fixture
@@ -207,7 +252,7 @@ async def test_a_redelivered_command_is_admitted_once_and_answered_from_the_jour
     assert first == second
     assert first.admitted.event.command_admitted.command == submit("test-input")
     assert (await runner.sessions[RUNNING].journal.admitted_entry("test-input")) == first.admitted
-    assert service.hellos[0].capabilities == ["commands", "events"]
+    assert service.hellos[0].capabilities == ["commands", "events", "lifecycle"]
     assert service.authorizations == ["Bearer test-placeholder"]
 
 
@@ -385,6 +430,175 @@ async def test_a_follow_on_a_connection_that_did_not_agree_events_fails_the_stre
         while len(service.hellos) < 2:
             await service.connected.get()
     assert service.followed.empty()
+
+
+def control(request: channel_pb2.ControlRequest) -> channel_pb2.ServiceFrame:
+    return channel_pb2.ServiceFrame(control=request)
+
+
+def open_session(
+    request_id: str, session_id: str, spec: protocol_pb2.SessionSpec = SPEC, setup_script: str | None = None
+) -> channel_pb2.ServiceFrame:
+    return control(
+        channel_pb2.ControlRequest(
+            request_id=request_id,
+            open=channel_pb2.OpenSession(session_id=session_id, spec=spec, setup_script=setup_script),
+        )
+    )
+
+
+def resume(request_id: str, session_id: str) -> channel_pb2.ServiceFrame:
+    return control(
+        channel_pb2.ControlRequest(request_id=request_id, resume=channel_pb2.ResumeSession(session_id=session_id))
+    )
+
+
+def seal(request_id: str) -> channel_pb2.ServiceFrame:
+    return control(channel_pb2.ControlRequest(request_id=request_id, seal=protocol_pb2.SealRequest()))
+
+
+async def control_results(service: ScriptedService, count: int) -> dict[str, channel_pb2.ControlResult]:
+    async with asyncio.timeout(10):
+        results = [await service.control_results.get() for _ in range(count)]
+    by_id = {result.request_id: result for result in results}
+    assert len(by_id) == count
+    return by_id
+
+
+async def test_list_sessions_reports_every_session(service: ScriptedService) -> None:
+    service.frames.append(
+        control(channel_pb2.ControlRequest(request_id="test-list", list_sessions=protocol_pb2.ListSessionsRequest()))
+    )
+    service.dial()
+    listed = (await control_results(service, 1))["test-list"]
+    assert {(row.session_id, row.harness_state, row.setup_state) for row in listed.list_sessions.sessions} == {
+        (RUNNING, protocol_pb2.HARNESS_STATE_RUNNING, protocol_pb2.SETUP_STATE_NOT_REQUIRED),
+        (STOPPED, protocol_pb2.HARNESS_STATE_STOPPED, protocol_pb2.SETUP_STATE_NOT_REQUIRED),
+        (FAILED_SETUP, protocol_pb2.HARNESS_STATE_STOPPED, protocol_pb2.SETUP_STATE_FAILED),
+    }
+
+
+async def test_open_creates_a_session_and_starts_it(
+    runner: Runner, service: ScriptedService, started: list[str]
+) -> None:
+    service.frames.append(open_session("test-open", "test-new-session"))
+    service.dial()
+    opened = (await control_results(service, 1))["test-open"]
+    assert (opened.open.session_id, opened.open.spec, opened.open.harness_state) == (
+        "test-new-session",
+        SPEC,
+        protocol_pb2.HARNESS_STATE_RUNNING,
+    )
+    assert started == ["test-new-session"]
+    assert runner.store.exists("test-new-session")
+
+
+async def test_opening_an_existing_session_confirms_it_without_restarting_its_harness(
+    service: ScriptedService, started: list[str]
+) -> None:
+    service.frames.append(open_session("test-open", STOPPED))
+    service.dial()
+    opened = (await control_results(service, 1))["test-open"]
+    assert (opened.open.session_id, opened.open.harness_state) == (STOPPED, protocol_pb2.HARNESS_STATE_STOPPED)
+    assert started == []
+
+
+@pytest.mark.parametrize(
+    ("spec", "setup_script"),
+    [
+        (protocol_pb2.SessionSpec(harness=SPEC.harness, cwd=SPEC.cwd, model="test-other-model"), None),
+        (SPEC, "test other setup"),
+    ],
+)
+async def test_opening_an_existing_session_with_another_spec_is_refused(
+    spec: protocol_pb2.SessionSpec, setup_script: str | None, service: ScriptedService, started: list[str]
+) -> None:
+    service.frames.append(open_session("test-open", STOPPED, spec, setup_script))
+    service.dial()
+    assert (await control_results(service, 1))["test-open"].refused.reason == Refused.REASON_SPEC_CONFLICT
+    assert started == []
+
+
+async def test_resume_restarts_a_stopped_harness_on_its_retained_spec(
+    service: ScriptedService, started: list[str]
+) -> None:
+    service.frames.append(resume("test-resume", STOPPED))
+    service.dial()
+    resumed = (await control_results(service, 1))["test-resume"]
+    assert (resumed.resume.spec, resumed.resume.harness_state) == (SPEC, protocol_pb2.HARNESS_STATE_RUNNING)
+    assert started == [STOPPED]
+
+
+@pytest.mark.parametrize(
+    ("session_id", "reason"),
+    [(FAILED_SETUP, Refused.REASON_SETUP_FAILED), ("test-unknown-session", Refused.REASON_SESSION_UNKNOWN)],
+)
+async def test_a_resume_the_runner_cannot_serve_is_refused(
+    session_id: str, reason: channel_pb2.ControlRefused.Reason, service: ScriptedService, started: list[str]
+) -> None:
+    service.frames.append(resume("test-resume", session_id))
+    service.dial()
+    assert (await control_results(service, 1))["test-resume"].refused.reason == reason
+    assert started == []
+
+
+async def test_a_seal_lands_after_the_commands_delivered_before_it_and_before_those_after_it(
+    runner: Runner, service: ScriptedService, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Holds the earlier command's admission until the runner has read the Seal behind it.
+    journal = runner.sessions[RUNNING].journal
+    unblocked = asyncio.Event()
+    get = journal.get
+
+    async def held_get(command_id: str) -> object:
+        await unblocked.wait()
+        return await get(command_id)
+
+    monkeypatch.setattr(journal, "get", held_get)
+    service.frames += [
+        deliver(RUNNING, submit("test-before-seal")),
+        seal("test-seal"),
+        deliver(RUNNING, submit("test-after-seal")),
+        # Follows are not ordered behind a Seal, so this one's first frame shows the Seal was read.
+        open_follow("test-follow", STOPPED),
+    ]
+    service.dial()
+    assert isinstance(await next_follow_frame(service, "test-follow"), channel_pb2.FollowFrame)
+    unblocked.set()
+    async with asyncio.timeout(10):
+        receipts = {receipt.command_id: receipt for receipt in [await service.receipts.get() for _ in range(2)]}
+    sealed = (await control_results(service, 1))["test-seal"]
+    cursors = {row.session_id: row.cursor for row in sealed.seal.sessions}
+    admitted = receipts["test-before-seal"]
+    assert admitted.HasField("admitted")
+    assert admitted.admitted.cursor <= cursors[RUNNING]
+    assert receipts["test-after-seal"].refused.reason == Reason.REASON_HARNESS_STOPPED
+
+
+async def test_sealing_again_returns_the_same_cursors_and_opening_is_refused(
+    runner: Runner, service: ScriptedService, started: list[str]
+) -> None:
+    service.frames += [seal("test-seal-1"), seal("test-seal-2"), open_session("test-open", "test-new-session")]
+    service.dial()
+    results = await control_results(service, 3)
+    assert results["test-seal-1"].seal == results["test-seal-2"].seal
+    assert {row.session_id for row in results["test-seal-1"].seal.sessions} == {RUNNING, STOPPED, FAILED_SETUP}
+    assert results["test-open"].refused.reason == Refused.REASON_SEALED
+    assert not runner.sessions[RUNNING].running
+    assert started == []
+
+
+async def test_a_control_request_on_a_connection_that_did_not_agree_lifecycle_fails_the_stream(
+    runner: Runner, service: ScriptedService
+) -> None:
+    service.capabilities = ["commands", "events"]
+    service.frames.append(seal("test-seal"))
+    service.dial()
+    async with asyncio.timeout(10):
+        while len(service.hellos) < 2:
+            await service.connected.get()
+    assert service.control_results.empty()
+    assert not runner.store.sealed
 
 
 if __name__ == "__main__":

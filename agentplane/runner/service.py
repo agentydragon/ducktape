@@ -37,7 +37,27 @@ _FOLLOW_PAGE = 128
 
 
 class OpenError(Exception):
-    """Open named a session the runner cannot serve; the stream ends with this message."""
+    """A session operation the runner refuses; an Attach stream ends with this message."""
+
+
+class SessionUnknownError(OpenError):
+    pass
+
+
+class SpecConflictError(OpenError):
+    """The session exists with a different spec or setup script."""
+
+
+class SandboxSealedError(OpenError):
+    pass
+
+
+class SetupFailedError(OpenError):
+    """The session's setup failed or was interrupted, so it never resumes."""
+
+
+class InvalidRequestError(OpenError):
+    """A malformed session ID, spec or setup script."""
 
 
 class InitializationConflictError(Exception):
@@ -70,6 +90,9 @@ class Runner:
             raise
         self.sessions: dict[str, Session] = {}
         self._sessions_lock = asyncio.Lock()
+        # Held from the existence check through writing the record, so two concurrent creates of one
+        # session cannot each write a record with its own event source.
+        self._create_lock = asyncio.Lock()
         self._resources = AsyncExitStack()
         self._initialize_lock = asyncio.Lock()
         self._initialization_log: InitializationLog | None = None
@@ -200,78 +223,119 @@ class Runner:
         return await self._load(session_id) if self.store.exists(session_id) else None
 
     async def open(self, request: protocol_pb2.Open) -> Session:
+        """Attach's Open. Without a spec it only finds the session; with one it creates the session
+        or confirms it, then starts its harness if stopped."""
+        session_id = self._valid_session_id(request.session_id)
+        if not request.HasField("spec"):
+            if not self.store.exists(session_id):
+                raise SessionUnknownError(f"session {session_id} does not exist and Open carries no spec")
+            return await self._load(session_id)
+        self._refuse_sealed()
+        setup_script = request.setup_script if request.HasField("setup_script") else None
+        async with self._create_lock:
+            existing = self.store.exists(session_id)
+            session = await (self._confirm if existing else self._create)(session_id, request.spec, setup_script)
+        await self._start(session)
+        return session
+
+    async def open_session(self, session_id: str, spec: protocol_pb2.SessionSpec, setup_script: str | None) -> Session:
+        """Create the session with `spec` and start it, or confirm an existing one with the same spec
+        without starting anything: unlike Attach's Open, this never restarts a stopped harness."""
+        session_id = self._valid_session_id(session_id)
+        self._refuse_sealed()
+        async with self._create_lock:
+            if self.store.exists(session_id):
+                return await self._confirm(session_id, spec, setup_script)
+            session = await self._create(session_id, spec, setup_script)
+        await self._start(session)
+        return session
+
+    async def resume(self, session_id: str) -> Session:
+        """Restart a stopped harness on the session's retained spec."""
+        session_id = self._valid_session_id(session_id)
+        self._refuse_sealed()
+        if not self.store.exists(session_id):
+            raise SessionUnknownError(f"session {session_id} does not exist")
+        session = await self._load(session_id)
+        if session.setup_state in (protocol_pb2.SETUP_STATE_FAILED, protocol_pb2.SETUP_STATE_INTERRUPTED):
+            raise SetupFailedError(f"session {session_id}'s setup failed or was interrupted; create a new session")
+        await self._start(session)
+        return session
+
+    @staticmethod
+    def _valid_session_id(session_id: str) -> str:
         try:
-            session_id = validate_session_id(request.session_id)
+            return validate_session_id(session_id)
         except ValueError as error:
-            raise OpenError(str(error)) from error
-        if request.HasField("spec") and self.store.sealed:
-            raise OpenError("this Sandbox is sealed: its sessions can be followed, not created or resumed")
-        if self.store.exists(session_id):
-            session = await self._load(session_id)
-            if request.HasField("spec") and request.spec != session.record.spec():
-                raise OpenError(f"session {session_id} exists with a different spec")
-            if request.HasField("setup_script"):
-                source = request.setup_script.encode()
-                if len(source) > _MAX_BOOTSTRAP_BYTES:
-                    raise OpenError(f"setup_script exceeds {_MAX_BOOTSTRAP_BYTES} UTF-8 bytes")
-                selected = hashlib.sha256(source).hexdigest() if source else None
-                if selected != session.record.setup_script_sha256:
-                    raise OpenError(f"session {session_id} exists with a different setup script")
-            if request.HasField("spec") and not session.record.context_budget_resolved:
-                try:
-                    model_config = await self.config.resolve_model_config(
-                        harness=protocol_pb2.Harness.Value(session.record.harness), model=session.record.model
-                    )
-                except ModelConfigLookupError as error:
-                    raise OpenError(str(error)) from error
-                session.record.total_context_budget_tokens = (
-                    model_config.total_context_budget_tokens if model_config is not None else None
-                )
-                session.record.context_budget_resolved = True
-                self.store.write(session_id, session.record)
-        else:
-            if not request.HasField("spec"):
-                raise OpenError(f"session {session_id} does not exist and Open carries no spec")
-            if request.spec.harness not in (protocol_pb2.HARNESS_CLAUDE, protocol_pb2.HARNESS_CODEX):
-                raise OpenError("spec.harness must be CLAUDE or CODEX")
-            if not request.spec.cwd or not request.spec.model:
-                raise OpenError("spec.cwd and spec.model are required")
-            if not PurePosixPath(request.spec.cwd).is_absolute():
-                raise OpenError(f"spec.cwd must be an absolute path, not {request.spec.cwd!r}")
-            try:
-                self._validate_workspace(request.spec.cwd)
-            except ValueError as error:
-                raise OpenError(str(error)) from error
-            source = request.setup_script.encode()
+            raise InvalidRequestError(str(error)) from error
+
+    def _refuse_sealed(self) -> None:
+        if self.store.sealed:
+            raise SandboxSealedError("this Sandbox is sealed: its sessions can be followed, not created or resumed")
+
+    async def _confirm(self, session_id: str, spec: protocol_pb2.SessionSpec, setup_script: str | None) -> Session:
+        session = await self._load(session_id)
+        if spec != session.record.spec():
+            raise SpecConflictError(f"session {session_id} exists with a different spec")
+        if setup_script is not None:
+            source = setup_script.encode()
             if len(source) > _MAX_BOOTSTRAP_BYTES:
-                raise OpenError(f"setup_script exceeds {_MAX_BOOTSTRAP_BYTES} UTF-8 bytes")
+                raise InvalidRequestError(f"setup_script exceeds {_MAX_BOOTSTRAP_BYTES} UTF-8 bytes")
+            if (hashlib.sha256(source).hexdigest() if source else None) != session.record.setup_script_sha256:
+                raise SpecConflictError(f"session {session_id} exists with a different setup script")
+        return session
+
+    async def _create(self, session_id: str, spec: protocol_pb2.SessionSpec, setup_script: str | None) -> Session:
+        """Record a new session and start its setup, if it has one; never its harness."""
+        if spec.harness not in (protocol_pb2.HARNESS_CLAUDE, protocol_pb2.HARNESS_CODEX):
+            raise InvalidRequestError("spec.harness must be CLAUDE or CODEX")
+        if not spec.cwd or not spec.model:
+            raise InvalidRequestError("spec.cwd and spec.model are required")
+        if not PurePosixPath(spec.cwd).is_absolute():
+            raise InvalidRequestError(f"spec.cwd must be an absolute path, not {spec.cwd!r}")
+        try:
+            self._validate_workspace(spec.cwd)
+        except ValueError as error:
+            raise InvalidRequestError(str(error)) from error
+        script = setup_script or ""
+        if len(script.encode()) > _MAX_BOOTSTRAP_BYTES:
+            raise InvalidRequestError(f"setup_script exceeds {_MAX_BOOTSTRAP_BYTES} UTF-8 bytes")
+        try:
+            model_config = await self.config.resolve_model_config(harness=spec.harness, model=spec.model)
+        except ModelConfigLookupError as error:
+            raise OpenError(str(error)) from error
+        record = SessionRecord.from_spec(
+            spec,
+            setup_script=script,
+            total_context_budget_tokens=model_config.total_context_budget_tokens if model_config is not None else None,
+        )
+        self.store.write(session_id, record)
+        session = await self._load(session_id)
+        if record.setup_script_sha256 is not None:
+            session.start_setup(script)
+        return session
+
+    async def _start(self, session: Session) -> None:
+        """Start the harness of a session whose setup allows it; one still in setup starts when the
+        setup succeeds."""
+        if not session.record.context_budget_resolved:
             try:
                 model_config = await self.config.resolve_model_config(
-                    harness=request.spec.harness, model=request.spec.model
+                    harness=protocol_pb2.Harness.Value(session.record.harness), model=session.record.model
                 )
             except ModelConfigLookupError as error:
                 raise OpenError(str(error)) from error
-            record = SessionRecord.from_spec(
-                request.spec,
-                setup_script=request.setup_script,
-                total_context_budget_tokens=(
-                    model_config.total_context_budget_tokens if model_config is not None else None
-                ),
+            session.record.total_context_budget_tokens = (
+                model_config.total_context_budget_tokens if model_config is not None else None
             )
-            self.store.write(session_id, record)
-            session = await self._load(session_id)
-            if record.setup_script_sha256 is not None:
-                session.start_setup(request.setup_script)
-        if request.HasField("spec") and self.store.sealed:
-            # Sealing began during this Open and may have listed the store before it held this session.
+            session.record.context_budget_resolved = True
+            self.store.write(session.session_id, session.record)
+        if self.store.sealed:
+            # Sealing began meanwhile and may have listed the store before it held this session.
             await session.seal()
-            raise OpenError("this Sandbox is sealed: its sessions can be followed, not created or resumed")
-        if request.HasField("spec") and session.setup_state in (
-            protocol_pb2.SETUP_STATE_NOT_REQUIRED,
-            protocol_pb2.SETUP_STATE_SUCCEEDED,
-        ):
+            raise SandboxSealedError("this Sandbox is sealed: its sessions can be followed, not created or resumed")
+        if session.setup_state in (protocol_pb2.SETUP_STATE_NOT_REQUIRED, protocol_pb2.SETUP_STATE_SUCCEEDED):
             await session.ensure_running()
-        return session
 
     async def seal(self) -> list[protocol_pb2.SessionSeal]:
         """Sandbox teardown: refuse new and resumed sessions, stop every harness, seal every journal."""
@@ -491,11 +555,11 @@ async def _wake(journal: Journal, closing: asyncio.Event | None, cursor: int) ->
         await asyncio.gather(*waits, return_exceptions=True)
 
 
-async def finish_command(command: Awaitable[None]) -> None:
+async def finish_command[T](command: Awaitable[T]) -> T:
     # A connection disappearing must not cancel a shared harness operation halfway through.
     task = asyncio.ensure_future(command)
     try:
-        await asyncio.shield(task)
+        return await asyncio.shield(task)
     except asyncio.CancelledError:
         await asyncio.gather(task, return_exceptions=True)
         raise
