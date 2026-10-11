@@ -94,6 +94,8 @@ class DirectToolProvider(Provider):
         return self._tool(ActionIdentity(group=group_key, name=action_key))
 
     async def get_tasks(self) -> Sequence[FastMCPComponent]:
+        # TODO: Consider caller-scoped tasks for direct tools after start_action_task
+        # have durable semantics; see agentplane/plans/mcp_action_tasks.md.
         # FastMCP collects task components at startup, when no request names a caller to list for.
         return []
 

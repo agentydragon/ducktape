@@ -404,6 +404,11 @@ class ActionService:
     async def get(self, request_id: UUID, principal: ReadPrincipal) -> ActionRequestView:
         return await self._store.get(request_id, principal)
 
+    async def get_mcp_task(
+        self, request_id: UUID, principal: CallerPrincipal
+    ) -> tuple[ActionRequestView, ActionState | None, datetime | None]:
+        return await self._store.get_mcp_task(request_id, principal)
+
     async def cancel(self, request_id: UUID, principal: Principal) -> CancellationResult:
         return await self._store.cancel(request_id, principal)
 
@@ -518,6 +523,9 @@ class ActionService:
         lease = _StoreBackedLease(self._store, claim, self._lease_duration)
         try:
             request = await self._store.mark_running(claim.request_id)
+            # TODO: Support cooperative cancellation in capable executors after dispatch;
+            # withdrawal currently ends when the execution is claimed. See
+            # agentplane/plans/mcp_action_tasks.md.
             result = await self._resolve_executor(request.action).execute(request, lease)
         except ExecutionOutcomeUnknownError:
             result = ExecutionResult(

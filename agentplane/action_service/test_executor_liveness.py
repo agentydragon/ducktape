@@ -183,6 +183,30 @@ async def test_late_completion_from_the_original_executor_reconciles_the_unknown
         assert row.reconciled_by == "slow-executor"
 
 
+async def test_task_projection_uses_first_terminal_event_before_late_completion(engine: AsyncEngine) -> None:
+    store = ActionStore(make_sessionmaker(engine))
+    request_id = await _allowed_execution(store, idempotency_key="task-late-completion")
+    claim = await store.claim_execution(request_id, executor_id="task-executor", lease_duration=ALREADY_EXPIRED)
+    assert claim is not None
+    await store.mark_running(request_id)
+    assert await store.expire_stale_leases(executor_health_timeout=timedelta(seconds=30)) == [request_id]
+    unknown, terminal, terminal_at = await store.get_mcp_task(request_id, CALLER)
+    assert unknown.state is ActionState.EXECUTION_UNKNOWN
+    assert terminal is ActionState.EXECUTION_UNKNOWN
+    assert terminal_at is not None
+
+    await store.finish_execution(
+        request_id,
+        claim.executor_id,
+        claim.lease_token,
+        ExecutionResult(state=ExecutionState.SUCCEEDED, result={"echo": {}}),
+    )
+    reconciled, terminal_after, at_after = await store.get_mcp_task(request_id, CALLER)
+    assert reconciled.state is ActionState.SUCCEEDED  # The canonical receipt reports the reconciliation.
+    assert terminal_after is ActionState.EXECUTION_UNKNOWN  # The published MCP task remains failed.
+    assert at_after == terminal_at
+
+
 async def test_late_completion_with_a_different_lease_token_is_rejected(engine: AsyncEngine) -> None:
     store = ActionStore(make_sessionmaker(engine))
     request_id = await _allowed_execution(store, idempotency_key="late-completion-wrong-token")
