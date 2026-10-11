@@ -54,7 +54,7 @@ from util.settings_contract import env_name
 NAME = "agentplane-runner-gateway"
 _LABELS = {"app.kubernetes.io/name": NAME}
 _IMAGE = "git.allegedly.works/ducktape-ci/agentplane-runner-gateway"
-# The port every runner listens on (app.py's SandboxTemplate); this service dials it.
+# The port every runner listens on (runner_sandbox.py's SandboxTemplate); this service dials it.
 RUNNER_PORT = 7000
 KUBERNETES_ADMIN_INSTRUCTIONS = (
     Path(__file__).with_name("kubernetes_admin_instructions.md").read_text(encoding="utf-8").strip()
@@ -116,8 +116,10 @@ class RunnerGateway(Construct):
         callers: dict[ServiceAccountRef, ServiceRef],
         sealer: ServiceAccountRef,
         sealer_pods: Pods,
+        runners: Pods,
     ) -> None:
-        """`callers` are the Session API's clients and their Pods; `sealer` alone may seal a Sandbox."""
+        """`callers` are the Session API's clients and their Pods; `sealer` alone may seal a Sandbox;
+        `runners` are the Pods this service dials."""
         super().__init__(scope, id)
         self.env = env
         endpoint = service(env.namespace)
@@ -199,7 +201,7 @@ class RunnerGateway(Construct):
                 cilium.dns_egress(),
                 EgressRule.to_entities(Entity.KUBE_APISERVER),
                 database.egress(env.namespace),
-                EgressRule.to_endpoints(cilium.endpoint_labels(env.namespace, "agentplane-runner"), RUNNER_PORT),
+                EgressRule.to_endpoints(runners.cilium, RUNNER_PORT),
             ],
         )
         self._add_runner_control_egress(control)

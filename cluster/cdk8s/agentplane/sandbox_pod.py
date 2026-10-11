@@ -1,10 +1,10 @@
 """The Pod shape every agentplane SandboxTemplate shares: the egress sidecar that relays a box's
 traffic to the central proxy, the tokens only it mounts, the interception CA over the system bundle
 and as Java's trust store, a kubeconfig that reaches the API server through the proxy, and the proxy
-environment that points a workload at the sidecar. The runner template (app.py) and the sandbox
-Actions' command box (command_sandbox.py) are both built from it, so both kinds of box sit behind
-the same egress path; only the command box also gets the system bazelrc that points Bazel at the
-trust store.
+environment that points a workload at the sidecar. The runner templates (runner_sandbox.py) and the
+sandbox Actions' command box (command_sandbox.py) are both built from it, so both kinds of box sit
+behind the same egress path; only the command box also gets the system bazelrc that points Bazel at
+the trust store.
 """
 
 from __future__ import annotations

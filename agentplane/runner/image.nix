@@ -2,7 +2,7 @@
 # installed from its released wheel (the `agentplane-runner` pin in nix/artifact-pins.json), and
 # nixpkgs' Claude Code and Codex. Published as runner by
 # .github/workflows/agentplane-runner-image.yml and run by the runner SandboxTemplate
-# (cluster/cdk8s/agentplane/app.py), which names the harnesses by their /bin paths here.
+# (cluster/cdk8s/agentplane/runner_sandbox.py), which names the harnesses by their /bin paths here.
 #
 # The runner's Python and both harnesses come from nixos-unstable: the wheel's generated protobuf
 # modules need protobuf >= 7.36, which nixos-26.05 does not ship.

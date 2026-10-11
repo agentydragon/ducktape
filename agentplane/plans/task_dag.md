@@ -1073,7 +1073,6 @@ flowchart TD
         NOTIFICATION_GITHUB_PACKAGE[Candidate: one GitHub source package]
         CDK8S_RUNNER_ENDPOINT_HELPER[Candidate: one runner-facing endpoint helper]
         GRPC_CHANNEL_OPTIONS_CONSTANT[Candidate: one gRPC channel options constant]
-        CDK8S_RUNNER_TEMPLATE_MOVE[Candidate: runner Pod objects out of the app]
         CDK8S_CALLER_WIRING[Candidate: one callers shape]
         TEST_SUPPORT_REHOME[Candidate: test support beside its service]
         TESTING_FAILURE_JOURNAL[Candidate: one failed-journal fixture]
@@ -1266,12 +1265,6 @@ EgressCredential, EgressPolicy and proxy NetworkPolicy; build them once.
 **Candidate.** Both environments set every channel-options field to
 `LARGE_EVENT_GRPC_CHANNEL_OPTIONS`, and `notifications.py` and `history_service.py` read the app's
 copies. Use the constant (or the clients' default) instead of `Environment` and app-config plumbing.
-
-### `CDK8S_RUNNER_TEMPLATE_MOVE` — runner Pod objects out of the app
-
-**Candidate.** `cluster/cdk8s/agentplane/app.py` owns the runner `SandboxTemplate`, ServiceAccount,
-NetworkPolicy and `RUNNER_IMAGE`, and three files spell the `agentplane-runner` label. Move them
-beside `sandbox_pod.py` with one `runner_pods(namespace)`.
 
 ### `CDK8S_CALLER_WIRING` — one callers shape
 

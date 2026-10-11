@@ -63,9 +63,10 @@ does not have.
 configuration offers, at the same operator cadence as `action_groups`. A free-form choice would let
 a caller stamp any template in the namespace. Staging offers its own `agentplane-sandbox` template
 on the plain sandbox image (<../../../cluster/cdk8s/agentplane/command_sandbox.py>), a build-sized
-box, and the app's runner template, and a caller always names one. Each template describes itself:
-its `sandbox-actions.agentplane.allegedly.works/description` annotation is what `create` tells an
-agent, read once when the service starts, and a command runs in the container `kubectl exec` would
+box, and the shared runner template (<../../../cluster/cdk8s/agentplane/runner_sandbox.py>), and a
+caller always names one. Each template describes itself: its
+`sandbox-actions.agentplane.allegedly.works/description` annotation is what `create` tells an agent,
+read once when the service starts, and a command runs in the container `kubectl exec` would
 pick, the Pod template's `kubectl.kubernetes.io/default-container` or else its first.
 `get_template` returns one offered template whole, read when asked and less only
 `metadata.managedFields`. **Every caller can read everything in an offered template**, so a template

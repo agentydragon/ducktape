@@ -537,7 +537,8 @@ class Egress(Construct):
     EgressCredential/EgressPolicy resources it reads.
     """
 
-    def __init__(self, scope: Construct, id: str, env: Environment) -> None:
+    def __init__(self, scope: Construct, id: str, env: Environment, *, runners: Pods) -> None:
+        """`runners` are the runner Pods, which the proxy admits."""
         super().__init__(scope, id)
         self.env = env
         self.proxy = proxy(env.namespace)
@@ -574,7 +575,7 @@ class Egress(Construct):
             selector=workload.deployment,
             ports=[self.admin.port.service_port()],
         )
-        self._add_network_policy()
+        self._add_network_policy(runners)
         _egress_credentials(self, namespace=env.namespace)
         _egress_policies(self, namespace=env.namespace)
 
@@ -738,7 +739,7 @@ class Egress(Construct):
         settings.mount_into(workload.container, env=CONFIG_FILE_ENV)
         return workload
 
-    def _add_network_policy(self) -> None:
+    def _add_network_policy(self, runners: Pods) -> None:
         namespace = self.env.namespace
         (litellm_spec,) = litellm_proxy.proxy_specs()
         NetworkPolicy(
@@ -747,12 +748,10 @@ class Egress(Construct):
             metadata=ApiObjectMetadata(name=NAME, namespace=namespace),
             endpoint_selector=self.proxy.pods.selector,
             ingress=[
-                # Runner Pods, and the sandbox Actions' command boxes. app.py and command_sandbox.py
-                # import this module, so their Pods are named here.
+                # Runner Pods, and the sandbox Actions' command boxes. command_sandbox.py imports this
+                # module, so its Pods are named here.
                 IngressRule.from_endpoints(
-                    cilium.endpoint_labels(namespace, "agentplane-runner"),
-                    cilium.endpoint_labels(namespace, "agentplane-sandbox"),
-                    ports=[self.proxy.pod_port],
+                    runners.cilium, cilium.endpoint_labels(namespace, "agentplane-sandbox"), ports=[self.proxy.pod_port]
                 ),
                 IngressRule.from_endpoints(
                     cilium.endpoint_labels(namespace, "agentplane-app"), ports=[self.admin.pod_port]

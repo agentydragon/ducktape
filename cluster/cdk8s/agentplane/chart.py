@@ -23,6 +23,7 @@ from cluster.cdk8s.agentplane import (
     llm_ingress,
     notifications,
     runner_gateway,
+    runner_sandbox,
     sandbox_pod,
     sandbox_service,
 )
@@ -61,7 +62,7 @@ def environment_chart(app: App, env: Environment) -> Chart:
     electric.Electric(chart, "electric", env, electric.APP)
     electric.Electric(chart, "electric-history", env, electric.HISTORY)
     llm_ingress.LlmIngress(chart, "llm-ingress", env)
-    egress.Egress(chart, "egress", env)
+    egress.Egress(chart, "egress", env, runners=runner_sandbox.pods(env.namespace))
     sandbox_pod.add_tool_config(chart, env)
     sandbox_service.SandboxService(
         chart,
@@ -85,6 +86,7 @@ def environment_chart(app: App, env: Environment) -> Chart:
         },
         sealer=ServiceAccountRef(namespace=env.namespace, name=sandbox_service.NAME),
         sealer_pods=sandbox_service.service(env.namespace).pods,
+        runners=runner_sandbox.pods(env.namespace),
     )
     history_service.HistoryService(
         chart,
@@ -100,6 +102,7 @@ def environment_chart(app: App, env: Environment) -> Chart:
     if env.history_compaction is not None:
         history_compaction.HistoryCompaction(chart, "history-compaction", env, env.history_compaction)
     app_component.App(chart, "app", env)
+    runner_sandbox.RunnerSandbox(chart, "runner-sandbox", env)
     actions.Actions(chart, "actions", env)
     notifications.Notifications(
         chart,
