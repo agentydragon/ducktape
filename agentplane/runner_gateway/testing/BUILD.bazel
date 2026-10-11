@@ -84,8 +84,8 @@ py_library(
     srcs = ["unimplemented_gateway.py"],
     deps = [
         "//agentplane/proto:event_log_pb2",
+        "//agentplane/proto:runner_gateway_pb2_grpc",
         "//agentplane/proto:runner_pb2",
-        "//agentplane/runner_gateway:protocol_pb2_grpc",
         "//agentplane/sandbox_service:protocol_pb2",
         "@pypi//grpcio",
         "@pypi//protobuf",

@@ -49,6 +49,7 @@ py_library(
     ],
     deps = [
         ":errors",
+        "//agentplane:grpc_options",
         "//agentplane/proto:command_pb2",
         "//agentplane/proto:event_log_pb2",
         "//agentplane/proto:runner_pb2",
@@ -328,7 +329,6 @@ py_test(
         "//agentplane/runner/testing:events",
         "//agentplane/runner/testing:scripted_model",
         "//util/testing:undeclared_outputs",
-        "@pypi//grpcio",
         "@pypi//protobuf",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
@@ -805,7 +805,6 @@ py_test(
         "//:conftest",
         "//agentplane/proto:event_pb2",
         "//agentplane/proto:runner_pb2",
-        "@pypi//grpcio",
         "@pypi//protobuf",
         "@pypi//pytest",
         "@pypi//pytest_bazel",

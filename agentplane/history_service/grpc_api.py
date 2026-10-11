@@ -22,7 +22,7 @@ from agentplane.history_service.summaries import SummaryReader
 from agentplane.history_service.summary_changes import SummaryChanges
 from agentplane.history_service.thread_reads import ThreadReader, ThreadScopeResetError
 from agentplane.subjects import ServiceAccountRef
-from agentplane.workload_auth.bearer import parse_bearer, sole_header
+from agentplane.workload_auth.grpc_caller import authenticate
 from agentplane.workload_auth.principal import WorkloadPrincipalRejectedError, WorkloadPrincipalResolver
 
 # gazelle:include_dep @pypi//protobuf
@@ -62,14 +62,7 @@ class HistoryService(protocol_pb2_grpc.HistoryServiceServicer):
         """Authenticate a reader and sanitize failures; no bearer or database detail reaches clients."""
         try:
             async with asyncio.timeout(self.resources.request_timeout_s):
-                values = [value for key, value in (context.invocation_metadata() or ()) if key == "authorization"]
-                value = sole_header([value for value in values if isinstance(value, str)])
-                token = parse_bearer(value) if value is not None else None
-                if token is None:
-                    raise WorkloadPrincipalRejectedError("invalid bearer metadata")
-                principal = await self.resources.principals.resolve_workload(token)
-                if principal.account not in self.resources.reader_accounts:
-                    await context.abort(grpc.StatusCode.PERMISSION_DENIED, "session history reader not allowed")
+                await authenticate(self.resources.principals, self.resources.reader_accounts, context)
                 yield
         except WorkloadPrincipalRejectedError:
             await context.abort(grpc.StatusCode.UNAUTHENTICATED, "invalid workload bearer")

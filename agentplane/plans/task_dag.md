@@ -739,7 +739,6 @@ are irreplaceable, and a node that deletes a column or row stops for the operato
 flowchart TD
     HISTORY_SANDBOX_LOCATOR_DROP[Blocked: drop the Sandbox locator from the history database]
     HISTORY_MIGRATE_IMAGE_RENAME[Blocked: name the history migration image for the History Service]
-    HISTORY_WRITER_SWITCH_RETIRE[Blocked: delete the history_writer switch]
     HISTORY_DATABASE_RENAME[Blocked: rename the sandbox_service database and role]
     SANDBOX_DATABASE_RENAME[Blocked: name the sandbox_commands database for the Sandbox Service]
     APP_ELECTRIC_RETIRE[Blocked: remove Electric's access to the app database]
@@ -771,13 +770,6 @@ the registry, point the History Service's init container (`cluster/cdk8s/agentpl
 and both image-pin Components at it, then delete the old `image_targets.json` entry and its
 `IMAGES` entry in `cluster/cdk8s/forgejo_registry/image_automation.py`.
 
-### `HISTORY_WRITER_SWITCH_RETIRE` — one ingester, no switch
-
-**Blocked on the History Service image that defaults `ingester.enabled` to true.** Then, in one
-change, delete `Environment.history_writer` (its `SANDBOX_SERVICE` value has no ingester behind it
-since the Sandbox Service's was deleted), the manifest's `ingester.enabled` and the field itself. Not
-before: the old image reads a missing key as off and stops copying journals until it rolls.
-
 ### `HISTORY_DATABASE_RENAME` — name the database for its owner
 
 **Blocked on the column drop.** Rename the `sandbox_service` database and role
@@ -804,8 +796,8 @@ plain name if it carries a history-specific one.
 **Candidate; operator direction, 2026-10-10 and 2026-10-11 PDT.** Protobuf messages and gRPC
 services that cross components live in `agentplane/proto/<name>.proto` (google3's `proto/`
 convention), each with the package `agentplane.proto.<name>`: its path from the ducktape root, no
-version suffix. `runner.proto`, `runner_ingress.proto`, `runner_control.proto` and the shared
-`command.proto`, `event.proto` and `event_log.proto` are there. Move the rest with their
+version suffix. `runner.proto`, `runner_ingress.proto`, `runner_control.proto`, `runner_gateway.proto`
+and the shared `command.proto`, `event.proto` and `event_log.proto` are there. Move the rest with their
 generated-code imports: `sandbox_service/protocol.proto` and `history_service/protocol.proto`. A
 gRPC service's full name includes its package, so each move is a clean cutover with no second name
 served: `agentplane/AGENTS.md` § Deployed state is disposable accepts old pods failing during the
@@ -815,7 +807,7 @@ roll.
 
 Dead code, finished gates, compatibility shims and stale names found by the 2026-10-10 PDT audit of
 devel. A gate counts as legacy once its rollout is finished on both testing and staging or nothing
-reads it; mid-rollout gates (read cutover, `history_writer`, delta settlement) stay with their own
+reads it; mid-rollout gates (read cutover, delta settlement) stay with their own
 nodes above. Lane named per node; leftovers of in-flight work belong to the lane already changing
 that code. Upstream-gated tombstones with a verifiable condition in code (`keepingOffset` in
 `thread_store.tsx`, the jsdom pragma in `markdown.test.tsx`) need no node.
@@ -832,7 +824,6 @@ flowchart TD
     REFACTOR_COHERENCE_AUDIT[Blocked: whole-refactor coherence audit]
     FOLLOW_PATH_RETIRE[Delete following, WatchSessions and holds] --> REFACTOR_COHERENCE_AUDIT
     RUNNER_INBOUND_RETIRE[Retire inbound runner access] --> REFACTOR_COHERENCE_AUDIT
-    SANDBOX_SERVICE_DEPLOYMENT_SPLIT[Sandbox Service and Runner Gateway split] --> REFACTOR_COHERENCE_AUDIT
     HISTORY_SERVICE_OWNERSHIP[History Service ownership] --> REFACTOR_COHERENCE_AUDIT
     RUNNER_SESSION_RECORD_SHIMS --> REFACTOR_COHERENCE_AUDIT
 ```
@@ -902,8 +893,7 @@ flowchart TD
     RUNNER_OUTBOUND_ROLLOUT[Every template dials out]
     LEGACY_SANDBOX_RETIRE[Retire pre-cutover Sandboxes]
     FOLLOW_PATH_RETIRE[Blocked: delete following, WatchSessions and holds]
-    SANDBOX_SERVICE_DEPLOYMENT_SPLIT[Candidate: Sandbox Service and Runner Gateway as separate services]
-    SANDBOX_SERVICE_DEPLOYMENT_SPLIT --> GATEWAY_CLIENT_SPLIT[Unscheduled: Session messages and client move to the gateway]
+    GATEWAY_CLIENT_SPLIT[Unscheduled: Session messages and client move to the gateway]
     AGENTPLANE_SANDBOX_RESOURCE[Decision: our own Sandbox resource]
     POD_INCARNATION[Decision: a Pod is the incarnation]
     SEAL_FINALIZER[Unscheduled: seal as a finalizer on every delete]
@@ -953,21 +943,6 @@ and token volume in cdk8s, and its caller account on the Sandbox Service; `follo
 With the holds goes teardown's path for a runner that pushes nothing: `SealResponse.pushes`,
 `TEARDOWN_PHASE_SEALED`, `SandboxInventory.record_seal` and `delete_if_released`. Every teardown
 then waits for every seal to be `flushed`.
-
-### `SANDBOX_SERVICE_DEPLOYMENT_SPLIT` — Sandbox Service and Runner Gateway as separate services
-
-**Candidate; operator, 2026-10-10 and 2026-10-11 PDT.** Two services with their own packages,
-servers, images and ServiceAccounts: the Sandbox Service (`SandboxService`), a single active
-reconciler holding the RBAC, ServiceAccount and egress grant permissions; and the replicated
-Runner Gateway (`RunnerGateway`, `agentplane/runner_gateway`), facing runners with only Lease and
-EndpointSlice writes, so a gateway bug cannot reach the Sandbox Service's credentials. Teardown
-seals through the gateway's `SealSandbox`. The code split lands first, with the Sandbox Service
-still serving both from one Deployment while `gateway_target` is unset; the manifest PR, after the
-`agentplane-runner-gateway` image publishes, deploys the gateway, points clients' `gateway_target`
-at it and deletes that combined mode (`CombinedSettings`, `serve_combined`, the gateway's legacy
-service name). The same PR, or its follow-up once that image serves, makes each client's gateway
-target setting required and deletes its fallback to the Sandbox Service target (app, History
-Service, notification service), so no caller equivocates between the two.
 
 ### `GATEWAY_CLIENT_SPLIT` — Session messages and client move to the gateway
 

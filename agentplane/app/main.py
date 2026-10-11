@@ -119,7 +119,7 @@ async def async_main(settings: Settings) -> None:
         custom_objects = cast(CustomObjectsClient, CustomObjectsApi(api))
         inventory = SandboxServiceClient(
             settings.sandbox_service_target,
-            gateway_target=settings.runner_gateway_target or settings.sandbox_service_target,
+            gateway_target=settings.runner_gateway_target,
             namespace=settings.sandbox_namespace,
             token_file=settings.sandbox_service_token_file,
             command_admission_timeout_s=settings.sandbox_service_command_admission_timeout_s,

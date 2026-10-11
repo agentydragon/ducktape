@@ -13,7 +13,6 @@ from typing import Any, Protocol, cast
 from urllib.parse import urlsplit
 from uuid import uuid4
 
-import grpc
 from cdk8s import App, Chart
 from kubernetes_asyncio import client as k8s_client, config as k8s_config
 
@@ -646,7 +645,7 @@ async def inspect(args: argparse.Namespace) -> None:
             "port_forward": _port_forward(namespace, pod) if pod is not None else None,
         }
         if args.target is not None:
-            runner = RunnerClient(grpc.aio.insecure_channel(args.target))
+            runner = RunnerClient(args.target, channel_options=None)
             try:
                 summaries = await _within(runner.list_sessions(), deadline)
             finally:
@@ -778,7 +777,7 @@ async def _retire_format_permission(core: k8s_client.CoreV1Api, namespace: str, 
 
 async def initialize(args: argparse.Namespace) -> None:
     deadline = asyncio.get_running_loop().time() + args.timeout
-    runner = RunnerClient(grpc.aio.insecure_channel(args.target))
+    runner = RunnerClient(args.target, channel_options=None)
     try:
         sessions = await _within(runner.list_sessions(), deadline)
 
@@ -878,7 +877,7 @@ async def session(args: argparse.Namespace) -> None:
     marker = f"VM_RECOVERY_{uuid4().hex[:16]}"
     workdir = f"{_SESSION_ROOT}/sessions/{session_id}"
     setup_script = f"mkdir -p {workdir}"
-    runner = RunnerClient(grpc.aio.insecure_channel(args.target), capture_history=True)
+    runner = RunnerClient(args.target, channel_options=None, capture_history=True)
     try:
         spec = runner_pb2.SessionSpec(
             harness=_harness(args.harness), cwd=workdir, model=args.model, reasoning_effort=args.reasoning_effort
@@ -923,7 +922,7 @@ async def setup_probe(args: argparse.Namespace) -> None:
         raise ValueError("setup script must contain 1..65536 UTF-8 bytes")
     workdir = f"{_SESSION_ROOT}/setup/{session_id}"
     deadline = asyncio.get_running_loop().time() + args.timeout
-    runner = RunnerClient(grpc.aio.insecure_channel(args.target), capture_history=True)
+    runner = RunnerClient(args.target, channel_options=None, capture_history=True)
     attachment = None
     stream_drained = False
     try:
@@ -1109,7 +1108,7 @@ async def resume_vm(args: argparse.Namespace) -> None:
 
 async def recover(args: argparse.Namespace) -> None:
     deadline = asyncio.get_running_loop().time() + args.timeout
-    runner = RunnerClient(grpc.aio.insecure_channel(args.target), capture_history=True)
+    runner = RunnerClient(args.target, channel_options=None, capture_history=True)
     try:
         summaries = await _within(runner.list_sessions(), deadline)
         summary = next((item for item in summaries if item.session_id == args.session_id), None)

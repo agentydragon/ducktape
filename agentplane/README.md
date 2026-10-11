@@ -35,6 +35,7 @@ flowchart TB
     app[Integration app]
     subgraph services[Backend services]
         ss[Sandbox Service]
+        gw[Runner Gateway]
         hs[History Service]
         hi[History ingress]
         notif[Notification service]
@@ -53,26 +54,31 @@ flowchart TB
 
     browser -->|HTTPS, SSE| app
     mcp_client -->|MCP over OAuth| actions
-    app -->|gRPC: Sandboxes, Sessions, commands| ss
+    app -->|gRPC: Sandboxes| ss
+    app -->|gRPC: Sessions, commands| gw
     app -->|gRPC: Session and Thread reads| hs
     app -->|HTTP| notif
     app -->|HTTP: operator decisions| actions
     app -->|Thread shapes for the browser| electric
     electric -->|logical replication| hist_db
 
-    ss -->|Sandbox CRs, control Services, Leases| k8s
+    ss -->|Sandbox CRs, grants| k8s
+    ss -->|SealSandbox| gw
     k8s -->|creates| sandbox
-    ss -->|gRPC Attach: event follow| runner
-    hs -->|WatchSessions, FollowSession, holds| ss
+    gw -->|control Services, Leases| k8s
+    gw -->|gRPC Attach: event follow| runner
+    hs -->|WatchSessions, FollowSession| gw
+    hs -->|retention holds| ss
     hs -->|ingest, fold, read| hist_db
     hi -.->|append| hist_db
-    notif -->|commands| ss
+    notif -->|Sandbox lookups| ss
+    notif -->|commands| gw
     notif -->|command receipts| hs
     notif --> actions
     actions -->|execute| k8s
 
     runner --> sidecar -->|all outbound traffic| proxy
-    proxy -->|RunnerControl Connect: commands, lifecycle| ss
+    proxy -->|RunnerControl Connect: commands, lifecycle| gw
     proxy -.->|RunnerIngress Push: Events| hi
     proxy -->|MCP| actions
     proxy -->|HTTP| notif
@@ -82,22 +88,23 @@ flowchart TB
 
 - **Sessions and Threads.** A Session is a runner's raw Event stream; a Thread is its
   conversation view, folded by the History Service. Today the History Service ingests Events by
-  following each Session through the Sandbox Service, which reads them from the runner over
+  following each Session through the Runner Gateway, which reads them from the runner over
   `Attach`. The History ingress replaces that path once runners are configured to push to it.
 - **Runner traffic is outbound.** Everything a runner sends goes through its Pod's egress
   sidecar to the egress proxy, which authenticates the Pod and substitutes credentials. Commands
-  reach staging's runners over the `RunnerControl` stream they dial to the Sandbox Service, routed
+  reach staging's runners over the `RunnerControl` stream they dial to the Runner Gateway, routed
   per Sandbox by its `<sandbox>-control` Service and `<sandbox>-runner` Lease
   ([runner control stream](docs/runner_control.md)). The testing environment still delivers commands
   over `Attach`.
 - **Databases.** Each service owns a database on one shared CNPG cluster: `app`,
-  `sandbox_commands` (Sandbox Service command admission), `sandbox_service` (Session history,
+  `sandbox_commands` (Runner Gateway command admission), `sandbox_service` (Session history,
   written by the History Service and its ingress), `actions`, `egress` and `notifications`. Only
   the history database is drawn. A second Electric over the `app` database still runs, but
   staging's app reads Threads through the history one.
-- **Runner Gateway split.** The Sandbox Service runs as one Deployment. Its runner-facing half
-  (Sessions, commands, the runner control stream) is moving into a separate Runner Gateway service and
-  image; until that ships, both halves are the box above.
+- **Sandbox Service and Runner Gateway.** The Sandbox Service owns Sandbox lifecycle, grants,
+  retention holds and teardown; the Runner Gateway owns everything that talks to a runner: Sessions,
+  commands and the runner control stream. They run as separate Deployments with their own accounts,
+  and the Sandbox Service seals a Sandbox through the gateway before deleting it.
 
 Status, open work and design gates: [`plans/`](plans/README.md). Implemented contracts:
 [`docs/`](docs/).
