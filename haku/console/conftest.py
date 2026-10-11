@@ -52,13 +52,7 @@ from haku.console.tool_call_actor import OperatorActor
 from haku.console.tool_calls import ToolCallStatus
 from third_party.containers import pgvector_pg18
 from util.oci import OciImage
-from util.testing.postgres import (
-    DatabaseClones,
-    DatabaseNames,
-    PostgresDatabaseTemplate,
-    create_database_sync,
-    force_drop_database_sync,
-)
+from util.testing.postgres import DatabaseClones, PostgresDatabaseTemplate
 from util.testing.postgres_fixtures import database_clones, database_names, postgres_admin_url, postgres_container
 from util.testing.sqlalchemy_engines import managed_async_engine
 
@@ -292,17 +286,19 @@ def postgres_image() -> OciImage:
     return pgvector_pg18.IMAGE
 
 
+@pytest.fixture(scope="session")
+def empty_vector_database_template(postgres_admin_url: str) -> Iterator[PostgresDatabaseTemplate]:
+    """Install pgvector once as superuser; migration tests clone this pristine empty database."""
+    with PostgresDatabaseTemplate(
+        postgres_admin_url, "haku_console_empty_vector_template", extensions=("vector",)
+    ) as template:
+        yield template
+
+
 @pytest.fixture
-def db_url(postgres_admin_url: str, database_names: DatabaseNames) -> Generator[str]:
+def db_url(empty_vector_database_template: PostgresDatabaseTemplate, database_clones: DatabaseClones) -> str:
     """A pristine, empty per-test database (no migrations)."""
-    db_name = database_names()
-    # `vector` here rather than in a migration: pgvector is untrusted, so only a superuser can
-    # install it, which is why the deployed database gets it from CNPG's `Database` CR.
-    db_url = create_database_sync(postgres_admin_url, db_name, extensions=("vector",))
-
-    yield make_url(db_url).set(drivername="postgresql+asyncpg").render_as_string(hide_password=False)
-
-    force_drop_database_sync(postgres_admin_url, db_name)
+    return database_clones.clone(empty_vector_database_template, drivername="postgresql+asyncpg")
 
 
 @pytest.fixture(scope="session")

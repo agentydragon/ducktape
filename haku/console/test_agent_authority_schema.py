@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import datetime
 from dataclasses import dataclass
-from typing import Any
 from uuid import UUID, uuid4
 
 import pytest
@@ -34,7 +33,7 @@ from haku.console.identity.agent import (
 )
 from haku.console.identity.operator_identity import OperatorStatus
 from haku.console.tool_calls import ToolCallStatus
-from util.testing.postgres import DatabaseNames, create_database_sync, force_drop_database_sync
+from util.testing.postgres import DatabaseClones, PostgresDatabaseTemplate
 
 _UTC = datetime.UTC
 
@@ -66,13 +65,9 @@ class StaticAgent:
 
 
 @pytest.fixture
-def db_url(postgres_admin_url: str, database_names: DatabaseNames) -> Any:
-    db_name = database_names()
-    db_url = create_database_sync(postgres_admin_url, db_name, extensions=("vector",))
-
-    yield db_url
-
-    force_drop_database_sync(postgres_admin_url, db_name)
+def db_url(empty_vector_database_template: PostgresDatabaseTemplate, database_clones: DatabaseClones) -> str:
+    """Clone the pristine schema with a sync driver for the physical migration checks."""
+    return database_clones.clone(empty_vector_database_template, drivername="postgresql+psycopg")
 
 
 def _now() -> datetime.datetime:
