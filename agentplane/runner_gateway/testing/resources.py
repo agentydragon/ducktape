@@ -25,6 +25,8 @@ def build_resources(
     caller_accounts: frozenset[ServiceAccountRef],
     platform_instructions: str,
 ) -> Resources:
+    # Shared, as in production: delivery and control must agree on which replica holds a runner.
+    leases = ConnectionLeases()
     return Resources(
         runner_admission_ack_timeout_s=1,
         principals=principals,
@@ -37,9 +39,9 @@ def build_resources(
             engine.url,
             dispatches=DispatchStore(engine),
             connections=ConnectionStore(engine),
-            leases=ConnectionLeases(),
+            leases=leases,
             liveness_s=1,
         ),
-        control=ChannelControl(ConnectionLeases()),
+        control=ChannelControl(leases),
         session_changes=SessionChanges(engine.url),
     )
