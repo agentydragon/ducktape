@@ -22,6 +22,7 @@ from props.db.database import Database
 from props.db.sync.model_metadata import sync_model_metadata_with_session
 from props.db.sync.sync import SpecimenBundle, refresh_examples_matview, sync_specimen
 from util.bazel.runfiles import get_required_path
+from util.oci import OciImage
 from util.testing.postgres import (
     DatabaseNames,
     PostgresDatabaseTemplate,
@@ -66,14 +67,14 @@ def pytest_addoption(parser: pytest.Parser) -> None:
 
 
 @pytest.fixture(scope="session")
-def postgres_container() -> Generator[PostgresContainer]:
+def postgres_container(postgres_image: OciImage) -> Generator[PostgresContainer]:
     """Session-scoped PostgreSQL container.
 
     Starts a fresh PostgreSQL 18 container for the entire test session.
     All tests share this container but get isolated databases.
     """
     with tracer.start_as_current_span("postgres_container fixture"):
-        container = start_postgres_container()
+        container = start_postgres_container(postgres_image)
 
     try:
         yield container

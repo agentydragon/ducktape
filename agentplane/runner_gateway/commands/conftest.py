@@ -12,6 +12,7 @@ from util.testing.postgres_fixtures import (
     migrated_database_fixtures,
     postgres_admin_url,
     postgres_container,
+    postgres_image,
 )
 
 # gazelle:include_dep @pypi//asyncpg

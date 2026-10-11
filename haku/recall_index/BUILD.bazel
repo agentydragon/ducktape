@@ -112,6 +112,7 @@ py_library(
         ":fake_embedder",
         ":store",
         "//third_party/containers:pgvector_pg18",
+        "//util:oci",
         "//util/testing:postgres",
         "//util/testing:postgres_fixtures",
         "@pypi//asyncpg",
@@ -119,7 +120,6 @@ py_library(
         "@pypi//pytest",
         "@pypi//pytest_asyncio",
         "@pypi//sqlalchemy",
-        "@pypi//testcontainers",
     ],
 )
 

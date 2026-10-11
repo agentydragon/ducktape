@@ -8,7 +8,13 @@ from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 
 from agentplane.history_service.storage.database_migrate import RUNNER
 from util.testing.postgres import DatabaseClones, PostgresDatabaseTemplate, migrated_database_template
-from util.testing.postgres_fixtures import database_clones, database_names, postgres_admin_url, postgres_container
+from util.testing.postgres_fixtures import (
+    database_clones,
+    database_names,
+    postgres_admin_url,
+    postgres_container,
+    postgres_image,
+)
 
 # gazelle:include_dep @pypi//asyncpg
 # gazelle:include_dep @pypi//psycopg

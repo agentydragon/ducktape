@@ -21,7 +21,13 @@ from agentplane.sandbox_service.testing.grpc_service import CALLER_TOKEN
 from agentplane.sandbox_service.testing.kubernetes import Cluster, kubernetes
 from util.kubernetes import CustomObjectsClient
 from util.testing.postgres import DatabaseClones, PostgresDatabaseTemplate
-from util.testing.postgres_fixtures import database_clones, database_names, postgres_admin_url, postgres_container
+from util.testing.postgres_fixtures import (
+    database_clones,
+    database_names,
+    postgres_admin_url,
+    postgres_container,
+    postgres_image,
+)
 
 
 @pytest.fixture(autouse=True)

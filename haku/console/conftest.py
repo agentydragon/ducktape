@@ -34,7 +34,6 @@ from pydantic import SecretStr
 from sqlalchemy import select
 from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker, create_async_engine
-from testcontainers.postgres import PostgresContainer
 
 from haku.console.app import create_app
 from haku.console.config import OperatorIdentityConfig, OperatorOidcConfig, WebPushConfig
@@ -52,6 +51,7 @@ from haku.console.settings import Settings
 from haku.console.tool_call_actor import OperatorActor
 from haku.console.tool_calls import ToolCallStatus
 from third_party.containers import pgvector_pg18
+from util.oci import OciImage
 from util.testing.postgres import (
     DatabaseClones,
     DatabaseNames,
@@ -59,7 +59,7 @@ from util.testing.postgres import (
     create_database_sync,
     force_drop_database_sync,
 )
-from util.testing.postgres_fixtures import database_clones, database_names, postgres_admin_url, start_postgres_container
+from util.testing.postgres_fixtures import database_clones, database_names, postgres_admin_url, postgres_container
 
 # TestClient drives the app over httpx, imported inside starlette; gazelle cannot see it.
 # gazelle:include_dep @pypi//httpx
@@ -286,17 +286,9 @@ async def insert_approved_tool_call(
 
 
 @pytest.fixture(scope="session")
-def postgres_container() -> Generator[PostgresContainer]:
-    """Postgres **with pgvector**, overriding the shared stock-image fixture.
-
-    The baseline creates `vector` columns, so every test that migrates to head needs an image
-    that has the extension — the same capability production gets from the CNPG image.
-    """
-    container = start_postgres_container(pgvector_pg18.IMAGE)
-    try:
-        yield container
-    finally:
-        container.stop()
+def postgres_image() -> OciImage:
+    """Migrations create `vector` columns, so use the same pgvector capability as production."""
+    return pgvector_pg18.IMAGE
 
 
 @pytest.fixture

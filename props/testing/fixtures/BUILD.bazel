@@ -26,6 +26,7 @@ py_library(
         "//props/db:database",
         "//props/db/sync",
         "//props/db/sync:model_metadata",
+        "//util:oci",
         "//util/bazel:runfiles",
         "//util/testing:postgres",
         "//util/testing:postgres_fixtures",

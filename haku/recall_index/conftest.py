@@ -2,19 +2,19 @@
 
 from __future__ import annotations
 
-from collections.abc import AsyncGenerator, Generator
+from collections.abc import AsyncGenerator
 
 import pytest
 import pytest_asyncio
 from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker, create_async_engine
-from testcontainers.postgres import PostgresContainer
 
 from haku.recall_index.fake_embedder import FakeEmbedder
 from haku.recall_index.store import ensure_schema
 from third_party.containers import pgvector_pg18
+from util.oci import OciImage
 from util.testing.postgres import DatabaseClones, PostgresDatabaseTemplate
-from util.testing.postgres_fixtures import database_clones, database_names, postgres_admin_url, start_postgres_container
+from util.testing.postgres_fixtures import database_clones, postgres_admin_url, postgres_container
 
 # Fixtures build postgresql+asyncpg:// engines; SQLAlchemy loads the dialect's
 # driver at runtime, so gazelle cannot see the dependency.
@@ -24,12 +24,8 @@ from util.testing.postgres_fixtures import database_clones, database_names, post
 
 
 @pytest.fixture(scope="session")
-def postgres_container() -> Generator[PostgresContainer]:
-    container = start_postgres_container(pgvector_pg18.IMAGE)
-    try:
-        yield container
-    finally:
-        container.stop()
+def postgres_image() -> OciImage:
+    return pgvector_pg18.IMAGE
 
 
 @pytest_asyncio.fixture(scope="session", loop_scope="session")
