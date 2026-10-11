@@ -23,7 +23,7 @@ from agentplane.proto import event_log_pb2, runner_pb2
 from agentplane.thread_fold.models import ThreadHistorySummary
 from agentplane.thread_fold.projection_lease import ProjectionLease
 from agentplane.thread_fold.projector import HistoryProjector, service_pages
-from agentplane.thread_fold.recording import THREAD_FOLD_EPOCH, set_operational
+from agentplane.thread_fold.recording import THREAD_FOLD_EPOCH, THREAD_FOLD_PAGE_SIZE, set_operational
 
 # gazelle:include_dep @pypi//protobuf
 
@@ -77,7 +77,11 @@ class ProjectedHistory(Ingestion):
         self.peer = peer
         self.reader = history_reader
         self.projector = HistoryProjector(
-            engine, service_pages(history_reader), projection_epoch=THREAD_FOLD_EPOCH, notify=notify_threads
+            engine,
+            service_pages(history_reader),
+            projection_epoch=THREAD_FOLD_EPOCH,
+            page_size=THREAD_FOLD_PAGE_SIZE,
+            notify=notify_threads,
         )
         self._attachments: dict[UUID, runner_pb2.Attached] = {}
 

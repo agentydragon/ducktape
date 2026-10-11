@@ -47,7 +47,7 @@ from agentplane.kubernetes_watch import STALE_AFTER_CYCLES
 from agentplane.sandbox_service.client import SandboxServiceClient
 from agentplane.sandbox_service.egress_views import EgressReader
 from agentplane.thread_fold.projector import HistoryProjector, service_pages
-from agentplane.thread_fold.recording import THREAD_FOLD_EPOCH
+from agentplane.thread_fold.recording import THREAD_FOLD_EPOCH, THREAD_FOLD_PAGE_SIZE
 from util.bazel.runfiles import get_required_path
 from util.kubernetes import CustomObjectsClient
 
@@ -156,7 +156,11 @@ async def async_main(settings: Settings) -> None:
                 summaries: AppSummaries | HistorySummaries = AppSummaries(engine)
                 content = ContentStore(engine, history_reader=history)
                 projector: HistoryProjector | None = HistoryProjector(
-                    engine, service_pages(history), projection_epoch=THREAD_FOLD_EPOCH, notify=notify_threads
+                    engine,
+                    service_pages(history),
+                    projection_epoch=THREAD_FOLD_EPOCH,
+                    page_size=THREAD_FOLD_PAGE_SIZE,
+                    notify=notify_threads,
                 )
             case ThreadReads.HISTORY_SERVICE:
                 summaries = HistorySummaries(engine, history)

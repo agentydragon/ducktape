@@ -39,7 +39,7 @@ from agentplane.runner.harness import Harness
 from agentplane.sandbox_service.client import SandboxServiceClient
 from agentplane.sandbox_service.egress_views import EgressReader
 from agentplane.thread_fold.projector import HistoryProjector, service_pages
-from agentplane.thread_fold.recording import THREAD_FOLD_EPOCH
+from agentplane.thread_fold.recording import THREAD_FOLD_EPOCH, THREAD_FOLD_PAGE_SIZE
 from agentplane.thread_fold.views import ThreadEntityView
 
 
@@ -77,7 +77,11 @@ def _openapi_document(api_client: k8s_client.ApiClient) -> dict[str, Any]:
                 event_logs=event_logs,
                 ingestion=Ingestion(engine),
                 history_projector=HistoryProjector(
-                    engine, service_pages(history), projection_epoch=THREAD_FOLD_EPOCH, notify=notify_threads
+                    engine,
+                    service_pages(history),
+                    projection_epoch=THREAD_FOLD_EPOCH,
+                    page_size=THREAD_FOLD_PAGE_SIZE,
+                    notify=notify_threads,
                 ),
             ),
         ),

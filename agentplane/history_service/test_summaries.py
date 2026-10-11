@@ -75,7 +75,7 @@ async def test_pages_newest_first_with_unfolded_sessions_ahead(
     newest = await session_in(history, "test-sandbox", started(20))
     middle = await session_in(history, "test-sandbox", started(10))
     empty = await session_in(history, "test-sandbox", [])
-    await FoldShadow(engine=engine, history=history, concurrency=2).cycle()
+    await FoldShadow(engine=engine, history=history, concurrency=2, page_size=1000).cycle()
     # Committed after the fold ran, so it lags.
     lagging = await session_in(history, "test-sandbox", started(30))
 

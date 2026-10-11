@@ -12,7 +12,6 @@ from agentplane.history_service.fold_shadow import FOLD_EPOCH, FoldShadow
 from agentplane.history_service.storage.store import HistoryNotFoundError, Store
 from agentplane.history_service.thread_reads import ThreadReader, ThreadScopeResetError
 from agentplane.proto import event_log_pb2, event_pb2
-from agentplane.thread_fold.projector import PAGE_SIZE
 from agentplane.thread_fold.views import EntityKind, ThreadEntityView, ThreadItemEntityView
 
 # gazelle:include_dep @pypi//protobuf
@@ -21,6 +20,7 @@ from agentplane.thread_fold.views import EntityKind, ThreadEntityView, ThreadIte
 pytest_plugins = ("agentplane.history_service.storage.conftest",)
 
 VIEW: TypeAdapter[ThreadEntityView] = TypeAdapter(ThreadEntityView)
+PAGE_SIZE = 8
 # More deltas than a fold page, so the window reflects several fold batches.
 DELTAS = PAGE_SIZE + 2
 
@@ -64,7 +64,7 @@ async def folded(engine: AsyncEngine, history: Store) -> UUID:
             ),
         ],
     )
-    shadow = FoldShadow(engine=engine, history=history, concurrency=1)
+    shadow = FoldShadow(engine=engine, history=history, concurrency=1, page_size=PAGE_SIZE)
     while (await shadow.cycle()).behind:
         pass
     return session_id

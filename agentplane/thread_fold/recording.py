@@ -39,6 +39,8 @@ from agentplane.thread_fold.views import (
 
 # The epoch the app's projection was built in.
 THREAD_FOLD_EPOCH = "v1"
+# Entries the app projector folds per transaction.
+THREAD_FOLD_PAGE_SIZE = 128
 
 
 class EventReplicationError(ValueError):

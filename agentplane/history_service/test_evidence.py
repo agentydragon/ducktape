@@ -65,7 +65,7 @@ async def folded(engine: AsyncEngine, history: Store) -> UUID:
             entry(4, text_delta=event_pb2.TextDelta(item_id="test-reply", text="hello")),
         ],
     )
-    await FoldShadow(engine=engine, history=history, concurrency=1).cycle()
+    await FoldShadow(engine=engine, history=history, concurrency=1, page_size=1000).cycle()
     return session_id
 
 
@@ -108,7 +108,7 @@ async def test_a_frame_settled_before_the_fold_forgets_its_link_is_unavailable(
         runner_session_id="test-runner-session",
     )
     await settling.append(session_id, span[:6])
-    await FoldShadow(engine=engine, history=settling, concurrency=1).cycle()
+    await FoldShadow(engine=engine, history=settling, concurrency=1, page_size=1000).cycle()
     await settling.append(session_id, span[6:])
 
     frames = await reader.native_frames(

@@ -23,12 +23,13 @@ from agentplane.thread_fold.models import (
     ThreadNativeLink,
     ThreadPayloadChunk,
 )
-from agentplane.thread_fold.projector import PAGE_SIZE
 from agentplane.thread_fold.views import EntityKind
 
 # gazelle:include_dep //agentplane/history_service/storage:conftest
 
 pytest_plugins = ("agentplane.history_service.storage.conftest",)
+
+PAGE_SIZE = 8
 
 
 def entry(cursor: int, **observation: object) -> event_log_pb2.EventEntry:
@@ -84,7 +85,7 @@ async def test_folds_retained_sessions_a_page_per_cycle_until_caught_up(engine: 
     entries = [entry(1, harness_started=event_pb2.HarnessStarted(pid=7)), *turn(2)]
     folded = await retained_session(history, entries)
     empty = await retained_session(history, [])
-    shadow = FoldShadow(engine=engine, history=history, concurrency=2)
+    shadow = FoldShadow(engine=engine, history=history, concurrency=2, page_size=PAGE_SIZE)
 
     assert await shadow.cycle() == FoldBacklog(sessions=2, behind=1, events_behind=len(entries) - PAGE_SIZE)
     assert await shadow.cycle() == FoldBacklog(sessions=2, behind=0, events_behind=0)
@@ -106,7 +107,7 @@ async def test_folds_retained_sessions_a_page_per_cycle_until_caught_up(engine: 
 async def test_run_folds_without_waiting_out_the_interval_while_behind(engine: AsyncEngine, history: Store) -> None:
     entries = turn(1)
     session_id = await retained_session(history, entries)
-    shadow = FoldShadow(engine=engine, history=history, concurrency=1)
+    shadow = FoldShadow(engine=engine, history=history, concurrency=1, page_size=PAGE_SIZE)
     changes = HistoryChanges(engine.url)
     sessions = async_sessionmaker(engine)
 
@@ -132,8 +133,8 @@ async def test_run_folds_without_waiting_out_the_interval_while_behind(engine: A
 
 async def test_replicas_split_sessions_by_lease(engine: AsyncEngine, history: Store) -> None:
     session_id = await retained_session(history, turn(1))
-    first = FoldShadow(engine=engine, history=history, concurrency=1)
-    second = FoldShadow(engine=engine, history=history, concurrency=1)
+    first = FoldShadow(engine=engine, history=history, concurrency=1, page_size=PAGE_SIZE)
+    second = FoldShadow(engine=engine, history=history, concurrency=1, page_size=PAGE_SIZE)
 
     assert (await first.cycle()).behind == 1
     # The first replica's lease is live, so the second leaves the Session alone.
@@ -200,7 +201,7 @@ async def test_settled_history_folds_to_the_rows_of_the_full_log(engine: AsyncEn
     span = claude_text(["Hel", "lo"]).entries
     full = await retained_session(history, span)
     settled = await retained_session(Store(engine, settle_deltas=True), span)
-    shadow = FoldShadow(engine=engine, history=history, concurrency=2)
+    shadow = FoldShadow(engine=engine, history=history, concurrency=2, page_size=PAGE_SIZE)
 
     assert await shadow.cycle() == FoldBacklog(sessions=2, behind=0, events_behind=0)
 
@@ -218,7 +219,7 @@ async def test_settlement_after_a_live_fold_drops_the_chunks_evidence(engine: As
     settling = Store(engine, settle_deltas=True)
     span = claude_text(["Hel", "lo"]).entries
     session_id = await retained_session(settling, span[:6])
-    shadow = FoldShadow(engine=engine, history=settling, concurrency=1)
+    shadow = FoldShadow(engine=engine, history=settling, concurrency=1, page_size=PAGE_SIZE)
 
     await shadow.cycle()
     async with async_sessionmaker(engine)() as session:

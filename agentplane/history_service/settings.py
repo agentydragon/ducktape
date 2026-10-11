@@ -76,6 +76,8 @@ class Settings(BaseSettings):
     # Folds every retained Session from its raw log; off until the operator starts the rebuild.
     fold_shadow: bool = False
     fold_concurrency: int = Field(default=4, ge=1, le=64)
+    # A backfill advances each Session one page per cycle; the history store serves at most 1000.
+    fold_page_size: int = Field(default=1000, ge=1, le=1000)
     fold_interval_s: float = Field(default=2, gt=0)
     watch_lease_s: float = Field(
         default=300, gt=0, description="Seconds a WatchSessionSummaries stream lasts before planned renewal."

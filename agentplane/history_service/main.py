@@ -58,9 +58,12 @@ async def serve(settings: Settings) -> None:
             # A failed fold stops folding, not the raw reads this process serves.
             shadow = (
                 asyncio.create_task(
-                    FoldShadow(engine=fold_engine, history=history, concurrency=settings.fold_concurrency).run(
-                        interval_s=settings.fold_interval_s, changes=history_changes
-                    ),
+                    FoldShadow(
+                        engine=fold_engine,
+                        history=history,
+                        concurrency=settings.fold_concurrency,
+                        page_size=settings.fold_page_size,
+                    ).run(interval_s=settings.fold_interval_s, changes=history_changes),
                     name="fold-shadow",
                 )
                 if settings.fold_shadow

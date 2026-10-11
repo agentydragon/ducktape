@@ -31,8 +31,8 @@ from agentplane.proto import event_pb2, runner_pb2
 from agentplane.sandbox_service import protocol_pb2
 from agentplane.thread_fold.models import ThreadCheckpoint, ThreadEntity, ThreadHistorySummary
 from agentplane.thread_fold.projection_lease import ProjectionLeaseLostError
-from agentplane.thread_fold.projector import PAGE_SIZE, HistoryProjector, service_pages
-from agentplane.thread_fold.recording import THREAD_FOLD_EPOCH, EventReplicationError
+from agentplane.thread_fold.projector import HistoryProjector, service_pages
+from agentplane.thread_fold.recording import THREAD_FOLD_EPOCH, THREAD_FOLD_PAGE_SIZE, EventReplicationError
 from agentplane.thread_fold.views import ThreadViewState
 
 # gazelle:include_dep @pypi//protobuf
@@ -55,6 +55,7 @@ async def test_projection_resumes_existing_checkpoint_without_copying_raw_events
         engine,
         service_pages(cast(HistoryServiceClient, reader)),
         projection_epoch=THREAD_FOLD_EPOCH,
+        page_size=THREAD_FOLD_PAGE_SIZE,
         notify=notify_threads,
     )
     assert (await projector.project_batch(thread, lease=lease)).through_cursor == 2
@@ -77,6 +78,7 @@ async def test_failed_projection_can_retry_without_advancing_checkpoint(
         engine,
         service_pages(cast(HistoryServiceClient, reader)),
         projection_epoch=THREAD_FOLD_EPOCH,
+        page_size=THREAD_FOLD_PAGE_SIZE,
         notify=notify_threads,
     )
     with (
@@ -105,6 +107,7 @@ async def test_expired_owner_cannot_project(
             engine,
             service_pages(cast(HistoryServiceClient, reader)),
             projection_epoch=THREAD_FOLD_EPOCH,
+            page_size=THREAD_FOLD_PAGE_SIZE,
             notify=notify_threads,
         ).project_batch(thread, lease=lease)
     async with async_sessionmaker(engine)() as session:
@@ -129,6 +132,7 @@ async def test_invalid_history_does_not_advance_projection(
             engine,
             service_pages(cast(HistoryServiceClient, reader)),
             projection_epoch=THREAD_FOLD_EPOCH,
+            page_size=THREAD_FOLD_PAGE_SIZE,
             notify=notify_threads,
         ).project_batch(thread, lease=lease)
     assert await event_logs.last_cursor(thread) == 0
@@ -149,6 +153,7 @@ async def test_projection_requires_service_coverage_of_checkpoint(
             engine,
             service_pages(cast(HistoryServiceClient, reader)),
             projection_epoch=THREAD_FOLD_EPOCH,
+            page_size=THREAD_FOLD_PAGE_SIZE,
             notify=notify_threads,
         ).project_batch(thread, lease=lease)
     assert await event_logs.last_cursor(thread) == 1
@@ -176,6 +181,7 @@ async def test_supervisor_resumes_deleted_sandbox_without_runner_contact(
                 engine,
                 service_pages(cast(HistoryServiceClient, reader)),
                 projection_epoch=THREAD_FOLD_EPOCH,
+                page_size=THREAD_FOLD_PAGE_SIZE,
                 notify=notify_threads,
             ),
         )
@@ -280,6 +286,7 @@ async def test_projection_updates_activity_atomically_and_ignores_tool_output(
         engine,
         service_pages(cast(HistoryServiceClient, reader)),
         projection_epoch=THREAD_FOLD_EPOCH,
+        page_size=THREAD_FOLD_PAGE_SIZE,
         notify=AsyncMock(side_effect=RuntimeError("commit interrupted")),
     )
     # Fail after the fold and activity write: both must roll back together.
@@ -289,6 +296,7 @@ async def test_projection_updates_activity_atomically_and_ignores_tool_output(
         engine,
         service_pages(cast(HistoryServiceClient, reader)),
         projection_epoch=THREAD_FOLD_EPOCH,
+        page_size=THREAD_FOLD_PAGE_SIZE,
         notify=notify_threads,
     )
     async with async_sessionmaker(engine)() as session:
@@ -341,6 +349,7 @@ async def test_thread_metadata_survives_projection_retry(
         engine,
         service_pages(cast(HistoryServiceClient, reader)),
         projection_epoch=THREAD_FOLD_EPOCH,
+        page_size=THREAD_FOLD_PAGE_SIZE,
         notify=AsyncMock(side_effect=RuntimeError("interrupted")),
     )
     with pytest.raises(RuntimeError, match="interrupted"):
@@ -349,6 +358,7 @@ async def test_thread_metadata_survives_projection_retry(
         engine,
         service_pages(cast(HistoryServiceClient, reader)),
         projection_epoch=THREAD_FOLD_EPOCH,
+        page_size=THREAD_FOLD_PAGE_SIZE,
         notify=notify_threads,
     )
     assert await store.get_thread(thread) == before
@@ -395,6 +405,7 @@ async def test_lifecycle_uses_only_covered_service_snapshot(
         engine,
         service_pages(cast(HistoryServiceClient, reader)),
         projection_epoch=THREAD_FOLD_EPOCH,
+        page_size=THREAD_FOLD_PAGE_SIZE,
         notify=notify_threads,
     )
     await projector.project_batch(thread, lease=lease)
@@ -446,7 +457,11 @@ async def test_unchanged_idle_projection_does_not_write_or_notify(
     reader.read_session_events.return_value = page
     notify = AsyncMock()
     projector = HistoryProjector(
-        engine, service_pages(cast(HistoryServiceClient, reader)), projection_epoch=THREAD_FOLD_EPOCH, notify=notify
+        engine,
+        service_pages(cast(HistoryServiceClient, reader)),
+        projection_epoch=THREAD_FOLD_EPOCH,
+        page_size=THREAD_FOLD_PAGE_SIZE,
+        notify=notify,
     )
     await projector.project_batch(thread, lease=lease)
     notify.reset_mock()
@@ -489,6 +504,7 @@ async def test_empty_page_adopts_eof_and_rolls_back_invalid_snapshot(
         engine,
         service_pages(cast(HistoryServiceClient, reader)),
         projection_epoch=THREAD_FOLD_EPOCH,
+        page_size=THREAD_FOLD_PAGE_SIZE,
         notify=notify_threads,
     )
     with pytest.raises(EventReplicationError, match="outside"):
@@ -520,6 +536,7 @@ async def test_deleted_history_keeps_seeded_terminal_state_without_service_snaps
         engine,
         service_pages(cast(HistoryServiceClient, reader)),
         projection_epoch=THREAD_FOLD_EPOCH,
+        page_size=THREAD_FOLD_PAGE_SIZE,
         notify=notify_threads,
     ).project_batch(thread, lease=lease)
     assert await event_logs.feed_state(thread) == before
@@ -538,6 +555,7 @@ async def test_projection_failure_retains_checkpoint_not_eof_and_recovers(
         engine,
         service_pages(cast(HistoryServiceClient, reader)),
         projection_epoch=THREAD_FOLD_EPOCH,
+        page_size=THREAD_FOLD_PAGE_SIZE,
         notify=notify_threads,
     )
     with pytest.raises(ConnectionError):
@@ -598,6 +616,7 @@ async def test_discovery_of_new_service_thread_never_starts_legacy_follow(
             engine,
             service_pages(cast(HistoryServiceClient, reader)),
             projection_epoch=THREAD_FOLD_EPOCH,
+            page_size=THREAD_FOLD_PAGE_SIZE,
             notify=notify_threads,
         ),
     )
@@ -605,7 +624,7 @@ async def test_discovery_of_new_service_thread_never_starts_legacy_follow(
         await coordinator.reconcile()
         assert public_id in await logs.projection_sessions()
         await coordinator.reconcile()
-        reader.read_session_events.assert_awaited_once_with(str(public_id), after_cursor=0, limit=PAGE_SIZE)
+        reader.read_session_events.assert_awaited_once_with(str(public_id), after_cursor=0, limit=THREAD_FOLD_PAGE_SIZE)
         client.follow.assert_not_called()
     finally:
         await coordinator.close()
@@ -636,6 +655,7 @@ async def test_discovery_racing_open_agrees_on_the_service_id(engine: AsyncEngin
             engine,
             service_pages(cast(HistoryServiceClient, reader)),
             projection_epoch=THREAD_FOLD_EPOCH,
+            page_size=THREAD_FOLD_PAGE_SIZE,
             notify=notify_threads,
         ),
     )
@@ -674,6 +694,7 @@ async def test_sessions_without_projection_metadata_are_not_scheduled(
             engine,
             service_pages(cast(HistoryServiceClient, reader)),
             projection_epoch=THREAD_FOLD_EPOCH,
+            page_size=THREAD_FOLD_PAGE_SIZE,
             notify=notify_threads,
         ),
     )
@@ -727,6 +748,7 @@ async def test_coordinator_projects_sibling_owned_by_another_replica_independent
             engine,
             service_pages(cast(HistoryServiceClient, reader)),
             projection_epoch=THREAD_FOLD_EPOCH,
+            page_size=THREAD_FOLD_PAGE_SIZE,
             notify=notify_threads,
         ),
     )

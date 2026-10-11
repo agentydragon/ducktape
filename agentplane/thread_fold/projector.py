@@ -38,9 +38,6 @@ class ProjectionProgress:
 
 # Up to `limit` entries of a Session's committed prefix after a cursor, with its watermark and lifecycle.
 PageReader = Callable[[UUID, int, int], Awaitable[history_pb2.ReadSessionEventsResponse]]
-# Entries folded per transaction, at most the history store's page limit. A backfill advances
-# one page per cycle, so this bounds its rate.
-PAGE_SIZE = 1000
 
 
 def service_pages(client: HistoryServiceClient) -> PageReader:
@@ -57,11 +54,14 @@ class HistoryProjector:
         read_page: PageReader,
         *,
         projection_epoch: str,
+        page_size: int,
         notify: Callable[[AsyncSession], Awaitable[None]],
     ) -> None:
-        """`notify` runs inside each transaction that changes what a Thread's readers see."""
+        """Fold at most `page_size` entries per transaction; `notify` runs inside each transaction
+        that changes what a Thread's readers see."""
         self._sessions = async_sessionmaker(engine, expire_on_commit=False)
         self._read_page = read_page
+        self._page_size = page_size
         self._projection_epoch = projection_epoch
         self._notify = notify
 
@@ -100,10 +100,10 @@ class HistoryProjector:
             await self._notify(session)
 
     async def _project_prefix(self, thread_id: UUID, *, lease: ProjectionLease, after: int) -> ProjectionProgress:
-        page = await self._read_page(thread_id, after, PAGE_SIZE)
+        page = await self._read_page(thread_id, after, self._page_size)
         if page.last_cursor < after:
             raise ConnectionError("History Service has not covered the app projection checkpoint")
-        if len(page.entries) > PAGE_SIZE:
+        if len(page.entries) > self._page_size:
             raise EventReplicationError("invalid service history projection page")
         # Cursors a settlement removed are covered by its ranges, not missing.
         settled = settled_ranges(cursor_range for settlement in page.settlements for cursor_range in settlement.ranges)

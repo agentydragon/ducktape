@@ -124,7 +124,7 @@ async def fold_history(database_url: str) -> None:
     try:
         async with engine.begin() as connection:
             await connection.run_sync(Base.metadata.create_all)
-        shadow = FoldShadow(engine=engine, history=Store(engine), concurrency=1)
+        shadow = FoldShadow(engine=engine, history=Store(engine), concurrency=1, page_size=1000)
         try:
             while (await shadow.cycle()).behind:
                 pass
