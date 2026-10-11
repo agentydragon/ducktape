@@ -1,9 +1,9 @@
 # Runner channel
 
 Status: **accepted design, command delivery live on staging.** The Sandbox Service's
-channel listener (`sandbox_service/runner_channel.py`), reachable through the egress proxy,
+channel listener (`runner_gateway/runner_channel.py`), reachable through the egress proxy,
 authenticates, fences and keeps connections alive, and delivers dispatch attempts
-(`sandbox_service/channel_delivery.py`) for Sandboxes routed to it. The runner dials it when started
+(`runner_gateway/channel_delivery.py`) for Sandboxes routed to it. The runner dials it when started
 with `--channel-target` (`runner/channel.py`), which staging's Sandbox Service passes to every new
 Sandbox's runner (`runner_control`), so staging's commands travel over the channel. Testing's
 runners are reached through the inbound `Attach` RPC, which Cilium admits only from the Sandbox
@@ -293,7 +293,7 @@ Sandbox, hence `-control`.
 
 Status: **accepted (operator, 2026-10-10 PDT); built for the `ListSessions`, `CreateSession` and
 `ResumeSession` RPCs and teardown sealing.** The Sandbox Service agrees `lifecycle` and sends those
-callers' requests over the channel (`sandbox_service/channel_control.py`); `LookupSession` still
+callers' requests over the channel (`runner_gateway/channel_control.py`); `LookupSession` still
 reads Sessions through the inbound API, and so does every Sandbox whose runner never agreed
 `lifecycle`. A runner refuses `OpenSession` for a Session it created but could not
 start with `FAILED`; asked again, it confirms the stopped Session, so `CreateSession` follows an

@@ -8,7 +8,7 @@ from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 from testcontainers.postgres import PostgresContainer
 
-from agentplane.sandbox_service.commands.database_migrate import RUNNER
+from agentplane.runner_gateway.commands.database_migrate import RUNNER
 from util.testing.postgres import create_database_sync, force_drop_database_sync
 from util.testing.postgres_fixtures import postgres_container
 

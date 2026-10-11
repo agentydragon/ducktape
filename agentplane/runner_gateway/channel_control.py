@@ -16,7 +16,7 @@ import grpc
 
 from agentplane.proto import runner_channel_pb2 as channel_pb2
 from agentplane.runner.errors import RunnerError
-from agentplane.sandbox_service.connection_records import ConnectionLeases
+from agentplane.runner_gateway.connection_records import ConnectionLeases
 from agentplane.sandbox_service.destinations import DestinationUnavailableError
 
 # gazelle:include_dep @pypi//protobuf

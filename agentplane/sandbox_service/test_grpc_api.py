@@ -19,15 +19,17 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 
 from agentplane.proto import command_pb2, event_log_pb2, event_pb2, runner_pb2
 from agentplane.runner.errors import RunnerError, StreamClosedError
+from agentplane.runner_gateway.channel_control import ChannelControl
+from agentplane.runner_gateway.channel_delivery import ChannelDelivery
+from agentplane.runner_gateway.commands import db as commands_db
+from agentplane.runner_gateway.commands.connections import ConnectionStore
+from agentplane.runner_gateway.commands.dispatch import DispatchStore
+from agentplane.runner_gateway.commands.store import CommandSubmission, SubmissionState, SubmissionStore
+from agentplane.runner_gateway.connection_records import ConnectionLeases
+from agentplane.runner_gateway.session_registry import SessionRegistry
+from agentplane.runner_gateway.testing.sessions import register_session
 from agentplane.sandbox_service import protocol_pb2, wire
-from agentplane.sandbox_service.channel_control import ChannelControl
-from agentplane.sandbox_service.channel_delivery import ChannelDelivery
 from agentplane.sandbox_service.client import ReconnectRequiredError, SandboxServiceClient, SealedError, ServiceError
-from agentplane.sandbox_service.commands import db as commands_db
-from agentplane.sandbox_service.commands.connections import ConnectionStore
-from agentplane.sandbox_service.commands.dispatch import DispatchStore
-from agentplane.sandbox_service.commands.store import CommandSubmission, SubmissionState, SubmissionStore
-from agentplane.sandbox_service.connection_records import ConnectionLeases
 from agentplane.sandbox_service.destinations import DestinationResolver
 from agentplane.sandbox_service.grpc_api import Resources
 from agentplane.sandbox_service.kubernetes_grants import RoleBindingGrant, RoleRef
@@ -38,10 +40,8 @@ from agentplane.sandbox_service.kubernetes_views import (
 )
 from agentplane.sandbox_service.protocol_pb2 import ResolvedGrant, SandboxDestination
 from agentplane.sandbox_service.session_changes import SessionChanges
-from agentplane.sandbox_service.session_registry import SessionRegistry
 from agentplane.sandbox_service.testing.grpc_service import service_client
 from agentplane.sandbox_service.testing.kubernetes import ACCOUNT, SANDBOX, SANDBOX_UID, Cluster
-from agentplane.sandbox_service.testing.sessions import register_session
 from agentplane.subjects import ServiceAccountRef
 from agentplane.testing.fake_apiserver import SANDBOX_NAMESPACE, TokenVerdict
 from agentplane.workload_auth.principal import WorkloadPrincipalResolver

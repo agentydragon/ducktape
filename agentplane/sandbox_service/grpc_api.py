@@ -20,12 +20,11 @@ from agentplane.grpc_options import grpc_channel_option_kvps
 from agentplane.proto import command_pb2, event_log_pb2, runner_channel_pb2 as channel_pb2, runner_pb2
 from agentplane.runner.client import RunnerClient
 from agentplane.runner.errors import OpenTimeoutError, RunnerError, SessionSealedError, StreamClosedError
-from agentplane.sandbox_service import protocol_pb2, protocol_pb2_grpc, session_lifecycle, wire
-from agentplane.sandbox_service.action_policy_views import UnknownPolicySetError
-from agentplane.sandbox_service.channel_control import ChannelControl, ConnectionNotHeldError, ControlRefusedError
-from agentplane.sandbox_service.channel_delivery import ChannelDelivery, CommandRefusedError
-from agentplane.sandbox_service.command_relay import admit_running_command
-from agentplane.sandbox_service.commands.store import (
+from agentplane.runner_gateway import session_lifecycle
+from agentplane.runner_gateway.channel_control import ChannelControl, ConnectionNotHeldError, ControlRefusedError
+from agentplane.runner_gateway.channel_delivery import ChannelDelivery, CommandRefusedError
+from agentplane.runner_gateway.command_relay import admit_running_command
+from agentplane.runner_gateway.commands.store import (
     CommandSubmission,
     Submission,
     SubmissionConflictError,
@@ -34,6 +33,10 @@ from agentplane.sandbox_service.commands.store import (
     SubmissionStore,
     submit_command,
 )
+from agentplane.runner_gateway.runner_channel import ChannelOperation
+from agentplane.runner_gateway.session_registry import SessionNotFoundError, SessionRegistry
+from agentplane.sandbox_service import protocol_pb2, protocol_pb2_grpc, wire
+from agentplane.sandbox_service.action_policy_views import UnknownPolicySetError
 from agentplane.sandbox_service.destinations import DestinationResolver, DestinationUnavailableError, RunnerEndpoint
 from agentplane.sandbox_service.egress_views import BindingNotFoundError, UnknownPolicyError
 from agentplane.sandbox_service.models import (
@@ -45,9 +48,7 @@ from agentplane.sandbox_service.models import (
 from agentplane.sandbox_service.protocol_pb2 import Sandbox, SandboxDestination
 from agentplane.sandbox_service.provisioning import Provisioning
 from agentplane.sandbox_service.retention_holds import MAX_HOLD_KEY_LENGTH
-from agentplane.sandbox_service.runner_channel import ChannelOperation
 from agentplane.sandbox_service.session_changes import SessionChanges
-from agentplane.sandbox_service.session_registry import SessionNotFoundError, SessionRegistry
 from agentplane.subjects import ServiceAccountRef
 from agentplane.workload_auth.bearer import parse_bearer, sole_header
 from agentplane.workload_auth.principal import WorkloadPrincipalRejectedError, WorkloadPrincipalResolver

@@ -7,8 +7,8 @@ import pytest_bazel
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from agentplane.proto import command_pb2, event_log_pb2, runner_channel_pb2 as channel_pb2
-from agentplane.sandbox_service.commands.dispatch import CommandKey, DispatchStore, ReceiptMismatchError, Refused
-from agentplane.sandbox_service.commands.store import CommandSubmission, SubmissionState, SubmissionStore
+from agentplane.runner_gateway.commands.dispatch import CommandKey, DispatchStore, ReceiptMismatchError, Refused
+from agentplane.runner_gateway.commands.store import CommandSubmission, SubmissionState, SubmissionStore
 from agentplane.subjects import ServiceAccountRef
 
 # gazelle:include_dep @pypi//protobuf

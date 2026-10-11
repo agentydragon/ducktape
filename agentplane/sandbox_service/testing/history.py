@@ -15,12 +15,12 @@ from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 
 from agentplane.history_service.storage.db import Base
 from agentplane.runner.client import RunnerClient
-from agentplane.sandbox_service.commands import db as commands_db
+from agentplane.runner_gateway.commands import db as commands_db
+from agentplane.runner_gateway.testing.sessions import register_session
 from agentplane.sandbox_service.destinations import DestinationUnavailableError
 from agentplane.sandbox_service.grpc_api import Resources
 from agentplane.sandbox_service.models import SandboxNotFoundError
 from agentplane.sandbox_service.protocol_pb2 import SandboxDestination
-from agentplane.sandbox_service.testing.sessions import register_session
 
 # gazelle:include_dep @pypi//asyncpg
 # gazelle:include_dep @pypi//protobuf

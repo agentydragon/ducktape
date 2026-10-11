@@ -8,8 +8,8 @@ import pytest_bazel
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 from agentplane.proto import command_pb2, event_log_pb2
-from agentplane.sandbox_service.commands import db, store
-from agentplane.sandbox_service.commands.store import (
+from agentplane.runner_gateway.commands import db, store
+from agentplane.runner_gateway.commands.store import (
     CommandSubmission,
     SubmissionConflictError,
     SubmissionRefusedError,

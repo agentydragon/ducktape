@@ -14,12 +14,12 @@ from kubernetes_asyncio import client as k8s_client
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from agentplane.proto import command_pb2, event_log_pb2, runner_channel_pb2, runner_channel_pb2_grpc
-from agentplane.sandbox_service.channel_control import ChannelControl
-from agentplane.sandbox_service.channel_delivery import ChannelDelivery, CommandRefusedError
-from agentplane.sandbox_service.commands.connections import ConnectionStore
-from agentplane.sandbox_service.commands.dispatch import DispatchStore
-from agentplane.sandbox_service.commands.store import CommandSubmission, SubmissionStore
-from agentplane.sandbox_service.connection_records import (
+from agentplane.runner_gateway.channel_control import ChannelControl
+from agentplane.runner_gateway.channel_delivery import ChannelDelivery, CommandRefusedError
+from agentplane.runner_gateway.commands.connections import ConnectionStore
+from agentplane.runner_gateway.commands.dispatch import DispatchStore
+from agentplane.runner_gateway.commands.store import CommandSubmission, SubmissionStore
+from agentplane.runner_gateway.connection_records import (
     CONNECTION_EPOCH_ANNOTATION,
     CONNECTION_LABEL,
     POD_UID_ANNOTATION,
@@ -29,8 +29,8 @@ from agentplane.sandbox_service.connection_records import (
     ConnectionRecords,
     RecordOwner,
 )
+from agentplane.runner_gateway.runner_channel import ChannelTiming, RunnerChannelService
 from agentplane.sandbox_service.destinations import DestinationUnavailableError
-from agentplane.sandbox_service.runner_channel import ChannelTiming, RunnerChannelService
 from agentplane.sandbox_service.testing.kubernetes import ACCOUNT, SANDBOX, SANDBOX_UID, Cluster
 from agentplane.subjects import ServiceAccountRef
 from agentplane.testing.fake_apiserver import SANDBOX_NAMESPACE, TokenVerdict
@@ -38,9 +38,9 @@ from agentplane.workload_auth.principal import WorkloadPrincipalResolver
 from util.agent_sandbox import SANDBOX_KIND, SANDBOXES_PLURAL
 
 # gazelle:include_dep @pypi//protobuf
-# gazelle:include_dep //agentplane/sandbox_service/commands:conftest
+# gazelle:include_dep //agentplane/runner_gateway/commands:conftest
 
-pytest_plugins = ("agentplane.sandbox_service.commands.conftest",)
+pytest_plugins = ("agentplane.runner_gateway.commands.conftest",)
 
 AUDIENCE = "test-runner-channel"
 TOKEN = "test-runner-token"

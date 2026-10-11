@@ -822,7 +822,7 @@ py_library(
         "//agentplane/crds:egresscredential",
         "//agentplane/crds:egresspolicy",
         "//agentplane/egress:resources",
-        "//agentplane/sandbox_service:instructions",
+        "//agentplane/runner_gateway:instructions",
         "//agentplane/sandbox_service:kubernetes_grants",
         "//agentplane/sandbox_service:runner_endpoints",
         "//agentplane/sandbox_service:settings",
