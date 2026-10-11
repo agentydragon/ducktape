@@ -8,11 +8,11 @@
   background-color: currentColor;
 }
 
-/* Larger than the library icons' share of growth: a filled disc this size reads as big as their
-   outlined circles (the power button, the clock) at 14px. */
+/* Matches the 11px visible circle of the 15px library icons (the power button, the clock, the
+   circle-x), which sit inside their viewBox's padding. */
 .agentplane-mark-small .agentplane-mark-disc {
-  width: 0.5625rem;
-  height: 0.5625rem;
+  width: 0.6875rem;
+  height: 0.6875rem;
 }
 
 /* Two classes, to outrank mark_glyph.css's size for the `svg` of a library icon. */
