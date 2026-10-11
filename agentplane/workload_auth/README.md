@@ -21,7 +21,8 @@ Resolution requires an authenticated TokenReview for that audience, an allowed S
 subject, and exactly one Pod name/UID claim pair. Nothing else is read: the API server validates the
 object the token is bound to, so a deleted or replaced Pod fails the TokenReview. No caller-supplied
 header, body field, source address, operator identity, role, permission, Agent, or Thread
-participates, and no destination reads the Pod object.
+participates, and resolution does not read the Pod object. The Runner Gateway's `resolve_peer` reads
+it afterwards, to follow a runner control stream's Pod to its controlling Sandbox.
 
 Every call reviews the bearer, at every door, with nothing memoized. A TokenReview writes nothing
 -- it is a signature check plus an existence check on the object the token is bound to -- so the

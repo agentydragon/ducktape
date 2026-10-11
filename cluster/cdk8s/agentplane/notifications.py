@@ -1,4 +1,4 @@
-"""Notification-owned persistence and workload API; only Sandbox Service reaches runners, and
+"""Notification-owned persistence and workload API; only the Runner Gateway reaches runners, and
 receipts are read from the History Service."""
 
 from cdk8s import ApiObject, ApiObjectMetadata, Duration, JsonPatch, Size

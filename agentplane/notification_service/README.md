@@ -1,8 +1,8 @@
 # Notification Service
 
 Standalone Actions and GitHub App subscriptions and durable session inboxes. The service reads Actions history,
-calls Sandbox Service for destination validation and runner commands, and reads command receipts from the
-Session's runner entries in the History Service. It does not depend on the integration app or connect
+looks up destination Sandboxes in the Sandbox Service, sends runner commands through the Runner Gateway, and
+reads command receipts from the Session's runner entries in the History Service. It does not depend on the integration app or connect
 directly to runners.
 
 Agents subscribe with an explicit destination/session and an idempotence key, then retrieve stored
@@ -24,7 +24,8 @@ an inbox to a replacement Sandbox.
 ## Running and deployment
 
 Bazel targets: `:server`, `:migrate`, `:image`, `:migration_image`. The service needs its own PostgreSQL
-database, Actions, Sandbox Service and History Service endpoints, and projected service-account tokens.
+database, Actions, Sandbox Service, Runner Gateway and History Service endpoints, and projected
+service-account tokens.
 
 Run the image-coupled migration before starting workers. Use published server/migration image tags
 and preserve existing staging data. `/healthz` reports process liveness; `/readyz` checks workers and
@@ -38,7 +39,8 @@ unknown keys fail startup. Environment variables override YAML using `__` for ne
 [settings.py](settings.py) defines the configuration fields and their descriptions.
 Configuration changes require a service restart.
 
-`actions` contains `url` and `token_file`; `sandbox_service` contains `target` and `token_file`.
+`actions` contains `url` and `token_file`; `sandbox_service` contains the Sandbox Service `target`, the
+Runner Gateway `gateway_target` and `control_target`, and the `token_file` both services accept.
 Token paths refer to rotating projected ServiceAccount tokens, not static secrets. Actions rereads its
 token file for each request. Set `AGENTPLANE_NOTIFICATIONS_DATABASE_URL` through a Secret-backed
 environment variable rather than putting the DSN in the ConfigMap.

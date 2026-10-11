@@ -1,7 +1,7 @@
 # Agentplane service dependency rule
 
-Status: **accepted architecture constraint, including v1.** The Sandbox Service, the History
-Service, and the app's clients of both are implemented and deployed.
+Status: **accepted architecture constraint.** The Sandbox Service, the Runner Gateway, the History
+Service, and the app's clients of them are implemented and deployed.
 
 ## The integration app is a client
 
@@ -11,14 +11,19 @@ services must not depend on it.** The dependency direction is app to services, n
 ```mermaid
 flowchart LR
     App[Integration app] --> Sandbox[Sandbox Service]
+    App --> Gateway[Runner Gateway]
     App --> History[History Service]
     History --> Sandbox
+    History --> Gateway
     App --> Notifications[Notification service]
     App --> Actions[Action Service]
     Notifications --> Sandbox
+    Notifications --> Gateway
+    Notifications --> History
     Notifications --> Actions
     Sandbox --> Kubernetes[Kubernetes / provisioning]
-    Sandbox --> Runners[Runners]
+    Sandbox --> Gateway
+    Gateway --> Runners[Runners]
 ```
 
 The services may depend on shared infrastructure and explicit backend APIs. The graph is the relevant
@@ -40,8 +45,11 @@ presentation state and projections, but those must not become hidden sources of 
 
 ## Ownership
 
-- **Sandbox Service:** sandbox provisioning/lifecycle, verified destination bindings, the Session
-  registry, authorized runner-session access, and command relay/event following.
+- **Sandbox Service:** Sandbox provisioning and lifecycle, templates, grants and egress, retention
+  holds, teardown, and the runner endpoints each new Sandbox's runner dials. It has no database.
+- **Runner Gateway:** the runner control stream, verified destination bindings, the Session registry,
+  authorized runner-session access, command admission and delivery, event following, the
+  `sandbox_commands` database, and sealing a Sandbox's runner on the Sandbox Service's request.
 - **History Service:** the Session Event archive, its ingestion from runner journals, the Thread
   fold of each Session, and the read API over both.
 - **Runner:** native harness scheduling/execution, durable command journal, canonical execution Events
@@ -52,74 +60,69 @@ presentation state and projections, but those must not become hidden sources of 
 - **Integration app:** user-facing composition, interaction, presentation, and app-only projections/state;
   a client of the above that reads Session history and Threads from the History Service.
 
-The backend is named **Sandbox Service**: it manages sandboxes and access to their runner
-sessions. It is not another Action executor or a service called "runtime" with unspecified ownership.
-`app/threads/` owns only the app's thread metadata, projections, and browser-facing composition. Its session adapter uses the service client; it does not provision sandboxes or
-connect to runners. Thread identities never enter the Sandbox Service API.
+`app/threads/` owns only the app's thread metadata, projections, and browser-facing composition. Its
+session adapter uses the service client; it does not provision sandboxes or connect to runners.
+Thread identities never enter the Sandbox Service or Runner Gateway API.
 
-## Extraction before notification v1
+## Session access without the app
 
-Build the minimum independently usable [Sandbox Service](../sandbox_service/README.md) before wiring
-notifications. It must resolve explicit session destinations, expose authorized command delivery and
-receipt/event following, and distinguish available, unavailable, and permanently removed destinations
-without querying the app. Migrate the app to be a client of those extracted operations.
-
-Provisioning and suspend/resume implementations belong on the Sandbox Service side as they are
-extracted. Notification-triggered wake and durable acceptance of commands for offline destinations
-remain separate, deferred product features. A service boundary is not permission to silently create
-a second runner-command queue.
+The [Runner Gateway](../runner_gateway/README.md) resolves explicit session destinations, exposes
+authorized command delivery and receipt/event following, and distinguishes available, unavailable,
+and permanently removed destinations without querying the app; the
+[Sandbox Service](../sandbox_service/README.md) provisions, suspends and resumes Sandboxes.
+Notification-triggered wake and durable acceptance of commands for offline destinations are separate,
+deferred product features. A service boundary is not permission to silently create a second
+runner-command queue.
 
 Runner journals remain durable on runner state volumes. They are ingested into a Session Event
 archive that outlives the runner volume; the app reads history from that archive through the
 History Service and keeps its UI projections.
 
-Sandbox Service uses a protobuf/gRPC service API; the app retains its browser-facing HTTP API.
-After cutover, Sandbox Service is the sole normal production client of runner control/event RPCs.
-This boundary does not proxy runner outbound model, Actions, or egress traffic. Administrative/test
+The Sandbox Service and the Runner Gateway serve protobuf/gRPC APIs; the app retains its
+browser-facing HTTP API. The Runner Gateway is the only production client of runner control and event
+RPCs. It does not proxy runner outbound model, Actions, or egress traffic. Administrative/test
 exceptions must be explicit; there is no production direct-runner fallback in the app or notifications.
 
 ## Existing staging data
 
-Backend independence is not a reason to discard the current staging instance. For this extraction,
-default to preserving existing data and identities, with an inventory, tested migration/restore path,
-and controlled ownership handoff. One-time migration of app-owned records is distinct from a
+Backend independence is not a reason to discard the current staging instance. When state moves
+between services, preserve existing data and identities, with an inventory, tested migration/restore
+path, and controlled ownership handoff. One-time migration of app-owned records is distinct from a
 steady-state dependency on app tables. See [staging data preservation](staging_data_preservation.md).
 Any necessary loss/reset must be described and explicitly approved before execution; the general
-staging-disposability rule in [`../AGENTS.md`](../AGENTS.md) is not permission to bypass this task-specific requirement.
+staging-disposability rule in [`../AGENTS.md`](../AGENTS.md) is not permission to bypass this requirement.
 
 ## Review and acceptance gates
 
 - Reject new reverse imports, app API clients, app-table reads, or app-only bootstrap dependencies in
   backend code. Make this rule visible to coding agents in [`../AGENTS.md`](../AGENTS.md).
-- Declare each moved record, queue, lifecycle operation, and auth decision's owner. No overlapping
-  command authorities or implicit new persistence semantics during the cutover.
-- Exercise provisioning/session setup for the extracted paths, notification ingestion/subscription,
-  payload read/ack, command delivery, and receipt replay **with the integration app unavailable**.
-  For new code, independence is required from its first implementation, not a later cleanup task.
+- Give each record, queue, lifecycle operation, and auth decision one owner. No overlapping command
+  authorities or implicit new persistence semantics.
+- Exercise provisioning/session setup, notification ingestion/subscription, payload read/ack, command
+  delivery, and receipt replay **with the integration app unavailable**, from a backend path's first
+  implementation.
 - Verify restart/recovery also works without the app: a happy path using state pre-created by the app
   alone does not demonstrate backend independence.
 - Test authorization failures and preserve the distinction between accepted intent, runner admission,
   and harness effect. Human decision requirements stay in their backend authority even if the UI is down.
 
-Dependency enforcement and those acceptance tests are implementation gates. Source changes and unit
-tests do not themselves prove the live handoff complete or staging data preservation.
+## Sandbox Service and Runner Gateway callers
 
-## Sandbox Service callers
-
-Sandbox provisioning, grant mutations, and runner RPCs are service-owned operations. Consumers
-must call the authenticated Sandbox Service API, not instantiate its inventory, provisioner,
-reconciler, destination resolver, command relay, or lifecycle implementation. Do not introduce
-local-or-remote unions, in-process fallbacks, or a second provisioning dependency in the app.
-Backend implementation targets have Bazel visibility limited to the service and its testing package.
+Sandbox provisioning, grant mutations, Session operations and runner RPCs are service-owned
+operations. Consumers call the authenticated Sandbox Service or Runner Gateway API, not instantiate
+their inventory, provisioner, reconciler, destination resolver, command relay, or lifecycle
+implementation. Do not introduce local-or-remote unions, in-process fallbacks, or a second
+provisioning dependency in the app. Sandbox Service implementation targets are visible only inside
+that service, except the inventory and destination resolver the Runner Gateway reads.
 
 Public protobuf/client models and read-only Kubernetes projections can be shared. The projection
 modules carry no create/delete/grant/session authority. Consumer acceptance tests use the real gRPC
 boundary through service-owned test fixtures; tests of backend mutations live with the service.
 
 Bazel defaults keep app implementation visible only to the app and its explicit acceptance/deployment
-consumers, and Sandbox Service implementation visible only inside that service. Public DTOs,
-client/protobufs, and read-only projections are opt-in exports. The direct runner transport and its
-generated gRPC stub are visible only to runner code and Sandbox Service. Archive fault tests get
+consumers. Public DTOs, client/protobufs, and read-only projections are opt-in exports. The direct
+runner transport and its generated gRPC stub are visible only to runner code, the Runner Gateway, and
+Sandbox Service test support. Archive fault tests get
 an explicit test-only transport dependency, which production app targets cannot use. Shared runner
 error types live separately so importing an error does not grant a transport
 dependency. Use concrete service clients, not protocols introduced solely to allow alternate

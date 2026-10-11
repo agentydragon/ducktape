@@ -11,7 +11,10 @@ an MCP approval gateway for any MCP-capable LLM product.
 
 - [Action Service](action_service/README.md): ActionRequests, Decisions, auto-approval policies,
   and an MCP endpoint over OAuth.
-- [Sandbox Service](sandbox_service/README.md): sandbox lifecycle and access to runner sessions.
+- [Sandbox Service](sandbox_service/README.md): Sandbox lifecycle, grants, egress, retention holds
+  and teardown.
+- [Runner Gateway](runner_gateway/README.md): the runner control stream, Sessions, and command
+  admission and delivery.
 - [History Service](history_service/README.md): retained Session history, read by the
   integration app.
 - [Runner](runner/README.md) and [native drivers](native/README.md): run Claude Code or Codex in a
@@ -31,6 +34,7 @@ What staging runs ([`cluster/cdk8s/agentplane/`](../cluster/cdk8s/agentplane/cha
 flowchart TB
     browser([Browser])
     mcp_client([MCP client, e.g. claude.ai])
+    github([GitHub])
     app[Integration app]
     subgraph services[Backend services]
         ss[Sandbox Service]
@@ -44,6 +48,7 @@ flowchart TB
         runner[Runner + native drivers]
         sidecar[Egress sidecar]
     end
+    cmd_sandbox[Command Sandbox Pods]
     proxy[Egress proxy]
     llm[LLM ingress]
     k8s[Kubernetes API, agent-sandbox controller]
@@ -58,6 +63,7 @@ flowchart TB
     app -->|gRPC: Session and Thread reads| hs
     app -->|HTTP| notif
     app -->|HTTP: operator decisions| actions
+    app -->|HTTP admin port: egress decisions| proxy
     app -->|Thread shapes for the browser| electric
     electric -->|logical replication| hist_db
 
@@ -74,7 +80,12 @@ flowchart TB
     notif -->|commands| gw
     notif -->|command receipts| hs
     notif --> actions
-    actions -->|execute| k8s
+    notif -->|REST| github
+    github -->|webhooks over an HTTPS route| notif
+    actions -->|execute: Sandbox CRs, exec| k8s
+    k8s -->|creates| cmd_sandbox
+    cmd_sandbox -->|all outbound traffic| proxy
+    actions -->|MCP servers, GitHub, web push| outside
 
     runner --> sidecar -->|all outbound traffic| proxy
     proxy -->|RunnerControl Connect: commands, lifecycle| gw
@@ -96,10 +107,11 @@ flowchart TB
   per Sandbox by its `<sandbox>-control` Service and `<sandbox>-runner` Lease
   ([runner control stream](docs/runner_control.md)).
 - **Databases.** Each service owns a database on one shared CNPG cluster: `app`,
-  `sandbox_commands` (Runner Gateway command admission), `sandbox_service` (Session history,
-  written by the History Service and its ingress), `actions`, `egress` and `notifications`. Only
-  the history database is drawn. A second Electric over the `app` database still runs, but
-  staging's app reads Threads through the history one.
+  `sandbox_commands` (the Runner Gateway's Session registry and command admission),
+  `sandbox_service` (Session history, written by the History Service and its ingress), `actions`,
+  `egress` and `notifications`; the Sandbox Service has none. Only the history database is drawn.
+  A second Electric over the `app` database still runs, but the app reads Threads through the
+  History Service and its Electric.
 - **Sandbox Service and Runner Gateway.** The Sandbox Service owns Sandbox lifecycle, grants,
   retention holds and teardown; the Runner Gateway owns everything that talks to a runner: Sessions,
   commands and the runner control stream. They run as separate Deployments with their own accounts,

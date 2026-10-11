@@ -49,7 +49,7 @@ map to their unchanged `(sandbox, runner session_id)` storage locator while it e
 
 Authorization lives with the history's Session record and read API, in the History
 Service. Do not broaden its reader allowlist wholesale: a listed reader reads every
-Session. Add narrowly scoped read authorization, separate from the Sandbox Service's
+Session. Add narrowly scoped read authorization, separate from the Runner Gateway's
 Open/Resume/SubmitCommand and operator policy mutations. A `read` grant does not
 imply eventual `send` or `create` authority.
 
@@ -65,7 +65,7 @@ the Sandbox, which is not planned here.
 
 For this proposed scoped-read policy, assign a Sandbox trust domain before opening its
 first classified Session and refuse incompatible Opens from _any_ caller, including
-direct Sandbox Service users and races on different service replicas. A Sandbox may
+direct Runner Gateway callers and races on different gateway replicas. A Sandbox may
 contain multiple Sessions within that domain, but matching compartments alone do not
 prove that differently privileged work can safely share credentials or files.
 Classification limits external history reads; it does not confer intra-Sandbox isolation.

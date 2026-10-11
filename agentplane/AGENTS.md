@@ -12,8 +12,9 @@ See [the dependency rule](docs/service_boundaries.md).
 - The app calls independent services; those services do not call back into the app to operate.
   This includes v1, startup, background recovery, provisioning, and backend-required prompt/context
   construction. Operator approval still belongs to its backend authority; the app presents it.
-- The Sandbox Service owns sandbox lifecycle and access to runner sessions; notifications owns
-  subscriptions/inboxes, and runners own native execution and canonical command/Event evidence.
+- The Sandbox Service owns sandbox lifecycle; the Runner Gateway owns Sessions, command admission
+  and access to runner sessions; notifications owns subscriptions/inboxes, and runners own native
+  execution and canonical command/Event evidence.
 - Current backend responsibilities inside the app are extraction work, not a precedent for new
   dependencies. Distinguish planned boundaries from what is already implemented.
 - Acceptance for an extracted backend path must exercise it with the integration app unavailable.

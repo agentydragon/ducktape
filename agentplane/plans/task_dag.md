@@ -1050,7 +1050,6 @@ flowchart TD
         SERVICE_SETTINGS_BASE[Candidate: one config-file settings base]
         SERVICE_PROCESS_MODULE[Candidate: one service process module]
         REQUIRED_SERVICE_WIRING[Candidate: no footgun defaults on service wiring]
-        SERVICE_DOCS_GATEWAY[Candidate: docs give the Runner Gateway its jobs]
         GATEWAY_NAME_SWEEP[Candidate: code says Runner Gateway for the gateway]
         AGENTPLANE_LABEL_DOMAIN[Candidate: one annotation domain]
         WATCH_FRESHNESS_DEDUPE[Candidate: one watch freshness]
@@ -1121,17 +1120,6 @@ gateway's defaults `sealer_accounts=frozenset()` and its channel options; only t
 them (`sandbox_service/grpc_api.py:40`, `runner_gateway/grpc_api.py:77`). Make them required, as
 `launch_spec(sandbox_namespace=)` and `SandboxInventory.suspend`/`resume(uid=)` whose `None`
 branches only tests take.
-
-### `SERVICE_DOCS_GATEWAY` — docs give the Runner Gateway its jobs
-
-**Candidate.** `docs/service_boundaries.md` (with its diagram and cutover gates),
-`agentplane/AGENTS.md`, the README service list, `thread_layering.md`, `scoped_session_reads.md`,
-`runner_gateway/README.md`, the Notification Service README, `docs/api.md` and its generator
-docstring still give the gateway's registry, access and relay to the Sandbox Service.
-`workload_auth/README.md` says no destination reads the Pod, which `resolve_peer` does. The README
-diagram misses deployed edges (app to egress admin, notifications to GitHub and its webhook route,
-the Action Service's external egress and command Sandboxes); its Databases paragraph follows #9836
-and #9839.
 
 ### `GATEWAY_NAME_SWEEP` — code says Runner Gateway for the gateway
 

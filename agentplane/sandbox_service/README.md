@@ -1,75 +1,35 @@
 # Sandbox Service
 
-Independent backend owner for sandbox lifecycle and runner session access.
-It does not own notification payloads or inboxes, Action Decisions or execution, native harness
-scheduling, browser sessions, or UI-only Thread projections. The
-[service dependency rule](../docs/service_boundaries.md) applies to this package.
+Independent backend owner for Sandbox lifecycle: provisioning, suspend/resume and deletion,
+templates, Kubernetes and egress grants, retention holds, teardown, and the runner endpoints each new
+Sandbox's runner dials. It has no database; Kubernetes is its inventory. Sessions, commands and
+runner access belong to the [Runner Gateway](../runner_gateway/README.md). It does not own
+notification payloads or inboxes, Action Decisions or execution, native harness scheduling, browser
+sessions, or UI-only Thread projections. The [service dependency rule](../docs/service_boundaries.md)
+applies to this package.
 
-## Implemented foundation
+## Inventory and launch configuration
 
-`command_relay.admit_running_command` extracts the existing app's running-session
-command relay. The standalone service uses it; the app calls the service while retaining its existing
-archive wait and error mapping. The helper:
-
-- Opens an explicit runner session without a spec, so it cannot create or resume it.
-- Sends the caller's unchanged common-protocol `Command` and requests detach.
-- Waits for the runner's exact `CommandAdmitted` and returns its original `EventEntry`.
-- Cancels the attachment on every exit, without taking ownership of the client.
-
-Admission is not native user-message confirmation, model completion, or inbox
-acknowledgement. An uncertain result is settled by the caller retrying the same command
-ID/payload with a runner-log replay cursor before its possible admission. This helper
-adds no retry, command queue, Event authority, or exactly-once guarantee.
-
-Protocol-edge tests use a controllable gRPC peer. Native tests exercise both harnesses
-with scripted model endpoints, without the integration app or its database. They cover
-admission before model completion, receipt replay, and refusing to create/resume a session.
-
-## Inventory and concrete launch configuration
-
-`inventory.py` now owns the existing Kubernetes-backed inventory and low-level
-Sandbox lifecycle operations. `session_config.py` owns the concrete, serialized
-launch fields; `kubernetes_grants.py` owns the selected grant shapes. Consumers import public models and read-only projections, not these mutation implementations. UI preset catalogs remain app-owned and are not interpreted
-by this package. The API and the binding annotation use `SessionDefaults` / `session_defaults`. Annotation keys, defaults,
-ServiceAccount creation, PVC policy, and provisioning behavior are unchanged.
+`inventory.py` owns the Kubernetes-backed inventory and low-level Sandbox lifecycle operations.
+`session_config.py` owns the concrete, serialized launch fields; `kubernetes_grants.py` owns the
+selected grant shapes. Consumers import public models and read-only projections, not these mutation
+implementations. UI preset catalogs remain app-owned and are not interpreted by this package. The
+API and the binding annotation use `SessionDefaults` / `session_defaults`.
 
 `provisioning.py` owns recoverable grant orchestration and policy binding, with pending launch
-intent stored on the Sandbox. The production app now uses the remote client, not an in-process provisioner or reconciler.
-The deployment source transfers these authorities to the service.
+intent stored on the Sandbox. `controller.py` reconciles Sandbox initialization, grants and
+teardown; `teardown.py` has the Runner Gateway seal each Session before deleting the Sandbox.
 
-## Session API
+## API
 
-The [authenticated gRPC API](API.md) has a standalone server entry point and Python client. This
-service serves Sandbox lifecycle and provisioning (`SandboxService`); the
-[Runner Gateway](../runner_gateway/README.md) serves Sessions and commands (`RunnerGateway`). It resolves
-SA-authorized, UID-pinned destinations inside the configured Kubernetes inventory, then
-inspects, commands, or follows existing runner sessions. Separately authorized explicit
-management routes list sessions, bootstrap, open, and resume using runner-retained specs.
-The backend owns launch instructions and concrete defaults; no UI preset lookup is needed.
-Read/command/follow never start sessions. Separate explicit Sandbox lifecycle operations can resume
-a Sandbox. Read/follow availability is limited to the surviving runner log.
+The [authenticated gRPC API](API.md) has a standalone server entry point and Python client
+(`client.py`), which also calls the Runner Gateway. This service serves `SandboxService`: Sandbox
+lifecycle, provisioning, egress grants and retention holds. It calls the Runner Gateway only to seal
+a Sandbox for teardown.
 
-## Production app cutover and rollout
+## Deployment
 
-The production app requires `sandbox_service_target` and a projected workload token. Its directory,
-bridge, and ingester use the service client with no direct-runner fallback. UI preset selection,
-read-only Kubernetes projections, UI folds remain app-owned; PostgreSQL raw history is described below.
-App tests use the service-owned gRPC fixtures; there is no alternate direct-runner app directory.
-App/service integration acceptance uses native harnesses and the existing app database archive.
-
-The deployment source adds a separately built service image, Deployment/Service/ServiceAccount,
-TokenReview and lifecycle/grant RBAC, and network isolation. The app has read-only resource RBAC;
-only Sandbox Service can reach the runner control port. Cross-namespace delegation keeps its
-existing Role/RoleBinding identities and changes the grantee. Runner template/volume identities
-and archive schema are unchanged. Service-native acceptance tests exercise authenticated gRPC,
-including launch defaults, bootstrap/setup, delivery evidence, and recovery after service restart.
-
-Runner journals remain on their state volume as execution evidence, and the runner journal still
-authors execution Events. Retained history lives in the [History Service](../history_service/README.md)'s PostgreSQL.
-The Session registry (public Session IDs, runner locators, Open reservations and `WatchSessions`
-positions) lives in the service's own `sandbox_commands` database beside command admission. The
-History Service's ingester creates a Session's history row from the registry's feed before its first append.
-
-Service-to-runner calls over the inbound control port are unauthenticated plaintext, fenced only by
-that network policy; the [runner control stream](../docs/runner_control.md) replaces the route rather than
-securing it. App-to-service calls already require a Pod-bound workload TokenReview.
+A separately built image, Deployment/Service/ServiceAccount, TokenReview and lifecycle/grant RBAC,
+and network isolation. One replica reconciles. Its callers are the app, the Notification Service and
+the History Service; it reaches the Kubernetes API and the Runner Gateway. App-to-service calls
+require a Pod-bound workload TokenReview.
