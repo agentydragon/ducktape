@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 from agentplane.history_service import protocol_pb2
 from agentplane.history_service.storage.store import Store
 from agentplane.history_service.thread_reads import ThreadScopeResetError
+from agentplane.sandbox_service.settled_cursors import next_stored, settled_ranges
 from agentplane.thread_fold.models import ThreadCheckpoint, ThreadEntity, ThreadEvidence, ThreadNativeLink
 
 # gazelle:include_dep @pypi//protobuf
@@ -94,6 +95,10 @@ class EvidenceReader:
         for sequence in sequences[: request.limit]:
             frame = response.frames.add(source_sequence=sequence)
             page = await self._history.read_page(session_id, after_cursor=sequence - 1, limit=1)
+            # Settlement may remove a linked delta frame before the fold forgets the link.
+            settled = settled_ranges(span for settlement in page.settlements for span in settlement.ranges)
+            if next_stored(sequence - 1, settled) != sequence:
+                continue
             entry = page.entries[0] if page.entries else None
             if entry is not None and (entry.cursor != sequence or entry.origin.source_id != source_id):
                 raise ValueError("retained history does not match the folded native link")

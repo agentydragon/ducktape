@@ -616,10 +616,8 @@ what unrelated agents can still do while it is down or rolling.
 
 **Candidate; needs the operator's go-ahead.** Settlement is built behind the
 History Service's `ingester.settle_deltas` ([History Service](../history_service/README.md#delta-settlement)),
-and its fold skips settled ranges. The app's raw-history readers (`EventLogStore` entry and
-observation pages, `ContentStore` native frames) still require contiguous cursors and must treat
-settled ranges as covered first. Then enable on testing, then staging, and re-measure
-`session_event` and evidence growth against the 2026-10-10 sample.
+and its fold and the app's raw-history readers treat settled ranges as covered. Enable on testing,
+then staging, and re-measure `session_event` and evidence growth against the 2026-10-10 sample.
 
 ### `SESSION_EVENT_COMPACTION_PLAN` — approve settling stored history
 

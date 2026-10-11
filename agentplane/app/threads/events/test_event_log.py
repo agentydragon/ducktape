@@ -93,6 +93,35 @@ async def test_service_read_does_not_chase_a_growing_watermark(engine: AsyncEngi
     assert calls == [0, 1]
 
 
+# Cursors 3-5 were settled; 6 completes the item.
+SETTLED = history_pb2.SettledDeltas(item_id="test-item", ranges=[history_pb2.CursorRange(first=3, last=5)])
+
+
+async def test_service_read_walks_over_settled_ranges(engine: AsyncEngine) -> None:
+    thread_id = UUID("00000000-0000-0000-0000-000000000001")
+    stored = {cursor: event_entry(cursor) for cursor in (1, 2, 6, 7)}
+
+    class Reader:
+        async def read_session_events(
+            self, session_id: str, *, after_cursor: int = 0, limit: int = 128
+        ) -> history_pb2.ReadSessionEventsResponse:
+            entries = [entry for cursor, entry in stored.items() if cursor > after_cursor][:limit]
+            return history_pb2.ReadSessionEventsResponse(last_cursor=7, entries=entries, settlements=[SETTLED])
+
+        async def read_session_observations(
+            self, session_id: str, *, limit: int
+        ) -> history_pb2.ReadSessionObservationsResponse:
+            return history_pb2.ReadSessionObservationsResponse(last_cursor=7)
+
+    reader = cast(HistoryServiceClient, Reader())
+    remote = EventLogStore(engine, summaries=AppSummaries(engine), history_reader=reader)
+    assert [entry.cursor for entry in await remote.events(thread_id, limit=10)] == [1, 2, 6, 7]
+    assert await remote.observation_entry(thread_id, 4) is None
+    observed = await remote.observation_entry(thread_id, 6)
+    assert observed is not None
+    assert observed.entry["cursor"] == "6"
+
+
 @pytest.mark.parametrize("case", ["gap", "beyond_watermark", "resume_ahead"])
 async def test_service_read_rejects_invalid_pages(engine: AsyncEngine, case: str) -> None:
     thread_id = UUID("00000000-0000-0000-0000-000000000001")
@@ -148,6 +177,26 @@ async def test_service_observation_pages_do_not_require_app_raw_rows(
     reader.read_session_observations.assert_awaited_once_with(
         str(thread), before_cursor=before, after_cursor=after, limit=2
     )
+
+
+@pytest.mark.parametrize(
+    ("before", "after", "cursors"),
+    [(None, None, [6, 7]), (7, None, [2, 6]), (5, None, [1, 2]), (None, 2, [6, 7]), (None, 6, [7])],
+)
+async def test_service_observation_pages_treat_settled_ranges_as_covered(
+    engine: AsyncEngine, before: int | None, after: int | None, cursors: list[int]
+) -> None:
+    reader = AsyncMock(spec=HistoryServiceClient)
+    reader.read_session_observations.return_value = history_pb2.ReadSessionObservationsResponse(
+        last_cursor=7,
+        observations=[history_pb2.SessionObservation(cursor=cursor, kind="native") for cursor in cursors],
+        settled=SETTLED.ranges,
+    )
+    remote = EventLogStore(engine, summaries=AppSummaries(engine), history_reader=cast(HistoryServiceClient, reader))
+    page = await remote.observations(
+        UUID("00000000-0000-0000-0000-000000000001"), before_cursor=before, after_cursor=after, limit=2
+    )
+    assert [row.cursor for row in page.observations] == [str(cursor) for cursor in cursors]
 
 
 async def test_service_observation_page_rejects_missing_entries(engine: AsyncEngine) -> None:

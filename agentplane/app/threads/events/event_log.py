@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from itertools import pairwise
 from uuid import UUID
 
 from google.protobuf.json_format import MessageToDict
@@ -16,6 +17,7 @@ from agentplane.app.threads.models import EventLog
 from agentplane.app.threads.summaries import AppSummaries, FeedSnapshot, HistorySummaries
 from agentplane.history_service.client import HistoryServiceClient
 from agentplane.proto import event_log_pb2
+from agentplane.sandbox_service.settled_cursors import next_stored, settled_ranges
 from agentplane.thread_fold.models import ThreadHistorySummary
 from agentplane.thread_fold.recording import EventReplicationError
 
@@ -137,9 +139,14 @@ class EventLogStore:
                 through = page.last_cursor
             if page.last_cursor < through or cursor > page.last_cursor:
                 raise ConnectionError("History Service regressed behind the reader's cursor")
-            if len(page.entries) > requested or any(
-                entry.cursor != cursor + index + 1 or entry.cursor > page.last_cursor
-                for index, entry in enumerate(page.entries)
+            settled = settled_ranges(span for settlement in page.settlements for span in settlement.ranges)
+            cursors = [entry.cursor for entry in page.entries]
+            if (
+                len(cursors) > requested
+                or any(
+                    following != next_stored(previous, settled) for previous, following in pairwise([cursor, *cursors])
+                )
+                or (cursors and cursors[-1] > page.last_cursor)
             ):
                 raise ConnectionError("History Service page is not contiguous or exceeds its watermark")
             if not page.entries:
@@ -165,15 +172,26 @@ class EventLogStore:
             str(thread_id), before_cursor=before_cursor, after_cursor=after_cursor, limit=limit
         )
         observations = page.observations
-        # Service history is a contiguous, immutable prefix. Boundaries need no
-        # app raw lookups and refer to the watermark captured by this response.
+        # Service history is an immutable prefix whose only gaps are the settled ranges the page
+        # reports. Boundaries need no app raw lookups and refer to the watermark captured by this
+        # response. Cursor 1 and the head are never settled: a settled range lies strictly between
+        # an item's start and its completion.
+        cursors = [row.cursor for row in observations]
+        settled = settled_ranges(page.settled)
         if after_cursor is not None:
-            start = after_cursor + 1
-            end = min(page.last_cursor, after_cursor + limit)
+            walk = [after_cursor, *cursors]
+            within = not cursors or cursors[-1] <= page.last_cursor
+            short_ok = (cursors[-1] if cursors else after_cursor) >= page.last_cursor
         else:
             end = page.last_cursor if before_cursor is None else min(page.last_cursor, max(0, before_cursor - 1))
-            start = max(1, end - limit + 1)
-        if [row.cursor for row in observations] != list(range(start, end + 1)):
+            walk = cursors
+            within = not cursors or cursors[-1] <= end < next_stored(cursors[-1], settled)
+            short_ok = cursors[0] == 1 if cursors else end < 1
+        if not (
+            within
+            and all(following == next_stored(previous, settled) for previous, following in pairwise(walk))
+            and (len(cursors) == limit or short_ok)
+        ):
             raise ConnectionError("invalid service observation page")
         return ObservationPage(
             observations=[ArchivedObservation(cursor=str(row.cursor), kind=row.kind) for row in observations],
@@ -190,6 +208,9 @@ class EventLogStore:
         page = await self._history_reader.read_session_events(str(thread_id), after_cursor=cursor - 1, limit=1)
         if page.last_cursor < cursor <= await self.last_cursor(thread_id):
             raise ConnectionError("Requested observation is not committed in History Service yet")
+        settled = settled_ranges(span for settlement in page.settlements for span in settlement.ranges)
+        if next_stored(cursor - 1, settled) != cursor:
+            return None  # a settled delta, no longer stored
         if not page.entries:
             if cursor <= page.last_cursor:
                 raise ConnectionError("History Service omitted a published entry")
