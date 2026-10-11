@@ -571,29 +571,19 @@ node switches which service reads or writes it.
 
 ```mermaid
 flowchart TD
-    APP_PROJECTION_RETIRE[Blocked: drop app projection tables]
     HISTORY_SERVICE_OWNERSHIP[Capstone: History Service owns log and fold]
     SESSION_EVENT_COMPACTION[Candidate: settle stored history]
     HISTORY_REPACK[Blocked: return freed space to the volume]
     APP_ALEMBIC_SQUASH[Baseline final app schema]
     THREAD_READ_POLICY[Scoped archive reads]
-    APP_PROJECTION_RETIRE --> HISTORY_SERVICE_OWNERSHIP
     SESSION_EVENT_COMPACTION --> HISTORY_REPACK
-    APP_PROJECTION_RETIRE --> HISTORY_REPACK
-    APP_PROJECTION_RETIRE -. smaller baseline, not required .-> APP_ALEMBIC_SQUASH
     HISTORY_SERVICE_OWNERSHIP -. enforce at the final owner .-> THREAD_READ_POLICY
 ```
 
-### `APP_PROJECTION_RETIRE` — drop the app projection
-
-**Blocked on the app projector's deletion rolling out to staging.** An explicit deletion PR for the app projection tables and
-leases. The data is derived and rebuildable from the raw log.
-
 ### `HISTORY_SERVICE_OWNERSHIP` — capstone
 
-**Blocked on projection retirement.** The History Service is
-the only owner of the raw log and fold; the app is a facade over it. Each service's README states
-what unrelated agents can still do while it is down or rolling.
+The History Service is the only owner of the raw log and fold; the app is a facade over it. Each
+service's README states what unrelated agents can still do while it is down or rolling.
 
 ### `SESSION_EVENT_COMPACTION` — settle stored history
 
@@ -604,9 +594,8 @@ kept seven days, since the clusters keep no CNPG backups.
 
 ### `HISTORY_REPACK` — return freed space
 
-**Blocked on compaction and the app projection drop.** `VACUUM FULL` in a window (the CNPG image
-ships no `pg_repack`) on the log and projection tables; deleted rows otherwise stay as reusable
-space inside Postgres.
+**Blocked on compaction.** `VACUUM FULL` in a window (the CNPG image ships no `pg_repack`) on the
+log and projection tables; deleted rows otherwise stay as reusable space inside Postgres.
 
 ## 8. Sessions that outlive their Sandbox
 
