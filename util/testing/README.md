@@ -8,23 +8,12 @@ fixtures directly into the owning package conftest; keep this wiring local to th
 Postgres so unrelated tests do not load Docker or migration dependencies.
 
 ```python
-from util.testing.postgres import DatabaseClones, PostgresDatabaseTemplate, migrated_database_template
-from util.testing.postgres_fixtures import database_clones, database_names, postgres_admin_url, postgres_container
+from util.testing.postgres_fixtures import (
+    database_clones, database_names, migrated_database_fixtures, postgres_admin_url, postgres_container,
+)
 
 
-@pytest.fixture(scope="session")
-def migrated_template(postgres_admin_url: str) -> Iterator[PostgresDatabaseTemplate]:
-    with migrated_database_template(
-        postgres_admin_url,
-        "service_test_template",
-        SERVICE_RUNNER,
-    ) as template:
-        yield template
-
-
-@pytest.fixture
-def db_url(migrated_template: PostgresDatabaseTemplate, database_clones: DatabaseClones) -> str:
-    return database_clones.clone(migrated_template, drivername="postgresql+asyncpg")
+database_template, db_url = migrated_database_fixtures(SERVICE_RUNNER, drivername="postgresql+asyncpg")
 ```
 
 `database_names` allocates safe, deterministic, unique names from the current pytest node id. Use it
@@ -33,7 +22,11 @@ owns an `ExitStack` for the test and drops every clone after dependent fixtures 
 clone's SQLAlchemy driver explicitly. The shared `postgres_admin_url` uses psycopg, and callers can
 use `make_url` to preserve its credentials and query parameters while changing drivers.
 
-`migrated_database_template` creates a template and applies its `MigrationRunner` once.
+`migrated_database_fixtures` returns both fixtures: one session migration template and one fresh
+clone URL per test. Bind both at module scope. `template_name` and `url_name` select explicit pytest
+fixture names when composing multiple services; the SQL database name derives from the template
+fixture name. For setup that also needs role creation,
+a source template, or extensions, compose `migrated_database_template` inside an explicit fixture.
 For application-specific initialization that is not a `MigrationRunner`, use
 `PostgresDatabaseTemplate` directly and perform that initialization once on `template.url`. It also
 supports `template=` when one test schema must extend another. Keep tests that verify starting from an
