@@ -28,6 +28,6 @@ async def plaid_database_template(postgres_admin_url: str) -> AsyncIterator[Post
 
 
 @pytest.fixture
-def plaid_database_url(plaid_database_template: PostgresDatabaseTemplate, database_clones: DatabaseClones) -> str:
+def db_url(plaid_database_template: PostgresDatabaseTemplate, database_clones: DatabaseClones) -> str:
     """A fresh writable clone of the migrated Plaid schema for this test."""
     return database_clones.clone(plaid_database_template, drivername="postgresql+asyncpg")
