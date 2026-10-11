@@ -10,6 +10,7 @@ from agentplane.history_service.compaction import Compaction, compact
 from agentplane.history_service.fold_shadow import FoldShadow
 from agentplane.history_service.storage.db import SessionEvent, SessionHistory
 from agentplane.history_service.storage.store import Store
+from agentplane.history_service.testing.sessions import WRITER
 from agentplane.proto import event_log_pb2
 from agentplane.sandbox_service.testing.delta_spans import claude_text
 from agentplane.thread_fold.models import ThreadEvidence, ThreadNativeLink
@@ -26,13 +27,7 @@ SPAN = claude_text(["Hel", "lo"]).entries
 async def stored_before_settlement(engine: AsyncEngine, entries: list[event_log_pb2.EventEntry]) -> UUID:
     """A Session whose every entry was stored before settlement existed."""
     session_id = uuid4()
-    await Store(engine).record_session(
-        session_id,
-        sandbox_namespace="test-namespace",
-        sandbox_name="test-sandbox",
-        sandbox_uid=None,
-        runner_session_id=f"test-runner-{session_id}",
-    )
+    await Store(engine).bind_writer(session_id, WRITER)
     async with async_sessionmaker(engine).begin() as session:
         session.add_all(
             SessionEvent(
