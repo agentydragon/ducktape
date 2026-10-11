@@ -6,7 +6,7 @@ from sqlalchemy import create_engine, text
 from sqlalchemy.engine import make_url
 from testcontainers.postgres import PostgresContainer
 
-from util.testing.postgres import PostgresDatabaseTemplate
+from util.testing.postgres import DatabaseClones, DatabaseNames, PostgresDatabaseTemplate
 
 # SQLAlchemy loads this driver from the explicit URL scheme below.
 # gazelle:include_dep @pypi//psycopg
@@ -14,6 +14,21 @@ from util.testing.postgres import PostgresDatabaseTemplate
 # gazelle:include_dep //util/testing:postgres_fixtures
 
 pytest_plugins = ["util.testing.postgres_fixtures"]
+
+
+def test_database_names_are_safe_unique_and_deterministic() -> None:
+    node_id = "tests/" + ("非常長" * 30) + "::test_name[param]"
+    names = DatabaseNames(node_id)
+    first, second = names(), names()
+
+    assert first != second
+    assert DatabaseNames(node_id)() == first
+    assert len(first) <= 63
+    assert len(second) <= 63
+    assert first.replace("_", "").isalnum()
+    assert second.replace("_", "").isalnum()
+    assert first.isascii()
+    assert second.isascii()
 
 
 @pytest.fixture(scope="module")
@@ -84,6 +99,58 @@ def test_template_clones_keep_schema_extensions_and_isolate_writes(admin_url: st
         assert not _database_exists(admin_url, "template_helper_clone_failure")
 
     assert not _database_exists(admin_url, "template_helper_test")
+
+
+def test_database_clones_allocate_isolated_databases_and_clean_up(admin_url: str) -> None:
+    node_id = "test_database_clones_allocate_isolated_databases_and_clean_up"
+    clone_names: list[str] = []
+    with PostgresDatabaseTemplate(admin_url, "template_helper_owner_test") as template:
+        engine = create_engine(template.url)
+        try:
+            with engine.begin() as connection:
+                connection.execute(text("CREATE TABLE template_data (value text NOT NULL)"))
+                connection.execute(text("INSERT INTO template_data VALUES ('seed')"))
+        finally:
+            engine.dispose()
+
+        def exercise_clones() -> None:
+            with DatabaseClones(DatabaseNames(node_id)) as clones:
+                first_url = clones.clone(template, drivername="postgresql+psycopg")
+                second_url = clones.clone(template, drivername="postgresql+psycopg")
+                async_url = clones.clone(template, drivername="postgresql+asyncpg")
+                assert make_url(first_url).query["application_name"] == "postgres-template-helper"
+                assert make_url(second_url).query["application_name"] == "postgres-template-helper"
+                assert make_url(async_url).drivername == "postgresql+asyncpg"
+                assert make_url(async_url).query["application_name"] == "postgres-template-helper"
+                for url in (first_url, second_url, async_url):
+                    name = make_url(url).database
+                    assert name is not None
+                    clone_names.append(name)
+                assert len(set(clone_names)) == 3
+
+                engine = create_engine(first_url)
+                try:
+                    with engine.begin() as connection:
+                        connection.execute(text("INSERT INTO template_data VALUES ('first clone')"))
+                finally:
+                    engine.dispose()
+
+                engine = create_engine(second_url)
+                try:
+                    with engine.connect() as connection:
+                        values = (
+                            connection.execute(text("SELECT value FROM template_data ORDER BY value")).scalars().all()
+                        )
+                finally:
+                    engine.dispose()
+                assert values == ["seed"]
+                raise RuntimeError("failure from the test body")
+
+        with pytest.raises(RuntimeError, match="failure from the test body"):
+            exercise_clones()
+
+        assert all(not _database_exists(admin_url, name) for name in clone_names)
+    assert not _database_exists(admin_url, "template_helper_owner_test")
 
 
 if __name__ == "__main__":

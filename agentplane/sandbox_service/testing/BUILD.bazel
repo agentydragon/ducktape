@@ -127,3 +127,13 @@ py_library(
         "@pypi//protobuf",
     ],
 )
+
+py_library(
+    name = "fixtures",
+    srcs = ["fixtures.py"],
+    deps = [
+        ":history",
+        "//util/testing:postgres",
+        "@pypi//pytest",
+    ],
+)

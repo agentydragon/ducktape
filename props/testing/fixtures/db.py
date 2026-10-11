@@ -23,9 +23,9 @@ from props.db.sync.model_metadata import sync_model_metadata_with_session
 from props.db.sync.sync import SpecimenBundle, refresh_examples_matview, sync_specimen
 from util.bazel.runfiles import get_required_path
 from util.testing.postgres import (
+    DatabaseNames,
     PostgresDatabaseTemplate,
     create_database_sync,
-    database_name_for_test,
     force_drop_database_sync,
 )
 from util.testing.postgres_fixtures import start_postgres_container
@@ -118,14 +118,17 @@ def _setup_test_database(
 
 @pytest.fixture
 def db(
-    request: pytest.FixtureRequest, postgres_base_config: DatabaseConfig, postgres_template: PostgresDatabaseTemplate
+    request: pytest.FixtureRequest,
+    postgres_base_config: DatabaseConfig,
+    postgres_template: PostgresDatabaseTemplate,
+    database_names: DatabaseNames,
 ) -> Generator[Database]:
     """Create isolated Database for each test.
 
     Clones the migrated schema into a unique database per test and drops it after.
     Safe for parallel pytest-xdist execution - each test gets its own database.
     """
-    db_name = database_name_for_test(f"props_test_{request.node.nodeid}")
+    db_name = database_names()
 
     database = _setup_test_database(postgres_base_config, db_name, postgres_template)
 

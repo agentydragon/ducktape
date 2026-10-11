@@ -22,7 +22,6 @@ from fastapi import FastAPI
 from fastmcp import FastMCP
 from pydantic import AnyHttpUrl
 from sqlalchemy import select
-from sqlalchemy.engine import make_url
 from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
 from starlette.routing import Route
@@ -90,7 +89,7 @@ from agentplane.workload_auth.principal import (
 from util.net import bind_free_port, pick_free_port
 from util.testing.asgi import serve_app, serve_app_in_loop
 from util.testing.mock_oidc import build_mock_oidc_app, generate_rsa_keypair, sign_jwt
-from util.testing.postgres import PostgresDatabaseTemplate, database_name_for_test
+from util.testing.postgres import DatabaseClones, PostgresDatabaseTemplate, migrated_database_template
 
 CALLER = CallerPrincipal(account=ServiceAccountRef(namespace="agentplane-test", name="test-sandbox"))
 SUBJECT_A = "test-operator-subject"
@@ -137,17 +136,18 @@ def direct_federation() -> bool:
 def action_api_template(
     postgres_admin_url: str, app_database_template: PostgresDatabaseTemplate
 ) -> Iterator[PostgresDatabaseTemplate]:
-    with PostgresDatabaseTemplate(
-        postgres_admin_url, "agentplane_action_api_template", template=app_database_template.template_name
+    with migrated_database_template(
+        postgres_admin_url,
+        "agentplane_action_api_template",
+        ACTIONS_RUNNER,
+        template=app_database_template.template_name,
     ) as template:
-        ACTIONS_RUNNER.apply(template.url)
         yield template
 
 
 @pytest.fixture
-def db_url(action_api_template: PostgresDatabaseTemplate, request: pytest.FixtureRequest) -> Iterator[str]:
-    with action_api_template.clone(database_name_for_test(request.node.nodeid)) as url:
-        yield make_url(url).set(drivername="postgresql+asyncpg").render_as_string(hide_password=False)
+def db_url(action_api_template: PostgresDatabaseTemplate, database_clones: DatabaseClones) -> str:
+    return database_clones.clone(action_api_template, drivername="postgresql+asyncpg")
 
 
 @pytest.fixture

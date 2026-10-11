@@ -221,10 +221,8 @@ py_library(
         ":store",
         "//util/testing:postgres",
         "//util/testing:postgres_fixtures",
-        "@pypi//psycopg",
         "@pypi//pytest",
         "@pypi//sqlalchemy",
-        "@pypi//testcontainers",
     ],
 )
 

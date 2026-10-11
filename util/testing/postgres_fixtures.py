@@ -10,8 +10,8 @@ wrap it (e.g. props, which adds a tracing span).
 Both images are marked ``immutable`` upstream tags, so ``load_oci_image`` skips the
 push on a warm worker by itself — this module no longer checks.
 
-Packages keep their own ``postgres_admin_url(postgres_container)`` because the
-SQLAlchemy driver differs (``postgresql+psycopg://`` vs ``postgresql+asyncpg://``).
+The shared ``postgres_admin_url`` uses the sync psycopg driver. Tests that need asyncpg
+should change the driver explicitly on their per-test database URL.
 """
 
 import contextlib
@@ -20,11 +20,16 @@ import time
 from collections.abc import Generator, Iterator
 
 import pytest
+from sqlalchemy.engine import URL
 from testcontainers.postgres import PostgresContainer
 
 from third_party.containers import postgres_18, ryuk
 from util.oci import OciImage, load_oci_image
+from util.testing.postgres import DatabaseClones, DatabaseNames
 from util.testing.undeclared_outputs import undeclared_outputs_dir
+
+# SQLAlchemy loads the psycopg dialect from the URL scheme at runtime.
+# gazelle:include_dep @pypi//psycopg
 
 logger = logging.getLogger(__name__)
 
@@ -85,3 +90,29 @@ def postgres_container() -> Generator[PostgresContainer]:
         yield container
     finally:
         container.stop()
+
+
+@pytest.fixture(scope="session")
+def postgres_admin_url(postgres_container: PostgresContainer) -> str:
+    """Build the sync psycopg admin URL for the shared Postgres container."""
+    return URL.create(
+        "postgresql+psycopg",
+        username="postgres",
+        password="postgres",
+        host=postgres_container.get_container_host_ip(),
+        port=int(postgres_container.get_exposed_port(5432)),
+        database="postgres",
+    ).render_as_string(hide_password=False)
+
+
+@pytest.fixture
+def database_names(request: pytest.FixtureRequest) -> DatabaseNames:
+    """Allocate safe unique PostgreSQL names scoped to the current pytest node."""
+    return DatabaseNames(request.node.nodeid)
+
+
+@pytest.fixture
+def database_clones(database_names: DatabaseNames) -> Iterator[DatabaseClones]:
+    """Own template clones for one test and drop them after dependent fixtures finish."""
+    with DatabaseClones(database_names) as clones:
+        yield clones
