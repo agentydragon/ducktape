@@ -246,6 +246,8 @@ def datasource_for(
             return by_name[DATASOURCE_PLACEHOLDERS[placeholder.group(1)]]
         if raw in by_uid:
             return by_uid[raw]
+        if raw in by_name:
+            return by_name[raw]
     raise VerificationError(f"{panel_name(panel)} target {target.get('refId', '?')} has no live datasource")
 
 
