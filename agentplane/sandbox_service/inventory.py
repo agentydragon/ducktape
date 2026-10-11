@@ -22,6 +22,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from tenacity import retry, retry_if_exception, stop_after_attempt
 
 from agentplane.action_service.policies.resources import CALLER_LABEL
+from agentplane.proto.sandbox_service_pb2 import CreateSandboxRequest, Hold, Sandbox, SandboxBinding, TeardownPhase
 from agentplane.sandbox_service.binding_storage import read_binding
 from agentplane.sandbox_service.kubernetes_views import (
     CREATE_INTENT,
@@ -44,7 +45,6 @@ from agentplane.sandbox_service.models import (
     SandboxRunningError,
     SandboxTearingDownError,
 )
-from agentplane.sandbox_service.protocol_pb2 import CreateSandboxRequest, Hold, Sandbox, SandboxBinding, TeardownPhase
 from agentplane.sandbox_service.retention_holds import RetentionHolds, read_holds
 from agentplane.sandbox_service.runner_endpoints import RunnerEndpoints
 from agentplane.sandbox_service.session_config import LaunchGrants

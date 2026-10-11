@@ -7,11 +7,11 @@ from uuid import UUID
 from google.protobuf.json_format import MessageToDict, MessageToJson, ParseDict
 
 from agentplane.proto import runner_control_pb2 as control_pb2, runner_pb2
+from agentplane.proto.sandbox_service_pb2 import SandboxBinding, SessionDestination
 from agentplane.runner.client import RunnerClient
 from agentplane.runner.errors import RunnerError
 from agentplane.runner_gateway.instructions import combine_instructions
 from agentplane.runner_gateway.lifecycle_control import LifecycleControl
-from agentplane.sandbox_service.protocol_pb2 import SandboxBinding, SessionDestination
 
 # gazelle:include_dep @pypi//protobuf
 

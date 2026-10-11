@@ -7,6 +7,7 @@ from kubernetes_asyncio import client as k8s_client
 from more_itertools import unique_everseen
 
 from agentplane.egress.resources import EgressBinding
+from agentplane.proto.sandbox_service_pb2 import Sandbox
 from agentplane.sandbox_service.egress_views import (
     BINDINGS_PLURAL,
     EGRESS_API,
@@ -20,7 +21,6 @@ from agentplane.sandbox_service.egress_views import (
     binding_view,
 )
 from agentplane.sandbox_service.owned_binding import create_binding
-from agentplane.sandbox_service.protocol_pb2 import Sandbox
 from util.agent_sandbox import SANDBOX_API
 from util.kubernetes import CustomObjectsClient
 

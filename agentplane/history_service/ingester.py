@@ -24,6 +24,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 from agentplane.history_service.protocol_pb2 import SessionFeedState
 from agentplane.history_service.storage.store import HistoryConflictError, Store
 from agentplane.proto import event_log_pb2
+from agentplane.proto.sandbox_service_pb2 import SandboxDestination, Sealed, SessionChange
 from agentplane.runner.errors import RunnerError, StreamClosedError
 from agentplane.sandbox_service.client import (
     Attachment,
@@ -33,7 +34,6 @@ from agentplane.sandbox_service.client import (
     SealedError,
     ServiceError,
 )
-from agentplane.sandbox_service.protocol_pb2 import SandboxDestination, Sealed, SessionChange
 
 # Generated stubs require the protobuf runtime as a direct mypy dependency.
 # gazelle:include_dep @pypi//protobuf

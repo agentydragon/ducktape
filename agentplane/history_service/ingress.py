@@ -25,7 +25,7 @@ from agentplane.history_service.storage.store import (
     WriterMismatchError,
 )
 from agentplane.proto import event_log_pb2, runner_ingress_pb2, runner_ingress_pb2_grpc, runner_pb2
-from agentplane.sandbox_service.protocol_pb2 import Sealed
+from agentplane.proto.sandbox_service_pb2 import Sealed
 from agentplane.workload_auth.grpc_caller import resolve_caller
 from agentplane.workload_auth.principal import WorkloadPrincipalRejectedError, WorkloadPrincipalResolver
 

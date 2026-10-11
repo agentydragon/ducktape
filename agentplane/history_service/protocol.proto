@@ -6,7 +6,7 @@ package ducktape.agentplane.history.v1;
 import "agentplane/proto/event.proto";
 import "agentplane/proto/event_log.proto";
 import "agentplane/proto/runner.proto";
-import "agentplane/sandbox_service/protocol.proto";
+import "agentplane/proto/sandbox_service.proto";
 import "google/protobuf/empty.proto";
 import "google/protobuf/timestamp.proto";
 
@@ -76,7 +76,7 @@ message SessionFeedState {
   // unconfirmed, not evidence of current connectivity or a running harness.
   bool ended = 2;
   // The incarnation's seal, once a follower committed every entry through it. Sticky.
-  ducktape.agentplane.sandbox.v1.Sealed sealed = 3;
+  .agentplane.proto.sandbox_service.Sealed sealed = 3;
 }
 
 message ReadSessionObservationsRequest {

@@ -12,7 +12,7 @@ from typing import Annotated, Literal
 from google.protobuf.json_format import ParseDict
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 
-from agentplane.sandbox_service.protocol_pb2 import ResolvedGrant
+from agentplane.proto.sandbox_service_pb2 import ResolvedGrant
 
 DnsName = Annotated[str, StringConstraints(pattern=r"^[a-z0-9]([-a-z0-9]*[a-z0-9])?$", min_length=1, max_length=63)]
 

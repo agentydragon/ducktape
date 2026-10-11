@@ -19,7 +19,8 @@ from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from agentplane.grpc_process import serving
-from agentplane.proto import command_pb2, event_log_pb2, event_pb2, runner_pb2, runner_pb2_grpc
+from agentplane.proto import command_pb2, event_log_pb2, event_pb2, runner_pb2, runner_pb2_grpc, sandbox_service_pb2
+from agentplane.proto.sandbox_service_pb2 import ResolvedGrant, SandboxDestination
 from agentplane.runner.errors import RunnerError, StreamClosedError
 from agentplane.runner_gateway.commands.connections import ConnectionStore
 from agentplane.runner_gateway.commands.store import CommandSubmission, SubmissionState, SubmissionStore
@@ -30,7 +31,7 @@ from agentplane.runner_gateway.testing.grpc_service import service_client
 from agentplane.runner_gateway.testing.journal import admission, entry, journal_entry
 from agentplane.runner_gateway.testing.resources import build_resources
 from agentplane.runner_gateway.testing.sessions import register_session
-from agentplane.sandbox_service import protocol_pb2, wire
+from agentplane.sandbox_service import wire
 from agentplane.sandbox_service.client import ReconnectRequiredError, SandboxServiceClient, SealedError, ServiceError
 from agentplane.sandbox_service.destinations import DestinationResolver
 from agentplane.sandbox_service.kubernetes_grants import RoleBindingGrant, RoleRef
@@ -39,7 +40,6 @@ from agentplane.sandbox_service.kubernetes_views import (
     KUBERNETES_GRANTS_READY_ANNOTATION,
     PROVISIONING_ANNOTATION,
 )
-from agentplane.sandbox_service.protocol_pb2 import ResolvedGrant, SandboxDestination
 from agentplane.sandbox_service.testing.grpc_service import CALLER_TOKEN
 from agentplane.sandbox_service.testing.kubernetes import ACCOUNT, DESTINATION, OWNER, SANDBOX, SANDBOX_UID, Cluster
 from agentplane.subjects import ServiceAccountRef
@@ -308,49 +308,51 @@ async def test_command_status_reads_retained_submissions_without_the_runner(
     receipt = admission(commands["admitted"], 1)
     await submissions.record_admission(session_id, receipt)
     await submissions.record_rejection(session_id, "rejected", "test refusal")
-    destination = protocol_pb2.SessionDestination(sandbox=DESTINATION, session_id=str(session_id))
+    destination = sandbox_service_pb2.SessionDestination(sandbox=DESTINATION, session_id=str(session_id))
     async with service_client(
         replace(resources, sessions=sessions, submissions=submissions), token_file, cluster.provisioning
     ) as remote:
 
-        async def get(command_id: str, at: protocol_pb2.SessionDestination = destination) -> protocol_pb2.CommandStatus:
+        async def get(
+            command_id: str, at: sandbox_service_pb2.SessionDestination = destination
+        ) -> sandbox_service_pb2.CommandStatus:
             return await remote.unary(
-                remote.gateway.GetCommand, protocol_pb2.GetCommandRequest(destination=at, command_id=command_id)
+                remote.gateway.GetCommand, sandbox_service_pb2.GetCommandRequest(destination=at, command_id=command_id)
             )
 
-        async def page(request: protocol_pb2.ListCommandsRequest) -> protocol_pb2.ListCommandsResponse:
+        async def page(request: sandbox_service_pb2.ListCommandsRequest) -> sandbox_service_pb2.ListCommandsResponse:
             request.destination.CopyFrom(destination)
             return await remote.unary(remote.gateway.ListCommands, request)
 
         admitted = await get("admitted")
         assert (admitted.command, admitted.state, admitted.admission) == (
             commands["admitted"],
-            protocol_pb2.COMMAND_STATE_ADMITTED,
+            sandbox_service_pb2.COMMAND_STATE_ADMITTED,
             receipt,
         )
         pending = await get("pending")
-        assert pending.state == protocol_pb2.COMMAND_STATE_PENDING_ADMISSION
+        assert pending.state == sandbox_service_pb2.COMMAND_STATE_PENDING_ADMISSION
         assert not pending.HasField("admission")
         rejected = await get("rejected")
-        assert (rejected.state, rejected.rejection) == (protocol_pb2.COMMAND_STATE_REJECTED, "test refusal")
+        assert (rejected.state, rejected.rejection) == (sandbox_service_pb2.COMMAND_STATE_REJECTED, "test refusal")
 
-        listed: list[protocol_pb2.CommandStatus] = []
+        listed: list[sandbox_service_pb2.CommandStatus] = []
         token = ""
         while True:
-            response = await page(protocol_pb2.ListCommandsRequest(page_token=token, page_size=2))
+            response = await page(sandbox_service_pb2.ListCommandsRequest(page_token=token, page_size=2))
             listed.extend(response.commands)
             if not (token := response.next_page_token):
                 break
         assert listed == [admitted, pending, rejected]
         only_pending = await page(
-            protocol_pb2.ListCommandsRequest(states=[protocol_pb2.COMMAND_STATE_PENDING_ADMISSION])
+            sandbox_service_pb2.ListCommandsRequest(states=[sandbox_service_pb2.COMMAND_STATE_PENDING_ADMISSION])
         )
         assert list(only_pending.commands) == [pending]
 
-        other_incarnation = protocol_pb2.SessionDestination()
+        other_incarnation = sandbox_service_pb2.SessionDestination()
         other_incarnation.CopyFrom(destination)
         other_incarnation.sandbox.sandbox_uid = str(uuid4())
-        legacy = protocol_pb2.SessionDestination(sandbox=DESTINATION, session_id="legacy-runner-session")
+        legacy = sandbox_service_pb2.SessionDestination(sandbox=DESTINATION, session_id="legacy-runner-session")
         for command_id, at, code in (
             ("unknown", destination, grpc.StatusCode.NOT_FOUND),
             ("pending", other_incarnation, grpc.StatusCode.NOT_FOUND),
@@ -486,7 +488,7 @@ async def test_open_without_a_client_session_id_mints_one_and_survives_a_lost_re
 ) -> None:
     """A client predating client-minted Session IDs names only its Open key."""
     peer.answer_open = False
-    request = protocol_pb2.CreateSessionRequest(
+    request = sandbox_service_pb2.CreateSessionRequest(
         sandbox=DESTINATION,
         idempotency_key="lost-response",
         spec=runner_pb2.SessionSpec(harness=runner_pb2.HARNESS_CODEX, cwd="/state", model="test-model"),
@@ -525,8 +527,8 @@ async def test_managed_open_expands_default_cwd_with_reserved_id(
     resources: Resources, token_file: Path, peer: Peer, engine: AsyncEngine, sessions: SessionRegistry, cluster: Cluster
 ) -> None:
     cluster.set_binding(
-        protocol_pb2.SandboxBinding(
-            session_defaults=protocol_pb2.SessionDefaults(
+        sandbox_service_pb2.SandboxBinding(
+            session_defaults=sandbox_service_pb2.SessionDefaults(
                 harness=runner_pb2.HARNESS_CODEX, model="test-model", cwd="/state/workspaces/{session_id}"
             )
         )
@@ -568,8 +570,8 @@ async def test_idle_follow_renews_with_ok_status_not_native_end(
     ) as remote:
         async with asyncio.timeout(8):
             call = remote.gateway.FollowSession(
-                protocol_pb2.FollowSessionRequest(
-                    destination=protocol_pb2.SessionDestination(sandbox=DESTINATION, session_id="session")
+                sandbox_service_pb2.FollowSessionRequest(
+                    destination=sandbox_service_pb2.SessionDestination(sandbox=DESTINATION, session_id="session")
                 ),
                 metadata=await remote.metadata(),
                 timeout=5,
@@ -835,7 +837,9 @@ async def test_missing_invalid_or_duplicate_bearer_is_rejected(
     remote: SandboxServiceClient, peer: Peer, metadata: tuple[tuple[str, str], ...]
 ) -> None:
     with pytest.raises(grpc.aio.AioRpcError) as rejected:
-        await remote.gateway.ListSessions(protocol_pb2.SandboxRequest(destination=DESTINATION), metadata=metadata)
+        await remote.gateway.ListSessions(
+            sandbox_service_pb2.SandboxRequest(destination=DESTINATION), metadata=metadata
+        )
     assert rejected.value.code() == grpc.StatusCode.UNAUTHENTICATED
     assert peer.attachments.empty()
 
@@ -843,7 +847,10 @@ async def test_missing_invalid_or_duplicate_bearer_is_rejected(
 @pytest.mark.parametrize(
     ("change", "code"),
     [
-        ({"owner": protocol_pb2.ServiceAccount(namespace=SANDBOX_NAMESPACE, name="other")}, grpc.StatusCode.NOT_FOUND),
+        (
+            {"owner": sandbox_service_pb2.ServiceAccount(namespace=SANDBOX_NAMESPACE, name="other")},
+            grpc.StatusCode.NOT_FOUND,
+        ),
         ({"sandbox_uid": str(uuid4())}, grpc.StatusCode.NOT_FOUND),
     ],
 )
@@ -885,24 +892,27 @@ async def test_unlisted_callers_rejected_before_lookup(
         resources, caller_accounts=frozenset({ServiceAccountRef(namespace=SANDBOX_NAMESPACE, name="allowed-service")})
     )
     cluster.fake.objects[SANDBOXES_PLURAL].clear()
-    destination = protocol_pb2.SessionDestination(sandbox=DESTINATION, session_id="session")
+    destination = sandbox_service_pb2.SessionDestination(sandbox=DESTINATION, session_id="session")
     async with service_client(configured, token_file, cluster.provisioning) as remote:
         for call, request in (
             (remote.stub.ListSandboxes, Empty()),
-            (remote.stub.GetSandbox, protocol_pb2.GetSandboxRequest(name=SANDBOX)),
-            (remote.stub.CreateSandbox, protocol_pb2.CreateSandboxRequest()),
-            (remote.stub.SuspendSandbox, protocol_pb2.SandboxRequest(destination=DESTINATION)),
-            (remote.stub.ResumeSandbox, protocol_pb2.SandboxRequest(destination=DESTINATION)),
-            (remote.stub.DeleteSandbox, protocol_pb2.SandboxRequest(destination=DESTINATION)),
+            (remote.stub.GetSandbox, sandbox_service_pb2.GetSandboxRequest(name=SANDBOX)),
+            (remote.stub.CreateSandbox, sandbox_service_pb2.CreateSandboxRequest()),
+            (remote.stub.SuspendSandbox, sandbox_service_pb2.SandboxRequest(destination=DESTINATION)),
+            (remote.stub.ResumeSandbox, sandbox_service_pb2.SandboxRequest(destination=DESTINATION)),
+            (remote.stub.DeleteSandbox, sandbox_service_pb2.SandboxRequest(destination=DESTINATION)),
             (remote.stub.ListTemplates, Empty()),
-            (remote.stub.GrantEgress, protocol_pb2.GrantEgressRequest(destination=DESTINATION)),
-            (remote.stub.RevokeEgress, protocol_pb2.RevokeEgressRequest()),
-            (remote.gateway.ListSessions, protocol_pb2.SandboxRequest(destination=DESTINATION)),
-            (remote.gateway.ResumeSession, protocol_pb2.SessionRequest(destination=destination)),
-            (remote.gateway.SubmitCommand, protocol_pb2.SubmitCommandRequest(destination=destination)),
-            (remote.stub.PlaceHold, protocol_pb2.HoldRequest(destination=destination, holder="test-holder")),
-            (remote.stub.ConfirmHold, protocol_pb2.ConfirmHoldRequest(destination=destination, holder="test-holder")),
-            (remote.stub.ReleaseHold, protocol_pb2.HoldRequest(destination=destination, holder="test-holder")),
+            (remote.stub.GrantEgress, sandbox_service_pb2.GrantEgressRequest(destination=DESTINATION)),
+            (remote.stub.RevokeEgress, sandbox_service_pb2.RevokeEgressRequest()),
+            (remote.gateway.ListSessions, sandbox_service_pb2.SandboxRequest(destination=DESTINATION)),
+            (remote.gateway.ResumeSession, sandbox_service_pb2.SessionRequest(destination=destination)),
+            (remote.gateway.SubmitCommand, sandbox_service_pb2.SubmitCommandRequest(destination=destination)),
+            (remote.stub.PlaceHold, sandbox_service_pb2.HoldRequest(destination=destination, holder="test-holder")),
+            (
+                remote.stub.ConfirmHold,
+                sandbox_service_pb2.ConfirmHoldRequest(destination=destination, holder="test-holder"),
+            ),
+            (remote.stub.ReleaseHold, sandbox_service_pb2.HoldRequest(destination=destination, holder="test-holder")),
         ):
             with pytest.raises(ServiceError) as rejected:
                 await remote.unary(call, request)
@@ -933,7 +943,7 @@ async def test_open_and_resume_refuse_unready_grants_without_app(
                 RoleBindingGrant(
                     kind="RoleBinding", namespace=SANDBOX_NAMESPACE, role_ref=RoleRef(kind="Role", name="config-reader")
                 ).model_dump(mode="json"),
-                protocol_pb2.KubernetesGrant(),
+                sandbox_service_pb2.KubernetesGrant(),
             ),
         )
         annotations[KUBERNETES_GRANTS_ANNOTATION] = json.dumps([MessageToDict(grant, preserving_proto_field_name=True)])
@@ -1067,7 +1077,7 @@ async def test_watch_sessions_resumes_after_disconnect_and_wakes_on_other_writer
     configured = replace(resources, session_changes=session_changes, follow_lease_s=2)
     async with service_client(configured, token_file, cluster.provisioning) as remote:
         first_call = remote.gateway.WatchSessions(
-            protocol_pb2.WatchSessionsRequest(), metadata=await remote.metadata(), timeout=10
+            sandbox_service_pb2.WatchSessionsRequest(), metadata=await remote.metadata(), timeout=10
         )
         legacy = (await first_call.read()).change
         assert (legacy.session_id, legacy.sandbox, legacy.sandbox_uid) == (str(legacy_id), "deleted-sandbox", "")
@@ -1075,7 +1085,7 @@ async def test_watch_sessions_resumes_after_disconnect_and_wakes_on_other_writer
         first_call.cancel()  # disconnect before acknowledging the second Session
 
         resumed = remote.gateway.WatchSessions(
-            protocol_pb2.WatchSessionsRequest(after_position=legacy.position),
+            sandbox_service_pb2.WatchSessionsRequest(after_position=legacy.position),
             metadata=await remote.metadata(),
             timeout=10,
         )
@@ -1121,7 +1131,9 @@ async def test_watch_sessions_requires_allowed_caller(
         caller_accounts=frozenset({ServiceAccountRef(namespace=SANDBOX_NAMESPACE, name="allowed-service")}),
     )
     async with service_client(configured, token_file, cluster.provisioning) as remote:
-        call = remote.gateway.WatchSessions(protocol_pb2.WatchSessionsRequest(), metadata=await remote.metadata())
+        call = remote.gateway.WatchSessions(
+            sandbox_service_pb2.WatchSessionsRequest(), metadata=await remote.metadata()
+        )
         with pytest.raises(grpc.aio.AioRpcError) as denied:
             await call.read()
         assert denied.value.code() == grpc.StatusCode.PERMISSION_DENIED

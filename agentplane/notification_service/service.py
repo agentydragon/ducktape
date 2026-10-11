@@ -32,10 +32,10 @@ from agentplane.notification_service.sources.github_client import (
 )
 from agentplane.notification_service.store import ClaimLostError, ConflictError, QuotaError, Store
 from agentplane.proto import command_pb2, event_log_pb2, runner_pb2
+from agentplane.proto.sandbox_service_pb2 import SandboxDestination, ServiceAccount
 from agentplane.runner.errors import RunnerError
 from agentplane.sandbox_service.client import Runner, SandboxServiceClient
 from agentplane.sandbox_service.models import SandboxNotFoundError
-from agentplane.sandbox_service.protocol_pb2 import SandboxDestination, ServiceAccount
 from agentplane.subjects import ServiceAccountRef
 from agentplane.workload_auth.principal import WorkloadPrincipal
 

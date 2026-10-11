@@ -13,7 +13,7 @@ py_library(
         "//agentplane/history_service:protocol_pb2",
         "//agentplane/proto:command_pb2",
         "//agentplane/proto:event_log_pb2",
-        "//agentplane/sandbox_service:protocol_pb2",
+        "//agentplane/proto:sandbox_service_pb2",
         "//agentplane/thread_fold:models",
         "//agentplane/thread_fold:views",
         "@pypi//grpcio",

@@ -14,11 +14,18 @@ from google.protobuf.empty_pb2 import Empty
 from google.protobuf.message import Message
 
 from agentplane.grpc_options import grpc_channel_option_kvps
-from agentplane.proto import command_pb2, event_log_pb2, runner_gateway_pb2_grpc, runner_pb2
+from agentplane.proto import (
+    command_pb2,
+    event_log_pb2,
+    runner_gateway_pb2_grpc,
+    runner_pb2,
+    sandbox_service_pb2,
+    sandbox_service_pb2_grpc,
+)
+from agentplane.proto.sandbox_service_pb2 import CreateSandboxRequest, Sandbox, SandboxDestination
 from agentplane.runner.errors import RunnerError, StreamClosedError
-from agentplane.sandbox_service import protocol_pb2, protocol_pb2_grpc, wire
+from agentplane.sandbox_service import wire
 from agentplane.sandbox_service.models import SandboxNotFoundError
-from agentplane.sandbox_service.protocol_pb2 import CreateSandboxRequest, Sandbox, SandboxDestination
 
 # gazelle:include_dep @pypi//protobuf
 # gazelle:include_dep @pypi//grpcio
@@ -70,7 +77,7 @@ class Attachment:
             _raise(error)
         if message is grpc.aio.EOF:
             raise ConnectionError("Sandbox Service follow ended without native closure evidence")
-        assert isinstance(message, protocol_pb2.FollowSessionResponse)
+        assert isinstance(message, sandbox_service_pb2.FollowSessionResponse)
         if message.HasField("entry"):
             return message.entry
         if message.HasField("reconnect_required"):
@@ -126,7 +133,7 @@ class SandboxServiceClient:
         self.control_target = control_target
         self._channel_options = channel_options
         self._channel: grpc.aio.Channel | None = None
-        self._stub: protocol_pb2_grpc.SandboxServiceAsyncStub | None = None
+        self._stub: sandbox_service_pb2_grpc.SandboxServiceAsyncStub | None = None
         self._gateway_channel: grpc.aio.Channel | None = None
         self._gateway_stub: runner_gateway_pb2_grpc.RunnerGatewayAsyncStub | None = None
 
@@ -142,10 +149,10 @@ class SandboxServiceClient:
         )
 
     @property
-    def stub(self) -> protocol_pb2_grpc.SandboxServiceAsyncStub:
+    def stub(self) -> sandbox_service_pb2_grpc.SandboxServiceAsyncStub:
         if self._stub is None:
             self._channel = self.dial(self.target)
-            self._stub = protocol_pb2_grpc.SandboxServiceStub(self._channel)
+            self._stub = sandbox_service_pb2_grpc.SandboxServiceStub(self._channel)
         return self._stub
 
     @property
@@ -210,7 +217,7 @@ class SandboxServiceClient:
 
     async def get(self, name: str) -> Sandbox:
         try:
-            result = await self.unary(self.stub.GetSandbox, protocol_pb2.GetSandboxRequest(name=name))
+            result = await self.unary(self.stub.GetSandbox, sandbox_service_pb2.GetSandboxRequest(name=name))
         except ServiceError as error:
             if error.code == grpc.StatusCode.NOT_FOUND:
                 raise SandboxNotFoundError(name) from error
@@ -223,7 +230,7 @@ class SandboxServiceClient:
     async def _lifecycle(self, call: Callable[..., Awaitable[Empty]], name: str) -> None:
         view = await self.get(name)
         destination = SandboxDestination(owner=view.service_account, sandbox=view.name, sandbox_uid=view.uid)
-        await self.unary(call, protocol_pb2.SandboxRequest(destination=destination))
+        await self.unary(call, sandbox_service_pb2.SandboxRequest(destination=destination))
 
     async def suspend(self, name: str) -> None:
         await self._lifecycle(self.stub.SuspendSandbox, name)
@@ -237,17 +244,18 @@ class SandboxServiceClient:
     async def grant_egress(self, sandbox: Sandbox, policies: list[str]) -> str:
         destination = SandboxDestination(owner=sandbox.service_account, sandbox=sandbox.name, sandbox_uid=sandbox.uid)
         result = await self.unary(
-            self.stub.GrantEgress, protocol_pb2.GrantEgressRequest(destination=destination, egress_policies=policies)
+            self.stub.GrantEgress,
+            sandbox_service_pb2.GrantEgressRequest(destination=destination, egress_policies=policies),
         )
         return result.binding_name
 
     async def revoke_egress(self, name: str) -> None:
-        await self.unary(self.stub.RevokeEgress, protocol_pb2.RevokeEgressRequest(binding_name=name))
+        await self.unary(self.stub.RevokeEgress, sandbox_service_pb2.RevokeEgressRequest(binding_name=name))
 
-    async def watch_sessions(self, *, after_position: int) -> AsyncIterator[protocol_pb2.SessionChange]:
+    async def watch_sessions(self, *, after_position: int) -> AsyncIterator[sandbox_service_pb2.SessionChange]:
         """Yield changes after the position until planned renewal, which returns; anything else raises."""
         call = self.gateway.WatchSessions(
-            protocol_pb2.WatchSessionsRequest(after_position=after_position),
+            sandbox_service_pb2.WatchSessionsRequest(after_position=after_position),
             metadata=await self.metadata(),
             timeout=self.follow_timeout_s,
         )
@@ -259,7 +267,7 @@ class SandboxServiceClient:
                     _raise(error)
                 if message is grpc.aio.EOF:
                     raise ConnectionError("Sandbox Service ended the Session feed without planned renewal")
-                assert isinstance(message, protocol_pb2.WatchSessionsResponse)
+                assert isinstance(message, sandbox_service_pb2.WatchSessionsResponse)
                 if message.HasField("reconnect_required"):
                     return
                 yield message.change
@@ -287,13 +295,15 @@ class Runner:
 
     async def list_sessions(self) -> list[runner_pb2.SessionSummary]:
         result = await self.service.held_unary(
-            self.destination, lambda stub: stub.ListSessions, protocol_pb2.SandboxRequest(destination=self.destination)
+            self.destination,
+            lambda stub: stub.ListSessions,
+            sandbox_service_pb2.SandboxRequest(destination=self.destination),
         )
         return list(result.sessions)
 
     async def create(
         self, *, session_id: UUID, spec: dict[str, object], setup_script: str | None = None
-    ) -> protocol_pb2.CreateSessionResponse:
+    ) -> sandbox_service_pb2.CreateSessionResponse:
         """Open the Session the caller minted `session_id` for; a retry passes the same ID and inputs.
         The response's Session ID is authoritative: a Sandbox Service that predates client-minted IDs
         mints its own."""
@@ -304,23 +314,25 @@ class Runner:
             timeout_s=self.service.lifecycle_timeout_s,
         )
 
-    async def lookup(self, *, idempotency_key: str) -> protocol_pb2.LookupSessionResponse:
+    async def lookup(self, *, idempotency_key: str) -> sandbox_service_pb2.LookupSessionResponse:
         return await self.service.unary(
             self.service.gateway.LookupSession,
-            protocol_pb2.LookupSessionRequest(sandbox=self.destination, idempotency_key=idempotency_key),
+            sandbox_service_pb2.LookupSessionRequest(sandbox=self.destination, idempotency_key=idempotency_key),
         )
 
-    async def place_hold(self, session_id: str, *, holder: str) -> protocol_pb2.Hold:
-        destination = protocol_pb2.SessionDestination(sandbox=self.destination, session_id=session_id)
+    async def place_hold(self, session_id: str, *, holder: str) -> sandbox_service_pb2.Hold:
+        destination = sandbox_service_pb2.SessionDestination(sandbox=self.destination, session_id=session_id)
         return await self.service.unary(
-            self.service.stub.PlaceHold, protocol_pb2.HoldRequest(destination=destination, holder=holder)
+            self.service.stub.PlaceHold, sandbox_service_pb2.HoldRequest(destination=destination, holder=holder)
         )
 
-    async def confirm_hold(self, session_id: str, *, holder: str, through_cursor: int) -> protocol_pb2.Hold:
-        destination = protocol_pb2.SessionDestination(sandbox=self.destination, session_id=session_id)
+    async def confirm_hold(self, session_id: str, *, holder: str, through_cursor: int) -> sandbox_service_pb2.Hold:
+        destination = sandbox_service_pb2.SessionDestination(sandbox=self.destination, session_id=session_id)
         return await self.service.unary(
             self.service.stub.ConfirmHold,
-            protocol_pb2.ConfirmHoldRequest(destination=destination, holder=holder, through_cursor=through_cursor),
+            sandbox_service_pb2.ConfirmHoldRequest(
+                destination=destination, holder=holder, through_cursor=through_cursor
+            ),
         )
 
     async def seal(self) -> runner_pb2.SealResponse:
@@ -329,7 +341,7 @@ class Runner:
         return await self.service.held_unary(
             self.destination,
             lambda stub: stub.SealSandbox,
-            protocol_pb2.SandboxRequest(destination=self.destination),
+            sandbox_service_pb2.SandboxRequest(destination=self.destination),
             timeout_s=self.service.lifecycle_timeout_s,
         )
 
@@ -337,8 +349,8 @@ class Runner:
         return await self.service.held_unary(
             self.destination,
             lambda stub: stub.ResumeSession,
-            protocol_pb2.SessionRequest(
-                destination=protocol_pb2.SessionDestination(sandbox=self.destination, session_id=session_id)
+            sandbox_service_pb2.SessionRequest(
+                destination=sandbox_service_pb2.SessionDestination(sandbox=self.destination, session_id=session_id)
             ),
             timeout_s=self.service.lifecycle_timeout_s,
         )
@@ -350,8 +362,8 @@ class Runner:
             raise ValueError("SubmitCommand requires an explicit client deadline")
         receipt = await self.service.unary(
             self.service.gateway.SubmitCommand,
-            protocol_pb2.SubmitCommandRequest(
-                destination=protocol_pb2.SessionDestination(sandbox=self.destination, session_id=session_id),
+            sandbox_service_pb2.SubmitCommandRequest(
+                destination=sandbox_service_pb2.SessionDestination(sandbox=self.destination, session_id=session_id),
                 command=command,
                 follow=event_log_pb2.Follow(after_cursor=after_cursor),
             ),
@@ -361,19 +373,19 @@ class Runner:
             raise ConnectionError("Sandbox Service did not return the exact command admission")
         return receipt
 
-    async def get_command(self, session_id: str, command_id: str) -> protocol_pb2.CommandStatus:
+    async def get_command(self, session_id: str, command_id: str) -> sandbox_service_pb2.CommandStatus:
         return await self.service.unary(
             self.service.gateway.GetCommand,
-            protocol_pb2.GetCommandRequest(
-                destination=protocol_pb2.SessionDestination(sandbox=self.destination, session_id=session_id),
+            sandbox_service_pb2.GetCommandRequest(
+                destination=sandbox_service_pb2.SessionDestination(sandbox=self.destination, session_id=session_id),
                 command_id=command_id,
             ),
         )
 
     async def attach(self, session_id: str, *, after_cursor: int = 0) -> Attachment:
         call = self.service.gateway.FollowSession(
-            protocol_pb2.FollowSessionRequest(
-                destination=protocol_pb2.SessionDestination(sandbox=self.destination, session_id=session_id),
+            sandbox_service_pb2.FollowSessionRequest(
+                destination=sandbox_service_pb2.SessionDestination(sandbox=self.destination, session_id=session_id),
                 follow=event_log_pb2.Follow(after_cursor=after_cursor),
             ),
             metadata=await self.service.metadata(),
@@ -382,7 +394,7 @@ class Runner:
         try:
             async with asyncio.timeout(self.service.request_timeout_s):
                 message = await call.read()
-            if not isinstance(message, protocol_pb2.FollowSessionResponse) or not message.HasField("attached"):
+            if not isinstance(message, sandbox_service_pb2.FollowSessionResponse) or not message.HasField("attached"):
                 raise ConnectionError("Sandbox Service did not provide an Attached snapshot")
             return Attachment(call, message.attached)
         except BaseException as error:

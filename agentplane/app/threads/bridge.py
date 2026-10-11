@@ -15,12 +15,11 @@ from agentplane.app.threads.ingestion import Ingester
 from agentplane.app.threads.sessions import SandboxSessions
 from agentplane.app.threads.summaries import FeedError
 from agentplane.app.threads.view.content import ContentStore
-from agentplane.proto import command_pb2, event_log_pb2, runner_pb2
-from agentplane.runner.errors import RunnerError
-from agentplane.runner.harness import Harness
 
 # Not `runner_pb2`: that name is the runner's protocol here.
-from agentplane.sandbox_service import protocol_pb2 as service_pb2
+from agentplane.proto import command_pb2, event_log_pb2, runner_pb2, sandbox_service_pb2
+from agentplane.runner.errors import RunnerError
+from agentplane.runner.harness import Harness
 
 # gazelle:include_dep @pypi//protobuf
 # gazelle:include_dep @pypi//grpcio
@@ -61,9 +60,9 @@ class CommandState(StrEnum):
 
 
 _COMMAND_STATES = {
-    service_pb2.COMMAND_STATE_PENDING_ADMISSION: CommandState.PENDING_ADMISSION,
-    service_pb2.COMMAND_STATE_ADMITTED: CommandState.ADMITTED,
-    service_pb2.COMMAND_STATE_REJECTED: CommandState.REJECTED,
+    sandbox_service_pb2.COMMAND_STATE_PENDING_ADMISSION: CommandState.PENDING_ADMISSION,
+    sandbox_service_pb2.COMMAND_STATE_ADMITTED: CommandState.ADMITTED,
+    sandbox_service_pb2.COMMAND_STATE_REJECTED: CommandState.REJECTED,
 }
 
 

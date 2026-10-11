@@ -14,11 +14,11 @@ from kubernetes_asyncio import client as k8s_client
 
 from agentplane.grpc_process import serving
 from agentplane.proto import runner_gateway_pb2_grpc, runner_pb2
+from agentplane.proto.sandbox_service_pb2 import Hold, Sandbox, SandboxDestination, SandboxRequest, TeardownPhase
 from agentplane.sandbox_service.client import ServiceError
 from agentplane.sandbox_service.destinations import DestinationResolver
 from agentplane.sandbox_service.inventory import SandboxInventory
 from agentplane.sandbox_service.models import SandboxTearingDownError
-from agentplane.sandbox_service.protocol_pb2 import Hold, Sandbox, SandboxDestination, SandboxRequest, TeardownPhase
 from agentplane.sandbox_service.teardown import GatewaySealing, SealNotFlushedError, Teardown
 from agentplane.sandbox_service.testing.backend import seed_runner
 from agentplane.sandbox_service.testing.fake_inventory import FakeCoreV1Api, FakeCustomObjectsApi

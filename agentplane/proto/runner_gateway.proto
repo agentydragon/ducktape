@@ -6,29 +6,29 @@ package agentplane.proto.runner_gateway;
 
 import "agentplane/proto/event_log.proto";
 import "agentplane/proto/runner.proto";
-import "agentplane/sandbox_service/protocol.proto";
+import "agentplane/proto/sandbox_service.proto";
 
 service RunnerGateway {
-  rpc ListSessions(ducktape.agentplane.sandbox.v1.SandboxRequest) returns (agentplane.proto.runner.ListSessionsResponse);
+  rpc ListSessions(agentplane.proto.sandbox_service.SandboxRequest) returns (agentplane.proto.runner.ListSessionsResponse);
   // Opens the Session the client named. A retry with the same ID and inputs returns it again.
-  rpc CreateSession(ducktape.agentplane.sandbox.v1.CreateSessionRequest) returns (ducktape.agentplane.sandbox.v1.CreateSessionResponse);
+  rpc CreateSession(agentplane.proto.sandbox_service.CreateSessionRequest) returns (agentplane.proto.sandbox_service.CreateSessionResponse);
   // Read-only reconciliation by the original caller, sandbox incarnation and Open key.
-  rpc LookupSession(ducktape.agentplane.sandbox.v1.LookupSessionRequest) returns (ducktape.agentplane.sandbox.v1.LookupSessionResponse);
-  rpc ResumeSession(ducktape.agentplane.sandbox.v1.SessionRequest) returns (agentplane.proto.runner.Attached);
+  rpc LookupSession(agentplane.proto.sandbox_service.LookupSessionRequest) returns (agentplane.proto.sandbox_service.LookupSessionResponse);
+  rpc ResumeSession(agentplane.proto.sandbox_service.SessionRequest) returns (agentplane.proto.runner.Attached);
   // Returns the original matching CommandAdmitted entry, not command completion.
-  rpc SubmitCommand(ducktape.agentplane.sandbox.v1.SubmitCommandRequest) returns (agentplane.proto.event_log.EventEntry);
+  rpc SubmitCommand(agentplane.proto.sandbox_service.SubmitCommandRequest) returns (agentplane.proto.event_log.EventEntry);
   // A command submitted to a public Session ID, as retained: never contacts the runner.
-  rpc GetCommand(ducktape.agentplane.sandbox.v1.GetCommandRequest) returns (ducktape.agentplane.sandbox.v1.CommandStatus);
+  rpc GetCommand(agentplane.proto.sandbox_service.GetCommandRequest) returns (agentplane.proto.sandbox_service.CommandStatus);
   // The Session's submitted commands in acceptance order, as retained: never contacts the runner.
-  rpc ListCommands(ducktape.agentplane.sandbox.v1.ListCommandsRequest) returns (ducktape.agentplane.sandbox.v1.ListCommandsResponse);
+  rpc ListCommands(agentplane.proto.sandbox_service.ListCommandsRequest) returns (agentplane.proto.sandbox_service.ListCommandsResponse);
   // Replays the runner journal after the caller's cursor, then continues live on the same stream.
   // The gateway keeps no copy of these entries.
-  rpc FollowSession(ducktape.agentplane.sandbox.v1.FollowSessionRequest) returns (stream ducktape.agentplane.sandbox.v1.FollowSessionResponse);
+  rpc FollowSession(agentplane.proto.sandbox_service.FollowSessionRequest) returns (stream agentplane.proto.sandbox_service.FollowSessionResponse);
   // Any allowed service caller. Every Session, including those of deleted Sandboxes, in the
   // order of each one's latest change, then each later change as it commits.
-  rpc WatchSessions(ducktape.agentplane.sandbox.v1.WatchSessionsRequest) returns (stream ducktape.agentplane.sandbox.v1.WatchSessionsResponse);
+  rpc WatchSessions(agentplane.proto.sandbox_service.WatchSessionsRequest) returns (stream agentplane.proto.sandbox_service.WatchSessionsResponse);
   // Teardown's seal, called by the Sandbox Service alone: fence and seal every Session of the
   // incarnation, and return each one's final cursor keyed as holders name the Session (the public
   // Session ID, or the runner's own ID for a Session opened with a caller-chosen one). Idempotent.
-  rpc SealSandbox(ducktape.agentplane.sandbox.v1.SandboxRequest) returns (agentplane.proto.runner.SealResponse);
+  rpc SealSandbox(agentplane.proto.sandbox_service.SandboxRequest) returns (agentplane.proto.runner.SealResponse);
 }

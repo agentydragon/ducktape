@@ -5,9 +5,9 @@ from ipaddress import ip_address
 
 from kubernetes_asyncio import client as k8s_client
 
+from agentplane.proto.sandbox_service_pb2 import SandboxBinding, SandboxDestination, TeardownPhase
 from agentplane.sandbox_service.inventory import SandboxInventory
 from agentplane.sandbox_service.models import SandboxNotFoundError, SandboxTearingDownError
-from agentplane.sandbox_service.protocol_pb2 import SandboxBinding, SandboxDestination, TeardownPhase
 from util.agent_sandbox import SANDBOX_API, OperatingMode
 
 

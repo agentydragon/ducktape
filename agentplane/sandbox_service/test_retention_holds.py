@@ -10,7 +10,8 @@ import pytest
 import pytest_bazel
 from kubernetes_asyncio import client as k8s_client
 
-from agentplane.sandbox_service import protocol_pb2
+from agentplane.proto import sandbox_service_pb2
+from agentplane.proto.sandbox_service_pb2 import Hold
 from agentplane.sandbox_service.action_policy import ActionPolicyBindings
 from agentplane.sandbox_service.client import SandboxServiceClient, ServiceError
 from agentplane.sandbox_service.egress import EgressInventory
@@ -18,7 +19,6 @@ from agentplane.sandbox_service.grpc_api import Resources
 from agentplane.sandbox_service.inventory import SandboxInventory
 from agentplane.sandbox_service.kubernetes_bindings import KubernetesBindings
 from agentplane.sandbox_service.models import SandboxNotFoundError
-from agentplane.sandbox_service.protocol_pb2 import Hold
 from agentplane.sandbox_service.provisioning import Provisioning
 from agentplane.sandbox_service.runner_endpoints import RunnerEndpoints
 from agentplane.sandbox_service.testing.fake_inventory import NAMESPACE, FakeCustomObjectsApi, sandbox
@@ -72,10 +72,10 @@ def custom_objects() -> RacingObjects:
 
 
 @pytest.fixture
-def destination(custom_objects: RacingObjects) -> protocol_pb2.SessionDestination:
-    return protocol_pb2.SessionDestination(
-        sandbox=protocol_pb2.SandboxDestination(
-            owner=protocol_pb2.ServiceAccount(namespace=NAMESPACE, name=NAME),
+def destination(custom_objects: RacingObjects) -> sandbox_service_pb2.SessionDestination:
+    return sandbox_service_pb2.SessionDestination(
+        sandbox=sandbox_service_pb2.SandboxDestination(
+            owner=sandbox_service_pb2.ServiceAccount(namespace=NAMESPACE, name=NAME),
             sandbox=NAME,
             sandbox_uid=custom_objects.objects[(SANDBOXES_PLURAL, NAME)]["metadata"]["uid"],
         ),
@@ -112,35 +112,35 @@ async def api(
 
 
 async def place(
-    api: SandboxServiceClient, destination: protocol_pb2.SessionDestination, holder: str = "history"
+    api: SandboxServiceClient, destination: sandbox_service_pb2.SessionDestination, holder: str = "history"
 ) -> Hold:
-    return await api.unary(api.stub.PlaceHold, protocol_pb2.HoldRequest(destination=destination, holder=holder))
+    return await api.unary(api.stub.PlaceHold, sandbox_service_pb2.HoldRequest(destination=destination, holder=holder))
 
 
 async def confirm(
-    api: SandboxServiceClient, destination: protocol_pb2.SessionDestination, cursor: int, holder: str = "history"
+    api: SandboxServiceClient, destination: sandbox_service_pb2.SessionDestination, cursor: int, holder: str = "history"
 ) -> Hold:
     return await api.unary(
         api.stub.ConfirmHold,
-        protocol_pb2.ConfirmHoldRequest(destination=destination, holder=holder, through_cursor=cursor),
+        sandbox_service_pb2.ConfirmHoldRequest(destination=destination, holder=holder, through_cursor=cursor),
     )
 
 
 async def release(
-    api: SandboxServiceClient, destination: protocol_pb2.SessionDestination, holder: str = "history"
+    api: SandboxServiceClient, destination: sandbox_service_pb2.SessionDestination, holder: str = "history"
 ) -> None:
-    await api.unary(api.stub.ReleaseHold, protocol_pb2.HoldRequest(destination=destination, holder=holder))
+    await api.unary(api.stub.ReleaseHold, sandbox_service_pb2.HoldRequest(destination=destination, holder=holder))
 
 
-async def holds(api: SandboxServiceClient, destination: protocol_pb2.SessionDestination) -> list[Hold]:
-    listed = await api.unary(api.stub.ListHolds, protocol_pb2.SandboxRequest(destination=destination.sandbox))
+async def holds(api: SandboxServiceClient, destination: sandbox_service_pb2.SessionDestination) -> list[Hold]:
+    listed = await api.unary(api.stub.ListHolds, sandbox_service_pb2.SandboxRequest(destination=destination.sandbox))
     return list(listed.holds)
 
 
 async def seal(
     api: SandboxServiceClient,
     inventory: SandboxInventory,
-    destination: protocol_pb2.SessionDestination,
+    destination: sandbox_service_pb2.SessionDestination,
     cursors: dict[str, int],
 ) -> None:
     """DeleteSandbox, then the seal the teardown driver records from the runner."""
@@ -148,14 +148,14 @@ async def seal(
     await inventory.record_seal(NAME, uid=destination.sandbox.sandbox_uid, cursors=cursors)
 
 
-async def delete(inventory: SandboxInventory, destination: protocol_pb2.SessionDestination) -> bool:
+async def delete(inventory: SandboxInventory, destination: sandbox_service_pb2.SessionDestination) -> bool:
     return await inventory.delete_if_released(NAME, uid=destination.sandbox.sandbox_uid)
 
 
 async def test_sealed_sandbox_without_holds_deletes(
     api: SandboxServiceClient,
     inventory: SandboxInventory,
-    destination: protocol_pb2.SessionDestination,
+    destination: sandbox_service_pb2.SessionDestination,
     custom_objects: RacingObjects,
 ) -> None:
     await seal(api, inventory, destination, {SESSION: 3})
@@ -166,7 +166,7 @@ async def test_sealed_sandbox_without_holds_deletes(
 async def test_unconfirmed_hold_keeps_the_sandbox_and_is_listed_until_released(
     api: SandboxServiceClient,
     inventory: SandboxInventory,
-    destination: protocol_pb2.SessionDestination,
+    destination: sandbox_service_pb2.SessionDestination,
     custom_objects: RacingObjects,
 ) -> None:
     await place(api, destination)
@@ -188,7 +188,7 @@ async def test_unconfirmed_hold_keeps_the_sandbox_and_is_listed_until_released(
 async def test_hold_on_a_session_the_runner_did_not_report_waits_for_its_release(
     api: SandboxServiceClient,
     inventory: SandboxInventory,
-    destination: protocol_pb2.SessionDestination,
+    destination: sandbox_service_pb2.SessionDestination,
     custom_objects: RacingObjects,
 ) -> None:
     await place(api, destination)
@@ -196,7 +196,7 @@ async def test_hold_on_a_session_the_runner_did_not_report_waits_for_its_release
     assert not await delete(inventory, destination)
     assert await holds(api, destination) == [Hold(session_id=SESSION, holder="history")]
     # Once sealed, a new hold could never be satisfied on a Session without a seal.
-    unsealed = protocol_pb2.SessionDestination()
+    unsealed = sandbox_service_pb2.SessionDestination()
     unsealed.CopyFrom(destination)
     unsealed.session_id = "test-unsealed-session"
     with pytest.raises(ServiceError) as refused:
@@ -209,7 +209,7 @@ async def test_hold_on_a_session_the_runner_did_not_report_waits_for_its_release
 async def test_deletion_waits_for_every_holder_to_confirm_through_the_seal(
     api: SandboxServiceClient,
     inventory: SandboxInventory,
-    destination: protocol_pb2.SessionDestination,
+    destination: sandbox_service_pb2.SessionDestination,
     custom_objects: RacingObjects,
 ) -> None:
     await place(api, destination, "history")
@@ -232,7 +232,7 @@ async def test_deletion_waits_for_every_holder_to_confirm_through_the_seal(
 
 
 async def test_hold_is_idempotent_per_holder_and_confirmation_never_regresses(
-    api: SandboxServiceClient, destination: protocol_pb2.SessionDestination
+    api: SandboxServiceClient, destination: sandbox_service_pb2.SessionDestination
 ) -> None:
     await place(api, destination)
     await confirm(api, destination, 5)
@@ -241,7 +241,7 @@ async def test_hold_is_idempotent_per_holder_and_confirmation_never_regresses(
     with pytest.raises(ServiceError) as absent:
         await confirm(api, destination, 5, "never-placed")
     assert absent.value.code == grpc.StatusCode.NOT_FOUND
-    stale = protocol_pb2.SessionDestination()
+    stale = sandbox_service_pb2.SessionDestination()
     stale.CopyFrom(destination)
     stale.sandbox.sandbox_uid = "test-previous-incarnation"
     with pytest.raises(ServiceError) as wrong_incarnation:
@@ -254,7 +254,7 @@ async def test_hold_is_idempotent_per_holder_and_confirmation_never_regresses(
 
 async def test_hold_placed_while_deletion_is_in_flight_keeps_the_sandbox(
     api: SandboxServiceClient,
-    destination: protocol_pb2.SessionDestination,
+    destination: sandbox_service_pb2.SessionDestination,
     inventory: SandboxInventory,
     custom_objects: RacingObjects,
 ) -> None:
@@ -270,7 +270,7 @@ async def test_hold_placed_while_deletion_is_in_flight_keeps_the_sandbox(
 @pytest.mark.parametrize("finalizers", [[], ["test.agentplane/cleanup"]])
 async def test_hold_racing_a_committed_deletion_is_refused(
     api: SandboxServiceClient,
-    destination: protocol_pb2.SessionDestination,
+    destination: sandbox_service_pb2.SessionDestination,
     inventory: SandboxInventory,
     custom_objects: RacingObjects,
     finalizers: list[str],

@@ -10,13 +10,13 @@ from uuid import UUID, uuid4
 import grpc
 
 from agentplane.proto import runner_control_pb2 as control_pb2, runner_pb2
+from agentplane.proto.sandbox_service_pb2 import Sandbox, SandboxDestination
 from agentplane.runner.client import RunnerClient
 from agentplane.runner_gateway.commands.connections import ConnectionStore
 from agentplane.runner_gateway.lifecycle_control import ConnectionNotHeldError, LifecycleControl
 from agentplane.runner_gateway.runner_control import ControlOperation
 from agentplane.runner_gateway.session_registry import SessionRegistry
 from agentplane.sandbox_service.destinations import DestinationResolver
-from agentplane.sandbox_service.protocol_pb2 import Sandbox, SandboxDestination
 
 # gazelle:include_dep @pypi//protobuf
 

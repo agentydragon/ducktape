@@ -13,6 +13,7 @@ from google.protobuf.json_format import MessageToDict
 from kubernetes_asyncio import client as k8s_client
 
 from agentplane.action_service.policies.resources import CALLER_LABEL
+from agentplane.proto.sandbox_service_pb2 import CreateSandboxRequest, TeardownPhase
 from agentplane.sandbox_service.inventory import INITIALIZING, SandboxInventory
 from agentplane.sandbox_service.kubernetes_views import MANAGED_LABEL
 from agentplane.sandbox_service.models import (
@@ -21,7 +22,6 @@ from agentplane.sandbox_service.models import (
     SandboxRunningError,
     SandboxTearingDownError,
 )
-from agentplane.sandbox_service.protocol_pb2 import CreateSandboxRequest, TeardownPhase
 from agentplane.sandbox_service.runner_endpoints import RunnerEndpoints
 from agentplane.sandbox_service.testing.fake_inventory import (
     NAMESPACE,

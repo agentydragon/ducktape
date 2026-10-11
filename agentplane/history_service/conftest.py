@@ -18,8 +18,13 @@ import grpc
 import pytest
 from google.protobuf.empty_pb2 import Empty
 
-from agentplane.proto import event_log_pb2, runner_gateway_pb2_grpc, runner_pb2
-from agentplane.sandbox_service import protocol_pb2, protocol_pb2_grpc
+from agentplane.proto import (
+    event_log_pb2,
+    runner_gateway_pb2_grpc,
+    runner_pb2,
+    sandbox_service_pb2,
+    sandbox_service_pb2_grpc,
+)
 from agentplane.sandbox_service.client import SandboxServiceClient
 
 # gazelle:include_dep @pypi//protobuf
@@ -27,10 +32,10 @@ from agentplane.sandbox_service.client import SandboxServiceClient
 
 @dataclass
 class Journal:
-    change: protocol_pb2.SessionChange
+    change: sandbox_service_pb2.SessionChange
     entries: list[event_log_pb2.EventEntry] = field(default_factory=list)
     sealed: bool = False
-    holds: dict[str, protocol_pb2.Hold] = field(default_factory=dict)
+    holds: dict[str, sandbox_service_pb2.Hold] = field(default_factory=dict)
 
     def deletable(self) -> bool:
         """Whether teardown would delete the Sandbox: sealed, and every hold confirmed through the seal."""
@@ -40,7 +45,7 @@ class Journal:
 @dataclass(frozen=True)
 class Follow:
     bearer: str
-    request: protocol_pb2.FollowSessionRequest
+    request: sandbox_service_pb2.FollowSessionRequest
     # The holders whose hold was in place when the follow started.
     holders: frozenset[str]
 
@@ -61,9 +66,11 @@ class ScriptedSandboxes:
         self.changed.set()
         self.changed = asyncio.Event()
 
-    def add(self, session_id: str, *, sandbox: str, sandbox_uid: str, owner: protocol_pb2.ServiceAccount) -> None:
+    def add(
+        self, session_id: str, *, sandbox: str, sandbox_uid: str, owner: sandbox_service_pb2.ServiceAccount
+    ) -> None:
         self._position += 1
-        change = protocol_pb2.SessionChange(
+        change = sandbox_service_pb2.SessionChange(
             session_id=session_id, sandbox=sandbox, sandbox_uid=sandbox_uid, position=self._position, owner=owner
         )
         self.journals[session_id] = Journal(change)
@@ -77,7 +84,9 @@ class ScriptedSandboxes:
         self.journals[session_id].sealed = True
         self._notify()
 
-    async def journal(self, destination: protocol_pb2.SessionDestination, context: grpc.aio.ServicerContext) -> Journal:
+    async def journal(
+        self, destination: sandbox_service_pb2.SessionDestination, context: grpc.aio.ServicerContext
+    ) -> Journal:
         journal = self.journals.get(destination.session_id)
         if journal is None or (
             destination.sandbox.owner,
@@ -105,8 +114,8 @@ class ScriptedGateway(runner_gateway_pb2_grpc.RunnerGatewayServicer):
 
     @override
     async def WatchSessions(
-        self, request: protocol_pb2.WatchSessionsRequest, context: grpc.aio.ServicerContext
-    ) -> AsyncIterator[protocol_pb2.WatchSessionsResponse]:
+        self, request: sandbox_service_pb2.WatchSessionsRequest, context: grpc.aio.ServicerContext
+    ) -> AsyncIterator[sandbox_service_pb2.WatchSessionsResponse]:
         self.watch_peers.put_nowait(context.peer())
         if self.watch_failures:
             self.watch_failures -= 1
@@ -117,19 +126,19 @@ class ScriptedGateway(runner_gateway_pb2_grpc.RunnerGatewayServicer):
             changed = self.sandboxes.changed
             for journal in sorted(self.sandboxes.journals.values(), key=lambda journal: journal.change.position):
                 if journal.change.position > position:
-                    yield protocol_pb2.WatchSessionsResponse(change=journal.change)
+                    yield sandbox_service_pb2.WatchSessionsResponse(change=journal.change)
                     position = journal.change.position
             try:
                 async with asyncio.timeout_at(deadline):
                     await changed.wait()
             except TimeoutError:
                 break
-        yield protocol_pb2.WatchSessionsResponse(reconnect_required=Empty())
+        yield sandbox_service_pb2.WatchSessionsResponse(reconnect_required=Empty())
 
     @override
     async def FollowSession(
-        self, request: protocol_pb2.FollowSessionRequest, context: grpc.aio.ServicerContext
-    ) -> AsyncIterator[protocol_pb2.FollowSessionResponse]:
+        self, request: sandbox_service_pb2.FollowSessionRequest, context: grpc.aio.ServicerContext
+    ) -> AsyncIterator[sandbox_service_pb2.FollowSessionResponse]:
         [bearer] = [value for key, value in context.invocation_metadata() or () if key == "authorization"]
         assert isinstance(bearer, str)
         destination = request.destination
@@ -140,7 +149,7 @@ class ScriptedGateway(runner_gateway_pb2_grpc.RunnerGatewayServicer):
             await context.abort(grpc.StatusCode.FAILED_PRECONDITION, "cursor beyond the journal")
         self.following[destination.session_id] += 1
         try:
-            yield protocol_pb2.FollowSessionResponse(
+            yield sandbox_service_pb2.FollowSessionResponse(
                 attached=runner_pb2.Attached(session_id=destination.session_id, last_cursor=len(journal.entries))
             )
             if self.replay_gate is not None:
@@ -149,49 +158,49 @@ class ScriptedGateway(runner_gateway_pb2_grpc.RunnerGatewayServicer):
             while True:
                 changed = self.sandboxes.changed
                 while cursor < len(journal.entries):
-                    yield protocol_pb2.FollowSessionResponse(entry=journal.entries[cursor])
+                    yield sandbox_service_pb2.FollowSessionResponse(entry=journal.entries[cursor])
                     cursor += 1
                 if journal.sealed:
-                    yield protocol_pb2.FollowSessionResponse(sealed=protocol_pb2.Sealed(cursor=cursor))
+                    yield sandbox_service_pb2.FollowSessionResponse(sealed=sandbox_service_pb2.Sealed(cursor=cursor))
                     return
                 try:
                     async with asyncio.timeout_at(deadline):
                         await changed.wait()
                 except TimeoutError:
                     break
-            yield protocol_pb2.FollowSessionResponse(reconnect_required=Empty())
+            yield sandbox_service_pb2.FollowSessionResponse(reconnect_required=Empty())
         finally:
             self.following[destination.session_id] -= 1
 
 
-class ScriptedHolds(protocol_pb2_grpc.SandboxServiceServicer):
+class ScriptedHolds(sandbox_service_pb2_grpc.SandboxServiceServicer):
     """Scripts only retention holds; anything else answers UNIMPLEMENTED."""
 
     def __init__(self, sandboxes: ScriptedSandboxes) -> None:
         self.sandboxes = sandboxes
         # Every hold confirmation, in arrival order.
-        self.confirmations: asyncio.Queue[protocol_pb2.Hold] = asyncio.Queue()
+        self.confirmations: asyncio.Queue[sandbox_service_pb2.Hold] = asyncio.Queue()
 
     @override
     async def PlaceHold(
-        self, request: protocol_pb2.HoldRequest, context: grpc.aio.ServicerContext
-    ) -> protocol_pb2.Hold:
+        self, request: sandbox_service_pb2.HoldRequest, context: grpc.aio.ServicerContext
+    ) -> sandbox_service_pb2.Hold:
         journal = await self.sandboxes.journal(request.destination, context)
         return journal.holds.setdefault(
-            request.holder, protocol_pb2.Hold(session_id=request.destination.session_id, holder=request.holder)
+            request.holder, sandbox_service_pb2.Hold(session_id=request.destination.session_id, holder=request.holder)
         )
 
     @override
     async def ConfirmHold(
-        self, request: protocol_pb2.ConfirmHoldRequest, context: grpc.aio.ServicerContext
-    ) -> protocol_pb2.Hold:
+        self, request: sandbox_service_pb2.ConfirmHoldRequest, context: grpc.aio.ServicerContext
+    ) -> sandbox_service_pb2.Hold:
         journal = await self.sandboxes.journal(request.destination, context)
         hold = journal.holds.get(request.holder)
         if hold is None:
             await context.abort(grpc.StatusCode.NOT_FOUND, "no such hold")
         assert hold is not None
         hold.confirmed_through = max(hold.confirmed_through, request.through_cursor)
-        snapshot = protocol_pb2.Hold()
+        snapshot = sandbox_service_pb2.Hold()
         snapshot.CopyFrom(hold)  # the stored hold keeps changing
         self.confirmations.put_nowait(snapshot)
         return hold

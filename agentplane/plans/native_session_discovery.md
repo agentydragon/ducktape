@@ -507,7 +507,7 @@ unresolved record, not guessed identity or automatic retry of old work.
 `CreateSession` takes a client-minted UUID, which is the Session's public ID, its runner Session ID
 and the ID it is announced under on the ingress. Sessions created before clients minted the UUID run
 under the runner ID `r-<uuid>`, until `SESSION_ID_MINT_RETIRE`. See
-[`sandbox_service/protocol.proto`](../sandbox_service/protocol.proto).
+[`proto/sandbox_service.proto`](../proto/sandbox_service.proto).
 
 Build on that rather than introducing another creation queue or replacing the API with the
 illustrative `StartSession` name above. The runner remains authoritative about existence and native

@@ -4,7 +4,7 @@ import json
 
 from google.protobuf.json_format import MessageToDict, ParseDict
 
-from agentplane.sandbox_service.protocol_pb2 import SandboxBinding
+from agentplane.proto.sandbox_service_pb2 import SandboxBinding
 
 # gazelle:include_dep @pypi//protobuf
 

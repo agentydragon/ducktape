@@ -5,6 +5,7 @@ from collections.abc import Sequence
 from google.protobuf.json_format import MessageToDict
 
 from agentplane.action_service.policies.resources import BINDINGS_PLURAL, ActionPolicySet, InvalidResource
+from agentplane.proto.sandbox_service_pb2 import Sandbox
 from agentplane.sandbox_service.action_policy_views import (
     ACTION_POLICY_API,
     MANAGED_BY_APP,
@@ -13,7 +14,6 @@ from agentplane.sandbox_service.action_policy_views import (
     UnknownPolicySetError,
 )
 from agentplane.sandbox_service.owned_binding import create_binding
-from agentplane.sandbox_service.protocol_pb2 import Sandbox
 from util.agent_sandbox import SANDBOX_API, SANDBOX_KIND
 
 

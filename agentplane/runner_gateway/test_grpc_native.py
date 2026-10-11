@@ -15,6 +15,7 @@ from kubernetes_asyncio import client as k8s_client
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from agentplane.proto import command_pb2, event_log_pb2, runner_pb2
+from agentplane.proto.sandbox_service_pb2 import SandboxBinding, SessionDefaults
 from agentplane.runner.errors import RunnerError, StreamClosedError
 from agentplane.runner.testing import events
 from agentplane.runner.testing.fixtures import RunnerHandle
@@ -24,7 +25,6 @@ from agentplane.runner_gateway.testing.grpc_service import service_client
 from agentplane.runner_gateway.testing.resources import build_resources
 from agentplane.sandbox_service.client import Runner, SandboxServiceClient, ServiceError
 from agentplane.sandbox_service.destinations import DestinationResolver
-from agentplane.sandbox_service.protocol_pb2 import SandboxBinding, SessionDefaults
 from agentplane.sandbox_service.testing.grpc_service import CALLER_TOKEN
 from agentplane.sandbox_service.testing.kubernetes import DESTINATION, OWNER, SANDBOX_UID, Cluster
 from agentplane.testing.fake_apiserver import TokenVerdict

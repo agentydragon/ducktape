@@ -18,8 +18,13 @@ from agentplane.history_service import protocol_pb2 as history_pb2
 from agentplane.history_service.conftest import ScriptedSandboxes, subscriber
 from agentplane.history_service.ingester import HOLDER, HistoryIngester, claim, logger
 from agentplane.history_service.storage.store import HistoryConflictError, HistoryNotFoundError, Store
-from agentplane.proto import event_log_pb2, event_pb2, runner_gateway_pb2_grpc
-from agentplane.sandbox_service import protocol_pb2, protocol_pb2_grpc
+from agentplane.proto import (
+    event_log_pb2,
+    event_pb2,
+    runner_gateway_pb2_grpc,
+    sandbox_service_pb2,
+    sandbox_service_pb2_grpc,
+)
 
 # gazelle:include_dep @pypi//protobuf
 # gazelle:include_dep //agentplane/history_service/storage:conftest
@@ -29,7 +34,7 @@ pytest_plugins = ("agentplane.history_service.storage.conftest",)
 NAMESPACE = "test-sandboxes"
 SANDBOX = "test-followed-sandbox"
 SANDBOX_UID = "7c1f3a52-0d7e-4e43-9a55-3f0c7d1f2b10"
-OWNER = protocol_pb2.ServiceAccount(namespace=NAMESPACE, name="test-followed-sandbox-account")
+OWNER = sandbox_service_pb2.ServiceAccount(namespace=NAMESPACE, name="test-followed-sandbox-account")
 
 
 def entry(cursor: int, text: str = "journal") -> event_log_pb2.EventEntry:
@@ -114,7 +119,7 @@ def committed(store: Store, commits: Commits) -> Callable[[UUID, int], Awaitable
 async def target(sandboxes: ScriptedSandboxes) -> AsyncIterator[str]:
     server = grpc.aio.server()
     runner_gateway_pb2_grpc.add_RunnerGatewayServicer_to_server(sandboxes.gateway, server)
-    protocol_pb2_grpc.add_SandboxServiceServicer_to_server(sandboxes.holds, server)
+    sandbox_service_pb2_grpc.add_SandboxServiceServicer_to_server(sandboxes.holds, server)
     async with serving(server, "127.0.0.1:0", grace_s=0) as port:
         yield f"127.0.0.1:{port}"
 
@@ -172,7 +177,7 @@ async def test_discovered_session_is_copied_through_its_owners_destination(
         sandboxes.append(str(session_id), entry(3))  # live, after the replayed prefix
         await committed(session_id, 3)
     first = await sandboxes.gateway.follows.get()
-    assert first.request.destination.sandbox == protocol_pb2.SandboxDestination(
+    assert first.request.destination.sandbox == sandbox_service_pb2.SandboxDestination(
         owner=OWNER, sandbox=SANDBOX, sandbox_uid=SANDBOX_UID
     )
     page = await store.read_page(session_id)

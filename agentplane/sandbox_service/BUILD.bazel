@@ -1,14 +1,9 @@
 load("@aspect_rules_py//py:defs.bzl", "py_image_layer", aspect_py_binary = "py_binary")
-load("@protobuf//bazel:proto_library.bzl", "proto_library")
 load("@rules_oci//oci:defs.bzl", "oci_image")
 load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
-load("//devinfra/python:grpc.bzl", "py_grpc_service_library")
-load("//devinfra/python:proto.bzl", "py_proto_library_with_mypy_stubs")
 load("//props:oci.bzl", "py_image_entrypoint", "py_image_env")
 
 package(default_visibility = ["//agentplane/sandbox_service:__subpackages__"])
-
-# gazelle:resolve py agentplane.sandbox_service.protocol_pb2 //agentplane/sandbox_service:protocol_pb2
 
 py_library(
     name = "conftest",
@@ -46,7 +41,7 @@ py_library(
         ":session_config",
         "//agentplane:subjects",
         "//agentplane/action_service/policies:resources",
-        "//agentplane/sandbox_service:protocol_pb2",
+        "//agentplane/proto:sandbox_service_pb2",
         "//util:agent_sandbox",
         "//util:kubernetes",
         "@pypi//kubernetes_asyncio",
@@ -64,7 +59,7 @@ py_library(
         "//cluster/cdk8s:__subpackages__",
     ],
     deps = [
-        "//agentplane/sandbox_service:protocol_pb2",
+        "//agentplane/proto:sandbox_service_pb2",
         "@pypi//protobuf",
         "@pypi//pydantic",
     ],
@@ -105,8 +100,8 @@ py_test(
         ":kubernetes_views",
         ":models",
         "//:conftest",
+        "//agentplane/proto:sandbox_service_pb2",
         "//agentplane/runner_gateway:session_lifecycle",
-        "//agentplane/sandbox_service:protocol_pb2",
         "//agentplane/sandbox_service/testing:kubernetes",
         "//agentplane/testing:fake_apiserver",
         "//util:agent_sandbox",
@@ -126,7 +121,7 @@ py_library(
     deps = [
         ":inventory",
         ":models",
-        "//agentplane/sandbox_service:protocol_pb2",
+        "//agentplane/proto:sandbox_service_pb2",
         "//util:agent_sandbox",
         "@pypi//kubernetes_asyncio",
         "@pypi//protobuf",
@@ -143,7 +138,7 @@ py_test(
         ":provisioning",
         ":teardown",
         "//:conftest",
-        "//agentplane/sandbox_service:protocol_pb2",
+        "//agentplane/proto:sandbox_service_pb2",
         "//util:agent_sandbox",
         "@pypi//kubernetes_asyncio",
         "@pypi//protobuf",
@@ -162,7 +157,7 @@ py_library(
         ":models",
         ":provisioning",
         ":teardown",
-        "//agentplane/sandbox_service:protocol_pb2",
+        "//agentplane/proto:sandbox_service_pb2",
         "//util:agent_sandbox",
         "//util:kubernetes_watch",
         "@pypi//protobuf",
@@ -211,7 +206,7 @@ py_library(
         ":action_policy_views",
         ":owned_binding",
         "//agentplane/action_service/policies:resources",
-        "//agentplane/sandbox_service:protocol_pb2",
+        "//agentplane/proto:sandbox_service_pb2",
         "//util:agent_sandbox",
         "@pypi//protobuf",
     ],
@@ -225,7 +220,7 @@ py_library(
         ":egress_views",
         ":owned_binding",
         "//agentplane/egress:resources",
-        "//agentplane/sandbox_service:protocol_pb2",
+        "//agentplane/proto:sandbox_service_pb2",
         "//util:agent_sandbox",
         "//util:kubernetes",
         "@pypi//kubernetes_asyncio",
@@ -241,7 +236,7 @@ py_library(
     deps = [
         ":inventory",
         ":models",
-        "//agentplane/sandbox_service:protocol_pb2",
+        "//agentplane/proto:sandbox_service_pb2",
         "//util:agent_sandbox",
         "@pypi//kubernetes_asyncio",
         "@pypi//protobuf",
@@ -278,7 +273,7 @@ py_library(
         ":session_config",
         "//agentplane:subjects",
         "//agentplane/proto:runner_pb2",
-        "//agentplane/sandbox_service:protocol_pb2",
+        "//agentplane/proto:sandbox_service_pb2",
         "@pypi//more_itertools",
         "@pypi//protobuf",
     ],
@@ -294,7 +289,7 @@ py_test(
         "//:conftest",
         "//agentplane:subjects",
         "//agentplane/egress:resources",
-        "//agentplane/sandbox_service:protocol_pb2",
+        "//agentplane/proto:sandbox_service_pb2",
         "//agentplane/sandbox_service/testing:fake_inventory",
         "@pypi//protobuf",
         "@pypi//pydantic",
@@ -316,7 +311,7 @@ py_test(
         ":runner_endpoints",
         "//:conftest",
         "//agentplane:subjects",
-        "//agentplane/sandbox_service:protocol_pb2",
+        "//agentplane/proto:sandbox_service_pb2",
         "//agentplane/sandbox_service/testing:fake_inventory",
         "//agentplane/sandbox_service/testing:fake_rbac",
         "//agentplane/sandbox_service/testing:teardown",
@@ -346,8 +341,8 @@ py_test(
         "//:conftest",
         "//agentplane:subjects",
         "//agentplane/proto:runner_pb2",
+        "//agentplane/proto:sandbox_service_pb2",
         "//agentplane/runner:errors",
-        "//agentplane/sandbox_service:protocol_pb2",
         "//agentplane/sandbox_service/testing:fake_inventory",
         "//agentplane/sandbox_service/testing:fake_rbac",
         "//agentplane/sandbox_service/testing:grpc_service",
@@ -363,36 +358,6 @@ py_test(
     ],
 )
 
-exports_files(["protocol.proto"])
-
-proto_library(
-    name = "protocol_proto",
-    srcs = ["protocol.proto"],
-    visibility = ["//agentplane:__subpackages__"],
-    deps = [
-        "//agentplane/proto:command_proto",
-        "//agentplane/proto:event_log_proto",
-        "//agentplane/proto:runner_proto",
-        "@protobuf//:empty_proto",
-        "@protobuf//:field_mask_proto",
-        "@protobuf//:struct_proto",
-        "@protobuf//:timestamp_proto",
-    ],
-)
-
-py_proto_library_with_mypy_stubs(
-    name = "protocol_pb2",
-    visibility = ["//agentplane:__subpackages__"],
-    deps = [":protocol_proto"],
-)
-
-py_grpc_service_library(
-    name = "protocol_pb2_grpc",
-    proto = ":protocol_proto",
-    py_proto = ":protocol_pb2",
-    visibility = ["//agentplane:__subpackages__"],
-)
-
 py_library(
     name = "wire",
     srcs = ["wire.py"],
@@ -402,7 +367,7 @@ py_library(
     ],
     deps = [
         "//agentplane/proto:runner_pb2",
-        "//agentplane/sandbox_service:protocol_pb2",
+        "//agentplane/proto:sandbox_service_pb2",
         "@pypi//protobuf",
     ],
 )
@@ -419,9 +384,9 @@ py_library(
         "//agentplane/proto:event_log_pb2",
         "//agentplane/proto:runner_gateway_pb2_grpc",
         "//agentplane/proto:runner_pb2",
+        "//agentplane/proto:sandbox_service_pb2",
+        "//agentplane/proto:sandbox_service_pb2_grpc",
         "//agentplane/runner:errors",
-        "//agentplane/sandbox_service:protocol_pb2",
-        "//agentplane/sandbox_service:protocol_pb2_grpc",
         "@pypi//grpcio",
         "@pypi//protobuf",
     ],
@@ -441,8 +406,8 @@ py_library(
         ":provisioning",
         ":retention_holds",
         "//agentplane:subjects",
-        "//agentplane/sandbox_service:protocol_pb2",
-        "//agentplane/sandbox_service:protocol_pb2_grpc",
+        "//agentplane/proto:sandbox_service_pb2",
+        "//agentplane/proto:sandbox_service_pb2_grpc",
         "//agentplane/workload_auth:grpc_caller",
         "//agentplane/workload_auth:principal",
         "@pypi//grpcio",
@@ -517,7 +482,7 @@ py_library(
     deps = [
         ":binding_storage",
         ":kubernetes_grants",
-        "//agentplane/sandbox_service:protocol_pb2",
+        "//agentplane/proto:sandbox_service_pb2",
         "//util:agent_sandbox",
         "@pypi//kubernetes_asyncio",
         "@pypi//protobuf",
@@ -539,7 +504,7 @@ py_test(
         ":action_policy_views",
         ":conftest",
         "//:conftest",
-        "//agentplane/sandbox_service:protocol_pb2",
+        "//agentplane/proto:sandbox_service_pb2",
         "//agentplane/sandbox_service/testing:fake_inventory",
         "//util:kubernetes",
         "@pypi//protobuf",
@@ -561,7 +526,7 @@ py_test(
         "//:conftest",
         "//agentplane:subjects",
         "//agentplane/action_service/policies:resources",
-        "//agentplane/sandbox_service:protocol_pb2",
+        "//agentplane/proto:sandbox_service_pb2",
         "//agentplane/sandbox_service/testing:fake_inventory",
         "//agentplane/sandbox_service/testing:teardown",
         "//util:agent_sandbox",
@@ -576,7 +541,7 @@ py_library(
     name = "binding_storage",
     srcs = ["binding_storage.py"],
     deps = [
-        "//agentplane/sandbox_service:protocol_pb2",
+        "//agentplane/proto:sandbox_service_pb2",
         "@pypi//protobuf",
     ],
 )
@@ -602,7 +567,7 @@ py_library(
     name = "retention_holds",
     srcs = ["retention_holds.py"],
     deps = [
-        "//agentplane/sandbox_service:protocol_pb2",
+        "//agentplane/proto:sandbox_service_pb2",
         "@pypi//protobuf",
         "@pypi//pydantic",
     ],
@@ -624,7 +589,7 @@ py_test(
         ":runner_endpoints",
         "//:conftest",
         "//agentplane:subjects",
-        "//agentplane/sandbox_service:protocol_pb2",
+        "//agentplane/proto:sandbox_service_pb2",
         "//agentplane/sandbox_service/testing:fake_inventory",
         "//agentplane/sandbox_service/testing:fake_rbac",
         "//agentplane/sandbox_service/testing:grpc_service",
@@ -651,7 +616,7 @@ py_library(
         ":client",
         ":inventory",
         "//agentplane/proto:runner_pb2",
-        "//agentplane/sandbox_service:protocol_pb2",
+        "//agentplane/proto:sandbox_service_pb2",
         "@pypi//protobuf",
     ],
 )
@@ -672,7 +637,7 @@ py_test(
         "//agentplane:grpc_process",
         "//agentplane/proto:runner_gateway_pb2_grpc",
         "//agentplane/proto:runner_pb2",
-        "//agentplane/sandbox_service:protocol_pb2",
+        "//agentplane/proto:sandbox_service_pb2",
         "//agentplane/sandbox_service/testing:backend",
         "//agentplane/sandbox_service/testing:fake_inventory",
         "//agentplane/sandbox_service/testing:grpc_service",
@@ -716,7 +681,7 @@ py_test(
         "//agentplane:grpc_process",
         "//agentplane/proto:runner_gateway_pb2_grpc",
         "//agentplane/proto:runner_pb2",
-        "//agentplane/sandbox_service:protocol_pb2",
+        "//agentplane/proto:sandbox_service_pb2",
         "//agentplane/sandbox_service/testing:grpc_service",
         "//agentplane/sandbox_service/testing:kubernetes",
         "//agentplane/testing:fake_apiserver",

@@ -15,9 +15,9 @@ import logging
 from dataclasses import dataclass
 
 from agentplane.proto import runner_pb2
+from agentplane.proto.sandbox_service_pb2 import Sandbox, SandboxDestination, TeardownPhase
 from agentplane.sandbox_service.client import SandboxServiceClient
 from agentplane.sandbox_service.inventory import SandboxInventory
-from agentplane.sandbox_service.protocol_pb2 import Sandbox, SandboxDestination, TeardownPhase
 
 # gazelle:include_dep @pypi//protobuf
 

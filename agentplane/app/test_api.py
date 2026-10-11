@@ -41,9 +41,8 @@ from agentplane.app.threads.sessions import SandboxSessions
 from agentplane.app.threads.store import ThreadStore
 from agentplane.app.threads.view.content import ContentStore
 from agentplane.grpc_process import serving
-from agentplane.proto import event_log_pb2, runner_gateway_pb2_grpc, runner_pb2
+from agentplane.proto import event_log_pb2, runner_gateway_pb2_grpc, runner_pb2, sandbox_service_pb2
 from agentplane.runner.harness import Harness
-from agentplane.sandbox_service import protocol_pb2 as service_pb2
 from agentplane.sandbox_service.client import SandboxServiceClient
 from agentplane.sandbox_service.kubernetes_grants import KubernetesGrant, RoleBindingGrant, RoleRef
 from agentplane.sandbox_service.testing.backend import Endpoint, backend, seed_runner
@@ -643,10 +642,10 @@ async def test_open_lookup_reconciles_only_runner_confirmed_sessions(
             session_id=public_id,
             spec=runner_pb2.SessionSpec(harness=runner_pb2.HARNESS_CLAUDE, cwd="/w", model="m", instructions="secret"),
         )
-        result = service_pb2.LookupSessionResponse()
+        result = sandbox_service_pb2.LookupSessionResponse()
         calls: list[str] = []
 
-        async def lookup(*, idempotency_key: str) -> service_pb2.LookupSessionResponse:
+        async def lookup(*, idempotency_key: str) -> sandbox_service_pb2.LookupSessionResponse:
             calls.append(idempotency_key)
             return result
 
@@ -751,7 +750,7 @@ async def unanswered_command_service(
     class UnansweredGateway(runner_gateway_pb2_grpc.RunnerGatewayServicer):
         @override
         async def SubmitCommand(
-            self, request: service_pb2.SubmitCommandRequest, context: grpc.aio.ServicerContext
+            self, request: sandbox_service_pb2.SubmitCommandRequest, context: grpc.aio.ServicerContext
         ) -> event_log_pb2.EventEntry:
             try:
                 await asyncio.Event().wait()

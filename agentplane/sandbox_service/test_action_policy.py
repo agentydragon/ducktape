@@ -5,9 +5,9 @@ from typing import cast
 import pytest
 import pytest_bazel
 
+from agentplane.proto.sandbox_service_pb2 import Sandbox, ServiceAccount
 from agentplane.sandbox_service.action_policy import ActionPolicyBindings
 from agentplane.sandbox_service.action_policy_views import MANAGED_BY_APP, MANAGED_BY_LABEL, UnknownPolicySetError
-from agentplane.sandbox_service.protocol_pb2 import Sandbox, ServiceAccount
 from agentplane.sandbox_service.testing.fake_inventory import NAMESPACE, FakeCustomObjectsApi, action_policy_set
 from util.kubernetes import CustomObjectsClient
 

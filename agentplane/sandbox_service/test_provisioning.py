@@ -14,9 +14,9 @@ import pytest_bazel
 from kubernetes_asyncio import client as k8s_client
 from more_itertools import one
 
-from agentplane.proto import runner_pb2
+from agentplane.proto import runner_pb2, sandbox_service_pb2
+from agentplane.proto.sandbox_service_pb2 import CreateSandboxRequest, SandboxDestination
 from agentplane.runner.errors import RunnerError
-from agentplane.sandbox_service import protocol_pb2
 from agentplane.sandbox_service.action_policy import ActionPolicyBindings
 from agentplane.sandbox_service.client import SandboxServiceClient, ServiceError
 from agentplane.sandbox_service.egress import EgressInventory
@@ -25,7 +25,6 @@ from agentplane.sandbox_service.inventory import SandboxInventory
 from agentplane.sandbox_service.kubernetes_bindings import KubernetesBindings
 from agentplane.sandbox_service.kubernetes_grants import RoleBindingGrant, RoleRef
 from agentplane.sandbox_service.kubernetes_views import SANDBOX_BINDING_ANNOTATION
-from agentplane.sandbox_service.protocol_pb2 import CreateSandboxRequest, SandboxDestination
 from agentplane.sandbox_service.provisioning import Provisioning
 from agentplane.sandbox_service.runner_endpoints import RunnerEndpoint, RunnerEndpoints
 from agentplane.sandbox_service.testing.fake_inventory import (
@@ -130,7 +129,7 @@ async def test_headless_create_list_and_uid_pinned_lifecycle(api: SandboxService
             action_policy_sets=["test-actions"],
             kubernetes_grants=["test-read"],
             bootstrap="printf ready",
-            session_defaults=protocol_pb2.SessionDefaults(model="test-model", instructions=""),
+            session_defaults=sandbox_service_pb2.SessionDefaults(model="test-model", instructions=""),
         )
     )
     assert view.HasField("binding")
@@ -163,7 +162,7 @@ async def test_headless_create_list_and_uid_pinned_lifecycle(api: SandboxService
     stale = SandboxDestination(owner=view.service_account, sandbox=view.name, sandbox_uid=str(uuid4()))
     for operation in (api.stub.SuspendSandbox, api.stub.ResumeSandbox, api.stub.DeleteSandbox):
         with pytest.raises(ServiceError) as rejected:
-            await api.unary(operation, protocol_pb2.SandboxRequest(destination=stale))
+            await api.unary(operation, sandbox_service_pb2.SandboxRequest(destination=stale))
         assert rejected.value.code == grpc.StatusCode.NOT_FOUND
     await api.suspend(view.name)
     await api.resume(view.name)
@@ -180,12 +179,14 @@ async def test_headless_create_list_and_uid_pinned_lifecycle(api: SandboxService
         CreateSandboxRequest(name="test"),
         CreateSandboxRequest(name="test", template=TEMPLATE, bootstrap="x" * 65_537),
         CreateSandboxRequest(
-            name="test", template=TEMPLATE, session_defaults=protocol_pb2.SessionDefaults(setup_script="x" * 65_537)
+            name="test",
+            template=TEMPLATE,
+            session_defaults=sandbox_service_pb2.SessionDefaults(setup_script="x" * 65_537),
         ),
         CreateSandboxRequest(
             name="test",
             template=TEMPLATE,
-            session_defaults=protocol_pb2.SessionDefaults(harness=runner_pb2.HARNESS_UNSPECIFIED),
+            session_defaults=sandbox_service_pb2.SessionDefaults(harness=runner_pb2.HARNESS_UNSPECIFIED),
         ),
     ],
     ids=[
@@ -286,7 +287,7 @@ async def test_manual_egress_grants_cross_the_service_boundary(api: SandboxServi
     with pytest.raises(ServiceError) as missing:
         await api.revoke_egress(name)
     assert missing.value.code is grpc.StatusCode.NOT_FOUND
-    stale = protocol_pb2.Sandbox()
+    stale = sandbox_service_pb2.Sandbox()
     stale.CopyFrom(view)
     stale.uid = str(uuid4())
     before = dict(case.custom.objects)

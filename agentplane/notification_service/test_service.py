@@ -19,9 +19,9 @@ from agentplane.notification_service.settings import NoticeDebounceSettings
 from agentplane.notification_service.sources.actions import Actions
 from agentplane.notification_service.store import ConflictError, Store
 from agentplane.proto import event_log_pb2, event_pb2
+from agentplane.proto.sandbox_service_pb2 import Sandbox, ServiceAccount
 from agentplane.sandbox_service.client import SandboxServiceClient
 from agentplane.sandbox_service.models import SandboxNotFoundError
-from agentplane.sandbox_service.protocol_pb2 import Sandbox, ServiceAccount
 from agentplane.workload_auth.principal import WorkloadPrincipal
 
 # gazelle:include_dep @pypi//protobuf

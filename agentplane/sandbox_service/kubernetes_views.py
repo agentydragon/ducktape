@@ -12,9 +12,7 @@ from kubernetes_asyncio import client as k8s_client
 from pydantic import BaseModel, ConfigDict, Field, TypeAdapter
 from pydantic.alias_generators import to_camel
 
-from agentplane.sandbox_service.binding_storage import read_binding
-from agentplane.sandbox_service.kubernetes_grants import DnsName, KubernetesGrant
-from agentplane.sandbox_service.protocol_pb2 import (
+from agentplane.proto.sandbox_service_pb2 import (
     OwnerReference,
     ResolvedGrant,
     Sandbox,
@@ -23,6 +21,8 @@ from agentplane.sandbox_service.protocol_pb2 import (
     ServiceAccount,
     TeardownPhase,
 )
+from agentplane.sandbox_service.binding_storage import read_binding
+from agentplane.sandbox_service.kubernetes_grants import DnsName, KubernetesGrant
 from util.agent_sandbox import OperatingMode
 
 MANAGED_LABEL = "agentplane.allegedly.works/managed"

@@ -12,7 +12,8 @@ from google.protobuf.json_format import MessageToDict, ParseDict
 from kubernetes_asyncio import client as k8s_client
 from pydantic import ValidationError
 
-from agentplane.sandbox_service import protocol_pb2
+from agentplane.proto import sandbox_service_pb2
+from agentplane.proto.sandbox_service_pb2 import CreateSandboxRequest, ResolvedGrant
 from agentplane.sandbox_service.inventory import SandboxInventory
 from agentplane.sandbox_service.kubernetes_bindings import (
     KUBERNETES_BINDINGS_FINALIZER,
@@ -31,7 +32,6 @@ from agentplane.sandbox_service.kubernetes_grants import (
     resolve_grants,
 )
 from agentplane.sandbox_service.kubernetes_views import KUBERNETES_GRANTS_ANNOTATION, sandbox_view
-from agentplane.sandbox_service.protocol_pb2 import CreateSandboxRequest, ResolvedGrant
 from agentplane.sandbox_service.runner_endpoints import RunnerEndpoints
 from agentplane.sandbox_service.testing.fake_inventory import (
     NAMESPACE,
@@ -312,7 +312,7 @@ async def test_orphan_sweep_checks_sandbox_created_after_list_snapshot() -> None
             ClusterRoleBindingGrant(
                 kind="ClusterRoleBinding", role_ref=ClusterRoleRef(kind="ClusterRole", name="diagnostics")
             ).model_dump(mode="json"),
-            protocol_pb2.KubernetesGrant(),
+            sandbox_service_pb2.KubernetesGrant(),
         ),
     )
 

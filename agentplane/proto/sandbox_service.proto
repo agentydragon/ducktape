@@ -1,7 +1,7 @@
 // The authorized Sandbox Service boundary, not a tunnel to runner Attach.
 syntax = "proto3";
 
-package ducktape.agentplane.sandbox.v1;
+package agentplane.proto.sandbox_service;
 
 import "agentplane/proto/command.proto";
 import "agentplane/proto/event_log.proto";
@@ -68,7 +68,7 @@ message CreateSessionRequest {
   // Opaque to the service, scoped to the authenticated caller and Sandbox UID; LookupSession finds
   // the Session by it. Optional when session_id is set.
   string idempotency_key = 2;
-  .agentplane.proto.runner.SessionSpec spec = 3;
+  agentplane.proto.runner.SessionSpec spec = 3;
   // Which spec fields replace the Sandbox defaults (proto field names). Proto3 scalar
   // fields cannot distinguish absent from explicitly empty; e.g. instructions=""
   // with "instructions" in this mask clears inherited instructions. An empty mask
@@ -84,7 +84,7 @@ message CreateSessionRequest {
 message CreateSessionResponse {
   // Public Session ID (UUID): the request's session_id when it set one. Not the harness session ID.
   string session_id = 1;
-  .agentplane.proto.runner.Attached attached = 2;
+  agentplane.proto.runner.Attached attached = 2;
 }
 
 message LookupSessionRequest {
@@ -97,7 +97,7 @@ message LookupSessionResponse {
   string session_id = 1;
   // Only set after evidence that native Open succeeded; inventory alone also includes failed Opens.
   // This is app-facing only and may contain the frozen spec: never forward it to the browser.
-  .agentplane.proto.runner.SessionSummary summary = 2;
+  agentplane.proto.runner.SessionSummary summary = 2;
   // The runner has terminal setup/launch failure evidence without a successful native start.
   // A reserved but still in-flight Open leaves both summary and failed unset.
   bool failed = 3;
@@ -162,14 +162,14 @@ message WatchSessionsResponse {
 
 // Internal frozen launch snapshot, committed before contacting the runner.
 message FrozenLaunch {
-  .agentplane.proto.runner.Open open = 1;
+  agentplane.proto.runner.Open open = 1;
   string bootstrap = 2;
 }
 
 message SubmitCommandRequest {
   SessionDestination destination = 1;
-  .agentplane.proto.command.Command command = 2;
-  .agentplane.proto.event_log.Follow follow = 3;
+  agentplane.proto.command.Command command = 2;
+  agentplane.proto.event_log.Follow follow = 3;
 }
 
 // Runner admission only: whether the runner journaled the command, never what the harness did.
@@ -186,11 +186,11 @@ enum CommandState {
 
 message CommandStatus {
   // The command as submitted.
-  .agentplane.proto.command.Command command = 1;
+  agentplane.proto.command.Command command = 1;
   CommandState state = 2;
   google.protobuf.Timestamp accepted_at = 3;
   // Set when admitted: the runner's journal entry with the CommandAdmitted, as SubmitCommand returns it.
-  .agentplane.proto.event_log.EventEntry admission = 4;
+  agentplane.proto.event_log.EventEntry admission = 4;
   // Set when rejected: the runner's refusal.
   optional string rejection = 5;
 }
@@ -221,7 +221,7 @@ message FollowSessionRequest {
   SessionDestination destination = 1;
   // Entries after this cursor of the current Sandbox incarnation's runner journal. A cursor beyond
   // the journal's end fails with FAILED_PRECONDITION instead of an Attached snapshot.
-  .agentplane.proto.event_log.Follow follow = 2;
+  agentplane.proto.event_log.Follow follow = 2;
 }
 
 // The runner sealed this Sandbox incarnation of the Session at teardown: its journal is final.
@@ -233,9 +233,9 @@ message Sealed {
 message FollowSessionResponse {
   oneof observation {
     // Its last_cursor is the journal end at attach time: entries up to it are replayed, later ones live.
-    .agentplane.proto.runner.Attached attached = 1;
+    agentplane.proto.runner.Attached attached = 1;
     // Replayed and live entries have the same shape, with consecutive cursors.
-    .agentplane.proto.event_log.EventEntry entry = 2;
+    agentplane.proto.event_log.EventEntry entry = 2;
     // Runner attachment reached native EOF. This is not a fabricated execution Event.
     google.protobuf.Empty ended = 3;
     // Planned renewal: reconnect with fresh authorization from the committed cursor.
@@ -248,7 +248,7 @@ message FollowSessionResponse {
 }
 
 message SessionDefaults {
-  optional .agentplane.proto.runner.Harness harness = 1;
+  optional agentplane.proto.runner.Harness harness = 1;
   optional string model = 2;
   optional string cwd = 3;
   optional string reasoning_effort = 4;

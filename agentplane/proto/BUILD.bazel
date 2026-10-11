@@ -158,7 +158,7 @@ proto_library(
     deps = [
         ":event_log_proto",
         ":runner_proto",
-        "//agentplane/sandbox_service:protocol_proto",
+        ":sandbox_service_proto",
     ],
 )
 
@@ -171,4 +171,29 @@ py_grpc_service_library(
     name = "runner_gateway_pb2_grpc",
     proto = ":runner_gateway_proto",
     py_proto = ":runner_gateway_pb2",
+)
+
+proto_library(
+    name = "sandbox_service_proto",
+    srcs = ["sandbox_service.proto"],
+    deps = [
+        ":command_proto",
+        ":event_log_proto",
+        ":runner_proto",
+        "@protobuf//:empty_proto",
+        "@protobuf//:field_mask_proto",
+        "@protobuf//:struct_proto",
+        "@protobuf//:timestamp_proto",
+    ],
+)
+
+py_proto_library_with_mypy_stubs(
+    name = "sandbox_service_pb2",
+    deps = [":sandbox_service_proto"],
+)
+
+py_grpc_service_library(
+    name = "sandbox_service_pb2_grpc",
+    proto = ":sandbox_service_proto",
+    py_proto = ":sandbox_service_pb2",
 )

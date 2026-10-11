@@ -9,8 +9,14 @@ import grpc
 
 from agentplane.app.testing.history_service import HistoryService
 from agentplane.history_service import protocol_pb2 as history_pb2, protocol_pb2_grpc as history_pb2_grpc
-from agentplane.proto import command_pb2, event_log_pb2, event_pb2, runner_gateway_pb2_grpc, runner_pb2
-from agentplane.sandbox_service import protocol_pb2 as service_pb2
+from agentplane.proto import (
+    command_pb2,
+    event_log_pb2,
+    event_pb2,
+    runner_gateway_pb2_grpc,
+    runner_pb2,
+    sandbox_service_pb2,
+)
 
 # gazelle:include_dep @pypi//protobuf
 
@@ -84,7 +90,7 @@ class Gateway(runner_gateway_pb2_grpc.RunnerGatewayServicer):
 
     @override
     async def SubmitCommand(
-        self, request: service_pb2.SubmitCommandRequest, context: grpc.aio.ServicerContext
+        self, request: sandbox_service_pb2.SubmitCommandRequest, context: grpc.aio.ServicerContext
     ) -> event_log_pb2.EventEntry:
         command = request.command
         self.commands.put_nowait(command)
@@ -98,7 +104,7 @@ class Gateway(runner_gateway_pb2_grpc.RunnerGatewayServicer):
 
     @override
     async def ListSessions(
-        self, request: service_pb2.SandboxRequest, context: grpc.aio.ServicerContext
+        self, request: sandbox_service_pb2.SandboxRequest, context: grpc.aio.ServicerContext
     ) -> runner_pb2.ListSessionsResponse:
         return runner_pb2.ListSessionsResponse(
             sessions=[

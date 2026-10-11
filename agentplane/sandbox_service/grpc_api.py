@@ -11,7 +11,8 @@ from google.protobuf.empty_pb2 import Empty
 from google.protobuf.json_format import ParseError
 from kubernetes_asyncio import client as k8s_client
 
-from agentplane.sandbox_service import protocol_pb2, protocol_pb2_grpc
+from agentplane.proto import sandbox_service_pb2, sandbox_service_pb2_grpc
+from agentplane.proto.sandbox_service_pb2 import Sandbox
 from agentplane.sandbox_service.action_policy_views import UnknownPolicySetError
 from agentplane.sandbox_service.egress_views import BindingNotFoundError, UnknownPolicyError
 from agentplane.sandbox_service.models import (
@@ -20,7 +21,6 @@ from agentplane.sandbox_service.models import (
     SandboxConflictError,
     SandboxNotFoundError,
 )
-from agentplane.sandbox_service.protocol_pb2 import Sandbox
 from agentplane.sandbox_service.provisioning import Provisioning
 from agentplane.sandbox_service.retention_holds import MAX_HOLD_KEY_LENGTH
 from agentplane.subjects import ServiceAccountRef
@@ -76,7 +76,7 @@ async def errors(context: grpc.aio.ServicerContext) -> AsyncIterator[None]:
         await context.abort(grpc.StatusCode.UNAVAILABLE, "Kubernetes unavailable")
 
 
-class SandboxService(protocol_pb2_grpc.SandboxServiceServicer):
+class SandboxService(sandbox_service_pb2_grpc.SandboxServiceServicer):
     def __init__(self, resources: Resources) -> None:
         self.resources = resources
 
@@ -89,15 +89,15 @@ class SandboxService(protocol_pb2_grpc.SandboxServiceServicer):
     @override
     async def ListSandboxes(
         self, request: Empty, context: grpc.aio.ServicerContext
-    ) -> protocol_pb2.ListSandboxesResponse:
+    ) -> sandbox_service_pb2.ListSandboxesResponse:
         async with self.request(context):
             inventory = self.resources.provisioning.inventory
-            return protocol_pb2.ListSandboxesResponse(sandboxes=await inventory.list_sandboxes())
+            return sandbox_service_pb2.ListSandboxesResponse(sandboxes=await inventory.list_sandboxes())
 
     @override
     async def GetSandbox(
-        self, request: protocol_pb2.GetSandboxRequest, context: grpc.aio.ServicerContext
-    ) -> protocol_pb2.Sandbox:
+        self, request: sandbox_service_pb2.GetSandboxRequest, context: grpc.aio.ServicerContext
+    ) -> sandbox_service_pb2.Sandbox:
         async with self.request(context):
             inventory = self.resources.provisioning.inventory
             if not request.name:
@@ -106,14 +106,14 @@ class SandboxService(protocol_pb2_grpc.SandboxServiceServicer):
 
     @override
     async def CreateSandbox(
-        self, request: protocol_pb2.CreateSandboxRequest, context: grpc.aio.ServicerContext
-    ) -> protocol_pb2.Sandbox:
+        self, request: sandbox_service_pb2.CreateSandboxRequest, context: grpc.aio.ServicerContext
+    ) -> sandbox_service_pb2.Sandbox:
         async with errors(context), asyncio.timeout(self.resources.lifecycle_timeout_s):
             principal = await self.resources.authenticate(context)
             provisioning = self.resources.provisioning
             return await provisioning.create(request, caller=principal)
 
-    async def checked_sandbox(self, request: protocol_pb2.SandboxRequest) -> tuple[Provisioning, Sandbox]:
+    async def checked_sandbox(self, request: sandbox_service_pb2.SandboxRequest) -> tuple[Provisioning, Sandbox]:
         provisioning = self.resources.provisioning
         destination = request.destination
         if not all((destination.sandbox, destination.sandbox_uid, destination.owner.namespace, destination.owner.name)):
@@ -124,14 +124,18 @@ class SandboxService(protocol_pb2_grpc.SandboxServiceServicer):
         return provisioning, view
 
     @override
-    async def SuspendSandbox(self, request: protocol_pb2.SandboxRequest, context: grpc.aio.ServicerContext) -> Empty:
+    async def SuspendSandbox(
+        self, request: sandbox_service_pb2.SandboxRequest, context: grpc.aio.ServicerContext
+    ) -> Empty:
         async with self.request(context):
             provisioning, view = await self.checked_sandbox(request)
             await provisioning.inventory.suspend(view.name, uid=view.uid)
             return Empty()
 
     @override
-    async def ResumeSandbox(self, request: protocol_pb2.SandboxRequest, context: grpc.aio.ServicerContext) -> Empty:
+    async def ResumeSandbox(
+        self, request: sandbox_service_pb2.SandboxRequest, context: grpc.aio.ServicerContext
+    ) -> Empty:
         async with self.request(context):
             provisioning, view = await self.checked_sandbox(request)
             if await provisioning.inventory.pending_grants(view.name) is not None:
@@ -140,26 +144,30 @@ class SandboxService(protocol_pb2_grpc.SandboxServiceServicer):
             return Empty()
 
     @override
-    async def DeleteSandbox(self, request: protocol_pb2.SandboxRequest, context: grpc.aio.ServicerContext) -> Empty:
+    async def DeleteSandbox(
+        self, request: sandbox_service_pb2.SandboxRequest, context: grpc.aio.ServicerContext
+    ) -> Empty:
         async with self.request(context):
             provisioning, view = await self.checked_sandbox(request)
             await provisioning.inventory.begin_teardown(view.name, uid=view.uid)
             return Empty()
 
     async def checked_hold_sandbox(
-        self, request: protocol_pb2.HoldRequest | protocol_pb2.ConfirmHoldRequest
+        self, request: sandbox_service_pb2.HoldRequest | sandbox_service_pb2.ConfirmHoldRequest
     ) -> Sandbox:
         if not all(
             1 <= len(value) <= MAX_HOLD_KEY_LENGTH for value in (request.destination.session_id, request.holder)
         ):
             raise ValueError("Session ID and holder are required and must not exceed 128 characters")
-        _, view = await self.checked_sandbox(protocol_pb2.SandboxRequest(destination=request.destination.sandbox))
+        _, view = await self.checked_sandbox(
+            sandbox_service_pb2.SandboxRequest(destination=request.destination.sandbox)
+        )
         return view
 
     @override
     async def PlaceHold(
-        self, request: protocol_pb2.HoldRequest, context: grpc.aio.ServicerContext
-    ) -> protocol_pb2.Hold:
+        self, request: sandbox_service_pb2.HoldRequest, context: grpc.aio.ServicerContext
+    ) -> sandbox_service_pb2.Hold:
         async with self.request(context):
             view = await self.checked_hold_sandbox(request)
             return await self.resources.provisioning.inventory.place_hold(
@@ -168,8 +176,8 @@ class SandboxService(protocol_pb2_grpc.SandboxServiceServicer):
 
     @override
     async def ConfirmHold(
-        self, request: protocol_pb2.ConfirmHoldRequest, context: grpc.aio.ServicerContext
-    ) -> protocol_pb2.Hold:
+        self, request: sandbox_service_pb2.ConfirmHoldRequest, context: grpc.aio.ServicerContext
+    ) -> sandbox_service_pb2.Hold:
         async with self.request(context):
             view = await self.checked_hold_sandbox(request)
             return await self.resources.provisioning.inventory.confirm_hold(
@@ -181,7 +189,7 @@ class SandboxService(protocol_pb2_grpc.SandboxServiceServicer):
             )
 
     @override
-    async def ReleaseHold(self, request: protocol_pb2.HoldRequest, context: grpc.aio.ServicerContext) -> Empty:
+    async def ReleaseHold(self, request: sandbox_service_pb2.HoldRequest, context: grpc.aio.ServicerContext) -> Empty:
         async with self.request(context):
             view = await self.checked_hold_sandbox(request)
             await self.resources.provisioning.inventory.release_hold(
@@ -191,38 +199,40 @@ class SandboxService(protocol_pb2_grpc.SandboxServiceServicer):
 
     @override
     async def ListHolds(
-        self, request: protocol_pb2.SandboxRequest, context: grpc.aio.ServicerContext
-    ) -> protocol_pb2.ListHoldsResponse:
+        self, request: sandbox_service_pb2.SandboxRequest, context: grpc.aio.ServicerContext
+    ) -> sandbox_service_pb2.ListHoldsResponse:
         async with self.request(context):
             provisioning, view = await self.checked_sandbox(request)
-            return protocol_pb2.ListHoldsResponse(
+            return sandbox_service_pb2.ListHoldsResponse(
                 holds=await provisioning.inventory.list_holds(view.name, uid=view.uid)
             )
 
     @override
     async def ListTemplates(
         self, request: Empty, context: grpc.aio.ServicerContext
-    ) -> protocol_pb2.ListTemplatesResponse:
+    ) -> sandbox_service_pb2.ListTemplatesResponse:
         async with self.request(context):
             inventory = self.resources.provisioning.inventory
-            return protocol_pb2.ListTemplatesResponse(templates=await inventory.list_templates())
+            return sandbox_service_pb2.ListTemplatesResponse(templates=await inventory.list_templates())
 
     @override
     async def GrantEgress(
-        self, request: protocol_pb2.GrantEgressRequest, context: grpc.aio.ServicerContext
-    ) -> protocol_pb2.GrantEgressResponse:
+        self, request: sandbox_service_pb2.GrantEgressRequest, context: grpc.aio.ServicerContext
+    ) -> sandbox_service_pb2.GrantEgressResponse:
         async with self.request(context):
             provisioning, view = await self.checked_sandbox(
-                protocol_pb2.SandboxRequest(destination=request.destination)
+                sandbox_service_pb2.SandboxRequest(destination=request.destination)
             )
             if not request.egress_policies:
                 raise ValueError("at least one egress policy is required")
             provisioning.endpoints.require_unreserved(request.egress_policies)
             binding = await provisioning.egress.grant(view, list(request.egress_policies))
-            return protocol_pb2.GrantEgressResponse(binding_name=binding.name)
+            return sandbox_service_pb2.GrantEgressResponse(binding_name=binding.name)
 
     @override
-    async def RevokeEgress(self, request: protocol_pb2.RevokeEgressRequest, context: grpc.aio.ServicerContext) -> Empty:
+    async def RevokeEgress(
+        self, request: sandbox_service_pb2.RevokeEgressRequest, context: grpc.aio.ServicerContext
+    ) -> Empty:
         async with self.request(context):
             provisioning = self.resources.provisioning
             if not request.binding_name:
@@ -232,4 +242,4 @@ class SandboxService(protocol_pb2_grpc.SandboxServiceServicer):
 
 
 def add_service(resources: Resources, server: grpc.aio.Server) -> None:
-    protocol_pb2_grpc.add_SandboxServiceServicer_to_server(SandboxService(resources), server)
+    sandbox_service_pb2_grpc.add_SandboxServiceServicer_to_server(SandboxService(resources), server)

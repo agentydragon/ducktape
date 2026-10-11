@@ -11,9 +11,9 @@ import asyncio
 import logging
 from typing import Any
 
+from agentplane.proto.sandbox_service_pb2 import TeardownPhase
 from agentplane.sandbox_service.kubernetes_views import MANAGED_LABEL
 from agentplane.sandbox_service.models import SandboxNotFoundError
-from agentplane.sandbox_service.protocol_pb2 import TeardownPhase
 from agentplane.sandbox_service.provisioning import Provisioning
 from agentplane.sandbox_service.teardown import FLUSH_RETRY_S, SealNotFlushedError, Teardown
 from util.agent_sandbox import SANDBOX_API, SANDBOXES_PLURAL

@@ -10,8 +10,8 @@ from uuid import UUID
 from google.protobuf.json_format import MessageToDict, ParseDict
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 
+from agentplane.proto import sandbox_service_pb2
 from agentplane.runner.harness import Harness
-from agentplane.sandbox_service import protocol_pb2
 from agentplane.sandbox_service.kubernetes_grants import (
     ClusterRoleRef,
     DnsName,
@@ -159,12 +159,12 @@ class SandboxView(BaseModel):
     pod: PodView | None = None
 
 
-def sandbox_view(value: protocol_pb2.Sandbox) -> SandboxView:
+def sandbox_view(value: sandbox_service_pb2.Sandbox) -> SandboxView:
     data = MessageToDict(value, preserving_proto_field_name=True, always_print_fields_with_no_presence=True)
     data.setdefault("kubernetes_grant_error", None)
     # Shown as deleting from DeleteSandbox on: during teardown it takes no new work either.
     del data["teardown"]
-    data["deleting"] = value.deleting or value.teardown != protocol_pb2.TEARDOWN_PHASE_UNSPECIFIED
+    data["deleting"] = value.deleting or value.teardown != sandbox_service_pb2.TEARDOWN_PHASE_UNSPECIFIED
     return SandboxView.model_validate(data)
 
 
@@ -204,5 +204,5 @@ def sandbox_has_ready_pod(view: SandboxView) -> bool:
     )
 
 
-def create_request(value: NewSandbox) -> protocol_pb2.CreateSandboxRequest:
-    return ParseDict(value.model_dump(mode="json", exclude_none=True), protocol_pb2.CreateSandboxRequest())
+def create_request(value: NewSandbox) -> sandbox_service_pb2.CreateSandboxRequest:
+    return ParseDict(value.model_dump(mode="json", exclude_none=True), sandbox_service_pb2.CreateSandboxRequest())

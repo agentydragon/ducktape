@@ -10,9 +10,9 @@ from sqlalchemy import func, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
+from agentplane.proto import sandbox_service_pb2
 from agentplane.runner_gateway.commands.db import CHANGE_POSITION, Session
 from agentplane.runner_gateway.session_changes import CHANNEL
-from agentplane.sandbox_service import protocol_pb2
 
 # gazelle:include_dep @pypi//protobuf
 
@@ -146,7 +146,7 @@ class SessionRegistry:
                 ),
             )
 
-    async def read_changes(self, *, after_position: int, limit: int) -> list[protocol_pb2.SessionChange]:
+    async def read_changes(self, *, after_position: int, limit: int) -> list[sandbox_service_pb2.SessionChange]:
         """Every Session whose latest change is after the position, oldest change first."""
         if after_position < 0 or not 1 <= limit <= 1000:
             raise ValueError("invalid Session change page")
@@ -158,7 +158,7 @@ class SessionRegistry:
                 .limit(limit)
             )
             return [
-                protocol_pb2.SessionChange(
+                sandbox_service_pb2.SessionChange(
                     session_id=str(row.id),
                     sandbox=row.sandbox_name,
                     sandbox_uid=str(row.sandbox_uid) if row.sandbox_uid is not None else "",

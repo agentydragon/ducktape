@@ -12,7 +12,7 @@ from collections.abc import Mapping
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from agentplane.sandbox_service.protocol_pb2 import Hold
+from agentplane.proto.sandbox_service_pb2 import Hold
 
 # gazelle:include_dep @pypi//protobuf
 

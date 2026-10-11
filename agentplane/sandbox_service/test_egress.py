@@ -9,6 +9,7 @@ import pytest_bazel
 from pydantic import ValidationError
 
 from agentplane.egress.resources import TargetMethod
+from agentplane.proto.sandbox_service_pb2 import Sandbox, ServiceAccount
 from agentplane.sandbox_service.egress import EgressInventory
 from agentplane.sandbox_service.egress_views import (
     BindingNotFoundError,
@@ -16,7 +17,6 @@ from agentplane.sandbox_service.egress_views import (
     FluxOwnedBindingError,
     UnknownPolicyError,
 )
-from agentplane.sandbox_service.protocol_pb2 import Sandbox, ServiceAccount
 from agentplane.sandbox_service.testing.fake_inventory import (
     NAMESPACE,
     FakeCustomObjectsApi,

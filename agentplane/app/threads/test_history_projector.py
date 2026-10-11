@@ -27,8 +27,7 @@ from agentplane.app.threads.summaries import AppSummaries, FeedEnd
 from agentplane.app.threads.view.content import ContentStore
 from agentplane.history_service import protocol_pb2 as history_pb2
 from agentplane.history_service.client import HistoryServiceClient
-from agentplane.proto import event_pb2, runner_pb2
-from agentplane.sandbox_service import protocol_pb2
+from agentplane.proto import event_pb2, runner_pb2, sandbox_service_pb2
 from agentplane.thread_fold.models import ThreadCheckpoint, ThreadEntity, ThreadHistorySummary
 from agentplane.thread_fold.projection_lease import ProjectionLeaseLostError
 from agentplane.thread_fold.projector import HistoryProjector, service_pages
@@ -622,7 +621,7 @@ async def test_discovery_racing_open_agrees_on_the_service_id(engine: AsyncEngin
     )
     client = AsyncMock()
     client.list_sessions.return_value = [runner_pb2.SessionSummary(session_id=str(public_id), spec=SPEC)]
-    client.create.return_value = protocol_pb2.CreateSessionResponse(
+    client.create.return_value = sandbox_service_pb2.CreateSessionResponse(
         session_id=str(public_id), attached=runner_pb2.Attached(session_id=str(public_id), spec=SPEC)
     )
     runners = Mock(spec=SandboxSessions)

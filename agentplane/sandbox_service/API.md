@@ -1,6 +1,6 @@
 # Sandbox Service API
 
-The service uses [protobuf/gRPC](protocol.proto). Its standalone entry point serves this API;
+The service uses [protobuf/gRPC](../proto/sandbox_service.proto). Its standalone entry point serves this API;
 HTTP is limited to a health probe. The integration app retains its browser-facing HTTP API.
 There is no transparent runner `Attach` tunnel or caller-supplied runner URL.
 
@@ -9,7 +9,7 @@ HTTP service adapter.
 
 It is two gRPC services, each its own server and image:
 
-- `SandboxService` ([`protocol.proto`](protocol.proto)), served by the Sandbox Service: Sandbox
+- `SandboxService` ([`sandbox_service.proto`](../proto/sandbox_service.proto)), served by the Sandbox Service: Sandbox
   inventory and lifecycle, templates, egress grants and [retention holds](#retention-holds). One
   replica reconciles, and it alone holds the RBAC, ServiceAccount and egress grant permissions.
 - `RunnerGateway` ([`../proto/runner_gateway.proto`](../proto/runner_gateway.proto)), served by

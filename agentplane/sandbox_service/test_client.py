@@ -9,8 +9,7 @@ import pytest
 import pytest_bazel
 
 from agentplane.grpc_process import serving
-from agentplane.proto import runner_gateway_pb2_grpc, runner_pb2
-from agentplane.sandbox_service import protocol_pb2
+from agentplane.proto import runner_gateway_pb2_grpc, runner_pb2, sandbox_service_pb2
 from agentplane.sandbox_service.testing.grpc_service import connect
 from agentplane.sandbox_service.testing.kubernetes import DESTINATION
 from agentplane.testing.fake_apiserver import SANDBOX_NAMESPACE
@@ -23,9 +22,9 @@ TOKEN = "test-grpc-token"
 class TruncatedGateway(runner_gateway_pb2_grpc.RunnerGatewayServicer):
     @override
     async def FollowSession(
-        self, request: protocol_pb2.FollowSessionRequest, context: grpc.aio.ServicerContext
-    ) -> AsyncIterator[protocol_pb2.FollowSessionResponse]:
-        yield protocol_pb2.FollowSessionResponse(
+        self, request: sandbox_service_pb2.FollowSessionRequest, context: grpc.aio.ServicerContext
+    ) -> AsyncIterator[sandbox_service_pb2.FollowSessionResponse]:
+        yield sandbox_service_pb2.FollowSessionResponse(
             attached=runner_pb2.Attached(session_id=request.destination.session_id)
         )
         # Deliberately no ended observation: even an OK transport status is not native EOF evidence.

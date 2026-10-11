@@ -23,7 +23,9 @@ from agentplane.proto import (
     runner_control_pb2 as control_pb2,
     runner_gateway_pb2_grpc,
     runner_pb2,
+    sandbox_service_pb2,
 )
+from agentplane.proto.sandbox_service_pb2 import SandboxDestination
 from agentplane.runner.client import RunnerClient
 from agentplane.runner.errors import OpenTimeoutError, RunnerError, SessionSealedError, StreamClosedError
 from agentplane.runner_gateway import session_lifecycle
@@ -43,10 +45,9 @@ from agentplane.runner_gateway.runner_control import ControlOperation
 from agentplane.runner_gateway.sealing import SEAL_S, Sealing
 from agentplane.runner_gateway.session_changes import SessionChanges
 from agentplane.runner_gateway.session_registry import SessionNotFoundError, SessionRegistry
-from agentplane.sandbox_service import protocol_pb2, wire
+from agentplane.sandbox_service import wire
 from agentplane.sandbox_service.destinations import DestinationResolver, DestinationUnavailableError, RunnerEndpoint
 from agentplane.sandbox_service.models import InventoryError, SandboxNotFoundError
-from agentplane.sandbox_service.protocol_pb2 import SandboxDestination
 from agentplane.subjects import ServiceAccountRef
 from agentplane.workload_auth.grpc_caller import authenticate
 from agentplane.workload_auth.principal import WorkloadPrincipalRejectedError, WorkloadPrincipalResolver
@@ -159,15 +160,15 @@ def public_session_id(session_id: str) -> UUID | None:
 
 
 SUBMISSION_STATES = {
-    protocol_pb2.COMMAND_STATE_PENDING_ADMISSION: SubmissionState.PENDING_ADMISSION,
-    protocol_pb2.COMMAND_STATE_ADMITTED: SubmissionState.ADMITTED,
-    protocol_pb2.COMMAND_STATE_REJECTED: SubmissionState.REJECTED,
+    sandbox_service_pb2.COMMAND_STATE_PENDING_ADMISSION: SubmissionState.PENDING_ADMISSION,
+    sandbox_service_pb2.COMMAND_STATE_ADMITTED: SubmissionState.ADMITTED,
+    sandbox_service_pb2.COMMAND_STATE_REJECTED: SubmissionState.REJECTED,
 }
 COMMAND_STATES = {value: key for key, value in SUBMISSION_STATES.items()}
 
 
-def command_status(submission: Submission) -> protocol_pb2.CommandStatus:
-    result = protocol_pb2.CommandStatus(command=submission.command, state=COMMAND_STATES[submission.state])
+def command_status(submission: Submission) -> sandbox_service_pb2.CommandStatus:
+    result = sandbox_service_pb2.CommandStatus(command=submission.command, state=COMMAND_STATES[submission.state])
     result.accepted_at.FromDatetime(submission.accepted_at)
     if submission.admission is not None:
         result.admission.CopyFrom(submission.admission)
@@ -239,7 +240,7 @@ class RunnerGateway(runner_gateway_pb2_grpc.RunnerGatewayServicer):
 
     @override
     async def ListSessions(
-        self, request: protocol_pb2.SandboxRequest, context: grpc.aio.ServicerContext
+        self, request: sandbox_service_pb2.SandboxRequest, context: grpc.aio.ServicerContext
     ) -> runner_pb2.ListSessionsResponse:
         async with self.request(context):
             sessions = await self.list_runner_sessions(request.destination)
@@ -254,7 +255,7 @@ class RunnerGateway(runner_gateway_pb2_grpc.RunnerGatewayServicer):
                     summary.session_id = str(public_id)
             return runner_pb2.ListSessionsResponse(sessions=sessions)
 
-    async def runner_session_id(self, destination: protocol_pb2.SessionDestination) -> str:
+    async def runner_session_id(self, destination: sandbox_service_pb2.SessionDestination) -> str:
         """Keep physical runner identifiers behind this service, including on follow."""
         if (session_id := public_session_id(destination.session_id)) is None:
             return destination.session_id  # legacy caller-chosen runner ID
@@ -267,8 +268,8 @@ class RunnerGateway(runner_gateway_pb2_grpc.RunnerGatewayServicer):
 
     @override
     async def CreateSession(
-        self, request: protocol_pb2.CreateSessionRequest, context: grpc.aio.ServicerContext
-    ) -> protocol_pb2.CreateSessionResponse:
+        self, request: sandbox_service_pb2.CreateSessionRequest, context: grpc.aio.ServicerContext
+    ) -> sandbox_service_pb2.CreateSessionResponse:
         async with errors(context), asyncio.timeout(self.resources.lifecycle_timeout_s):
             caller = await self.resources.authenticate(context)
             if len(request.idempotency_key) > 128 or len(request.setup_script) > 65_536:
@@ -284,7 +285,9 @@ class RunnerGateway(runner_gateway_pb2_grpc.RunnerGatewayServicer):
             sandbox_uid = UUID(request.sandbox.sandbox_uid)
 
             def freeze(session_id: UUID) -> bytes:
-                destination = protocol_pb2.SessionDestination(sandbox=request.sandbox, session_id=str(session_id))
+                destination = sandbox_service_pb2.SessionDestination(
+                    sandbox=request.sandbox, session_id=str(session_id)
+                )
                 # Resolve workspace templates against the reserved public ID, and freeze the result.
                 effective_overrides = dict(overrides)
                 if isinstance(cwd := effective_overrides.get("cwd"), str):
@@ -303,7 +306,7 @@ class RunnerGateway(runner_gateway_pb2_grpc.RunnerGatewayServicer):
                     if endpoint.binding is not None and endpoint.binding.session_defaults.HasField("setup_script")
                     else None
                 )
-                launch = protocol_pb2.FrozenLaunch(
+                launch = sandbox_service_pb2.FrozenLaunch(
                     open=runner_pb2.Open(session_id=str(session_id) if client_id else f"r-{session_id}", spec=spec),
                     bootstrap=endpoint.binding.bootstrap if endpoint.binding is not None else "",
                 )
@@ -322,7 +325,7 @@ class RunnerGateway(runner_gateway_pb2_grpc.RunnerGatewayServicer):
                 open_request=request.SerializeToString(deterministic=True),
                 launch_spec=freeze,
             )
-            launch = protocol_pb2.FrozenLaunch.FromString(reservation.launch_spec)
+            launch = sandbox_service_pb2.FrozenLaunch.FromString(reservation.launch_spec)
             public_id = str(reservation.session_id)
             setup_script = launch.open.setup_script if launch.open.HasField("setup_script") else None
             if control_routed:
@@ -347,12 +350,12 @@ class RunnerGateway(runner_gateway_pb2_grpc.RunnerGatewayServicer):
                 finally:
                     await client.close()
             attachment.session_id = public_id
-            return protocol_pb2.CreateSessionResponse(session_id=public_id, attached=attachment)
+            return sandbox_service_pb2.CreateSessionResponse(session_id=public_id, attached=attachment)
 
     @override
     async def LookupSession(
-        self, request: protocol_pb2.LookupSessionRequest, context: grpc.aio.ServicerContext
-    ) -> protocol_pb2.LookupSessionResponse:
+        self, request: sandbox_service_pb2.LookupSessionRequest, context: grpc.aio.ServicerContext
+    ) -> sandbox_service_pb2.LookupSessionResponse:
         async with errors(context), asyncio.timeout(self.resources.admission_timeout_s):
             caller = await self.resources.authenticate(context)
             if not request.idempotency_key or len(request.idempotency_key) > 128:
@@ -367,8 +370,8 @@ class RunnerGateway(runner_gateway_pb2_grpc.RunnerGatewayServicer):
                 open_key=request.idempotency_key,
             )
             if public_id is None:
-                return protocol_pb2.LookupSessionResponse()
-            result = protocol_pb2.LookupSessionResponse(session_id=str(public_id))
+                return sandbox_service_pb2.LookupSessionResponse()
+            result = sandbox_service_pb2.LookupSessionResponse(session_id=str(public_id))
             runner_session_id = await self.resources.sessions.runner_id(
                 public_id,
                 sandbox_namespace=self.resources.destinations.inventory.namespace,
@@ -413,7 +416,7 @@ class RunnerGateway(runner_gateway_pb2_grpc.RunnerGatewayServicer):
 
     @override
     async def ResumeSession(
-        self, request: protocol_pb2.SessionRequest, context: grpc.aio.ServicerContext
+        self, request: sandbox_service_pb2.SessionRequest, context: grpc.aio.ServicerContext
     ) -> runner_pb2.Attached:
         async with self.request(context, timeout_s=self.resources.lifecycle_timeout_s):
             destination = request.destination
@@ -435,7 +438,7 @@ class RunnerGateway(runner_gateway_pb2_grpc.RunnerGatewayServicer):
 
     @override
     async def SubmitCommand(
-        self, request: protocol_pb2.SubmitCommandRequest, context: grpc.aio.ServicerContext
+        self, request: sandbox_service_pb2.SubmitCommandRequest, context: grpc.aio.ServicerContext
     ) -> event_log_pb2.EventEntry:
         async with errors(context), asyncio.timeout(self.resources.runner_admission_ack_timeout_s):
             caller = await self.resources.authenticate(context)
@@ -497,7 +500,7 @@ class RunnerGateway(runner_gateway_pb2_grpc.RunnerGatewayServicer):
 
             return await submit_command(submissions, public_id, submission, caller=caller, dispatch=dispatch)
 
-    async def checked_public_session(self, destination: protocol_pb2.SessionDestination) -> UUID:
+    async def checked_public_session(self, destination: sandbox_service_pb2.SessionDestination) -> UUID:
         """The public Session ID of this Sandbox incarnation. Its submissions outlive the Sandbox, so
         the owner is checked only while the incarnation exists."""
         sandbox = destination.sandbox
@@ -516,8 +519,8 @@ class RunnerGateway(runner_gateway_pb2_grpc.RunnerGatewayServicer):
 
     @override
     async def GetCommand(
-        self, request: protocol_pb2.GetCommandRequest, context: grpc.aio.ServicerContext
-    ) -> protocol_pb2.CommandStatus:
+        self, request: sandbox_service_pb2.GetCommandRequest, context: grpc.aio.ServicerContext
+    ) -> sandbox_service_pb2.CommandStatus:
         async with self.request(context):
             session_id = await self.checked_public_session(request.destination)
             if not 1 <= len(request.command_id) <= 128:
@@ -526,8 +529,8 @@ class RunnerGateway(runner_gateway_pb2_grpc.RunnerGatewayServicer):
 
     @override
     async def ListCommands(
-        self, request: protocol_pb2.ListCommandsRequest, context: grpc.aio.ServicerContext
-    ) -> protocol_pb2.ListCommandsResponse:
+        self, request: sandbox_service_pb2.ListCommandsRequest, context: grpc.aio.ServicerContext
+    ) -> sandbox_service_pb2.ListCommandsResponse:
         async with self.request(context):
             session_id = await self.checked_public_session(request.destination)
             if request.page_size > 1000:
@@ -538,7 +541,7 @@ class RunnerGateway(runner_gateway_pb2_grpc.RunnerGatewayServicer):
             states = {SUBMISSION_STATES[state] for state in request.states}
             after = read_page_token(request.page_token) if request.page_token else None
             page = await self.resources.submissions.list(session_id, states=states, after=after, limit=limit)
-            result = protocol_pb2.ListCommandsResponse(commands=[command_status(row) for row in page])
+            result = sandbox_service_pb2.ListCommandsResponse(commands=[command_status(row) for row in page])
             if len(page) == limit:
                 last = page[-1]
                 result.next_page_token = write_page_token(last.accepted_at, last.command.command_id)
@@ -548,7 +551,7 @@ class RunnerGateway(runner_gateway_pb2_grpc.RunnerGatewayServicer):
     # intentional: flow-control stalls must stay inside the deadline and cleanup scope.
     @override
     async def FollowSession(  # type: ignore[override]
-        self, request: protocol_pb2.FollowSessionRequest, context: grpc.aio.ServicerContext
+        self, request: sandbox_service_pb2.FollowSessionRequest, context: grpc.aio.ServicerContext
     ) -> None:
         # Explicit writes keep flow-control stalls inside our deadline and finally blocks.
         async with errors(context):
@@ -570,7 +573,7 @@ class RunnerGateway(runner_gateway_pb2_grpc.RunnerGatewayServicer):
                         attached = runner_pb2.Attached()
                         attached.CopyFrom(attachment.attached)
                         attached.session_id = destination.session_id
-                        await context.write(protocol_pb2.FollowSessionResponse(attached=attached))
+                        await context.write(sandbox_service_pb2.FollowSessionResponse(attached=attached))
                     while True:
                         # Idle runners may stay quiet for the whole lease. Only writes have
                         # the short timeout: a blocked consumer must not pin an attachment.
@@ -581,18 +584,18 @@ class RunnerGateway(runner_gateway_pb2_grpc.RunnerGatewayServicer):
                         except TimeoutError:
                             if not lease.expired():
                                 raise
-                            terminal = protocol_pb2.FollowSessionResponse(reconnect_required=Empty())
+                            terminal = sandbox_service_pb2.FollowSessionResponse(reconnect_required=Empty())
                             break
                         except SessionSealedError as sealed:
-                            terminal = protocol_pb2.FollowSessionResponse(
-                                sealed=protocol_pb2.Sealed(cursor=sealed.cursor)
+                            terminal = sandbox_service_pb2.FollowSessionResponse(
+                                sealed=sandbox_service_pb2.Sealed(cursor=sealed.cursor)
                             )
                             break
                         except StreamClosedError:
-                            terminal = protocol_pb2.FollowSessionResponse(ended=Empty())
+                            terminal = sandbox_service_pb2.FollowSessionResponse(ended=Empty())
                             break
                         async with asyncio.timeout(self.resources.admission_timeout_s):
-                            await context.write(protocol_pb2.FollowSessionResponse(entry=entry))
+                            await context.write(sandbox_service_pb2.FollowSessionResponse(entry=entry))
                     async with asyncio.timeout(self.resources.admission_timeout_s):
                         await context.write(terminal)
                 finally:
@@ -602,7 +605,7 @@ class RunnerGateway(runner_gateway_pb2_grpc.RunnerGatewayServicer):
 
     @override
     async def WatchSessions(  # type: ignore[override]
-        self, request: protocol_pb2.WatchSessionsRequest, context: grpc.aio.ServicerContext
+        self, request: sandbox_service_pb2.WatchSessionsRequest, context: grpc.aio.ServicerContext
     ) -> None:
         async with errors(context):
             async with asyncio.timeout(self.resources.admission_timeout_s):
@@ -623,7 +626,7 @@ class RunnerGateway(runner_gateway_pb2_grpc.RunnerGatewayServicer):
                         if (owner := owners.get((change.sandbox, change.sandbox_uid))) is not None:
                             change.owner.CopyFrom(owner)
                         async with asyncio.timeout(self.resources.admission_timeout_s):
-                            await context.write(protocol_pb2.WatchSessionsResponse(change=change))
+                            await context.write(sandbox_service_pb2.WatchSessionsResponse(change=change))
                         position = change.position
                     if len(page) == WATCH_PAGE:
                         continue
@@ -635,11 +638,11 @@ class RunnerGateway(runner_gateway_pb2_grpc.RunnerGatewayServicer):
                         if not lease.expired():
                             raise
             async with asyncio.timeout(self.resources.admission_timeout_s):
-                await context.write(protocol_pb2.WatchSessionsResponse(reconnect_required=Empty()))
+                await context.write(sandbox_service_pb2.WatchSessionsResponse(reconnect_required=Empty()))
 
     @override
     async def SealSandbox(
-        self, request: protocol_pb2.SandboxRequest, context: grpc.aio.ServicerContext
+        self, request: sandbox_service_pb2.SandboxRequest, context: grpc.aio.ServicerContext
     ) -> runner_pb2.SealResponse:
         async with errors(context), asyncio.timeout(SEAL_S + self.resources.admission_timeout_s):
             await authenticate(self.resources.principals, self.resources.sealer_accounts, context)
