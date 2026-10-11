@@ -2352,10 +2352,7 @@ routes.push(
     "GET",
     /^\/threads$/,
     (_match, query) => ({
-      threads: THREADS.filter(
-        (thread) =>
-!query.has("sandbox") || thread.sandbox === query.get("sandbox")
-      ),
+      threads: THREADS.filter((thread) => !query.has("sandbox") || thread.sandbox === query.get("sandbox")),
       next_page_token: null,
     }),
   ],
