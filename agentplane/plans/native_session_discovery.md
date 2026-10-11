@@ -1,7 +1,9 @@
 # Native session discovery: characterization gaps and deferred design
 
-Status: **implementation deferred** while session-event ownership moves into Sandbox Service.
-This holds the remaining characterization, proposed design and hardening candidates for
+Status: **implementation deferred.** Discovery builds on the
+[event ingress](../docs/runner_channel.md#event-ingress): the runner pushes every Session it
+declares, roots and discovered children alike, and the History Service's index is the record of
+which exist. This holds the remaining characterization, proposed design and hardening candidates for
 [`NATIVE_SUBAGENT_THREADS`](task_freezer.md#native_subagent_threads--as-linked-agentplane-threads).
 The [hardening candidates](#deferred-hardening-candidates) are not a dispatch queue; the
 [shared design](#proposed-shared-design) is not a shipped runner contract or a priority change.
@@ -128,8 +130,10 @@ Deterministic adapter/replay tests must supplement, not replace, real-binary cha
 
 Let a harness create native children. Its runner adapter interprets the native protocol evidence
 and declares those children as logical sessions. The runner durably owns their identities,
-relationships, observations, and availability; the Sandbox Service exposes them, and the app
-presents them as related Threads.
+relationships, observations, and availability, and pushes each declared Session to its ingress like
+any other; the History Service indexes and serves them, and the app presents them as related
+Threads. The Sandbox Service takes no part in discovery: it routes commands and lifecycle requests,
+and a read-only child receives neither.
 
 This does not require adding an Agentplane-specific declaration API to Claude Code or Codex. Their
 existing messages are the declaration inputs. The adapter is responsible for translating those
@@ -168,9 +172,11 @@ is insufficient to advertise an exhaustive live-native snapshot.
 
 ### Identity and declaration
 
-Use the same declaration model for roots and children. Today root runner IDs are client-selected;
-the proposed harness-minted-root flow below separates requesting creation from observing a native
-conversation. Persist an opaque Agentplane logical ID and its native binding before publication.
+Use the same declaration model for roots and children. A root's Session ID is the UUID its client
+minted for `CreateSession`; the runner mints a UUID for each child it discovers. Either way the ID
+is the Session's public identity on the ingress, and the History Service's index learns it from the
+announcement. The proposed harness-minted-root flow below separates requesting creation from
+observing a native conversation. Persist an opaque Agentplane logical ID and its native binding before publication.
 Use the canonical logical identity direction in the layering plan; do not require existing root
 storage paths to be rekeyed here.
 
@@ -212,9 +218,10 @@ Keep three identifiers distinct:
   creation attempt; it is not a native or logical session ID.
 - **Native session ID:** minted by the harness and learned from native protocol evidence.
 - **Agentplane session reference:** a stable public logical identity bound to the qualified native
-  ID. Prefer an opaque runner-assigned ID so native scope/format changes do not rekey public history.
-  Making the native ID itself public is a possible alternative, but it still needs harness/owner
-  scope; a bare native ID is not a globally unique Agentplane reference.
+  ID: the client-minted UUID for a created root, a runner-minted UUID for a discovered Session, so
+  native scope/format changes do not rekey public history. Making the native ID itself public is a
+  possible alternative, but it still needs harness/owner scope; a bare native ID is not a globally
+  unique Agentplane reference.
 
 The proposed flow is:
 
@@ -291,14 +298,16 @@ not claims about the current API. The caller can be a UI backend, CLI, or anothe
    stream-json mode, submit the saved input, and bind the ID from a session-bearing native frame.
    Alternatively its adapter can preselect the ID through `--session-id` and wait for native
    confirmation. These choices do not change the caller's flow or justify resending the input.
-5. **Runner → Sandbox Service → client: declaration and events.** Commit the qualified native-ID
-   binding and declare root `S` with no parent and the creation request as provenance. The client
-   continues using the same `S` for follow/attach and proven root commands; it need not address a
+5. **Runner → ingress → client: declaration and events.** Commit the qualified native-ID
+   binding and declare root `S` with no parent and the creation request as provenance; its
+   announcement and journal go to the ingress. The client reads `S` from the History Service (or is
+   the ingress itself) and sends proven root commands through the Sandbox Service; it need not address a
    Codex thread ID or Claude conversation ID. Startup acceptance, native existence, input
    confirmation, and work completion remain distinct facts.
 6. **If the harness delegates later:** native evidence declares child `S2`, with parent `S` and the
-   same execution owner. The child enters the same inventory with its proven coverage/capabilities;
-   Agentplane does not provision another sandbox or launch another process to recognize it.
+   same execution owner. The runner opens a `Push` call for `S2` like any Session, so the child
+   enters the History Service's index with its proven coverage/capabilities; Agentplane does not
+   provision another sandbox or launch another process to recognize it.
 
 Creation failure remains inspectable through the pending attempt. The ambiguous native-creation
 crash window described above still applies; request deduplication does not make native creation or
@@ -360,25 +369,25 @@ an explicit unresolved state when it cannot be resolved.
 
 Today [`runner/protocol.proto`](../runner/protocol.proto), [`Session`](../runner/session.py), and
 [`SessionRecord`](../runner/store.py) couple a session to a launch spec, native persistence, process,
-and active turn. `ListSessions` lists those stored sessions; `Open` with a spec may launch/resume.
-The first implementation must separate the logical-session descriptor from execution ownership.
+and active turn, and `Attached`, the ingress announcement, carries that spec. The first
+implementation must separate the logical-session descriptor from execution ownership.
 
 Proposed public behavior:
 
-- Extend `ListSessions` to include discovered children and their execution owner, ancestry, origin,
-  availability, and coverage. A stopped owner does not erase its historical children.
-- Extend `Attached` with the same descriptor. Retain `Open` without a spec as observation-only;
-  attaching a discovered child never starts its owner. Initial child attachments are read-only.
-  An idle child can still receive future activity on that attachment; do not end its stream merely
-  because its most recent task completed. Describe owner-process health separately from child activity.
-- Reject launch/setup/spec mutations on discovered children. A child must not acquire a fake copy
-  of the parent's `SessionSpec`: its actual prompt/model/settings may differ or be unknown.
-- Reject unsupported child commands before admission. Do not route a child command to the parent's
-  stdin just because they share a process. Existing root command idempotency remains unchanged.
-- Include replayable discovery in the owner's Events. A client first obtains the retained inventory,
-  then follows the owners from the returned cursors to cover declarations racing the snapshot.
-  Define and test that list/follow handoff, including inventory reconciliation for execution owners
-  created after the snapshot; do not rely on the app noticing an incidental tool card.
+- Extend `Attached` with the descriptor: kind, origin, execution owner, parent, availability and
+  coverage. A discovered child's announcement carries no `SessionSpec`; it must not acquire a fake
+  copy of the parent's, since its actual prompt/model/settings may differ or be unknown.
+- Every declared Session gets its own journal and its own `Push` call, opened when it is declared
+  and after any lost call, as the ingress contract already does for roots. Discovery therefore
+  needs no inventory snapshot and no list/follow handoff: a declaration racing a restart is pushed
+  when the runner resumes after the last acknowledgement. A stopped owner does not erase its
+  historical children.
+- The ingress accepts a parent only if it is bound to the same writer, so a Sandbox cannot attach
+  children to another Sandbox's Session. An idle child stays open on its call; finishing its most
+  recent task does not seal it. Describe owner-process health separately from child activity.
+- Reject launch/setup/spec mutations and unsupported commands on discovered children before
+  admission, on the control stream. Do not route a child command to the parent's stdin just
+  because they share a process. Existing root command idempotency remains unchanged.
 
 Prefer retaining one logical Event stream per child so the current one-Session/one-Thread view model
 remains meaningful. This needs an explicit evidence and storage design before protocol rollout:
@@ -397,8 +406,9 @@ remains meaningful. This needs an explicit evidence and storage design before pr
 - If using replayable projection, record a durable applied prefix and deduplicate each derived
   observation by its source evidence and target. Keep already-published origins stable on replay;
   reinterpreting history after an adapter upgrade needs an explicit policy, not silent regeneration.
-- Archive enough referenced owner evidence with child history that Raw remains resolvable after
-  sandbox deletion. The Sandbox Service remains a live access service, not a new archive authority.
+- The owner's journal reaches the same ingress under the same writer, so the History Service holds
+  the referenced owner evidence and Raw stays resolvable after Sandbox deletion; a reader resolves a
+  cross-log reference only between Sessions of one writer.
 
 These are required design gates, not a claim that the existing journal already supplies multi-session
 transactions. The read-only first slice should settle them without refactoring command scheduling
@@ -414,8 +424,8 @@ is still an open test. A runner must not synthesize missing child text from a pa
 Describe native message/control routes separately from exposed runner commands. Claude's proven
 parent-tool `SendMessage` route does not establish a direct driver-input API for children. Likewise,
 `TaskOutput` retrieving a result does not prove general history enumeration. A capability becoming
-visible does not bypass the Sandbox Service's existing authorization or grant child callers another
-ServiceAccount's authority. Shared-process children are not isolation boundaries.
+visible does not bypass the History Service's read authorization or the Sandbox Service's command
+authorization, or grant child callers another ServiceAccount's authority. Shared-process children are not isolation boundaries.
 
 On owner transport/process loss, mark previously active children unknown/lost as observations of
 availability; preserve their last known outcomes. Do not convert loss into successful completion or
@@ -488,27 +498,25 @@ unresolved record, not guessed identity or automatic retry of old work.
 
 #### Root creation and today's service IDs
 
-The current Sandbox Service already has `CreateSession` / `LookupSession` with a client-minted
-**service session UUID**, which is also the runner's logical Session ID, a caller- and
-Sandbox-UID-scoped idempotency key, and a frozen launch request. Sessions created before clients
-minted the UUID run under the runner ID `r-<uuid>`.
-See [`sandbox_service/protocol.proto`](../sandbox_service/protocol.proto) and
-[`session_history/store.py`](../sandbox_service/session_history/store.py).
+`CreateSession` takes a client-minted UUID, which is the Session's public ID, its runner Session ID
+and the ID it is announced under on the ingress. Sessions created before clients minted the UUID run
+under the runner ID `r-<uuid>`, until `SESSION_ID_MINT_RETIRE`. See
+[`sandbox_service/protocol.proto`](../sandbox_service/protocol.proto).
 
-Build on those reservations rather than introducing another creation queue or replacing the API
-with the illustrative `StartSession` name above. Preserve the existing service UUID and routing
-binding to `(Sandbox UID, runner logical ID)`. The runner remains authoritative about existence
-and native bindings; the service row is a durable address/authorization/history projection, not a
-second native session registry. A runner-minted root ID requires returning and persisting that
-binding rather than treating today's preselected `Open.session_id` as proof of native creation.
-Existing roots can retain their runner IDs; opaque runner allocation is not a reason to rekey them.
+Build on that rather than introducing another creation queue or replacing the API with the
+illustrative `StartSession` name above. The runner remains authoritative about existence and native
+bindings; the Sandbox Service keeps only the Session → Sandbox route for commands, and the History
+Service's index, not a Sandbox Service registry, records which Sessions exist. A harness-minted root
+ID would be bound to the client's UUID, not replace it, rather than treating today's preselected
+`Open.session_id` as proof of native creation.
 
 The concrete root sequences are:
 
 1. Client provisions an authorized sandbox through Sandbox Service and follows readiness.
 2. Client calls `CreateSession` with a fresh UUID, harness spec and override mask. Service
-   reserves the UUID and immutable launch intent. Runner accepts/reserves a logical root and
-   execution owner. Timeout recovery uses `LookupSession`; a reservation is not launch success.
+   passes the UUID and launch intent to the runner, which accepts/reserves a logical root and
+   execution owner. A retry carries the same UUID; whether the runner started it is read from the
+   History Service's index (`LOOKUP_SESSION_RETIRE`). An announcement is not launch success.
 3. **Codex:** initialize the app-server; send `thread/start`; commit the returned thread ID as
    the native binding before reporting root readiness. No client-selected native thread ID is
    required. First user input subsequently uses `turn/start` with its own command ID.
@@ -602,28 +610,25 @@ Use the existing runner storage and journal authority, not a new execution/messa
 4. Store native activity/item IDs where available to distinguish repeated history hydration from
    new work. Source-frame deduplication alone cannot deduplicate a later query returning the same
    historical outcome. Keep newly received raw evidence while upserting the existing activity.
-5. Return inventory at a runner registry revision and permit following subsequent registry changes
-   from that revision. This covers new execution owners as well as children racing the snapshot;
-   following only owners that existed at listing time is insufficient. This is a view of the same
-   durable runner registry, not a new service-side event authority. Expired cursors require an
-   explicit resnapshot; owner-local and child-local content cursors are never compared numerically.
+5. Publication to readers is the ingress push: each declared Session's journal goes out on its own
+   `Push` call and resumes after the last acknowledgement, so no inventory revision or resnapshot is
+   needed. Owner-local and child-local content cursors are never compared numerically.
 
 Implementation must first verify that current storage can provide these atomic/idempotent seams;
 if not, introduce the minimal journal primitive and crash tests before exposing child discovery.
 Schema names are deliberately deferred, but the ordering and failure guarantees are not optional.
 
-#### Service exposure, controls, and acceptance boundaries
+#### Exposure, controls, and acceptance boundaries
 
-Sandbox Service lists/follows the runner's descriptor inventory and binds discovered runner IDs to
-service-facing session references idempotently. A unique `(Sandbox UID, runner logical ID)` binding
-prevents concurrent listing/follow clients from allocating duplicate public child addresses. Its
-persisted history projection can retain records while the runner is unavailable, clearly marked as
-stale. Projection failure cannot block runner-native discovery or require an app database write.
+The History Service indexes each announced Session with its descriptor: kind, parent and owner
+references, coverage, availability and capabilities. The runner mints a child's ID once, before its
+first announcement, so no reader allocates public child addresses. The index retains records while
+the runner is unavailable; their availability is the last the runner pushed. Ingress failure only
+lags discovery: it never blocks the runner or requires an app database write.
 
-Extend inventory/attachment responses with explicit descriptor kind, parent/owner references,
-coverage, availability, and capabilities. Do not duplicate the parent's launch spec onto a child.
-The app may create linked Thread views from this evidence; it does not create or supervise native
-children. Authorize child reads through the same sandbox/service boundary; knowing a native ID,
+Do not duplicate the parent's launch spec onto a child. The app may create linked Thread views from
+the index; it does not create or supervise native children. Authorize child reads as the History
+Service authorizes any Session's; knowing a native ID,
 sharing a process, or receiving a harness message is not a new authorization grant. Native prompt,
 path, and tool metadata are untrusted data, not instructions or proof of human origin.
 
@@ -647,9 +652,9 @@ Existing root controls and command IDs retain their semantics.
    binding without assuming exactly-once creation. Persist descriptors and attributed child streams;
    implement read-only
    list/attach. Crash-test every declaration/fan-out publication boundary and duplicate replay.
-3. **Service and presentation.** Expose inventory/history through the existing Sandbox Service API.
-   The app discovers children from runner evidence and presents linked Threads with coverage and
-   availability indicators. No app database write is a prerequisite for declaring a native child.
+3. **Index and presentation.** The History Service's index and read API carry the descriptor. The
+   app lists children from the index and presents linked Threads with coverage and availability
+   indicators. No app database write is a prerequisite for declaring a native child.
 4. **Broader recovery and control.** Add only the capabilities demonstrated by further tests:
    alternate subscriptions, native enumeration, independent controls, restart identity, nesting,
    and broader Codex v2 contexts. These are not prerequisites for honest read-only discovery.
@@ -678,11 +683,11 @@ Concrete gates for this implementation (not satisfied by characterization tests 
 - **Failure boundaries:** crash after raw append, registry commit, destination append, and before
   outbox acknowledgement. Replay produces no duplicate IDs or derived event keys and no dangling
   evidence references. Conflicting parent/alias mappings remain visible reconciliation errors.
-- **Inventory handoff:** create a root/child during list/follow, restart the runner between those
-  operations, and expire a cursor. Recover by revision or explicit resnapshot without silently
-  missing an owner. Absence from partial native inventory never marks a child disposed.
-- **Service isolation:** two clients discover the same child concurrently and obtain the same service
-  mapping. With the integration app unavailable, list/follow still works; unauthorized reads and
+- **Push handoff:** declare a root/child, restart the runner before and after its first
+  announcement is acknowledged, and lose the ingress mid-push. The child reaches the index once,
+  under one ID. Absence from partial native inventory never marks a child disposed.
+- **Isolation:** the ingress refuses a child whose parent is bound to another writer. With the
+  integration app unavailable, discovery still reaches the History Service; unauthorized reads and
   unsupported child commands fail before admission, and observation starts no native work.
 - **Coverage honesty:** lost native state, missing terminal notification, stale owner connection,
   and unknown task kinds remain distinguishable. No reconstruction from prose is labeled native
