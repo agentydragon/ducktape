@@ -6,7 +6,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from uuid import UUID
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete, select, text
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
@@ -249,6 +249,9 @@ class Store:
         if after_cursor < 0 or not 1 <= limit <= 1000:
             raise ValueError("invalid history page")
         async with self._sessions() as session:
+            # One snapshot: settlement deletes entries and adds their range in one commit, so a page
+            # read across that commit could pair entries with the range that removed them.
+            await session.execute(text("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY"))
             history = await session.get(SessionHistory, session_id)
             if history is None:
                 raise HistoryNotFoundError(session_id)
@@ -310,6 +313,8 @@ class Store:
         ):
             raise ValueError("invalid observation page")
         async with self._sessions() as session:
+            # One snapshot, as in `read_page`.
+            await session.execute(text("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY"))
             history = await session.get(SessionHistory, session_id)
             if history is None:
                 raise HistoryNotFoundError(session_id)
