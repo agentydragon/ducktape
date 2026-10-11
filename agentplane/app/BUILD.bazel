@@ -388,7 +388,6 @@ py_test(
         "//agentplane/thread_fold:models",
         "//util:net",
         "//util/testing:asgi",
-        "//util/testing:undeclared_outputs",
         "@pypi//httpx",
         "@pypi//protobuf",
         "@pypi//pytest",

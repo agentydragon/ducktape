@@ -24,7 +24,7 @@ from agentplane.runner.service import Runner, serve
 from agentplane.runner.testing import launches
 from agentplane.runner.testing.claude_model import ClaudeModel
 from agentplane.runner.testing.codex_model import CodexModel
-from agentplane.runner.testing.failure_journal import preserve_native_evidence
+from agentplane.runner.testing.failure_journal import FailureEvidence
 from agentplane.runner.testing.scripted_model import ScriptedModel
 
 # The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.
@@ -108,7 +108,8 @@ async def runner(
     caplog.set_level(logging.INFO, logger="httpx")
     async with serve(config, address="127.0.0.1:0", grace_s=0) as (started, port):
         yield RunnerHandle(runner=started, port=port)
-        await preserve_native_evidence(request, started)
+        if (evidence := FailureEvidence.for_failed_call(request)) is not None:
+            await evidence.preserve_runner(started)
 
 
 @pytest.fixture
