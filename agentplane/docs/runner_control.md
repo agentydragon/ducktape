@@ -6,8 +6,8 @@ authenticates, fences and keeps connections alive, and delivers dispatch attempt
 (`runner_gateway/command_delivery.py`) for Sandboxes routed to it. The runner dials it when started
 with `--control-target` (`runner/control.py`), which staging's Sandbox Service passes to every new
 Sandbox's runner (`runner_control`), so staging's commands travel over the control stream. Testing's
-runners are reached through the inbound `Attach` RPC, which Cilium admits only from the Sandbox
-Service, and every runner's Events still are. This is
+runners are reached through the inbound `Attach` RPC, which Cilium admits only from the Runner
+Gateway, and every runner's Events still are. This is
 the contract the
 runner-initiated replacement implements. It covers command delivery, authentication, connection ownership and
 dispatch attempts, lifecycle requests (built: a runner that agrees `lifecycle` is listed, opened,

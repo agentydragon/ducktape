@@ -10,7 +10,7 @@ VM provider.
 
 ## Control transport
 
-The guest runner dials the Sandbox Service over the [runner control stream](../docs/runner_control.md)
+The guest runner dials the Runner Gateway over the [runner control stream](../docs/runner_control.md)
 through the same egress relay its LLM and Action traffic needs, so no guest runner service has to
 be exposed or routed. It does not remove that relay or its credential boundary. Diagrams below show
 the inbound-control baseline that the control stream replaces. `VM_CONTROL_NETWORKING` states which
@@ -50,8 +50,8 @@ flowchart LR
     EG --> DEST[LLM ingress, Action Service, allowed upstreams]
 ```
 
-Sandbox Service owns lifecycle, grants, destination resolution, and access to sessions. Runner SQLite
-remains the only admitted-command/Event authority. The service-owned archive migration retains copied Events independently of VM storage; the app
+Sandbox Service owns lifecycle, grants and destination resolution; the Runner Gateway owns access to sessions. Runner SQLite
+remains the only admitted-command/Event authority. The History Service retains Events independently of VM storage; the app
 remains its presentation client. VM startup, recovery and notifications must work with the app unavailable. There is no VM-specific
 command queue or new credential issuer.
 
@@ -181,7 +181,7 @@ readiness) stay in the launcher network namespace; omitting the interface port l
 all ports and can break this arrangement. Test kubelet probes and guest-to-gateway packets through
 the actual NAT rules; do not borrow Istio's special annotations as undocumented network fixes.
 
-Apply Cilium policy to launcher Pods: inbound runner control only from Sandbox Service, no external
+Apply Cilium policy to launcher Pods: inbound runner control only from the Runner Gateway, no external
 access to the unauthenticated relay, and outbound only to the existing DNS and central-egress routes.
 Prove another environment cannot borrow this relay's identity. The guest and sidecar still share
 the Pod's external network identity: direct guest TCP access to the central gateway can exist, but

@@ -177,7 +177,7 @@ If idle polling becomes a priority, replace the notification source's five-secon
 
 - Consider removing `lifetime_days`. Prefer no automatic expiry; if retained, make it opt-in with
   agent warning/expiry-notification semantics.
-- Add command-scoped admission/confirmation/failure tracking through Sandbox Service, resumable by
+- Add command-scoped admission/confirmation/failure tracking through the Runner Gateway, resumable by
   command ID and backed by the runner's journal, so notifications need not follow conversation content.
 - Consider automatic Action following or a submission convenience flag, backed by durable authorized
   intent and reconciliation rather than a best-effort second request.

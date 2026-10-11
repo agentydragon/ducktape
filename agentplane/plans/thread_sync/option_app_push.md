@@ -2,7 +2,7 @@
 
 A1's delta, but the server keeps the connection and writes to it rather than answering a re-issued
 poll. The app already does exactly this for the inventory: `/live/sandboxes` is SSE, `LiveIndex`
-holds the state, and `changes.py` is the Postgres wake-up behind it.
+holds the state, and `database_updates.py` is the Postgres wake-up behind it.
 
 The reader opens one stream and declares its interest — a cursor window and a content selection.
 The app watches the fold and writes the entities and bodies that fall inside it.

@@ -46,7 +46,7 @@ What the renderer needs from any implementation, per thread:
 - a body by reference, possibly still growing (**S1**, **P8**);
 - the fold's rows for commands the client sent (**P9**).
 
-`ThreadSync` in `frontend/thread_sync.ts` is that list: a `Thread` provider that syncs one thread
+`ThreadSync` in `frontend/threads/thread_sync.ts` is that list: a `Thread` provider that syncs one thread
 while mounted, and hooks for its window, command rows by ID, and a body by reference. Paging is
 "load older", owned by the implementation. Electric's swap to a new epoch without a reload stays
 inside it; **P7** requires only the refusal.

@@ -11,7 +11,7 @@ Give user inputs typed metadata that is not passed to the runner or harness. Ini
 Notification Service notices so the frontend can render them compactly, with full text available
 on expansion. The agent continues receiving the existing actionable notice text.
 
-- Sandbox Service owns input submission, authenticated provenance and durable input metadata.
+- The Runner Gateway owns input submission, authenticated provenance and durable input metadata.
 - Notification Service owns subscriptions, inboxes, entries and delivery bookkeeping.
 - Runners remain responsible for execution and canonical admission/confirmation evidence. They
   neither receive nor interpret this metadata; Claude/Codex integrations do not change.
@@ -48,7 +48,7 @@ identity if the command ID already uniquely identifies that notice. A notice may
 sources. Start with stable inbox/range references; add only bounded source descriptors needed for
 presentation, not full provider payloads or a single misleading source label for a batch.
 
-Sandbox Service persists the complete service envelope and immediately sends only a copy of its
+The Runner Gateway persists the complete service envelope and immediately sends only a copy of its
 runner Command. Notification metadata is valid only on `submit_input`; controls continue through
 the same admission surface without it. The RPC returns OK only on runner admission, not merely
 service persistence. Metadata never enters the runner or harness.
@@ -62,7 +62,7 @@ representation; a claimed service name in a header or request body is not authen
 
 Unauthorized metadata receives a permission-denied response before persistence or dispatch, not
 silent stripping. Notification Service must still be authorized to submit to the target session.
-Sandbox Service stamps trusted notification provenance after authorization; callers supply notice
+The Runner Gateway stamps trusted notification provenance after authorization; callers supply notice
 references, not their own trusted producer identity. No new signatures or callback validation service
 is required. Notification Service remains responsible for reference correctness.
 
@@ -90,7 +90,7 @@ Existing runner evidence already supplies the necessary joins:
 - `HarnessUserMessageConfirmed.origin_command_ids` identifies originating commands for a confirmed
   harness message, alongside its harness message ID.
 
-Sandbox Service exposes input metadata keyed by session/command identity through an authorized read
+The Runner Gateway exposes input metadata keyed by session/command identity through an authorized read
 API. The message projection uses origin IDs to attach annotations, including pending or failed inputs
 where no confirmed message exists yet. Preserve annotation availability across replay/reconnect and
 client archival without rewriting canonical runner Events or requiring runners to echo metadata.

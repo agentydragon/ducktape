@@ -346,8 +346,7 @@ flowchart LR
 
 ### `RUNNER_OUTBOUND_ROLLOUT` — every template dials out
 
-**Blocked on the [ingress and control split](#11-runner-ingress-and-control-split).**
-Every Sandbox template starts its runner pushing Events to its ingress and holding its control
+**Blocked on `PROTO_DIRECTORY`.** Every Sandbox template starts its runner pushing Events to its ingress and holding its control
 stream. The Sandbox Service sets both endpoints at creation once its config carries
 `runner_control` and `runner_ingress` (staging has `runner_control`), after the images that read
 them are published. `runner_control` and `runner_ingress` then become required settings (the
@@ -698,8 +697,8 @@ a newer image) and resume, checking continuation and prompt-cache cost. The froz
 
 ### `SESSION_INCARNATIONS` — a Session records its Sandboxes over time
 
-**Blocked on the lifecycle decision.** The Sandbox Service's Session
-record holds a sequence of Sandbox incarnations, at most one live; the locator ↔ Sandbox binding
+**Blocked on the lifecycle decision.** The Runner Gateway's Session
+registry holds a sequence of Sandbox incarnations, at most one live; the locator ↔ Sandbox binding
 becomes per incarnation. Each incarnation's runner announces its `sandbox_uid` on ingress, from which the
 History Service records it, and its seal ends that incarnation, not the Session. On the retained volume the runner journal and its
 cursors simply continue; the next incarnation journals that it resumed after a seal.
@@ -739,14 +738,13 @@ are irreplaceable, and a node that deletes a column or row stops for the operato
 flowchart TD
     HISTORY_SANDBOX_LOCATOR_DROP[Blocked: drop the Sandbox locator from the history database]
     HISTORY_DATABASE_RENAME[Blocked: rename the sandbox_service database and role]
-    SANDBOX_DATABASE_RENAME[Blocked: name the sandbox_commands database for the Sandbox Service]
+    SANDBOX_DATABASE_RENAME[Candidate: name the sandbox_commands database for the Runner Gateway]
     APP_ELECTRIC_RETIRE[Blocked: remove Electric's access to the app database]
     PROTO_DIRECTORY[Candidate: protos under agentplane/proto, packages named by path]
     APP_PROJECTOR_RETIRE[Delete app projector]
     HISTORY_SERVICE_OWNERSHIP[History Service ownership]
     FOLLOW_PATH_RETIRE[Delete following, WatchSessions and holds] --> HISTORY_SANDBOX_LOCATOR_DROP
     HISTORY_SANDBOX_LOCATOR_DROP --> HISTORY_DATABASE_RENAME
-    HISTORY_DATABASE_RENAME --> SANDBOX_DATABASE_RENAME
     APP_PROJECTOR_RETIRE --> APP_ELECTRIC_RETIRE
 ```
 
@@ -768,12 +766,12 @@ Stops for the operator.
 and have the CNPG `Database` and managed role adopt the new names; recreating the database under a
 new name would copy the log. Verify the History Service and Electric reconnect with no data movement.
 
-### `SANDBOX_DATABASE_RENAME` — name the Sandbox Service's database for it
+### `SANDBOX_DATABASE_RENAME` — name the Runner Gateway's database for it
 
-**Blocked on the history database rename**, which frees the `sandbox_service` name. Rename
-`sandbox_commands` and its role and Secret to `sandbox_service` in place, as that node does, and
-point the Sandbox Service, its migration init container and `commands_database_url` at the new
-names.
+**Candidate.** `sandbox_commands` holds the Runner Gateway's Session registry and command
+admission; the Sandbox Service has no database. Rename it and its role and Secret for the gateway
+in place, as `HISTORY_DATABASE_RENAME` does, and point the Runner Gateway, its migration init
+container and `commands_database_url` at the new names.
 
 ### `APP_ELECTRIC_RETIRE` — Electric no longer reads the app database
 
@@ -804,12 +802,13 @@ that code. Upstream-gated tombstones with a verifiable condition in code (`keepi
 
 ```mermaid
 flowchart TD
-    APP_THREAD_VIEW_CLEANUP[Candidate: app Thread view shims]
+    APP_THREAD_VIEW_CLEANUP[Blocked: app Thread view shims]
     RUNNER_SESSION_RECORD_SHIMS[Blocked: drop runner session record compatibility]
     LEGACY_SANDBOX_RETIRE[Retire pre-dial-out Sandboxes]
     LEGACY_SANDBOX_RETIRE --> RUNNER_SESSION_RECORD_SHIMS
     HISTORY_FOLD_ALWAYS_ON[Blocked: the History Service always folds]
     APP_PROJECTOR_RETIRE[Delete app projector] --> HISTORY_FOLD_ALWAYS_ON
+    APP_PROJECTOR_RETIRE --> APP_THREAD_VIEW_CLEANUP
     ACTION_EXECUTION_AUDIT_TRIM[Decision: execution reconciliation columns]
     REFACTOR_COHERENCE_AUDIT[Blocked: whole-refactor coherence audit]
     FOLLOW_PATH_RETIRE[Delete following, WatchSessions and holds] --> REFACTOR_COHERENCE_AUDIT
@@ -829,9 +828,7 @@ both fields required, and have `from_spec` set `event_source_id` explicitly.
 
 ### `APP_THREAD_VIEW_CLEANUP` — app Thread view shims
 
-**Candidate; Thread fold move lane.** The fold's page size is `128` in both `fold_shadow.PAGE_SIZE`
-(read only by tests) and `projector.py`; keep one. **Blocked on app projector retirement:** the
-frontend reads `requested_value` with a `.default(null)` because the app's own fold (epoch `v1`)
+**Blocked on app projector retirement; Thread fold move lane.** The frontend reads `requested_value` with a `.default(null)` because the app's own fold (epoch `v1`)
 still holds Command rows written before the field existed, and `thread_reads: APP` serves them;
 once that switch is gone, only the History Service fold (rebuilt in `history-v1`, every row
 carrying the field) is read and the default can go. Code only.

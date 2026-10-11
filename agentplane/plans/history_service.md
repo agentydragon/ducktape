@@ -14,23 +14,25 @@ except where an edge says so.
 ```mermaid
 flowchart LR
     Browser --> App[Integration app: auth, browser API]
-    App -- commands --> SS[Sandbox Service]
+    App -- Sandboxes --> SS[Sandbox Service]
+    App -- Sessions, commands --> GW[Runner Gateway]
     App -- thread and raw reads --> HS[History Service]
     Electric -- logical replication --> HSDB[(history database)]
     App -- auth proxy --> Electric
-    Runner -- control stream: commands, receipts, lifecycle --> SS
+    Runner -- control stream: commands, receipts, lifecycle --> GW
     Runner -- pushes journal Events, acked by cursor --> HSI[History Service ingress]
     HSI --> HSDB
     HS --> HSDB
-    SS --> SSDB[(sandbox_commands database: command admission)]
+    GW --> GWDB[(sandbox_commands database: Sessions, command admission)]
 ```
 
-| Component       | Owns                                                                                                                                             | Does not own                       |
-| --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------- |
-| Runner          | harness driving, journal, journal-ordered command admission, pushing its journal to one ingress                                                  | durable history beyond its volume  |
-| Sandbox Service | provisioning, lifecycle, grants, egress, the runner control stream and its authentication, durable command submission, Session ↔ Sandbox routing | Events, stored history, folds      |
-| History Service | ingress, raw event log, delta settlement, thread fold and projection, read API, scoped history reads, the index of which Sessions exist          | Sandboxes, commands                |
-| App             | browser auth and API, app-only Thread metadata                                                                                                   | folds, raw history, runner routing |
+| Component       | Owns                                                                                                                                    | Does not own                       |
+| --------------- | --------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------- |
+| Runner          | harness driving, journal, journal-ordered command admission, pushing its journal to one ingress                                         | durable history beyond its volume  |
+| Sandbox Service | provisioning, lifecycle, grants, egress, teardown, the runner endpoints each Sandbox is created with                                    | Sessions, commands, Events         |
+| Runner Gateway  | the runner control stream and its authentication, the Session registry, durable command submission, Session ↔ Sandbox routing           | Sandboxes, Events, stored history  |
+| History Service | ingress, raw event log, delta settlement, thread fold and projection, read API, scoped history reads, the index of which Sessions exist | Sandboxes, commands                |
+| App             | browser auth and API, app-only Thread metadata                                                                                          | folds, raw history, runner routing |
 
 Properties the target keeps:
 
@@ -52,7 +54,7 @@ Properties the target keeps:
 - **The `sandbox_service` database holds Session history** (`session_history` and
   `session_event`, `history_service/storage/db.py`; the package has its own migrations).
   Handing it to the History Service moves the raw log with no copy. The Session registry and command
-  admission live in the Sandbox Service's own `sandbox_commands` database.
+  admission live in the Runner Gateway's own `sandbox_commands` database.
 - **The app still keeps its own copy of the fold** (`thread_entity`, `thread_evidence`,
   `thread_native_link`, `thread_payload_chunk`/`_manifest`, `thread_checkpoint`,
   `session_projection_lease`) with its projector and Electric source, though both environments
@@ -76,8 +78,6 @@ Properties the target keeps:
   come with `THREAD_READ_POLICY`, enforced in the History Service.
 - **Existing runners:** not upgraded in place. Sandboxes on images that cannot dial out are archived
   and deleted, and inbound access is retired once none is left.
-- **Command submission records** stay in the Sandbox Service for now.
+- **Command submission records** stay in the Runner Gateway for now.
 - **Cutover:** clean, like the dial-out cutover; Sandboxes from before it are archived the old way
   and deleted.
-- **Deployments:** the Sandbox Service and the Runner Gateway are separate services and images,
-  with separate ServiceAccounts.

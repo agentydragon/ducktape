@@ -132,7 +132,7 @@ Let a harness create native children. Its runner adapter interprets the native p
 and declares those children as logical sessions. The runner durably owns their identities,
 relationships, observations, and availability, and pushes each declared Session to its ingress like
 any other; the History Service indexes and serves them, and the app presents them as related
-Threads. The Sandbox Service takes no part in discovery: it routes commands and lifecycle requests,
+Threads. The Runner Gateway takes no part in discovery: it routes commands and lifecycle requests,
 and a read-only child receives neither.
 
 Scope is every native session the runner observes in its container, not only children of Sessions
@@ -290,7 +290,7 @@ not claims about the current API. The caller can be a UI backend, CLI, or anothe
    and authorized workload configuration. The service authorizes and provisions the sandbox, then
    returns a stable sandbox reference and a provisioning operation to follow. Allocated is not yet
    ready: wait for the runner to become reachable and required sandbox initialization to succeed.
-2. **Client → Sandbox Service: `StartSession`.** Supply that sandbox reference, a session-creation
+2. **Client → Runner Gateway: `StartSession`.** Supply that sandbox reference, a session-creation
    request ID, the harness/model/workspace/instructions spec, and optionally the initial input with
    its own command ID. The service authorizes access, resolves the runner, and forwards the request;
    it does not operate the harness itself.
@@ -307,7 +307,7 @@ not claims about the current API. The caller can be a UI backend, CLI, or anothe
 5. **Runner → ingress → client: declaration and events.** Commit the qualified native-ID
    binding and declare root `S` with no parent and the creation request as provenance; its
    announcement and journal go to the ingress. The client reads `S` from the History Service (or is
-   the ingress itself) and sends proven root commands through the Sandbox Service; it need not address a
+   the ingress itself) and sends proven root commands through the Runner Gateway; it need not address a
    Codex thread ID or Claude conversation ID. Startup acceptance, native existence, input
    confirmation, and work completion remain distinct facts.
 6. **If the harness delegates later:** native evidence declares child `S2`, with parent `S` and the
@@ -430,7 +430,7 @@ is still an open test. A runner must not synthesize missing child text from a pa
 Describe native message/control routes separately from exposed runner commands. Claude's proven
 parent-tool `SendMessage` route does not establish a direct driver-input API for children. Likewise,
 `TaskOutput` retrieving a result does not prove general history enumeration. A capability becoming
-visible does not bypass the History Service's read authorization or the Sandbox Service's command
+visible does not bypass the History Service's read authorization or the Runner Gateway's command
 authorization, or grant child callers another ServiceAccount's authority. Shared-process children are not isolation boundaries.
 
 On owner transport/process loss, mark previously active children unknown/lost as observations of
@@ -504,15 +504,15 @@ unresolved record, not guessed identity or automatic retry of old work.
 
 #### Root creation and today's service IDs
 
-`CreateSession` takes a client-minted UUID, which is the Session's public ID, its runner Session ID
+`RunnerGateway.CreateSession` takes a client-minted UUID, which is the Session's public ID, its runner Session ID
 and the ID it is announced under on the ingress. Sessions created before clients minted the UUID run
 under the runner ID `r-<uuid>`, until `SESSION_ID_MINT_RETIRE`. See
-[`proto/sandbox_service.proto`](../proto/sandbox_service.proto).
+[`proto/runner_gateway.proto`](../proto/runner_gateway.proto).
 
 Build on that rather than introducing another creation queue or replacing the API with the
 illustrative `StartSession` name above. The runner remains authoritative about existence and native
-bindings; the Sandbox Service keeps only the Session → Sandbox route for commands, and the History
-Service's index, not a Sandbox Service registry, records which Sessions exist. A harness-minted root
+bindings; the Runner Gateway keeps only the Session → Sandbox route for commands, and the History
+Service's index, not a Runner Gateway registry, records which Sessions exist. A harness-minted root
 ID would be bound to the client's UUID, not replace it, rather than treating today's preselected
 `Open.session_id` as proof of native creation.
 
