@@ -179,7 +179,7 @@ class ScriptedSandboxService:
         server.add_generic_rpc_handlers(
             [
                 grpc.method_handlers_generic_handler(
-                    "ducktape.agentplane.sandbox.v1.SandboxService",
+                    "ducktape.agentplane.runner_gateway.v1.RunnerGateway",
                     {
                         "WatchSessions": grpc.unary_stream_rpc_method_handler(
                             self.watch,
@@ -191,6 +191,11 @@ class ScriptedSandboxService:
                             request_deserializer=protocol_pb2.FollowSessionRequest.FromString,
                             response_serializer=protocol_pb2.FollowSessionResponse.SerializeToString,
                         ),
+                    },
+                ),
+                grpc.method_handlers_generic_handler(
+                    "ducktape.agentplane.sandbox.v1.SandboxService",
+                    {
                         "PlaceHold": grpc.unary_unary_rpc_method_handler(
                             self.place_hold,
                             request_deserializer=protocol_pb2.HoldRequest.FromString,
@@ -202,7 +207,7 @@ class ScriptedSandboxService:
                             response_serializer=protocol_pb2.Hold.SerializeToString,
                         ),
                     },
-                )
+                ),
             ]
         )
         port = server.add_insecure_port("127.0.0.1:0")
@@ -217,6 +222,7 @@ class ScriptedSandboxService:
 async def subscriber(target: str, token_file: Path) -> AsyncIterator[SandboxServiceClient]:
     client = SandboxServiceClient(
         target,
+        gateway_target=target,
         namespace=None,
         token_file=token_file,
         command_admission_timeout_s=None,

@@ -26,8 +26,8 @@ py_grpc_service_library(
 )
 
 proto_library(
-    name = "runner_channel_proto",
-    srcs = ["runner_channel.proto"],
+    name = "runner_control_proto",
+    srcs = ["runner_control.proto"],
     deps = [
         ":command_proto",
         ":event_log_proto",
@@ -36,14 +36,14 @@ proto_library(
 )
 
 py_proto_library_with_mypy_stubs(
-    name = "runner_channel_pb2",
-    deps = [":runner_channel_proto"],
+    name = "runner_control_pb2",
+    deps = [":runner_control_proto"],
 )
 
 py_grpc_service_library(
-    name = "runner_channel_pb2_grpc",
-    proto = ":runner_channel_proto",
-    py_proto = ":runner_channel_pb2",
+    name = "runner_control_pb2_grpc",
+    proto = ":runner_control_proto",
+    py_proto = ":runner_control_pb2",
 )
 
 proto_library(
@@ -135,6 +135,7 @@ py_grpc_service_library(
     py_proto = ":runner_pb2",
     visibility = [
         "//agentplane/runner:__subpackages__",
+        "//agentplane/runner_gateway:__subpackages__",
         "//agentplane/sandbox_service:__subpackages__",
     ],
 )

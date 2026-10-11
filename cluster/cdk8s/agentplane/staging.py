@@ -324,7 +324,7 @@ ENV = Environment(
     runner_grpc_channel_options=LARGE_EVENT_GRPC_CHANNEL_OPTIONS,
     history_writer=HistoryWriter.HISTORY_SERVICE,
     fold_shadow=True,
-    settle_deltas=False,
+    settle_deltas=True,
     thread_reads=ThreadReads.HISTORY_SERVICE,
     runner_control=True,
     notifications_github=GitHubAppProps(app_id=5188971, secret_name="agentplane-github-app"),

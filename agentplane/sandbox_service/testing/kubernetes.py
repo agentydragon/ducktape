@@ -3,33 +3,25 @@
 import asyncio
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import cast
 
 from kubernetes_asyncio import client as k8s_client
 
+from agentplane.runner_gateway.testing.grpc_service import service_client
+from agentplane.runner_gateway.testing.resources import build_resources
 from agentplane.sandbox_service.action_policy import ActionPolicyBindings
 from agentplane.sandbox_service.binding_storage import write_binding
-from agentplane.sandbox_service.channel_control import ChannelControl
-from agentplane.sandbox_service.channel_delivery import ChannelDelivery
 from agentplane.sandbox_service.client import SandboxServiceClient
-from agentplane.sandbox_service.commands.connections import ConnectionStore
-from agentplane.sandbox_service.commands.dispatch import DispatchStore
-from agentplane.sandbox_service.commands.store import SubmissionStore
-from agentplane.sandbox_service.connection_records import ConnectionLeases
 from agentplane.sandbox_service.destinations import DestinationResolver
 from agentplane.sandbox_service.egress import EgressInventory
-from agentplane.sandbox_service.grpc_api import Resources
 from agentplane.sandbox_service.inventory import SandboxInventory
 from agentplane.sandbox_service.kubernetes_bindings import KubernetesBindings
 from agentplane.sandbox_service.kubernetes_views import MANAGED_LABEL, SANDBOX_BINDING_ANNOTATION
-from agentplane.sandbox_service.protocol_pb2 import SandboxBinding
+from agentplane.sandbox_service.protocol_pb2 import SandboxBinding, SandboxDestination, ServiceAccount
 from agentplane.sandbox_service.provisioning import Provisioning
 from agentplane.sandbox_service.runner_endpoints import RunnerEndpoints
-from agentplane.sandbox_service.session_changes import SessionChanges
-from agentplane.sandbox_service.session_registry import SessionRegistry
-from agentplane.sandbox_service.testing.grpc_service import service_client
 from agentplane.sandbox_service.testing.history import service_database
 from agentplane.subjects import ServiceAccountRef
 from agentplane.testing.fake_apiserver import SANDBOX_NAMESPACE, FakeApiServer, TokenVerdict, fake_apiserver, pod_for
@@ -42,6 +34,10 @@ from util.kubernetes import CustomObjectsClient
 SANDBOX = "test-runner"
 SANDBOX_UID = "40e373bd-2742-43de-8d1c-1ef97c4d4801"
 ACCOUNT = "test-runner-account"
+OWNER = ServiceAccountRef(namespace=SANDBOX_NAMESPACE, name=ACCOUNT)
+DESTINATION = SandboxDestination(
+    owner=ServiceAccount(namespace=OWNER.namespace, name=OWNER.name), sandbox=SANDBOX, sandbox_uid=SANDBOX_UID
+)
 
 
 @dataclass
@@ -58,6 +54,14 @@ class Cluster:
         self.fake.objects[SANDBOXES_PLURAL][SANDBOX]["metadata"].setdefault("annotations", {})[
             SANDBOX_BINDING_ANNOTATION
         ] = write_binding(binding)
+
+    def build_principal_resolver(self, audience: str) -> WorkloadPrincipalResolver:
+        """Callers authenticate to this audience with tokens the fake TokenReview trusts."""
+        return WorkloadPrincipalResolver(
+            authentication=k8s_client.AuthenticationV1Api(self.api),
+            audience=audience,
+            allowed_service_account_namespaces={SANDBOX_NAMESPACE},
+        )
 
 
 @asynccontextmanager
@@ -129,29 +133,18 @@ async def authenticated_service(
         audiences=(audience,),
     )
     async with service_database(database_url) as engine:
-        resources = Resources(
-            runner_admission_ack_timeout_s=1,
-            principals=WorkloadPrincipalResolver(
-                authentication=k8s_client.AuthenticationV1Api(cluster.api),
-                audience=audience,
-                allowed_service_account_namespaces={SANDBOX_NAMESPACE},
+        resources = replace(
+            build_resources(
+                engine,
+                principals=cluster.build_principal_resolver(audience),
+                destinations=DestinationResolver(cluster.inventory, k8s_client.CoreV1Api(cluster.api), runner_port),
+                caller_accounts=frozenset({manager}),
+                platform_instructions=platform_instructions,
             ),
-            destinations=DestinationResolver(cluster.inventory, k8s_client.CoreV1Api(cluster.api), runner_port),
-            provisioning=cluster.provisioning,
-            caller_accounts=frozenset({manager}),
-            platform_instructions=platform_instructions,
             follow_lease_s=1,
-            sessions=SessionRegistry(engine),
-            submissions=SubmissionStore(engine),
-            delivery=ChannelDelivery(
-                engine.url,
-                dispatches=DispatchStore(engine),
-                connections=ConnectionStore(engine),
-                leases=ConnectionLeases(),
-                liveness_s=1,
-            ),
-            control=ChannelControl(ConnectionLeases()),
-            session_changes=SessionChanges(engine.url),
         )
-        async with resources.session_changes.listener.listen(), service_client(resources, token_file) as client:
+        async with (
+            resources.session_changes.listener.listen(),
+            service_client(resources, token_file, cluster.provisioning) as client,
+        ):
             yield client

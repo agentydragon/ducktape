@@ -7,6 +7,19 @@ There is no transparent runner `Attach` tunnel or caller-supplied runner URL.
 Production callers and service acceptance tests use this same gRPC interface; there is no separate
 HTTP service adapter.
 
+It is two gRPC services, each its own server and image:
+
+- `SandboxService` ([`protocol.proto`](protocol.proto)), served by the Sandbox Service: Sandbox
+  inventory and lifecycle, templates, egress grants and [retention holds](#retention-holds). One
+  replica reconciles, and it alone holds the RBAC, ServiceAccount and egress grant permissions.
+- `RunnerGateway` ([`../runner_gateway/protocol.proto`](../runner_gateway/protocol.proto)), served by
+  the [Runner Gateway](../runner_gateway/README.md): Sessions, commands and event following. Its
+  replicas hold the runner connections; a Sandbox's `<sandbox>-control` Service reaches the replica
+  holding its runner.
+
+`SandboxServiceClient` takes one target per service: `target` for the Sandbox Service and
+`gateway_target` for the Runner Gateway.
+
 ## Authentication and destinations
 
 Every RPC requires one `authorization: Bearer …` metadata value. The shared workload-principal
@@ -26,7 +39,7 @@ Resolution checks the stored Sandbox account, UID, operating mode, provisioning/
 ready Pod's identity and controller ownership before selecting its endpoint. Name reuse with a new UID
 is refused. A successor Pod under the same Sandbox may replace the endpoint. These are Kubernetes
 association checks, not cryptographic runner authentication: the inbound runner RPC relies on
-network isolation until the [runner channel](../docs/runner_channel.md) replaces it.
+network isolation until the [runner control stream](../docs/runner_control.md) replaces it.
 
 ## Inventory and explicit sandbox lifecycle
 
@@ -46,9 +59,9 @@ The same service-caller allowlist gates every RPC. Provisioning is always enable
   are asynchronous.
   After deletion, a new CR under the same name cannot prove whether an earlier Create succeeded.
   The service starts the template's `runner` container with the configured `runner_ingress` and
-  hub (`runner_control`) as `--ingress-target`/`--ingress-bearer` and
-  `--channel-target`/`--channel-bearer`, and grants each endpoint's `egress_policy` with the launch
-  policies ([Event ingress](../docs/runner_channel.md#event-ingress)); the request chooses neither.
+  Runner Gateway (`runner_control`) as `--ingress-target`/`--ingress-bearer` and
+  `--control-target`/`--control-bearer`, and grants each endpoint's `egress_policy` with the launch
+  policies ([Event ingress](../docs/runner_control.md#event-ingress)); the request chooses neither.
   A template whose runner already passes one of those flags is refused. No request may pick an
   endpoint's egress policy, at creation or through `GrantEgress`. An unset setting leaves that
   endpoint off.
@@ -79,7 +92,9 @@ namespaced annotations, not competing Sandbox status conditions.
 
 1. Runs the Sandbox again (`TEARDOWN_PHASE_SEALING`). From now on it refuses new Sessions and
    commands, and suspend and resume; its Sessions can still be listed and followed.
-2. Calls the runner's [`Seal`](../runner/SPEC.md#teardown-seal), which stops every harness and returns
+2. Asks the Runner Gateway to seal it (`RunnerGateway.SealSandbox`, through the Sandbox's control
+   Service; only the gateway's `sealer_accounts` may call it). The gateway calls the runner's
+   [`Seal`](../runner/SPEC.md#teardown-seal), which stops every harness and returns
    each Session's final cursor. A runner image without `Seal` has every running harness stopped
    instead, and each journal's head is taken as its final cursor; only this service's fence keeps
    new work out of it.
@@ -171,7 +186,7 @@ registered but are not followed until their binding is established by a verified
   receipt is found by replaying the journal after `follow`, so the caller names a cursor before the
   command's possible admission; a stopped harness is refused there before any replay. For a legacy
   caller-chosen runner ID nothing is recorded. Once a Sandbox's runner has agreed `commands` on the
-  [runner channel](../docs/runner_channel.md), the Sandbox receives its commands only over it,
+  [runner control stream](../docs/runner_control.md), the Sandbox receives its commands only over it,
   through the submission's dispatch attempt. Such a Sandbox takes public Session IDs only, and with no
   live runner connection the call is `UNAVAILABLE` rather than relayed. A runner refusal returns
   `FAILED_PRECONDITION` (`ALREADY_EXISTS` for a conflicting command, `INVALID_ARGUMENT` for an
@@ -293,7 +308,13 @@ is not a queue: nothing delivers it later, and the runner journal stays the rece
 ## Server configuration and cutover
 
 `//agentplane/sandbox_service:server` uses `AGENTPLANE_SANDBOX_SERVICE_*` environment variables or
-kebab-case CLI flags. Required settings are `sandbox_namespace` and
+kebab-case CLI flags, and `//agentplane/runner_gateway:server` uses `AGENTPLANE_RUNNER_GATEWAY_*`
+(`AGENTPLANE_RUNNER_GATEWAY_CONFIG_FILE` for its YAML file). The Sandbox Service reaches the gateway
+at `gateway_target`, and a Sandbox's holder replica through `control_target`, with the token in
+`gateway_token_file`; the gateway accepts that account for `SealSandbox` through `sealer_accounts`.
+Without `gateway_target`, one Sandbox Service process runs both services and seals in-process; it
+also answers the gateway's RPCs under the `ducktape.agentplane.sandbox.v1.SandboxService` name for
+clients from before the split. Required settings are `sandbox_namespace` and
 `caller_accounts` (nonempty). TokenReview namespaces are derived from that allowlist.
 `token_audience` defaults to `agentplane-sandbox-service`. Kubernetes access is in-cluster unless `kubeconfig` is supplied.
 
@@ -308,11 +329,11 @@ The client whole-follow safety deadline defaults to 960 seconds / 16 minutes; in
 still uses the short request timeout. Renewal repeats TokenReview and destination admission; it
 is not in-stream reauthentication or a lease derived from the token's exact expiry.
 Service-to-runner calls are unauthenticated plaintext behind a network policy; the
-[runner channel](../docs/runner_channel.md) replaces that route rather than securing it.
+[runner control stream](../docs/runner_control.md) replaces that route rather than securing it.
 
-`runner_channel_port` (default 8082) is a separate gRPC listener serving only the
-[runner channel](../docs/runner_channel.md), so a Sandbox's network fence can admit it alone. It
-accepts Pod tokens for `runner_channel_audience` (default `agentplane-runner-channel`), and
+`runner_control_port` (default 8082) is a separate gRPC listener serving only the
+[runner control stream](../docs/runner_control.md), so a Sandbox's network fence can admit it alone. It
+accepts Pod tokens for `runner_control_audience` (default `agentplane-runner-control`), and
 `commands_database_url` holds its connection rows next to command admission.
 
 Deployment must grant the service the appropriate Kubernetes/TokenReview/provisioning permissions,

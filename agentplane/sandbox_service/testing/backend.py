@@ -13,24 +13,17 @@ from typing import Any, cast
 from anyio.from_thread import start_blocking_portal
 from kubernetes_asyncio import client as k8s_client
 
+from agentplane.runner_gateway.testing.grpc_service import service
+from agentplane.runner_gateway.testing.resources import build_resources
 from agentplane.sandbox_service.action_policy import ActionPolicyBindings
-from agentplane.sandbox_service.channel_control import ChannelControl
-from agentplane.sandbox_service.channel_delivery import ChannelDelivery
 from agentplane.sandbox_service.client import SandboxServiceClient
-from agentplane.sandbox_service.commands.connections import ConnectionStore
-from agentplane.sandbox_service.commands.dispatch import DispatchStore
-from agentplane.sandbox_service.commands.store import SubmissionStore
-from agentplane.sandbox_service.connection_records import ConnectionLeases
 from agentplane.sandbox_service.destinations import DestinationResolver
 from agentplane.sandbox_service.egress import EgressInventory
-from agentplane.sandbox_service.grpc_api import Resources
 from agentplane.sandbox_service.inventory import SandboxInventory
 from agentplane.sandbox_service.kubernetes_bindings import KubernetesBindings
 from agentplane.sandbox_service.kubernetes_grants import KubernetesGrant
 from agentplane.sandbox_service.provisioning import Provisioning
 from agentplane.sandbox_service.runner_endpoints import RunnerEndpoints
-from agentplane.sandbox_service.session_changes import SessionChanges
-from agentplane.sandbox_service.session_registry import SessionRegistry
 from agentplane.sandbox_service.testing.fake_inventory import (
     NAMESPACE,
     FakeCoreV1Api,
@@ -39,7 +32,7 @@ from agentplane.sandbox_service.testing.fake_inventory import (
     sandbox,
 )
 from agentplane.sandbox_service.testing.fake_rbac import FakeRbac
-from agentplane.sandbox_service.testing.grpc_service import service
+from agentplane.sandbox_service.testing.grpc_service import connect
 from agentplane.sandbox_service.testing.history import register_attached_sessions, service_database
 from agentplane.subjects import ServiceAccountRef
 from agentplane.workload_auth.principal import POD_NAME_CLAIM, POD_UID_CLAIM, WorkloadPrincipalResolver
@@ -74,15 +67,7 @@ class Endpoint:
     reconcile: Callable[[], None]
 
     def client(self) -> SandboxServiceClient:
-        return SandboxServiceClient(
-            self.target,
-            namespace=NAMESPACE,
-            token_file=self.token_file,
-            command_admission_timeout_s=20,
-            request_timeout_s=20,
-            lifecycle_timeout_s=310,
-            follow_timeout_s=960,
-        )
+        return connect(self.target, self.token_file, namespace=NAMESPACE, command_admission_timeout_s=20)
 
 
 @contextmanager
@@ -105,8 +90,16 @@ def backend(
     inventory = SandboxInventory(namespace=NAMESPACE, custom_objects=custom, core_v1=core_api)
     bindings = KubernetesBindings(inventory, cast(k8s_client.RbacAuthorizationV1Api, rbac or FakeRbac()))
     with start_blocking_portal() as portal, portal.wrap_async_context_manager(service_database(database_url)) as engine:
-        resources = Resources(
-            runner_admission_ack_timeout_s=1,
+        provisioning = Provisioning(
+            inventory,
+            EgressInventory(namespace=NAMESPACE, custom_objects=custom, default_policies=default_policies),
+            ActionPolicyBindings(namespace=NAMESPACE, custom_objects=custom),
+            grants if grants is not None else {},
+            bindings,
+            RunnerEndpoints(control=None, ingress=None),
+        )
+        resources = build_resources(
+            engine,
             principals=WorkloadPrincipalResolver(
                 authentication=cast(k8s_client.AuthenticationV1Api, Authentication()),
                 audience=AUDIENCE,
@@ -115,25 +108,6 @@ def backend(
             destinations=DestinationResolver(inventory, core_api, runner_port),
             caller_accounts=frozenset({MANAGER}),
             platform_instructions=platform_instructions,
-            provisioning=Provisioning(
-                inventory,
-                EgressInventory(namespace=NAMESPACE, custom_objects=custom, default_policies=default_policies),
-                ActionPolicyBindings(namespace=NAMESPACE, custom_objects=custom),
-                grants if grants is not None else {},
-                bindings,
-                RunnerEndpoints(control=None, ingress=None),
-            ),
-            sessions=SessionRegistry(engine),
-            submissions=SubmissionStore(engine),
-            delivery=ChannelDelivery(
-                engine.url,
-                dispatches=DispatchStore(engine),
-                connections=ConnectionStore(engine),
-                leases=ConnectionLeases(),
-                liveness_s=1,
-            ),
-            control=ChannelControl(ConnectionLeases()),
-            session_changes=SessionChanges(engine.url),
         )
         with (
             (
@@ -142,9 +116,9 @@ def backend(
                 else nullcontext()
             ),
             portal.wrap_async_context_manager(resources.session_changes.listener.listen()),
-            portal.wrap_async_context_manager(service(resources)) as target,
+            portal.wrap_async_context_manager(service(resources, provisioning)) as target,
         ):
-            yield Endpoint(target, token_file, lambda: portal.call(resources.provisioning.reconcile_once))
+            yield Endpoint(target, token_file, lambda: portal.call(provisioning.reconcile_once))
 
 
 def seed_runner(

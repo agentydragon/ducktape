@@ -1,0 +1,80 @@
+load("//devinfra/python:defs.bzl", "py_library")
+
+package(
+    default_testonly = True,
+    default_visibility = ["//agentplane:__subpackages__"],
+)
+
+py_library(
+    name = "sessions",
+    srcs = ["sessions.py"],
+    deps = [
+        "//agentplane/runner_gateway:session_registry",
+        "//agentplane/runner_gateway/commands:db",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
+    name = "grpc_service",
+    srcs = ["grpc_service.py"],
+    deps = [
+        "//agentplane/runner_gateway:grpc_api",
+        "//agentplane/sandbox_service:client",
+        "//agentplane/sandbox_service:grpc_api",
+        "//agentplane/sandbox_service:provisioning",
+        "//agentplane/sandbox_service/testing:grpc_service",
+        "@pypi//grpcio",
+    ],
+)
+
+py_library(
+    name = "journal",
+    srcs = ["journal.py"],
+    deps = [
+        "//agentplane/proto:command_pb2",
+        "//agentplane/proto:event_log_pb2",
+        "//agentplane/proto:event_pb2",
+        "@pypi//protobuf",
+    ],
+)
+
+py_library(
+    name = "resources",
+    srcs = ["resources.py"],
+    deps = [
+        "//agentplane:subjects",
+        "//agentplane/runner_gateway:command_delivery",
+        "//agentplane/runner_gateway:connection_records",
+        "//agentplane/runner_gateway:grpc_api",
+        "//agentplane/runner_gateway:lifecycle_control",
+        "//agentplane/runner_gateway:session_changes",
+        "//agentplane/runner_gateway:session_registry",
+        "//agentplane/runner_gateway/commands:connections",
+        "//agentplane/runner_gateway/commands:dispatch",
+        "//agentplane/runner_gateway/commands:store",
+        "//agentplane/sandbox_service:destinations",
+        "//agentplane/workload_auth:principal",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
+    name = "runner_control",
+    srcs = ["runner_control.py"],
+    deps = [
+        "//agentplane/proto:runner_control_pb2",
+        "//agentplane/proto:runner_control_pb2_grpc",
+        "//agentplane/runner_gateway:command_delivery",
+        "//agentplane/runner_gateway:connection_records",
+        "//agentplane/runner_gateway:lifecycle_control",
+        "//agentplane/runner_gateway:runner_control",
+        "//agentplane/runner_gateway/commands:connections",
+        "//agentplane/sandbox_service/testing:grpc_service",
+        "//agentplane/sandbox_service/testing:kubernetes",
+        "//agentplane/testing:fake_apiserver",
+        "@pypi//grpcio",
+        "@pypi//kubernetes_asyncio",
+        "@pypi//protobuf",
+    ],
+)

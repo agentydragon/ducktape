@@ -37,7 +37,7 @@ The cdk8s `Environment.history_writer` turns `ingester.enabled` on.
 ## Runner ingress
 
 `ingress.py` serves `RunnerIngress.Push`, the
-[runner ingress contract](../docs/runner_channel.md#event-ingress): runners push each Session's
+[runner ingress contract](../docs/runner_control.md#event-ingress): runners push each Session's
 journal here, one call per Session. It runs as its own binary and image (`ingress_main.py`,
 `:ingress_image`), apart from the read API, since it takes untrusted input. Its settings name the
 token audience and the namespaces whose ServiceAccounts may push. Each environment deploys it as
@@ -59,7 +59,8 @@ the same transaction, when every frame matches an exact versioned template
 (`agentplane/native/delta_templates.py`) and the retained completion holds exactly their
 concatenation. Anything else in the span keeps every entry. The dropped cursors are recorded as a
 `SettledDeltas` with its ranges, and read pages report the settlements that cover or complete in
-them. The runner journal keeps every entry. Off by default.
+them; the fold and the app's raw-history readers treat a settled cursor as absent. The runner
+journal keeps every entry. Off by default; on in testing and staging.
 
 ## Thread fold
 

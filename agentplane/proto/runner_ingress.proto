@@ -1,6 +1,6 @@
 // The runner's push of its Sessions' journals to the one ingress its Sandbox names, served by the
 // History Service or by a client that keeps no history; contract in
-// agentplane/docs/runner_channel.md § Event ingress.
+// agentplane/docs/runner_control.md § Event ingress.
 syntax = "proto3";
 
 package agentplane.proto.runner_ingress;

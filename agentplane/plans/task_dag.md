@@ -316,7 +316,7 @@ does not grant history read, messaging, credentials or execution of another prin
 The [KubeVirt plan](kubevirt_environments.md) contains completed prototype evidence and the detailed
 provider design. Split implementation rather than making “VM support” one indivisible task. This is
 an unranked candidate lane, not authorization for local Bazel in current containers. The
-[runner channel](../docs/runner_channel.md) settles the dial-out contract VM control networking
+[runner control stream](../docs/runner_control.md) settles the dial-out contract VM control networking
 builds on; changing connection direction does not move command durability or remove the runner
 journal.
 
@@ -330,7 +330,6 @@ flowchart LR
     VM_PROCESS_ISOLATION[Blocked: harness/process resource boundary]
     VM_LIFECYCLE[Blocked: integrated lifecycle]
     PROTO_DIRECTORY[Protos under agentplane/proto] --> RUNNER_OUTBOUND_ROLLOUT
-    RUNNER_CONTROL_RENAME[Name the runner's control endpoint control] --> RUNNER_OUTBOUND_ROLLOUT
     RUNNER_OUTBOUND_ROLLOUT --> LEGACY_SANDBOX_RETIRE[Blocked: operator deletes every pre-cutover Sandbox]
     LEGACY_SANDBOX_RETIRE --> RUNNER_INBOUND_RETIRE[Blocked: retire inbound runner access]
     VM_PROVIDER --> VM_CONTROL_NETWORKING
@@ -361,7 +360,7 @@ it.
 **Blocked on the rollout; the operator's step.** The operator chose a clean cutover (2026-10-10
 PDT) and deletes every Sandbox created before it through `DeleteSandbox`, so each runner seals its
 journals and retention holds keep it until the History Service has archived them. Exit: no live
-Sandbox's runner lacks the channel.
+Sandbox's runner lacks the control stream.
 
 Pre-cutover Sandboxes are still archived the old way: the History Service follows them through the
 Sandbox Service and holds them until the seal, which is why `FOLLOW_PATH_RETIRE` waits for this
@@ -388,7 +387,7 @@ the relay as its foundation, is rewritten for the channel.
 ### `VM_CONTROL_NETWORKING` — integrate the reviewed connection direction
 
 **Blocked on the VM provider.** Wire
-VM control reachability/authentication to the chosen path. An outbound channel may remove guest
+VM control reachability/authentication to the chosen path. An outbound control stream may remove guest
 control-port exposure and endpoint discovery; retain the independently needed outbound API/credential
 proxy path. State which guest ports, endpoint discovery and network policies the chosen path
 replaces. Image packaging and process-isolation work need not wait for this decision. Verify the
@@ -578,7 +577,6 @@ flowchart TD
     APP_PROJECTOR_RETIRE[Candidate: delete app projector code]
     APP_PROJECTION_RETIRE[Blocked: drop app projection tables]
     HISTORY_SERVICE_OWNERSHIP[Capstone: History Service owns log and fold]
-    SESSION_EVENT_RETENTION_ENABLE[Candidate, needs operator go-ahead: enable delta settlement and re-measure]
     SESSION_EVENT_COMPACTION_PLAN[Decision: approve compaction of stored history]
     SESSION_EVENT_COMPACTION[Blocked: settle stored history]
     HISTORY_REPACK[Blocked: return freed space to the volume]
@@ -586,7 +584,6 @@ flowchart TD
     THREAD_READ_POLICY[Scoped archive reads]
     APP_PROJECTOR_RETIRE --> APP_PROJECTION_RETIRE
     APP_PROJECTION_RETIRE --> HISTORY_SERVICE_OWNERSHIP
-    SESSION_EVENT_RETENTION_ENABLE --> SESSION_EVENT_COMPACTION_PLAN
     SESSION_EVENT_COMPACTION_PLAN --> SESSION_EVENT_COMPACTION
     SESSION_EVENT_COMPACTION --> HISTORY_REPACK
     APP_PROJECTION_RETIRE --> HISTORY_REPACK
@@ -611,13 +608,6 @@ leases. The data is derived and rebuildable from the raw log.
 **Blocked on projection retirement.** The History Service is
 the only owner of the raw log and fold; the app is a facade over it. Each service's README states
 what unrelated agents can still do while it is down or rolling.
-
-### `SESSION_EVENT_RETENTION_ENABLE` — turn it on and measure
-
-**Candidate; needs the operator's go-ahead.** Settlement is built behind the
-History Service's `ingester.settle_deltas` ([History Service](../history_service/README.md#delta-settlement)),
-and its fold and the app's raw-history readers treat settled ranges as covered. Enable on testing,
-then staging, and re-measure `session_event` and evidence growth against the 2026-10-10 sample.
 
 ### `SESSION_EVENT_COMPACTION_PLAN` — approve settling stored history
 
@@ -748,7 +738,7 @@ are irreplaceable, and a node that deletes a column or row stops for the operato
 ```mermaid
 flowchart TD
     HISTORY_SANDBOX_LOCATOR_DROP[Blocked: drop the Sandbox locator from the history database]
-    HISTORY_MIGRATE_IMAGE_RENAME[Candidate: name the history migration image for the History Service]
+    HISTORY_MIGRATE_IMAGE_RENAME[Blocked: name the history migration image for the History Service]
     HISTORY_WRITER_SWITCH_RETIRE[Blocked: delete the history_writer switch]
     HISTORY_DATABASE_RENAME[Blocked: rename the sandbox_service database and role]
     SANDBOX_DATABASE_RENAME[Blocked: name the sandbox_commands database for the Sandbox Service]
@@ -774,12 +764,12 @@ Stops for the operator.
 
 ### `HISTORY_MIGRATE_IMAGE_RENAME` — the migration image says whose it is
 
-**Candidate.** `agentplane-sandbox-service-history-migrate` builds from
-`history_service/storage` and runs only as the History Service's init container. Publish it as
-`agentplane-history-migrate` beside the old name, point the History Service's manifests and Flux
-image automation at the new name once it has published, then delete the old `image_targets.json`
-entry and its `ImageRepository`/`ImagePolicy`. A manifest must not name the new image before it
-publishes.
+**Blocked on the first `agentplane-history-migrate` publish.** The migration image built from
+`history_service/storage` now publishes under both `agentplane-history-migrate` and the old
+`agentplane-sandbox-service-history-migrate`, and Flux watches both. Once the new name has a tag in
+the registry, point the History Service's init container (`cluster/cdk8s/agentplane/history_service.py`)
+and both image-pin Components at it, then delete the old `image_targets.json` entry and its
+`IMAGES` entry in `cluster/cdk8s/forgejo_registry/image_automation.py`.
 
 ### `HISTORY_WRITER_SWITCH_RETIRE` — one ingester, no switch
 
@@ -814,7 +804,7 @@ plain name if it carries a history-specific one.
 **Candidate; operator direction, 2026-10-10 and 2026-10-11 PDT.** Protobuf messages and gRPC
 services that cross components live in `agentplane/proto/<name>.proto` (google3's `proto/`
 convention), each with the package `agentplane.proto.<name>`: its path from the ducktape root, no
-version suffix. `runner.proto`, `runner_ingress.proto`, `runner_channel.proto` and the shared
+version suffix. `runner.proto`, `runner_ingress.proto`, `runner_control.proto` and the shared
 `command.proto`, `event.proto` and `event_log.proto` are there. Move the rest with their
 generated-code imports: `sandbox_service/protocol.proto` and `history_service/protocol.proto`. A
 gRPC service's full name includes its package, so each move is a clean cutover with no second name
@@ -901,9 +891,9 @@ with the last of them.
 
 Target and decisions: [History Service plan](history_service.md#target). The runner keeps dialing
 out, but to two endpoints its Sandbox names: an **ingress** it pushes its journal's Events to, and
-a **control hub** (the Sandbox Service) whose stream it holds for commands, receipts and lifecycle
+a **control endpoint** (the Runner Gateway) whose stream it holds for commands, receipts and lifecycle
 requests. The History Service is the ingress when history is kept. The contract is
-[runner channel § Event ingress](../docs/runner_channel.md#event-ingress); it replaces following the
+[runner control stream § Event ingress](../docs/runner_control.md#event-ingress); it replaces following the
 runner through the Sandbox Service. Section 7's store, fold and database
 nodes and section 9 are unaffected.
 
@@ -912,13 +902,12 @@ flowchart TD
     RUNNER_OUTBOUND_ROLLOUT[Every template dials out]
     LEGACY_SANDBOX_RETIRE[Retire pre-cutover Sandboxes]
     FOLLOW_PATH_RETIRE[Blocked: delete following, WatchSessions and holds]
-    SANDBOX_SERVICE_DEPLOYMENT_SPLIT[Candidate: controller and hub as separate Deployments]
+    SANDBOX_SERVICE_DEPLOYMENT_SPLIT[Candidate: Sandbox Service and Runner Gateway as separate services]
+    SANDBOX_SERVICE_DEPLOYMENT_SPLIT --> GATEWAY_CLIENT_SPLIT[Unscheduled: Session messages and client move to the gateway]
     AGENTPLANE_SANDBOX_RESOURCE[Decision: our own Sandbox resource]
     POD_INCARNATION[Decision: a Pod is the incarnation]
     SEAL_FINALIZER[Unscheduled: seal as a finalizer on every delete]
     COMMAND_RECORDS_RETIRE[Unscheduled: drop command submission records]
-    RUNNER_CONTROL_RENAME[Candidate: name the runner's control endpoint control]
-    RUNNER_CONTROL_RENAME --> RUNNER_OUTBOUND_ROLLOUT
     SESSION_ID_MINT_RETIRE[Blocked: clients always name the Session ID]
     LOOKUP_SESSION_RETIRE[Candidate: Session status from history, no Open reservation]
     RUNNER_OUTBOUND_ROLLOUT --> LEGACY_SANDBOX_RETIRE
@@ -931,7 +920,7 @@ flowchart TD
 ### `SESSION_ID_MINT_RETIRE` — clients always name the Session ID
 
 **Blocked on the deployed app sending `session_id` on every create, and on legacy Sandbox
-retirement.** `CreateSessionRequest.session_id` becomes required. The Sandbox Service stops
+retirement.** `CreateSessionRequest.session_id` becomes required. The Runner Gateway stops
 minting IDs and handing the runner an `r-` locator (the `CLEANUP` tombstones in `grpc_api.py`'s
 `CreateSession` and `session_registry.py`), and the app stops sending the ID again as
 `idempotency_key` for older Sandbox Services.
@@ -939,7 +928,7 @@ minting IDs and handing the runner an `r-` locator (the `CLEANUP` tombstones in 
 ### `LOOKUP_SESSION_RETIRE` — Session status from history, no Open reservation
 
 **Candidate.** After a reload the browser keeps only the Session ID, so it asks `LookupSession`
-whether the runner started it, and the Sandbox Service keeps an Open reservation (spec frozen per
+whether the runner started it, and the Runner Gateway keeps an Open reservation (spec frozen per
 key) for a retried create. The History Service's index records which Sessions a runner announced
 on ingress, so the browser reads that instead. `LookupSession`, its journal scan over the inbound
 API, the Open reservation and the Open key go.
@@ -965,22 +954,26 @@ With the holds goes teardown's path for a runner that pushes nothing: `SealRespo
 `TEARDOWN_PHASE_SEALED`, `SandboxInventory.record_seal` and `delete_if_released`. Every teardown
 then waits for every seal to be `flushed`.
 
-### `SANDBOX_SERVICE_DEPLOYMENT_SPLIT` — controller and hub as separate Deployments
+### `SANDBOX_SERVICE_DEPLOYMENT_SPLIT` — Sandbox Service and Runner Gateway as separate services
 
-**Candidate; operator, 2026-10-10 PDT.** The Sandbox Service stays one service and one API owner
-(lifecycle and control of Sandboxes), but runs as two Deployments with separate ServiceAccounts: a
-single active controller holding the RBAC, ServiceAccount and egress grant permissions, and the
-replicated runner-facing hub with only Lease and EndpointSlice writes, so a hub bug cannot reach
-the controller's credentials.
+**Candidate; operator, 2026-10-10 and 2026-10-11 PDT.** Two services with their own packages,
+servers, images and ServiceAccounts: the Sandbox Service (`SandboxService`), a single active
+reconciler holding the RBAC, ServiceAccount and egress grant permissions; and the replicated
+Runner Gateway (`RunnerGateway`, `agentplane/runner_gateway`), facing runners with only Lease and
+EndpointSlice writes, so a gateway bug cannot reach the Sandbox Service's credentials. Teardown
+seals through the gateway's `SealSandbox`. The code split lands first, with the Sandbox Service
+still serving both from one Deployment while `gateway_target` is unset; the manifest PR, after the
+`agentplane-runner-gateway` image publishes, deploys the gateway, points clients' `gateway_target`
+at it and deletes that combined mode (`CombinedSettings`, `serve_combined`, the gateway's legacy
+service name). The same PR, or its follow-up once that image serves, makes each client's gateway
+target setting required and deletes its fallback to the Sandbox Service target (app, History
+Service, notification service), so no caller equivocates between the two.
 
-### `RUNNER_CONTROL_RENAME` — name the runner's control endpoint "control"
+### `GATEWAY_CLIENT_SPLIT` — Session messages and client move to the gateway
 
-**Candidate; rides the clean cutover with `PROTO_DIRECTORY`.** Settings and `RunnerEndpoints` say
-`runner_control`, everything else says "channel": the runner's `--channel-target` and
-`--channel-bearer` flags, the `runner_channel_port` and `runner_channel_audience` settings, the
-`agentplane-runner-channel` audience, the `runner-channel` EgressPolicy, the `runner_channel`
-package and `docs/runner_channel.md`. Flags, audience and package cross the runner image boundary,
-so rename them all before `RUNNER_OUTBOUND_ROLLOUT`.
+**Unscheduled.** `RunnerGateway` still uses the Session and command messages in the Sandbox
+Service's proto package, and one `SandboxServiceClient` serves both services. Move those messages
+into the gateway's proto and give the gateway its own client.
 
 ### `AGENTPLANE_SANDBOX_RESOURCE` — our own Sandbox resource
 
@@ -989,7 +982,8 @@ egress, session defaults, bootstrap command, runner endpoints) and the desired r
 running or stopped), with incarnations in its status. Recommendation: back it with an upstream
 Sandbox first and keep owning Pod and PVCs directly as the fallback; clients key off our resource
 either way. Replaces the annotations on the upstream Sandbox and the imperative-only
-`CreateSandbox`.
+`CreateSandbox`. If the Sandbox Service becomes a real controller or operator for it, rename
+the service to say so (operator, 2026-10-11 PDT).
 
 ### `POD_INCARNATION` — a Pod is the incarnation
 
@@ -1023,7 +1017,7 @@ ReadWriteOnce, so the Job starts only once every container of the old Pod is gon
 ### `COMMAND_RECORDS_RETIRE` — drop command submission records
 
 **Unscheduled; operator, 2026-10-10 PDT: keep them for now.** The runner journal already holds
-every admission, idempotent on `command_id`. Retiring the hub's submission records would make it
+every admission, idempotent on `command_id`. Retiring the Runner Gateway's submission records would make it
 stateless, with `GetCommand`, `ListCommands` and the command status UI reading receipts from
 history instead.
 

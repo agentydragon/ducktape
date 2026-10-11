@@ -31,6 +31,7 @@ async def serve(settings: Settings) -> None:
     )
     sandboxes = SandboxServiceClient(
         settings.sandbox_service.target,
+        gateway_target=settings.sandbox_service.gateway_target or settings.sandbox_service.target,
         namespace=settings.namespace,
         token_file=settings.sandbox_service.token_file,
         request_timeout_s=settings.sandbox_service.request_timeout_s,

@@ -80,10 +80,10 @@ Thread-page projection. Their cross-layer contract is [Thread, runner, and harne
 - `StopRunnerSession` interrupts an active turn, stops the harness, reports `HarnessExited`, and
   ends the streams after every observer drains the terminal events. The session stays resumable.
 
-## Runner channel
+## Runner control stream
 
-- Given `--channel-target`, the runner also dials the Sandbox Service's
-  [runner channel](../docs/runner_channel.md) and keeps one `Connect` stream for as long as it runs,
+- Given `--control-target`, the runner also dials the Sandbox Service's
+  [runner control stream](../docs/runner_control.md) and keeps one `Connect` stream for as long as it runs,
   reconnecting on a fresh connection after any loss. It offers `commands` and `lifecycle`.
 - A delivered command is admitted exactly as an `Attach` command is, and answered from the journal:
   its `CommandAdmitted` entry, also when the command was already journaled with the same payload,
@@ -100,18 +100,18 @@ Thread-page projection. Their cross-layer contract is [Thread, runner, and harne
   command delivered before it is answered, and deliveries and requests after it wait for it. A lost
   connection drops the answers of requests in flight, never an operation halfway through.
 - The bearer it sends is a placeholder the egress proxy substitutes; the runner never holds the
-  channel token.
+  control token.
 
 ## Event ingress
 
 - Given `--ingress-target`, the runner pushes every session's journal to that
-  [ingress](../docs/runner_channel.md#event-ingress), one `Push` call per session until the ingress
+  [ingress](../docs/runner_control.md#event-ingress), one `Push` call per session until the ingress
   acknowledges the session's seal: at startup, when a session is created, and after a call is lost.
   Each call announces the session's `Attached` snapshot and sends the journal's entries after the
   ingress's first acknowledgement, replayed and then live, at most 1024 beyond the latest
   acknowledgement, then `Sealed` once the journal is sealed.
 - The runner records each session's latest acknowledgement on its state volume and deletes no
-  journal entry on it. A lost call retries with the channel's backoff; one the ingress refuses as
+  journal entry on it. A lost call retries with the control stream's backoff; one the ingress refuses as
   another writer's, or whose first acknowledgement is beyond the journal, retries at the maximum.
   Neither holds up another session, a command or a lifecycle request: the journal is the buffer.
 - The bearer it sends is a placeholder the egress proxy substitutes for the ingress's own audience.
@@ -339,7 +339,7 @@ hooks off, so the runner's own handling of it is read off the harnesses' schemas
 - Log compaction or retention; a session log grows for the session's lifetime.
 - Caller authentication and transport security on the inbound listener. It is plaintext (loopback
   by default; hosted deployments bind on the Pod network, where Cilium admits only the Sandbox
-  Service). The [runner channel](../docs/runner_channel.md), whose every connection is
+  Service). The [runner control stream](../docs/runner_control.md), whose every connection is
   authenticated, replaces this route rather than securing it.
 - Determining whether an incomplete tool call caused side effects outside the harness process group.
 - Duplicate-free recovery when native execution precedes durable runner evidence.

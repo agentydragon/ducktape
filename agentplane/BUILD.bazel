@@ -7,8 +7,10 @@ load("//devinfra/python:defs.bzl", "py_library")
 # gazelle:resolve py agentplane.proto.event_pb2 //agentplane/proto:event_pb2
 # gazelle:resolve py agentplane.proto.runner_pb2 //agentplane/proto:runner_pb2
 # gazelle:resolve py agentplane.proto.runner_pb2_grpc //agentplane/proto:runner_pb2_grpc
-# gazelle:resolve py agentplane.proto.runner_channel_pb2 //agentplane/proto:runner_channel_pb2
-# gazelle:resolve py agentplane.proto.runner_channel_pb2_grpc //agentplane/proto:runner_channel_pb2_grpc
+# gazelle:resolve py agentplane.runner_gateway.protocol_pb2 //agentplane/runner_gateway:protocol_pb2
+# gazelle:resolve py agentplane.runner_gateway.protocol_pb2_grpc //agentplane/runner_gateway:protocol_pb2_grpc
+# gazelle:resolve py agentplane.proto.runner_control_pb2 //agentplane/proto:runner_control_pb2
+# gazelle:resolve py agentplane.proto.runner_control_pb2_grpc //agentplane/proto:runner_control_pb2_grpc
 # gazelle:resolve py agentplane.proto.runner_ingress_pb2 //agentplane/proto:runner_ingress_pb2
 # gazelle:resolve py agentplane.proto.runner_ingress_pb2_grpc //agentplane/proto:runner_ingress_pb2_grpc
 
@@ -45,5 +47,16 @@ py_library(
     visibility = [
         "//agentplane:__subpackages__",
         "//cluster/validation:__pkg__",
+    ],
+)
+
+py_library(
+    name = "grpc_process",
+    srcs = ["grpc_process.py"],
+    deps = [
+        "@pypi//fastapi",
+        "@pypi//grpcio",
+        "@pypi//kubernetes_asyncio",
+        "@pypi//uvicorn",
     ],
 )

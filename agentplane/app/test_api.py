@@ -760,7 +760,7 @@ async def unanswered_command_service(
     server.add_generic_rpc_handlers(
         [
             grpc.method_handlers_generic_handler(
-                "ducktape.agentplane.sandbox.v1.SandboxService",
+                "ducktape.agentplane.runner_gateway.v1.RunnerGateway",
                 {
                     "SubmitCommand": grpc.unary_unary_rpc_method_handler(
                         submit,
@@ -775,6 +775,7 @@ async def unanswered_command_service(
     await asyncio.to_thread(token_file.write_text, "test-app-command-peer")
     service = SandboxServiceClient(
         f"127.0.0.1:{port}",
+        gateway_target=f"127.0.0.1:{port}",
         namespace="test",
         token_file=token_file,
         command_admission_timeout_s=1,

@@ -72,7 +72,7 @@ flowchart TB
     actions -->|execute| k8s
 
     runner --> sidecar -->|all outbound traffic| proxy
-    proxy -->|RunnerChannel Connect: commands, lifecycle| ss
+    proxy -->|RunnerControl Connect: commands, lifecycle| ss
     proxy -.->|RunnerIngress Push: Events| hi
     proxy -->|MCP| actions
     proxy -->|HTTP| notif
@@ -86,9 +86,9 @@ flowchart TB
   `Attach`. The History ingress replaces that path once runners are configured to push to it.
 - **Runner traffic is outbound.** Everything a runner sends goes through its Pod's egress
   sidecar to the egress proxy, which authenticates the Pod and substitutes credentials. Commands
-  reach staging's runners over the `RunnerChannel` stream they dial to the Sandbox Service, routed
+  reach staging's runners over the `RunnerControl` stream they dial to the Sandbox Service, routed
   per Sandbox by its `<sandbox>-control` Service and `<sandbox>-runner` Lease
-  ([runner channel](docs/runner_channel.md)). The testing environment still delivers commands
+  ([runner control stream](docs/runner_control.md)). The testing environment still delivers commands
   over `Attach`.
 - **Databases.** Each service owns a database on one shared CNPG cluster: `app`,
   `sandbox_commands` (Sandbox Service command admission), `sandbox_service` (Session history,
@@ -96,7 +96,7 @@ flowchart TB
   the history database is drawn. A second Electric over the `app` database still runs, but
   staging's app reads Threads through the history one.
 - **Runner Gateway split.** The Sandbox Service runs as one Deployment. Its runner-facing half
-  (Sessions, commands, the runner channel) is moving into a separate Runner Gateway service and
+  (Sessions, commands, the runner control stream) is moving into a separate Runner Gateway service and
   image; until that ships, both halves are the box above.
 
 Status, open work and design gates: [`plans/`](plans/README.md). Implemented contracts:

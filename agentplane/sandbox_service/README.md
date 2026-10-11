@@ -39,7 +39,9 @@ The deployment source transfers these authorities to the service.
 
 ## Session API
 
-The [authenticated gRPC API](API.md) has a standalone server entry point and Python client. It resolves
+The [authenticated gRPC API](API.md) has a standalone server entry point and Python client. This
+service serves Sandbox lifecycle and provisioning (`SandboxService`); the
+[Runner Gateway](../runner_gateway/README.md) serves Sessions and commands (`RunnerGateway`). It resolves
 SA-authorized, UID-pinned destinations inside the configured Kubernetes inventory, then
 inspects, commands, or follows existing runner sessions. Separately authorized explicit
 management routes list sessions, bootstrap, open, and resume using runner-retained specs.
@@ -69,5 +71,5 @@ positions) lives in the service's own `sandbox_commands` database beside command
 History Service's ingester creates a Session's history row from the registry's feed before its first append.
 
 Service-to-runner calls over the inbound control port are unauthenticated plaintext, fenced only by
-that network policy; the [runner channel](../docs/runner_channel.md) replaces the route rather than
+that network policy; the [runner control stream](../docs/runner_control.md) replaces the route rather than
 securing it. App-to-service calls already require a Pod-bound workload TokenReview.

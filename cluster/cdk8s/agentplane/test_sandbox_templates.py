@@ -176,7 +176,7 @@ def test_model_configs_are_generated_into_the_llm_ingress_configmap(
             assert "AGENTPLANE_MODEL_CONTEXT_WINDOWS" not in {entry["name"] for entry in runner["env"]}
 
 
-def test_runner_control_names_the_channel_its_egress_policy_admits(
+def test_runner_control_names_the_listener_its_egress_policy_admits(
     agentplane_manifests: dict[str, list[dict[str, Any]]],
 ) -> None:
     checked = 0
@@ -188,7 +188,7 @@ def test_runner_control_names_the_channel_its_egress_policy_admits(
         endpoint = RunnerEndpoint.model_validate(config["runner_control"])
         host, port = endpoint.target.rsplit(":", 1)
         service_ports = _by_name(docs, "Service", sandbox_service.NAME)["spec"]["ports"]
-        assert int(port) == one(entry for entry in service_ports if entry["name"] == "runner-channel")["port"]
+        assert int(port) == one(entry for entry in service_ports if entry["name"] == "runner-control")["port"]
         # The proxy matches the host on the exact string the policy names, and swaps the bearer only
         # where it is the placeholder of the credential that rule substitutes.
         rule = one(_by_name(docs, "EgressPolicy", endpoint.egress_policy)["spec"]["rules"])
@@ -199,7 +199,7 @@ def test_runner_control_names_the_channel_its_egress_policy_admits(
             if template["kind"] != "SandboxTemplate":
                 continue
             for container in template["spec"]["podTemplate"]["spec"]["containers"]:
-                assert not {"--channel-target", "--channel-bearer"} & set(container.get("args", [])), (
+                assert not {"--control-target", "--control-bearer"} & set(container.get("args", [])), (
                     namespace,
                     template["metadata"]["name"],
                 )

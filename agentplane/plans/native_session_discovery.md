@@ -1,7 +1,7 @@
 # Native session discovery: characterization gaps and deferred design
 
 Status: **implementation deferred.** Discovery builds on the
-[event ingress](../docs/runner_channel.md#event-ingress): the runner pushes every Session it
+[event ingress](../docs/runner_control.md#event-ingress): the runner pushes every Session it
 declares, roots and discovered children alike, and the History Service's index is the record of
 which exist. This holds the remaining characterization, proposed design and hardening candidates for
 [`NATIVE_SUBAGENT_THREADS`](task_freezer.md#native_subagent_threads--as-linked-agentplane-threads).

@@ -1,5 +1,5 @@
 """The runner's push of each Session's journal to its ingress, one `Push` call per Session over one
-HTTP/2 connection. Contract: `agentplane/docs/runner_channel.md` § Event ingress."""
+HTTP/2 connection. Contract: `agentplane/docs/runner_control.md` § Event ingress."""
 
 from __future__ import annotations
 
@@ -12,7 +12,7 @@ from tenacity import AsyncRetrying, RetryCallState, retry_if_exception_type, wai
 
 from agentplane.grpc_options import grpc_channel_option_kvps
 from agentplane.proto import runner_ingress_pb2, runner_ingress_pb2_grpc, runner_pb2
-from agentplane.runner.channel import ChannelTiming
+from agentplane.runner.control import ControlTiming
 from agentplane.runner.service import Runner, build_attached, follow_journal
 from agentplane.runner.session import Session
 from agentplane.runner.store import IngressAcknowledgement, SessionStore
@@ -43,7 +43,7 @@ class _Push:
         call: grpc.aio.StreamStreamCall[runner_ingress_pb2.PushFrame, runner_ingress_pb2.Acknowledgement],
         session: Session,
         store: SessionStore,
-        timing: ChannelTiming,
+        timing: ControlTiming,
     ) -> None:
         self.call = call
         self.session = session
@@ -160,7 +160,7 @@ class IngressPusher:
         *,
         target: str,
         bearer: str,
-        timing: ChannelTiming,
+        timing: ControlTiming,
         channel_options: dict[str, int | str] | None = None,
     ) -> None:
         self.runner = runner
@@ -185,7 +185,7 @@ class IngressPusher:
         logger.log(level, "session %s: push to the ingress lost: %s", session_id, error)
 
     async def run(self) -> None:
-        # The ingress's own reconnects follow the channel's backoff, not gRPC's default 120 s cap.
+        # The ingress's own reconnects follow the control stream's backoff, not gRPC's default 120 s cap.
         channel = grpc.aio.insecure_channel(
             self.target,
             options=grpc_channel_option_kvps(
