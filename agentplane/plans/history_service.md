@@ -20,8 +20,7 @@ flowchart LR
     Electric -- logical replication --> HSDB[(history database)]
     App -- auth proxy --> Electric
     Runner -- control stream: commands, receipts, lifecycle --> GW
-    Runner -- pushes journal Events, acked by cursor --> HSI[History Service ingress]
-    HSI --> HSDB
+    Runner -- pushes journal Events, acked by cursor --> HS
     HS --> HSDB
     GW --> GWDB[(sandbox_commands database: Sessions, command admission)]
 ```
@@ -41,6 +40,9 @@ Properties the target keeps:
   `Seal` always have a path. A historyless client implements the ingress itself and sends commands
   through the gateway. The History Service knows Sessions from what it is pushed, not Sandboxes, and
   binds each Session to the workload identity of its first writer.
+- **One History Service** (operator, 2026-10-11 PDT): one binary and Deployment takes what runners
+  push and serves reads from the same database. The ingress keeps a listener of its own, so the
+  network fence admits Sandboxes to it and nothing else.
 - **History Service outage:** runners keep running and commands keep flowing. The runner journal
   is the buffer, so an outage is unacknowledged lag; teardown waits until the ingress has
   acknowledged through every seal cursor.

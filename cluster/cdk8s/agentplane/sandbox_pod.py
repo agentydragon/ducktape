@@ -40,7 +40,7 @@ from constructs import Construct
 
 from agentplane.egress import sidecar
 from agentplane.egress.resources import placeholder_of
-from agentplane.history_service.ingress_settings import RUNNER_INGRESS_AUDIENCE
+from agentplane.history_service.settings import RUNNER_INGRESS_AUDIENCE
 from agentplane.runner_gateway.settings import RUNNER_CONTROL_AUDIENCE
 from agentplane.workload_auth.audience import WORKLOAD_TOKEN_AUDIENCE
 from cluster.cdk8s import node_scheduling

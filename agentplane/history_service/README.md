@@ -36,12 +36,12 @@ feed failures the ingester dials a fresh Sandbox Service channel.
 
 `ingress.py` serves `RunnerIngress.Push`, the
 [runner ingress contract](../docs/runner_control.md#event-ingress): runners push each Session's
-journal here, one call per Session. It runs as its own binary and image (`ingress_main.py`,
-`:ingress_image`), apart from the read API, since it takes untrusted input. Its settings name the
-token audience and the namespaces whose ServiceAccounts may push. Each environment deploys it as
-`agentplane-history-ingress` (`cluster/cdk8s/agentplane/history_ingress.py`), reachable from a
-Sandbox only through the egress proxy under the `runner-ingress` policy, which substitutes the
-Pod's token for the `agentplane-runner-ingress` audience.
+journal here, one call per Session. `main.py` serves it on its own listener (`ingress.port`), apart
+from the read API, since it takes untrusted input: the network fence admits the egress proxy to that
+port alone. Its settings name the token audience and the namespaces whose ServiceAccounts may push.
+A Sandbox reaches it only through the egress proxy under the `runner-ingress` policy
+(`cluster/cdk8s/agentplane/history_service.py`), which substitutes the Pod's token for the
+`agentplane-runner-ingress` audience.
 
 The first accepted announcement binds the Session to the pushing ServiceAccount (namespace, name,
 UID) in `session_history`; other accounts get `PERMISSION_DENIED`. Entries commit through the same

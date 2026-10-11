@@ -14,6 +14,7 @@ from pydantic_settings import BaseSettings, PydanticBaseSettingsSource, Settings
 from agentplane.subjects import ServiceAccountRef
 
 CONFIG_FILE_ENV = "AGENTPLANE_HISTORY_SERVICE_CONFIG_FILE"
+RUNNER_INGRESS_AUDIENCE = "agentplane-runner-ingress"
 
 
 class SandboxServiceSettings(BaseModel):
@@ -58,6 +59,27 @@ class IngesterSettings(BaseModel):
     )
 
 
+class IngressSettings(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    token_audience: str = Field(
+        min_length=1, description="The audience runners' projected tokens carry for the ingress."
+    )
+    writer_namespaces: frozenset[str] = Field(
+        min_length=1, description="Namespaces whose ServiceAccounts may push: the ones Sandboxes run in."
+    )
+    port: int = Field(
+        default=8081,
+        ge=1,
+        le=65535,
+        description="The ingress's own listener, so the network fence admits Sandboxes to it and nothing else.",
+    )
+    settle_deltas: bool = Field(
+        default=False,
+        description="Remove an item's streamed delta entries from stored history once its retained "
+        "completion provably holds their concatenation.",
+    )
+
+
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
         env_prefix="AGENTPLANE_HISTORY_SERVICE_", cli_parse_args=True, cli_kebab_case=True
@@ -72,6 +94,7 @@ class Settings(BaseSettings):
     kubeconfig: Path | None = None
     sandbox_service: SandboxServiceSettings
     ingester: IngesterSettings = Field(default_factory=IngesterSettings)
+    ingress: IngressSettings
     # Folds every retained Session from its raw log; off until the operator starts the rebuild.
     fold_shadow: bool = False
     fold_concurrency: int = Field(default=4, ge=1, le=64)

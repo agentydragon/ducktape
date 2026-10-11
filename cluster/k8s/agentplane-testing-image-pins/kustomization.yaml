@@ -42,5 +42,3 @@ images:
     newTag: devel-20261011190632-8ebdc77 # {"$imagepolicy": "flux-system:agentplane-history-service:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-history-compact
     newTag: devel-20261011190633-8ebdc77 # {"$imagepolicy": "flux-system:agentplane-history-compact:tag"}
-  - name: git.allegedly.works/ducktape-ci/agentplane-history-ingress
-    newTag: devel-20261011190631-8ebdc77 # {"$imagepolicy": "flux-system:agentplane-history-ingress:tag"}

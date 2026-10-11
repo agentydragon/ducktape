@@ -114,7 +114,7 @@ message Heartbeat {}
 Status: **accepted design (operator, 2026-10-10 PDT); deployed.** The runner pushes
 when started with `--ingress-target` (`runner/ingress.py`), which the Sandbox Service passes to new
 runners from its `runner_ingress` setting, and reports `flushed` from what it recorded. The History
-Service serves the ingress (`history_service/ingress.py`) as its own Deployment. It also still follows
+Service serves the ingress (`history_service/ingress.py`) on a listener of its own. It also still follows
 every Session over `Attach`, the only path for a Sandbox created before runners pushed; the two
 write the same log, which accepts exact replays.
 

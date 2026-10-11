@@ -18,7 +18,7 @@ from more_itertools import one
 from agentplane.action_service.sandbox.binding import DESCRIPTION_ANNOTATION, SandboxExecutorBinding
 from agentplane.egress.resources import placeholder_of
 from agentplane.sandbox_service.runner_endpoints import RunnerEndpoint
-from cluster.cdk8s.agentplane import history_ingress, notifications, runner_gateway, sandbox_service
+from cluster.cdk8s.agentplane import history_service, notifications, runner_gateway, sandbox_service
 from cluster.cdk8s.agentplane.conftest import NAMESPACES
 
 
@@ -180,7 +180,7 @@ def test_model_configs_are_generated_into_the_llm_ingress_configmap(
     ("setting", "service", "port_name", "flags"),
     [
         ("runner_control", runner_gateway.NAME, "runner-control", {"--control-target", "--control-bearer"}),
-        ("runner_ingress", history_ingress.NAME, "grpc", {"--ingress-target", "--ingress-bearer"}),
+        ("runner_ingress", history_service.NAME, "runner-ingress", {"--ingress-target", "--ingress-bearer"}),
     ],
 )
 @pytest.mark.parametrize("namespace", NAMESPACES)

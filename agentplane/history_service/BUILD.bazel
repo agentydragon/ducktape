@@ -398,37 +398,6 @@ py_library(
     ],
 )
 
-py_library(
-    name = "ingress_main",
-    srcs = ["ingress_main.py"],
-    deps = [
-        ":ingress",
-        ":ingress_settings",
-        "//agentplane:grpc_process",
-        "//agentplane:grpc_serving",
-        "//agentplane/history_service/storage:store",
-        "//agentplane/workload_auth:principal",
-        "@pypi//asyncpg",
-        "@pypi//grpcio",
-        "@pypi//kubernetes_asyncio",
-        "@pypi//sqlalchemy",
-    ],
-)
-
-py_library(
-    name = "ingress_settings",
-    srcs = ["ingress_settings.py"],
-    visibility = [
-        "//agentplane/history_service:__subpackages__",
-        "//cluster/cdk8s/agentplane:__pkg__",
-    ],
-    deps = [
-        "@pypi//pydantic",
-        "@pypi//pydantic_settings",
-        "@pypi//pyyaml",
-    ],
-)
-
 py_test(
     name = "test_ingress",
     size = "medium",
@@ -464,6 +433,7 @@ py_library(
         ":fold_shadow",
         ":grpc_api",
         ":ingester",
+        ":ingress",
         ":settings",
         ":summaries",
         ":summary_changes",
@@ -538,37 +508,6 @@ oci_image(
     labels = {"org.opencontainers.image.source": "https://github.com/agentydragon/ducktape"},
     tars = [
         ":server_layers",
-        "//third_party/debian_slim:cacerts",
-    ],
-    user = "1000:1000",
-    visibility = ["//visibility:public"],
-)
-
-aspect_py_binary(
-    name = "ingress_image_bin",
-    main = "ingress_main.py",
-    deps = [":ingress_main"],
-)
-
-py_image_layer(
-    name = "ingress_layers",
-    binary = ":ingress_image_bin",
-    group = "1000",
-    owner = "1000",
-)
-
-oci_image(
-    name = "ingress_image",
-    base = "@debian_trixie_slim_linux_amd64",
-    entrypoint = py_image_entrypoint("ingress_image_bin"),
-    # Kubernetes TLS verification uses the system trust store.
-    env = py_image_env(
-        binary_name = "ingress_image_bin",
-        extra_env = {"SSL_CERT_FILE": "/etc/ssl/certs/ca-certificates.crt"},
-    ),
-    labels = {"org.opencontainers.image.source": "https://github.com/agentydragon/ducktape"},
-    tars = [
-        ":ingress_layers",
         "//third_party/debian_slim:cacerts",
     ],
     user = "1000:1000",

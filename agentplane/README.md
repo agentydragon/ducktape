@@ -40,7 +40,6 @@ flowchart TB
         ss[Sandbox Service]
         gw[Runner Gateway]
         hs[History Service]
-        hi[History ingress]
         notif[Notification service]
         actions[Action Service]
     end
@@ -75,7 +74,6 @@ flowchart TB
     hs -->|WatchSessions, FollowSession| gw
     hs -->|retention holds| ss
     hs -->|ingest, fold, read| hist_db
-    hi -->|append| hist_db
     notif -->|Sandbox lookups| ss
     notif -->|commands| gw
     notif -->|command receipts| hs
@@ -89,7 +87,7 @@ flowchart TB
 
     runner --> sidecar -->|all outbound traffic| proxy
     proxy -->|RunnerControl Connect: commands, lifecycle| gw
-    proxy -->|RunnerIngress Push: Events| hi
+    proxy -->|RunnerIngress Push: Events| hs
     proxy -->|MCP| actions
     proxy -->|HTTP| notif
     proxy -->|model calls| llm --> outside
@@ -98,7 +96,7 @@ flowchart TB
 
 - **Sessions and Threads.** A Session is a runner's raw Event stream; a Thread is its
   conversation view, folded by the History Service. Every new Sandbox's runner pushes its Events to
-  the History ingress. The History Service also follows each Session through the Runner Gateway,
+  the History Service. The History Service also follows each Session through the Runner Gateway,
   which reads it from the runner over `Attach`; for a Sandbox created before runners pushed, that
   is the only path, and both write the same log.
 - **Runner traffic is outbound.** Everything a runner sends goes through its Pod's egress
@@ -108,7 +106,7 @@ flowchart TB
   ([runner control stream](docs/runner_control.md)).
 - **Databases.** Each service owns a database on one shared CNPG cluster: `app`,
   `sandbox_commands` (the Runner Gateway's Session registry and command admission),
-  `sandbox_service` (Session history, written by the History Service and its ingress), `actions`,
+  `sandbox_service` (Session history, written by the History Service), `actions`,
   `egress` and `notifications`; the Sandbox Service has none. Only the history database is drawn.
   A second Electric over the `app` database still runs, but the app reads Threads through the
   History Service and its Electric.
