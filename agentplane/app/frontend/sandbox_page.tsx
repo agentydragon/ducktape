@@ -25,9 +25,9 @@ import { fromJson, type JsonValue } from "@bufbuild/protobuf";
 import {
   api,
   displayableError,
+  findThread,
   getThread,
   listSessions,
-  lookupOpen,
   modelsForHarness,
   harnessOptions,
   openSession,
@@ -461,19 +461,15 @@ export function SandboxPage({
     setCreatingSession(true);
     setError(null);
     try {
-      const result = await lookupOpen(name, pendingOpen.sessionId);
-      if (result.status === "ready" && result.session_id) {
-        await openThread(result.session_id, pendingOpen.sessionId);
-      } else if (result.status === "unconfirmed") {
-        setError(
-          "Open was reserved but the runner has not confirmed it. Check later, or explicitly discard it to start fresh; this attempt will not be retried."
-        );
-      } else if (result.status === "failed") {
-        setError(
-          "The runner could not start this session. Discard this Open attempt before starting fresh; it will not be retried."
-        );
+      // The Thread's ID is the Session ID the attempt named; it appears once the runner reports the
+      // Session, including a launch that failed.
+      const { sessionId } = pendingOpen;
+      if (threadBySession[sessionId] || (await findThread(sessionId))) {
+        await openThread(sessionId, sessionId);
       } else {
-        setError("No Open reservation exists for this attempt. You may discard it and start fresh.");
+        setError(
+          "The runner has not reported this session. Check later, or discard this attempt to start fresh; it will not be retried."
+        );
       }
     } catch (reason: unknown) {
       setError(displayableError(reason));

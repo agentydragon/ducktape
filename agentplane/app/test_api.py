@@ -626,56 +626,6 @@ def test_create_session_answers_the_service_id(
     assert client.post(path, json={"session_id": "not-a-uuid", "spec": {}}).status_code == 422
 
 
-async def test_open_lookup_reconciles_only_runner_confirmed_sessions(
-    client: TestClient, bridge: RunnerBridge, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """No reservation/runner confirmation means no Thread; a confirmed one repairs lost app writes."""
-    # Keep DB work on the async fixture's loop, not TestClient's portal thread.
-    async with httpx.AsyncClient(
-        transport=httpx.ASGITransport(app=client.app), base_url="http://testserver", headers=AGENT_AUTH
-    ) as http:
-        public_id = str(uuid4())
-        summary = runner_pb2.SessionSummary(
-            session_id=public_id,
-            spec=runner_pb2.SessionSpec(harness=runner_pb2.HARNESS_CLAUDE, cwd="/w", model="m", instructions="secret"),
-        )
-        result = sandbox_service_pb2.LookupSessionResponse()
-        calls: list[str] = []
-
-        async def lookup(*, idempotency_key: str) -> sandbox_service_pb2.LookupSessionResponse:
-            calls.append(idempotency_key)
-            return result
-
-        monkeypatch.setattr(bridge._runners, "client", lambda name: SimpleNamespace(lookup=lookup))
-        path = "/sandboxes/live/sessions/open"
-        requested = str(uuid4())
-        absent = await http.get(path, params={"session_id": requested})
-        assert absent.status_code == 200
-        assert absent.json() == {"status": "absent", "session_id": None}
-        assert (await http.get(f"/threads/{public_id}")).status_code == 404
-
-        result.session_id = public_id
-        unconfirmed = await http.get(path, params={"session_id": requested})
-        assert unconfirmed.json() == {"status": "unconfirmed", "session_id": public_id}
-        assert (await http.get(f"/threads/{public_id}")).status_code == 404
-
-        result.failed = True
-        failed = await http.get(path, params={"session_id": requested})
-        assert failed.json() == {"status": "failed", "session_id": public_id}
-        assert (await http.get(f"/threads/{public_id}")).status_code == 404
-
-        result.failed = False
-        result.summary.CopyFrom(summary)
-        for _ in range(2):  # Reconcile after a lost app mapping, then repeat idempotently.
-            ready = await http.get(path, params={"session_id": requested})
-            assert ready.status_code == 200, ready.text
-            assert ready.json() == {"status": "ready", "session_id": public_id}
-            assert "secret" not in ready.text
-        assert (await http.get(f"/threads/{public_id}")).json()["sandbox"] == "live"
-        assert calls == [requested] * 5
-        assert (await http.get(path, params={"session_id": "not-a-uuid"})).status_code == 422
-
-
 def test_a_runner_that_has_not_connected_is_a_503(
     tmp_path: Path,
     custom_objects: FakeCustomObjectsApi,

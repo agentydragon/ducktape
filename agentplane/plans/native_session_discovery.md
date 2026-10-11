@@ -521,7 +521,7 @@ The concrete root sequences are:
 2. Client calls `CreateSession` with a fresh UUID, harness spec and override mask. Service
    passes the UUID and launch intent to the runner, which accepts/reserves a logical root and
    execution owner. A retry carries the same UUID; whether the runner started it is read from the
-   History Service's index (`LOOKUP_SESSION_RETIRE`). An announcement is not launch success.
+   History Service's index. An announcement is not launch success.
 3. **Codex:** initialize the app-server; send `thread/start`; commit the returned thread ID as
    the native binding before reporting root readiness. No client-selected native thread ID is
    required. First user input subsequently uses `turn/start` with its own command ID.

@@ -285,8 +285,7 @@ Sandbox, hence `-control`.
 ## Lifecycle operations
 
 Status: **built.** The Runner Gateway sends every Session call and teardown's seal over the control
-stream (`runner_gateway/lifecycle_control.py`); `LookupSession` reads the first launch outcome each
-Session's summary carries in the runner's listing. A runner refuses `OpenSession` for a Session it created but could not
+stream (`runner_gateway/lifecycle_control.py`). A runner refuses `OpenSession` for a Session it created but could not
 start with `FAILED`; asked again, it confirms the stopped Session, so `CreateSession` follows an
 `OpenSession` that confirms a stopped harness with `ResumeSession`. The App and the Notification
 Service reach the holder through the control Service (`control_target`); a client without it calls
@@ -339,7 +338,6 @@ calling RPC's deadline, like dispatch attempts, and a reconnect replays none of 
 | `ListSessions` RPC    | `ListSessions`                                        |
 | `CreateSession`       | `Initialize`, then `OpenSession` with the client's ID |
 | `ResumeSession`       | `ResumeSession`                                       |
-| `LookupSession`       | `ListSessions`, reading each first launch outcome     |
 | `Teardown` sealing    | `Seal`, repeated until every Session is flushed       |
 | `SubmitCommand`       | `DeliverCommand`                                      |
 
