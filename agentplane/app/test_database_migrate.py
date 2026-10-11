@@ -57,6 +57,8 @@ def _restore_launch_copies(connection: Connection) -> None:
 def _restore_app_projection(connection: Connection) -> None:
     """The fold tables that migrations before `0032_app_projection_drop` expect."""
     fold_models.Base.metadata.create_all(connection)
+    # `0030_thread_resume` copies the app's resume marker, which the fold model no longer has.
+    connection.execute(text("ALTER TABLE thread_history_summary ADD COLUMN resumed_after_cursor bigint"))
 
 
 def test_raw_history_retirement_preserves_current_state(db_url: str) -> None:
