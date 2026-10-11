@@ -12107,5 +12107,1324 @@
       "changed_section_rendered": true,
       "horizontal_table_overflow_contained": true
     }
+  },
+  "props_image_followup": {
+    "pr": 9984,
+    "source_commit": "7726059851ac1fa9dc23dece1e27d01f92dc54bd",
+    "remote_metadata_commit": "3296057da29a24be4eeaf9c79b0f489dd5f862b0",
+    "source_note": "bbr mirrors local source and experiment patches over remote metadata commit",
+    "experiments": {
+      "profile": {
+        "invocation": "6d8a1d04-ac2a-406f-86f8-ee08c9cf28b1",
+        "targets": {
+          "props_agents_critic_dev_optimize_test_e2e__otel_spans.jsonl": [
+            {
+              "name": "docker_load",
+              "seconds": 0.476524
+            },
+            {
+              "name": "load_oci_image(testcontainers/ryuk:0.14.0)",
+              "seconds": 0.584006
+            },
+            {
+              "name": "docker_load",
+              "seconds": 18.963347
+            },
+            {
+              "name": "load_oci_image(postgres:18)",
+              "seconds": 19.024602
+            },
+            {
+              "name": "postgres_container fixture",
+              "seconds": 22.211509
+            },
+            {
+              "name": "upgrade_database",
+              "seconds": 0.367488
+            },
+            {
+              "name": "recreate_database",
+              "seconds": 0.429444
+            },
+            {
+              "name": "configure container",
+              "seconds": 0.015322
+            },
+            {
+              "name": "container start + wait",
+              "seconds": 4.156816
+            },
+            {
+              "name": "e2e_registry startup",
+              "seconds": 4.172698
+            },
+            {
+              "name": "delete registry manifests",
+              "seconds": 0.26345
+            },
+            {
+              "name": "push image critic_dev_optimize",
+              "seconds": 5.824222
+            },
+            {
+              "name": "push image critic",
+              "seconds": 6.507646
+            },
+            {
+              "name": "push image grader",
+              "seconds": 6.650221
+            },
+            {
+              "name": "docker ensure_image",
+              "seconds": 24.094311
+            },
+            {
+              "name": "docker run_container",
+              "seconds": 1.061879
+            },
+            {
+              "name": "docker ensure_image",
+              "seconds": 27.584176
+            },
+            {
+              "name": "docker run_container",
+              "seconds": 1.266779
+            },
+            {
+              "name": "docker ensure_image",
+              "seconds": 18.928907
+            },
+            {
+              "name": "docker run_container",
+              "seconds": 1.114561
+            },
+            {
+              "name": "docker wait",
+              "seconds": 6.46544
+            },
+            {
+              "name": "docker kill_and_delete",
+              "seconds": 0.134071
+            },
+            {
+              "name": "docker wait",
+              "seconds": 40.765544
+            },
+            {
+              "name": "docker kill_and_delete",
+              "seconds": 0.111805
+            },
+            {
+              "name": "docker wait",
+              "seconds": 69.829163
+            },
+            {
+              "name": "docker kill_and_delete",
+              "seconds": 0.326559
+            },
+            {
+              "name": "test: props/agents/critic_dev/optimize/test_e2e.py::test_optimizer_orchestrates_critic",
+              "seconds": 144.385078
+            }
+          ],
+          "props_agents_critic_dev_recipes_test_build_critic_e2e__otel_spans.jsonl": [
+            {
+              "name": "docker_load",
+              "seconds": 0.461896
+            },
+            {
+              "name": "load_oci_image(testcontainers/ryuk:0.14.0)",
+              "seconds": 0.552283
+            },
+            {
+              "name": "docker_load",
+              "seconds": 15.139559
+            },
+            {
+              "name": "load_oci_image(postgres:18)",
+              "seconds": 15.167253
+            },
+            {
+              "name": "postgres_container fixture",
+              "seconds": 17.809898
+            },
+            {
+              "name": "upgrade_database",
+              "seconds": 0.30289
+            },
+            {
+              "name": "recreate_database",
+              "seconds": 0.336044
+            },
+            {
+              "name": "configure container",
+              "seconds": 0.012692
+            },
+            {
+              "name": "container start + wait",
+              "seconds": 4.061207
+            },
+            {
+              "name": "e2e_registry startup",
+              "seconds": 4.07453
+            },
+            {
+              "name": "delete registry manifests",
+              "seconds": 0.180069
+            },
+            {
+              "name": "push image critic_dev_optimize",
+              "seconds": 6.709008
+            },
+            {
+              "name": "push image critic",
+              "seconds": 7.250458
+            },
+            {
+              "name": "push image grader",
+              "seconds": 8.204377
+            },
+            {
+              "name": "docker ensure_image",
+              "seconds": 22.263477
+            },
+            {
+              "name": "docker run_container",
+              "seconds": 1.091124
+            },
+            {
+              "name": "docker ensure_image",
+              "seconds": 23.246228
+            },
+            {
+              "name": "docker run_container",
+              "seconds": 1.372268
+            },
+            {
+              "name": "docker ensure_image",
+              "seconds": 15.243591
+            },
+            {
+              "name": "docker run_container",
+              "seconds": 1.212652
+            },
+            {
+              "name": "docker wait",
+              "seconds": 2.546241
+            },
+            {
+              "name": "docker kill_and_delete",
+              "seconds": 0.118758
+            },
+            {
+              "name": "docker wait",
+              "seconds": 35.172081
+            },
+            {
+              "name": "docker kill_and_delete",
+              "seconds": 0.113372
+            },
+            {
+              "name": "docker wait",
+              "seconds": 59.995336
+            },
+            {
+              "name": "docker kill_and_delete",
+              "seconds": 0.306526
+            },
+            {
+              "name": "test: props/agents/critic_dev/recipes/test_build_critic_e2e.py::test_build_critic_sh_via_agent",
+              "seconds": 131.097074
+            }
+          ],
+          "props_agents_critic_dev_test_e2e__otel_spans.jsonl": [
+            {
+              "name": "docker_load",
+              "seconds": 0.468137
+            },
+            {
+              "name": "load_oci_image(testcontainers/ryuk:0.14.0)",
+              "seconds": 0.571847
+            },
+            {
+              "name": "docker_load",
+              "seconds": 15.511667
+            },
+            {
+              "name": "load_oci_image(postgres:18)",
+              "seconds": 15.534381
+            },
+            {
+              "name": "postgres_container fixture",
+              "seconds": 18.655302
+            },
+            {
+              "name": "upgrade_database",
+              "seconds": 0.322247
+            },
+            {
+              "name": "recreate_database",
+              "seconds": 0.355954
+            },
+            {
+              "name": "configure container",
+              "seconds": 0.032014
+            },
+            {
+              "name": "container start + wait",
+              "seconds": 4.080761
+            },
+            {
+              "name": "e2e_registry startup",
+              "seconds": 4.113431
+            },
+            {
+              "name": "delete registry manifests",
+              "seconds": 0.14809
+            },
+            {
+              "name": "push image critic_dev_optimize",
+              "seconds": 6.865801
+            },
+            {
+              "name": "push image critic",
+              "seconds": 5.29367
+            },
+            {
+              "name": "push image grader",
+              "seconds": 5.525081
+            },
+            {
+              "name": "docker ensure_image",
+              "seconds": 23.358291
+            },
+            {
+              "name": "docker run_container",
+              "seconds": 0.665055
+            },
+            {
+              "name": "docker ensure_image",
+              "seconds": 24.408577
+            },
+            {
+              "name": "docker run_container",
+              "seconds": 1.384808
+            },
+            {
+              "name": "docker ensure_image",
+              "seconds": 18.259247
+            },
+            {
+              "name": "docker run_container",
+              "seconds": 1.239128
+            },
+            {
+              "name": "docker wait",
+              "seconds": 6.070079
+            },
+            {
+              "name": "docker kill_and_delete",
+              "seconds": 0.107189
+            },
+            {
+              "name": "docker wait",
+              "seconds": 38.101239
+            },
+            {
+              "name": "docker kill_and_delete",
+              "seconds": 0.116528
+            },
+            {
+              "name": "docker wait",
+              "seconds": 64.097688
+            },
+            {
+              "name": "docker kill_and_delete",
+              "seconds": 0.283592
+            },
+            {
+              "name": "test: props/agents/critic_dev/test_e2e.py::test_po_orchestrates_critic_with_system_prompt_check",
+              "seconds": 131.537093
+            },
+            {
+              "name": "delete registry manifests",
+              "seconds": 0.076837
+            },
+            {
+              "name": "push image critic",
+              "seconds": 0.180956
+            },
+            {
+              "name": "docker ensure_image",
+              "seconds": 0.058199
+            },
+            {
+              "name": "docker run_container",
+              "seconds": 0.199758
+            },
+            {
+              "name": "docker wait",
+              "seconds": 6.124989
+            },
+            {
+              "name": "docker kill_and_delete",
+              "seconds": 0.114179
+            },
+            {
+              "name": "test: props/agents/critic_dev/test_e2e.py::test_critic_cannot_push_images",
+              "seconds": 8.655867
+            }
+          ]
+        }
+      },
+      "prefetch": {
+        "invocation": "d2742669-9d96-4a4d-995a-e810ea69b09a",
+        "targets": {
+          "props_agents_critic_dev_optimize_test_e2e__otel_spans.jsonl": [
+            {
+              "name": "docker_load",
+              "seconds": 0.40709
+            },
+            {
+              "name": "load_oci_image(testcontainers/ryuk:0.14.0)",
+              "seconds": 0.487366
+            },
+            {
+              "name": "docker_load",
+              "seconds": 14.060013
+            },
+            {
+              "name": "load_oci_image(postgres:18)",
+              "seconds": 14.083952
+            },
+            {
+              "name": "postgres_container fixture",
+              "seconds": 17.070803
+            },
+            {
+              "name": "upgrade_database",
+              "seconds": 0.356458
+            },
+            {
+              "name": "recreate_database",
+              "seconds": 0.386043
+            },
+            {
+              "name": "configure container",
+              "seconds": 0.060138
+            },
+            {
+              "name": "container start + wait",
+              "seconds": 3.906982
+            },
+            {
+              "name": "e2e_registry startup",
+              "seconds": 3.982772
+            },
+            {
+              "name": "delete registry manifests",
+              "seconds": 0.339683
+            },
+            {
+              "name": "push image critic_dev_optimize",
+              "seconds": 6.047963
+            },
+            {
+              "name": "push image critic",
+              "seconds": 5.026897
+            },
+            {
+              "name": "push image grader",
+              "seconds": 5.409727
+            },
+            {
+              "name": "docker ensure_image",
+              "seconds": 38.854007
+            },
+            {
+              "name": "docker ensure_image",
+              "seconds": 38.904641
+            },
+            {
+              "name": "docker ensure_image",
+              "seconds": 40.546662
+            },
+            {
+              "name": "prefetch images concurrently",
+              "seconds": 40.547492
+            },
+            {
+              "name": "docker ensure_image",
+              "seconds": 0.00219
+            },
+            {
+              "name": "docker run_container",
+              "seconds": 0.776842
+            },
+            {
+              "name": "docker ensure_image",
+              "seconds": 0.002262
+            },
+            {
+              "name": "docker run_container",
+              "seconds": 0.361883
+            },
+            {
+              "name": "docker ensure_image",
+              "seconds": 0.015049
+            },
+            {
+              "name": "docker run_container",
+              "seconds": 0.363067
+            },
+            {
+              "name": "docker wait",
+              "seconds": 9.319358
+            },
+            {
+              "name": "docker kill_and_delete",
+              "seconds": 0.111602
+            },
+            {
+              "name": "docker wait",
+              "seconds": 18.105076
+            },
+            {
+              "name": "docker kill_and_delete",
+              "seconds": 0.115517
+            },
+            {
+              "name": "docker wait",
+              "seconds": 18.694314
+            },
+            {
+              "name": "docker kill_and_delete",
+              "seconds": 0.309352
+            },
+            {
+              "name": "test: props/agents/critic_dev/optimize/test_e2e.py::test_optimizer_orchestrates_critic",
+              "seconds": 103.520132
+            }
+          ],
+          "props_agents_critic_dev_recipes_test_build_critic_e2e__otel_spans.jsonl": [
+            {
+              "name": "docker_load",
+              "seconds": 0.594931
+            },
+            {
+              "name": "load_oci_image(testcontainers/ryuk:0.14.0)",
+              "seconds": 0.630673
+            },
+            {
+              "name": "docker_load",
+              "seconds": 14.526714
+            },
+            {
+              "name": "load_oci_image(postgres:18)",
+              "seconds": 14.550791
+            },
+            {
+              "name": "postgres_container fixture",
+              "seconds": 17.69074
+            },
+            {
+              "name": "upgrade_database",
+              "seconds": 0.309122
+            },
+            {
+              "name": "recreate_database",
+              "seconds": 0.336804
+            },
+            {
+              "name": "configure container",
+              "seconds": 0.039845
+            },
+            {
+              "name": "container start + wait",
+              "seconds": 4.737723
+            },
+            {
+              "name": "e2e_registry startup",
+              "seconds": 4.781777
+            },
+            {
+              "name": "delete registry manifests",
+              "seconds": 0.212698
+            },
+            {
+              "name": "push image critic_dev_optimize",
+              "seconds": 6.115122
+            },
+            {
+              "name": "push image critic",
+              "seconds": 5.209208
+            },
+            {
+              "name": "push image grader",
+              "seconds": 5.258357
+            },
+            {
+              "name": "docker ensure_image",
+              "seconds": 36.08507
+            },
+            {
+              "name": "docker ensure_image",
+              "seconds": 36.188164
+            },
+            {
+              "name": "docker ensure_image",
+              "seconds": 37.371866
+            },
+            {
+              "name": "prefetch images concurrently",
+              "seconds": 37.372708
+            },
+            {
+              "name": "docker ensure_image",
+              "seconds": 0.001906
+            },
+            {
+              "name": "docker run_container",
+              "seconds": 1.466661
+            },
+            {
+              "name": "docker ensure_image",
+              "seconds": 0.00198
+            },
+            {
+              "name": "docker run_container",
+              "seconds": 0.181863
+            },
+            {
+              "name": "docker ensure_image",
+              "seconds": 0.158356
+            },
+            {
+              "name": "docker run_container",
+              "seconds": 0.181484
+            },
+            {
+              "name": "docker wait",
+              "seconds": 2.864777
+            },
+            {
+              "name": "docker kill_and_delete",
+              "seconds": 0.118667
+            },
+            {
+              "name": "docker wait",
+              "seconds": 16.281212
+            },
+            {
+              "name": "docker kill_and_delete",
+              "seconds": 0.109798
+            },
+            {
+              "name": "docker wait",
+              "seconds": 16.657664
+            },
+            {
+              "name": "docker kill_and_delete",
+              "seconds": 0.275121
+            },
+            {
+              "name": "test: props/agents/critic_dev/recipes/test_build_critic_e2e.py::test_build_critic_sh_via_agent",
+              "seconds": 98.424743
+            }
+          ],
+          "props_agents_critic_dev_test_e2e__otel_spans.jsonl": [
+            {
+              "name": "docker_load",
+              "seconds": 0.432899
+            },
+            {
+              "name": "load_oci_image(testcontainers/ryuk:0.14.0)",
+              "seconds": 0.465735
+            },
+            {
+              "name": "docker_load",
+              "seconds": 14.611561
+            },
+            {
+              "name": "load_oci_image(postgres:18)",
+              "seconds": 14.635797
+            },
+            {
+              "name": "postgres_container fixture",
+              "seconds": 17.570797
+            },
+            {
+              "name": "upgrade_database",
+              "seconds": 0.305377
+            },
+            {
+              "name": "recreate_database",
+              "seconds": 0.336681
+            },
+            {
+              "name": "configure container",
+              "seconds": 0.030523
+            },
+            {
+              "name": "container start + wait",
+              "seconds": 3.682605
+            },
+            {
+              "name": "e2e_registry startup",
+              "seconds": 3.713878
+            },
+            {
+              "name": "delete registry manifests",
+              "seconds": 0.162632
+            },
+            {
+              "name": "push image critic_dev_optimize",
+              "seconds": 15.682523
+            },
+            {
+              "name": "push image critic",
+              "seconds": 5.172038
+            },
+            {
+              "name": "push image grader",
+              "seconds": 5.255157
+            },
+            {
+              "name": "docker ensure_image",
+              "seconds": 28.991385
+            },
+            {
+              "name": "docker ensure_image",
+              "seconds": 29.697915
+            },
+            {
+              "name": "docker ensure_image",
+              "seconds": 30.314537
+            },
+            {
+              "name": "prefetch images concurrently",
+              "seconds": 30.317724
+            },
+            {
+              "name": "docker ensure_image",
+              "seconds": 0.015736
+            },
+            {
+              "name": "docker run_container",
+              "seconds": 1.708343
+            },
+            {
+              "name": "docker ensure_image",
+              "seconds": 0.002062
+            },
+            {
+              "name": "docker run_container",
+              "seconds": 0.218306
+            },
+            {
+              "name": "docker ensure_image",
+              "seconds": 0.013268
+            },
+            {
+              "name": "docker run_container",
+              "seconds": 0.303268
+            },
+            {
+              "name": "docker wait",
+              "seconds": 6.316296
+            },
+            {
+              "name": "docker kill_and_delete",
+              "seconds": 0.111051
+            },
+            {
+              "name": "docker wait",
+              "seconds": 20.453305
+            },
+            {
+              "name": "docker kill_and_delete",
+              "seconds": 0.112333
+            },
+            {
+              "name": "docker wait",
+              "seconds": 20.881143
+            },
+            {
+              "name": "docker kill_and_delete",
+              "seconds": 0.322905
+            },
+            {
+              "name": "test: props/agents/critic_dev/test_e2e.py::test_po_orchestrates_critic_with_system_prompt_check",
+              "seconds": 103.962762
+            },
+            {
+              "name": "delete registry manifests",
+              "seconds": 0.073811
+            },
+            {
+              "name": "push image critic",
+              "seconds": 0.174406
+            },
+            {
+              "name": "docker ensure_image",
+              "seconds": 0.054048
+            },
+            {
+              "name": "prefetch images concurrently",
+              "seconds": 0.054529
+            },
+            {
+              "name": "docker ensure_image",
+              "seconds": 0.001428
+            },
+            {
+              "name": "docker run_container",
+              "seconds": 0.226401
+            },
+            {
+              "name": "docker wait",
+              "seconds": 6.386343
+            },
+            {
+              "name": "docker kill_and_delete",
+              "seconds": 0.114794
+            },
+            {
+              "name": "test: props/agents/critic_dev/test_e2e.py::test_critic_cannot_push_images",
+              "seconds": 9.163259
+            }
+          ]
+        }
+      },
+      "layout": {
+        "invocation": "fb689d0f-b3a4-4a33-8711-50e85abc64a8",
+        "targets": {
+          "props_agents_critic_dev_optimize_test_e2e__otel_spans.jsonl": [
+            {
+              "name": "docker_load",
+              "seconds": 0.502233
+            },
+            {
+              "name": "load_oci_image(testcontainers/ryuk:0.14.0)",
+              "seconds": 0.600908
+            },
+            {
+              "name": "docker_load",
+              "seconds": 20.87203
+            },
+            {
+              "name": "load_oci_image(postgres:18)",
+              "seconds": 21.000634
+            },
+            {
+              "name": "postgres_container fixture",
+              "seconds": 24.213476
+            },
+            {
+              "name": "upgrade_database",
+              "seconds": 0.402466
+            },
+            {
+              "name": "recreate_database",
+              "seconds": 0.462138
+            },
+            {
+              "name": "configure container",
+              "seconds": 0.012286
+            },
+            {
+              "name": "container start + wait",
+              "seconds": 4.0285
+            },
+            {
+              "name": "e2e_registry startup",
+              "seconds": 4.041507
+            },
+            {
+              "name": "delete registry manifests",
+              "seconds": 0.277327
+            },
+            {
+              "name": "docker_load",
+              "seconds": 34.045637
+            },
+            {
+              "name": "preload layout critic_dev_optimize",
+              "seconds": 34.049028
+            },
+            {
+              "name": "push image critic_dev_optimize",
+              "seconds": 3.994991
+            },
+            {
+              "name": "docker_load",
+              "seconds": 30.513434
+            },
+            {
+              "name": "preload layout critic",
+              "seconds": 30.51819
+            },
+            {
+              "name": "push image critic",
+              "seconds": 2.097701
+            },
+            {
+              "name": "docker_load",
+              "seconds": 32.583431
+            },
+            {
+              "name": "preload layout grader",
+              "seconds": 32.585879
+            },
+            {
+              "name": "push image grader",
+              "seconds": 2.828065
+            },
+            {
+              "name": "docker ensure_image",
+              "seconds": 0.072034
+            },
+            {
+              "name": "docker ensure_image",
+              "seconds": 0.095801
+            },
+            {
+              "name": "docker ensure_image",
+              "seconds": 0.097067
+            },
+            {
+              "name": "prefetch images concurrently",
+              "seconds": 0.09854
+            },
+            {
+              "name": "docker ensure_image",
+              "seconds": 0.001209
+            },
+            {
+              "name": "docker run_container",
+              "seconds": 0.890713
+            },
+            {
+              "name": "docker ensure_image",
+              "seconds": 0.001679
+            },
+            {
+              "name": "docker run_container",
+              "seconds": 0.196925
+            },
+            {
+              "name": "docker ensure_image",
+              "seconds": 0.030705
+            },
+            {
+              "name": "docker run_container",
+              "seconds": 0.279892
+            },
+            {
+              "name": "docker wait",
+              "seconds": 8.044211
+            },
+            {
+              "name": "docker kill_and_delete",
+              "seconds": 0.1074
+            },
+            {
+              "name": "docker wait",
+              "seconds": 22.963368
+            },
+            {
+              "name": "docker kill_and_delete",
+              "seconds": 0.106238
+            },
+            {
+              "name": "docker wait",
+              "seconds": 23.362164
+            },
+            {
+              "name": "docker kill_and_delete",
+              "seconds": 0.30299
+            },
+            {
+              "name": "test: props/agents/critic_dev/optimize/test_e2e.py::test_optimizer_orchestrates_critic",
+              "seconds": 162.96325
+            }
+          ],
+          "props_agents_critic_dev_recipes_test_build_critic_e2e__otel_spans.jsonl": [
+            {
+              "name": "docker_load",
+              "seconds": 0.4133
+            },
+            {
+              "name": "load_oci_image(testcontainers/ryuk:0.14.0)",
+              "seconds": 0.485024
+            },
+            {
+              "name": "docker_load",
+              "seconds": 14.528307
+            },
+            {
+              "name": "load_oci_image(postgres:18)",
+              "seconds": 14.55413
+            },
+            {
+              "name": "postgres_container fixture",
+              "seconds": 17.588884
+            },
+            {
+              "name": "upgrade_database",
+              "seconds": 0.313875
+            },
+            {
+              "name": "recreate_database",
+              "seconds": 0.342824
+            },
+            {
+              "name": "configure container",
+              "seconds": 0.044876
+            },
+            {
+              "name": "container start + wait",
+              "seconds": 3.874274
+            },
+            {
+              "name": "e2e_registry startup",
+              "seconds": 3.919848
+            },
+            {
+              "name": "delete registry manifests",
+              "seconds": 0.148519
+            },
+            {
+              "name": "docker_load",
+              "seconds": 28.382
+            },
+            {
+              "name": "preload layout critic_dev_optimize",
+              "seconds": 28.384481
+            },
+            {
+              "name": "push image critic_dev_optimize",
+              "seconds": 1.875231
+            },
+            {
+              "name": "docker_load",
+              "seconds": 29.823296
+            },
+            {
+              "name": "preload layout critic",
+              "seconds": 29.825685
+            },
+            {
+              "name": "push image critic",
+              "seconds": 1.854731
+            },
+            {
+              "name": "docker_load",
+              "seconds": 28.827854
+            },
+            {
+              "name": "preload layout grader",
+              "seconds": 28.8306
+            },
+            {
+              "name": "push image grader",
+              "seconds": 2.191477
+            },
+            {
+              "name": "docker ensure_image",
+              "seconds": 0.095124
+            },
+            {
+              "name": "docker ensure_image",
+              "seconds": 0.127993
+            },
+            {
+              "name": "docker ensure_image",
+              "seconds": 0.131164
+            },
+            {
+              "name": "prefetch images concurrently",
+              "seconds": 0.132934
+            },
+            {
+              "name": "docker ensure_image",
+              "seconds": 0.001761
+            },
+            {
+              "name": "docker run_container",
+              "seconds": 0.650831
+            },
+            {
+              "name": "docker ensure_image",
+              "seconds": 0.001978
+            },
+            {
+              "name": "docker run_container",
+              "seconds": 0.309928
+            },
+            {
+              "name": "docker ensure_image",
+              "seconds": 12.196482
+            },
+            {
+              "name": "docker run_container",
+              "seconds": 0.215702
+            },
+            {
+              "name": "docker wait",
+              "seconds": 2.724267
+            },
+            {
+              "name": "docker kill_and_delete",
+              "seconds": 0.127278
+            },
+            {
+              "name": "docker wait",
+              "seconds": 30.08669
+            },
+            {
+              "name": "docker kill_and_delete",
+              "seconds": 0.110183
+            },
+            {
+              "name": "docker wait",
+              "seconds": 30.608224
+            },
+            {
+              "name": "docker kill_and_delete",
+              "seconds": 0.324812
+            },
+            {
+              "name": "test: props/agents/critic_dev/recipes/test_build_critic_e2e.py::test_build_critic_sh_via_agent",
+              "seconds": 149.536602
+            }
+          ],
+          "props_agents_critic_dev_test_e2e__otel_spans.jsonl": [
+            {
+              "name": "docker_load",
+              "seconds": 0.455261
+            },
+            {
+              "name": "load_oci_image(testcontainers/ryuk:0.14.0)",
+              "seconds": 0.546583
+            },
+            {
+              "name": "docker_load",
+              "seconds": 14.74859
+            },
+            {
+              "name": "load_oci_image(postgres:18)",
+              "seconds": 14.77302
+            },
+            {
+              "name": "postgres_container fixture",
+              "seconds": 23.800439
+            },
+            {
+              "name": "upgrade_database",
+              "seconds": 0.448868
+            },
+            {
+              "name": "recreate_database",
+              "seconds": 0.525106
+            },
+            {
+              "name": "configure container",
+              "seconds": 0.033921
+            },
+            {
+              "name": "container start + wait",
+              "seconds": 4.079536
+            },
+            {
+              "name": "e2e_registry startup",
+              "seconds": 4.114181
+            },
+            {
+              "name": "delete registry manifests",
+              "seconds": 0.277381
+            },
+            {
+              "name": "docker_load",
+              "seconds": 38.244083
+            },
+            {
+              "name": "preload layout critic_dev_optimize",
+              "seconds": 38.247229
+            },
+            {
+              "name": "push image critic_dev_optimize",
+              "seconds": 5.501816
+            },
+            {
+              "name": "docker_load",
+              "seconds": 28.399175
+            },
+            {
+              "name": "preload layout critic",
+              "seconds": 28.402343
+            },
+            {
+              "name": "push image critic",
+              "seconds": 1.495484
+            },
+            {
+              "name": "docker_load",
+              "seconds": 32.373835
+            },
+            {
+              "name": "preload layout grader",
+              "seconds": 32.376915
+            },
+            {
+              "name": "push image grader",
+              "seconds": 2.464468
+            },
+            {
+              "name": "docker ensure_image",
+              "seconds": 0.088603
+            },
+            {
+              "name": "docker ensure_image",
+              "seconds": 0.088492
+            },
+            {
+              "name": "docker ensure_image",
+              "seconds": 0.095603
+            },
+            {
+              "name": "prefetch images concurrently",
+              "seconds": 0.097508
+            },
+            {
+              "name": "docker ensure_image",
+              "seconds": 0.002394
+            },
+            {
+              "name": "docker run_container",
+              "seconds": 0.932164
+            },
+            {
+              "name": "docker ensure_image",
+              "seconds": 0.002482
+            },
+            {
+              "name": "docker run_container",
+              "seconds": 0.209577
+            },
+            {
+              "name": "docker ensure_image",
+              "seconds": 0.051993
+            },
+            {
+              "name": "docker run_container",
+              "seconds": 0.263087
+            },
+            {
+              "name": "docker wait",
+              "seconds": 9.745148
+            },
+            {
+              "name": "docker kill_and_delete",
+              "seconds": 0.115453
+            },
+            {
+              "name": "docker wait",
+              "seconds": 29.316211
+            },
+            {
+              "name": "docker kill_and_delete",
+              "seconds": 0.120751
+            },
+            {
+              "name": "docker wait",
+              "seconds": 29.737791
+            },
+            {
+              "name": "docker kill_and_delete",
+              "seconds": 0.332324
+            },
+            {
+              "name": "test: props/agents/critic_dev/test_e2e.py::test_po_orchestrates_critic_with_system_prompt_check",
+              "seconds": 171.175796
+            },
+            {
+              "name": "delete registry manifests",
+              "seconds": 0.079405
+            },
+            {
+              "name": "docker_load",
+              "seconds": 1.608844
+            },
+            {
+              "name": "preload layout critic",
+              "seconds": 1.610736
+            },
+            {
+              "name": "push image critic",
+              "seconds": 0.193258
+            },
+            {
+              "name": "docker ensure_image",
+              "seconds": 0.083252
+            },
+            {
+              "name": "prefetch images concurrently",
+              "seconds": 0.083802
+            },
+            {
+              "name": "docker ensure_image",
+              "seconds": 0.001679
+            },
+            {
+              "name": "docker run_container",
+              "seconds": 0.217008
+            },
+            {
+              "name": "docker wait",
+              "seconds": 6.825429
+            },
+            {
+              "name": "docker kill_and_delete",
+              "seconds": 0.119649
+            },
+            {
+              "name": "test: props/agents/critic_dev/test_e2e.py::test_critic_cannot_push_images",
+              "seconds": 11.109918
+            }
+          ]
+        }
+      }
+    },
+    "action_seconds": {
+      "critic_dev:test_e2e": [
+        165.3,
+        139.6,
+        207.7
+      ],
+      "critic_dev/optimize:test_e2e": [
+        169.4,
+        127.5,
+        186.1
+      ],
+      "critic_dev/recipes:test_build_critic_e2e": [
+        157.3,
+        124.8,
+        173.2
+      ]
+    },
+    "action_seconds_order": [
+      "serial_pulls",
+      "concurrent_pulls",
+      "sequential_layout_loads_then_pulls"
+    ],
+    "all_completed_experiments_passed": true,
+    "concurrent_layout_loads": "not submitted: BuildBuddy DNS failure",
+    "limitations": [
+      "Single instrumented run per variant",
+      "Worker warmth and load uncontrolled",
+      "No CPU or whole-CI saving established",
+      "Published head uses newer devel without instrumentation; CI validation is separate"
+    ]
   }
 }
