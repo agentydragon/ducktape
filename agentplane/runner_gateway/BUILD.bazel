@@ -1,9 +1,6 @@
 load("@aspect_rules_py//py:defs.bzl", "py_image_layer", aspect_py_binary = "py_binary")
-load("@protobuf//bazel:proto_library.bzl", "proto_library")
 load("@rules_oci//oci:defs.bzl", "oci_image")
 load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
-load("//devinfra/python:grpc.bzl", "py_grpc_service_library")
-load("//devinfra/python:proto.bzl", "py_proto_library_with_mypy_stubs")
 load("//props:oci.bzl", "py_image_entrypoint", "py_image_env")
 
 package(default_visibility = ["//agentplane:__subpackages__"])
@@ -214,27 +211,6 @@ py_library(
     ],
 )
 
-proto_library(
-    name = "protocol_proto",
-    srcs = ["protocol.proto"],
-    deps = [
-        "//agentplane/proto:event_log_proto",
-        "//agentplane/proto:runner_proto",
-        "//agentplane/sandbox_service:protocol_proto",
-    ],
-)
-
-py_proto_library_with_mypy_stubs(
-    name = "protocol_pb2",
-    deps = [":protocol_proto"],
-)
-
-py_grpc_service_library(
-    name = "protocol_pb2_grpc",
-    proto = ":protocol_proto",
-    py_proto = ":protocol_pb2",
-)
-
 py_binary(
     name = "server",
     main_module = "agentplane.runner_gateway.main",
@@ -289,11 +265,11 @@ py_library(
         "//agentplane/proto:command_pb2",
         "//agentplane/proto:event_log_pb2",
         "//agentplane/proto:runner_control_pb2",
+        "//agentplane/proto:runner_gateway_pb2",
+        "//agentplane/proto:runner_gateway_pb2_grpc",
         "//agentplane/proto:runner_pb2",
         "//agentplane/runner:client",
         "//agentplane/runner:errors",
-        "//agentplane/runner_gateway:protocol_pb2",
-        "//agentplane/runner_gateway:protocol_pb2_grpc",
         "//agentplane/runner_gateway/commands:store",
         "//agentplane/sandbox_service:destinations",
         "//agentplane/sandbox_service:models",

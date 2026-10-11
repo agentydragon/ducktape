@@ -8,8 +8,7 @@ import grpc
 import pytest
 import pytest_bazel
 
-from agentplane.proto import runner_pb2
-from agentplane.runner_gateway import protocol_pb2_grpc
+from agentplane.proto import runner_gateway_pb2_grpc, runner_pb2
 from agentplane.runner_gateway.testing.unimplemented_gateway import UnimplementedRunnerGateway
 from agentplane.sandbox_service import protocol_pb2
 from agentplane.sandbox_service.testing.grpc_service import connect, serving
@@ -34,7 +33,7 @@ class TruncatedGateway(UnimplementedRunnerGateway):
 
 async def test_bare_service_eof_is_not_native_closure(tmp_path: Path) -> None:
     server = grpc.aio.server()
-    protocol_pb2_grpc.add_RunnerGatewayServicer_to_server(TruncatedGateway(), server)
+    runner_gateway_pb2_grpc.add_RunnerGatewayServicer_to_server(TruncatedGateway(), server)
     token_file = tmp_path / "token"
     token_file.write_text(TOKEN)
     async with serving(server) as target:

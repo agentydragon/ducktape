@@ -12,7 +12,7 @@ It is two gRPC services, each its own server and image:
 - `SandboxService` ([`protocol.proto`](protocol.proto)), served by the Sandbox Service: Sandbox
   inventory and lifecycle, templates, egress grants and [retention holds](#retention-holds). One
   replica reconciles, and it alone holds the RBAC, ServiceAccount and egress grant permissions.
-- `RunnerGateway` ([`../runner_gateway/protocol.proto`](../runner_gateway/protocol.proto)), served by
+- `RunnerGateway` ([`../proto/runner_gateway.proto`](../proto/runner_gateway.proto)), served by
   the [Runner Gateway](../runner_gateway/README.md): Sessions, commands and event following. Its
   replicas hold the runner connections; a Sandbox's `<sandbox>-control` Service reaches the replica
   holding its runner.
