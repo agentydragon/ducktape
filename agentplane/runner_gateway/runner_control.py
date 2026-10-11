@@ -27,7 +27,7 @@ from agentplane.runner_gateway.connection_records import ConnectionRecords, Conn
 from agentplane.runner_gateway.lifecycle_control import ControlConnection, LifecycleControl
 from agentplane.sandbox_service.inventory import SandboxInventory
 from agentplane.sandbox_service.models import SandboxNotFoundError
-from agentplane.workload_auth.bearer import parse_bearer, sole_header
+from agentplane.workload_auth.grpc_caller import resolve_caller
 from agentplane.workload_auth.principal import (
     WorkloadPrincipal,
     WorkloadPrincipalRejectedError,
@@ -137,14 +137,7 @@ class RunnerControlService(runner_control_pb2_grpc.RunnerControlServicer):
         self.timing = timing
 
     async def authenticate(self, context: grpc.aio.ServicerContext) -> tuple[WorkloadPrincipal, ControlPeer]:
-        values = [value for key, value in (context.invocation_metadata() or ()) if key == "authorization"]
-        if any(not isinstance(value, str) for value in values):
-            raise WorkloadPrincipalRejectedError("invalid bearer metadata")
-        value = sole_header([value for value in values if isinstance(value, str)])
-        token = parse_bearer(value) if value is not None else None
-        if token is None:
-            raise WorkloadPrincipalRejectedError("invalid bearer metadata")
-        principal = await self.principals.resolve_workload(token)
+        principal = await resolve_caller(self.principals, context)
         return principal, await resolve_peer(principal, inventory=self.inventory, core=self.core)
 
     # mypy-protobuf types the handler as returning an iterator; explicit writes keep every send

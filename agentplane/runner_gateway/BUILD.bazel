@@ -25,7 +25,7 @@ py_library(
         "//agentplane/runner_gateway/commands:store",
         "//agentplane/sandbox_service:inventory",
         "//agentplane/sandbox_service:models",
-        "//agentplane/workload_auth:bearer",
+        "//agentplane/workload_auth:grpc_caller",
         "//agentplane/workload_auth:principal",
         "//util:agent_sandbox",
         "@pypi//grpcio",
