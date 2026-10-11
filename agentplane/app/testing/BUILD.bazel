@@ -180,7 +180,6 @@ py_library(
         "//agentplane/history_service:client",
         "//agentplane/history_service/testing:history",
         "//agentplane/postgres:wakeups",
-        "//agentplane/runner_gateway:session_registry",
         "//agentplane/runner_gateway/commands:db",
         "@pypi//sqlalchemy",
     ],

@@ -80,8 +80,8 @@ py_library(
     name = "control_listener",
     srcs = ["control_listener.py"],
     deps = [
-        "//agentplane:grpc_process",
         "//agentplane:grpc_serving",
+        "//agentplane:service_process",
         "//agentplane/proto:runner_control_pb2",
         "//agentplane/proto:runner_control_pb2_grpc",
         "//agentplane/runner:control",

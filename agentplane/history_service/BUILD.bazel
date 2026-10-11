@@ -405,6 +405,7 @@ py_library(
         ":summaries",
         ":thread_reads",
         "//agentplane:grpc_serving",
+        "//agentplane:service_process",
         "//agentplane/history_service/storage:store",
         "//agentplane/workload_auth:principal",
         "@pypi//asyncpg",

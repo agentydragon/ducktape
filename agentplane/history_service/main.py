@@ -17,6 +17,7 @@ from agentplane.history_service.settings import Settings
 from agentplane.history_service.storage.store import Store
 from agentplane.history_service.summaries import SummaryReader
 from agentplane.history_service.thread_reads import ThreadReader
+from agentplane.service_process import background, configure_logging, kubernetes_configuration, until_terminated
 from agentplane.workload_auth.principal import WorkloadPrincipalResolver
 
 # The asyncpg dialect is loaded by SQLAlchemy from the configured driver name.

@@ -8,7 +8,6 @@ from uuid import UUID
 import grpc
 from kubernetes_asyncio import client as k8s_client
 
-from agentplane.grpc_process import background
 from agentplane.grpc_serving import serving
 from agentplane.proto import runner_control_pb2_grpc
 from agentplane.runner import control as runner_control
@@ -19,6 +18,7 @@ from agentplane.runner_gateway.grpc_api import Resources
 from agentplane.runner_gateway.lifecycle_control import LifecycleControl
 from agentplane.runner_gateway.runner_control import ControlTiming, RunnerControlService
 from agentplane.sandbox_service.reader import SandboxReader
+from agentplane.service_process import background
 from agentplane.workload_auth.principal import WorkloadPrincipalResolver
 
 # The control servicer stub names its messages; mypy reads stubs only from direct deps.
