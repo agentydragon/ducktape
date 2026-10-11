@@ -10,9 +10,9 @@ import pytest
 import pytest_bazel
 from kubernetes_asyncio.client import ApiClient, AuthenticationV1Api
 
-from agentplane.egress.conftest import AUDIENCE, SANDBOX_A, SANDBOX_B, TOKEN_A
+from agentplane.egress.conftest import AUDIENCE, RULES_HOST, SANDBOX_A, SANDBOX_B, TOKEN_A
 from agentplane.egress.policy import Index
-from agentplane.egress.rules_api import HOST, PATH, RulesProjection, create_rules_app
+from agentplane.egress.rules_api import PATH, RulesProjection, create_rules_app
 from agentplane.testing.fake_apiserver import SANDBOX_NAMESPACE, FakeApiServer
 from agentplane.workload_auth.http import WorkloadPrincipalAuthenticator
 from agentplane.workload_auth.principal import WorkloadPrincipalResolver
@@ -30,7 +30,7 @@ def client(api_client: ApiClient, index: Index) -> httpx.AsyncClient:
         )
     )
     app = create_rules_app(authenticator, RulesProjection(index, clock=lambda: NOW))
-    return httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url=f"http://{HOST}")
+    return httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url=f"http://{RULES_HOST}")
 
 
 async def test_api_independently_tokenreviews_authorization_and_returns_redacted_rules(

@@ -28,7 +28,7 @@ from more_itertools import one
 from tenacity import AsyncRetrying, stop_after_delay, wait_fixed
 
 from agentplane.egress.addon import DENIED_HEADER, PROJECTED_TOKEN_HEADER, EgressAddon
-from agentplane.egress.admin import create_admin_app, serve_admin
+from agentplane.egress.admin import create_admin_app
 from agentplane.egress.conftest import (
     AUDIENCE,
     GITHUB_POLICY,
@@ -39,6 +39,7 @@ from agentplane.egress.conftest import (
     PROJECTED_AUDIENCE,
     PROJECTED_TOKEN_A,
     PROJECTED_TOKEN_B,
+    RULES_HOST,
     SANDBOX_A,
     SANDBOX_B,
     SCHEME,
@@ -55,16 +56,11 @@ from agentplane.egress.conftest import (
 from agentplane.egress.decision_log import DecisionLog
 from agentplane.egress.decisions import Phase
 from agentplane.egress.identity import ProjectedTokenVerifier, WorkloadIdentityVerifier
+from agentplane.egress.listener import serve
 from agentplane.egress.policy import DenyReason, Index
 from agentplane.egress.proxy import EgressProxyServer, write_interception_ca
 from agentplane.egress.resources import TargetMethod, placeholder_of
-from agentplane.egress.rules_api import (
-    HOST as RULES_HOST,
-    PATH as RULES_PATH,
-    RulesProjection,
-    create_rules_app,
-    serve_rules_api,
-)
+from agentplane.egress.rules_api import PATH as RULES_PATH, RulesProjection, create_rules_app
 from agentplane.egress.settings import Settings
 from agentplane.egress.sidecar import SidecarRelay
 from agentplane.egress.testing.replica import kubeconfig, replica
@@ -322,7 +318,7 @@ async def proxy(
         agent_api = create_rules_app(WorkloadPrincipalAuthenticator(workload_resolver), RulesProjection(index))
         resolver = ServiceMappingResolver(agent_api_port=agent_api_port, exempt=exempt_networks)
         async with (
-            serve_rules_api(agent_api, host="127.0.0.1", port=agent_api_port),
+            serve(agent_api, host="127.0.0.1", port=agent_api_port),
             recording_upstream(*issue_leaf(upstream_ca, UPSTREAM_HOST, tmp_path)) as upstream,
             EgressProxyServer(
                 addon := EgressAddon(
@@ -338,7 +334,7 @@ async def proxy(
                 # proxy verifies its upstream against a bundle it was handed, not mitmproxy's own.
                 upstream_ca_file=upstream_ca_cert,
             ) as server,
-            serve_admin(create_admin_app(decision_log, index, resync_seconds=60), "127.0.0.1", 0) as admin_port,
+            serve(create_admin_app(decision_log, index, resync_seconds=60), "127.0.0.1", 0) as admin_port,
         ):
             yield ProxyUnderTest(
                 server=server,
@@ -1398,7 +1394,7 @@ async def test_matrix_json_login_through_real_proxy(
         evidence = await response.text()
     assert secret_value not in evidence
     assert "@bot:test" not in evidence
-    assert '"substituted": true' in evidence
+    assert any(decision["substituted"] for decision in json.loads(evidence))
 
 
 if __name__ == "__main__":

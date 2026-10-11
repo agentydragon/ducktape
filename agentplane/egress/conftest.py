@@ -49,6 +49,8 @@ from util.testing.postgres_fixtures import (
 
 AUDIENCE = "agentplane-egress-test"
 UPSTREAM_HOST = "localhost"
+# The rules API's Service host as tests address it; nothing resolves it but the tests' own resolver.
+RULES_HOST = "egress-rules.test"
 CREDENTIAL_NAME = "github-pat"
 PLACEHOLDER = placeholder_of(CREDENTIAL_NAME)
 SCHEME = "Bearer"

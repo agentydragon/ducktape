@@ -11,11 +11,11 @@ from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 
-import aiohttp
+import httpx
 import pytest
 import pytest_bazel
 
-from agentplane.egress.admin import create_admin_app, serve_admin
+from agentplane.egress.admin import create_admin_app
 from agentplane.egress.decision_log import DecisionLog
 from agentplane.egress.decision_store import DecisionStore, make_engine
 from agentplane.egress.policy import Index
@@ -48,23 +48,23 @@ def clock() -> Clock:
 
 
 @pytest.fixture
-async def session(index: Index, clock: Clock) -> AsyncIterator[aiohttp.ClientSession]:
+async def session(index: Index, clock: Clock) -> AsyncIterator[httpx.AsyncClient]:
     log = DecisionLog(
         DecisionStore(make_engine("postgresql://test:test@127.0.0.1:1/test"), retention=timedelta(days=7))
     )
     app = create_admin_app(log, index, resync_seconds=RESYNC_SECONDS, clock=clock)
-    async with serve_admin(app, "127.0.0.1", 0) as port, aiohttp.ClientSession(f"http://127.0.0.1:{port}") as client:
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://egress-admin.test") as client:
         yield client
     await log.close()
 
 
-async def _get(session: aiohttp.ClientSession) -> tuple[int, dict]:
-    async with session.get("/healthz") as response:
-        return response.status, await response.json()
+async def _get(session: httpx.AsyncClient) -> tuple[int, dict]:
+    response = await session.get("/healthz")
+    return response.status_code, response.json()
 
 
 async def test_a_kind_that_stops_completing_cycles_turns_the_proxy_unhealthy(
-    session: aiohttp.ClientSession, index: Index, clock: Clock
+    session: httpx.AsyncClient, index: Index, clock: Clock
 ) -> None:
     status, body = await _get(session)
     assert (status, body["staleAfterSeconds"]) == (200, 900.0)
@@ -87,9 +87,7 @@ async def test_a_kind_that_stops_completing_cycles_turns_the_proxy_unhealthy(
     assert (await _get(session))[0] == 200
 
 
-async def test_an_index_that_has_not_listed_everything_is_not_ready(
-    session: aiohttp.ClientSession, index: Index
-) -> None:
+async def test_an_index_that_has_not_listed_everything_is_not_ready(session: httpx.AsyncClient, index: Index) -> None:
     """Freshness is the new half; completeness is still the old one, and both have to hold."""
     index.synced = False
 
@@ -100,19 +98,18 @@ async def test_an_index_that_has_not_listed_everything_is_not_ready(
 
 
 async def test_missing_freshness_and_drain_refuse_readiness_but_not_liveness(
-    session: aiohttp.ClientSession, index: Index
+    session: httpx.AsyncClient, index: Index
 ) -> None:
     index.refreshed.pop("egresscredentials")
     assert (await _get(session))[0] == 503
     index.refreshed["egresscredentials"] = STARTED
     index.draining = True
     assert (await _get(session))[0] == 503
-    async with session.get("/livez") as response:
-        assert response.status == 200
+    assert (await session.get("/livez")).status_code == 200
 
 
 async def test_binding_observations_are_local_and_derived_at_read_time(
-    session: aiohttp.ClientSession, index: Index, clock: Clock
+    session: httpx.AsyncClient, index: Index, clock: Clock
 ) -> None:
     index.bindings["test-binding"] = EgressBinding.model_validate(
         binding(
@@ -123,15 +120,13 @@ async def test_binding_observations_are_local_and_derived_at_read_time(
         )
     )
     index.policies["test-policy"] = EgressPolicy.model_validate(policy("test-policy", [{"hosts": ["example.test"]}]))
-    async with session.get("/bindings") as response:
-        body = await response.json()
-        assert body["scope"] == "replica-local"
-        assert body["available"]
-        assert body["bindings"][0]["reason"] == "Resolved"
-        assert body["bindings"][0]["missingPolicies"] == ["test-absent"]
+    body = (await session.get("/bindings")).json()
+    assert body["scope"] == "replica-local"
+    assert body["available"]
+    assert body["bindings"][0]["reason"] == "Resolved"
+    assert body["bindings"][0]["missingPolicies"] == ["test-absent"]
     clock.now += timedelta(seconds=10)
-    async with session.get("/bindings") as response:
-        assert (await response.json())["bindings"][0]["reason"] == "Expired"
+    assert (await session.get("/bindings")).json()["bindings"][0]["reason"] == "Expired"
 
 
 if __name__ == "__main__":

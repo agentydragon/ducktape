@@ -12,14 +12,15 @@ from kubernetes_asyncio import client as k8s_client, config as k8s_config
 from kubernetes_asyncio.client import ApiClient, AuthenticationV1Api, CoreV1Api, CustomObjectsApi
 
 from agentplane.egress.addon import EgressAddon
-from agentplane.egress.admin import create_admin_app, serve_admin
+from agentplane.egress.admin import create_admin_app
 from agentplane.egress.decision_log import DecisionLog
 from agentplane.egress.decision_store import DecisionStore, make_engine
 from agentplane.egress.identity import ProjectedTokenVerifier, WorkloadIdentityVerifier
 from agentplane.egress.informer import Informer
+from agentplane.egress.listener import serve
 from agentplane.egress.policy import Index
 from agentplane.egress.proxy import EgressProxyServer, write_interception_ca
-from agentplane.egress.rules_api import RulesProjection, create_rules_app, serve_rules_api
+from agentplane.egress.rules_api import RulesProjection, create_rules_app
 from agentplane.egress.settings import Settings
 from agentplane.egress.upstream import PinnedDialEventLoop, UpstreamResolver
 from agentplane.kubernetes_watch import STALE_AFTER_CYCLES
@@ -106,12 +107,12 @@ async def async_main(settings: Settings) -> None:
                     listen_host=settings.listen_host,
                     listen_port=settings.listen_port,
                 ),
-                serve_rules_api(rules_app, settings.agent_api_host, settings.agent_api_port),
+                serve(rules_app, settings.agent_api_host, settings.agent_api_port),
                 # Admitted last, so that /healthz answering at all means the two listeners above
                 # are bound. It is the readiness probe, and readiness gates every Service this Pod
                 # backs -- entered first it reports the Pod ready while mitmproxy, much the slower
                 # of the two to bind, still refuses connections on the tunnel port.
-                serve_admin(
+                serve(
                     create_admin_app(decision_log, index, resync_seconds=settings.resync_seconds),
                     settings.admin_host,
                     settings.admin_port,

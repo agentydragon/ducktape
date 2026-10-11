@@ -4,15 +4,16 @@ import asyncio
 from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
-import aiohttp
+import httpx
 import pytest
 import pytest_bazel
 from alembic.autogenerate import compare_metadata
 from alembic.migration import MigrationContext
+from fastapi import FastAPI
 from sqlalchemy import func, select
 from sqlalchemy.engine import Connection
 
-from agentplane.egress.admin import create_admin_app, serve_admin
+from agentplane.egress.admin import create_admin_app
 from agentplane.egress.database_migrate import RUNNER
 from agentplane.egress.decision_log import DecisionLog
 from agentplane.egress.decision_store import Base, DecisionRecordRow, DecisionStore, make_engine
@@ -21,6 +22,10 @@ from agentplane.egress.policy import WATCHED_KINDS, Index
 from agentplane.subjects import ServiceAccountRef
 
 SUBJECT = ServiceAccountRef(namespace="test-namespace", name="test-workload")
+
+
+def admin_client(app: FastAPI) -> httpx.AsyncClient:
+    return httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://egress-admin.test")
 
 
 def record(**values) -> DecisionRecord:
@@ -66,13 +71,10 @@ async def test_shared_history_survives_replacement_and_repeated_migration(histor
         async with replacement.store.engine.begin() as connection:
             await connection.run_sync(check_migration)
         app = create_admin_app(replacement, Index(), resync_seconds=300)
-        async with (
-            serve_admin(app, "127.0.0.1", 0) as port,
-            aiohttp.ClientSession(f"http://127.0.0.1:{port}") as client,
-            client.get("/decisions", params={"namespace": SUBJECT.namespace, "name": SUBJECT.name}) as response,
-        ):
-            assert response.status == 200
-            rows = [DecisionRecord.model_validate(item) for item in await response.json()]
+        async with admin_client(app) as client:
+            response = await client.get("/decisions", params=SUBJECT.model_dump())
+        assert response.status_code == 200
+        rows = [DecisionRecord.model_validate(item) for item in response.json()]
         assert rows == [a, b]
         assert await replacement.store.recent(SUBJECT.model_copy(update={"name": "absent"})) == []
         assert await replacement.store.recent(SUBJECT.model_copy(update={"namespace": "elsewhere"})) == [], (
@@ -145,13 +147,13 @@ async def test_overflow_outage_nonblocking_and_explicit_read_failure(monkeypatch
     app = create_admin_app(
         log, Index(synced=True, refreshed=dict.fromkeys(WATCHED_KINDS, datetime.now(UTC))), resync_seconds=300
     )
-    async with serve_admin(app, "127.0.0.1", 0) as port, aiohttp.ClientSession(f"http://127.0.0.1:{port}") as client:
-        async with client.get("/decisions") as response:
-            assert response.status == 503
-            assert await response.json() == {"error": "decision-history-unavailable"}
-        async with client.get("/healthz") as response:
-            assert response.status == 200
-            assert (await response.json())["decisionHistory"]["dropped_overflow"] == 1
+    async with admin_client(app) as client:
+        refused = await client.get("/decisions")
+        health = await client.get("/healthz")
+    assert refused.status_code == 503
+    assert "test private exception" not in refused.text
+    assert health.status_code == 200
+    assert health.json()["decisionHistory"]["dropped_overflow"] == 1
     # Shutdown must not wait for the deliberately unreleased DB operation.
     await log.close(flush_seconds=0.01)
     assert not release.is_set()

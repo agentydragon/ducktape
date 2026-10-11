@@ -1073,7 +1073,6 @@ flowchart TD
         RUNNER_HARNESS_ENUM[Candidate: Harness enum beside its owner]
         NATIVE_PROCESS_DEDUP[Candidate: one native process wrapper]
         EGRESS_DECISIONS_CLIENT[Candidate: egress decisions client beside the server]
-        EGRESS_RULES_API_TIDY[Candidate: egress rules API tidy]
         LLM_INGRESS_MODEL_CONFIG_CONTRACT[Candidate: structural absent model config]
         ACTION_SETTINGS_SINGLE_MODEL[Candidate: one Action Service settings model]
         ACTION_PROTOCOLS_CONCRETE[Candidate: concrete types for Action protocols]
@@ -1281,12 +1280,6 @@ and make `async_process` test-only.
 **Candidate.** `app/decisions.py` mirrors egress `Outcome`/`Decision` and holds the client for the
 egress `/decisions` route. Move model and client into `agentplane/egress/`, drop the never-set
 `DecisionRecord.path`, and say at the model which written-but-unread columns operators query.
-
-### `EGRESS_RULES_API_TIDY` — egress rules API tidy
-
-**Candidate.** `rules_api.py` keeps a test-only staging `HOST` and polls `server.started` with a
-sleep; the central proxy serves aiohttp `admin.py` beside a FastAPI app with hand-built dict JSON.
-Move the host into the tests, wait on the condition, and serve both listeners on one stack.
 
 ### `LLM_INGRESS_MODEL_CONFIG_CONTRACT` — structural absent model config
 

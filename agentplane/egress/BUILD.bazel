@@ -33,11 +33,23 @@ py_library(
     srcs = ["admin.py"],
     deps = [
         ":decision_log",
+        ":decisions",
         ":policy",
+        ":resources",
         "//agentplane:kubernetes_watch",
         "//agentplane:subjects",
-        "@pypi//aiohttp",
+        "@pypi//fastapi",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "listener",
+    srcs = ["listener.py"],
+    deps = [
+        "@pypi//fastapi",
         "@pypi//more_itertools",
+        "@pypi//uvicorn",
     ],
 )
 
@@ -88,6 +100,7 @@ py_library(
         ":decision_store",
         ":identity",
         ":informer",
+        ":listener",
         ":policy",
         ":proxy",
         ":rules_api",
@@ -225,6 +238,7 @@ py_test(
         ":decision_log",
         ":decisions",
         ":identity",
+        ":listener",
         ":policy",
         ":proxy",
         ":resources",
@@ -384,7 +398,7 @@ py_test(
         ":resources",
         "//:conftest",
         "//agentplane/testing:fake_apiserver",
-        "@pypi//aiohttp",
+        "@pypi//httpx",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
@@ -427,7 +441,6 @@ py_library(
         "//agentplane/workload_auth:http",
         "//agentplane/workload_auth:principal",
         "@pypi//fastapi",
-        "@pypi//uvicorn",
     ],
 )
 
@@ -498,8 +511,9 @@ py_test(
         ":policy",
         "//:conftest",
         "//agentplane:subjects",
-        "@pypi//aiohttp",
         "@pypi//alembic",
+        "@pypi//fastapi",
+        "@pypi//httpx",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",

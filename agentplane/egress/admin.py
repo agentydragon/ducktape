@@ -3,92 +3,54 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import AsyncIterator, Callable
-from contextlib import asynccontextmanager
+from collections.abc import Callable
 from datetime import UTC, datetime
+from typing import Literal
 
-from aiohttp import web
-from more_itertools import one
+from fastapi import FastAPI, HTTPException, Response, status
+from pydantic import BaseModel, ConfigDict
+from pydantic.alias_generators import to_camel
 
 from agentplane.egress.decision_log import DB_ERRORS, DecisionLog
+from agentplane.egress.decisions import DecisionRecord
 from agentplane.egress.policy import Index, resolve_binding
+from agentplane.egress.resources import ActiveReason
 from agentplane.kubernetes_watch import STALE_AFTER_CYCLES
 from agentplane.subjects import ServiceAccountRef
 
 logger = logging.getLogger(__name__)
 
-_DECISION_LOG = web.AppKey("decision_log", DecisionLog)
-_INDEX = web.AppKey("index", Index)
-_STALE_AFTER = web.AppKey("stale_after", float)
-_CLOCK: web.AppKey[Callable[[], datetime]] = web.AppKey("clock")
+
+class _CamelModel(BaseModel):
+    model_config = ConfigDict(alias_generator=to_camel, validate_by_name=True, serialize_by_alias=True)
 
 
-async def _decisions(request: web.Request) -> web.Response:
-    """`?namespace=&name=` selects one subject; neither selects the refusals that never authenticated."""
-    namespace, name = request.query.get("namespace"), request.query.get("name")
-    if (namespace is None) != (name is None):
-        raise web.HTTPBadRequest(reason="namespace and name are given together or not at all")
-    subject = None if namespace is None or name is None else ServiceAccountRef(namespace=namespace, name=name)
-    try:
-        decisions = await request.app[_DECISION_LOG].store.recent(subject)
-    except DB_ERRORS as error:
-        logger.warning("decision history read failed (%s)", type(error).__name__)
-        return web.json_response({"error": "decision-history-unavailable"}, status=503)
-    return web.json_response([decision.model_dump(mode="json") for decision in decisions])
+class Health(_CamelModel):
+    synced: bool
+    draining: bool
+    decision_history: dict[str, int | bool | None]
+    stale_after_seconds: float
+    refreshed_seconds_ago: dict[str, float]
 
 
-async def _healthz(request: web.Request) -> web.Response:
-    """Healthy means the index is both complete and still moving.
-
-    `synced` alone said only that every kind had been listed once, so a proxy whose watches had
-    since wedged went on answering 200 while it served a frozen snapshot of the rules -- the whole
-    point of a policy engine being wrong in the quiet direction. The ages below are the facts; the
-    status code is the verdict on them.
-    """
-    index, stale_after = request.app[_INDEX], request.app[_STALE_AFTER]
-    now = request.app[_CLOCK]()
-    ages = {plural: (now - at).total_seconds() for plural, at in index.refreshed.items()}
-    healthy = index.available(now, stale_after_seconds=stale_after)
-    return web.json_response(
-        {
-            "synced": index.synced,
-            "draining": index.draining,
-            "decisionHistory": request.app[_DECISION_LOG].health(),
-            "staleAfterSeconds": stale_after,
-            "refreshedSecondsAgo": {plural: round(age, 1) for plural, age in sorted(ages.items())},
-        },
-        status=200 if healthy else 503,
-    )
+class BindingObservation(_CamelModel):
+    name: str
+    uid: str | None
+    generation: int | None
+    reason: ActiveReason
+    policies: list[str]
+    missing_policies: list[str]
 
 
-async def _bindings(request: web.Request) -> web.Response:
-    index = request.app[_INDEX]
-    now = request.app[_CLOCK]()
-    return web.json_response(
-        {
-            "scope": "replica-local",
-            "observedAt": now.isoformat(),
-            "available": index.available(now, stale_after_seconds=request.app[_STALE_AFTER]),
-            "bindings": [
-                {
-                    "name": resolution.binding.metadata.name,
-                    "uid": resolution.binding.metadata.uid,
-                    "generation": resolution.binding.metadata.generation,
-                    "reason": resolution.reason,
-                    "policies": [policy.metadata.name for policy in resolution.policies],
-                    "missingPolicies": list(resolution.missing),
-                }
-                for resolution in (
-                    resolve_binding(index, binding, now)
-                    for binding in sorted(index.bindings.values(), key=lambda binding: binding.metadata.name)
-                )
-            ],
-        }
-    )
+class Bindings(_CamelModel):
+    scope: Literal["replica-local"] = "replica-local"
+    observed_at: datetime
+    available: bool
+    bindings: list[BindingObservation]
 
 
-async def _livez(request: web.Request) -> web.Response:
-    return web.json_response({"alive": True})
+class Liveness(BaseModel):
+    alive: bool = True
 
 
 def create_admin_app(
@@ -97,27 +59,68 @@ def create_admin_app(
     *,
     resync_seconds: int,
     clock: Callable[[], datetime] = lambda: datetime.now(UTC),
-) -> web.Application:
-    app = web.Application()
-    app[_DECISION_LOG] = decision_log
-    app[_INDEX] = index
-    app[_STALE_AFTER] = float(resync_seconds * STALE_AFTER_CYCLES)
-    app[_CLOCK] = clock
-    app.router.add_get("/decisions", _decisions)
-    app.router.add_get("/bindings", _bindings)
-    app.router.add_get("/healthz", _healthz)
-    app.router.add_get("/livez", _livez)
+) -> FastAPI:
+    app = FastAPI(title="agentplane-egress-admin")
+    stale_after = float(resync_seconds * STALE_AFTER_CYCLES)
+
+    @app.get("/decisions")
+    async def decisions(namespace: str | None = None, name: str | None = None) -> list[DecisionRecord]:
+        """`?namespace=&name=` selects one subject; neither selects the refusals that never authenticated."""
+        if (namespace is None) != (name is None):
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, "namespace and name are given together or not at all")
+        subject = None if namespace is None or name is None else ServiceAccountRef(namespace=namespace, name=name)
+        try:
+            return await decision_log.store.recent(subject)
+        except DB_ERRORS as error:
+            logger.warning("decision history read failed (%s)", type(error).__name__)
+            raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "decision-history-unavailable") from None
+
+    @app.get("/healthz")
+    async def healthz(response: Response) -> Health:
+        """Healthy means the index is both complete and still moving.
+
+        `synced` alone said only that every kind had been listed once, so a proxy whose watches had
+        since wedged went on answering 200 while it served a frozen snapshot of the rules -- the whole
+        point of a policy engine being wrong in the quiet direction. The ages below are the facts; the
+        status code is the verdict on them.
+        """
+        now = clock()
+        if not index.available(now, stale_after_seconds=stale_after):
+            response.status_code = status.HTTP_503_SERVICE_UNAVAILABLE
+        return Health(
+            synced=index.synced,
+            draining=index.draining,
+            decision_history=decision_log.health(),
+            stale_after_seconds=stale_after,
+            refreshed_seconds_ago={
+                plural: round((now - at).total_seconds(), 1) for plural, at in sorted(index.refreshed.items())
+            },
+        )
+
+    @app.get("/bindings")
+    async def bindings() -> Bindings:
+        now = clock()
+        return Bindings(
+            observed_at=now,
+            available=index.available(now, stale_after_seconds=stale_after),
+            bindings=[
+                BindingObservation(
+                    name=resolution.binding.metadata.name,
+                    uid=resolution.binding.metadata.uid,
+                    generation=resolution.binding.metadata.generation,
+                    reason=resolution.reason,
+                    policies=[policy.metadata.name for policy in resolution.policies],
+                    missing_policies=list(resolution.missing),
+                )
+                for resolution in (
+                    resolve_binding(index, binding, now)
+                    for binding in sorted(index.bindings.values(), key=lambda binding: binding.metadata.name)
+                )
+            ],
+        )
+
+    @app.get("/livez")
+    async def livez() -> Liveness:
+        return Liveness()
+
     return app
-
-
-@asynccontextmanager
-async def serve_admin(app: web.Application, host: str, port: int) -> AsyncIterator[int]:
-    """Serve `app`, yielding the bound port (pass 0 for an ephemeral one)."""
-    runner = web.AppRunner(app, shutdown_timeout=5)
-    await runner.setup()
-    site = web.TCPSite(runner, host, port)
-    await site.start()
-    try:
-        yield one(runner.addresses)[1]
-    finally:
-        await runner.cleanup()
