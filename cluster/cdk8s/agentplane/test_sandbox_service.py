@@ -179,11 +179,12 @@ def _token_audience(pod: dict[str, Any], container: str, token_file: str) -> str
         if token_file.startswith(f"{mount['mountPath']}/")
     )
     volume = one(volume for volume in pod["volumes"] if volume["name"] == mount["name"])
-    return one(
+    audience: str = one(
         source["serviceAccountToken"]["audience"]
         for source in volume["projected"]["sources"]
         if source["serviceAccountToken"]["path"] == token_file.removeprefix(f"{mount['mountPath']}/")
     )
+    return audience
 
 
 @pytest.mark.parametrize("namespace", NAMESPACES)
@@ -196,10 +197,12 @@ def test_gateway_callers_send_the_gateway_audience(
         return one(doc for doc in documents if doc["kind"] == kind and doc["metadata"]["name"] == name)
 
     def pod(name: str) -> dict[str, Any]:
-        return resource("Deployment", name)["spec"]["template"]["spec"]
+        spec: dict[str, Any] = resource("Deployment", name)["spec"]["template"]["spec"]
+        return spec
 
     def config(name: str, key: str) -> dict[str, Any]:
-        return yaml.safe_load(resource("ConfigMap", name)["data"][key])
+        loaded: dict[str, Any] = yaml.safe_load(resource("ConfigMap", name)["data"][key])
+        return loaded
 
     accepted = config(f"{runner_gateway.NAME}-config", "config.yaml")["token_audience"]
     app_args = one(item for item in pod(app.NAME)["containers"] if item["name"] == "app")["args"]
