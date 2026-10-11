@@ -22,9 +22,9 @@ Standing under it:
   exact origins or namespaces plus verbs, a duration and a rationale, manual approval under the
   agent policy, `get_tool_call` for the long poll, `withdraw_tool_call`. The agent working on
   Agentplane lives this story from the agent's side every time it needs a key it does not hold.
-- The standalone Action Service landed in PR
-  [#5700](https://github.com/agentydragon/ducktape/pull/5700): one invariant ActionRequest, a separate
-  human Decision, automatic at-most-one Execution, caller-own/operator-all reads, and no blind retry.
+- The [Action Service](../action_service/SPEC.md): one invariant ActionRequest, a separate human
+  Decision, automatic at-most-one Execution, a namespaced Action catalog with MCP executors, and
+  Action policies that auto-approve within reviewed scope.
 - Submission is non-blocking. Agents can follow Decision/result events through an SA-authorized
   runner-session inbox and machine notices from the [notification service](../notification_service/README.md).
   Replacing the source's idle Action-history polling remains
@@ -42,20 +42,14 @@ Standing under it:
   ([`../docs/egress_composition.md`](../docs/egress_composition.md)).
 - Host commands: Haku's node daemons (`hostexec`) already run an approved command on a named
   machine.
-- Delivery to Rai exists once already: Haku Console sends a Web Push with Approve and Deny for a
-  waiting tool call and retracts it when the call leaves the queue
-  ([`haku/SPEC.md`](../../haku/SPEC.md)).
+- Delivery to Rai: the Action Service sends approval Web Push for pending requests
+  ([README](../action_service/README.md#action-live-updates-and-approval-web-push)), as Haku
+  Console does for waiting tool calls ([`haku/SPEC.md`](../../haku/SPEC.md)).
 - [`../docs/hooks.md`](../docs/hooks.md): a `PreToolUse` deny with a reason is the cheapest way to
   turn a refused call into an ask the model understands.
 
 Missing:
 
-- **Action schema contract.** Decide the stable namespaced Action definition, parameter validation,
-  result/error and redaction contracts, and compatibility rules. The landed echo capability is a
-  fixture, not a production definition; no public `action_version` is required.
-- **Executor wiring contract.** Select and validate one concrete adapter/backend, process and
-  credential boundary, dispatch/result transport, health discovery, and exactly-one/no-retry
-  behavior across loss.
 - **Standing grants as a separate product.** An `EgressBinding` or Kubernetes binding can represent
   reusable authority; it is not another outcome or repeated Execution of one ActionRequest.
 
@@ -75,9 +69,9 @@ Standing under it:
   what the central proxy keys credentials and rules on.
 - Threads outlive sandboxes (`T1`): every event on both sides of a delegation is stored under
   a thread, so the audit of what crossed the channel is the same store the UI reads.
-- The threads API is the seed of cross-transcript reads. Haku Console already scopes conversation
-  reads to the reader's trust tier ([`haku/console/TODO.md`](../../haku/console/TODO.md)
-  § Scope conversation reads to the reader's trust tier): the fence is the tier, not the room.
+- The threads API is the seed of cross-transcript reads. Haku's
+  [information trust tiers](../../haku/plans/information_trust_tiers.md) sketch scopes conversation
+  reads to the reader's trust tier: the fence is the tier, not the room.
 
 Missing:
 
@@ -130,11 +124,11 @@ Missing:
 - **Wake-ups.** A specialist's `TurnCompleted` reaching an idle orchestrator as an input, when it
   asked to be woken, is the same delivery path as an approval decision; the batcher makes a burst
   of results one input.
-- **A notification queue with a read primitive.** Everything addressed to an agent (a sandbox
-  died, a turn completed, a decision landed, a message from another agent) accumulates in a queue
-  the agent drains with one call, oldest first, marking what it read; the wake-up input tells an
-  idle agent the queue is non-empty, a busy agent reads when it chooses. This is the primitive
-  Claude Code gives its own sessions as `ReadNotifications` (Rai).
+- **Every agent-addressed event in the inbox.** The
+  [notification service](../notification_service/README.md) inbox is the queue an agent reads
+  and explicitly acknowledges, with a notice telling it the inbox is non-empty; its sources are
+  Actions and GitHub. A sandbox dying, a turn completing and a message from another agent are not
+  sources yet.
 - **Cross-transcript reads for the orchestrator**, tier-scoped, so Haku can read what a specialist
   did without the specialist being able to read Haku.
 
@@ -203,8 +197,8 @@ Missing:
 
 ## What this fixes about the order of work
 
-- Story 1 is next: the proxy has landed and is where a denied call turns into an ask, and the
-  approvals machinery is already designed.
+- Story 1 lacks only standing grants as their own product: the proxy, the Action Service and
+  approval delivery stand.
 - Story 2 has the proxy's per-identity credential sets and the thread store, and adds tiers,
   the events kind filter, and the judge.
 - Story 3 is story 2 with the orchestrator in the driver's seat and the fleet view on top.
@@ -219,5 +213,3 @@ Missing:
 - How the ingress admits a workload: the sandbox identity's own token (TokenReview, as the
   egress proxy does) or a per-workload secret the deploy pipeline mints; the former needs no
   new secret.
-- Which notification channel carries the ask cards; the existing Haku console approvals are the
-  fallback until one is chosen.

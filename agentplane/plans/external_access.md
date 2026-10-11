@@ -59,19 +59,15 @@ per managed Sandbox. Its egress sidecar holds a projected Kubernetes-audience to
 substitutes that Sandbox SA's identity for `kubectl` requests. The workload receives a
 placeholder kubeconfig, not the token. Kubernetes enforces the resulting SA's RBAC.
 
-Flux owns shared Role rules and the catalog of explicitly enabled role/scope choices.
-The operator may replace a preset's launch defaults with any catalog choice. Agentplane
-resolves choices before creation, supplies the created SA as subject, persists the
-concrete templates, and reconciles its owned bindings through deletion. Editing a Role
-affects all already-bound Sandboxes; editing a preset or catalog entry does not retarget
-them. Runtime additions/removals of a Sandbox SA's grants remain future work.
+[Agent RBAC](../../cluster/docs/agent_rbac.md#agentplane-managed-sandbox-grants) documents the
+implemented grant catalog, launch-time resolution and binding ownership. Runtime additions and
+removals of a Sandbox SA's grants are the open [RBAC grant-group design](kubernetes_rbac_groups.md).
 
 External OAuth Haku continues to use its static `claude-ai` caller through MCP-created
 sandboxes. It runs `kubectl` from that sandbox; no OAuth-to-Kubernetes gateway is part
 of this design. Its existing static permissions and view-only Coinbase Secret grant
-remain separate from the managed Haku preset. See
-[agent RBAC](../../cluster/docs/agent_rbac.md) for the configured managed grants and
-[the Sandbox task](task_dag.md#sandbox_rbac--bounded-deployed-grant-checks) for live acceptance still required.
+remain separate from the managed Haku preset. Live acceptance still required is
+[the Sandbox task](task_dag.md#sandbox_rbac--bounded-deployed-grant-checks).
 
 ## Candidate revocation gate for minted grants
 
@@ -111,16 +107,10 @@ reconciler lands; with one identity per grant, only the grant being revoked paus
 The same guarantee holds for any target the egress fence fronts, since header substitution works
 the same for GitHub or Forgejo tokens, with the desired-versus-actual check replaced by whatever
 that target exposes about the token's scope; it does not hold where the agent must possess the
-real credential. BuildBuddy is now split at the measured transport boundary: local HTTP API and
-gRPC clients can present `agentplane-credential-<name>` as the whole
-`x-buildbuddy-api-key` header/metadata value, and the proxy substitutes it across unary and
-bidirectional HTTP/2 calls with trailers intact. Under the current header-only contract, `bb remote`
-still sends the placeholder in the Bazel command run on BuildBuddy's hosted runner. A narrow rewrite
-of the unary `runner.RunRequest.steps[].run` protobuf field can keep the real key out of the local
-Sandbox, but it delivers the key to agent-controlled code on the hosted runner, which breaks the
-rule that agents never hold real credentials; adopting it needs an explicit, recorded exception. The implemented transport contract is canonical in the
-[egress SPEC](../egress/SPEC.md); the candidate rewrite and its required evidence are in
-[`buildbuddy_remote_auth.md`](../docs/buildbuddy_remote_auth.md).
+real credential. BuildBuddy-hosted `bb remote` is such a case: the
+[egress SPEC](../egress/SPEC.md) covers local HTTP/gRPC clients, and
+[`buildbuddy_remote_auth.md`](../docs/buildbuddy_remote_auth.md) records why the hosted runner
+still needs the real key.
 
 ## Choosing
 

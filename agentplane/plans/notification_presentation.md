@@ -1,10 +1,9 @@
 # Notification presentation and input metadata
 
-Status: follow-up to [generic command admission](command_admission.md), not part of its initial
-persistence/routing or outbound-channel rollout. The [task DAG](task_dag.md#notification_presentation--compact-notification-rendering)
-tracks the dependencies. Review metadata/provenance after admission settles; do not add notification
-fields or producer integration to the admission foundation. This plan replaces the earlier proposal
-to carry presentation metadata through runner commands and journals.
+Status: open. Builds on durable command admission, whose contract is in the
+[Sandbox Service API](../sandbox_service/API.md#sessions-and-commands). The
+[task DAG](task_dag.md#notification_presentation--compact-notification-rendering) tracks the
+dependencies.
 
 ## Goal and boundaries
 
@@ -73,10 +72,9 @@ read APIs must enforce session access and return only authorized fields.
 
 ## Admission dependency and metadata persistence
 
-[Durable command admission](command_admission.md) owns the base persistence, immediate-dispatch,
-retry and redelivery contract for all runner commands. This notification extension is a
-later phase, outside the initial command-admission PR; it must not add another input-only queue.
-The source trace and admission recovery requirements live in that owning plan.
+The [command admission contract](../sandbox_service/API.md#sessions-and-commands) owns base
+persistence, immediate dispatch, retry and redelivery for all runner Commands. This extension must
+not add another input-only queue.
 
 Extend the service-owned admission record with typed metadata and
 server-stamped producer provenance. Preserve an immutable accepted snapshot across replay, inbox
@@ -118,8 +116,7 @@ human text using prefix heuristics. Initially render mixed messages normally wit
 
 The [DAG](task_dag.md#2-service-owned-command-admission-and-later-notification-presentation) owns status and edges:
 
-1. `SESSION_INPUT_METADATA`: add typed annotations and producer
-   authorization. This is not part of the initial command-admission PR.
+1. `SESSION_INPUT_METADATA`: add typed annotations and producer authorization.
 2. `SESSION_INPUT_METADATA_READ` and `NOTIFICATION_NOTICE_METADATA`: authorized annotation reads and
    producer integration after the metadata extension exists.
 3. `NOTIFICATION_PRESENTATION`: compact rendering after metadata reads and producer integration.
