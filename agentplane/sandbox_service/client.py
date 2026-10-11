@@ -18,6 +18,7 @@ from agentplane.grpc_options import grpc_channel_option_kvps
 from agentplane.proto import (
     command_pb2,
     event_log_pb2,
+    runner_gateway_pb2,
     runner_gateway_pb2_grpc,
     runner_pb2,
     sandbox_service_pb2,
@@ -275,6 +276,17 @@ class SandboxServiceClient:
 
     async def revoke_egress(self, name: str) -> None:
         await self.unary(self.stub.RevokeEgress, sandbox_service_pb2.RevokeEgressRequest(binding_name=name))
+
+    async def session_sandboxes(self, session_ids: set[str]) -> list[runner_gateway_pb2.SessionSandbox]:
+        """Where each Session the gateway registered among `session_ids` runs."""
+        request = runner_gateway_pb2.BatchGetSessionSandboxesRequest(session_ids=sorted(session_ids))
+        return list((await self.unary(self.gateway.BatchGetSessionSandboxes, request)).sessions)
+
+    async def find_sessions(
+        self, request: runner_gateway_pb2.FindSessionsRequest
+    ) -> list[runner_gateway_pb2.SessionSandbox]:
+        """Every Session in a Sandbox whose name `request` matches, deleted Sandboxes included."""
+        return list((await self.unary(self.gateway.FindSessions, request)).sessions)
 
     async def watch_sessions(self, *, after_position: int) -> AsyncIterator[sandbox_service_pb2.SessionChange]:
         """Yield changes after the position until planned renewal, which returns; anything else raises."""

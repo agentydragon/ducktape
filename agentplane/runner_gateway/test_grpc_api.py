@@ -19,7 +19,15 @@ from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from agentplane.grpc_serving import serving
-from agentplane.proto import command_pb2, event_log_pb2, event_pb2, runner_pb2, runner_pb2_grpc, sandbox_service_pb2
+from agentplane.proto import (
+    command_pb2,
+    event_log_pb2,
+    event_pb2,
+    runner_gateway_pb2,
+    runner_pb2,
+    runner_pb2_grpc,
+    sandbox_service_pb2,
+)
 from agentplane.proto.sandbox_service_pb2 import ResolvedGrant, SandboxDestination
 from agentplane.runner.errors import RunnerError, StreamClosedError
 from agentplane.runner_gateway.commands.connections import ConnectionStore
@@ -1113,6 +1121,41 @@ async def test_watch_sessions_resumes_after_disconnect_and_wakes_on_other_writer
         assert (await resumed.read()).HasField("reconnect_required")
         assert await resumed.read() is grpc.aio.EOF
         assert await resumed.code() == grpc.StatusCode.OK
+
+
+async def test_session_sandboxes_answer_from_the_registry_including_deleted_sandboxes(
+    cluster: Cluster, resources: Resources, token_file: Path, engine: AsyncEngine
+) -> None:
+    live_id, deleted_id, unknown_id = uuid4(), uuid4(), uuid4()
+    await register(engine, live_id, f"r-{live_id}")
+    await register_session(
+        engine,
+        deleted_id,
+        sandbox_namespace=SANDBOX_NAMESPACE,
+        sandbox_name="Deleted-Sandbox",
+        sandbox_uid=None,
+        runner_session_id="deleted-runner",
+    )
+    live = runner_gateway_pb2.SessionSandbox(
+        session_id=str(live_id), sandbox_namespace=SANDBOX_NAMESPACE, sandbox=SANDBOX, sandbox_uid=SANDBOX_UID
+    )
+    deleted = runner_gateway_pb2.SessionSandbox(
+        session_id=str(deleted_id), sandbox_namespace=SANDBOX_NAMESPACE, sandbox="Deleted-Sandbox"
+    )
+    async with service_client(resources, token_file, cluster.provisioning) as remote:
+        got = await remote.session_sandboxes({str(live_id), str(deleted_id), str(unknown_id)})
+        assert sorted(got, key=lambda found: found.session_id) == sorted(
+            [live, deleted], key=lambda found: found.session_id
+        )
+        assert await remote.find_sessions(runner_gateway_pb2.FindSessionsRequest(sandbox_name=SANDBOX)) == [live]
+        # Case-insensitive, and a LIKE wildcard in the text is matched literally.
+        contains = runner_gateway_pb2.FindSessionsRequest(sandbox_name_contains="deleted-")
+        assert await remote.find_sessions(contains) == [deleted]
+        wildcard = runner_gateway_pb2.FindSessionsRequest(sandbox_name_contains="%")
+        assert await remote.find_sessions(wildcard) == []
+        with pytest.raises(ServiceError) as unmatched:
+            await remote.find_sessions(runner_gateway_pb2.FindSessionsRequest())
+        assert unmatched.value.code == grpc.StatusCode.INVALID_ARGUMENT
 
 
 async def test_watch_sessions_requires_allowed_caller(

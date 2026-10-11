@@ -39,8 +39,8 @@ consumer audits remain scoped cleanup, not permission to discard useful UI proje
 **Candidate; operator, 2026-10-11 PDT: the app should not keep this in its own database.**
 `event_log.sandbox` (and the `event_log_sandbox_session_id_key` constraint) is the app's own copy of
 the Runner Gateway's Session ↔ Sandbox routing; the bridge, `api.py` and the Thread list's Sandbox
-grouping read it. Give the gateway a batch read of each Session's Sandbox, switch those readers to
-it, then drop the column. Stops for the operator before the drop. Independent of
+grouping read it. The gateway answers where Sessions run (`BatchGetSessionSandboxes`,
+`FindSessions`); switch those readers to it, then drop the column. Stops for the operator before the drop. Independent of
 `APP_SESSION_SCHEMA_RENAME`; whichever lands second rebases.
 
 ### `APP_ALEMBIC_SQUASH` — consolidate the final app schema

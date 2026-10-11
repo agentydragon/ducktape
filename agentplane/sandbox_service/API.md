@@ -268,6 +268,15 @@ fan-out queue.
 `CreateSession` reserves the Session's registry row; the Sandbox Service keeps no copy of its
 Events. Runner journals remain on the state volume, and the History Service ingests them.
 
+## Session placement
+
+`BatchGetSessionSandboxes` and `FindSessions` are open to every `caller_accounts` caller and carry
+no transcript. Each answers from the gateway's registry, deleted Sandboxes included: a Session's
+public ID, Sandbox namespace and name, and incarnation UID (empty for imported Sessions without
+one). `BatchGetSessionSandboxes` takes at most 1000 IDs and leaves out any the gateway never
+registered; `FindSessions` returns every Session in a Sandbox with exactly the given name, or whose
+name contains the given text, ignoring case.
+
 ## Session feed
 
 `WatchSessions` is server-streaming and open to every `caller_accounts` caller; it carries no
