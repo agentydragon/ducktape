@@ -54,7 +54,6 @@ def _openapi_document(api_client: k8s_client.ApiClient) -> dict[str, Any]:
         # Schema export never makes an RPC; these are inert placeholder arguments, not runtime defaults.
         request_timeout_s=1,
         lifecycle_timeout_s=1,
-        follow_timeout_s=1,
     )
     history = HistoryServiceClient("schema.invalid:8080", token_file=Path("/schema-unused-token"), request_timeout_s=1)
     # An engine connects lazily, so a URL nothing listens on is fine for a document.

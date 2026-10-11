@@ -7,18 +7,7 @@ Session history lives in another database, keyed by the same public Session ID w
 from datetime import datetime
 from uuid import UUID
 
-from sqlalchemy import (
-    BigInteger,
-    CheckConstraint,
-    DateTime,
-    Index,
-    LargeBinary,
-    Sequence,
-    String,
-    UniqueConstraint,
-    func,
-    text,
-)
+from sqlalchemy import BigInteger, CheckConstraint, DateTime, Index, LargeBinary, String, UniqueConstraint, func, text
 from sqlalchemy.dialects.postgresql import ARRAY
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
@@ -32,12 +21,8 @@ class Base(DeclarativeBase):
     pass
 
 
-# Allocated only by `SessionRegistry`, under a lock that orders positions by commit (WatchSessions resumes after one).
-CHANGE_POSITION = Sequence("session_change_position", metadata=Base.metadata)
-
-
 class Session(Base):
-    """A public Session: its runner locator in one Sandbox incarnation, Open reservation and feed position."""
+    """A public Session: its runner locator in one Sandbox incarnation and its Open reservation."""
 
     __tablename__ = "session"
     __table_args__ = (
@@ -64,7 +49,6 @@ class Session(Base):
             unique=True,
             postgresql_where=text("open_key IS NOT NULL"),
         ),
-        Index("ux_session_change_position", "change_position", unique=True),
     )
 
     id: Mapped[UUID] = mapped_column(primary_key=True)
@@ -81,8 +65,6 @@ class Session(Base):
     # before runner contact, so a changed default cannot alter the retried launch.
     open_request: Mapped[bytes | None] = mapped_column(LargeBinary)
     launch_spec: Mapped[bytes | None] = mapped_column(LargeBinary)
-    # Position of this Session's latest change in the WatchSessions feed.
-    change_position: Mapped[int] = mapped_column(BigInteger)
 
 
 class CommandSubmission(Base):

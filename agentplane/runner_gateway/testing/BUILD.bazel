@@ -9,7 +9,6 @@ py_library(
     name = "sessions",
     srcs = ["sessions.py"],
     deps = [
-        "//agentplane/runner_gateway:session_registry",
         "//agentplane/runner_gateway/commands:db",
         "@pypi//sqlalchemy",
     ],
@@ -49,7 +48,6 @@ py_library(
         "//agentplane/runner_gateway:connection_records",
         "//agentplane/runner_gateway:grpc_api",
         "//agentplane/runner_gateway:lifecycle_control",
-        "//agentplane/runner_gateway:session_changes",
         "//agentplane/runner_gateway:session_registry",
         "//agentplane/runner_gateway/commands:connections",
         "//agentplane/runner_gateway/commands:dispatch",

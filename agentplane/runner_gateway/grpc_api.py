@@ -12,7 +12,6 @@ from typing import override
 from uuid import UUID
 
 import grpc
-from google.protobuf.empty_pb2 import Empty
 from google.protobuf.json_format import ParseError
 from kubernetes_asyncio import client as k8s_client
 from sqlalchemy.exc import SQLAlchemyError
@@ -27,7 +26,7 @@ from agentplane.proto import (
 )
 from agentplane.proto.sandbox_service_pb2 import SandboxDestination
 from agentplane.runner.client import RunnerClient
-from agentplane.runner.errors import OpenTimeoutError, RunnerError, SessionSealedError, StreamClosedError
+from agentplane.runner.errors import OpenTimeoutError, RunnerError, StreamClosedError
 from agentplane.runner_gateway import session_lifecycle
 from agentplane.runner_gateway.command_delivery import CommandDelivery, CommandRefusedError
 from agentplane.runner_gateway.command_relay import admit_running_command
@@ -43,7 +42,6 @@ from agentplane.runner_gateway.commands.store import (
 from agentplane.runner_gateway.lifecycle_control import ConnectionNotHeldError, ControlRefusedError, LifecycleControl
 from agentplane.runner_gateway.runner_control import ControlOperation
 from agentplane.runner_gateway.sealing import SEAL_S, Sealing
-from agentplane.runner_gateway.session_changes import SessionChanges
 from agentplane.runner_gateway.session_registry import SessionNotFoundError, SessionRegistry
 from agentplane.sandbox_service import wire
 from agentplane.sandbox_service.destinations import DestinationResolver, DestinationUnavailableError, RunnerEndpoint
@@ -54,8 +52,6 @@ from agentplane.workload_auth.principal import WorkloadPrincipalRejectedError, W
 
 # gazelle:include_dep @pypi//protobuf
 # gazelle:include_dep @pypi//grpcio
-
-WATCH_PAGE = 256
 
 
 @dataclass(frozen=True)
@@ -71,25 +67,15 @@ class Resources:
     submissions: SubmissionStore
     delivery: CommandDelivery
     control: LifecycleControl
-    session_changes: SessionChanges
     # The Sandbox Service's account, which alone may seal a Sandbox for teardown; none where the
     # Sandbox Service seals in-process.
     sealer_accounts: frozenset[ServiceAccountRef] = frozenset()
     admission_timeout_s: float = 15
-    follow_lease_s: float = 900
     lifecycle_timeout_s: float = 300
     runner_grpc_channel_options: dict[str, int | str] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
-        if (
-            min(
-                self.admission_timeout_s,
-                self.runner_admission_ack_timeout_s,
-                self.follow_lease_s,
-                self.lifecycle_timeout_s,
-            )
-            <= 0
-        ):
+        if min(self.admission_timeout_s, self.runner_admission_ack_timeout_s, self.lifecycle_timeout_s) <= 0:
             raise ValueError("timeouts must be positive")
         if not self.caller_accounts:
             raise ValueError("at least one service caller is required")
@@ -540,96 +526,6 @@ class RunnerGateway(runner_gateway_pb2_grpc.RunnerGatewayServicer):
                 last = page[-1]
                 result.next_page_token = write_page_token(last.accepted_at, last.command.command_id)
             return result
-
-    # mypy-protobuf omits aio's supported writer-style streaming handlers. Explicit writes are
-    # intentional: flow-control stalls must stay inside the deadline and cleanup scope.
-    @override
-    async def FollowSession(  # type: ignore[override]
-        self, request: sandbox_service_pb2.FollowSessionRequest, context: grpc.aio.ServicerContext
-    ) -> None:
-        # Explicit writes keep flow-control stalls inside our deadline and finally blocks.
-        async with errors(context):
-            async with asyncio.timeout(self.resources.admission_timeout_s):
-                await self.resources.authenticate(context)
-                destination = request.destination
-                if not destination.session_id:
-                    raise ValueError("session ID is required")
-                endpoint = await self.resources.destinations.resolve(destination.sandbox, writes=False)
-            async with self._runner_client(endpoint.target) as client:
-                async with asyncio.timeout(self.resources.admission_timeout_s):
-                    attachment = await client.attach(
-                        await self.runner_session_id(destination), after_cursor=request.follow.after_cursor
-                    )
-                try:
-                    deadline = asyncio.get_running_loop().time() + self.resources.follow_lease_s
-                    async with asyncio.timeout(self.resources.admission_timeout_s):
-                        attached = runner_pb2.Attached()
-                        attached.CopyFrom(attachment.attached)
-                        attached.session_id = destination.session_id
-                        await context.write(sandbox_service_pb2.FollowSessionResponse(attached=attached))
-                    while True:
-                        # Idle runners may stay quiet for the whole lease. Only writes have
-                        # the short timeout: a blocked consumer must not pin an attachment.
-                        lease = asyncio.timeout_at(deadline)
-                        try:
-                            async with lease:
-                                entry = await attachment.next_entry()
-                        except TimeoutError:
-                            if not lease.expired():
-                                raise
-                            terminal = sandbox_service_pb2.FollowSessionResponse(reconnect_required=Empty())
-                            break
-                        except SessionSealedError as sealed:
-                            terminal = sandbox_service_pb2.FollowSessionResponse(
-                                sealed=sandbox_service_pb2.Sealed(cursor=sealed.cursor)
-                            )
-                            break
-                        except StreamClosedError:
-                            terminal = sandbox_service_pb2.FollowSessionResponse(ended=Empty())
-                            break
-                        async with asyncio.timeout(self.resources.admission_timeout_s):
-                            await context.write(sandbox_service_pb2.FollowSessionResponse(entry=entry))
-                    async with asyncio.timeout(self.resources.admission_timeout_s):
-                        await context.write(terminal)
-                finally:
-                    attachment.cancel()
-
-    @override
-    async def WatchSessions(  # type: ignore[override]
-        self, request: sandbox_service_pb2.WatchSessionsRequest, context: grpc.aio.ServicerContext
-    ) -> None:
-        async with errors(context):
-            async with asyncio.timeout(self.resources.admission_timeout_s):
-                # Any allowed service caller may watch; the feed carries no transcript.
-                await self.resources.authenticate(context)
-                sessions, changes = self.resources.sessions, self.resources.session_changes
-            loop = asyncio.get_running_loop()
-            deadline = loop.time() + self.resources.follow_lease_s
-            position = request.after_position
-            with changes.subscribe() as changed:
-                while loop.time() < deadline:
-                    changed.clear()
-                    async with asyncio.timeout(self.resources.admission_timeout_s):
-                        page = await sessions.read_changes(after_position=position, limit=WATCH_PAGE)
-                        sandboxes = await self.resources.destinations.inventory.list_sandboxes() if page else []
-                    owners = {(sandbox.name, sandbox.uid): sandbox.service_account for sandbox in sandboxes}
-                    for change in page:
-                        if (owner := owners.get((change.sandbox, change.sandbox_uid))) is not None:
-                            change.owner.CopyFrom(owner)
-                        async with asyncio.timeout(self.resources.admission_timeout_s):
-                            await context.write(sandbox_service_pb2.WatchSessionsResponse(change=change))
-                        position = change.position
-                    if len(page) == WATCH_PAGE:
-                        continue
-                    lease = asyncio.timeout_at(deadline)
-                    try:
-                        async with lease:
-                            await changed.wait()
-                    except TimeoutError:
-                        if not lease.expired():
-                            raise
-            async with asyncio.timeout(self.resources.admission_timeout_s):
-                await context.write(sandbox_service_pb2.WatchSessionsResponse(reconnect_required=Empty()))
 
     @override
     async def SealSandbox(
