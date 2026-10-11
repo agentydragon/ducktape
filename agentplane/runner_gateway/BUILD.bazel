@@ -427,7 +427,6 @@ py_test(
         "//agentplane/proto:event_log_pb2",
         "//agentplane/proto:event_pb2",
         "//agentplane/proto:runner_pb2",
-        "//agentplane/proto:runner_pb2_grpc",
         "//agentplane/runner:errors",
         "//agentplane/runner/testing:runner_server",
         "//agentplane/runner_gateway/commands:connections",
