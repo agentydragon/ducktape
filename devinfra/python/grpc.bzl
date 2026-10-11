@@ -8,6 +8,7 @@ via `//devinfra/python:proto.bzl`, which owns the proto import graph.
 
 load("@grpc//bazel:python_rules.bzl", "py_grpc_library")
 load("@protobuf//bazel/common:proto_info.bzl", "ProtoInfo")
+load("@rules_python//python:defs.bzl", "PyInfo")
 load("//devinfra/python:defs.bzl", "py_library")
 
 _MYPY_GRPC_PLUGIN = "//devinfra/python:protoc_gen_mypy_grpc"
@@ -49,6 +50,17 @@ _mypy_grpc_stub = rule(
     outputs = {"pyi": "%{module_name}.pyi"},
 )
 
+def _message_stubs_impl(ctx):
+    return DefaultInfo(files = ctx.attr.py_proto[PyInfo].direct_pyi_files)
+
+# rules_mypy reads only each direct dependency's `direct_pyi_files`, so a module importing just the
+# service module sees the message module as untyped `.py`. Re-exporting the message stubs as this
+# library's own `pyi_srcs` puts them in front of mypy for every consumer.
+_message_stubs = rule(
+    implementation = _message_stubs_impl,
+    attrs = {"py_proto": attr.label(mandatory = True, providers = [PyInfo])},
+)
+
 def py_grpc_service_library(name, proto, py_proto, visibility = None):
     """A typed `<name>` gRPC service library over a standard `py_proto_library`.
 
@@ -62,6 +74,11 @@ def py_grpc_service_library(name, proto, py_proto, visibility = None):
         grpc_library = "@pypi//grpcio",
         visibility = ["//visibility:private"],
     )
+    _message_stubs(
+        name = name + "_message_stubs",
+        py_proto = py_proto,
+        visibility = ["//visibility:private"],
+    )
     _mypy_grpc_stub(
         name = name + "_stub",
         module_name = name,
@@ -73,10 +90,8 @@ def py_grpc_service_library(name, proto, py_proto, visibility = None):
     py_library(
         name = name,
         srcs = [],
-        pyi_srcs = [":" + name + "_stub"],
+        pyi_srcs = [":" + name + "_stub", ":" + name + "_message_stubs"],
         tags = ["no-lint", "no-mypy"],
         visibility = visibility,
-        # The stub names the message types. The mypy aspect follows `deps`, not `pyi_deps`, so a module
-        # that imports only the service module needs them here to type-check.
         deps = [name + "_service", py_proto],
     )
