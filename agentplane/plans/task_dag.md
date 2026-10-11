@@ -330,7 +330,6 @@ flowchart LR
     VM_PROCESS_ISOLATION[Blocked: harness/process resource boundary]
     VM_LIFECYCLE[Blocked: integrated lifecycle]
     PROTO_DIRECTORY[Protos under agentplane/proto] --> RUNNER_OUTBOUND_ROLLOUT
-    RUNNER_CONTROL_RENAME[Name the runner's control endpoint control] --> RUNNER_OUTBOUND_ROLLOUT
     RUNNER_OUTBOUND_ROLLOUT --> LEGACY_SANDBOX_RETIRE[Blocked: operator deletes every pre-cutover Sandbox]
     LEGACY_SANDBOX_RETIRE --> RUNNER_INBOUND_RETIRE[Blocked: retire inbound runner access]
     VM_PROVIDER --> VM_CONTROL_NETWORKING
@@ -918,8 +917,6 @@ flowchart TD
     POD_INCARNATION[Decision: a Pod is the incarnation]
     SEAL_FINALIZER[Unscheduled: seal as a finalizer on every delete]
     COMMAND_RECORDS_RETIRE[Unscheduled: drop command submission records]
-    RUNNER_CONTROL_RENAME[Candidate: name the runner's control endpoint control]
-    RUNNER_CONTROL_RENAME --> RUNNER_OUTBOUND_ROLLOUT
     SESSION_ID_MINT_RETIRE[Blocked: clients always name the Session ID]
     LOOKUP_SESSION_RETIRE[Candidate: Session status from history, no Open reservation]
     RUNNER_OUTBOUND_ROLLOUT --> LEGACY_SANDBOX_RETIRE
@@ -986,15 +983,6 @@ Service, notification service), so no caller equivocates between the two.
 **Unscheduled.** `RunnerGateway` still uses the Session and command messages in the Sandbox
 Service's proto package, and one `SandboxServiceClient` serves both services. Move those messages
 into the gateway's proto and give the gateway its own client.
-
-### `RUNNER_CONTROL_RENAME` — name the runner's control endpoint "control"
-
-**Candidate; rides the clean cutover with `PROTO_DIRECTORY`.** Settings and `RunnerEndpoints` say
-`runner_control`, everything else says "channel": the runner's `--channel-target` and
-`--channel-bearer` flags, the `runner_channel_port` and `runner_channel_audience` settings, the
-`agentplane-runner-channel` audience, the `runner-channel` EgressPolicy, the `runner_channel`
-package and `docs/runner_channel.md`. Flags, audience and package cross the runner image boundary,
-so rename them all before `RUNNER_OUTBOUND_ROLLOUT`.
 
 ### `AGENTPLANE_SANDBOX_RESOURCE` — our own Sandbox resource
 
