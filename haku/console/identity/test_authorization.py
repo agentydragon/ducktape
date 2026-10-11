@@ -168,8 +168,8 @@ class Harness:
 
 @pytest.fixture
 def db_url(migrated_db_url: str) -> str:
-    """Use the shared migrated template while keeping this test's database writable and isolated."""
-    return migrated_db_url
+    """Use the shared migrated clone with a sync driver for ORM helpers in this test."""
+    return make_url(migrated_db_url).set(drivername="postgresql+psycopg").render_as_string(hide_password=False)
 
 
 HarnessFactory = Callable[..., Awaitable[Harness]]
