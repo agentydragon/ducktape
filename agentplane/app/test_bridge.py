@@ -1414,8 +1414,9 @@ async def test_open_and_resume_reply_before_archive_catches_up(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Runner receipts and a committed Thread mapping suffice; copying the feed is independent."""
-    # Stall the Sandbox Service's history copy without delaying the runner itself.
-    monkeypatch.setattr("agentplane.sandbox_service.session_history.ingestion.HistoryIngester.copy_one", AsyncMock())
+    # Stall the History Service ingester's copy without delaying the runner itself; it registers the
+    # Session, then waits for a change that never comes.
+    monkeypatch.setattr("agentplane.history_service.ingester.HistoryIngester._copy", AsyncMock())
     ingester = Ingester(runners=local_runners, event_logs=event_logs)
     bridge = RunnerBridge(runners=local_runners, event_logs=event_logs, content=content, ingester=ingester)
     opened = await asyncio.wait_for(bridge.create_session(SANDBOX, uuid4(), MessageToDict(spec)), timeout=10)
