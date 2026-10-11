@@ -35,16 +35,6 @@ class HttpModelConfigResolver:
                 )
         except httpx.HTTPError as error:
             raise ModelConfigLookupError("could not query the LLM proxy for model configuration") from error
-        # CLEANUP(added 2026-10-11): delete this 404 branch in the change that makes the ingress
-        #   answer `null` (LLM_INGRESS_MODEL_CONFIG_NULL), once no deployed ingress predates it.
-        if response.status_code == 404:
-            try:
-                detail = response.json().get("detail")
-            except ValueError, AttributeError:
-                detail = None
-            if detail == "no configuration for model":
-                return None
-            raise ModelConfigLookupError("LLM proxy model-config lookup endpoint is unavailable")
         if response.status_code != 200:
             raise ModelConfigLookupError(f"LLM proxy model-config lookup failed with HTTP {response.status_code}")
         try:

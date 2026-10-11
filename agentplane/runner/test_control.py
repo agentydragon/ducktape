@@ -151,9 +151,7 @@ async def runner(tmp_path: Path) -> AsyncIterator[Runner]:
         RunnerConfig(
             state_dir=tmp_path / "state",
             model_config_resolver=HttpModelConfigResolver(
-                transport=httpx.MockTransport(
-                    lambda _request: httpx.Response(404, json={"detail": "no configuration for model"})
-                )
+                transport=httpx.MockTransport(lambda _request: httpx.Response(200, content=b"null"))
             ),
             # Never launched: `started` stands in for the harness.
             claude=ClaudeLaunch(

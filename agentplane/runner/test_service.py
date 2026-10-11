@@ -43,9 +43,7 @@ def config(harness: runner_pb2.Harness, harness_binary: Path, tmp_path: Path) ->
     return RunnerConfig(
         state_dir=tmp_path / "state",
         model_config_resolver=HttpModelConfigResolver(
-            transport=httpx.MockTransport(
-                lambda _request: httpx.Response(404, json={"detail": "no configuration for model"})
-            )
+            transport=httpx.MockTransport(lambda _request: httpx.Response(200, content=b"null"))
         ),
         native_state_dir=tmp_path / "native-state",
         claude=ClaudeLaunch(binary=harness_binary, base_url=TEST_ENDPOINT, auth_token="test-token")

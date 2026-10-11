@@ -75,7 +75,7 @@ def model_config_resolver(windows: Mapping[str, int]) -> HttpModelConfigResolver
         model = request.url.params["model"]
         if window := windows.get(model):
             return httpx.Response(200, json={"model": model, "total_context_budget_tokens": window})
-        return httpx.Response(404, json={"detail": "no configuration for model"})
+        return httpx.Response(200, content=b"null")
 
     return HttpModelConfigResolver(transport=httpx.MockTransport(respond))
 
