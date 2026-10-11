@@ -184,7 +184,7 @@ class Service:
             return
         if not current.admitted and (current.attempted or await self.store.attempt(claim, current)):
             # Its admission and confirmation are copied by a later claim, once the History Service has them.
-            await runner.command(
+            await self.sandboxes.command(
                 claim.session_id,
                 command_pb2.Command(
                     command_id=str(current.command_id), submit_input=command_pb2.SubmitInput(text=current.text)

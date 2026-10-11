@@ -38,7 +38,7 @@ from agentplane.proto.sandbox_service_pb2 import SandboxDestination, ServiceAcco
 from agentplane.runner.testing.fixtures import RunnerHandle
 from agentplane.runner.testing.scripted_model import ScriptedModel, Text
 from agentplane.runner_gateway.instructions import render_platform_instructions
-from agentplane.sandbox_service.client import Runner
+from agentplane.sandbox_service.client import SandboxServiceClient
 from agentplane.sandbox_service.testing.kubernetes import (
     ACCOUNT,
     SANDBOX,
@@ -233,7 +233,7 @@ async def test_listen_deliver_read_ack_and_recover_lost_response_without_app(
                     assert (await agent.post("/v1/subscriptions", json=body)).json() == subscription
                     initial = None
                     if busy:
-                        await native.command(
+                        await remote.command(
                             session_id,
                             command_pb2.Command(
                                 command_id="initial", submit_input=command_pb2.SubmitInput(text="Do other work")
@@ -254,7 +254,7 @@ async def test_listen_deliver_read_ack_and_recover_lost_response_without_app(
                             command.command_id,
                             command.WhichOneof("operation"),
                         )
-                        receipt = await native.command(session_id, command)
+                        receipt = await remote.command(session_id, command)
                         history_cursor = receipt.cursor
                         logger.info(
                             "notification journal seed %d/130: admitted command_id=%s cursor=%d",
@@ -263,13 +263,13 @@ async def test_listen_deliver_read_ack_and_recover_lost_response_without_app(
                             history_cursor,
                         )
                     assert history_cursor > 128
-                    original = Runner.command
+                    original = SandboxServiceClient.command
                     lost = False
                     notice_sent = False
                     attempted_id: str | None = None
 
                     async def lose_response(
-                        self: Runner, session_id: str, command: command_pb2.Command
+                        self: SandboxServiceClient, session_id: str, command: command_pb2.Command
                     ) -> event_log_pb2.EventEntry:
                         nonlocal lost, notice_sent, attempted_id
                         if command.HasField("submit_input"):
@@ -287,7 +287,7 @@ async def test_listen_deliver_read_ack_and_recover_lost_response_without_app(
                             raise ConnectionError("simulated lost admission response")
                         return receipt
 
-                    monkeypatch.setattr(Runner, "command", lose_response)
+                    monkeypatch.setattr(SandboxServiceClient, "command", lose_response)
 
                     async def step_until_sent() -> None:
                         # A step sends only once the History Service has every entry the runner had,
@@ -386,7 +386,7 @@ async def test_listen_deliver_read_ack_and_recover_lost_response_without_app(
                         if entry.event.HasField("command_admitted")
                     ]
                     assert admitted.count(page["notice"]["command_id"]) == 1
-                    await native.command(
+                    await remote.command(
                         session_id,
                         command_pb2.Command(command_id="stop", stop_runner_session=command_pb2.StopRunnerSession()),
                     )
