@@ -866,7 +866,7 @@ probe not named `demo_`; egress and app test support each build a throwaway CA;
 `sandbox_service/models.py` holds only errors, `provisioning.py` makes its logger in a function, and
 `{session_id}` cwd templating runs twice in the gateway; operator routes are `/operator/v1/` in
 notifications but `/v1/operator/` in actions; `cluster/cdk8s/agentplane/kubevirt_experiment` is an
-experiment outside `x/`. Findings are fixed in PRs of their own; this node leaves with the last of
+experiment outside `x/`; `app/threads/models.py` cites a task DAG anchor from code. Findings are fixed in PRs of their own; this node leaves with the last of
 them.
 
 ## 11. Runner ingress and control split
