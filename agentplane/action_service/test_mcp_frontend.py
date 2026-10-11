@@ -87,6 +87,7 @@ def sandbox(label: str) -> WorkloadPrincipal:
         service_account_subject=f"system:serviceaccount:{NAMESPACE}:test-runner-{label}",
         pod_name=f"test-pod-{label}",
         pod_uid=f"test-pod-uid-{label}",
+        service_account_uid=f"test-account-uid-{label}",
     )
 
 
@@ -233,6 +234,7 @@ async def _serve(
                 audiences=[AUDIENCE],
                 user=k8s_client.V1UserInfo(
                     username=identity.service_account_subject,
+                    uid=identity.service_account_uid,
                     extra={POD_NAME_CLAIM: [identity.pod_name], POD_UID_CLAIM: [identity.pod_uid]},
                 )
                 if identity is not None

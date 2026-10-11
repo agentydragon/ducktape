@@ -28,6 +28,7 @@ TOKEN = "opaque-workload-token"
 SUBJECT = f"system:serviceaccount:{NAMESPACE}:runner"
 POD_NAME = "sandbox-a-pod"
 POD_UID = "pod-a-uid"
+ACCOUNT_UID = "account-runner-uid"
 
 
 def review(
@@ -38,6 +39,7 @@ def review(
     audiences: tuple[str, ...] = (AUDIENCE,),
     authenticated: bool = True,
     extra: Mapping[str, list[str]] | None = None,
+    account_uid: str | None = ACCOUNT_UID,
 ) -> k8s_client.V1TokenReview:
     return k8s_client.V1TokenReview(
         spec=k8s_client.V1TokenReviewSpec(token=TOKEN, audiences=[AUDIENCE]),
@@ -46,6 +48,7 @@ def review(
             audiences=list(audiences),
             user=k8s_client.V1UserInfo(
                 username=subject,
+                uid=account_uid,
                 extra=dict(extra) if extra is not None else {POD_NAME_CLAIM: [pod_name], POD_UID_CLAIM: [pod_uid]},
             ),
         ),
@@ -82,6 +85,7 @@ async def test_a_valid_bearer_is_the_service_account_its_pod_runs_as() -> None:
         service_account_subject=SUBJECT,
         pod_name=POD_NAME,
         pod_uid=POD_UID,
+        service_account_uid=ACCOUNT_UID,
     )
     authentication.assert_awaited_once()
     sent = authentication.await_args
@@ -117,6 +121,7 @@ async def test_distinct_service_accounts_in_scope_work() -> None:
         review(subject="human@example.com"),
         review(subject="system:serviceaccount:elsewhere:runner"),
         review(authenticated=False),
+        review(account_uid=None),
     ],
 )
 async def test_tokenreview_identity_gates(bad_review: k8s_client.V1TokenReview) -> None:
@@ -155,7 +160,7 @@ async def test_bearer_never_appears_in_principal_error_repr_or_logs(caplog: pyte
     assert secret not in str(rejected.value)
     assert secret not in repr(rejected.value)
     assert secret not in caplog.text
-    assert secret not in repr(WorkloadPrincipal(NAMESPACE, "runner", SUBJECT, POD_NAME, POD_UID))
+    assert secret not in repr(WorkloadPrincipal(NAMESPACE, "runner", SUBJECT, POD_NAME, POD_UID, "account-uid"))
 
 
 def credential_bearing_api_error(status: int) -> k8s_client.ApiException:

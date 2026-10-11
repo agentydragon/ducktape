@@ -41,6 +41,7 @@ async def test_a_good_token_is_the_service_account_its_pod_runs_as(verifier: Wor
         service_account_subject=f"system:serviceaccount:{SANDBOX_NAMESPACE}:{SANDBOX_A}",
         pod_name=SANDBOX_A,
         pod_uid=POD_A_UID,
+        service_account_uid=f"uid-system:serviceaccount:{SANDBOX_NAMESPACE}:{SANDBOX_A}",
     )
     assert identity.account == SUBJECT_A
 

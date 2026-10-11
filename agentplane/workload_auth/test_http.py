@@ -24,7 +24,7 @@ TOKEN = "workload-token"
 AUDIENCE = "workload-auth-test-audience"
 NAMESPACE = "sandboxes"
 SUBJECT = f"system:serviceaccount:{NAMESPACE}:runner"
-PRINCIPAL = WorkloadPrincipal(NAMESPACE, "runner", SUBJECT, "pod-a", "pod-uid")
+PRINCIPAL = WorkloadPrincipal(NAMESPACE, "runner", SUBJECT, "pod-a", "pod-uid", "account-uid")
 
 
 def authenticator() -> tuple[WorkloadPrincipalAuthenticator, AsyncMock]:
@@ -35,7 +35,9 @@ def authenticator() -> tuple[WorkloadPrincipalAuthenticator, AsyncMock]:
                 authenticated=True,
                 audiences=[AUDIENCE],
                 user=k8s_client.V1UserInfo(
-                    username=SUBJECT, extra={POD_NAME_CLAIM: [PRINCIPAL.pod_name], POD_UID_CLAIM: [PRINCIPAL.pod_uid]}
+                    username=SUBJECT,
+                    uid=PRINCIPAL.service_account_uid,
+                    extra={POD_NAME_CLAIM: [PRINCIPAL.pod_name], POD_UID_CLAIM: [PRINCIPAL.pod_uid]},
                 ),
             ),
         )

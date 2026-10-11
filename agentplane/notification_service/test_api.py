@@ -36,6 +36,7 @@ PRINCIPAL = WorkloadPrincipal(
     service_account_subject="system:serviceaccount:test:agent",
     pod_name="sandbox",
     pod_uid="pod-uid",
+    service_account_uid="account-uid",
 )
 
 
@@ -190,7 +191,7 @@ async def test_operator_status_is_read_only_and_uid_pinned(store: Store) -> None
         assert (await client.get(url, params={"uid": "sandbox-uid"})).status_code == 403
         assert (await client.get(url + "/stream", params={"uid": "sandbox-uid"})).status_code == 403
         app.dependency_overrides[authenticated_caller] = lambda: WorkloadPrincipal(
-            "test", "app", "system:serviceaccount:test:app", "app-pod", "pod-uid"
+            "test", "app", "system:serviceaccount:test:app", "app-pod", "pod-uid", "account-uid"
         )
         assert (await client.get(url, params={"uid": "another-uid"})).json()["inboxes"] == []
         response = await client.get(url, params={"uid": "sandbox-uid"})

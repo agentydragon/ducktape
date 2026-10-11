@@ -84,7 +84,7 @@ from agentplane.workload_auth.principal import WorkloadPrincipal, WorkloadPrinci
 HEAD = "a" * 40
 NEXT = "b" * 40
 SECRET = b"test-webhook-secret!"  # 20 characters: accepted on startup and used by the signed-delivery tests.
-PRINCIPAL = WorkloadPrincipal("test", "owner", "system:serviceaccount:test:owner", "pod", "uid")
+PRINCIPAL = WorkloadPrincipal("test", "owner", "system:serviceaccount:test:owner", "pod", "uid", "account-uid")
 SOURCE = GitHubSource(
     provider="github", repository="owner/repo", subject=PullRequestSubject(kind="pull_request", number=7)
 )

@@ -48,6 +48,7 @@ class Authentication:
                 audiences=[AUDIENCE],
                 user=k8s_client.V1UserInfo(
                     username=f"system:serviceaccount:{READER.namespace}:{READER.name}",
+                    uid="test-app-account-uid",
                     extra={POD_NAME_CLAIM: ["test-app-pod"], POD_UID_CLAIM: ["test-app-pod-uid"]},
                 ),
             ),

@@ -63,6 +63,7 @@ def _sandbox(label: str) -> WorkloadPrincipal:
         service_account_subject=f"system:serviceaccount:{NAMESPACE}:sandbox-{label}",
         pod_name=f"sandbox-{label}-pod",
         pod_uid=f"pod-{label}-uid",
+        service_account_uid=f"account-{label}-uid",
     )
 
 
@@ -74,6 +75,7 @@ READER = WorkloadPrincipal(
     service_account_subject=f"system:serviceaccount:{NAMESPACE}:test-reader",
     pod_name="test-reader-pod",
     pod_uid="pod-reader-uid",
+    service_account_uid="account-reader-uid",
 )
 ACCOUNT_A = ServiceAccountRef(namespace=NAMESPACE, name=SANDBOX_A.service_account_name)
 ACCOUNT_B = ServiceAccountRef(namespace=NAMESPACE, name=SANDBOX_B.service_account_name)

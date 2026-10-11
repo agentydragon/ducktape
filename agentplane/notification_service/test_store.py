@@ -33,7 +33,7 @@ from agentplane.workload_auth.principal import WorkloadPrincipal
 
 # gazelle:include_dep @pypi//protobuf
 
-PRINCIPAL = WorkloadPrincipal("test", "owner", "system:serviceaccount:test:owner", "pod", "pod-uid")
+PRINCIPAL = WorkloadPrincipal("test", "owner", "system:serviceaccount:test:owner", "pod", "pod-uid", "account-uid")
 BODY = Subscribe(
     destination_ref=DestinationRef(namespace="test", name="sandbox", uid="sandbox-uid"),
     session_id="session",
@@ -143,7 +143,7 @@ async def test_configured_inbox_and_entry_quotas(engine: AsyncEngine) -> None:
     with pytest.raises(QuotaError, match="1 inboxes"):
         await limited.subscribe(PRINCIPAL, BODY.model_copy(update={"session_id": "second"}))
     # Another account has its own capacity, even under the same configuration.
-    other = WorkloadPrincipal("test", "other", "system:serviceaccount:test:other", "pod", "pod-uid")
+    other = WorkloadPrincipal("test", "other", "system:serviceaccount:test:other", "pod", "pod-uid", "account-uid")
     claim = await limited.claim()
     assert claim is not None
     source = await limited.source(claim)

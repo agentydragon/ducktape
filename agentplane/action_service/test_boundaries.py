@@ -43,6 +43,7 @@ def principal(label: str) -> WorkloadPrincipal:
         service_account_subject=SUBJECT,
         pod_name=f"sandbox-{label}-pod",
         pod_uid=f"pod-{label}-uid",
+        service_account_uid="test-account-uid",
     )
 
 
@@ -58,6 +59,7 @@ def review(token: str, resolved: WorkloadPrincipal, *, audience: str = AUDIENCE)
             audiences=[audience],
             user=k8s_client.V1UserInfo(
                 username=resolved.service_account_subject,
+                uid=resolved.service_account_uid,
                 extra={POD_NAME_CLAIM: [resolved.pod_name], POD_UID_CLAIM: [resolved.pod_uid]},
             ),
         ),

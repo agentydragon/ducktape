@@ -26,7 +26,7 @@ from agentplane.workload_auth.principal import WorkloadPrincipal
 
 # gazelle:include_dep @pypi//protobuf
 
-PRINCIPAL = WorkloadPrincipal("test", "owner", "system:serviceaccount:test:owner", "pod", "pod-uid")
+PRINCIPAL = WorkloadPrincipal("test", "owner", "system:serviceaccount:test:owner", "pod", "pod-uid", "account-uid")
 BODY = Subscribe(
     destination_ref=DestinationRef(namespace="test", name="sandbox", uid="sandbox-uid"),
     session_id="session",

@@ -27,6 +27,9 @@ class WorkloadPrincipal:
     service_account_subject: str
     pod_name: str
     pod_uid: str
+    # TokenReview's user UID: the ServiceAccount object's, so an account recreated under the same
+    # name is a different principal.
+    service_account_uid: str
 
     @property
     def account(self) -> ServiceAccountRef:
@@ -92,12 +95,15 @@ class WorkloadPrincipalResolver:
         extra = status.user.extra or {}
         pod_name = self._one_claim(extra.get(POD_NAME_CLAIM), "Pod name")
         pod_uid = self._one_claim(extra.get(POD_UID_CLAIM), "Pod UID")
+        if not status.user.uid:
+            raise WorkloadPrincipalRejectedError("bearer names no ServiceAccount UID")
         return WorkloadPrincipal(
             namespace=namespace,
             service_account_name=service_account,
             service_account_subject=subject,
             pod_name=pod_name,
             pod_uid=pod_uid,
+            service_account_uid=status.user.uid,
         )
 
     def _service_account(self, subject: str | None) -> tuple[str, str]:
