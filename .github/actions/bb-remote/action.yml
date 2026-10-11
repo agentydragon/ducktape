@@ -90,7 +90,7 @@ inputs:
     default: ""
   bazel_invocation_ids:
     description: >
-      Optional comma-separated Bazel invocation ids for linkage. These must be
+      Optional comma-separated Bazel invocation ids for linkage and cancellation. These must be
       supplied by the caller; the linkage step never extracts invocation ids
       from command logs.
     required: false
@@ -236,8 +236,9 @@ runs:
         fi
 
         set +e
-        "${BB_REMOTE_COMMAND[@]}" 2>&1 | tee "$LOG_PATH"
-        BB_REMOTE_STATUS=${PIPESTATUS[0]}
+        # Source in this step's shell: GitHub sends cancellation to that process.
+        source devinfra/ci/bb_remote_log.sh "$LOG_PATH" "${BB_REMOTE_COMMAND[@]}"
+        BB_REMOTE_STATUS=$?
         set -e
 
         LINKAGE_STATUS=0

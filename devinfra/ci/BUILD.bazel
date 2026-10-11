@@ -388,3 +388,31 @@ py_test(
         "@pypi//pytest_bazel",
     ],
 )
+
+py_test(
+    name = "test_bb_remote_log",
+    srcs = ["test_bb_remote_log.py"],
+    data = [
+        "bb_remote_log.sh",
+        "cancel_bb_invocations.py",
+    ],
+    deps = [
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
+    name = "cancel_bb_invocations",
+    srcs = ["cancel_bb_invocations.py"],
+)
+
+py_test(
+    name = "test_cancel_bb_invocations",
+    srcs = ["test_cancel_bb_invocations.py"],
+    deps = [
+        ":cancel_bb_invocations",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
