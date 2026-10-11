@@ -121,19 +121,20 @@ class CommandSubmission(Base):
     )
 
 
+# CLEANUP(added 2026-10-11): Nothing reads or writes this table since commands and lifecycle always go
+#   over the control stream. Delete the model with the drop migration once the operator merges it
+#   (branch claude/agentplane-runner-dial-out-7te2w3-drop-runner-connection).
 class RunnerConnection(Base):
-    """The control operations a Sandbox's runner connections have agreed."""
+    """The control operations a Sandbox's runner connections agreed, before every connection carried
+    every operation."""
 
     __tablename__ = "runner_connection"
     __table_args__ = (CheckConstraint("connection_epoch > 0", name="connection_epoch_positive"),)
 
     sandbox_uid: Mapped[UUID] = mapped_column(primary_key=True)
-    # Unread and no longer written: the Sandbox's Lease holds the connection. They go with the table.
     pod_uid: Mapped[str | None] = mapped_column(String)
     connection_epoch: Mapped[int | None] = mapped_column(BigInteger)
     owner_replica: Mapped[str | None] = mapped_column(String)
     runner_boot_id: Mapped[str | None] = mapped_column(String)
     last_seen_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
-    # Every control operation a connection of this Sandbox has agreed in its handshake. It only
-    # grows, so once a runner carries an operation over the control stream it never falls back inbound.
     operations: Mapped[list[str]] = mapped_column(ARRAY(String))

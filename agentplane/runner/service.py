@@ -213,7 +213,7 @@ class Runner:
                     state_owner_descriptor=self._state_owner.descriptor,
                     make_adapter=make_adapter,
                 )
-                await self.sessions[session_id].load_setup_state()
+                await self.sessions[session_id].load_prefix_state()
                 for loaded in self.session_loaded:
                     loaded(self.sessions[session_id])
             return self.sessions[session_id]
@@ -408,6 +408,7 @@ class Runner:
                 harness_state=runner_pb2.HARNESS_STATE_RUNNING if session.running else runner_pb2.HARNESS_STATE_STOPPED,
                 active_turn_id=session.journal.recovery_state.active_turn_id,
                 setup_state=session.setup_state,
+                launch_outcome=session.launch_outcome,
             )
             for session in sorted(self.sessions.values(), key=lambda session: session.session_id)
         ]

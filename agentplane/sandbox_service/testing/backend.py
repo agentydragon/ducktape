@@ -5,7 +5,7 @@ Only the endpoint and public client escape this fixture, never provisioning impl
 """
 
 from collections.abc import AsyncIterator, Callable, Iterator, Sequence
-from contextlib import asynccontextmanager, contextmanager, nullcontext
+from contextlib import asynccontextmanager, contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, cast
@@ -35,7 +35,6 @@ from agentplane.sandbox_service.testing.fake_inventory import (
 )
 from agentplane.sandbox_service.testing.fake_rbac import FakeRbac
 from agentplane.sandbox_service.testing.grpc_service import connect
-from agentplane.sandbox_service.testing.history import register_attached_sessions
 from agentplane.subjects import ServiceAccountRef
 from agentplane.testing.fake_apiserver import fake_apiserver
 from agentplane.workload_auth.principal import POD_NAME_CLAIM, POD_UID_CLAIM, WorkloadPrincipalResolver
@@ -97,8 +96,6 @@ def backend(
     token_file: Path,
     *,
     database_url: str,
-    register_attached: bool = False,
-    runner_port: int = 1,
     default_policies: Sequence[str] = (),
     grants: dict[str, KubernetesGrant] | None = None,
     rbac: FakeRbac | None = None,
@@ -125,16 +122,11 @@ def backend(
         resources = build_resources(
             engine,
             principals=principals(AUDIENCE),
-            destinations=DestinationResolver(inventory, core_api, runner_port),
+            destinations=DestinationResolver(inventory, core_api),
             caller_accounts=frozenset({MANAGER}),
             platform_instructions=platform_instructions,
         )
         with (
-            (
-                portal.wrap_async_context_manager(register_attached_sessions(resources, engine))
-                if register_attached
-                else nullcontext()
-            ),
             portal.wrap_async_context_manager(service(resources, provisioning)) as target,
             portal.wrap_async_context_manager(connection_records_api()) as api,
             portal.wrap_async_context_manager(

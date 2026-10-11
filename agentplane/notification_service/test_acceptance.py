@@ -116,7 +116,7 @@ async def test_listen_deliver_read_ack_and_recover_lost_response_without_app(
                 ) as action_http,
                 authenticated_service(
                     cluster,
-                    runner,
+                    runner.runner,
                     token_file,
                     database_url=sandbox_service_db_url,
                     manager=delegate,
@@ -238,7 +238,6 @@ async def test_listen_deliver_read_ack_and_recover_lost_response_without_app(
                             command_pb2.Command(
                                 command_id="initial", submit_input=command_pb2.SubmitInput(text="Do other work")
                             ),
-                            after_cursor=0,
                         )
                         initial = await model.request()
                     # Real native journal longer than a worker replay batch. First delivery must
@@ -250,13 +249,12 @@ async def test_listen_deliver_read_ack_and_recover_lost_response_without_app(
                             interrupt_turn=command_pb2.InterruptTurn(turn_id="nonexistent-turn"),
                         )
                         logger.info(
-                            "notification journal seed %d/130: submitting command_id=%s operation=%s after_cursor=%d",
+                            "notification journal seed %d/130: submitting command_id=%s operation=%s",
                             index + 1,
                             command.command_id,
                             command.WhichOneof("operation"),
-                            history_cursor,
                         )
-                        receipt = await native.command(session_id, command, after_cursor=history_cursor)
+                        receipt = await native.command(session_id, command)
                         history_cursor = receipt.cursor
                         logger.info(
                             "notification journal seed %d/130: admitted command_id=%s cursor=%d",
@@ -271,11 +269,10 @@ async def test_listen_deliver_read_ack_and_recover_lost_response_without_app(
                     attempted_id: str | None = None
 
                     async def lose_response(
-                        self: Runner, session_id: str, command: command_pb2.Command, *, after_cursor: int
+                        self: Runner, session_id: str, command: command_pb2.Command
                     ) -> event_log_pb2.EventEntry:
                         nonlocal lost, notice_sent, attempted_id
                         if command.HasField("submit_input"):
-                            assert after_cursor >= history_cursor
                             if attempted_id is None:
                                 attempted_id = command.command_id
                             else:
@@ -284,7 +281,7 @@ async def test_listen_deliver_read_ack_and_recover_lost_response_without_app(
                                 lost = True
                                 raise ValueError("simulated local failure before SubmitCommand")
                         notice_sent = notice_sent or command.HasField("submit_input")
-                        receipt = await original(self, session_id, command, after_cursor=after_cursor)
+                        receipt = await original(self, session_id, command)
                         if not lost and command.HasField("submit_input"):
                             lost = True
                             raise ConnectionError("simulated lost admission response")
@@ -392,7 +389,6 @@ async def test_listen_deliver_read_ack_and_recover_lost_response_without_app(
                     await native.command(
                         session_id,
                         command_pb2.Command(command_id="stop", stop_runner_session=command_pb2.StopRunnerSession()),
-                        after_cursor=0,
                     )
     finally:
         await action_service.close()

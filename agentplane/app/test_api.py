@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import socket
 from collections.abc import AsyncIterator, Iterator
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -680,7 +679,7 @@ async def test_open_lookup_reconciles_only_runner_confirmed_sessions(
         assert (await http.get(path, params={"session_id": "not-a-uuid"})).status_code == 422
 
 
-def test_a_runner_that_does_not_answer_is_a_503(
+def test_a_runner_that_has_not_connected_is_a_503(
     tmp_path: Path,
     custom_objects: FakeCustomObjectsApi,
     core_v1: FakeCoreV1Api,
@@ -701,45 +700,35 @@ def test_a_runner_that_does_not_answer_is_a_503(
     notifications_token_file: Path,
     service_history_db_url: str,
 ) -> None:
-    """A Pod with an address but no runner listening yet, as right after a resume."""
+    """A ready Pod whose runner has not dialed the gateway yet, as right after a resume."""
     live_index.sandboxes["live"], live_index.pods["live"] = seed_runner(custom_objects, core_v1, "live")
-
-    # A bound but never listening port refuses every connection for as long as the socket is open.
-    with socket.socket() as closed_port:
-        closed_port.bind(("127.0.0.1", 0))
-        with backend(
-            custom_objects,
-            core_v1,
-            tmp_path / "failure-token",
-            database_url=service_history_db_url,
-            runner_port=closed_port.getsockname()[1],
-        ) as endpoint:
-            runners = SandboxSessions(live_index, endpoint.client())
-            app = create_app(
-                inventory,
-                RunnerBridge(
-                    runners=runners,
-                    event_logs=event_logs,
-                    content=content,
-                    ingester=Ingester(runners=runners, event_logs=event_logs, ingestion=ingestion),
-                ),
-                store,
-                TEST_MODELS,
-                egress,
-                decisions,
-                live_index,
-                action_policy,
-                reviewer=reviewer,
+    with backend(custom_objects, core_v1, tmp_path / "failure-token", database_url=service_history_db_url) as endpoint:
+        runners = SandboxSessions(live_index, endpoint.client())
+        app = create_app(
+            inventory,
+            RunnerBridge(
+                runners=runners,
                 event_logs=event_logs,
                 content=content,
-                database_updates=database_updates,
-                operator_sessions=operator_sessions,
-                electric=electric_proxy,
-                notifications_http=notifications_http,
-                notifications_token_file=notifications_token_file,
-            )
-            with TestClient(app, headers=AGENT_AUTH) as client:
-                response = client.get("/sandboxes/live/sessions")
+                ingester=Ingester(runners=runners, event_logs=event_logs, ingestion=ingestion),
+            ),
+            store,
+            TEST_MODELS,
+            egress,
+            decisions,
+            live_index,
+            action_policy,
+            reviewer=reviewer,
+            event_logs=event_logs,
+            content=content,
+            database_updates=database_updates,
+            operator_sessions=operator_sessions,
+            electric=electric_proxy,
+            notifications_http=notifications_http,
+            notifications_token_file=notifications_token_file,
+        )
+        with TestClient(app, headers=AGENT_AUTH) as client:
+            response = client.get("/sandboxes/live/sessions")
     assert response.status_code == 503
     assert "UNAVAILABLE" in response.json()["detail"]
 

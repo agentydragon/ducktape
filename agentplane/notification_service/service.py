@@ -189,7 +189,6 @@ class Service:
                 command_pb2.Command(
                     command_id=str(current.command_id), submit_input=command_pb2.SubmitInput(text=current.text)
                 ),
-                after_cursor=copied,
             )
 
     async def get_notice_due_at(self, claim: Inbox) -> datetime | None:
