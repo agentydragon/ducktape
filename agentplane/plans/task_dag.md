@@ -971,7 +971,8 @@ egress, session defaults, bootstrap command, runner endpoints) and the desired r
 running or stopped), with incarnations in its status. Recommendation: back it with an upstream
 Sandbox first and keep owning Pod and PVCs directly as the fallback; clients key off our resource
 either way. Replaces the annotations on the upstream Sandbox and the imperative-only
-`CreateSandbox`.
+`CreateSandbox`. If the Sandbox Service becomes a real controller or operator for it, rename
+the service to say so (operator, 2026-10-11 PDT).
 
 ### `POD_INCARNATION` — a Pod is the incarnation
 
