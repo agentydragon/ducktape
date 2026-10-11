@@ -40,6 +40,7 @@ from constructs import Construct
 
 from agentplane.egress import sidecar
 from agentplane.egress.resources import placeholder_of
+from agentplane.history_service.ingress_settings import RUNNER_INGRESS_AUDIENCE
 from agentplane.runner_gateway.settings import RUNNER_CONTROL_AUDIENCE
 from agentplane.workload_auth.audience import WORKLOAD_TOKEN_AUDIENCE
 from cluster.cdk8s import node_scheduling
@@ -61,6 +62,7 @@ _SUBSTITUTABLE_AUDIENCE_FILES = {
     egress.KUBERNETES_AUDIENCE: "kubernetes-token",
     notifications.TOKEN_AUDIENCE: "notifications-token",
     RUNNER_CONTROL_AUDIENCE: "runner-control-token",
+    RUNNER_INGRESS_AUDIENCE: "runner-ingress-token",
 }
 _SIDECAR_LISTEN_PORT = 3128
 # Shared by a workload's egress-ca volumeMount and the pod-level volume -- Kubernetes matches the

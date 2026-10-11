@@ -322,14 +322,13 @@ journal.
 
 ```mermaid
 flowchart LR
-    RUNNER_OUTBOUND_ROLLOUT[Blocked: every template dials out]
+    RUNNER_OUTBOUND_ROLLOUT[Candidate: runner endpoints required]
     VM_CONTROL_NETWORKING[Blocked: integrate selected VM control path]
     VM_IMAGE[Candidate: packaged guest and storage]
     VM_PROVIDER[Candidate: production provider and API]
     VM_EGRESS[Candidate: production admission and egress integration]
     VM_PROCESS_ISOLATION[Blocked: harness/process resource boundary]
     VM_LIFECYCLE[Blocked: integrated lifecycle]
-    PROTO_DIRECTORY[Protos under agentplane/proto] --> RUNNER_OUTBOUND_ROLLOUT
     RUNNER_OUTBOUND_ROLLOUT --> LEGACY_SANDBOX_RETIRE[Blocked: operator deletes every pre-cutover Sandbox]
     LEGACY_SANDBOX_RETIRE --> RUNNER_INBOUND_RETIRE[Blocked: retire inbound runner access]
     VM_PROVIDER --> VM_CONTROL_NETWORKING
@@ -344,15 +343,12 @@ flowchart LR
     SANDBOX_VM_ISOLATION --> LOCAL_BAZEL[Blocked: bounded local Bazel client in VM]
 ```
 
-### `RUNNER_OUTBOUND_ROLLOUT` — every template dials out
+### `RUNNER_OUTBOUND_ROLLOUT` — runner endpoints required
 
-**Blocked on `PROTO_DIRECTORY`.** Every Sandbox template starts its runner pushing Events to its ingress and holding its control
-stream. The Sandbox Service sets both endpoints at creation once its config carries
-`runner_control` and `runner_ingress` (staging has `runner_control`), after the images that read
-them are published. `runner_control` and `runner_ingress` then become required settings (the
-`CLEANUP` tombstone in `sandbox_service/settings.py`). Pre-cutover Sandboxes are not upgraded: a
-clean cutover (operator, 2026-10-10 PDT), with the operator stopping their one running Sandbox for
-it.
+**Candidate.** Both environments' Sandbox Service config sets `runner_control` and `runner_ingress`,
+so every new runner pushes its Events and holds its control stream. Make both required settings
+(the `CLEANUP` tombstone in `sandbox_service/settings.py`). Pre-cutover Sandboxes are not upgraded:
+a clean cutover (operator, 2026-10-10 PDT).
 
 ### `LEGACY_SANDBOX_RETIRE` — delete pre-cutover Sandboxes
 

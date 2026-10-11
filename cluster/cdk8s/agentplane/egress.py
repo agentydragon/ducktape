@@ -50,6 +50,7 @@ from trust_manager_crds.io.cert_manager.trust import (
 
 from agentplane.egress.database_migrate import MigrationSettings
 from agentplane.egress.settings import CONFIG_FILE_ENV, Settings
+from agentplane.history_service.ingress_settings import RUNNER_INGRESS_AUDIENCE
 from agentplane.runner_gateway.settings import RUNNER_CONTROL_AUDIENCE
 from agentplane.workload_auth.audience import WORKLOAD_TOKEN_AUDIENCE
 from cluster.cdk8s import cilium, node_scheduling, pod_policy
@@ -568,6 +569,7 @@ class Egress(Construct):
                     KUBERNETES_AUDIENCE,
                     notifications.TOKEN_AUDIENCE,
                     RUNNER_CONTROL_AUDIENCE,
+                    RUNNER_INGRESS_AUDIENCE,
                 ],
             },
             # A directory of its own: the CA volumes mount under /etc/agentplane-egress, and nothing

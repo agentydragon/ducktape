@@ -1137,6 +1137,7 @@ data:
       - https://localhost:7445
       - agentplane-notifications
       - agentplane-runner-control
+      - agentplane-runner-ingress
 immutable: false
 ---
 apiVersion: apps/v1
@@ -2607,6 +2608,10 @@ data:
       target: agentplane-runner-gateway.agentplane-staging.svc.cluster.local:8082
       bearer: agentplane-credential-agentplane-runner-control
       egress_policy: runner-control
+    runner_ingress:
+      target: agentplane-history-ingress.agentplane-staging.svc.cluster.local:8080
+      bearer: agentplane-credential-agentplane-runner-ingress
+      egress_policy: runner-ingress
 immutable: false
 ---
 apiVersion: apps/v1
@@ -5879,7 +5884,7 @@ spec:
             - name: AGENTPLANE_EGRESS_SIDECAR_TOKEN_FILE
               value: /var/run/agentplane-egress/token
             - name: AGENTPLANE_EGRESS_SIDECAR_AUDIENCE_TOKEN_FILES
-              value: '{"https://localhost:7445": "/var/run/agentplane-egress/kubernetes-token", "agentplane-notifications": "/var/run/agentplane-egress/notifications-token", "agentplane-runner-control": "/var/run/agentplane-egress/runner-control-token"}'
+              value: '{"https://localhost:7445": "/var/run/agentplane-egress/kubernetes-token", "agentplane-notifications": "/var/run/agentplane-egress/notifications-token", "agentplane-runner-control": "/var/run/agentplane-egress/runner-control-token", "agentplane-runner-ingress": "/var/run/agentplane-egress/runner-ingress-token"}'
           image: git.allegedly.works/ducktape-ci/agentplane-egress-sidecar:unset
           name: egress-sidecar
           readinessProbe:
@@ -5944,6 +5949,10 @@ spec:
                   audience: agentplane-runner-control
                   expirationSeconds: 600
                   path: runner-control-token
+              - serviceAccountToken:
+                  audience: agentplane-runner-ingress
+                  expirationSeconds: 600
+                  path: runner-ingress-token
   volumeClaimTemplates:
     - metadata:
         name: state
@@ -7293,7 +7302,7 @@ spec:
             - name: AGENTPLANE_EGRESS_SIDECAR_TOKEN_FILE
               value: /var/run/agentplane-egress/token
             - name: AGENTPLANE_EGRESS_SIDECAR_AUDIENCE_TOKEN_FILES
-              value: '{"https://localhost:7445": "/var/run/agentplane-egress/kubernetes-token", "agentplane-notifications": "/var/run/agentplane-egress/notifications-token", "agentplane-runner-control": "/var/run/agentplane-egress/runner-control-token"}'
+              value: '{"https://localhost:7445": "/var/run/agentplane-egress/kubernetes-token", "agentplane-notifications": "/var/run/agentplane-egress/notifications-token", "agentplane-runner-control": "/var/run/agentplane-egress/runner-control-token", "agentplane-runner-ingress": "/var/run/agentplane-egress/runner-ingress-token"}'
           image: git.allegedly.works/ducktape-ci/agentplane-egress-sidecar:unset
           name: egress-sidecar
           readinessProbe:
@@ -7358,6 +7367,10 @@ spec:
                   audience: agentplane-runner-control
                   expirationSeconds: 600
                   path: runner-control-token
+              - serviceAccountToken:
+                  audience: agentplane-runner-ingress
+                  expirationSeconds: 600
+                  path: runner-ingress-token
         - name: buildbuddy-api-key
           secret:
             defaultMode: 288
@@ -7510,7 +7523,7 @@ spec:
             - name: AGENTPLANE_EGRESS_SIDECAR_TOKEN_FILE
               value: /var/run/agentplane-egress/token
             - name: AGENTPLANE_EGRESS_SIDECAR_AUDIENCE_TOKEN_FILES
-              value: '{"https://localhost:7445": "/var/run/agentplane-egress/kubernetes-token", "agentplane-notifications": "/var/run/agentplane-egress/notifications-token", "agentplane-runner-control": "/var/run/agentplane-egress/runner-control-token"}'
+              value: '{"https://localhost:7445": "/var/run/agentplane-egress/kubernetes-token", "agentplane-notifications": "/var/run/agentplane-egress/notifications-token", "agentplane-runner-control": "/var/run/agentplane-egress/runner-control-token", "agentplane-runner-ingress": "/var/run/agentplane-egress/runner-ingress-token"}'
           image: git.allegedly.works/ducktape-ci/agentplane-egress-sidecar:unset
           name: egress-sidecar
           readinessProbe:
@@ -7574,6 +7587,10 @@ spec:
                   audience: agentplane-runner-control
                   expirationSeconds: 600
                   path: runner-control-token
+              - serviceAccountToken:
+                  audience: agentplane-runner-ingress
+                  expirationSeconds: 600
+                  path: runner-ingress-token
 ---
 apiVersion: extensions.agents.x-k8s.io/v1beta1
 kind: SandboxTemplate
@@ -7669,7 +7686,7 @@ spec:
             - name: AGENTPLANE_EGRESS_SIDECAR_TOKEN_FILE
               value: /var/run/agentplane-egress/token
             - name: AGENTPLANE_EGRESS_SIDECAR_AUDIENCE_TOKEN_FILES
-              value: '{"https://localhost:7445": "/var/run/agentplane-egress/kubernetes-token", "agentplane-notifications": "/var/run/agentplane-egress/notifications-token", "agentplane-runner-control": "/var/run/agentplane-egress/runner-control-token"}'
+              value: '{"https://localhost:7445": "/var/run/agentplane-egress/kubernetes-token", "agentplane-notifications": "/var/run/agentplane-egress/notifications-token", "agentplane-runner-control": "/var/run/agentplane-egress/runner-control-token", "agentplane-runner-ingress": "/var/run/agentplane-egress/runner-ingress-token"}'
           image: git.allegedly.works/ducktape-ci/agentplane-egress-sidecar:unset
           name: egress-sidecar
           readinessProbe:
@@ -7733,6 +7750,10 @@ spec:
                   audience: agentplane-runner-control
                   expirationSeconds: 600
                   path: runner-control-token
+              - serviceAccountToken:
+                  audience: agentplane-runner-ingress
+                  expirationSeconds: 600
+                  path: runner-ingress-token
         - emptyDir:
             sizeLimit: 20Gi
           name: home

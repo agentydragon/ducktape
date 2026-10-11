@@ -164,7 +164,6 @@ ENV = Environment(
     fold_shadow=True,
     settle_deltas=True,
     thread_reads=ThreadReads.HISTORY_SERVICE,
-    runner_control=False,
     db=DbProps(instances=1),
     llm_ingress=LlmIngressProps(litellm_key_secret_name=_LITELLM_KEY_SECRET, models=model_configs(TESTING_APP_MODELS)),
     egress=EgressProps(

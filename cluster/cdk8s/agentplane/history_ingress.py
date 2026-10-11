@@ -28,7 +28,8 @@ from cdk8s_plus_34 import (
 from constructs import Construct
 
 from agentplane.egress.resources import placeholder_of
-from agentplane.history_service.ingress_settings import CONFIG_FILE_ENV, IngressSettings
+from agentplane.history_service.ingress_settings import CONFIG_FILE_ENV, RUNNER_INGRESS_AUDIENCE, IngressSettings
+from agentplane.sandbox_service.runner_endpoints import RunnerEndpoint
 from cluster.cdk8s import cilium, node_scheduling, pod_policy
 from cluster.cdk8s.agentplane import database, egress
 from cluster.cdk8s.agentplane.environment import Environment
@@ -45,7 +46,6 @@ from cluster.cdk8s.token_reviewer_rbac import token_reviewer_cluster_rbac
 from util.settings_contract import env_name
 
 NAME = "agentplane-history-ingress"
-TOKEN_AUDIENCE = "agentplane-runner-ingress"
 # The policy a Sandbox's runner reaches the ingress under, and the credential it substitutes.
 EGRESS_POLICY = "runner-ingress"
 _CREDENTIAL = "agentplane-runner-ingress"
@@ -61,6 +61,13 @@ def service(namespace: str) -> ServiceRef:
     return ServiceRef(
         name=NAME, port=Port(name="grpc", number=8080), pods=Pods(namespace=namespace, labels=tuple(_LABELS.items()))
     )
+
+
+def runner_ingress_endpoint(namespace: str) -> RunnerEndpoint:
+    """The endpoint every new Sandbox's runner pushes its Events to: through the egress proxy, which
+    swaps the placeholder bearer for the Pod's token."""
+    endpoint = service(namespace)
+    return RunnerEndpoint(target=f"{endpoint.fqdn}:{endpoint.port.number}", bearer=BEARER, egress_policy=EGRESS_POLICY)
 
 
 class HistoryIngress(Construct):
@@ -84,7 +91,7 @@ class HistoryIngress(Construct):
             metadata=ApiObjectMetadata(name=f"{NAME}-config", namespace=env.namespace),
             model=IngressSettings,
             content={
-                "token_audience": TOKEN_AUDIENCE,
+                "token_audience": RUNNER_INGRESS_AUDIENCE,
                 # Sandboxes run in the environment's own namespace.
                 "writer_namespaces": [env.namespace],
                 "port": endpoint.port.number,
@@ -163,7 +170,7 @@ class HistoryIngress(Construct):
                 "The calling Sandbox Pod's short-lived, Pod-bound identity minted only for its runner's "
                 "pushes to the History Service ingress. It conveys no other authority."
             ),
-            source=Source.projected_workload_token(audience=TOKEN_AUDIENCE),
+            source=Source.projected_workload_token(audience=RUNNER_INGRESS_AUDIENCE),
             targets=[
                 EgressCredentialSpecTargets(
                     header="Authorization", method=EgressCredentialSpecTargetsMethod.SCHEME_TOKEN, scheme="Bearer"

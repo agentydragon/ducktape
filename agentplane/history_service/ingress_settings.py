@@ -11,6 +11,7 @@ from pydantic_settings import BaseSettings, PydanticBaseSettingsSource, Settings
 # gazelle:include_dep @pypi//pyyaml
 
 CONFIG_FILE_ENV = "AGENTPLANE_HISTORY_INGRESS_CONFIG_FILE"
+RUNNER_INGRESS_AUDIENCE = "agentplane-runner-ingress"
 
 
 class IngressSettings(BaseSettings):

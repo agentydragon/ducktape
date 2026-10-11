@@ -18,7 +18,7 @@ from more_itertools import one
 from agentplane.action_service.sandbox.binding import DESCRIPTION_ANNOTATION, SandboxExecutorBinding
 from agentplane.egress.resources import placeholder_of
 from agentplane.sandbox_service.runner_endpoints import RunnerEndpoint
-from cluster.cdk8s.agentplane import notifications, runner_gateway, sandbox_service
+from cluster.cdk8s.agentplane import history_ingress, notifications, runner_gateway, sandbox_service
 from cluster.cdk8s.agentplane.conftest import NAMESPACES
 
 
@@ -176,36 +176,55 @@ def test_model_configs_are_generated_into_the_llm_ingress_configmap(
             assert "AGENTPLANE_MODEL_CONTEXT_WINDOWS" not in {entry["name"] for entry in runner["env"]}
 
 
-def test_runner_control_names_the_listener_its_egress_policy_admits(
+@pytest.mark.parametrize(
+    ("setting", "service", "port_name", "flags"),
+    [
+        ("runner_control", runner_gateway.NAME, "runner-control", {"--control-target", "--control-bearer"}),
+        ("runner_ingress", history_ingress.NAME, "grpc", {"--ingress-target", "--ingress-bearer"}),
+    ],
+)
+@pytest.mark.parametrize("namespace", NAMESPACES)
+def test_runner_endpoint_reaches_its_listener_with_the_pods_token(
+    namespace: str,
+    setting: str,
+    service: str,
+    port_name: str,
+    flags: set[str],
     agentplane_manifests: dict[str, list[dict[str, Any]]],
 ) -> None:
-    checked = 0
-    for namespace in NAMESPACES:
-        docs = agentplane_manifests[namespace]
-        config = yaml.safe_load(_by_name(docs, "ConfigMap", f"{sandbox_service.NAME}-config")["data"]["config.yaml"])
-        if "runner_control" not in config:
+    docs = agentplane_manifests[namespace]
+    config = yaml.safe_load(_by_name(docs, "ConfigMap", f"{sandbox_service.NAME}-config")["data"]["config.yaml"])
+    endpoint = RunnerEndpoint.model_validate(config[setting])
+    host, port = endpoint.target.rsplit(":", 1)
+    service_ports = _by_name(docs, "Service", service)["spec"]["ports"]
+    assert int(port) == one(entry for entry in service_ports if entry["name"] == port_name)["port"]
+    # The proxy matches the host on the exact string the policy names, and swaps the bearer only
+    # where it is the placeholder of the credential that rule substitutes.
+    rule = one(_by_name(docs, "EgressPolicy", endpoint.egress_policy)["spec"]["rules"])
+    assert host in rule["hosts"], rule
+    assert endpoint.bearer == placeholder_of(rule["credentialRef"]["name"])
+    # The substituted token is one the proxy may use and every Sandbox's sidecar projects.
+    credential = _by_name(docs, "EgressCredential", rule["credentialRef"]["name"])
+    audience = credential["spec"]["source"]["projectedWorkloadToken"]["audience"]
+    proxy_settings = yaml.safe_load(_by_name(docs, "ConfigMap", "agentplane-egress-settings")["data"]["settings.yaml"])
+    assert audience in proxy_settings["projected_token_audiences"]
+    for template in docs:
+        if template["kind"] != "SandboxTemplate":
             continue
-        endpoint = RunnerEndpoint.model_validate(config["runner_control"])
-        host, port = endpoint.target.rsplit(":", 1)
-        service_ports = _by_name(docs, "Service", runner_gateway.NAME)["spec"]["ports"]
-        assert int(port) == one(entry for entry in service_ports if entry["name"] == "runner-control")["port"]
-        # The proxy matches the host on the exact string the policy names, and swaps the bearer only
-        # where it is the placeholder of the credential that rule substitutes.
-        rule = one(_by_name(docs, "EgressPolicy", endpoint.egress_policy)["spec"]["rules"])
-        assert host in rule["hosts"], (namespace, rule)
-        assert endpoint.bearer == placeholder_of(rule["credentialRef"]["name"]), namespace
-        # The Sandbox Service refuses a template whose runner already names its control endpoint.
-        for template in docs:
-            if template["kind"] != "SandboxTemplate":
-                continue
-            for container in template["spec"]["podTemplate"]["spec"]["containers"]:
-                assert not {"--control-target", "--control-bearer"} & set(container.get("args", [])), (
-                    namespace,
-                    template["metadata"]["name"],
-                )
-        checked += 1
-    # Keeps this from passing vacuously should no environment set runner_control.
-    assert checked
+        pod = template["spec"]["podTemplate"]["spec"]
+        sidecar = one(container for container in pod["containers"] if container["name"] == "egress-sidecar")
+        token_files = json.loads(
+            one(item["value"] for item in sidecar["env"] if item["name"].endswith("AUDIENCE_TOKEN_FILES"))
+        )
+        token_volume = one(volume for volume in pod["volumes"] if volume["name"] == "egress-token")
+        projected = {
+            source["serviceAccountToken"]["audience"]: source["serviceAccountToken"]["path"]
+            for source in token_volume["projected"]["sources"]
+        }
+        assert token_files[audience].endswith(f"/{projected[audience]}"), template["metadata"]["name"]
+        # The Sandbox Service refuses a template whose runner already names the endpoint.
+        for container in pod["containers"]:
+            assert not flags & set(container.get("args", [])), template["metadata"]["name"]
 
 
 if __name__ == "__main__":

@@ -28,7 +28,7 @@ from agentplane.sandbox_service.kubernetes_grants import ClusterRoleBindingGrant
 from agentplane.sandbox_service.settings import CONFIG_FILE_ENV, Settings
 from agentplane.subjects import ServiceAccountRef
 from cluster.cdk8s import cilium, node_scheduling, pod_policy
-from cluster.cdk8s.agentplane import egress, history_service, notifications, runner_gateway
+from cluster.cdk8s.agentplane import egress, history_ingress, history_service, notifications, runner_gateway
 from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.agentplane.pod_disruption_budget import add_pod_disruption_budget
 from cluster.cdk8s.api_resource import custom_resource, named_resource
@@ -94,11 +94,8 @@ class SandboxService(Construct):
                 "gateway_target": runner_gateway.target(env.namespace),
                 "control_target": runner_gateway.control_target(env.namespace),
                 "gateway_token_file": f"{_GATEWAY_TOKEN_DIR}/token",
-                **(
-                    {"runner_control": runner_gateway.runner_control_endpoint(env.namespace).model_dump()}
-                    if env.runner_control
-                    else {}
-                ),
+                "runner_control": runner_gateway.runner_control_endpoint(env.namespace).model_dump(),
+                "runner_ingress": history_ingress.runner_ingress_endpoint(env.namespace).model_dump(),
             },
             path="/etc/agentplane-sandbox-service/config.yaml",
         )

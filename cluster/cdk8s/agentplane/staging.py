@@ -324,7 +324,6 @@ ENV = Environment(
     fold_shadow=True,
     settle_deltas=True,
     thread_reads=ThreadReads.HISTORY_SERVICE,
-    runner_control=True,
     notifications_github=GitHubAppProps(app_id=5188971, secret_name="agentplane-github-app"),
     kubernetes_binding_cleanup_namespaces=frozenset(agent_access_profiles.cleanup_namespaces()),
     kubernetes_cluster_binding_cleanup=True,

@@ -1,14 +1,13 @@
 # Runner control stream
 
-Status: **accepted design, command delivery live on staging.** The Runner Gateway's
+Status: **accepted design, deployed.** The Runner Gateway's
 control listener (`runner_gateway/runner_control.py`), reachable through the egress proxy,
 authenticates, fences and keeps connections alive, and delivers dispatch attempts
 (`runner_gateway/command_delivery.py`) for Sandboxes routed to it. The runner dials it when started
-with `--control-target` (`runner/control.py`), which staging's Sandbox Service passes to every new
-Sandbox's runner (`runner_control`), so staging's commands travel over the control stream. Testing's
-runners are reached through the inbound `Attach` RPC, which Cilium admits only from the Runner
-Gateway, and every runner's Events still are. This is
-the contract the
+with `--control-target` (`runner/control.py`), which the Sandbox Service passes to every new
+Sandbox's runner (`runner_control`). A Sandbox created before that is still reached through the
+inbound `Attach` RPC, which Cilium admits only from the Runner Gateway, and the History Service
+still follows every runner's Events over it. This is the contract the
 runner-initiated replacement implements. It covers command delivery, authentication, connection ownership and
 dispatch attempts, lifecycle requests (built: a runner that agrees `lifecycle` is listed, opened,
 resumed and sealed over the control stream), and the push of Events to the runner's ingress.
@@ -112,11 +111,12 @@ message Heartbeat {}
 
 ## Event ingress
 
-Status: **accepted design (operator, 2026-10-10 PDT); built, not yet deployed.** The runner pushes
+Status: **accepted design (operator, 2026-10-10 PDT); deployed.** The runner pushes
 when started with `--ingress-target` (`runner/ingress.py`), which the Sandbox Service passes to new
 runners from its `runner_ingress` setting, and reports `flushed` from what it recorded. The History
-Service serves the ingress (`history_service/ingress.py`) as its own Deployment, but no environment
-sets `runner_ingress`, so every runner's Events are still read through `Attach`.
+Service serves the ingress (`history_service/ingress.py`) as its own Deployment. It also still follows
+every Session over `Attach`, the only path for a Sandbox created before runners pushed; the two
+write the same log, which accepts exact replays.
 
 The runner pushes each Session's journal to one **ingress**, the endpoint its Sandbox names, and
 nothing else reads its journals. The History Service is the ingress when history is kept. A client

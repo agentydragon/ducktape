@@ -25,8 +25,7 @@ an MCP approval gateway for any MCP-capable LLM product.
 
 ## System overview
 
-What staging runs ([`cluster/cdk8s/agentplane/`](../cluster/cdk8s/agentplane/chart.py)). Dashed
-edges are deployed but carry no traffic yet.
+What staging runs ([`cluster/cdk8s/agentplane/`](../cluster/cdk8s/agentplane/chart.py)).
 
 ```mermaid
 flowchart TB
@@ -70,7 +69,7 @@ flowchart TB
     hs -->|WatchSessions, FollowSession| gw
     hs -->|retention holds| ss
     hs -->|ingest, fold, read| hist_db
-    hi -.->|append| hist_db
+    hi -->|append| hist_db
     notif -->|Sandbox lookups| ss
     notif -->|commands| gw
     notif -->|command receipts| hs
@@ -79,7 +78,7 @@ flowchart TB
 
     runner --> sidecar -->|all outbound traffic| proxy
     proxy -->|RunnerControl Connect: commands, lifecycle| gw
-    proxy -.->|RunnerIngress Push: Events| hi
+    proxy -->|RunnerIngress Push: Events| hi
     proxy -->|MCP| actions
     proxy -->|HTTP| notif
     proxy -->|model calls| llm --> outside
@@ -87,15 +86,15 @@ flowchart TB
 ```
 
 - **Sessions and Threads.** A Session is a runner's raw Event stream; a Thread is its
-  conversation view, folded by the History Service. Today the History Service ingests Events by
-  following each Session through the Runner Gateway, which reads them from the runner over
-  `Attach`. The History ingress replaces that path once runners are configured to push to it.
+  conversation view, folded by the History Service. Every new Sandbox's runner pushes its Events to
+  the History ingress. The History Service also follows each Session through the Runner Gateway,
+  which reads it from the runner over `Attach`; for a Sandbox created before runners pushed, that
+  is the only path, and both write the same log.
 - **Runner traffic is outbound.** Everything a runner sends goes through its Pod's egress
   sidecar to the egress proxy, which authenticates the Pod and substitutes credentials. Commands
   reach staging's runners over the `RunnerControl` stream they dial to the Runner Gateway, routed
   per Sandbox by its `<sandbox>-control` Service and `<sandbox>-runner` Lease
-  ([runner control stream](docs/runner_control.md)). The testing environment still delivers commands
-  over `Attach`.
+  ([runner control stream](docs/runner_control.md)).
 - **Databases.** Each service owns a database on one shared CNPG cluster: `app`,
   `sandbox_commands` (Runner Gateway command admission), `sandbox_service` (Session history,
   written by the History Service and its ingress), `actions`, `egress` and `notifications`. Only
