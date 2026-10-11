@@ -154,6 +154,21 @@ class Gateway(runner_gateway_pb2_grpc.RunnerGatewayServicer):
         return entry
 
     @override
+    async def GetCommand(
+        self, request: sandbox_service_pb2.GetCommandRequest, context: grpc.aio.ServicerContext
+    ) -> sandbox_service_pb2.CommandStatus:
+        """Let browser tests gate command status; unspecified lookups keep the old unsupported behavior."""
+        snapshot = sandbox_service_pb2.GetCommandRequest.FromString(request.SerializeToString())
+        self.command_status_requests.put_nowait(snapshot)
+        try:
+            result = await self._command_status_results.get_nowait()
+        except asyncio.QueueEmpty:
+            await context.abort(grpc.StatusCode.UNIMPLEMENTED, "GetCommand not scripted")
+        if isinstance(result, grpc.StatusCode):
+            await context.abort(result, "scripted command status")
+        return result
+
+    @override
     async def BatchGetSessionSandboxes(
         self, request: runner_gateway_pb2.BatchGetSessionSandboxesRequest, context: grpc.aio.ServicerContext
     ) -> runner_gateway_pb2.SessionSandboxes:
