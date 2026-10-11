@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from collections.abc import Generator
 
 import pytest
@@ -28,7 +29,10 @@ def pytest_runtest_makereport(
 def call_failed(request: pytest.FixtureRequest) -> bool:
     """Whether the test's call phase failed, as opposed to setup or teardown."""
     report = request.node.stash.get(CALL_REPORT, None)
-    return report is not None and report.failed
+    if report is None:
+        logging.getLogger(__name__).warning("no pytest call report for %s; failure journal unavailable", request.node.nodeid)
+        return False
+    return report.failed
 
 
 async def capture_native_journal(request: pytest.FixtureRequest, runner: RunnerHandle) -> None:

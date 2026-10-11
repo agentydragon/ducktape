@@ -55,7 +55,7 @@ from agentplane.app.threads.store import ThreadStore
 from agentplane.app.threads.view.content import ContentStore
 from agentplane.history_service.client import HistoryServiceClient
 from agentplane.history_service.testing.backend import history_service, ingest
-from agentplane.proto import command_pb2, event_log_pb2, event_pb2, runner_pb2
+from agentplane.proto import command_pb2, event_log_pb2, event_pb2, runner_pb2, sandbox_service_pb2
 from agentplane.runner import service
 from agentplane.runner.harness import Harness
 from agentplane.runner.session import Session
@@ -80,20 +80,71 @@ SESSIONS = f"/sandboxes/{SANDBOX}/sessions"
 
 @pytest.fixture
 async def failed_native_journal(
-    request: pytest.FixtureRequest, runner: RunnerHandle, caplog: pytest.LogCaptureFixture
+    request: pytest.FixtureRequest,
+    runner: RunnerHandle,
+    event_logs: EventLogStore,
+    local_runners: SandboxSessions,
+    caplog: pytest.LogCaptureFixture,
 ) -> AsyncIterator[None]:
-    """Preserve native history and journal evidence when an app-level bridge case fails."""
+    """Preserve each service's cursor and admission state when an app-level bridge case fails."""
     caplog.set_level(logging.INFO, logger="httpx")
     yield
     if not call_failed(request):
         return
+    state: dict[str, Any] = {}
     for session_id, session in runner.runner.sessions.items():
-        target = undeclared_outputs_dir() / request.node.name / session_id
-        for dialect, history in (("claude", "projects"), ("codex", "sessions")):
-            source = session.directory / dialect / history
-            if source.exists():
-                shutil.copytree(source, target / dialect / history, dirs_exist_ok=True)
-    await capture_native_journal(request, runner)
+        observed: dict[str, Any] = {"runner_cursor": session.journal.last_cursor}
+        state[session_id] = observed
+        try:
+            target = undeclared_outputs_dir() / request.node.name / session_id
+            for dialect, history in (("claude", "projects"), ("codex", "sessions")):
+                source = session.directory / dialect / history
+                if source.exists():
+                    shutil.copytree(source, target / dialect / history, dirs_exist_ok=True)
+        except Exception as error:
+            observed["native_history_error"] = repr(error)
+            logging.getLogger(__name__).warning("bridge failure native history capture failed", exc_info=True)
+        try:
+            async with asyncio.timeout(5):
+                thread_id = UUID(session_id)
+                observed["app_cursor"] = await event_logs.last_cursor(thread_id)
+                snapshot = await event_logs.feed_state(thread_id)
+                observed["app_feed"] = (
+                    None
+                    if snapshot is None
+                    else {"attached": MessageToDict(snapshot.attached), "end": repr(snapshot.end)}
+                )
+                page = await event_logs.reader.read_session_events(session_id, after_cursor=0, limit=1)
+                observed["history_cursor"] = page.last_cursor
+                observed["history_feed"] = MessageToDict(page.feed_state) if page.HasField("feed_state") else None
+        except Exception as error:
+            observed["history_error"] = repr(error)
+            logging.getLogger(__name__).warning("bridge failure history state capture failed", exc_info=True)
+        try:
+            async with asyncio.timeout(5):
+                client = local_runners.client(SANDBOX)
+                commands = await client.service.unary(
+                    client.service.gateway.ListCommands,
+                    sandbox_service_pb2.ListCommandsRequest(
+                        destination=sandbox_service_pb2.SessionDestination(
+                            sandbox=client.destination, session_id=session_id
+                        ),
+                        page_size=1000,
+                    ),
+                )
+                observed["gateway_commands"] = [MessageToDict(command) for command in commands.commands]
+                observed["gateway_next_page_token"] = commands.next_page_token
+        except Exception as error:
+            observed["gateway_error"] = repr(error)
+            logging.getLogger(__name__).warning("bridge failure gateway state capture failed", exc_info=True)
+    try:
+        await capture_native_journal(request, runner)
+    except Exception as error:
+        state["native_journal_error"] = repr(error)
+        logging.getLogger(__name__).warning("bridge failure journal capture failed", exc_info=True)
+    (undeclared_outputs_dir() / f"{request.node.name}-bridge-state.json").write_text(
+        json.dumps(state, indent=2, sort_keys=True)
+    )
 
 
 async def _create(http: httpx.AsyncClient, spec: runner_pb2.SessionSpec, session_id: UUID) -> str:
@@ -143,8 +194,15 @@ async def read_until(lines: AsyncIterator[str], key: str) -> list[SseMessage]:
     """Entries up to and including the first whose Event payload carries `key`."""
     seen: list[SseMessage] = []
     while True:
-        message = await next_message(lines)
+        try:
+            message = await next_message(lines)
+        except AssertionError as error:
+            progress = [(row.event, row.id, list(row.data.get("event", {}))) for row in seen[-20:]]
+            raise AssertionError(f"transport EOF before {key}; preceding SSE frames: {progress}") from error
         seen.append(message)
+        if message.event in ("end", "error"):
+            progress = [(row.event, row.id, list(row.data.get("event", {}))) for row in seen[-20:]]
+            raise AssertionError(f"SSE {message.event} before {key}; preceding SSE frames: {progress}")
         if key in message.data.get("event", {}):
             return seen
 
