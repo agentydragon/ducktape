@@ -26,14 +26,7 @@ class FakeEgressAdmin:
 
 
 def decision(
-    at: str,
-    method: str,
-    host: str,
-    path: str | None,
-    outcome: str,
-    *,
-    reason: str | None = None,
-    address: str | None = None,
+    at: str, method: str, host: str, outcome: str, *, reason: str | None = None, address: str | None = None
 ) -> dict[str, Any]:
     """One decision as the proxy's `/decisions` serialises it."""
     return {
@@ -42,7 +35,6 @@ def decision(
         "method": method,
         "host": host,
         "port": 443,
-        "path": path,
         "outcome": outcome,
         "reason": reason,
         "binding": "sandboxes-github-agentydragon-agent" if outcome == "allow" else None,

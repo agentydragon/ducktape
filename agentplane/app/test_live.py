@@ -26,7 +26,6 @@ from agentplane.app.api import create_app
 from agentplane.app.conftest import stored_login
 from agentplane.app.database import connect
 from agentplane.app.database_updates import Channel, DatabaseUpdates
-from agentplane.app.decisions import DecisionsClient
 from agentplane.app.egress_access import EgressAccess
 from agentplane.app.electric import ElectricProxy
 from agentplane.app.identity import CallerIdentity, CallerKind, TokenReviewer
@@ -65,6 +64,7 @@ from agentplane.app.threads.sessions import SandboxSessions
 from agentplane.app.threads.store import ThreadStore
 from agentplane.app.threads.summaries import AppSummaries
 from agentplane.app.threads.view.content import ContentStore
+from agentplane.egress.decisions_client import DecisionsClient
 from agentplane.history_service.client import HistoryServiceClient
 from agentplane.runner.harness import Harness
 from agentplane.sandbox_service.client import SandboxServiceClient

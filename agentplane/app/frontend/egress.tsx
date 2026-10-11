@@ -265,7 +265,6 @@ function DecisionsTable({ decisions }: { decisions: Decision[] }): JSX.Element {
           <Table.Th>Time</Table.Th>
           <Table.Th>Method</Table.Th>
           <Table.Th>Host</Table.Th>
-          <Table.Th visibleFrom="sm">Path</Table.Th>
           <Table.Th>Decision</Table.Th>
           <Table.Th visibleFrom="sm">Reason</Table.Th>
         </Table.Tr>
@@ -273,7 +272,7 @@ function DecisionsTable({ decisions }: { decisions: Decision[] }): JSX.Element {
       <Table.Tbody>
         {rows.length === 0 && (
           <Table.Tr>
-            <Table.Td colSpan={6}>
+            <Table.Td colSpan={5}>
               <Text size="sm" c="dimmed">
                 No decisions yet.
               </Text>
@@ -308,12 +307,7 @@ function DecisionsTable({ decisions }: { decisions: Decision[] }): JSX.Element {
                   </Text>
                 )}
                 <Text size="xs" c="dimmed" hiddenFrom="sm" style={{ overflowWrap: "anywhere" }}>
-                  {[decision.path, reason].filter((part) => part).join(" · ")}
-                </Text>
-              </Table.Td>
-              <Table.Td visibleFrom="sm">
-                <Text size="sm" style={{ overflowWrap: "anywhere" }}>
-                  {decision.path ?? "—"}
+                  {reason}
                 </Text>
               </Table.Td>
               <Table.Td>

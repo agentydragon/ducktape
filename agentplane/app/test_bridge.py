@@ -34,7 +34,6 @@ from agentplane.app.changes import Changes
 from agentplane.app.conftest import AGENT_AUTH
 from agentplane.app.database import connect
 from agentplane.app.database_updates import Channel, DatabaseUpdates
-from agentplane.app.decisions import DecisionsClient
 from agentplane.app.egress_access import EgressAccess
 from agentplane.app.electric import ElectricProxy
 from agentplane.app.identity import TokenReviewer
@@ -53,6 +52,7 @@ from agentplane.app.threads.events.stream import follow
 from agentplane.app.threads.sessions import SandboxSessions
 from agentplane.app.threads.store import ThreadStore
 from agentplane.app.threads.view.content import ContentStore
+from agentplane.egress.decisions_client import DecisionsClient
 from agentplane.history_service.client import HistoryServiceClient
 from agentplane.history_service.testing.backend import history_service, ingest
 from agentplane.proto import command_pb2, event_log_pb2, event_pb2, runner_pb2

@@ -74,7 +74,7 @@ class DecisionStore:
     async def append(self, records: list[DecisionRecord]) -> None:
         values = []
         for record in records:
-            value = record.model_dump(exclude={"path", "at", "subject"})
+            value = record.model_dump(exclude={"at", "subject"})
             value["decided_at"] = record.at
             value["subject_namespace"] = None if record.subject is None else record.subject.namespace
             value["subject_name"] = None if record.subject is None else record.subject.name
