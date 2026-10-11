@@ -10,7 +10,7 @@ from google.protobuf.timestamp_pb2 import Timestamp
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
-from agentplane.history_service.fold_shadow import FOLD_EPOCH, PAGE_SIZE, FoldBacklog, FoldShadow
+from agentplane.history_service.fold_shadow import FOLD_EPOCH, FoldBacklog, FoldShadow
 from agentplane.history_service.storage.history_changes import HistoryChanges
 from agentplane.history_service.storage.store import Store
 from agentplane.proto import event_log_pb2, event_pb2
@@ -23,6 +23,7 @@ from agentplane.thread_fold.models import (
     ThreadNativeLink,
     ThreadPayloadChunk,
 )
+from agentplane.thread_fold.projector import PAGE_SIZE
 from agentplane.thread_fold.views import EntityKind
 
 # gazelle:include_dep //agentplane/history_service/storage:conftest

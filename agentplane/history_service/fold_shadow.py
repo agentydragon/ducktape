@@ -37,7 +37,6 @@ logger = logging.getLogger(__name__)
 # Distinct from the app's, so a reader holding rows of one projection sees a scope reset on the other.
 FOLD_EPOCH = "history-v1"
 LEASE_DURATION = timedelta(seconds=30)
-PAGE_SIZE = 128
 
 
 def history_pages(history: Store) -> PageReader:

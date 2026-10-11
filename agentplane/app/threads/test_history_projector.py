@@ -31,7 +31,7 @@ from agentplane.proto import event_pb2, runner_pb2
 from agentplane.sandbox_service import protocol_pb2
 from agentplane.thread_fold.models import ThreadCheckpoint, ThreadEntity, ThreadHistorySummary
 from agentplane.thread_fold.projection_lease import ProjectionLeaseLostError
-from agentplane.thread_fold.projector import HistoryProjector, service_pages
+from agentplane.thread_fold.projector import PAGE_SIZE, HistoryProjector, service_pages
 from agentplane.thread_fold.recording import THREAD_FOLD_EPOCH, EventReplicationError
 from agentplane.thread_fold.views import ThreadViewState
 
@@ -605,7 +605,7 @@ async def test_discovery_of_new_service_thread_never_starts_legacy_follow(
         await coordinator.reconcile()
         assert public_id in await logs.projection_sessions()
         await coordinator.reconcile()
-        reader.read_session_events.assert_awaited_once_with(str(public_id), after_cursor=0, limit=128)
+        reader.read_session_events.assert_awaited_once_with(str(public_id), after_cursor=0, limit=PAGE_SIZE)
         client.follow.assert_not_called()
     finally:
         await coordinator.close()

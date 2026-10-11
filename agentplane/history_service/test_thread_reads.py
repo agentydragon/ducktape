@@ -8,10 +8,11 @@ from pydantic import TypeAdapter
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from agentplane.history_service import protocol_pb2
-from agentplane.history_service.fold_shadow import FOLD_EPOCH, PAGE_SIZE, FoldShadow
+from agentplane.history_service.fold_shadow import FOLD_EPOCH, FoldShadow
 from agentplane.history_service.storage.store import HistoryNotFoundError, Store
 from agentplane.history_service.thread_reads import ThreadReader, ThreadScopeResetError
 from agentplane.proto import event_log_pb2, event_pb2
+from agentplane.thread_fold.projector import PAGE_SIZE
 from agentplane.thread_fold.views import EntityKind, ThreadEntityView, ThreadItemEntityView
 
 # gazelle:include_dep @pypi//protobuf
