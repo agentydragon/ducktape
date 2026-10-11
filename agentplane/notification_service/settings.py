@@ -21,6 +21,7 @@ class ActionsSettings(BaseModel):
     token_file: Path = Field(
         description="Path to the projected ServiceAccount token for Actions; reread for each request to follow rotation."
     )
+    request_timeout_s: float = Field(default=5, gt=0, allow_inf_nan=False)
 
 
 class GitHubSettings(BaseModel):

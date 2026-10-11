@@ -39,13 +39,6 @@ from agentplane.notification_service.db import (
     Inbox,
     Subscription,
 )
-from agentplane.notification_service.github_state import (
-    AccessKey,
-    GitHubState,
-    RefreshDeferredError,
-    RefreshLease,
-    SubjectKey,
-)
 from agentplane.notification_service.models import (
     DestinationRef,
     EventIdentity,
@@ -56,8 +49,7 @@ from agentplane.notification_service.models import (
 from agentplane.notification_service.service import Service
 from agentplane.notification_service.settings import CONFIG_FILE_ENV, GitHubSettings, NoticeDebounceSettings, Settings
 from agentplane.notification_service.sources.actions import Actions
-from agentplane.notification_service.sources.github import GitHub, IssuePayload, RefPayload, correlation
-from agentplane.notification_service.sources.github_client import (
+from agentplane.notification_service.sources.github.client import (
     GitHubAccessError,
     GitHubClient,
     GitHubRetryError,
@@ -66,7 +58,7 @@ from agentplane.notification_service.sources.github_client import (
     Repository,
     rate_limit_delay,
 )
-from agentplane.notification_service.sources.github_models import (
+from agentplane.notification_service.sources.github.models import (
     BranchSubject,
     CommitSubject,
     EventFilter,
@@ -75,6 +67,14 @@ from agentplane.notification_service.sources.github_models import (
     IssueSubject,
     PullRequestSubject,
     Subject,
+)
+from agentplane.notification_service.sources.github.source import GitHub, IssuePayload, RefPayload, correlation
+from agentplane.notification_service.sources.github.state import (
+    AccessKey,
+    GitHubState,
+    RefreshDeferredError,
+    RefreshLease,
+    SubjectKey,
 )
 from agentplane.notification_service.store import ConflictError, NotFoundError, Store
 from agentplane.sandbox_service.client import Runner, SandboxServiceClient
@@ -567,7 +567,7 @@ async def test_primary_limit_uses_reset_without_retry_after(provider: tuple[GitH
     )
     headers = github.client.app_headers()
     with (
-        patch("agentplane.notification_service.sources.github_client.time.time", return_value=1000.25),
+        patch("agentplane.notification_service.sources.github.client.time.time", return_value=1000.25),
         pytest.raises(GitHubRetryError, match=f"HTTP {status}") as failure,
     ):
         await github.client.request("GET", "/repos/owner/repo/installation", headers)

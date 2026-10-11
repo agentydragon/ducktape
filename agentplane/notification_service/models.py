@@ -7,7 +7,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, JsonValue
 
-from agentplane.notification_service.sources.github_models import GitHubEvent, GitHubSource
+from agentplane.notification_service.sources.github.models import GitHubEvent, GitHubSource
 
 
 class Model(BaseModel):

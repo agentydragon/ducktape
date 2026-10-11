@@ -13,7 +13,6 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from agentplane.history_service.client import HistoryServiceClient
 from agentplane.notification_service.db import Inbox, Notice
-from agentplane.notification_service.github_state import RefreshDeferredError
 from agentplane.notification_service.models import (
     ActionsSource,
     DestinationRef,
@@ -23,13 +22,14 @@ from agentplane.notification_service.models import (
 )
 from agentplane.notification_service.settings import NoticeDebounceSettings
 from agentplane.notification_service.sources.actions import Actions, SourceNotOwnedError
-from agentplane.notification_service.sources.github import GitHub
-from agentplane.notification_service.sources.github_client import (
+from agentplane.notification_service.sources.github.client import (
     GitHubAccessError,
     GitHubRetryError,
     GitHubSourceChangedError,
     GitHubUnavailableError,
 )
+from agentplane.notification_service.sources.github.source import GitHub
+from agentplane.notification_service.sources.github.state import RefreshDeferredError
 from agentplane.notification_service.store import ClaimLostError, ConflictError, QuotaError, Store
 from agentplane.proto import command_pb2, event_log_pb2, runner_pb2
 from agentplane.proto.sandbox_service_pb2 import SandboxDestination, ServiceAccount

@@ -14,8 +14,8 @@ from agentplane.notification_service.api import create_app
 from agentplane.notification_service.service import Service
 from agentplane.notification_service.settings import Settings
 from agentplane.notification_service.sources.actions import Actions
-from agentplane.notification_service.sources.github import GitHub
-from agentplane.notification_service.sources.github_client import GitHubClient
+from agentplane.notification_service.sources.github.client import GitHubClient
+from agentplane.notification_service.sources.github.source import GitHub
 from agentplane.notification_service.store import Store
 from agentplane.sandbox_service.client import SandboxServiceClient
 from agentplane.workload_auth.principal import WorkloadPrincipalResolver
@@ -32,7 +32,9 @@ async def serve(settings: Settings) -> None:
     try:
         async with (
             k8s_client.ApiClient() as kube,
-            httpx.AsyncClient(base_url=str(settings.actions.url), timeout=5, follow_redirects=False) as http,
+            httpx.AsyncClient(
+                base_url=str(settings.actions.url), timeout=settings.actions.request_timeout_s, follow_redirects=False
+            ) as http,
             AsyncExitStack() as github_stack,
             SandboxServiceClient(
                 settings.sandbox_service.target,

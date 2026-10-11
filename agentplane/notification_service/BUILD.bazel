@@ -13,8 +13,8 @@ py_library(
         ":service",
         ":store",
         "//agentplane/notification_service/sources:actions",
-        "//agentplane/notification_service/sources:github",
-        "//agentplane/notification_service/sources:github_client",
+        "//agentplane/notification_service/sources/github:client",
+        "//agentplane/notification_service/sources/github:source",
         "//agentplane/workload_auth:http",
         "//agentplane/workload_auth:principal",
         "@pypi//fastapi",
@@ -66,16 +66,6 @@ py_library(
 )
 
 py_library(
-    name = "github_state",
-    srcs = ["github_state.py"],
-    deps = [
-        ":db",
-        ":models",
-        "@pypi//sqlalchemy",
-    ],
-)
-
-py_library(
     name = "main",
     srcs = ["main.py"],
     deps = [
@@ -85,8 +75,8 @@ py_library(
         ":store",
         "//agentplane/history_service:client",
         "//agentplane/notification_service/sources:actions",
-        "//agentplane/notification_service/sources:github",
-        "//agentplane/notification_service/sources:github_client",
+        "//agentplane/notification_service/sources/github:client",
+        "//agentplane/notification_service/sources/github:source",
         "//agentplane/sandbox_service:client",
         "//agentplane/workload_auth:principal",
         "@pypi//asyncpg",
@@ -105,7 +95,7 @@ py_library(
         "//agentplane/notification_service:__subpackages__",
     ],
     deps = [
-        "//agentplane/notification_service/sources:github_models",
+        "//agentplane/notification_service/sources/github:models",
         "@pypi//pydantic",
     ],
 )
@@ -115,15 +105,15 @@ py_library(
     srcs = ["service.py"],
     deps = [
         ":db",
-        ":github_state",
         ":models",
         ":settings",
         ":store",
         "//agentplane:subjects",
         "//agentplane/history_service:client",
         "//agentplane/notification_service/sources:actions",
-        "//agentplane/notification_service/sources:github",
-        "//agentplane/notification_service/sources:github_client",
+        "//agentplane/notification_service/sources/github:client",
+        "//agentplane/notification_service/sources/github:source",
+        "//agentplane/notification_service/sources/github:state",
         "//agentplane/proto:command_pb2",
         "//agentplane/proto:event_log_pb2",
         "//agentplane/proto:runner_pb2",
@@ -146,13 +136,13 @@ py_library(
     srcs = ["store.py"],
     deps = [
         ":db",
-        ":github_state",
         ":models",
         ":settings",
         ":updates",
         "//agentplane:subjects",
         "//agentplane/action_service:models",
-        "//agentplane/notification_service/sources:github_models",
+        "//agentplane/notification_service/sources/github:models",
+        "//agentplane/notification_service/sources/github:state",
         "//agentplane/proto:event_log_pb2",
         "//agentplane/workload_auth:principal",
         "@pypi//protobuf",
@@ -382,40 +372,6 @@ py_library(
     srcs = ["updates.py"],
     deps = [
         "//agentplane/postgres:listener",
-        "@pypi//sqlalchemy",
-    ],
-)
-
-py_test(
-    name = "test_github",
-    size = "medium",
-    srcs = ["test_github.py"],
-    deps = [
-        ":api",
-        ":conftest",
-        ":database_migrate",
-        ":db",
-        ":github_state",
-        ":models",
-        ":service",
-        ":settings",
-        ":store",
-        "//:conftest",
-        "//agentplane:subjects",
-        "//agentplane/history_service:client",
-        "//agentplane/notification_service/sources:actions",
-        "//agentplane/notification_service/sources:github",
-        "//agentplane/notification_service/sources:github_client",
-        "//agentplane/notification_service/sources:github_models",
-        "//agentplane/sandbox_service:client",
-        "//agentplane/workload_auth:principal",
-        "@pypi//alembic",
-        "@pypi//cryptography",
-        "@pypi//httpx",
-        "@pypi//pydantic",
-        "@pypi//pyjwt",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
     ],
 )

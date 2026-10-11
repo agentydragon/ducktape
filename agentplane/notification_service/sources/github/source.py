@@ -24,19 +24,8 @@ from agentplane.notification_service.db import (
     Inbox,
     Subscription,
 )
-from agentplane.notification_service.github_state import (
-    AccessFence,
-    AccessKey,
-    GitHubState,
-    HeadRevision,
-    RefreshDeferredError,
-    RefreshLease,
-    SubjectKey,
-    access_valid,
-    github_lock,
-)
 from agentplane.notification_service.models import SourceFailureKind
-from agentplane.notification_service.sources.github_client import (
+from agentplane.notification_service.sources.github.client import (
     GitHubAccessError,
     GitHubClient,
     GitHubNotInstalledError,
@@ -49,7 +38,7 @@ from agentplane.notification_service.sources.github_client import (
     Repository,
     Upstream,
 )
-from agentplane.notification_service.sources.github_models import (
+from agentplane.notification_service.sources.github.models import (
     CI_EVENTS,
     ISSUE_EVENTS,
     PR_EVENTS,
@@ -64,6 +53,17 @@ from agentplane.notification_service.sources.github_models import (
     PullRequestSubject,
     Subject,
     subject_key,
+)
+from agentplane.notification_service.sources.github.state import (
+    AccessFence,
+    AccessKey,
+    GitHubState,
+    HeadRevision,
+    RefreshDeferredError,
+    RefreshLease,
+    SubjectKey,
+    access_valid,
+    github_lock,
 )
 from agentplane.notification_service.store import Store
 

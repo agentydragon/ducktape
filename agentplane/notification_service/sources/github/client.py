@@ -18,7 +18,7 @@ import jwt
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, SecretStr
 
 from agentplane.notification_service.settings import GitHubSettings
-from agentplane.notification_service.sources.github_models import RepositoryName
+from agentplane.notification_service.sources.github.models import RepositoryName
 
 # RS256 is loaded dynamically by PyJWT.
 # gazelle:include_dep @pypi//cryptography

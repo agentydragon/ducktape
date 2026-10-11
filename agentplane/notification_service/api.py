@@ -29,13 +29,13 @@ from agentplane.notification_service.models import (
 )
 from agentplane.notification_service.service import DestinationRejectedError, Service
 from agentplane.notification_service.sources.actions import SourceNotOwnedError
-from agentplane.notification_service.sources.github import (
+from agentplane.notification_service.sources.github.client import GitHubRetryError, GitHubUnavailableError
+from agentplane.notification_service.sources.github.source import (
     PAYLOAD_MODELS,
     InvalidSignatureError,
     MissingWebhookRepositoryError,
     UnsupportedWebhookEventError,
 )
-from agentplane.notification_service.sources.github_client import GitHubRetryError, GitHubUnavailableError
 from agentplane.notification_service.store import MAX_NOTICE_STATE_SESSIONS, ConflictError, NotFoundError, QuotaError
 from agentplane.workload_auth.http import WorkloadPrincipalAuthenticator
 from agentplane.workload_auth.principal import WorkloadPrincipal, WorkloadPrincipalResolver

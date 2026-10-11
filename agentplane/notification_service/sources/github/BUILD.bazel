@@ -1,0 +1,82 @@
+load("//devinfra/python:defs.bzl", "py_library", "py_test")
+
+package(default_visibility = ["//agentplane/notification_service:__subpackages__"])
+
+py_library(
+    name = "client",
+    srcs = ["client.py"],
+    deps = [
+        ":models",
+        "//agentplane/notification_service:settings",
+        "@pypi//cryptography",
+        "@pypi//httpx",
+        "@pypi//pydantic",
+        "@pypi//pyjwt",
+    ],
+)
+
+py_library(
+    name = "models",
+    srcs = ["models.py"],
+    deps = ["@pypi//pydantic"],
+)
+
+py_library(
+    name = "source",
+    srcs = ["source.py"],
+    deps = [
+        ":client",
+        ":models",
+        ":state",
+        "//agentplane/notification_service:db",
+        "//agentplane/notification_service:models",
+        "//agentplane/notification_service:store",
+        "@pypi//httpx",
+        "@pypi//pydantic",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
+    name = "state",
+    srcs = ["state.py"],
+    deps = [
+        "//agentplane/notification_service:db",
+        "//agentplane/notification_service:models",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_test(
+    name = "test_source",
+    size = "medium",
+    srcs = ["test_source.py"],
+    deps = [
+        ":client",
+        ":models",
+        ":source",
+        ":state",
+        "//:conftest",
+        "//agentplane:subjects",
+        "//agentplane/history_service:client",
+        "//agentplane/notification_service:api",
+        "//agentplane/notification_service:conftest",
+        "//agentplane/notification_service:database_migrate",
+        "//agentplane/notification_service:db",
+        "//agentplane/notification_service:models",
+        "//agentplane/notification_service:service",
+        "//agentplane/notification_service:settings",
+        "//agentplane/notification_service:store",
+        "//agentplane/notification_service/sources:actions",
+        "//agentplane/sandbox_service:client",
+        "//agentplane/workload_auth:principal",
+        "@pypi//alembic",
+        "@pypi//cryptography",
+        "@pypi//httpx",
+        "@pypi//pydantic",
+        "@pypi//pyjwt",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//sqlalchemy",
+    ],
+)

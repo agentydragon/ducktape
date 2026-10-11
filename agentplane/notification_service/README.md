@@ -104,7 +104,7 @@ The configured endpoint receives App JWTs and installation tokens: only use trus
 and use fixture credentials for local mock services. These are deployment-owned settings,
 not subscription-controlled destinations, and do not alter egress authorization.
 
-`GitHubClient` in `sources/github_client.py` owns the async HTTP lifetime, configured endpoint,
+`GitHubClient` in `sources/github/client.py` owns the async HTTP lifetime, configured endpoint,
 App JWTs, installation-token cache and typed REST resource methods. The notification provider
 owns webhook verification, durable access/subject observations, leases, backoff scheduling and
 matching. Client calls surface rate limits immediately; they do not sleep/retry inside a lease.
