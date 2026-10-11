@@ -34,7 +34,7 @@ def call_failed(request: pytest.FixtureRequest) -> bool:
             "no pytest call report for %s; failure journal unavailable", request.node.nodeid
         )
         return False
-    return report.failed
+    return bool(report.failed)
 
 
 async def capture_native_journal(request: pytest.FixtureRequest, runner: RunnerHandle) -> None:
