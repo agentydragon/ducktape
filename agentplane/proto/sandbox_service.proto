@@ -101,7 +101,8 @@ message FrozenLaunch {
 message SubmitCommandRequest {
   SessionDestination destination = 1;
   agentplane.proto.command.Command command = 2;
-  agentplane.proto.event_log.Follow follow = 3;
+  reserved 3;
+  reserved "follow";
 }
 
 // Runner admission only: whether the runner journaled the command, never what the harness did.

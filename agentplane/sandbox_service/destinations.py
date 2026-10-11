@@ -1,7 +1,6 @@
-"""Resolve an explicit, authorized Sandbox incarnation to its current controller-owned runner Pod."""
+"""Check an explicit, authorized Sandbox incarnation and its current controller-owned runner Pod."""
 
 from dataclasses import dataclass
-from ipaddress import ip_address
 
 from kubernetes_asyncio import client as k8s_client
 
@@ -16,20 +15,14 @@ class DestinationUnavailableError(Exception):
 
 
 @dataclass(frozen=True)
-class RunnerEndpoint:
-    target: str
-    binding: SandboxBinding | None
-
-
-@dataclass(frozen=True)
 class DestinationResolver:
     inventory: SandboxInventory
     core: k8s_client.CoreV1Api
-    runner_port: int
 
-    async def resolve(self, destination: SandboxDestination, *, writes: bool) -> RunnerEndpoint:
-        """`writes`: the caller may create, resume or command a Session, which a Sandbox being torn
-        down refuses. Following and listing its Sessions stays possible until it is deleted."""
+    async def resolve(self, destination: SandboxDestination, *, writes: bool) -> SandboxBinding | None:
+        """The Sandbox's binding, once its runner Pod is running and ready. `writes`: the caller may
+        create, resume or command a Session, which a Sandbox being torn down refuses. Listing its
+        Sessions stays possible until it is deleted."""
         if not all((destination.sandbox, destination.sandbox_uid, destination.owner.namespace, destination.owner.name)):
             raise ValueError("Sandbox name, UID, and owner are required")
         view = await self.inventory.get(destination.sandbox)
@@ -62,7 +55,6 @@ class DestinationResolver:
             or (spec.service_account_name or "default") != destination.owner.name
             or status is None
             or status.phase != "Running"
-            or not status.pod_ip
             or not any(c.type == "Ready" and c.status == "True" for c in status.conditions or [])
         ):
             raise DestinationUnavailableError
@@ -77,14 +69,7 @@ class DestinationResolver:
             or owner.uid != str(destination.sandbox_uid)
         ):
             raise DestinationUnavailableError
-        try:
-            address = ip_address(status.pod_ip)
-        except ValueError as error:
-            raise DestinationUnavailableError from error
-        host = f"[{address}]" if address.version == 6 else str(address)
-        return RunnerEndpoint(
-            target=f"{host}:{self.runner_port}", binding=view.binding if view.HasField("binding") else None
-        )
+        return view.binding if view.HasField("binding") else None
 
 
 # gazelle:include_dep @pypi//protobuf

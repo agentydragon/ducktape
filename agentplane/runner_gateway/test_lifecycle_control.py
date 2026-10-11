@@ -18,7 +18,6 @@ from agentplane.proto import runner_control_pb2, runner_control_pb2_grpc, runner
 from agentplane.proto.sandbox_service_pb2 import TeardownPhase
 from agentplane.runner.errors import RunnerError
 from agentplane.runner_gateway.command_delivery import CommandDelivery
-from agentplane.runner_gateway.commands.connections import ConnectionStore
 from agentplane.runner_gateway.commands.dispatch import DispatchStore
 from agentplane.runner_gateway.connection_records import ConnectionHolder, ConnectionLeases
 from agentplane.runner_gateway.lifecycle_control import (
@@ -45,9 +44,7 @@ from util.agent_sandbox import SANDBOXES_PLURAL, OperatingMode
 
 CALLER_AUDIENCE = "test-sandbox-service"
 CALLER = ServiceAccountRef(namespace=SANDBOX_NAMESPACE, name="test-caller")
-HELLO = runner_control_pb2.RunnerFrame(
-    hello=runner_control_pb2.Hello(runner_boot_id="test-boot", capabilities=["commands", "lifecycle"])
-)
+HELLO = runner_control_pb2.RunnerFrame(hello=runner_control_pb2.Hello(runner_boot_id="test-boot"))
 SPEC: dict[str, object] = {"harness": "HARNESS_CLAUDE", "cwd": "/test-workspace/{session_id}", "model": "test-model"}
 Reason = runner_control_pb2.ControlRefused.Reason
 
@@ -74,19 +71,16 @@ def replica(
         pod_uid="test-caller-pod-uid",
         audiences=(CALLER_AUDIENCE,),
     )
-    connections = ConnectionStore(engine)
 
     @asynccontextmanager
     async def start(holder: ConnectionHolder) -> AsyncIterator[Replica]:
         control = LifecycleControl(leases)
-        delivery = CommandDelivery(
-            engine.url, dispatches=DispatchStore(engine), connections=connections, leases=leases, liveness_s=5
-        )
+        delivery = CommandDelivery(engine.url, dispatches=DispatchStore(engine), leases=leases, liveness_s=5)
         resources = replace(
             build_resources(
                 engine,
                 principals=cluster.build_principal_resolver(CALLER_AUDIENCE),
-                destinations=DestinationResolver(cluster.inventory, k8s_client.CoreV1Api(cluster.api), 1),
+                destinations=DestinationResolver(cluster.inventory, k8s_client.CoreV1Api(cluster.api)),
                 caller_accounts=frozenset({CALLER}),
                 platform_instructions="Test platform guidance.",
             ),
@@ -129,7 +123,7 @@ async def connected(replica: Replica) -> AsyncIterator[Connect]:
         await call.write(HELLO)
         frame = await call.read()
         assert isinstance(frame, runner_control_pb2.ServiceFrame)
-        assert list(frame.welcome.capabilities) == ["commands", "lifecycle"]
+        assert frame.HasField("welcome")
         yield call
     finally:
         call.cancel()
@@ -261,17 +255,13 @@ async def test_a_replica_without_the_connection_refuses_before_acting(
     holder: Replica, other: Replica, token_file: Path
 ) -> None:
     async with connected(holder):
-        async with client(token_file, other.api, control_target=None) as direct:
-            with pytest.raises(ServiceError) as refused:
-                await direct.runner(DESTINATION).create(session_id=uuid4(), spec=SPEC)
-            assert refused.value.code == grpc.StatusCode.UNAVAILABLE
-        # A control Service still naming the other replica, as during a roll: the call is refused
-        # there and served by the holder.
-        async with connected(holder) as call, client(token_file, holder.api, control_target=other.api) as stale:
-            listing = asyncio.create_task(stale.runner(DESTINATION).list_sessions())
-            listed = await next_request(call)
-            await answer(call, runner_control_pb2.ControlResult(request_id=listed.request_id, list_sessions={}))
-            assert await listing == []
+        # Called directly, and through a control Service still naming the other replica as during a
+        # roll: the caller's retry resolves the control Service again.
+        for control_target in (None, other.api):
+            async with client(token_file, other.api, control_target=control_target) as caller:
+                with pytest.raises(ServiceError) as refused:
+                    await caller.runner(DESTINATION).create(session_id=uuid4(), spec=SPEC)
+                assert refused.value.code == grpc.StatusCode.UNAVAILABLE
 
 
 async def test_a_superseded_connection_sends_nothing(holder: Replica, other: Replica, leases: ConnectionLeases) -> None:
@@ -319,8 +309,17 @@ def sandbox_service_teardown(cluster: Cluster, gateway: SandboxServiceClient) ->
 
 
 async def test_teardown_seals_over_the_holders_connection(
-    holder: Replica, other: Replica, cluster: Cluster, token_file: Path
+    holder: Replica, other: Replica, cluster: Cluster, engine: AsyncEngine, token_file: Path
 ) -> None:
+    public_id = uuid4()
+    await register_session(
+        engine,
+        public_id,
+        sandbox_namespace=SANDBOX_NAMESPACE,
+        sandbox_name=SANDBOX,
+        sandbox_uid=UUID(SANDBOX_UID),
+        runner_session_id="test-runner-session",
+    )
     cluster.fake.objects[SANDBOXES_PLURAL][SANDBOX]["spec"]["operatingMode"] = OperatingMode.SUSPENDED
     view = await cluster.inventory.get(SANDBOX)
     await cluster.inventory.begin_teardown(SANDBOX, uid=view.uid)

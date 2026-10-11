@@ -70,7 +70,6 @@ flowchart TB
     ss -->|SealSandbox| gw
     k8s -->|creates| sandbox
     gw -->|control Services, Leases| k8s
-    gw -->|gRPC Attach: commands, lifecycle without control| runner
     hs -->|ingest, fold, read| hist_db
     notif -->|Sandbox lookups| ss
     notif -->|commands| gw
@@ -96,10 +95,10 @@ flowchart TB
   conversation view, folded by the History Service. Every runner pushes its Events to the History
   Service, the only way into retained history.
 - **Runner traffic is outbound.** Everything a runner sends goes through its Pod's egress
-  sidecar to the egress proxy, which authenticates the Pod and substitutes credentials. Commands
-  reach staging's runners over the `RunnerControl` stream they dial to the Runner Gateway, routed
-  per Sandbox by its `<sandbox>-control` Service and `<sandbox>-runner` Lease
-  ([runner control stream](docs/runner_control.md)).
+  sidecar to the egress proxy, which authenticates the Pod and substitutes credentials, and runner
+  Pods admit no connections. Commands and lifecycle requests reach runners over the `RunnerControl`
+  stream they dial to the Runner Gateway, routed per Sandbox by its `<sandbox>-control` Service and
+  `<sandbox>-runner` Lease ([runner control stream](docs/runner_control.md)).
 - **Databases.** Each service owns a database on one shared CNPG cluster: `app`,
   `sandbox_commands` (the Runner Gateway's Session registry and command admission),
   `sandbox_service` (Session history, written by the History Service), `actions`,

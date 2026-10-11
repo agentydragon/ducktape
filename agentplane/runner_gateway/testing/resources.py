@@ -4,7 +4,6 @@ runner control connection."""
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from agentplane.runner_gateway.command_delivery import CommandDelivery
-from agentplane.runner_gateway.commands.connections import ConnectionStore
 from agentplane.runner_gateway.commands.dispatch import DispatchStore
 from agentplane.runner_gateway.commands.store import SubmissionStore
 from agentplane.runner_gateway.connection_records import ConnectionLeases
@@ -34,12 +33,6 @@ def build_resources(
         platform_instructions=platform_instructions,
         sessions=SessionRegistry(engine),
         submissions=SubmissionStore(engine),
-        delivery=CommandDelivery(
-            engine.url,
-            dispatches=DispatchStore(engine),
-            connections=ConnectionStore(engine),
-            leases=leases,
-            liveness_s=1,
-        ),
+        delivery=CommandDelivery(engine.url, dispatches=DispatchStore(engine), leases=leases, liveness_s=1),
         control=LifecycleControl(leases),
     )

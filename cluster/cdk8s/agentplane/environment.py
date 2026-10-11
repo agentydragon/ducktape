@@ -147,8 +147,6 @@ class Environment:
     replicas: ReplicaProfile
     # The ConfigMap-authored portion of agentplane/app/settings.py's `Settings`.
     app_config: AppSettingsConfig
-    # Options for Sandbox Service's gRPC channel to the runner, authored into its ConfigMap.
-    runner_grpc_channel_options: Mapping[str, int | str]
     # Whether the History Service rebuilds the thread fold from the raw log beside the app's.
     fold_shadow: bool
     # Whether the History Service's writers remove an item's streamed delta entries once its

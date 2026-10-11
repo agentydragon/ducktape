@@ -16,7 +16,6 @@ from agentplane.grpc_process import background, kubernetes_configuration, until_
 from agentplane.grpc_serving import add_health, serving
 from agentplane.proto import runner_control_pb2_grpc
 from agentplane.runner_gateway.command_delivery import CommandDelivery
-from agentplane.runner_gateway.commands.connections import ConnectionStore
 from agentplane.runner_gateway.commands.dispatch import DispatchStore
 from agentplane.runner_gateway.commands.store import SubmissionStore
 from agentplane.runner_gateway.connection_records import ConnectionHolder, ConnectionLeases, ConnectionRecords
@@ -54,17 +53,12 @@ async def gateway(
     )
     sessions = SessionRegistry(commands_engine)
     submissions = SubmissionStore(commands_engine)
-    connections = ConnectionStore(commands_engine)
-    destinations = DestinationResolver(inventory, core, settings.runner_port)
+    destinations = DestinationResolver(inventory, core)
     leases = ConnectionLeases()
     timing = ControlTiming()
     control = LifecycleControl(leases)
     delivery = CommandDelivery(
-        commands_engine.url,
-        dispatches=DispatchStore(commands_engine),
-        connections=connections,
-        leases=leases,
-        liveness_s=timing.liveness_s,
+        commands_engine.url, dispatches=DispatchStore(commands_engine), leases=leases, liveness_s=timing.liveness_s
     )
     resources = Resources(
         principals=WorkloadPrincipalResolver(
@@ -85,7 +79,6 @@ async def gateway(
         sealer_accounts=settings.sealer_accounts,
         platform_instructions=settings.platform_instructions,
         lifecycle_timeout_s=settings.lifecycle_timeout_s,
-        runner_grpc_channel_options=settings.runner_grpc_channel_options,
     )
     add_service(resources, server)
     if settings.port == settings.runner_control_port:
@@ -101,7 +94,6 @@ async def gateway(
             ),
             inventory=inventory,
             core=core,
-            connections=connections,
             records=ConnectionRecords(
                 api,
                 namespace=settings.sandbox_namespace,

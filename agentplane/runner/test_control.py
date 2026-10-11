@@ -96,7 +96,6 @@ class ScriptedService(runner_control_pb2_grpc.RunnerControlServicer):
     authorizations: list[str] = field(default_factory=list)
     receipts: asyncio.Queue[control_pb2.CommandReceipt] = field(default_factory=asyncio.Queue)
     control_results: asyncio.Queue[control_pb2.ControlResult] = field(default_factory=asyncio.Queue)
-    capabilities: list[str] = field(default_factory=lambda: ["commands", "lifecycle"])
     # Each connection's send queue, holding its scripted frames, for the test to push more to.
     connected: asyncio.Queue[asyncio.Queue[control_pb2.ServiceFrame | grpc.StatusCode]] = field(
         default_factory=asyncio.Queue
@@ -112,11 +111,7 @@ class ScriptedService(runner_control_pb2_grpc.RunnerControlServicer):
         ]
         self.hellos.append((await anext(request_iterator)).hello)
         self.peers.append(context.peer())
-        await context.write(
-            control_pb2.ServiceFrame(
-                welcome=control_pb2.Welcome(connection_epoch=len(self.hellos), capabilities=self.capabilities)
-            )
-        )
+        await context.write(control_pb2.ServiceFrame(welcome=control_pb2.Welcome(connection_epoch=len(self.hellos))))
         if self.closes:
             await context.abort(self.closes.pop(0), "test service closes this connection")
         if self.silences:
@@ -228,7 +223,6 @@ async def test_a_redelivered_command_is_admitted_once_and_answered_from_the_jour
     assert first == second
     assert first.admitted.event.command_admitted.command == submit("test-input")
     assert (await runner.sessions[RUNNING].journal.admitted_entry("test-input")) == first.admitted
-    assert service.hellos[0].capabilities == ["commands", "lifecycle"]
     assert service.authorizations == ["Bearer test-placeholder"]
 
 
@@ -437,8 +431,8 @@ async def test_a_seal_lands_after_the_commands_delivered_before_it_and_before_th
                 read_through.append(frame)
             return frame
 
-    async def observed_serve(client: RunnerControlClient, call: Any, welcome: control_pb2.Welcome) -> None:
-        await serve(client, cast(Any, ObservedCall(call)), welcome)
+    async def observed_serve(client: RunnerControlClient, call: Any) -> None:
+        await serve(client, cast(Any, ObservedCall(call)))
 
     monkeypatch.setattr(RunnerControlClient, "serve", observed_serve)
     service.frames += [
@@ -471,19 +465,6 @@ async def test_sealing_again_returns_the_same_cursors_and_opening_is_refused(
     assert results["test-open"].refused.reason == Refused.REASON_SEALED
     assert not runner.sessions[RUNNING].running
     assert started == []
-
-
-async def test_a_control_request_on_a_connection_that_did_not_agree_lifecycle_fails_the_stream(
-    runner: Runner, service: ScriptedService
-) -> None:
-    service.capabilities = ["commands"]
-    service.frames.append(seal("test-seal"))
-    service.dial()
-    async with asyncio.timeout(10):
-        while len(service.hellos) < 2:
-            await service.connected.get()
-    assert service.control_results.empty()
-    assert not runner.store.sealed
 
 
 if __name__ == "__main__":
