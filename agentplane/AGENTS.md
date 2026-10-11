@@ -19,6 +19,13 @@ See [the dependency rule](docs/service_boundaries.md).
 - Acceptance for an extracted backend path must exercise it with the integration app unavailable.
   Do not add another command queue, event authority, or credential issuer as an incidental refactor.
 
+## System overview diagram
+
+A PR that adds, removes, splits or renames a service or Deployment, or changes the traffic between
+them (who calls whom, over which protocol, or an edge going live), updates the
+[README system overview](README.md#system-overview) in the same PR. The diagram draws what
+staging deploys, from `cluster/cdk8s/agentplane/`; a deployed path with no traffic yet is dashed.
+
 ## Deployed state is disposable
 
 Agentplane has no production tier, only staging and testing, so its deployed state is disposable.
