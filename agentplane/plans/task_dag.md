@@ -917,7 +917,7 @@ flowchart TD
     SANDBOX_SERVICE_DEPLOYMENT_SPLIT[Candidate: controller and hub as separate Deployments]
     AGENTPLANE_SANDBOX_RESOURCE[Decision: our own Sandbox resource]
     POD_INCARNATION[Decision: a Pod is the incarnation]
-    SEAL_FINALIZER[Candidate: seal as a finalizer on every delete]
+    SEAL_FINALIZER[Unscheduled: seal as a finalizer on every delete]
     COMMAND_RECORDS_RETIRE[Unscheduled: drop command submission records]
     RUNNER_CONTROL_RENAME[Candidate: name the runner's control endpoint control]
     RUNNER_CONTROL_RENAME --> RUNNER_OUTBOUND_ROLLOUT
@@ -1002,7 +1002,7 @@ around it: keeping the volume means keeping the Sandbox.
 
 ### `SEAL_FINALIZER` — seal as a finalizer on every delete
 
-**Candidate; operator, 2026-10-10 PDT.** Every Sandbox carries a seal
+**Unscheduled; operator, 2026-10-11 PDT: not worth the effort for now.** Every Sandbox carries a seal
 finalizer, so any deletion (`kubectl`, `DeleteSandbox`) seals before its volume goes. It replaces
 the controller loop's seal from the replica holding the runner, the `teardown` annotation and the
 suspended-only delete guard. Deletion is one-way: a hold can delay it, never cancel it.
@@ -1016,6 +1016,11 @@ controller owner references with `blockOwnerDeletion`, so only background propag
 `kubectl` and `DeleteSandbox` default) keeps them until the finalizer clears: foreground
 propagation garbage-collects them while the finalizer still holds the Sandbox, and namespace
 deletion removes them directly. Those two paths lose the unsealed tail.
+
+The considered way to seal a suspended one without our own resource: the finalizer starts a Job on
+the Sandbox's volume, under the Sandbox's own ServiceAccount and egress sidecar (the ingress binds a
+Session to its first writer), that pushes the unacknowledged tail and seals. The volume is
+ReadWriteOnce, so the Job starts only once every container of the old Pod is gone.
 
 ### `COMMAND_RECORDS_RETIRE` — drop command submission records
 
