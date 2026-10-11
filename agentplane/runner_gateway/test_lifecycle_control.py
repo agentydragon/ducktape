@@ -29,7 +29,7 @@ from agentplane.runner_gateway.lifecycle_control import (
 from agentplane.runner_gateway.runner_control import ControlTiming
 from agentplane.runner_gateway.testing.grpc_service import service
 from agentplane.runner_gateway.testing.resources import build_resources
-from agentplane.runner_gateway.testing.runner_control import OTHER_REPLICA, REPLICA, RUNNER_TOKEN, serve_channel
+from agentplane.runner_gateway.testing.runner_control import OTHER_REPLICA, REPLICA, RUNNER_TOKEN, serve_replica_control
 from agentplane.runner_gateway.testing.sessions import register_session
 from agentplane.sandbox_service.client import SandboxServiceClient, ServiceError
 from agentplane.sandbox_service.destinations import DestinationResolver
@@ -89,7 +89,7 @@ def replica(
             sealer_accounts=frozenset({CALLER}),
         )
         async with (
-            serve_channel(
+            serve_replica_control(
                 cluster,
                 holder,
                 delivery=delivery,

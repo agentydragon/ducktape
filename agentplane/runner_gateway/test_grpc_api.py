@@ -34,7 +34,7 @@ from agentplane.runner_gateway.testing.control_listener import wait_connected
 from agentplane.runner_gateway.testing.grpc_service import service_client
 from agentplane.runner_gateway.testing.journal import admission
 from agentplane.runner_gateway.testing.resources import build_resources
-from agentplane.runner_gateway.testing.runner_control import REPLICA, RUNNER_TOKEN, serve_channel
+from agentplane.runner_gateway.testing.runner_control import REPLICA, RUNNER_TOKEN, serve_replica_control
 from agentplane.runner_gateway.testing.sessions import register_session
 from agentplane.sandbox_service import wire
 from agentplane.sandbox_service.client import SandboxServiceClient, ServiceError
@@ -191,7 +191,7 @@ def resources(cluster: Cluster, engine: AsyncEngine, leases: ConnectionLeases) -
 async def peer(cluster: Cluster, resources: Resources) -> AsyncIterator[Peer]:
     async with (
         resources.delivery.listener.listen(),
-        serve_channel(
+        serve_replica_control(
             cluster,
             REPLICA,
             delivery=resources.delivery,

@@ -82,7 +82,7 @@ Thread-page projection. Their cross-layer contract is [Thread, runner, and harne
 
 ## Runner control stream
 
-- Given `--control-target`, the runner also dials the Sandbox Service's
+- Given `--control-target`, the runner also dials the Runner Gateway's
   [runner control stream](../docs/runner_control.md) and keeps one `Connect` stream for as long as it runs,
   reconnecting on a fresh connection after any loss. It offers `commands` and `lifecycle`.
 - A delivered command is admitted exactly as an `Attach` command is, and answered from the journal:

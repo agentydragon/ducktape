@@ -1,4 +1,4 @@
-"""The Sandbox Service's own schema, in the `sandbox_commands` database: its Session registry,
+"""The Runner Gateway's own schema, in the `sandbox_commands` database: its Session registry,
 command admission and runner connections.
 
 Session history lives in another database, keyed by the same public Session ID with no foreign key.

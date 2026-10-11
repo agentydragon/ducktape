@@ -1,4 +1,4 @@
-"""The runner's peer of the runner control stream: it dials the Sandbox Service, keeps one `Connect` stream,
+"""The runner's peer of the runner control stream: it dials the Runner Gateway, keeps one `Connect` stream,
 admits the commands delivered over it and answers its lifecycle requests. Contract:
 `agentplane/docs/runner_control.md`."""
 
@@ -155,7 +155,7 @@ async def control(runner: Runner, request: control_pb2.ControlRequest) -> contro
 
 
 class RunnerControlClient:
-    """Keeps one `Connect` stream to the Sandbox Service for as long as the runner runs.
+    """Keeps one `Connect` stream to the Runner Gateway for as long as the runner runs.
 
     Each connection dials a fresh HTTP/2 connection from a local subchannel pool: gRPC's global pool
     would hand a reconnect the stale connection that just failed.
@@ -222,7 +222,7 @@ class RunnerControlClient:
             except grpc.aio.AioRpcError as error:
                 lost = ControlStreamLostError(error.code(), error.details() or "")
             except TimeoutError:
-                lost = ControlStreamLostError(None, "no frame from the Sandbox Service")
+                lost = ControlStreamLostError(None, "no frame from the Runner Gateway")
             except ControlStreamLostError as error:
                 lost = error
         if welcomed_at is not None and loop.time() - welcomed_at >= self.timing.liveness_s:

@@ -1,6 +1,6 @@
-"""Migrate the Sandbox Service's command admission database.
+"""Migrate the Runner Gateway's command admission database.
 
-Run from the commands migration image as a Sandbox Service Deployment init container.
+Run from the commands migration image as a Runner Gateway Deployment init container.
 A migration failure prevents the Pod from serving even existing lifecycle RPCs.
 """
 

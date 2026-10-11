@@ -32,8 +32,7 @@ bbr test //agentplane/runner/...
 - `claude.py`, `codex.py`: the adapters, one per harness, behind `adapter.py`. They parse frames
   with the wire models and reuse the frame constructors and launch configuration in
   <../native/README.md>.
-- `client.py`: a typed client over one attachment plus `list_sessions`, used by the Sandbox Service
-  and the tests.
+- `client.py`: a typed client over one attachment plus `list_sessions`, used by the tests.
 
 ## Tests
 

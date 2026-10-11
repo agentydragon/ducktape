@@ -1,4 +1,4 @@
-"""The runner's control-stream peer against a scripted Sandbox Service: delivered commands are admitted once
+"""The runner's control-stream peer against a scripted Runner Gateway: delivered commands are admitted once
 and answered from the journal, refusals name their cause, lifecycle requests start a harness only when
 they say so, and a lost connection is replaced by a fresh one."""
 

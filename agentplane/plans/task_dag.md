@@ -965,7 +965,6 @@ flowchart TD
         RUNNER_GATEWAY_AUDIENCE[Candidate: the Runner Gateway's own token audience]
         SERVICE_SETTINGS_BASE[Candidate: one config-file settings base]
         SERVICE_PROCESS_MODULE[Candidate: one service process module]
-        GATEWAY_NAME_SWEEP[Candidate: code says Runner Gateway for the gateway]
         WATCH_FRESHNESS_DEDUPE[Candidate: one watch freshness]
         POSTGRES_WAKEUPS_SHARED[Candidate: one PostgreSQL wakeup class]
         GATEWAY_SANDBOX_READS[Candidate: the gateway reads Sandboxes read-only]
@@ -1018,15 +1017,6 @@ check, subclass it in every service, and drop the no-op `__init__(self, **values
 it does, and have every main use its `kubernetes_configuration` (re-inlined in six mains),
 `background` (hand-rolled for the History Service fold task) and one `kubernetes_asyncio` log-level
 line; the History Service's two "ports must differ" checks go with it.
-
-### `GATEWAY_NAME_SWEEP` — code says Runner Gateway for the gateway
-
-**Candidate.** Module docstrings, `proto/runner_control.proto`, the EndpointSlice
-`managed-by: agentplane-sandbox-service` (`runner_gateway/connection_records.py`), the agent prompt
-in `session_lifecycle.py`, and the runner's `control.py`, `main.py` flag help, `SPEC.md` and README
-say "Sandbox Service" for the gateway; History Service docstrings say it writes and migrates the
-history store. Also the stale `sealer_accounts` comment, the `serve_channel` test helper, and the
-`CLEANUP` in `sandbox_service/teardown.py` that cites this plan.
 
 ### `WATCH_FRESHNESS_DEDUPE` — one watch freshness
 
