@@ -12,7 +12,7 @@ from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, cast
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, Mock
 from urllib.parse import parse_qs, urlsplit
 
 import httpx
@@ -483,6 +483,21 @@ async def test_bearer_storage_outage_is_retryable_not_a_false_invalid_token(
             await oauth.proxy.authenticate(token)
         assert error.value.status_code == 503
     assert await oauth.proxy.authenticate(token) is not None
+
+
+async def test_unreadable_bearer_is_invalid_but_a_verifier_bug_propagates(
+    oauth: OAuthFixture, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    client_id = await oauth.register()
+    handle, verifier = await oauth.authorize(client_id)
+    code = await oauth.callback(await oauth.approve(handle))
+    response = await oauth.exchange(client_id, code, verifier)
+    assert response.status_code == 200, response.text
+    assert await oauth.proxy.authenticate("not-a-jwt") is None
+    assert await oauth.proxy.authenticate(response.json()["refresh_token"]) is None
+    monkeypatch.setattr(oauth.proxy.jwt_issuer, "verify_token", Mock(side_effect=RuntimeError("test verifier bug")))
+    with pytest.raises(RuntimeError, match="test verifier bug"):
+        await oauth.proxy.authenticate(response.json()["access_token"])
 
 
 @pytest.mark.parametrize("token_type", ["access_token", "refresh_token"])

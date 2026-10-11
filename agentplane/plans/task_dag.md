@@ -1076,7 +1076,6 @@ flowchart TD
         LLM_INGRESS_MODEL_CONFIG_CONTRACT[Candidate: structural absent model config]
         ACTION_SETTINGS_SINGLE_MODEL[Candidate: one Action Service settings model]
         ACTION_PROTOCOLS_CONCRETE[Candidate: concrete types for Action protocols]
-        ACTION_OAUTH_REFERENCE_TYPE[Candidate: typed OAuth token reference]
         NOTIFICATION_GITHUB_PACKAGE[Candidate: one GitHub source package]
         CDK8S_SERVICE_CONSTRUCT[Candidate: one cdk8s service construct]
         CDK8S_RUNNER_ENDPOINT_HELPER[Candidate: one runner-facing endpoint helper]
@@ -1299,12 +1298,6 @@ namespaces required, and move `token_audience` from the CLI into the file.
 **Candidate.** `AccessTokenProvider`, `ExternalGrantAuthority` (also a footgun `| None = None`),
 `DecisionProvider` and `ExecutionLease` each have one production implementation, and
 `OperatorAuthenticator` is a union of two. Name the concrete types or unions.
-
-### `ACTION_OAUTH_REFERENCE_TYPE` — typed OAuth token reference
-
-**Candidate.** `ActionsOAuthProxy._reference` returns an indexed `tuple[UUID, str, str]` and its
-callers catch `Exception`, so a bug looks like a revoked token (`action_service/oauth.py:282`). A
-dataclass, and catches narrowed to the JWT, `ValueError` and `KeyError` failures.
 
 ### `NOTIFICATION_GITHUB_PACKAGE` — one GitHub source package
 

@@ -6,6 +6,7 @@ import logging
 from collections.abc import AsyncIterator, Mapping
 from contextlib import asynccontextmanager
 from contextvars import ContextVar
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Any, SupportsFloat, cast
 from uuid import UUID
@@ -15,6 +16,7 @@ import jwt
 from cryptography.fernet import Fernet
 from fastapi import HTTPException
 from fastmcp.server.auth.auth import AccessToken, TokenVerifier
+from joserfc.errors import JoseError
 from key_value.aio.protocols import AsyncKeyValue
 from key_value.aio.wrappers.base import BaseWrapper
 from key_value.aio.wrappers.encryption import FernetEncryptionWrapper
@@ -112,6 +114,15 @@ class _ObservedVerifier(RetryableJWTVerifier):
         except Exception as error:
             _observe_failure(error)
             raise
+
+
+@dataclass(frozen=True)
+class _GrantReference:
+    """The canonical grant a locally issued access or refresh token names."""
+
+    grant_id: UUID
+    issuer: str
+    client_id: str
 
 
 class ActionsOAuthProxy(DownstreamClientIdentityOIDCProxy):
@@ -279,23 +290,29 @@ class ActionsOAuthProxy(DownstreamClientIdentityOIDCProxy):
             raise _unavailable() from None
         return {"grant_id": str(grant_id)}
 
-    def _reference(self, token: str, *, token_use: str) -> tuple[UUID, str, str]:
+    def _reference(self, token: str, *, token_use: str) -> _GrantReference:
+        """Raises JoseError for a token this issuer did not sign, ValueError for one naming no grant."""
         claims = self.jwt_issuer.verify_token(token, expected_token_use=token_use)
-        grant_claims = claims["upstream_claims"]
+        grant_claims = claims.get("upstream_claims")
         if not isinstance(grant_claims, dict) or set(grant_claims) != {"grant_id"}:
             raise ValueError("invalid grant reference")
-        grant_id = UUID(grant_claims["grant_id"])
-        issuer, client_id = claims["iss"], claims["client_id"]
-        if not isinstance(issuer, str) or not isinstance(client_id, str) or not client_id:
+        grant_id, issuer, client_id = grant_claims["grant_id"], claims.get("iss"), claims.get("client_id")
+        if (
+            not isinstance(grant_id, str)
+            or not isinstance(issuer, str)
+            or not isinstance(client_id, str)
+            or not client_id
+        ):
             raise ValueError("invalid token identity")
-        return grant_id, issuer, client_id
+        return _GrantReference(grant_id=UUID(grant_id), issuer=issuer, client_id=client_id)
 
-    async def _resolve(self, reference: tuple[UUID, str, str]) -> Grant:
-        grant_id, issuer, client_id = reference
-        return await self._connections.resolve(grant_id, issuer=issuer, client_id=client_id)
+    async def _resolve(self, reference: _GrantReference) -> Grant:
+        return await self._connections.resolve(
+            reference.grant_id, issuer=reference.issuer, client_id=reference.client_id
+        )
 
     def _validate_family(self, token: OAuthToken, grant: Grant) -> None:
-        expected = (grant.id, grant.issuer, grant.client_id)
+        expected = _GrantReference(grant_id=grant.id, issuer=grant.issuer, client_id=grant.client_id)
         if self._reference(token.access_token, token_use="access") != expected:
             raise TokenError("invalid_grant", _INVALID_GRANT)
         if token.refresh_token is not None and self._reference(token.refresh_token, token_use="refresh") != expected:
@@ -306,9 +323,9 @@ class ActionsOAuthProxy(DownstreamClientIdentityOIDCProxy):
     ) -> OAuthToken:
         try:
             reference = self._reference(refresh_token.token, token_use="refresh")
-        except Exception:
+        except JoseError, ValueError:
             raise TokenError("invalid_grant", _INVALID_GRANT) from None
-        if reference[2] != client.client_id or refresh_token.client_id != client.client_id:
+        if reference.client_id != client.client_id or refresh_token.client_id != client.client_id:
             raise TokenError("invalid_grant", _INVALID_GRANT)
         try:
             grant = await self._resolve(reference)
@@ -328,7 +345,7 @@ class ActionsOAuthProxy(DownstreamClientIdentityOIDCProxy):
     async def load_access_token(self, token: str) -> AccessToken | None:
         try:
             reference = self._reference(token, token_use="access")
-        except Exception:
+        except JoseError, ValueError:
             return None
         try:
             await self._resolve(reference)
@@ -382,10 +399,10 @@ class ActionsOAuthProxy(DownstreamClientIdentityOIDCProxy):
             reference = self._reference(
                 token.token, token_use="refresh" if isinstance(token, RefreshToken) else "access"
             )
-        except Exception:
+        except JoseError, ValueError:
             return
         try:
-            await self._connections.revoke(reference[0])
+            await self._connections.revoke(reference.grant_id)
         except SQLAlchemyError:
             raise _unavailable() from None
         # Do not forward local reference credentials to the upstream IdP. Canonical

@@ -867,6 +867,7 @@ py_library(
         "@pypi//cryptography",
         "@pypi//fastapi",
         "@pypi//fastmcp_slim",
+        "@pypi//joserfc",
         "@pypi//mcp",
         "@pypi//mcp_types",
         "@pypi//py_key_value_aio",
