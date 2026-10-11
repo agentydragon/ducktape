@@ -1,4 +1,4 @@
-"""Fake Kubernetes fixtures and a caller bearer file, with no integration app or app database."""
+"""Fake Kubernetes fixtures, a caller bearer file, and the service schema for integration tests."""
 
 from collections.abc import AsyncIterator
 from pathlib import Path

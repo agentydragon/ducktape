@@ -67,6 +67,7 @@ py_library(
     deps = [
         "//util:db_migrations",
         "@pypi//asyncpg",
+        "@pypi//psycopg",
         "@pypi//psycopg2_binary",
         "@pypi//sqlalchemy",
     ],
