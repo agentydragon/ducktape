@@ -39,11 +39,11 @@ from agentplane.runner_gateway.commands.store import (
     SubmissionStore,
     submit_command,
 )
+from agentplane.runner_gateway.destinations import DestinationResolver, DestinationUnavailableError
 from agentplane.runner_gateway.lifecycle_control import ConnectionNotHeldError, ControlRefusedError, LifecycleControl
 from agentplane.runner_gateway.sealing import SEAL_S, Sealing
 from agentplane.runner_gateway.session_registry import SessionNotFoundError, SessionRegistry
 from agentplane.sandbox_service import wire
-from agentplane.sandbox_service.destinations import DestinationResolver, DestinationUnavailableError
 from agentplane.sandbox_service.models import InventoryError, SandboxNotFoundError
 from agentplane.subjects import ServiceAccountRef
 from agentplane.workload_auth.grpc_caller import authenticate
@@ -200,7 +200,7 @@ class RunnerGateway(runner_gateway_pb2_grpc.RunnerGatewayServicer):
             for summary in await self.list_runner_sessions(request.destination):
                 public_id = await self.resources.sessions.public_id(
                     summary.session_id,
-                    sandbox_namespace=self.resources.destinations.inventory.namespace,
+                    sandbox_namespace=self.resources.destinations.sandboxes.namespace,
                     sandbox_name=request.destination.sandbox,
                     sandbox_uid=UUID(request.destination.sandbox_uid),
                 )
@@ -216,7 +216,7 @@ class RunnerGateway(runner_gateway_pb2_grpc.RunnerGatewayServicer):
         session_id = parse_session_id(destination.session_id)
         await self.resources.sessions.require(
             session_id,
-            sandbox_namespace=self.resources.destinations.inventory.namespace,
+            sandbox_namespace=self.resources.destinations.sandboxes.namespace,
             sandbox_name=destination.sandbox.sandbox,
             sandbox_uid=UUID(destination.sandbox.sandbox_uid),
         )
@@ -250,7 +250,7 @@ class RunnerGateway(runner_gateway_pb2_grpc.RunnerGatewayServicer):
                     effective_overrides,
                     binding=binding,
                     platform_instructions=self.resources.platform_instructions,
-                    sandbox_namespace=self.resources.destinations.inventory.namespace,
+                    sandbox_namespace=self.resources.destinations.sandboxes.namespace,
                 )
                 setup_script = (
                     request.setup_script
@@ -271,7 +271,7 @@ class RunnerGateway(runner_gateway_pb2_grpc.RunnerGatewayServicer):
                 session_id=client_id,
                 caller_namespace=caller.namespace,
                 caller_name=caller.name,
-                sandbox_namespace=self.resources.destinations.inventory.namespace,
+                sandbox_namespace=self.resources.destinations.sandboxes.namespace,
                 sandbox_name=request.sandbox.sandbox,
                 sandbox_uid=sandbox_uid,
                 open_key=request.idempotency_key or None,
@@ -303,7 +303,7 @@ class RunnerGateway(runner_gateway_pb2_grpc.RunnerGatewayServicer):
             public_id = await self.resources.sessions.lookup_open(
                 caller_namespace=caller.namespace,
                 caller_name=caller.name,
-                sandbox_namespace=self.resources.destinations.inventory.namespace,
+                sandbox_namespace=self.resources.destinations.sandboxes.namespace,
                 sandbox_name=request.sandbox.sandbox,
                 sandbox_uid=UUID(request.sandbox.sandbox_uid),
                 open_key=request.idempotency_key,
@@ -432,14 +432,7 @@ class RunnerGateway(runner_gateway_pb2_grpc.RunnerGatewayServicer):
     ) -> runner_pb2.SealResponse:
         async with errors(context), asyncio.timeout(SEAL_S + self.resources.admission_timeout_s):
             await authenticate(self.resources.principals, self.resources.sealer_accounts, context)
-            destination = request.destination
-            if not all(
-                (destination.sandbox, destination.sandbox_uid, destination.owner.namespace, destination.owner.name)
-            ):
-                raise ValueError("Sandbox name, UID, and owner are required")
-            view = await self.resources.destinations.inventory.get(destination.sandbox)
-            if view.uid != destination.sandbox_uid or view.service_account != destination.owner:
-                raise SandboxNotFoundError(destination.sandbox)
+            view = await self.resources.destinations.sandboxes.incarnation(request.destination)
             return await self.resources.sealing.seal(view)
 
 

@@ -26,6 +26,7 @@ from agentplane.runner_gateway.commands import db
 from agentplane.runner_gateway.commands.dispatch import DispatchStore
 from agentplane.runner_gateway.commands.store import CommandSubmission, SubmissionState, SubmissionStore
 from agentplane.runner_gateway.connection_records import ConnectionLeases
+from agentplane.runner_gateway.destinations import DestinationResolver
 from agentplane.runner_gateway.grpc_api import Resources
 from agentplane.runner_gateway.lifecycle_control import LifecycleControl
 from agentplane.runner_gateway.runner_control import ControlTiming
@@ -38,7 +39,6 @@ from agentplane.runner_gateway.testing.runner_control import REPLICA, RUNNER_TOK
 from agentplane.runner_gateway.testing.sessions import register_session
 from agentplane.sandbox_service import wire
 from agentplane.sandbox_service.client import SandboxServiceClient, ServiceError
-from agentplane.sandbox_service.destinations import DestinationResolver
 from agentplane.sandbox_service.kubernetes_grants import RoleBindingGrant, RoleRef
 from agentplane.sandbox_service.kubernetes_views import (
     KUBERNETES_GRANTS_ANNOTATION,

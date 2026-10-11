@@ -906,8 +906,6 @@ flowchart TD
     subgraph COHERENCE_REFACTORS[Coherence refactors]
         REQUIRED_SERVICE_WIRING[Candidate: no footgun defaults on service wiring]
         GATEWAY_NAME_SWEEP[Candidate: code says Runner Gateway for the gateway]
-        GATEWAY_SANDBOX_READS[Candidate: the gateway reads Sandboxes read-only]
-        SANDBOX_DEAD_CODE[Candidate: delete KubernetesBindings.run]
         RUNNER_ERRORS_REHOME[Blocked: errors beside the client that raises them]
         SETTLE_DELTAS_ALWAYS_ON[Unscheduled: retire the settle_deltas flag]
         FEED_ENDED_RETIRE[Candidate: a feed ends where its harness stopped]
@@ -941,18 +939,6 @@ in `session_lifecycle.py`, and the runner's `control.py`, `main.py` flag help, `
 say "Sandbox Service" for the gateway; History Service docstrings say it writes and migrates the
 history store. Also the stale `sealer_accounts` comment, the `serve_channel` test helper, and the
 `CLEANUP` in `sandbox_service/teardown.py` that cites this plan.
-
-### `GATEWAY_SANDBOX_READS` — the gateway reads Sandboxes read-only
-
-**Candidate.** The gateway builds the Sandbox Service's mutating `SandboxInventory` but only reads
-it, and alone uses `sandbox_service/destinations.py`, against service_boundaries.md § callers. Split
-a read-only Sandbox reader, move `destinations.py` into `runner_gateway/`, write the incarnation
-check (four copies) once, and drop the second `RunnerEndpoint` class name.
-
-### `SANDBOX_DEAD_CODE` — delete `KubernetesBindings.run`
-
-**Candidate.** Nothing calls it (`sandbox_service/kubernetes_bindings.py:295`); grant bindings
-reconcile through `Provisioning.reconcile_once`.
 
 ### `RUNNER_ERRORS_REHOME` — errors beside the client that raises them
 

@@ -44,7 +44,7 @@ async def serve_replica_control(
     async with (
         serve_runner_control(
             principals=cluster.build_principal_resolver(RUNNER_AUDIENCE),
-            inventory=cluster.inventory,
+            sandboxes=cluster.inventory,
             core=k8s_client.CoreV1Api(cluster.api),
             records=ConnectionRecords(cluster.api, namespace=SANDBOX_NAMESPACE, holder=holder),
             delivery=delivery,
