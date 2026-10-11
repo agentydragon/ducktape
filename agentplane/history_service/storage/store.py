@@ -19,7 +19,7 @@ from agentplane.history_service.storage.db import (
 )
 from agentplane.history_service.storage.history_changes import notify_history
 from agentplane.history_service.storage.settlement import completion_target, settle, started_item
-from agentplane.proto import event_log_pb2
+from agentplane.proto import event_log_pb2, runner_pb2
 
 # The generated protobuf stubs need the protobuf runtime as a direct mypy dependency.
 # gazelle:include_dep @pypi//protobuf
@@ -223,8 +223,30 @@ class Store:
                     snapshot.ended = prior.ended
                 elif snapshot.attached.last_cursor == prior.attached.last_cursor:
                     if snapshot.attached != prior.attached:
-                        raise HistoryConflictError("conflicting attachment snapshots at one cursor")
-                    snapshot.ended = snapshot.ended or prior.ended
+                        same_except_harness = runner_pb2.Attached()
+                        same_except_harness.CopyFrom(prior.attached)
+                        same_except_harness.harness_state = snapshot.attached.harness_state
+                        if same_except_harness != snapshot.attached:
+                            raise HistoryConflictError("conflicting attachment snapshots at one cursor")
+                        if (
+                            not prior.HasField("sealed")
+                            and prior.attached.harness_state == runner_pb2.HARNESS_STATE_STOPPED
+                            and snapshot.attached.harness_state == runner_pb2.HARNESS_STATE_RUNNING
+                            and not snapshot.ended
+                        ):
+                            # Resume can be confirmed before HarnessStarted advances the journal.
+                            pass
+                        elif (
+                            prior.attached.harness_state == runner_pb2.HARNESS_STATE_RUNNING
+                            and snapshot.attached.harness_state == runner_pb2.HARNESS_STATE_STOPPED
+                        ):
+                            # Stops have journal entries. A stopped snapshot at the same cursor
+                            # after Resume belongs to the previous run.
+                            snapshot.CopyFrom(prior)
+                        else:
+                            raise HistoryConflictError("conflicting attachment snapshots at one cursor")
+                    else:
+                        snapshot.ended = snapshot.ended or prior.ended
             serialized = snapshot.SerializeToString(deterministic=True)
             if row.feed_state != serialized:
                 row.feed_state = serialized

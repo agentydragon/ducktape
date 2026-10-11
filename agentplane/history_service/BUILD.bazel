@@ -407,6 +407,7 @@ py_test(
         ":ingress",
         "//:conftest",
         "//agentplane:grpc_serving",
+        "//agentplane/history_service:protocol_pb2",
         "//agentplane/history_service/storage:conftest",
         "//agentplane/history_service/storage:store",
         "//agentplane/proto:event_log_pb2",

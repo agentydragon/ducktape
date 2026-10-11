@@ -13,6 +13,7 @@ from kubernetes_asyncio import client as k8s_client
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from agentplane.grpc_serving import serving
+from agentplane.history_service import protocol_pb2 as history_pb2
 from agentplane.history_service.ingress import Resources, Timing, add_ingress
 from agentplane.history_service.storage.store import Store
 from agentplane.proto import event_log_pb2, event_pb2, runner_ingress_pb2, runner_ingress_pb2_grpc, runner_pb2
@@ -180,6 +181,29 @@ async def test_resume_replays_exact_duplicates_and_continues_after_a_restart(eng
         call = await push(stub, [announce(session_id, last_cursor=3)])
         await call.acknowledged(3, sealed=True)
         assert await call.call.read() is grpc.aio.EOF
+
+
+async def test_resume_announce_at_stopped_cursor_accepts_the_next_journal_entry(engine: AsyncEngine) -> None:
+    session_id = uuid4()
+    stopped = announce(session_id, last_cursor=1)
+    stopped.announce.harness_state = runner_pb2.HARNESS_STATE_STOPPED
+    async with ingress(engine) as stub:
+        call = await push(stub, [stopped, *entries(1)])
+        await call.acknowledged(1)
+        call.call.cancel()
+        # A follower observed EOF before the runner resumed at the same cursor.
+        await Store(engine).record_feed_state(
+            session_id, history_pb2.SessionFeedState(attached=stopped.announce, ended=True)
+        )
+        resumed = announce(session_id, last_cursor=1)
+        resumed.announce.harness_state = runner_pb2.HARNESS_STATE_RUNNING
+        call = await push(stub, [resumed, *entries(2)])
+        await call.acknowledged(2)
+        call.call.cancel()
+    page = await Store(engine).read_page(session_id, after_cursor=1)
+    assert page.feed_state.attached == resumed.announce
+    assert not page.feed_state.ended
+    assert list(page.entries) == [entry(2)]
 
 
 @pytest.mark.parametrize(
