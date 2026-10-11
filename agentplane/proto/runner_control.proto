@@ -1,4 +1,4 @@
-// The runner-initiated control stream to the Sandbox Service; contract in
+// The runner-initiated control stream to the Runner Gateway; contract in
 // agentplane/docs/runner_control.md. An incompatible change rides a clean cutover: the operator
 // retires every Sandbox on the old protocol.
 syntax = "proto3";

@@ -89,7 +89,7 @@ def main(
     ] = None,
     control_target: Annotated[
         str | None,
-        typer.Option(help="Sandbox Service runner-control host:port to dial; omit to serve only inbound Attach."),
+        typer.Option(help="Runner Gateway runner-control host:port to dial; omit to serve only inbound Attach."),
     ] = None,
     control_bearer: Annotated[
         str | None, typer.Option(help="Bearer placeholder the egress proxy substitutes on the runner control stream.")

@@ -35,8 +35,8 @@ async def serve(settings: Settings) -> None:
     else:
         await k8s_config.load_kube_config(config_file=str(settings.kubeconfig), client_configuration=configuration)
     url = make_url(settings.database_url).set(drivername="postgresql+asyncpg")
-    # The Sandbox Service's init container migrates these tables; the fold writes through its own
-    # engine, and reads never write.
+    # The migration init container owns the schema; the fold writes through its own engine, and
+    # reads never write.
     engine = create_async_engine(
         url, pool_size=4, max_overflow=2, connect_args={"server_settings": {"default_transaction_read_only": "on"}}
     )

@@ -31,7 +31,7 @@ def launch_spec(
     spec = ParseDict(values | overrides, runner_pb2.SessionSpec())
     validate_spec(spec)
     context = (
-        "Your explicit Sandbox Service session destination is:\n"
+        "Your explicit Runner Gateway session destination is:\n"
         f"{MessageToJson(destination, preserving_proto_field_name=True)}\n"
         "Use these identifiers when addressing this session; they are not credentials."
     )

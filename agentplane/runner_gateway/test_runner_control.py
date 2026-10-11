@@ -27,7 +27,7 @@ from agentplane.runner_gateway.connection_records import (
 )
 from agentplane.runner_gateway.lifecycle_control import LifecycleControl
 from agentplane.runner_gateway.runner_control import ControlTiming
-from agentplane.runner_gateway.testing.runner_control import OTHER_REPLICA, REPLICA, RUNNER_TOKEN, serve_channel
+from agentplane.runner_gateway.testing.runner_control import OTHER_REPLICA, REPLICA, RUNNER_TOKEN, serve_replica_control
 from agentplane.sandbox_service.destinations import DestinationUnavailableError
 from agentplane.sandbox_service.testing.kubernetes import ACCOUNT, SANDBOX, SANDBOX_UID, Cluster
 from agentplane.subjects import ServiceAccountRef
@@ -53,7 +53,7 @@ async def delivery(engine: AsyncEngine, leases: ConnectionLeases) -> AsyncIterat
 @pytest.fixture
 def replica(cluster: Cluster, engine: AsyncEngine, delivery: CommandDelivery) -> Replica:
     """Start a channel listener as one gateway replica; replicas share the cluster and database."""
-    return lambda holder: serve_channel(
+    return lambda holder: serve_replica_control(
         cluster,
         holder,
         delivery=delivery,
