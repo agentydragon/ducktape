@@ -136,6 +136,7 @@ py_library(
     deps = [
         ":database",
         ":environment",
+        ":notifications",
         ":pod_disruption_budget",
         "//agentplane:subjects",
         "//agentplane/history_service:settings",

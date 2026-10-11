@@ -270,13 +270,13 @@ async def test_listen_deliver_read_ack_and_recover_lost_response_without_app(
                     assert history_cursor > 128
                     original = Runner.command
                     lost = False
-                    submitted = False
+                    notice_sent = False
                     attempted_id: str | None = None
 
                     async def lose_response(
                         self: Runner, session_id: str, command: command_pb2.Command, *, after_cursor: int
                     ) -> event_log_pb2.EventEntry:
-                        nonlocal lost, submitted, attempted_id
+                        nonlocal lost, notice_sent, attempted_id
                         if command.HasField("submit_input"):
                             assert after_cursor >= history_cursor
                             if attempted_id is None:
@@ -286,7 +286,7 @@ async def test_listen_deliver_read_ack_and_recover_lost_response_without_app(
                             if failed_before_rpc and not lost:
                                 lost = True
                                 raise ValueError("simulated local failure before SubmitCommand")
-                        submitted = submitted or command.HasField("submit_input")
+                        notice_sent = notice_sent or command.HasField("submit_input")
                         receipt = await original(self, session_id, command, after_cursor=after_cursor)
                         if not lost and command.HasField("submit_input"):
                             lost = True
@@ -294,27 +294,30 @@ async def test_listen_deliver_read_ack_and_recover_lost_response_without_app(
                         return receipt
 
                     monkeypatch.setattr(Runner, "command", lose_response)
-                    await history_caught_up()
+
+                    async def step_until_sent() -> None:
+                        # A step sends only once the History Service has every entry the runner had,
+                        # and the runner can append between the two reads, so steps repeat until it sends.
+                        while not notice_sent:
+                            async with store.sessions.begin() as session:
+                                await session.execute(
+                                    update(Inbox)
+                                    .where(Inbox.id == UUID(subscription["inbox_id"]))
+                                    .values(next_attempt=datetime.now(UTC))
+                                )
+                            await history_caught_up()
+                            await service.step()
+
                     if failed_before_rpc:
                         with pytest.raises(ValueError, match="before SubmitCommand"):
-                            await service.step()
+                            await step_until_sent()
                     else:
-                        await service.step()
+                        await step_until_sent()
                     assert lost
                     if initial is not None:
                         await model.reply(initial, Text("Initial work complete"))
-                    # The durable attempt marker exists, but the runner has not been called. A step
-                    # sends only once the History Service has every entry the runner had, and the
-                    # busy turn may still be finishing.
-                    while not submitted:
-                        async with store.sessions.begin() as session:
-                            await session.execute(
-                                update(Inbox)
-                                .where(Inbox.id == UUID(subscription["inbox_id"]))
-                                .values(next_attempt=datetime.now(UTC))
-                            )
-                        await history_caught_up()
-                        await service.step()
+                    # The durable attempt marker exists, but the runner has not been called.
+                    await step_until_sent()
                     notice_request = await model.request()
                     notices = [
                         text for text in notice_request.user_texts if text.startswith("Agentplane inbox notice: ")
