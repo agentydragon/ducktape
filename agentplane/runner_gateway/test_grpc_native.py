@@ -164,8 +164,7 @@ async def test_launch_delivery_and_restart_preserve_evidence_and_configuration(
             tail.cancel()
         with pytest.raises(RunnerError):
             await runner.command(
-                session,
-                command_pb2.Command(command_id="no-wake", submit_input=command_pb2.SubmitInput(text="no wake")),
+                session, command_pb2.Command(command_id="no-wake", submit_input=command_pb2.SubmitInput(text="no wake"))
             )
         assert (await inspect(runner, session)).harness_state == runner_pb2.HARNESS_STATE_STOPPED
         # Observe the stopped journal too: rejected delivery added no admission and did not wake it.
