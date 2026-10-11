@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any
 
 from pydantic import Field
 from pydantic_settings import BaseSettings, PydanticBaseSettingsSource, SettingsConfigDict, YamlConfigSettingsSource
@@ -109,11 +109,6 @@ class CombinedSettings(_Provisioning):
     follow_lease_s: float = Field(default=900, gt=0, le=900)
     runner_grpc_channel_options: dict[str, int | str] = Field(default_factory=dict)
     pod_ip: str = Field(min_length=1)
-    # CLEANUP(added 2026-10-10): Nothing reads `database_url` or `ingest_history`; the History Service
-    #   writes Session history. Delete both with the manifest keys that set them once the release that
-    #   stopped reading them serves on staging and testing, so no older Pod is left requiring them.
-    database_url: str | None = None
-    ingest_history: Literal[False] = False
 
     def gateway_settings(self) -> GatewaySettings:
         """The in-process gateway's settings. It seals in-process, so no account may seal over the API."""
