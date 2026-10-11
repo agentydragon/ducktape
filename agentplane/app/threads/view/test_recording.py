@@ -7,6 +7,7 @@ import json
 from collections.abc import Sequence
 from pathlib import Path
 from typing import cast
+from uuid import uuid4
 
 import pytest
 import pytest_bazel
@@ -42,7 +43,14 @@ class _HarnessOutputRecorder:
     """The Codex adapter's session seam, recording observations before database ingestion."""
 
     def __init__(self) -> None:
-        self.record = SessionRecord(harness=Harness.CODEX, cwd="/workspace", model="gpt-5.4", reasoning_effort="low")
+        self.record = SessionRecord(
+            harness=Harness.CODEX,
+            cwd="/workspace",
+            model="gpt-5.4",
+            reasoning_effort="low",
+            instructions="",
+            event_source_id=uuid4(),
+        )
         self.active_turn_id = ""
         self.observations: list[tuple[Observation, list[int]]] = []
 

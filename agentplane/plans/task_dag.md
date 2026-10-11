@@ -794,7 +794,6 @@ that code. Upstream-gated tombstones with a verifiable condition in code (`keepi
 ```mermaid
 flowchart TD
     APP_THREAD_VIEW_CLEANUP[Blocked: app Thread view shims]
-    RUNNER_SESSION_RECORD_SHIMS[Candidate: drop runner session record compatibility]
     HISTORY_FOLD_ALWAYS_ON[Blocked: the History Service always folds]
     APP_PROJECTOR_RETIRE[Delete app projector] --> HISTORY_FOLD_ALWAYS_ON
     APP_PROJECTOR_RETIRE --> APP_THREAD_VIEW_CLEANUP
@@ -802,18 +801,8 @@ flowchart TD
     REFACTOR_COHERENCE_AUDIT[Blocked: whole-refactor coherence audit]
     RUNNER_INBOUND_RETIRE[Retire inbound runner access] --> REFACTOR_COHERENCE_AUDIT
     HISTORY_SERVICE_OWNERSHIP[History Service ownership] --> REFACTOR_COHERENCE_AUDIT
-    RUNNER_SESSION_RECORD_SHIMS --> REFACTOR_COHERENCE_AUDIT
     COHERENCE_REFACTORS[Section 12 coherence refactors] --> REFACTOR_COHERENCE_AUDIT
 ```
-
-### `RUNNER_SESSION_RECORD_SHIMS` — drop runner session record compatibility
-
-**Candidate; Legacy burn-down lane.** The runner's `SessionRecord` reads
-`session.json` written by older images: `context_budget_resolved` (False only for records from before
-budget resolution, 2026-10-10 PDT) re-resolves the budget at Open, and `instructions` and
-`event_source_id` have defaults that fill records predating them. The operator deleted every
-Sandbox created before then (2026-10-11 PDT), so delete the flag and its Open branch, make both
-fields required, and have `from_spec` set `event_source_id` explicitly.
 
 ### `APP_THREAD_VIEW_CLEANUP` — app Thread view shims
 

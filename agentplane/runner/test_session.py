@@ -18,6 +18,7 @@ from collections.abc import AsyncIterator, Callable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+from uuid import uuid4
 
 import aiosqlite
 import pytest
@@ -133,7 +134,12 @@ async def session(tmp_path: Path, make_adapter: Callable[[Session], HarnessAdapt
     store = SessionStore(state_dir / "sessions")
     owner = StateOwner(state_dir)
     record = SessionRecord(
-        harness=Harness.CODEX, cwd=str(tmp_path / "workspace"), model="test-model", reasoning_effort="low"
+        harness=Harness.CODEX,
+        cwd=str(tmp_path / "workspace"),
+        model="test-model",
+        reasoning_effort="low",
+        instructions="",
+        event_source_id=uuid4(),
     )
     store.write("test-session", record)
     try:
