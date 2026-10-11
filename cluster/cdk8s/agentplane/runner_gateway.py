@@ -4,15 +4,6 @@ before Pod startup."""
 from pathlib import Path
 from typing import cast
 
-from agentplane_egresscredential_crds.works.allegedly.agentplane import (
-    EgressCredentialSpecTargets,
-    EgressCredentialSpecTargetsMethod,
-)
-from agentplane_egresspolicy_crds.works.allegedly.agentplane import (
-    EgressPolicySpecRules,
-    EgressPolicySpecRulesCredentialRef,
-    EgressPolicySpecRulesMethods,
-)
 from cdk8s import ApiObjectMetadata, Duration, Size
 from cdk8s_plus_34 import (
     ApiResource,
@@ -42,8 +33,6 @@ from cluster.cdk8s.agentplane.migrate_container import migrate_init_container
 from cluster.cdk8s.agentplane.service_workload import add_service_workload
 from cluster.cdk8s.api_resource import custom_resource
 from cluster.cdk8s.probes import grpc_probe
-from cluster.cdk8s.providers.agentplane.egress_credential import EgressCredential, Source
-from cluster.cdk8s.providers.agentplane.egress_policy import EgressPolicy
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, Entity, NetworkPolicy
 from cluster.cdk8s.secret_ref import SecretRef
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
@@ -205,49 +194,14 @@ class RunnerGateway(Construct):
                 EgressRule.to_endpoints(runners.cilium, RUNNER_PORT),
             ],
         )
-        self._add_runner_control_egress(control)
-
-    def _add_runner_control_egress(self, control: ServiceRef) -> None:
-        """The egress path a runner dials the control listener on: the proxy swaps the placeholder for the
-        Pod's own token for the control stream's audience, which no other recipient accepts."""
-        namespace = self.env.namespace
-        EgressCredential(
+        egress.add_runner_egress(
             self,
-            "runner-control-credential",
-            metadata=ApiObjectMetadata(name=RUNNER_CONTROL_CREDENTIAL, namespace=namespace),
-            description=(
-                "The calling Sandbox Pod's short-lived, Pod-bound identity minted only for its runner's "
-                "control stream to the Runner Gateway. It conveys no other authority."
-            ),
-            source=Source.projected_workload_token(audience=RUNNER_CONTROL_AUDIENCE),
-            targets=[
-                EgressCredentialSpecTargets(
-                    header="Authorization", method=EgressCredentialSpecTargetsMethod.SCHEME_TOKEN, scheme="Bearer"
-                )
-            ],
-        )
-        EgressPolicy(
-            self,
-            "runner-control-policy",
-            metadata=ApiObjectMetadata(name=RUNNER_CONTROL_POLICY, namespace=namespace),
-            rules=[
-                EgressPolicySpecRules(
-                    hosts=[control.fqdn],
-                    cluster_internal=True,
-                    methods=[EgressPolicySpecRulesMethods.POST],
-                    paths=[_RUNNER_CONTROL_CONNECT],
-                    credential_ref=EgressPolicySpecRulesCredentialRef(name=RUNNER_CONTROL_CREDENTIAL),
-                )
-            ],
-        )
-        # Additive to the proxy's own policy, which egress.py owns and which cannot name this
-        # module: this one imports that one.
-        NetworkPolicy(
-            self,
-            "runner-control-proxy-egress",
-            metadata=ApiObjectMetadata(name=f"{NAME}-runner-control-proxy", namespace=namespace),
-            endpoint_selector=egress.proxy(namespace).pods.selector,
-            egress=[control.egress()],
+            policy=RUNNER_CONTROL_POLICY,
+            credential=RUNNER_CONTROL_CREDENTIAL,
+            endpoint=control,
+            path=_RUNNER_CONTROL_CONNECT,
+            audience=RUNNER_CONTROL_AUDIENCE,
+            purpose="control stream to the Runner Gateway",
         )
 
     def _add_rbac(self, service_account: ServiceAccount) -> None:

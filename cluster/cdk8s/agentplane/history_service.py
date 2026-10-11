@@ -7,15 +7,6 @@ bearer for the Pod's own token for the ingress audience. It takes untrusted inpu
 apart from the read API, and the network fence admits Sandboxes to it alone.
 """
 
-from agentplane_egresscredential_crds.works.allegedly.agentplane import (
-    EgressCredentialSpecTargets,
-    EgressCredentialSpecTargetsMethod,
-)
-from agentplane_egresspolicy_crds.works.allegedly.agentplane import (
-    EgressPolicySpecRules,
-    EgressPolicySpecRulesCredentialRef,
-    EgressPolicySpecRulesMethods,
-)
 from cdk8s import ApiObjectMetadata, Duration, Size
 from cdk8s_plus_34 import ContainerResources, Cpu, CpuResources, MemoryResources
 from constructs import Construct
@@ -30,8 +21,6 @@ from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.agentplane.migrate_container import migrate_init_container
 from cluster.cdk8s.agentplane.service_workload import add_service_workload
 from cluster.cdk8s.probes import grpc_probe
-from cluster.cdk8s.providers.agentplane.egress_credential import EgressCredential, Source
-from cluster.cdk8s.providers.agentplane.egress_policy import EgressPolicy
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, Entity, NetworkPolicy
 from cluster.cdk8s.secret_ref import SecretRef
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
@@ -174,41 +163,12 @@ class HistoryService(Construct):
                 database.egress(env.namespace),
             ],
         )
-        EgressCredential(
+        egress.add_runner_egress(
             self,
-            "runner-ingress-credential",
-            metadata=ApiObjectMetadata(name=_CREDENTIAL, namespace=env.namespace),
-            description=(
-                "The calling Sandbox Pod's short-lived, Pod-bound identity minted only for its runner's "
-                "pushes to the History Service ingress. It conveys no other authority."
-            ),
-            source=Source.projected_workload_token(audience=RUNNER_INGRESS_AUDIENCE),
-            targets=[
-                EgressCredentialSpecTargets(
-                    header="Authorization", method=EgressCredentialSpecTargetsMethod.SCHEME_TOKEN, scheme="Bearer"
-                )
-            ],
-        )
-        EgressPolicy(
-            self,
-            "runner-ingress-policy",
-            metadata=ApiObjectMetadata(name=EGRESS_POLICY, namespace=env.namespace),
-            rules=[
-                EgressPolicySpecRules(
-                    hosts=[ingress.fqdn],
-                    cluster_internal=True,
-                    methods=[EgressPolicySpecRulesMethods.POST],
-                    paths=[_PUSH],
-                    credential_ref=EgressPolicySpecRulesCredentialRef(name=_CREDENTIAL),
-                )
-            ],
-        )
-        # Additive to the proxy's own policy, which egress.py owns and which cannot name this
-        # module: this one imports that one.
-        NetworkPolicy(
-            self,
-            "runner-ingress-proxy-egress",
-            metadata=ApiObjectMetadata(name=f"{NAME}-runner-ingress-proxy", namespace=env.namespace),
-            endpoint_selector=proxy.pods.selector,
-            egress=[ingress.egress()],
+            policy=EGRESS_POLICY,
+            credential=_CREDENTIAL,
+            endpoint=ingress,
+            path=_PUSH,
+            audience=RUNNER_INGRESS_AUDIENCE,
+            purpose="pushes to the History Service ingress",
         )

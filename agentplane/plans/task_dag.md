@@ -988,7 +988,6 @@ flowchart TD
         KUBEVIRT_GUEST_CONTROL[Candidate: KubeVirt guest dials out]
         RUNNER_CORE_SPLIT[Blocked: runner core out of the inbound servicer]
         ACTION_PROTOCOLS_CONCRETE[Candidate: concrete external-grant authority]
-        CDK8S_RUNNER_ENDPOINT_HELPER[Candidate: one runner-facing endpoint helper]
         GRPC_CHANNEL_OPTIONS_CONSTANT[Candidate: one gRPC channel options constant]
         SETTLED_CURSORS_MOVE[Candidate: settled cursors live with the History Service]
         CONTROL_TARGET_REQUIRED[Candidate: clients require the control Service target]
@@ -1100,11 +1099,6 @@ lost-stream error and backoff, `IngressPusher` stops borrowing `ControlTiming`, 
 **Candidate.** `ActionStore`'s `ExternalGrantAuthority` Protocol (also a footgun `| None = None`) has
 one production implementation, `ConnectionAuthority`. `db.py` cannot name it, because `connections.py`
 imports `db.py`'s rows: `ActionStore` first moves out of `db.py`, then takes a `ConnectionAuthority`.
-
-### `CDK8S_RUNNER_ENDPOINT_HELPER` — one runner-facing endpoint helper
-
-**Candidate.** `HistoryService` and `RunnerGateway._add_runner_control_egress` each build the same
-EgressCredential, EgressPolicy and proxy NetworkPolicy; build them once.
 
 ### `GRPC_CHANNEL_OPTIONS_CONSTANT` — one gRPC channel options constant
 

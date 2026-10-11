@@ -146,6 +146,54 @@ def admin(namespace: str) -> ServiceRef:
     return ServiceRef(name=f"{NAME}-admin", port=Port(name="admin", number=8081), pods=_pods(namespace))
 
 
+def add_runner_egress(
+    scope: Construct, *, policy: str, credential: str, endpoint: ServiceRef, path: str, audience: str, purpose: str
+) -> None:
+    """The path a runner dials `endpoint` on: `policy` admits POSTs to `path` through the proxy, which
+    swaps the `credential` placeholder for the Pod's own token for `audience`, a token no other
+    recipient accepts. `purpose` finishes "minted only for its runner's ..." in the description.
+
+    The proxy NetworkPolicy is additive to the proxy's own: that one cannot name the endpoint,
+    since the endpoint's module imports this one."""
+    namespace = endpoint.pods.namespace
+    EgressCredential(
+        scope,
+        f"{policy}-credential",
+        metadata=ApiObjectMetadata(name=credential, namespace=namespace),
+        description=(
+            f"The calling Sandbox Pod's short-lived, Pod-bound identity minted only for its runner's {purpose}. "
+            "It conveys no other authority."
+        ),
+        source=Source.projected_workload_token(audience=audience),
+        targets=[
+            EgressCredentialSpecTargets(
+                header="Authorization", method=EgressCredentialSpecTargetsMethod.SCHEME_TOKEN, scheme="Bearer"
+            )
+        ],
+    )
+    EgressPolicy(
+        scope,
+        f"{policy}-policy",
+        metadata=ApiObjectMetadata(name=policy, namespace=namespace),
+        rules=[
+            EgressPolicySpecRules(
+                hosts=[endpoint.fqdn],
+                cluster_internal=True,
+                methods=[EgressPolicySpecRulesMethods.POST],
+                paths=[path],
+                credential_ref=EgressPolicySpecRulesCredentialRef(name=credential),
+            )
+        ],
+    )
+    NetworkPolicy(
+        scope,
+        f"{policy}-proxy-egress",
+        metadata=ApiObjectMetadata(name=f"{endpoint.name}-{policy}-proxy", namespace=namespace),
+        endpoint_selector=proxy(namespace).pods.selector,
+        egress=[endpoint.egress()],
+    )
+
+
 def _egress_credentials(scope: Construct, *, namespace: str) -> None:
     EgressCredential(
         scope,
