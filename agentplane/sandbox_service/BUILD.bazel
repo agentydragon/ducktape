@@ -762,12 +762,3 @@ py_test(
         "@pypi//pytest_bazel",
     ],
 )
-
-py_library(
-    name = "session_changes",
-    srcs = ["session_changes.py"],
-    deps = [
-        "//agentplane/postgres:listener",
-        "@pypi//sqlalchemy",
-    ],
-)

@@ -39,12 +39,12 @@ from agentplane.runner_gateway.commands.store import (
 )
 from agentplane.runner_gateway.runner_channel import ChannelOperation
 from agentplane.runner_gateway.sealing import SEAL_S, Sealing
+from agentplane.runner_gateway.session_changes import SessionChanges
 from agentplane.runner_gateway.session_registry import SessionNotFoundError, SessionRegistry
 from agentplane.sandbox_service import protocol_pb2, wire
 from agentplane.sandbox_service.destinations import DestinationResolver, DestinationUnavailableError, RunnerEndpoint
 from agentplane.sandbox_service.models import InventoryError, SandboxNotFoundError
 from agentplane.sandbox_service.protocol_pb2 import SandboxDestination
-from agentplane.sandbox_service.session_changes import SessionChanges
 from agentplane.subjects import ServiceAccountRef
 from agentplane.workload_auth.grpc_caller import authenticate
 from agentplane.workload_auth.principal import WorkloadPrincipalRejectedError, WorkloadPrincipalResolver

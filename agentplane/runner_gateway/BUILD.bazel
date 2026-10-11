@@ -80,9 +80,9 @@ py_library(
     name = "session_registry",
     srcs = ["session_registry.py"],
     deps = [
+        ":session_changes",
         "//agentplane/runner_gateway/commands:db",
         "//agentplane/sandbox_service:protocol_pb2",
-        "//agentplane/sandbox_service:session_changes",
         "@pypi//protobuf",
         "@pypi//sqlalchemy",
     ],
@@ -281,6 +281,7 @@ py_library(
         ":command_relay",
         ":runner_channel",
         ":sealing",
+        ":session_changes",
         ":session_lifecycle",
         ":session_registry",
         "//agentplane:grpc_options",
@@ -297,7 +298,6 @@ py_library(
         "//agentplane/sandbox_service:destinations",
         "//agentplane/sandbox_service:models",
         "//agentplane/sandbox_service:protocol_pb2",
-        "//agentplane/sandbox_service:session_changes",
         "//agentplane/sandbox_service:wire",
         "//agentplane/workload_auth:grpc_caller",
         "//agentplane/workload_auth:principal",
@@ -317,6 +317,7 @@ py_library(
         ":connection_records",
         ":grpc_api",
         ":runner_channel",
+        ":session_changes",
         ":session_registry",
         ":settings",
         "//agentplane:grpc_process",
@@ -327,7 +328,6 @@ py_library(
         "//agentplane/runner_gateway/commands:store",
         "//agentplane/sandbox_service:destinations",
         "//agentplane/sandbox_service:inventory",
-        "//agentplane/sandbox_service:session_changes",
         "//agentplane/workload_auth:principal",
         "//util:kubernetes",
         "@pypi//asyncpg",
@@ -419,6 +419,7 @@ py_test(
     deps = [
         ":conftest",
         ":grpc_api",
+        ":session_changes",
         ":session_registry",
         "//:conftest",
         "//agentplane:subjects",
@@ -439,7 +440,6 @@ py_test(
         "//agentplane/sandbox_service:kubernetes_grants",
         "//agentplane/sandbox_service:kubernetes_views",
         "//agentplane/sandbox_service:protocol_pb2",
-        "//agentplane/sandbox_service:session_changes",
         "//agentplane/sandbox_service:wire",
         "//agentplane/sandbox_service/testing:grpc_service",
         "//agentplane/sandbox_service/testing:kubernetes",
@@ -491,6 +491,15 @@ py_test(
         "@pypi//protobuf",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
+    name = "session_changes",
+    srcs = ["session_changes.py"],
+    deps = [
+        "//agentplane/postgres:listener",
         "@pypi//sqlalchemy",
     ],
 )

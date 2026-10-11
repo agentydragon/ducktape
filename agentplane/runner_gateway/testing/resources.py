@@ -10,9 +10,9 @@ from agentplane.runner_gateway.commands.dispatch import DispatchStore
 from agentplane.runner_gateway.commands.store import SubmissionStore
 from agentplane.runner_gateway.connection_records import ConnectionLeases
 from agentplane.runner_gateway.grpc_api import Resources
+from agentplane.runner_gateway.session_changes import SessionChanges
 from agentplane.runner_gateway.session_registry import SessionRegistry
 from agentplane.sandbox_service.destinations import DestinationResolver
-from agentplane.sandbox_service.session_changes import SessionChanges
 from agentplane.subjects import ServiceAccountRef
 from agentplane.workload_auth.principal import WorkloadPrincipalResolver
 

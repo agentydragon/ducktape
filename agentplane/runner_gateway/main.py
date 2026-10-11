@@ -22,11 +22,11 @@ from agentplane.runner_gateway.commands.store import SubmissionStore
 from agentplane.runner_gateway.connection_records import ConnectionHolder, ConnectionLeases, ConnectionRecords
 from agentplane.runner_gateway.grpc_api import Resources, add_service
 from agentplane.runner_gateway.runner_channel import ChannelTiming, RunnerChannelService
+from agentplane.runner_gateway.session_changes import SessionChanges
 from agentplane.runner_gateway.session_registry import SessionRegistry
 from agentplane.runner_gateway.settings import Settings
 from agentplane.sandbox_service.destinations import DestinationResolver
 from agentplane.sandbox_service.inventory import SandboxInventory
-from agentplane.sandbox_service.session_changes import SessionChanges
 from agentplane.workload_auth.principal import WorkloadPrincipalResolver
 from util.kubernetes import CustomObjectsClient
 

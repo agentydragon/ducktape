@@ -23,6 +23,7 @@ from agentplane.runner.testing.runner_server import serve_runner
 from agentplane.runner_gateway.commands.connections import ConnectionStore
 from agentplane.runner_gateway.commands.store import CommandSubmission, SubmissionState, SubmissionStore
 from agentplane.runner_gateway.grpc_api import LEGACY_SERVICE, Resources, add_legacy_service
+from agentplane.runner_gateway.session_changes import SessionChanges
 from agentplane.runner_gateway.session_registry import SessionRegistry
 from agentplane.runner_gateway.testing.grpc_service import service_client
 from agentplane.runner_gateway.testing.journal import admission, entry, journal_entry
@@ -38,7 +39,6 @@ from agentplane.sandbox_service.kubernetes_views import (
     PROVISIONING_ANNOTATION,
 )
 from agentplane.sandbox_service.protocol_pb2 import ResolvedGrant, SandboxDestination
-from agentplane.sandbox_service.session_changes import SessionChanges
 from agentplane.sandbox_service.testing.grpc_service import CALLER_TOKEN
 from agentplane.sandbox_service.testing.kubernetes import ACCOUNT, DESTINATION, OWNER, SANDBOX, SANDBOX_UID, Cluster
 from agentplane.subjects import ServiceAccountRef
