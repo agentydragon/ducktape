@@ -225,7 +225,7 @@ async def test_external_scopes_recover_and_clean_up_after_deletion() -> None:
     await bindings.reconcile_once()
     assert rbac.creates == 3
     assert cross.role_ref.name == "logs-configmaps-reader"
-    await inventory.suspend(name)
+    await inventory.suspend(name, uid=view.uid)
     await seal_and_delete(inventory, name)
     assert (await inventory.get(name)).deleting
     rbac.fail_on_delete = 2
@@ -257,7 +257,7 @@ async def test_external_name_collision_is_not_deleted() -> None:
         subjects=[k8s_client.RbacV1Subject(kind="ServiceAccount", namespace=NAMESPACE, name="someone-else")],
     )
     rbac.cluster_bindings[binding_name(view, selected[0])] = binding
-    await inventory.suspend(name)
+    await inventory.suspend(name, uid=view.uid)
     await seal_and_delete(inventory, name)
     await KubernetesBindings(inventory, cast(Any, rbac)).reconcile_once()
     assert rbac.cluster_bindings[binding_name(view, selected[0])] is binding
@@ -283,7 +283,7 @@ async def test_partial_launch_deletion_and_name_reuse_leave_no_old_binding() -> 
     await bindings.reconcile_once()
     old_view = await inventory.get(name)
     old_binding = rbac.bindings[("another-namespace", binding_name(old_view, selected[0]))]
-    await inventory.suspend(name)
+    await inventory.suspend(name, uid=old_view.uid)
     await seal_and_delete(inventory, name)
     await bindings.reconcile_once()
     assert ("sandboxes", name) not in custom.objects

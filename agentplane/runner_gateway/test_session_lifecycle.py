@@ -30,6 +30,7 @@ def test_binding_default_cwd_names_the_session() -> None:
             )
         ),
         platform_instructions="",
+        sandbox_namespace="test-namespace",
     )
     assert spec.cwd == "/state/test-session"
 
