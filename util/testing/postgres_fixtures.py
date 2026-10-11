@@ -136,10 +136,8 @@ def migrated_database_fixtures(
     """
 
     @pytest.fixture(scope="session", name=template_name)
-    def template(postgres_admin_url: str, request: pytest.FixtureRequest) -> Iterator[PostgresDatabaseTemplate]:
-        with migrated_database_template(
-            postgres_admin_url, database_name_for_test(request.fixturename), runner
-        ) as migrated:
+    def template(postgres_admin_url: str) -> Iterator[PostgresDatabaseTemplate]:
+        with migrated_database_template(postgres_admin_url, database_name_for_test(template_name), runner) as migrated:
             yield migrated
 
     @pytest.fixture(name=url_name)
