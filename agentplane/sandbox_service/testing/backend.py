@@ -19,12 +19,12 @@ from agentplane.runner_gateway.commands.connections import ConnectionStore
 from agentplane.runner_gateway.commands.dispatch import DispatchStore
 from agentplane.runner_gateway.commands.store import SubmissionStore
 from agentplane.runner_gateway.connection_records import ConnectionLeases
+from agentplane.runner_gateway.grpc_api import Resources
 from agentplane.runner_gateway.session_registry import SessionRegistry
 from agentplane.sandbox_service.action_policy import ActionPolicyBindings
 from agentplane.sandbox_service.client import SandboxServiceClient
 from agentplane.sandbox_service.destinations import DestinationResolver
 from agentplane.sandbox_service.egress import EgressInventory
-from agentplane.sandbox_service.grpc_api import Resources
 from agentplane.sandbox_service.inventory import SandboxInventory
 from agentplane.sandbox_service.kubernetes_bindings import KubernetesBindings
 from agentplane.sandbox_service.kubernetes_grants import KubernetesGrant
@@ -75,6 +75,7 @@ class Endpoint:
     def client(self) -> SandboxServiceClient:
         return SandboxServiceClient(
             self.target,
+            gateway_target=self.target,
             namespace=NAMESPACE,
             token_file=self.token_file,
             command_admission_timeout_s=20,
@@ -104,6 +105,14 @@ def backend(
     inventory = SandboxInventory(namespace=NAMESPACE, custom_objects=custom, core_v1=core_api)
     bindings = KubernetesBindings(inventory, cast(k8s_client.RbacAuthorizationV1Api, rbac or FakeRbac()))
     with start_blocking_portal() as portal, portal.wrap_async_context_manager(service_database(database_url)) as engine:
+        provisioning = Provisioning(
+            inventory,
+            EgressInventory(namespace=NAMESPACE, custom_objects=custom, default_policies=default_policies),
+            ActionPolicyBindings(namespace=NAMESPACE, custom_objects=custom),
+            grants if grants is not None else {},
+            bindings,
+            RunnerEndpoints(control=None, ingress=None),
+        )
         resources = Resources(
             runner_admission_ack_timeout_s=1,
             principals=WorkloadPrincipalResolver(
@@ -114,14 +123,6 @@ def backend(
             destinations=DestinationResolver(inventory, core_api, runner_port),
             caller_accounts=frozenset({MANAGER}),
             platform_instructions=platform_instructions,
-            provisioning=Provisioning(
-                inventory,
-                EgressInventory(namespace=NAMESPACE, custom_objects=custom, default_policies=default_policies),
-                ActionPolicyBindings(namespace=NAMESPACE, custom_objects=custom),
-                grants if grants is not None else {},
-                bindings,
-                RunnerEndpoints(control=None, ingress=None),
-            ),
             sessions=SessionRegistry(engine),
             submissions=SubmissionStore(engine),
             delivery=ChannelDelivery(
@@ -141,9 +142,9 @@ def backend(
                 else nullcontext()
             ),
             portal.wrap_async_context_manager(resources.session_changes.listener.listen()),
-            portal.wrap_async_context_manager(service(resources)) as target,
+            portal.wrap_async_context_manager(service(resources, provisioning)) as target,
         ):
-            yield Endpoint(target, token_file, lambda: portal.call(resources.provisioning.reconcile_once))
+            yield Endpoint(target, token_file, lambda: portal.call(provisioning.reconcile_once))
 
 
 def seed_runner(

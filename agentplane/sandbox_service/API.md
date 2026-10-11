@@ -7,6 +7,19 @@ There is no transparent runner `Attach` tunnel or caller-supplied runner URL.
 Production callers and service acceptance tests use this same gRPC interface; there is no separate
 HTTP service adapter.
 
+It is two gRPC services, each its own server and image:
+
+- `SandboxService` ([`protocol.proto`](protocol.proto)), served by the Sandbox Service: Sandbox
+  inventory and lifecycle, templates, egress grants and [retention holds](#retention-holds). One
+  replica reconciles, and it alone holds the RBAC, ServiceAccount and egress grant permissions.
+- `RunnerGateway` ([`../runner_gateway/protocol.proto`](../runner_gateway/protocol.proto)), served by
+  the [Runner Gateway](../runner_gateway/README.md): Sessions, commands and event following. Its
+  replicas hold the runner connections; a Sandbox's `<sandbox>-control` Service reaches the replica
+  holding its runner.
+
+`SandboxServiceClient` takes one target per service: `target` for the Sandbox Service and
+`gateway_target` for the Runner Gateway.
+
 ## Authentication and destinations
 
 Every RPC requires one `authorization: Bearer …` metadata value. The shared workload-principal
@@ -46,7 +59,7 @@ The same service-caller allowlist gates every RPC. Provisioning is always enable
   are asynchronous.
   After deletion, a new CR under the same name cannot prove whether an earlier Create succeeded.
   The service starts the template's `runner` container with the configured `runner_ingress` and
-  hub (`runner_control`) as `--ingress-target`/`--ingress-bearer` and
+  Runner Gateway (`runner_control`) as `--ingress-target`/`--ingress-bearer` and
   `--channel-target`/`--channel-bearer`, and grants each endpoint's `egress_policy` with the launch
   policies ([Event ingress](../docs/runner_channel.md#event-ingress)); the request chooses neither.
   A template whose runner already passes one of those flags is refused. No request may pick an
@@ -79,7 +92,9 @@ namespaced annotations, not competing Sandbox status conditions.
 
 1. Runs the Sandbox again (`TEARDOWN_PHASE_SEALING`). From now on it refuses new Sessions and
    commands, and suspend and resume; its Sessions can still be listed and followed.
-2. Calls the runner's [`Seal`](../runner/SPEC.md#teardown-seal), which stops every harness and returns
+2. Asks the Runner Gateway to seal it (`RunnerGateway.SealSandbox`, through the Sandbox's control
+   Service; only the gateway's `sealer_accounts` may call it). The gateway calls the runner's
+   [`Seal`](../runner/SPEC.md#teardown-seal), which stops every harness and returns
    each Session's final cursor. A runner image without `Seal` has every running harness stopped
    instead, and each journal's head is taken as its final cursor; only this service's fence keeps
    new work out of it.
@@ -287,7 +302,13 @@ is not a queue: nothing delivers it later, and the runner journal stays the rece
 ## Server configuration and cutover
 
 `//agentplane/sandbox_service:server` uses `AGENTPLANE_SANDBOX_SERVICE_*` environment variables or
-kebab-case CLI flags. Required settings are `sandbox_namespace` and
+kebab-case CLI flags, and `//agentplane/runner_gateway:server` uses `AGENTPLANE_RUNNER_GATEWAY_*`
+(`AGENTPLANE_RUNNER_GATEWAY_CONFIG_FILE` for its YAML file). The Sandbox Service reaches the gateway
+at `gateway_target`, and a Sandbox's holder replica through `control_target`, with the token in
+`gateway_token_file`; the gateway accepts that account for `SealSandbox` through `sealer_accounts`.
+Without `gateway_target`, one Sandbox Service process runs both services and seals in-process; it
+also answers the gateway's RPCs under the `ducktape.agentplane.sandbox.v1.SandboxService` name for
+clients from before the split. Required settings are `sandbox_namespace` and
 `caller_accounts` (nonempty). TokenReview namespaces are derived from that allowlist.
 `token_audience` defaults to `agentplane-sandbox-service`. Kubernetes access is in-cluster unless `kubeconfig` is supplied.
 

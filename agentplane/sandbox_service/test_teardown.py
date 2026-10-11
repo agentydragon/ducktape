@@ -17,6 +17,7 @@ from agentplane.runner_gateway.channel_control import ChannelControl
 from agentplane.runner_gateway.commands import db as commands_db
 from agentplane.runner_gateway.commands.connections import ConnectionStore
 from agentplane.runner_gateway.connection_records import ConnectionLeases
+from agentplane.runner_gateway.sealing import Sealing
 from agentplane.runner_gateway.session_registry import SessionRegistry
 from agentplane.runner_gateway.testing.sessions import register_session
 from agentplane.sandbox_service.destinations import DestinationResolver, DestinationUnavailableError
@@ -129,13 +130,14 @@ async def teardown(destinations: DestinationResolver, engine: AsyncEngine) -> Te
     # The registry tables share the history test database; production keeps them apart.
     async with engine.begin() as connection:
         await connection.run_sync(commands_db.Base.metadata.create_all)
-    return Teardown(
+    sealing = Sealing(
         destinations,
         SessionRegistry(engine),
         connections=ConnectionStore(engine),
         control=ChannelControl(ConnectionLeases()),
         runner_grpc_channel_options={},
     )
+    return Teardown(destinations.inventory, sealing.seal)
 
 
 @pytest.fixture

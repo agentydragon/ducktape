@@ -58,12 +58,18 @@ class GitHubSettings(BaseModel):
 
 class SandboxServiceSettings(BaseModel):
     model_config = ConfigDict(extra="forbid", hide_input_in_errors=True)
-    target: str = Field(description="Sandbox Service gRPC host:port for session access and runner commands.")
+    target: str = Field(description="Sandbox Service gRPC host:port, for Sandbox lookups.")
+    # CLEANUP(added 2026-10-11): Make this required once the manifests set it (SANDBOX_SERVICE_DEPLOYMENT_SPLIT's manifest PR).
+    gateway_target: str | None = Field(
+        default=None,
+        description="Runner Gateway gRPC host:port for session access and runner commands. Unset calls it at "
+        "`target`, whose one Deployment still serves it.",
+    )
     control_target: str | None = Field(
         default=None,
         description="Each Sandbox's control Service, a template of `{sandbox}` and `{namespace}` such as "
         "`{sandbox}-control.{namespace}.svc:8080`. Lifecycle calls go there, to the replica holding the "
-        "runner connection. Unset sends them to the Sandbox Service target.",
+        "runner connection. Unset sends them to the Runner Gateway target.",
     )
     request_timeout_s: float = Field(default=5, gt=0, allow_inf_nan=False)
     lifecycle_timeout_s: float = Field(default=310, gt=0, allow_inf_nan=False)

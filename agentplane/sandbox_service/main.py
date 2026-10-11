@@ -1,31 +1,24 @@
-"""Standalone Sandbox Service entry point. Kubernetes owns inventory; runners own session logs."""
+"""Standalone Sandbox Service entry point: provisions, grants and tears down Sandboxes. Kubernetes
+owns inventory; the Runner Gateway serves their Sessions."""
 
 import asyncio
 import logging
-import socket
-from contextlib import suppress
-from typing import cast
+from collections.abc import AsyncIterator, Coroutine
+from contextlib import AsyncExitStack, asynccontextmanager, suppress
+from pathlib import Path
+from typing import Any, cast
 
 import grpc
 import uvicorn
 from fastapi import FastAPI
 from kubernetes_asyncio import client as k8s_client, config as k8s_config
-from sqlalchemy.engine import make_url
-from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 
-from agentplane.runner_channel import protocol_pb2_grpc
-from agentplane.runner_gateway.admission_reconciliation import AdmissionReconciler
-from agentplane.runner_gateway.channel_control import ChannelControl
-from agentplane.runner_gateway.channel_delivery import ChannelDelivery
-from agentplane.runner_gateway.commands.connections import ConnectionStore
-from agentplane.runner_gateway.commands.dispatch import DispatchStore
-from agentplane.runner_gateway.commands.store import SubmissionStore
-from agentplane.runner_gateway.connection_records import ConnectionHolder, ConnectionLeases, ConnectionRecords
-from agentplane.runner_gateway.runner_channel import ChannelTiming, RunnerChannelService
-from agentplane.runner_gateway.session_registry import SessionRegistry
+from agentplane.runner_gateway import main as gateway_main
+from agentplane.runner_gateway.grpc_api import add_legacy_service
+from agentplane.sandbox_service import protocol_pb2
 from agentplane.sandbox_service.action_policy import ActionPolicyBindings
+from agentplane.sandbox_service.client import SandboxServiceClient
 from agentplane.sandbox_service.controller import SandboxController
-from agentplane.sandbox_service.destinations import DestinationResolver
 from agentplane.sandbox_service.egress import EgressInventory
 from agentplane.sandbox_service.grpc_api import Resources, add_service
 from agentplane.sandbox_service.inventory import SandboxInventory
@@ -33,188 +26,168 @@ from agentplane.sandbox_service.kubernetes_bindings import KubernetesBindings
 from agentplane.sandbox_service.kubernetes_grants import ClusterRoleBindingGrant, RoleBindingGrant
 from agentplane.sandbox_service.provisioning import Provisioning
 from agentplane.sandbox_service.runner_endpoints import RunnerEndpoints
-from agentplane.sandbox_service.session_history.session_changes import SessionChanges
-from agentplane.sandbox_service.settings import Settings
-from agentplane.sandbox_service.teardown import Teardown
+from agentplane.sandbox_service.settings import CombinedSettings, Launch, Settings
+from agentplane.sandbox_service.teardown import Seal, Teardown
 from agentplane.workload_auth.principal import WorkloadPrincipalResolver
 from util.kubernetes import CustomObjectsClient
 
 # The asyncpg dialect is loaded by SQLAlchemy from the configured driver name.
 # gazelle:include_dep @pypi//asyncpg
-# The channel servicer stub names its messages; mypy reads stubs only from direct deps.
-# gazelle:include_dep //agentplane/runner_channel:protocol_pb2
 # gazelle:include_dep @pypi//protobuf
 
 
-async def serve(settings: Settings) -> None:
+async def kubernetes_configuration(kubeconfig: Path | None) -> k8s_client.Configuration:
     configuration = k8s_client.Configuration()
-    if settings.kubeconfig is None:
+    if kubeconfig is None:
         k8s_config.load_incluster_config(client_configuration=configuration)
     else:
-        await k8s_config.load_kube_config(config_file=str(settings.kubeconfig), client_configuration=configuration)
-    commands_engine = create_async_engine(
-        make_url(settings.commands_database_url).set(drivername="postgresql+asyncpg"), pool_size=4, max_overflow=2
-    )
+        await k8s_config.load_kube_config(config_file=str(kubeconfig), client_configuration=configuration)
+    return configuration
+
+
+@asynccontextmanager
+async def background(coroutine: Coroutine[Any, Any, None], *, name: str) -> AsyncIterator[None]:
+    task = asyncio.create_task(coroutine, name=name)
     try:
-        await serve_with_engine(settings, configuration, commands_engine)
+        yield
+    finally:
+        task.cancel()
+        with suppress(asyncio.CancelledError):
+            await task
+
+
+@asynccontextmanager
+async def started(server: grpc.aio.Server) -> AsyncIterator[None]:
+    await server.start()
+    try:
+        yield
+    finally:
+        await server.stop(grace=5)
+
+
+async def serve_health(host: str, port: int) -> None:
+    health = FastAPI(openapi_url=None, docs_url=None, redoc_url=None)
+
+    @health.get("/healthz")
+    async def healthz() -> dict[str, str]:
+        return {"status": "ok"}
+
+    await uvicorn.Server(uvicorn.Config(health, host=host, port=port, access_log=False)).serve()
+
+
+@asynccontextmanager
+async def sandboxes(
+    settings: Settings | CombinedSettings, api: k8s_client.ApiClient, server: grpc.aio.Server, *, seal: Seal
+) -> AsyncIterator[None]:
+    """Serve `SandboxService` on `server` and reconcile Sandboxes, sealing each teardown with `seal`."""
+    custom = cast(CustomObjectsClient, k8s_client.CustomObjectsApi(api))
+    inventory = SandboxInventory(
+        namespace=settings.sandbox_namespace, core_v1=k8s_client.CoreV1Api(api), custom_objects=custom
+    )
+    provisioning = Provisioning(
+        inventory,
+        EgressInventory(
+            namespace=settings.sandbox_namespace,
+            custom_objects=custom,
+            default_policies=settings.default_egress_policies,
+        ),
+        ActionPolicyBindings(namespace=settings.sandbox_namespace, custom_objects=custom),
+        settings.kubernetes_grants,
+        KubernetesBindings(
+            inventory,
+            k8s_client.RbacAuthorizationV1Api(api),
+            cleanup_namespaces=(
+                settings.kubernetes_binding_cleanup_namespaces
+                | {
+                    grant.namespace
+                    for grant in settings.kubernetes_grants.values()
+                    if isinstance(grant, RoleBindingGrant)
+                }
+            )
+            - {settings.sandbox_namespace},
+            cleanup_cluster_bindings=settings.kubernetes_cluster_binding_cleanup
+            or any(isinstance(grant, ClusterRoleBindingGrant) for grant in settings.kubernetes_grants.values()),
+        ),
+        RunnerEndpoints(control=settings.runner_control, ingress=settings.runner_ingress),
+    )
+    add_service(
+        Resources(
+            principals=WorkloadPrincipalResolver(
+                authentication=k8s_client.AuthenticationV1Api(api),
+                audience=settings.token_audience,
+                allowed_service_account_namespaces={account.namespace for account in settings.caller_accounts},
+            ),
+            provisioning=provisioning,
+            caller_accounts=settings.caller_accounts,
+            admission_timeout_s=settings.admission_timeout_s,
+            lifecycle_timeout_s=settings.lifecycle_timeout_s,
+        ),
+        server,
+    )
+    async with background(
+        SandboxController(provisioning, Teardown(inventory, seal)).run(), name="sandbox-provisioning"
+    ):
+        yield
+
+
+async def serve(settings: Settings) -> None:
+    gateway = SandboxServiceClient(
+        f"127.0.0.1:{settings.port}",
+        gateway_target=settings.gateway_target,
+        control_target=settings.control_target,
+        namespace=settings.sandbox_namespace,
+        token_file=settings.gateway_token_file,
+        command_admission_timeout_s=None,
+        request_timeout_s=settings.admission_timeout_s,
+        lifecycle_timeout_s=settings.lifecycle_timeout_s,
+        follow_timeout_s=settings.lifecycle_timeout_s,
+    )
+
+    async def seal(sandbox: protocol_pb2.Sandbox) -> dict[str, int]:
+        destination = protocol_pb2.SandboxDestination(
+            owner=sandbox.service_account, sandbox=sandbox.name, sandbox_uid=sandbox.uid
+        )
+        return await gateway.runner(destination).seal()
+
+    async with (
+        k8s_client.ApiClient(await kubernetes_configuration(settings.kubeconfig)) as api,
+        AsyncExitStack() as stack,
+    ):
+        stack.push_async_callback(gateway.close)
+        server = grpc.aio.server()
+        await stack.enter_async_context(sandboxes(settings, api, server, seal=seal))
+        server.add_insecure_port(f"{settings.host}:{settings.port}")
+        await stack.enter_async_context(started(server))
+        await serve_health(settings.host, settings.health_port)
+
+
+async def serve_combined(settings: CombinedSettings) -> None:
+    """The Sandbox Service and Runner Gateway in one process, sealing in-process. See
+    `Launch.gateway_target`."""
+    commands_engine = gateway_main.database_engine(settings.commands_database_url)
+    try:
+        async with (
+            k8s_client.ApiClient(await kubernetes_configuration(settings.kubeconfig)) as api,
+            AsyncExitStack() as stack,
+        ):
+            server = grpc.aio.server()
+            gateway = await stack.enter_async_context(
+                gateway_main.gateway(settings, api, server, commands_engine, sealer_accounts=frozenset())
+            )
+            await stack.enter_async_context(sandboxes(settings, api, server, seal=gateway.sealing.seal))
+            add_legacy_service(gateway, server)
+            server.add_insecure_port(f"{settings.host}:{settings.port}")
+            await stack.enter_async_context(started(server))
+            await serve_health(settings.host, settings.health_port)
     finally:
         await commands_engine.dispose()
-
-
-async def serve_with_engine(
-    settings: Settings, configuration: k8s_client.Configuration, commands_engine: AsyncEngine
-) -> None:
-    session_changes = SessionChanges(commands_engine.url)
-    async with k8s_client.ApiClient(configuration) as api, session_changes.listener.listen():
-        core = k8s_client.CoreV1Api(api)
-        inventory = SandboxInventory(
-            namespace=settings.sandbox_namespace,
-            core_v1=core,
-            custom_objects=cast(CustomObjectsClient, k8s_client.CustomObjectsApi(api)),
-        )
-        principals = WorkloadPrincipalResolver(
-            authentication=k8s_client.AuthenticationV1Api(api),
-            audience=settings.token_audience,
-            allowed_service_account_namespaces={a.namespace for a in settings.caller_accounts},
-        )
-        custom = cast(CustomObjectsClient, k8s_client.CustomObjectsApi(api))
-        provisioning = Provisioning(
-            inventory,
-            EgressInventory(
-                namespace=settings.sandbox_namespace,
-                custom_objects=custom,
-                default_policies=settings.default_egress_policies,
-            ),
-            ActionPolicyBindings(namespace=settings.sandbox_namespace, custom_objects=custom),
-            settings.kubernetes_grants,
-            KubernetesBindings(
-                inventory,
-                k8s_client.RbacAuthorizationV1Api(api),
-                cleanup_namespaces=(
-                    settings.kubernetes_binding_cleanup_namespaces
-                    | {
-                        grant.namespace
-                        for grant in settings.kubernetes_grants.values()
-                        if isinstance(grant, RoleBindingGrant)
-                    }
-                )
-                - {settings.sandbox_namespace},
-                cleanup_cluster_bindings=settings.kubernetes_cluster_binding_cleanup
-                or any(isinstance(grant, ClusterRoleBindingGrant) for grant in settings.kubernetes_grants.values()),
-            ),
-            RunnerEndpoints(control=settings.runner_control, ingress=settings.runner_ingress),
-        )
-        sessions = SessionRegistry(commands_engine)
-        submissions = SubmissionStore(commands_engine)
-        connections = ConnectionStore(commands_engine)
-        leases = ConnectionLeases()
-        timing = ChannelTiming()
-        control = ChannelControl(leases)
-        delivery = ChannelDelivery(
-            commands_engine.url,
-            dispatches=DispatchStore(commands_engine),
-            connections=connections,
-            leases=leases,
-            liveness_s=timing.liveness_s,
-        )
-        resources = Resources(
-            principals=principals,
-            sessions=sessions,
-            submissions=submissions,
-            delivery=delivery,
-            control=control,
-            session_changes=session_changes,
-            destinations=DestinationResolver(inventory, core, settings.runner_port),
-            admission_timeout_s=settings.admission_timeout_s,
-            runner_admission_ack_timeout_s=settings.runner_admission_ack_timeout_s,
-            follow_lease_s=settings.follow_lease_s,
-            caller_accounts=settings.caller_accounts,
-            platform_instructions=settings.platform_instructions,
-            lifecycle_timeout_s=settings.lifecycle_timeout_s,
-            runner_grpc_channel_options=settings.runner_grpc_channel_options,
-            provisioning=provisioning,
-        )
-        async with delivery.listener.listen():
-            if len({settings.port, settings.health_port, settings.runner_channel_port}) != 3:
-                raise ValueError("gRPC, runner channel and health ports must differ")
-            server = grpc.aio.server()
-            add_service(resources, server)
-            server.add_insecure_port(f"{settings.host}:{settings.port}")
-            await server.start()
-            # A separate listener, so the network fence can admit runners to the channel and nothing else.
-            channel_server = grpc.aio.server()
-            protocol_pb2_grpc.add_RunnerChannelServicer_to_server(
-                RunnerChannelService(
-                    principals=WorkloadPrincipalResolver(
-                        authentication=k8s_client.AuthenticationV1Api(api),
-                        audience=settings.runner_channel_audience,
-                        allowed_service_account_namespaces={settings.sandbox_namespace},
-                    ),
-                    inventory=inventory,
-                    core=core,
-                    connections=connections,
-                    records=ConnectionRecords(
-                        api,
-                        namespace=settings.sandbox_namespace,
-                        holder=ConnectionHolder(
-                            pod_name=socket.gethostname(), pod_ip=settings.pod_ip, port=settings.port
-                        ),
-                    ),
-                    delivery=delivery,
-                    control=control,
-                    timing=timing,
-                ),
-                channel_server,
-            )
-            channel_server.add_insecure_port(f"{settings.host}:{settings.runner_channel_port}")
-            await channel_server.start()
-            health = FastAPI(openapi_url=None, docs_url=None, redoc_url=None)
-
-            @health.get("/healthz")
-            async def healthz() -> dict[str, str]:
-                return {"status": "ok"}
-
-            teardown = Teardown(
-                resources.destinations,
-                sessions,
-                connections=connections,
-                control=control,
-                runner_grpc_channel_options=settings.runner_grpc_channel_options,
-            )
-            lease_watch = asyncio.create_task(
-                leases.watch(k8s_client.CoordinationV1Api(api), settings.sandbox_namespace, resync_seconds=300).run(),
-                name="runner-connection-leases",
-            )
-            reconcile = asyncio.create_task(
-                SandboxController(provisioning, teardown).run(), name="sandbox-provisioning"
-            )
-            admissions = asyncio.create_task(
-                AdmissionReconciler(
-                    submissions,
-                    sessions,
-                    resources.destinations,
-                    runner_grpc_channel_options=settings.runner_grpc_channel_options,
-                ).run(),
-                name="sandbox-admission-reconciliation",
-            )
-            try:
-                await uvicorn.Server(
-                    uvicorn.Config(health, host=settings.host, port=settings.health_port, access_log=False)
-                ).serve()
-            finally:
-                await server.stop(grace=5)
-                await channel_server.stop(grace=5)
-                for task in (lease_watch, reconcile, admissions):
-                    task.cancel()
-                    with suppress(asyncio.CancelledError):
-                        await task
 
 
 def main() -> None:
     logging.basicConfig(level=logging.INFO)
     # TokenReview responses echo their bearer. Do not log the generated client's wire bodies.
     logging.getLogger("kubernetes_asyncio.client.rest").setLevel(logging.INFO)
-    asyncio.run(serve(Settings()))
+    asyncio.run(serve_combined(CombinedSettings()) if Launch().gateway_target is None else serve(Settings()))
 
 
 if __name__ == "__main__":

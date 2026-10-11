@@ -50,7 +50,7 @@ from trust_manager_crds.io.cert_manager.trust import (
 
 from agentplane.egress.database_migrate import MigrationSettings
 from agentplane.egress.settings import CONFIG_FILE_ENV, Settings
-from agentplane.sandbox_service.settings import RUNNER_CHANNEL_AUDIENCE
+from agentplane.runner_gateway.settings import RUNNER_CHANNEL_AUDIENCE
 from agentplane.workload_auth.audience import WORKLOAD_TOKEN_AUDIENCE
 from cluster.cdk8s import cilium, node_scheduling, pod_policy
 from cluster.cdk8s.agentplane import actions, database, llm_ingress, notifications

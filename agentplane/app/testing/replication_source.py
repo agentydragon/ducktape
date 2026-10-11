@@ -102,7 +102,7 @@ class ReplicationSource(HistoryService):
             [
                 self.handler(),
                 grpc.method_handlers_generic_handler(
-                    "ducktape.agentplane.sandbox.v1.SandboxService",
+                    "ducktape.agentplane.runner_gateway.v1.RunnerGateway",
                     {
                         "SubmitCommand": grpc.unary_unary_rpc_method_handler(
                             self.submit_command,

@@ -23,13 +23,13 @@ from agentplane.runner_gateway.commands.connections import ConnectionStore
 from agentplane.runner_gateway.commands.dispatch import DispatchStore
 from agentplane.runner_gateway.commands.store import SubmissionStore
 from agentplane.runner_gateway.connection_records import ConnectionLeases
+from agentplane.runner_gateway.grpc_api import Resources
 from agentplane.runner_gateway.session_registry import SessionRegistry
 from agentplane.sandbox_service import protocol_pb2
 from agentplane.sandbox_service.action_policy import ActionPolicyBindings
 from agentplane.sandbox_service.client import SandboxServiceClient, ServiceError
 from agentplane.sandbox_service.destinations import DestinationResolver
 from agentplane.sandbox_service.egress import EgressInventory
-from agentplane.sandbox_service.grpc_api import Resources
 from agentplane.sandbox_service.inventory import SandboxInventory
 from agentplane.sandbox_service.kubernetes_bindings import KubernetesBindings
 from agentplane.sandbox_service.kubernetes_grants import RoleBindingGrant, RoleRef
@@ -64,7 +64,7 @@ pytest_plugins = ("agentplane.runner_gateway.commands.conftest",)
 TOKEN = "test-provisioner-token"
 ADMIN = ServiceAccountRef(namespace=SANDBOX_NAMESPACE, name="test-provisioner")
 AUDIENCE = "test-provisioning"
-CONTROL = RunnerEndpoint(target="test-hub.test:8082", bearer="test-control-bearer", egress_policy="test-control")
+CONTROL = RunnerEndpoint(target="test-gateway.test:8082", bearer="test-control-bearer", egress_policy="test-control")
 HISTORY = RunnerEndpoint(target="test-history.test:8083", bearer="test-history-bearer", egress_policy="test-history")
 
 
@@ -138,7 +138,6 @@ async def api(case: Case, cluster: Cluster, engine: AsyncEngine, tmp_path: Path)
         destinations=DestinationResolver(case.service.inventory, cast(k8s_client.CoreV1Api, case.core), 7000),
         caller_accounts=frozenset({ADMIN}),
         platform_instructions="",
-        provisioning=case.service,
         sessions=SessionRegistry(engine),
         submissions=SubmissionStore(engine),
         delivery=ChannelDelivery(
@@ -153,9 +152,10 @@ async def api(case: Case, cluster: Cluster, engine: AsyncEngine, tmp_path: Path)
     )
     token_file = tmp_path / "token"
     token_file.write_text(TOKEN)
-    async with service(resources) as target:
+    async with service(resources, case.service) as target:
         client = SandboxServiceClient(
             target,
+            gateway_target=target,
             namespace=NAMESPACE,
             token_file=token_file,
             command_admission_timeout_s=20,

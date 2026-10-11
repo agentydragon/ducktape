@@ -35,9 +35,9 @@ flowchart LR
 Properties the target keeps:
 
 - **Ingress is pluggable per deployment, control is not:** the Sandbox Service's configuration
-  names the one ingress every Sandbox it creates pushes to; the control endpoint is always the Sandbox Service's runner-facing hub, so lifecycle requests such as
+  names the one ingress every Sandbox it creates pushes to; the control endpoint is always the Runner Gateway, so lifecycle requests such as
   `Seal` always have a path. A historyless client implements the ingress itself and sends commands
-  through the hub. The History Service knows Sessions from what it is pushed, not Sandboxes, and
+  through the gateway. The History Service knows Sessions from what it is pushed, not Sandboxes, and
   binds each Session to the workload identity of its first writer.
 - **History Service outage:** runners keep running and commands keep flowing. The runner journal
   is the buffer, so an outage is unacknowledged lag; teardown waits until the ingress has
@@ -111,8 +111,8 @@ Properties the target keeps:
 - **Command submission records** stay in the Sandbox Service for now.
 - **Cutover:** clean, like the dial-out cutover; Sandboxes from before it are archived the old way
   and deleted.
-- **Deployments:** the controller and the runner-facing hub run separately, with separate
-  ServiceAccounts.
+- **Deployments:** the Sandbox Service and the Runner Gateway are separate services and images,
+  with separate ServiceAccounts.
 
 ## APIs
 

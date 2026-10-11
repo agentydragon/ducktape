@@ -16,6 +16,9 @@ from agentplane.grpc_options import grpc_channel_option_kvps
 from agentplane.protocol import command_pb2, event_log_pb2
 from agentplane.runner import protocol_pb2 as runner_pb2
 from agentplane.runner.errors import RunnerError, StreamClosedError
+
+# Aliased: `protocol_pb2_grpc` is the Sandbox Service's stubs.
+from agentplane.runner_gateway import protocol_pb2_grpc as gateway_pb2_grpc
 from agentplane.sandbox_service import protocol_pb2, protocol_pb2_grpc, wire
 from agentplane.sandbox_service.models import SandboxNotFoundError
 from agentplane.sandbox_service.protocol_pb2 import CreateSandboxRequest, Sandbox, SandboxDestination
@@ -96,6 +99,7 @@ class SandboxServiceClient:
         self,
         target: str,
         *,
+        gateway_target: str,
         # The Sandbox namespace, for callers that check destinations against it.
         namespace: str | None,
         token_file: Path,
@@ -110,7 +114,9 @@ class SandboxServiceClient:
             command_admission_timeout_s is not None and command_admission_timeout_s <= 0
         ):
             raise ValueError("timeouts must be positive")
+        # The Sandbox Service, and the Runner Gateway serving Sessions.
         self.target = target
+        self.gateway_target = gateway_target
         self.namespace = namespace
         self.token_file = token_file
         self.request_timeout_s = request_timeout_s
@@ -119,11 +125,13 @@ class SandboxServiceClient:
         self.follow_timeout_s = follow_timeout_s
         # A Sandbox's control Service, which names the replica holding its runner connection, as a
         # template of `{sandbox}` and `{namespace}`: `{sandbox}-control.{namespace}.svc:8080`. None
-        # sends every call to `target`.
+        # sends every gateway call to `gateway_target`.
         self.control_target = control_target
         self._channel_options = channel_options
         self._channel: grpc.aio.Channel | None = None
         self._stub: protocol_pb2_grpc.SandboxServiceAsyncStub | None = None
+        self._gateway_channel: grpc.aio.Channel | None = None
+        self._gateway_stub: gateway_pb2_grpc.RunnerGatewayAsyncStub | None = None
 
     def dial(self, target: str) -> grpc.aio.Channel:
         # No retry service config: uncertain mutations need domain-specific reconciliation.
@@ -143,6 +151,13 @@ class SandboxServiceClient:
             self._stub = protocol_pb2_grpc.SandboxServiceStub(self._channel)
         return self._stub
 
+    @property
+    def gateway(self) -> gateway_pb2_grpc.RunnerGatewayAsyncStub:
+        if self._gateway_stub is None:
+            self._gateway_channel = self.dial(self.gateway_target)
+            self._gateway_stub = gateway_pb2_grpc.RunnerGatewayStub(self._gateway_channel)
+        return self._gateway_stub
+
     async def metadata(self) -> tuple[tuple[str, str], ...]:
         # Projected tokens rotate. Read for every RPC, including follow reconnects.
         token = (await asyncio.to_thread(self.token_file.read_text)).strip()
@@ -159,7 +174,7 @@ class SandboxServiceClient:
     async def held_unary[T](
         self,
         destination: SandboxDestination,
-        call: Callable[[protocol_pb2_grpc.SandboxServiceAsyncStub], Callable[..., Awaitable[T]]],
+        call: Callable[[gateway_pb2_grpc.RunnerGatewayAsyncStub], Callable[..., Awaitable[T]]],
         request: Message,
         *,
         timeout_s: float | None = None,
@@ -172,9 +187,7 @@ class SandboxServiceClient:
                 self.control_target.format(sandbox=destination.sandbox, namespace=destination.owner.namespace)
             )
             try:
-                return await self.unary(
-                    call(protocol_pb2_grpc.SandboxServiceStub(channel)), request, timeout_s=timeout_s
-                )
+                return await self.unary(call(gateway_pb2_grpc.RunnerGatewayStub(channel)), request, timeout_s=timeout_s)
             except ServiceError as error:
                 if error.code != grpc.StatusCode.UNAVAILABLE:
                     raise
@@ -183,10 +196,10 @@ class SandboxServiceClient:
                 # connected has no control Service. Any replica serves its inbound route and refuses a
                 # channel-routed Sandbox before acting unless it holds the connection, so this retry
                 # never takes such a Sandbox's operation another way.
-                logger.debug("Sandbox %s: control Service unavailable, calling the service", destination.sandbox)
+                logger.debug("Sandbox %s: control Service unavailable, calling the gateway", destination.sandbox)
             finally:
                 await channel.close()
-        return await self.unary(call(self.stub), request, timeout_s=timeout_s)
+        return await self.unary(call(self.gateway), request, timeout_s=timeout_s)
 
     async def list_sandboxes(self) -> list[Sandbox]:
         result = await self.unary(self.stub.ListSandboxes, Empty())
@@ -234,7 +247,7 @@ class SandboxServiceClient:
 
     async def watch_sessions(self, *, after_position: int) -> AsyncIterator[protocol_pb2.SessionChange]:
         """Yield changes after the position until planned renewal, which returns; anything else raises."""
-        call = self.stub.WatchSessions(
+        call = self.gateway.WatchSessions(
             protocol_pb2.WatchSessionsRequest(after_position=after_position),
             metadata=await self.metadata(),
             timeout=self.follow_timeout_s,
@@ -262,6 +275,10 @@ class SandboxServiceClient:
             await self._channel.close()
             self._channel = None
             self._stub = None
+        if self._gateway_channel is not None:
+            await self._gateway_channel.close()
+            self._gateway_channel = None
+            self._gateway_stub = None
 
 
 class Runner:
@@ -288,7 +305,7 @@ class Runner:
 
     async def lookup(self, *, idempotency_key: str) -> protocol_pb2.LookupSessionResponse:
         return await self.service.unary(
-            self.service.stub.LookupSession,
+            self.service.gateway.LookupSession,
             protocol_pb2.LookupSessionRequest(sandbox=self.destination, idempotency_key=idempotency_key),
         )
 
@@ -304,6 +321,17 @@ class Runner:
             self.service.stub.ConfirmHold,
             protocol_pb2.ConfirmHoldRequest(destination=destination, holder=holder, through_cursor=through_cursor),
         )
+
+    async def seal(self) -> dict[str, int]:
+        """Teardown's seal, which only the Sandbox Service may ask for: each Session's final cursor, keyed
+        as retention holders name the Session."""
+        result = await self.service.held_unary(
+            self.destination,
+            lambda stub: stub.SealSandbox,
+            protocol_pb2.SandboxRequest(destination=self.destination),
+            timeout_s=self.service.lifecycle_timeout_s,
+        )
+        return {seal.session_id: seal.cursor for seal in result.sessions}
 
     async def resume(self, session_id: str) -> runner_pb2.Attached:
         return await self.service.held_unary(
@@ -321,7 +349,7 @@ class Runner:
         if self.service.command_admission_timeout_s is None:
             raise ValueError("SubmitCommand requires an explicit client deadline")
         receipt = await self.service.unary(
-            self.service.stub.SubmitCommand,
+            self.service.gateway.SubmitCommand,
             protocol_pb2.SubmitCommandRequest(
                 destination=protocol_pb2.SessionDestination(sandbox=self.destination, session_id=session_id),
                 command=command,
@@ -335,7 +363,7 @@ class Runner:
 
     async def get_command(self, session_id: str, command_id: str) -> protocol_pb2.CommandStatus:
         return await self.service.unary(
-            self.service.stub.GetCommand,
+            self.service.gateway.GetCommand,
             protocol_pb2.GetCommandRequest(
                 destination=protocol_pb2.SessionDestination(sandbox=self.destination, session_id=session_id),
                 command_id=command_id,
@@ -343,7 +371,7 @@ class Runner:
         )
 
     async def attach(self, session_id: str, *, after_cursor: int = 0) -> Attachment:
-        call = self.service.stub.FollowSession(
+        call = self.service.gateway.FollowSession(
             protocol_pb2.FollowSessionRequest(
                 destination=protocol_pb2.SessionDestination(sandbox=self.destination, session_id=session_id),
                 follow=event_log_pb2.Follow(after_cursor=after_cursor),

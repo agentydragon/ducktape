@@ -11,6 +11,8 @@ import "google/protobuf/field_mask.proto";
 import "google/protobuf/struct.proto";
 import "google/protobuf/timestamp.proto";
 
+// Sandboxes, their grants and retention holds. The Sandbox Service alone holds the
+// RBAC, ServiceAccount and egress grant permissions; the Runner Gateway serves Sessions.
 service SandboxService {
   rpc ListSandboxes(google.protobuf.Empty) returns (ListSandboxesResponse);
   rpc GetSandbox(GetSandboxRequest) returns (Sandbox);
@@ -27,25 +29,6 @@ service SandboxService {
 
   rpc GrantEgress(GrantEgressRequest) returns (GrantEgressResponse);
   rpc RevokeEgress(RevokeEgressRequest) returns (google.protobuf.Empty);
-
-  rpc ListSessions(SandboxRequest) returns (ducktape.agentplane.runner.v1.ListSessionsResponse);
-  // Service-owned Session identity. The key is only for an explicit Open retry.
-  rpc CreateSession(CreateSessionRequest) returns (CreateSessionResponse);
-  // Read-only reconciliation by the original caller, sandbox incarnation and Open key.
-  rpc LookupSession(LookupSessionRequest) returns (LookupSessionResponse);
-  rpc ResumeSession(SessionRequest) returns (ducktape.agentplane.runner.v1.Attached);
-  // Returns the original matching CommandAdmitted entry, not command completion.
-  rpc SubmitCommand(SubmitCommandRequest) returns (ducktape.agentplane.protocol.v1.EventEntry);
-  // A command submitted to a public Session ID, as retained: never contacts the runner.
-  rpc GetCommand(GetCommandRequest) returns (CommandStatus);
-  // The Session's submitted commands in acceptance order, as retained: never contacts the runner.
-  rpc ListCommands(ListCommandsRequest) returns (ListCommandsResponse);
-  // Replays the runner journal after the caller's cursor, then continues live on the same stream.
-  // The Sandbox Service keeps no copy of these entries.
-  rpc FollowSession(FollowSessionRequest) returns (stream FollowSessionResponse);
-  // Any allowed service caller. Every Session, including those of deleted Sandboxes, in the
-  // order of each one's latest change, then each later change as it commits.
-  rpc WatchSessions(WatchSessionsRequest) returns (stream WatchSessionsResponse);
 
   // Retention holds: "do not delete this Sandbox until I have confirmed its Session through the
   // seal". Idempotent per (Session, holder); placing an existing hold keeps its confirmation.

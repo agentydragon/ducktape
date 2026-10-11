@@ -1,0 +1,34 @@
+syntax = "proto3";
+
+// The Runner Gateway: Sessions and commands, served by the replicas runners connect to. A Sandbox's
+// control Service reaches the replica holding its runner connection.
+package ducktape.agentplane.runner_gateway.v1;
+
+import "agentplane/protocol/event_log.proto";
+import "agentplane/runner/protocol.proto";
+import "agentplane/sandbox_service/protocol.proto";
+
+service RunnerGateway {
+  rpc ListSessions(ducktape.agentplane.sandbox.v1.SandboxRequest) returns (ducktape.agentplane.runner.v1.ListSessionsResponse);
+  // Service-owned Session identity. The key is only for an explicit Open retry.
+  rpc CreateSession(ducktape.agentplane.sandbox.v1.CreateSessionRequest) returns (ducktape.agentplane.sandbox.v1.CreateSessionResponse);
+  // Read-only reconciliation by the original caller, sandbox incarnation and Open key.
+  rpc LookupSession(ducktape.agentplane.sandbox.v1.LookupSessionRequest) returns (ducktape.agentplane.sandbox.v1.LookupSessionResponse);
+  rpc ResumeSession(ducktape.agentplane.sandbox.v1.SessionRequest) returns (ducktape.agentplane.runner.v1.Attached);
+  // Returns the original matching CommandAdmitted entry, not command completion.
+  rpc SubmitCommand(ducktape.agentplane.sandbox.v1.SubmitCommandRequest) returns (ducktape.agentplane.protocol.v1.EventEntry);
+  // A command submitted to a public Session ID, as retained: never contacts the runner.
+  rpc GetCommand(ducktape.agentplane.sandbox.v1.GetCommandRequest) returns (ducktape.agentplane.sandbox.v1.CommandStatus);
+  // The Session's submitted commands in acceptance order, as retained: never contacts the runner.
+  rpc ListCommands(ducktape.agentplane.sandbox.v1.ListCommandsRequest) returns (ducktape.agentplane.sandbox.v1.ListCommandsResponse);
+  // Replays the runner journal after the caller's cursor, then continues live on the same stream.
+  // The gateway keeps no copy of these entries.
+  rpc FollowSession(ducktape.agentplane.sandbox.v1.FollowSessionRequest) returns (stream ducktape.agentplane.sandbox.v1.FollowSessionResponse);
+  // Any allowed service caller. Every Session, including those of deleted Sandboxes, in the
+  // order of each one's latest change, then each later change as it commits.
+  rpc WatchSessions(ducktape.agentplane.sandbox.v1.WatchSessionsRequest) returns (stream ducktape.agentplane.sandbox.v1.WatchSessionsResponse);
+  // Teardown's seal, called by the Sandbox Service alone: fence and seal every Session of the
+  // incarnation, and return each one's final cursor keyed as holders name the Session (the public
+  // Session ID, or the runner's own ID for a Session opened with a caller-chosen one). Idempotent.
+  rpc SealSandbox(ducktape.agentplane.sandbox.v1.SandboxRequest) returns (ducktape.agentplane.runner.v1.SealResponse);
+}

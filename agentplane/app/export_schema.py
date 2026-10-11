@@ -47,6 +47,7 @@ def _openapi_document(api_client: k8s_client.ApiClient) -> dict[str, Any]:
     # Only routes and models shape the document; the service clients are never called.
     inventory = SandboxServiceClient(
         "schema.invalid:8080",
+        gateway_target="schema.invalid:8080",
         namespace="schema",
         token_file=Path("/schema-unused-token"),
         command_admission_timeout_s=None,
