@@ -8,6 +8,8 @@ from pathlib import Path
 from typing import cast
 
 from kubernetes_asyncio import client as k8s_client
+from sqlalchemy.engine import make_url
+from sqlalchemy.ext.asyncio import create_async_engine
 
 from agentplane.proto.sandbox_service_pb2 import SandboxBinding, SandboxDestination, ServiceAccount
 from agentplane.runner_gateway.testing.grpc_service import service_client
@@ -22,13 +24,14 @@ from agentplane.sandbox_service.kubernetes_bindings import KubernetesBindings
 from agentplane.sandbox_service.kubernetes_views import MANAGED_LABEL, SANDBOX_BINDING_ANNOTATION
 from agentplane.sandbox_service.provisioning import Provisioning
 from agentplane.sandbox_service.runner_endpoints import RunnerEndpoints
-from agentplane.sandbox_service.testing.history import service_database
 from agentplane.subjects import ServiceAccountRef
 from agentplane.testing.fake_apiserver import SANDBOX_NAMESPACE, FakeApiServer, TokenVerdict, fake_apiserver, pod_for
 from agentplane.workload_auth.principal import WorkloadPrincipalResolver
 from util.agent_sandbox import SANDBOX_API, SANDBOXES_PLURAL
 from util.kubernetes import CustomObjectsClient
+from util.testing.sqlalchemy_engines import managed_async_engine
 
+# gazelle:include_dep @pypi//asyncpg
 # gazelle:include_dep @pypi//protobuf
 
 SANDBOX = "test-runner"
@@ -132,7 +135,9 @@ async def authenticated_service(
         pod_uid="test-app-pod-uid",
         audiences=(audience,),
     )
-    async with service_database(database_url) as engine:
+    async with managed_async_engine(
+        create_async_engine(make_url(database_url).set(drivername="postgresql+asyncpg"))
+    ) as engine:
         resources = replace(
             build_resources(
                 engine,

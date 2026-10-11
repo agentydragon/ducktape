@@ -13,6 +13,7 @@ from util.testing.postgres_fixtures import (
     postgres_admin_url,
     postgres_container,
 )
+from util.testing.sqlalchemy_engines import managed_async_engine
 
 # gazelle:include_dep @pypi//asyncpg
 # gazelle:include_dep @pypi//psycopg
@@ -23,8 +24,5 @@ database_template, db_url = migrated_database_fixtures(RUNNER, drivername="postg
 
 @pytest.fixture
 async def engine(db_url: str) -> AsyncIterator[AsyncEngine]:
-    engine = create_async_engine(db_url)
-    try:
+    async with managed_async_engine(create_async_engine(db_url)) as engine:
         yield engine
-    finally:
-        await engine.dispose()

@@ -60,6 +60,7 @@ from util.testing.postgres import (
     force_drop_database_sync,
 )
 from util.testing.postgres_fixtures import database_clones, database_names, postgres_admin_url, start_postgres_container
+from util.testing.sqlalchemy_engines import managed_async_engine
 
 # TestClient drives the app over httpx, imported inside starlette; gazelle cannot see it.
 # gazelle:include_dep @pypi//httpx
@@ -333,11 +334,8 @@ async def migrated_engine(migrated_db_url: str) -> AsyncGenerator[AsyncEngine]:
     The fixture owns disposal so tests can share the same pool without leaking one engine per
     helper call.
     """
-    engine = create_async_engine(migrated_db_url, pool_pre_ping=True)
-    try:
+    async with managed_async_engine(create_async_engine(migrated_db_url, pool_pre_ping=True)) as engine:
         yield engine
-    finally:
-        await engine.dispose()
 
 
 @pytest.fixture
