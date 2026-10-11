@@ -1,15 +1,17 @@
 """DeleteSandbox's teardown, driven by the Sandbox Service's reconciler: seal every Session, then delete.
 
 `SandboxInventory.begin_teardown` runs the suspended Sandbox again. Here the Runner Gateway has its runner seal
-every Session; the seal cursors go into the retention holds and the Sandbox is suspended again; it
-is deleted once every hold is confirmed through its seal. While the runner is unreachable, the
-Sandbox stays in `TEARDOWN_PHASE_SEALING` for the operator: nothing deletes an unsealed Sandbox.
+every Session; the seal cursors go into the retention holds, and the Sandbox runs on until every hold
+is confirmed through its seal, since a holder confirms by following its Session to the seal; then it is
+deleted. While the runner is unreachable, the Sandbox stays in `TEARDOWN_PHASE_SEALING` for the
+operator: nothing deletes an unsealed Sandbox.
 
 A runner that pushes its Events to an ingress reports each seal flushed once that ingress has
 acknowledged it. Its Sandbox needs no holds: it is deleted straight from `TEARDOWN_PHASE_SEALING` once
 every seal is flushed, and sealed again every `FLUSH_RETRY_S` until then.
 """
 
+import logging
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 
@@ -18,6 +20,8 @@ from agentplane.sandbox_service.inventory import SandboxInventory
 from agentplane.sandbox_service.protocol_pb2 import Sandbox, TeardownPhase
 
 # gazelle:include_dep @pypi//protobuf
+
+logger = logging.getLogger(__name__)
 
 FLUSH_RETRY_S = 10
 
@@ -50,5 +54,6 @@ class Teardown:
                     raise SealNotFlushedError(f"{sandbox.name}: ingress has not acknowledged {unflushed=}")
                 await self.inventory.delete_flushed(sandbox.name, uid=sandbox.uid)
             case TeardownPhase.TEARDOWN_PHASE_SEALED:
-                # Otherwise a hold change reconciles it again.
-                await self.inventory.delete_if_released(sandbox.name, uid=sandbox.uid)
+                if not await self.inventory.delete_if_released(sandbox.name, uid=sandbox.uid):
+                    # A hold change reconciles it again.
+                    logger.info("%s is sealed; waiting for its retention holds to confirm the seal", sandbox.name)

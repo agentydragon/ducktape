@@ -685,7 +685,6 @@ py_test(
         "//agentplane/runner_gateway/commands:db",
         "//agentplane/runner_gateway/testing:sessions",
         "//agentplane/sandbox_service:protocol_pb2",
-        "//agentplane/history_service/storage:conftest",
         "//agentplane/sandbox_service/testing:backend",
         "//agentplane/sandbox_service/testing:fake_inventory",
         "//util:agent_sandbox",
@@ -761,5 +760,14 @@ py_test(
         "//agentplane/sandbox_service/testing:kubernetes",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
+    name = "session_changes",
+    srcs = ["session_changes.py"],
+    deps = [
+        "//agentplane/postgres:listener",
+        "@pypi//sqlalchemy",
     ],
 )
