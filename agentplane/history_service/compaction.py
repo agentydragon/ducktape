@@ -14,13 +14,13 @@ from uuid import UUID
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
 
+from agentplane.history_service.fold.models import ThreadCheckpoint
+from agentplane.history_service.fold.recording import forget_settled
 from agentplane.history_service.fold_shadow import FOLD_EPOCH
 from agentplane.history_service.storage.db import SessionEvent, SessionEventSettlement, SessionHistory
 from agentplane.history_service.storage.settlement import completion_target
 from agentplane.history_service.storage.store import record_settlement, settlement_for
 from agentplane.proto import event_log_pb2
-from agentplane.thread_fold.models import ThreadCheckpoint
-from agentplane.thread_fold.recording import forget_settled
 
 # gazelle:include_dep @pypi//protobuf
 

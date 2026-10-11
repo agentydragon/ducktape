@@ -136,7 +136,7 @@ their badges even while collapsed, and interrupted items do not become streaming
 a later turn starts.
 
 The retained-event SSE API reads archived events through the History Service on whichever replica
-receives its request. The History Service's fold-commit notices (`SummaryWatch`) and the app's
+receives its request. The History Service's fold-commit notices (`HistoryWatch`) and the app's
 transactional `NOTIFY` wake Thread and inventory readers; both are hints, and the History Service's
 cursor remains authoritative.
 
