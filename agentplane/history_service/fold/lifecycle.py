@@ -5,10 +5,9 @@ from uuid import UUID
 from google.protobuf.json_format import MessageToDict, ParseDict
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from agentplane.history_service import protocol_pb2 as history_pb2
 from agentplane.history_service.fold.models import ThreadHistorySummary
 from agentplane.history_service.fold.recording import EventReplicationError, set_operational
-from agentplane.proto import event_log_pb2, runner_pb2
+from agentplane.proto import event_log_pb2, history_service_pb2, runner_pb2
 
 # gazelle:include_dep @pypi//protobuf
 
@@ -17,7 +16,7 @@ async def project_lifecycle(
     session: AsyncSession,
     thread_id: UUID,
     summary: ThreadHistorySummary,
-    page: history_pb2.ReadSessionEventsResponse,
+    page: history_service_pb2.ReadSessionEventsResponse,
     *,
     through_cursor: int,
 ) -> bool:

@@ -7,13 +7,12 @@ import pytest_bazel
 from pydantic import TypeAdapter
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from agentplane.history_service import protocol_pb2
 from agentplane.history_service.fold.views import EntityKind, ThreadEntityView, ThreadItemEntityView
 from agentplane.history_service.fold_runner import FOLD_EPOCH, FoldRunner
 from agentplane.history_service.storage.store import HistoryNotFoundError, Store
 from agentplane.history_service.testing.sessions import WRITER
 from agentplane.history_service.thread_reads import ThreadReader, ThreadScopeResetError
-from agentplane.proto import event_log_pb2, event_pb2
+from agentplane.proto import event_log_pb2, event_pb2, history_service_pb2
 
 # gazelle:include_dep @pypi//protobuf
 # gazelle:include_dep //agentplane/history_service/storage:conftest
@@ -67,10 +66,10 @@ async def folded(engine: AsyncEngine, history: Store) -> UUID:
 
 async def test_a_range_window_reads_back_the_folded_stream(reader: ThreadReader, folded: UUID) -> None:
     window = await reader.entities(
-        protocol_pb2.ReadThreadEntitiesRequest(
+        history_service_pb2.ReadThreadEntitiesRequest(
             session_id=str(folded),
             projection_epoch=FOLD_EPOCH,
-            range=protocol_pb2.EntityRange(start_entity_index=0, limit=200),
+            range=history_service_pb2.EntityRange(start_entity_index=0, limit=200),
         )
     )
 
@@ -83,12 +82,12 @@ async def test_a_range_window_reads_back_the_folded_stream(reader: ThreadReader,
 
 async def test_keys_return_the_rows_that_exist(reader: ThreadReader, folded: UUID) -> None:
     window = await reader.entities(
-        protocol_pb2.ReadThreadEntitiesRequest(
+        history_service_pb2.ReadThreadEntitiesRequest(
             session_id=str(folded),
-            keys=protocol_pb2.EntityKeys(
+            keys=history_service_pb2.EntityKeys(
                 keys=[
-                    protocol_pb2.EntityKey(entity_kind=EntityKind.ITEM, entity_id="test-reply"),
-                    protocol_pb2.EntityKey(entity_kind=EntityKind.COMMAND, entity_id="test-never-sent"),
+                    history_service_pb2.EntityKey(entity_kind=EntityKind.ITEM, entity_id="test-reply"),
+                    history_service_pb2.EntityKey(entity_kind=EntityKind.COMMAND, entity_id="test-never-sent"),
                 ]
             ),
         )
@@ -98,13 +97,13 @@ async def test_keys_return_the_rows_that_exist(reader: ThreadReader, folded: UUI
 
 
 async def test_reads_refuse_a_stale_epoch_and_an_unknown_session(reader: ThreadReader, folded: UUID) -> None:
-    window = protocol_pb2.EntityRange(start_entity_index=0, limit=10)
+    window = history_service_pb2.EntityRange(start_entity_index=0, limit=10)
     with pytest.raises(ThreadScopeResetError):
         await reader.entities(
-            protocol_pb2.ReadThreadEntitiesRequest(session_id=str(folded), projection_epoch="v1", range=window)
+            history_service_pb2.ReadThreadEntitiesRequest(session_id=str(folded), projection_epoch="v1", range=window)
         )
     with pytest.raises(HistoryNotFoundError):
-        await reader.entities(protocol_pb2.ReadThreadEntitiesRequest(session_id=str(uuid4()), range=window))
+        await reader.entities(history_service_pb2.ReadThreadEntitiesRequest(session_id=str(uuid4()), range=window))
 
 
 if __name__ == "__main__":

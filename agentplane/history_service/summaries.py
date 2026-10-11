@@ -8,11 +8,10 @@ from google.protobuf.json_format import ParseDict
 from sqlalchemy import Select, select
 from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
 
-from agentplane.history_service import protocol_pb2
 from agentplane.history_service.fold.models import ThreadCheckpoint, ThreadHistorySummary
 from agentplane.history_service.storage.db import SessionHistory
 from agentplane.history_service.storage.store import HistoryNotFoundError
-from agentplane.proto import event_pb2
+from agentplane.proto import event_pb2, history_service_pb2
 
 MAX_BATCH = 200
 
@@ -21,14 +20,14 @@ class SummaryReader:
     def __init__(self, engine: AsyncEngine) -> None:
         self._sessions = async_sessionmaker(engine)
 
-    async def get_many(self, session_ids: Set[UUID]) -> list[protocol_pb2.SessionSummary]:
+    async def get_many(self, session_ids: Set[UUID]) -> list[history_service_pb2.SessionSummary]:
         if len(session_ids) > MAX_BATCH:
             raise ValueError("too many Sessions in one summary read")
         async with self._sessions() as session:
             rows = await session.execute(_summaries().where(SessionHistory.id.in_(session_ids)))
         return [_summary(*row) for row in rows]
 
-    async def get(self, session_id: UUID) -> protocol_pb2.SessionSummary:
+    async def get(self, session_id: UUID) -> history_service_pb2.SessionSummary:
         async with self._sessions() as session:
             row = (await session.execute(_summaries().where(SessionHistory.id == session_id))).one_or_none()
         if row is None:
@@ -47,8 +46,8 @@ def _summaries() -> Select[tuple[SessionHistory, ThreadHistorySummary, ThreadChe
 
 def _summary(
     history: SessionHistory, summary: ThreadHistorySummary | None, checkpoint: ThreadCheckpoint | None
-) -> protocol_pb2.SessionSummary:
-    message = protocol_pb2.SessionSummary(
+) -> history_service_pb2.SessionSummary:
+    message = history_service_pb2.SessionSummary(
         session_id=str(history.id),
         sandbox_namespace=history.sandbox_namespace,
         sandbox_name=history.sandbox_name,
@@ -70,11 +69,11 @@ def _summary(
     if summary.attached is not None:
         ParseDict(summary.attached, message.attached)
         message.feed_status = (
-            protocol_pb2.FEED_STATUS_ACTIVE
+            history_service_pb2.FEED_STATUS_ACTIVE
             if summary.end is None
-            else protocol_pb2.FEED_STATUS_FAILED
+            else history_service_pb2.FEED_STATUS_FAILED
             if summary.end
-            else protocol_pb2.FEED_STATUS_ENDED
+            else history_service_pb2.FEED_STATUS_ENDED
         )
         if summary.end:
             message.feed_error = summary.end["message"]

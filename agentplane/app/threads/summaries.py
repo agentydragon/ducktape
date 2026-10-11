@@ -14,10 +14,9 @@ from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
 
 from agentplane.app.database_updates import Channel
 from agentplane.app.threads.models import Thread
-from agentplane.history_service import protocol_pb2 as history_pb2
 from agentplane.history_service.client import HistoryServiceClient, HistoryServiceError
 from agentplane.postgres.wakeups import notify
-from agentplane.proto import runner_pb2
+from agentplane.proto import history_service_pb2, runner_pb2
 
 # The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.
 # gazelle:include_dep @pypi//protobuf
@@ -115,16 +114,16 @@ class Summaries:
             return {row.id: row.resumed_after_cursor for row in rows}
 
 
-def _summary(summary: history_pb2.SessionSummary, resumed_after_cursor: int | None) -> FoldSummary:
+def _summary(summary: history_service_pb2.SessionSummary, resumed_after_cursor: int | None) -> FoldSummary:
     feed = None
     if summary.HasField("attached"):
         end: FeedEnd | FeedError | None
         match summary.feed_status:
-            case history_pb2.FEED_STATUS_ACTIVE:
+            case history_service_pb2.FEED_STATUS_ACTIVE:
                 end = None
-            case history_pb2.FEED_STATUS_ENDED:
+            case history_service_pb2.FEED_STATUS_ENDED:
                 end = FeedEnd()
-            case history_pb2.FEED_STATUS_FAILED:
+            case history_service_pb2.FEED_STATUS_FAILED:
                 end = FeedError(summary.feed_error)
             case status:
                 raise ValueError(f"attached Session summary without a feed status: {status=}")

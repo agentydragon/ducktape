@@ -17,9 +17,8 @@ from agentplane.app.testing.thread_test_support import event_entry
 from agentplane.app.threads.events.event_log import EventLogStore, SessionAdmissionError
 from agentplane.app.threads.models import EventLog
 from agentplane.app.threads.summaries import Summaries
-from agentplane.history_service import protocol_pb2 as history_pb2
 from agentplane.history_service.client import HistoryServiceClient
-from agentplane.proto import event_pb2
+from agentplane.proto import event_pb2, history_service_pb2
 
 # The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.
 # gazelle:include_dep @pypi//protobuf
@@ -32,23 +31,23 @@ async def test_remote_history_reads_its_own_committed_prefix(engine: AsyncEngine
     class Reader:
         last_cursor = 0
 
-        async def get_session_summary(self, session_id: str) -> history_pb2.SessionSummary:
+        async def get_session_summary(self, session_id: str) -> history_service_pb2.SessionSummary:
             # The fold has applied the first entry, whatever the archive has committed since.
-            return history_pb2.SessionSummary(session_id=session_id, folded_through=1)
+            return history_service_pb2.SessionSummary(session_id=session_id, folded_through=1)
 
         async def read_session_observations(
             self, session_id: str, *, limit: int
-        ) -> history_pb2.ReadSessionObservationsResponse:
+        ) -> history_service_pb2.ReadSessionObservationsResponse:
             assert session_id == str(thread_id)
             assert limit == 1
-            return history_pb2.ReadSessionObservationsResponse(last_cursor=self.last_cursor)
+            return history_service_pb2.ReadSessionObservationsResponse(last_cursor=self.last_cursor)
 
         async def read_session_events(
             self, session_id: str, *, after_cursor: int = 0, limit: int = 128
-        ) -> history_pb2.ReadSessionEventsResponse:
+        ) -> history_service_pb2.ReadSessionEventsResponse:
             assert session_id == str(thread_id)
             assert limit == 1
-            return history_pb2.ReadSessionEventsResponse(
+            return history_service_pb2.ReadSessionEventsResponse(
                 last_cursor=self.last_cursor, entries=[entry] if after_cursor == 0 and self.last_cursor else []
             )
 
@@ -79,11 +78,11 @@ async def test_service_read_does_not_chase_a_growing_watermark(engine: AsyncEngi
     class Reader:
         async def read_session_events(
             self, session_id: str, *, after_cursor: int = 0, limit: int = 128
-        ) -> history_pb2.ReadSessionEventsResponse:
+        ) -> history_service_pb2.ReadSessionEventsResponse:
             calls.append(after_cursor)
             # A second page may advertise a newer head, but the call's ceiling is 2.
             end = 2 if after_cursor == 0 else 3
-            return history_pb2.ReadSessionEventsResponse(
+            return history_service_pb2.ReadSessionEventsResponse(
                 last_cursor=end,
                 entries=[event_entry(after_cursor + 1, harness_stderr=event_pb2.HarnessStderr(text="x"))],
             )
@@ -95,7 +94,9 @@ async def test_service_read_does_not_chase_a_growing_watermark(engine: AsyncEngi
 
 
 # Cursors 3-5 were settled; 6 completes the item.
-SETTLED = history_pb2.SettledDeltas(item_id="test-item", ranges=[history_pb2.CursorRange(first=3, last=5)])
+SETTLED = history_service_pb2.SettledDeltas(
+    item_id="test-item", ranges=[history_service_pb2.CursorRange(first=3, last=5)]
+)
 
 
 async def test_service_read_walks_over_settled_ranges(engine: AsyncEngine) -> None:
@@ -105,14 +106,14 @@ async def test_service_read_walks_over_settled_ranges(engine: AsyncEngine) -> No
     class Reader:
         async def read_session_events(
             self, session_id: str, *, after_cursor: int = 0, limit: int = 128
-        ) -> history_pb2.ReadSessionEventsResponse:
+        ) -> history_service_pb2.ReadSessionEventsResponse:
             entries = [entry for cursor, entry in stored.items() if cursor > after_cursor][:limit]
-            return history_pb2.ReadSessionEventsResponse(last_cursor=7, entries=entries, settlements=[SETTLED])
+            return history_service_pb2.ReadSessionEventsResponse(last_cursor=7, entries=entries, settlements=[SETTLED])
 
         async def read_session_observations(
             self, session_id: str, *, limit: int
-        ) -> history_pb2.ReadSessionObservationsResponse:
-            return history_pb2.ReadSessionObservationsResponse(last_cursor=7)
+        ) -> history_service_pb2.ReadSessionObservationsResponse:
+            return history_service_pb2.ReadSessionObservationsResponse(last_cursor=7)
 
     reader = cast(HistoryServiceClient, Reader())
     remote = EventLogStore(engine, summaries=Summaries(engine, reader), history_reader=reader)
@@ -130,9 +131,9 @@ async def test_service_read_rejects_invalid_pages(engine: AsyncEngine, case: str
     class Reader:
         async def read_session_events(
             self, session_id: str, *, after_cursor: int = 0, limit: int = 128
-        ) -> history_pb2.ReadSessionEventsResponse:
+        ) -> history_service_pb2.ReadSessionEventsResponse:
             entries = [] if case != "beyond_watermark" else [event_entry(1)]
-            return history_pb2.ReadSessionEventsResponse(last_cursor=1 if case == "gap" else 0, entries=entries)
+            return history_service_pb2.ReadSessionEventsResponse(last_cursor=1 if case == "gap" else 0, entries=entries)
 
     reader = cast(HistoryServiceClient, Reader())
     remote = EventLogStore(engine, summaries=Summaries(engine, reader), history_reader=reader)
@@ -142,7 +143,7 @@ async def test_service_read_rejects_invalid_pages(engine: AsyncEngine, case: str
 
 async def test_concurrent_replicas_create_one_service_thread(engine: AsyncEngine) -> None:
     reader = AsyncMock(spec=HistoryServiceClient)
-    reader.read_session_observations.return_value = history_pb2.ReadSessionObservationsResponse(last_cursor=0)
+    reader.read_session_observations.return_value = history_service_pb2.ReadSessionObservationsResponse(last_cursor=0)
     stores = [EventLogStore(engine, summaries=Summaries(engine, reader), history_reader=reader) for _ in range(2)]
     public_id = uuid4()
     first, second = await asyncio.gather(*(store.open(str(public_id)) for store in stores))
@@ -166,8 +167,9 @@ async def test_service_observation_pages_do_not_require_app_raw_rows(
 ) -> None:
     thread = UUID("00000000-0000-0000-0000-000000000001")
     reader = AsyncMock(spec=HistoryServiceClient)
-    reader.read_session_observations.return_value = history_pb2.ReadSessionObservationsResponse(
-        last_cursor=5, observations=[history_pb2.SessionObservation(cursor=cursor, kind="native") for cursor in cursors]
+    reader.read_session_observations.return_value = history_service_pb2.ReadSessionObservationsResponse(
+        last_cursor=5,
+        observations=[history_service_pb2.SessionObservation(cursor=cursor, kind="native") for cursor in cursors],
     )
     remote = EventLogStore(
         engine,
@@ -192,9 +194,9 @@ async def test_service_observation_pages_treat_settled_ranges_as_covered(
     engine: AsyncEngine, before: int | None, after: int | None, cursors: list[int]
 ) -> None:
     reader = AsyncMock(spec=HistoryServiceClient)
-    reader.read_session_observations.return_value = history_pb2.ReadSessionObservationsResponse(
+    reader.read_session_observations.return_value = history_service_pb2.ReadSessionObservationsResponse(
         last_cursor=7,
-        observations=[history_pb2.SessionObservation(cursor=cursor, kind="native") for cursor in cursors],
+        observations=[history_service_pb2.SessionObservation(cursor=cursor, kind="native") for cursor in cursors],
         settled=SETTLED.ranges,
     )
     client = cast(HistoryServiceClient, reader)
@@ -207,7 +209,7 @@ async def test_service_observation_pages_treat_settled_ranges_as_covered(
 
 async def test_service_observation_page_rejects_missing_entries(engine: AsyncEngine) -> None:
     reader = AsyncMock(spec=HistoryServiceClient)
-    reader.read_session_observations.return_value = history_pb2.ReadSessionObservationsResponse(last_cursor=5)
+    reader.read_session_observations.return_value = history_service_pb2.ReadSessionObservationsResponse(last_cursor=5)
     remote = EventLogStore(
         engine,
         summaries=Summaries(engine, cast(HistoryServiceClient, reader)),
@@ -277,11 +279,11 @@ async def test_existing_identity_winning_registration_race_is_preserved(engine: 
     public_id = uuid4()
     reader = AsyncMock(spec=HistoryServiceClient)
 
-    async def register(session_id: str, *, limit: int) -> history_pb2.ReadSessionObservationsResponse:
+    async def register(session_id: str, *, limit: int) -> history_service_pb2.ReadSessionObservationsResponse:
         assert session_id == str(public_id)
         assert limit == 1
         await seed_retained_session(engine, public_id=public_id)
-        return history_pb2.ReadSessionObservationsResponse(last_cursor=0)
+        return history_service_pb2.ReadSessionObservationsResponse(last_cursor=0)
 
     reader.read_session_observations.side_effect = register
     current = EventLogStore(

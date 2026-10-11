@@ -6,11 +6,11 @@ from pydantic import TypeAdapter
 from sqlalchemy import select, tuple_
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
-from agentplane.history_service import protocol_pb2
 from agentplane.history_service.fold.models import ThreadCheckpoint, ThreadEntity
 from agentplane.history_service.fold.views import ThreadEntityView
 from agentplane.history_service.storage.db import SessionHistory
 from agentplane.history_service.storage.store import HistoryNotFoundError
+from agentplane.proto import history_service_pb2
 
 # gazelle:include_dep @pypi//protobuf
 
@@ -28,8 +28,8 @@ class ThreadReader:
         self._sessions = async_sessionmaker(engine)
 
     async def entities(
-        self, request: protocol_pb2.ReadThreadEntitiesRequest
-    ) -> protocol_pb2.ReadThreadEntitiesResponse:
+        self, request: history_service_pb2.ReadThreadEntitiesRequest
+    ) -> history_service_pb2.ReadThreadEntitiesResponse:
         session_id = UUID(request.session_id)
         match request.WhichOneof("window"):
             case "range" if 1 <= request.range.limit <= MAX_ENTITIES:
@@ -45,7 +45,7 @@ class ThreadReader:
         async with self._sessions() as session:
             checkpoint = await _checkpoint(session, session_id, request.projection_epoch)
             if checkpoint is None:
-                return protocol_pb2.ReadThreadEntitiesResponse()
+                return history_service_pb2.ReadThreadEntitiesResponse()
             rows = await session.scalars(
                 select(ThreadEntity)
                 .where(
@@ -55,11 +55,12 @@ class ThreadReader:
                 )
                 .order_by(ThreadEntity.entity_index)
             )
-            return protocol_pb2.ReadThreadEntitiesResponse(
+            return history_service_pb2.ReadThreadEntitiesResponse(
                 projection_epoch=checkpoint.projection_epoch,
                 through_cursor=checkpoint.through_cursor,
                 entities=[
-                    protocol_pb2.ThreadEntity(entity_index=row.entity_index, view_json=_view_json(row)) for row in rows
+                    history_service_pb2.ThreadEntity(entity_index=row.entity_index, view_json=_view_json(row))
+                    for row in rows
                 ],
             )
 

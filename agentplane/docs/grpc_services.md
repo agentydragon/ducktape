@@ -15,11 +15,11 @@ follows it; code that differs converges on it.
   from the generated messages:
 
   ```python
-  class HistoryService(protocol_pb2_grpc.HistoryServiceServicer):
+  class HistoryService(history_service_pb2_grpc.HistoryServiceServicer):
       @override
       async def ReadSessionEvents(
-          self, request: history_pb2.ReadSessionEventsRequest, context: grpc.aio.ServicerContext
-      ) -> history_pb2.ReadSessionEventsResponse: ...
+          self, request: history_service_pb2.ReadSessionEventsRequest, context: grpc.aio.ServicerContext
+      ) -> history_service_pb2.ReadSessionEventsResponse: ...
   ```
 
 - It registers through the generated `add_<Service>Servicer_to_server`, which builds the method

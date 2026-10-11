@@ -5,10 +5,10 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
-from agentplane.history_service import protocol_pb2
 from agentplane.history_service.fold.models import ThreadCheckpoint, ThreadEntity, ThreadEvidence, ThreadNativeLink
 from agentplane.history_service.storage.store import Store
 from agentplane.history_service.thread_reads import ThreadScopeResetError
+from agentplane.proto import history_service_pb2
 from agentplane.sandbox_service.settled_cursors import next_stored, settled_ranges
 
 # gazelle:include_dep @pypi//protobuf
@@ -26,8 +26,8 @@ class EvidenceReader:
         self._history = history
 
     async def evidence(
-        self, request: protocol_pb2.ReadEntityEvidenceRequest
-    ) -> protocol_pb2.ReadEntityEvidenceResponse:
+        self, request: history_service_pb2.ReadEntityEvidenceRequest
+    ) -> history_service_pb2.ReadEntityEvidenceResponse:
         if not 1 <= request.limit <= MAX_PAGE:
             raise ValueError("invalid evidence page size")
         session_id = UUID(request.session_id)
@@ -56,9 +56,9 @@ class EvidenceReader:
                     .limit(request.limit + 1)
                 )
             )
-        response = protocol_pb2.ReadEntityEvidenceResponse(
+        response = history_service_pb2.ReadEntityEvidenceResponse(
             observations=[
-                protocol_pb2.EvidenceObservation(observation_cursor=cursor, has_native=native)
+                history_service_pb2.EvidenceObservation(observation_cursor=cursor, has_native=native)
                 for cursor, native in rows[: request.limit]
             ]
         )
@@ -67,8 +67,8 @@ class EvidenceReader:
         return response
 
     async def native_frames(
-        self, request: protocol_pb2.ReadNativeFramesRequest
-    ) -> protocol_pb2.ReadNativeFramesResponse:
+        self, request: history_service_pb2.ReadNativeFramesRequest
+    ) -> history_service_pb2.ReadNativeFramesResponse:
         if not 1 <= request.limit <= MAX_PAGE:
             raise ValueError("invalid native frame page size")
         session_id = UUID(request.session_id)
@@ -91,7 +91,7 @@ class EvidenceReader:
                     .limit(request.limit + 1)
                 )
             )
-        response = protocol_pb2.ReadNativeFramesResponse()
+        response = history_service_pb2.ReadNativeFramesResponse()
         retained = (await self._history.read_page(session_id, limit=1)).last_cursor
         for sequence in sequences[: request.limit]:
             frame = response.frames.add(source_sequence=sequence)
@@ -114,7 +114,7 @@ class EvidenceReader:
 
 
 async def _entity(
-    session: AsyncSession, session_id: UUID, projection_epoch: str, key: protocol_pb2.EntityKey
+    session: AsyncSession, session_id: UUID, projection_epoch: str, key: history_service_pb2.EntityKey
 ) -> tuple[int, str]:
     """The entity's cursor and the Session's runner source, in the caller's still-current epoch."""
     checkpoint = await session.get(ThreadCheckpoint, session_id)

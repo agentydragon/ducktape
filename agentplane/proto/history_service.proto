@@ -1,7 +1,7 @@
 // The History Service's read boundary over retained Session history.
 syntax = "proto3";
 
-package ducktape.agentplane.history.v1;
+package agentplane.proto.history_service;
 
 import "agentplane/proto/event.proto";
 import "agentplane/proto/event_log.proto";

@@ -15,11 +15,11 @@ from pydantic import ValidationError
 from sqlalchemy.exc import SQLAlchemyError
 
 from agentplane.changes import Changes
-from agentplane.history_service import protocol_pb2 as history_pb2, protocol_pb2_grpc
 from agentplane.history_service.evidence import EvidenceNotFoundError, EvidenceReader
 from agentplane.history_service.storage.store import HistoryNotFoundError, Store
 from agentplane.history_service.summaries import SummaryReader
 from agentplane.history_service.thread_reads import ThreadReader, ThreadScopeResetError
+from agentplane.proto import history_service_pb2, history_service_pb2_grpc
 from agentplane.subjects import ServiceAccountRef
 from agentplane.workload_auth.grpc_caller import authenticate
 from agentplane.workload_auth.principal import WorkloadPrincipalRejectedError, WorkloadPrincipalResolver
@@ -79,14 +79,14 @@ async def errors(context: grpc.aio.ServicerContext) -> AsyncIterator[None]:
         await context.abort(grpc.StatusCode.UNAVAILABLE, "history or authentication unavailable")
 
 
-class HistoryService(protocol_pb2_grpc.HistoryServiceServicer):
+class HistoryService(history_service_pb2_grpc.HistoryServiceServicer):
     def __init__(self, resources: Resources) -> None:
         self.resources = resources
 
     @override
     async def ReadSessionEvents(
-        self, request: history_pb2.ReadSessionEventsRequest, context: grpc.aio.ServicerContext
-    ) -> history_pb2.ReadSessionEventsResponse:
+        self, request: history_service_pb2.ReadSessionEventsRequest, context: grpc.aio.ServicerContext
+    ) -> history_service_pb2.ReadSessionEventsResponse:
         async with errors(context), asyncio.timeout(self.resources.request_timeout_s):
             await self.resources.authenticate(context)
             return await self.resources.history.read_page(
@@ -95,8 +95,8 @@ class HistoryService(protocol_pb2_grpc.HistoryServiceServicer):
 
     @override
     async def ReadSessionObservations(
-        self, request: history_pb2.ReadSessionObservationsRequest, context: grpc.aio.ServicerContext
-    ) -> history_pb2.ReadSessionObservationsResponse:
+        self, request: history_service_pb2.ReadSessionObservationsRequest, context: grpc.aio.ServicerContext
+    ) -> history_service_pb2.ReadSessionObservationsResponse:
         async with errors(context), asyncio.timeout(self.resources.request_timeout_s):
             await self.resources.authenticate(context)
             page = await self.resources.history.read_observations(
@@ -105,60 +105,61 @@ class HistoryService(protocol_pb2_grpc.HistoryServiceServicer):
                 after_cursor=request.after_cursor if request.HasField("after_cursor") else None,
                 limit=request.limit,
             )
-            return history_pb2.ReadSessionObservationsResponse(
+            return history_service_pb2.ReadSessionObservationsResponse(
                 last_cursor=page.last_cursor,
                 observations=[
-                    history_pb2.SessionObservation(cursor=cursor, kind=kind) for cursor, kind in page.observations
+                    history_service_pb2.SessionObservation(cursor=cursor, kind=kind)
+                    for cursor, kind in page.observations
                 ],
-                settled=[history_pb2.CursorRange(first=first, last=last) for first, last in page.settled],
+                settled=[history_service_pb2.CursorRange(first=first, last=last) for first, last in page.settled],
             )
 
     @override
     async def GetSessionSummary(
-        self, request: history_pb2.GetSessionSummaryRequest, context: grpc.aio.ServicerContext
-    ) -> history_pb2.SessionSummary:
+        self, request: history_service_pb2.GetSessionSummaryRequest, context: grpc.aio.ServicerContext
+    ) -> history_service_pb2.SessionSummary:
         async with errors(context), asyncio.timeout(self.resources.request_timeout_s):
             await self.resources.authenticate(context)
             return await self.resources.summaries.get(UUID(request.session_id))
 
     @override
     async def BatchGetSessionSummaries(
-        self, request: history_pb2.BatchGetSessionSummariesRequest, context: grpc.aio.ServicerContext
-    ) -> history_pb2.BatchGetSessionSummariesResponse:
+        self, request: history_service_pb2.BatchGetSessionSummariesRequest, context: grpc.aio.ServicerContext
+    ) -> history_service_pb2.BatchGetSessionSummariesResponse:
         async with errors(context), asyncio.timeout(self.resources.request_timeout_s):
             await self.resources.authenticate(context)
             summaries = await self.resources.summaries.get_many(
                 {UUID(session_id) for session_id in request.session_ids}
             )
-            return history_pb2.BatchGetSessionSummariesResponse(summaries=summaries)
+            return history_service_pb2.BatchGetSessionSummariesResponse(summaries=summaries)
 
     @override
     async def ReadThreadEntities(
-        self, request: history_pb2.ReadThreadEntitiesRequest, context: grpc.aio.ServicerContext
-    ) -> history_pb2.ReadThreadEntitiesResponse:
+        self, request: history_service_pb2.ReadThreadEntitiesRequest, context: grpc.aio.ServicerContext
+    ) -> history_service_pb2.ReadThreadEntitiesResponse:
         async with errors(context), asyncio.timeout(self.resources.request_timeout_s):
             await self.resources.authenticate(context)
             return await self.resources.threads.entities(request)
 
     @override
     async def ReadEntityEvidence(
-        self, request: history_pb2.ReadEntityEvidenceRequest, context: grpc.aio.ServicerContext
-    ) -> history_pb2.ReadEntityEvidenceResponse:
+        self, request: history_service_pb2.ReadEntityEvidenceRequest, context: grpc.aio.ServicerContext
+    ) -> history_service_pb2.ReadEntityEvidenceResponse:
         async with errors(context), asyncio.timeout(self.resources.request_timeout_s):
             await self.resources.authenticate(context)
             return await self.resources.evidence.evidence(request)
 
     @override
     async def ReadNativeFrames(
-        self, request: history_pb2.ReadNativeFramesRequest, context: grpc.aio.ServicerContext
-    ) -> history_pb2.ReadNativeFramesResponse:
+        self, request: history_service_pb2.ReadNativeFramesRequest, context: grpc.aio.ServicerContext
+    ) -> history_service_pb2.ReadNativeFramesResponse:
         async with errors(context), asyncio.timeout(self.resources.request_timeout_s):
             await self.resources.authenticate(context)
             return await self.resources.evidence.native_frames(request)
 
     @override
     async def WatchSessionSummaries(  # type: ignore[override]
-        self, request: history_pb2.WatchSessionSummariesRequest, context: grpc.aio.ServicerContext
+        self, request: history_service_pb2.WatchSessionSummariesRequest, context: grpc.aio.ServicerContext
     ) -> None:
         """Write `changed` on open and after each change, then `reconnect_required` once the lease ends."""
         async with errors(context):
@@ -171,7 +172,7 @@ class HistoryService(protocol_pb2_grpc.HistoryServiceServicer):
                 while True:
                     changed.clear()
                     async with asyncio.timeout(self.resources.request_timeout_s):
-                        await context.write(history_pb2.WatchSessionSummariesResponse(changed=Empty()))
+                        await context.write(history_service_pb2.WatchSessionSummariesResponse(changed=Empty()))
                     lease = asyncio.timeout_at(deadline)
                     try:
                         async with lease:
@@ -181,8 +182,8 @@ class HistoryService(protocol_pb2_grpc.HistoryServiceServicer):
                             raise
                         break
             async with asyncio.timeout(self.resources.request_timeout_s):
-                await context.write(history_pb2.WatchSessionSummariesResponse(reconnect_required=Empty()))
+                await context.write(history_service_pb2.WatchSessionSummariesResponse(reconnect_required=Empty()))
 
 
 def add_service(resources: Resources, server: grpc.aio.Server) -> None:
-    protocol_pb2_grpc.add_HistoryServiceServicer_to_server(HistoryService(resources), server)
+    history_service_pb2_grpc.add_HistoryServiceServicer_to_server(HistoryService(resources), server)

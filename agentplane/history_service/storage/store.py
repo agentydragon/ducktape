@@ -10,7 +10,6 @@ from sqlalchemy import delete, select, text
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
-from agentplane.history_service import protocol_pb2 as history_pb2
 from agentplane.history_service.channels import Channel
 from agentplane.history_service.storage.db import (
     SessionEvent,
@@ -20,7 +19,7 @@ from agentplane.history_service.storage.db import (
 )
 from agentplane.history_service.storage.settlement import completion_target, settle, started_item
 from agentplane.postgres.wakeups import notify
-from agentplane.proto import event_log_pb2, runner_pb2
+from agentplane.proto import event_log_pb2, history_service_pb2, runner_pb2
 
 # The generated protobuf stubs need the protobuf runtime as a direct mypy dependency.
 # gazelle:include_dep @pypi//protobuf
@@ -145,13 +144,13 @@ class Store:
                 await notify(session, Channel.HISTORY)
             return row.last_cursor
 
-    async def record_feed_state(self, session_id: UUID, feed: history_pb2.SessionFeedState) -> None:
+    async def record_feed_state(self, session_id: UUID, feed: history_service_pb2.SessionFeedState) -> None:
         """Record only a covered runner snapshot; delayed copiers cannot rewind it or drop a seal.
 
         The snapshot may name the runner session or the public Session ID; it is stored under the
         runner's where the row knows it (rows the retired follower created).
         """
-        snapshot = history_pb2.SessionFeedState()
+        snapshot = history_service_pb2.SessionFeedState()
         snapshot.CopyFrom(feed)
         async with self._sessions.begin() as session:
             row = await session.scalar(select(SessionHistory).where(SessionHistory.id == session_id).with_for_update())
@@ -169,7 +168,7 @@ class Store:
             if snapshot.HasField("sealed") and snapshot.sealed.cursor != row.last_cursor:
                 raise HistoryConflictError("seal does not end the committed history")
             if row.feed_state is not None:
-                prior = history_pb2.SessionFeedState.FromString(row.feed_state)
+                prior = history_service_pb2.SessionFeedState.FromString(row.feed_state)
                 if prior.HasField("sealed"):
                     if snapshot.HasField("sealed") and snapshot.sealed != prior.sealed:
                         raise HistoryConflictError("conflicting seals")
@@ -210,7 +209,7 @@ class Store:
 
     async def read_page(
         self, session_id: UUID, *, after_cursor: int = 0, limit: int = 128
-    ) -> history_pb2.ReadSessionEventsResponse:
+    ) -> history_service_pb2.ReadSessionEventsResponse:
         """Read prefix watermark and lifecycle from the same history-row snapshot."""
         if after_cursor < 0 or not 1 <= limit <= 1000:
             raise ValueError("invalid history page")
@@ -258,10 +257,10 @@ class Store:
                 )
                 .order_by(SessionEventSettlement.completion_cursor)
             )
-            page = history_pb2.ReadSessionEventsResponse(
+            page = history_service_pb2.ReadSessionEventsResponse(
                 last_cursor=history.last_cursor,
                 entries=[event_log_pb2.EventEntry.FromString(row.payload) for row in rows],
-                settlements=[history_pb2.SettledDeltas.FromString(payload) for payload in settlements],
+                settlements=[history_service_pb2.SettledDeltas.FromString(payload) for payload in settlements],
             )
             if history.feed_state is not None:
                 page.feed_state.ParseFromString(history.feed_state)
@@ -320,7 +319,9 @@ class Store:
 
 
 def _checkpoint(row: SessionHistory) -> Checkpoint:
-    sealed = row.feed_state is not None and history_pb2.SessionFeedState.FromString(row.feed_state).HasField("sealed")
+    sealed = row.feed_state is not None and history_service_pb2.SessionFeedState.FromString(row.feed_state).HasField(
+        "sealed"
+    )
     return Checkpoint(cursor=row.last_cursor, sealed=sealed)
 
 
@@ -336,7 +337,7 @@ async def _settled_range(session: AsyncSession, session_id: UUID, cursor: int) -
 
 async def settlement_for(
     session: AsyncSession, session_id: UUID, completion: event_log_pb2.EventEntry
-) -> history_pb2.SettledDeltas | None:
+) -> history_service_pb2.SettledDeltas | None:
     """The settlement of the field `completion` completes, if its stored span qualifies."""
     target = completion_target(completion)
     assert target is not None
@@ -368,7 +369,7 @@ async def settlement_for(
 
 
 async def record_settlement(
-    session: AsyncSession, session_id: UUID, completion_cursor: int, settled: history_pb2.SettledDeltas
+    session: AsyncSession, session_id: UUID, completion_cursor: int, settled: history_service_pb2.SettledDeltas
 ) -> None:
     """Store `settled` and delete the entries in its ranges."""
     session.add(

@@ -23,10 +23,9 @@ from agentplane.app.threads.events.debug import (
 )
 from agentplane.app.threads.events.event_log import ThreadNotFoundError
 from agentplane.app.threads.models import EventLog
-from agentplane.history_service import protocol_pb2 as history_pb2
 from agentplane.history_service.client import HistoryServiceClient, HistoryServiceError
 from agentplane.history_service.fold.views import EntityKind, ThreadCommandEntityView
-from agentplane.proto import command_pb2, event_log_pb2
+from agentplane.proto import command_pb2, event_log_pb2, history_service_pb2
 
 # The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.
 # gazelle:include_dep @pypi//protobuf
@@ -68,10 +67,10 @@ class ContentStore:
             raise ValueError("invalid evidence page bounds")
         with _evidence_errors():
             page = await self._history_reader.read_entity_evidence(
-                history_pb2.ReadEntityEvidenceRequest(
+                history_service_pb2.ReadEntityEvidenceRequest(
                     session_id=str(thread_id),
                     projection_epoch=projection_epoch,
-                    entity=history_pb2.EntityKey(entity_kind=entity_kind, entity_id=entity_id),
+                    entity=history_service_pb2.EntityKey(entity_kind=entity_kind, entity_id=entity_id),
                     after_cursor=after_cursor,
                     limit=limit,
                 )
@@ -99,10 +98,10 @@ class ContentStore:
             raise ValueError("invalid native frame page bounds")
         with _evidence_errors():
             page = await self._history_reader.read_native_frames(
-                history_pb2.ReadNativeFramesRequest(
+                history_service_pb2.ReadNativeFramesRequest(
                     session_id=str(thread_id),
                     projection_epoch=projection_epoch,
-                    entity=history_pb2.EntityKey(entity_kind=entity_kind, entity_id=entity_id),
+                    entity=history_service_pb2.EntityKey(entity_kind=entity_kind, entity_id=entity_id),
                     observation_cursor=observation_cursor,
                     after_sequence=after_sequence,
                     limit=limit,
@@ -141,11 +140,11 @@ class ContentStore:
         """The commands' entities in the current projection epoch; None when there is none."""
         try:
             page = await self._history_reader.read_thread_entities(
-                history_pb2.ReadThreadEntitiesRequest(
+                history_service_pb2.ReadThreadEntitiesRequest(
                     session_id=str(thread_id),
-                    keys=history_pb2.EntityKeys(
+                    keys=history_service_pb2.EntityKeys(
                         keys=[
-                            history_pb2.EntityKey(entity_kind=EntityKind.COMMAND, entity_id=command_id)
+                            history_service_pb2.EntityKey(entity_kind=EntityKind.COMMAND, entity_id=command_id)
                             for command_id in command_ids
                         ]
                     ),

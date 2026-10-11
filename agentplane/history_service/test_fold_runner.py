@@ -15,7 +15,6 @@ from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 from agentplane.changes import Changes
 from agentplane.grpc_serving import add_health, serving
-from agentplane.history_service import protocol_pb2
 from agentplane.history_service.channels import Channel, create_wakeups
 from agentplane.history_service.fold.models import (
     ThreadCheckpoint,
@@ -30,7 +29,7 @@ from agentplane.history_service.fold_runner import FOLD_EPOCH, HEALTH_SERVICE, F
 from agentplane.history_service.storage.store import Store
 from agentplane.history_service.testing.delta_spans import claude_text
 from agentplane.history_service.testing.sessions import WRITER
-from agentplane.proto import event_log_pb2, event_pb2
+from agentplane.proto import event_log_pb2, event_pb2, history_service_pb2
 
 # gazelle:include_dep //agentplane/history_service/storage:conftest
 
@@ -243,7 +242,7 @@ class BrokenFoldStore(Store):
     @typing.override
     async def read_page(
         self, session_id: UUID, *, after_cursor: int = 0, limit: int = 128
-    ) -> protocol_pb2.ReadSessionEventsResponse:
+    ) -> history_service_pb2.ReadSessionEventsResponse:
         raise TypeError("test: a fold bug")
 
 

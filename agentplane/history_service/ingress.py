@@ -16,7 +16,6 @@ import grpc
 from kubernetes_asyncio import client as k8s_client
 from sqlalchemy.exc import SQLAlchemyError
 
-from agentplane.history_service.protocol_pb2 import SessionFeedState
 from agentplane.history_service.storage.store import (
     Checkpoint,
     HistoryConflictError,
@@ -25,6 +24,7 @@ from agentplane.history_service.storage.store import (
     WriterMismatchError,
 )
 from agentplane.proto import event_log_pb2, runner_ingress_pb2, runner_ingress_pb2_grpc, runner_pb2
+from agentplane.proto.history_service_pb2 import SessionFeedState
 from agentplane.workload_auth.grpc_caller import resolve_caller
 from agentplane.workload_auth.principal import WorkloadPrincipalRejectedError, WorkloadPrincipalResolver
 

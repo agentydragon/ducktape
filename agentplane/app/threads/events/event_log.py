@@ -20,7 +20,7 @@ from agentplane.sandbox_service.settled_cursors import next_stored, settled_rang
 
 # The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.
 # gazelle:include_dep @pypi//protobuf
-# gazelle:include_dep //agentplane/history_service:protocol_pb2
+# gazelle:include_dep //agentplane/proto:history_service_pb2
 
 
 class SessionAdmissionError(ValueError):

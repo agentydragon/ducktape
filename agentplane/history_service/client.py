@@ -11,7 +11,7 @@ from typing import Never, Self
 import grpc
 
 from agentplane.grpc_options import grpc_channel_option_kvps
-from agentplane.history_service import protocol_pb2 as history_pb2, protocol_pb2_grpc
+from agentplane.proto import history_service_pb2, history_service_pb2_grpc
 
 # gazelle:include_dep @pypi//protobuf
 # gazelle:include_dep @pypi//grpcio
@@ -46,10 +46,10 @@ class HistoryServiceClient:
         self.request_timeout_s = request_timeout_s
         self._channel_options = channel_options
         self._channel: grpc.aio.Channel | None = None
-        self._stub: protocol_pb2_grpc.HistoryServiceAsyncStub | None = None
+        self._stub: history_service_pb2_grpc.HistoryServiceAsyncStub | None = None
 
     @property
-    def stub(self) -> protocol_pb2_grpc.HistoryServiceAsyncStub:
+    def stub(self) -> history_service_pb2_grpc.HistoryServiceAsyncStub:
         if self._stub is None:
             # A local subchannel pool makes a channel after `redial()` dial anew; from the process-wide
             # pool it would inherit the closed channel's connection.
@@ -57,7 +57,7 @@ class HistoryServiceClient:
                 self.target,
                 options=grpc_channel_option_kvps(self._channel_options, required={"grpc.use_local_subchannel_pool": 1}),
             )
-            self._stub = protocol_pb2_grpc.HistoryServiceStub(self._channel)
+            self._stub = history_service_pb2_grpc.HistoryServiceStub(self._channel)
         return self._stub
 
     async def metadata(self) -> tuple[tuple[str, str], ...]:
@@ -76,12 +76,14 @@ class HistoryServiceClient:
 
     async def read_session_events(
         self, session_id: str, *, after_cursor: int = 0, limit: int = 128
-    ) -> history_pb2.ReadSessionEventsResponse:
+    ) -> history_service_pb2.ReadSessionEventsResponse:
         if not session_id or after_cursor < 0 or not 1 <= limit <= 1000:
             raise ValueError("invalid session history page")
         try:
             return await self.stub.ReadSessionEvents(
-                history_pb2.ReadSessionEventsRequest(session_id=session_id, after_cursor=after_cursor, limit=limit),
+                history_service_pb2.ReadSessionEventsRequest(
+                    session_id=session_id, after_cursor=after_cursor, limit=limit
+                ),
                 metadata=await self.metadata(),
                 timeout=self.request_timeout_s,
             )
@@ -90,7 +92,7 @@ class HistoryServiceClient:
 
     async def read_session_observations(
         self, session_id: str, *, before_cursor: int | None = None, after_cursor: int | None = None, limit: int = 30
-    ) -> history_pb2.ReadSessionObservationsResponse:
+    ) -> history_service_pb2.ReadSessionObservationsResponse:
         if (
             not session_id
             or not 1 <= limit <= 200
@@ -99,7 +101,7 @@ class HistoryServiceClient:
             or (before_cursor is not None and after_cursor is not None)
         ):
             raise ValueError("invalid session observation page")
-        request = history_pb2.ReadSessionObservationsRequest(session_id=session_id, limit=limit)
+        request = history_service_pb2.ReadSessionObservationsRequest(session_id=session_id, limit=limit)
         if before_cursor is not None:
             request.before_cursor = before_cursor
         if after_cursor is not None:
@@ -111,20 +113,22 @@ class HistoryServiceClient:
         except grpc.aio.AioRpcError as error:
             _raise(error)
 
-    async def get_session_summary(self, session_id: str) -> history_pb2.SessionSummary:
+    async def get_session_summary(self, session_id: str) -> history_service_pb2.SessionSummary:
         try:
             return await self.stub.GetSessionSummary(
-                history_pb2.GetSessionSummaryRequest(session_id=session_id),
+                history_service_pb2.GetSessionSummaryRequest(session_id=session_id),
                 metadata=await self.metadata(),
                 timeout=self.request_timeout_s,
             )
         except grpc.aio.AioRpcError as error:
             _raise(error)
 
-    async def batch_get_session_summaries(self, session_ids: Collection[str]) -> list[history_pb2.SessionSummary]:
+    async def batch_get_session_summaries(
+        self, session_ids: Collection[str]
+    ) -> list[history_service_pb2.SessionSummary]:
         try:
             response = await self.stub.BatchGetSessionSummaries(
-                history_pb2.BatchGetSessionSummariesRequest(session_ids=session_ids),
+                history_service_pb2.BatchGetSessionSummariesRequest(session_ids=session_ids),
                 metadata=await self.metadata(),
                 timeout=self.request_timeout_s,
             )
@@ -133,8 +137,8 @@ class HistoryServiceClient:
         return list(response.summaries)
 
     async def read_thread_entities(
-        self, request: history_pb2.ReadThreadEntitiesRequest
-    ) -> history_pb2.ReadThreadEntitiesResponse:
+        self, request: history_service_pb2.ReadThreadEntitiesRequest
+    ) -> history_service_pb2.ReadThreadEntitiesResponse:
         try:
             return await self.stub.ReadThreadEntities(
                 request, metadata=await self.metadata(), timeout=self.request_timeout_s
@@ -143,8 +147,8 @@ class HistoryServiceClient:
             _raise(error)
 
     async def read_entity_evidence(
-        self, request: history_pb2.ReadEntityEvidenceRequest
-    ) -> history_pb2.ReadEntityEvidenceResponse:
+        self, request: history_service_pb2.ReadEntityEvidenceRequest
+    ) -> history_service_pb2.ReadEntityEvidenceResponse:
         try:
             return await self.stub.ReadEntityEvidence(
                 request, metadata=await self.metadata(), timeout=self.request_timeout_s
@@ -153,8 +157,8 @@ class HistoryServiceClient:
             _raise(error)
 
     async def read_native_frames(
-        self, request: history_pb2.ReadNativeFramesRequest
-    ) -> history_pb2.ReadNativeFramesResponse:
+        self, request: history_service_pb2.ReadNativeFramesRequest
+    ) -> history_service_pb2.ReadNativeFramesResponse:
         try:
             return await self.stub.ReadNativeFrames(
                 request, metadata=await self.metadata(), timeout=self.request_timeout_s
@@ -167,7 +171,7 @@ class HistoryServiceClient:
         # A long-lived stream: no call deadline. The server's opening notice bounds the handshake,
         # and its lease ends the stream with reconnect_required.
         call = self.stub.WatchSessionSummaries(
-            history_pb2.WatchSessionSummariesRequest(), metadata=await self.metadata()
+            history_service_pb2.WatchSessionSummariesRequest(), metadata=await self.metadata()
         )
         handshake: float | None = self.request_timeout_s
         try:
@@ -180,7 +184,7 @@ class HistoryServiceClient:
                 handshake = None
                 if message is grpc.aio.EOF:
                     raise ConnectionError("History Service ended the summary watch without planned renewal")
-                assert isinstance(message, history_pb2.WatchSessionSummariesResponse)
+                assert isinstance(message, history_service_pb2.WatchSessionSummariesResponse)
                 if message.HasField("reconnect_required"):
                     return
                 yield

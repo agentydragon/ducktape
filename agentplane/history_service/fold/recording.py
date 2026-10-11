@@ -10,7 +10,6 @@ from sqlalchemy import delete, func, or_, select, tuple_
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from agentplane.history_service import protocol_pb2 as history_pb2
 from agentplane.history_service.fold import fold
 from agentplane.history_service.fold.models import (
     ThreadCheckpoint,
@@ -31,7 +30,7 @@ from agentplane.history_service.fold.views import (
     ThreadOperationalState,
     ThreadViewState,
 )
-from agentplane.proto import event_log_pb2
+from agentplane.proto import event_log_pb2, history_service_pb2
 from agentplane.sandbox_service.settled_cursors import settled_ranges
 
 # The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.
@@ -56,7 +55,7 @@ async def record_thread_fold(
     source_id: str,
     entries: Sequence[event_log_pb2.EventEntry],
     *,
-    settlements: Sequence[history_pb2.SettledDeltas],
+    settlements: Sequence[history_service_pb2.SettledDeltas],
     projection_epoch: str,
 ) -> None:
     checkpoint = await session.scalar(
@@ -131,7 +130,10 @@ async def record_thread_fold(
 
 
 async def forget_settled(
-    session: AsyncSession, thread_id: UUID, projection_epoch: str, settlements: Sequence[history_pb2.SettledDeltas]
+    session: AsyncSession,
+    thread_id: UUID,
+    projection_epoch: str,
+    settlements: Sequence[history_service_pb2.SettledDeltas],
 ) -> None:
     """Drop the evidence of deltas folded before their item settled; their cursors are gone.
 

@@ -12,7 +12,6 @@ package(default_visibility = [
 # gazelle:resolve py agentplane.proto.command_pb2 //agentplane/proto:command_pb2
 # gazelle:resolve py agentplane.proto.event_pb2 //agentplane/proto:event_pb2
 # gazelle:resolve py agentplane.proto.event_log_pb2 //agentplane/proto:event_log_pb2
-# gazelle:resolve py agentplane.history_service.protocol_pb2 //agentplane/history_service:protocol_pb2
 # gazelle:resolve py httpx_sse @pypi//httpx_sse
 
 # No test here is small, and none of that is about the tests being slow: on the CI executor image

@@ -678,7 +678,6 @@ flowchart TD
     HISTORY_DATABASE_RENAME[Blocked: rename the sandbox_service database and role]
     SANDBOX_DATABASE_RENAME[Candidate: name the sandbox_commands database for the Runner Gateway]
     ELECTRIC_DEPLOYMENT_RENAME[Candidate: give Electric its plain name]
-    PROTO_DIRECTORY[Candidate: protos under agentplane/proto, packages named by path]
     ACTION_SANDBOX_DESIGN[Decision: Action Service Sandboxes through the Sandbox Service]
     ACTION_SANDBOX_PROVISIONING[Blocked: the Action Service stops creating Sandboxes]
     ACTION_SANDBOX_DESIGN --> ACTION_SANDBOX_PROVISIONING
@@ -736,18 +735,6 @@ once the Sandbox Service's lifetime handling covers them (`SANDBOX_IDLE_EXPIRY`)
 
 **Candidate.** Give the remaining Electric deployment the plain name; it still carries the
 history-specific `agentplane-electric-history`.
-
-### `PROTO_DIRECTORY` — protocols in one place
-
-**Candidate; operator direction, 2026-10-10 and 2026-10-11 PDT.** Protobuf messages and gRPC
-services that cross components live in `agentplane/proto/<name>.proto` (google3's `proto/`
-convention), each with the package `agentplane.proto.<name>`: its path from the ducktape root, no
-version suffix. `runner.proto`, `runner_ingress.proto`, `runner_control.proto`, `runner_gateway.proto`,
-`sandbox_service.proto` and the shared `command.proto`, `event.proto` and `event_log.proto` are there.
-Move the last one with its generated-code imports: `history_service/protocol.proto`. A
-gRPC service's full name includes its package, so each move is a clean cutover with no second name
-served: `agentplane/AGENTS.md` § Deployed state is disposable accepts old pods failing during the
-roll.
 
 ## 10. Legacy burn-down
 

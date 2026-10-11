@@ -15,9 +15,8 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from enum import StrEnum
 
-from agentplane.history_service import protocol_pb2 as history_pb2
 from agentplane.native.delta_templates import ClaudeDelta, CodexDelta, DeltaTemplate, match_delta, parse_strict
-from agentplane.proto import event_log_pb2, event_pb2
+from agentplane.proto import event_log_pb2, event_pb2, history_service_pb2
 
 # The generated protobuf stubs need the protobuf runtime as a direct mypy dependency.
 # gazelle:include_dep @pypi//protobuf
@@ -107,7 +106,7 @@ def _one_source(entry: event_log_pb2.EventEntry) -> int | None:
     return sources[0] if len(sources) == 1 else None
 
 
-def settle(span: Sequence[event_log_pb2.EventEntry]) -> history_pb2.SettledDeltas | None:
+def settle(span: Sequence[event_log_pb2.EventEntry]) -> history_service_pb2.SettledDeltas | None:
     """`span` runs in cursor order from the item's ItemStarted (and its native source) through the
     completing entry, which is last. Stored gaps from earlier settlements are allowed."""
     if not span:
@@ -165,11 +164,11 @@ def settle(span: Sequence[event_log_pb2.EventEntry]) -> history_pb2.SettledDelta
     if not _completion_holds(deltas, target, completion, completion_frame):
         return None
 
-    settlement = history_pb2.SettledDeltas(
+    settlement = history_service_pb2.SettledDeltas(
         item_id=target.item_id,
         template=template,
         completion_cursor=completion.cursor,
-        ranges=[history_pb2.CursorRange(first=first, last=last) for first, last in cursor_ranges(elided)],
+        ranges=[history_service_pb2.CursorRange(first=first, last=last) for first, last in cursor_ranges(elided)],
         chunk_count=len(pairs),
     )
     settlement.first_chunk_at.CopyFrom(pairs[0][0].event.at)

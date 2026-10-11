@@ -15,7 +15,6 @@ from more_itertools import one
 from sqlalchemy import func, insert, select
 from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker, create_async_engine
 
-from agentplane.history_service import protocol_pb2 as history_pb2
 from agentplane.history_service.channels import Channel
 from agentplane.history_service.fold import fold
 from agentplane.history_service.fold.models import (
@@ -35,7 +34,7 @@ from agentplane.history_service.storage.db import SessionHistory
 from agentplane.history_service.storage.store import Store
 from agentplane.history_service.testing.sessions import record_follower_session
 from agentplane.postgres.wakeups import notify
-from agentplane.proto import event_log_pb2, runner_pb2
+from agentplane.proto import event_log_pb2, history_service_pb2, runner_pb2
 from util.testing.postgres import PostgresDatabaseTemplate, migrated_database_template
 
 # gazelle:include_dep @pypi//asyncpg
@@ -114,7 +113,7 @@ class History:
         cursor = await self.store.append(session_id, entries)
         pending = self._attachments.get(session_id)
         if pending is not None and pending.last_cursor <= cursor:
-            await self.store.record_feed_state(session_id, history_pb2.SessionFeedState(attached=pending))
+            await self.store.record_feed_state(session_id, history_service_pb2.SessionFeedState(attached=pending))
             del self._attachments[session_id]
         await self.fold()
 
@@ -218,7 +217,7 @@ class History:
             # it once the entries cover it.
             self._attachments[session_id] = snapshot
             return
-        await self.store.record_feed_state(session_id, history_pb2.SessionFeedState(attached=snapshot))
+        await self.store.record_feed_state(session_id, history_service_pb2.SessionFeedState(attached=snapshot))
         await self.fold()
 
     async def end_feed(self, session_id: UUID, *, error: str | None, error_cursor: int | None = None) -> None:
@@ -232,7 +231,7 @@ class History:
             row = await session.get(SessionHistory, session_id)
         if row is None or row.feed_state is None:
             raise ValueError("seed an attachment before terminal state")
-        terminal = history_pb2.SessionFeedState.FromString(row.feed_state)
+        terminal = history_service_pb2.SessionFeedState.FromString(row.feed_state)
         terminal.ended = True
         await self.store.record_feed_state(session_id, terminal)
         await self.fold()
