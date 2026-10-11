@@ -1050,7 +1050,6 @@ flowchart TD
         APP_TEST_CLIENT_MOVE[Candidate: app test client out of production]
         KUBEVIRT_GUEST_CONTROL[Candidate: KubeVirt guest dials out]
         RUNNER_CORE_SPLIT[Blocked: runner core out of the inbound servicer]
-        LLM_INGRESS_MODEL_CONFIG_CONTRACT[Candidate: structural absent model config]
         ACTION_PROTOCOLS_CONCRETE[Candidate: concrete external-grant authority]
         CDK8S_SERVICE_CONSTRUCT[Candidate: one cdk8s service construct]
         CDK8S_RUNNER_ENDPOINT_HELPER[Candidate: one runner-facing endpoint helper]
@@ -1171,12 +1170,6 @@ experiment instead also orphans the VM-only `RunnerConfig` fields and `cgroups.p
 `runner/service.py`; move them to their own module. The control and ingress clients share one
 lost-stream error and backoff, `IngressPusher` stops borrowing `ControlTiming`, and the unpassed
 `channel_options` parameters go.
-
-### `LLM_INGRESS_MODEL_CONFIG_CONTRACT` — structural absent model config
-
-**Candidate.** `llm_ingress/app.py` answers an absent model config with a 404 whose `detail` text
-`runner/model_config.py` string-matches. Carry the absent state structurally (204, or 200 with a
-nullable body).
 
 ### `ACTION_PROTOCOLS_CONCRETE` — concrete external-grant authority
 

@@ -122,14 +122,12 @@ def create_app(resources: IngressResources) -> FastAPI:
     principal_dependency = Depends(principal)
 
     @app.get("/agentplane/model-config")
-    async def model_config(model: str, verified: WorkloadPrincipal = principal_dependency) -> ModelConfig:
+    async def model_config(model: str, verified: WorkloadPrincipal = principal_dependency) -> ModelConfig | None:
         # Requiring the same verified workload identity as inference prevents this from becoming
-        # a public model inventory endpoint. Only explicit generated configuration is returned.
+        # a public model inventory endpoint. Only explicit generated configuration is returned;
+        # an unconfigured route answers 200 with a JSON `null` body.
         del verified
-        config = resources.models.get(model)
-        if config is None:
-            raise HTTPException(status_code=404, detail="no configuration for model")
-        return config
+        return resources.models.get(model)
 
     @app.api_route("/{path:path}", methods=_REQUEST_METHODS)
     async def forward(request: Request, path: str, verified: WorkloadPrincipal = principal_dependency) -> Response:

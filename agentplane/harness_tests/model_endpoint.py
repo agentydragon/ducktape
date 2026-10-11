@@ -256,7 +256,7 @@ class ModelEndpoint[RequestT: StreamableRequest]:
     @staticmethod
     async def _no_model_config(request: web.Request) -> web.Response:
         del request
-        return web.json_response({"detail": "no configuration for model"}, status=404)
+        return web.json_response(None)
 
     async def _post(self, request: web.Request) -> web.StreamResponse:
         try:

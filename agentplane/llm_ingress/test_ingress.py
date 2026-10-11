@@ -274,7 +274,7 @@ async def test_model_config_lookup_serves_configured_metadata_without_forwarding
     assert not backend.requests, "metadata is answered from generated ingress configuration, not LiteLLM"
 
 
-async def test_model_config_lookup_returns_not_found_for_unconfigured_model() -> None:
+async def test_model_config_lookup_returns_null_for_unconfigured_model() -> None:
     async with fake_apiserver() as kubernetes, fake_litellm() as backend:
         add_sandbox(kubernetes, "sandbox-a", TOKEN_A, pod_uid="pod-a-uid")
         async with ingress_clients(kubernetes, backend) as (client, _):
@@ -282,7 +282,8 @@ async def test_model_config_lookup_returns_not_found_for_unconfigured_model() ->
                 "/agentplane/model-config", params={"model": "unlisted"}, headers=bearer(TOKEN_A)
             )
 
-    assert missing.status_code == 404
+    assert missing.status_code == 200
+    assert missing.json() is None
     assert not backend.requests
 
 

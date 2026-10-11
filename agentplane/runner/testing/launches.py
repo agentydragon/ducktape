@@ -49,9 +49,7 @@ def config(harness: runner_pb2.Harness, endpoint: str, *, state_dir: Path, home:
         state_dir=state_dir,
         harness_environment=environment(home),
         model_config_resolver=HttpModelConfigResolver(
-            transport=httpx.MockTransport(
-                lambda _request: httpx.Response(404, json={"detail": "no configuration for model"})
-            )
+            transport=httpx.MockTransport(lambda _request: httpx.Response(200, content=b"null"))
         ),
         claude=claude_launch(endpoint) if harness == runner_pb2.HARNESS_CLAUDE else None,
         codex=codex_launch(endpoint) if harness == runner_pb2.HARNESS_CODEX else None,

@@ -36,11 +36,11 @@ mounted into a runner or harness container.
 ## Per-model client configuration
 
 The authenticated `GET /agentplane/model-config?model=...` endpoint returns a
-`ModelConfig` record for an exposed route. The ingress retains complete records,
-indexed by their exposed model IDs, rather than reducing them to integer budgets.
-Lookups are answered locally and never forwarded to LiteLLM. An explicit 404
-`"no configuration for model"` response lets the runner use harness defaults;
-authentication, transport, malformed-response and other 404 errors fail the lookup.
+`ModelConfig` record for an exposed route, or JSON `null` (status 200) for a route
+with no configuration, on which the runner uses harness defaults. The ingress retains
+complete records, indexed by their exposed model IDs, rather than reducing them to
+integer budgets. Lookups are answered locally and never forwarded to LiteLLM. Any
+non-200 status, including 404, fails the runner's lookup.
 
 Configuration is authored as a list in ingress settings, for example:
 
