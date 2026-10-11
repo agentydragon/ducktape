@@ -426,6 +426,31 @@ spec:
 apiVersion: image.toolkit.fluxcd.io/v1
 kind: ImageRepository
 metadata:
+  name: agentplane-runner-gateway-migrate
+  namespace: flux-system
+spec:
+  image: git.allegedly.works/ducktape-ci/agentplane-runner-gateway-migrate
+  interval: 5m
+  secretRef:
+    name: forgejo-images-creds
+---
+apiVersion: image.toolkit.fluxcd.io/v1
+kind: ImagePolicy
+metadata:
+  name: agentplane-runner-gateway-migrate
+  namespace: flux-system
+spec:
+  filterTags:
+    pattern: ^devel-\d{14}-[0-9a-f]{7}$
+  imageRepositoryRef:
+    name: agentplane-runner-gateway-migrate
+  policy:
+    alphabetical:
+      order: asc
+---
+apiVersion: image.toolkit.fluxcd.io/v1
+kind: ImageRepository
+metadata:
   name: agentplane-sandbox
   namespace: flux-system
 spec:
