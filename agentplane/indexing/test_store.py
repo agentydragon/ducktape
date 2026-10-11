@@ -106,8 +106,8 @@ async def test_gc_retains_served_versions_then_collects_orphans(store: Store, em
             assert await session.scalar(select(func.count()).select_from(entity)) == 1
 
 
-async def test_batches_are_durable_before_publication(engine: AsyncEngine, embedder: FakeEmbedder) -> None:
-    store = Store(engine, budget=ChunkBudget(target_bytes=5, max_bytes=5), model_key=embedder.model_key)
+async def test_batches_are_durable_before_publication(empty_engine: AsyncEngine, embedder: FakeEmbedder) -> None:
+    store = Store(empty_engine, budget=ChunkBudget(target_bytes=5, max_bytes=5), model_key=embedder.model_key)
     await store.initialize()
     await ingest(store, "A", {"a": b"alpha beta gamma"})
     assert await store.advance(embedder, batch_size=1)
@@ -182,8 +182,8 @@ async def test_backend_dimension_change_preserves_served_version(store: Store, e
     assert status.updating
 
 
-async def test_new_layout_revives_cached_content(engine: AsyncEngine, embedder: FakeEmbedder) -> None:
-    store = Store(engine, budget=ChunkBudget(target_bytes=5, max_bytes=5), model_key=embedder.model_key)
+async def test_new_layout_revives_cached_content(empty_engine: AsyncEngine, embedder: FakeEmbedder) -> None:
+    store = Store(empty_engine, budget=ChunkBudget(target_bytes=5, max_bytes=5), model_key=embedder.model_key)
     await store.initialize()
     await ingest(store, "A", {"a": b"alpha"})
     await drain(store, embedder)
