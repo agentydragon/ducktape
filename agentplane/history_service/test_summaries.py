@@ -12,6 +12,7 @@ from agentplane.history_service import protocol_pb2
 from agentplane.history_service.fold_shadow import FOLD_EPOCH, FoldShadow
 from agentplane.history_service.storage.store import Store
 from agentplane.history_service.summaries import SummaryReader
+from agentplane.history_service.testing.sessions import WRITER, record_follower_session
 from agentplane.proto import event_log_pb2, event_pb2
 
 # gazelle:include_dep //agentplane/history_service/storage:conftest
@@ -43,13 +44,23 @@ def summaries(engine: AsyncEngine) -> SummaryReader:
     return SummaryReader(engine)
 
 
-async def session_in(history: Store, sandbox: str, entries: list[event_log_pb2.EventEntry]) -> UUID:
+async def session_in(history: Store, entries: list[event_log_pb2.EventEntry]) -> UUID:
     session_id = uuid4()
-    await history.record_session(
+    await history.bind_writer(session_id, WRITER)
+    await history.append(session_id, entries)
+    return session_id
+
+
+async def followed_session_in(
+    engine: AsyncEngine, history: Store, sandbox: str, entries: list[event_log_pb2.EventEntry]
+) -> UUID:
+    """Only rows the retired follower created name a Sandbox to filter by."""
+    session_id = uuid4()
+    await record_follower_session(
+        engine,
         session_id,
         sandbox_namespace="test-namespace",
         sandbox_name=sandbox,
-        sandbox_uid=None,
         runner_session_id=f"test-runner-{session_id}",
     )
     await history.append(session_id, entries)
@@ -71,13 +82,13 @@ async def every_page(
 async def test_pages_newest_first_with_unfolded_sessions_ahead(
     engine: AsyncEngine, history: Store, summaries: SummaryReader
 ) -> None:
-    oldest = await session_in(history, "test-sandbox", started(0))
-    newest = await session_in(history, "test-sandbox", started(20))
-    middle = await session_in(history, "test-sandbox", started(10))
-    empty = await session_in(history, "test-sandbox", [])
+    oldest = await session_in(history, started(0))
+    newest = await session_in(history, started(20))
+    middle = await session_in(history, started(10))
+    empty = await session_in(history, [])
     await FoldShadow(engine=engine, history=history, concurrency=2, page_size=1000).cycle()
     # Committed after the fold ran, so it lags.
-    lagging = await session_in(history, "test-sandbox", started(30))
+    lagging = await session_in(history, started(30))
 
     pages = await every_page(summaries, protocol_pb2.ListSessionSummariesRequest(limit=2))
 
@@ -93,9 +104,12 @@ async def test_pages_newest_first_with_unfolded_sessions_ahead(
     assert (by_id[lagging].HasField("projection_epoch"), by_id[lagging].committed_cursor) == (False, 1)
 
 
-async def test_a_sandbox_filter_and_its_token_go_together(history: Store, summaries: SummaryReader) -> None:
-    kept = [await session_in(history, "test-kept-sandbox", started(minutes)) for minutes in (0, 1)]
-    await session_in(history, "test-other-sandbox", started(2))
+async def test_a_sandbox_filter_and_its_token_go_together(
+    engine: AsyncEngine, history: Store, summaries: SummaryReader
+) -> None:
+    kept = [await followed_session_in(engine, history, "test-kept-sandbox", started(minutes)) for minutes in (0, 1)]
+    await followed_session_in(engine, history, "test-other-sandbox", started(2))
+    await session_in(history, started(3))
     filtered = protocol_pb2.ListSessionSummariesRequest(
         sandbox_namespace="test-namespace", sandbox_name="test-kept-sandbox", limit=1
     )
@@ -113,8 +127,8 @@ async def test_a_sandbox_filter_and_its_token_go_together(history: Store, summar
 
 
 async def test_a_batch_read_leaves_out_sessions_without_history(history: Store, summaries: SummaryReader) -> None:
-    named = {await session_in(history, "test-sandbox", started(minutes)) for minutes in (0, 1)}
-    await session_in(history, "test-sandbox", started(2))
+    named = {await session_in(history, started(minutes)) for minutes in (0, 1)}
+    await session_in(history, started(2))
 
     read = await summaries.get_many(named | {uuid4()})
 

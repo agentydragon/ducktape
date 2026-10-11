@@ -5,10 +5,9 @@ from uuid import UUID, uuid4
 
 import pytest
 import pytest_bazel
-from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession
+from sqlalchemy.ext.asyncio import AsyncEngine
 
 from agentplane.history_service import protocol_pb2 as history_pb2
-from agentplane.history_service.storage.db import SessionHistory
 from agentplane.history_service.storage.history_changes import HistoryChanges
 from agentplane.history_service.storage.store import (
     HistoryConflictError,
@@ -18,6 +17,7 @@ from agentplane.history_service.storage.store import (
     Writer,
     WriterMismatchError,
 )
+from agentplane.history_service.testing.sessions import record_follower_session
 from agentplane.proto import event_log_pb2, event_pb2, runner_pb2
 from agentplane.sandbox_service.testing.delta_spans import claude_text
 
@@ -37,20 +37,6 @@ WRITER = Writer(namespace="testing", name="worker", uid="test-worker-account-uid
 
 async def opened(store: Store, session_id: UUID) -> None:
     await store.bind_writer(session_id, WRITER)
-
-
-async def follower_row(engine: AsyncEngine, session_id: UUID) -> None:
-    """A row the retired follower created: it names the runner session, and feed snapshots are stored under it."""
-    async with AsyncSession(engine) as session, session.begin():
-        session.add(
-            SessionHistory(
-                id=session_id,
-                sandbox_namespace="testing",
-                sandbox_name="gone",
-                runner_session_id="original-native-path",
-                last_cursor=0,
-            )
-        )
 
 
 @pytest.mark.asyncio
@@ -222,7 +208,9 @@ async def test_feed_snapshot_requires_covered_bound_history_and_cannot_regress(e
 async def test_followed_snapshot_is_stored_under_runner_id_and_seal_is_sticky(engine: AsyncEngine) -> None:
     store = Store(engine)
     session_id = uuid4()
-    await follower_row(engine, session_id)
+    await record_follower_session(
+        engine, session_id, sandbox_namespace="testing", sandbox_name="gone", runner_session_id="original-native-path"
+    )
     await store.append(session_id, [entry(1), entry(2)])
     # A Sandbox Service follow names the public Session ID; a direct runner attach the runner's.
     followed = history_pb2.SessionFeedState(attached=runner_pb2.Attached(session_id=str(session_id), last_cursor=1))
