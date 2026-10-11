@@ -322,18 +322,6 @@ class Runner:
     async def _start(self, session: Session) -> None:
         """Start the harness of a session whose setup allows it; one still in setup starts when the
         setup succeeds."""
-        if not session.record.context_budget_resolved:
-            try:
-                model_config = await self.config.resolve_model_config(
-                    harness=runner_pb2.Harness.Value(session.record.harness), model=session.record.model
-                )
-            except ModelConfigLookupError as error:
-                raise OpenError(str(error)) from error
-            session.record.total_context_budget_tokens = (
-                model_config.total_context_budget_tokens if model_config is not None else None
-            )
-            session.record.context_budget_resolved = True
-            self.store.write(session.session_id, session.record)
         if self.store.sealed:
             # Sealing began meanwhile and may have listed the store before it held this session.
             await session.seal()

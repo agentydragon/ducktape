@@ -7,6 +7,7 @@ from collections.abc import AsyncIterator, Mapping
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any, cast
+from uuid import uuid4
 
 import httpx
 import pytest
@@ -93,8 +94,9 @@ async def session_with_blocked_adapter(
         cwd=str(tmp_path / "workspace"),
         model=initial_model,
         total_context_budget_tokens=windows.get(initial_model),
-        context_budget_resolved=True,
         reasoning_effort="low",
+        instructions="",
+        event_source_id=uuid4(),
     )
     store.write("scheduling-1", record)
     adapter = BlockingAdapter()

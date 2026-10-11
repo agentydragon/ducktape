@@ -86,14 +86,13 @@ class SessionRecord(BaseModel):
     model: str
     # Resolved from the LLM ingress when this route was selected; None means the harness default.
     total_context_budget_tokens: int | None = Field(default=None, gt=0)
-    context_budget_resolved: bool = False
     reasoning_effort: str
-    instructions: str = Field(default="", description="SessionSpec.instructions; empty for a session without any")
+    instructions: str = Field(description="SessionSpec.instructions; empty for a session without any")
     setup_script_sha256: str | None = Field(
         default=None, description="Creation-time setup identity; the source is never echoed in SessionSpec."
     )
     event_source_id: UUID = Field(
-        default_factory=uuid4, description="The runner session's stable EventOrigin.source_id across runner restarts."
+        description="The runner session's stable EventOrigin.source_id across runner restarts."
     )
     native_session_id: str | None = Field(
         default=None, description="Claude session id or Codex thread id, once the harness has assigned one"
@@ -108,10 +107,10 @@ class SessionRecord(BaseModel):
             cwd=spec.cwd,
             model=spec.model,
             total_context_budget_tokens=total_context_budget_tokens,
-            context_budget_resolved=True,
             reasoning_effort=spec.reasoning_effort,
             instructions=spec.instructions,
             setup_script_sha256=hashlib.sha256(setup_script.encode()).hexdigest() if setup_script else None,
+            event_source_id=uuid4(),
         )
 
     def spec(self) -> runner_pb2.SessionSpec:
