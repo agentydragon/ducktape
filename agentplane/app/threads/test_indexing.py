@@ -61,7 +61,7 @@ async def test_command_lookup_and_touched_projection_preload_stay_indexed_with_l
     # measures indexed reads and a real update to its already-folded item, not bulk prefix folding.
     filler = [_history_event(cursor, materialized_item_count) for cursor in range(3, history_size + 3)]
     async with history.paused():
-        for batch in batched(filler, 1_000):
+        for batch in batched(filler, 1_000, strict=False):
             await history.store.append(thread, batch)
         await _seed_indexed_history(thread, history_size, materialized_item_count, [*initial, *filler], history.engine)
 
