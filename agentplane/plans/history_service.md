@@ -81,4 +81,3 @@ Properties the target keeps:
   and deleted.
 - **Deployments:** the Sandbox Service and the Runner Gateway are separate services and images,
   with separate ServiceAccounts.
-
