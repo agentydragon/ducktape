@@ -17,7 +17,8 @@ from agentplane.action_service.testing.fixtures import action_database_template,
 from agentplane.notification_service.database_migrate import RUNNER
 from agentplane.notification_service.store import Store
 from agentplane.runner.testing.fixtures import RunnerHandle, config, endpoint, harness, model, runner, spec, workspace
-from util.testing.postgres import PostgresDatabaseTemplate, create_database_sync, force_drop_database_sync
+from agentplane.sandbox_service.testing.history import initialize_service_database, service_database
+from util.testing.postgres import PostgresDatabaseTemplate, database_name_for_test
 from util.testing.postgres_fixtures import postgres_container
 from util.testing.undeclared_outputs import undeclared_outputs_dir
 
@@ -77,17 +78,23 @@ def db_url(notification_database_template: PostgresDatabaseTemplate) -> Iterator
         yield make_url(url).set(drivername="postgresql+asyncpg").render_as_string(hide_password=False)
 
 
+@pytest.fixture(scope="session")
+async def sandbox_service_database_template(
+    postgres_container: PostgresContainer,
+) -> AsyncIterator[PostgresDatabaseTemplate]:
+    """Create the History + Commands schema once for Sandbox Service tests."""
+    with PostgresDatabaseTemplate(admin_url(postgres_container), f"sandbox_service_template_{uuid4().hex}") as template:
+        async with service_database(template.url) as engine:
+            await initialize_service_database(engine)
+        yield template
+
+
 @pytest.fixture
-def sandbox_service_db_url(postgres_container: PostgresContainer) -> Iterator[str]:
-    """The Sandbox Service's own database; its schema belongs to the service fixture."""
-    admin = admin_url(postgres_container)
-    name = f"sandbox_service_{uuid4().hex}"
-    yield (
-        make_url(create_database_sync(admin, name))
-        .set(drivername="postgresql+asyncpg")
-        .render_as_string(hide_password=False)
-    )
-    force_drop_database_sync(admin, name)
+def sandbox_service_db_url(
+    sandbox_service_database_template: PostgresDatabaseTemplate, request: pytest.FixtureRequest
+) -> Iterator[str]:
+    with sandbox_service_database_template.clone(database_name_for_test(request.node.nodeid)) as url:
+        yield make_url(url).set(drivername="postgresql+asyncpg").render_as_string(hide_password=False)
 
 
 @pytest.fixture

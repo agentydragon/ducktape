@@ -20,8 +20,12 @@ py_library(
         "//agentplane/sandbox_service/testing:grpc_service",
         "//agentplane/sandbox_service/testing:kubernetes",
         "//util:kubernetes",
+        "//util/testing:postgres",
+        "//util/testing:postgres_fixtures",
         "@pypi//kubernetes_asyncio",
         "@pypi//pytest",
+        "@pypi//sqlalchemy",
+        "@pypi//testcontainers",
     ],
 )
 
