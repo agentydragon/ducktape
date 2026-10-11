@@ -554,6 +554,74 @@ export { a, b, foo, bar, result };
 }
 
 #[test]
+fn uninstantiated_constructor_does_not_create_an_eager_cycle() {
+    let fixture = run_fixture(FixtureOpts::new(
+        r#"class Foo { constructor() { bar(); } }
+function bar() { return b; }
+const b = Foo.name;
+console.log(b);
+export { Foo, bar, b };
+"#,
+        vec![
+            logical_module("mod_a", &[Member::new("Foo"), Member::new("bar")]),
+            logical_module("mod_b", &[Member::new("b")]),
+        ],
+    ));
+    assert_preserved_entry_output(&fixture, "Foo\n");
+}
+
+#[test]
+fn uninstantiated_instance_field_does_not_create_an_eager_cycle() {
+    let fixture = run_fixture(FixtureOpts::new(
+        r#"class Foo { value = bar(); }
+function bar() { return b; }
+const b = Foo.name;
+console.log(b);
+export { Foo, bar, b };
+"#,
+        vec![
+            logical_module("mod_a", &[Member::new("Foo"), Member::new("bar")]),
+            logical_module("mod_b", &[Member::new("b")]),
+        ],
+    ));
+    assert_preserved_entry_output(&fixture, "Foo\n");
+}
+
+#[test]
+fn static_field_call_still_runs_during_class_definition() {
+    let fixture = run_fixture(FixtureOpts::new(
+        r#"const b = 3;
+function bar() { return b; }
+class Foo { static value = bar(); }
+console.log(Foo.value);
+export { b, bar, Foo };
+"#,
+        vec![
+            logical_module("mod_a", &[Member::new("bar"), Member::new("Foo")]),
+            logical_module("mod_b", &[Member::new("b")]),
+        ],
+    ));
+    assert_preserved_entry_output(&fixture, "3\n");
+}
+
+#[test]
+fn computed_method_key_still_runs_during_class_definition() {
+    let fixture = run_fixture(FixtureOpts::new(
+        r#"const b = "value";
+function bar() { return b; }
+class Foo { [bar()]() {} }
+console.log(typeof Foo.prototype.value);
+export { b, bar, Foo };
+"#,
+        vec![
+            logical_module("mod_a", &[Member::new("bar"), Member::new("Foo")]),
+            logical_module("mod_b", &[Member::new("b")]),
+        ],
+    ));
+    assert_preserved_entry_output(&fixture, "function\n");
+}
+
+#[test]
 fn constructor_body_reads_initialized_value() {
     expect_cycle_rejection(
         FixtureOpts::new(

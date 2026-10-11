@@ -347,22 +347,70 @@ impl ExecutionIndex {
 }
 
 impl Visit for ExecutionIndex {
+    fn visit_class_member(&mut self, member: &ClassMember) {
+        // Defining a class evaluates computed keys and static initializers,
+        // but does not run its constructor or instance field initializers.
+        // The ordinary SWC descent would put calls in those deferred bodies
+        // into `top_calls`, falsely promoting their callees at class init.
+        match member {
+            ClassMember::ClassProp(prop) => prop.decorators.visit_with(self),
+            ClassMember::PrivateProp(prop) => prop.decorators.visit_with(self),
+            ClassMember::AutoAccessor(accessor) => accessor.decorators.visit_with(self),
+            _ => {}
+        }
+        visit_eager_member_parts(self, member);
+        match member {
+            ClassMember::Method(method) => {
+                if method.kind == MethodKind::Setter {
+                    self.setter_owners
+                        .entry(static_property_name(&method.key))
+                        .or_default()
+                        .insert(self.owner);
+                }
+                method.function.visit_with(self);
+            }
+            ClassMember::PrivateMethod(method) => {
+                method.function.visit_with(self);
+            }
+            ClassMember::Constructor(ctor) => {
+                // Keep inspecting the deferred body for nested accessors;
+                // property-write promotion still needs their owner. Its
+                // calls must stay out of the class owner's top-call list.
+                self.with_callable(ctor.span.lo.0, Vec::new(), |index| {
+                    ctor.visit_children_with(index);
+                });
+            }
+            ClassMember::ClassProp(prop) if !prop.is_static => {
+                if let Some(value) = &prop.value {
+                    self.with_callable(prop.span.lo.0, Vec::new(), |index| {
+                        value.visit_with(index);
+                    });
+                }
+            }
+            ClassMember::PrivateProp(prop) if !prop.is_static => {
+                if let Some(value) = &prop.value {
+                    self.with_callable(prop.span.lo.0, Vec::new(), |index| {
+                        value.visit_with(index);
+                    });
+                }
+            }
+            ClassMember::AutoAccessor(accessor) if !accessor.is_static => {
+                if let Some(value) = &accessor.value {
+                    self.with_callable(accessor.span.lo.0, Vec::new(), |index| {
+                        value.visit_with(index);
+                    });
+                }
+            }
+            _ => {}
+        }
+    }
+
     fn visit_setter_prop(&mut self, setter: &SetterProp) {
         self.setter_owners
             .entry(static_property_name(&setter.key))
             .or_default()
             .insert(self.owner);
         setter.visit_children_with(self);
-    }
-
-    fn visit_class_method(&mut self, method: &ClassMethod) {
-        if method.kind == MethodKind::Setter {
-            self.setter_owners
-                .entry(static_property_name(&method.key))
-                .or_default()
-                .insert(self.owner);
-        }
-        method.visit_children_with(self);
     }
 
     fn visit_object_lit(&mut self, object: &ObjectLit) {
@@ -448,6 +496,12 @@ impl Visit for ExecutionIndex {
     }
 
     fn visit_function(&mut self, function: &Function) {
+        // Decorator expressions run when the method is defined. Defaults in
+        // parameter patterns and the body run only when it is called.
+        function.decorators.visit_with(self);
+        for param in &function.params {
+            param.decorators.visit_with(self);
+        }
         let params = function
             .params
             .iter()
@@ -459,7 +513,12 @@ impl Visit for ExecutionIndex {
                 .get_mut(&function.span.lo.0)
                 .unwrap()
                 .generator = function.is_generator;
-            function.visit_children_with(index);
+            for param in &function.params {
+                param.pat.visit_with(index);
+            }
+            if let Some(body) = &function.body {
+                body.visit_with(index);
+            }
         });
     }
 
