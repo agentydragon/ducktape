@@ -9,14 +9,7 @@ py_library(
     name = "sessions",
     srcs = ["sessions.py"],
     deps = [
-        "//agentplane/proto:sandbox_service_pb2",
-        "//agentplane/runner:client",
-        "//agentplane/runner_gateway:grpc_api",
         "//agentplane/runner_gateway/commands:db",
-        "//agentplane/sandbox_service:destinations",
-        "//agentplane/sandbox_service:models",
-        "@pypi//grpcio",
-        "@pypi//protobuf",
         "@pypi//sqlalchemy",
     ],
 )
@@ -56,7 +49,6 @@ py_library(
         "//agentplane/runner_gateway:grpc_api",
         "//agentplane/runner_gateway:lifecycle_control",
         "//agentplane/runner_gateway:session_registry",
-        "//agentplane/runner_gateway/commands:connections",
         "//agentplane/runner_gateway/commands:dispatch",
         "//agentplane/runner_gateway/commands:store",
         "//agentplane/sandbox_service:destinations",

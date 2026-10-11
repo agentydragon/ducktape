@@ -14,7 +14,6 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 
 from agentplane.proto import command_pb2, event_log_pb2, runner_control_pb2, runner_control_pb2_grpc
 from agentplane.runner_gateway.command_delivery import CommandDelivery, CommandRefusedError
-from agentplane.runner_gateway.commands.connections import ConnectionStore
 from agentplane.runner_gateway.commands.dispatch import DispatchStore
 from agentplane.runner_gateway.commands.store import CommandSubmission, SubmissionStore
 from agentplane.runner_gateway.connection_records import (
@@ -28,7 +27,7 @@ from agentplane.runner_gateway.connection_records import (
 )
 from agentplane.runner_gateway.lifecycle_control import LifecycleControl
 from agentplane.runner_gateway.runner_control import ControlTiming
-from agentplane.runner_gateway.testing.runner_control import OTHER_REPLICA, REPLICA, RUNNER_TOKEN, serve_channel
+from agentplane.runner_gateway.testing.runner_control import OTHER_REPLICA, REPLICA, RUNNER_TOKEN, serve_replica_control
 from agentplane.sandbox_service.destinations import DestinationUnavailableError
 from agentplane.sandbox_service.testing.kubernetes import ACCOUNT, SANDBOX, SANDBOX_UID, Cluster
 from agentplane.subjects import ServiceAccountRef
@@ -38,9 +37,7 @@ from util.agent_sandbox import SANDBOX_KIND, SANDBOXES_PLURAL
 # gazelle:include_dep @pypi//protobuf
 COMMAND = command_pb2.Command(command_id="test-command", submit_input=command_pb2.SubmitInput(text="hello"))
 RUNNER_SESSION = "test-runner-session"
-HELLO = runner_control_pb2.RunnerFrame(
-    hello=runner_control_pb2.Hello(runner_boot_id="test-boot", capabilities=["commands", "test-future-capability"])
-)
+HELLO = runner_control_pb2.RunnerFrame(hello=runner_control_pb2.Hello(runner_boot_id="test-boot"))
 OWNER = RecordOwner(name=SANDBOX, uid=UUID(SANDBOX_UID))
 
 type Replica = Callable[[ConnectionHolder], AbstractAsyncContextManager[runner_control_pb2_grpc.RunnerControlAsyncStub]]
@@ -48,14 +45,7 @@ type Replica = Callable[[ConnectionHolder], AbstractAsyncContextManager[runner_c
 
 @pytest.fixture
 async def delivery(engine: AsyncEngine, leases: ConnectionLeases) -> AsyncIterator[CommandDelivery]:
-    delivery = CommandDelivery(
-        engine.url,
-        dispatches=DispatchStore(engine),
-        connections=ConnectionStore(engine),
-        leases=leases,
-        liveness_s=1,
-        recheck_s=0.1,
-    )
+    delivery = CommandDelivery(engine.url, dispatches=DispatchStore(engine), leases=leases, liveness_s=1, recheck_s=0.1)
     async with delivery.listener.listen():
         yield delivery
 
@@ -63,7 +53,7 @@ async def delivery(engine: AsyncEngine, leases: ConnectionLeases) -> AsyncIterat
 @pytest.fixture
 def replica(cluster: Cluster, engine: AsyncEngine, delivery: CommandDelivery) -> Replica:
     """Start a channel listener as one gateway replica; replicas share the cluster and database."""
-    return lambda holder: serve_channel(
+    return lambda holder: serve_replica_control(
         cluster,
         holder,
         delivery=delivery,
@@ -125,7 +115,7 @@ async def test_newest_connection_supersedes_the_previous_one(
     async with connect(listener) as first:
         await first.write(HELLO)
         welcome = await read_frame(first)
-        assert welcome.welcome == runner_control_pb2.Welcome(connection_epoch=1, capabilities=["commands"])
+        assert welcome.welcome == runner_control_pb2.Welcome(connection_epoch=1)
         assert (await read_frame(first)).HasField("heartbeat")
         async with connect(listener) as second:
             await second.write(HELLO)
@@ -369,23 +359,6 @@ async def test_refusal_reaches_the_caller(
 async def test_unconnected_runner_is_unavailable(delivery: CommandDelivery, cluster: Cluster, session_id: UUID) -> None:
     with pytest.raises(DestinationUnavailableError):
         await deliver(delivery, cluster, session_id)
-
-
-async def test_agreed_operations_stick_to_the_sandbox(
-    listener: runner_control_pb2_grpc.RunnerControlAsyncStub, cluster: Cluster, engine: AsyncEngine
-) -> None:
-    sandbox_uid = UUID(SANDBOX_UID)
-    connections = ConnectionStore(engine)
-    async with connect(listener) as call:
-        await call.write(HELLO)
-        assert (await read_frame(call)).HasField("welcome")
-    # A later runner that no longer offers commands gets none, but the Sandbox stays control-routed.
-    async with connect(listener) as call:
-        await call.write(
-            runner_control_pb2.RunnerFrame(hello=runner_control_pb2.Hello(runner_boot_id="test-later-boot"))
-        )
-        assert list((await read_frame(call)).welcome.capabilities) == []
-    assert await connections.read_operations(sandbox_uid) == {"commands"}
 
 
 if __name__ == "__main__":

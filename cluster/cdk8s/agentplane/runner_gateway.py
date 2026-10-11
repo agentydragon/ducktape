@@ -44,8 +44,6 @@ NAME = "agentplane-runner-gateway"
 TOKEN_AUDIENCE = "agentplane-runner-gateway"
 _LABELS = {"app.kubernetes.io/name": NAME}
 _IMAGE = "git.allegedly.works/ducktape-ci/agentplane-runner-gateway"
-# The port every runner listens on (runner_sandbox.py's SandboxTemplate); this service dials it.
-RUNNER_PORT = 7000
 KUBERNETES_ADMIN_INSTRUCTIONS = (
     Path(__file__).with_name("kubernetes_admin_instructions.md").read_text(encoding="utf-8").strip()
 )
@@ -104,10 +102,8 @@ class RunnerGateway(Construct):
         *,
         callers: dict[ServiceAccountRef, Pods],
         sealers: dict[ServiceAccountRef, Pods],
-        runners: Pods,
     ) -> None:
-        """`callers` are the Session API's clients and their Pods; `sealers` alone may seal a Sandbox;
-        `runners` are the Pods this service dials."""
+        """`callers` are the Session API's clients and their Pods; `sealers` alone may seal a Sandbox."""
         super().__init__(scope, id)
         self.env = env
         endpoint = service(env.namespace)
@@ -137,11 +133,9 @@ class RunnerGateway(Construct):
                     ),
                     KUBERNETES_ADMIN_INSTRUCTIONS,
                 ),
-                "runner_grpc_channel_options": dict(env.runner_grpc_channel_options),
                 "runner_control_audience": RUNNER_CONTROL_AUDIENCE,
                 "port": endpoint.port.number,
                 "runner_control_port": control.pod_port,
-                "runner_port": RUNNER_PORT,
             },
             path="/etc/agentplane-runner-gateway/config.yaml",
             supplied=[("commands_database_url",), ("pod_ip",)],
@@ -187,12 +181,7 @@ class RunnerGateway(Construct):
                 *(pods.admit(endpoint.pod_port) for pods in (*callers.values(), *sealers.values())),
                 egress.proxy(env.namespace).pods.admit(control.pod_port),
             ],
-            egress=[
-                cilium.dns_egress(),
-                EgressRule.to_entities(Entity.KUBE_APISERVER),
-                database.egress(env.namespace),
-                EgressRule.to_endpoints(runners.cilium, RUNNER_PORT),
-            ],
+            egress=[cilium.dns_egress(), EgressRule.to_entities(Entity.KUBE_APISERVER), database.egress(env.namespace)],
         )
         egress.add_runner_egress(
             self,

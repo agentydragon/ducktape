@@ -1,11 +1,11 @@
-"""Resolve an explicit, authorized Sandbox incarnation to its current controller-owned runner Pod."""
+"""Check an explicit, authorized Sandbox incarnation and its current controller-owned runner Pod."""
 
 from dataclasses import dataclass
-from ipaddress import ip_address
+from uuid import UUID
 
 from kubernetes_asyncio import client as k8s_client
 
-from agentplane.proto.sandbox_service_pb2 import SandboxBinding, SandboxDestination, TeardownPhase
+from agentplane.proto.sandbox_service_pb2 import Sandbox, SandboxBinding, SandboxDestination, TeardownPhase
 from agentplane.sandbox_service.inventory import SandboxInventory
 from agentplane.sandbox_service.models import SandboxNotFoundError, SandboxTearingDownError
 from util.agent_sandbox import SANDBOX_API, OperatingMode
@@ -16,27 +16,31 @@ class DestinationUnavailableError(Exception):
 
 
 @dataclass(frozen=True)
-class RunnerEndpoint:
-    target: str
-    binding: SandboxBinding | None
-
-
-@dataclass(frozen=True)
 class DestinationResolver:
     inventory: SandboxInventory
     core: k8s_client.CoreV1Api
-    runner_port: int
 
-    async def resolve(self, destination: SandboxDestination, *, writes: bool) -> RunnerEndpoint:
-        """`writes`: the caller may create, resume or command a Session, which a Sandbox being torn
-        down refuses. Following and listing its Sessions stays possible until it is deleted."""
+    async def resolve(self, destination: SandboxDestination, *, writes: bool) -> SandboxBinding | None:
+        """The Sandbox's binding, once its runner Pod is running and ready. `writes`: the caller may
+        create, resume or command a Session, which a Sandbox being torn down refuses. Listing its
+        Sessions stays possible until it is deleted."""
         if not all((destination.sandbox, destination.sandbox_uid, destination.owner.namespace, destination.owner.name)):
             raise ValueError("Sandbox name, UID, and owner are required")
         view = await self.inventory.get(destination.sandbox)
         if view.uid != destination.sandbox_uid or view.service_account != destination.owner:
             raise SandboxNotFoundError(destination.sandbox)
+        return await self._ready(view, writes=writes)
+
+    async def resolve_incarnation(self, name: str, uid: UUID, *, writes: bool) -> SandboxBinding | None:
+        """`resolve` for a Sandbox incarnation the Runner Gateway's own registry names."""
+        view = await self.inventory.get(name)
+        if view.uid != str(uid):
+            raise SandboxNotFoundError(name)
+        return await self._ready(view, writes=writes)
+
+    async def _ready(self, view: Sandbox, *, writes: bool) -> SandboxBinding | None:
         if writes and view.teardown != TeardownPhase.TEARDOWN_PHASE_UNSPECIFIED:
-            raise SandboxTearingDownError(destination.sandbox)
+            raise SandboxTearingDownError(view.name)
         if (
             view.deleting
             or view.operating_mode != OperatingMode.RUNNING
@@ -46,7 +50,7 @@ class DestinationResolver:
         ):
             raise DestinationUnavailableError
         try:
-            pod = await self.core.read_namespaced_pod(destination.sandbox, self.inventory.namespace)
+            pod = await self.core.read_namespaced_pod(view.name, self.inventory.namespace)
         except k8s_client.ApiException as error:
             if error.status == 404:
                 raise DestinationUnavailableError from error
@@ -54,15 +58,14 @@ class DestinationResolver:
         metadata, spec, status = pod.metadata, pod.spec, pod.status
         if (
             metadata is None
-            or metadata.name != destination.sandbox
+            or metadata.name != view.name
             or metadata.namespace != self.inventory.namespace
             or not metadata.uid
             or metadata.deletion_timestamp is not None
             or spec is None
-            or (spec.service_account_name or "default") != destination.owner.name
+            or (spec.service_account_name or "default") != view.service_account.name
             or status is None
             or status.phase != "Running"
-            or not status.pod_ip
             or not any(c.type == "Ready" and c.status == "True" for c in status.conditions or [])
         ):
             raise DestinationUnavailableError
@@ -73,18 +76,11 @@ class DestinationResolver:
         if (
             owner.api_version != SANDBOX_API.api_version
             or owner.kind != "Sandbox"
-            or owner.name != destination.sandbox
-            or owner.uid != str(destination.sandbox_uid)
+            or owner.name != view.name
+            or owner.uid != str(view.uid)
         ):
             raise DestinationUnavailableError
-        try:
-            address = ip_address(status.pod_ip)
-        except ValueError as error:
-            raise DestinationUnavailableError from error
-        host = f"[{address}]" if address.version == 6 else str(address)
-        return RunnerEndpoint(
-            target=f"{host}:{self.runner_port}", binding=view.binding if view.HasField("binding") else None
-        )
+        return view.binding if view.HasField("binding") else None
 
 
 # gazelle:include_dep @pypi//protobuf

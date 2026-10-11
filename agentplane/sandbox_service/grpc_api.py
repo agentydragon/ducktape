@@ -32,8 +32,8 @@ class Resources:
     principals: WorkloadPrincipalResolver
     provisioning: Provisioning
     caller_accounts: frozenset[ServiceAccountRef]
-    admission_timeout_s: float = 15
-    lifecycle_timeout_s: float = 300
+    admission_timeout_s: float
+    lifecycle_timeout_s: float
 
     def __post_init__(self) -> None:
         if min(self.admission_timeout_s, self.lifecycle_timeout_s) <= 0:

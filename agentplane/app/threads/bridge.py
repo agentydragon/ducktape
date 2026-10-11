@@ -184,12 +184,7 @@ class RunnerBridge:
         # the prefix preceding it. The response does not wait for that copy.
         await self._ingester.start()
         try:
-            return await self._command(
-                runner_session.sandbox,
-                runner_session.session_id,
-                command,
-                after_cursor=await self._event_logs.last_cursor(thread_id),
-            )
+            return await self._runners.service.command(runner_session.session_id, command)
         except TimeoutError as error:
             raise RunnerAdmissionTimeoutError(command.command_id) from error
 
@@ -198,17 +193,12 @@ class RunnerBridge:
         runner_session = await self._event_logs.service_session(thread_id)
         if runner_session is None:
             raise ThreadNotFoundError(thread_id)
-        status = await self._runners.client(runner_session.sandbox).get_command(runner_session.session_id, command_id)
+        status = await self._runners.service.get_command(runner_session.session_id, command_id)
         return CommandStatus(
             state=_COMMAND_STATES[status.state],
             admission=MessageToDict(status.admission) if status.HasField("admission") else None,
             rejection=status.rejection if status.HasField("rejection") else None,
         )
-
-    async def _command(
-        self, sandbox: str, session_id: str, command: command_pb2.Command, *, after_cursor: int
-    ) -> event_log_pb2.EventEntry:
-        return await self._runners.client(sandbox).command(session_id, command, after_cursor=after_cursor)
 
 
 def _parse[M: command_pb2.Command | runner_pb2.SessionSpec](message: M, body: dict[str, object]) -> M:

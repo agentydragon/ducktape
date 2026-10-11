@@ -4,7 +4,7 @@ in the service's own database."""
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import cast
-from uuid import UUID, uuid4
+from uuid import UUID
 
 from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert
@@ -27,6 +27,12 @@ class OpenReservation:
     launch_spec: bytes
 
 
+@dataclass(frozen=True)
+class SessionPlacement:
+    sandbox_name: str
+    sandbox_uid: UUID
+
+
 class SessionRegistry:
     def __init__(self, engine: AsyncEngine) -> None:
         self._sessions = async_sessionmaker(engine, expire_on_commit=False)
@@ -34,7 +40,7 @@ class SessionRegistry:
     async def reserve(
         self,
         *,
-        session_id: UUID | None,
+        session_id: UUID,
         caller_namespace: str,
         caller_name: str,
         sandbox_namespace: str,
@@ -46,16 +52,13 @@ class SessionRegistry:
     ) -> OpenReservation:
         """Reserve a durable Session ID *before* runner attach, or recover a lost reply.
 
-        A retry names the same Session: by the client's Session ID, or, from a client that mints
-        none, by the Open key, which is opaque to the Service and scoped to the authenticated caller
-        and Sandbox incarnation. The request bytes identify the caller's original inputs; the launch
+        A retry names the same client-minted Session ID, scoped to the authenticated caller and
+        Sandbox incarnation. The request bytes identify the caller's original inputs; the launch
         factory freezes effective runner setup for the Session ID. Committing before runner contact
         lets a retry recover the same setup.
         """
         if not all((caller_namespace, caller_name, sandbox_namespace, sandbox_name)):
             raise ValueError("caller and sandbox are required")
-        if session_id is None and not open_key:
-            raise ValueError("a Session ID or an Open idempotency key is required")
         scope = (
             Session.caller_namespace == caller_namespace,
             Session.caller_name == caller_name,
@@ -63,16 +66,15 @@ class SessionRegistry:
             Session.sandbox_name == sandbox_name,
             Session.sandbox_uid == sandbox_uid,
         )
-        query = select(Session).where(*scope, Session.id == session_id if session_id else Session.open_key == open_key)
+        query = select(Session).where(*scope, Session.id == session_id)
         async with self._sessions.begin() as session:
             # Do not recompute today's defaults for an already reserved Open.
             row = await session.scalar(query)
             if row is None:
-                candidate = session_id or uuid4()
                 await session.execute(
                     insert(Session)
                     .values(
-                        id=candidate,
+                        id=session_id,
                         caller_namespace=caller_namespace,
                         caller_name=caller_name,
                         sandbox_namespace=sandbox_namespace,
@@ -80,10 +82,7 @@ class SessionRegistry:
                         sandbox_uid=sandbox_uid,
                         open_key=open_key or None,
                         open_request=open_request,
-                        launch_spec=launch_spec(candidate),
-                        # CLEANUP(added 2026-10-11): Drop the `r-` locator with service-minted IDs
-                        #   (grpc_api.py's CreateSession tombstone).
-                        runner_session_id=str(session_id) if session_id else f"r-{candidate}",
+                        launch_spec=launch_spec(session_id),
                     )
                     .on_conflict_do_nothing()
                 )
@@ -124,32 +123,42 @@ class SessionRegistry:
                 ),
             )
 
-    async def runner_id(self, session_id: UUID, *, sandbox_namespace: str, sandbox_name: str, sandbox_uid: UUID) -> str:
-        """Resolve a public Session ID only in its original Sandbox incarnation."""
+    async def placement(self, session_id: UUID) -> SessionPlacement:
+        """The Sandbox incarnation the Session runs in. Imported Sessions with no recorded
+        incarnation have none, and raise `SessionNotFoundError` like an unknown ID."""
         async with self._sessions() as session:
             row = await session.get(Session, session_id)
-            if (
-                row is None
-                or (row.sandbox_namespace, row.sandbox_name, row.sandbox_uid)
-                != (sandbox_namespace, sandbox_name, sandbox_uid)
-                or row.runner_session_id is None
-            ):
-                raise SessionNotFoundError(session_id)
-            return row.runner_session_id
+        if row is None or row.sandbox_uid is None:
+            raise SessionNotFoundError(session_id)
+        return SessionPlacement(sandbox_name=row.sandbox_name, sandbox_uid=row.sandbox_uid)
 
-    async def session_id(
-        self, *, sandbox_namespace: str, sandbox_name: str, sandbox_uid: UUID, runner_session_id: str
+    async def require(self, session_id: UUID, *, sandbox_namespace: str, sandbox_name: str, sandbox_uid: UUID) -> None:
+        """Raise `SessionNotFoundError` unless the Session was registered in this Sandbox incarnation."""
+        if not await self.registered(
+            session_id, sandbox_namespace=sandbox_namespace, sandbox_name=sandbox_name, sandbox_uid=sandbox_uid
+        ):
+            raise SessionNotFoundError(session_id)
+
+    async def public_id(
+        self, runner_session_id: str, *, sandbox_namespace: str, sandbox_name: str, sandbox_uid: UUID
     ) -> UUID | None:
-        """Map an inventoried runner ID to a public Session ID, if managed."""
+        """The public Session a runner Session ID names, if registered in this Sandbox incarnation."""
+        try:
+            session_id = UUID(runner_session_id)
+        except ValueError:
+            return None
+        registered = await self.registered(
+            session_id, sandbox_namespace=sandbox_namespace, sandbox_name=sandbox_name, sandbox_uid=sandbox_uid
+        )
+        return session_id if registered else None
+
+    async def registered(
+        self, session_id: UUID, *, sandbox_namespace: str, sandbox_name: str, sandbox_uid: UUID
+    ) -> bool:
         async with self._sessions() as session:
-            return cast(
-                UUID | None,
-                await session.scalar(
-                    select(Session.id).where(
-                        Session.sandbox_namespace == sandbox_namespace,
-                        Session.sandbox_name == sandbox_name,
-                        Session.sandbox_uid == sandbox_uid,
-                        Session.runner_session_id == runner_session_id,
-                    )
-                ),
+            row = await session.get(Session, session_id)
+            return row is not None and (row.sandbox_namespace, row.sandbox_name, row.sandbox_uid) == (
+                sandbox_namespace,
+                sandbox_name,
+                sandbox_uid,
             )

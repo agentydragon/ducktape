@@ -50,7 +50,6 @@ from cluster.cdk8s.agentplane.environment import (
     ReplicaProfile,
     WebPushProps,
 )
-from cluster.cdk8s.agentplane.grpc_channel_config import LARGE_EVENT_GRPC_CHANNEL_OPTIONS
 from cluster.cdk8s.agentplane.llm_ingress import model_configs
 from cluster.cdk8s.agentplane.namespaces import STAGING_NAMESPACE
 from cluster.cdk8s.agentplane.runner_sandbox import RunnerTemplate
@@ -293,13 +292,8 @@ ENV = Environment(
         pdb_min_available=1,
     ),
     app_config=staging_config.config(
-        namespace=STAGING_NAMESPACE,
-        models=STAGING_APP_MODELS,
-        action_federation=_ACTION_FEDERATION,
-        sandbox_service_grpc_channel_options=LARGE_EVENT_GRPC_CHANNEL_OPTIONS,
-        history_service_grpc_channel_options=LARGE_EVENT_GRPC_CHANNEL_OPTIONS,
+        namespace=STAGING_NAMESPACE, models=STAGING_APP_MODELS, action_federation=_ACTION_FEDERATION
     ),
-    runner_grpc_channel_options=LARGE_EVENT_GRPC_CHANNEL_OPTIONS,
     settle_deltas=True,
     history_compaction=None,
     notifications_github=GitHubAppProps(app_id=5188971, secret_name="agentplane-github-app"),

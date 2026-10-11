@@ -2838,12 +2838,9 @@ data:
       and wait for the decision and execution result via the Actions API/notifications as described
       in the shared platform instructions. Never impersonate an operator, bypass the egress proxy,
       or use admin Actions for unrelated work. Approval is not execution success.
-    runner_grpc_channel_options:
-      grpc.max_receive_message_length: 33554432
     runner_control_audience: agentplane-runner-control
     port: 8080
     runner_control_port: 8082
-    runner_port: 7000
 immutable: false
 ---
 apiVersion: v1
@@ -3130,14 +3127,6 @@ spec:
       toPorts:
         - ports:
             - port: "5432"
-              protocol: TCP
-    - toEndpoints:
-        - matchLabels:
-            app.kubernetes.io/name: agentplane-runner
-            k8s:io.kubernetes.pod.namespace: agentplane-staging
-      toPorts:
-        - ports:
-            - port: "7000"
               protocol: TCP
   endpointSelector:
     matchLabels:
@@ -5276,14 +5265,7 @@ spec:
     matchLabels:
       app.kubernetes.io/name: agentplane-runner
   ingress:
-    - fromEndpoints:
-        - matchLabels:
-            app.kubernetes.io/name: agentplane-runner-gateway
-            k8s:io.kubernetes.pod.namespace: agentplane-staging
-      toPorts:
-        - ports:
-            - port: "7000"
-              protocol: TCP
+    - {}
 ---
 apiVersion: extensions.agents.x-k8s.io/v1beta1
 kind: SandboxTemplate
@@ -5304,8 +5286,6 @@ spec:
         - args:
             - --state-dir
             - /state
-            - --listen
-            - 0.0.0.0:7000
             - --claude-binary
             - /bin/claude
             - --anthropic-base-url
@@ -5381,9 +5361,6 @@ spec:
               value: America/Los_Angeles
           image: git.allegedly.works/ducktape-ci/runner:unset
           name: runner
-          ports:
-            - containerPort: 7000
-              name: runner
           resources:
             limits:
               cpu: "2"
@@ -6722,8 +6699,6 @@ spec:
         - args:
             - --state-dir
             - /state
-            - --listen
-            - 0.0.0.0:7000
             - --claude-binary
             - /bin/claude
             - --anthropic-base-url
@@ -6803,9 +6778,6 @@ spec:
               value: America/Los_Angeles
           image: git.allegedly.works/ducktape-ci/runner-ducktape:unset
           name: runner
-          ports:
-            - containerPort: 7000
-              name: runner
           resources:
             limits:
               cpu: "2"

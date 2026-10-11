@@ -1,7 +1,7 @@
 # Sandbox Service
 
 Independent backend owner for Sandbox lifecycle: provisioning, suspend/resume and deletion,
-templates, Kubernetes and egress grants, retention holds, teardown, and the runner endpoints each new
+templates, Kubernetes and egress grants, teardown, and the runner endpoints each new
 Sandbox's runner dials. It has no database; Kubernetes is its inventory. Sessions, commands and
 runner access belong to the [Runner Gateway](../runner_gateway/README.md). It does not own
 notification payloads or inboxes, Action Decisions or execution, native harness scheduling, browser
@@ -24,12 +24,11 @@ teardown; `teardown.py` has the Runner Gateway seal each Session before deleting
 
 The [authenticated gRPC API](API.md) has a standalone server entry point and Python client
 (`client.py`), which also calls the Runner Gateway. This service serves `SandboxService`: Sandbox
-lifecycle, provisioning, egress grants and retention holds. It calls the Runner Gateway only to seal
+lifecycle, provisioning and egress grants. It calls the Runner Gateway only to seal
 a Sandbox for teardown.
 
 ## Deployment
 
 A separately built image, Deployment/Service/ServiceAccount, TokenReview and lifecycle/grant RBAC,
-and network isolation. Its callers are the app, the Notification Service and
-the History Service; it reaches the Kubernetes API and the Runner Gateway. App-to-service calls
+and network isolation. Its callers are the app and the Notification Service; it reaches the Kubernetes API and the Runner Gateway. App-to-service calls
 require a Pod-bound workload TokenReview.

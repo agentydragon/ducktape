@@ -79,7 +79,6 @@ def environment_chart(app: App, env: Environment) -> Chart:
                 env.namespace
             ).pods
         },
-        runners=runner_sandbox.pods(env.namespace),
     )
     history_service.HistoryService(
         chart,
