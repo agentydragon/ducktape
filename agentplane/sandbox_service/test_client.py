@@ -35,17 +35,16 @@ async def test_bare_service_eof_is_not_native_closure(tmp_path: Path) -> None:
     runner_gateway_pb2_grpc.add_RunnerGatewayServicer_to_server(TruncatedGateway(), server)
     token_file = tmp_path / "token"
     token_file.write_text(TOKEN)
-    async with serving(server, "127.0.0.1:0", grace_s=0) as port:
-        client = connect(f"127.0.0.1:{port}", token_file, namespace=SANDBOX_NAMESPACE, command_admission_timeout_s=20)
+    async with (
+        serving(server, "127.0.0.1:0", grace_s=0) as port,
+        connect(f"127.0.0.1:{port}", token_file, namespace=SANDBOX_NAMESPACE, command_admission_timeout_s=20) as client,
+    ):
+        attachment = await client.runner(DESTINATION).attach("session")
         try:
-            attachment = await client.runner(DESTINATION).attach("session")
-            try:
-                with pytest.raises(ConnectionError, match="without native closure"):
-                    await attachment.next_entry()
-            finally:
-                attachment.cancel()
+            with pytest.raises(ConnectionError, match="without native closure"):
+                await attachment.next_entry()
         finally:
-            await client.close()
+            attachment.cancel()
 
 
 if __name__ == "__main__":

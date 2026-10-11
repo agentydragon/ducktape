@@ -196,9 +196,8 @@ async def local_runners(
 ) -> AsyncIterator[SandboxSessions]:
     """`SANDBOX` running, its Pod at the local runner's address."""
     live_index.sandboxes[SANDBOX], live_index.pods[SANDBOX] = seed_runner(custom_objects, core_v1, SANDBOX)
-    runners = SandboxSessions(live_index, sandbox_endpoint.client())
-    yield runners
-    await runners.close()
+    async with sandbox_endpoint.client() as service:
+        yield SandboxSessions(live_index, service)
 
 
 @pytest.fixture
@@ -967,8 +966,7 @@ async def test_thread_command_reports_id_conflict_after_runner_admitted_before_a
     original = command_pb2.Command(
         command_id="reused-before-copy", interrupt_turn=command_pb2.InterruptTurn(turn_id="first-target")
     )
-    client = runner_client_factory(runner.target, capture_history=True)
-    try:
+    async with runner_client_factory(runner.target, capture_history=True) as client:
         attachment = await client.attach(SESSION, spec=spec)
         try:
             await attachment.command(original)
@@ -977,8 +975,6 @@ async def test_thread_command_reports_id_conflict_after_runner_admitted_before_a
             await attachment.drain_until_end()
         finally:
             attachment.cancel()
-    finally:
-        await client.close()
 
     async with httpx.AsyncClient(base_url=app_url, timeout=60, headers=AGENT_AUTH) as http:
         conflict = await http.post(
@@ -1195,7 +1191,8 @@ async def replicas(
 ) -> AsyncIterator[Replicas]:
     replica_engine = connect(db_url)
     replica_updates = DatabaseUpdates(replica_engine.url)
-    survivor_runners = SandboxSessions(live_index, sandbox_endpoint.client())
+    survivor_service = sandbox_endpoint.client()
+    survivor_runners = SandboxSessions(live_index, survivor_service)
     survivor_event_logs = EventLogStore(replica_engine, peer=event_logs.peer, history_reader=event_logs.reader)
     owner_ingester = Ingester(runners=local_runners, event_logs=event_logs, ingestion=ingestion)
     survivor_ingester = Ingester(
@@ -1211,7 +1208,7 @@ async def replicas(
         ingester=survivor_ingester,
     )
     try:
-        async with replica_updates.listener.listen():
+        async with survivor_service, replica_updates.listener.listen():
             await owner_ingester.start()
             await owner_ingester.reconcile()
             try:
@@ -1226,7 +1223,6 @@ async def replicas(
             finally:
                 await owner_ingester.close()
                 await survivor_ingester.close()
-                await survivor_runners.close()
     finally:
         await replica_engine.dispose()
 
@@ -1300,7 +1296,8 @@ async def test_inventory_change_discovers_existing_runner_session_without_browse
 ) -> None:
     # This must wake from the informer notification, not the periodic recovery scan.
     monkeypatch.setattr("agentplane.app.threads.ingestion.RECONCILE_S", 3600)
-    runners = SandboxSessions(live_index, sandbox_endpoint.client())
+    service = sandbox_endpoint.client()
+    runners = SandboxSessions(live_index, service)
     discovered = asyncio.Event()
     running = runners.running
 
@@ -1310,33 +1307,31 @@ async def test_inventory_change_discovers_existing_runner_session_without_browse
 
     monkeypatch.setattr(runners, "running", observed_running)
     ingester = Ingester(runners=runners, event_logs=event_logs, ingestion=ingestion)
-    client = runner_client_factory(runner.target, capture_history=True)
-    try:
-        async with await client.attach(SESSION, spec=spec):
-            pass
-        await ingester.start()
-        async with asyncio.timeout(10):
-            await discovered.wait()
-        discovered.clear()
-        live_index.sandboxes[SANDBOX], live_index.pods[SANDBOX] = seed_runner(custom_objects, core_v1, SANDBOX)
-        live_index.changes.notify()
-        async with asyncio.timeout(10):
-            await discovered.wait()
-        # Only the ingester can create this row: no bridge exists, so no Open, command, or SSE request ran.
-        async for attempt in AsyncRetrying(
-            stop=stop_after_delay(10), wait=wait_fixed(0.1), retry=retry_if_exception_type(AssertionError)
-        ):
-            with attempt:
-                threads = await store.list_threads()
-                assert len(threads) == 1
-                # Discovery wakes once from the informer; projection subsequently fetches service pages.
-                await ingester.reconcile()
-                assert await event_logs.last_cursor(threads[0].id) > 0
-        assert threads[0].sandbox == SANDBOX
-    finally:
-        await ingester.close()
-        await runners.close()
-        await client.close()
+    async with service, runner_client_factory(runner.target, capture_history=True) as client:
+        try:
+            async with await client.attach(SESSION, spec=spec):
+                pass
+            await ingester.start()
+            async with asyncio.timeout(10):
+                await discovered.wait()
+            discovered.clear()
+            live_index.sandboxes[SANDBOX], live_index.pods[SANDBOX] = seed_runner(custom_objects, core_v1, SANDBOX)
+            live_index.changes.notify()
+            async with asyncio.timeout(10):
+                await discovered.wait()
+            # Only the ingester can create this row: no bridge exists, so no Open, command, or SSE request ran.
+            async for attempt in AsyncRetrying(
+                stop=stop_after_delay(10), wait=wait_fixed(0.1), retry=retry_if_exception_type(AssertionError)
+            ):
+                with attempt:
+                    threads = await store.list_threads()
+                    assert len(threads) == 1
+                    # Discovery wakes once from the informer; projection subsequently fetches service pages.
+                    await ingester.reconcile()
+                    assert await event_logs.last_cursor(threads[0].id) > 0
+            assert threads[0].sandbox == SANDBOX
+        finally:
+            await ingester.close()
 
 
 async def test_resumed_session_stream_does_not_end_at_previous_shutdown(

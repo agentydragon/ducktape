@@ -114,10 +114,7 @@ async def async_main(settings: Settings) -> None:
         httpx.AsyncClient(base_url=str(settings.notifications_url), timeout=5) as notifications_http,
         httpx.AsyncClient(base_url=str(settings.egress_admin_url), timeout=settings.egress_admin_timeout) as admin_http,
         httpx.AsyncClient(base_url=str(settings.electric_url), timeout=httpx.Timeout(65, connect=5)) as electric_http,
-    ):
-        # Cast so `patch_namespaced_custom_object` accepts `_content_type` (see util.kubernetes).
-        custom_objects = cast(CustomObjectsClient, CustomObjectsApi(api))
-        inventory = SandboxServiceClient(
+        SandboxServiceClient(
             settings.sandbox_service_target,
             gateway_target=settings.runner_gateway_target,
             namespace=settings.sandbox_namespace,
@@ -128,13 +125,17 @@ async def async_main(settings: Settings) -> None:
             follow_timeout_s=settings.sandbox_service_follow_timeout_s,
             control_target=settings.sandbox_service_control_target,
             channel_options=settings.sandbox_service_grpc_channel_options,
-        )
-        history = HistoryServiceClient(
+        ) as inventory,
+        HistoryServiceClient(
             settings.history_service_target,
             token_file=settings.history_service_token_file,
             request_timeout_s=settings.history_service_request_timeout_s,
             channel_options=settings.history_service_grpc_channel_options,
-        )
+        ) as history,
+        history.new_client() as history_watch_client,
+    ):
+        # Cast so `patch_namespaced_custom_object` accepts `_content_type` (see util.kubernetes).
+        custom_objects = cast(CustomObjectsClient, CustomObjectsApi(api))
         egress = EgressAccess(EgressReader(namespace=settings.namespace, custom_objects=custom_objects), inventory)
         # In the Sandbox's namespace, not the app's: that is where the Action Service matches a
         # binding to the authenticated Sandbox, and where the owner reference cascades.
@@ -172,7 +173,6 @@ async def async_main(settings: Settings) -> None:
         ingester = Ingester(
             runners=runners, event_logs=event_logs, ingestion=Ingestion(engine), history_projector=projector
         )
-        history_watch_client = history.new_client()
         if projector is None:
             history_watch = HistoryWatch(
                 history_watch_client,
@@ -238,7 +238,6 @@ async def async_main(settings: Settings) -> None:
                     drain_of(app),
                 ),
                 ingester=ingester,
-                runners=runners,
                 database_updates=database_updates,
                 engine=engine,
             )
@@ -246,17 +245,10 @@ async def async_main(settings: Settings) -> None:
             for task in watch_tasks:
                 task.cancel()
             await asyncio.gather(*watch_tasks, return_exceptions=True)
-            await history_watch.close()
-            await history.close()
 
 
 async def serve_then_close(
-    server: uvicorn.Server,
-    *,
-    ingester: Ingester,
-    runners: SandboxSessions,
-    database_updates: DatabaseUpdates,
-    engine: AsyncEngine,
+    server: uvicorn.Server, *, ingester: Ingester, database_updates: DatabaseUpdates, engine: AsyncEngine
 ) -> None:
     """Serve until told to exit, then let go in the order the budgets assume: Uvicorn's graceful-shutdown
     timeout bounds the requests and streams still open, and the ingester's lease release and closing the
@@ -268,7 +260,6 @@ async def serve_then_close(
                 await server.serve()
             finally:
                 await ingester.close()
-                await runners.close()
     finally:
         await engine.dispose()
 

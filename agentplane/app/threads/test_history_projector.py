@@ -219,53 +219,55 @@ async def test_raw_history_watch_wakes_multi_page_projection_without_polling(
             self.reconciled.set()
 
     coordinator = ObservedIngester()
-    watch_client = event_logs.reader.new_client()
-    history_watch = HistoryWatch(
-        watch_client, lambda: watch_client.watch_session_history(timeout_s=300), coordinator.wake, retry_interval_s=1
-    )
-    watch_task = asyncio.create_task(history_watch.run())
-    try:
-        await coordinator.start()
-        await asyncio.wait_for(coordinator.reconciled.wait(), 10)
-        await asyncio.wait_for(event_logs.peer.history_watch_opened.wait(), 10)
-        entries = [
-            event_entry(cursor, harness_stderr=event_pb2.HarnessStderr(text=f"line {cursor}"))
-            for cursor in range(1, 257)
-        ]
-        event_logs.peer.publish(thread, entries)
+    async with event_logs.reader.new_client() as watch_client:
+        history_watch = HistoryWatch(
+            watch_client,
+            lambda: watch_client.watch_session_history(timeout_s=300),
+            coordinator.wake,
+            retry_interval_s=1,
+        )
+        watch_task = asyncio.create_task(history_watch.run())
+        try:
+            await coordinator.start()
+            await asyncio.wait_for(coordinator.reconciled.wait(), 10)
+            await asyncio.wait_for(event_logs.peer.history_watch_opened.wait(), 10)
+            entries = [
+                event_entry(cursor, harness_stderr=event_pb2.HarnessStderr(text=f"line {cursor}"))
+                for cursor in range(1, 257)
+            ]
+            event_logs.peer.publish(thread, entries)
 
-        changed = asyncio.Event()
-        changes = database_updates.changes[Channel.THREADS]
-        with changes.subscribe(changed):
-            while True:
-                changed.clear()
-                async with async_sessionmaker(engine)() as session:
-                    through = await session.scalar(
-                        select(ThreadCheckpoint.through_cursor).where(ThreadCheckpoint.thread_id == thread)
-                    )
-                if through == len(entries):
-                    break
-                await asyncio.wait_for(changed.wait(), 10)
+            changed = asyncio.Event()
+            changes = database_updates.changes[Channel.THREADS]
+            with changes.subscribe(changed):
+                while True:
+                    changed.clear()
+                    async with async_sessionmaker(engine)() as session:
+                        through = await session.scalar(
+                            select(ThreadCheckpoint.through_cursor).where(ThreadCheckpoint.thread_id == thread)
+                        )
+                    if through == len(entries):
+                        break
+                    await asyncio.wait_for(changed.wait(), 10)
 
-            # The initial stream invalidation and 256-entry backlog have been consumed. A new
-            # commit must wake an idle coordinator without relying on the normal interval.
-            event_logs.peer.publish(
-                thread, [event_entry(257, harness_stderr=event_pb2.HarnessStderr(text="after backlog"))]
-            )
-            while True:
-                changed.clear()
-                async with async_sessionmaker(engine)() as session:
-                    through = await session.scalar(
-                        select(ThreadCheckpoint.through_cursor).where(ThreadCheckpoint.thread_id == thread)
-                    )
-                if through == 257:
-                    break
-                await asyncio.wait_for(changed.wait(), 10)
-    finally:
-        watch_task.cancel()
-        await asyncio.gather(watch_task, return_exceptions=True)
-        await history_watch.close()
-        await coordinator.close()
+                # The initial stream invalidation and 256-entry backlog have been consumed. A new
+                # commit must wake an idle coordinator without relying on the normal interval.
+                event_logs.peer.publish(
+                    thread, [event_entry(257, harness_stderr=event_pb2.HarnessStderr(text="after backlog"))]
+                )
+                while True:
+                    changed.clear()
+                    async with async_sessionmaker(engine)() as session:
+                        through = await session.scalar(
+                            select(ThreadCheckpoint.through_cursor).where(ThreadCheckpoint.thread_id == thread)
+                        )
+                    if through == 257:
+                        break
+                    await asyncio.wait_for(changed.wait(), 10)
+        finally:
+            watch_task.cancel()
+            await asyncio.gather(watch_task, return_exceptions=True)
+            await coordinator.close()
 
 
 async def test_projection_updates_activity_atomically_and_ignores_tool_output(

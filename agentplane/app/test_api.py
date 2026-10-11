@@ -762,8 +762,9 @@ async def unanswered_command_service(
     server = grpc.aio.server()
     runner_gateway_pb2_grpc.add_RunnerGatewayServicer_to_server(UnansweredGateway(), server)
     await asyncio.to_thread(token_file.write_text, "test-app-command-peer")
-    async with serving(server, "127.0.0.1:0", grace_s=0) as port:
-        service = SandboxServiceClient(
+    async with (
+        serving(server, "127.0.0.1:0", grace_s=0) as port,
+        SandboxServiceClient(
             f"127.0.0.1:{port}",
             gateway_target=f"127.0.0.1:{port}",
             namespace="test",
@@ -772,11 +773,9 @@ async def unanswered_command_service(
             request_timeout_s=5,
             lifecycle_timeout_s=5,
             follow_timeout_s=5,
-        )
-        try:
-            yield service, cancelled
-        finally:
-            await service.close()
+        ) as service,
+    ):
+        yield service, cancelled
 
 
 async def test_unanswered_service_command_is_a_504_and_cancels_its_rpc(
@@ -839,7 +838,6 @@ async def test_unanswered_service_command_is_a_504_and_cancels_its_rpc(
                 assert await cancelled.get() == session_id
         finally:
             await ingester.close()
-            await runners.close()
 
 
 def test_egress_lists_the_bindings_naming_the_sandbox(client: TestClient) -> None:

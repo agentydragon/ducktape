@@ -39,7 +39,6 @@ from agentplane.app.testing.history import SeededEventLogStore as EventLogStore
 from agentplane.app.testing.model_test_data import TEST_REASONING_EFFORTS
 from agentplane.app.threads.bridge import RunnerBridge
 from agentplane.app.threads.ingestion import Ingester
-from agentplane.app.threads.sessions import SandboxSessions
 from agentplane.app.threads.store import ThreadStore
 from agentplane.app.threads.view.content import ContentStore
 from agentplane.runner.harness import Harness
@@ -227,7 +226,6 @@ async def test_sigterm_ends_open_streams_fails_readiness_and_closes_the_ingester
     database: AsyncEngine,
     event_logs: EventLogStore,
     content: ContentStore,
-    runners: SandboxSessions,
     ingester: Ingester,
     custom_objects: FakeCustomObjectsApi,
     core_v1: FakeCoreV1Api,
@@ -268,7 +266,7 @@ async def test_sigterm_ends_open_streams_fails_readiness_and_closes_the_ingester
         drain_of(app),
     )
     serving = asyncio.create_task(
-        serve_then_close(server, ingester=ingester, runners=runners, database_updates=database_updates, engine=engine)
+        serve_then_close(server, ingester=ingester, database_updates=database_updates, engine=engine)
     )
     # The registered Session gets its own lease even when Sandbox discovery cannot dial.
     while not server.started or await _leases(database) == 0:

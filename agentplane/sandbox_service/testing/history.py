@@ -52,11 +52,8 @@ async def register_attached_sessions(resources: Resources, engine: AsyncEngine) 
                         sandbox=view.name, sandbox_uid=view.uid, owner=view.service_account
                     )
                     endpoint = await resources.destinations.resolve(destination, writes=False)
-                    runner = RunnerClient(endpoint.target, channel_options=None)
-                    try:
+                    async with RunnerClient(endpoint.target, channel_options=None) as runner:
                         summaries = await runner.list_sessions()
-                    finally:
-                        await runner.close()
                     namespace = resources.destinations.inventory.namespace
                     for summary in summaries:
                         # CreateSession registered its own; a runner Session a test attached directly

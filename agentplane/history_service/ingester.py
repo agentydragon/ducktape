@@ -133,7 +133,7 @@ class HistoryIngester:
                     # A channel once stayed UNAVAILABLE for half an hour against a healthy Sandbox Service
                     # that a fresh process reached at once. Follows on the old channel fail and retry.
                     logger.warning("Session feed failed %d times in a row; dialing a fresh channel", failures)
-                    await self.sandboxes.close()
+                    await self.sandboxes.redial()
                 await asyncio.sleep(self.retry_interval_s)
 
     def _observe(self, change: SessionChange) -> None:

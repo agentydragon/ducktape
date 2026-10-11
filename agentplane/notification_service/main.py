@@ -29,29 +29,29 @@ async def serve(settings: Settings) -> None:
     engine = create_async_engine(
         make_url(settings.database_url).set(drivername="postgresql+asyncpg"), pool_size=4, max_overflow=2
     )
-    sandboxes = SandboxServiceClient(
-        settings.sandbox_service.target,
-        gateway_target=settings.sandbox_service.gateway_target,
-        namespace=settings.namespace,
-        token_file=settings.sandbox_service.token_file,
-        request_timeout_s=settings.sandbox_service.request_timeout_s,
-        lifecycle_timeout_s=settings.sandbox_service.lifecycle_timeout_s,
-        follow_timeout_s=settings.sandbox_service.follow_timeout_s,
-        command_admission_timeout_s=settings.sandbox_service.command_admission_timeout_s,
-        control_target=settings.sandbox_service.control_target,
-        channel_options=settings.sandbox_service.grpc_channel_options,
-    )
-    history = HistoryServiceClient(
-        settings.history_service.target,
-        token_file=settings.history_service.token_file,
-        request_timeout_s=settings.history_service.request_timeout_s,
-        channel_options=settings.history_service.grpc_channel_options,
-    )
     try:
         async with (
             k8s_client.ApiClient() as kube,
             httpx.AsyncClient(base_url=str(settings.actions.url), timeout=5, follow_redirects=False) as http,
             AsyncExitStack() as github_stack,
+            SandboxServiceClient(
+                settings.sandbox_service.target,
+                gateway_target=settings.sandbox_service.gateway_target,
+                namespace=settings.namespace,
+                token_file=settings.sandbox_service.token_file,
+                request_timeout_s=settings.sandbox_service.request_timeout_s,
+                lifecycle_timeout_s=settings.sandbox_service.lifecycle_timeout_s,
+                follow_timeout_s=settings.sandbox_service.follow_timeout_s,
+                command_admission_timeout_s=settings.sandbox_service.command_admission_timeout_s,
+                control_target=settings.sandbox_service.control_target,
+                channel_options=settings.sandbox_service.grpc_channel_options,
+            ) as sandboxes,
+            HistoryServiceClient(
+                settings.history_service.target,
+                token_file=settings.history_service.token_file,
+                request_timeout_s=settings.history_service.request_timeout_s,
+                channel_options=settings.history_service.grpc_channel_options,
+            ) as history,
         ):
             principals = WorkloadPrincipalResolver(
                 authentication=k8s_client.AuthenticationV1Api(kube),
@@ -77,8 +77,6 @@ async def serve(settings: Settings) -> None:
             )
             await uvicorn.Server(uvicorn.Config(app, host=settings.host, port=settings.port)).serve()
     finally:
-        await sandboxes.close()
-        await history.close()
         await engine.dispose()
 
 

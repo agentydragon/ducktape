@@ -44,8 +44,5 @@ class HistoryWatch:
                 logger.warning("History Service change watch failed; reconnecting", exc_info=True)
                 if failures % self._fresh_channel_after == 0:
                     logger.warning("history watch failed %d times in a row; dialing a fresh channel", failures)
-                    await self._history.close()
+                    await self._history.redial()
                 await asyncio.sleep(self._retry_interval_s)
-
-    async def close(self) -> None:
-        await self._history.close()

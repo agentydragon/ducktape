@@ -122,15 +122,15 @@ async def ingest(settings: Settings, url: URL) -> None:
         channel_options=target.grpc_channel_options,
     )
     try:
-        await HistoryIngester(
-            Store(engine, settle_deltas=settings.ingester.settle_deltas),
-            engine,
-            sandboxes,
-            concurrency=settings.ingester.concurrency,
-            retry_interval_s=settings.ingester.retry_interval_s,
-        ).run()
+        async with sandboxes:
+            await HistoryIngester(
+                Store(engine, settle_deltas=settings.ingester.settle_deltas),
+                engine,
+                sandboxes,
+                concurrency=settings.ingester.concurrency,
+                retry_interval_s=settings.ingester.retry_interval_s,
+            ).run()
     finally:
-        await sandboxes.close()
         await engine.dispose()
 
 

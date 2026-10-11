@@ -130,9 +130,8 @@ class HistoryService(protocol_pb2_grpc.HistoryServiceServicer):
         server = grpc.aio.server()
         protocol_pb2_grpc.add_HistoryServiceServicer_to_server(self, server)
         await asyncio.to_thread(token_file.write_text, "test-app-history-peer")
-        async with serving(server, "127.0.0.1:0", grace_s=0) as port:
-            client = HistoryServiceClient(f"127.0.0.1:{port}", token_file=token_file, request_timeout_s=10)
-            try:
-                yield client
-            finally:
-                await client.close()
+        async with (
+            serving(server, "127.0.0.1:0", grace_s=0) as port,
+            HistoryServiceClient(f"127.0.0.1:{port}", token_file=token_file, request_timeout_s=10) as client,
+        ):
+            yield client

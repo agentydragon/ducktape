@@ -65,14 +65,13 @@ def gateway() -> ScriptedGateway:
 async def teardown(inventory: SandboxInventory, gateway: ScriptedGateway, token_file: Path) -> AsyncIterator[Teardown]:
     server = grpc.aio.server()
     runner_gateway_pb2_grpc.add_RunnerGatewayServicer_to_server(gateway, server)
-    async with serving(server, "127.0.0.1:0", grace_s=0) as port:
-        client = connect(
+    async with (
+        serving(server, "127.0.0.1:0", grace_s=0) as port,
+        connect(
             f"127.0.0.1:{port}", token_file, namespace=inventory.namespace, command_admission_timeout_s=None
-        )
-        try:
-            yield Teardown(inventory, GatewaySealing(client))
-        finally:
-            await client.close()
+        ) as client,
+    ):
+        yield Teardown(inventory, GatewaySealing(client))
 
 
 @pytest.fixture

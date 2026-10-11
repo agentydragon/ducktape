@@ -645,11 +645,8 @@ async def inspect(args: argparse.Namespace) -> None:
             "port_forward": _port_forward(namespace, pod) if pod is not None else None,
         }
         if args.target is not None:
-            runner = RunnerClient(args.target, channel_options=None)
-            try:
+            async with RunnerClient(args.target, channel_options=None) as runner:
                 summaries = await _within(runner.list_sessions(), deadline)
-            finally:
-                await runner.close()
             result["sessions"] = [
                 {
                     "session_id": item.session_id,
@@ -777,16 +774,13 @@ async def _retire_format_permission(core: k8s_client.CoreV1Api, namespace: str, 
 
 async def initialize(args: argparse.Namespace) -> None:
     deadline = asyncio.get_running_loop().time() + args.timeout
-    runner = RunnerClient(args.target, channel_options=None)
-    try:
+    async with RunnerClient(args.target, channel_options=None) as runner:
         sessions = await _within(runner.list_sessions(), deadline)
 
         async def collect() -> list[runner_pb2.InitializationEvent]:
             return [event async for event in runner.initialize_events(_PROBE_SCRIPT)]
 
         events = await _within(collect(), deadline)
-    finally:
-        await runner.close()
     results = [event.result for event in events if event.HasField("result")]
     if not results or results[-1].exit_code != 0:
         exit_code = results[-1].exit_code if results else "missing"
@@ -877,8 +871,7 @@ async def session(args: argparse.Namespace) -> None:
     marker = f"VM_RECOVERY_{uuid4().hex[:16]}"
     workdir = f"{_SESSION_ROOT}/sessions/{session_id}"
     setup_script = f"mkdir -p {workdir}"
-    runner = RunnerClient(args.target, channel_options=None, capture_history=True)
-    try:
+    async with RunnerClient(args.target, channel_options=None, capture_history=True) as runner:
         spec = runner_pb2.SessionSpec(
             harness=_harness(args.harness), cwd=workdir, model=args.model, reasoning_effort=args.reasoning_effort
         )
@@ -892,8 +885,6 @@ async def session(args: argparse.Namespace) -> None:
         )
         if _turn_text(entries) != "MARKER_SAVED":
             raise RuntimeError("native harness did not return the expected initial marker acknowledgement")
-    finally:
-        await runner.close()
     if not entries:
         raise RuntimeError("runner attached without event evidence")
     print(
@@ -922,55 +913,56 @@ async def setup_probe(args: argparse.Namespace) -> None:
         raise ValueError("setup script must contain 1..65536 UTF-8 bytes")
     workdir = f"{_SESSION_ROOT}/setup/{session_id}"
     deadline = asyncio.get_running_loop().time() + args.timeout
-    runner = RunnerClient(args.target, channel_options=None, capture_history=True)
     attachment = None
     stream_drained = False
-    try:
-        await _within(runner.list_sessions(), deadline)
-        attachment = await _within(
-            runner.attach(
-                session_id,
-                spec=runner_pb2.SessionSpec(
-                    harness=_harness(args.harness),
-                    cwd=workdir,
-                    model=args.model,
-                    reasoning_effort=args.reasoning_effort,
+    async with RunnerClient(args.target, channel_options=None, capture_history=True) as runner:
+        try:
+            await _within(runner.list_sessions(), deadline)
+            attachment = await _within(
+                runner.attach(
+                    session_id,
+                    spec=runner_pb2.SessionSpec(
+                        harness=_harness(args.harness),
+                        cwd=workdir,
+                        model=args.model,
+                        reasoning_effort=args.reasoning_effort,
+                    ),
+                    setup_script=script,
                 ),
-                setup_script=script,
-            ),
-            deadline,
-        )
-        async with asyncio.timeout(_remaining(deadline)):
-            finished = await attachment.until(
-                lambda entry: entry.event.WhichOneof("observation") in {"setup_finished", "setup_interrupted"},
-                timeout_s=_remaining(deadline),
+                deadline,
             )
-            terminal_kind = finished.event.WhichOneof("observation")
-            exit_code = finished.event.setup_finished.exit_code if terminal_kind == "setup_finished" else None
-            if terminal_kind == "setup_finished" and exit_code == 0:
-                launch = await attachment.until(
-                    lambda entry: entry.event.WhichOneof("observation") in {"harness_started", "harness_launch_failed"},
+            async with asyncio.timeout(_remaining(deadline)):
+                finished = await attachment.until(
+                    lambda entry: entry.event.WhichOneof("observation") in {"setup_finished", "setup_interrupted"},
                     timeout_s=_remaining(deadline),
                 )
-                if launch.event.WhichOneof("observation") == "harness_started":
-                    await _within(attachment.detach(), deadline)
+                terminal_kind = finished.event.WhichOneof("observation")
+                exit_code = finished.event.setup_finished.exit_code if terminal_kind == "setup_finished" else None
+                if terminal_kind == "setup_finished" and exit_code == 0:
+                    launch = await attachment.until(
+                        lambda entry: (
+                            entry.event.WhichOneof("observation") in {"harness_started", "harness_launch_failed"}
+                        ),
+                        timeout_s=_remaining(deadline),
+                    )
+                    if launch.event.WhichOneof("observation") == "harness_started":
+                        await _within(attachment.detach(), deadline)
+                    else:
+                        await _within(attachment.drain_until_end(), deadline)
+                        stream_drained = True
                 else:
+                    # Failed and interrupted setup streams close on their own. Drain through EOF before
+                    # exiting so Attachment cleanup cannot race a Detach write with the server close.
                     await _within(attachment.drain_until_end(), deadline)
                     stream_drained = True
-            else:
-                # Failed and interrupted setup streams close on their own. Drain through EOF before
-                # exiting so Attachment cleanup cannot race a Detach write with the server close.
-                await _within(attachment.drain_until_end(), deadline)
-                stream_drained = True
-            if not stream_drained:
-                await _within(attachment.drain_until_end(), deadline)
-                stream_drained = True
-            entries = list(attachment.seen)
-        summaries = await _within(runner.list_sessions(), deadline)
-    finally:
-        if attachment is not None and not stream_drained:
-            attachment.cancel()
-        await runner.close()
+                if not stream_drained:
+                    await _within(attachment.drain_until_end(), deadline)
+                    stream_drained = True
+                entries = list(attachment.seen)
+            summaries = await _within(runner.list_sessions(), deadline)
+        finally:
+            if attachment is not None and not stream_drained:
+                attachment.cancel()
     stdout = b"".join(
         entry.event.setup_output.stdout
         for entry in entries
@@ -1108,8 +1100,7 @@ async def resume_vm(args: argparse.Namespace) -> None:
 
 async def recover(args: argparse.Namespace) -> None:
     deadline = asyncio.get_running_loop().time() + args.timeout
-    runner = RunnerClient(args.target, channel_options=None, capture_history=True)
-    try:
+    async with RunnerClient(args.target, channel_options=None, capture_history=True) as runner:
         summaries = await _within(runner.list_sessions(), deadline)
         summary = next((item for item in summaries if item.session_id == args.session_id), None)
         if summary is None:
@@ -1124,8 +1115,6 @@ async def recover(args: argparse.Namespace) -> None:
             timeout_s=_remaining(deadline),
             after_cursor=args.after_cursor,
         )
-    finally:
-        await runner.close()
     if not entries:
         raise RuntimeError("runner returned no post-stop event evidence")
     source_ids = {entry.origin.source_id for entry in entries}

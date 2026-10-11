@@ -53,12 +53,11 @@ class Sealing:
                 owner=sandbox.service_account, sandbox=sandbox.name, sandbox_uid=sandbox.uid
             )
             endpoint = await self.destinations.resolve(destination, writes=False)
-            client = RunnerClient(endpoint.target, channel_options=self.runner_grpc_channel_options)
-            try:
-                async with asyncio.timeout(SEAL_S):
-                    sealed = await self._seal_sessions(client)
-            finally:
-                await client.close()
+            async with (
+                RunnerClient(endpoint.target, channel_options=self.runner_grpc_channel_options) as client,
+                asyncio.timeout(SEAL_S),
+            ):
+                sealed = await self._seal_sessions(client)
         for session in sealed.sessions:
             public_id = await self.sessions.session_id(
                 sandbox_namespace=sandbox.namespace,

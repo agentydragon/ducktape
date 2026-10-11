@@ -101,7 +101,7 @@ async def serve(settings: Settings) -> None:
         k8s_client.ApiClient(await kubernetes_configuration(settings.kubeconfig)) as api,
         AsyncExitStack() as stack,
     ):
-        stack.push_async_callback(gateway.close)
+        await stack.enter_async_context(gateway)
         server = grpc.aio.server()
         await stack.enter_async_context(sandboxes(settings, api, server, sealing=GatewaySealing(gateway)))
         await stack.enter_async_context(serving(server, f"{settings.host}:{settings.port}", grace_s=5))

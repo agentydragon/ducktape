@@ -41,14 +41,13 @@ async def service(resources: gateway_api.Resources, provisioning: Provisioning |
 async def service_client(
     resources: gateway_api.Resources, token_file: Path, provisioning: Provisioning | None = None
 ) -> AsyncIterator[SandboxServiceClient]:
-    async with service(resources, provisioning) as target:
-        client = connect(
+    async with (
+        service(resources, provisioning) as target,
+        connect(
             target,
             token_file,
             namespace=resources.destinations.inventory.namespace,
             command_admission_timeout_s=resources.runner_admission_ack_timeout_s + 10,
-        )
-        try:
-            yield client
-        finally:
-            await client.close()
+        ) as client,
+    ):
+        yield client

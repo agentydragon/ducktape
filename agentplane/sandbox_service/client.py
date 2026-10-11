@@ -6,7 +6,8 @@ import asyncio
 import logging
 from collections.abc import AsyncIterator, Awaitable, Callable, Mapping
 from pathlib import Path
-from typing import Never
+from types import TracebackType
+from typing import Never, Self
 from uuid import UUID
 
 import grpc
@@ -139,7 +140,7 @@ class SandboxServiceClient:
 
     def dial(self, target: str) -> grpc.aio.Channel:
         # No retry service config: uncertain mutations need domain-specific reconciliation.
-        # A local subchannel pool makes a channel after `close()` dial anew; from the process-wide
+        # A local subchannel pool makes a channel after `redial()` dial anew; from the process-wide
         # pool it would inherit the closed channel's connection.
         return grpc.aio.insecure_channel(
             target,
@@ -187,24 +188,22 @@ class SandboxServiceClient:
         connection dialed for this call alone: a replica that no longer holds it refuses with
         UNAVAILABLE, and the caller's retry resolves the control Service again."""
         if self.control_target is not None:
-            channel = self.dial(
+            async with self.dial(
                 self.control_target.format(sandbox=destination.sandbox, namespace=destination.owner.namespace)
-            )
-            try:
-                return await self.unary(
-                    call(runner_gateway_pb2_grpc.RunnerGatewayStub(channel)), request, timeout_s=timeout_s
-                )
-            except ServiceError as error:
-                if error.code != grpc.StatusCode.UNAVAILABLE:
-                    raise
-                # CLEANUP(added 2026-10-11): Call through the control Service alone once no live
-                # Sandbox's runner lacks the control stream. Until then a Sandbox whose runner never
-                # connected has no control Service. Any replica serves its inbound route and refuses a
-                # control-routed Sandbox before acting unless it holds the connection, so this retry
-                # never takes such a Sandbox's operation another way.
-                logger.debug("Sandbox %s: control Service unavailable, calling the gateway", destination.sandbox)
-            finally:
-                await channel.close()
+            ) as channel:
+                try:
+                    return await self.unary(
+                        call(runner_gateway_pb2_grpc.RunnerGatewayStub(channel)), request, timeout_s=timeout_s
+                    )
+                except ServiceError as error:
+                    if error.code != grpc.StatusCode.UNAVAILABLE:
+                        raise
+                    # CLEANUP(added 2026-10-11): Call through the control Service alone once no live
+                    # Sandbox's runner lacks the control stream. Until then a Sandbox whose runner never
+                    # connected has no control Service. Any replica serves its inbound route and refuses a
+                    # control-routed Sandbox before acting unless it holds the connection, so this retry
+                    # never takes such a Sandbox's operation another way.
+                    logger.debug("Sandbox %s: control Service unavailable, calling the gateway", destination.sandbox)
         return await self.unary(call(self.gateway), request, timeout_s=timeout_s)
 
     async def list_sandboxes(self) -> list[Sandbox]:
@@ -277,7 +276,16 @@ class SandboxServiceClient:
     def runner(self, destination: SandboxDestination) -> Runner:
         return Runner(self, destination)
 
-    async def close(self) -> None:
+    async def __aenter__(self) -> Self:
+        return self
+
+    async def __aexit__(
+        self, exc_type: type[BaseException] | None, exc: BaseException | None, tb: TracebackType | None
+    ) -> None:
+        await self.redial()
+
+    async def redial(self) -> None:
+        """Close the open channels; the next call dials fresh ones."""
         if self._channel is not None:
             await self._channel.close()
             self._channel = None

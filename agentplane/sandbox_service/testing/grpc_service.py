@@ -42,14 +42,13 @@ def connect(
 async def service_client(resources: grpc_api.Resources, token_file: Path) -> AsyncIterator[SandboxServiceClient]:
     server = grpc.aio.server()
     grpc_api.add_service(resources, server)
-    async with serving(server, "127.0.0.1:0", grace_s=0) as port:
-        client = connect(
+    async with (
+        serving(server, "127.0.0.1:0", grace_s=0) as port,
+        connect(
             f"127.0.0.1:{port}",
             token_file,
             namespace=resources.provisioning.inventory.namespace,
             command_admission_timeout_s=20,
-        )
-        try:
-            yield client
-        finally:
-            await client.close()
+        ) as client,
+    ):
+        yield client

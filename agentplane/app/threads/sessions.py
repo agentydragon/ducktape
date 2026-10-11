@@ -44,6 +44,3 @@ class SandboxSessions:
         if str(view.uid) not in self._clients:
             self._clients[str(view.uid)] = self._service.runner(destination)
         return self._clients[str(view.uid)]
-
-    async def close(self) -> None:
-        await self._service.close()

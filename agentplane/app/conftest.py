@@ -254,11 +254,9 @@ def core_v1() -> FakeCoreV1Api:
 
 
 @pytest.fixture
-async def runners(live_index: LiveIndex, inventory: SandboxServiceClient) -> AsyncIterator[SandboxSessions]:
+def runners(live_index: LiveIndex, inventory: SandboxServiceClient) -> SandboxSessions:
     """The runners `live_index` shows, dialled on a port nothing listens on."""
-    runners = SandboxSessions(live_index, inventory)
-    yield runners
-    await runners.close()
+    return SandboxSessions(live_index, inventory)
 
 
 @pytest.fixture
@@ -324,11 +322,8 @@ def sandbox_endpoint(
 
 @pytest.fixture
 async def inventory(sandbox_endpoint: Endpoint) -> AsyncIterator[SandboxServiceClient]:
-    client = sandbox_endpoint.client()
-    try:
+    async with sandbox_endpoint.client() as client:
         yield client
-    finally:
-        await client.close()
 
 
 # The agent's credential, and what a test client carries: the app's other one is an OIDC session

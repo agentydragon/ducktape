@@ -89,13 +89,13 @@ async def history_service(
     )
     await asyncio.to_thread(token_file.write_text, TOKEN)
     try:
-        async with serving(server, "127.0.0.1:0", grace_s=0) as port:
-            client = HistoryServiceClient(f"127.0.0.1:{port}", token_file=token_file, request_timeout_s=20)
-            try:
-                async with history_changes.listener.listen(), summary_changes.listener.listen():
-                    yield client
-            finally:
-                await client.close()
+        async with (
+            serving(server, "127.0.0.1:0", grace_s=0) as port,
+            HistoryServiceClient(f"127.0.0.1:{port}", token_file=token_file, request_timeout_s=20) as client,
+            history_changes.listener.listen(),
+            summary_changes.listener.listen(),
+        ):
+            yield client
     finally:
         await engine.dispose()
 

@@ -131,15 +131,11 @@ async def test_an_unanswered_open_fails_on_its_bound_and_cancels_the_call(
     wedged = UnansweringRunner()
     server = grpc.aio.server()
     runner_pb2_grpc.add_RunnerServicer_to_server(wedged, server)
-    async with serving(server, "127.0.0.1:0", grace_s=0) as port:
-        client = runner_client_factory(f"127.0.0.1:{port}")
-        try:
-            async with asyncio.timeout(10):
-                with pytest.raises(OpenTimeoutError, match="'test-unanswered'"):
-                    await client.attach("test-unanswered", spec=spec)
-                assert await wedged.cancelled.get() == "test-unanswered"
-        finally:
-            await client.close()
+    async with serving(server, "127.0.0.1:0", grace_s=0) as port, runner_client_factory(f"127.0.0.1:{port}") as client:
+        async with asyncio.timeout(10):
+            with pytest.raises(OpenTimeoutError, match="'test-unanswered'"):
+                await client.attach("test-unanswered", spec=spec)
+            assert await wedged.cancelled.get() == "test-unanswered"
 
 
 if __name__ == "__main__":

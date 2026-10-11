@@ -123,7 +123,7 @@ class RunnerClient:
     def __init__(
         self, target: str, *, channel_options: Mapping[str, int | str] | None, capture_history: bool = False
     ) -> None:
-        """Dial `target`; `close()` closes the channel."""
+        """Dial `target`; exiting the client closes the channel."""
         self._capture_history = capture_history
         # Callers close a client and dial the same runner again. A local subchannel pool makes the new
         # channel connect anew; from the process-wide pool it would inherit the closed one's connection.
@@ -195,5 +195,10 @@ class RunnerClient:
     async def seal(self) -> runner_pb2.SealResponse:
         return await self._stub.Seal(runner_pb2.SealRequest())
 
-    async def close(self) -> None:
+    async def __aenter__(self) -> Self:
+        return self
+
+    async def __aexit__(
+        self, exc_type: type[BaseException] | None, exc: BaseException | None, tb: TracebackType | None
+    ) -> None:
         await self._channel.close()

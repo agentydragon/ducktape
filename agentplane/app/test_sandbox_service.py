@@ -124,7 +124,6 @@ async def test_production_bridge_archives_native_evidence_across_bounded_service
             ]
         finally:
             await ingester.close()
-            await directory.close()
 
 
 async def test_history_service_reads_match_the_app_projection(
@@ -176,7 +175,6 @@ async def test_history_service_reads_match_the_app_projection(
                     assert (await folded.get(thread)).folded_through == archived[-1].cursor
         finally:
             await ingester.close()
-            await directory.close()
 
         app = AppSummaries(engine)
         folded_logs = EventLogStore(engine, peer=event_logs.peer, history_reader=history, summaries=folded)
@@ -228,12 +226,10 @@ async def test_stopped_service_never_falls_back_to_reachable_runner(
     ) as remote:
         directory = SandboxSessions(live_index, remote)
         assert await directory.client(SANDBOX).list_sessions() == []
-    try:
+    async with remote:
         with pytest.raises(ServiceError):
             await directory.client(SANDBOX).list_sessions()
         assert not runner.runner.sessions
-    finally:
-        await directory.close()
 
 
 if __name__ == "__main__":

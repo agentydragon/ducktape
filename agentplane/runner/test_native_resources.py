@@ -86,11 +86,10 @@ def sample_native(pid: int, directory: Path) -> NativeSample:
 @asynccontextmanager
 async def running_client(config: RunnerConfig) -> AsyncIterator[RunnerClient]:
     server, runner, port = await serve(config)
-    client = RunnerClient(f"127.0.0.1:{port}", channel_options=None)
     try:
-        yield client
+        async with RunnerClient(f"127.0.0.1:{port}", channel_options=None) as client:
+            yield client
     finally:
-        await client.close()
         await runner.stop()
         await server.stop(0)
 

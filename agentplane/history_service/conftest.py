@@ -208,7 +208,7 @@ class ScriptedHolds(sandbox_service_pb2_grpc.SandboxServiceServicer):
 
 @asynccontextmanager
 async def subscriber(target: str, token_file: Path) -> AsyncIterator[SandboxServiceClient]:
-    client = SandboxServiceClient(
+    async with SandboxServiceClient(
         target,
         gateway_target=target,
         namespace=None,
@@ -217,11 +217,8 @@ async def subscriber(target: str, token_file: Path) -> AsyncIterator[SandboxServ
         request_timeout_s=5,
         lifecycle_timeout_s=5,
         follow_timeout_s=30,
-    )
-    try:
+    ) as client:
         yield client
-    finally:
-        await client.close()
 
 
 @pytest.fixture

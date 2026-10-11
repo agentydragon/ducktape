@@ -527,7 +527,6 @@ py_test(
         "//agentplane/app/testing:model_test_data",
         "//agentplane/app/threads:bridge",
         "//agentplane/app/threads:ingestion",
-        "//agentplane/app/threads:sessions",
         "//agentplane/app/threads:store",
         "//agentplane/app/threads/view:content",
         "//agentplane/runner:harness",

@@ -5,7 +5,8 @@ from __future__ import annotations
 import asyncio
 from collections.abc import AsyncIterator, Collection, Mapping
 from pathlib import Path
-from typing import Never
+from types import TracebackType
+from typing import Never, Self
 
 import grpc
 
@@ -50,7 +51,7 @@ class HistoryServiceClient:
     @property
     def stub(self) -> protocol_pb2_grpc.HistoryServiceAsyncStub:
         if self._stub is None:
-            # A local subchannel pool makes a channel after `close()` dial anew; from the process-wide
+            # A local subchannel pool makes a channel after `redial()` dial anew; from the process-wide
             # pool it would inherit the closed channel's connection.
             self._channel = grpc.aio.insecure_channel(
                 self.target,
@@ -211,7 +212,16 @@ class HistoryServiceClient:
         finally:
             call.cancel()
 
-    async def close(self) -> None:
+    async def __aenter__(self) -> Self:
+        return self
+
+    async def __aexit__(
+        self, exc_type: type[BaseException] | None, exc: BaseException | None, tb: TracebackType | None
+    ) -> None:
+        await self.redial()
+
+    async def redial(self) -> None:
+        """Close the open channel; the next call dials a fresh one."""
         if self._channel is not None:
             await self._channel.close()
             self._channel = None

@@ -211,11 +211,8 @@ class RunnerGateway(runner_gateway_pb2_grpc.RunnerGatewayServicer):
     ) -> AsyncIterator[tuple[RunnerClient, RunnerEndpoint]]:
         endpoint = await self.resources.destinations.resolve(destination, writes=writes)
         # TODO: runner RPC authentication/TLS. V1 relies on the deployment network boundary.
-        client = self._runner_client(endpoint.target)
-        try:
+        async with self._runner_client(endpoint.target) as client:
             yield client, endpoint
-        finally:
-            await client.close()
 
     async def lifecycle_routed(self, destination: SandboxDestination) -> bool:
         """Whether the Sandbox's lifecycle requests travel over its runner control stream, which they do for
@@ -338,8 +335,7 @@ class RunnerGateway(runner_gateway_pb2_grpc.RunnerGatewayServicer):
                     setup_script=setup_script,
                 )
             else:
-                client = self._runner_client(endpoint.target)
-                try:
+                async with self._runner_client(endpoint.target) as client:
                     attachment = await session_lifecycle.open_session(
                         client,
                         launch.open.session_id,
@@ -347,8 +343,6 @@ class RunnerGateway(runner_gateway_pb2_grpc.RunnerGatewayServicer):
                         bootstrap=launch.bootstrap,
                         setup_script=setup_script,
                     )
-                finally:
-                    await client.close()
             attachment.session_id = public_id
             return sandbox_service_pb2.CreateSessionResponse(session_id=public_id, attached=attachment)
 
@@ -561,8 +555,7 @@ class RunnerGateway(runner_gateway_pb2_grpc.RunnerGatewayServicer):
                 if not destination.session_id:
                     raise ValueError("session ID is required")
                 endpoint = await self.resources.destinations.resolve(destination.sandbox, writes=False)
-            client = self._runner_client(endpoint.target)
-            try:
+            async with self._runner_client(endpoint.target) as client:
                 async with asyncio.timeout(self.resources.admission_timeout_s):
                     attachment = await client.attach(
                         await self.runner_session_id(destination), after_cursor=request.follow.after_cursor
@@ -600,8 +593,6 @@ class RunnerGateway(runner_gateway_pb2_grpc.RunnerGatewayServicer):
                         await context.write(terminal)
                 finally:
                     attachment.cancel()
-            finally:
-                await client.close()
 
     @override
     async def WatchSessions(  # type: ignore[override]

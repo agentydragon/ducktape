@@ -157,15 +157,10 @@ def attached(session_id: str, harness_state: runner_pb2.HarnessState) -> runner_
     )
 
 
-@asynccontextmanager
-async def client(token_file: Path, target: str, *, control_target: str | None) -> AsyncIterator[SandboxServiceClient]:
-    started = connect(
+def client(token_file: Path, target: str, *, control_target: str | None) -> SandboxServiceClient:
+    return connect(
         target, token_file, namespace=SANDBOX_NAMESPACE, command_admission_timeout_s=None, control_target=control_target
     )
-    try:
-        yield started
-    finally:
-        await started.close()
 
 
 async def test_a_create_whose_harness_failed_resumes_the_session_on_retry(

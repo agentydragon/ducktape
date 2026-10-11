@@ -309,6 +309,8 @@ async def _serve(
         ingester = Ingester(runners=runners, event_logs=event_logs, ingestion=ingestion, history_projector=projector)
         bridge = RunnerBridge(runners=runners, event_logs=event_logs, content=content, ingester=ingester)
         async with (
+            inventory,
+            history,
             httpx.AsyncClient(base_url="http://test-unused-decisions.invalid") as decisions_http,
             httpx.AsyncClient(
                 base_url=electric_url or "http://test-unused-electric.invalid", timeout=65
@@ -374,8 +376,6 @@ async def _serve(
                             )
                     finally:
                         await ingester.close()
-                        await runners.close()
-                        await history.close()
             finally:
                 await engine.dispose()
                 await core.close()
