@@ -1031,7 +1031,6 @@ Refactors found by reading devel (2026-10-11 PDT) against the quality bar and
 flowchart TD
     GATEWAY_CLIENT_SPLIT[Session messages and client move to the gateway]
     RUNNER_INBOUND_RETIRE[Retire inbound runner access]
-    APP_PROJECTOR_RETIRE[Delete app projector]
     subgraph COHERENCE_REFACTORS[Coherence refactors]
         RUNNER_GATEWAY_AUDIENCE[Candidate: the Runner Gateway's own token audience]
         SERVICE_SETTINGS_BASE[Candidate: one config-file settings base]
@@ -1046,9 +1045,9 @@ flowchart TD
         RUNNER_ERRORS_REHOME[Blocked: errors beside the client that raises them]
         HISTORY_LIST_SUMMARIES_RETIRE[Candidate: delete ListSessionSummaries]
         HISTORY_GRPC_CONFORM[Candidate: the History Service follows grpc_services.md]
-        THREAD_FOLD_SINGLE_OWNER[Blocked: the fold has one owner]
+        THREAD_FOLD_SINGLE_OWNER[Candidate: the fold has one owner]
         SETTLE_DELTAS_ALWAYS_ON[Delta settlement always on]
-        APP_SERVICE_NAMES[Blocked: app names the right services]
+        APP_SERVICE_NAMES[Candidate: app names the right services]
         APP_TEST_CLIENT_MOVE[Candidate: app test client out of production]
         KUBEVIRT_GUEST_CONTROL[Candidate: KubeVirt guest dials out]
         RUNNER_CORE_SPLIT[Blocked: runner core out of the inbound servicer]
@@ -1070,8 +1069,6 @@ flowchart TD
     GATEWAY_CLIENT_SPLIT --> RUNNER_ERRORS_REHOME
     KUBEVIRT_GUEST_CONTROL --> RUNNER_INBOUND_RETIRE
     RUNNER_INBOUND_RETIRE --> RUNNER_CORE_SPLIT
-    APP_PROJECTOR_RETIRE --> THREAD_FOLD_SINGLE_OWNER
-    APP_PROJECTOR_RETIRE --> APP_SERVICE_NAMES
     COHERENCE_REFACTORS --> REFACTOR_COHERENCE_AUDIT[Whole-refactor coherence audit]
 ```
 
@@ -1167,11 +1164,12 @@ app's `history_service_watch_timeout_s`.
 
 ### `THREAD_FOLD_SINGLE_OWNER` — the fold has one owner
 
-**Blocked on `APP_PROJECTOR_RETIRE`.** With only the History Service running the fold,
+**Candidate; Thread fold move lane.** With only the History Service running the fold,
 `HistoryProjector` takes its `Store` instead of two single-implementation callables and drops its
 `grpc.RpcError` catch, the app's `HistoryWatch` calls the client directly, app-era wording goes,
 `EventLogStore.open` raises an app error instead of `EventReplicationError`, and `thread_fold` moves
-under `history_service/`.
+under `history_service/`: the view types the browser syncs become a public History Service module,
+and the fold engine, projector and tables private to it.
 
 ### `SETTLE_DELTAS_ALWAYS_ON` — delta settlement always on
 
@@ -1183,7 +1181,7 @@ silently stops settling. Settlement becomes unconditional: delete the setting,
 
 ### `APP_SERVICE_NAMES` — the app names the right services
 
-**Blocked on `APP_PROJECTOR_RETIRE`**, which rewrites the same files. The app says Sandbox Service
+**Candidate.** The app says Sandbox Service
 for the gateway's command records (`bridge.py`, `api.py`, a settings description), answers every
 `ConnectionError` with "Sandbox Service unavailable", and calls the stored cursor a follow cursor.
 `threads/ingestion.py`'s `Ingester` then only discovers Sessions; rename it for that.
