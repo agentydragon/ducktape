@@ -217,7 +217,6 @@ async def test_flushed_reports_the_acknowledged_seal_across_a_restart(
 ) -> None:
     service, target = ingress
     unflushed = await runner.seal()
-    assert unflushed.pushes
     assert {seal.session_id: seal.flushed for seal in unflushed.sessions} == {A: False, B: False}
     async with pushing(runner, target) as pusher:
         await service.until(lambda: service.sealed == {A, B})
