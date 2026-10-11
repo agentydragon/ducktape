@@ -10,7 +10,6 @@ import pytest_bazel
 
 from agentplane.proto import runner_pb2
 from agentplane.runner_gateway import protocol_pb2_grpc
-from agentplane.runner_gateway.testing.unimplemented_gateway import UnimplementedRunnerGateway
 from agentplane.sandbox_service import protocol_pb2
 from agentplane.sandbox_service.testing.grpc_service import connect, serving
 from agentplane.sandbox_service.testing.kubernetes import DESTINATION
@@ -21,7 +20,7 @@ from agentplane.testing.fake_apiserver import SANDBOX_NAMESPACE
 TOKEN = "test-grpc-token"
 
 
-class TruncatedGateway(UnimplementedRunnerGateway):
+class TruncatedGateway(protocol_pb2_grpc.RunnerGatewayServicer):
     @override
     async def FollowSession(
         self, request: protocol_pb2.FollowSessionRequest, context: grpc.aio.ServicerContext

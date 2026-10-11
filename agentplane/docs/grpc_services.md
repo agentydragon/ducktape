@@ -30,10 +30,11 @@ follows it; code that differs converges on it.
   carries them.
 - RPC methods carry `@override`. Besides checking the signature against the generated base, it
   exempts the RPC-cased method names from ruff's `N802`; no `noqa` is needed.
-- **Test fakes follow the same rule.** The generated stubs mark every RPC abstract, so each service
-  has one test base in its `testing/` package, `Unimplemented<Service>`, whose RPCs all answer
-  `UNIMPLEMENTED`. A fake subclasses it and overrides only the RPCs its test drives; the inherited
-  ones are also how a fake plays a peer that predates an RPC.
+- **Test fakes follow the same rule.** A fake subclasses the generated servicer directly and
+  overrides only the RPCs its test drives; the inherited ones answer `UNIMPLEMENTED`, which is also
+  how a fake plays a peer that predates an RPC. Deviation from stock mypy-protobuf: the stubs are
+  generated with `generate_concrete_servicer_stubs` (`devinfra/python/grpc.bzl`), so mypy sees
+  the servicer as the concrete class it is at runtime instead of an ABC with every RPC abstract.
 - A fake plays exactly one service. A test peer standing in for two services is two servicers over
   shared state, registered on one server.
 - A generic handler is right only where no generated code exists for the service, such as a proxy

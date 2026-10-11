@@ -13,8 +13,8 @@ import pytest_bazel
 from kubernetes_asyncio import client as k8s_client
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from agentplane.proto import runner_pb2
-from agentplane.runner.testing.runner_server import UnimplementedRunner, serve_runner
+from agentplane.proto import runner_pb2, runner_pb2_grpc
+from agentplane.runner.testing.runner_server import serve_runner
 from agentplane.runner_gateway.commands import db as commands_db
 from agentplane.runner_gateway.commands.connections import ConnectionStore
 from agentplane.runner_gateway.connection_records import ConnectionLeases
@@ -41,7 +41,7 @@ LEGACY = "test-legacy-session"
 
 
 @dataclass
-class ScriptedRunner(UnimplementedRunner):
+class ScriptedRunner(runner_pb2_grpc.RunnerServicer):
     """Seal, ListSessions and an Attach that answers StopRunnerSession by ending the stream."""
 
     harness_states: dict[str, runner_pb2.HarnessState] = field(default_factory=dict)

@@ -126,14 +126,3 @@ py_library(
         "@pypi//protobuf",
     ],
 )
-
-py_library(
-    name = "unimplemented_sandbox_service",
-    srcs = ["unimplemented_sandbox_service.py"],
-    deps = [
-        "//agentplane/sandbox_service:protocol_pb2",
-        "//agentplane/sandbox_service:protocol_pb2_grpc",
-        "@pypi//grpcio",
-        "@pypi//protobuf",
-    ],
-)

@@ -7,14 +7,14 @@ from typing import override
 
 import grpc
 
-from agentplane.proto import runner_pb2
-from agentplane.runner.testing.runner_server import UnimplementedRunner, serve_runner
+from agentplane.proto import runner_pb2, runner_pb2_grpc
+from agentplane.runner.testing.runner_server import serve_runner
 
 # gazelle:include_dep @pypi//protobuf
 # gazelle:include_dep @pypi//grpcio
 
 
-class UnansweringRunner(UnimplementedRunner):
+class UnansweringRunner(runner_pb2_grpc.RunnerServicer):
     def __init__(self) -> None:
         self.cancelled: asyncio.Queue[str] = asyncio.Queue()
 
