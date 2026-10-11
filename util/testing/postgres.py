@@ -1,11 +1,14 @@
-"""PostgreSQL test database utilities: create and force-drop per-test databases."""
+"""PostgreSQL test database utilities for isolated test databases and migrated templates."""
 
 from __future__ import annotations
 
 import re
-from collections.abc import Sequence
+from collections.abc import Callable, Iterator, Sequence
+from contextlib import contextmanager
+from hashlib import sha256
 
 from sqlalchemy import create_engine, text
+from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import create_async_engine
 
 # The dialect is chosen by the admin_url scheme the caller passes (sync callers use
@@ -21,28 +24,45 @@ _TERMINATE_SQL = text(
 _SAFE_DB_NAME = re.compile(r"^[a-zA-Z0-9_]+$")
 
 
+def database_name_for_test(node_id: str) -> str:
+    """Return a readable, collision-resistant PostgreSQL identifier for a pytest node id."""
+    readable = re.sub(r"[^a-zA-Z0-9_]+", "_", node_id).strip("_") or "test"
+    suffix = sha256(node_id.encode()).hexdigest()[:10]
+    return f"{readable[:52].rstrip('_')}_{suffix}"
+
+
+def _database_url(admin_url: str, db_name: str) -> str:
+    return make_url(admin_url).set(database=db_name).render_as_string(hide_password=False)
+
+
 def _require_safe_db_name(db_name: str) -> None:
     """Raise if db_name contains characters outside [a-zA-Z0-9_]."""
     if not _SAFE_DB_NAME.match(db_name):
         raise ValueError(f"Unsafe database name for test teardown: {db_name!r} (must match [a-zA-Z0-9_]+)")
 
 
-def create_database_sync(admin_url: str, db_name: str, *, extensions: Sequence[str] = ()) -> str:
-    """Create a per-test database and its extensions, returning its URL.
+def create_database_sync(
+    admin_url: str, db_name: str, *, extensions: Sequence[str] = (), template: str | None = None
+) -> str:
+    """Create a database and its extensions, returning its URL.
 
     Extensions are installed here rather than by whatever runs migrations because the interesting
     ones are untrusted — pgvector among them — so only a superuser can install them, which in a
     deployment means the operator that owns the cluster rather than the application's own role.
+    When ``template`` is set, the database starts as a physical copy of that database.
     """
     _require_safe_db_name(db_name)
+    if template is not None:
+        _require_safe_db_name(template)
     admin_engine = create_engine(admin_url, isolation_level="AUTOCOMMIT")
     try:
         with admin_engine.connect() as conn:
-            conn.execute(text(f'CREATE DATABASE "{db_name}"'))
+            template_clause = f' TEMPLATE "{template}"' if template is not None else ""
+            conn.execute(text(f'CREATE DATABASE "{db_name}"{template_clause}'))
     finally:
         admin_engine.dispose()
 
-    db_url = admin_url.rsplit("/", 1)[0] + f"/{db_name}"
+    db_url = _database_url(admin_url, db_name)
     if extensions:
         engine = create_engine(db_url, isolation_level="AUTOCOMMIT")
         try:
@@ -54,16 +74,22 @@ def create_database_sync(admin_url: str, db_name: str, *, extensions: Sequence[s
     return db_url
 
 
-async def create_database_async(admin_url: str, db_name: str) -> str:
-    """Create an isolated per-test database, returning its async SQLAlchemy URL."""
+async def create_database_async(admin_url: str, db_name: str, *, template: str | None = None) -> str:
+    """Create a database and its URL, as an async SQLAlchemy URL.
+
+    When ``template`` is set, the database starts as a physical copy of that database.
+    """
     _require_safe_db_name(db_name)
+    if template is not None:
+        _require_safe_db_name(template)
     engine = create_async_engine(admin_url, isolation_level="AUTOCOMMIT")
     try:
         async with engine.connect() as conn:
-            await conn.execute(text(f'CREATE DATABASE "{db_name}"'))
+            template_clause = f' TEMPLATE "{template}"' if template is not None else ""
+            await conn.execute(text(f'CREATE DATABASE "{db_name}"{template_clause}'))
     finally:
         await engine.dispose()
-    return admin_url.rsplit("/", 1)[0] + f"/{db_name}"
+    return _database_url(admin_url, db_name)
 
 
 async def force_drop_database(admin_url: str, db_name: str) -> None:
@@ -94,3 +120,52 @@ def force_drop_database_sync(admin_url: str, db_name: str) -> None:
             conn.execute(text(f'DROP DATABASE IF EXISTS "{db_name}"'))
     finally:
         engine.dispose()
+
+
+class PostgresDatabaseTemplate:
+    """A migrated database that tests can clone into isolated writable databases.
+
+    Create and migrate one template per session, then clone it once per test. A template can itself
+    be based on another template, which lets an integration suite add a second service's schema
+    once without repeating the first service's migrations.
+    """
+
+    def __init__(
+        self, admin_url: str, template_name: str, *, template: str | None = None, extensions: Sequence[str] = ()
+    ) -> None:
+        self.admin_url = admin_url
+        self.template_name = template_name
+        self.source_template = template
+        self.extensions = tuple(extensions)
+
+    def __enter__(self) -> PostgresDatabaseTemplate:
+        create_database_sync(
+            self.admin_url, self.template_name, extensions=self.extensions, template=self.source_template
+        )
+        return self
+
+    def __exit__(self, *_exc: object) -> None:
+        force_drop_database_sync(self.admin_url, self.template_name)
+
+    @property
+    def url(self) -> str:
+        """Template URL, retaining the driver's scheme and connection query parameters."""
+        return _database_url(self.admin_url, self.template_name)
+
+    @contextmanager
+    def clone(self, db_name: str, *, before_drop: Callable[[str], None] | None = None) -> Iterator[str]:
+        """Yield an isolated writable copy, then clean up resources and drop it.
+
+        ``before_drop`` is for database-scoped external resources such as an inactive logical
+        replication slot. It runs while the clone still exists; the database is dropped even if
+        the callback fails.
+        """
+        url = create_database_sync(self.admin_url, db_name, template=self.template_name)
+        try:
+            yield url
+        finally:
+            try:
+                if before_drop is not None:
+                    before_drop(db_name)
+            finally:
+                force_drop_database_sync(self.admin_url, db_name)

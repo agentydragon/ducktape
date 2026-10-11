@@ -70,6 +70,22 @@ py_library(
     ],
 )
 
+py_test(
+    name = "test_postgres",
+    srcs = ["test_postgres.py"],
+    requires_docker = True,
+    deps = [
+        ":postgres",
+        "//:conftest",
+        ":postgres_fixtures",
+        "@pypi//psycopg",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//sqlalchemy",
+        "@pypi//testcontainers",
+    ],
+)
+
 py_library(
     name = "postgres_fixtures",
     testonly = True,
