@@ -84,8 +84,7 @@ These readers depend on the pinned native formats and must be checked with the a
 matrix when upgrading a harness. The matrix covers interrupt, graceful shutdown/resume, and
 process-group kill/resume at three gates: streaming text, tool execution, and streaming after a
 completed tool. The mock reads tool results throughout each request, including older user messages.
-Both harnesses retain the tested completed results; the earlier last-message-only mock falsely
-suggested Claude lost them.
+Both harnesses retain the tested completed results.
 
 ## SQLite storage
 
@@ -93,7 +92,7 @@ The connection uses `journal_mode=DELETE` and `synchronous=EXTRA`; publication r
 [durable rollback-journal commits](https://sqlite.org/pragma.html#pragma_synchronous) and storage honoring sync.
 An async lock owns each complete transaction; the driver's per-statement queue alone does not.
 Explicit `BEGIN IMMEDIATE` reserves the writer before reading ids/cursors; no transaction spans
-harness or network I/O. One retained connection serves the existing single runner-session writer.
+harness or network I/O. One retained connection serves the single runner-session writer.
 That SQLite transaction is not the native-execution fence: a runner owns its whole retained state
 directory through a nonblocking lifetime lock on the fixed `.agentplane-runner-owner` inode before
 opening a journal, listening, or launching a harness. A contender exits before it can serve state.
@@ -119,8 +118,7 @@ Keep `journal.sqlite` and any recovery journal together on the surviving state v
 staging/testing templates mount `/state` from `local-path-ovh-hdd` PVCs. Network filesystems
 and deleting the only state volume are not supported recovery paths. That node-local `ReadWriteOnce`
 mount is the required ownership assumption; RWO alone does not prevent two processes on its node
-from opening it. Session metadata and native resume files remain beside the database. There is no
-JSONL reader or old-data migration.
+from opening it. Session metadata and native resume files remain beside the database.
 
 ### Bounded session history
 
@@ -133,9 +131,7 @@ attachment retains one page.
 Completed command IDs and debug checkpoint identities are looked up by their indexed
 keys rather than retained in process-lifetime sets. Outstanding commands remain in memory.
 
-This changes the disposable journal schema: recreate old staging runner state rather than
-replaying it into a compatibility checkpoint. The native harness's own history and memory
-usage are separate from the runner journal's bounds.
+The native harness's own history and memory usage are separate from the runner journal's bounds.
 
 Historical adapter item identities and Claude per-message block counts use connection-local
 SQLite temporary tables with `temp_store=FILE` and a 2 MiB temporary page cache. Each adapter
@@ -164,6 +160,5 @@ a deployed sandbox must separately prove the normal proxy/CA/credential route fo
 No credentials are embedded in the image. The staging container workflow is BuildBuddy-hosted
 builds, not a local Bazel client with remote actions. Local Bazel execution is deferred until
 VM-backed environments; package availability does not imply permission to run it. Adding tools
-does not isolate their processes or memory from the harness. VM-backed resource/process isolation
-remains separate work under `SANDBOX_VM_ISOLATION`. See the
+does not isolate their processes or memory from the harness. See the
 [BuildBuddy execution policy and validation](../docs/buildbuddy_remote_auth.md#validation-and-execution-policy).

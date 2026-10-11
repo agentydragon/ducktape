@@ -1054,7 +1054,6 @@ flowchart TD
         REQUIRED_SERVICE_WIRING[Candidate: no footgun defaults on service wiring]
         SERVICE_DOCS_GATEWAY[Candidate: docs give the Runner Gateway its jobs]
         GATEWAY_NAME_SWEEP[Candidate: code says Runner Gateway for the gateway]
-        SERVICE_DOCS_NARRATION_TRIM[Candidate: no changelogs in service docs]
         AGENTPLANE_LABEL_DOMAIN[Candidate: one annotation domain]
         WATCH_FRESHNESS_DEDUPE[Candidate: one watch freshness]
         POSTGRES_WAKEUPS_SHARED[Candidate: one PostgreSQL wakeup class]
@@ -1151,13 +1150,6 @@ in `session_lifecycle.py`, and the runner's `control.py`, `main.py` flag help, `
 say "Sandbox Service" for the gateway; History Service docstrings say it writes and migrates the
 history store. Also the stale `sealer_accounts` comment, the `serve_channel` test helper, and the
 `CLEANUP` in `sandbox_service/teardown.py` that cites this plan.
-
-### `SERVICE_DOCS_NARRATION_TRIM` — no changelogs in service docs
-
-**Candidate.** The Action Service README narrates about nine migrations and a file-backed adapter
-that no longer exists; Notification `docs/api.md` keeps cutover instructions; the runner README
-keeps schema-change narration; the egress README counts its watched kinds three ways and names the
-rendered manifests, not `cluster/cdk8s/agentplane/egress.py`. Describe the code as it is.
 
 ### `AGENTPLANE_LABEL_DOMAIN` — one annotation domain
 

@@ -4,7 +4,7 @@ For setup and configuration, see the [service README](../README.md).
 
 ## Agent API
 
-Workload bearer authentication uses the existing TokenReview foundation. Owner authority is the
+Workload bearer authentication uses TokenReview. Owner authority is the
 verified ServiceAccount, shared by its workloads. Every creation specifies `destination_ref`
 (namespace/name/UID) and `session_id`; inbox and subscription IDs identify subsequent operations.
 
@@ -74,13 +74,12 @@ subscriptions without withdrawing Actions or retiring the session inbox.
 Prompt changes apply to newly opened sessions; existing runner sessions keep their immutable specs.
 Notices carry only the inbox ID and preparation-time acknowledgement/coverage cursors; retrieval,
 paging, and contiguous-ack instructions live in the standing prompt. Previously prepared notices
-keep their original text on retries. Existing sessions retain their immutable standing instructions;
-ensure they have the shared read/ack contract before adopting compact notices.
+keep their original text on retries.
 
 ## Persistence and recovery
 
 The service has its own PostgreSQL database and role on the shared cluster. Migrations use the shared
-image-coupled Alembic runner and advisory migration lock. The app archive and runner volumes are untouched.
+image-coupled Alembic runner and advisory migration lock.
 
 A short inbox row lock serializes cursor allocation, payload insertion, overlapping subscription
 matches and source-checkpoint advancement. Provider identities are deduplicated per inbox. Reads
@@ -92,12 +91,12 @@ never travel in NOTIFY. Workers drain durable work at startup and after reconnec
 does not lose an accepted delivery. Inbox leases and provider generations fence concurrent workers
 and webhooks arriving during matching. Idle GitHub subscriptions have no scheduled polling; timers
 are only for explicit retry/lease deadlines, Actions API reads and retention cleanup.
-Actions still requires timed reads of its separate service's event history; this does not access the
+Actions requires timed reads of its separate service's event history; this does not access the
 Actions database or create a cross-service database dependency. Listener loss fails readiness.
 
 Workers claim inboxes for 30 seconds, with a 20-second work budget and fenced commits. Network calls
 are outside transactions. They poll canonical Actions history (bounded pages of 128), including
-terminal requests; no second Action queue or retry of Action execution is introduced. Errors of a
+terminal requests; there is no second Action queue and no retry of Action execution. Errors of a
 source subscription and delivery errors are exposed separately. Polling rechecks source ownership.
 
 Before submitting a notice, persist its command ID, exact input, and coverage boundary. Before the
@@ -115,7 +114,7 @@ There is no exactly-once native execution claim. Coverage is independent of ackn
 reminders for unacknowledged entries, including after a worker restart. Only a running harness can receive
 input; this service never calls CreateSession, ResumeSession, or sandbox provisioning APIs.
 
-Default V1 limits: 64 inboxes per account; 64 active (not cancelled and not expired) subscriptions per inbox; 10000
+Default limits: 64 inboxes per account; 64 active (not cancelled and not expired) subscriptions per inbox; 10000
 source-event identities per inbox lifetime; 128 entries per read/poll/replay step; subscriptions last
 7 days by default and can be renewed up to 30 days at a time. A full inbox stops source progress with
 an observable error rather than dropping events. Provider payloads expire after 30 days, preserving
@@ -158,7 +157,7 @@ ordinary argument redaction. Notifications checks that owner against the authent
 before accepting a subscription and on every source poll. Agent tokens are never retained or forwarded.
 
 The worker uses rotating, audience-specific projected service tokens. It is allowlisted at Sandbox
-Service, which still validates sandbox UID and account binding and owns all runner access, and is a
+Service, which validates sandbox UID and account binding and owns all runner access, and is a
 History Service reader.
 Notification Kubernetes RBAC is TokenReview only. Cilium allows egress proxy → notifications, notifications
 → Actions/Sandbox Service/History Service/PostgreSQL/API server/GitHub API, and no notifications → runner path.
@@ -177,8 +176,7 @@ a JSON-escaped event header capped at 64 characters, and a stable reason: `inval
 fallback `invalid_delivery`. Validation logs include the total error count and at most eight
 Pydantic error codes with known top-level schema fields. Nested locations, input values, error
 messages/context, raw payloads and signatures are omitted. Event headers are untrusted labels,
-not evidence of signature verification. Rejections retain their existing generic HTTP responses;
-they do not create durable receipts or inbox entries.
+not evidence of signature verification. Rejections return generic HTTP responses and do not create durable receipts or inbox entries.
 
 GitHub does not automatically retry failed webhook requests: failures/timeouts require redelivery.
 Durable recovery starts at the committed receipt, not at the start of the HTTP request.
@@ -244,11 +242,6 @@ after restart, and clear the error on success. No client-side resubscription or 
 needed for this recovery. Webhook deliveries GitHub never successfully submitted are outside that
 guarantee. A changed installation/repository identity requires explicit subscription recreation.
 
-Migration `0005_github` retains existing Actions identities, checkpoints, payloads and delivery state while
-making event identity provider-neutral and storing source-specific progress separately. Use a coordinated service/schema cutover; older
-workers cannot use the replaced columns. Downgrade refuses to proceed if GitHub subscriptions or deliveries
-exist, rather than discarding that data.
-
 ## Operator notification diagnostics
 
 The integration app (and only the configured `operator_reader_account` in the Notification Service's
@@ -291,9 +284,7 @@ supply the classification; message text is not parsed. A successful committed pa
 fields and advances `last_success_at`. Before the first success, that timestamp is null.
 
 Repeated failures of the same kind preserve `error_since` and update diagnostic details, last
-observation and retry deadline. A different kind starts a new `error_since`. Existing opaque errors
-are adopted as `processing_error` at migration time; their earlier observation times are unknown.
-The database constrains the error vocabulary and requires all four error fields to be jointly null
+observation and retry deadline. A different kind starts a new `error_since`. The database constrains the error vocabulary and requires all four error fields to be jointly null
 or non-null. There is no persisted summary health enum.
 
 `next_attempt` is the durable scheduler deadline for retries or normal source work. API `retry_at`
@@ -323,8 +314,7 @@ failure facts, retry schedule and refresh lease for an App/installation/reposito
 an association cannot grant access to the head repository.
 `github_delivery_subject` links each receipt to its structured subject references through foreign
 keys, including comments and branch events without a SHA. The delivery journal has no encoded
-subject-string array; direct matching uses the indexed relation. Migration preserves existing
-references before removing the old array and its GIN index.
+subject-string array; direct matching uses the indexed relation.
 
 Subscription `last_success_at` and current failure describe that subscription's processing. Shared
 access or repair failures belong on the grant or subject. GET/list and operator status expose them
@@ -334,10 +324,6 @@ subscriptions return the shared observations. Omission is not treated as `null`.
 Each observation includes current failure facts, retry deadline and refresh lease deadline. Access
 observations also expose validation time, expiry and `currently_valid` as of the read; this is not
 a promise about later delivery. No refresh failure or recovery creates an inbox entry.
-
-The normalized binding migration preserves subscription IDs, inboxes, event checkpoints and raw
-receipts. It does not claim historical validation times. Reverse migration refuses to discard
-shared observations or revision associations.
 
 ### Durable GitHub refresh and matching
 

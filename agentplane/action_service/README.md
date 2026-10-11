@@ -25,8 +25,7 @@ needs at run time. `policy_informer.PolicyInformer` watches them with a label se
 and `connections.ConnectionAuthority` resolves grants against that index: a grant whose
 currently bound ServiceAccount is missing, unlabeled, or not yet listed by the watch refuses resolution.
 `ConnectionAuthority` persists runtime named Connections and immutable grant revisions in the
-existing database (migration `0008_external_connections`; `0014_action_policies` stores the
-ServiceAccount as a typed `caller` JSON value). The operator API exposes
+service's database. The operator API exposes
 `GET /v1/operator/caller-service-accounts`, list/detail at `/v1/operator/connections`, `PATCH` of
 a name with `expected_version`, `POST .../{id}/rebind` with `expected_version` and an
 eligible `service_account`, and `POST .../{id}/unbind` with `expected_version`.
@@ -39,29 +38,27 @@ grant, and activation is bounded by its deadline. The [app consent UI](../app/RE
 `Grant.provenance()` through the trusted `ActionService.submit(..., external_grant=...)` keyword,
 never a caller-envelope field. Admission stores the exact issuer/client/Connection/grant/revision
 snapshot, including the current binding version, atomically with the first request.
-A shared-ServiceAccount repeat of the key is refused; the lookup by key returns the original snapshot, including after rename, rebind or reconnect. Existing
-workload requests retain a null snapshot.
+A shared-ServiceAccount repeat of the key is refused; the lookup by key returns the original
+snapshot, including after rename, rebind or reconnect. Workload requests carry no snapshot.
 
 `ActionStore` validates that snapshot against the active grant and the Connection's current
 binding version and eligible ServiceAccount under the Connection row lock, both during admission
 and before the dispatch claim. The operator may rebind an active Connection to a different eligible
 ServiceAccount without issuing a new OAuth token; this increments the binding version, retains
 immutable original grant history in `original_caller`, and records the operator and previous/new caller
-in an `external_connection_binding_change` audit row. Migration `0022_connection_binding_change` renames
-the table created by `0021_connection_rebind`, preserving existing audit entries. Future requests from
-the existing token use the new account. Authority comes from `bound_caller`, history from `original_caller`.
+in an `external_connection_binding_change` audit row. Later requests from the existing token use
+the new account. Authority comes from `bound_caller`, history from `original_caller`.
 A revoked, missing, unlabeled or rebound original authority prevents an older unclaimed Action
 from dispatching even if another grant now acts as the same ServiceAccount: the unstarted
 Execution fails with
 `external_grant_not_authorized`, retaining the historical Decision. Already claimed work is not
 stopped. Receipt and executor projections carry the original snapshot; no credentials are stored
-in it. Migration `0009_action_external_grant` adds its nullable column without inventing
-provenance for pre-existing requests.
+in it.
 
 Action Service/PostgreSQL owns Connection authority; the integration app owns its operator UI.
 Configurable policies and the Thread lifecycle are separate from this authority.
 
-The v0 executable seam is deliberately small:
+The executable contract is deliberately small:
 
 - one invariant request envelope, carrying a required caller-authored `title` (at most 60
   characters) and optional `description` (at most 250 characters) projected verbatim to the
@@ -83,9 +80,7 @@ The v0 executable seam is deliberately small:
   state, and every submit/Decision/dispatch/terminal/`execution_unknown` transition appends exactly
   one ordered event.
 
-Migration `0006_decision_note` renames the existing human-note column without dropping data;
-downgrade restores the old column name. Existing notes become caller-visible too. Notes are not
-a secret channel: do not put credentials in them. Human decisions leave provider reason fields null.
+Notes are not a secret channel: do not put credentials in them. Human decisions leave provider reason fields null.
 
 ## Consent transactions
 
@@ -104,7 +99,7 @@ or stale decisions cannot overwrite it. The watched labeled ServiceAccounts supp
 The service validates the existing Connection version at decision and the binding authority checks
 it again when reserving the replacement at code exchange. A concurrent rename, unbind, activation,
 or competing reconnect requires fresh authorization rather than updating the reviewed version.
-Migration `0011_enrollment_reconnect` retains the selected UUID/version alongside the consent.
+The consent row retains the selected Connection UUID and version.
 Grant reservation revokes all prior active/pending grants atomically, even if later issuance fails;
 the replacement stays pending until activation and neither old tokens nor Actions retarget.
 
@@ -113,8 +108,8 @@ verified, explicitly mapped upstream operator. It binds and validates the result
 then calls `claim_exchange` immediately before framework code consumption. Only one exchange can
 claim an enrollment; dependency failures before the claim remain retryable, whereas ambiguous
 post-claim failures require fresh OAuth. Activation remains the adapter's responsibility after
-successful token persistence. Migration `0010_connection_enrollments` retains correlation
-tombstones so expired codes cannot select a newer consent. These endpoints do not enable OAuth
+successful token persistence. Enrollments retain correlation tombstones so expired codes cannot
+select a newer consent. These endpoints do not enable OAuth
 or bypass Action review on their own.
 
 ## Decision providers
@@ -149,9 +144,8 @@ a queued dispatch task, or a late approval. Claiming is the cutoff even before
 the executor is invoked. Cancellation does not signal executors or kill processes; disconnecting
 or cancelling an HTTP/MCP wait does not cancel the underlying ActionRequest.
 
-A successful cancellation appends one canonical `cancelled` event with authenticated
-`actor_principal` and timestamp. Migration `0007_cancellation_actor` adds the nullable actor field;
-existing and non-caller-cancellation events leave it null. An unclaimed Execution retains null
+A successful cancellation appends one canonical `cancelled` event with the authenticated `actor`
+and timestamp; every other event leaves `actor` null. An unclaimed Execution retains null
 `started_at`, result and error, with `completed_at` set to the cancellation time. The cancelled
 request stays readable by its submission idempotency key; an intentional new attempt needs a new
 key.
@@ -330,9 +324,7 @@ request ID for subsequent reads; a completed direct-tool response relays the bac
 For side-effectful calls requiring recovery from a lost first reply, use `request_action`
 with a caller-chosen idempotency key and recover by that key instead.
 Do not infer that repeating arguments is a safe deduplication rule: two identical calls may be
-intentional. This is a limitation of the current direct-tool call shape, not a pending
-Action-Service retry fix. MCP Tasks interoperability is a separate harness-capability question
-tracked in the [task DAG](../plans/task_dag.md).
+intentional.
 
 ## Action catalog
 
@@ -363,7 +355,7 @@ not a second admission registry. Executors expose execution only, not an action 
 Dispatch resolves the identity again, so a removed action is terminally refused rather than rerouted or
 retried. Each service replica may own its own current FastMCP connection; the database-backed
 single-Execution claim and lease token, not the MCP connection, fence dispatch and keep a lost
-attempt from being replayed. The existing no-retry state machine is unchanged.
+attempt from being replayed.
 
 `runtime.running_executor` builds one typed executor per reviewed group by matching on its binding,
 passes a group-keyed mapping to the service, and shares the same catalog objects with discovery. An
@@ -430,9 +422,7 @@ shared CIMD only when authorization-server discovery advertises
 
 Requests, execution payloads and durable rows use `action: {"group": "everything", "name": "echo"}`.
 The fields remain separate throughout discovery, validation and dispatch; no concatenated identity
-or legacy name is accepted. Migration `0005_structured_action` removes the unused string column
-without inventing a compatibility mapping. Adding the required replacement column fails
-transactionally if unexpected preexisting rows exist.
+is accepted.
 
 ## Action policy sets and bindings
 
@@ -459,11 +449,10 @@ unexpired valid bindings and the valid sets they name, nothing before sync) and
 `cache_ttl_seconds`); staging's network policy admits `api.github.com:443` for that lookup.
 `ActionService` builds the `DecisionContext` at admission with the typed caller (`SandboxCaller`
 from the workload principal, `ServiceAccountCaller` from the grant) and those bindings; the
-provider's allow carries `PolicyEvidence`, persisted on the Decision (migration
-`0014_action_policies`) and projected as `DecisionView.policy_evidence`, whose `matched.repository`
+provider's allow carries `PolicyEvidence`, persisted on the Decision and projected as `DecisionView.policy_evidence`, whose `matched.repository`
 names the repository a GitHub kind resolved and whether the public lookup confirmed it. A set has
-no deny form: `autoApproveIf` is the only list, and what it does not match waits for a human. Dispatch
-is unchanged: it re-checks caller authority, never policy.
+no deny form: `autoApproveIf` is the only list, and what it does not match waits for a human.
+Dispatch re-checks caller authority, never policy.
 
 `policy_view` projects that same `resolve_bindings` for readers: `GET /v1/action-policy` answers
 the authenticated caller (the ServiceAccount its Pod runs as, on the workload route) and the
@@ -501,9 +490,8 @@ never authorization. Thread and Agent fields remain untrusted until an authorita
 workload authentication performs no Thread or Agent lookup.
 
 Operator/BFF calls use the separate `/v1/operator/...` surface and a separate replaceable
-`OperatorAuthenticator`. The production composition is fail-closed unless explicitly configured.
-Its minimal v0 file-backed bearer adapter retains only a digest and is not a claim that static
-Kubernetes ServiceAccount lists are the final operator design.
+`OperatorAuthenticator`: the OIDC adapter below when `operator_oidc` is set, otherwise
+`DisabledOperatorAuthenticator`, which refuses every operator bearer.
 
 Migrations run separately through `:migrate`; the server verifies the migrated schema and never
 creates tables at startup. `:image` and `:migration_image` are separate OCI targets. Each deployed
@@ -543,8 +531,7 @@ transport exceptions or endpoint values.
 
 `operator_oidc` selects pinned RS256 JWT verification for the Action audience. Authentik's target
 provider policy governs who can obtain that audience; the service does not maintain a second subject
-allowlist. It is mutually exclusive with the legacy file-backed adapter; there is no fallback. The
-destination records the actual token issuer and subject, not a shared BFF identity. Both deployed
+allowlist. The destination records the actual token issuer and subject, not a shared BFF identity. Both deployed
 environments set `AGENTPLANE_ACTIONS_OPERATOR_OIDC` from the `operator-oidc` key of their
 `agentplane-action-federation` ConfigMap (built from the `action_federation`/`operator_oidc`
 dicts in `cluster/cdk8s/generate_manifests.py`); staging
