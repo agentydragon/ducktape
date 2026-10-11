@@ -257,6 +257,11 @@ async def _make_stack(
                     digest = await push_bazel_image(crane, image, proxy_url, BUILTIN_TAG, insecure=True)
                     oci_ref = registry_proxy_config.build_oci_reference(AgentType(image.repo_name), digest)
                     resolved_images[image.repo_name] = ResolvedImage(digest=digest, oci_ref=oci_ref)
+                # Pull through the authenticated proxy concurrently so nested agents
+                # do not each wait for a cold image pull when orchestration reaches them.
+                async with asyncio.TaskGroup() as tasks:
+                    for resolved_image in resolved_images.values():
+                        tasks.create_task(executor.ensure_image(resolved_image.oci_ref))
                 yield E2EStack(registry=registry, model=model, resolved_images=resolved_images)
             finally:
                 await registry.close()
