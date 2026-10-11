@@ -139,4 +139,3 @@ async def announce_fold_commit(database_url: str) -> None:
         AsyncSession(bind=connection) as session,
     ):
         await notify_summaries(session)
-
