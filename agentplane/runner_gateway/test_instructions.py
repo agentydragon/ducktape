@@ -39,6 +39,7 @@ def _launched_instructions(overrides: dict[str, object]) -> str:
             )
         ),
         platform_instructions="Test platform guidance.",
+        sandbox_namespace="test-namespace",
     ).instructions
 
 
