@@ -1,18 +1,16 @@
-# Native session discovery: evidence and deferred design
+# Native session discovery: characterization gaps and deferred design
 
 Status: **implementation deferred** while session-event ownership moves into Sandbox Service.
-This is the single evidence inventory, proposed design and hardening burndown for
+This holds the remaining characterization, proposed design and hardening candidates for
 [`NATIVE_SUBAGENT_THREADS`](task_freezer.md#native_subagent_threads--as-linked-agentplane-threads).
-The [hardening inventory](#deferred-hardening-inventory) is historical/deferred, not a dispatch queue; the
+The [hardening candidates](#deferred-hardening-candidates) are not a dispatch queue; the
 [shared design](#proposed-shared-design) is not a shipped runner contract or a priority change.
 
-## Observed behavior and characterization gaps
+## Characterization gaps
 
-The passing baseline comes from [#9435](https://github.com/agentydragon/ducktape/pull/9435),
-the Claude 2.1.292 [RemoteIO/stdio comparison #9440](https://github.com/agentydragon/ducktape/pull/9440),
-and the [Codex v2 matrix #9446](https://github.com/agentydragon/ducktape/pull/9446).
-A child must be created by the real harness, not synthesized by an adapter or inferred from parent
-prose. The model endpoints below are test oracles, not proposed discovery dependencies.
+What the pinned and experimental harnesses have been observed to do with native children is in
+[harness evidence § Native subagents](../docs/harness_evidence.md#native-subagents). A child must
+be created by the real harness, not synthesized by an adapter or inferred from parent prose.
 
 ### Test method and evidence
 
@@ -36,110 +34,56 @@ For each case:
    bounded observation is not proof that the harness can never provide it through another interface.
    Once a limitation is established, assert that behavior rather than skipping the case.
 
-The current pins in `MODULE.bazel` are Claude Code `2.1.252` and Codex `0.157.0`. The tests inherit
-those pins; the older Claude observations in the protocol roster are not evidence for the new pin.
-Codex's initial test explicitly exercises `features.multi_agent` and the `multi_agent_v1` namespace.
-Its `multi_agent_v2` feature is a separate configuration, characterized in the
-[discovery extension](#codex-multi-agent-v2-discovery-extension), not an interchangeable alias.
-
-### Observed Claude and Codex v1 behavior
-
-For Claude Code `2.1.252`:
-
-- `system/task_started` supplies `task_id`, originating `tool_use_id`, task type, and background
-  status. The parent `Agent` tool result exposes the same identity as `agentId`.
-- Forwarded child tools and completed prose carry `parent_tool_use_id`. Their `session_id` can
-  still be the parent's, so that field alone is not a child identity.
-- `system/task_notification` identifies the child and its completion outcome.
-- `SendMessage` to a completed child resumes that same agent ID. The child's next model request
-  retains its earlier answer; a later completion notification names the same child. `TaskOutput`
-  can retrieve its later result. A send receipt is not evidence that the child has finished.
-
-For Codex app-server `0.157.0`, with `multi_agent_v1` enabled:
-
-- Native `collabAgentToolCall` items expose `senderThreadId` and, on successful spawn completion,
-  `receiverThreadIds`. The spawn result's child ID agrees with the separate child model request.
-- A completed wait item exposes the same child identity and its completion through `agentsStates`.
-- Spawn-tool completion and child-work completion are different observations.
-
-The runner can obtain these identities from native traffic. The model endpoints used by the tests
-are a test oracle, not a proposed discovery dependency. The v1 tests do not prove full Codex child
-transcript delivery, complete native enumeration, or nesting. Do not apply their missing-child
-resume result to v2, or interpret the newer recovery tests as evidence for every configuration.
-
-For Claude **2.1.292**, tested independently of the runner's `2.1.252` pin:
-
-- Both RemoteIO and stream-json expose task identity and forwarded child output, still using
-  the parent's native session ID on child frames.
-- Native-file resume after an active-child crash automatically reports the original task as
-  `stopped` before new parent input. The notification can omit the original tool-use ID.
-- An empty successful zero-turn result accompanies task-notification processing; over stdio it
-  can precede the initialization control response. It must not settle a user command or be
-  treated as an initialization failure merely because it arrived first.
-- Completed-child resume retains parent history without a new completion notification in the
-  tested sequence. `TaskOutput` is unavailable in this configuration; its error is not a missing
-  task result. The older version's tool behavior must not be assumed.
-
-These results justify version-specific read-only recovery, not a production version/transport
-cutover. RemoteIO is not required for the observed stopped-child signal; complete Claude task
-enumeration, server history hydration, and recovery without native files remain unproven.
+Tests inherit the `MODULE.bazel` pins; observations of another version are not evidence for the
+pin. Codex `multi_agent_v1` and `multi_agent_v2` are separate configurations, not aliases. A first
+failure is diagnostic evidence to inspect, not a reason to weaken an assertion into accepting either
+behavior. Fix the script if it did not reach the intended stimulus; update a behavioral expectation
+only against the actual native trace.
 
 ### Matrix
 
-**Added** identifies baseline executable coverage; the linked CI evidence establishes pass/fail status.
-**Partial** identifies the exact remaining question. **Planned** means no new assertion yet.
-The Claude defaults below follow the `2.1.252` CI trace: asynchronous launch and forwarded completed
-child prose. They must not inherit expectations from the older `2.1.220` probe.
+Each cell names what is still unmeasured. Scenarios already covered for both harnesses (spawn with
+native identity and parent linkage, child completion and parent continuation) are not listed.
 
-| ID  | Scenario and controlled stimulus                                        | Claude Code                                                                         | Codex app-server                                                                                              | Evidence needed before normalization                                                                        |
-| --- | ----------------------------------------------------------------------- | ----------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
-| S1  | Spawn one background child with a unique task marker                    | Added: `Agent` call produces a child model request                                  | Added: namespaced `spawn_agent` produces a different model-request thread ID                                  | Creation evidence, native identity, parent linkage, and when each becomes available                         |
-| S2  | Child runs a shell tool and returns a unique result                     | Added: child tool result round trip and forwarded tool frame's `parent_tool_use_id` | Partial: child tool result round trip; its model-request identity matches the spawn result                    | Which child tool inputs/results reach the runner, their attribution, and which require another subscription |
-| S3  | Child completes; parent consumes result and continues                   | Added: async launch, parent turn end, child completion notification                 | Added: `wait_agent` result and native completed collaboration item identify the same child and its completion | Distinguish delegation-tool completion, child completion, and parent-turn completion                        |
-| S4  | Observe child prose with forwarding defaults and explicit opt-in        | Partial: default forwards completed child prose with `parent_tool_use_id`           | Planned: compare parent stream with explicit child attachment                                                 | Full transcript vs summary; transport/subscription required; provenance of every message                    |
-| S5  | Two children active together; finish in reverse spawn order             | Planned                                                                             | Planned                                                                                                       | Independent identities and terminal states; interleaved tool/text attribution; no imposed global ordering   |
-| S6  | Child tool fails, then child handles it successfully                    | Planned                                                                             | Planned                                                                                                       | Tool failure must not be mistaken for session failure; preserve exit/error evidence                         |
-| S7  | Child model request fails terminally; parent continues                  | Planned                                                                             | Planned                                                                                                       | Failure event/result and correlation; distinguish harness failure from a tool error                         |
-| S8  | Interrupt child while its model exchange is held open                   | Planned: determine whether independent control exists                               | Planned: exercise native child control                                                                        | Accepted control vs observed interruption; sibling/parent isolation; too-late behavior                      |
-| S9  | Parent completes, is interrupted, or exits while child is active        | Planned: foreground and background separately                                       | Planned                                                                                                       | Whether child stops, outlives parent turn, or disappears with process; no inferred completion               |
-| S10 | Disconnect client while retaining the harness, then reconnect           | Planned: first establish supported transport                                        | Planned                                                                                                       | Enumeration vs events-only discovery; snapshot completeness; history replay and duplicate identity          |
-| S11 | Restart harness and resume parent with completed and active children    | Planned                                                                             | Planned                                                                                                       | Persisted child identity/history, recoverable execution, and explicit unrecoverable/lost state              |
-| S12 | Child delegates to a grandchild within configured depth limits          | Planned                                                                             | Planned                                                                                                       | Full ancestry vs root-only correlation; rejection at the limit without phantom sessions                     |
-| S13 | Send child another input after it completes; attempt independent resume | Planned                                                                             | Planned                                                                                                       | Same session vs successor identity, supported addressing, and capability boundaries                         |
-| S14 | Repeat core scenarios with alternate subagent configuration             | Planned: prose forwarding and background execution                                  | Planned: `multi_agent_v2`, then context-forking variants                                                      | Configuration-dependent behavior must not silently inherit the baseline contract                            |
+| ID  | Scenario and controlled stimulus                                        | Claude Code                                           | Codex app-server                                                                   | Evidence needed before normalization                                                                        |
+| --- | ----------------------------------------------------------------------- | ----------------------------------------------------- | ---------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
+| S2  | Child runs a shell tool and returns a unique result                     | Covered                                               | Partial: child tool/text visibility on the parent connection                       | Which child tool inputs/results reach the runner, their attribution, and which require another subscription |
+| S4  | Observe child prose with forwarding defaults and explicit opt-in        | Partial: explicit forwarding opt-in/opt-out           | Compare parent stream with explicit child attachment                               | Full transcript vs summary; transport/subscription required; provenance of every message                    |
+| S5  | Two children active together; finish in reverse spawn order             | Planned                                               | Planned                                                                            | Independent identities and terminal states; interleaved tool/text attribution; no imposed global ordering   |
+| S6  | Child tool fails, then child handles it successfully                    | Planned                                               | Planned                                                                            | Tool failure must not be mistaken for session failure; preserve exit/error evidence                         |
+| S7  | Child model request fails terminally; parent continues                  | Planned                                               | Planned                                                                            | Failure event/result and correlation; distinguish harness failure from a tool error                         |
+| S8  | Interrupt child while its model exchange is held open                   | Planned: determine whether independent control exists | Planned: exercise native child control                                             | Accepted control vs observed interruption; sibling/parent isolation; too-late behavior                      |
+| S9  | Parent completes, is interrupted, or exits while child is active        | Planned: foreground and background separately         | Planned                                                                            | Whether child stops, outlives parent turn, or disappears with process; no inferred completion               |
+| S10 | Disconnect client while retaining the harness, then reconnect           | Planned: first establish supported transport          | Planned, v1 and v2: stdio process restart is not this case                         | Enumeration vs events-only discovery; snapshot completeness; history replay and duplicate identity          |
+| S11 | Restart harness and resume parent with completed and active children    | Partial: active child and crash on the runner pin     | Partial: v1 crash and active child                                                 | Persisted child identity/history, recoverable execution, and explicit unrecoverable/lost state              |
+| S12 | Child delegates to a grandchild within configured depth limits          | Planned                                               | Planned                                                                            | Full ancestry vs root-only correlation; rejection at the limit without phantom sessions                     |
+| S13 | Send child another input after it completes; attempt independent resume | Partial: independent resume                           | Planned                                                                            | Same session vs successor identity, supported addressing, and capability boundaries                         |
+| S14 | Repeat core scenarios with alternate subagent configuration             | Planned: prose forwarding and background execution    | Planned: v2 context fork, concurrent children, explicit child attachment and input | Configuration-dependent behavior must not silently inherit the baseline contract                            |
 
 #### Claude communication surfaces
 
 Do not treat every communication operation as another spawn, or a successful send receipt as proof
 that the recipient consumed the message. Characterize these separately under the pinned tool roster:
 
-- **`Agent` / `Task`:** creation and parent provenance. The model-facing `Agent` name and the native
-  init roster's `Task` name differ in the current trace; aliases are not separate child sessions.
-- **`SendMessage`, completed child (added):** address the returned agent ID; prove the follow-up
-  reaches a child request containing its previous answer; correlate the send receipt and subsequent
-  completion with the same child. Covered by
-  `test_send_message_resumes_a_completed_child_and_task_output_reads_its_result`.
-- **`SendMessage`, active child (planned):** gate the child's request, send another message, and
+- **`SendMessage`, active child:** gate the child's request, send another message, and
   determine when it is consumed and whether it interrupts work. Test child-to-parent and sibling
   delivery separately, including an unknown recipient. Do not infer delivery from a successful
   parent tool result.
-- **`TaskOutput` (partial):** the communication test reads the completed child's follow-up result
-  with `block=false`. Running-task reads and `block=true` need separate gates. The pinned tool
+- **`TaskOutput`:** running-task reads and `block=true` need separate gates. The pinned tool
   describes itself as deprecated; test its behavior without making it the proposed discovery API.
-- **`TaskStop` (planned):** stop a held-open child request; distinguish the tool receipt from an
+- **`TaskStop`:** stop a held-open child request; distinguish the tool receipt from an
   observed terminal notification and verify that parent and sibling work survive. Team shutdown
   messages, if advertised, are a separate cooperative protocol rather than equivalent cancellation.
-- **`ListAgents` and configuration-specific team tools (planned):** first establish availability,
+- **`ListAgents` and configuration-specific team tools:** first establish availability,
   scope, and feature gates. An entry in a tool roster does not prove that it enumerates all native
   children. Keep cross-session/remote messaging outside these same-harness loopback scenarios.
 
-#### Resume and child fate: coverage and gaps
+#### Resume and child fate
 
-Expand S10/S11 for both harnesses. The passing Claude `SendMessage` scenario reactivates a
-completed child within the same live harness; it does not establish recovery after parent exit.
-Distinguish client reattachment to a live owner, runner restart with retained journals, clean parent
-harness exit followed by native resume, and parent crash followed by native resume. Record which
-processes and native storage survive each case; these are not equivalent forms of resume.
+Expand S10/S11 for both harnesses. Distinguish client reattachment to a live owner, runner restart
+with retained journals, clean parent harness exit followed by native resume, and parent crash
+followed by native resume. Record which processes and native storage survive each case; these are
+not equivalent forms of resume.
 
 For each applicable boundary, gate interruption with the child running (held at a model request or
 tool), completed before its notification is consumed, completed after notification consumption,
@@ -166,116 +110,18 @@ Use bounded phases: observe resume without input, then a genuine scripted parent
 advertised status/history query. Negative observations apply only to that phase and route. Reuse
 ordinary parent-resume fixtures, preserving native storage while starting a new harness process;
 model-side gates establish the stimulus, but assertions about discoverability use native wire data.
-Pin observed behavior per harness/configuration before advertising recovery capabilities.
+Slice append-only traces at the process boundary so first-process notifications are not counted as
+replay. Pin observed behavior per harness/configuration before advertising recovery capabilities.
 
-#### Transport-specific recovery investigation
-
-Compare Claude `stream-json` with [`--sdk-url` RemoteIO](claude_remote_io.md), using the
-same binary version and interruption points. The RemoteIO plan's static findings concern
-`2.1.292`; they are not evidence of runner-pinned `2.1.252` behavior. Probe worker registration,
-reinitialization, child/task inventory, transcript hydration, terminal-event replay, and whether
-command delivery receipts expose anything about child execution. Keep server-supplied history
-separate from state recovered by the harness itself. No transport cutover is implied.
-
-Codex v1 and v2 require separate recovery probes. At tag `rust-v0.157.0`, upstream
-[`multi_agent_resume.rs`](https://github.com/openai/codex/blob/rust-v0.157.0/codex-rs/core/tests/suite/multi_agent_resume.rs)
-and its restore tests exercise v2 durable child identities and lazy loading after root restart.
-This is source evidence for a promising path, not an app-server wire assertion or proof that the
-v1 baseline automatically restores its children. Characterize unloaded identity, historical outcome,
-and active execution separately; a loaded-thread list need not enumerate all known children.
-
-The parameterized completed-child scenarios also probe a clean parent exit and fresh-process
-resume. Both passed on commit `03596ef8` in
-[CI](https://github.com/agentydragon/ducktape/commit/03596ef86d09913a11f521a69640e129cf60fea9/checks).
-Parent model history retains the completed result, but querying the old child without reactivation
-returns a missing-task error from Claude `TaskOutput` and `not_found` from Codex v1 `wait_agent`.
-Codex also exposes `notFound` in the native collaboration item's `agentsStates`. Claude emits no
-new `task_notification` during the tested resume/input/query sequence; the fixture's append-only
-trace must be sliced at the process boundary to avoid counting first-process notifications as replay.
-These observations cover neither crash recovery nor active children, v2, or RemoteIO.
-
-#### Initial executable coverage
-
-Baseline coverage lives in the existing tool-test targets, with their pinned-binary runfiles and CI coverage:
-
-- `//agentplane/harness_tests/claude:test_tools`:
-  `test_subagent_tool_frames_are_correlated_with_the_parent_call` covers S1–S3 and the default half
-  of S4. The child executes `Bash`; its forwarded tool frame points to the parent's `Agent` call.
-  The async launch result, `task_started`, and `task_notification` must agree on child identity.
-  This does not yet establish identity across restart or an independent child transcript API.
-- `//agentplane/harness_tests/codex:test_tools`:
-  `test_subagent_spawn_and_wait_report_the_child_identity` covers S1, the upstream part of S2, and
-  S3. It handles parent/child model exchanges in either order and checks native collaboration items
-  against the returned child ID. It does not yet assert child tool/text visibility on the parent
-  connection, child attachment, or enumeration.
-
-Single-agent tests keep their current configuration. Only the subagent Claude scenarios enable `Agent`, `SendMessage`, and `TaskOutput`;
-only the new Codex scenario enables multi-agent tools. Neither changes production launch defaults.
-
-CI should run the existing affected targets; no live-inference job or new secret is needed. CI runs these assertions against the pinned binaries. A first failure is diagnostic evidence to inspect,
-not a reason to weaken an assertion into accepting either behavior. Fix the script if it did not
-reach the intended stimulus; update a behavioral expectation only against the actual native trace.
-
-### Codex multi-agent v2 discovery extension
-
-`//agentplane/harness_tests/codex:test_v2_discovery` adds a separate configuration matrix
-on the existing Codex **0.157.0** pin: `features.multi_agent=true` and
-`features.multi_agent_v2=true`. The existing app-server driver already uses v2 JSON-RPC
-methods; this extension specifically changes the **multi-agent feature/tool surface** from
-`multi_agent_v1` to `collaboration`. It is not a production adapter or pin change.
-
-| Case                           | Assertions / evidence                                                                                                             | Status                                          |
-| ------------------------------ | --------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------- |
-| Root creation                  | `thread/start` mints ID; root has no parent; loaded enumeration includes it                                                       | Verified `8f5c39f4`                             |
-| Native child launch            | `collaboration.spawn_agent`, task name and `fork_turns=none`; `subAgentActivity.agentThreadId` agrees with child model-request ID | Verified `8f5c39f4`                             |
-| Live child snapshot            | `thread/read` identifies parent and shared session tree, active status; paginated loaded enumeration includes root and child      | Verified `8f5c39f4`                             |
-| Completed child, clean restart | Await native completed turn, restart server, resume root, enumerate and read historical child without resuming it                 | Verified `8f5c39f4`                             |
-| Completed child, crash         | Same read-only recovery after killing the server                                                                                  | Verified `8f5c39f4`                             |
-| Active child, crash            | Hold model request unanswered, kill server, observe request closure; recover identity/history without child reactivation          | Verified `8f5c39f4`                             |
-| Live client reconnect          | Retain server process, reconnect a separate client, compare enumeration and subscriptions                                         | Planned; stdio process restart is not this case |
-| Alternate context/ancestry     | Context fork, concurrent children, grandchild, explicit child attachment and input                                                | Planned                                         |
-
-Verified on `8f5c39f4`: Bazel tests/build, pre-commit, Gazelle, build/import checks, and
-visual review passed. The visual-diff report is neutral and uses a fallback baseline;
-it is not proof of unchanged visuals.
-
-#### Observed discovery and recovery contract
-
-- Launch emits `item/completed` with `item.type=subAgentActivity`, `kind=started`,
-  `agentThreadId`, and `agentPath=/root/probe`; enclosing `params.threadId` identifies
-  the parent. V1's `senderThreadId` / `receiverThreadIds` shape does not apply here.
-- Native captures also contain child `agentMessage` output under the child's own thread
-  ID and parent-stream `subAgentActivity(kind=completed)`. The test pins spawn identity
-  and completed-child history; these additional live output shapes were inspected in traces.
-- After restarting and resuming the root, loaded enumeration contains the root, not the
-  child. A broad `thread/list(sourceKinds=["subAgent"], modelProviders=[])` returns no
-  rows in these cases. **Explicit `thread/list(parentThreadId=...)` does find the original
-  child.** An empty broad listing is not proof of missing identity or history.
-- `thread/read(includeTurns=true)` retains the original child ID, `parentThreadId`, and
-  source ancestry. Completed-child history retains the answer and a `completed` turn
-  after both clean exit and crash. An active child killed with its model response held
-  unanswered reads back with an **`interrupted` historical turn**, null `completedAt`,
-  and no answer. Runtime status is **`notLoaded`** in all three cases; that load state
-  alone is not terminal-fate evidence.
-- While live, the child's `sessionId` equals the root's. An unloaded read after restart
-  instead reports `sessionId` equal to the child thread ID. Do not use that field alone
-  as a durable tree key; retain the original thread ID and explicit parent linkage.
-- Recovery uses paginated read-only enumeration and history reads. It does not send
-  `turn/start`, resume the child, or invoke `followup_task` or a model-driven status tool.
-  Reads leave loaded enumeration unchanged, followed by a 250 ms no-model-request
-  observation. This bounded observation is not a guarantee against arbitrary delayed work.
-
-Native request/response traces and `recovery.json` retain exact fields for each case.
-The fixture uses the pinned real CLI against a loopback scripted Responses endpoint,
-without live inference credentials. These results support a runner projection of native
-child identity, ancestry, load state, and historical turn outcome as separate facts.
-They do not establish live reconnect semantics, independent child control, or recovery
-without native persisted state; those remain separate matrix items.
+Still open across transports: Claude task enumeration, RemoteIO server history hydration, and
+recovery without native files ([RemoteIO plan](claude_remote_io.md)); Codex v1 crash and
+active-child recovery, which the v2 results do not cover. Keep server-supplied history separate
+from state recovered by the harness itself. No transport cutover is implied.
 
 ## Proposed shared design
 
 The following ownership, identity, storage and API contracts are proposals, not assertions of
-implemented behavior. Native controls and normalization remain gated by the evidence above.
+implemented behavior. Native controls and normalization remain gated by the characterization above.
 Deterministic adapter/replay tests must supplement, not replace, real-binary characterization.
 
 ### Direction
@@ -577,7 +423,7 @@ claim remote/native execution stopped unless the harness proves it. On runner re
 retained inventory without launching anything; on explicit native resume, reconcile only what the
 native protocol can establish. Absence from a partial snapshot is not proof of deletion.
 
-The [resume/fate characterization](#resume-and-child-fate-coverage-and-gaps)
+The [resume/fate characterization](#resume-and-child-fate)
 must distinguish live reattachment, runner replay, clean native resume, and crash recovery. For each
 child, retain the last observed work outcome separately from current availability and the evidence
 that supports reconciliation. Report whether fate can be recovered automatically, only after input,
@@ -791,7 +637,7 @@ Existing root controls and command IDs retain their semantics.
 
 1. **Evidence extraction and routing.** Keep the existing root launch path initially; pin its native
    identity-confirmation boundary and extract the characterized child evidence for each supported
-   version/configuration. Use #9459’s bounded root-identity observations; they do not establish an
+   version/configuration. The bounded root-identity observations do not establish an
    input-free native identity-allocation API. Extend native wire types only for fields consumed; add
    adapter tests for declaration, aliases, attribution, and completion using the characterized native
    events. Retain unknown frames. Verify child events cannot settle parent commands or turns.
@@ -817,7 +663,7 @@ siblings, attachment during discovery, owner loss, runner restart with retained 
 rejection of child launch/control. Assert version-specific coverage without claiming a complete transcript merely because some
 Codex child prose was observed. UI acceptance then proves presentation, not backend authority.
 
-Concrete gates for this implementation (not satisfied merely by the characterization PRs):
+Concrete gates for this implementation (not satisfied by characterization tests alone):
 
 - **Single-agent control:** for each supported harness, one creation key produces one reserved
   root and stable service/runner binding; changed-spec retries fail; ambiguous native launch is not
@@ -842,30 +688,14 @@ Concrete gates for this implementation (not satisfied merely by the characteriza
   and unknown task kinds remain distinguishable. No reconstruction from prose is labeled native
   lifecycle evidence; no child is restarted to make its status observable.
 
-## Deferred hardening inventory
+## Deferred hardening candidates
 
-This retained inventory is not a live priority or PR-status board. Check current evidence before
-promoting a concrete gap from the [freezer](task_freezer.md#harness-features-and-native-research).
-Finishing archive migration does not automatically unfreeze native-subagent work.
-
-Potential work extends the characterization suite and its shared fixtures, not the deferred
-shared-session implementation. It does not add a session authority or event store. The automatic current-versus-candidate upgrade lane is excluded.
-
-### Landed foundation
-
-- **Initialization correlation (#9461):** unrelated results cannot satisfy Claude initialization;
-  pipe-peer interleaving and real-CLI failed-resume tests cover the distinction. General input/result
-  correlation remains open.
-- **Root identity timing (#9459):** explicit/minted Claude IDs with and without input; the no-input
-  observation is bounded to 250 ms, not proof of indefinitely absent startup traffic.
-- **Parser compatibility (#9458):** known-frame extensions, opaque unknown payloads and malformed
-  known shapes. Typed projections are not lossless raw-frame round trips.
-- **RemoteIO conformance (#9454):** shared HTTP fixture, authentication, malformed input, epochs and
-  cursors. This is an experimental peer, not a production RemoteIO service.
-- **Exceptional process cleanup (#9455):** assertion/cancellation, descendants and trace retention;
-  successful exit remains graceful and deliberate `crash()` remains parent-only.
-
-### Candidate gaps, not acceptance obligations
+These are not a live priority or acceptance obligations. Check current evidence before promoting a
+concrete gap from the [freezer](task_freezer.md#harness-features-and-native-research); finishing
+archive migration does not automatically unfreeze native-subagent work. They extend the
+characterization suite and its shared fixtures, not the deferred shared-session implementation, and
+add no session authority or event store. The automatic current-versus-candidate upgrade lane is
+excluded.
 
 1. **Codex v2 live reconnect:** disconnect only the client during an active turn and after completion.
    Capture identity, history and lifecycle evidence on reconnect without submitting work as a status
@@ -887,6 +717,5 @@ shared-session implementation. It does not add a session authority or event stor
    history, epochs and cursors across reconnect/restart. Missing/unloaded tasks are not completed tasks;
    read-only recovery must not secretly reactivate them.
 
-These extend the [characterization coverage above](#matrix). Mark a task complete only after its focused PR merges with
-passing relevant real-binary tests and repository checks on the latest head. Keep dependent PRs draft
-with explicit merge conditions. Use the [evidence rules](#test-method-and-evidence) rather than maintaining a second matrix.
+Follow the [evidence rules](#test-method-and-evidence) and record results in the
+[matrix](#matrix) rather than a second one.

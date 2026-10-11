@@ -17,8 +17,8 @@ execution sequence. This is a priority decision, not a technical dependency.
 
 ## Open plans and gates
 
-- [Native session discovery](native_session_discovery.md) — harness characterization evidence and deferred
-  shared-session design with identity, attribution and durability gates
+- [Native session discovery](native_session_discovery.md) — remaining harness characterization and
+  deferred shared-session design with identity, attribution and durability gates
 - [Thread sync](thread_sync/README.md) — what is still open on the deployed Electric design (pending-command paging, body compaction, measurement), and the seams and candidates for a second implementation
 - [Task DAG](task_dag.md) — remaining work and proposed priorities, including unranked future
   harness-capability candidates, deployed acceptance, UI/history, and native recovery

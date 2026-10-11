@@ -8,9 +8,10 @@ incompatible tool-request lifecycle.
 
 ## Input-delivery research prerequisite
 
-Future input-delivery work must follow `INPUT_DELIVERY` in [the DAG](task_dag.md): re-read landed
-Claude/Codex queueing evidence, compare native receipt/promotion/coalescing semantics, and refresh
-captures before revising the common protocol. A harness-local queue is neither a background Action
+Future input-delivery work must follow
+[`INPUT_DELIVERY`](task_freezer.md#input_delivery--remaining-native-queue-and-recovery-evidence):
+re-read Claude/Codex queueing evidence, compare native receipt/promotion/coalescing semantics, and
+refresh captures before revising the common protocol. A harness-local queue is neither a background Action
 Execution nor proof that both harnesses support the same per-input acknowledgement or cancellation.
 
 ## Driver-provided declarations

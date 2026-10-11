@@ -55,7 +55,7 @@ Driver: `agentplane/native/claude/{driver,scenarios,async_run}.py`. Every test e
 | Streaming        | `stream_event` (`--include-partial-messages`): `content_block_start/stop`, deltas                                       | yes, `frames.assert_tool_lifecycles`                                     | Text deltas not asserted individually                                                                                                                                             |
 | Thinking         | `thinking` blocks in `assistant`; signature echoed upstream                                                             | yes, `test_parallel_shell_tools_report_both_streams_and_exit_codes`      | Thinking stays on; `--thinking`, `--max-thinking-tokens` hidden flags, `MAX_THINKING_TOKENS` (inferred) untested                                                                  |
 | Progress         | `tool_progress` (`elapsed_time_seconds`, `heartbeat`), `tool_use_summary` (inferred)                                    | no                                                                       | Long-running tool liveness                                                                                                                                                        |
-| Subagents        | `Task`/`Agent` tool, `parent_tool_use_id`, `--forward-subagent-text`, `--agents`, `system` `task_*` subtypes (inferred) | partial, `test_subagent_tool_frames_are_correlated_with_the_parent_call` | Opt-in tool round-trip test; see the matrix below. On 2.1.252, completed child prose and tools are forwarded with `parent_tool_use_id` by default; the initial test asserts both. |
+| Subagents        | `Task`/`Agent` tool, `parent_tool_use_id`, `--forward-subagent-text`, `--agents`, `system` `task_*` subtypes (inferred) | partial, `test_subagent_tool_frames_are_correlated_with_the_parent_call` | Opt-in tool round-trip test; see the bullet below. On 2.1.252, completed child prose and tools are forwarded with `parent_tool_use_id` by default; the initial test asserts both. |
 | Background tasks | `background_tasks` subtype, `system` `background_tasks_changed` (inferred)                                              | no                                                                       |                                                                                                                                                                                   |
 
 ### Approvals and permissions
@@ -245,9 +245,9 @@ the scenario under test; a bridge that turns any of these on must widen the rost
   `request_user_input`, `get_goal`, `create_goal`, `update_goal`).
 - **Multi-agent / subagents**: Default scenarios omit Claude `Agent`/`Task` and set Codex
   `features.multi_agent = false`. The opt-in cases in each harness's `test_tools.py` exercise one
-  child tool round trip; the [characterization matrix](../../plans/native_session_discovery.md#matrix)
-  tracks the remaining discovery, forwarding, and recovery coverage.
-  `parent_tool_use_id` is asserted; `subAgentActivity` remains unexercised.
+  child tool round trip, and Codex `test_v2_discovery.py` exercises `multi_agent_v2`
+  `subAgentActivity`; [harness evidence](../../docs/harness_evidence.md#native-subagents) records
+  what they establish.
 - **Web search and image viewing**: Codex `web_search = "disabled"`, `features.view_image = false`;
   Claude `--tools` omits `WebSearch`, `WebFetch`.
 - **Code mode**: avoided by using a model id outside Codex's catalog (`MODEL = "agentplane-test-model"`);

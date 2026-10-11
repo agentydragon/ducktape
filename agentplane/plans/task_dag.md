@@ -52,7 +52,7 @@ flowchart LR
     NOTIFICATION_NOTICE_METADATA --> NOTIFICATION_PRESENTATION
 ```
 
-Details: [Command admission](command_admission.md); later
+Details: [command admission](../sandbox_service/API.md#sessions-and-commands); later
 [notification presentation and input metadata](notification_presentation.md).
 
 ### `SESSION_INPUT_METADATA` — later typed annotations on input commands
