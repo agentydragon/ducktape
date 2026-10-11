@@ -405,16 +405,28 @@ class SandboxInventory:
             raise SandboxConflictError(name)
         if self._holds(sandbox).blocking():
             return False
+        await self._delete(name, uid=uid, resource_version=sandbox.metadata.resource_version)
+        return True
+
+    @_retry_on_conflict
+    async def delete_flushed(self, name: str, *, uid: str) -> None:
+        """Delete a sealing Sandbox whose runner's ingress has acknowledged every seal: history holds
+        each Session through its seal, so no retention hold is consulted."""
+        sandbox = await self._incarnation(name, uid=uid)
+        if sandbox.teardown != TeardownPhase.TEARDOWN_PHASE_SEALING:
+            raise SandboxConflictError(name)
+        await self._delete(name, uid=uid, resource_version=sandbox.metadata.resource_version)
+
+    async def _delete(self, name: str, *, uid: str, resource_version: str) -> None:
         await self._custom_objects.delete_namespaced_custom_object(
             *SANDBOX_API,
             self._namespace,
             SANDBOXES_PLURAL,
             name,
             body=k8s_client.V1DeleteOptions(
-                preconditions=k8s_client.V1Preconditions(uid=uid, resource_version=sandbox.metadata.resource_version)
+                preconditions=k8s_client.V1Preconditions(uid=uid, resource_version=resource_version)
             ),
         )
-        return True
 
     @_retry_on_conflict
     async def place_hold(self, name: str, *, uid: str, session_id: str, holder: str) -> Hold:

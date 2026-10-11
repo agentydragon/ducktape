@@ -346,9 +346,11 @@ message Sandbox {
 enum TeardownPhase {
   TEARDOWN_PHASE_UNSPECIFIED = 0;
   // Running again so that its runner can seal every Session. Stays here while the runner is
-  // unreachable, for the operator to decide.
+  // unreachable, for the operator to decide. A runner pushing to an ingress is deleted from here
+  // once the ingress has acknowledged every seal.
   TEARDOWN_PHASE_SEALING = 1;
-  // Sealed and suspended. Deleted once every retention hold has confirmed through its seal.
+  // Sealed and suspended, for a runner that pushes to no ingress. Deleted once every retention hold
+  // has confirmed through its seal.
   TEARDOWN_PHASE_SEALED = 2;
 }
 message ListSandboxesResponse { repeated Sandbox sandboxes = 1; }

@@ -331,7 +331,6 @@ flowchart LR
     VM_EGRESS[Candidate: production admission and egress integration]
     VM_PROCESS_ISOLATION[Blocked: harness/process resource boundary]
     VM_LIFECYCLE[Blocked: integrated lifecycle]
-    SEAL_ON_INGRESS_ACK[Seal waits on the ingress acknowledgement] --> RUNNER_OUTBOUND_ROLLOUT
     PROTO_DIRECTORY[Protos under agentplane/proto] --> RUNNER_OUTBOUND_ROLLOUT
     RUNNER_CONTROL_RENAME[Name the runner's control endpoint control] --> RUNNER_OUTBOUND_ROLLOUT
     RUNNER_OUTBOUND_ROLLOUT --> LEGACY_SANDBOX_RETIRE[Blocked: operator deletes every pre-cutover Sandbox]
@@ -558,8 +557,8 @@ unless the operator reviews a change. Separate Sandbox initialization from per-s
 **Candidate.** Draft [#7859](https://github.com/agentydragon/ducktape/pull/7859)
 expires idle Sandboxes (`TODO(sandbox-lifetime)` in `action_service/sandbox/inventory.py`). Deleting
 one goes through [teardown](../sandbox_service/API.md#teardown), which waits until history is
-archived through the seal (a retention hold today, the ingress acknowledgement after
-`SEAL_ON_INGRESS_ACK`).
+archived through the seal (the ingress acknowledgement, or a retention hold for a runner that pushes
+to no ingress).
 
 ## 7. History Service extraction and delta settlement
 
@@ -912,23 +911,20 @@ nodes and section 9 are unaffected.
 
 ```mermaid
 flowchart TD
-    SEAL_ON_INGRESS_ACK[Candidate: seal waits on the ingress acknowledgement]
     RUNNER_OUTBOUND_ROLLOUT[Every template dials out]
     LEGACY_SANDBOX_RETIRE[Retire pre-cutover Sandboxes]
     FOLLOW_PATH_RETIRE[Blocked: delete following, WatchSessions and holds]
     SANDBOX_SERVICE_DEPLOYMENT_SPLIT[Candidate: controller and hub as separate Deployments]
     AGENTPLANE_SANDBOX_RESOURCE[Decision: our own Sandbox resource]
     POD_INCARNATION[Decision: a Pod is the incarnation]
-    SEAL_FINALIZER[Blocked: seal as a finalizer on every delete]
+    SEAL_FINALIZER[Candidate: seal as a finalizer on every delete]
     COMMAND_RECORDS_RETIRE[Unscheduled: drop command submission records]
     RUNNER_CONTROL_RENAME[Candidate: name the runner's control endpoint control]
     RUNNER_CONTROL_RENAME --> RUNNER_OUTBOUND_ROLLOUT
     SESSION_ID_MINT_RETIRE[Blocked: clients always name the Session ID]
     LOOKUP_SESSION_RETIRE[Candidate: Session status from history, no Open reservation]
-    SEAL_ON_INGRESS_ACK --> RUNNER_OUTBOUND_ROLLOUT
     RUNNER_OUTBOUND_ROLLOUT --> LEGACY_SANDBOX_RETIRE
     LEGACY_SANDBOX_RETIRE --> FOLLOW_PATH_RETIRE
-    SEAL_ON_INGRESS_ACK --> SEAL_FINALIZER
     AGENTPLANE_SANDBOX_RESOURCE -. to seal a suspended Sandbox on delete .-> SEAL_FINALIZER
     POD_INCARNATION -. if chosen, rewrites .-> SESSION_STATE_VOLUME_DESIGN[State volume design]
     LEGACY_SANDBOX_RETIRE --> SESSION_ID_MINT_RETIRE
@@ -950,13 +946,6 @@ key) for a retried create. The History Service's index records which Sessions a 
 on ingress, so the browser reads that instead. `LookupSession`, its journal scan over the inbound
 API, the Open reservation and the Open key go.
 
-### `SEAL_ON_INGRESS_ACK` — seal waits on the ingress acknowledgement
-
-**Candidate.** Teardown waits until the runner reports every Session's seal `flushed`,
-which the runner already reports from its recorded acknowledgements, instead of on History Service
-holds. A runner
-that cannot report keeps the Sandbox in sealing for the operator, as today.
-
 ### `FOLLOW_PATH_RETIRE` — delete following, WatchSessions and holds
 
 **Blocked on legacy Sandbox retirement.** Delete `FollowSession`,
@@ -973,6 +962,10 @@ and token volume in cdk8s, and its caller account on the Sandbox Service; `follo
 `SessionChanges`; the client's `follow_timeout_s` and `Attachment` with the app's
 `sandbox_service_follow_timeout_s` and the Notification Service's `follow_timeout_s`; and
 `protocol.v1.Follow` once nothing sends `Open.follow`.
+
+With the holds goes teardown's path for a runner that pushes nothing: `SealResponse.pushes`,
+`TEARDOWN_PHASE_SEALED`, `SandboxInventory.record_seal` and `delete_if_released`. Every teardown
+then waits for every seal to be `flushed`.
 
 ### `SANDBOX_SERVICE_DEPLOYMENT_SPLIT` — controller and hub as separate Deployments
 
@@ -1009,7 +1002,7 @@ around it: keeping the volume means keeping the Sandbox.
 
 ### `SEAL_FINALIZER` — seal as a finalizer on every delete
 
-**Blocked on the ingress acknowledgement; operator, 2026-10-10 PDT.** Every Sandbox carries a seal
+**Candidate; operator, 2026-10-10 PDT.** Every Sandbox carries a seal
 finalizer, so any deletion (`kubectl`, `DeleteSandbox`) seals before its volume goes. It replaces
 the controller loop's seal from the replica holding the runner, the `teardown` annotation and the
 suspended-only delete guard. Deletion is one-way: a hold can delay it, never cancel it.

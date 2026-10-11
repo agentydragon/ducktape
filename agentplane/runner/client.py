@@ -186,9 +186,8 @@ class RunnerClient:
         response = await self._stub.ListSessions(protocol_pb2.ListSessionsRequest())
         return list(response.sessions)
 
-    async def seal(self) -> list[protocol_pb2.SessionSeal]:
-        response = await self._stub.Seal(protocol_pb2.SealRequest())
-        return list(response.sessions)
+    async def seal(self) -> protocol_pb2.SealResponse:
+        return await self._stub.Seal(protocol_pb2.SealRequest())
 
     async def close(self) -> None:
         await self._channel.close()

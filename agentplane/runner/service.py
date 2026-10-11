@@ -341,17 +341,20 @@ class Runner:
         if session.setup_state in (protocol_pb2.SETUP_STATE_NOT_REQUIRED, protocol_pb2.SETUP_STATE_SUCCEEDED):
             await session.ensure_running()
 
-    async def seal(self) -> list[protocol_pb2.SessionSeal]:
+    async def seal(self) -> protocol_pb2.SealResponse:
         """Sandbox teardown: refuse new and resumed sessions, stop every harness, seal every journal."""
         self.store.seal()
         sessions = [await self._load(session_id) for session_id in self.store.session_ids()]
         cursors = await asyncio.gather(*(session.seal() for session in sessions))
-        return [
-            protocol_pb2.SessionSeal(
-                session_id=session.session_id, cursor=cursor, flushed=self._flushed(session.session_id, cursor)
-            )
-            for session, cursor in zip(sessions, cursors, strict=True)
-        ]
+        return protocol_pb2.SealResponse(
+            sessions=[
+                protocol_pb2.SessionSeal(
+                    session_id=session.session_id, cursor=cursor, flushed=self._flushed(session.session_id, cursor)
+                )
+                for session, cursor in zip(sessions, cursors, strict=True)
+            ],
+            pushes=self.config.ingress is not None,
+        )
 
     def _flushed(self, session_id: str, cursor: int) -> bool:
         acknowledged = self.store.read_acknowledgement(session_id)
@@ -459,7 +462,7 @@ class RunnerService(protocol_pb2_grpc.RunnerServicer):
         self, request: protocol_pb2.SealRequest, context: grpc.aio.ServicerContext
     ) -> protocol_pb2.SealResponse:
         del request, context
-        return protocol_pb2.SealResponse(sessions=await self.runner.seal())
+        return await self.runner.seal()
 
     async def Attach(  # noqa: N802  # gRPC names servicer methods after the RPC
         self, request_iterator: AsyncIterator[protocol_pb2.ClientMessage], context: grpc.aio.ServicerContext

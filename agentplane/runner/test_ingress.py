@@ -19,7 +19,7 @@ from agentplane.proto import runner_ingress_pb2, runner_ingress_pb2_grpc
 from agentplane.protocol import event_log_pb2, event_pb2
 from agentplane.runner import protocol_pb2
 from agentplane.runner.channel import ChannelTiming
-from agentplane.runner.config import RunnerConfig
+from agentplane.runner.config import IngressEndpoint, RunnerConfig
 from agentplane.runner.ingress import IngressPusher
 from agentplane.runner.service import Runner
 from agentplane.runner.store import SessionRecord
@@ -111,7 +111,10 @@ class ScriptedIngress(runner_ingress_pb2_grpc.RunnerIngressServicer):
 
 @pytest.fixture
 def config(tmp_path: Path) -> RunnerConfig:
-    return RunnerConfig(state_dir=tmp_path / "state")
+    # Each test starts its pusher against its own ingress; the endpoint here only makes Seal say so.
+    return RunnerConfig(
+        state_dir=tmp_path / "state", ingress=IngressEndpoint(target="test-ingress.invalid:1", bearer="test-bearer")
+    )
 
 
 async def journal_stderr(runner: Runner, session_id: str, count: int) -> None:
@@ -218,16 +221,18 @@ async def test_flushed_reports_the_acknowledged_seal_across_a_restart(
     config: RunnerConfig, runner: Runner, ingress: tuple[ScriptedIngress, str]
 ) -> None:
     service, target = ingress
-    assert {seal.session_id: seal.flushed for seal in await runner.seal()} == {A: False, B: False}
+    unflushed = await runner.seal()
+    assert unflushed.pushes
+    assert {seal.session_id: seal.flushed for seal in unflushed.sessions} == {A: False, B: False}
     async with pushing(runner, target) as pusher:
         await service.until(lambda: service.sealed == {A, B})
         async with asyncio.timeout(10):
             await asyncio.gather(*pusher.pushes.values())
-    assert {seal.session_id: seal.flushed for seal in await runner.seal()} == {A: True, B: True}
+    assert {seal.session_id: seal.flushed for seal in (await runner.seal()).sessions} == {A: True, B: True}
     await runner.stop()
     restarted = Runner(config)
     try:
-        assert {seal.session_id: (seal.cursor, seal.flushed) for seal in await restarted.seal()} == {
+        assert {seal.session_id: (seal.cursor, seal.flushed) for seal in (await restarted.seal()).sessions} == {
             A: (JOURNALED, True),
             B: (JOURNALED, True),
         }
@@ -241,7 +246,7 @@ async def test_an_unreachable_ingress_holds_up_neither_journaling_nor_seal(runne
         target = f"127.0.0.1:{unused.getsockname()[1]}"
     async with pushing(runner, target):
         await journal_stderr(runner, A, 1)
-        assert {seal.session_id: (seal.cursor, seal.flushed) for seal in await runner.seal()} == {
+        assert {seal.session_id: (seal.cursor, seal.flushed) for seal in (await runner.seal()).sessions} == {
             A: (JOURNALED + 1, False),
             B: (JOURNALED, False),
         }

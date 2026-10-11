@@ -15,7 +15,7 @@ from agentplane.sandbox_service.kubernetes_views import MANAGED_LABEL
 from agentplane.sandbox_service.models import SandboxNotFoundError
 from agentplane.sandbox_service.protocol_pb2 import TeardownPhase
 from agentplane.sandbox_service.provisioning import Provisioning
-from agentplane.sandbox_service.teardown import Teardown
+from agentplane.sandbox_service.teardown import FLUSH_RETRY_S, SealNotFlushedError, Teardown
 from util.agent_sandbox import SANDBOX_API, SANDBOXES_PLURAL
 from util.kubernetes_watch import ListWatch, WatchedKind
 
@@ -133,6 +133,12 @@ class SandboxController:
                 await (self._sweep() if name == _SWEEP else self._reconcile(name))
             except asyncio.CancelledError:
                 raise
+            except SealNotFlushedError as waiting:
+                # Expected while the ingress catches up: seal again on a fixed period, not a backoff.
+                logger.info("%s; sealing again in %ss", waiting, FLUSH_RETRY_S)
+                self._retries[name] = asyncio.create_task(
+                    self._retry(name, FLUSH_RETRY_S), name=f"sandbox-retry-{name}"
+                )
             except Exception:
                 attempts = self._attempts.get(name, 0) + 1
                 self._attempts[name] = attempts

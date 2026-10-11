@@ -1,5 +1,6 @@
 """DeleteSandbox's teardown against a scripted runner: the Sandbox is sealed before anything deletes
-it, a runner without Seal has its harnesses stopped instead, and holds gate the deletion."""
+it, a runner without Seal has its harnesses stopped instead, and holds gate the deletion unless the
+runner pushes to an ingress, which gates it on every seal being flushed instead."""
 
 from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
@@ -22,7 +23,7 @@ from agentplane.sandbox_service.inventory import SandboxInventory
 from agentplane.sandbox_service.models import SandboxTearingDownError
 from agentplane.sandbox_service.protocol_pb2 import Hold, Sandbox, SandboxDestination, TeardownPhase
 from agentplane.sandbox_service.session_registry import SessionRegistry
-from agentplane.sandbox_service.teardown import Teardown
+from agentplane.sandbox_service.teardown import SealNotFlushedError, Teardown
 from agentplane.sandbox_service.testing.backend import seed_runner
 from agentplane.sandbox_service.testing.fake_inventory import NAMESPACE, FakeCoreV1Api, FakeCustomObjectsApi
 from agentplane.sandbox_service.testing.sessions import register_session
@@ -45,6 +46,8 @@ class ScriptedRunner:
     last_cursors: dict[str, int] = field(default_factory=dict)
     # None answers Seal as a runner image without it does.
     seals: dict[str, int] | None = None
+    pushes: bool = False
+    flushed: set[str] = field(default_factory=set)
     stopped: list[tuple[str, int]] = field(default_factory=list)
     port: int = 0
 
@@ -52,7 +55,11 @@ class ScriptedRunner:
         if self.seals is None:
             await context.abort(grpc.StatusCode.UNIMPLEMENTED, "test runner predates Seal")
         return runner_pb2.SealResponse(
-            sessions=[runner_pb2.SessionSeal(session_id=key, cursor=cursor) for key, cursor in self.seals.items()]
+            sessions=[
+                runner_pb2.SessionSeal(session_id=key, cursor=cursor, flushed=key in self.flushed)
+                for key, cursor in self.seals.items()
+            ],
+            pushes=self.pushes,
         )
 
     async def list_sessions(
@@ -189,6 +196,27 @@ async def test_sealed_sessions_hold_the_deletion_until_confirmed(
 
     await inventory.confirm_hold(NAME, uid=sandbox.uid, session_id=str(public), holder="test", through_cursor=4)
     await teardown.advance(sealed)
+    assert (SANDBOXES_PLURAL, NAME) not in custom_objects.objects
+
+
+async def test_a_pushing_runner_is_deleted_once_every_seal_is_flushed(
+    sandbox: Sandbox,
+    inventory: SandboxInventory,
+    teardown: Teardown,
+    runner: ScriptedRunner,
+    custom_objects: FakeCustomObjectsApi,
+) -> None:
+    runner.pushes = True
+    runner.seals = {"test-flushed": 4, "test-unflushed": 2}
+    runner.flushed = {"test-flushed"}
+    with pytest.raises(SealNotFlushedError):
+        await teardown.advance(sandbox)
+    assert (await inventory.get(NAME)).teardown == TeardownPhase.TEARDOWN_PHASE_SEALING
+
+    # History holds every Session through its seal, so an unconfirmed hold keeps nothing.
+    await inventory.place_hold(NAME, uid=sandbox.uid, session_id="test-unflushed", holder="test")
+    runner.flushed.add("test-unflushed")
+    await teardown.advance(await inventory.get(NAME))
     assert (SANDBOXES_PLURAL, NAME) not in custom_objects.objects
 
 

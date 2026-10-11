@@ -137,7 +137,7 @@ async def control(runner: Runner, request: channel_pb2.ControlRequest) -> channe
             case "resume":
                 result.resume.CopyFrom(_attached(await runner.resume(request.resume.session_id)))
             case "seal":
-                result.seal.sessions.extend(await runner.seal())
+                result.seal.CopyFrom(await runner.seal())
             case None:
                 raise InvalidRequestError("the request names no verb")
     except SessionUnknownError as error:

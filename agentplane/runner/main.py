@@ -21,7 +21,7 @@ from typing import Annotated
 import typer
 
 from agentplane.runner.channel import ChannelTiming, RunnerChannelClient
-from agentplane.runner.config import ClaudeLaunch, CodexLaunch, DebugCheckpoint, RunnerConfig
+from agentplane.runner.config import ClaudeLaunch, CodexLaunch, DebugCheckpoint, IngressEndpoint, RunnerConfig
 from agentplane.runner.ingress import IngressPusher
 from agentplane.runner.service import serve
 
@@ -133,6 +133,11 @@ def main(
         ),
         claude=claude,
         codex=codex,
+        ingress=(
+            IngressEndpoint(target=ingress_target, bearer=ingress_bearer)
+            if ingress_target is not None and ingress_bearer is not None
+            else None
+        ),
         test_debug_checkpoint=(
             DebugCheckpoint(test_debug_checkpoint_name, test_debug_checkpoint_command_id)
             if test_debug_checkpoint_name is not None and test_debug_checkpoint_command_id is not None
@@ -140,13 +145,10 @@ def main(
         ),
     )
     channel = (channel_target, channel_bearer) if channel_target is not None and channel_bearer is not None else None
-    ingress = (ingress_target, ingress_bearer) if ingress_target is not None and ingress_bearer is not None else None
-    asyncio.run(async_main(config, listen, channel, ingress))
+    asyncio.run(async_main(config, listen, channel))
 
 
-async def async_main(
-    config: RunnerConfig, listen: str, channel: tuple[str, str] | None, ingress: tuple[str, str] | None
-) -> None:
+async def async_main(config: RunnerConfig, listen: str, channel: tuple[str, str] | None) -> None:
     server, runner, port = await serve(config, address=listen)
     host = listen.rsplit(":", 1)[0]
     # The line a supervisor or test reads to find the port.
@@ -165,11 +167,13 @@ async def async_main(
                 name="runner channel",
             )
         )
-    if ingress is not None:
-        target, bearer = ingress
+    if config.ingress is not None:
         dialing.append(
             asyncio.create_task(
-                IngressPusher(runner, target=target, bearer=bearer, timing=ChannelTiming()).run(), name="ingress push"
+                IngressPusher(
+                    runner, target=config.ingress.target, bearer=config.ingress.bearer, timing=ChannelTiming()
+                ).run(),
+                name="ingress push",
             )
         )
     for task in dialing:

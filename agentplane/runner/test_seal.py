@@ -64,9 +64,9 @@ async def read_to_seal(attachment: Attachment) -> tuple[list[int], int]:
 async def test_seal_ends_every_session_and_refuses_resume(
     client: RunnerClient, config: RunnerConfig, last_cursors: dict[str, int]
 ) -> None:
-    seals = {seal.session_id: seal.cursor for seal in await client.seal()}
+    seals = {seal.session_id: seal.cursor for seal in (await client.seal()).sessions}
     assert seals == last_cursors
-    assert {seal.session_id: seal.cursor for seal in await client.seal()} == seals
+    assert {seal.session_id: seal.cursor for seal in (await client.seal()).sessions} == seals
     async with await client.attach("test-session-a", after_cursor=1) as attachment:
         assert await read_to_seal(attachment) == (list(range(2, seals["test-session-a"] + 1)), seals["test-session-a"])
     for session_id in ("test-session-a", "test-session-new"):
@@ -80,7 +80,7 @@ async def test_a_restarted_runner_keeps_the_seal(config: RunnerConfig, last_curs
         server, runner, port = await serve(config)
         client = RunnerClient(grpc.aio.insecure_channel(f"127.0.0.1:{port}"), capture_history=True)
         try:
-            assert {seal.session_id: seal.cursor for seal in await client.seal()} == last_cursors
+            assert {seal.session_id: seal.cursor for seal in (await client.seal()).sessions} == last_cursors
             async with await client.attach("test-session-b") as attachment:
                 cursors, sealed = await read_to_seal(attachment)
             assert sealed == cursors[-1] == last_cursors["test-session-b"]

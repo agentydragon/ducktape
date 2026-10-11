@@ -29,6 +29,15 @@ class CodexLaunch:
 
 
 @dataclass(frozen=True, slots=True)
+class IngressEndpoint:
+    """Where the runner pushes every Session's Events (agentplane/docs/runner_channel.md § Event ingress)."""
+
+    target: str
+    # A placeholder the egress proxy swaps for this Pod's ingress token; the runner never holds it.
+    bearer: str
+
+
+@dataclass(frozen=True, slots=True)
 class DebugCheckpoint:
     """One test-only runner pause, surfaced through the ordinary session event stream."""
 
@@ -51,6 +60,8 @@ class RunnerConfig:
     # VM guests keep app work in a delegated cgroup and run it under a separate unprivileged UID.
     # Container deployments leave this unset and retain their existing process behavior.
     process_isolation: AgentCgroups | None = None
+    # Unset, the runner pushes no Events and no seal is ever reported flushed.
+    ingress: IngressEndpoint | None = None
     # When set, new and retained session working directories must stay beneath this mount.
     workspace_root: Path | None = None
     # VM guests separate native harness histories from the runner's journal tree so project quota

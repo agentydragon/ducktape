@@ -83,10 +83,13 @@ namespaced annotations, not competing Sandbox status conditions.
    each Session's final cursor. A runner image without `Seal` has every running harness stopped
    instead, and each journal's head is taken as its final cursor; only this service's fence keeps
    new work out of it.
-3. Records the cursors as the [retention holds'](#retention-holds) seal cursors and suspends the
-   Sandbox again, in one write (`TEARDOWN_PHASE_SEALED`). A Session is keyed by its public ID, or by
-   the runner's ID for one opened with a caller-chosen ID.
-4. Deletes the Sandbox, and its volume, once every hold is satisfied.
+3. If the runner pushes its Events to an ingress, deletes the Sandbox, and its volume, once that
+   ingress has acknowledged every seal (`flushed`), sealing again every 10 s until then. Holds are
+   not consulted: history already has every Session through its seal.
+4. Otherwise records the cursors as the [retention holds'](#retention-holds) seal cursors and
+   suspends the Sandbox again, in one write (`TEARDOWN_PHASE_SEALED`). A Session is keyed by its
+   public ID, or by the runner's ID for one opened with a caller-chosen ID. It deletes the Sandbox,
+   and its volume, once every hold is satisfied.
 
 While the runner is unreachable the Sandbox stays in `TEARDOWN_PHASE_SEALING`, retried with backoff,
 for the operator to decide: nothing deletes an unsealed Sandbox.

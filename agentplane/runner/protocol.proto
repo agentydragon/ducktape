@@ -159,6 +159,9 @@ message SessionSeal {
 
 message SealResponse {
   repeated SessionSeal sessions = 1;
+  // The runner pushes its Events to an ingress, so each `flushed` turns true once that ingress
+  // acknowledges the seal. False, no `flushed` ever does.
+  bool pushes = 2;
 }
 
 // The session's journal is final: every entry through `cursor` precedes this message.

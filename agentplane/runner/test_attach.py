@@ -153,7 +153,7 @@ async def test_seal_stops_the_running_harness_and_ends_live_followers(
     await submit_input(first, "input-1", "Reply with exactly: SEED_OK")
     await model.reply(await model.request(), Text("SEED_OK"))
     await first.until(events.turn_completed)
-    (seal,) = await client.seal()
+    (seal,) = (await client.seal()).sessions
     assert seal.session_id == "seal-1"
     with pytest.raises(SessionSealedError) as sealed:
         await first.until(lambda _: False)
