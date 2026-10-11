@@ -131,7 +131,6 @@ def test_the_two_settings_models_read_one_environment_without_colliding(monkeypa
     assert (settings.namespace, settings.sandbox_namespace) == ("test-namespace", "test-sandbox-namespace")
     assert settings.sandbox_service_request_timeout_s == 20
     assert settings.sandbox_service_lifecycle_timeout_s == 310
-    assert settings.sandbox_service_follow_timeout_s == 960
     assert (settings.port, settings.token_audience) == (8080, "agentplane")
     assert oidc.redirect_uri == "https://app.test.invalid/auth/callback"
     assert (

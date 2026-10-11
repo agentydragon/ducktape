@@ -773,7 +773,6 @@ async def unanswered_command_service(
             command_admission_timeout_s=1,
             request_timeout_s=5,
             lifecycle_timeout_s=5,
-            follow_timeout_s=5,
         ) as service,
     ):
         yield service, cancelled

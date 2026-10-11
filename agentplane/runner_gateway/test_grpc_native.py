@@ -12,10 +12,13 @@ import pytest
 import pytest_bazel
 from google.protobuf.json_format import MessageToDict
 from kubernetes_asyncio import client as k8s_client
+from more_itertools import one
 from sqlalchemy.ext.asyncio import AsyncEngine
+from tenacity import AsyncRetrying, retry_if_exception_type, stop_after_delay, wait_fixed
 
 from agentplane.proto import command_pb2, event_log_pb2, runner_pb2
 from agentplane.proto.sandbox_service_pb2 import SandboxBinding, SessionDefaults
+from agentplane.runner.client import RunnerClient
 from agentplane.runner.errors import RunnerError, StreamClosedError
 from agentplane.runner.testing import events
 from agentplane.runner.testing.fixtures import RunnerHandle
@@ -60,16 +63,12 @@ async def remote(resources: Resources, token_file: Path) -> AsyncIterator[Sandbo
         yield client
 
 
-async def inspect(remote: SandboxServiceClient, session_id: str) -> runner_pb2.Attached:
-    attachment = await remote.runner(DESTINATION).attach(session_id)
-    try:
-        return attachment.attached
-    finally:
-        attachment.cancel()
+async def inspect(runner: Runner, session_id: str) -> runner_pb2.SessionSummary:
+    return one(summary for summary in await runner.list_sessions() if summary.session_id == session_id)
 
 
 async def complete_turn(
-    runner: Runner, model: ScriptedModel, session_id: str, command_id: str
+    runner: Runner, journal: RunnerClient, model: ScriptedModel, session_id: str, command_id: str
 ) -> list[event_log_pb2.EventEntry]:
     command = command_pb2.Command(command_id=command_id, submit_input=command_pb2.SubmitInput(text="Reply: GRPC_OK"))
     receipt = await runner.command(session_id, command, after_cursor=0)
@@ -84,7 +83,7 @@ async def complete_turn(
     assert "New platform guidance." not in request.system_text
     assert str(SANDBOX_UID) in request.system_text
     await model.reply(request, Text("GRPC_OK"))
-    attachment = await runner.attach(session_id, after_cursor=receipt.cursor - 1)
+    attachment = await journal.attach(session_id, after_cursor=receipt.cursor - 1)
     entries: list[event_log_pb2.EventEntry] = []
     try:
         async with asyncio.timeout(20):
@@ -110,6 +109,7 @@ async def test_launch_delivery_and_restart_preserve_evidence_and_configuration(
     spec: runner_pb2.SessionSpec,
     cluster: Cluster,
     workspace: Path,
+    client: RunnerClient,
 ) -> None:
     bootstrap_marker = workspace / "bootstrap-runs"
     setup_marker = workspace / "setup-runs"
@@ -131,12 +131,10 @@ async def test_launch_delivery_and_restart_preserve_evidence_and_configuration(
         requested = uuid4()
         created = await runner.create(session_id=requested, spec={})
         session = created.session_id
-        opened = created.attached
         async with asyncio.timeout(15):
-            while opened.harness_state != runner_pb2.HARNESS_STATE_RUNNING:
+            while (opened := await inspect(runner, session)).harness_state != runner_pb2.HARNESS_STATE_RUNNING:
                 assert opened.setup_state not in (runner_pb2.SETUP_STATE_FAILED, runner_pb2.SETUP_STATE_INTERRUPTED)
                 await asyncio.sleep(0.05)
-                opened = await inspect(remote, session)
         assert opened.setup_state == runner_pb2.SETUP_STATE_SUCCEEDED
         assert session in opened.spec.instructions
         assert (await runner.create(session_id=requested, spec={})).attached.spec == opened.spec
@@ -146,10 +144,10 @@ async def test_launch_delivery_and_restart_preserve_evidence_and_configuration(
         assert changed.value.code == grpc.StatusCode.INVALID_ARGUMENT
         assert bootstrap_marker.read_text() == "B"
         assert setup_marker.read_text() == "S"
-        entries = await complete_turn(runner, model, session, "grpc-notice")
+        entries = await complete_turn(runner, client, model, session, "grpc-notice")
         stop = command_pb2.Command(command_id="grpc-stop", stop_runner_session=command_pb2.StopRunnerSession())
         await runner.command(session, stop, after_cursor=entries[-1].cursor)
-        tail = await runner.attach(session, after_cursor=entries[-1].cursor)
+        tail = await client.attach(session, after_cursor=entries[-1].cursor)
         try:
             async with asyncio.timeout(20):
                 while True:
@@ -166,9 +164,9 @@ async def test_launch_delivery_and_restart_preserve_evidence_and_configuration(
                 command_pb2.Command(command_id="no-wake", submit_input=command_pb2.SubmitInput(text="no wake")),
                 after_cursor=0,
             )
-        assert (await inspect(remote, session)).harness_state == runner_pb2.HARNESS_STATE_STOPPED
+        assert (await inspect(runner, session)).harness_state == runner_pb2.HARNESS_STATE_STOPPED
         # Observe the stopped journal too: rejected delivery added no admission and did not wake it.
-        stopped = await runner.attach(session)
+        stopped = await client.attach(session)
         try:
             async with asyncio.timeout(20):
                 cursor = 0
@@ -181,9 +179,6 @@ async def test_launch_delivery_and_restart_preserve_evidence_and_configuration(
                     assert entry.event.command_admitted.command.command_id != "no-wake"
         finally:
             stopped.cancel()
-        # A cursor past the journal's end is refused, not followed until the journal reaches it.
-        with pytest.raises(RunnerError):
-            await runner.attach(session, after_cursor=stopped.attached.last_cursor + 1)
     # Stop the service, change its configuration and stored defaults, and recover solely from the runner.
     cluster.set_binding(SandboxBinding(bootstrap="exit 42", session_defaults=SessionDefaults(model="changed")))
     async with service_client(
@@ -193,7 +188,7 @@ async def test_launch_delivery_and_restart_preserve_evidence_and_configuration(
         resumed = await runner.resume(session)
         assert resumed.spec == opened.spec
         assert resumed.harness_state == runner_pb2.HARNESS_STATE_RUNNING
-        await complete_turn(runner, model, session, "grpc-resumed")
+        await complete_turn(runner, client, model, session, "grpc-resumed")
         assert (await runner.list_sessions())[0].spec == opened.spec
         with pytest.raises(RunnerError):
             await runner.create(
@@ -205,10 +200,6 @@ async def test_launch_delivery_and_restart_preserve_evidence_and_configuration(
 
 async def test_observe_command_and_resume_do_not_create_unknown_session(remote: SandboxServiceClient) -> None:
     runner = remote.runner(DESTINATION)
-    with pytest.raises(RunnerError):
-        await inspect(remote, SESSION)
-    with pytest.raises(RunnerError):
-        await runner.attach(SESSION)
     with pytest.raises(RunnerError):
         await runner.command(
             SESSION,
@@ -223,11 +214,12 @@ async def test_observe_command_and_resume_do_not_create_unknown_session(remote: 
 async def test_failed_setup_cannot_be_resumed(remote: SandboxServiceClient, spec: runner_pb2.SessionSpec) -> None:
     runner = remote.runner(DESTINATION)
     created = await runner.create(session_id=uuid4(), spec=MessageToDict(spec), setup_script="exit 42")
-    opened = created.attached
-    async with asyncio.timeout(15):
-        while opened.setup_state == runner_pb2.SETUP_STATE_RUNNING:
-            await asyncio.sleep(0.05)
-            opened = await inspect(remote, created.session_id)
+    async for attempt in AsyncRetrying(
+        stop=stop_after_delay(15), wait=wait_fixed(0.05), retry=retry_if_exception_type(AssertionError), reraise=True
+    ):
+        with attempt:
+            opened = await inspect(runner, created.session_id)
+            assert opened.setup_state != runner_pb2.SETUP_STATE_RUNNING
     assert opened.setup_state == runner_pb2.SETUP_STATE_FAILED
     with pytest.raises(RunnerError):
         await runner.resume(created.session_id)

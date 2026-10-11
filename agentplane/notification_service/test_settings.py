@@ -68,7 +68,6 @@ history_service:
     assert settings.sandbox_service.request_timeout_s == 5
     assert settings.stale_inbox_confirmation_s == 30
     assert settings.sandbox_service.lifecycle_timeout_s == 310
-    assert settings.sandbox_service.follow_timeout_s == 960
     monkeypatch.setenv("AGENTPLANE_NOTIFICATIONS_QUOTAS__INBOXES_PER_ACCOUNT", "18")
     monkeypatch.setenv("AGENTPLANE_NOTIFICATIONS_QUOTAS__ACTIVE_SUBSCRIPTIONS_PER_INBOX", "36")
     monkeypatch.setenv("AGENTPLANE_NOTIFICATIONS_QUOTAS__ENTRIES_PER_INBOX", "750")
@@ -183,7 +182,7 @@ def test_invalid_command_admission_timeout(timeout: float) -> None:
         )
 
 
-@pytest.mark.parametrize("name", ["request_timeout_s", "lifecycle_timeout_s", "follow_timeout_s"])
+@pytest.mark.parametrize("name", ["request_timeout_s", "lifecycle_timeout_s"])
 @pytest.mark.parametrize("timeout", [0, -1, float("nan"), float("inf")])
 def test_invalid_sandbox_service_deadline(name: str, timeout: float) -> None:
     with pytest.raises(ValidationError):

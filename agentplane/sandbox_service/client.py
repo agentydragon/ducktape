@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from collections.abc import AsyncIterator, Awaitable, Callable, Mapping
+from collections.abc import Awaitable, Callable, Mapping
 from pathlib import Path
 from types import TracebackType
 from typing import Never, Self
@@ -24,7 +24,7 @@ from agentplane.proto import (
     sandbox_service_pb2_grpc,
 )
 from agentplane.proto.sandbox_service_pb2 import CreateSandboxRequest, Sandbox, SandboxDestination
-from agentplane.runner.errors import RunnerError, StreamClosedError
+from agentplane.runner.errors import RunnerError
 from agentplane.sandbox_service import wire
 from agentplane.sandbox_service.models import SandboxNotFoundError
 
@@ -40,18 +40,6 @@ class ServiceError(ConnectionError):
         self.code = code
 
 
-class ReconnectRequiredError(ConnectionError):
-    """Planned follow renewal, not an interruption or native session end."""
-
-
-class SealedError(StreamClosedError):
-    """The runner sealed this Sandbox incarnation of the Session; its journal ends at `cursor`."""
-
-    def __init__(self, cursor: int) -> None:
-        super().__init__(f"Session incarnation sealed at cursor {cursor}")
-        self.cursor = cursor
-
-
 def _raise(error: grpc.aio.AioRpcError) -> Never:
     # Do not include upstream details: they may contain credentials or native output.
     if error.code() == grpc.StatusCode.DEADLINE_EXCEEDED:
@@ -59,44 +47,6 @@ def _raise(error: grpc.aio.AioRpcError) -> Never:
     if error.code() == grpc.StatusCode.FAILED_PRECONDITION:
         raise RunnerError("Sandbox Service refused the requested session or resource state") from error
     raise ServiceError(error.code()) from error
-
-
-class Attachment:
-    def __init__(self, call: grpc.aio.UnaryStreamCall, attached: runner_pb2.Attached) -> None:
-        self.attached = attached
-        self._call = call
-        self._ended = False
-
-    async def next_entry(self) -> event_log_pb2.EventEntry:
-        if self._ended:
-            raise StreamClosedError
-        try:
-            message = await self._call.read()
-        except grpc.aio.AioRpcError as error:
-            if error.code() == grpc.StatusCode.DEADLINE_EXCEEDED:
-                raise TimeoutError("Sandbox Service follow deadline expired") from error
-            _raise(error)
-        if message is grpc.aio.EOF:
-            raise ConnectionError("Sandbox Service follow ended without native closure evidence")
-        assert isinstance(message, sandbox_service_pb2.FollowSessionResponse)
-        if message.HasField("entry"):
-            return message.entry
-        if message.HasField("reconnect_required"):
-            self._call.cancel()
-            raise ReconnectRequiredError
-        if message.HasField("ended"):
-            self._ended = True
-            self._call.cancel()
-            raise StreamClosedError
-        if message.HasField("sealed"):
-            self._ended = True
-            self._call.cancel()
-            raise SealedError(message.sealed.cursor)
-        self._call.cancel()
-        raise ConnectionError("Sandbox Service sent an unexpected follow observation")
-
-    def cancel(self) -> None:
-        self._call.cancel()
 
 
 class SandboxServiceClient:
@@ -111,11 +61,10 @@ class SandboxServiceClient:
         command_admission_timeout_s: float | None,
         request_timeout_s: float,
         lifecycle_timeout_s: float,
-        follow_timeout_s: float,
         control_target: str | None = None,
         channel_options: Mapping[str, int | str] | None = None,
     ) -> None:
-        if min(request_timeout_s, lifecycle_timeout_s, follow_timeout_s) <= 0 or (
+        if min(request_timeout_s, lifecycle_timeout_s) <= 0 or (
             command_admission_timeout_s is not None and command_admission_timeout_s <= 0
         ):
             raise ValueError("timeouts must be positive")
@@ -127,7 +76,6 @@ class SandboxServiceClient:
         self.request_timeout_s = request_timeout_s
         self.command_admission_timeout_s = command_admission_timeout_s
         self.lifecycle_timeout_s = lifecycle_timeout_s
-        self.follow_timeout_s = follow_timeout_s
         # A Sandbox's control Service, which names the replica holding its runner connection, as a
         # template of `{sandbox}` and `{namespace}`: `{sandbox}-control.{namespace}.svc:8080`. None
         # sends every gateway call to `gateway_target`.
@@ -164,7 +112,7 @@ class SandboxServiceClient:
         return self._gateway_stub
 
     async def metadata(self) -> tuple[tuple[str, str], ...]:
-        # Projected tokens rotate. Read for every RPC, including follow reconnects.
+        # Projected tokens rotate. Read for every RPC.
         token = (await asyncio.to_thread(self.token_file.read_text)).strip()
         return (("authorization", f"Bearer {token}"),)
 
@@ -250,28 +198,6 @@ class SandboxServiceClient:
 
     async def revoke_egress(self, name: str) -> None:
         await self.unary(self.stub.RevokeEgress, sandbox_service_pb2.RevokeEgressRequest(binding_name=name))
-
-    async def watch_sessions(self, *, after_position: int) -> AsyncIterator[sandbox_service_pb2.SessionChange]:
-        """Yield changes after the position until planned renewal, which returns; anything else raises."""
-        call = self.gateway.WatchSessions(
-            sandbox_service_pb2.WatchSessionsRequest(after_position=after_position),
-            metadata=await self.metadata(),
-            timeout=self.follow_timeout_s,
-        )
-        try:
-            while True:
-                try:
-                    message = await call.read()
-                except grpc.aio.AioRpcError as error:
-                    _raise(error)
-                if message is grpc.aio.EOF:
-                    raise ConnectionError("Sandbox Service ended the Session feed without planned renewal")
-                assert isinstance(message, sandbox_service_pb2.WatchSessionsResponse)
-                if message.HasField("reconnect_required"):
-                    return
-                yield message.change
-        finally:
-            call.cancel()
 
     def runner(self, destination: SandboxDestination) -> Runner:
         return Runner(self, destination)
@@ -389,24 +315,3 @@ class Runner:
                 command_id=command_id,
             ),
         )
-
-    async def attach(self, session_id: str, *, after_cursor: int = 0) -> Attachment:
-        call = self.service.gateway.FollowSession(
-            sandbox_service_pb2.FollowSessionRequest(
-                destination=sandbox_service_pb2.SessionDestination(sandbox=self.destination, session_id=session_id),
-                follow=event_log_pb2.Follow(after_cursor=after_cursor),
-            ),
-            metadata=await self.service.metadata(),
-            timeout=self.service.follow_timeout_s,
-        )
-        try:
-            async with asyncio.timeout(self.service.request_timeout_s):
-                message = await call.read()
-            if not isinstance(message, sandbox_service_pb2.FollowSessionResponse) or not message.HasField("attached"):
-                raise ConnectionError("Sandbox Service did not provide an Attached snapshot")
-            return Attachment(call, message.attached)
-        except BaseException as error:
-            call.cancel()
-            if isinstance(error, grpc.aio.AioRpcError):
-                _raise(error)
-            raise

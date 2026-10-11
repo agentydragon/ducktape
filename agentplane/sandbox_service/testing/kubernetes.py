@@ -3,7 +3,7 @@
 import asyncio
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from pathlib import Path
 from typing import cast
 
@@ -133,18 +133,12 @@ async def authenticated_service(
         audiences=(audience,),
     )
     async with postgres_async_engine(database_url) as engine:
-        resources = replace(
-            build_resources(
-                engine,
-                principals=cluster.build_principal_resolver(audience),
-                destinations=DestinationResolver(cluster.inventory, k8s_client.CoreV1Api(cluster.api), runner_port),
-                caller_accounts=frozenset({manager}),
-                platform_instructions=platform_instructions,
-            ),
-            follow_lease_s=1,
+        resources = build_resources(
+            engine,
+            principals=cluster.build_principal_resolver(audience),
+            destinations=DestinationResolver(cluster.inventory, k8s_client.CoreV1Api(cluster.api), runner_port),
+            caller_accounts=frozenset({manager}),
+            platform_instructions=platform_instructions,
         )
-        async with (
-            resources.session_changes.listener.listen(),
-            service_client(resources, token_file, cluster.provisioning) as client,
-        ):
+        async with service_client(resources, token_file, cluster.provisioning) as client:
             yield client

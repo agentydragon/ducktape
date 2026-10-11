@@ -45,7 +45,6 @@ class Settings(BaseSettings):
         description="Seconds SubmitCommand waits for the runner journal to durably record the exact "
         "command; expiry leaves admission uncertain.",
     )
-    follow_lease_s: float = Field(default=900, gt=0, le=900)
     runner_grpc_channel_options: dict[str, int | str] = Field(
         default_factory=dict,
         description="gRPC options for gateway-to-runner control streams; receives retained journal events up to the configured limit.",

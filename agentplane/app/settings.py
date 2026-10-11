@@ -93,7 +93,6 @@ class Settings(AppSettingsConfig):
     history_service_request_timeout_s: float = Field(default=20, gt=0, allow_inf_nan=False)
     sandbox_service_request_timeout_s: float = Field(default=20, gt=0, allow_inf_nan=False)
     sandbox_service_lifecycle_timeout_s: float = Field(default=310, gt=0, allow_inf_nan=False)
-    sandbox_service_follow_timeout_s: float = Field(default=960, gt=0, allow_inf_nan=False)
     sandbox_service_command_admission_timeout_s: float = Field(
         default=20,
         gt=0,

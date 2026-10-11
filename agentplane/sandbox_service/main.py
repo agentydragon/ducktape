@@ -95,7 +95,6 @@ async def serve(settings: Settings) -> None:
         command_admission_timeout_s=None,
         request_timeout_s=settings.admission_timeout_s,
         lifecycle_timeout_s=settings.lifecycle_timeout_s,
-        follow_timeout_s=settings.lifecycle_timeout_s,
     )
 
     async with (
