@@ -8,7 +8,7 @@ import pygit2
 import pytest
 import pytest_asyncio
 from pygit2.enums import FileMode
-from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
+from sqlalchemy.ext.asyncio import AsyncEngine
 
 from agentplane.indexing.store import Store
 from haku.recall_index.chunking import DEFAULT_CHUNK_BUDGET
@@ -17,7 +17,7 @@ from third_party.containers import pgvector_pg18
 from util.oci import OciImage
 from util.testing.postgres import DatabaseClones, PostgresDatabaseTemplate
 from util.testing.postgres_fixtures import database_clones, database_names, postgres_admin_url, postgres_container
-from util.testing.sqlalchemy_engines import managed_async_engine, postgres_async_engine
+from util.testing.sqlalchemy_engines import postgres_async_engine
 
 # gazelle:include_dep @pypi//asyncpg
 # The template admin URL uses the psycopg dialect, which SQLAlchemy loads at runtime.
@@ -59,7 +59,7 @@ async def engine(
 ) -> AsyncGenerator[AsyncEngine]:
     """A fresh writable clone of the default initialized index schema and state."""
     db_url = database_clones.clone(initialized_index_database_template, drivername="postgresql+asyncpg")
-    async with managed_async_engine(create_async_engine(db_url)) as opened:
+    async with postgres_async_engine(db_url) as opened:
         yield opened
 
 
@@ -69,7 +69,7 @@ async def empty_engine(
 ) -> AsyncGenerator[AsyncEngine]:
     """A fresh pgvector database for tests that choose a non-default index configuration."""
     db_url = database_clones.clone(empty_index_database_template, drivername="postgresql+asyncpg")
-    async with managed_async_engine(create_async_engine(db_url)) as opened:
+    async with postgres_async_engine(db_url) as opened:
         yield opened
 
 

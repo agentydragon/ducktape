@@ -19,12 +19,13 @@ different PostgreSQL image can override ``postgres_image`` in their conftest.
 import contextlib
 import logging
 import time
-from collections.abc import Generator, Iterator
+from collections.abc import AsyncIterator, Generator, Iterator
 
 import pytest
 from _pytest.fixtures import FixtureFunctionDefinition
 from opentelemetry import trace
 from sqlalchemy.engine import URL
+from sqlalchemy.ext.asyncio import AsyncEngine
 from testcontainers.postgres import PostgresContainer
 
 from third_party.containers import postgres_18, ryuk
@@ -37,6 +38,7 @@ from util.testing.postgres import (
     database_name_for_test,
     migrated_database_template,
 )
+from util.testing.sqlalchemy_engines import postgres_async_engine
 from util.testing.undeclared_outputs import undeclared_outputs_dir
 
 # SQLAlchemy loads the psycopg dialect from the URL scheme at runtime.
@@ -157,3 +159,10 @@ def migrated_database_fixtures(
         return database_clones.clone(source, drivername=drivername)
 
     return template, url
+
+
+@pytest.fixture
+async def engine(db_url: str) -> AsyncIterator[AsyncEngine]:
+    """Own a default asyncpg engine for the suite's per-test database clone."""
+    async with postgres_async_engine(db_url) as opened:
+        yield opened

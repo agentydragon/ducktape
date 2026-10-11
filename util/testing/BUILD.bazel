@@ -96,6 +96,7 @@ py_library(
     visibility = ["//visibility:public"],
     deps = [
         ":postgres",
+        ":sqlalchemy_engines",
         ":undeclared_outputs",
         "//third_party/containers:postgres_18",
         "//third_party/containers:ryuk",
