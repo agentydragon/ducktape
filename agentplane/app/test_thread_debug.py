@@ -17,7 +17,7 @@ from agentplane.app.model_catalog import ModelCatalog, ModelOption
 from agentplane.app.operator_sessions import OperatorSessionStore
 from agentplane.app.testing.history import SeededEventLogStore as EventLogStore
 from agentplane.app.testing.model_test_data import TEST_REASONING_EFFORTS
-from agentplane.app.testing.replication_source import SANDBOX, SESSION, ReplicationSource
+from agentplane.app.testing.replication_source import SANDBOX, SESSION, Placements, ReplicationSource
 from agentplane.app.threads.bridge import RunnerBridge
 from agentplane.app.threads.store import ThreadStore
 from agentplane.app.threads.view.content import ContentStore
@@ -25,7 +25,6 @@ from agentplane.egress.decisions_client import DecisionsClient
 from agentplane.history_service.testing.history import History
 from agentplane.proto import command_pb2, event_pb2
 from agentplane.runner.harness import Harness
-from agentplane.runner_gateway.session_registry import SessionRegistry
 from agentplane.sandbox_service.client import SandboxServiceClient
 
 # gazelle:include_dep @pypi//protobuf
@@ -49,7 +48,7 @@ async def test_lazy_scoped_evidence_and_native_expansion(
     notifications_http: httpx.AsyncClient,
     notifications_token_file: Path,
 ) -> None:
-    source = ReplicationSource(SessionRegistry(history.engine))
+    source = ReplicationSource(Placements())
     source.append(event_pb2.Event(harness_started=event_pb2.HarnessStarted(pid=123)))
     source.append(event_pb2.Event(turn_started=event_pb2.TurnStarted(turn_id="turn", model="test-model")))
     source.append(event_pb2.Event(native=event_pb2.Native(direction=event_pb2.DIRECTION_FROM_HARNESS, line="first")))

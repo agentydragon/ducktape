@@ -1217,6 +1217,7 @@ async def replicas(
     survivor_event_logs = EventLogStore(
         replica_engine,
         history=event_logs.history,
+        gateway=event_logs.gateway,
         history_reader=history_client,
         summaries=Summaries(replica_engine, history_client),
     )

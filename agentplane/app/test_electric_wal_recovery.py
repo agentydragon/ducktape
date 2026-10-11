@@ -15,10 +15,9 @@ import pytest_bazel
 
 from agentplane.app.testing.electric_service import ElectricService, electric_service
 from agentplane.app.testing.history import fixture_session_id
-from agentplane.app.testing.replication_source import SANDBOX, SESSION, ReplicationSource
+from agentplane.app.testing.replication_source import SANDBOX, SESSION, Placements, ReplicationSource
 from agentplane.history_service.testing.history import History
 from agentplane.proto import event_pb2
-from agentplane.runner_gateway.session_registry import SessionRegistry
 from util.db_url import render_postgresql_url
 from util.testing.undeclared_outputs import undeclared_outputs_dir
 
@@ -132,7 +131,7 @@ async def test_electric_lagging_slot_forces_client_resnapshot_after_wal_cap() ->
 
 
 async def _project_initial_item(history: History) -> tuple[UUID, ReplicationSource]:
-    source = ReplicationSource(SessionRegistry(history.engine))
+    source = ReplicationSource(Placements())
     source.append(event_pb2.Event(harness_started=event_pb2.HarnessStarted(pid=123)))
     source.append(event_pb2.Event(turn_started=event_pb2.TurnStarted(turn_id="turn", model="test-model")))
     source.append(

@@ -5,7 +5,7 @@ copies a runner's journal; its first copy waits for the test to release the `ope
 """
 
 import asyncio
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable, Iterable
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from typing import override
@@ -23,7 +23,6 @@ from agentplane.proto import (
     runner_pb2,
     sandbox_service_pb2,
 )
-from agentplane.runner_gateway.session_registry import SessionRegistry
 
 # gazelle:include_dep @pypi//protobuf
 
@@ -37,12 +36,38 @@ class Opened:
     replay: asyncio.Event = field(default_factory=asyncio.Event)
 
 
-class ReplicationSource:
-    """One runner's Session; `gateway` admits its commands and answers where Sessions run from `sessions`."""
+@dataclass
+class Placements:
+    """Where each Session a test opened runs: what the Runner Gateway's registry would answer."""
 
-    def __init__(self, sessions: SessionRegistry) -> None:
-        self.sessions = sessions
+    sandboxes: dict[UUID, str] = field(default_factory=dict)
+
+    def get(self, session_ids: Iterable[str]) -> runner_gateway_pb2.SessionSandboxes:
+        wanted = set(session_ids)
+        return self._matching(lambda session_id, _: str(session_id) in wanted)
+
+    def find(self, request: runner_gateway_pb2.FindSessionsRequest) -> runner_gateway_pb2.SessionSandboxes:
+        if request.HasField("sandbox_name"):
+            return self._matching(lambda _, sandbox: sandbox == request.sandbox_name)
+        return self._matching(lambda _, sandbox: request.sandbox_name_contains.lower() in sandbox.lower())
+
+    def _matching(self, keep: Callable[[UUID, str], bool]) -> runner_gateway_pb2.SessionSandboxes:
+        return runner_gateway_pb2.SessionSandboxes(
+            sessions=[
+                runner_gateway_pb2.SessionSandbox(session_id=str(session_id), sandbox=sandbox)
+                for session_id, sandbox in self.sandboxes.items()
+                if keep(session_id, sandbox)
+            ]
+        )
+
+
+class ReplicationSource:
+    """One runner's Session; `gateway` admits its commands and answers where Sessions run from `placements`."""
+
+    def __init__(self, placements: Placements) -> None:
+        self.placements = placements
         self.session_id = uuid5(NAMESPACE_URL, SANDBOX + "/" + SESSION)
+        placements.sandboxes[self.session_id] = SANDBOX
         self.entries: list[event_log_pb2.EventEntry] = []
         self.attached = runner_pb2.Attached(
             session_id=SESSION, spec=SPEC, harness_state=runner_pb2.HARNESS_STATE_RUNNING
@@ -132,35 +157,13 @@ class Gateway(runner_gateway_pb2_grpc.RunnerGatewayServicer):
     async def BatchGetSessionSandboxes(
         self, request: runner_gateway_pb2.BatchGetSessionSandboxesRequest, context: grpc.aio.ServicerContext
     ) -> runner_gateway_pb2.SessionSandboxes:
-        found = await self.source.sessions.sandboxes({UUID(session_id) for session_id in request.session_ids})
-        return runner_gateway_pb2.SessionSandboxes(sessions=found)
+        return self.source.placements.get(request.session_ids)
 
     @override
     async def FindSessions(
         self, request: runner_gateway_pb2.FindSessionsRequest, context: grpc.aio.ServicerContext
     ) -> runner_gateway_pb2.SessionSandboxes:
-        if request.HasField("sandbox_name"):
-            return runner_gateway_pb2.SessionSandboxes(
-                sessions=await self.source.sessions.find(sandbox_name=request.sandbox_name)
-            )
-        return runner_gateway_pb2.SessionSandboxes(
-            sessions=await self.source.sessions.find(sandbox_name_contains=request.sandbox_name_contains)
-        )
-
-    @override
-    async def GetCommand(
-        self, request: sandbox_service_pb2.GetCommandRequest, context: grpc.aio.ServicerContext
-    ) -> sandbox_service_pb2.CommandStatus:
-        """Let browser tests gate command status; unspecified lookups keep the old unsupported behavior."""
-        snapshot = sandbox_service_pb2.GetCommandRequest.FromString(request.SerializeToString())
-        self.command_status_requests.put_nowait(snapshot)
-        try:
-            result = await self._command_status_results.get_nowait()
-        except asyncio.QueueEmpty:
-            await context.abort(grpc.StatusCode.UNIMPLEMENTED, "GetCommand not scripted")
-        if isinstance(result, grpc.StatusCode):
-            await context.abort(result, "scripted command status")
-        return result
+        return self.source.placements.find(request)
 
     @override
     async def ListSessions(

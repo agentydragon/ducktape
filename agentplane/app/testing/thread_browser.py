@@ -2,8 +2,9 @@
 `pytest_plugins = ("agentplane.app.testing.thread_browser",)`.
 
 A conftest fixture outranks a plugin's, so each test module defines `service_history_db_url` itself,
-as `electric`'s database, for the package conftest's history fixtures to follow, and `inventory` as
-`gateway_client`, for the package conftest's `store` to ask where Sessions run.
+as `electric`'s database, for the package conftest's history fixtures to follow; `gateway_registry` as
+`placements`, where the package conftest's `event_logs` registers Sessions; and `inventory` as
+`gateway_client`, for its `store` to ask where they run.
 """
 
 import asyncio
@@ -32,6 +33,7 @@ from agentplane.app.testing.replication_source import (
     SANDBOX,
     SESSION,
     Opened,
+    Placements,
     ReplicationSource,
     add_replication_source,
 )
@@ -41,7 +43,6 @@ from agentplane.grpc_serving import serving
 from agentplane.history_service.client import HistoryServiceClient
 from agentplane.history_service.testing.history import SANDBOX_NAMESPACE, History
 from agentplane.proto import event_log_pb2, event_pb2
-from agentplane.runner_gateway.session_registry import SessionRegistry
 from agentplane.sandbox_service.client import SandboxServiceClient
 from util.bazel.runfiles import get_required_path
 from util.testing.frontend_visual import CONTAINER_BASE_BROWSER_ARGS, chromium_executable
@@ -148,10 +149,16 @@ async def electric(
 
 
 @pytest.fixture
-async def gateway_port(history: History) -> AsyncIterator[int]:
+def placements() -> Placements:
+    """Where the test's Sessions run, for every fake gateway the test serves."""
+    return Placements()
+
+
+@pytest.fixture
+async def gateway_port(placements: Placements) -> AsyncIterator[int]:
     """A Runner Gateway that answers where every Session the test opened runs, for apps with no live runner."""
     server = grpc.aio.server()
-    add_replication_source(ReplicationSource(SessionRegistry(history.engine)), server)
+    add_replication_source(ReplicationSource(placements), server)
     async with serving(server, "127.0.0.1:0", grace_s=0) as port:
         yield port
 
@@ -180,8 +187,8 @@ def replay_after() -> int | None:
 
 
 @pytest.fixture
-def thread_source(history: History) -> ReplicationSource:
-    source = ReplicationSource(SessionRegistry(history.engine))
+def thread_source(placements: Placements) -> ReplicationSource:
+    source = ReplicationSource(placements)
     source.attached.active_turn_id = "test-browser-turn"
     source.append(event_pb2.Event(harness_started=event_pb2.HarnessStarted(pid=123)))
     source.append(

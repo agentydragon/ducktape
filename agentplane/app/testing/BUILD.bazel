@@ -84,7 +84,6 @@ py_library(
         "//agentplane/proto:runner_gateway_pb2_grpc",
         "//agentplane/proto:runner_pb2",
         "//agentplane/proto:sandbox_service_pb2",
-        "//agentplane/runner_gateway:session_registry",
         "@pypi//grpcio",
         "@pypi//protobuf",
     ],
@@ -95,7 +94,6 @@ py_library(
     srcs = ["electric_service.py"],
     deps = [
         "//agentplane/history_service/testing:history",
-        "//agentplane/runner_gateway/commands:db",
         "//agentplane/testing:electric_role",
         "//third_party/containers:electric_1_8_1",
         "//third_party/containers:postgres_18",
@@ -165,7 +163,6 @@ py_library(
         "//agentplane/history_service/testing:history",
         "//agentplane/proto:event_log_pb2",
         "//agentplane/proto:event_pb2",
-        "//agentplane/runner_gateway:session_registry",
         "//agentplane/sandbox_service:client",
         "//util/bazel:runfiles",
         "//util/testing:frontend_visual",
@@ -194,6 +191,7 @@ py_library(
     srcs = ["history.py"],
     visibility = ["//agentplane/app:__subpackages__"],
     deps = [
+        ":replication_source",
         "//agentplane/app:database_updates",
         "//agentplane/app/threads:models",
         "//agentplane/app/threads:summaries",

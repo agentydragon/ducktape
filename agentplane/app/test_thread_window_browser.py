@@ -12,6 +12,7 @@ from playwright.async_api import Page, Request, Route, TimeoutError as Playwrigh
 
 from agentplane.app.testing import thread_view_marks
 from agentplane.app.testing.electric_service import ElectricService
+from agentplane.app.testing.replication_source import Placements
 from agentplane.app.testing.thread_browser import (
     ThreadBrowser,
     append_items,
@@ -38,6 +39,11 @@ async def service_history_db_url(electric: ElectricService) -> str:
 @pytest.fixture
 def inventory(gateway_client: SandboxServiceClient) -> SandboxServiceClient:
     return gateway_client
+
+
+@pytest.fixture
+def gateway_registry(placements: Placements) -> Placements:
+    return placements
 
 
 def _append_uneven_items(thread_browser: ThreadBrowser, prefix: str, numbers: range) -> event_log_pb2.EventEntry:

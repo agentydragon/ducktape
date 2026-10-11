@@ -14,13 +14,12 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 from agentplane.app.testing.electric_service import ElectricService, electric_service
 from agentplane.app.testing.history import SeededEventLogStore as EventLogStore
 from agentplane.app.testing.replication_process import app_process
-from agentplane.app.testing.replication_source import SANDBOX, SESSION, ReplicationSource
+from agentplane.app.testing.replication_source import SANDBOX, SESSION, Placements, ReplicationSource
 from agentplane.app.threads.summaries import Summaries
 from agentplane.history_service.client import HistoryServiceClient
 from agentplane.history_service.testing.backend import history_service
 from agentplane.history_service.testing.history import History
 from agentplane.proto import command_pb2, event_pb2
-from agentplane.runner_gateway.session_registry import SessionRegistry
 
 # gazelle:include_dep @pypi//protobuf
 
@@ -33,9 +32,12 @@ async def test_materialized_revisions_replicate_with_restricted_role(
         history_service(service.database_url, tmp_path / "history-token") as reader,
     ):
         history = History(service.database_url)
-        event_logs = EventLogStore(engine, history=history, history_reader=reader, summaries=Summaries(engine, reader))
+        placements = Placements()
+        event_logs = EventLogStore(
+            engine, history=history, gateway=placements, history_reader=reader, summaries=Summaries(engine, reader)
+        )
         try:
-            source = ReplicationSource(SessionRegistry(history.engine))
+            source = ReplicationSource(placements)
             source.append(event_pb2.Event(harness_started=event_pb2.HarnessStarted(pid=123)))
             source.append(event_pb2.Event(turn_started=event_pb2.TurnStarted(turn_id="turn", model="test-model")))
             source.append(

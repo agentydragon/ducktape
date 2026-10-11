@@ -20,12 +20,11 @@ from sqlalchemy import select
 
 from agentplane.app.testing.electric_service import electric_service
 from agentplane.app.testing.history import fixture_session_id
-from agentplane.app.testing.replication_source import SANDBOX, SESSION, ReplicationSource
+from agentplane.app.testing.replication_source import SANDBOX, SESSION, Placements, ReplicationSource
 from agentplane.history_service.fold.models import ThreadEntity
 from agentplane.history_service.fold_runner import FOLD_EPOCH
 from agentplane.history_service.testing.history import History
 from agentplane.proto import event_pb2
-from agentplane.runner_gateway.session_registry import SessionRegistry
 
 # gazelle:include_dep @pypi//protobuf
 
@@ -109,7 +108,7 @@ async def _attached_thread() -> AsyncIterator[_Thread]:
     async with electric_service() as service:
         history = History(service.database_url)
         try:
-            source, thread = ReplicationSource(SessionRegistry(history.engine)), fixture_session_id(SANDBOX, SESSION)
+            source, thread = ReplicationSource(Placements()), fixture_session_id(SANDBOX, SESSION)
             await history.open(thread, sandbox=SANDBOX)
             await history.set_attached(thread, source.attached)
             yield _Thread(service.url, history, source, thread)
