@@ -143,6 +143,7 @@ py_test(
         "//agentplane/history_service/storage:db",
         "//agentplane/history_service/storage:store",
         "//agentplane/history_service/testing:delta_spans",
+        "//agentplane/history_service/testing:sessions",
         "//agentplane/proto:event_log_pb2",
         "@pypi//protobuf",
         "@pypi//pytest_bazel",
