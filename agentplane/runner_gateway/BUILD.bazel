@@ -309,6 +309,7 @@ py_library(
         ":runner_channel",
         ":session_registry",
         ":settings",
+        "//agentplane:grpc_process",
         "//agentplane/proto:runner_channel_pb2",
         "//agentplane/proto:runner_channel_pb2_grpc",
         "//agentplane/runner_gateway/commands:connections",
@@ -320,12 +321,10 @@ py_library(
         "//agentplane/workload_auth:principal",
         "//util:kubernetes",
         "@pypi//asyncpg",
-        "@pypi//fastapi",
         "@pypi//grpcio",
         "@pypi//kubernetes_asyncio",
         "@pypi//protobuf",
         "@pypi//sqlalchemy",
-        "@pypi//uvicorn",
     ],
 )
 

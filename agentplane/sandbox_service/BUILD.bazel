@@ -189,6 +189,7 @@ py_library(
         ":runner_endpoints",
         ":settings",
         ":teardown",
+        "//agentplane:grpc_process",
         "//agentplane/proto:runner_pb2",
         "//agentplane/runner_gateway:grpc_api",
         "//agentplane/runner_gateway:main",
@@ -196,11 +197,9 @@ py_library(
         "//agentplane/workload_auth:principal",
         "//util:kubernetes",
         "@pypi//asyncpg",
-        "@pypi//fastapi",
         "@pypi//grpcio",
         "@pypi//kubernetes_asyncio",
         "@pypi//protobuf",
-        "@pypi//uvicorn",
     ],
 )
 
