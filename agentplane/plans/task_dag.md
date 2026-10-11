@@ -577,7 +577,7 @@ node switches which service reads or writes it. Only the fold double-runs.
 
 ```mermaid
 flowchart TD
-    SANDBOX_LOCAL_HISTORY_RETIRE[Blocked: delete Sandbox Service ingester and store]
+    SANDBOX_LOCAL_HISTORY_RETIRE[Candidate: delete Sandbox Service ingester and store]
     APP_PROJECTOR_RETIRE[Candidate: delete app projector code]
     APP_PROJECTION_RETIRE[Blocked: drop app projection tables]
     APP_EVENT_LOG_COPIES_RETIRE[Candidate: drop event_log launch copies]
@@ -602,10 +602,12 @@ flowchart TD
 
 ### `SANDBOX_LOCAL_HISTORY_RETIRE` — remove the local store
 
-**Blocked until the release after staging's History Service ingester took over writes.** Delete the Sandbox
-Service's ingester and `session_history` store code and revoke its grants on history tables. Test
-that the Sandbox Service provisions, drives and reconciles commands with no History Service
-running, and update `sandbox_service/API.md`.
+**Candidate; staging's History Service ingester took over writes (#9842), and the split does not
+change this node.** Delete the Sandbox Service's ingester and `session_history` store code and
+revoke its grants on history tables. Test that the Sandbox Service provisions, drives and
+reconciles commands with no history consumer at all, so the tests do not depend on the History
+Service's follower ingester, which `FOLLOW_PATH_RETIRE` deletes later (closed #9855 built on it).
+Update `sandbox_service/API.md`.
 
 ### `APP_PROJECTOR_RETIRE` — delete the app projector
 
@@ -785,7 +787,7 @@ flowchart TD
     SANDBOX_LOCAL_HISTORY_RETIRE --> HISTORY_WRITER_SWITCH_RETIRE
     HISTORY_STORE_MOVE --> HISTORY_SERVICE_OWNERSHIP
     HISTORY_STORE_MOVE --> HISTORY_DATABASE_RENAME
-    SANDBOX_LOCAL_HISTORY_RETIRE --> HISTORY_RUNNER_SESSION_ID_DROP
+    FOLLOW_PATH_RETIRE[Delete following, WatchSessions and holds] --> HISTORY_RUNNER_SESSION_ID_DROP
     HISTORY_RUNNER_SESSION_ID_DROP --> HISTORY_DATABASE_RENAME
     HISTORY_DATABASE_RENAME --> SANDBOX_DATABASE_RENAME
     APP_PROJECTOR_RETIRE --> APP_ELECTRIC_RETIRE
@@ -793,19 +795,22 @@ flowchart TD
 
 ### `HISTORY_RUNNER_SESSION_ID_DROP` — rows carry only the public ID
 
-**Blocked on Sandbox Service local-history retirement**, whose ingester follows imported rows by
-`runner_session_id`. Then the column only names feed snapshots stored before ingesters wrote them
-under the public ID: rewrite those snapshots under the public ID, then drop the column with
-`ux_history_runner_locator`. Stops for the operator.
+**Blocked on the follow path's retirement**, because both follower ingesters (the Sandbox
+Service's and the History Service's) follow by `runner_session_id`. Under the ingress, Sessions
+arrive under their client-minted public ID, which is also the runner's. Then the column only names
+feed snapshots stored before ingesters wrote them under the public ID: rewrite those snapshots
+under the public ID, then drop the column with `ux_history_runner_locator`, together with the
+follower-only ingestion state (`source_id`, `feed_state`). Stops for the operator.
 
 ### `HISTORY_STORE_MOVE` — the history store belongs to the History Service
 
-**Blocked on Sandbox Service local-history retirement.** Move the remaining store, models and
+**Blocked on Sandbox Service local-history retirement; unaffected by the split.** Move the remaining store, models and
 Alembic migrations from `sandbox_service/session_history` into `history_service`, rename the
 `agentplane-sandbox-service-history-migrate` image, and run the migration init container in the
 History Service Deployment. The Sandbox Service then has no credential for the history database.
 `session_history/session_changes.py`, which listens on `sandbox_commands`, moves next to the
-Session registry rather than with the store.
+Session registry rather than with the store, unless `FOLLOW_PATH_RETIRE` has deleted the
+`WatchSessions` feed first.
 
 ### `HISTORY_WRITER_SWITCH_RETIRE` — one ingester, no switch
 
