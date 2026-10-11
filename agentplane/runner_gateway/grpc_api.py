@@ -345,23 +345,21 @@ class RunnerGateway(runner_gateway_pb2_grpc.RunnerGatewayServicer):
     ) -> event_log_pb2.EventEntry:
         async with errors(context), asyncio.timeout(self.resources.runner_admission_ack_timeout_s):
             caller = await self.resources.authenticate(context)
-            destination = request.destination
-            if not destination.session_id:
-                raise ValueError("session ID is required")
+            public_id = parse_session_id(request.session_id)
             submission = CommandSubmission(command=request.command)
-            # Resolving the public ID binds the Session to this Sandbox incarnation before anything
-            # is persisted for it.
-            runner_session_id = await self.runner_session_id(destination)
-            public_id = parse_session_id(destination.session_id)
-            await self.resources.destinations.resolve(destination.sandbox, writes=True)
+            # Nothing is persisted for a Session whose Sandbox incarnation is gone or going.
+            placement = await self.resources.sessions.placement(public_id)
+            await self.resources.destinations.resolve_incarnation(
+                placement.sandbox_name, placement.sandbox_uid, writes=True
+            )
             delivery = self.resources.delivery
 
             async def dispatch(command: command_pb2.Command) -> event_log_pb2.EventEntry:
                 return await delivery.deliver(
-                    sandbox_uid=UUID(destination.sandbox.sandbox_uid),
+                    sandbox_uid=placement.sandbox_uid,
                     session_id=public_id,
                     command_id=command.command_id,
-                    runner_session_id=runner_session_id,
+                    runner_session_id=str(public_id),
                     deadline_s=min(self.resources.runner_admission_ack_timeout_s, 60),
                 )
 
@@ -369,28 +367,18 @@ class RunnerGateway(runner_gateway_pb2_grpc.RunnerGatewayServicer):
                 self.resources.submissions, public_id, submission, caller=caller, dispatch=dispatch
             )
 
-    async def checked_public_session(self, destination: sandbox_service_pb2.SessionDestination) -> UUID:
-        """The public Session ID of this Sandbox incarnation. Its submissions outlive the Sandbox, so
-        the owner is checked only while the incarnation exists."""
-        sandbox = destination.sandbox
-        if not all((sandbox.sandbox, sandbox.sandbox_uid, sandbox.owner.namespace, sandbox.owner.name)):
-            raise ValueError("Sandbox name, UID, and owner are required")
-        session_id = parse_session_id(destination.session_id)
-        await self.runner_session_id(destination)
-        try:
-            view = await self.resources.destinations.inventory.get(sandbox.sandbox)
-        except SandboxNotFoundError:
-            return session_id
-        if view.uid == sandbox.sandbox_uid and view.service_account != sandbox.owner:
-            raise SandboxNotFoundError(sandbox.sandbox)
-        return session_id
+    async def registered_session(self, session_id: str) -> UUID:
+        """A registered public Session ID. Its submissions outlive its Sandbox."""
+        public_id = parse_session_id(session_id)
+        await self.resources.sessions.placement(public_id)
+        return public_id
 
     @override
     async def GetCommand(
         self, request: sandbox_service_pb2.GetCommandRequest, context: grpc.aio.ServicerContext
     ) -> sandbox_service_pb2.CommandStatus:
         async with self.request(context):
-            session_id = await self.checked_public_session(request.destination)
+            session_id = await self.registered_session(request.session_id)
             if not 1 <= len(request.command_id) <= 128:
                 raise ValueError("command ID must contain 1 to 128 characters")
             return command_status(await self.resources.submissions.read(session_id, request.command_id))
@@ -400,7 +388,7 @@ class RunnerGateway(runner_gateway_pb2_grpc.RunnerGatewayServicer):
         self, request: sandbox_service_pb2.ListCommandsRequest, context: grpc.aio.ServicerContext
     ) -> sandbox_service_pb2.ListCommandsResponse:
         async with self.request(context):
-            session_id = await self.checked_public_session(request.destination)
+            session_id = await self.registered_session(request.session_id)
             if request.page_size > 1000:
                 raise ValueError("page size must not exceed 1000")
             limit = request.page_size or 100

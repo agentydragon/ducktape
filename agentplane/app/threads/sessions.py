@@ -20,7 +20,7 @@ class SandboxNotReachableError(Exception):
 class SandboxSessions:
     def __init__(self, index: LiveIndex, service: SandboxServiceClient) -> None:
         self._index = index
-        self._service = service
+        self.service = service
         self._clients: dict[str, Runner] = {}
 
     @property
@@ -42,5 +42,5 @@ class SandboxSessions:
             sandbox_uid=str(view.uid),
         )
         if str(view.uid) not in self._clients:
-            self._clients[str(view.uid)] = self._service.runner(destination)
+            self._clients[str(view.uid)] = self.service.runner(destination)
         return self._clients[str(view.uid)]
