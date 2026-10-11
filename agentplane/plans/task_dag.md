@@ -52,7 +52,7 @@ flowchart LR
     NOTIFICATION_NOTICE_METADATA --> NOTIFICATION_PRESENTATION
 ```
 
-Details: [command admission](../sandbox_service/API.md#sessions-and-commands); later
+Details: [command admission](../runner_gateway/API.md#sessions-and-commands); later
 [notification presentation and input metadata](notification_presentation.md).
 
 ### `NOTIFICATION_COMMAND_OUTCOME_DESIGN` — notice delivery without reading conversation history
@@ -772,17 +772,12 @@ Thread for its projection; no "hub", "follow" or "shadow" left); READMEs, `SPEC.
 `docs/` describing the code as it is, without cutover narration; no compatibility branch,
 optional-with-fallback setting or `CLEANUP` tombstone whose condition is met; the system diagram in
 `agentplane/README.md` showing exactly the deployed services and the traffic between them in
-`cluster/cdk8s/agentplane`. Known now: the cutover guards in
-`cluster/cdk8s/agentplane/test_sandbox_service.py` (a "removed stays removed" assertion, and a test
-defined after `__main__`); the test-only `PostgresListener.wait_until_disconnected`;
-`runner/observation.py` probes the oneof with `getattr`; two `ClaudeHarness` classes
-(`native/claude/facade.py`, `harness_tests`); `//agentplane/capture:live_capture` is a hand-run
-probe not named `demo_`; egress and app test support each build a throwaway CA;
-`sandbox_service/models.py` holds only errors, `provisioning.py` makes its logger in a function, and
-`{session_id}` cwd templating runs twice in the gateway; operator routes are `/operator/v1/` in
-notifications but `/v1/operator/` in actions; `cluster/cdk8s/agentplane/kubevirt_experiment` is an
-experiment outside `x/`; `app/threads/models.py` cites a task DAG anchor from code. Findings are fixed in PRs of their own; this node leaves with the last of
-them.
+`cluster/cdk8s/agentplane`. Known now: the test-only `PostgresListener.wait_until_disconnected`
+(`connected` turns false before the termination callback runs, so its tests cannot wait on
+`connected` instead); egress and app test support each build a throwaway CA; operator routes are
+`/operator/v1/` in notifications but `/v1/operator/` in actions;
+`cluster/cdk8s/agentplane/kubevirt_experiment` is an experiment outside `x/`. Findings are fixed in
+PRs of their own; this node leaves with the last of them.
 
 ## 11. Runner ingress and control split
 
@@ -881,41 +876,23 @@ flowchart TD
     GATEWAY_CLIENT_SPLIT[Session messages and client move to the gateway]
     RUNNER_INBOUND_RETIRE[Retire inbound runner access]
     subgraph COHERENCE_REFACTORS[Coherence refactors]
-        REQUIRED_SERVICE_WIRING[Candidate: no footgun defaults on service wiring]
-        GATEWAY_NAME_SWEEP[Candidate: code says Runner Gateway for the gateway]
         RUNNER_ERRORS_REHOME[Blocked: errors beside the client that raises them]
         SETTLE_DELTAS_ALWAYS_ON[Unscheduled: retire the settle_deltas flag]
         FEED_ENDED_RETIRE[Candidate: a feed ends where its harness stopped]
-        APP_SERVICE_NAMES[Candidate: app names the right services]
         KUBEVIRT_GUEST_CONTROL[Candidate: KubeVirt guest dials out]
         RUNNER_CORE_SPLIT[Blocked: runner core out of the inbound servicer]
         ACTION_PROTOCOLS_CONCRETE[Candidate: concrete external-grant authority]
         GRPC_CHANNEL_OPTIONS_CONSTANT[Waits on rollout: drop the unread channel-options settings]
-        SETTLED_CURSORS_MOVE[Candidate: settled cursors live with the History Service]
-        CONTROL_TARGET_REQUIRED[Candidate: clients require the control Service target]
+        COMMAND_REJECTED_STATE[Decision: a rejected command state nothing writes]
+        SERVICE_SETTING_NAMES[Candidate: settings name the service they configure]
+        OPERATOR_ROUTE_PREFIX[Candidate: one operator route prefix]
+        NOTIFICATION_WRITE_ONLY_COLUMNS[Decision: audit columns nothing reads]
     end
     GATEWAY_CLIENT_SPLIT --> RUNNER_ERRORS_REHOME
     KUBEVIRT_GUEST_CONTROL --> RUNNER_INBOUND_RETIRE
     RUNNER_INBOUND_RETIRE --> RUNNER_CORE_SPLIT
     COHERENCE_REFACTORS --> REFACTOR_COHERENCE_AUDIT[Whole-refactor coherence audit]
 ```
-
-### `REQUIRED_SERVICE_WIRING` — no footgun defaults on service wiring
-
-**Candidate.** Both services' `Resources` default timeouts that copy the Settings defaults, and the
-gateway's defaults `sealer_accounts=frozenset()` and its channel options; only test builders rely on
-them (`sandbox_service/grpc_api.py:40`, `runner_gateway/grpc_api.py:77`). Make them required, as
-`launch_spec(sandbox_namespace=)` and `SandboxInventory.suspend`/`resume(uid=)` whose `None`
-branches only tests take.
-
-### `GATEWAY_NAME_SWEEP` — code says Runner Gateway for the gateway
-
-**Candidate.** Module docstrings, `proto/runner_control.proto`, the EndpointSlice
-`managed-by: agentplane-sandbox-service` (`runner_gateway/connection_records.py`), the agent prompt
-in `session_lifecycle.py`, and the runner's `control.py`, `main.py` flag help, `SPEC.md` and README
-say "Sandbox Service" for the gateway; History Service docstrings say it writes and migrates the
-history store. Also the stale `sealer_accounts` comment, the `serve_channel` test helper, and the
-`CLEANUP` in `sandbox_service/teardown.py` that cites this plan.
 
 ### `RUNNER_ERRORS_REHOME` — errors beside the client that raises them
 
@@ -935,13 +912,6 @@ its own error type.
 **Unscheduled; operator, 2026-10-11 PDT: keep the flag for debugging for now, may retire it later.**
 Settlement is on by default; `ingress.settle_deltas` turns it off. Retiring the flag makes
 settlement unconditional: delete the setting, `Environment.settle_deltas` and the `Store` flag.
-
-### `APP_SERVICE_NAMES` — the app names the right services
-
-**Candidate.** The app says Sandbox Service
-for the gateway's command records (`bridge.py`, `api.py`, a settings description), answers every
-`ConnectionError` with "Sandbox Service unavailable", and calls the stored cursor a follow cursor.
-`threads/ingestion.py`'s `Ingester` then only discovers Sessions; rename it for that.
 
 ### `KUBEVIRT_GUEST_CONTROL` — KubeVirt guest dials out
 
@@ -971,20 +941,33 @@ and History Service clients now set the 32 MiB receive limit themselves, and not
 and Notification Service's channel-options settings. Remove those fields and the values
 `app_settings.py` and `notifications.py` set from `grpc_channel_config.py`, in one PR.
 
-### `SETTLED_CURSORS_MOVE` — settled cursors live with the History Service
+### `COMMAND_REJECTED_STATE` — a rejected command state nothing writes
 
-**Candidate.** `sandbox_service/settled_cursors.py` (`settled_ranges`, `next_stored`) interprets the
-History Service's settlement ranges, and only History Service readers use it:
-`history_service/evidence.py`, `thread_fold/projector.py` and the app's
-`threads/events/event_log.py`. Move it beside the History Service's client, which those readers
-already depend on.
+**Decision; drops a stored state, so the operator decides.** Nothing in production writes
+`COMMAND_STATE_REJECTED` or raises `SubmissionRefusedError` (`runner_gateway/commands/store.py`);
+only tests do, and the app still maps the state. Either persist a runner's refusal of a command as
+`REJECTED`, or drop the state with a migration and reserve its proto field.
 
-### `CONTROL_TARGET_REQUIRED` — clients require the control Service target
+### `SERVICE_SETTING_NAMES` — settings name the service they configure
 
-**Candidate.** The app's `sandbox_service_control_target` and the Notification Service's
-`control_target` are optional, and unset they send lifecycle calls to the Runner Gateway target,
-which reaches no runner once lifecycle runs over the control stream. Both environments set them
-(`runner_gateway.control_target`). Make both settings and the client's `control_target` required.
+**Candidate.** The gateway's and the History Service's migrators read `AGENTPLANE_SANDBOX_SERVICE_*`
+(`runner_gateway/commands/migrate.py`, `history_service/storage/migrate.py`), and the app's
+`sandbox_service_control_target` and `sandbox_service_command_admission_timeout_s` configure the
+Runner Gateway. The settings forbid extra keys, so a rename lands in two steps: accept the new name
+and render it, then drop the old one.
+
+### `OPERATOR_ROUTE_PREFIX` — one operator route prefix
+
+**Candidate.** Notifications serve operator routes under `/operator/v1/`, actions under
+`/v1/operator/`. Unifying them is a wire change between Deployments: the app's clients and the
+services move together.
+
+### `NOTIFICATION_WRITE_ONLY_COLUMNS` — audit columns nothing reads
+
+**Decision; drops columns, so the operator decides.** `Subscription.creator` and
+`GitHubDelivery.received_at` (notifications) and the Action Service's
+`external_connection_binding_change` table are written and never read in production. Keep them as an
+audit trail, or drop them with a migration.
 
 ## Scope and retirement of stale gates
 
