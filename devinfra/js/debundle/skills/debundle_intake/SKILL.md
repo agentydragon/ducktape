@@ -86,8 +86,10 @@ Write `<scratch>/seeds.json`:
 
 For workers consuming fresh/extension seeds, carry `proposal_id`, `owner_ids`,
 reviewed module path, and readable names into `debundle modules apply --batch`.
-The selector proof and post-edit gate can still reject a graph-ready row;
-workers report that friction. Existing YAML claims use `bindings assign`.
+Workers inspect the dry-run `selector_reviews` before applying, and may add
+reviewed selector overrides or leave a proposal residual. The selector proof
+and post-edit gate can still reject a graph-ready row; workers report that
+friction. Existing YAML claims use `bindings assign`.
 
 Sort seeds by:
 

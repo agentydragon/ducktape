@@ -13,13 +13,21 @@ Use the proposer to surface what's currently extractable:
    explaining why a closed atomic-DAG set could not become a proposal
    (currently `exceeds_size_cap`: the spec edit is larger than
    `--size-cap-lines`).
-3. **Apply reviewed binding-only residual proposals** with `modules apply`
-   after choosing semantic destinations and readable names. See <cli.md> §
-   Claiming fresh proposals.
+3. **Review fresh residual claims** with `modules apply --dry-run --format json`
+   after choosing semantic destinations and readable names. Inspect every
+   `selector_reviews` entry: check that its selector targets the intended binding
+   and that retained literals and property names are reasonable rebuild anchors.
+   A successful uniqueness proof is specific to the current source snapshot.
+   See <cli.md> § Claiming fresh proposals and <selectors.md> for selector
+   stability guidance.
+4. **Apply the reviewed batch.** Supply a `selectors` override for a binding
+   whose synthesized selector needs a better structural anchor, or omit an
+   unready proposal from the batch so it stays residual. Then apply and run
+   the project's extraction gate.
 
 ```bash
 # Author reviewed.json with proposal_id, owner_ids, module, and readable_names.
-debundle modules apply --batch reviewed.json --dry-run
+debundle modules apply --batch reviewed.json --dry-run --format json
 debundle modules apply --batch reviewed.json
 ```
 

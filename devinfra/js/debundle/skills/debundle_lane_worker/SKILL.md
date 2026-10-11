@@ -49,6 +49,15 @@ The orchestrator or project adapter provides:
    for existing claims, and `bindings rename` / `modules merge` for their
    respective edits. See `references/docs/cli.md` § Claiming fresh proposals.
 
+   For `modules apply`, first run `--dry-run --format json` and inspect each
+   `selector_reviews` selector against the intended binding and source. Review
+   retained literals and property names as rebuild anchors, using
+   `references/docs/selectors.md` for stability guidance. Add a reviewed
+   `selectors` override when synthesis chooses a poor anchor; omit a proposal
+   from the batch when it is not ready to claim. Then apply the reviewed batch
+   and run the adapter's gate. A dry-run uniqueness proof covers the current
+   source snapshot, not future versions.
+
    For selector-stabilization assignments, follow `references/docs/selectors.md`
    (the ladder and § "Bulk conversion loop"): confirm the bucket with
    `selector-debt`, draft with `synthesize-selectors` dry-run scoped to the
