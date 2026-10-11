@@ -75,10 +75,6 @@ def environment_chart(app: App, env: Environment) -> Chart:
         callers={
             ServiceAccountRef(namespace=env.namespace, name=app_component.NAME): app_component.service(env.namespace),
             ServiceAccountRef(namespace=env.namespace, name=notifications.NAME): notifications.service(env.namespace),
-            # Follows every Session for its ingester (WatchSessions, FollowSession).
-            ServiceAccountRef(namespace=env.namespace, name=history_service.NAME): history_service.service(
-                env.namespace
-            ),
         },
         sealer=ServiceAccountRef(namespace=env.namespace, name=sandbox_service.NAME),
         sealer_pods=sandbox_service.service(env.namespace).pods,
@@ -89,10 +85,6 @@ def environment_chart(app: App, env: Environment) -> Chart:
         env,
         reader=ServiceAccountRef(namespace=env.namespace, name=app_component.NAME),
         caller=app_component.service(env.namespace),
-        sandboxes=sandbox_service.service(env.namespace),
-        sandboxes_audience=sandbox_service.TOKEN_AUDIENCE,
-        gateway=runner_gateway.service(env.namespace),
-        gateway_audience=runner_gateway.TOKEN_AUDIENCE,
     )
     if env.history_compaction is not None:
         history_compaction.HistoryCompaction(chart, "history-compaction", env, env.history_compaction)
