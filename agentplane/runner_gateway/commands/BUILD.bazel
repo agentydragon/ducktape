@@ -150,8 +150,6 @@ py_test(
         "//agentplane/proto:command_pb2",
         "//agentplane/proto:event_log_pb2",
         "//agentplane/proto:runner_channel_pb2",
-        "//agentplane/proto:command_pb2",
-        "//agentplane/proto:event_log_pb2",
         "//agentplane/runner_gateway:conftest",
         "@pypi//protobuf",
         "@pypi//pytest",
