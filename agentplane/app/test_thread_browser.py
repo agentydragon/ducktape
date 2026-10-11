@@ -1601,7 +1601,7 @@ async def test_failed_turn_preserves_confirmed_input_and_allows_another_turn(
     await composer.fill("Test input confirmed before a model error")
     await composer.press("Enter")
     async with asyncio.timeout(15):
-        command = await source.commands.get()
+        command = await source.gateway.commands.get()
     source.append(
         event_pb2.Event(
             harness_user_message_confirmed=event_pb2.HarnessUserMessageConfirmed(
@@ -1675,7 +1675,7 @@ async def test_failed_turn_preserves_confirmed_input_and_allows_another_turn(
     await composer.fill("Test distinct input after the failed turn")
     await composer.press("Enter")
     async with asyncio.timeout(15):
-        following = await source.commands.get()
+        following = await source.gateway.commands.get()
     assert following.command_id != command.command_id
     assert following.submit_input.text == "Test distinct input after the failed turn"
     source.append(event_pb2.Event(turn_started=event_pb2.TurnStarted(turn_id="test-following-turn")))
@@ -1714,7 +1714,7 @@ async def test_failed_turn_preserves_confirmed_input_and_allows_another_turn(
         [command.submit_input.text, following.submit_input.text]
     )
     await expect_input_confirmed(page)
-    assert source.commands.empty()
+    assert source.gateway.commands.empty()
     (thread,) = await thread_browser.store.list_threads(sandbox=SANDBOX)
     archived = await thread_browser.event_logs.events(thread.id, limit=100)
     assert archived == source.entries
@@ -1736,7 +1736,7 @@ async def test_settled_command_reason_survives_leaving_the_tail_and_reload(
     await composer.fill(submitted)
     await composer.press("Enter")
     async with asyncio.timeout(15):
-        command = await source.commands.get()
+        command = await source.gateway.commands.get()
     reason = f"Test command {outcome} after admission"
     if outcome == "failed":
         source.append(
@@ -1763,7 +1763,7 @@ async def test_settled_command_reason_survives_leaving_the_tail_and_reload(
     await expect(page.get_by_text(submitted, exact=True)).to_have_count(1)
     await expect(page.locator(f'.agentplane-user-bubble[data-message-phase="{outcome}"]')).to_have_count(1)
     await page.screenshot(path=undeclared_outputs_dir() / f"command-{outcome}-retained.png")
-    assert source.commands.empty()
+    assert source.gateway.commands.empty()
 
 
 async def test_browser_sends_a_command_and_transitions_its_message_to_confirmed_input(
@@ -1776,7 +1776,7 @@ async def test_browser_sends_a_command_and_transitions_its_message_to_confirmed_
     await composer.fill("Test input from the real browser")
     await composer.press("Enter")
     async with asyncio.timeout(15):
-        command = await source.commands.get()
+        command = await source.gateway.commands.get()
     assert command.command_id
     assert command.HasField("submit_input")
     assert command.submit_input.text == "Test input from the real browser"
@@ -1826,7 +1826,7 @@ async def test_reload_redelivers_an_unsaved_command_with_its_original_identity(t
     assert redelivery.post_data is not None
     assert json_format.Parse(redelivery.post_data, command_pb2.Command()) == command
     async with asyncio.timeout(15):
-        assert await source.commands.get() == command
+        assert await source.gateway.commands.get() == command
     await expect_pending_message_bubble(page, command.submit_input.text)
     await expect(page.locator('[data-stage="local"]')).to_have_count(0)
     await expect(page.get_by_role("button", name="Retry", exact=True)).to_have_count(0)
@@ -1880,7 +1880,7 @@ async def test_streamed_admission_survives_a_lost_http_reply_and_reload(thread_b
         await composer.press("Enter")
         async with asyncio.timeout(15):
             response = await replies.get()
-            command = await source.commands.get()
+            command = await source.gateway.commands.get()
         assert response.status == 200
         admission = json_format.Parse(await response.text(), event_log_pb2.EventEntry())
         assert admission.event.command_admitted.command == command
@@ -1921,7 +1921,7 @@ async def test_lost_runner_receipt_reconciles_from_thread_without_retry(thread_b
     await composer.press("Enter")
     async with asyncio.timeout(15):
         receipt = await receipts.get()
-        original = await source.commands.get()
+        original = await source.gateway.commands.get()
     assert receipt.status == 200
     admitted = json_format.Parse(await receipt.text(), event_log_pb2.EventEntry())
     assert admitted.event.command_admitted.command == original
@@ -1932,7 +1932,7 @@ async def test_lost_runner_receipt_reconciles_from_thread_without_retry(thread_b
     await expect(page.get_by_role("button", name="Retry", exact=True)).to_have_count(0)
     await page.reload()
     await expect_pending_message_bubble(page, original.submit_input.text)
-    assert source.commands.empty()
+    assert source.gateway.commands.empty()
 
 
 async def test_unconfirmed_command_retries_with_same_identity_then_reconciles(thread_browser: ThreadBrowser) -> None:
@@ -1961,7 +1961,7 @@ async def test_unconfirmed_command_retries_with_same_identity_then_reconciles(th
     assert retry.post_data is not None
     assert json_format.Parse(retry.post_data, command_pb2.Command()) == original
     async with asyncio.timeout(15):
-        assert await source.commands.get() == original
+        assert await source.gateway.commands.get() == original
     await expect_pending_message_bubble(page, original.submit_input.text)
     (thread,) = await thread_browser.store.list_threads(sandbox=SANDBOX)
     archived = await expect_archived_events(thread_browser.event_logs, thread.id, source.entries)
@@ -2009,7 +2009,7 @@ async def test_unobserved_committed_admission_reconciles_once_after_reload(threa
         await composer.press("Enter")
         async with asyncio.timeout(15):
             response = await replies.get()
-            command = await source.commands.get()
+            command = await source.gateway.commands.get()
             assert (await app.replay_held()).cursor >= 5
         assert response.status == 200
         admission = json_format.Parse(await response.text(), event_log_pb2.EventEntry())
@@ -2038,7 +2038,7 @@ async def test_unobserved_committed_admission_reconciles_once_after_reload(threa
         await expect(pending.get_by_text(command.submit_input.text, exact=True)).to_be_visible()
         await expect(pending.locator('[data-stage="admitted"]')).to_be_visible()
         await expect(page.get_by_text("Catching up thread…", exact=True)).to_be_visible()
-        assert source.commands.empty(), "reload must not manufacture a second command"
+        assert source.gateway.commands.empty(), "reload must not manufacture a second command"
 
         app.release_replay()
         await expect_pending_message_bubble(page, command.submit_input.text)
@@ -2059,7 +2059,7 @@ async def test_unobserved_committed_admission_reconciles_once_after_reload(threa
             command.submit_input.text
         )
         await expect(pending).to_have_count(0)
-        assert source.commands.empty(), "the runner must receive the Command once"
+        assert source.gateway.commands.empty(), "the runner must receive the Command once"
         archived = await expect_archived_events(thread_browser.event_logs, thread.id, source.entries)
         assert [entry for entry in archived if entry.event.HasField("command_admitted")] == [admission]
     finally:
@@ -2083,7 +2083,7 @@ async def test_http_admission_ahead_of_replay_does_not_skip_earlier_events(threa
         await composer.press("Enter")
     response = await replied.value
     async with asyncio.timeout(15):
-        command = await source.commands.get()
+        command = await source.gateway.commands.get()
     assert response.status == 200
     admission = json_format.Parse(await response.text(), event_log_pb2.EventEntry())
     assert admission.event.command_admitted.command == command
@@ -2113,7 +2113,7 @@ async def test_http_admission_ahead_of_replay_does_not_skip_earlier_events(threa
     )
     await expect(page.locator(".agentplane-user-bubble .agentplane-verbatim")).to_have_text(command.submit_input.text)
     await expect(pending).to_have_count(0)
-    assert source.commands.empty()
+    assert source.gateway.commands.empty()
     await expect_archived_events(thread_browser.event_logs, thread.id, source.entries)
 
 
@@ -2145,7 +2145,7 @@ async def test_electric_reconnects_unconfirmed_command_without_reloading(thread_
         await composer.press("Enter")
         async with asyncio.timeout(15):
             response = await replies.get()
-            command = await source.commands.get()
+            command = await source.gateway.commands.get()
             assert (await app.replay_held()).cursor >= 5
         assert response.status == 200
         admission = json_format.Parse(await response.text(), event_log_pb2.EventEntry())
@@ -2194,7 +2194,7 @@ async def test_electric_reconnects_unconfirmed_command_without_reloading(thread_
         await expect(pending).to_have_count(0)
         assert await document.evaluate("original => original === document")
         assert len(submissions) == 1
-        assert source.commands.empty()
+        assert source.gateway.commands.empty()
         (thread,) = await thread_browser.store.list_threads(sandbox=SANDBOX)
         await expect_archived_events(thread_browser.event_logs, thread.id, source.entries)
     finally:
@@ -2213,7 +2213,7 @@ async def test_terminal_shape_error_keeps_rows_and_follows_on_from_where_it_stop
     await composer.fill("Command retained across terminal shape error")
     await composer.press("Enter")
     async with asyncio.timeout(15):
-        command = await source.commands.get()
+        command = await source.gateway.commands.get()
     pending = page.get_by_role("region", name="Input messages")
     await expect_pending_message_bubble(page, command.submit_input.text)
 

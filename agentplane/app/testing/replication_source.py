@@ -28,7 +28,9 @@ class Opened:
     replay: asyncio.Event = field(default_factory=asyncio.Event)
 
 
-class ReplicationSource(HistoryService, gateway_pb2_grpc.RunnerGatewayServicer):
+class ReplicationSource(HistoryService):
+    """The History Service the app replicates one Session from; `gateway` admits its commands."""
+
     def __init__(self, peer: HistoryService | None = None) -> None:
         super().__init__()
         if peer is not None:
@@ -41,8 +43,7 @@ class ReplicationSource(HistoryService, gateway_pb2_grpc.RunnerGatewayServicer):
         )
         self.opened: asyncio.Queue[Opened] = asyncio.Queue()
         self.hold_next_replay = True
-        self.commands: asyncio.Queue[command_pb2.Command] = asyncio.Queue()
-        self._admissions: dict[str, event_log_pb2.EventEntry] = {}
+        self.gateway = Gateway(self)
 
     def append(self, event: event_pb2.Event) -> event_log_pb2.EventEntry:
         cursor = len(self.entries) + 1
@@ -69,6 +70,27 @@ class ReplicationSource(HistoryService, gateway_pb2_grpc.RunnerGatewayServicer):
         self.set_feed(self.session_id, history_pb2.SessionFeedState(attached=self.attached))
         return await super().ReadSessionEvents(request, context)
 
+    @asynccontextmanager
+    async def serve(self) -> AsyncIterator[int]:
+        server = grpc.aio.server()
+        history_pb2_grpc.add_HistoryServiceServicer_to_server(self, server)
+        gateway_pb2_grpc.add_RunnerGatewayServicer_to_server(self.gateway, server)
+        port = server.add_insecure_port("127.0.0.1:0")
+        await server.start()
+        try:
+            yield port
+        finally:
+            await server.stop(0)
+
+
+class Gateway(gateway_pb2_grpc.RunnerGatewayServicer):
+    """The Runner Gateway in front of the source's runner: an admitted command lands in its history."""
+
+    def __init__(self, source: ReplicationSource) -> None:
+        self.source = source
+        self.commands: asyncio.Queue[command_pb2.Command] = asyncio.Queue()
+        self._admissions: dict[str, event_log_pb2.EventEntry] = {}
+
     @override
     async def SubmitCommand(
         self, request: service_pb2.SubmitCommandRequest, context: grpc.aio.ServicerContext
@@ -79,7 +101,7 @@ class ReplicationSource(HistoryService, gateway_pb2_grpc.RunnerGatewayServicer):
             if previous.event.command_admitted.command != command:
                 await context.abort(grpc.StatusCode.ALREADY_EXISTS, "conflicting command")
             return previous
-        entry = self.append(event_pb2.Event(command_admitted=event_pb2.CommandAdmitted(command=command)))
+        entry = self.source.append(event_pb2.Event(command_admitted=event_pb2.CommandAdmitted(command=command)))
         self._admissions[command.command_id] = entry
         return entry
 
@@ -90,23 +112,11 @@ class ReplicationSource(HistoryService, gateway_pb2_grpc.RunnerGatewayServicer):
         return runner_pb2.ListSessionsResponse(
             sessions=[
                 runner_pb2.SessionSummary(
-                    session_id=str(self.session_id),
-                    spec=self.attached.spec,
-                    last_cursor=self.attached.last_cursor,
-                    harness_state=self.attached.harness_state,
-                    active_turn_id=self.attached.active_turn_id,
+                    session_id=str(self.source.session_id),
+                    spec=self.source.attached.spec,
+                    last_cursor=self.source.attached.last_cursor,
+                    harness_state=self.source.attached.harness_state,
+                    active_turn_id=self.source.attached.active_turn_id,
                 )
             ]
         )
-
-    @asynccontextmanager
-    async def serve(self) -> AsyncIterator[int]:
-        server = grpc.aio.server()
-        history_pb2_grpc.add_HistoryServiceServicer_to_server(self, server)
-        gateway_pb2_grpc.add_RunnerGatewayServicer_to_server(self, server)
-        port = server.add_insecure_port("127.0.0.1:0")
-        await server.start()
-        try:
-            yield port
-        finally:
-            await server.stop(0)
