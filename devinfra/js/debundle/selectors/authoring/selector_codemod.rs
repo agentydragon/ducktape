@@ -1141,7 +1141,10 @@ fn synthesize_simplest_selector_for_group(
             index, item, decl, &targets,
         )?));
     };
-    let mut match_source = trim_selector_source_line_suffixes(&specialized.match_source);
+    // The rendered selector is JavaScript. Trailing spaces inside template
+    // literals are data, so a line-based whitespace trim can invalidate a
+    // selector that the resolver already proved.
+    let mut match_source = specialized.match_source;
     if specialized.rewritten_holes.contains(STMT_LIST_HOLE_KEYWORD) {
         let collapsed = collapse_statement_hole_runs(&match_source)?;
         if prove_synthesized_selector(index, decl, &targets, &collapsed).is_ok() {
@@ -1162,7 +1165,7 @@ fn synthesize_simplest_selector_for_group(
         synthesize_specialized_selector_candidates(index, item, decl, &targets, candidates_limit)?
             .into_iter()
             .map(|candidate| SelectorAlternative {
-                match_source: trim_selector_source_line_suffixes(&candidate.match_source),
+                match_source: candidate.match_source,
                 rewritten_holes: candidate.rewritten_holes.into_iter().collect(),
             })
             .filter(|alternative| alternative.match_source != match_source)
@@ -1641,14 +1644,6 @@ fn matched_body_indices(
 /// input.
 fn declarator_hole_name() -> &'static str {
     DECLARATORS_HOLE_KEYWORD
-}
-
-fn trim_selector_source_line_suffixes(source: &str) -> String {
-    source
-        .split('\n')
-        .map(|line| line.trim_end_matches([' ', '\t']))
-        .collect::<Vec<_>>()
-        .join("\n")
 }
 
 struct SynthesizedCandidateInput<'a> {

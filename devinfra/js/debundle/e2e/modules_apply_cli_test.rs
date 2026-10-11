@@ -74,6 +74,60 @@ fn applies_fresh_proposal_with_a_structural_selector() {
 }
 
 #[test]
+fn synthesizes_multideclarator_template_with_trailing_spaces() {
+    // The spaces before the newline are part of the template literal value.
+    let source = format!(
+        "var a = () => `foo{}\nbar`, b = 1;\nconsole.log(a());\n",
+        "  "
+    );
+    let fixture = GraphFixture::new(&source, &[]);
+    let report = fixture.json(&["modules", "propose", "--size-cap-lines", "2"]);
+    let proposal = report["proposals"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|row| {
+            row["binding_ids"]
+                .as_array()
+                .is_some_and(|bindings| bindings.iter().any(|binding| binding == "a"))
+        })
+        .expect("a proposal for the template-valued binding");
+    let request = json!({
+        "proposal_id": proposal["proposed_module_id"],
+        "owner_ids": proposal["owner_ids"],
+        "module": "foo/bar",
+        "readable_names": {"a": "foo"}
+    });
+    let temp = tempfile::tempdir().unwrap();
+    let batch = temp.path().join("apply.json");
+    fs::write(&batch, serde_json::to_vec(&json!([request])).unwrap()).unwrap();
+    let args = [
+        "modules",
+        "apply",
+        "--batch",
+        batch.to_str().unwrap(),
+        "--size-cap-lines",
+        "2",
+    ];
+    let preview = fixture.command(&[&args[..], &["--dry-run", "--format", "json"]].concat());
+    assert!(
+        preview.status.success(),
+        "{}",
+        String::from_utf8_lossy(&preview.stderr)
+    );
+    let preview: serde_json::Value = serde_json::from_slice(&preview.stdout).unwrap();
+    assert_eq!(preview["selector_reviews"][0]["origin"], "synthesized");
+    assert!(
+        preview["selector_reviews"][0]["claim"]["match"]
+            .as_str()
+            .unwrap()
+            .contains("foo  \n")
+    );
+    fixture.assert_success(&args);
+    fixture.assert_runs("foo  \nbar\n");
+}
+
+#[test]
 fn applies_reviewed_source_match_instead_of_synthesized_one() {
     let (fixture, mut request) = provider_fixture();
     request["selectors"] = json!({
