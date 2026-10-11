@@ -56,8 +56,7 @@ py_test(
 
 py_test(
     name = "test_indexing",
-    # Three history sizes up to 40,000 events folded into 20,000 materialized entities: minutes of
-    # bounded work, measured at ~200s for the three cases together.
+    # Full archives up to 40,000 events and pure-fold-derived prefixes up to 20,000 item rows.
     size = "large",
     srcs = ["test_indexing.py"],
     deps = [
@@ -71,7 +70,9 @@ py_test(
         "//agentplane/protocol:command_pb2",
         "//agentplane/protocol:event_log_pb2",
         "//agentplane/protocol:event_pb2",
+        "//agentplane/thread_fold:fold",
         "//agentplane/thread_fold:models",
+        "//agentplane/thread_fold:rows",
         "//util/testing:undeclared_outputs",
         "@pypi//protobuf",
         "@pypi//pytest",
