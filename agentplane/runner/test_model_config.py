@@ -29,12 +29,16 @@ async def test_lookup_uses_ingress_route_and_preserves_workload_placeholder(base
     assert request.headers["authorization"] == "Bearer test-workload-token"
 
 
-async def test_unknown_model_uses_harness_default() -> None:
-    resolver = HttpModelConfigResolver(
-        transport=httpx.MockTransport(
-            lambda _request: httpx.Response(404, json={"detail": "no configuration for model"})
-        )
-    )
+@pytest.mark.parametrize(
+    "answer",
+    [
+        httpx.Response(200, content=b"null"),
+        # The ingress's answer until it serves `null`; goes with the runner's CLEANUP branch.
+        httpx.Response(404, json={"detail": "no configuration for model"}),
+    ],
+)
+async def test_unknown_model_uses_harness_default(answer: httpx.Response) -> None:
+    resolver = HttpModelConfigResolver(transport=httpx.MockTransport(lambda _request: answer))
     assert await resolver.resolve(base_url="http://ingress.test", token="workload", model="unknown") is None
 
 
