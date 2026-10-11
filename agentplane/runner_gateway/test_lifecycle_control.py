@@ -98,7 +98,6 @@ def replica(
             serve_channel(
                 cluster,
                 holder,
-                connections=connections,
                 delivery=delivery,
                 control=control,
                 timing=ControlTiming(heartbeat_s=0.05, liveness_s=5, touch_s=0.1, max_age_s=60),

@@ -6,13 +6,12 @@ from contextlib import asynccontextmanager
 import grpc
 from kubernetes_asyncio import client as k8s_client
 
-from agentplane.grpc_serving import serving
 from agentplane.proto import runner_control_pb2_grpc
 from agentplane.runner_gateway.command_delivery import CommandDelivery
-from agentplane.runner_gateway.commands.connections import ConnectionStore
 from agentplane.runner_gateway.connection_records import ConnectionHolder, ConnectionRecords
 from agentplane.runner_gateway.lifecycle_control import LifecycleControl
-from agentplane.runner_gateway.runner_control import ControlTiming, RunnerControlService
+from agentplane.runner_gateway.runner_control import ControlTiming
+from agentplane.runner_gateway.testing.control_listener import serve_runner_control
 from agentplane.sandbox_service.testing.kubernetes import ACCOUNT, SANDBOX, Cluster
 from agentplane.testing.fake_apiserver import SANDBOX_NAMESPACE, TokenVerdict
 
@@ -31,7 +30,6 @@ async def serve_channel(
     cluster: Cluster,
     holder: ConnectionHolder,
     *,
-    connections: ConnectionStore,
     delivery: CommandDelivery,
     control: LifecycleControl,
     timing: ControlTiming,
@@ -42,22 +40,16 @@ async def serve_channel(
         pod_uid="test-pod-uid",
         audiences=(RUNNER_AUDIENCE,),
     )
-    server = grpc.aio.server()
-    runner_control_pb2_grpc.add_RunnerControlServicer_to_server(
-        RunnerControlService(
+    async with (
+        serve_runner_control(
             principals=cluster.build_principal_resolver(RUNNER_AUDIENCE),
             inventory=cluster.inventory,
             core=k8s_client.CoreV1Api(cluster.api),
-            connections=connections,
             records=ConnectionRecords(cluster.api, namespace=SANDBOX_NAMESPACE, holder=holder),
             delivery=delivery,
             control=control,
             timing=timing,
-        ),
-        server,
-    )
-    async with (
-        serving(server, "127.0.0.1:0", grace_s=0) as port,
+        ) as port,
         grpc.aio.insecure_channel(f"127.0.0.1:{port}") as channel,
     ):
         yield runner_control_pb2_grpc.RunnerControlStub(channel)
