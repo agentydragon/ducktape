@@ -128,5 +128,9 @@ class Db(Construct):
                 cluster=DatabaseSpecCluster(name=cluster.name),
                 name=role,
                 owner=role,
-                database_reclaim_policy=DatabaseSpecDatabaseReclaimPolicy.DELETE,
+                # CLEANUP(added 2026-10-11): Delete the exception once `sandbox_commands` is renamed in
+                #   place for the Runner Gateway; removing its Database then must not drop the renamed data.
+                database_reclaim_policy=DatabaseSpecDatabaseReclaimPolicy.RETAIN
+                if role == "sandbox_commands"
+                else DatabaseSpecDatabaseReclaimPolicy.DELETE,
             )
