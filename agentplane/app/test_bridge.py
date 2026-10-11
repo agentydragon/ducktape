@@ -162,20 +162,20 @@ def sandbox_runner_port(runner: RunnerHandle) -> int:
 @pytest.fixture
 async def history_client(
     request: pytest.FixtureRequest,
-    inventory: SandboxServiceClient,
+    runner: RunnerHandle,
     service_history_db_url: str,
     history_peer: HistoryService,
     tmp_path: Path,
 ) -> AsyncIterator[HistoryServiceClient]:
-    # Native cross-service cases read, through a real History Service whose ingester follows
-    # `sandbox_endpoint`, the separate service DB it creates. Pure command/projection cases keep the
-    # controlled RPC peer.
+    # Native cross-service cases read, through a real History Service, what the local runner pushes
+    # to the ingress over the separate service DB `sandbox_endpoint` creates. Pure command/projection
+    # cases keep the controlled RPC peer.
     native = "local_runners" in request.fixturenames or request.node.name.startswith(
         "test_inventory_change_discovers_existing_runner_session"
     )
     if native:
         async with (
-            ingest(service_history_db_url, inventory),
+            ingest(service_history_db_url, runner.runner),
             history_service(service_history_db_url, tmp_path / "history-service-token") as client,
         ):
             yield client
