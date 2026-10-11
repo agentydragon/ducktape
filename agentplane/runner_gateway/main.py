@@ -82,7 +82,7 @@ async def gateway(
     add_service(resources, server)
     if settings.port == settings.runner_control_port:
         raise ValueError("gRPC and runner control stream ports must differ")
-    # A separate listener, so the network fence can admit runners to the control listener and nothing else.
+    # A separate listener, so the network fence can admit the egress proxy to it and nothing else.
     control_server = grpc.aio.server()
     runner_control_pb2_grpc.add_RunnerControlServicer_to_server(
         RunnerControlService(

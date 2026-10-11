@@ -36,7 +36,7 @@ from agentplane.proto import command_pb2, event_log_pb2, runner_pb2
 from agentplane.proto.sandbox_service_pb2 import SandboxDestination, ServiceAccount
 from agentplane.runner.errors import RunnerError
 from agentplane.sandbox_service.client import Runner, SandboxServiceClient
-from agentplane.sandbox_service.models import SandboxNotFoundError
+from agentplane.sandbox_service.errors import SandboxNotFoundError
 from agentplane.subjects import ServiceAccountRef
 from agentplane.workload_auth.principal import WorkloadPrincipal
 
@@ -141,7 +141,7 @@ class Service:
         return list(page.entries)
 
     async def deliver(self, claim: Inbox, runner: Runner, notice: Notice) -> None:
-        # TODO: Observe command-scoped admission/delivery outcomes through Sandbox Service,
+        # TODO: Observe command-scoped admission/delivery outcomes through the Runner Gateway (GetCommand),
         # resumable by command ID, rather than checkpointing the shared conversation journal.
         # The runner's journal end now; its entries are read from the History Service, which may lag.
         live = first(

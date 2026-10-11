@@ -420,7 +420,7 @@ async def test_session_pending_failed(view: VisualPage, app: AgentplaneFixture) 
 
 @pytest.mark.parametrize("viewport", [DESKTOP, MOBILE], ids=["desktop", "mobile"])
 async def test_session_pending_stored_by_service(view: VisualPage, app: AgentplaneFixture) -> None:
-    """A lost delivery reply for a command the Sandbox Service holds: stored, runner admission unconfirmed."""
+    """A lost delivery reply for a command the Runner Gateway holds: stored, runner admission unconfirmed."""
     await app.time_out_command_admission()
     await app.retain_command_in_service()
     await app.remember_pending_input()

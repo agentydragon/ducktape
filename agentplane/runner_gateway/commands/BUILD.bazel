@@ -76,7 +76,7 @@ py_test(
     ],
 )
 
-# This image runs as a Sandbox Service migration init container.
+# This image runs as a Runner Gateway migration init container.
 py_library(
     name = "migrate",
     srcs = ["migrate.py"],
