@@ -29,7 +29,7 @@ service SandboxService {
   rpc RevokeEgress(RevokeEgressRequest) returns (google.protobuf.Empty);
 
   rpc ListSessions(SandboxRequest) returns (ducktape.agentplane.runner.v1.ListSessionsResponse);
-  // Service-owned Session identity. The key is only for an explicit Open retry.
+  // Opens the Session the client named. A retry with the same ID and inputs returns it again.
   rpc CreateSession(CreateSessionRequest) returns (CreateSessionResponse);
   // Read-only reconciliation by the original caller, sandbox incarnation and Open key.
   rpc LookupSession(LookupSessionRequest) returns (LookupSessionResponse);
@@ -82,7 +82,8 @@ message GetSandboxRequest { string name = 1; }
 
 message CreateSessionRequest {
   SandboxDestination sandbox = 1;
-  // Opaque to the service, scoped to the authenticated caller and Sandbox UID.
+  // Opaque to the service, scoped to the authenticated caller and Sandbox UID; LookupSession finds
+  // the Session by it. Optional when session_id is set.
   string idempotency_key = 2;
   ducktape.agentplane.runner.v1.SessionSpec spec = 3;
   // Which spec fields replace the Sandbox defaults (proto field names). Proto3 scalar
@@ -91,10 +92,14 @@ message CreateSessionRequest {
   // inherits all defaults, regardless of spec's scalar default values.
   google.protobuf.FieldMask override_mask = 4;
   optional string setup_script = 5;
+  // A fresh UUID the client minted: the public Session ID, and the runner's Session ID. Reusing it
+  // with other inputs, another Sandbox or another caller is refused. When unset, the service mints
+  // the public ID and gives the runner `r-<public ID>`.
+  string session_id = 6;
 }
 
 message CreateSessionResponse {
-  // Durable service ID (UUID), NOT the runner or harness session ID.
+  // Public Session ID (UUID): the request's session_id when it set one. Not the harness session ID.
   string session_id = 1;
   ducktape.agentplane.runner.v1.Attached attached = 2;
 }

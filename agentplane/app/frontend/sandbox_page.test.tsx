@@ -247,8 +247,7 @@ it("uses the bound working directory template and setup script for later Threads
   await act(async () => newSession().click());
   const body = await postedBody(sessions);
   expect(body.spec.cwd).toBe("/state/custom/{session_id}/work");
-  expect(body.idempotency_key).toMatch(/^[0-9a-f-]{36}$/);
-  expect(body.session_id).toBeUndefined();
+  expect(body.session_id).toMatch(/^[0-9a-f-]{36}$/);
   expect(body.setup_script).toBe("printf 'ready\\n'");
 });
 
@@ -375,7 +374,7 @@ it.each(["absent", "unconfirmed", "failed"] as const)("does not retry %s Open", 
   const onOpenThread = await render(sessions);
   await act(async () => newSession().click());
   const first = await postedBody(sessions);
-  expect(sessionStorage.getItem("agentplane:pending-open:startup-test")).toBe(first.idempotency_key);
+  expect(sessionStorage.getItem("agentplane:pending-open:startup-test")).toBe(first.session_id);
   await act(async () => button("Check Open status").click());
   expect(onOpenThread).not.toHaveBeenCalled();
   expect(container.textContent).toContain(
@@ -387,7 +386,7 @@ it.each(["absent", "unconfirmed", "failed"] as const)("does not retry %s Open", 
   );
   expect(sessions.mock.calls.filter(([request]) => request.method === "POST")).toHaveLength(1);
   const lookup = sessions.mock.calls.find(([request]) => new URL(request.url).pathname.endsWith("/open"))?.[0];
-  expect(new URL(lookup!.url).searchParams.get("idempotency_key")).toBe(first.idempotency_key);
+  expect(new URL(lookup!.url).searchParams.get("session_id")).toBe(first.session_id);
 });
 
 it("recovers a lost Open from lookup without sending a second Open", async () => {
@@ -410,7 +409,7 @@ it("recovers a lost Open from lookup without sending a second Open", async () =>
   expect(sessionStorage.getItem("agentplane:pending-open:startup-test")).toBeNull();
 });
 
-it("reload retains only the opaque key, never the Open spec or bootstrap", async () => {
+it("reload retains only the Session ID, never the Open spec or bootstrap", async () => {
   const sessions = vi.fn<(request: Request) => Promise<Response>>((request) =>
     Promise.resolve(
       request.method === "GET"
@@ -425,11 +424,11 @@ it("reload retains only the opaque key, never the Open spec or bootstrap", async
   const original = await postedBody(sessions);
   expect(original.spec).toBeDefined();
   expect(sessionStorage.length).toBe(1);
-  expect(sessionStorage.getItem("agentplane:pending-open:startup-test")).toBe(original.idempotency_key);
+  expect(sessionStorage.getItem("agentplane:pending-open:startup-test")).toBe(original.session_id);
   await act(async () => root.unmount());
   container.remove();
   await render(sessions);
-  expect(container.textContent).toContain(original.idempotency_key);
+  expect(container.textContent).toContain(original.session_id);
   expect(newSession().disabled).toBe(true);
   await act(async () => button("Check Open status").click());
   expect(sessions.mock.calls.filter(([request]) => request.method === "POST")).toHaveLength(1);
@@ -438,7 +437,7 @@ it("reload retains only the opaque key, never the Open spec or bootstrap", async
   expect(newSession().disabled).toBe(false);
 });
 
-it("opens a service-owned public session ID on success, never the Open key", async () => {
+it("opens the Session ID the service answers, which a service predating client IDs mints itself", async () => {
   const publicId = "7af90050-01fd-423c-a3cb-c1f552b6cda7";
   live.snapshot.threads = [thread({ id: publicId })];
   const sessions = vi.fn<(request: Request) => Promise<Response>>((request) =>
@@ -447,7 +446,7 @@ it("opens a service-owned public session ID on success, never the Open key", asy
   const onOpenThread = await render(sessions);
   await act(async () => newSession().click());
   expect(onOpenThread).toHaveBeenCalledWith(publicId);
-  expect((await postedBody(sessions)).idempotency_key).not.toBe(publicId);
+  expect((await postedBody(sessions)).session_id).not.toBe(publicId);
   expect(sessionStorage.getItem("agentplane:pending-open:startup-test")).toBeNull();
 });
 

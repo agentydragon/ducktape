@@ -513,7 +513,7 @@ def test_bound_thread_forwards_overrides_without_app_bootstrap_or_default_assemb
     setup_scripts: list[str | None] = []
 
     async def create_session(
-        name: str, idempotency_key: str, spec: dict[str, object], setup_script: str | None = None
+        name: str, session_id: UUID, spec: dict[str, object], setup_script: str | None = None
     ) -> protocol_pb2.Attached:
         calls.append(("create", spec))
         setup_scripts.append(setup_script)
@@ -523,14 +523,14 @@ def test_bound_thread_forwards_overrides_without_app_bootstrap_or_default_assemb
 
     response = client.post(
         f"/sandboxes/{created['name']}/sessions",
-        json={"idempotency_key": "thread-1", "spec": {"model": "thread-model", "instructions": "thread instructions"}},
+        json={"session_id": str(uuid4()), "spec": {"model": "thread-model", "instructions": "thread instructions"}},
     )
 
     assert response.status_code == 201, response.text
     assert calls == [("create", {"model": "thread-model", "instructions": "thread instructions"})]
     assert setup_scripts == [None]
     cleared = client.post(
-        f"/sandboxes/{created['name']}/sessions", json={"idempotency_key": "thread-2", "spec": {}, "setup_script": ""}
+        f"/sandboxes/{created['name']}/sessions", json={"session_id": str(uuid4()), "spec": {}, "setup_script": ""}
     )
     assert cleared.status_code == 201, cleared.text
     assert setup_scripts == [None, ""]
@@ -569,7 +569,7 @@ def test_direct_session_launch_leaves_platform_instructions_to_service(
     captured: list[dict[str, object]] = []
 
     async def create_session(
-        name: str, idempotency_key: str, spec: dict[str, object], setup_script: str | None = None
+        name: str, session_id: UUID, spec: dict[str, object], setup_script: str | None = None
     ) -> protocol_pb2.Attached:
         captured.append(spec)
         return protocol_pb2.Attached(session_id=str(uuid4()))
@@ -577,7 +577,7 @@ def test_direct_session_launch_leaves_platform_instructions_to_service(
     monkeypatch.setattr(bridge, "create_session", create_session)
     response = client.post(
         "/sandboxes/live/sessions",
-        json={"idempotency_key": "plain-1", "spec": {"harness": "HARNESS_CLAUDE", "cwd": "/w", "model": "plain-model"}},
+        json={"session_id": str(uuid4()), "spec": {"harness": "HARNESS_CLAUDE", "cwd": "/w", "model": "plain-model"}},
     )
 
     assert response.status_code == 201, response.text
@@ -593,38 +593,41 @@ def test_service_launch_failure_preserves_uncertainty(
     status_code: int,
 ) -> None:
     async def failed_create(
-        name: str, idempotency_key: str, spec: dict[str, object], setup_script: str | None = None
+        name: str, session_id: UUID, spec: dict[str, object], setup_script: str | None = None
     ) -> protocol_pb2.Attached:
         raise error_type("test upstream failure")
 
     monkeypatch.setattr(bridge, "create_session", failed_create)
     response = client.post(
         "/sandboxes/live/sessions",
-        json={"idempotency_key": "uncertain", "spec": {"harness": "HARNESS_CLAUDE", "cwd": "/w", "model": "m"}},
+        json={"session_id": str(uuid4()), "spec": {"harness": "HARNESS_CLAUDE", "cwd": "/w", "model": "m"}},
     )
     assert response.status_code == status_code
 
 
-def test_create_session_uses_service_id(
+def test_create_session_answers_the_service_id(
     client: TestClient, bridge: RunnerBridge, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """The client's Session ID reaches the bridge; the answer carries the ID the service confirmed."""
+    requested = uuid4()
     public_id = str(uuid4())
-    received: list[tuple[str, str, dict[str, object], str | None]] = []
+    received: list[tuple[str, UUID, dict[str, object], str | None]] = []
 
     async def create_session(
-        sandbox: str, idempotency_key: str, spec: dict[str, object], setup_script: str | None = None
+        sandbox: str, session_id: UUID, spec: dict[str, object], setup_script: str | None = None
     ) -> protocol_pb2.Attached:
-        received.append((sandbox, idempotency_key, spec, setup_script))
+        received.append((sandbox, session_id, spec, setup_script))
         return protocol_pb2.Attached(session_id=public_id)
 
     monkeypatch.setattr(bridge, "create_session", create_session)
     path = "/sandboxes/live/sessions"
     created = client.post(
-        path, json={"idempotency_key": "open-key", "spec": {"cwd": "/w/{session_id}"}, "setup_script": "bootstrap"}
+        path, json={"session_id": str(requested), "spec": {"cwd": "/w/{session_id}"}, "setup_script": "bootstrap"}
     )
     assert created.status_code == 201, created.text
     assert created.json()["sessionId"] == public_id
-    assert received == [("live", "open-key", {"cwd": "/w/{session_id}"}, "bootstrap")]
+    assert received == [("live", requested, {"cwd": "/w/{session_id}"}, "bootstrap")]
+    assert client.post(path, json={"session_id": "not-a-uuid", "spec": {}}).status_code == 422
 
 
 async def test_open_lookup_reconciles_only_runner_confirmed_sessions(
@@ -651,31 +654,32 @@ async def test_open_lookup_reconciles_only_runner_confirmed_sessions(
 
         monkeypatch.setattr(bridge._runners, "client", lambda name: SimpleNamespace(lookup=lookup))
         path = "/sandboxes/live/sessions/open"
-        absent = await http.get(path, params={"idempotency_key": "opaque-key"})
+        requested = str(uuid4())
+        absent = await http.get(path, params={"session_id": requested})
         assert absent.status_code == 200
         assert absent.json() == {"status": "absent", "session_id": None}
         assert (await http.get(f"/threads/{public_id}")).status_code == 404
 
         result.session_id = public_id
-        unconfirmed = await http.get(path, params={"idempotency_key": "opaque-key"})
+        unconfirmed = await http.get(path, params={"session_id": requested})
         assert unconfirmed.json() == {"status": "unconfirmed", "session_id": public_id}
         assert (await http.get(f"/threads/{public_id}")).status_code == 404
 
         result.failed = True
-        failed = await http.get(path, params={"idempotency_key": "opaque-key"})
+        failed = await http.get(path, params={"session_id": requested})
         assert failed.json() == {"status": "failed", "session_id": public_id}
         assert (await http.get(f"/threads/{public_id}")).status_code == 404
 
         result.failed = False
         result.summary.CopyFrom(summary)
         for _ in range(2):  # Reconcile after a lost app mapping, then repeat idempotently.
-            ready = await http.get(path, params={"idempotency_key": "opaque-key"})
+            ready = await http.get(path, params={"session_id": requested})
             assert ready.status_code == 200, ready.text
             assert ready.json() == {"status": "ready", "session_id": public_id}
             assert "secret" not in ready.text
         assert (await http.get(f"/threads/{public_id}")).json()["sandbox"] == "live"
-        assert calls == ["opaque-key"] * 5
-        assert (await http.get(path, params={"idempotency_key": ""})).status_code == 422
+        assert calls == [requested] * 5
+        assert (await http.get(path, params={"session_id": "not-a-uuid"})).status_code == 422
 
 
 def test_a_runner_that_does_not_answer_is_a_503(

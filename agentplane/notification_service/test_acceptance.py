@@ -5,7 +5,7 @@ import json
 import logging
 from datetime import UTC, datetime
 from pathlib import Path
-from uuid import UUID
+from uuid import UUID, uuid4
 
 import httpx
 import pytest
@@ -155,7 +155,7 @@ async def test_listen_deliver_read_ack_and_recover_lost_response_without_app(
                     )
                     native = remote.runner(destination)
                     session_id = (
-                        await native.create(idempotency_key="notifications", spec=MessageToDict(spec))
+                        await native.create(session_id=uuid4(), spec=MessageToDict(spec))
                     ).session_id
 
                     async def history_caught_up() -> None:

@@ -256,7 +256,8 @@ async def test_a_create_whose_harness_failed_resumes_the_session_on_retry(
     # The caller's own target is the other replica; the control Service names the holder.
     async with connected(holder) as call, client(token_file, other.api, control_target=holder.api) as service:
         runner = service.runner(destination)
-        first = asyncio.create_task(runner.create(idempotency_key="test-open", spec=SPEC))
+        requested = uuid4()
+        first = asyncio.create_task(runner.create(session_id=requested, spec=SPEC))
         opened = await next_request(call)
         assert opened.WhichOneof("verb") == "open"
         session_id = opened.open.session_id
@@ -271,7 +272,7 @@ async def test_a_create_whose_harness_failed_resumes_the_session_on_retry(
             await first
         # The runner created the Session and could not start it; asked again it only confirms it,
         # stopped, so the create starts it.
-        retried = asyncio.create_task(runner.create(idempotency_key="test-open", spec=SPEC))
+        retried = asyncio.create_task(runner.create(session_id=requested, spec=SPEC))
         confirmed = await next_request(call)
         assert (confirmed.open.session_id, confirmed.open.spec) == (session_id, opened.open.spec)
         await answer(
@@ -291,14 +292,14 @@ async def test_a_create_whose_harness_failed_resumes_the_session_on_retry(
         response = await retried
     assert response.attached.harness_state == runner_pb2.HARNESS_STATE_RUNNING
     assert response.attached.session_id == response.session_id
-    assert session_id == f"r-{response.session_id}"
+    assert session_id == response.session_id == str(requested)
 
 
 async def test_a_created_running_session_is_not_resumed(
     holder: Replica, token_file: Path, destination: SandboxDestination
 ) -> None:
     async with connected(holder) as call, client(token_file, holder.api, control_target=None) as service:
-        creating = asyncio.create_task(service.runner(destination).create(idempotency_key="test-open", spec=SPEC))
+        creating = asyncio.create_task(service.runner(destination).create(session_id=uuid4(), spec=SPEC))
         opened = await next_request(call)
         await answer(
             call,
@@ -352,7 +353,7 @@ async def test_a_replica_without_the_connection_refuses_before_acting(
     async with connected(holder):
         async with client(token_file, other.api, control_target=None) as direct:
             with pytest.raises(ServiceError) as refused:
-                await direct.runner(destination).create(idempotency_key="test-open", spec=SPEC)
+                await direct.runner(destination).create(session_id=uuid4(), spec=SPEC)
             assert refused.value.code == grpc.StatusCode.UNAVAILABLE
         # A control Service still naming the other replica, as during a roll: the call is refused
         # there and served by the holder.

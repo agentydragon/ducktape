@@ -116,14 +116,14 @@ class Client:
         return [Decision.model_validate(row) for row in await self._json("GET", f"/sandboxes/{name}/egress/decisions")]
 
     async def create_session(
-        self, name: str, idempotency_key: str, *, overrides: dict[str, object] | None = None
+        self, name: str, session_id: UUID, *, overrides: dict[str, object] | None = None
     ) -> Attachment:
         """Create a Session from the defaults recorded on the Sandbox plus proto-JSON overrides.
 
-        Retrying with the same key and overrides answers the same Session.
+        Retrying with the same Session ID and overrides answers the same Session.
         """
-        body = NewSession(idempotency_key=idempotency_key, spec=overrides or {})
-        answered = await self._json("POST", f"/sandboxes/{name}/sessions", json=body.model_dump())
+        body = NewSession(session_id=session_id, spec=overrides or {})
+        answered = await self._json("POST", f"/sandboxes/{name}/sessions", json=body.model_dump(mode="json"))
         return Attachment(ParseDict(answered, protocol_pb2.Attached()))
 
     async def resume_thread(self, thread_id: UUID) -> Attachment:

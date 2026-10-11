@@ -423,6 +423,11 @@ class SandboxService(protocol_pb2_grpc.SandboxServiceServicer):
             caller = await self.resources.authenticate(context)
             if len(request.idempotency_key) > 128 or len(request.setup_script) > 65_536:
                 raise ValueError("Open key or setup script is too long")
+            # CLEANUP(added 2026-10-11): Require session_id, and stop minting here, once the deployed
+            #   app sends it on every CreateSession (agentplane/sandbox_service/client.py's create).
+            client_id = public_session_id(request.session_id) if request.session_id else None
+            if request.session_id and client_id is None:
+                raise ValueError("session ID must be a UUID")
             overrides = wire.launch_overrides(request)
             endpoint = await self.resources.destinations.resolve(request.sandbox, writes=True)
             channel_routed = await self.lifecycle_routed(request.sandbox)
@@ -430,8 +435,7 @@ class SandboxService(protocol_pb2_grpc.SandboxServiceServicer):
 
             def freeze(session_id: UUID) -> bytes:
                 destination = protocol_pb2.SessionDestination(sandbox=request.sandbox, session_id=str(session_id))
-                # CreateSession callers cannot know the public ID before Open. Resolve
-                # workspace templates only after reservation, and freeze the result.
+                # Resolve workspace templates against the reserved public ID, and freeze the result.
                 effective_overrides = dict(overrides)
                 if isinstance(cwd := effective_overrides.get("cwd"), str):
                     effective_overrides["cwd"] = cwd.replace("{session_id}", str(session_id))
@@ -450,7 +454,7 @@ class SandboxService(protocol_pb2_grpc.SandboxServiceServicer):
                     else None
                 )
                 launch = protocol_pb2.FrozenLaunch(
-                    open=runner_pb2.Open(session_id=f"r-{session_id}", spec=spec),
+                    open=runner_pb2.Open(session_id=str(session_id) if client_id else f"r-{session_id}", spec=spec),
                     bootstrap=endpoint.binding.bootstrap if endpoint.binding is not None else "",
                 )
                 if setup_script is not None:
@@ -458,12 +462,13 @@ class SandboxService(protocol_pb2_grpc.SandboxServiceServicer):
                 return launch.SerializeToString(deterministic=True)
 
             reservation = await self.resources.sessions.reserve(
+                session_id=client_id,
                 caller_namespace=caller.namespace,
                 caller_name=caller.name,
                 sandbox_namespace=self.resources.destinations.inventory.namespace,
                 sandbox_name=request.sandbox.sandbox,
                 sandbox_uid=sandbox_uid,
-                open_key=request.idempotency_key,
+                open_key=request.idempotency_key or None,
                 open_request=request.SerializeToString(deterministic=True),
                 launch_spec=freeze,
             )
@@ -514,11 +519,17 @@ class SandboxService(protocol_pb2_grpc.SandboxServiceServicer):
             if public_id is None:
                 return protocol_pb2.LookupSessionResponse()
             result = protocol_pb2.LookupSessionResponse(session_id=str(public_id))
+            runner_session_id = await self.resources.sessions.runner_id(
+                public_id,
+                sandbox_namespace=self.resources.destinations.inventory.namespace,
+                sandbox_name=request.sandbox.sandbox,
+                sandbox_uid=UUID(request.sandbox.sandbox_uid),
+            )
             # DB reservation precedes runner Open. Inventory includes sessions whose
             # native handshake failed: a retained spec is not proof of a successful Open.
             async with self.runner(request.sandbox, writes=False) as (client, _):
                 for summary in await client.list_sessions():
-                    if summary.session_id != f"r-{public_id}":
+                    if summary.session_id != runner_session_id:
                         continue
                     if summary.setup_state in (runner_pb2.SETUP_STATE_FAILED, runner_pb2.SETUP_STATE_INTERRUPTED):
                         result.failed = True

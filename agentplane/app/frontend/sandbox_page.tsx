@@ -58,12 +58,12 @@ import { StaleNotice } from "./stream_status";
 import { TopbarTitle } from "./topbar";
 import { HarnessState, SessionSpecSchema, SetupState, type SessionSummary } from "../../runner/protocol_pb";
 
-// Persist only the Open key, never instructions or setup scripts (which can contain secrets).
+// Persist only the Session ID, never instructions or setup scripts (which can contain secrets).
 function pendingOpenKey(sandbox: string): string {
   return `agentplane:pending-open:${sandbox}`;
 }
 
-type PendingOpen = { openKey: string };
+type PendingOpen = { sessionId: string };
 
 function setupLabel(state: SetupState): string {
   switch (state) {
@@ -274,15 +274,15 @@ export function SandboxPage({
   const [sessionList, setSessionList] = useState<"loading" | "waiting" | "ready" | { error: string }>("loading");
   const [creatingSession, setCreatingSession] = useState(false);
   const [pendingOpen, setPendingOpen] = useState<PendingOpen | null>(() => {
-    const openKey = sessionStorage.getItem(pendingOpenKey(name));
-    return openKey ? { openKey } : null;
+    const sessionId = sessionStorage.getItem(pendingOpenKey(name));
+    return sessionId ? { sessionId } : null;
   });
   useEffect(() => {
-    const openKey = sessionStorage.getItem(pendingOpenKey(name));
-    setPendingOpen(openKey ? { openKey } : null);
+    const sessionId = sessionStorage.getItem(pendingOpenKey(name));
+    setPendingOpen(sessionId ? { sessionId } : null);
   }, [name]);
   function rememberOpen(attempt: PendingOpen | null): void {
-    if (attempt) sessionStorage.setItem(pendingOpenKey(name), attempt.openKey);
+    if (attempt) sessionStorage.setItem(pendingOpenKey(name), attempt.sessionId);
     else sessionStorage.removeItem(pendingOpenKey(name));
     setPendingOpen(attempt);
   }
@@ -432,22 +432,22 @@ export function SandboxPage({
 
   async function createSession(): Promise<void> {
     if (!sandbox || !model || creatingSession || pendingOpen) return;
-    const openKey = crypto.randomUUID();
+    const sessionId = crypto.randomUUID();
     const spec = fromJson(SessionSpecSchema, {
       harness,
-      cwd: cwdTemplate, // Sandbox Service expands {session_id} after reserving the public ID.
+      cwd: cwdTemplate, // Sandbox Service expands {session_id} to the public ID.
       model,
       reasoningEffort: effort,
       instructions,
     } as JsonValue);
-    // Only the opaque key survives reload. In particular, never persist instructions or bootstrap.
-    rememberOpen({ openKey });
+    // Only the Session ID survives reload. In particular, never persist instructions or bootstrap.
+    rememberOpen({ sessionId });
     setCreatingSession(true);
     setError(null);
     try {
-      const attached = await openSession(name, openKey, spec, setupScript);
+      const attached = await openSession(name, sessionId, spec, setupScript);
       if (!attached.sessionId) throw new Error("Open returned without a Session ID");
-      await openThread(attached.sessionId, openKey);
+      await openThread(attached.sessionId, sessionId);
     } catch (reason: unknown) {
       // Outcome may be ambiguous. Do not replay Open or bootstrap, even in this tab.
       setError(`${displayableError(reason)} Check this attempt before starting another session.`);
@@ -461,9 +461,9 @@ export function SandboxPage({
     setCreatingSession(true);
     setError(null);
     try {
-      const result = await lookupOpen(name, pendingOpen.openKey);
+      const result = await lookupOpen(name, pendingOpen.sessionId);
       if (result.status === "ready" && result.session_id) {
-        await openThread(result.session_id, pendingOpen.openKey);
+        await openThread(result.session_id, pendingOpen.sessionId);
       } else if (result.status === "unconfirmed") {
         setError(
           "Open was reserved but the runner has not confirmed it. Check later, or explicitly discard it to start fresh; this attempt will not be retried."
@@ -482,10 +482,10 @@ export function SandboxPage({
     }
   }
 
-  async function openThread(sessionId: string, resolvedOpenKey?: string): Promise<void> {
+  async function openThread(sessionId: string, resolvedAttempt?: string): Promise<void> {
     try {
       const thread = threadBySession[sessionId] ?? (await getThread(sessionId));
-      if (resolvedOpenKey && sessionStorage.getItem(pendingOpenKey(name)) === resolvedOpenKey) rememberOpen(null);
+      if (resolvedAttempt && sessionStorage.getItem(pendingOpenKey(name)) === resolvedAttempt) rememberOpen(null);
       onOpenThread(thread.id);
     } catch (reason: unknown) {
       setError(displayableError(reason));
@@ -628,7 +628,7 @@ export function SandboxPage({
             {pendingOpen && (
               <Stack gap="xs">
                 <Text size="sm" role="status">
-                  Open attempt {pendingOpen.openKey} may have succeeded. Check its status before starting another
+                  Open attempt {pendingOpen.sessionId} may have succeeded. Check its status before starting another
                   session. An unconfirmed attempt is never retried automatically.
                 </Text>
                 <Group gap="xs">

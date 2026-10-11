@@ -18,7 +18,7 @@ from datetime import timedelta
 from pathlib import Path
 from typing import Any
 from unittest.mock import AsyncMock
-from uuid import UUID
+from uuid import UUID, uuid4
 
 import httpx
 import pytest
@@ -102,15 +102,15 @@ async def failed_native_journal(
     )
 
 
-async def _create(http: httpx.AsyncClient, spec: protocol_pb2.SessionSpec, key: str = "bridge-test-open") -> str:
+async def _create(http: httpx.AsyncClient, spec: protocol_pb2.SessionSpec, session_id: UUID) -> str:
     """Create a Session through the app; its public ID is the Thread's."""
-    opened = await http.post(SESSIONS, json={"idempotency_key": key, "spec": MessageToDict(spec)})
+    opened = await http.post(SESSIONS, json={"session_id": str(session_id), "spec": MessageToDict(spec)})
     assert opened.status_code == 201, opened.text
     return str(opened.json()["sessionId"])
 
 
 def _runner_session(runner: RunnerHandle, thread_id: str | UUID) -> Session:
-    return runner.runner.sessions[f"r-{thread_id}"]
+    return runner.runner.sessions[str(thread_id)]
 
 
 def _commands(thread_id: str) -> str:
@@ -262,7 +262,8 @@ async def test_the_bridge_streams_a_turn_to_every_tab_and_resumes_from_the_last_
     app_url: str, model: ScriptedModel, spec: protocol_pb2.SessionSpec, failed_native_journal: None
 ) -> None:
     async with httpx.AsyncClient(base_url=app_url, timeout=60, headers=AGENT_AUTH) as http:
-        opened = await http.post(SESSIONS, json={"idempotency_key": "bridge-test-open", "spec": MessageToDict(spec)})
+        session_id = uuid4()
+        opened = await http.post(SESSIONS, json={"session_id": str(session_id), "spec": MessageToDict(spec)})
         assert opened.status_code == 201, opened.text
         assert opened.json()["harnessState"] == "HARNESS_STATE_RUNNING"
         thread_id = opened.json()["sessionId"]
@@ -280,7 +281,7 @@ async def test_the_bridge_streams_a_turn_to_every_tab_and_resumes_from_the_last_
         async with http.stream("GET", f"/threads/{thread_id}/events/stream") as first_tab:
             first = first_tab.aiter_lines()
             assert (await next_message(first)).event == "attached"
-            assert await _create(http, spec) == thread_id
+            assert await _create(http, spec, session_id) == thread_id
             accepted = await http.post(
                 _commands(thread_id),
                 json={"commandId": "input-1", "submitInput": {"text": "Reply with exactly: BRIDGE_OK"}},
@@ -501,7 +502,7 @@ async def _next_model_request(model: ScriptedModel) -> Any:
 async def _open_thread_with_seed(
     http: httpx.AsyncClient, model: ScriptedModel, spec: protocol_pb2.SessionSpec, *, seed_prompt: str, seed_answer: str
 ) -> str:
-    thread_id = await _create(http, spec)
+    thread_id = await _create(http, spec, uuid4())
     accepted = await http.post(
         _commands(thread_id), json={"commandId": "seed-input", "submitInput": {"text": seed_prompt}}
     )
@@ -522,7 +523,7 @@ async def test_http_error_is_archived_as_failed_turn_and_follow_up_succeeds(
 ) -> None:
     """A failed model turn stays admitted and replayable; a later input is a separate turn."""
     async with httpx.AsyncClient(base_url=app_url, timeout=60, headers=AGENT_AUTH) as http:
-        thread_id = await _create(http, spec)
+        thread_id = await _create(http, spec, uuid4())
         accepted = await http.post(
             _commands(thread_id),
             json={"commandId": "http-failure", "submitInput": {"text": "Reply with exactly: HTTP_ERROR"}},
@@ -922,7 +923,7 @@ async def test_the_feed_records_a_turn_nobody_is_watching(
 ) -> None:
     """Opening a session starts its feed, so a turn driven over REST alone lands in the store."""
     async with httpx.AsyncClient(base_url=app_url, timeout=60, headers=AGENT_AUTH) as http:
-        thread_id = await _create(http, spec)
+        thread_id = await _create(http, spec, uuid4())
         accepted = await http.post(
             _commands(thread_id),
             json={"commandId": "input-1", "submitInput": {"text": "Reply with exactly: UNWATCHED_OK"}},
@@ -997,7 +998,7 @@ async def test_command_status_reads_what_the_sandbox_service_retained(
     app_url: str, spec: protocol_pb2.SessionSpec, failed_native_journal: None
 ) -> None:
     async with httpx.AsyncClient(base_url=app_url, timeout=60, headers=AGENT_AUTH) as http:
-        thread_id = await _create(http, spec)
+        thread_id = await _create(http, spec, uuid4())
         admitted = await http.post(
             _commands(thread_id), json={"commandId": "status-read", "interruptTurn": {"turnId": "no-such-turn"}}
         )
@@ -1016,7 +1017,7 @@ async def test_stop_command_returns_after_admission_before_native_shutdown_effec
     failed_native_journal: None,
 ) -> None:
     async with httpx.AsyncClient(base_url=app_url, timeout=60, headers=AGENT_AUTH) as http:
-        thread_id = await _create(http, spec)
+        thread_id = await _create(http, spec, uuid4())
         session = _runner_session(runner, thread_id)
         original_shutdown = session._shutdown
         shutdown_entered = asyncio.Event()
@@ -1058,7 +1059,7 @@ async def test_command_relay_waits_for_runner_admission_before_closing(
 ) -> None:
     """A relay cancellation before the runner reads its frames must not discard the Command."""
     async with httpx.AsyncClient(base_url=app_url, timeout=60, headers=AGENT_AUTH) as http:
-        thread_id = await _create(http, spec)
+        thread_id = await _create(http, spec, uuid4())
         original_consume = service._consume
         consumer_started = asyncio.Event()
         release_consumer = asyncio.Event()
@@ -1105,7 +1106,7 @@ async def test_command_admission_timeout_is_not_an_internal_server_error(
     app_url: str, spec: protocol_pb2.SessionSpec, monkeypatch: pytest.MonkeyPatch, failed_native_journal: None
 ) -> None:
     async with httpx.AsyncClient(base_url=app_url, timeout=60, headers=AGENT_AUTH) as http:
-        thread_id = await _create(http, spec)
+        thread_id = await _create(http, spec, uuid4())
 
         async def timed_out(
             _bridge: RunnerBridge, _thread_id: UUID, _command: command_pb2.Command
@@ -1239,7 +1240,7 @@ async def frame_lines(frames: AsyncIterator[bytes]) -> AsyncIterator[str]:
 async def test_replica_commands_and_database_stream_survive_ingestion_owner_exit(
     replicas: Replicas, event_logs: EventLogStore, model: ScriptedModel, spec: protocol_pb2.SessionSpec
 ) -> None:
-    thread = UUID((await replicas.owner.create_session(SANDBOX, "replica-open", MessageToDict(spec))).session_id)
+    thread = UUID((await replicas.owner.create_session(SANDBOX, uuid4(), MessageToDict(spec))).session_id)
     async for attempt in AsyncRetrying(
         stop=stop_after_delay(10), wait=wait_fixed(0.05), retry=retry_if_exception_type(AssertionError)
     ):
@@ -1341,7 +1342,7 @@ async def test_inventory_change_discovers_existing_runner_session_without_browse
 async def test_resumed_session_stream_does_not_end_at_previous_shutdown(
     replicas: Replicas, event_logs: EventLogStore, model: ScriptedModel, spec: protocol_pb2.SessionSpec
 ) -> None:
-    thread = UUID((await replicas.owner.create_session(SANDBOX, "replica-open", MessageToDict(spec))).session_id)
+    thread = UUID((await replicas.owner.create_session(SANDBOX, uuid4(), MessageToDict(spec))).session_id)
     await replicas.survivor.command(
         thread, command_pb2.Command(command_id="seed-input", submit_input=command_pb2.SubmitInput(text="BEFORE_RESUME"))
     )
@@ -1365,7 +1366,7 @@ async def test_resumed_session_stream_does_not_end_at_previous_shutdown(
             assert (await next_message(lines)).event == "end"
     cursor = stopped[-1].id
     assert cursor is not None
-    await replicas.survivor.create_session(SANDBOX, "replica-open", MessageToDict(spec))
+    await replicas.survivor.create_session(SANDBOX, thread, MessageToDict(spec))
     async with aclosing(
         follow(replicas.survivor_event_logs, replicas.survivor_changes, thread, after_cursor=cursor)
     ) as frames:
@@ -1399,7 +1400,7 @@ async def test_stored_thread_stream_does_not_require_reachable_runner(
     content: ContentStore,
     ingestion: Ingestion,
 ) -> None:
-    thread = UUID((await replicas.owner.create_session(SANDBOX, "replica-open", MessageToDict(spec))).session_id)
+    thread = UUID((await replicas.owner.create_session(SANDBOX, uuid4(), MessageToDict(spec))).session_id)
     stop = command_pb2.Command(command_id="stop-for-offline", stop_runner_session=command_pb2.StopRunnerSession())
     admitted = await replicas.survivor.command(thread, stop)
     async with aclosing(
@@ -1447,7 +1448,7 @@ async def test_open_and_resume_reply_before_archive_catches_up(
     # Simulate stalled ingestion without delaying the runner itself.
     monkeypatch.setattr(ingester, "start", AsyncMock())
     bridge = RunnerBridge(runners=local_runners, event_logs=event_logs, content=content, ingester=ingester)
-    opened = await asyncio.wait_for(bridge.create_session(SANDBOX, "unarchived-open", MessageToDict(spec)), timeout=10)
+    opened = await asyncio.wait_for(bridge.create_session(SANDBOX, uuid4(), MessageToDict(spec)), timeout=10)
     thread_id = UUID(opened.session_id)
     assert opened.last_cursor > 0
     assert await event_logs.last_cursor(thread_id) == 0

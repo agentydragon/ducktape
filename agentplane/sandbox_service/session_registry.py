@@ -55,37 +55,41 @@ class SessionRegistry:
     async def reserve(
         self,
         *,
+        session_id: UUID | None,
         caller_namespace: str,
         caller_name: str,
         sandbox_namespace: str,
         sandbox_name: str,
         sandbox_uid: UUID,
-        open_key: str,
+        open_key: str | None,
         open_request: bytes,
         launch_spec: Callable[[UUID], bytes],
     ) -> OpenReservation:
         """Reserve a durable Session ID *before* runner attach, or recover a lost reply.
 
-        The key is opaque to the Service and scoped to the authenticated caller and
-        Sandbox incarnation. The request bytes identify the caller's original inputs;
-        the launch factory freezes effective runner setup for the candidate ID.
-        Committing before runner contact lets a retry recover the same setup.
+        A retry names the same Session: by the client's Session ID, or, from a client that mints
+        none, by the Open key, which is opaque to the Service and scoped to the authenticated caller
+        and Sandbox incarnation. The request bytes identify the caller's original inputs; the launch
+        factory freezes effective runner setup for the Session ID. Committing before runner contact
+        lets a retry recover the same setup.
         """
-        if not all((caller_namespace, caller_name, sandbox_namespace, sandbox_name, open_key)):
-            raise ValueError("caller, sandbox, and Open idempotency key are required")
-        query = select(Session).where(
+        if not all((caller_namespace, caller_name, sandbox_namespace, sandbox_name)):
+            raise ValueError("caller and sandbox are required")
+        if session_id is None and not open_key:
+            raise ValueError("a Session ID or an Open idempotency key is required")
+        scope = (
             Session.caller_namespace == caller_namespace,
             Session.caller_name == caller_name,
             Session.sandbox_namespace == sandbox_namespace,
             Session.sandbox_name == sandbox_name,
             Session.sandbox_uid == sandbox_uid,
-            Session.open_key == open_key,
         )
+        query = select(Session).where(*scope, Session.id == session_id if session_id else Session.open_key == open_key)
         async with self._sessions.begin() as session:
             # Do not recompute today's defaults for an already reserved Open.
             row = await session.scalar(query)
             if row is None:
-                candidate = uuid4()
+                candidate = session_id or uuid4()
                 await session.execute(
                     insert(Session)
                     .values(
@@ -95,19 +99,22 @@ class SessionRegistry:
                         sandbox_namespace=sandbox_namespace,
                         sandbox_name=sandbox_name,
                         sandbox_uid=sandbox_uid,
-                        open_key=open_key,
+                        open_key=open_key or None,
                         open_request=open_request,
                         launch_spec=launch_spec(candidate),
-                        runner_session_id=f"r-{candidate}",
+                        # CLEANUP(added 2026-10-11): Drop the `r-` locator with service-minted IDs
+                        #   (grpc_api.py's CreateSession tombstone).
+                        runner_session_id=str(session_id) if session_id else f"r-{candidate}",
                         change_position=await next_change_position(session),
                     )
                     .on_conflict_do_nothing()
                 )
+                # Another Session already holds this ID or Open key.
                 row = await session.scalar(query)
                 if row is None:
                     raise OpenConflictError("Open identity could not be reserved")
         if row.open_request != open_request:
-            raise OpenConflictError("Open idempotency key reused with different inputs")
+            raise OpenConflictError("Open identity reused with different inputs")
         assert row.launch_spec is not None
         return OpenReservation(row.id, row.launch_spec)
 

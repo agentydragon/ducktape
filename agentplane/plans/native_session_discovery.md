@@ -642,9 +642,10 @@ unresolved record, not guessed identity or automatic retry of old work.
 
 #### Root creation and today's service IDs
 
-The current Sandbox Service already has `CreateSession` / `LookupSession` with a caller- and
-Sandbox-UID-scoped idempotency key, a frozen launch request, and a durable **service session UUID**.
-Its response also contains the runner `Attached.session_id`; these IDs are not interchangeable.
+The current Sandbox Service already has `CreateSession` / `LookupSession` with a client-minted
+**service session UUID**, which is also the runner's logical Session ID, a caller- and
+Sandbox-UID-scoped idempotency key, and a frozen launch request. Sessions created before clients
+minted the UUID run under the runner ID `r-<uuid>`.
 See [`sandbox_service/protocol.proto`](../sandbox_service/protocol.proto) and
 [`session_history/store.py`](../sandbox_service/session_history/store.py).
 
@@ -659,8 +660,8 @@ Existing roots can retain their runner IDs; opaque runner allocation is not a re
 The concrete root sequences are:
 
 1. Client provisions an authorized sandbox through Sandbox Service and follows readiness.
-2. Client calls `CreateSession` with harness spec, override mask, and idempotency key. Service
-   reserves its UUID and immutable launch intent. Runner accepts/reserves a logical root and
+2. Client calls `CreateSession` with a fresh UUID, harness spec and override mask. Service
+   reserves the UUID and immutable launch intent. Runner accepts/reserves a logical root and
    execution owner. Timeout recovery uses `LookupSession`; a reservation is not launch success.
 3. **Codex:** initialize the app-server; send `thread/start`; commit the returned thread ID as
    the native binding before reporting root readiness. No client-selected native thread ID is

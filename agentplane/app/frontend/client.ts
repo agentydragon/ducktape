@@ -302,24 +302,27 @@ export async function listSessions(sandbox: string): Promise<SessionSummary[]> {
 
 export type OpenStatus = { status: "absent" | "unconfirmed" | "failed" | "ready"; session_id: string | null };
 
-export async function lookupOpen(sandbox: string, openKey: string): Promise<OpenStatus> {
+export async function lookupOpen(sandbox: string, sessionId: string): Promise<OpenStatus> {
   const { data, error } = await api.GET("/sandboxes/{name}/sessions/open", {
-    params: { path: { name: sandbox }, query: { idempotency_key: openKey } },
+    params: { path: { name: sandbox }, query: { session_id: sessionId } },
   });
   if (error) throw new Error(displayableError(error));
   return data as OpenStatus;
 }
 
-/** Create once. On an ambiguous response, use lookupOpen; never re-run bootstrap implicitly. */
+/**
+ * Create the Session `sessionId`, a fresh UUID, names. On an ambiguous response, use lookupOpen;
+ * never re-run bootstrap implicitly.
+ */
 export async function openSession(
   sandbox: string,
-  openKey: string,
+  sessionId: string,
   spec: SessionSpec,
   setupScript?: string
 ): Promise<Attached> {
   const { data, error } = await api.POST("/sandboxes/{name}/sessions", {
     params: { path: { name: sandbox } },
-    body: { idempotency_key: openKey, spec: toJson(SessionSpecSchema, spec) as JsonObject, setup_script: setupScript },
+    body: { session_id: sessionId, spec: toJson(SessionSpecSchema, spec) as JsonObject, setup_script: setupScript },
   });
   if (error) throw new Error(displayableError(error));
   return fromJson(AttachedSchema, data as JsonValue);

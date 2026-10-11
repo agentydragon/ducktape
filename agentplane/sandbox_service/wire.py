@@ -1,5 +1,7 @@
 """Typed service protobuf boundary; persisted Kubernetes formats are handled separately."""
 
+from uuid import UUID
+
 from google.protobuf.json_format import MessageToDict, ParseDict
 
 from agentplane.runner import protocol_pb2 as runner_pb2
@@ -22,10 +24,7 @@ def launch_overrides(request: protocol_pb2.CreateSessionRequest) -> dict[str, ob
 
 
 def create_proto(
-    sandbox: protocol_pb2.SandboxDestination,
-    idempotency_key: str,
-    overrides: dict[str, object],
-    setup_script: str | None,
+    sandbox: protocol_pb2.SandboxDestination, session_id: UUID, overrides: dict[str, object], setup_script: str | None
 ) -> protocol_pb2.CreateSessionRequest:
     fields = runner_pb2.SessionSpec.DESCRIPTOR.fields
     if any(
@@ -34,8 +33,14 @@ def create_proto(
         raise ValueError("a SessionSpec field cannot use both proto and JSON spellings")
     spec = ParseDict(overrides, runner_pb2.SessionSpec())
     paths = [field.name for field in fields if field.name in overrides or field.json_name in overrides]
+    # The Session ID doubles as the Open key: LookupSession finds the Session by it, and a Sandbox
+    # Service that predates session_id reserves by it alone.
     request = protocol_pb2.CreateSessionRequest(
-        sandbox=sandbox, idempotency_key=idempotency_key, spec=spec, setup_script=setup_script
+        sandbox=sandbox,
+        session_id=str(session_id),
+        idempotency_key=str(session_id),
+        spec=spec,
+        setup_script=setup_script,
     )
     request.override_mask.paths.extend(paths)
     return request

@@ -125,18 +125,21 @@ The Sandbox Service keeps no Session history; the [History Service](../history_s
 copies each runner's Events and serves reads. Legacy rows without a known Sandbox UID stay
 registered but are not followed until their binding is established by a verified handoff.
 
-- `ListSessions`: Sandbox destination; maps every registered runner ID, `r-<uuid>` or an imported
-  legacy one, to its public Session ID in the returned summaries. Unregistered runner sessions keep
-  their runner IDs.
-- `CreateSession`: explicit Open with Sandbox destination, caller-scoped idempotency key,
-  and selected overrides (no runner ID). A durable public Session UUID and effective launch
-  settings are committed before runner contact; the Service returns the UUID and an attachment
-  snapshot with that public ID. A `{session_id}` placeholder in a selected `cwd` override
-  is expanded to that UUID after reservation, just like the stored default cwd. Concurrent or response-lost retries use the original settings;
-  a changed request with the same key is rejected. `ResumeSession`, `FollowSession`, and
-  `SubmitCommand` accept the returned ID and resolve it to the retained runner ID within the
-  pinned Sandbox UID. The key is not a Session ID and does not apply to runner-discovered native
-  child sessions. The app opens every new Thread through it.
+- `ListSessions`: Sandbox destination; maps every registered runner ID (the public ID itself,
+  `r-<uuid>` or an imported legacy one) to its public Session ID in the returned summaries.
+  Unregistered runner sessions keep their runner IDs.
+- `CreateSession`: explicit Open with Sandbox destination, the client's fresh Session UUID,
+  an optional caller-scoped idempotency key, and selected overrides. The UUID is the public
+  Session ID and the runner's Session ID alike. The Session and its effective launch settings are
+  committed before runner contact; the Service returns the UUID and an attachment snapshot with it.
+  A `{session_id}` placeholder in a selected `cwd` override is expanded to that UUID, just like
+  the stored default cwd. Concurrent or response-lost retries with the same UUID use the original
+  settings; the same UUID with changed inputs, another caller or another Sandbox is rejected. A
+  request without a UUID (a client predating them) is reserved by its key alone: the Service mints
+  the public ID and gives the runner `r-<public ID>`. `ResumeSession`, `FollowSession`, and
+  `SubmitCommand` accept the public ID and resolve it to the retained runner ID within the pinned
+  Sandbox UID. Neither the UUID nor the key applies to runner-discovered native child sessions. The
+  app opens every new Thread through it, with its Session ID as the key too.
 - `LookupSession`: read-only reconciliation by authenticated caller, current Sandbox name/UID
   and opaque Open key. Returns no public ID for an absent reservation, or the public ID
   without runner confirmation for a reserved Open. A runner summary is present only when

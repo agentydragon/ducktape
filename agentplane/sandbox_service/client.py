@@ -7,6 +7,7 @@ import logging
 from collections.abc import AsyncIterator, Awaitable, Callable, Mapping
 from pathlib import Path
 from typing import Never
+from uuid import UUID
 
 import grpc
 from google.protobuf.empty_pb2 import Empty
@@ -276,13 +277,15 @@ class Runner:
         return list(result.sessions)
 
     async def create(
-        self, *, idempotency_key: str, spec: dict[str, object], setup_script: str | None = None
+        self, *, session_id: UUID, spec: dict[str, object], setup_script: str | None = None
     ) -> protocol_pb2.CreateSessionResponse:
-        # The key is for an explicit Open attempt, not a runner/session identifier.
+        """Open the Session the caller minted `session_id` for; a retry passes the same ID and inputs.
+        The response's Session ID is authoritative: a Sandbox Service that predates client-minted IDs
+        mints its own."""
         return await self.service.held_unary(
             self.destination,
             lambda stub: stub.CreateSession,
-            wire.create_proto(self.destination, idempotency_key, spec, setup_script),
+            wire.create_proto(self.destination, session_id, spec, setup_script),
             timeout_s=self.service.lifecycle_timeout_s,
         )
 

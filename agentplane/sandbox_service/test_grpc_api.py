@@ -242,7 +242,7 @@ async def remote(resources: Resources, token_file: Path) -> AsyncIterator[Sandbo
         yield client
 
 
-async def test_managed_open_keeps_runner_id_internal_and_retries_frozen_launch(
+async def test_managed_open_uses_the_client_session_id_and_retries_frozen_launch(
     resources: Resources,
     token_file: Path,
     peer: Peer,
@@ -253,21 +253,22 @@ async def test_managed_open_keeps_runner_id_internal_and_retries_frozen_launch(
     async with service_client(resources, token_file) as remote:
         runner = remote.runner(DESTINATION)
         overrides: dict[str, object] = {"harness": "HARNESS_CODEX", "model": "test-model", "cwd": "/state/{session_id}"}
-        created = await runner.create(idempotency_key="first-attempt", spec=overrides)
+        requested = uuid4()
+        created = await runner.create(session_id=requested, spec=overrides)
         first = await peer.attachments.get()
         public = created.session_id
-        assert str(UUID(public)) == public
+        assert public == str(requested)
         assert created.attached.session_id == public
-        assert first.opened.session_id == f"r-{public}"
+        # The runner's Session ID is the client's, as the ingress announces it.
+        assert first.opened.session_id == public
         assert first.opened.spec.cwd == f"/state/{public}"
         assert public in first.opened.spec.instructions
-        assert created.attached.session_id != first.opened.session_id
         await first.closed.wait()
         assert [row.session_id for row in await runner.list_sessions()] == [public]
 
         # Simulate changed defaults/platform instructions after the original reply was lost.
         async with service_client(replace(resources, platform_instructions="Changed guidance"), token_file) as retry:
-            again = await retry.runner(DESTINATION).create(idempotency_key="first-attempt", spec=overrides)
+            again = await retry.runner(DESTINATION).create(session_id=requested, spec=overrides)
         second = await peer.attachments.get()
         assert again == created
         assert second.opened == first.opened
@@ -275,13 +276,13 @@ async def test_managed_open_keeps_runner_id_internal_and_retries_frozen_launch(
         await second.closed.wait()
 
         with pytest.raises(ServiceError) as conflict:
-            await runner.create(idempotency_key="first-attempt", spec=overrides | {"model": "different"})
+            await runner.create(session_id=requested, spec=overrides | {"model": "different"})
         assert conflict.value.code == grpc.StatusCode.INVALID_ARGUMENT
         assert peer.attachments.empty()
 
         attachment = await runner.attach(public)
         following = await peer.attachments.get()
-        assert following.opened.session_id == f"r-{public}"
+        assert following.opened.session_id == public
         assert attachment.attached.session_id == public
         attachment.cancel()
         await following.closed.wait()
@@ -289,7 +290,7 @@ async def test_managed_open_keeps_runner_id_internal_and_retries_frozen_launch(
         async with asyncio.TaskGroup() as tasks:
             pending = tasks.create_task(runner.command(public, command, after_cursor=0))
             admitted = await peer.attachments.get()
-            assert admitted.opened.session_id == f"r-{public}"
+            assert admitted.opened.session_id == public
             assert (await admitted.commands.get()).command == command
             receipt = admission(command, 1)
             admitted.responses.put_nowait(runner_pb2.ServerMessage(event_entry=receipt))
@@ -298,7 +299,7 @@ async def test_managed_open_keeps_runner_id_internal_and_retries_frozen_launch(
 
         assert await runner.resume(public) == created.attached
         resumed = await peer.attachments.get()
-        assert resumed.opened.session_id == f"r-{public}"
+        assert resumed.opened.session_id == public
         await resumed.closed.wait()
 
 
@@ -459,6 +460,7 @@ async def test_lookup_open_scopes_reservation_and_waits_for_runner_confirmation(
         runner = remote.runner(DESTINATION)
         assert not (await runner.lookup(idempotency_key="lookup-key")).session_id
         reserved = await sessions.reserve(
+            session_id=None,
             caller_namespace=OWNER.namespace,
             caller_name=OWNER.name,
             sandbox_namespace=SANDBOX_NAMESPACE,
@@ -481,16 +483,16 @@ async def test_lookup_open_scopes_reservation_and_waits_for_runner_confirmation(
             await runner.lookup(idempotency_key="")
         assert invalid.value.code == grpc.StatusCode.INVALID_ARGUMENT
 
+        requested = uuid4()
         created = await runner.create(
-            idempotency_key="confirmed-key", spec={"harness": "HARNESS_CODEX", "model": "test-model", "cwd": "/state"}
+            session_id=requested, spec={"harness": "HARNESS_CODEX", "model": "test-model", "cwd": "/state"}
         )
         await (await peer.attachments.get()).closed.wait()
-        confirmed = await runner.lookup(idempotency_key="confirmed-key")
-        assert confirmed.session_id == created.session_id
+        confirmed = await runner.lookup(idempotency_key=str(requested))
+        assert confirmed.session_id == created.session_id == str(requested)
         assert confirmed.HasField("summary")
         assert confirmed.summary.session_id == created.session_id
         assert confirmed.summary.spec.model == "test-model"
-        assert f"r-{created.session_id}" not in str(confirmed)
 
 
 async def test_lookup_rejects_failed_native_open_but_recovers_an_earlier_success(
@@ -499,11 +501,12 @@ async def test_lookup_rejects_failed_native_open_but_recovers_an_earlier_success
     """Inventory also retains a spec after a native handshake fails; never project it as a Thread."""
     async with service_client(resources, token_file) as remote:
         runner = remote.runner(DESTINATION)
+        requested = uuid4()
         created = await runner.create(
-            idempotency_key="failed-handshake", spec={"harness": "HARNESS_CODEX", "model": "m", "cwd": "/state"}
+            session_id=requested, spec={"harness": "HARNESS_CODEX", "model": "m", "cwd": "/state"}
         )
         await (await peer.attachments.get()).closed.wait()
-        physical_id = f"r-{created.session_id}"
+        physical_id = str(requested)
         peer.state = runner_pb2.HARNESS_STATE_STOPPED
 
         def entry(cursor: int, event: event_pb2.Event) -> event_log_pb2.EventEntry:
@@ -514,7 +517,7 @@ async def test_lookup_rejects_failed_native_open_but_recovers_an_earlier_success
         # A failed native handshake leaves the runner's session in inventory but
         # never emits HarnessStarted. The observation-only attachment does not retry Open.
         peer.history[physical_id] = [entry(1, event_pb2.Event(harness_exited=event_pb2.HarnessExited(exit_code=1)))]
-        failed = await runner.lookup(idempotency_key="failed-handshake")
+        failed = await runner.lookup(idempotency_key=str(requested))
         assert failed.session_id == created.session_id
         assert failed.failed
         assert not failed.HasField("summary")
@@ -526,7 +529,7 @@ async def test_lookup_rejects_failed_native_open_but_recovers_an_earlier_success
         # A reservation with an in-flight setup has neither success nor failure evidence.
         peer.history[physical_id] = [entry(1, event_pb2.Event(setup_started=event_pb2.SetupStarted()))]
         peer.setup_state = runner_pb2.SETUP_STATE_RUNNING
-        pending = await runner.lookup(idempotency_key="failed-handshake")
+        pending = await runner.lookup(idempotency_key=str(requested))
         assert not pending.failed
         assert not pending.HasField("summary")
         await (await peer.attachments.get()).closed.wait()
@@ -538,21 +541,22 @@ async def test_lookup_rejects_failed_native_open_but_recovers_an_earlier_success
             entry(1, event_pb2.Event(harness_started=event_pb2.HarnessStarted(pid=8))),
             entry(2, event_pb2.Event(harness_exited=event_pb2.HarnessExited(exit_code=0))),
         ]
-        ready = await runner.lookup(idempotency_key="failed-handshake")
+        ready = await runner.lookup(idempotency_key=str(requested))
         assert not ready.failed
         assert ready.summary.session_id == created.session_id
         await (await peer.attachments.get()).closed.wait()
 
         peer.setup_state = runner_pb2.SETUP_STATE_FAILED
-        setup_failure = await runner.lookup(idempotency_key="failed-handshake")
+        setup_failure = await runner.lookup(idempotency_key=str(requested))
         assert setup_failure.failed
         assert not setup_failure.HasField("summary")
         assert peer.attachments.empty()
 
 
-async def test_managed_open_lost_response_uses_same_reservation(
+async def test_open_without_a_client_session_id_mints_one_and_survives_a_lost_response(
     resources: Resources, token_file: Path, peer: Peer, engine: AsyncEngine, sessions: SessionRegistry
 ) -> None:
+    """A client predating client-minted Session IDs names only its Open key."""
     peer.answer_open = False
     request = protocol_pb2.CreateSessionRequest(
         sandbox=DESTINATION,
@@ -577,6 +581,18 @@ async def test_managed_open_lost_response_uses_same_reservation(
         await second.closed.wait()
 
 
+async def test_open_refuses_a_session_id_that_is_not_a_uuid(
+    resources: Resources, token_file: Path, peer: Peer, engine: AsyncEngine, sessions: SessionRegistry
+) -> None:
+    request = wire.create_proto(DESTINATION, uuid4(), {"harness": "HARNESS_CODEX", "cwd": "/state", "model": "m"}, None)
+    request.session_id = "r-not-a-uuid"
+    async with service_client(resources, token_file) as remote:
+        with pytest.raises(grpc.aio.AioRpcError) as refused:
+            await remote.stub.CreateSession(request, metadata=await remote.metadata(), timeout=5)
+    assert refused.value.code() == grpc.StatusCode.INVALID_ARGUMENT
+    assert peer.attachments.empty()
+
+
 async def test_managed_open_expands_default_cwd_with_reserved_id(
     resources: Resources, token_file: Path, peer: Peer, engine: AsyncEngine, sessions: SessionRegistry, cluster: Cluster
 ) -> None:
@@ -588,7 +604,7 @@ async def test_managed_open_expands_default_cwd_with_reserved_id(
         )
     )
     async with service_client(resources, token_file) as remote:
-        created = await remote.runner(DESTINATION).create(idempotency_key="default-cwd", spec={})
+        created = await remote.runner(DESTINATION).create(session_id=uuid4(), spec={})
         opened = await peer.attachments.get()
         assert opened.opened.spec.cwd == f"/state/workspaces/{created.session_id}"
         await opened.closed.wait()
@@ -1009,9 +1025,7 @@ async def test_open_and_resume_refuse_unready_grants_without_app(
     async with service_client(configured, token_file) as caller:
         runner = caller.runner(DESTINATION)
         with pytest.raises(ServiceError) as opened:
-            await runner.create(
-                idempotency_key="unready", spec={"harness": "HARNESS_CODEX", "cwd": "/w", "model": "test"}
-            )
+            await runner.create(session_id=uuid4(), spec={"harness": "HARNESS_CODEX", "cwd": "/w", "model": "test"})
         assert opened.value.code == grpc.StatusCode.UNAVAILABLE
         with pytest.raises(ServiceError) as resumed:
             await runner.resume("session")
@@ -1039,7 +1053,7 @@ async def test_invalid_command_is_not_submitted(
 
 def test_wire_preserves_explicit_empty_overrides() -> None:
     request = wire.create_proto(
-        DESTINATION, "explicit-empty", {"model": "test-model", "instructions": "", "reasoningEffort": ""}, ""
+        DESTINATION, uuid4(), {"model": "test-model", "instructions": "", "reasoningEffort": ""}, ""
     )
     assert wire.launch_overrides(request) == {"model": "test-model", "instructions": "", "reasoningEffort": ""}
     assert request.HasField("setup_script")
@@ -1104,7 +1118,7 @@ async def test_bare_service_eof_is_not_native_closure(tmp_path: Path) -> None:
 
 def test_duplicate_spec_aliases_are_refused() -> None:
     with pytest.raises(ValueError, match="both proto and JSON"):
-        wire.create_proto(DESTINATION, "aliased", {"reasoning_effort": "low", "reasoningEffort": "high"}, None)
+        wire.create_proto(DESTINATION, uuid4(), {"reasoning_effort": "low", "reasoningEffort": "high"}, None)
 
 
 async def test_command_cancellation_closes_native_attachment(remote: SandboxServiceClient, peer: Peer) -> None:
@@ -1234,6 +1248,7 @@ async def test_watch_sessions_resumes_after_disconnect_and_wakes_on_other_writer
 
         # Another replica's commit reaches this stream through NOTIFY, not this replica's Store.
         reserved = await sessions.reserve(
+            session_id=None,
             caller_namespace=OWNER.namespace,
             caller_name=OWNER.name,
             sandbox_namespace=SANDBOX_NAMESPACE,

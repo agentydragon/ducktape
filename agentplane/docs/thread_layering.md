@@ -121,8 +121,9 @@ ID across Sandboxes only if it restores the same fenced journal and native state
 separate copied-state tests gate that claim. For existing histories, keep the
 app UUID as the canonical public ID and import its association to the existing
 `(sandbox, runner session_id)` into the durable history authority. That runner ID remains the physical storage/runtime locator: its
-native files, directories, and workspace paths need no rekey. New histories run under
-the runner locator `r-<uuid>`, which never leaves the Sandbox Service. A future multi-Session Thread would
+native files, directories, and workspace paths need no rekey. A client that mints its
+Session's UUID gets it as the runner locator too; Sessions created before clients minted them keep
+the locator `r-<uuid>`, which never leaves the Sandbox Service. A future multi-Session Thread would
 need a new explicit model rather than overloading this one-to-one identity.
 
 Both identities resolve through the same registry row, so Resume, Follow and command take the

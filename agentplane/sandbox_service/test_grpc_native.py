@@ -5,6 +5,7 @@ import shlex
 from collections.abc import AsyncIterator
 from dataclasses import replace
 from pathlib import Path
+from uuid import uuid4
 
 import grpc
 import pytest
@@ -53,7 +54,6 @@ DESTINATION = SandboxDestination(
     sandbox=SANDBOX,
     sandbox_uid=SANDBOX_UID,
 )
-OPEN_KEY = "grpc-open"
 # Names no Session: a caller-chosen runner ID the service relays as given.
 SESSION = "grpc-session"
 
@@ -180,7 +180,8 @@ async def test_launch_delivery_and_restart_preserve_evidence_and_configuration(
     )
     async with service_client(resources, token_file) as remote:
         runner = remote.runner(DESTINATION)
-        created = await runner.create(idempotency_key=OPEN_KEY, spec={})
+        requested = uuid4()
+        created = await runner.create(session_id=requested, spec={})
         session = created.session_id
         opened = created.attached
         async with asyncio.timeout(15):
@@ -190,10 +191,10 @@ async def test_launch_delivery_and_restart_preserve_evidence_and_configuration(
                 opened = await inspect(remote, session)
         assert opened.setup_state == runner_pb2.SETUP_STATE_SUCCEEDED
         assert session in opened.spec.instructions
-        assert (await runner.create(idempotency_key=OPEN_KEY, spec={})).attached.spec == opened.spec
+        assert (await runner.create(session_id=requested, spec={})).attached.spec == opened.spec
         assert (await runner.list_sessions())[0].spec == opened.spec
         with pytest.raises(ServiceError) as changed:
-            await runner.create(idempotency_key=OPEN_KEY, spec={"instructions": "Different task"})
+            await runner.create(session_id=requested, spec={"instructions": "Different task"})
         assert changed.value.code == grpc.StatusCode.INVALID_ARGUMENT
         assert bootstrap_marker.read_text() == "B"
         assert setup_marker.read_text() == "S"
@@ -248,8 +249,7 @@ async def test_launch_delivery_and_restart_preserve_evidence_and_configuration(
         assert (await runner.list_sessions())[0].spec == opened.spec
         with pytest.raises(RunnerError):
             await runner.create(
-                idempotency_key="after-bootstrap-change",
-                spec={"harness": "HARNESS_CODEX", "cwd": "/workspace", "model": "test"},
+                session_id=uuid4(), spec={"harness": "HARNESS_CODEX", "cwd": "/workspace", "model": "test"}
             )
     assert bootstrap_marker.read_text() == "B"
     assert setup_marker.read_text() == "S"
@@ -274,7 +274,7 @@ async def test_observe_command_and_resume_do_not_create_unknown_session(remote: 
 
 async def test_failed_setup_cannot_be_resumed(remote: SandboxServiceClient, spec: runner_pb2.SessionSpec) -> None:
     runner = remote.runner(DESTINATION)
-    created = await runner.create(idempotency_key=OPEN_KEY, spec=MessageToDict(spec), setup_script="exit 42")
+    created = await runner.create(session_id=uuid4(), spec=MessageToDict(spec), setup_script="exit 42")
     opened = created.attached
     async with asyncio.timeout(15):
         while opened.setup_state == runner_pb2.SETUP_STATE_RUNNING:
@@ -292,11 +292,11 @@ async def test_invalid_launch_and_failed_bootstrap_never_create(
     invalid_specs: list[dict[str, object]] = [{}, {"harness": "HARNESS_CODEX", "model": "m"}]
     for invalid in invalid_specs:
         with pytest.raises(ServiceError) as rejected:
-            await runner.create(idempotency_key=OPEN_KEY, spec=invalid)
+            await runner.create(session_id=uuid4(), spec=invalid)
         assert rejected.value.code == grpc.StatusCode.INVALID_ARGUMENT
     cluster.set_binding(SandboxBinding(bootstrap="exit 42"))
     with pytest.raises(RunnerError):
-        await runner.create(idempotency_key=OPEN_KEY, spec=MessageToDict(spec))
+        await runner.create(session_id=uuid4(), spec=MessageToDict(spec))
     assert not await runner.list_sessions()
 
 

@@ -122,7 +122,7 @@ class Agent:
         """Open a session, waiting out a runner that is up but not yet listening.
 
         A Running Sandbox's runner may not answer yet. Retry that `503` with the same
-        idempotency key; other HTTP errors fail immediately.
+        Session ID; other HTTP errors fail immediately.
 
         `instructions` are the session's standing orders, in front of the model on every turn; empty
         is the proto's own default and opens the session the runner would open without the field.
@@ -131,10 +131,10 @@ class Agent:
             harness=harness, cwd=WORKING_DIRECTORY, model=model, reasoning_effort="low", instructions=instructions
         )
         # Retry the same desired session even if an earlier Open reached the runner.
-        key = f"acceptance-{uuid4().hex[:8]}"
+        session_id = uuid4()
         async for attempt in runner_startup_retries():
             with attempt:
-                attachment = await client.create_session(sandbox, key, overrides=MessageToDict(spec))
+                attachment = await client.create_session(sandbox, session_id, overrides=MessageToDict(spec))
                 thread = await client.thread(UUID(attachment.attached.session_id))
                 return cls(client, thread_id=thread.id, cursor=attachment.last_cursor)
         raise AssertionError("unreachable: reraise=True either returns an agent or raises")

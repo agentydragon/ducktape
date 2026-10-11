@@ -43,7 +43,9 @@ class NewSession(BaseModel):
     spec: dict[str, object] = Field(
         description="Explicit proto-JSON SessionSpec fields; Sandbox-bound defaults fill omitted fields."
     )
-    idempotency_key: str = Field(min_length=1)
+    session_id: UUID = Field(
+        description="A fresh UUID the client minted for this Session; a retry of the same Open repeats it."
+    )
     setup_script: str | None = Field(default=None, max_length=65_536)
 
 
@@ -87,12 +89,12 @@ class RunnerBridge:
         return await self._runners.client(sandbox).list_sessions()
 
     async def create_session(
-        self, sandbox: str, idempotency_key: str, spec: dict[str, object], setup_script: str | None = None
+        self, sandbox: str, session_id: UUID, spec: dict[str, object], setup_script: str | None = None
     ) -> protocol_pb2.Attached:
         """Use the service's public ID; the app only materializes its Thread projection."""
         try:
             created = await self._runners.client(sandbox).create(
-                idempotency_key=idempotency_key, spec=spec, setup_script=setup_script
+                session_id=session_id, spec=spec, setup_script=setup_script
             )
         except (ValueError, ParseError) as error:
             raise MalformedMessageError(f"invalid session overrides: {error}") from error
@@ -106,13 +108,14 @@ class RunnerBridge:
         attached.CopyFrom(created.attached)
         return attached
 
-    async def lookup_session(self, sandbox: str, idempotency_key: str) -> OpenStatus:
+    async def lookup_session(self, sandbox: str, session_id: UUID) -> OpenStatus:
         """Reconcile a lost Open without replaying its potentially secret-bearing inputs.
 
         A reservation is not proof the runner accepted Open; only inventory permits a
         Thread projection. Never return the summary (which includes the frozen spec).
         """
-        result = await self._runners.client(sandbox).lookup(idempotency_key=idempotency_key)
+        # The create sent the Session ID as its Open key too.
+        result = await self._runners.client(sandbox).lookup(idempotency_key=str(session_id))
         if not result.session_id:
             return OpenStatus(status="absent")
         if result.failed:
@@ -243,11 +246,9 @@ async def list_sessions(bridge: Bridge, name: str) -> list[dict[str, object]]:
 @router.post("", status_code=status.HTTP_201_CREATED)
 async def create_session(bridge: Bridge, name: str, body: NewSession) -> dict[str, object]:
     _parse(protocol_pb2.SessionSpec(), body.spec)  # Validate without losing explicit empty overrides.
-    return MessageToDict(await bridge.create_session(name, body.idempotency_key, body.spec, body.setup_script))
+    return MessageToDict(await bridge.create_session(name, body.session_id, body.spec, body.setup_script))
 
 
 @router.get("/open", response_model=OpenStatus)
-async def lookup_session(bridge: Bridge, name: str, idempotency_key: str) -> OpenStatus:
-    if not idempotency_key or len(idempotency_key) > 128:
-        raise MalformedMessageError("Open key is required and must not exceed 128 characters")
-    return await bridge.lookup_session(name, idempotency_key)
+async def lookup_session(bridge: Bridge, name: str, session_id: UUID) -> OpenStatus:
+    return await bridge.lookup_session(name, session_id)

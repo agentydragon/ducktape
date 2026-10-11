@@ -26,7 +26,67 @@ def registry(engine: AsyncEngine) -> SessionRegistry:
     return SessionRegistry(engine)
 
 
-async def test_reservation_is_stable_across_retries_and_replicas(
+async def test_client_session_id_is_stable_across_retries_and_replicas(
+    registry: SessionRegistry, engine: AsyncEngine
+) -> None:
+    replica = SessionRegistry(engine)
+    uid = uuid4()
+    session_id = uuid4()
+
+    async def reserve(
+        on: SessionRegistry,
+        *,
+        requested: UUID = session_id,
+        key: str | None = None,
+        caller_name: str = "app",
+        sandbox_uid: UUID = uid,
+        payload: bytes = b"spec",
+        launch: str = "frozen",
+    ) -> OpenReservation:
+        return await on.reserve(
+            session_id=requested,
+            caller_namespace="testing",
+            caller_name=caller_name,
+            sandbox_namespace="testing",
+            sandbox_name="worker",
+            sandbox_uid=sandbox_uid,
+            open_key=key,
+            open_request=payload,
+            launch_spec=lambda candidate: f"{launch} {candidate}".encode(),
+        )
+
+    first, second = await asyncio.gather(reserve(registry), reserve(replica))
+    assert first == second == OpenReservation(session_id, f"frozen {session_id}".encode())
+    assert await reserve(replica, launch="changed default should be ignored") == first
+    # The client's ID is the runner's Session ID too.
+    assert await registry.runner_id(
+        session_id, sandbox_namespace="testing", sandbox_name="worker", sandbox_uid=uid
+    ) == str(session_id)
+    with pytest.raises(HistoryConflictError, match="different inputs"):
+        await reserve(registry, payload=b"different caller request")
+    with pytest.raises(HistoryConflictError, match="could not be reserved"):
+        await reserve(registry, caller_name="other")
+    with pytest.raises(HistoryConflictError, match="could not be reserved"):
+        await reserve(registry, sandbox_uid=uuid4())
+    assert await reserve(replica) == first  # a refused retry does not change the reservation
+
+    keyed = await reserve(registry, requested=uuid4(), key="open-1")
+    assert (
+        await replica.lookup_open(
+            caller_namespace="testing",
+            caller_name="app",
+            sandbox_namespace="testing",
+            sandbox_name="worker",
+            sandbox_uid=uid,
+            open_key="open-1",
+        )
+        == keyed.session_id
+    )
+    with pytest.raises(HistoryConflictError, match="could not be reserved"):
+        await reserve(registry, requested=uuid4(), key="open-1")
+
+
+async def test_service_minted_reservation_is_stable_across_retries_and_replicas(
     registry: SessionRegistry, engine: AsyncEngine
 ) -> None:
     replica = SessionRegistry(engine)
@@ -42,6 +102,7 @@ async def test_reservation_is_stable_across_retries_and_replicas(
         launch: str = "frozen",
     ) -> OpenReservation:
         return await on.reserve(
+            session_id=None,
             caller_namespace="testing",
             caller_name=caller_name,
             sandbox_namespace="testing",

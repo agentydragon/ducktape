@@ -331,7 +331,6 @@ flowchart LR
     VM_EGRESS[Candidate: production admission and egress integration]
     VM_PROCESS_ISOLATION[Blocked: harness/process resource boundary]
     VM_LIFECYCLE[Blocked: integrated lifecycle]
-    CLIENT_SESSION_IDS[Clients mint Session IDs] --> RUNNER_OUTBOUND_ROLLOUT
     SEAL_ON_INGRESS_ACK[Seal waits on the ingress acknowledgement] --> RUNNER_OUTBOUND_ROLLOUT
     PROTO_DIRECTORY[Protos under agentplane/proto] --> RUNNER_OUTBOUND_ROLLOUT
     RUNNER_CONTROL_RENAME[Name the runner's control endpoint control] --> RUNNER_OUTBOUND_ROLLOUT
@@ -911,7 +910,6 @@ nodes and section 9 are unaffected.
 
 ```mermaid
 flowchart TD
-    CLIENT_SESSION_IDS[Candidate: clients mint Session IDs]
     SEAL_ON_INGRESS_ACK[Candidate: seal waits on the ingress acknowledgement]
     RUNNER_OUTBOUND_ROLLOUT[Every template dials out]
     LEGACY_SANDBOX_RETIRE[Retire pre-cutover Sandboxes]
@@ -923,8 +921,6 @@ flowchart TD
     COMMAND_RECORDS_RETIRE[Unscheduled: drop command submission records]
     RUNNER_CONTROL_RENAME[Candidate: name the runner's control endpoint control]
     RUNNER_CONTROL_RENAME --> RUNNER_OUTBOUND_ROLLOUT
-    CLIENT_SESSION_IDS --> RUNNER_OUTBOUND_ROLLOUT
-    CLIENT_SESSION_IDS --> RUNNER_INBOUND_RETIRE[Retire inbound runner access]
     SEAL_ON_INGRESS_ACK --> RUNNER_OUTBOUND_ROLLOUT
     RUNNER_OUTBOUND_ROLLOUT --> LEGACY_SANDBOX_RETIRE
     LEGACY_SANDBOX_RETIRE --> FOLLOW_PATH_RETIRE
@@ -932,15 +928,6 @@ flowchart TD
     AGENTPLANE_SANDBOX_RESOURCE -. to seal a suspended Sandbox on delete .-> SEAL_FINALIZER
     POD_INCARNATION -. if chosen, rewrites .-> SESSION_STATE_VOLUME_DESIGN[State volume design]
 ```
-
-### `CLIENT_SESSION_IDS` — clients mint Session IDs
-
-**Candidate; operator, 2026-10-10 PDT.** The client puts a fresh UUID in the
-create-session control message; the runner journals it and announces the Session on ingress (`announce`), and
-the History Service's index becomes the record of which Sessions exist. The hub keeps only what it
-needs to route: Session to Sandbox. `CreateSession` stops minting the runner Session ID it passes
-in `OpenSession` (#9858). A retried create carries the same ID, so the Open reservation and
-`LookupSession`, which reconciles it by scanning the journal over the inbound API, are deleted.
 
 ### `SEAL_ON_INGRESS_ACK` — seal waits on the ingress acknowledgement
 

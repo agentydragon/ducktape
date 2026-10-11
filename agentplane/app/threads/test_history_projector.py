@@ -649,7 +649,7 @@ async def test_discovery_racing_open_agrees_on_the_service_id(engine: AsyncEngin
     try:
         await coordinator.reconcile()
         assert await logs.service_session(public_id) == ServiceSessionReference("sb-1", str(public_id))
-        attached = await bridge.create_session("sb-1", "open-key", {})
+        attached = await bridge.create_session("sb-1", public_id, {})
         assert attached.session_id == str(public_id)
         assert await logs.service_session(public_id) == ServiceSessionReference("sb-1", str(public_id))
     finally:

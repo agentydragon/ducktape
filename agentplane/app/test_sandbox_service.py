@@ -3,7 +3,7 @@
 import logging
 from collections.abc import AsyncIterator
 from pathlib import Path
-from uuid import UUID
+from uuid import UUID, uuid4
 
 import pytest
 import pytest_bazel
@@ -81,11 +81,9 @@ async def test_production_bridge_archives_native_evidence_across_bounded_service
         bridge = RunnerBridge(runners=directory, event_logs=event_logs, content=content, ingester=ingester)
         try:
             with pytest.raises(MalformedMessageError):
-                await bridge.create_session(
-                    SANDBOX, "invalid-overrides", {"reasoning_effort": "low", "reasoningEffort": "high"}
-                )
+                await bridge.create_session(SANDBOX, uuid4(), {"reasoning_effort": "low", "reasoningEffort": "high"})
             assert not runner.runner.sessions
-            opened = await bridge.create_session(SANDBOX, "remote-app", MessageToDict(spec))
+            opened = await bridge.create_session(SANDBOX, uuid4(), MessageToDict(spec))
             assert "Backend guidance" in opened.spec.instructions
             thread = UUID(opened.session_id)
             first = command_pb2.Command(command_id="remote-first", submit_input=command_pb2.SubmitInput(text="first"))
@@ -116,7 +114,7 @@ async def test_production_bridge_archives_native_evidence_across_bounded_service
                 stop=stop_after_delay(15), wait=wait_fixed(0.1), retry=retry_if_exception_type(AssertionError)
             ):
                 with attempt:
-                    native = await runner.runner.sessions[f"r-{thread}"].journal.since(0, limit=1000)
+                    native = await runner.runner.sessions[str(thread)].journal.since(0, limit=1000)
                     archived = await event_logs.events(thread, limit=1000)
                     assert archived == native
                     assert any(entry.event.HasField("harness_exited") for entry in archived)
@@ -158,7 +156,7 @@ async def test_history_service_reads_match_the_app_projection(
         ingester = Ingester(runners=directory, event_logs=event_logs, ingestion=ingestion)
         bridge = RunnerBridge(runners=directory, event_logs=event_logs, content=content, ingester=ingester)
         try:
-            thread = UUID((await bridge.create_session(SANDBOX, "parity", MessageToDict(spec))).session_id)
+            thread = UUID((await bridge.create_session(SANDBOX, uuid4(), MessageToDict(spec))).session_id)
             command = command_pb2.Command(command_id="parity-first", submit_input=command_pb2.SubmitInput(text="first"))
             await bridge.command(thread, command)
             await model.reply(await model.request(), Text("FIRST"))
