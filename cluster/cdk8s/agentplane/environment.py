@@ -131,6 +131,9 @@ class Environment:
     history_writer: HistoryWriter
     # Whether the History Service rebuilds the thread fold from the raw log beside the app's.
     fold_shadow: bool
+    # Whether the History Service's writers remove an item's streamed delta entries once its
+    # completion provably holds them (agentplane/history_service/README.md#delta-settlement).
+    settle_deltas: bool
     # Which fold the app reads Threads from; the app's Electric upstream follows it.
     thread_reads: ThreadReads
     # Whether the Sandbox Service points every new Sandbox's runner at its runner channel

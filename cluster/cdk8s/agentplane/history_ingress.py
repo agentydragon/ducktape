@@ -89,6 +89,7 @@ class HistoryIngress(Construct):
                 "writer_namespaces": [env.namespace],
                 "port": endpoint.port.number,
                 "health_port": _HEALTH.number,
+                "settle_deltas": env.settle_deltas,
             },
             path="/etc/agentplane-history-ingress/config.yaml",
             supplied=[("database_url",)],

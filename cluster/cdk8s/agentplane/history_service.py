@@ -91,7 +91,10 @@ class HistoryService(Construct):
                     "token_file": f"{_SANDBOX_SERVICE_TOKEN_DIR}/token",
                     "grpc_channel_options": env.app_config.sandbox_service_grpc_channel_options,
                 },
-                "ingester": {"enabled": env.history_writer is HistoryWriter.HISTORY_SERVICE},
+                "ingester": {
+                    "enabled": env.history_writer is HistoryWriter.HISTORY_SERVICE,
+                    "settle_deltas": env.settle_deltas,
+                },
                 "fold_shadow": env.fold_shadow,
             },
             path="/etc/agentplane-history-service/config.yaml",

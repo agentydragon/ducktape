@@ -3192,6 +3192,7 @@ data:
         grpc.max_receive_message_length: 33554432
     ingester:
       enabled: true
+      settle_deltas: false
     fold_shadow: true
 immutable: false
 ---
@@ -3463,6 +3464,7 @@ data:
       - agentplane-staging
     port: 8080
     health_port: 8081
+    settle_deltas: false
 immutable: false
 ---
 apiVersion: apps/v1
