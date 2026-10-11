@@ -420,6 +420,9 @@ const SPEC: SessionSpec = create(SessionSpecSchema, {
 const IDLE_THREAD = "5f1c4a2e-0000-4000-8000-000000000001";
 const UNNAMED_STOPPED_THREAD = "5f1c4a2e-0000-4000-8000-000000000000";
 const RUNNING_THREAD = "5f1c4a2e-0000-4000-8000-000000000002";
+const NOTICE_QUEUED_THREAD = "5f1c4a2e-0000-4000-8000-000000000007";
+const NOTICE_DELIVERED_THREAD = "5f1c4a2e-0000-4000-8000-000000000008";
+const NOTICE_FAILED_THREAD = "5f1c4a2e-0000-4000-8000-000000000009";
 
 const SESSIONS: SessionSummary[] = [
   create(SessionSummarySchema, {
@@ -484,12 +487,54 @@ const THREADS: ThreadView[] = [
 ];
 
 /**
- * The sidebar's cross-sandbox fixture: the three THREADS above
+ * The sidebar's cross-sandbox fixture: the three THREADS above and one per notice badge state
  * (all `ready-sandbox`), one each for the pending and suspended sandboxes, one archived, and one whose
  * `sandbox` names no live SandboxView at all -- the struck-through, read-only group.
  */
 const THREADS_WITH_SANDBOXES: ThreadView[] = [
   ...THREADS,
+  {
+    id: NOTICE_QUEUED_THREAD,
+    sandbox: "ready-sandbox",
+    harness: "HARNESS_CLAUDE",
+    model: "harness-claude-model",
+    cwd: "/state/work",
+    created_at: ago(3 * HOUR),
+    name: "Notice-queued thread",
+    archived: false,
+    last_cursor: 7,
+    last_event_at: ago(2 * 60_000),
+    harness_state: "HARNESS_STATE_RUNNING",
+    feed_status: "active",
+  },
+  {
+    id: NOTICE_DELIVERED_THREAD,
+    sandbox: "ready-sandbox",
+    harness: "HARNESS_CLAUDE",
+    model: "harness-claude-model",
+    cwd: "/state/work",
+    created_at: ago(3 * HOUR),
+    name: "Notice-delivered thread",
+    archived: false,
+    last_cursor: 7,
+    last_event_at: ago(3 * 60_000),
+    harness_state: "HARNESS_STATE_RUNNING",
+    feed_status: "active",
+  },
+  {
+    id: NOTICE_FAILED_THREAD,
+    sandbox: "ready-sandbox",
+    harness: "HARNESS_CLAUDE",
+    model: "harness-claude-model",
+    cwd: "/state/work",
+    created_at: ago(3 * HOUR),
+    name: "Notice-failed thread",
+    archived: false,
+    last_cursor: 7,
+    last_event_at: ago(4 * 60_000),
+    harness_state: "HARNESS_STATE_STOPPED",
+    feed_status: "active",
+  },
   {
     id: "5f1c4a2e-0000-4000-8000-000000000003",
     sandbox: "pending-sandbox",
@@ -1918,7 +1963,6 @@ const MCP_GROUPS: ActionGroupView[] = [
 ];
 
 let notificationStatusUnavailable = false;
-let threadNoticesShown = false;
 let notificationExtraEntry = false;
 let pushBrowserAdded = false;
 let connectionRenamed = false;
@@ -2714,20 +2758,16 @@ class HarnessEventSource extends EventTarget {
       return;
     }
     if (url.pathname === "/threads/notices/stream") {
-      // By thread: one with notices waiting, one with a delivered notice the agent has not
-      // acknowledged, and one whose delivery failed.
-      const states: Record<string, Partial<InboxNoticeState>> = threadNoticesShown
-        ? {
-            [IDLE_THREAD]: {
-              queued: 2,
-              notice: "confirmed",
-              notice_wait_reason: "debouncing",
-              eligible_at: ago(-90_000),
-            },
-            [RUNNING_THREAD]: { unacknowledged: 1, notice: "confirmed" },
-            "5f1c4a2e-0000-4000-8000-000000000003": { queued: 1, notice: "attempted", error: "runner unreachable" },
-          }
-        : {};
+      const states: Record<string, Partial<InboxNoticeState>> = {
+        [NOTICE_QUEUED_THREAD]: {
+          queued: 2,
+          notice: "confirmed",
+          notice_wait_reason: "debouncing",
+          eligible_at: ago(-90_000),
+        },
+        [NOTICE_DELIVERED_THREAD]: { unacknowledged: 1, notice: "confirmed" },
+        [NOTICE_FAILED_THREAD]: { queued: 1, notice: "attempted", error: "runner unreachable" },
+      };
       const inboxes = url.searchParams
         .getAll("thread_id")
         .filter((session) => session in states)
@@ -2743,6 +2783,8 @@ class HarnessEventSource extends EventTarget {
           ...states[session],
         }));
       this.dispatchEvent(new MessageEvent("snapshot", { data: JSON.stringify({ observed_at: ago(0), inboxes }) }));
+      // A dropped Thread listing takes the notice stream down with it, so the badges show stale too.
+      if (dropThreadStream) this.drop();
       return;
     }
     const sandbox = url.pathname.startsWith("/live/sandboxes/") ? url.pathname.slice("/live/sandboxes/".length) : null;
@@ -2957,9 +2999,6 @@ const visualHarness = {
   publishMcpHealthChange(): void {
     mcpHealthChanged = true;
     HarnessEventSource.publishMcp("/action-groups/stream");
-  },
-  showThreadNotices(): void {
-    threadNoticesShown = true;
   },
   setNotificationStatusUnavailable(unavailable: boolean): void {
     notificationStatusUnavailable = unavailable;
