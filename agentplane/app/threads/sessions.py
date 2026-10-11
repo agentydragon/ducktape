@@ -12,6 +12,8 @@ from agentplane.sandbox_service.models import SandboxNotFoundError
 
 # gazelle:include_dep @pypi//protobuf
 # gazelle:include_dep @pypi//types_protobuf
+# The gateway's message stubs, which the mypy aspect resolves for direct deps only.
+# gazelle:include_dep //agentplane/proto:runner_gateway_pb2
 
 
 class SandboxNotReachableError(Exception):
