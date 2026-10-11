@@ -282,8 +282,8 @@ The [DAG VM lane](task_dag.md#4-vm-environment-phases) now sequences these separ
 
 - `RUNNER_OUTBOUND_ROLLOUT`: makes outbound delivery, which keeps command/Event semantics, the
   default for new container Sandboxes.
-- `VM_CONTROL_NETWORKING`: implement the chosen route after the transport decision and provider,
-  depending on outbound transport only if selected. Gate integrated VM lifecycle on this path.
+- `VM_CONTROL_NETWORKING`: wire the guest runner's outbound channel on the VM network after the
+  provider. Gate integrated VM lifecycle on this path.
 - `VM_IMAGE`: digest-pinned guest and bounded retained storage, tested with both harnesses.
 - `VM_PROVIDER`: typed provider/API, reconciliation, grants and UI. Review its service contracts
   and schema rollout; design and image work can proceed independently.

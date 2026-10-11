@@ -125,7 +125,7 @@ When enabling a hosted harness feature: isolate hosted configuration from determ
 
 ### `DT` — driver-provided declarations and background control
 
-Previously P2, still deferred. [Driver tools/background plan](driver_tools_and_background.md); reuse Action contracts, preceded by hosted/capture config isolation.
+[Driver tools/background plan](driver_tools_and_background.md); reuse Action contracts, preceded by hosted/capture config isolation.
 
 ### `HARNESS_MCP_TASKS_EVAL` — compare with Action receipts
 
@@ -201,7 +201,7 @@ Equivalent conditional evidence for Codex; no generic success claim across harne
 
 ### `RUNNER_CENTRAL_ADMISSION` — durable commands at the central authority
 
-Conditional on the authority decision, after archive cutover. Durable central admission/redelivery is distinct from storing input annotations.
+Conditional on the authority decision. Durable central admission/redelivery is distinct from storing input annotations.
 
 ### `RUNNER_OUTBOUND_CUTOVER` — migrate to thin, outbound-connected adapters
 

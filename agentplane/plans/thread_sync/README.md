@@ -37,13 +37,6 @@ would be for.
    - Shapes against `ELECTRIC_MAX_SHAPES`: one entity shape per thread, plus one per payload field
      in use.
 
-## Accepted browser-cache tradeoff (D6)
-
-The store retains loaded rows and bodies until the Thread closes; long content remains
-load-on-demand. The owner accepts this cache growth for now. Bounding browser cache state remains a
-desire, not an open Electric adoption gate. If resource pressure makes eviction worthwhile, the
-deferred design and evidence are in <../../docs/thread_view_sync.md#accepted-browser-cache-state-d6>.
-
 ## A second implementation
 
 <seams.md> is where one plugs in, so several can live on `devel` at once and a deployment picks
@@ -80,5 +73,6 @@ files, not measurements. Rows where every column is `+` are left out.
 | D3 incremental           | +                   | +           | +             | ~        |
 
 The window poll's `−` cells are one omission — the client never says what it holds — and adding it
-is the moving window. Electric's `−` on D6 is the accepted browser-cache tradeoff above; its `~` on E5 is
+is the moving window. Electric's `−` on D6 is an accepted tradeoff
+(<../../docs/thread_view_sync.md#accepted-browser-cache-state-d6>); its `~` on E5 is
 <../../docs/thread_sync_electric_limits.md> § What does not.
