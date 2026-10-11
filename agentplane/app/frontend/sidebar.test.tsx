@@ -746,22 +746,23 @@ it("keeps the scroll recorder in the lower-left sidebar across a threadless rout
   expect(stopRecording).toHaveBeenCalledOnce();
 });
 
-it("marks each listed thread's queued, delivered and failed notifications without acknowledging any", async () => {
+it("counts each listed thread's unprocessed notifications and flags failed delivery without acknowledging any", async () => {
   const sandboxes = { box: sandbox("box") };
   const threads = [
-    thread({ id: "00000000-0000-4000-8000-000000000001", sandbox: "box", name: "Queued thread" }),
-    thread({ id: "00000000-0000-4000-8000-000000000002", sandbox: "box", name: "Delivered thread" }),
-    thread({ id: "00000000-0000-4000-8000-000000000003", sandbox: "box", name: "Failed thread" }),
+    thread({ id: "00000000-0000-4000-8000-000000000001", sandbox: "box", name: "Three unprocessed thread" }),
+    thread({ id: "00000000-0000-4000-8000-000000000002", sandbox: "box", name: "One unprocessed thread" }),
+    thread({ id: "00000000-0000-4000-8000-000000000003", sandbox: "box", name: "Delivery-failed thread" }),
     thread({
       id: "00000000-0000-4000-8000-000000000004",
       sandbox: "box",
-      name: "Acknowledged thread",
+      name: "Empty-inbox thread",
     }),
   ];
   const { noticeUrls } = await render(threads, sandboxes, {
     notices: {
       "00000000-0000-4000-8000-000000000001": {
         queued: 2,
+        unacknowledged: 1,
         notice_wait_reason: "debouncing",
         eligible_at: "2026-01-01T00:05:00Z",
       },
@@ -772,12 +773,15 @@ it("marks each listed thread's queued, delivered and failed notifications withou
   });
   await act(async () => {});
   expect(new URL(noticeUrls[0], "http://test").searchParams.getAll("thread_id")).toEqual(threads.map(({ id }) => id));
-  const state = (name: string): string | null | undefined =>
-    row(name).querySelector(".agentplane-sidebar-row-notices")?.getAttribute("data-state");
-  expect(state("Queued thread")).toBe("queued");
-  expect(state("Delivered thread")).toBe("delivered");
-  expect(state("Failed thread")).toBe("error");
-  expect(state("Acknowledged thread")).toBeUndefined();
+  const badge = (name: string): [string | null, string | null] | undefined => {
+    const element = row(name).querySelector(".agentplane-sidebar-row-notices");
+    return element === null ? undefined : [element.getAttribute("data-state"), element.textContent];
+  };
+  // Queued and delivered-but-unacknowledged entries count alike: both still wait on the agent.
+  expect(badge("Three unprocessed thread")).toEqual(["pending", "3"]);
+  expect(badge("One unprocessed thread")).toEqual(["pending", "1"]);
+  expect(badge("Delivery-failed thread")).toEqual(["error", "1"]);
+  expect(badge("Empty-inbox thread")).toBeUndefined();
   // Viewing the list sends nothing back: only the agent acknowledges its inbox.
   expect(fetchMock.mock.calls.map(([request]) => request.method)).not.toContain("POST");
 });

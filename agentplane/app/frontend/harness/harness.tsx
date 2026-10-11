@@ -420,9 +420,9 @@ const SPEC: SessionSpec = create(SessionSpecSchema, {
 const IDLE_THREAD = "5f1c4a2e-0000-4000-8000-000000000001";
 const UNNAMED_STOPPED_THREAD = "5f1c4a2e-0000-4000-8000-000000000000";
 const RUNNING_THREAD = "5f1c4a2e-0000-4000-8000-000000000002";
-const NOTICE_QUEUED_THREAD = "5f1c4a2e-0000-4000-8000-000000000007";
-const NOTICE_DELIVERED_THREAD = "5f1c4a2e-0000-4000-8000-000000000008";
-const NOTICE_FAILED_THREAD = "5f1c4a2e-0000-4000-8000-000000000009";
+const THREE_UNPROCESSED_THREAD = "5f1c4a2e-0000-4000-8000-000000000007";
+const ONE_UNPROCESSED_THREAD = "5f1c4a2e-0000-4000-8000-000000000008";
+const DELIVERY_FAILED_THREAD = "5f1c4a2e-0000-4000-8000-000000000009";
 
 const SESSIONS: SessionSummary[] = [
   create(SessionSummarySchema, {
@@ -494,13 +494,13 @@ const THREADS: ThreadView[] = [
 const THREADS_WITH_SANDBOXES: ThreadView[] = [
   ...THREADS,
   {
-    id: NOTICE_QUEUED_THREAD,
+    id: THREE_UNPROCESSED_THREAD,
     sandbox: "ready-sandbox",
     harness: "HARNESS_CLAUDE",
     model: "harness-claude-model",
     cwd: "/state/work",
     created_at: ago(3 * HOUR),
-    name: "Notice-queued thread",
+    name: "Three unprocessed thread",
     archived: false,
     last_cursor: 7,
     last_event_at: ago(2 * 60_000),
@@ -508,13 +508,13 @@ const THREADS_WITH_SANDBOXES: ThreadView[] = [
     feed_status: "active",
   },
   {
-    id: NOTICE_DELIVERED_THREAD,
+    id: ONE_UNPROCESSED_THREAD,
     sandbox: "ready-sandbox",
     harness: "HARNESS_CLAUDE",
     model: "harness-claude-model",
     cwd: "/state/work",
     created_at: ago(3 * HOUR),
-    name: "Notice-delivered thread",
+    name: "One unprocessed thread",
     archived: false,
     last_cursor: 7,
     last_event_at: ago(3 * 60_000),
@@ -522,13 +522,13 @@ const THREADS_WITH_SANDBOXES: ThreadView[] = [
     feed_status: "active",
   },
   {
-    id: NOTICE_FAILED_THREAD,
+    id: DELIVERY_FAILED_THREAD,
     sandbox: "ready-sandbox",
     harness: "HARNESS_CLAUDE",
     model: "harness-claude-model",
     cwd: "/state/work",
     created_at: ago(3 * HOUR),
-    name: "Notice-failed thread",
+    name: "Delivery-failed thread",
     archived: false,
     last_cursor: 7,
     last_event_at: ago(4 * 60_000),
@@ -2759,14 +2759,15 @@ class HarnessEventSource extends EventTarget {
     }
     if (url.pathname === "/threads/notices/stream") {
       const states: Record<string, Partial<InboxNoticeState>> = {
-        [NOTICE_QUEUED_THREAD]: {
+        [THREE_UNPROCESSED_THREAD]: {
           queued: 2,
+          unacknowledged: 1,
           notice: "confirmed",
           notice_wait_reason: "debouncing",
           eligible_at: ago(-90_000),
         },
-        [NOTICE_DELIVERED_THREAD]: { unacknowledged: 1, notice: "confirmed" },
-        [NOTICE_FAILED_THREAD]: { queued: 1, notice: "attempted", error: "runner unreachable" },
+        [ONE_UNPROCESSED_THREAD]: { unacknowledged: 1, notice: "confirmed" },
+        [DELIVERY_FAILED_THREAD]: { queued: 1, notice: "attempted", error: "runner unreachable" },
       };
       const inboxes = url.searchParams
         .getAll("thread_id")

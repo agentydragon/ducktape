@@ -31,17 +31,18 @@ async def test_archived_thread_toggle(view: VisualPage, app: AgentplaneFixture) 
 
 
 async def expect_notice_badges(page: Page, *, stale: bool) -> None:
-    """The fixture's queued, delivered-but-unacknowledged and failed notice badges, one each, all
-    painted, and faded exactly when the notice stream is down."""
+    """The fixture's two unprocessed-count badges and one failed-delivery badge, all painted, and
+    faded exactly when the notice stream is down."""
     badges = page.locator(".agentplane-sidebar-row-notices")
-    for state in ["queued", "delivered", "error"]:
-        badge = badges.and_(page.locator(f'[data-state="{state}"]'))
+    for state, count in [("pending", 2), ("error", 1)]:
+        await expect(badges.and_(page.locator(f'[data-state="{state}"]'))).to_have_count(count)
+    for badge in await badges.all():
         await expect(badge).to_be_visible()
         await expect(badge).to_have_css("opacity", "0.5" if stale else "1")
 
 
 async def test_thread_notice_badges(view: VisualPage, app: AgentplaneFixture) -> None:
-    """Queued, delivered-but-unacknowledged and failed notification states on Thread rows."""
+    """Unprocessed-entry counts and a failed delivery on Thread rows; an empty inbox shows nothing."""
     await app.mount_app("/")
     await view.check(context="fixture ready")
     page = view.page

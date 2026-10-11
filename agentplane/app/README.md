@@ -638,9 +638,10 @@ indicator. It never sends that token or raw provider payloads to the browser, an
 browser operator login, not merely a workload bearer admitted elsewhere in the app. No inspection acknowledges an entry or changes a subscription. The drawer refreshes
 only while open and labels an unavailable backend or retained snapshot explicitly.
 
-The Thread list badges each listed thread whose live inboxes hold something: gray while entries
-wait for a notice (with the debounce's estimated due time), blue once a notice delivered entries the
-agent has not acknowledged, red when delivery failed. `/threads/notices/stream` relays the
+Each listed thread whose live inboxes hold entries the agent has not acknowledged gets a badge
+counting them, whether they still wait for a notice or a notice delivered them (the tooltip tells
+which, with the debounce's estimated due time). The badge turns red while delivery fails; an empty
+inbox shows none. `/threads/notices/stream` relays the
 Notification Service's `/operator/v1/notices/stream` for the listed thread IDs under the same
 operator-login and service-token rules; a disconnected stream dims the last badges. Following it
 acknowledges nothing.

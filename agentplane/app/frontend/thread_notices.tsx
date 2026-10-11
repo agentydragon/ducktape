@@ -68,9 +68,9 @@ function clock(value: string): string {
   return new Date(value).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 }
 
-/** A thread row's badge: red when delivery failed, blue for delivered entries the agent has not
- * acknowledged, gray for entries still waiting for a notice; nothing once everything is
- * acknowledged. */
+/** A thread row's badge: how many inbox entries the agent has not yet acknowledged, whether still
+ * waiting for a notice or delivered by one; red while delivery is failing; nothing once the inboxes
+ * are empty. */
 export function ThreadNoticeBadge({
   inboxes,
   live,
@@ -100,21 +100,20 @@ export function ThreadNoticeBadge({
         (eligible === undefined ? "" : `, due around ${clock(eligible)} (estimate; new events push it back)`),
     live ? null : "Notification status disconnected; this may be out of date.",
   ].filter((line): line is string => line !== null);
-  const [color, count] =
-    error !== null ? ["red", "!"] : unacknowledged > 0 ? ["blue", unacknowledged] : ["gray", queued];
+  const pending = queued + unacknowledged;
   return (
     <Tooltip label={lines.join("\n")} multiline style={{ whiteSpace: "pre-line" }} withArrow>
       <Badge
         className="agentplane-sidebar-row-notices"
-        data-state={error !== null ? "error" : unacknowledged > 0 ? "delivered" : "queued"}
+        data-state={error === null ? "pending" : "error"}
         size="xs"
         circle
-        variant={unacknowledged > 0 || error !== null ? "filled" : "light"}
-        color={color}
+        variant="filled"
+        color={error === null ? "blue" : "red"}
         aria-label={lines.join(". ")}
         style={live ? undefined : { opacity: 0.5 }}
       >
-        {count}
+        {pending === 0 ? "!" : pending}
       </Badge>
     </Tooltip>
   );
