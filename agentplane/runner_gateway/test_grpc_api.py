@@ -587,11 +587,7 @@ async def test_session_sandboxes_answer_from_the_registry_including_deleted_sand
     live_id, deleted_id, unknown_id = uuid4(), uuid4(), uuid4()
     await register(engine, live_id)
     await register_session(
-        engine,
-        deleted_id,
-        sandbox_namespace=SANDBOX_NAMESPACE,
-        sandbox_name="Deleted-Sandbox",
-        sandbox_uid=None,
+        engine, deleted_id, sandbox_namespace=SANDBOX_NAMESPACE, sandbox_name="Deleted-Sandbox", sandbox_uid=None
     )
     live = runner_gateway_pb2.SessionSandbox(
         session_id=str(live_id), sandbox_namespace=SANDBOX_NAMESPACE, sandbox=SANDBOX, sandbox_uid=SANDBOX_UID

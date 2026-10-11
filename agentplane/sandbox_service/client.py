@@ -222,6 +222,7 @@ class SandboxServiceClient:
     ) -> list[runner_gateway_pb2.SessionSandbox]:
         """Every Session in a Sandbox whose name `request` matches, deleted Sandboxes included."""
         return list((await self.unary(self.gateway.FindSessions, request)).sessions)
+
     async def command(self, session_id: str, command: command_pb2.Command) -> event_log_pb2.EventEntry:
         """Submit to a public Session; the Runner Gateway routes it to the Sandbox the Session runs in."""
         if self.command_admission_timeout_s is None:

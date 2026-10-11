@@ -17,7 +17,6 @@ from agentplane.postgres.wakeups import notify
 
 # Aliased: the gateway's Session row, beside SQLAlchemy sessions.
 from agentplane.runner_gateway.commands.db import Session as GatewaySession
-from agentplane.runner_gateway.session_registry import next_change_position
 
 
 def fixture_session_id(sandbox: str, session_id: str) -> UUID:
@@ -35,12 +34,7 @@ async def register_gateway_session(engine: AsyncEngine, session_id: UUID, *, san
         if await session.get(GatewaySession, session_id) is None:
             session.add(
                 GatewaySession(
-                    id=session_id,
-                    sandbox_namespace=SANDBOX_NAMESPACE,
-                    sandbox_name=sandbox,
-                    sandbox_uid=None,
-                    runner_session_id=str(session_id),
-                    change_position=await next_change_position(session),
+                    id=session_id, sandbox_namespace=SANDBOX_NAMESPACE, sandbox_name=sandbox, sandbox_uid=None
                 )
             )
 
