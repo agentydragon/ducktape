@@ -187,8 +187,10 @@ class Store:
                 appended.append(entry)
             if self._settle_deltas:
                 for entry in appended:
-                    if completion_target(entry) is not None:
-                        await _settle(session, session_id, entry)
+                    if completion_target(entry) is not None and (
+                        settled := await settlement_for(session, session_id, entry)
+                    ):
+                        await record_settlement(session, session_id, entry.cursor, settled)
             if appended:
                 await notify_history(session)
             return row.last_cursor
@@ -363,8 +365,10 @@ async def _settled_range(session: AsyncSession, session_id: UUID, cursor: int) -
     return candidate if candidate is not None and candidate.last_cursor >= cursor else None
 
 
-async def _settle(session: AsyncSession, session_id: UUID, completion: event_log_pb2.EventEntry) -> None:
-    """Settle the field `completion` completes, if its span qualifies; otherwise store nothing."""
+async def settlement_for(
+    session: AsyncSession, session_id: UUID, completion: event_log_pb2.EventEntry
+) -> history_pb2.SettledDeltas | None:
+    """The settlement of the field `completion` completes, if its stored span qualifies."""
     target = completion_target(completion)
     assert target is not None
     span = [completion]
@@ -380,7 +384,7 @@ async def _settle(session: AsyncSession, session_id: UUID, completion: event_log
             )
         ).all()
         if not rows or len(span) + len(rows) > _SETTLEMENT_SPAN_LIMIT:
-            return
+            return None
         for cursor, payload in rows:
             if floor is not None and cursor < floor:
                 break
@@ -391,12 +395,16 @@ async def _settle(session: AsyncSession, session_id: UUID, completion: event_log
                 floor = min([cursor, *entry.event.source_sequences])
         upper = rows[-1].cursor
     span.reverse()
-    settled = settle(span)
-    if settled is None:
-        return
+    return settle(span)
+
+
+async def record_settlement(
+    session: AsyncSession, session_id: UUID, completion_cursor: int, settled: history_pb2.SettledDeltas
+) -> None:
+    """Store `settled` and delete the entries in its ranges."""
     session.add(
         SessionEventSettlement(
-            session_id=session_id, completion_cursor=completion.cursor, payload=settled.SerializeToString()
+            session_id=session_id, completion_cursor=completion_cursor, payload=settled.SerializeToString()
         )
     )
     await session.flush()
@@ -406,7 +414,7 @@ async def _settle(session: AsyncSession, session_id: UUID, completion: event_log
                 session_id=session_id,
                 first_cursor=cursor_range.first,
                 last_cursor=cursor_range.last,
-                completion_cursor=completion.cursor,
+                completion_cursor=completion_cursor,
             )
         )
         await session.execute(

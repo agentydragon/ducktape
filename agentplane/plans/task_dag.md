@@ -553,14 +553,12 @@ flowchart TD
     APP_PROJECTOR_RETIRE[Candidate: delete app projector code]
     APP_PROJECTION_RETIRE[Blocked: drop app projection tables]
     HISTORY_SERVICE_OWNERSHIP[Capstone: History Service owns log and fold]
-    SESSION_EVENT_COMPACTION_PLAN[Decision: approve compaction of stored history]
-    SESSION_EVENT_COMPACTION[Blocked: settle stored history]
+    SESSION_EVENT_COMPACTION[Candidate: settle stored history]
     HISTORY_REPACK[Blocked: return freed space to the volume]
     APP_ALEMBIC_SQUASH[Baseline final app schema]
     THREAD_READ_POLICY[Scoped archive reads]
     APP_PROJECTOR_RETIRE --> APP_PROJECTION_RETIRE
     APP_PROJECTION_RETIRE --> HISTORY_SERVICE_OWNERSHIP
-    SESSION_EVENT_COMPACTION_PLAN --> SESSION_EVENT_COMPACTION
     SESSION_EVENT_COMPACTION --> HISTORY_REPACK
     APP_PROJECTION_RETIRE --> HISTORY_REPACK
     APP_PROJECTION_RETIRE -. smaller baseline, not required .-> APP_ALEMBIC_SQUASH
@@ -585,21 +583,18 @@ leases. The data is derived and rebuildable from the raw log.
 the only owner of the raw log and fold; the app is a facade over it. Each service's README states
 what unrelated agents can still do while it is down or rolling.
 
-### `SESSION_EVENT_COMPACTION_PLAN` — approve settling stored history
-
-**Decision.** A reviewed plan for a resumable one-off Job that settles stored Sessions with the same
-code: the Sessions it touches and what is lost. It deletes stored history, so it needs the
-operator's explicit approval.
-
 ### `SESSION_EVENT_COMPACTION` — settle stored history
 
-**Blocked on the approved plan.** Run the Job in testing, then staging, stopping and resuming
-cleanly. Backups keep the old rows until their retention expires.
+**Candidate; Delta settlement rollout lane.** The operator approved the plan on 2026-10-11, with a
+rollback dump. The `agentplane-history-compact` Job dry-runs on testing and staging; the operator
+approves `--apply` on those numbers. Apply runs after a `pg_dump` of the raw log tables to a PVC
+kept seven days, since the clusters keep no CNPG backups.
 
 ### `HISTORY_REPACK` — return freed space
 
-**Blocked on compaction and the app projection drop.** `pg_repack` (or `VACUUM FULL` in a window)
-on the log and projection tables; deleted rows otherwise stay as reusable space inside Postgres.
+**Blocked on compaction and the app projection drop.** `VACUUM FULL` in a window (the CNPG image
+ships no `pg_repack`) on the log and projection tables; deleted rows otherwise stay as reusable
+space inside Postgres.
 
 ## 8. Sessions that outlive their Sandbox
 

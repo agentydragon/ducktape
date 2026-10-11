@@ -122,7 +122,7 @@ async def record_thread_fold(
             await session.execute(
                 insert(ThreadNativeLink).values(**values, source_sequence=source_sequence).on_conflict_do_nothing()
             )
-    await _forget_settled(session, thread_id, result.state.position.projection_epoch, settlements)
+    await forget_settled(session, thread_id, result.state.position.projection_epoch, settlements)
     checkpoint_values = {
         "source_id": result.state.position.source_id,
         "projection_epoch": result.state.position.projection_epoch,
@@ -135,7 +135,7 @@ async def record_thread_fold(
     )
 
 
-async def _forget_settled(
+async def forget_settled(
     session: AsyncSession, thread_id: UUID, projection_epoch: str, settlements: Sequence[history_pb2.SettledDeltas]
 ) -> None:
     """Drop the evidence of deltas folded before their item settled; their cursors are gone.

@@ -44,6 +44,7 @@ IMAGES = (
     "agentplane-egress",
     "agentplane-egress-migrate",
     "agentplane-egress-sidecar",
+    "agentplane-history-compact",
     "agentplane-history-ingress",
     "agentplane-history-migrate",
     "agentplane-history-service",

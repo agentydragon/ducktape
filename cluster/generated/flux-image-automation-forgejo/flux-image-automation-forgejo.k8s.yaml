@@ -176,6 +176,31 @@ spec:
 apiVersion: image.toolkit.fluxcd.io/v1
 kind: ImageRepository
 metadata:
+  name: agentplane-history-compact
+  namespace: flux-system
+spec:
+  image: git.allegedly.works/ducktape-ci/agentplane-history-compact
+  interval: 5m
+  secretRef:
+    name: forgejo-images-creds
+---
+apiVersion: image.toolkit.fluxcd.io/v1
+kind: ImagePolicy
+metadata:
+  name: agentplane-history-compact
+  namespace: flux-system
+spec:
+  filterTags:
+    pattern: ^devel-\d{14}-[0-9a-f]{7}$
+  imageRepositoryRef:
+    name: agentplane-history-compact
+  policy:
+    alphabetical:
+      order: asc
+---
+apiVersion: image.toolkit.fluxcd.io/v1
+kind: ImageRepository
+metadata:
   name: agentplane-history-ingress
   namespace: flux-system
 spec:

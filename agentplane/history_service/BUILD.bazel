@@ -79,6 +79,55 @@ py_library(
 )
 
 py_library(
+    name = "compaction",
+    srcs = ["compaction.py"],
+    deps = [
+        ":fold_shadow",
+        "//agentplane/history_service/storage:db",
+        "//agentplane/history_service/storage:settlement",
+        "//agentplane/history_service/storage:store",
+        "//agentplane/proto:event_log_pb2",
+        "//agentplane/thread_fold:models",
+        "//agentplane/thread_fold:recording",
+        "@pypi//protobuf",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
+    name = "compaction_main",
+    srcs = ["compaction_main.py"],
+    deps = [
+        ":compaction",
+        "@pypi//asyncpg",
+        "@pypi//pydantic",
+        "@pypi//pydantic_settings",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_test(
+    name = "test_compaction",
+    size = "medium",
+    srcs = ["test_compaction.py"],
+    requires_docker = True,
+    deps = [
+        ":compaction",
+        ":conftest",
+        ":fold_shadow",
+        "//:conftest",
+        "//agentplane/history_service/storage:conftest",
+        "//agentplane/history_service/storage:db",
+        "//agentplane/history_service/storage:store",
+        "//agentplane/proto:event_log_pb2",
+        "//agentplane/sandbox_service/testing:delta_spans",
+        "//agentplane/thread_fold:models",
+        "@pypi//pytest_bazel",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
     name = "evidence",
     srcs = ["evidence.py"],
     deps = [
@@ -510,6 +559,31 @@ oci_image(
         ":ingress_layers",
         "//third_party/debian_slim:cacerts",
     ],
+    user = "1000:1000",
+    visibility = ["//visibility:public"],
+)
+
+aspect_py_binary(
+    name = "compaction_image_bin",
+    main = "compaction_main.py",
+    deps = [":compaction_main"],
+)
+
+py_image_layer(
+    name = "compaction_layers",
+    binary = ":compaction_image_bin",
+    group = "1000",
+    owner = "1000",
+)
+
+# The one-off Job that settles history stored before settlement.
+oci_image(
+    name = "compaction_image",
+    base = "@debian_trixie_slim_linux_amd64",
+    entrypoint = py_image_entrypoint("compaction_image_bin"),
+    env = py_image_env(binary_name = "compaction_image_bin"),
+    labels = {"org.opencontainers.image.source": "https://github.com/agentydragon/ducktape"},
+    tars = [":compaction_layers"],
     user = "1000:1000",
     visibility = ["//visibility:public"],
 )
