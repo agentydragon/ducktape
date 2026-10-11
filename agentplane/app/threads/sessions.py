@@ -8,7 +8,7 @@ from agentplane.app.threads.events.event_log import SessionNotRegisteredError
 from agentplane.changes import Changes
 from agentplane.proto.sandbox_service_pb2 import SandboxDestination, ServiceAccount
 from agentplane.sandbox_service.client import Runner, SandboxServiceClient
-from agentplane.sandbox_service.models import SandboxNotFoundError
+from agentplane.sandbox_service.errors import SandboxNotFoundError
 
 # gazelle:include_dep @pypi//protobuf
 # gazelle:include_dep @pypi//types_protobuf

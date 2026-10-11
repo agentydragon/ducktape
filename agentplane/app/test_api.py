@@ -30,7 +30,7 @@ from agentplane.app.testing.egress_proxy import FakeEgressAdmin, decision
 from agentplane.app.testing.history import SeededEventLogStore as EventLogStore
 from agentplane.app.testing.model_test_data import TEST_REASONING_EFFORTS
 from agentplane.app.threads.bridge import RunnerBridge
-from agentplane.app.threads.ingestion import Ingester
+from agentplane.app.threads.session_discovery import SessionDiscovery
 from agentplane.app.threads.sessions import SandboxSessions
 from agentplane.app.threads.store import ThreadStore
 from agentplane.app.threads.view.content import ContentStore
@@ -656,7 +656,7 @@ def test_a_runner_that_has_not_connected_is_a_503(
                 runners=runners,
                 event_logs=event_logs,
                 content=content,
-                ingester=Ingester(runners=runners, event_logs=event_logs),
+                discovery=SessionDiscovery(runners=runners, event_logs=event_logs),
             ),
             store,
             TEST_MODELS,
@@ -713,6 +713,7 @@ async def unanswered_command_service(
         SandboxServiceClient(
             f"127.0.0.1:{port}",
             gateway_target=f"127.0.0.1:{port}",
+            control_target=f"127.0.0.1:{port}",
             namespace="test",
             token_file=token_file,
             gateway_token_file=token_file,
@@ -749,10 +750,10 @@ async def test_unanswered_service_command_is_a_504_and_cancels_its_rpc(
     thread_id = await event_logs.seed("live", session_id)
     async with unanswered_command_service(tmp_path / "wedged-token") as (service, cancelled):
         runners = SandboxSessions(live_index, service)
-        ingester = Ingester(runners=runners, event_logs=event_logs)
+        discovery = SessionDiscovery(runners=runners, event_logs=event_logs)
         app = create_app(
             inventory,
-            RunnerBridge(runners=runners, event_logs=event_logs, content=content, ingester=ingester),
+            RunnerBridge(runners=runners, event_logs=event_logs, content=content, discovery=discovery),
             store,
             TEST_MODELS,
             egress,
@@ -782,7 +783,7 @@ async def test_unanswered_service_command_is_a_504_and_cancels_its_rpc(
                 assert response.status_code == 504, response.text
                 assert await cancelled.get() == session_id
         finally:
-            await ingester.close()
+            await discovery.close()
 
 
 def test_egress_lists_the_bindings_naming_the_sandbox(client: TestClient) -> None:

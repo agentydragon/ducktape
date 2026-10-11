@@ -44,7 +44,7 @@ from agentplane.runner_gateway.lifecycle_control import ConnectionNotHeldError, 
 from agentplane.runner_gateway.sealing import SEAL_S, Sealing
 from agentplane.runner_gateway.session_registry import SessionConflictError, SessionNotFoundError, SessionRegistry
 from agentplane.sandbox_service import wire
-from agentplane.sandbox_service.models import InventoryError, SandboxNotFoundError
+from agentplane.sandbox_service.errors import InventoryError, SandboxNotFoundError
 from agentplane.subjects import ServiceAccountRef
 from agentplane.workload_auth.grpc_caller import authenticate
 from agentplane.workload_auth.principal import WorkloadPrincipalRejectedError, WorkloadPrincipalResolver
@@ -244,8 +244,6 @@ class RunnerGateway(runner_gateway_pb2_grpc.RunnerGatewayServicer):
                 sandbox_name=request.sandbox.sandbox,
                 sandbox_uid=sandbox_uid,
             )
-            if isinstance(cwd := overrides.get("cwd"), str):
-                overrides["cwd"] = cwd.replace("{session_id}", str(session_id))
             spec = session_lifecycle.launch_spec(
                 sandbox_service_pb2.SessionDestination(sandbox=request.sandbox, session_id=str(session_id)),
                 overrides,

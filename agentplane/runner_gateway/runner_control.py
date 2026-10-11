@@ -22,7 +22,7 @@ from agentplane.runner_gateway.commands.dispatch import CommandKey, ReceiptMisma
 from agentplane.runner_gateway.commands.store import SubmissionConflictError
 from agentplane.runner_gateway.connection_records import ConnectionRecords, ConnectionSupersededError, RecordOwner
 from agentplane.runner_gateway.lifecycle_control import ControlConnection, LifecycleControl
-from agentplane.sandbox_service.models import SandboxNotFoundError
+from agentplane.sandbox_service.errors import SandboxNotFoundError
 from agentplane.sandbox_service.reader import SandboxReader
 from agentplane.workload_auth.grpc_caller import resolve_caller
 from agentplane.workload_auth.principal import (

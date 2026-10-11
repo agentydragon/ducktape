@@ -170,6 +170,7 @@ async def gateway_client(gateway_port: int, tmp_path: Path) -> AsyncIterator[San
     async with SandboxServiceClient(
         f"127.0.0.1:{gateway_port}",
         gateway_target=f"127.0.0.1:{gateway_port}",
+        control_target=f"127.0.0.1:{gateway_port}",
         namespace=SANDBOX_NAMESPACE,
         token_file=token_file,
         gateway_token_file=token_file,
@@ -227,11 +228,11 @@ async def thread_browser(
     server = grpc.aio.server()
     add_replication_source(source, server)
     async with (
-        serving(server, "127.0.0.1:0", grace_s=0) as runner_port,
+        serving(server, "127.0.0.1:0", grace_s=0) as service_port,
         source.ingesting(history),
         app_process(
             db_url,
-            runner_port,
+            service_port,
             history_client,
             frontend_directory=directory,
             replay_after=replay_after,

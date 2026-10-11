@@ -86,7 +86,13 @@ class Endpoint:
     wait_connected: Callable[[UUID], None]
 
     def client(self) -> SandboxServiceClient:
-        return connect(self.target, self.token_file, namespace=NAMESPACE, command_admission_timeout_s=20)
+        return connect(
+            self.target,
+            self.token_file,
+            namespace=NAMESPACE,
+            command_admission_timeout_s=20,
+            control_target=self.target,
+        )
 
 
 @contextmanager

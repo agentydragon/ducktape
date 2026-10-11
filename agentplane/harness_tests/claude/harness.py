@@ -16,7 +16,7 @@ MODEL = "agentplane-test/claude-haiku-4-5-20251001"
 
 
 @dataclass(frozen=True)
-class ClaudeHarness:
+class ClaudeLauncher:
     workspace: Path
     logs: Path
     config: Path

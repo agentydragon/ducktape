@@ -29,6 +29,8 @@ from agentplane.sandbox_service.runner_endpoints import RunnerEndpoints
 from agentplane.sandbox_service.session_config import LaunchGrants
 from agentplane.subjects import ServiceAccountRef
 
+logger = logging.getLogger(__name__)
+
 
 @dataclass(frozen=True)
 class Provisioning:
@@ -122,4 +124,4 @@ class Provisioning:
             try:
                 await self.ensure(sandbox)
             except Exception:
-                logging.getLogger(__name__).exception("provisioning incomplete for %s", sandbox.name)
+                logger.exception("provisioning incomplete for %s", sandbox.name)

@@ -1,6 +1,6 @@
 # Live capture probe
 
-`//agentplane/capture:live_capture` runs one Claude or Codex scenario against a real model
+`//agentplane/capture:demo_live_capture_bin` runs one Claude or Codex scenario against a real model
 endpoint and records the whole exchange: the native stdio frames on both sides and the upstream
 LiteLLM request/response bodies, passed through a header-blind recording proxy that can drop the
 connection at a named SSE packet. It is a discovery tool for provider behavior. The scenarios and
@@ -12,7 +12,7 @@ records cross-layer Claude/Codex and LiteLLM findings from these probes. Its ver
 observations are investigation evidence, not the current Agentplane configuration contract.
 
 ```sh
-bazel run //agentplane/capture:live_capture -- \
+bazel run //agentplane/capture:demo_live_capture_bin -- \
   --provider codex --scenario shell --binary /path/to/codex \
   --model cheap-model --endpoint http://litellm.example/v1 \
   --credential-file "$key_file" --workspace "$tmp/workspace" --output "$tmp/capture"

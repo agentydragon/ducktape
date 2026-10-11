@@ -119,7 +119,7 @@ async def test_archived_thread_page_survives_deleted_sandbox_and_reload(
     async with (
         app_process(
             db_url,
-            runner_port=gateway_port,
+            service_port=gateway_port,
             history=event_logs.reader,
             frontend_directory=directory,
             sandbox_present=False,
@@ -201,7 +201,7 @@ async def test_switching_threads_starts_at_each_threads_tail(
     async with (
         app_process(
             db_url,
-            runner_port=gateway_port,
+            service_port=gateway_port,
             history=event_logs.reader,
             frontend_directory=directory,
             sandbox_present=False,
@@ -248,7 +248,7 @@ async def test_returning_to_a_thread_lays_its_rows_out_at_the_heights_they_had(
     async with (
         app_process(
             db_url,
-            runner_port=gateway_port,
+            service_port=gateway_port,
             history=event_logs.reader,
             frontend_directory=directory,
             sandbox_present=False,
@@ -308,7 +308,7 @@ async def test_returning_to_a_thread_reads_only_what_changed_while_the_reader_wa
     async with (
         app_process(
             db_url,
-            runner_port=gateway_port,
+            service_port=gateway_port,
             history=event_logs.reader,
             frontend_directory=directory,
             sandbox_present=False,
@@ -554,10 +554,10 @@ async def test_projected_browser_streams_runner_events_and_loads_evidence_lazily
     server = grpc.aio.server()
     add_replication_source(source, server)
     async with (
-        serving(server, "127.0.0.1:0", grace_s=0) as runner_port,
+        serving(server, "127.0.0.1:0", grace_s=0) as service_port,
         source.ingesting(history),
         app_process(
-            db_url, runner_port, history_client, frontend_directory=directory, electric_url=electric.url
+            db_url, service_port, history_client, frontend_directory=directory, electric_url=electric.url
         ) as app,
         http2_proxy(app.url, certificate) as ingress,
         asyncio.timeout(60),

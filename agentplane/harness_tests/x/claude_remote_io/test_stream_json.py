@@ -10,7 +10,7 @@ import pytest
 import pytest_bazel
 
 from agentplane.harness_tests.claude import anthropic_sse as sse
-from agentplane.harness_tests.claude.harness import MODEL, ClaudeHarness
+from agentplane.harness_tests.claude.harness import MODEL, ClaudeLauncher
 from agentplane.harness_tests.claude.messages import AnthropicMessages
 from agentplane.native.claude import wire
 from util.bazel.runfiles import get_required_path
@@ -27,7 +27,7 @@ async def test_child_resume(tmp_path: Path, scenario: str) -> None:
     home.mkdir()
     config = home / ".claude"
     config.mkdir()
-    harness = ClaudeHarness(
+    harness = ClaudeLauncher(
         workspace=tmp_path,
         logs=logs,
         config=config,

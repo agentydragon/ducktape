@@ -10,7 +10,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from agentplane.crd_group import GROUP, VERSION
 from agentplane.egress.resources import EgressBinding, EgressCredential, EgressPolicy, Rule, Target
-from agentplane.sandbox_service.models import InventoryError
+from agentplane.sandbox_service.errors import InventoryError
 from agentplane.subjects import ServiceAccountRef
 from util.kubernetes import CustomObjectsClient
 

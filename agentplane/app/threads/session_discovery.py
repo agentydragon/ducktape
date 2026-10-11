@@ -12,7 +12,7 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from agentplane.app.threads.events.event_log import EventLogStore, SessionAdmissionError
 from agentplane.app.threads.sessions import SandboxNotReachableError, SandboxSessions
-from agentplane.sandbox_service.models import SandboxNotFoundError
+from agentplane.sandbox_service.errors import SandboxNotFoundError
 
 # gazelle:include_dep @pypi//grpcio
 
@@ -20,7 +20,7 @@ logger = logging.getLogger(__name__)
 RECONCILE_S: float = 2
 
 
-class Ingester:
+class SessionDiscovery:
     def __init__(self, *, runners: SandboxSessions, event_logs: EventLogStore) -> None:
         self._runners = runners
         self._event_logs = event_logs
@@ -31,7 +31,7 @@ class Ingester:
     async def start(self) -> None:
         """Start discovery, or wake it to reconcile now."""
         if self._coordinator is None:
-            self._coordinator = asyncio.create_task(self._coordinate(), name="sandbox-ingestion")
+            self._coordinator = asyncio.create_task(self._coordinate(), name="session-discovery")
         self._changed.set()
 
     async def _coordinate(self) -> None:
@@ -44,7 +44,7 @@ class Ingester:
             try:
                 await self.reconcile()
             except SQLAlchemyError, grpc.aio.AioRpcError, OSError:
-                logger.warning("sandbox ingestion reconciliation failed; will retry", exc_info=True)
+                logger.warning("session discovery failed; will retry", exc_info=True)
             with contextlib.suppress(TimeoutError):
                 await asyncio.wait_for(self._changed.wait(), timeout=RECONCILE_S)
 

@@ -51,7 +51,7 @@ py_library(
         "//agentplane/app:operator_sessions",
         "//agentplane/app/threads:bridge",
         "//agentplane/app/threads:history_watch",
-        "//agentplane/app/threads:ingestion",
+        "//agentplane/app/threads:session_discovery",
         "//agentplane/app/threads:sessions",
         "//agentplane/app/threads:store",
         "//agentplane/app/threads:summaries",

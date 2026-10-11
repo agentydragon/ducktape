@@ -9,8 +9,8 @@ from __future__ import annotations
 from dataclasses import dataclass, replace
 
 from agentplane.history_service.fold.views import CommandOutcome, PayloadField
+from agentplane.history_service.settled_cursors import next_stored
 from agentplane.proto import command_pb2, event_log_pb2, event_pb2
-from agentplane.sandbox_service.settled_cursors import next_stored
 
 
 class ObservationNotUnderstoodError(ValueError):

@@ -37,7 +37,7 @@ from agentplane.app.shutdown import drain_of
 from agentplane.app.testing.history import SeededEventLogStore as EventLogStore
 from agentplane.app.testing.model_test_data import TEST_REASONING_EFFORTS
 from agentplane.app.threads.bridge import RunnerBridge
-from agentplane.app.threads.ingestion import Ingester
+from agentplane.app.threads.session_discovery import SessionDiscovery
 from agentplane.app.threads.store import ThreadStore
 from agentplane.app.threads.view.content import ContentStore
 from agentplane.egress.decisions_client import DecisionsClient
@@ -53,6 +53,7 @@ APP_ENVIRONMENT = {
     "AGENTPLANE_SANDBOX_NAMESPACE": "test-sandbox-namespace",
     "AGENTPLANE_SANDBOX_SERVICE_TARGET": "sandbox-service.test:8080",
     "AGENTPLANE_RUNNER_GATEWAY_TARGET": "runner-gateway.test:8080",
+    "AGENTPLANE_SANDBOX_SERVICE_CONTROL_TARGET": "{sandbox}-control.{namespace}.test:8080",
     "AGENTPLANE_RUNNER_GATEWAY_TOKEN_FILE": "/tokens/runner-gateway",
     "AGENTPLANE_HISTORY_SERVICE_TARGET": "history-service.test:8080",
     "AGENTPLANE_DATABASE_URL": "postgresql+asyncpg://test@test.invalid/test",
@@ -206,7 +207,7 @@ async def _other_connections(database: AsyncEngine) -> int:
 
 
 @pytest.mark.usefixtures("sigterm_is_survivable")
-async def test_sigterm_ends_open_streams_fails_readiness_and_closes_the_ingester_and_database(
+async def test_sigterm_ends_open_streams_fails_readiness_and_closes_session_discovery_and_database(
     inventory: SandboxServiceClient,
     bridge: RunnerBridge,
     store: ThreadStore,
@@ -221,7 +222,7 @@ async def test_sigterm_ends_open_streams_fails_readiness_and_closes_the_ingester
     database: AsyncEngine,
     event_logs: EventLogStore,
     content: ContentStore,
-    ingester: Ingester,
+    discovery: SessionDiscovery,
     custom_objects: FakeCustomObjectsApi,
     core_v1: FakeCoreV1Api,
     electric_proxy: ElectricProxy,
@@ -260,7 +261,7 @@ async def test_sigterm_ends_open_streams_fails_readiness_and_closes_the_ingester
         drain_of(app),
     )
     serving = asyncio.create_task(
-        serve_then_close(server, ingester=ingester, database_updates=database_updates, engine=engine)
+        serve_then_close(server, discovery=discovery, database_updates=database_updates, engine=engine)
     )
     while not server.started:
         if serving.done():

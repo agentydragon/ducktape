@@ -48,6 +48,7 @@ async def service_client(
             token_file,
             namespace=resources.destinations.sandboxes.namespace,
             command_admission_timeout_s=resources.runner_admission_ack_timeout_s + 10,
+            control_target=target,
         ) as client,
     ):
         yield client

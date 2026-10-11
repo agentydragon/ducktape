@@ -124,11 +124,11 @@ py_library(
     name = "evidence",
     srcs = ["evidence.py"],
     deps = [
+        ":settled_cursors",
         ":thread_reads",
         "//agentplane/history_service/fold:models",
         "//agentplane/history_service/storage:store",
         "//agentplane/proto:history_service_pb2",
-        "//agentplane/sandbox_service:settled_cursors",
         "@pypi//protobuf",
         "@pypi//sqlalchemy",
     ],
@@ -470,4 +470,25 @@ oci_image(
     tars = [":compaction_layers"],
     user = "1000:1000",
     visibility = ["//visibility:public"],
+)
+
+py_library(
+    name = "settled_cursors",
+    srcs = ["settled_cursors.py"],
+    visibility = ["//agentplane:__subpackages__"],
+    deps = [
+        "//agentplane/proto:history_service_pb2",
+        "@pypi//protobuf",
+    ],
+)
+
+py_test(
+    name = "test_settled_cursors",
+    srcs = ["test_settled_cursors.py"],
+    deps = [
+        ":settled_cursors",
+        "//:conftest",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
 )

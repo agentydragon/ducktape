@@ -6,10 +6,10 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 from agentplane.history_service.fold.models import ThreadCheckpoint, ThreadEntity, ThreadEvidence, ThreadNativeLink
+from agentplane.history_service.settled_cursors import next_stored, settled_ranges
 from agentplane.history_service.storage.store import Store
 from agentplane.history_service.thread_reads import ThreadScopeResetError
 from agentplane.proto import history_service_pb2
-from agentplane.sandbox_service.settled_cursors import next_stored, settled_ranges
 
 # gazelle:include_dep @pypi//protobuf
 

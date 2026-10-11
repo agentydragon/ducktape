@@ -14,7 +14,7 @@ from tenacity import AsyncRetrying, retry_if_exception_type, stop_after_delay, w
 from agentplane.app.live import LiveIndex
 from agentplane.app.testing.history import SeededEventLogStore as EventLogStore
 from agentplane.app.threads.bridge import MalformedMessageError, RunnerBridge
-from agentplane.app.threads.ingestion import Ingester
+from agentplane.app.threads.session_discovery import SessionDiscovery
 from agentplane.app.threads.sessions import SandboxSessions
 from agentplane.app.threads.view.content import ContentStore
 from agentplane.history_service.testing.backend import ingest
@@ -70,8 +70,8 @@ async def test_production_bridge_archives_native_evidence_across_bounded_service
         ingest(service_history_db_url, runner.runner),
     ):
         directory = SandboxSessions(live_index, remote)
-        ingester = Ingester(runners=directory, event_logs=event_logs)
-        bridge = RunnerBridge(runners=directory, event_logs=event_logs, content=content, ingester=ingester)
+        discovery = SessionDiscovery(runners=directory, event_logs=event_logs)
+        bridge = RunnerBridge(runners=directory, event_logs=event_logs, content=content, discovery=discovery)
         try:
             with pytest.raises(MalformedMessageError):
                 await bridge.create_session(SANDBOX, uuid4(), {"reasoning_effort": "low", "reasoningEffort": "high"})
@@ -114,10 +114,10 @@ async def test_production_bridge_archives_native_evidence_across_bounded_service
             assert not [
                 record
                 for record in caplog.records
-                if record.name == "agentplane.app.threads.ingestion" and record.levelno >= logging.WARNING
+                if record.name == "agentplane.app.threads.session_discovery" and record.levelno >= logging.WARNING
             ]
         finally:
-            await ingester.close()
+            await discovery.close()
 
 
 async def test_stopped_service_never_falls_back_to_reachable_runner(

@@ -11,8 +11,8 @@ from kubernetes_asyncio.client import RbacAuthorizationV1Api
 from agentplane.crd_group import GROUP
 from agentplane.proto.sandbox_service_pb2 import ResolvedGrant, Sandbox
 from agentplane.sandbox_service.action_policy_views import MANAGED_BY_APP, MANAGED_BY_LABEL
+from agentplane.sandbox_service.errors import SandboxNotFoundError
 from agentplane.sandbox_service.inventory import SandboxInventory
-from agentplane.sandbox_service.models import SandboxNotFoundError
 from util.agent_sandbox import SANDBOX_API
 
 logger = logging.getLogger(__name__)

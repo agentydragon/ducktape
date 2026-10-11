@@ -41,7 +41,7 @@ from agentplane.app.testing.history import SeededEventLogStore as EventLogStore,
 from agentplane.app.testing.model_test_data import TEST_REASONING_EFFORTS
 from agentplane.app.threads.bridge import RunnerAdmissionTimeoutError, RunnerBridge
 from agentplane.app.threads.events.stream import follow
-from agentplane.app.threads.ingestion import Ingester
+from agentplane.app.threads.session_discovery import SessionDiscovery
 from agentplane.app.threads.sessions import SandboxSessions
 from agentplane.app.threads.store import ThreadStore
 from agentplane.app.threads.summaries import Summaries
@@ -241,8 +241,8 @@ async def app_url(
     """The app served by uvicorn, with the one test sandbox resolving to the local runner. The
     server is real because SSE needs a response that streams, which an in-process ASGI transport
     would buffer."""
-    ingester = Ingester(runners=local_runners, event_logs=event_logs)
-    bridge = RunnerBridge(runners=local_runners, event_logs=event_logs, content=content, ingester=ingester)
+    discovery = SessionDiscovery(runners=local_runners, event_logs=event_logs)
+    bridge = RunnerBridge(runners=local_runners, event_logs=event_logs, content=content, discovery=discovery)
     app = create_app(
         inventory,
         bridge,
@@ -273,7 +273,7 @@ async def app_url(
         async with serve_app_in_loop(app, sock=sock):
             yield f"http://127.0.0.1:{sock.getsockname()[1]}"
     finally:
-        await ingester.close()
+        await discovery.close()
 
 
 async def test_the_bridge_streams_a_turn_to_every_tab_and_resumes_from_the_last_event_id(
@@ -1001,7 +1001,7 @@ async def test_thread_command_reports_id_conflict_after_runner_admitted_before_a
         }
 
 
-async def test_command_status_reads_what_the_sandbox_service_retained(
+async def test_command_status_reads_what_the_runner_gateway_retained(
     app_url: str, spec: runner_pb2.SessionSpec, failed_bridge_state: None
 ) -> None:
     async with httpx.AsyncClient(base_url=app_url, timeout=60, headers=AGENT_AUTH) as http:
@@ -1108,7 +1108,7 @@ async def test_command_returns_runner_receipt_before_app_archive_catches_up(
         assert candidate == command
         return receipt
 
-    monkeypatch.setattr(bridge._ingester, "start", no_archive_yet)
+    monkeypatch.setattr(bridge._discovery, "start", no_archive_yet)
     monkeypatch.setattr(bridge._runners.service, "command", submit)
     assert await bridge.command(thread, command) == receipt
     assert await content.admitted_command(thread, command) is None
@@ -1124,9 +1124,9 @@ async def test_command_returns_runner_receipt_before_app_archive_catches_up(
 @dataclass
 class Replicas:
     owner: RunnerBridge
-    owner_ingester: Ingester
+    owner_discovery: SessionDiscovery
     survivor: RunnerBridge
-    survivor_ingester: Ingester
+    survivor_discovery: SessionDiscovery
     # What the survivor streams a thread from: its own pool and its own listener.
     survivor_event_logs: EventLogStore
     survivor_changes: Changes
@@ -1156,31 +1156,31 @@ async def replicas(
         history_reader=history_client,
         summaries=Summaries(replica_engine, history_client),
     )
-    owner_ingester = Ingester(runners=local_runners, event_logs=event_logs)
-    survivor_ingester = Ingester(runners=survivor_runners, event_logs=survivor_event_logs)
-    owner = RunnerBridge(runners=local_runners, event_logs=event_logs, content=content, ingester=owner_ingester)
+    owner_discovery = SessionDiscovery(runners=local_runners, event_logs=event_logs)
+    survivor_discovery = SessionDiscovery(runners=survivor_runners, event_logs=survivor_event_logs)
+    owner = RunnerBridge(runners=local_runners, event_logs=event_logs, content=content, discovery=owner_discovery)
     survivor = RunnerBridge(
         runners=survivor_runners,
         event_logs=survivor_event_logs,
         content=ContentStore(replica_engine, history_reader=history_client),
-        ingester=survivor_ingester,
+        discovery=survivor_discovery,
     )
     try:
         async with survivor_service, listening(replica_engine, history_client, history_token_file) as replica_updates:
-            await owner_ingester.start()
-            await owner_ingester.reconcile()
+            await owner_discovery.start()
+            await owner_discovery.reconcile()
             try:
                 yield Replicas(
                     owner,
-                    owner_ingester,
+                    owner_discovery,
                     survivor,
-                    survivor_ingester,
+                    survivor_discovery,
                     survivor_event_logs,
                     replica_updates.changes[Channel.THREADS],
                 )
             finally:
-                await owner_ingester.close()
-                await survivor_ingester.close()
+                await owner_discovery.close()
+                await survivor_discovery.close()
     finally:
         await replica_engine.dispose()
 
@@ -1191,7 +1191,7 @@ async def frame_lines(frames: AsyncIterator[bytes]) -> AsyncIterator[str]:
             yield line
 
 
-async def test_replica_commands_and_database_stream_survive_ingestion_owner_exit(
+async def test_replica_commands_and_database_stream_survive_discovery_owner_exit(
     replicas: Replicas, event_logs: EventLogStore, model: ScriptedModel, spec: runner_pb2.SessionSpec
 ) -> None:
     thread = UUID((await replicas.owner.create_session(SANDBOX, uuid4(), MessageToDict(spec))).session_id)
@@ -1218,7 +1218,7 @@ async def test_replica_commands_and_database_stream_survive_ingestion_owner_exit
             command_pb2.Command(command_id="input-2", submit_input=command_pb2.SubmitInput(text="AFTER_OWNER_EXIT")),
         )
         request = await model.request()
-        await replicas.owner_ingester.close()
+        await replicas.owner_discovery.close()
         await model.reply(request, Text("AFTER_OWNER_EXIT"))
         async with asyncio.timeout(10):
             second = await read_until(lines, "turnCompleted")
@@ -1252,7 +1252,7 @@ async def test_inventory_change_discovers_existing_runner_session_without_browse
     live_index: LiveIndex,
 ) -> None:
     # This must wake from the informer notification, not the periodic recovery scan.
-    monkeypatch.setattr("agentplane.app.threads.ingestion.RECONCILE_S", 3600)
+    monkeypatch.setattr("agentplane.app.threads.session_discovery.RECONCILE_S", 3600)
     # The Sandbox Service knows the Sandbox; the app's informer does not yet.
     raw, running_pod = seed_runner(custom_objects, core_v1, SANDBOX)
     destination = SandboxDestination(
@@ -1270,12 +1270,12 @@ async def test_inventory_change_discovers_existing_runner_session_without_browse
         return running()
 
     monkeypatch.setattr(runners, "running", observed_running)
-    ingester = Ingester(runners=runners, event_logs=event_logs)
+    discovery = SessionDiscovery(runners=runners, event_logs=event_logs)
     async with service, dialing(runner.runner, sandbox_endpoint.control_target, runner_bearer(SANDBOX)):
         try:
             await asyncio.to_thread(sandbox_endpoint.wait_connected, UUID(destination.sandbox_uid))
             await service.runner(destination).create(session_id=uuid4(), spec=MessageToDict(spec))
-            await ingester.start()
+            await discovery.start()
             async with asyncio.timeout(10):
                 await discovered.wait()
             discovered.clear()
@@ -1283,7 +1283,7 @@ async def test_inventory_change_discovers_existing_runner_session_without_browse
             live_index.changes.notify()
             async with asyncio.timeout(10):
                 await discovered.wait()
-            # Only the ingester can create this row: no bridge exists, so no Open, command, or SSE request ran.
+            # Only discovery can create this row: no bridge exists, so no Open, command, or SSE request ran.
             async for attempt in AsyncRetrying(
                 stop=stop_after_delay(10), wait=wait_fixed(0.1), retry=retry_if_exception_type(AssertionError)
             ):
@@ -1291,11 +1291,11 @@ async def test_inventory_change_discovers_existing_runner_session_without_browse
                     threads = await store.list_threads()
                     assert len(threads) == 1
                     # Discovery wakes once from the informer; projection subsequently fetches service pages.
-                    await ingester.reconcile()
+                    await discovery.reconcile()
                     assert await event_logs.last_cursor(threads[0].id) > 0
             assert threads[0].sandbox == SANDBOX
         finally:
-            await ingester.close()
+            await discovery.close()
 
 
 async def test_resumed_session_stream_does_not_end_at_previous_shutdown(
@@ -1370,12 +1370,12 @@ async def test_stored_thread_stream_does_not_require_reachable_runner(
         async with asyncio.timeout(10):
             stored = await read_until(lines, "harnessExited")
             assert (await next_message(lines)).event == "end"
-    await replicas.owner_ingester.close()
-    await replicas.survivor_ingester.close()
+    await replicas.owner_discovery.close()
+    await replicas.survivor_discovery.close()
 
     del live_index.sandboxes[SANDBOX], live_index.pods[SANDBOX]
-    offline_ingester = Ingester(runners=local_runners, event_logs=event_logs)
-    offline = RunnerBridge(runners=local_runners, event_logs=event_logs, content=content, ingester=offline_ingester)
+    offline_discovery = SessionDiscovery(runners=local_runners, event_logs=event_logs)
+    offline = RunnerBridge(runners=local_runners, event_logs=event_logs, content=content, discovery=offline_discovery)
     try:
         # A lost HTTP response is retryable from the committed Thread prefix even after the
         # sandbox disappears: this answer must not attempt a new runner attachment, which with the
@@ -1390,7 +1390,7 @@ async def test_stored_thread_stream_does_not_require_reachable_runner(
             assert await read_until(lines, "harnessExited") == stored
             assert (await next_message(lines)).event == "end"
     finally:
-        await offline_ingester.close()
+        await offline_discovery.close()
 
 
 async def test_open_and_resume_reply_before_archive_catches_up(
@@ -1402,10 +1402,10 @@ async def test_open_and_resume_reply_before_archive_catches_up(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Runner receipts and a committed Thread mapping suffice; copying the feed is independent."""
-    # Stall the runner's push to the History ingress without delaying the runner itself.
+    # Stall the runner's push to the History Service's ingress without delaying the runner itself.
     monkeypatch.setattr("agentplane.runner.ingress.IngressPusher.push", AsyncMock())
-    ingester = Ingester(runners=local_runners, event_logs=event_logs)
-    bridge = RunnerBridge(runners=local_runners, event_logs=event_logs, content=content, ingester=ingester)
+    discovery = SessionDiscovery(runners=local_runners, event_logs=event_logs)
+    bridge = RunnerBridge(runners=local_runners, event_logs=event_logs, content=content, discovery=discovery)
     opened = await asyncio.wait_for(bridge.create_session(SANDBOX, uuid4(), MessageToDict(spec)), timeout=10)
     thread_id = UUID(opened.session_id)
     assert opened.last_cursor > 0

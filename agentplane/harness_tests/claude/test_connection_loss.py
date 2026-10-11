@@ -5,14 +5,14 @@ from __future__ import annotations
 import pytest_bazel
 
 from agentplane.harness_tests.claude import anthropic_sse as sse, frames
-from agentplane.harness_tests.claude.harness import MODEL, ClaudeHarness
+from agentplane.harness_tests.claude.harness import MODEL, ClaudeLauncher
 from agentplane.harness_tests.claude.messages import AnthropicMessages
 from agentplane.harness_tests.model_endpoint import JsonResponse
 from agentplane.native.claude.scenarios import MAX_RETRIES
 
 
 async def test_stream_lost_before_content_is_retried_without_streaming(
-    claude: ClaudeHarness, anthropic_messages: AnthropicMessages
+    claude: ClaudeLauncher, anthropic_messages: AnthropicMessages
 ) -> None:
     async with claude.start(anthropic_messages) as run:
         prompt = await run.send("Reply with exactly: CONNECTION_RETRY_OK")
@@ -38,7 +38,7 @@ async def test_stream_lost_before_content_is_retried_without_streaming(
 
 
 async def test_stream_lost_after_visible_text_is_retried_without_streaming(
-    claude: ClaudeHarness, anthropic_messages: AnthropicMessages
+    claude: ClaudeLauncher, anthropic_messages: AnthropicMessages
 ) -> None:
     async with claude.start(anthropic_messages) as run:
         first = await run.send("Reply with exactly: POST_FAILURE_FIRST_OK")
@@ -72,7 +72,7 @@ async def test_stream_lost_after_visible_text_is_retried_without_streaming(
 
 
 async def test_retry_exhaustion_fails_the_turn_and_the_process_accepts_the_next_input(
-    claude: ClaudeHarness, anthropic_messages: AnthropicMessages
+    claude: ClaudeLauncher, anthropic_messages: AnthropicMessages
 ) -> None:
     async with claude.start(anthropic_messages) as run:
         first = await run.send("Reply with exactly: CONNECTION_EXHAUSTION_OK")
@@ -99,7 +99,7 @@ async def test_retry_exhaustion_fails_the_turn_and_the_process_accepts_the_next_
 
 
 async def test_http_502_exhaustion_is_terminal_but_next_input_succeeds(
-    claude: ClaudeHarness, anthropic_messages: AnthropicMessages
+    claude: ClaudeLauncher, anthropic_messages: AnthropicMessages
 ) -> None:
     async with claude.start(anthropic_messages) as run:
         first = await run.send("Reply with exactly: HTTP_FAILURE")

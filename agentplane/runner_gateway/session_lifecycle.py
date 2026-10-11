@@ -26,9 +26,10 @@ def launch_spec(
     defaults = binding.session_defaults if binding is not None and binding.HasField("session_defaults") else None
     values = MessageToDict(defaults) if defaults is not None else {}
     values.pop("setupScript", None)
-    if "cwd" in values:
-        values["cwd"] = values["cwd"].replace("{session_id}", destination.session_id)
-    spec = ParseDict(values | overrides, runner_pb2.SessionSpec())
+    merged = values | overrides
+    if isinstance(cwd := merged.get("cwd"), str):
+        merged["cwd"] = cwd.replace("{session_id}", destination.session_id)
+    spec = ParseDict(merged, runner_pb2.SessionSpec())
     validate_spec(spec)
     context = (
         "Your explicit Runner Gateway session destination is:\n"

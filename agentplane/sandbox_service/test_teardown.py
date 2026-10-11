@@ -16,8 +16,8 @@ from agentplane.proto import runner_gateway_pb2_grpc, runner_pb2
 from agentplane.proto.sandbox_service_pb2 import Sandbox, SandboxDestination, SandboxRequest, TeardownPhase
 from agentplane.runner_gateway.destinations import DestinationResolver
 from agentplane.sandbox_service.client import ServiceError
+from agentplane.sandbox_service.errors import SandboxTearingDownError
 from agentplane.sandbox_service.inventory import SandboxInventory
-from agentplane.sandbox_service.models import SandboxTearingDownError
 from agentplane.sandbox_service.teardown import GatewaySealing, SealNotFlushedError, Teardown
 from agentplane.sandbox_service.testing.backend import seed_runner
 from agentplane.sandbox_service.testing.fake_inventory import FakeCoreV1Api, FakeCustomObjectsApi
@@ -64,7 +64,11 @@ async def teardown(inventory: SandboxInventory, gateway: ScriptedGateway, token_
     async with (
         serving(server, "127.0.0.1:0", grace_s=0) as port,
         connect(
-            f"127.0.0.1:{port}", token_file, namespace=inventory.namespace, command_admission_timeout_s=None
+            f"127.0.0.1:{port}",
+            token_file,
+            namespace=inventory.namespace,
+            command_admission_timeout_s=None,
+            control_target=f"127.0.0.1:{port}",
         ) as client,
     ):
         yield Teardown(inventory, GatewaySealing(client))

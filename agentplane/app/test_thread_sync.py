@@ -183,14 +183,14 @@ async def _cross_replica_sync(
         asyncio.timeout(60),
         app_process(
             db_url,
-            runner_port=int(reader.target.rsplit(":", 1)[1]),
+            service_port=int(reader.target.rsplit(":", 1)[1]),
             history=reader,
             sandbox_present=False,
             electric_url=service.url,
         ) as first,
         app_process(
             db_url,
-            runner_port=int(reader.target.rsplit(":", 1)[1]),
+            service_port=int(reader.target.rsplit(":", 1)[1]),
             history=reader,
             sandbox_present=False,
             electric_url=service.url,
