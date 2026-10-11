@@ -15,6 +15,10 @@ py_library(
     name = "conftest",
     testonly = True,
     srcs = ["conftest.py"],
+    visibility = [
+        "//agentplane/runner_gateway:__subpackages__",
+        "//agentplane/sandbox_service:__subpackages__",
+    ],
     deps = [
         ":egress",
         ":inventory",
@@ -30,7 +34,10 @@ py_library(
 py_library(
     name = "inventory",
     srcs = ["inventory.py"],
-    visibility = ["//agentplane/sandbox_service:__subpackages__"],
+    visibility = [
+        "//agentplane/runner_gateway:__subpackages__",
+        "//agentplane/sandbox_service:__subpackages__",
+    ],
     deps = [
         ":binding_storage",
         ":kubernetes_views",
@@ -113,7 +120,10 @@ py_test(
 py_library(
     name = "destinations",
     srcs = ["destinations.py"],
-    visibility = ["//agentplane/sandbox_service:__subpackages__"],
+    visibility = [
+        "//agentplane/runner_gateway:__subpackages__",
+        "//agentplane/sandbox_service:__subpackages__",
+    ],
     deps = [
         ":inventory",
         ":models",
