@@ -31,4 +31,35 @@ service RunnerGateway {
   // incarnation, and return each one's final cursor keyed as holders name the Session (the public
   // Session ID, or the runner's own ID for a Session opened with a caller-chosen one). Idempotent.
   rpc SealSandbox(agentplane.proto.sandbox_service.SandboxRequest) returns (agentplane.proto.runner.SealResponse);
+  // Any allowed service caller. Which Sandbox each named Session runs in; a Session the gateway
+  // never registered is left out. Carries no transcript.
+  rpc BatchGetSessionSandboxes(BatchGetSessionSandboxesRequest) returns (SessionSandboxes);
+  // Any allowed service caller. Every Session in a Sandbox whose name matches, deleted Sandboxes
+  // included, in no particular order.
+  rpc FindSessions(FindSessionsRequest) returns (SessionSandboxes);
+}
+
+// Where a Session runs: the Sandbox incarnation the gateway routes it to.
+message SessionSandbox {
+  string session_id = 1;
+  string sandbox_namespace = 2;
+  string sandbox = 3;
+  // Empty for a Session imported without its Sandbox's UID.
+  string sandbox_uid = 4;
+}
+
+message SessionSandboxes { repeated SessionSandbox sessions = 1; }
+
+message BatchGetSessionSandboxesRequest {
+  // Public Session IDs; at most 1000.
+  repeated string session_ids = 1;
+}
+
+message FindSessionsRequest {
+  oneof sandbox {
+    // The Sandbox's exact name.
+    string sandbox_name = 1;
+    // Text the Sandbox's name contains, ignoring case.
+    string sandbox_name_contains = 2;
+  }
 }

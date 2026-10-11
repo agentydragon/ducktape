@@ -21,6 +21,7 @@ from agentplane.proto import (
     command_pb2,
     event_log_pb2,
     runner_control_pb2 as control_pb2,
+    runner_gateway_pb2,
     runner_gateway_pb2_grpc,
     runner_pb2,
     sandbox_service_pb2,
@@ -630,6 +631,28 @@ class RunnerGateway(runner_gateway_pb2_grpc.RunnerGatewayServicer):
                             raise
             async with asyncio.timeout(self.resources.admission_timeout_s):
                 await context.write(sandbox_service_pb2.WatchSessionsResponse(reconnect_required=Empty()))
+
+    @override
+    async def BatchGetSessionSandboxes(
+        self, request: runner_gateway_pb2.BatchGetSessionSandboxesRequest, context: grpc.aio.ServicerContext
+    ) -> runner_gateway_pb2.SessionSandboxes:
+        async with self.request(context):
+            session_ids = {UUID(session_id) for session_id in request.session_ids}
+            return runner_gateway_pb2.SessionSandboxes(sessions=await self.resources.sessions.sandboxes(session_ids))
+
+    @override
+    async def FindSessions(
+        self, request: runner_gateway_pb2.FindSessionsRequest, context: grpc.aio.ServicerContext
+    ) -> runner_gateway_pb2.SessionSandboxes:
+        async with self.request(context):
+            match request.WhichOneof("sandbox"):
+                case "sandbox_name":
+                    found = await self.resources.sessions.find(sandbox_name=request.sandbox_name)
+                case "sandbox_name_contains":
+                    found = await self.resources.sessions.find(sandbox_name_contains=request.sandbox_name_contains)
+                case _:
+                    raise ValueError("a Sandbox name match is required")
+            return runner_gateway_pb2.SessionSandboxes(sessions=found)
 
     @override
     async def SealSandbox(

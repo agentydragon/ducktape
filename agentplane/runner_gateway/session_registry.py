@@ -6,11 +6,11 @@ from dataclasses import dataclass
 from typing import cast
 from uuid import UUID, uuid4
 
-from sqlalchemy import func, select
+from sqlalchemy import ColumnElement, func, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
-from agentplane.proto import sandbox_service_pb2
+from agentplane.proto import runner_gateway_pb2, sandbox_service_pb2
 from agentplane.runner_gateway.commands.db import CHANGE_POSITION, Session
 from agentplane.runner_gateway.session_changes import CHANNEL
 
@@ -163,6 +163,39 @@ class SessionRegistry:
                     sandbox=row.sandbox_name,
                     sandbox_uid=str(row.sandbox_uid) if row.sandbox_uid is not None else "",
                     position=row.change_position,
+                )
+                for row in rows
+            ]
+
+    async def sandboxes(self, session_ids: set[UUID]) -> list[runner_gateway_pb2.SessionSandbox]:
+        """Where each registered Session among `session_ids` runs."""
+        if len(session_ids) > 1000:
+            raise ValueError("at most 1000 Session IDs per read")
+        return await self._sandboxes(Session.id.in_(session_ids))
+
+    async def find(
+        self, *, sandbox_name: str | None = None, sandbox_name_contains: str | None = None
+    ) -> list[runner_gateway_pb2.SessionSandbox]:
+        """Every Session in a Sandbox named `sandbox_name`, or whose name contains `sandbox_name_contains`."""
+        if sandbox_name:
+            if sandbox_name_contains is not None:
+                raise ValueError("exactly one Sandbox name match is required")
+            return await self._sandboxes(Session.sandbox_name == sandbox_name)
+        if not sandbox_name_contains:
+            raise ValueError("a non-empty Sandbox name match is required")
+        return await self._sandboxes(Session.sandbox_name.icontains(sandbox_name_contains, autoescape=True))
+
+    async def _sandboxes(self, where: ColumnElement[bool]) -> list[runner_gateway_pb2.SessionSandbox]:
+        async with self._sessions() as session:
+            rows = await session.execute(
+                select(Session.id, Session.sandbox_namespace, Session.sandbox_name, Session.sandbox_uid).where(where)
+            )
+            return [
+                runner_gateway_pb2.SessionSandbox(
+                    session_id=str(row.id),
+                    sandbox_namespace=row.sandbox_namespace,
+                    sandbox=row.sandbox_name,
+                    sandbox_uid="" if row.sandbox_uid is None else str(row.sandbox_uid),
                 )
                 for row in rows
             ]
