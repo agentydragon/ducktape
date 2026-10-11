@@ -22,7 +22,9 @@ follows it; code that differs converges on it.
       ) -> history_pb2.ReadSessionEventsResponse: ...
   ```
 
-- It registers through the generated `add_<Service>Servicer_to_server`. No
+- It registers through the generated `add_<Service>Servicer_to_server`, which builds the method
+  table from the proto's descriptor, so the service's full name and each method's (de)serializers
+  can't drift from the schema. No
   `grpc.method_handlers_generic_handler`, no hand-written `*_rpc_method_handler` tables, and no
   `type X = Callable[...]` aliases spelling out handler signatures: the generated base class already
   carries them.
@@ -63,7 +65,7 @@ follows it; code that differs converges on it.
 ## Clients
 
 - One `<Service>Client` per API, beside the servicer's owner, owns its channel and stub and exposes
-  domain methods; `close()` closes the channel. Callers never touch the stub.
+  domain methods. Callers never touch the stub.
 - The stub is annotated `<Service>AsyncStub` and built as `<Service>Stub(channel)`.
 - Channels are `grpc.aio.insecure_channel`: in-cluster traffic is plaintext and identity comes from
   the bearer (or, for Sandbox workloads, from the egress proxy that substitutes it). Options come from
@@ -73,10 +75,25 @@ follows it; code that differs converges on it.
     process-wide pool a new channel inherits the closed channel's connection.
   - `grpc.enable_retries: 0` for clients whose mutations must be reconciled, never replayed.
 
+## Lifetimes
+
+Everything that holds a connection is closed by a context manager, never by a hand-written
+`try`/`finally: await x.close()`:
+
+- A channel used for one call or one stream session is `async with grpc.aio.insecure_channel(...) as
+  channel:`.
+- A client class is an async context manager that closes its channel (`async with
+  HistoryServiceClient(...) as history:`). A process that owns several enters them on one
+  `AsyncExitStack`; a test fixture yields from inside the `async with`.
+- `grpc.aio.Server` has no context-manager form, so one shared async context manager registers
+  nothing itself but owns the rest: bind, `start`, and `stop` with the given grace on exit. Mains
+  and test fixtures use it rather than repeating the sequence.
+- Stubs hold no resources of their own and need no lifetime management.
+
 ## Server lifecycle
 
-- `grpc.aio.server()`, register servicers, `add_insecure_port`, `start`; `stop(grace=5)` on
-  shutdown. A second listener exists only where a network fence admits different callers to it (the
+- `grpc.aio.server()`, register servicers, then serve through the shared context manager;
+  `stop(grace=5)` on shutdown. A second listener exists only where a network fence admits different callers to it (the
   runner-facing port).
 - Liveness and readiness are HTTP `/healthz` on a separate `health_port`.
 - Tests serve on `127.0.0.1:0` and `stop(0)`.
