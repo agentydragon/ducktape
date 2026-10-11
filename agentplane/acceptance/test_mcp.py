@@ -42,8 +42,8 @@ from agentplane.action_service.models import (
 )
 from agentplane.action_service.policies.resources import BINDINGS_PLURAL, POLICY_SETS_PLURAL, READY_CONDITION
 from agentplane.action_service.policy_evaluation import PROVIDER_NAME
-from agentplane.app.client import Client
 from agentplane.app.sandbox_models import SandboxView
+from agentplane.app.testing.client import Client
 from agentplane.crd_group import GROUP, VERSION
 from agentplane.proto import runner_pb2
 

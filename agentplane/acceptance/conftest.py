@@ -15,8 +15,8 @@ from typing import cast
 import pytest
 from tenacity import AsyncRetrying, stop_after_delay, wait_fixed
 
-from agentplane.app.client import Client
 from agentplane.app.sandbox_models import NewSandbox, SandboxView, SessionDefaults, sandbox_has_ready_pod
+from agentplane.app.testing.client import Client
 from agentplane.proto import runner_pb2
 from agentplane.runner.harness import Harness
 

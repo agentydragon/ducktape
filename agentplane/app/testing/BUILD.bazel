@@ -205,3 +205,24 @@ py_library(
         "@pypi//sqlalchemy",
     ],
 )
+
+py_library(
+    name = "client",
+    srcs = ["client.py"],
+    visibility = ["//agentplane/acceptance:__pkg__"],
+    deps = [
+        "//agentplane/app:api",
+        "//agentplane/app:model_catalog",
+        "//agentplane/app:presets",
+        "//agentplane/app:sandbox_models",
+        "//agentplane/app/threads:bridge",
+        "//agentplane/app/threads:thread_view",
+        "//agentplane/egress:decisions",
+        "//agentplane/proto:command_pb2",
+        "//agentplane/proto:event_log_pb2",
+        "//agentplane/proto:runner_pb2",
+        "//agentplane/sandbox_service:egress_views",
+        "@pypi//httpx",
+        "@pypi//protobuf",
+    ],
+)

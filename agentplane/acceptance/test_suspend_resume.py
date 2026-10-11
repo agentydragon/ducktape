@@ -9,8 +9,8 @@ import pytest_bazel
 from tenacity import AsyncRetrying, retry_if_exception_type, stop_after_delay, wait_fixed
 
 from agentplane.acceptance.agent import Agent
-from agentplane.app.client import Client
 from agentplane.app.sandbox_models import SandboxView, sandbox_has_ready_pod
+from agentplane.app.testing.client import Client
 from agentplane.proto import runner_pb2
 from agentplane.runner.harness import Harness
 from util.agent_sandbox import OperatingMode

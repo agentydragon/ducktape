@@ -8,8 +8,8 @@ from uuid import UUID, uuid4
 import pytest_bazel
 
 from agentplane.acceptance.agent import Agent, runner_startup_retries
-from agentplane.app.client import Client
 from agentplane.app.sandbox_models import SandboxView, SessionDefaults
+from agentplane.app.testing.client import Client
 from agentplane.proto import runner_pb2
 from agentplane.runner.harness import Harness
 

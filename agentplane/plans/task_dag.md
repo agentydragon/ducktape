@@ -973,7 +973,6 @@ flowchart TD
         RUNNER_ERRORS_REHOME[Blocked: errors beside the client that raises them]
         SETTLE_DELTAS_ALWAYS_ON[Unscheduled: retire the settle_deltas flag]
         APP_SERVICE_NAMES[Candidate: app names the right services]
-        APP_TEST_CLIENT_MOVE[Candidate: app test client out of production]
         KUBEVIRT_GUEST_CONTROL[Candidate: KubeVirt guest dials out]
         RUNNER_CORE_SPLIT[Blocked: runner core out of the inbound servicer]
         ACTION_PROTOCOLS_CONCRETE[Candidate: concrete external-grant authority]
@@ -1036,11 +1035,6 @@ and the `Store` flag (the ingester's copy goes with `FOLLOW_PATH_RETIRE`).
 for the gateway's command records (`bridge.py`, `api.py`, a settings description), answers every
 `ConnectionError` with "Sandbox Service unavailable", and calls the stored cursor a follow cursor.
 `threads/ingestion.py`'s `Ingester` then only discovers Sessions; rename it for that.
-
-### `APP_TEST_CLIENT_MOVE` — app test client out of production
-
-**Candidate.** `agentplane/app/client.py` is `testonly` and imported only by
-`agentplane/acceptance`; move it to `app/testing/` or `acceptance/`.
 
 ### `KUBEVIRT_GUEST_CONTROL` — KubeVirt guest dials out
 

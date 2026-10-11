@@ -726,27 +726,6 @@ py_test(
 )
 
 py_library(
-    name = "client",
-    testonly = True,
-    srcs = ["client.py"],
-    deps = [
-        ":api",
-        ":model_catalog",
-        ":presets",
-        ":sandbox_models",
-        "//agentplane/app/threads:bridge",
-        "//agentplane/app/threads:thread_view",
-        "//agentplane/egress:decisions",
-        "//agentplane/proto:command_pb2",
-        "//agentplane/proto:event_log_pb2",
-        "//agentplane/proto:runner_pb2",
-        "//agentplane/sandbox_service:egress_views",
-        "@pypi//httpx",
-        "@pypi//protobuf",
-    ],
-)
-
-py_library(
     name = "action_federation",
     srcs = ["action_federation.py"],
     visibility = [

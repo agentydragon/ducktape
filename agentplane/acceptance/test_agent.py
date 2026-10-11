@@ -9,7 +9,7 @@ import pytest
 import pytest_bazel
 
 from agentplane.acceptance.agent import Agent
-from agentplane.app.client import Attachment, Client
+from agentplane.app.testing.client import Attachment, Client
 from agentplane.proto import event_log_pb2, event_pb2, runner_pb2
 
 # gazelle:include_dep @pypi//protobuf
