@@ -76,6 +76,7 @@ py_library(
     srcs = ["session_registry.py"],
     deps = [
         ":session_changes",
+        "//agentplane/proto:runner_gateway_pb2",
         "//agentplane/proto:sandbox_service_pb2",
         "//agentplane/runner_gateway/commands:db",
         "@pypi//protobuf",
@@ -262,6 +263,7 @@ py_library(
         "//agentplane/proto:command_pb2",
         "//agentplane/proto:event_log_pb2",
         "//agentplane/proto:runner_control_pb2",
+        "//agentplane/proto:runner_gateway_pb2",
         "//agentplane/proto:runner_gateway_pb2_grpc",
         "//agentplane/proto:runner_pb2",
         "//agentplane/proto:sandbox_service_pb2",
@@ -399,6 +401,7 @@ py_test(
         "//agentplane/proto:command_pb2",
         "//agentplane/proto:event_log_pb2",
         "//agentplane/proto:event_pb2",
+        "//agentplane/proto:runner_gateway_pb2",
         "//agentplane/proto:runner_pb2",
         "//agentplane/proto:runner_pb2_grpc",
         "//agentplane/proto:sandbox_service_pb2",
