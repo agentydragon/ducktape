@@ -38,6 +38,12 @@ async def cluster() -> AsyncIterator[Cluster]:
         yield started
 
 
+@pytest.fixture
+def ingest_sandbox_history() -> bool:
+    # The Sandbox Service fixture's ingester writes the history; the app only reads it.
+    return True
+
+
 @pytest.fixture(autouse=True)
 async def discover(cluster: Cluster, live_index: LiveIndex) -> None:
     live_index.sandboxes[SANDBOX] = cluster.fake.objects[SANDBOXES_PLURAL][SANDBOX]
