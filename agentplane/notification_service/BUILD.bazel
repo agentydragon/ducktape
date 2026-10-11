@@ -35,6 +35,7 @@ py_library(
         ":store",
         "//agentplane/action_service/testing:fixtures",
         "//agentplane/runner/testing:fixtures",
+        "//agentplane/sandbox_service/testing:history",
         "//util/testing:postgres",
         "//util/testing:postgres_fixtures",
         "//util/testing:undeclared_outputs",

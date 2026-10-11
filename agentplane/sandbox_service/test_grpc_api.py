@@ -23,7 +23,6 @@ from agentplane.sandbox_service import protocol_pb2, wire
 from agentplane.sandbox_service.channel_control import ChannelControl
 from agentplane.sandbox_service.channel_delivery import ChannelDelivery
 from agentplane.sandbox_service.client import ReconnectRequiredError, SandboxServiceClient, SealedError, ServiceError
-from agentplane.sandbox_service.commands import db as commands_db
 from agentplane.sandbox_service.commands.connections import ConnectionStore
 from agentplane.sandbox_service.commands.dispatch import DispatchStore
 from agentplane.sandbox_service.commands.store import CommandSubmission, SubmissionState, SubmissionStore
@@ -49,10 +48,6 @@ from util.agent_sandbox import SANDBOXES_PLURAL
 
 # gazelle:include_dep @pypi//protobuf
 # gazelle:include_dep @pypi//grpcio
-# gazelle:include_dep //agentplane/history_service/storage:conftest
-
-pytest_plugins = ("agentplane.history_service.storage.conftest",)
-
 TOKEN = "test-grpc-token"
 AUDIENCE = "test-sandbox-service"
 OWNER = ServiceAccountRef(namespace=SANDBOX_NAMESPACE, name=ACCOUNT)
@@ -214,17 +209,12 @@ def resources(
 
 @pytest.fixture
 async def submissions(engine: AsyncEngine) -> SubmissionStore:
-    # The admission tables share the history test database; production keeps them apart.
-    async with engine.begin() as connection:
-        await connection.run_sync(commands_db.Base.metadata.create_all)
+    # Admission and history schemas are both present in the cloned test database.
     return SubmissionStore(engine)
 
 
 @pytest.fixture
 async def sessions(engine: AsyncEngine) -> SessionRegistry:
-    # The registry tables share the history test database; production keeps them apart.
-    async with engine.begin() as connection:
-        await connection.run_sync(commands_db.Base.metadata.create_all)
     return SessionRegistry(engine)
 
 

@@ -22,7 +22,6 @@ py_library(
         "//agentplane/history_service/storage:history_changes",
         "//agentplane/history_service/storage:store",
         "//agentplane/sandbox_service:client",
-        "//agentplane/thread_fold:models",
         "//agentplane/workload_auth:principal",
         "@pypi//asyncpg",
         "@pypi//grpcio",
