@@ -126,6 +126,7 @@ async def ingest(settings: Settings, url: URL) -> None:
     target = settings.sandbox_service
     sandboxes = SandboxServiceClient(
         target.target,
+        gateway_target=target.gateway_target or target.target,
         namespace=None,  # the ingester follows the destinations the Session feed names
         token_file=target.token_file,
         command_admission_timeout_s=None,

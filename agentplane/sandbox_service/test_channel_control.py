@@ -27,13 +27,13 @@ from agentplane.runner_gateway.commands.connections import ConnectionStore
 from agentplane.runner_gateway.commands.dispatch import DispatchStore
 from agentplane.runner_gateway.commands.store import SubmissionStore
 from agentplane.runner_gateway.connection_records import ConnectionHolder, ConnectionLeases, ConnectionRecords
+from agentplane.runner_gateway.grpc_api import Resources
 from agentplane.runner_gateway.runner_channel import ChannelTiming, RunnerChannelService
 from agentplane.runner_gateway.session_registry import SessionRegistry
 from agentplane.runner_gateway.testing.sessions import register_session
 from agentplane.sandbox_service.client import SandboxServiceClient, ServiceError
 from agentplane.sandbox_service.destinations import DestinationResolver
-from agentplane.sandbox_service.grpc_api import Resources
-from agentplane.sandbox_service.protocol_pb2 import SandboxDestination, TeardownPhase
+from agentplane.sandbox_service.protocol_pb2 import Sandbox, SandboxDestination, TeardownPhase
 from agentplane.sandbox_service.session_changes import SessionChanges
 from agentplane.sandbox_service.teardown import Teardown
 from agentplane.sandbox_service.testing.grpc_service import service
@@ -66,12 +66,11 @@ type Connect = grpc.aio.StreamStreamCall[runner_channel_pb2.RunnerFrame, runner_
 
 @dataclass
 class Replica:
-    """One Sandbox Service replica: its channel listener, its public API and its lifecycle sender."""
+    """One gateway replica: its channel listener, its public API and its lifecycle sender."""
 
     channel: runner_channel_pb2_grpc.RunnerChannelAsyncStub
     api: str
     control: ChannelControl
-    teardown: Teardown
 
 
 @pytest.fixture
@@ -141,7 +140,6 @@ def replica(
                 allowed_service_account_namespaces={SANDBOX_NAMESPACE},
             ),
             destinations=destinations,
-            provisioning=cluster.provisioning,
             caller_accounts=frozenset({CALLER}),
             platform_instructions="Test platform guidance.",
             runner_admission_ack_timeout_s=1,
@@ -150,21 +148,11 @@ def replica(
             delivery=delivery,
             control=control,
             session_changes=SessionChanges(engine.url),
+            sealer_accounts=frozenset({CALLER}),
         )
         try:
             async with service(resources) as api, grpc.aio.insecure_channel(f"127.0.0.1:{port}") as channel:
-                yield Replica(
-                    channel=runner_channel_pb2_grpc.RunnerChannelStub(channel),
-                    api=api,
-                    control=control,
-                    teardown=Teardown(
-                        destinations,
-                        SessionRegistry(engine),
-                        connections=connections,
-                        control=control,
-                        runner_grpc_channel_options={},
-                    ),
-                )
+                yield Replica(channel=runner_channel_pb2_grpc.RunnerChannelStub(channel), api=api, control=control)
         finally:
             await channel_server.stop(0)
 
@@ -235,6 +223,7 @@ async def destination(cluster: Cluster) -> SandboxDestination:
 async def client(token_file: Path, target: str, *, control_target: str | None) -> AsyncIterator[SandboxServiceClient]:
     started = SandboxServiceClient(
         target,
+        gateway_target=target,
         namespace=SANDBOX_NAMESPACE,
         token_file=token_file,
         command_admission_timeout_s=None,
@@ -405,16 +394,32 @@ async def test_an_answer_for_another_verb_fails_the_request(holder: Replica) -> 
             await listing
 
 
-async def test_teardown_seals_over_the_holders_connection(holder: Replica, other: Replica, cluster: Cluster) -> None:
+def sandbox_service_teardown(cluster: Cluster, gateway: SandboxServiceClient) -> Teardown:
+    async def seal(sandbox: Sandbox) -> runner_pb2.SealResponse:
+        destination = SandboxDestination(owner=sandbox.service_account, sandbox=sandbox.name, sandbox_uid=sandbox.uid)
+        return await gateway.runner(destination).seal()
+
+    return Teardown(cluster.inventory, seal)
+
+
+async def test_teardown_seals_over_the_holders_connection(
+    holder: Replica, other: Replica, cluster: Cluster, token_file: Path
+) -> None:
     cluster.fake.objects[SANDBOXES_PLURAL][SANDBOX]["spec"]["operatingMode"] = OperatingMode.SUSPENDED
     view = await cluster.inventory.get(SANDBOX)
     await cluster.inventory.begin_teardown(SANDBOX, uid=view.uid)
     sealing = await cluster.inventory.get(SANDBOX)
-    async with connected(holder) as call:
-        # Every replica reconciles the Sandbox; only the holder seals it.
-        with pytest.raises(ConnectionNotHeldError):
-            await other.teardown.advance(sealing)
-        advancing = asyncio.create_task(holder.teardown.advance(sealing))
+    async with (
+        connected(holder) as call,
+        client(token_file, other.api, control_target=None) as unrouted,
+        client(token_file, other.api, control_target=holder.api) as routed,
+    ):
+        # Only the holder seals: a replica without the connection refuses, and the Sandbox Service's
+        # call through the control Service reaches the holder.
+        with pytest.raises(ServiceError) as refused:
+            await sandbox_service_teardown(cluster, unrouted).advance(sealing)
+        assert refused.value.code == grpc.StatusCode.UNAVAILABLE
+        advancing = asyncio.create_task(sandbox_service_teardown(cluster, routed).advance(sealing))
         sealed = await next_request(call)
         assert sealed.WhichOneof("verb") == "seal"
         result = runner_channel_pb2.ControlResult(request_id=sealed.request_id)

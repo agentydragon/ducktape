@@ -1,7 +1,10 @@
 # Runner Gateway
 
-The Sandbox runners' side of the Sandbox Service: Sessions, command admission and delivery, and
-the [runner channel](../docs/runner_channel.md) runners dial. It resolves runners in the Sandbox
+The Sandbox runners' side of Agentplane: Sessions, command admission and delivery, and the
+[runner channel](../docs/runner_channel.md) runners dial. Its own server (`:server`, image `:image`)
+serves the `RunnerGateway` gRPC service ([`protocol.proto`](protocol.proto), described in the
+Sandbox Service's [API](../sandbox_service/API.md)) with replicas, apart from the Sandbox Service's
+single reconciler and its RBAC. It resolves runners in the Sandbox
 Service's inventory (`agentplane.sandbox_service.inventory`, `destinations`) and does not
 provision or delete Sandboxes.
 
@@ -10,6 +13,8 @@ provision or delete Sandboxes.
 - `session_registry.py`, `session_lifecycle.py`, `command_relay.py`:
   Session identities, opening and resuming Sessions, and command admission.
 - `commands/`: the `sandbox_commands` database that holds them.
+- `sealing.py`: sealing a Sandbox's runner for teardown, on the Sandbox Service's request.
+- `grpc_api.py`, `settings.py`, `main.py`: the server.
 
-The Sandbox Service still serves this code's gRPC API from its one Deployment; the
-[API](../sandbox_service/API.md) describes it.
+Until the manifests run its Deployment, the Sandbox Service's one Deployment serves this API too
+(`Launch.gateway_target` unset).

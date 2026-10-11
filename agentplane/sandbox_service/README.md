@@ -39,7 +39,9 @@ The deployment source transfers these authorities to the service.
 
 ## Session API
 
-The [authenticated gRPC API](API.md) has a standalone server entry point and Python client. It resolves
+The [authenticated gRPC API](API.md) has a standalone server entry point and Python client. This
+service serves Sandbox lifecycle and provisioning (`SandboxService`); the
+[Runner Gateway](../runner_gateway/README.md) serves Sessions and commands (`RunnerGateway`). It resolves
 SA-authorized, UID-pinned destinations inside the configured Kubernetes inventory, then
 inspects, commands, or follows existing runner sessions. Separately authorized explicit
 management routes list sessions, bootstrap, open, and resume using runner-retained specs.

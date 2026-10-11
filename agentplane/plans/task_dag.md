@@ -903,7 +903,7 @@ with the last of them.
 
 Target and decisions: [History Service plan](history_service.md#target). The runner keeps dialing
 out, but to two endpoints its Sandbox names: an **ingress** it pushes its journal's Events to, and
-a **control hub** (the Sandbox Service) whose stream it holds for commands, receipts and lifecycle
+a **control endpoint** (the Runner Gateway) whose stream it holds for commands, receipts and lifecycle
 requests. The History Service is the ingress when history is kept. The contract is
 [runner channel § Event ingress](../docs/runner_channel.md#event-ingress); it replaces following the
 runner through the Sandbox Service. Section 7's store, fold and database
@@ -914,7 +914,8 @@ flowchart TD
     RUNNER_OUTBOUND_ROLLOUT[Every template dials out]
     LEGACY_SANDBOX_RETIRE[Retire pre-cutover Sandboxes]
     FOLLOW_PATH_RETIRE[Blocked: delete following, WatchSessions and holds]
-    SANDBOX_SERVICE_DEPLOYMENT_SPLIT[Candidate: controller and hub as separate Deployments]
+    SANDBOX_SERVICE_DEPLOYMENT_SPLIT[Candidate: Sandbox Service and Runner Gateway as separate services]
+    SANDBOX_SERVICE_DEPLOYMENT_SPLIT --> GATEWAY_CLIENT_SPLIT[Unscheduled: Session messages and client move to the gateway]
     AGENTPLANE_SANDBOX_RESOURCE[Decision: our own Sandbox resource]
     POD_INCARNATION[Decision: a Pod is the incarnation]
     SEAL_FINALIZER[Unscheduled: seal as a finalizer on every delete]
@@ -933,7 +934,7 @@ flowchart TD
 ### `SESSION_ID_MINT_RETIRE` — clients always name the Session ID
 
 **Blocked on the deployed app sending `session_id` on every create, and on legacy Sandbox
-retirement.** `CreateSessionRequest.session_id` becomes required. The Sandbox Service stops
+retirement.** `CreateSessionRequest.session_id` becomes required. The Runner Gateway stops
 minting IDs and handing the runner an `r-` locator (the `CLEANUP` tombstones in `grpc_api.py`'s
 `CreateSession` and `session_registry.py`), and the app stops sending the ID again as
 `idempotency_key` for older Sandbox Services.
@@ -941,7 +942,7 @@ minting IDs and handing the runner an `r-` locator (the `CLEANUP` tombstones in 
 ### `LOOKUP_SESSION_RETIRE` — Session status from history, no Open reservation
 
 **Candidate.** After a reload the browser keeps only the Session ID, so it asks `LookupSession`
-whether the runner started it, and the Sandbox Service keeps an Open reservation (spec frozen per
+whether the runner started it, and the Runner Gateway keeps an Open reservation (spec frozen per
 key) for a retried create. The History Service's index records which Sessions a runner announced
 on ingress, so the browser reads that instead. `LookupSession`, its journal scan over the inbound
 API, the Open reservation and the Open key go.
@@ -967,13 +968,24 @@ With the holds goes teardown's path for a runner that pushes nothing: `SealRespo
 `TEARDOWN_PHASE_SEALED`, `SandboxInventory.record_seal` and `delete_if_released`. Every teardown
 then waits for every seal to be `flushed`.
 
-### `SANDBOX_SERVICE_DEPLOYMENT_SPLIT` — controller and hub as separate Deployments
+### `SANDBOX_SERVICE_DEPLOYMENT_SPLIT` — Sandbox Service and Runner Gateway as separate services
 
-**Candidate; operator, 2026-10-10 PDT.** The Sandbox Service stays one service and one API owner
-(lifecycle and control of Sandboxes), but runs as two Deployments with separate ServiceAccounts: a
-single active controller holding the RBAC, ServiceAccount and egress grant permissions, and the
-replicated runner-facing hub with only Lease and EndpointSlice writes, so a hub bug cannot reach
-the controller's credentials.
+**Candidate; operator, 2026-10-10 and 2026-10-11 PDT.** Two services with their own packages,
+servers, images and ServiceAccounts: the Sandbox Service (`SandboxService`), a single active
+reconciler holding the RBAC, ServiceAccount and egress grant permissions; and the replicated
+Runner Gateway (`RunnerGateway`, `agentplane/runner_gateway`), facing runners with only Lease and
+EndpointSlice writes, so a gateway bug cannot reach the Sandbox Service's credentials. Teardown
+seals through the gateway's `SealSandbox`. The code split lands first, with the Sandbox Service
+still serving both from one Deployment while `gateway_target` is unset; the manifest PR, after the
+`agentplane-runner-gateway` image publishes, deploys the gateway, points clients' `gateway_target`
+at it and deletes that combined mode (`CombinedSettings`, `serve_combined`, the gateway's legacy
+service name).
+
+### `GATEWAY_CLIENT_SPLIT` — Session messages and client move to the gateway
+
+**Unscheduled.** `RunnerGateway` still uses the Session and command messages in the Sandbox
+Service's proto package, and one `SandboxServiceClient` serves both services. Move those messages
+into the gateway's proto and give the gateway its own client.
 
 ### `RUNNER_CONTROL_RENAME` — name the runner's control endpoint "control"
 
@@ -991,7 +1003,8 @@ egress, session defaults, bootstrap command, runner endpoints) and the desired r
 running or stopped), with incarnations in its status. Recommendation: back it with an upstream
 Sandbox first and keep owning Pod and PVCs directly as the fallback; clients key off our resource
 either way. Replaces the annotations on the upstream Sandbox and the imperative-only
-`CreateSandbox`.
+`CreateSandbox`. If the Sandbox Service becomes a real controller or operator for it, rename
+the service to say so (operator, 2026-10-11 PDT).
 
 ### `POD_INCARNATION` — a Pod is the incarnation
 
@@ -1025,7 +1038,7 @@ ReadWriteOnce, so the Job starts only once every container of the old Pod is gon
 ### `COMMAND_RECORDS_RETIRE` — drop command submission records
 
 **Unscheduled; operator, 2026-10-10 PDT: keep them for now.** The runner journal already holds
-every admission, idempotent on `command_id`. Retiring the hub's submission records would make it
+every admission, idempotent on `command_id`. Retiring the Runner Gateway's submission records would make it
 stateless, with `GetCommand`, `ListCommands` and the command status UI reading receipts from
 history instead.
 

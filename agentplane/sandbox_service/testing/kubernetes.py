@@ -15,13 +15,13 @@ from agentplane.runner_gateway.commands.connections import ConnectionStore
 from agentplane.runner_gateway.commands.dispatch import DispatchStore
 from agentplane.runner_gateway.commands.store import SubmissionStore
 from agentplane.runner_gateway.connection_records import ConnectionLeases
+from agentplane.runner_gateway.grpc_api import Resources
 from agentplane.runner_gateway.session_registry import SessionRegistry
 from agentplane.sandbox_service.action_policy import ActionPolicyBindings
 from agentplane.sandbox_service.binding_storage import write_binding
 from agentplane.sandbox_service.client import SandboxServiceClient
 from agentplane.sandbox_service.destinations import DestinationResolver
 from agentplane.sandbox_service.egress import EgressInventory
-from agentplane.sandbox_service.grpc_api import Resources
 from agentplane.sandbox_service.inventory import SandboxInventory
 from agentplane.sandbox_service.kubernetes_bindings import KubernetesBindings
 from agentplane.sandbox_service.kubernetes_views import MANAGED_LABEL, SANDBOX_BINDING_ANNOTATION
@@ -137,7 +137,6 @@ async def authenticated_service(
                 allowed_service_account_namespaces={SANDBOX_NAMESPACE},
             ),
             destinations=DestinationResolver(cluster.inventory, k8s_client.CoreV1Api(cluster.api), runner_port),
-            provisioning=cluster.provisioning,
             caller_accounts=frozenset({manager}),
             platform_instructions=platform_instructions,
             follow_lease_s=1,
@@ -153,5 +152,8 @@ async def authenticated_service(
             control=ChannelControl(ConnectionLeases()),
             session_changes=SessionChanges(engine.url),
         )
-        async with resources.session_changes.listener.listen(), service_client(resources, token_file) as client:
+        async with (
+            resources.session_changes.listener.listen(),
+            service_client(resources, token_file, cluster.provisioning) as client,
+        ):
             yield client

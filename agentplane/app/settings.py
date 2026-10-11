@@ -75,12 +75,18 @@ class Settings(AppSettingsConfig):
         description="Namespace whose Sandbox inventory the app observes. Separate from the app's own "
         "so a sandbox shares a namespace with neither the app, its database, nor the rules that govern it."
     )
-    sandbox_service_target: str = Field(min_length=1)
+    sandbox_service_target: str = Field(min_length=1, description="The Sandbox Service's gRPC host:port.")
+    # CLEANUP(added 2026-10-11): Make this required once the manifests set it (SANDBOX_SERVICE_DEPLOYMENT_SPLIT's manifest PR).
+    runner_gateway_target: str | None = Field(
+        default=None,
+        description="The Runner Gateway's gRPC host:port, serving Sessions. Unset calls it at the Sandbox Service "
+        "target, whose one Deployment still serves it.",
+    )
     sandbox_service_control_target: str | None = Field(
         default=None,
         description="Each Sandbox's control Service, a template of `{sandbox}` and `{namespace}` such as "
         "`{sandbox}-control.{namespace}.svc:8080`. Lifecycle calls go there, to the replica holding the "
-        "runner connection. Unset sends them to the Sandbox Service target.",
+        "runner connection. Unset sends them to the Runner Gateway target.",
     )
     history_service_target: str = Field(min_length=1)
     notifications_url: HttpEndpointUrl

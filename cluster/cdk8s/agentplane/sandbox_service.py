@@ -37,9 +37,10 @@ from constructs import Construct
 
 from agentplane.egress.resources import placeholder_of
 from agentplane.runner_gateway.instructions import combine_instructions, render_platform_instructions
+from agentplane.runner_gateway.settings import RUNNER_CHANNEL_AUDIENCE
 from agentplane.sandbox_service.kubernetes_grants import ClusterRoleBindingGrant, RoleBindingGrant
 from agentplane.sandbox_service.runner_endpoints import RunnerEndpoint
-from agentplane.sandbox_service.settings import CONFIG_FILE_ENV, RUNNER_CHANNEL_AUDIENCE, Settings
+from agentplane.sandbox_service.settings import CONFIG_FILE_ENV, CombinedSettings
 from agentplane.subjects import ServiceAccountRef
 from cluster.cdk8s import cilium, node_scheduling, pod_policy
 from cluster.cdk8s.agentplane import actions, database, egress, history_service, notifications
@@ -123,7 +124,7 @@ class SandboxService(Construct):
             self,
             "config",
             metadata=ApiObjectMetadata(name=f"{NAME}-config", namespace=env.namespace),
-            model=Settings,
+            model=CombinedSettings,
             content={
                 "sandbox_namespace": env.namespace,
                 "caller_accounts": [
@@ -203,7 +204,7 @@ class SandboxService(Construct):
             image=f"{_IMAGE}:unset",
             env_variables=commands_migration_env
             # Where the Sandbox control Services this replica writes point (runner_channel.md).
-            | {env_name(Settings, "pod_ip"): EnvValue.from_field_ref(EnvFieldPaths.POD_IP)},
+            | {env_name(CombinedSettings, "pod_ip"): EnvValue.from_field_ref(EnvFieldPaths.POD_IP)},
             image_pull_policy=ImagePullPolicy.IF_NOT_PRESENT,
             ports=[endpoint.port.container_port(), channel.port.container_port(), _HEALTH.container_port()],
             readiness=http_probe("/healthz", port=_HEALTH.number, initial_delay_seconds=3, period_seconds=10),

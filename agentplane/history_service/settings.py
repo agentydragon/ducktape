@@ -18,7 +18,15 @@ CONFIG_FILE_ENV = "AGENTPLANE_HISTORY_SERVICE_CONFIG_FILE"
 
 class SandboxServiceSettings(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    target: str = Field(min_length=1, description="Sandbox Service gRPC host:port the ingester follows Sessions from.")
+    target: str = Field(
+        min_length=1, description="Sandbox Service gRPC host:port, where the ingester places retention holds."
+    )
+    # CLEANUP(added 2026-10-11): Make this required once the manifests set it (SANDBOX_SERVICE_DEPLOYMENT_SPLIT's manifest PR).
+    gateway_target: str | None = Field(
+        default=None,
+        description="Runner Gateway gRPC host:port the ingester follows Sessions from. Unset calls it at `target`, "
+        "whose one Deployment still serves it.",
+    )
     token_file: Path = Field(
         description="Rotating projected ServiceAccount token for the Sandbox Service audience, reread on every call."
     )

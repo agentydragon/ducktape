@@ -1,13 +1,15 @@
-load("//devinfra/python:defs.bzl", "py_library", "py_test")
+load("@aspect_rules_py//py:defs.bzl", "py_image_layer", aspect_py_binary = "py_binary")
+load("@protobuf//bazel:proto_library.bzl", "proto_library")
+load("@rules_oci//oci:defs.bzl", "oci_image")
+load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
+load("//devinfra/python:grpc.bzl", "py_grpc_service_library")
+load("//devinfra/python:proto.bzl", "py_proto_library_with_mypy_stubs")
+load("//props:oci.bzl", "py_image_entrypoint", "py_image_env")
 
 package(default_visibility = ["//agentplane:__subpackages__"])
 
 # gazelle:resolve py agentplane.sandbox_service.protocol_pb2 //agentplane/sandbox_service:protocol_pb2
 # gazelle:resolve py agentplane.sandbox_service.protocol_pb2_grpc //agentplane/sandbox_service:protocol_pb2_grpc
-# gazelle:resolve py agentplane.proto.runner_pb2 //agentplane/proto:runner_pb2
-# gazelle:resolve py agentplane.proto.command_pb2 //agentplane/proto:command_pb2
-# gazelle:resolve py agentplane.proto.event_pb2 //agentplane/proto:event_pb2
-# gazelle:resolve py agentplane.proto.event_log_pb2 //agentplane/proto:event_log_pb2
 
 py_library(
     name = "runner_channel",
@@ -200,4 +202,164 @@ py_library(
     testonly = True,
     srcs = ["conftest.py"],
     deps = ["//agentplane/sandbox_service:conftest"],
+)
+
+proto_library(
+    name = "protocol_proto",
+    srcs = ["protocol.proto"],
+    deps = [
+        "//agentplane/proto:event_log_proto",
+        "//agentplane/proto:runner_proto",
+        "//agentplane/sandbox_service:protocol_proto",
+    ],
+)
+
+py_proto_library_with_mypy_stubs(
+    name = "protocol_pb2",
+    deps = [":protocol_proto"],
+)
+
+py_grpc_service_library(
+    name = "protocol_pb2_grpc",
+    proto = ":protocol_proto",
+    py_proto = ":protocol_pb2",
+)
+
+py_binary(
+    name = "server",
+    main_module = "agentplane.runner_gateway.main",
+    deps = [":main"],
+)
+
+aspect_py_binary(
+    name = "server_image_bin",
+    main = "main.py",
+    deps = [":main"],
+)
+
+py_image_layer(
+    name = "server_layers",
+    binary = ":server_image_bin",
+    group = "1000",
+    owner = "1000",
+)
+
+oci_image(
+    name = "image",
+    base = "@debian_trixie_slim_linux_amd64",
+    entrypoint = py_image_entrypoint("server_image_bin"),
+    # Kubernetes TLS verification uses the system trust store.
+    env = py_image_env(
+        binary_name = "server_image_bin",
+        extra_env = {"SSL_CERT_FILE": "/etc/ssl/certs/ca-certificates.crt"},
+    ),
+    labels = {"org.opencontainers.image.source": "https://github.com/agentydragon/ducktape"},
+    tars = [
+        ":server_layers",
+        "//third_party/debian_slim:cacerts",
+    ],
+    user = "1000:1000",
+    visibility = ["//visibility:public"],
+)
+
+py_library(
+    name = "grpc_api",
+    srcs = ["grpc_api.py"],
+    deps = [
+        ":channel_control",
+        ":channel_delivery",
+        ":command_relay",
+        ":runner_channel",
+        ":sealing",
+        ":session_lifecycle",
+        ":session_registry",
+        "//agentplane:grpc_options",
+        "//agentplane:subjects",
+        "//agentplane/proto:runner_channel_pb2",
+        "//agentplane/proto:command_pb2",
+        "//agentplane/proto:event_log_pb2",
+        "//agentplane/runner:client",
+        "//agentplane/runner:errors",
+        "//agentplane/proto:runner_pb2",
+        "//agentplane/runner_gateway:protocol_pb2",
+        "//agentplane/runner_gateway:protocol_pb2_grpc",
+        "//agentplane/runner_gateway/commands:store",
+        "//agentplane/sandbox_service:destinations",
+        "//agentplane/sandbox_service:models",
+        "//agentplane/sandbox_service:protocol_pb2",
+        "//agentplane/sandbox_service:wire",
+        "//agentplane/sandbox_service:session_changes",
+        "//agentplane/workload_auth:grpc_caller",
+        "//agentplane/workload_auth:principal",
+        "@pypi//grpcio",
+        "@pypi//kubernetes_asyncio",
+        "@pypi//protobuf",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
+    name = "main",
+    srcs = ["main.py"],
+    deps = [
+        ":channel_control",
+        ":channel_delivery",
+        ":connection_records",
+        ":grpc_api",
+        ":runner_channel",
+        ":session_registry",
+        ":settings",
+        "//agentplane:subjects",
+        "//agentplane/proto:runner_channel_pb2",
+        "//agentplane/proto:runner_channel_pb2_grpc",
+        "//agentplane/runner_gateway/commands:connections",
+        "//agentplane/runner_gateway/commands:dispatch",
+        "//agentplane/runner_gateway/commands:store",
+        "//agentplane/sandbox_service:destinations",
+        "//agentplane/sandbox_service:inventory",
+        "//agentplane/sandbox_service:session_changes",
+        "//agentplane/workload_auth:principal",
+        "//util:kubernetes",
+        "@pypi//asyncpg",
+        "@pypi//fastapi",
+        "@pypi//grpcio",
+        "@pypi//kubernetes_asyncio",
+        "@pypi//protobuf",
+        "@pypi//sqlalchemy",
+        "@pypi//uvicorn",
+    ],
+)
+
+py_library(
+    name = "sealing",
+    srcs = ["sealing.py"],
+    deps = [
+        ":channel_control",
+        ":runner_channel",
+        ":session_registry",
+        "//agentplane:grpc_options",
+        "//agentplane/proto:runner_channel_pb2",
+        "//agentplane/runner:client",
+        "//agentplane/proto:runner_pb2",
+        "//agentplane/runner_gateway/commands:connections",
+        "//agentplane/sandbox_service:destinations",
+        "//agentplane/sandbox_service:protocol_pb2",
+        "@pypi//grpcio",
+        "@pypi//protobuf",
+    ],
+)
+
+py_library(
+    name = "settings",
+    srcs = ["settings.py"],
+    visibility = [
+        "//agentplane:__subpackages__",
+        "//cluster/cdk8s/agentplane:__pkg__",
+    ],
+    deps = [
+        "//agentplane:subjects",
+        "@pypi//pydantic",
+        "@pypi//pydantic_settings",
+        "@pypi//pyyaml",
+    ],
 )

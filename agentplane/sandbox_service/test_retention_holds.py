@@ -17,13 +17,13 @@ from agentplane.runner_gateway.commands.connections import ConnectionStore
 from agentplane.runner_gateway.commands.dispatch import DispatchStore
 from agentplane.runner_gateway.commands.store import SubmissionStore
 from agentplane.runner_gateway.connection_records import ConnectionLeases
+from agentplane.runner_gateway.grpc_api import Resources
 from agentplane.runner_gateway.session_registry import SessionRegistry
 from agentplane.sandbox_service import protocol_pb2
 from agentplane.sandbox_service.action_policy import ActionPolicyBindings
 from agentplane.sandbox_service.client import SandboxServiceClient, ServiceError
 from agentplane.sandbox_service.destinations import DestinationResolver
 from agentplane.sandbox_service.egress import EgressInventory
-from agentplane.sandbox_service.grpc_api import Resources
 from agentplane.sandbox_service.inventory import SandboxInventory
 from agentplane.sandbox_service.kubernetes_bindings import KubernetesBindings
 from agentplane.sandbox_service.models import SandboxNotFoundError
@@ -114,6 +114,14 @@ async def api(
         audiences=(AUDIENCE,),
     )
     custom = cast(CustomObjectsClient, custom_objects)
+    provisioning = Provisioning(
+        inventory,
+        EgressInventory(namespace=NAMESPACE, custom_objects=custom, default_policies=[]),
+        ActionPolicyBindings(namespace=NAMESPACE, custom_objects=custom),
+        {},
+        KubernetesBindings(inventory, cast(k8s_client.RbacAuthorizationV1Api, FakeRbac())),
+        RunnerEndpoints(control=None, ingress=None),
+    )
     resources = Resources(
         runner_admission_ack_timeout_s=1,
         principals=WorkloadPrincipalResolver(
@@ -124,14 +132,6 @@ async def api(
         destinations=DestinationResolver(inventory, cast(k8s_client.CoreV1Api, core_v1), 7000),
         caller_accounts=frozenset({HOLDER_ACCOUNT}),
         platform_instructions="",
-        provisioning=Provisioning(
-            inventory,
-            EgressInventory(namespace=NAMESPACE, custom_objects=custom, default_policies=[]),
-            ActionPolicyBindings(namespace=NAMESPACE, custom_objects=custom),
-            {},
-            KubernetesBindings(inventory, cast(k8s_client.RbacAuthorizationV1Api, FakeRbac())),
-            RunnerEndpoints(control=None, ingress=None),
-        ),
         sessions=SessionRegistry(engine),
         submissions=SubmissionStore(engine),
         delivery=ChannelDelivery(
@@ -146,7 +146,7 @@ async def api(
     )
     token_file = tmp_path / "token"
     token_file.write_text(TOKEN)
-    async with service_client(resources, token_file) as client:
+    async with service_client(resources, token_file, provisioning) as client:
         yield client
 
 
