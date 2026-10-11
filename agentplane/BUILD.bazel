@@ -65,5 +65,8 @@ py_library(
 py_library(
     name = "grpc_serving",
     srcs = ["grpc_serving.py"],
-    deps = ["@pypi//grpcio"],
+    deps = [
+        "@pypi//grpcio",
+        "@pypi//grpcio_health_checking",
+    ],
 )

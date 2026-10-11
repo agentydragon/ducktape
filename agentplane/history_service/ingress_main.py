@@ -9,7 +9,7 @@ from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import create_async_engine
 
 from agentplane.grpc_process import serve_health
-from agentplane.grpc_serving import serving
+from agentplane.grpc_serving import add_health, serving
 from agentplane.history_service.ingress import Resources, Timing, add_ingress
 from agentplane.history_service.ingress_settings import IngressSettings
 from agentplane.history_service.storage.store import Store
@@ -33,6 +33,7 @@ async def serve(settings: IngressSettings) -> None:
     try:
         async with k8s_client.ApiClient(configuration) as api:
             server = grpc.aio.server()
+            add_health(server)
             add_ingress(
                 Resources(
                     principals=WorkloadPrincipalResolver(

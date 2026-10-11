@@ -188,6 +188,7 @@ manifest:
     greenlet: greenlet
     griffe: griffelib
     grpc: grpcio
+    grpc_health: grpcio_health_checking
     grpc_tools: grpcio_tools
     gymnasium: gymnasium
     h11: h11

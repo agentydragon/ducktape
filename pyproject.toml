@@ -266,6 +266,8 @@ dependencies = [
     # Protobuf and gRPC code generation for //agentplane/runner: grpcio-tools bundles protoc
     # and the gRPC Python plugin; mypy-protobuf adds the .pyi stubs mypy reads.
     "grpcio>=1.84.0",
+    # grpc.health.v1, which the agentplane services serve for Kubernetes gRPC probes.
+    "grpcio-health-checking>=1.84.0",
     "grpcio-tools>=1.84.0",
     "mypy-protobuf>=3.6",
 

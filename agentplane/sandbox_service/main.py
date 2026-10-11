@@ -11,7 +11,7 @@ import grpc
 from kubernetes_asyncio import client as k8s_client
 
 from agentplane.grpc_process import background, kubernetes_configuration, serve_health
-from agentplane.grpc_serving import serving
+from agentplane.grpc_serving import add_health, serving
 from agentplane.sandbox_service.action_policy import ActionPolicyBindings
 from agentplane.sandbox_service.client import SandboxServiceClient
 from agentplane.sandbox_service.controller import SandboxController
@@ -104,6 +104,7 @@ async def serve(settings: Settings) -> None:
     ):
         await stack.enter_async_context(gateway)
         server = grpc.aio.server()
+        add_health(server)
         await stack.enter_async_context(sandboxes(settings, api, server, sealing=GatewaySealing(gateway)))
         await stack.enter_async_context(serving(server, f"{settings.host}:{settings.port}", grace_s=5))
         await serve_health(settings.host, settings.health_port)

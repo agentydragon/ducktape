@@ -13,7 +13,7 @@ from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 
 from agentplane.grpc_process import background, kubernetes_configuration, serve_health
-from agentplane.grpc_serving import serving
+from agentplane.grpc_serving import add_health, serving
 from agentplane.proto import runner_control_pb2_grpc
 from agentplane.runner_gateway.command_delivery import CommandDelivery
 from agentplane.runner_gateway.commands.connections import ConnectionStore
@@ -140,6 +140,7 @@ async def serve(settings: Settings) -> None:
             AsyncExitStack() as stack,
         ):
             server = grpc.aio.server()
+            add_health(server)
             await stack.enter_async_context(gateway(settings, api, server, commands_engine))
             await stack.enter_async_context(serving(server, f"{settings.host}:{settings.port}", grace_s=5))
             await serve_health(settings.host, settings.health_port)

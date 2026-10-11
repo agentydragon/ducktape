@@ -1882,7 +1882,12 @@ grpcio==1.84.0 \
     --hash=sha256:fff5ef3fe1bba7d6147e5f19e01e5e122ac2c076486887ddcb8d42e663400fbe
     # via
     #   ducktape (pyproject.toml)
+    #   grpcio-health-checking
     #   grpcio-tools
+grpcio-health-checking==1.84.0 \
+    --hash=sha256:3eab9b688e5e09bd1d584c296d3440358f11817388db87b807edd61f45b464d1 \
+    --hash=sha256:c69ea3775a5f90cd094f294859dfd0150a560f7101a8936bf7b4e08b7186a14e
+    # via ducktape (pyproject.toml)
 grpcio-tools==1.84.0 \
     --hash=sha256:0130a41b311c5352fa7ab1e21da63b59db0af6559205d41c384099fc4c59f0be \
     --hash=sha256:036de16c1eb8e516740e0040e721fae73d459a5a5ca4dfb747b6cc095cf7a750 \
@@ -4193,6 +4198,7 @@ protobuf==7.36.1 \
     # via
     #   google-api-core
     #   googleapis-common-protos
+    #   grpcio-health-checking
     #   grpcio-tools
     #   mypy-protobuf
     #   proto-plus

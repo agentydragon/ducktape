@@ -10,7 +10,7 @@ from sqlalchemy.engine import URL, make_url
 from sqlalchemy.ext.asyncio import create_async_engine
 
 from agentplane.grpc_process import serve_health
-from agentplane.grpc_serving import serving
+from agentplane.grpc_serving import add_health, serving
 from agentplane.history_service.evidence import EvidenceReader
 from agentplane.history_service.fold_shadow import FoldShadow
 from agentplane.history_service.grpc_api import Resources, add_service
@@ -88,6 +88,7 @@ async def serve(settings: Settings) -> None:
                 watch_lease_s=settings.watch_lease_s,
             )
             server = grpc.aio.server()
+            add_health(server)
             add_service(resources, server)
             try:
                 # An ingester failure ends the process rather than leaving reads served with no writer.
