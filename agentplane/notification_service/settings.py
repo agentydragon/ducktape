@@ -74,6 +74,8 @@ class SandboxServiceSettings(BaseModel):
         description="Seconds to wait for the runner admission receipt via Sandbox Service; keep above its "
         "runner_admission_ack_timeout_s budget.",
     )
+    # CLEANUP(added 2026-10-11): unread; the clients set their own channel options. Remove this field and
+    #   its value in cluster/cdk8s/agentplane/notifications.py once agentplane-staging and agentplane-testing run an image that no longer reads it.
     grpc_channel_options: dict[str, int | str] = Field(
         default_factory=dict,
         description="gRPC channel options for the Notification Service's connection to Sandbox Service.",
@@ -92,6 +94,8 @@ class HistoryServiceSettings(BaseModel):
         description="History Service gRPC host:port; delivery reads the Session's runner entries there."
     )
     request_timeout_s: float = Field(default=20, gt=0, allow_inf_nan=False)
+    # CLEANUP(added 2026-10-11): unread; the clients set their own channel options. Remove this field and
+    #   its value in cluster/cdk8s/agentplane/notifications.py once agentplane-staging and agentplane-testing run an image that no longer reads it.
     grpc_channel_options: dict[str, int | str] = Field(
         default_factory=dict,
         description="gRPC channel options for the Notification Service's connection to the History Service.",

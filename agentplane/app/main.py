@@ -117,13 +117,11 @@ async def async_main(settings: Settings) -> None:
             request_timeout_s=settings.sandbox_service_request_timeout_s,
             lifecycle_timeout_s=settings.sandbox_service_lifecycle_timeout_s,
             control_target=settings.sandbox_service_control_target,
-            channel_options=settings.sandbox_service_grpc_channel_options,
         ) as inventory,
         HistoryServiceClient(
             settings.history_service_target,
             token_file=settings.history_service_token_file,
             request_timeout_s=settings.history_service_request_timeout_s,
-            channel_options=settings.history_service_grpc_channel_options,
         ) as history,
         history.new_client() as history_watch_client,
     ):

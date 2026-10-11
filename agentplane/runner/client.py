@@ -3,13 +3,12 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Callable, Mapping
+from collections.abc import Callable
 from types import TracebackType
 from typing import Self
 
 import grpc
 
-from agentplane.grpc_options import grpc_channel_option_kvps
 from agentplane.proto import command_pb2, event_log_pb2, runner_pb2, runner_pb2_grpc
 from agentplane.runner.errors import OpenTimeoutError, RunnerError, SessionSealedError, StreamClosedError
 
@@ -120,16 +119,12 @@ class Attachment:
 
 
 class RunnerClient:
-    def __init__(
-        self, target: str, *, channel_options: Mapping[str, int | str] | None, capture_history: bool = False
-    ) -> None:
+    def __init__(self, target: str, *, capture_history: bool = False) -> None:
         """Dial `target`; exiting the client closes the channel."""
         self._capture_history = capture_history
         # Callers close a client and dial the same runner again. A local subchannel pool makes the new
         # channel connect anew; from the process-wide pool it would inherit the closed one's connection.
-        self._channel = grpc.aio.insecure_channel(
-            target, options=grpc_channel_option_kvps(channel_options, required={"grpc.use_local_subchannel_pool": 1})
-        )
+        self._channel = grpc.aio.insecure_channel(target, options=(("grpc.use_local_subchannel_pool", 1),))
         self._stub = runner_pb2_grpc.RunnerStub(self._channel)
 
     async def attach(

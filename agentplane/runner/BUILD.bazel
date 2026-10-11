@@ -49,7 +49,6 @@ py_library(
     ],
     deps = [
         ":errors",
-        "//agentplane:grpc_options",
         "//agentplane/proto:command_pb2",
         "//agentplane/proto:event_log_pb2",
         "//agentplane/proto:runner_pb2",
@@ -833,7 +832,6 @@ py_library(
         ":journal",
         ":service",
         ":session",
-        "//agentplane:grpc_options",
         "//agentplane/proto:command_pb2",
         "//agentplane/proto:runner_control_pb2",
         "//agentplane/proto:runner_control_pb2_grpc",
@@ -881,7 +879,6 @@ py_library(
         ":service",
         ":session",
         ":store",
-        "//agentplane:grpc_options",
         "//agentplane/proto:runner_ingress_pb2",
         "//agentplane/proto:runner_ingress_pb2_grpc",
         "//agentplane/proto:runner_pb2",

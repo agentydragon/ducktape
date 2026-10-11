@@ -3,14 +3,14 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import AsyncIterator, Collection, Mapping
+from collections.abc import AsyncIterator, Collection
 from pathlib import Path
 from types import TracebackType
 from typing import Never, Self
 
 import grpc
 
-from agentplane.grpc_options import grpc_channel_option_kvps
+from agentplane.grpc_options import LARGE_EVENT_RECEIVE_OPTIONS
 from agentplane.proto import history_service_pb2, history_service_pb2_grpc
 
 # gazelle:include_dep @pypi//protobuf
@@ -31,20 +31,12 @@ def _raise(error: grpc.aio.AioRpcError) -> Never:
 
 
 class HistoryServiceClient:
-    def __init__(
-        self,
-        target: str,
-        *,
-        token_file: Path,
-        request_timeout_s: float,
-        channel_options: Mapping[str, int | str] | None = None,
-    ) -> None:
+    def __init__(self, target: str, *, token_file: Path, request_timeout_s: float) -> None:
         if request_timeout_s <= 0:
             raise ValueError("request timeout must be positive")
         self.target = target
         self.token_file = token_file
         self.request_timeout_s = request_timeout_s
-        self._channel_options = channel_options
         self._channel: grpc.aio.Channel | None = None
         self._stub: history_service_pb2_grpc.HistoryServiceAsyncStub | None = None
 
@@ -54,8 +46,7 @@ class HistoryServiceClient:
             # A local subchannel pool makes a channel after `redial()` dial anew; from the process-wide
             # pool it would inherit the closed channel's connection.
             self._channel = grpc.aio.insecure_channel(
-                self.target,
-                options=grpc_channel_option_kvps(self._channel_options, required={"grpc.use_local_subchannel_pool": 1}),
+                self.target, options=(*LARGE_EVENT_RECEIVE_OPTIONS, ("grpc.use_local_subchannel_pool", 1))
             )
             self._stub = history_service_pb2_grpc.HistoryServiceStub(self._channel)
         return self._stub
@@ -67,12 +58,7 @@ class HistoryServiceClient:
 
     def new_client(self) -> HistoryServiceClient:
         """Create an independent channel with this client's endpoint and credentials."""
-        return HistoryServiceClient(
-            self.target,
-            token_file=self.token_file,
-            request_timeout_s=self.request_timeout_s,
-            channel_options=self._channel_options,
-        )
+        return HistoryServiceClient(self.target, token_file=self.token_file, request_timeout_s=self.request_timeout_s)
 
     async def read_session_events(
         self, session_id: str, *, after_cursor: int = 0, limit: int = 128

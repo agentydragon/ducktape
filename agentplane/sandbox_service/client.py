@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Awaitable, Callable, Mapping
+from collections.abc import Awaitable, Callable
 from pathlib import Path
 from types import TracebackType
 from typing import Never, Self
@@ -13,7 +13,7 @@ import grpc
 from google.protobuf.empty_pb2 import Empty
 from google.protobuf.message import Message
 
-from agentplane.grpc_options import grpc_channel_option_kvps
+from agentplane.grpc_options import LARGE_EVENT_RECEIVE_OPTIONS
 from agentplane.proto import (
     command_pb2,
     event_log_pb2,
@@ -76,7 +76,6 @@ class SandboxServiceClient:
         request_timeout_s: float,
         lifecycle_timeout_s: float,
         control_target: str | None = None,
-        channel_options: Mapping[str, int | str] | None = None,
     ) -> None:
         if min(request_timeout_s, lifecycle_timeout_s) <= 0 or (
             command_admission_timeout_s is not None and command_admission_timeout_s <= 0
@@ -96,7 +95,6 @@ class SandboxServiceClient:
         # template of `{sandbox}` and `{namespace}`: `{sandbox}-control.{namespace}.svc:8080`. None
         # sends every gateway call to `gateway_target`.
         self.control_target = control_target
-        self._channel_options = channel_options
         self._channel: grpc.aio.Channel | None = None
         self._stub: sandbox_service_pb2_grpc.SandboxServiceAsyncStub | None = None
         self._gateway_channel: grpc.aio.Channel | None = None
@@ -108,9 +106,7 @@ class SandboxServiceClient:
         # pool it would inherit the closed channel's connection.
         return grpc.aio.insecure_channel(
             target,
-            options=grpc_channel_option_kvps(
-                self._channel_options, required={"grpc.enable_retries": 0, "grpc.use_local_subchannel_pool": 1}
-            ),
+            options=(*LARGE_EVENT_RECEIVE_OPTIONS, ("grpc.enable_retries", 0), ("grpc.use_local_subchannel_pool", 1)),
         )
 
     @property

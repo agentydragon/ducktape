@@ -10,7 +10,6 @@ from contextlib import AsyncExitStack, aclosing
 import grpc
 from tenacity import AsyncRetrying, RetryCallState, retry_if_exception_type, wait_random_exponential
 
-from agentplane.grpc_options import grpc_channel_option_kvps
 from agentplane.proto import runner_ingress_pb2, runner_ingress_pb2_grpc, runner_pb2
 from agentplane.runner.control import ControlTiming
 from agentplane.runner.service import Runner, build_attached, follow_journal
@@ -154,21 +153,12 @@ class IngressPusher:
     """Pushes every Session whose seal the ingress has not acknowledged, for as long as the runner
     runs. Commands never wait on it: the journal is the buffer."""
 
-    def __init__(
-        self,
-        runner: Runner,
-        *,
-        target: str,
-        bearer: str,
-        timing: ControlTiming,
-        channel_options: dict[str, int | str] | None = None,
-    ) -> None:
+    def __init__(self, runner: Runner, *, target: str, bearer: str, timing: ControlTiming) -> None:
         self.runner = runner
         self.target = target
         # A placeholder the egress proxy swaps for this Pod's ingress token; the runner never holds it.
         self.bearer = bearer
         self.timing = timing
-        self.channel_options = channel_options
         # Each Session's push, ending once the ingress acknowledged its seal.
         self.pushes: dict[str, asyncio.Task[None]] = {}
 
@@ -190,12 +180,9 @@ class IngressPusher:
             channel = await stack.enter_async_context(
                 grpc.aio.insecure_channel(
                     self.target,
-                    options=grpc_channel_option_kvps(
-                        self.channel_options,
-                        required={
-                            "grpc.initial_reconnect_backoff_ms": int(self.timing.backoff_initial_s * 1000),
-                            "grpc.max_reconnect_backoff_ms": int(self.timing.backoff_max_s * 1000),
-                        },
+                    options=(
+                        ("grpc.initial_reconnect_backoff_ms", int(self.timing.backoff_initial_s * 1000)),
+                        ("grpc.max_reconnect_backoff_ms", int(self.timing.backoff_max_s * 1000)),
                     ),
                 )
             )

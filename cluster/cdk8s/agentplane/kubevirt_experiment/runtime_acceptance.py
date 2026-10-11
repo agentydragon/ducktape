@@ -649,7 +649,7 @@ async def inspect(args: argparse.Namespace) -> None:
             "port_forward": _port_forward(namespace, pod) if pod is not None else None,
         }
         if args.target is not None:
-            async with RunnerClient(args.target, channel_options=None) as runner:
+            async with RunnerClient(args.target) as runner:
                 summaries = await _within(runner.list_sessions(), deadline)
             result["sessions"] = [
                 {
@@ -778,7 +778,7 @@ async def _retire_format_permission(core: k8s_client.CoreV1Api, namespace: str, 
 
 async def initialize(args: argparse.Namespace) -> None:
     deadline = asyncio.get_running_loop().time() + args.timeout
-    async with RunnerClient(args.target, channel_options=None) as runner:
+    async with RunnerClient(args.target) as runner:
         sessions = await _within(runner.list_sessions(), deadline)
 
         async def collect() -> list[runner_pb2.InitializationEvent]:
@@ -875,7 +875,7 @@ async def session(args: argparse.Namespace) -> None:
     marker = f"VM_RECOVERY_{uuid4().hex[:16]}"
     workdir = f"{_SESSION_ROOT}/sessions/{session_id}"
     setup_script = f"mkdir -p {workdir}"
-    async with RunnerClient(args.target, channel_options=None, capture_history=True) as runner:
+    async with RunnerClient(args.target, capture_history=True) as runner:
         spec = runner_pb2.SessionSpec(
             harness=_harness(args.harness), cwd=workdir, model=args.model, reasoning_effort=args.reasoning_effort
         )
@@ -919,7 +919,7 @@ async def setup_probe(args: argparse.Namespace) -> None:
     deadline = asyncio.get_running_loop().time() + args.timeout
     attachment = None
     stream_drained = False
-    async with RunnerClient(args.target, channel_options=None, capture_history=True) as runner:
+    async with RunnerClient(args.target, capture_history=True) as runner:
         try:
             await _within(runner.list_sessions(), deadline)
             attachment = await _within(
@@ -1104,7 +1104,7 @@ async def resume_vm(args: argparse.Namespace) -> None:
 
 async def recover(args: argparse.Namespace) -> None:
     deadline = asyncio.get_running_loop().time() + args.timeout
-    async with RunnerClient(args.target, channel_options=None, capture_history=True) as runner:
+    async with RunnerClient(args.target, capture_history=True) as runner:
         summaries = await _within(runner.list_sessions(), deadline)
         summary = next((item for item in summaries if item.session_id == args.session_id), None)
         if summary is None:

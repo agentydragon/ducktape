@@ -95,7 +95,7 @@ class RunnerClientFactory(Protocol):
 @pytest.fixture
 def runner_client_factory() -> RunnerClientFactory:
     def create(target: str, *, capture_history: bool = False) -> RunnerClient:
-        return RunnerClient(target, channel_options=None, capture_history=capture_history)
+        return RunnerClient(target, capture_history=capture_history)
 
     return create
 

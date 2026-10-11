@@ -87,7 +87,7 @@ def sample_native(pid: int, directory: Path) -> NativeSample:
 async def running_client(config: RunnerConfig) -> AsyncIterator[RunnerClient]:
     async with (
         serve(config, address="127.0.0.1:0", grace_s=0) as (_, port),
-        RunnerClient(f"127.0.0.1:{port}", channel_options=None) as client,
+        RunnerClient(f"127.0.0.1:{port}") as client,
     ):
         yield client
 

@@ -357,7 +357,8 @@ flowchart LR
 admit no connections; the KubeVirt experiment's guest is the last caller of the runner's own gRPC
 server. Delete that server, its `--listen` flag, the `Runner` service RPCs the channel duplicates
 and `protocol.v1.Follow` with `Open.follow`, and its client `runner/client.py`, test-only now, with
-the app's `OpenTimeoutError` handler.
+the app's `OpenTimeoutError` handler. `--control-target` and `--ingress-target`, optional only because
+that guest runs without them, become required.
 
 ### `VM_CONTROL_NETWORKING` — integrate the reviewed connection direction
 
@@ -889,7 +890,7 @@ flowchart TD
         KUBEVIRT_GUEST_CONTROL[Candidate: KubeVirt guest dials out]
         RUNNER_CORE_SPLIT[Blocked: runner core out of the inbound servicer]
         ACTION_PROTOCOLS_CONCRETE[Candidate: concrete external-grant authority]
-        GRPC_CHANNEL_OPTIONS_CONSTANT[Candidate: one gRPC channel options constant]
+        GRPC_CHANNEL_OPTIONS_CONSTANT[Waits on rollout: drop the unread channel-options settings]
         SETTLED_CURSORS_MOVE[Candidate: settled cursors live with the History Service]
         CONTROL_TARGET_REQUIRED[Candidate: clients require the control Service target]
     end
@@ -965,9 +966,10 @@ imports `db.py`'s rows: `ActionStore` first moves out of `db.py`, then takes a `
 
 ### `GRPC_CHANNEL_OPTIONS_CONSTANT` — one gRPC channel options constant
 
-**Candidate.** Both environments set every channel-options field to
-`LARGE_EVENT_GRPC_CHANNEL_OPTIONS`, and `notifications.py` and `history_service.py` read the app's
-copies. Use the constant (or the clients' default) instead of `Environment` and app-config plumbing.
+**Waits on the clients' own channel options rolling to both environments.** The Sandbox Service
+and History Service clients now set the 32 MiB receive limit themselves, and nothing reads the app's
+and Notification Service's channel-options settings. Remove those fields and the values
+`app_settings.py` and `notifications.py` set from `grpc_channel_config.py`, in one PR.
 
 ### `SETTLED_CURSORS_MOVE` — settled cursors live with the History Service
 

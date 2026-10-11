@@ -46,13 +46,11 @@ async def serve(settings: Settings) -> None:
                 lifecycle_timeout_s=settings.sandbox_service.lifecycle_timeout_s,
                 command_admission_timeout_s=settings.sandbox_service.command_admission_timeout_s,
                 control_target=settings.sandbox_service.control_target,
-                channel_options=settings.sandbox_service.grpc_channel_options,
             ) as sandboxes,
             HistoryServiceClient(
                 settings.history_service.target,
                 token_file=settings.history_service.token_file,
                 request_timeout_s=settings.history_service.request_timeout_s,
-                channel_options=settings.history_service.grpc_channel_options,
             ) as history,
         ):
             principals = WorkloadPrincipalResolver(

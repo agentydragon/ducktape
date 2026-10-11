@@ -14,7 +14,6 @@ import grpc
 from sqlalchemy.exc import SQLAlchemyError
 from tenacity import AsyncRetrying, RetryCallState, retry_if_exception_type, wait_random_exponential
 
-from agentplane.grpc_options import grpc_channel_option_kvps
 from agentplane.proto import command_pb2, runner_control_pb2 as control_pb2, runner_control_pb2_grpc, runner_pb2
 from agentplane.runner.journal import CommandConflictError, JournalSealedError
 from agentplane.runner.service import (
@@ -161,21 +160,12 @@ class RunnerControlClient:
     would hand a reconnect the stale connection that just failed.
     """
 
-    def __init__(
-        self,
-        runner: Runner,
-        *,
-        target: str,
-        bearer: str,
-        timing: ControlTiming,
-        channel_options: dict[str, int | str] | None = None,
-    ) -> None:
+    def __init__(self, runner: Runner, *, target: str, bearer: str, timing: ControlTiming) -> None:
         self.runner = runner
         self.target = target
         # A placeholder the egress proxy swaps for this Pod's control token; the runner never holds it.
         self.bearer = bearer
         self.timing = timing
-        self.channel_options = channel_options
         self.boot_id = str(uuid4())
 
     def _backoff(self, state: RetryCallState) -> float:
@@ -202,10 +192,7 @@ class RunnerControlClient:
         loop = asyncio.get_running_loop()
         welcomed_at: float | None = None
         lost = ControlStreamLostError(None, "the stream ended")
-        async with grpc.aio.insecure_channel(
-            self.target,
-            options=grpc_channel_option_kvps(self.channel_options, required={"grpc.use_local_subchannel_pool": 1}),
-        ) as channel:
+        async with grpc.aio.insecure_channel(self.target, options=(("grpc.use_local_subchannel_pool", 1),)) as channel:
             try:
                 stub = runner_control_pb2_grpc.RunnerControlStub(channel)
                 call = stub.Connect(metadata=(("authorization", f"Bearer {self.bearer}"),))

@@ -77,9 +77,9 @@ follows it; code that differs converges on it.
   domain methods. Callers never touch the stub.
 - The stub is annotated `<Service>AsyncStub` and built as `<Service>Stub(channel)`.
 - Channels are `grpc.aio.insecure_channel`: in-cluster traffic is plaintext and identity comes from
-  the bearer (or, for Sandbox workloads, from the egress proxy that substitutes it). Options come from
-  `grpc_channel_option_kvps`: the service's configured options plus the client's invariants as
-  `required`:
+  the bearer (or, for Sandbox workloads, from the egress proxy that substitutes it). Each client sets
+  its own options; a client that receives Session Events adds `LARGE_EVENT_RECEIVE_OPTIONS`
+  (`agentplane/grpc_options.py`). The invariants:
   - `grpc.use_local_subchannel_pool: 1` for every client that closes and redials. From the
     process-wide pool a new channel inherits the closed channel's connection.
   - `grpc.enable_retries: 0` for clients whose mutations must be reconciled, never replayed.

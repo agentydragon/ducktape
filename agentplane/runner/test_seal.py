@@ -45,7 +45,7 @@ async def client(config: RunnerConfig, last_cursors: dict[str, int]) -> AsyncIte
     del last_cursors
     async with (
         serve(config, address="127.0.0.1:0", grace_s=0) as (_, port),
-        RunnerClient(f"127.0.0.1:{port}", channel_options=None, capture_history=True) as client,
+        RunnerClient(f"127.0.0.1:{port}", capture_history=True) as client,
     ):
         yield client
 
@@ -74,7 +74,7 @@ async def test_a_restarted_runner_keeps_the_seal(config: RunnerConfig, last_curs
     for _ in range(2):
         async with (
             serve(config, address="127.0.0.1:0", grace_s=0) as (_, port),
-            RunnerClient(f"127.0.0.1:{port}", channel_options=None, capture_history=True) as client,
+            RunnerClient(f"127.0.0.1:{port}", capture_history=True) as client,
         ):
             assert {seal.session_id: seal.cursor for seal in (await client.seal()).sessions} == last_cursors
             async with await client.attach("test-session-b") as attachment:

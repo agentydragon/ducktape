@@ -40,6 +40,8 @@ class AppSettingsConfig(YamlFileSettings):
     kubernetes_grants: dict[str, KubernetesGrant] = Field(
         default_factory=dict, description="Enabled Kubernetes binding templates; launch requests select names only."
     )
+    # CLEANUP(added 2026-10-11): unread; the clients set their own channel options. Remove both channel-options fields and
+    #   their values in cluster/cdk8s/agentplane/app_settings.py once agentplane-staging and agentplane-testing run an image that no longer reads them.
     sandbox_service_grpc_channel_options: dict[str, int | str] = Field(
         default_factory=dict, description="gRPC channel options for the App's connection to Sandbox Service."
     )

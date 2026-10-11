@@ -1,12 +1,5 @@
-"""Normalize gRPC channel option maps supplied by service configuration."""
+"""Options Agentplane's gRPC client channels share."""
 
-from collections.abc import Mapping
-
-
-def grpc_channel_option_kvps(
-    configured: Mapping[str, int | str] | None = None, *, required: Mapping[str, int | str] | None = None
-) -> tuple[tuple[str, int | str], ...]:
-    """Combine ConfigMap options with client invariants such as disabling retries."""
-    options: dict[str, int | str] = dict(configured or {})
-    options.update(required or {})
-    return tuple(options.items())
+# A retained Codex thread/resume event was observed at about 14 MiB. Channels that receive Session
+# Events stay bounded at 32 MiB while still replaying those journal frames.
+LARGE_EVENT_RECEIVE_OPTIONS: tuple[tuple[str, int], ...] = (("grpc.max_receive_message_length", 32 * 1024 * 1024),)
