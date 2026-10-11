@@ -190,8 +190,25 @@
   white-space: nowrap;
 }
 
-.agentplane-sidebar-row-notices {
-  flex-shrink: 0;
+.agentplane-sidebar-row-mark {
+  position: relative;
+  display: inline-flex;
+  flex: 0 0 auto;
+}
+
+/* The unprocessed count tucks under the status mark's lower-right corner, like a count on an
+   avatar; the ring in the row's background keeps the two apart where they overlap. */
+.agentplane-sidebar-row-mark .agentplane-sidebar-row-notices {
+  position: absolute;
+  right: -0.4375rem;
+  bottom: -0.4375rem;
+  height: 0.6875rem;
+  min-width: 0.6875rem;
+  padding: 0 0.125rem;
+  font-size: 0.5rem;
+  line-height: 0.625rem;
+  letter-spacing: 0;
+  box-shadow: 0 0 0 1px var(--mantine-color-body);
 }
 
 .agentplane-sidebar-row-action {

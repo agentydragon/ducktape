@@ -106,8 +106,6 @@ export function ThreadNoticeBadge({
       <Badge
         className="agentplane-sidebar-row-notices"
         data-state={error === null ? "pending" : "error"}
-        size="xs"
-        circle
         variant="filled"
         color={error === null ? "blue" : "red"}
         aria-label={lines.join(". ")}

@@ -228,9 +228,11 @@ function ThreadRow({
         }
       }}
     >
-      <ThreadStatusIndicator kind={status.kind} label={status.label} size="small" />
+      <span className="agentplane-sidebar-row-mark">
+        <ThreadStatusIndicator kind={status.kind} label={status.label} size="small" />
+        <ThreadNoticeBadge inboxes={notices.bySession?.get(thread.id) ?? []} live={notices.live} />
+      </span>
       <span className="agentplane-sidebar-row-name">{label}</span>
-      <ThreadNoticeBadge inboxes={notices.bySession?.get(thread.id) ?? []} live={notices.live} />
       <Tooltip
         label={thread.archived ? "Unarchive" : harnessRunning ? "Stop the harness before archiving" : "Archive"}
         withArrow
