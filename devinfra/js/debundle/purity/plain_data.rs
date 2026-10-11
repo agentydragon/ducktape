@@ -64,11 +64,10 @@ pub(crate) fn collect_plain_data_bindings(
         .flat_map(|item| crate::facts::collect_declared_names(item.as_module_item()))
         .map(|id| id.0.to_string())
         .collect();
-    let mut object_to_names = BTreeMap::new();
-    let mut return_exempt = BTreeSet::new();
+    let mut objects = BTreeSet::new();
     for name in &candidates {
         let inits = &inits_by_name[name];
-        let objects: BTreeSet<_> = inits
+        let candidate_objects: BTreeSet<_> = inits
             .iter()
             .filter_map(|(init, _)| match init.unwrap_parens() {
                 Expr::Object(object) => Some(crate::facts::ValueOrigin::Object(object.span.lo.0)),
@@ -76,18 +75,16 @@ pub(crate) fn collect_plain_data_bindings(
                 _ => None,
             })
             .collect();
-        if objects.len() != inits.len() {
-            continue;
+        if candidate_objects.len() == inits.len() {
+            objects.extend(candidate_objects);
         }
-        for object in objects {
-            let aliases: BTreeSet<String> = value_flow
-                .aliases_of_objects(&BTreeSet::from([object]))
-                .intersection(&top_level_names)
-                .cloned()
-                .collect();
-            return_exempt.extend(aliases.iter().cloned());
-            object_to_names.insert(object, aliases);
-        }
+    }
+    let mut object_to_names = BTreeMap::new();
+    let mut return_exempt = BTreeSet::new();
+    for (object, names) in value_flow.aliases_by_object(&objects) {
+        let aliases: BTreeSet<String> = names.intersection(&top_level_names).cloned().collect();
+        return_exempt.extend(aliases.iter().cloned());
+        object_to_names.insert(object, aliases);
     }
     let mut scan_candidates = candidates.clone();
     scan_candidates.extend(return_exempt.iter().cloned());
@@ -153,16 +150,17 @@ pub(crate) fn collect_plain_data_bindings(
             _ => module_item.visit_with(&mut scanner),
         }
     }
-    let disqualified = scanner.disqualified;
+    let mut disqualified = scanner.disqualified;
     let object_to_names = scanner.object_to_names;
+    let disqualified_aliases: BTreeSet<String> = object_to_names
+        .values()
+        .filter(|aliases| !aliases.is_disjoint(&disqualified))
+        .flat_map(|aliases| aliases.iter().cloned())
+        .collect();
+    disqualified.extend(disqualified_aliases);
     candidates
         .into_iter()
-        .filter(|n| {
-            !disqualified.contains(n)
-                && !object_to_names
-                    .values()
-                    .any(|aliases| aliases.contains(n) && !aliases.is_disjoint(&disqualified))
-        })
+        .filter(|name| !disqualified.contains(name))
         .collect()
 }
 
@@ -675,8 +673,8 @@ impl PlainDataWriteScanner<'_> {
             }
             values.extend(flow.values_of_binding(&id));
         }
-        for (object, aliases) in &self.object_to_names {
-            if flow.may_reach_object(&values, &BTreeSet::from([*object])) {
+        for object in flow.reachable_objects(&values) {
+            if let Some(aliases) = self.object_to_names.get(&object) {
                 self.disqualified.extend(aliases.iter().cloned());
             }
         }

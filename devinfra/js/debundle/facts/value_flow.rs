@@ -135,8 +135,8 @@ impl ChunkValueFlow {
                         } else {
                             out.extend(
                                 self.properties
-                                    .iter()
-                                    .filter(|((owner, _), _)| *owner == object)
+                                    .range((object, String::new())..)
+                                    .take_while(|((owner, _), _)| *owner == object)
                                     .flat_map(|(_, values)| values.iter().copied()),
                             );
                             out.insert(ValueOrigin::Unknown);
@@ -195,30 +195,28 @@ impl ChunkValueFlow {
         self.returns.get(&function)
     }
 
-    pub(crate) fn aliases_of_objects(&self, objects: &BTreeSet<ValueOrigin>) -> BTreeSet<String> {
-        self.bindings
-            .iter()
-            .filter(|(_, values)| !values.is_disjoint(objects))
-            .map(|(id, _)| id.0.to_string())
-            .collect()
+    pub(crate) fn aliases_by_object(
+        &self,
+        objects: &BTreeSet<ValueOrigin>,
+    ) -> BTreeMap<ValueOrigin, BTreeSet<String>> {
+        let mut aliases: BTreeMap<ValueOrigin, BTreeSet<String>> = BTreeMap::new();
+        for (id, values) in &self.bindings {
+            for object in values.intersection(objects) {
+                aliases.entry(*object).or_default().insert(id.0.to_string());
+            }
+        }
+        aliases
     }
 
-    /// Values can themselves be functions which return the object. This is
-    /// used only at escape sites, so an unknown value is left to the caller's
-    /// conservative handling rather than being treated as a known object.
-    pub(crate) fn may_reach_object(
-        &self,
-        values: &Values,
-        objects: &BTreeSet<ValueOrigin>,
-    ) -> bool {
+    /// Walk return and property edges once for all candidate objects at an
+    /// escape site. Unknown values remain the caller's conservative case.
+    pub(crate) fn reachable_objects(&self, values: &Values) -> BTreeSet<ValueOrigin> {
         let mut pending: Vec<ValueOrigin> = values.iter().copied().collect();
         let mut seen = BTreeSet::new();
+        let mut objects = BTreeSet::new();
         while let Some(value) = pending.pop() {
             if !seen.insert(value) {
                 continue;
-            }
-            if objects.contains(&value) {
-                return true;
             }
             if let ValueOrigin::Function(function) = value
                 && let Some(returns) = self.return_values(function)
@@ -226,15 +224,16 @@ impl ChunkValueFlow {
                 pending.extend(returns.iter().copied());
             }
             if let ValueOrigin::Object(object) = value {
+                objects.insert(value);
                 pending.extend(
                     self.properties
-                        .iter()
-                        .filter(|((owner, _), _)| *owner == object)
+                        .range((object, String::new())..)
+                        .take_while(|((owner, _), _)| *owner == object)
                         .flat_map(|(_, values)| values.iter().copied()),
                 );
             }
         }
-        false
+        objects
     }
 
     /// Add call targets discovered through parameters, aliases, returns and

@@ -47,6 +47,11 @@ debundle_e2e_test(
 )
 
 debundle_e2e_test(
+    name = "plain_data_escape_scale_test",
+    timeout = "short",
+)
+
+debundle_e2e_test(
     name = "impure_call_reason_growth_test",
     deps = [
         "//devinfra/js/debundle:analysis",

@@ -37,7 +37,9 @@ use swc_common::Span;
 use swc_ecma_ast::ModuleItem;
 
 use crate::SourceLocation;
-use crate::facts::{compute_shadowed_globals, top_level_item_views};
+use crate::facts::{
+    ChunkValueFlow, TopLevelItemView, compute_shadowed_globals, top_level_item_views,
+};
 use crate::purity::{ChunkCodeGraph, Purity};
 
 /// Stable key identifying a module in the program (the chunk name).
@@ -69,15 +71,34 @@ pub struct ModulePurityFacts<'a> {
     pub source: Option<(String, SourceLineIndex)>,
 }
 
-impl ModulePurityFacts<'_> {
+struct PreparedModulePurityFacts<'a> {
+    views: Vec<TopLevelItemView<'a>>,
+    shadowed: BTreeSet<&'static str>,
+    value_flow: ChunkValueFlow,
+}
+
+impl<'a> ModulePurityFacts<'a> {
+    fn prepare(&self) -> PreparedModulePurityFacts<'a> {
+        let views = top_level_item_views(self.body);
+        let shadowed = compute_shadowed_globals(&views);
+        let value_flow = ChunkValueFlow::analyze(&views);
+        PreparedModulePurityFacts {
+            views,
+            shadowed,
+            value_flow,
+        }
+    }
+
     /// Build this module's `ChunkCodeGraph` with the supplied imported-binding
     /// purities. Only the cross-module map varies across fixpoint rounds; the
     /// declared-purity inputs are not consulted here (the oracle reasons about
     /// inferred body purity, and declared annotations only ever make a binding
     /// *more* pure, so omitting them keeps the verdict conservative).
-    fn build_graph(&self, imported: &BTreeMap<String, Arc<Purity>>) -> ChunkCodeGraph {
-        let views = top_level_item_views(self.body);
-        let shadowed = compute_shadowed_globals(&views);
+    fn build_graph(
+        &self,
+        prepared: &PreparedModulePurityFacts<'_>,
+        imported: &BTreeMap<String, Arc<Purity>>,
+    ) -> ChunkCodeGraph {
         let mut locate = |span: Span| {
             let (source_path, index) = self.source.as_ref()?;
             let (start_line, end_line, start_column) =
@@ -89,9 +110,10 @@ impl ModulePurityFacts<'_> {
                 start_column: Some(start_column),
             })
         };
-        ChunkCodeGraph::build_full_with_locations(
-            &views,
-            &shadowed,
+        ChunkCodeGraph::build_full_with_locations_and_flow(
+            &prepared.views,
+            &prepared.value_flow,
+            &prepared.shadowed,
             &BTreeSet::new(),
             &BTreeSet::new(),
             &BTreeMap::new(),
@@ -135,6 +157,12 @@ pub fn resolve_imported_purities(
     modules: &BTreeMap<ModuleKey, ModulePurityFacts<'_>>,
     asserted_pure: &BTreeMap<ModuleKey, BTreeSet<String>>,
 ) -> BTreeMap<ModuleKey, BTreeMap<String, Arc<Purity>>> {
+    // Imported verdicts change across rounds; the module's own value flow
+    // and shadowing do not. Keep those structural facts for every rebuild.
+    let prepared: BTreeMap<_, _> = modules
+        .iter()
+        .map(|(key, facts)| (key.clone(), facts.prepare()))
+        .collect();
     // The fixpoint state: the verdict for each *function* export. A
     // `(module, export)` pair is in this map iff `export`'s local binding is a
     // chunk-top function (so calling the import is meaningful); we seed those
@@ -144,7 +172,7 @@ pub fn resolve_imported_purities(
     for (key, facts) in modules {
         // Build once with no resolved imports to discover which exports are
         // functions; their concrete verdict is refined by the loop below.
-        let graph = facts.build_graph(&BTreeMap::new());
+        let graph = facts.build_graph(&prepared[key], &BTreeMap::new());
         for (export_name, local) in &facts.exports {
             if graph.function_purity(local).is_some() {
                 export_purity.insert((key.clone(), export_name.clone()), Arc::new(Purity::Pure));
@@ -189,7 +217,7 @@ pub fn resolve_imported_purities(
             if last_inputs.get(key) == Some(&imported) {
                 continue;
             }
-            let graph = facts.build_graph(&imported);
+            let graph = facts.build_graph(&prepared[key], &imported);
             last_inputs.insert(key, imported);
             for (export_name, local) in &facts.exports {
                 let slot_key = (key.clone(), export_name.clone());
