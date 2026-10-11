@@ -111,25 +111,16 @@ registered but are not followed until their binding is established by a verified
 
 - `ListSessions`: Sandbox destination; the runner's Sessions registered in this Sandbox
   incarnation. Runner sessions the registry does not know are left out.
-- `CreateSession`: explicit Open with Sandbox destination, the client's fresh Session UUID,
-  an optional caller-scoped idempotency key, and selected overrides. The UUID is the public
-  Session ID and the runner's Session ID alike. The Session and its effective launch settings are
-  committed before runner contact; the Service returns the UUID and an attachment snapshot with it.
-  A `{session_id}` placeholder in a selected `cwd` override is expanded to that UUID, just like
-  the stored default cwd. Concurrent or response-lost retries with the same UUID use the original
-  settings; the same UUID with changed inputs, another caller or another Sandbox is rejected; a
-  request without one is invalid. `ResumeSession` accepts the public ID of a Session registered
-  within the pinned Sandbox UID. Neither the UUID nor the key applies to runner-discovered native child sessions. The
-  app opens every new Thread through it, with its Session ID as the key too.
-- `LookupSession`: read-only reconciliation by authenticated caller, current Sandbox name/UID
-  and opaque Open key. Returns no public ID for an absent reservation, or the public ID
-  without runner confirmation for a reserved Open. A runner summary is present only when
-  the runner reports the Session's first launch outcome as started, including a session that
-  stopped later; its retained spec alone does not prove Open succeeded. A first outcome of failed
-  (setup or launch failed before any start) sets `failed` without a summary; an in-flight Open
-  stays unconfirmed. The summary includes the frozen spec and is intended for the trusted app,
-  **not** for browsers. Lookup only lists the runner's sessions, without supplying a spec,
-  restarting a harness, or rerunning bootstrap.
+- `CreateSession`: explicit Open with Sandbox destination, the client's fresh Session UUID and
+  selected overrides. The UUID is the public
+  Session ID and the runner's Session ID alike. The Session is registered in its
+  Sandbox incarnation before runner contact; the Service returns the UUID and an attachment
+  snapshot with it. A `{session_id}` placeholder in a selected `cwd` override is expanded to that
+  UUID, just like the stored default cwd. A retry with the same UUID and inputs returns the Session
+  again; the runner refuses changed inputs and the Runner Gateway refuses another Sandbox; a request
+  without a UUID is invalid. `ResumeSession` accepts the public ID of a Session registered within the
+  pinned Sandbox UID. The UUID does not apply to runner-discovered native child sessions. The app
+  opens every new Thread through it.
 - `CreateSession`'s bootstrap
   and setup use the runner's existing idempotence; the response is the native attachment snapshot, not
   a claim that all setup or a model turn has completed.

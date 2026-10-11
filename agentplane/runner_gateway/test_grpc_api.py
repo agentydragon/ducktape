@@ -219,7 +219,7 @@ async def remote(cluster: Cluster, resources: Resources, token_file: Path) -> As
         yield client
 
 
-async def test_managed_open_uses_the_client_session_id_and_retries_frozen_launch(
+async def test_managed_open_uses_the_client_session_id_and_retries_on_the_runner(
     cluster: Cluster, resources: Resources, token_file: Path, peer: Peer
 ) -> None:
     async with service_client(resources, token_file, cluster.provisioning) as remote:
@@ -235,20 +235,11 @@ async def test_managed_open_uses_the_client_session_id_and_retries_frozen_launch
         assert first.spec.cwd == f"/state/{public}"
         assert public in first.spec.instructions
 
-        # Simulate changed defaults/platform instructions after the original reply was lost.
-        async with service_client(
-            replace(resources, platform_instructions="Changed guidance"), token_file, cluster.provisioning
-        ) as retry:
-            retrying = asyncio.create_task(retry.runner(DESTINATION).create(session_id=requested, spec=overrides))
-            second = await peer.open()
-            assert await retrying == created
-        assert second == first
-        assert "Changed guidance" not in second.spec.instructions
-
-        with pytest.raises(ServiceError) as conflict:
-            await runner.create(session_id=requested, spec=overrides | {"model": "different"})
-        assert conflict.value.code == grpc.StatusCode.INVALID_ARGUMENT
-        assert peer.requests.empty()
+        # After a lost reply the retry reaches the runner again, which confirms it against the spec
+        # it recorded.
+        retrying = asyncio.create_task(runner.create(session_id=requested, spec=overrides))
+        assert await peer.open() == first
+        assert await retrying == created
 
         resuming = asyncio.create_task(runner.resume(public))
         resume = await peer.request()
@@ -364,80 +355,6 @@ async def test_command_status_reads_retained_submissions_without_the_runner(
             assert refused.value.code == code
 
 
-async def test_lookup_open_scopes_reservation_and_waits_for_runner_confirmation(
-    cluster: Cluster, resources: Resources, token_file: Path, peer: Peer, sessions: SessionRegistry
-) -> None:
-    async with service_client(resources, token_file, cluster.provisioning) as remote:
-        runner = remote.runner(DESTINATION)
-        assert not (await runner.lookup(idempotency_key="lookup-key")).session_id
-        reserved = await sessions.reserve(
-            session_id=uuid4(),
-            caller_namespace=OWNER.namespace,
-            caller_name=OWNER.name,
-            sandbox_namespace=SANDBOX_NAMESPACE,
-            sandbox_name=SANDBOX,
-            sandbox_uid=UUID(SANDBOX_UID),
-            open_key="lookup-key",
-            open_request=b"original inputs remain private",
-            launch_spec=lambda _: b"private launch",
-        )
-        pending = await runner.lookup(idempotency_key="lookup-key")
-        assert pending.session_id == str(reserved.session_id)
-        assert not pending.HasField("summary")  # reservation alone is not an Open success
-        with pytest.raises(ServiceError) as wrong_incarnation:
-            await remote.runner(
-                SandboxDestination(owner=DESTINATION.owner, sandbox=SANDBOX, sandbox_uid=str(uuid4()))
-            ).lookup(idempotency_key="lookup-key")
-        assert wrong_incarnation.value.code == grpc.StatusCode.NOT_FOUND
-        assert not (await runner.lookup(idempotency_key="other-key")).session_id
-        with pytest.raises(ServiceError) as invalid:
-            await runner.lookup(idempotency_key="")
-        assert invalid.value.code == grpc.StatusCode.INVALID_ARGUMENT
-
-        requested = uuid4()
-        creating = asyncio.create_task(runner.create(session_id=requested, spec=SPEC))
-        opened = await peer.open()
-        created = await creating
-        peer.sessions[opened.session_id] = runner_pb2.SessionSummary(
-            session_id=opened.session_id, spec=opened.spec, launch_outcome=runner_pb2.LAUNCH_OUTCOME_STARTED
-        )
-        confirmed = await runner.lookup(idempotency_key=str(requested))
-        assert confirmed.session_id == created.session_id == str(requested)
-        assert confirmed.summary.session_id == created.session_id
-        assert confirmed.summary.spec.model == "test-model"
-
-
-@pytest.mark.parametrize(
-    ("outcome", "failed", "confirmed"),
-    [
-        (runner_pb2.LAUNCH_OUTCOME_FAILED, True, False),
-        # Setup still running: neither success nor failure yet.
-        (runner_pb2.LAUNCH_OUTCOME_PENDING, False, False),
-        # A Session that started once opened successfully, even when a later exit stopped it.
-        (runner_pb2.LAUNCH_OUTCOME_STARTED, False, True),
-    ],
-)
-async def test_lookup_reads_the_runners_launch_outcome(
-    remote: SandboxServiceClient, peer: Peer, outcome: runner_pb2.LaunchOutcome, failed: bool, confirmed: bool
-) -> None:
-    """The runner keeps a Session's spec even when its launch failed; never project that as a Thread."""
-    runner = remote.runner(DESTINATION)
-    requested = uuid4()
-    creating = asyncio.create_task(runner.create(session_id=requested, spec=SPEC))
-    opened = await peer.open()
-    await creating
-    peer.sessions[opened.session_id] = runner_pb2.SessionSummary(
-        session_id=opened.session_id,
-        spec=opened.spec,
-        harness_state=runner_pb2.HARNESS_STATE_STOPPED,
-        launch_outcome=outcome,
-    )
-    looked_up = await runner.lookup(idempotency_key=str(requested))
-    assert looked_up.session_id == str(requested)
-    assert (looked_up.failed, looked_up.HasField("summary")) == (failed, confirmed)
-    assert peer.requests.empty()  # looking up never reopens
-
-
 @pytest.mark.parametrize("session_id", ["", "r-not-a-uuid"])
 async def test_open_requires_a_client_session_id(resources: Resources, token_file: Path, session_id: str) -> None:
     request = wire.create_proto(DESTINATION, uuid4(), {"harness": "HARNESS_CODEX", "cwd": "/state", "model": "m"}, None)
@@ -448,7 +365,7 @@ async def test_open_requires_a_client_session_id(resources: Resources, token_fil
     assert refused.value.code() == grpc.StatusCode.INVALID_ARGUMENT
 
 
-async def test_managed_open_expands_default_cwd_with_reserved_id(
+async def test_managed_open_expands_default_cwd_with_the_session_id(
     remote: SandboxServiceClient, peer: Peer, cluster: Cluster
 ) -> None:
     cluster.set_binding(

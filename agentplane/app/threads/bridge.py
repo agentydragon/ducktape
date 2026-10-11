@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from enum import StrEnum
-from typing import Annotated, Literal
+from typing import Annotated
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Request, status
@@ -45,11 +45,6 @@ class NewSession(BaseModel):
         description="A fresh UUID the client minted for this Session; a retry of the same Open repeats it."
     )
     setup_script: str | None = Field(default=None, max_length=65_536)
-
-
-class OpenStatus(BaseModel):
-    status: Literal["absent", "unconfirmed", "failed", "ready"]
-    session_id: str | None = None
 
 
 class CommandState(StrEnum):
@@ -105,27 +100,6 @@ class RunnerBridge:
         attached = runner_pb2.Attached()
         attached.CopyFrom(created.attached)
         return attached
-
-    async def lookup_session(self, sandbox: str, session_id: UUID) -> OpenStatus:
-        """Reconcile a lost Open without replaying its potentially secret-bearing inputs.
-
-        A reservation is not proof the runner accepted Open; only inventory permits a
-        Thread projection. Never return the summary (which includes the frozen spec).
-        """
-        # The create sent the Session ID as its Open key too.
-        result = await self._runners.client(sandbox).lookup(idempotency_key=str(session_id))
-        if not result.session_id:
-            return OpenStatus(status="absent")
-        if result.failed:
-            return OpenStatus(status="failed", session_id=result.session_id)
-        if not result.HasField("summary"):
-            return OpenStatus(status="unconfirmed", session_id=result.session_id)
-        thread_id = await self._event_logs.open(result.session_id)
-        if thread_id != UUID(result.session_id):
-            raise RunnerError("service Session ID conflicts with the retained Thread identity")
-        await self._event_logs.resume_pending(thread_id)
-        await self._ingester.start()
-        return OpenStatus(status="ready", session_id=result.session_id)
 
     async def resume_thread(
         self, thread_id: UUID, *, expected_harness: Harness | None, expected_cwd: str | None
@@ -235,8 +209,3 @@ async def list_sessions(bridge: Bridge, name: str) -> list[dict[str, object]]:
 async def create_session(bridge: Bridge, name: str, body: NewSession) -> dict[str, object]:
     _parse(runner_pb2.SessionSpec(), body.spec)  # Validate without losing explicit empty overrides.
     return MessageToDict(await bridge.create_session(name, body.session_id, body.spec, body.setup_script))
-
-
-@router.get("/open", response_model=OpenStatus)
-async def lookup_session(bridge: Bridge, name: str, session_id: UUID) -> OpenStatus:
-    return await bridge.lookup_session(name, session_id)

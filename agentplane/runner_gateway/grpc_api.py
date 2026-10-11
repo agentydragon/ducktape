@@ -42,7 +42,7 @@ from agentplane.runner_gateway.commands.store import (
 from agentplane.runner_gateway.destinations import DestinationResolver, DestinationUnavailableError
 from agentplane.runner_gateway.lifecycle_control import ConnectionNotHeldError, ControlRefusedError, LifecycleControl
 from agentplane.runner_gateway.sealing import SEAL_S, Sealing
-from agentplane.runner_gateway.session_registry import SessionNotFoundError, SessionRegistry
+from agentplane.runner_gateway.session_registry import SessionConflictError, SessionNotFoundError, SessionRegistry
 from agentplane.sandbox_service import wire
 from agentplane.sandbox_service.models import InventoryError, SandboxNotFoundError
 from agentplane.subjects import ServiceAccountRef
@@ -100,6 +100,8 @@ async def errors(context: grpc.aio.ServicerContext) -> AsyncIterator[None]:
         await context.abort(grpc.StatusCode.NOT_FOUND, "command not found")
     except SubmissionConflictError:
         await context.abort(grpc.StatusCode.ALREADY_EXISTS, "command ID already belongs to a different submission")
+    except SessionConflictError:
+        await context.abort(grpc.StatusCode.ALREADY_EXISTS, "session ID already belongs to another Sandbox")
     except CommandRefusedError as refused:
         code = {
             control_pb2.CommandRefused.REASON_COMMAND_CONFLICT: grpc.StatusCode.ALREADY_EXISTS,
@@ -227,102 +229,48 @@ class RunnerGateway(runner_gateway_pb2_grpc.RunnerGatewayServicer):
         self, request: sandbox_service_pb2.CreateSessionRequest, context: grpc.aio.ServicerContext
     ) -> sandbox_service_pb2.CreateSessionResponse:
         async with errors(context), asyncio.timeout(self.resources.lifecycle_timeout_s):
-            caller = await self.resources.authenticate(context)
-            if len(request.idempotency_key) > 128 or len(request.setup_script) > 65_536:
-                raise ValueError("Open key or setup script is too long")
+            await self.resources.authenticate(context)
+            if len(request.setup_script) > 65_536:
+                raise ValueError("setup script is too long")
             if not request.session_id:
                 raise ValueError("session ID is required")
-            client_id = parse_session_id(request.session_id)
+            session_id = parse_session_id(request.session_id)
             overrides = wire.launch_overrides(request)
             binding = await self.held(request.sandbox, writes=True)
             sandbox_uid = UUID(request.sandbox.sandbox_uid)
-
-            def freeze(session_id: UUID) -> bytes:
-                destination = sandbox_service_pb2.SessionDestination(
-                    sandbox=request.sandbox, session_id=str(session_id)
-                )
-                # Resolve workspace templates against the reserved public ID, and freeze the result.
-                effective_overrides = dict(overrides)
-                if isinstance(cwd := effective_overrides.get("cwd"), str):
-                    effective_overrides["cwd"] = cwd.replace("{session_id}", str(session_id))
-                spec = session_lifecycle.launch_spec(
-                    destination,
-                    effective_overrides,
-                    binding=binding,
-                    platform_instructions=self.resources.platform_instructions,
-                    sandbox_namespace=self.resources.destinations.sandboxes.namespace,
-                )
-                setup_script = (
-                    request.setup_script
-                    if request.HasField("setup_script")
-                    else binding.session_defaults.setup_script
-                    if binding is not None and binding.session_defaults.HasField("setup_script")
-                    else None
-                )
-                launch = sandbox_service_pb2.FrozenLaunch(
-                    open=runner_pb2.Open(session_id=str(session_id), spec=spec),
-                    bootstrap=binding.bootstrap if binding is not None else "",
-                )
-                if setup_script is not None:
-                    launch.open.setup_script = setup_script
-                return launch.SerializeToString(deterministic=True)
-
-            reservation = await self.resources.sessions.reserve(
-                session_id=client_id,
-                caller_namespace=caller.namespace,
-                caller_name=caller.name,
+            await self.resources.sessions.register(
+                session_id,
                 sandbox_namespace=self.resources.destinations.sandboxes.namespace,
                 sandbox_name=request.sandbox.sandbox,
                 sandbox_uid=sandbox_uid,
-                open_key=request.idempotency_key or None,
-                open_request=request.SerializeToString(deterministic=True),
-                launch_spec=freeze,
             )
-            launch = sandbox_service_pb2.FrozenLaunch.FromString(reservation.launch_spec)
-            public_id = str(reservation.session_id)
+            if isinstance(cwd := overrides.get("cwd"), str):
+                overrides["cwd"] = cwd.replace("{session_id}", str(session_id))
+            spec = session_lifecycle.launch_spec(
+                sandbox_service_pb2.SessionDestination(sandbox=request.sandbox, session_id=str(session_id)),
+                overrides,
+                binding=binding,
+                platform_instructions=self.resources.platform_instructions,
+                sandbox_namespace=self.resources.destinations.sandboxes.namespace,
+            )
+            setup_script = (
+                request.setup_script
+                if request.HasField("setup_script")
+                else binding.session_defaults.setup_script
+                if binding is not None and binding.session_defaults.HasField("setup_script")
+                else None
+            )
+            # A retry recomputes the spec; the runner confirms it against the one it recorded.
             attachment = await session_lifecycle.open_session(
                 self.resources.control,
                 sandbox_uid,
-                launch.open.session_id,
-                launch.open.spec,
-                bootstrap=launch.bootstrap,
-                setup_script=launch.open.setup_script if launch.open.HasField("setup_script") else None,
+                str(session_id),
+                spec,
+                bootstrap=binding.bootstrap if binding is not None else "",
+                setup_script=setup_script,
             )
-            attachment.session_id = public_id
-            return sandbox_service_pb2.CreateSessionResponse(session_id=public_id, attached=attachment)
-
-    @override
-    async def LookupSession(
-        self, request: sandbox_service_pb2.LookupSessionRequest, context: grpc.aio.ServicerContext
-    ) -> sandbox_service_pb2.LookupSessionResponse:
-        async with errors(context), asyncio.timeout(self.resources.admission_timeout_s):
-            caller = await self.resources.authenticate(context)
-            if not request.idempotency_key or len(request.idempotency_key) > 128:
-                raise ValueError("Open key is required and must not exceed 128 characters")
-            await self.resources.destinations.resolve(request.sandbox, writes=False)
-            public_id = await self.resources.sessions.lookup_open(
-                caller_namespace=caller.namespace,
-                caller_name=caller.name,
-                sandbox_namespace=self.resources.destinations.sandboxes.namespace,
-                sandbox_name=request.sandbox.sandbox,
-                sandbox_uid=UUID(request.sandbox.sandbox_uid),
-                open_key=request.idempotency_key,
-            )
-            if public_id is None:
-                return sandbox_service_pb2.LookupSessionResponse()
-            result = sandbox_service_pb2.LookupSessionResponse(session_id=str(public_id))
-            # DB reservation precedes runner Open, and a retained spec is not proof of a successful
-            # Open: only the Session's first launch outcome is. A stopped Session may have run before.
-            for summary in await self.list_runner_sessions(request.sandbox):
-                if summary.session_id != str(public_id):
-                    continue
-                if summary.launch_outcome == runner_pb2.LAUNCH_OUTCOME_STARTED:
-                    result.summary.CopyFrom(summary)
-                    result.summary.session_id = str(public_id)
-                elif summary.launch_outcome == runner_pb2.LAUNCH_OUTCOME_FAILED:
-                    result.failed = True
-                break
-            return result
+            attachment.session_id = str(session_id)
+            return sandbox_service_pb2.CreateSessionResponse(session_id=str(session_id), attached=attachment)
 
     @override
     async def ResumeSession(

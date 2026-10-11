@@ -814,20 +814,16 @@ flowchart TD
     SEAL_FINALIZER[Unscheduled: seal as a finalizer on every delete]
     COMMAND_RECORDS_RETIRE[Unscheduled: drop command submission records]
     RESUME_BY_SESSION_ID[Unscheduled: resume a Session by its ID alone]
-    LOOKUP_SESSION_RETIRE[Candidate: Session status from history, no Open reservation]
+    SESSION_OPEN_COLUMNS_DROP[Candidate: drop the gateway's Open reservation columns]
     AGENTPLANE_SANDBOX_RESOURCE -. to seal a suspended Sandbox on delete .-> SEAL_FINALIZER
     POD_INCARNATION -. if chosen, rewrites .-> SESSION_STATE_VOLUME_DESIGN[State volume design]
 ```
 
-### `LOOKUP_SESSION_RETIRE` — Session status from history, no Open reservation
+### `SESSION_OPEN_COLUMNS_DROP` — drop the gateway's Open reservation columns
 
-**Candidate.** After a reload the browser keeps only the Session ID, so it asks `LookupSession`
-whether the runner started it, and the Runner Gateway keeps an Open reservation (spec frozen per
-key) for a retried create. The History Service's index records which Sessions a runner announced
-on ingress, so the browser reads that instead. `LookupSession`, its journal scan over the inbound
-API, the Open reservation and the Open key go, with the gateway `session` columns `open_key`,
-`open_request`, `launch_spec`, `caller_namespace`, `caller_name` and `ux_session_open_key` (stops for
-the operator before the drop).
+**Candidate.** No code reads or writes the Runner Gateway `session` columns `open_key`,
+`open_request`, `launch_spec`, `caller_namespace` and `caller_name`, nor the `ux_session_open_key`
+index. A migration drops them. Data drop: its own PR, which the operator merges.
 
 ### `GATEWAY_CLIENT_SPLIT` — Session messages and client move to the gateway
 

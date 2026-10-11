@@ -35,13 +35,8 @@ def create_proto(
         raise ValueError("a SessionSpec field cannot use both proto and JSON spellings")
     spec = ParseDict(overrides, runner_pb2.SessionSpec())
     paths = [field.name for field in fields if field.name in overrides or field.json_name in overrides]
-    # The Session ID doubles as the Open key: LookupSession finds the Session by it.
     request = sandbox_service_pb2.CreateSessionRequest(
-        sandbox=sandbox,
-        session_id=str(session_id),
-        idempotency_key=str(session_id),
-        spec=spec,
-        setup_script=setup_script,
+        sandbox=sandbox, session_id=str(session_id), spec=spec, setup_script=setup_script
     )
     request.override_mask.paths.extend(paths)
     return request

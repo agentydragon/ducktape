@@ -300,19 +300,9 @@ export async function listSessions(sandbox: string): Promise<SessionSummary[]> {
   return data.map((row) => fromJson(SessionSummarySchema, row as JsonValue));
 }
 
-export type OpenStatus = { status: "absent" | "unconfirmed" | "failed" | "ready"; session_id: string | null };
-
-export async function lookupOpen(sandbox: string, sessionId: string): Promise<OpenStatus> {
-  const { data, error } = await api.GET("/sandboxes/{name}/sessions/open", {
-    params: { path: { name: sandbox }, query: { session_id: sessionId } },
-  });
-  if (error) throw new Error(displayableError(error));
-  return data as OpenStatus;
-}
-
 /**
- * Create the Session `sessionId`, a fresh UUID, names. On an ambiguous response, use lookupOpen;
- * never re-run bootstrap implicitly.
+ * Create the Session `sessionId`, a fresh UUID, names. On an ambiguous response, look for its
+ * Thread (`findThread`); never re-run bootstrap implicitly.
  */
 export async function openSession(
   sandbox: string,
@@ -414,7 +404,17 @@ export async function threadScope(threadId: string, signal?: AbortSignal): Promi
 }
 
 export async function getThread(threadId: string): Promise<ThreadView> {
-  const { data, error } = await api.GET("/threads/{thread_id}", { params: { path: { thread_id: threadId } } });
+  const thread = await findThread(threadId);
+  if (!thread) throw new Error(`Thread ${threadId} not found`);
+  return thread;
+}
+
+/** null until the History Service holds an event of the Thread's Session. */
+export async function findThread(threadId: string): Promise<ThreadView | null> {
+  const { data, error, response } = await api.GET("/threads/{thread_id}", {
+    params: { path: { thread_id: threadId } },
+  });
+  if (response.status === 404) return null;
   if (error) throw new Error(displayableError(error));
   return data;
 }

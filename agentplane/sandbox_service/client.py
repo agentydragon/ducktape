@@ -287,12 +287,6 @@ class Runner:
             timeout_s=self.service.lifecycle_timeout_s,
         )
 
-    async def lookup(self, *, idempotency_key: str) -> sandbox_service_pb2.LookupSessionResponse:
-        return await self.service.gateway_unary(
-            self.service.gateway.LookupSession,
-            sandbox_service_pb2.LookupSessionRequest(sandbox=self.destination, idempotency_key=idempotency_key),
-        )
-
     async def seal(self) -> runner_pb2.SealResponse:
         """Teardown's seal, which only the Sandbox Service may ask for."""
         return await self.service.held_unary(

@@ -21,10 +21,11 @@ class Base(DeclarativeBase):
 
 
 class Session(Base):
-    """A public Session in one Sandbox incarnation, which is also the runner's Session ID, and its Open
-    reservation."""
+    """A public Session in one Sandbox incarnation, which is also the runner's Session ID."""
 
     __tablename__ = "session"
+    # CLEANUP(added 2026-10-11): drop the index and the Open reservation columns below once the
+    #   SESSION_OPEN_COLUMNS_DROP migration lands; nothing reads or writes them.
     __table_args__ = (
         Index(
             "ux_session_open_key",
@@ -44,12 +45,9 @@ class Session(Base):
     sandbox_name: Mapped[str] = mapped_column(String)
     # Absent for imported Sessions whose original Sandbox UID was not retained in app history.
     sandbox_uid: Mapped[UUID | None]
-    # The caller provides an opaque key, never a runner session ID. Absent for imported Sessions.
     caller_namespace: Mapped[str | None] = mapped_column(String)
     caller_name: Mapped[str | None] = mapped_column(String)
     open_key: Mapped[str | None] = mapped_column(String)
-    # Original Open inputs identify a retry; the effective launch spec is frozen
-    # before runner contact, so a changed default cannot alter the retried launch.
     open_request: Mapped[bytes | None] = mapped_column(LargeBinary)
     launch_spec: Mapped[bytes | None] = mapped_column(LargeBinary)
 

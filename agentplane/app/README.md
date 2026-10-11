@@ -462,10 +462,8 @@ A new Thread's id is the public Session ID the browser mints and the Sandbox Ser
 `CreateSession` confirms; `{session_id}` in a cwd resolves server-side. The browser sends a fresh
 Session ID with the original overrides once and keeps only that ID in `sessionStorage`, never the
 spec or setup script, so it cannot retry the create. After a lost reply or a reload it never re-sends
-Open: **Check Open status** asks
-`GET /sandboxes/{name}/sessions/open`, which reports `absent`, `unconfirmed`, `failed` or `ready` and
-materializes the Thread only once the runner has confirmed a native start. Discovery through
-`ListSessions` may materialize the same Thread first; both key it by the same public ID.
+Open: **Check Open status** asks `GET /threads/{id}` for that ID, which exists once the runner has
+pushed the Session to the History Service. Until then the page offers only to discard the attempt.
 
 ## Action policy
 

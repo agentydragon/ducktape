@@ -363,62 +363,43 @@ function button(label: string): HTMLButtonElement {
   return found;
 }
 
-it.each(["absent", "unconfirmed", "failed"] as const)("does not retry %s Open", async (status) => {
-  const sessions = vi.fn<(request: Request) => Promise<Response>>((request) =>
+function lostOpen(): Mock<(request: Request) => Promise<Response>> {
+  return vi.fn((request: Request) =>
     Promise.resolve(
-      request.method === "GET"
-        ? Response.json(new URL(request.url).pathname.endsWith("/open") ? { status, session_id: null } : [])
-        : Response.json({ detail: "connection lost" }, { status: 503 })
+      request.method === "GET" ? Response.json([]) : Response.json({ detail: "connection lost" }, { status: 503 })
     )
   );
+}
+
+it("does not retry an Open the runner has not reported", async () => {
+  const sessions = lostOpen();
   const onOpenThread = await render(sessions);
   await act(async () => newSession().click());
   const first = await postedBody(sessions);
   expect(sessionStorage.getItem("agentplane:pending-open:startup-test")).toBe(first.session_id);
   await act(async () => button("Check Open status").click());
   expect(onOpenThread).not.toHaveBeenCalled();
-  expect(container.textContent).toContain(
-    status === "absent"
-      ? "No Open reservation"
-      : status === "failed"
-        ? "runner could not start"
-        : "runner has not confirmed"
-  );
+  expect(container.textContent).toContain("has not reported this session");
   expect(sessions.mock.calls.filter(([request]) => request.method === "POST")).toHaveLength(1);
-  const lookup = sessions.mock.calls.find(([request]) => new URL(request.url).pathname.endsWith("/open"))?.[0];
-  expect(new URL(lookup!.url).searchParams.get("session_id")).toBe(first.session_id);
+  expect(fetchMock.mock.calls.map(([request]) => new URL(request.url).pathname)).toContain(
+    `/threads/${first.session_id}`
+  );
 });
 
-it("recovers a lost Open from lookup without sending a second Open", async () => {
-  const publicId = "78c4fcc4-35cb-4296-804e-5fb7e0e525fe";
-  const sessions = vi.fn<(request: Request) => Promise<Response>>((request) =>
-    Promise.resolve(
-      request.method === "GET"
-        ? Response.json(
-            new URL(request.url).pathname.endsWith("/open") ? { status: "ready", session_id: publicId } : []
-          )
-        : Response.json({ detail: "connection lost" }, { status: 503 })
-    )
-  );
+it("recovers a lost Open from its Thread without sending a second Open", async () => {
+  const sessions = lostOpen();
   const onOpenThread = await render(sessions);
   await act(async () => newSession().click());
-  live.snapshot.threads = [thread({ id: publicId })];
+  const first = await postedBody(sessions);
+  live.snapshot.threads = [thread({ id: first.session_id })];
   await act(async () => button("Check Open status").click());
-  expect(onOpenThread).toHaveBeenCalledWith(publicId);
+  expect(onOpenThread).toHaveBeenCalledWith(first.session_id);
   expect(sessions.mock.calls.filter(([request]) => request.method === "POST")).toHaveLength(1);
   expect(sessionStorage.getItem("agentplane:pending-open:startup-test")).toBeNull();
 });
 
 it("reload retains only the Session ID, never the Open spec or bootstrap", async () => {
-  const sessions = vi.fn<(request: Request) => Promise<Response>>((request) =>
-    Promise.resolve(
-      request.method === "GET"
-        ? Response.json(
-            new URL(request.url).pathname.endsWith("/open") ? { status: "unconfirmed", session_id: null } : []
-          )
-        : Response.json({ detail: "connection lost" }, { status: 503 })
-    )
-  );
+  const sessions = lostOpen();
   await render(sessions);
   await act(async () => newSession().click());
   const original = await postedBody(sessions);
