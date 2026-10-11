@@ -2,7 +2,7 @@
 
 import asyncio
 from collections.abc import AsyncIterator, Callable
-from contextlib import AbstractAsyncContextManager, asynccontextmanager, suppress
+from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from datetime import UTC, datetime, timedelta
 from typing import Any
 from uuid import UUID, uuid4
@@ -10,7 +10,6 @@ from uuid import UUID, uuid4
 import grpc
 import pytest
 import pytest_bazel
-from kubernetes_asyncio import client as k8s_client
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from agentplane.proto import command_pb2, event_log_pb2, runner_channel_pb2, runner_channel_pb2_grpc
@@ -26,48 +25,25 @@ from agentplane.runner_gateway.connection_records import (
     RUNNER_BOOT_ID_ANNOTATION,
     ConnectionHolder,
     ConnectionLeases,
-    ConnectionRecords,
     RecordOwner,
 )
-from agentplane.runner_gateway.runner_channel import ChannelTiming, RunnerChannelService
+from agentplane.runner_gateway.runner_channel import ChannelTiming
+from agentplane.runner_gateway.testing.runner_channel import OTHER_REPLICA, REPLICA, RUNNER_TOKEN, serve_channel
 from agentplane.sandbox_service.destinations import DestinationUnavailableError
 from agentplane.sandbox_service.testing.kubernetes import ACCOUNT, SANDBOX, SANDBOX_UID, Cluster
 from agentplane.subjects import ServiceAccountRef
-from agentplane.testing.fake_apiserver import SANDBOX_NAMESPACE, TokenVerdict
-from agentplane.workload_auth.principal import WorkloadPrincipalResolver
+from agentplane.testing.fake_apiserver import SANDBOX_NAMESPACE
 from util.agent_sandbox import SANDBOX_KIND, SANDBOXES_PLURAL
 
 # gazelle:include_dep @pypi//protobuf
-# gazelle:include_dep //agentplane/runner_gateway/commands:conftest
-
-pytest_plugins = ("agentplane.runner_gateway.commands.conftest",)
-
-AUDIENCE = "test-runner-channel"
-TOKEN = "test-runner-token"
 COMMAND = command_pb2.Command(command_id="test-command", submit_input=command_pb2.SubmitInput(text="hello"))
 RUNNER_SESSION = "test-runner-session"
 HELLO = runner_channel_pb2.RunnerFrame(
     hello=runner_channel_pb2.Hello(runner_boot_id="test-boot", capabilities=["commands", "test-future-capability"])
 )
-REPLICA = ConnectionHolder(pod_name="test-replica", pod_ip="192.0.2.1", port=18080)
-OTHER_REPLICA = ConnectionHolder(pod_name="test-other-replica", pod_ip="192.0.2.2", port=18080)
 OWNER = RecordOwner(name=SANDBOX, uid=UUID(SANDBOX_UID))
 
 type Replica = Callable[[ConnectionHolder], AbstractAsyncContextManager[runner_channel_pb2_grpc.RunnerChannelAsyncStub]]
-
-
-@pytest.fixture
-async def leases(cluster: Cluster) -> AsyncIterator[ConnectionLeases]:
-    leases = ConnectionLeases()
-    watch = asyncio.create_task(
-        leases.watch(k8s_client.CoordinationV1Api(cluster.api), SANDBOX_NAMESPACE, resync_seconds=60).run()
-    )
-    try:
-        yield leases
-    finally:
-        watch.cancel()
-        with suppress(asyncio.CancelledError):
-            await watch
 
 
 @pytest.fixture
@@ -86,43 +62,15 @@ async def delivery(engine: AsyncEngine, leases: ConnectionLeases) -> AsyncIterat
 
 @pytest.fixture
 def replica(cluster: Cluster, engine: AsyncEngine, delivery: ChannelDelivery) -> Replica:
-    """Start a channel listener as one Sandbox Service replica; replicas share the cluster and database."""
-    cluster.fake.tokens[TOKEN] = TokenVerdict(
-        username=f"system:serviceaccount:{SANDBOX_NAMESPACE}:{ACCOUNT}",
-        pod_name=SANDBOX,
-        pod_uid="test-pod-uid",
-        audiences=(AUDIENCE,),
+    """Start a channel listener as one gateway replica; replicas share the cluster and database."""
+    return lambda holder: serve_channel(
+        cluster,
+        holder,
+        connections=ConnectionStore(engine),
+        delivery=delivery,
+        control=ChannelControl(delivery.leases),
+        timing=ChannelTiming(heartbeat_s=0.05, liveness_s=1, touch_s=0.1, max_age_s=60),
     )
-
-    @asynccontextmanager
-    async def start(holder: ConnectionHolder) -> AsyncIterator[runner_channel_pb2_grpc.RunnerChannelAsyncStub]:
-        server = grpc.aio.server()
-        runner_channel_pb2_grpc.add_RunnerChannelServicer_to_server(
-            RunnerChannelService(
-                principals=WorkloadPrincipalResolver(
-                    authentication=k8s_client.AuthenticationV1Api(cluster.api),
-                    audience=AUDIENCE,
-                    allowed_service_account_namespaces={SANDBOX_NAMESPACE},
-                ),
-                inventory=cluster.inventory,
-                core=k8s_client.CoreV1Api(cluster.api),
-                connections=ConnectionStore(engine),
-                records=ConnectionRecords(cluster.api, namespace=SANDBOX_NAMESPACE, holder=holder),
-                delivery=delivery,
-                control=ChannelControl(delivery.leases),
-                timing=ChannelTiming(heartbeat_s=0.05, liveness_s=1, touch_s=0.1, max_age_s=60),
-            ),
-            server,
-        )
-        port = server.add_insecure_port("127.0.0.1:0")
-        await server.start()
-        try:
-            async with grpc.aio.insecure_channel(f"127.0.0.1:{port}") as connection:
-                yield runner_channel_pb2_grpc.RunnerChannelStub(connection)
-        finally:
-            await server.stop(0)
-
-    return start
 
 
 @pytest.fixture
@@ -143,7 +91,7 @@ def run_sandbox_as(cluster: Cluster, account: str) -> None:
 
 @asynccontextmanager
 async def connect(
-    stub: runner_channel_pb2_grpc.RunnerChannelAsyncStub, token: str = TOKEN
+    stub: runner_channel_pb2_grpc.RunnerChannelAsyncStub, token: str = RUNNER_TOKEN
 ) -> AsyncIterator[grpc.aio.StreamStreamCall[runner_channel_pb2.RunnerFrame, runner_channel_pb2.ServiceFrame]]:
     call = stub.Connect(metadata=(("authorization", f"Bearer {token}"),), timeout=10)
     try:
@@ -296,7 +244,7 @@ async def test_liveness_is_read_from_the_watched_leases(leases: ConnectionLeases
     ("token", "account", "code"),
     [
         ("test-unknown-token", ACCOUNT, grpc.StatusCode.UNAUTHENTICATED),
-        (TOKEN, "test-other-account", grpc.StatusCode.PERMISSION_DENIED),
+        (RUNNER_TOKEN, "test-other-account", grpc.StatusCode.PERMISSION_DENIED),
     ],
 )
 async def test_only_the_sandbox_pod_connects(

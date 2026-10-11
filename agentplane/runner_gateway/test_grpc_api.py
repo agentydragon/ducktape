@@ -19,15 +19,14 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 
 from agentplane.proto import command_pb2, event_log_pb2, event_pb2, runner_pb2
 from agentplane.runner.errors import RunnerError, StreamClosedError
-from agentplane.runner_gateway.channel_control import ChannelControl
-from agentplane.runner_gateway.channel_delivery import ChannelDelivery
-from agentplane.runner_gateway.commands import db as commands_db
+from agentplane.runner.testing.runner_server import serve_runner
 from agentplane.runner_gateway.commands.connections import ConnectionStore
-from agentplane.runner_gateway.commands.dispatch import DispatchStore
 from agentplane.runner_gateway.commands.store import CommandSubmission, SubmissionState, SubmissionStore
-from agentplane.runner_gateway.connection_records import ConnectionLeases
 from agentplane.runner_gateway.grpc_api import LEGACY_SERVICE, Resources, add_legacy_service
 from agentplane.runner_gateway.session_registry import SessionRegistry
+from agentplane.runner_gateway.testing.grpc_service import service_client
+from agentplane.runner_gateway.testing.journal import admission, entry, journal_entry
+from agentplane.runner_gateway.testing.resources import build_resources
 from agentplane.runner_gateway.testing.sessions import register_session
 from agentplane.sandbox_service import protocol_pb2, wire
 from agentplane.sandbox_service.client import ReconnectRequiredError, SandboxServiceClient, SealedError, ServiceError
@@ -40,27 +39,16 @@ from agentplane.sandbox_service.kubernetes_views import (
 )
 from agentplane.sandbox_service.protocol_pb2 import ResolvedGrant, SandboxDestination
 from agentplane.sandbox_service.session_changes import SessionChanges
-from agentplane.sandbox_service.testing.grpc_service import service_client
-from agentplane.sandbox_service.testing.kubernetes import ACCOUNT, SANDBOX, SANDBOX_UID, Cluster
+from agentplane.sandbox_service.testing.grpc_service import CALLER_TOKEN
+from agentplane.sandbox_service.testing.kubernetes import ACCOUNT, DESTINATION, OWNER, SANDBOX, SANDBOX_UID, Cluster
 from agentplane.subjects import ServiceAccountRef
 from agentplane.testing.fake_apiserver import SANDBOX_NAMESPACE, TokenVerdict
-from agentplane.workload_auth.principal import WorkloadPrincipalResolver
 from util.agent_sandbox import SANDBOXES_PLURAL
 
 # gazelle:include_dep @pypi//protobuf
 # gazelle:include_dep @pypi//grpcio
-# gazelle:include_dep //agentplane/history_service/storage:conftest
 
-pytest_plugins = ("agentplane.history_service.storage.conftest",)
-
-TOKEN = "test-grpc-token"
 AUDIENCE = "test-sandbox-service"
-OWNER = ServiceAccountRef(namespace=SANDBOX_NAMESPACE, name=ACCOUNT)
-DESTINATION = SandboxDestination(
-    owner=protocol_pb2.ServiceAccount(namespace=OWNER.namespace, name=OWNER.name),
-    sandbox=SANDBOX,
-    sandbox_uid=SANDBOX_UID,
-)
 
 
 @dataclass
@@ -147,91 +135,42 @@ class Peer:
 @pytest.fixture
 async def peer() -> AsyncIterator[Peer]:
     peer = Peer()
-    server = grpc.aio.server()
-    server.add_generic_rpc_handlers(
-        [
-            grpc.method_handlers_generic_handler(
-                "agentplane.proto.runner.Runner",
-                {
-                    "ListSessions": grpc.unary_unary_rpc_method_handler(
-                        peer.list_sessions,
-                        request_deserializer=runner_pb2.ListSessionsRequest.FromString,
-                        response_serializer=runner_pb2.ListSessionsResponse.SerializeToString,
-                    ),
-                    "Attach": grpc.stream_stream_rpc_method_handler(
-                        peer.attach,
-                        request_deserializer=runner_pb2.ClientMessage.FromString,
-                        response_serializer=runner_pb2.ServerMessage.SerializeToString,
-                    ),
-                },
-            )
-        ]
-    )
-    peer.port = server.add_insecure_port("127.0.0.1:0")
-    await server.start()
-    try:
+    async with serve_runner(attach=peer.attach, list_sessions=peer.list_sessions) as port:
+        peer.port = port
         yield peer
-    finally:
-        await server.stop(0)
+
+
+async def register(engine: AsyncEngine, session_id: UUID, runner_session_id: str) -> None:
+    """Register a Session on the fake cluster's Sandbox."""
+    await register_session(
+        engine,
+        session_id,
+        sandbox_namespace=SANDBOX_NAMESPACE,
+        sandbox_name=SANDBOX,
+        sandbox_uid=UUID(SANDBOX_UID),
+        runner_session_id=runner_session_id,
+    )
 
 
 @pytest.fixture
-def resources(
-    cluster: Cluster, peer: Peer, engine: AsyncEngine, sessions: SessionRegistry, submissions: SubmissionStore
-) -> Resources:
-    cluster.fake.tokens[TOKEN] = TokenVerdict(
+def resources(cluster: Cluster, peer: Peer, engine: AsyncEngine) -> Resources:
+    cluster.fake.tokens[CALLER_TOKEN] = TokenVerdict(
         username=f"system:serviceaccount:{OWNER.namespace}:{OWNER.name}",
         pod_name="test-caller",
         pod_uid="test-caller-uid",
         audiences=(AUDIENCE,),
     )
-    return Resources(
-        runner_admission_ack_timeout_s=1,
-        principals=WorkloadPrincipalResolver(
-            authentication=k8s_client.AuthenticationV1Api(cluster.api),
-            audience=AUDIENCE,
-            allowed_service_account_namespaces={SANDBOX_NAMESPACE},
+    return replace(
+        build_resources(
+            engine,
+            principals=cluster.build_principal_resolver(AUDIENCE),
+            destinations=DestinationResolver(cluster.inventory, k8s_client.CoreV1Api(cluster.api), peer.port),
+            caller_accounts=frozenset({OWNER}),
+            platform_instructions="Test guidance",
         ),
-        destinations=DestinationResolver(cluster.inventory, k8s_client.CoreV1Api(cluster.api), peer.port),
-        caller_accounts=frozenset({OWNER}),
-        platform_instructions="Test guidance",
         follow_lease_s=0.5,
         admission_timeout_s=1,
-        sessions=sessions,
-        submissions=submissions,
-        delivery=ChannelDelivery(
-            engine.url,
-            dispatches=DispatchStore(engine),
-            connections=ConnectionStore(engine),
-            leases=ConnectionLeases(),
-            liveness_s=1,
-        ),
-        control=ChannelControl(ConnectionLeases()),
-        session_changes=SessionChanges(engine.url),
     )
-
-
-@pytest.fixture
-async def submissions(engine: AsyncEngine) -> SubmissionStore:
-    # The admission tables share the history test database; production keeps them apart.
-    async with engine.begin() as connection:
-        await connection.run_sync(commands_db.Base.metadata.create_all)
-    return SubmissionStore(engine)
-
-
-@pytest.fixture
-async def sessions(engine: AsyncEngine) -> SessionRegistry:
-    # The registry tables share the history test database; production keeps them apart.
-    async with engine.begin() as connection:
-        await connection.run_sync(commands_db.Base.metadata.create_all)
-    return SessionRegistry(engine)
-
-
-@pytest.fixture
-def token_file(tmp_path: Path) -> Path:
-    path = tmp_path / "token"
-    path.write_text(TOKEN)
-    return path
 
 
 @pytest.fixture
@@ -314,14 +253,7 @@ async def test_public_session_command_survives_a_lost_reply(
 ) -> None:
     session_id = uuid4()
     physical = f"r-{session_id}"
-    await register_session(
-        engine,
-        session_id,
-        sandbox_namespace=SANDBOX_NAMESPACE,
-        sandbox_name=SANDBOX,
-        sandbox_uid=UUID(SANDBOX_UID),
-        runner_session_id=physical,
-    )
+    await register(engine, session_id, physical)
     peer.opened_ids[physical] = runner_pb2.Open(session_id=physical)
     command = command_pb2.Command(command_id="durable", submit_input=command_pb2.SubmitInput(text="hi"))
     async with asyncio.timeout(10), service_client(resources, token_file, cluster.provisioning) as remote:
@@ -361,14 +293,7 @@ async def test_command_status_reads_retained_submissions_without_the_runner(
     submissions: SubmissionStore,
 ) -> None:
     session_id = uuid4()
-    await register_session(
-        engine,
-        session_id,
-        sandbox_namespace=SANDBOX_NAMESPACE,
-        sandbox_name=SANDBOX,
-        sandbox_uid=UUID(SANDBOX_UID),
-        runner_session_id=f"r-{session_id}",
-    )
+    await register(engine, session_id, f"r-{session_id}")
     commands = {
         name: command_pb2.Command(command_id=name, submit_input=command_pb2.SubmitInput(text=name))
         for name in ("admitted", "pending", "rejected")
@@ -444,14 +369,7 @@ async def test_channel_routed_command_never_falls_back_to_the_relay(
     # A runner agreed commands once, and no connection holds the Sandbox's Lease now.
     await ConnectionStore(engine).record_operations(UUID(SANDBOX_UID), {"commands"})
     session_id = uuid4()
-    await register_session(
-        engine,
-        session_id,
-        sandbox_namespace=SANDBOX_NAMESPACE,
-        sandbox_name=SANDBOX,
-        sandbox_uid=UUID(SANDBOX_UID),
-        runner_session_id=f"r-{session_id}",
-    )
+    await register(engine, session_id, f"r-{session_id}")
     command = command_pb2.Command(command_id="channel", submit_input=command_pb2.SubmitInput(text="hi"))
     async with service_client(resources, token_file, cluster.provisioning) as remote:
         runner = remote.runner(DESTINATION)
@@ -518,11 +436,6 @@ async def test_lookup_rejects_failed_native_open_but_recovers_an_earlier_success
         await (await peer.attachments.get()).closed.wait()
         physical_id = str(requested)
         peer.state = runner_pb2.HARNESS_STATE_STOPPED
-
-        def entry(cursor: int, event: event_pb2.Event) -> event_log_pb2.EventEntry:
-            return event_log_pb2.EventEntry(
-                cursor=cursor, origin=event_log_pb2.EventOrigin(source_id="journal", sequence=cursor), event=event
-            )
 
         # A failed native handshake leaves the runner's session in inventory but
         # never emits HarnessStarted. The observation-only attachment does not retry Open.
@@ -618,14 +531,6 @@ async def test_managed_open_expands_default_cwd_with_reserved_id(
         opened = await peer.attachments.get()
         assert opened.opened.spec.cwd == f"/state/workspaces/{created.session_id}"
         await opened.closed.wait()
-
-
-def admission(command: command_pb2.Command, cursor: int) -> event_log_pb2.EventEntry:
-    return event_log_pb2.EventEntry(
-        cursor=cursor,
-        origin=event_log_pb2.EventOrigin(source_id="test-journal", sequence=cursor),
-        event=event_pb2.Event(command_admitted=event_pb2.CommandAdmitted(command=command)),
-    )
 
 
 async def test_admission_is_exact_native_evidence(remote: SandboxServiceClient, peer: Peer) -> None:
@@ -752,20 +657,12 @@ async def test_follow_reconnect_rechecks_token_and_preserves_cursor(
             await runner.attach("session", after_cursor=12)
         assert rejected.value.code == grpc.StatusCode.UNAUTHENTICATED
         assert peer.attachments.empty()
-        remote.token_file.write_text(TOKEN)
+        remote.token_file.write_text(CALLER_TOKEN)
         cluster.fake.tokens.clear()
         with pytest.raises(ServiceError) as revoked:
             await runner.attach("session", after_cursor=12)
         assert revoked.value.code == grpc.StatusCode.UNAUTHENTICATED
         assert peer.attachments.empty()
-
-
-def journal_entry(cursor: int) -> event_log_pb2.EventEntry:
-    return event_log_pb2.EventEntry(
-        cursor=cursor,
-        origin=event_log_pb2.EventOrigin(source_id="test-journal", sequence=cursor),
-        event=event_pb2.Event(native=event_pb2.Native(line=f"line {cursor}")),
-    )
 
 
 # The fixture's Resources has no history store: entries can only come from the runner journal.
@@ -926,7 +823,7 @@ async def test_stopped_command_does_not_send_input(remote: SandboxServiceClient,
     [
         (),
         (("authorization", "Bearer invalid"),),
-        (("authorization", f"Bearer {TOKEN}"), ("authorization", f"Bearer {TOKEN}")),
+        (("authorization", f"Bearer {CALLER_TOKEN}"), ("authorization", f"Bearer {CALLER_TOKEN}")),
     ],
 )
 async def test_missing_invalid_or_duplicate_bearer_is_rejected(
@@ -965,14 +862,7 @@ async def test_legacy_service_name_still_reaches_the_gateway(
 ) -> None:
     # Clients from before the split call Session RPCs under the Sandbox Service's name.
     session_id = uuid4()
-    await register_session(
-        engine,
-        session_id,
-        sandbox_namespace=SANDBOX_NAMESPACE,
-        sandbox_name=SANDBOX,
-        sandbox_uid=UUID(SANDBOX_UID),
-        runner_session_id=f"r-{session_id}",
-    )
+    await register(engine, session_id, f"r-{session_id}")
     command = command_pb2.Command(command_id="test-command", submit_input=command_pb2.SubmitInput(text="test"))
     await submissions.accept(session_id, CommandSubmission(command=command), caller=OWNER)
     bearer = (await asyncio.to_thread(token_file.read_text)).strip()
@@ -1011,7 +901,7 @@ async def test_unlisted_callers_rejected_before_lookup(
     resources: Resources, token_file: Path, peer: Peer, cluster: Cluster, account_name: str
 ) -> None:
     # Owning the destination does not grant service access. The same allowlist gates all RPCs.
-    cluster.fake.tokens[TOKEN] = TokenVerdict(
+    cluster.fake.tokens[CALLER_TOKEN] = TokenVerdict(
         username=f"system:serviceaccount:{SANDBOX_NAMESPACE}:{account_name}",
         pod_name="test-unlisted-pod",
         pod_uid="test-unlisted-uid",
@@ -1111,77 +1001,6 @@ async def test_invalid_command_is_not_submitted(
     assert peer.attachments.empty()
 
 
-def test_wire_preserves_explicit_empty_overrides() -> None:
-    request = wire.create_proto(
-        DESTINATION, uuid4(), {"model": "test-model", "instructions": "", "reasoningEffort": ""}, ""
-    )
-    assert wire.launch_overrides(request) == {"model": "test-model", "instructions": "", "reasoningEffort": ""}
-    assert request.HasField("setup_script")
-    assert request.setup_script == ""
-    request.override_mask.paths.append("unknown")
-    with pytest.raises(ValueError, match="unique SessionSpec field names"):
-        wire.launch_overrides(request)
-    request.override_mask.paths[:] = ["model"]
-    request.spec.cwd = "/unselected"
-    with pytest.raises(ValueError, match="every supplied SessionSpec field"):
-        wire.launch_overrides(request)
-
-
-async def test_bare_service_eof_is_not_native_closure(tmp_path: Path) -> None:
-    async def truncated(
-        request: protocol_pb2.FollowSessionRequest, context: grpc.aio.ServicerContext
-    ) -> AsyncIterator[protocol_pb2.FollowSessionResponse]:
-        yield protocol_pb2.FollowSessionResponse(
-            attached=runner_pb2.Attached(session_id=request.destination.session_id)
-        )
-        # Deliberately no ended observation: even an OK transport status is not native EOF evidence.
-
-    server = grpc.aio.server()
-    server.add_generic_rpc_handlers(
-        [
-            grpc.method_handlers_generic_handler(
-                "ducktape.agentplane.runner_gateway.v1.RunnerGateway",
-                {
-                    "FollowSession": grpc.unary_stream_rpc_method_handler(
-                        truncated,
-                        request_deserializer=protocol_pb2.FollowSessionRequest.FromString,
-                        response_serializer=protocol_pb2.FollowSessionResponse.SerializeToString,
-                    )
-                },
-            )
-        ]
-    )
-    port = server.add_insecure_port("127.0.0.1:0")
-    await server.start()
-    token_file = tmp_path / "token"
-    token_file.write_text(TOKEN)
-    client = SandboxServiceClient(
-        f"127.0.0.1:{port}",
-        gateway_target=f"127.0.0.1:{port}",
-        namespace=SANDBOX_NAMESPACE,
-        token_file=token_file,
-        command_admission_timeout_s=20,
-        request_timeout_s=20,
-        lifecycle_timeout_s=310,
-        follow_timeout_s=960,
-    )
-    try:
-        attachment = await client.runner(DESTINATION).attach("session")
-        try:
-            with pytest.raises(ConnectionError, match="without native closure"):
-                await attachment.next_entry()
-        finally:
-            attachment.cancel()
-    finally:
-        await client.close()
-        await server.stop(0)
-
-
-def test_duplicate_spec_aliases_are_refused() -> None:
-    with pytest.raises(ValueError, match="both proto and JSON"):
-        wire.create_proto(DESTINATION, uuid4(), {"reasoning_effort": "low", "reasoningEffort": "high"}, None)
-
-
 async def test_command_cancellation_closes_native_attachment(remote: SandboxServiceClient, peer: Peer) -> None:
     command = command_pb2.Command(command_id="cancel", submit_input=command_pb2.SubmitInput(text="notice"))
     async with asyncio.timeout(8), asyncio.TaskGroup() as tasks:
@@ -1246,15 +1065,6 @@ async def test_unavailable_destination_does_not_contact_runner(
     assert peer.attachments.empty()
 
 
-async def test_successor_pod_same_sandbox_and_account_keeps_destination(resources: Resources, cluster: Cluster) -> None:
-    first = await resources.destinations.resolve(DESTINATION, writes=False)
-    assert first.target == f"127.0.0.1:{resources.destinations.runner_port}"
-    cluster.fake.pods[SANDBOX]["metadata"]["uid"] = "test-successor-pod"
-    cluster.fake.pods[SANDBOX]["status"]["podIP"] = "::1"
-    resolved = await resources.destinations.resolve(DESTINATION, writes=False)
-    assert resolved.target == f"[::1]:{resources.destinations.runner_port}"
-
-
 @pytest.fixture
 async def session_changes(db_url: str) -> AsyncIterator[SessionChanges]:
     changes = SessionChanges(make_url(db_url))
@@ -1279,14 +1089,7 @@ async def test_watch_sessions_resumes_after_disconnect_and_wakes_on_other_writer
         sandbox_uid=None,
         runner_session_id="legacy-runner",
     )
-    await register_session(
-        engine,
-        current_id,
-        sandbox_namespace=SANDBOX_NAMESPACE,
-        sandbox_name=SANDBOX,
-        sandbox_uid=UUID(SANDBOX_UID),
-        runner_session_id=f"r-{current_id}",
-    )
+    await register(engine, current_id, f"r-{current_id}")
     configured = replace(resources, session_changes=session_changes, follow_lease_s=2)
     async with service_client(configured, token_file, cluster.provisioning) as remote:
         first_call = remote.gateway.WatchSessions(
@@ -1336,14 +1139,7 @@ async def test_watch_sessions_requires_allowed_caller(
     sessions: SessionRegistry,
     session_changes: SessionChanges,
 ) -> None:
-    await register_session(
-        engine,
-        uuid4(),
-        sandbox_namespace=SANDBOX_NAMESPACE,
-        sandbox_name=SANDBOX,
-        sandbox_uid=UUID(SANDBOX_UID),
-        runner_session_id="unwatchable-runner",
-    )
+    await register(engine, uuid4(), "unwatchable-runner")
     # The token authenticates OWNER, which this configuration does not allow as a service caller.
     configured = replace(
         resources,

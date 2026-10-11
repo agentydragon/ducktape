@@ -3,16 +3,14 @@ owns inventory; the Runner Gateway serves their Sessions."""
 
 import asyncio
 import logging
-from collections.abc import AsyncIterator, Coroutine
-from contextlib import AsyncExitStack, asynccontextmanager, suppress
-from pathlib import Path
-from typing import Any, cast
+from collections.abc import AsyncIterator
+from contextlib import AsyncExitStack, asynccontextmanager
+from typing import cast
 
 import grpc
-import uvicorn
-from fastapi import FastAPI
-from kubernetes_asyncio import client as k8s_client, config as k8s_config
+from kubernetes_asyncio import client as k8s_client
 
+from agentplane.grpc_process import background, kubernetes_configuration, serve_health, started
 from agentplane.proto import runner_pb2
 from agentplane.runner_gateway import main as gateway_main
 from agentplane.runner_gateway.grpc_api import add_legacy_service
@@ -35,45 +33,6 @@ from util.kubernetes import CustomObjectsClient
 # The asyncpg dialect is loaded by SQLAlchemy from the configured driver name.
 # gazelle:include_dep @pypi//asyncpg
 # gazelle:include_dep @pypi//protobuf
-
-
-async def kubernetes_configuration(kubeconfig: Path | None) -> k8s_client.Configuration:
-    configuration = k8s_client.Configuration()
-    if kubeconfig is None:
-        k8s_config.load_incluster_config(client_configuration=configuration)
-    else:
-        await k8s_config.load_kube_config(config_file=str(kubeconfig), client_configuration=configuration)
-    return configuration
-
-
-@asynccontextmanager
-async def background(coroutine: Coroutine[Any, Any, None], *, name: str) -> AsyncIterator[None]:
-    task = asyncio.create_task(coroutine, name=name)
-    try:
-        yield
-    finally:
-        task.cancel()
-        with suppress(asyncio.CancelledError):
-            await task
-
-
-@asynccontextmanager
-async def started(server: grpc.aio.Server) -> AsyncIterator[None]:
-    await server.start()
-    try:
-        yield
-    finally:
-        await server.stop(grace=5)
-
-
-async def serve_health(host: str, port: int) -> None:
-    health = FastAPI(openapi_url=None, docs_url=None, redoc_url=None)
-
-    @health.get("/healthz")
-    async def healthz() -> dict[str, str]:
-        return {"status": "ok"}
-
-    await uvicorn.Server(uvicorn.Config(health, host=host, port=port, access_log=False)).serve()
 
 
 @asynccontextmanager

@@ -9,44 +9,29 @@ import grpc
 import pytest
 import pytest_bazel
 from kubernetes_asyncio import client as k8s_client
-from sqlalchemy.ext.asyncio import AsyncEngine
 
-from agentplane.runner_gateway.channel_control import ChannelControl
-from agentplane.runner_gateway.channel_delivery import ChannelDelivery
-from agentplane.runner_gateway.commands.connections import ConnectionStore
-from agentplane.runner_gateway.commands.dispatch import DispatchStore
-from agentplane.runner_gateway.commands.store import SubmissionStore
-from agentplane.runner_gateway.connection_records import ConnectionLeases
-from agentplane.runner_gateway.grpc_api import Resources
-from agentplane.runner_gateway.session_registry import SessionRegistry
 from agentplane.sandbox_service import protocol_pb2
 from agentplane.sandbox_service.action_policy import ActionPolicyBindings
 from agentplane.sandbox_service.client import SandboxServiceClient, ServiceError
-from agentplane.sandbox_service.destinations import DestinationResolver
 from agentplane.sandbox_service.egress import EgressInventory
+from agentplane.sandbox_service.grpc_api import Resources
 from agentplane.sandbox_service.inventory import SandboxInventory
 from agentplane.sandbox_service.kubernetes_bindings import KubernetesBindings
 from agentplane.sandbox_service.models import SandboxNotFoundError
 from agentplane.sandbox_service.protocol_pb2 import Hold
 from agentplane.sandbox_service.provisioning import Provisioning
 from agentplane.sandbox_service.runner_endpoints import RunnerEndpoints
-from agentplane.sandbox_service.session_changes import SessionChanges
-from agentplane.sandbox_service.testing.fake_inventory import NAMESPACE, FakeCoreV1Api, FakeCustomObjectsApi, sandbox
+from agentplane.sandbox_service.testing.fake_inventory import NAMESPACE, FakeCustomObjectsApi, sandbox
 from agentplane.sandbox_service.testing.fake_rbac import FakeRbac
-from agentplane.sandbox_service.testing.grpc_service import service_client
+from agentplane.sandbox_service.testing.grpc_service import CALLER_TOKEN, service_client
 from agentplane.sandbox_service.testing.kubernetes import Cluster
 from agentplane.subjects import ServiceAccountRef
 from agentplane.testing.fake_apiserver import SANDBOX_NAMESPACE, TokenVerdict
-from agentplane.workload_auth.principal import WorkloadPrincipalResolver
 from util.agent_sandbox import SANDBOXES_PLURAL
 from util.kubernetes import CustomObjectsClient
 
 # gazelle:include_dep @pypi//protobuf
-# gazelle:include_dep //agentplane/runner_gateway/commands:conftest
 
-pytest_plugins = ("agentplane.runner_gateway.commands.conftest",)
-
-TOKEN = "test-holder-token"
 AUDIENCE = "test-retention-holds"
 HOLDER_ACCOUNT = ServiceAccountRef(namespace=SANDBOX_NAMESPACE, name="test-holder")
 NAME = "test-held-sandbox"
@@ -100,14 +85,9 @@ def destination(custom_objects: RacingObjects) -> protocol_pb2.SessionDestinatio
 
 @pytest.fixture
 async def api(
-    cluster: Cluster,
-    inventory: SandboxInventory,
-    custom_objects: RacingObjects,
-    core_v1: FakeCoreV1Api,
-    engine: AsyncEngine,
-    tmp_path: Path,
+    cluster: Cluster, inventory: SandboxInventory, custom_objects: RacingObjects, token_file: Path
 ) -> AsyncIterator[SandboxServiceClient]:
-    cluster.fake.tokens[TOKEN] = TokenVerdict(
+    cluster.fake.tokens[CALLER_TOKEN] = TokenVerdict(
         username=f"system:serviceaccount:{HOLDER_ACCOUNT.namespace}:{HOLDER_ACCOUNT.name}",
         pod_name="test-holder-pod",
         pod_uid="test-holder-pod-uid",
@@ -123,30 +103,11 @@ async def api(
         RunnerEndpoints(control=None, ingress=None),
     )
     resources = Resources(
-        runner_admission_ack_timeout_s=1,
-        principals=WorkloadPrincipalResolver(
-            authentication=k8s_client.AuthenticationV1Api(cluster.api),
-            audience=AUDIENCE,
-            allowed_service_account_namespaces={SANDBOX_NAMESPACE},
-        ),
-        destinations=DestinationResolver(inventory, cast(k8s_client.CoreV1Api, core_v1), 7000),
+        principals=cluster.build_principal_resolver(AUDIENCE),
+        provisioning=provisioning,
         caller_accounts=frozenset({HOLDER_ACCOUNT}),
-        platform_instructions="",
-        sessions=SessionRegistry(engine),
-        submissions=SubmissionStore(engine),
-        delivery=ChannelDelivery(
-            engine.url,
-            dispatches=DispatchStore(engine),
-            connections=ConnectionStore(engine),
-            leases=ConnectionLeases(),
-            liveness_s=1,
-        ),
-        control=ChannelControl(ConnectionLeases()),
-        session_changes=SessionChanges(engine.url),
     )
-    token_file = tmp_path / "token"
-    token_file.write_text(TOKEN)
-    async with service_client(resources, token_file, provisioning) as client:
+    async with service_client(resources, token_file) as client:
         yield client
 
 

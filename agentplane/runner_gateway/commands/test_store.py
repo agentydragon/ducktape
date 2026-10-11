@@ -17,6 +17,7 @@ from agentplane.runner_gateway.commands.store import (
     SubmissionStore,
     submit_command,
 )
+from agentplane.runner_gateway.testing.journal import admission
 from agentplane.subjects import ServiceAccountRef
 
 # gazelle:include_dep @pypi//protobuf
@@ -31,22 +32,9 @@ def make_input_submission(*, command_id: str, text: str) -> CommandSubmission:
     )
 
 
-def admission(command: command_pb2.Command, cursor: int = 1) -> event_log_pb2.EventEntry:
-    result = event_log_pb2.EventEntry(cursor=cursor)
-    result.origin.source_id = "runner-source"
-    result.origin.sequence = cursor
-    result.event.command_admitted.command.CopyFrom(command)
-    return result
-
-
 @pytest.fixture
 def session_id() -> UUID:
     return uuid4()
-
-
-@pytest.fixture
-def submissions(engine: AsyncEngine) -> SubmissionStore:
-    return SubmissionStore(engine)
 
 
 async def test_persist_before_dispatch(submissions: SubmissionStore, session_id: UUID) -> None:

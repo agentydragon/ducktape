@@ -49,3 +49,14 @@ py_library(
         "//cluster/validation:__pkg__",
     ],
 )
+
+py_library(
+    name = "grpc_process",
+    srcs = ["grpc_process.py"],
+    deps = [
+        "@pypi//fastapi",
+        "@pypi//grpcio",
+        "@pypi//kubernetes_asyncio",
+        "@pypi//uvicorn",
+    ],
+)

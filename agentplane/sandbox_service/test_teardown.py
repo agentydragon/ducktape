@@ -14,6 +14,7 @@ from kubernetes_asyncio import client as k8s_client
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from agentplane.proto import runner_pb2
+from agentplane.runner.testing.runner_server import serve_runner
 from agentplane.runner_gateway.channel_control import ChannelControl
 from agentplane.runner_gateway.commands import db as commands_db
 from agentplane.runner_gateway.commands.connections import ConnectionStore
@@ -90,37 +91,9 @@ class ScriptedRunner:
 @pytest.fixture
 async def runner() -> AsyncIterator[ScriptedRunner]:
     runner = ScriptedRunner()
-    server = grpc.aio.server()
-    server.add_generic_rpc_handlers(
-        [
-            grpc.method_handlers_generic_handler(
-                "agentplane.proto.runner.Runner",
-                {
-                    "Seal": grpc.unary_unary_rpc_method_handler(
-                        runner.seal,
-                        request_deserializer=runner_pb2.SealRequest.FromString,
-                        response_serializer=runner_pb2.SealResponse.SerializeToString,
-                    ),
-                    "ListSessions": grpc.unary_unary_rpc_method_handler(
-                        runner.list_sessions,
-                        request_deserializer=runner_pb2.ListSessionsRequest.FromString,
-                        response_serializer=runner_pb2.ListSessionsResponse.SerializeToString,
-                    ),
-                    "Attach": grpc.stream_stream_rpc_method_handler(
-                        runner.attach,
-                        request_deserializer=runner_pb2.ClientMessage.FromString,
-                        response_serializer=runner_pb2.ServerMessage.SerializeToString,
-                    ),
-                },
-            )
-        ]
-    )
-    runner.port = server.add_insecure_port("127.0.0.1:0")
-    await server.start()
-    try:
+    async with serve_runner(attach=runner.attach, list_sessions=runner.list_sessions, seal=runner.seal) as port:
+        runner.port = port
         yield runner
-    finally:
-        await server.stop(0)
 
 
 @pytest.fixture

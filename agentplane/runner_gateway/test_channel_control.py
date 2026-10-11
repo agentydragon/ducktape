@@ -3,8 +3,8 @@ the public API on that replica and another, a fake API server and a migrated com
 
 import asyncio
 from collections.abc import AsyncIterator, Callable
-from contextlib import AbstractAsyncContextManager, asynccontextmanager, suppress
-from dataclasses import dataclass
+from contextlib import AbstractAsyncContextManager, asynccontextmanager
+from dataclasses import dataclass, replace
 from pathlib import Path
 from uuid import UUID, uuid4
 
@@ -25,39 +25,29 @@ from agentplane.runner_gateway.channel_control import (
 from agentplane.runner_gateway.channel_delivery import ChannelDelivery
 from agentplane.runner_gateway.commands.connections import ConnectionStore
 from agentplane.runner_gateway.commands.dispatch import DispatchStore
-from agentplane.runner_gateway.commands.store import SubmissionStore
-from agentplane.runner_gateway.connection_records import ConnectionHolder, ConnectionLeases, ConnectionRecords
-from agentplane.runner_gateway.grpc_api import Resources
-from agentplane.runner_gateway.runner_channel import ChannelTiming, RunnerChannelService
-from agentplane.runner_gateway.session_registry import SessionRegistry
+from agentplane.runner_gateway.connection_records import ConnectionHolder, ConnectionLeases
+from agentplane.runner_gateway.runner_channel import ChannelTiming
+from agentplane.runner_gateway.testing.grpc_service import service
+from agentplane.runner_gateway.testing.resources import build_resources
+from agentplane.runner_gateway.testing.runner_channel import OTHER_REPLICA, REPLICA, RUNNER_TOKEN, serve_channel
 from agentplane.runner_gateway.testing.sessions import register_session
 from agentplane.sandbox_service.client import SandboxServiceClient, ServiceError
 from agentplane.sandbox_service.destinations import DestinationResolver
 from agentplane.sandbox_service.protocol_pb2 import Sandbox, SandboxDestination, TeardownPhase
-from agentplane.sandbox_service.session_changes import SessionChanges
 from agentplane.sandbox_service.teardown import Teardown
-from agentplane.sandbox_service.testing.grpc_service import service
-from agentplane.sandbox_service.testing.kubernetes import ACCOUNT, SANDBOX, SANDBOX_UID, Cluster
+from agentplane.sandbox_service.testing.grpc_service import CALLER_TOKEN, connect
+from agentplane.sandbox_service.testing.kubernetes import DESTINATION, SANDBOX, SANDBOX_UID, Cluster
 from agentplane.subjects import ServiceAccountRef
 from agentplane.testing.fake_apiserver import SANDBOX_NAMESPACE, TokenVerdict
-from agentplane.workload_auth.principal import WorkloadPrincipalResolver
 from util.agent_sandbox import SANDBOXES_PLURAL, OperatingMode
 
 # gazelle:include_dep @pypi//protobuf
-# gazelle:include_dep //agentplane/runner_gateway/commands:conftest
 
-pytest_plugins = ("agentplane.runner_gateway.commands.conftest",)
-
-RUNNER_AUDIENCE = "test-runner-channel"
-RUNNER_TOKEN = "test-runner-token"
 CALLER_AUDIENCE = "test-sandbox-service"
-CALLER_TOKEN = "test-caller-token"
 CALLER = ServiceAccountRef(namespace=SANDBOX_NAMESPACE, name="test-caller")
 HELLO = runner_channel_pb2.RunnerFrame(
     hello=runner_channel_pb2.Hello(runner_boot_id="test-boot", capabilities=["commands", "lifecycle"])
 )
-HOLDER = ConnectionHolder(pod_name="test-replica", pod_ip="192.0.2.1", port=18080)
-OTHER = ConnectionHolder(pod_name="test-other-replica", pod_ip="192.0.2.2", port=18080)
 SPEC: dict[str, object] = {"harness": "HARNESS_CLAUDE", "cwd": "/test-workspace/{session_id}", "model": "test-model"}
 Reason = runner_channel_pb2.ControlRefused.Reason
 
@@ -74,30 +64,10 @@ class Replica:
 
 
 @pytest.fixture
-async def leases(cluster: Cluster) -> AsyncIterator[ConnectionLeases]:
-    leases = ConnectionLeases()
-    watch = asyncio.create_task(
-        leases.watch(k8s_client.CoordinationV1Api(cluster.api), SANDBOX_NAMESPACE, resync_seconds=60).run()
-    )
-    try:
-        yield leases
-    finally:
-        watch.cancel()
-        with suppress(asyncio.CancelledError):
-            await watch
-
-
-@pytest.fixture
 def replica(
     cluster: Cluster, engine: AsyncEngine, leases: ConnectionLeases
 ) -> Callable[[ConnectionHolder], AbstractAsyncContextManager[Replica]]:
     """Start a replica; replicas share the cluster, the database and its agreed operations."""
-    cluster.fake.tokens[RUNNER_TOKEN] = TokenVerdict(
-        username=f"system:serviceaccount:{SANDBOX_NAMESPACE}:{ACCOUNT}",
-        pod_name=SANDBOX,
-        pod_uid="test-pod-uid",
-        audiences=(RUNNER_AUDIENCE,),
-    )
     cluster.fake.tokens[CALLER_TOKEN] = TokenVerdict(
         username=f"system:serviceaccount:{CALLER.namespace}:{CALLER.name}",
         pod_name="test-caller-pod",
@@ -109,65 +79,46 @@ def replica(
     @asynccontextmanager
     async def start(holder: ConnectionHolder) -> AsyncIterator[Replica]:
         control = ChannelControl(leases)
-        destinations = DestinationResolver(cluster.inventory, k8s_client.CoreV1Api(cluster.api), 1)
         delivery = ChannelDelivery(
             engine.url, dispatches=DispatchStore(engine), connections=connections, leases=leases, liveness_s=5
         )
-        channel_server = grpc.aio.server()
-        runner_channel_pb2_grpc.add_RunnerChannelServicer_to_server(
-            RunnerChannelService(
-                principals=WorkloadPrincipalResolver(
-                    authentication=k8s_client.AuthenticationV1Api(cluster.api),
-                    audience=RUNNER_AUDIENCE,
-                    allowed_service_account_namespaces={SANDBOX_NAMESPACE},
-                ),
-                inventory=cluster.inventory,
-                core=k8s_client.CoreV1Api(cluster.api),
+        resources = replace(
+            build_resources(
+                engine,
+                principals=cluster.build_principal_resolver(CALLER_AUDIENCE),
+                destinations=DestinationResolver(cluster.inventory, k8s_client.CoreV1Api(cluster.api), 1),
+                caller_accounts=frozenset({CALLER}),
+                platform_instructions="Test platform guidance.",
+            ),
+            delivery=delivery,
+            control=control,
+            sealer_accounts=frozenset({CALLER}),
+        )
+        async with (
+            serve_channel(
+                cluster,
+                holder,
                 connections=connections,
-                records=ConnectionRecords(cluster.api, namespace=SANDBOX_NAMESPACE, holder=holder),
                 delivery=delivery,
                 control=control,
                 timing=ChannelTiming(heartbeat_s=0.05, liveness_s=5, touch_s=0.1, max_age_s=60),
-            ),
-            channel_server,
-        )
-        port = channel_server.add_insecure_port("127.0.0.1:0")
-        await channel_server.start()
-        resources = Resources(
-            principals=WorkloadPrincipalResolver(
-                authentication=k8s_client.AuthenticationV1Api(cluster.api),
-                audience=CALLER_AUDIENCE,
-                allowed_service_account_namespaces={SANDBOX_NAMESPACE},
-            ),
-            destinations=destinations,
-            caller_accounts=frozenset({CALLER}),
-            platform_instructions="Test platform guidance.",
-            runner_admission_ack_timeout_s=1,
-            sessions=SessionRegistry(engine),
-            submissions=SubmissionStore(engine),
-            delivery=delivery,
-            control=control,
-            session_changes=SessionChanges(engine.url),
-            sealer_accounts=frozenset({CALLER}),
-        )
-        try:
-            async with service(resources) as api, grpc.aio.insecure_channel(f"127.0.0.1:{port}") as channel:
-                yield Replica(channel=runner_channel_pb2_grpc.RunnerChannelStub(channel), api=api, control=control)
-        finally:
-            await channel_server.stop(0)
+            ) as channel,
+            service(resources) as api,
+        ):
+            yield Replica(channel=channel, api=api, control=control)
 
     return start
 
 
 @pytest.fixture
 async def holder(replica: Callable[[ConnectionHolder], AbstractAsyncContextManager[Replica]]) -> AsyncIterator[Replica]:
-    async with replica(HOLDER) as started:
+    async with replica(REPLICA) as started:
         yield started
 
 
 @pytest.fixture
 async def other(replica: Callable[[ConnectionHolder], AbstractAsyncContextManager[Replica]]) -> AsyncIterator[Replica]:
-    async with replica(OTHER) as started:
+    async with replica(OTHER_REPLICA) as started:
         yield started
 
 
@@ -206,31 +157,10 @@ def attached(session_id: str, harness_state: runner_pb2.HarnessState) -> runner_
     )
 
 
-@pytest.fixture
-def token_file(tmp_path: Path) -> Path:
-    path = tmp_path / "caller-token"
-    path.write_text(CALLER_TOKEN)
-    return path
-
-
-@pytest.fixture
-async def destination(cluster: Cluster) -> SandboxDestination:
-    view = await cluster.inventory.get(SANDBOX)
-    return SandboxDestination(owner=view.service_account, sandbox=view.name, sandbox_uid=view.uid)
-
-
 @asynccontextmanager
 async def client(token_file: Path, target: str, *, control_target: str | None) -> AsyncIterator[SandboxServiceClient]:
-    started = SandboxServiceClient(
-        target,
-        gateway_target=target,
-        namespace=SANDBOX_NAMESPACE,
-        token_file=token_file,
-        command_admission_timeout_s=None,
-        request_timeout_s=20,
-        lifecycle_timeout_s=20,
-        follow_timeout_s=20,
-        control_target=control_target,
+    started = connect(
+        target, token_file, namespace=SANDBOX_NAMESPACE, command_admission_timeout_s=None, control_target=control_target
     )
     try:
         yield started
@@ -239,11 +169,11 @@ async def client(token_file: Path, target: str, *, control_target: str | None) -
 
 
 async def test_a_create_whose_harness_failed_resumes_the_session_on_retry(
-    holder: Replica, other: Replica, token_file: Path, destination: SandboxDestination
+    holder: Replica, other: Replica, token_file: Path
 ) -> None:
     # The caller's own target is the other replica; the control Service names the holder.
     async with connected(holder) as call, client(token_file, other.api, control_target=holder.api) as service:
-        runner = service.runner(destination)
+        runner = service.runner(DESTINATION)
         requested = uuid4()
         first = asyncio.create_task(runner.create(session_id=requested, spec=SPEC))
         opened = await next_request(call)
@@ -283,11 +213,9 @@ async def test_a_create_whose_harness_failed_resumes_the_session_on_retry(
     assert session_id == response.session_id == str(requested)
 
 
-async def test_a_created_running_session_is_not_resumed(
-    holder: Replica, token_file: Path, destination: SandboxDestination
-) -> None:
+async def test_a_created_running_session_is_not_resumed(holder: Replica, token_file: Path) -> None:
     async with connected(holder) as call, client(token_file, holder.api, control_target=None) as service:
-        creating = asyncio.create_task(service.runner(destination).create(session_id=uuid4(), spec=SPEC))
+        creating = asyncio.create_task(service.runner(DESTINATION).create(session_id=uuid4(), spec=SPEC))
         opened = await next_request(call)
         await answer(
             call,
@@ -299,9 +227,7 @@ async def test_a_created_running_session_is_not_resumed(
         assert (await creating).attached.harness_state == runner_pb2.HARNESS_STATE_RUNNING
 
 
-async def test_listing_and_resuming_go_over_the_channel(
-    holder: Replica, engine: AsyncEngine, token_file: Path, destination: SandboxDestination
-) -> None:
+async def test_listing_and_resuming_go_over_the_channel(holder: Replica, engine: AsyncEngine, token_file: Path) -> None:
     public_id = uuid4()
     await register_session(
         engine,
@@ -312,7 +238,7 @@ async def test_listing_and_resuming_go_over_the_channel(
         runner_session_id="test-runner-session",
     )
     async with connected(holder) as call, client(token_file, holder.api, control_target=None) as service:
-        runner = service.runner(destination)
+        runner = service.runner(DESTINATION)
         listing = asyncio.create_task(runner.list_sessions())
         listed = await next_request(call)
         assert listed.WhichOneof("verb") == "list_sessions"
@@ -338,17 +264,17 @@ async def test_listing_and_resuming_go_over_the_channel(
 
 
 async def test_a_replica_without_the_connection_refuses_before_acting(
-    holder: Replica, other: Replica, token_file: Path, destination: SandboxDestination
+    holder: Replica, other: Replica, token_file: Path
 ) -> None:
     async with connected(holder):
         async with client(token_file, other.api, control_target=None) as direct:
             with pytest.raises(ServiceError) as refused:
-                await direct.runner(destination).create(session_id=uuid4(), spec=SPEC)
+                await direct.runner(DESTINATION).create(session_id=uuid4(), spec=SPEC)
             assert refused.value.code == grpc.StatusCode.UNAVAILABLE
         # A control Service still naming the other replica, as during a roll: the call is refused
         # there and served by the holder.
         async with connected(holder) as call, client(token_file, holder.api, control_target=other.api) as stale:
-            listing = asyncio.create_task(stale.runner(destination).list_sessions())
+            listing = asyncio.create_task(stale.runner(DESTINATION).list_sessions())
             listed = await next_request(call)
             await answer(call, runner_channel_pb2.ControlResult(request_id=listed.request_id, list_sessions={}))
             assert await listing == []
@@ -365,11 +291,11 @@ async def test_a_superseded_connection_sends_nothing(holder: Replica, other: Rep
 
 
 async def test_a_lost_connection_drops_its_request_and_a_reconnect_replays_none(
-    holder: Replica, token_file: Path, destination: SandboxDestination
+    holder: Replica, token_file: Path
 ) -> None:
     async with client(token_file, holder.api, control_target=None) as service:
         async with connected(holder) as call:
-            listing = asyncio.create_task(service.runner(destination).list_sessions())
+            listing = asyncio.create_task(service.runner(DESTINATION).list_sessions())
             await next_request(call)
         with pytest.raises(ServiceError) as lost:
             await listing

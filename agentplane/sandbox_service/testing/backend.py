@@ -13,14 +13,8 @@ from typing import Any, cast
 from anyio.from_thread import start_blocking_portal
 from kubernetes_asyncio import client as k8s_client
 
-from agentplane.runner_gateway.channel_control import ChannelControl
-from agentplane.runner_gateway.channel_delivery import ChannelDelivery
-from agentplane.runner_gateway.commands.connections import ConnectionStore
-from agentplane.runner_gateway.commands.dispatch import DispatchStore
-from agentplane.runner_gateway.commands.store import SubmissionStore
-from agentplane.runner_gateway.connection_records import ConnectionLeases
-from agentplane.runner_gateway.grpc_api import Resources
-from agentplane.runner_gateway.session_registry import SessionRegistry
+from agentplane.runner_gateway.testing.grpc_service import service
+from agentplane.runner_gateway.testing.resources import build_resources
 from agentplane.sandbox_service.action_policy import ActionPolicyBindings
 from agentplane.sandbox_service.client import SandboxServiceClient
 from agentplane.sandbox_service.destinations import DestinationResolver
@@ -30,7 +24,6 @@ from agentplane.sandbox_service.kubernetes_bindings import KubernetesBindings
 from agentplane.sandbox_service.kubernetes_grants import KubernetesGrant
 from agentplane.sandbox_service.provisioning import Provisioning
 from agentplane.sandbox_service.runner_endpoints import RunnerEndpoints
-from agentplane.sandbox_service.session_changes import SessionChanges
 from agentplane.sandbox_service.testing.fake_inventory import (
     NAMESPACE,
     FakeCoreV1Api,
@@ -39,7 +32,7 @@ from agentplane.sandbox_service.testing.fake_inventory import (
     sandbox,
 )
 from agentplane.sandbox_service.testing.fake_rbac import FakeRbac
-from agentplane.sandbox_service.testing.grpc_service import service
+from agentplane.sandbox_service.testing.grpc_service import connect
 from agentplane.sandbox_service.testing.history import register_attached_sessions, service_database
 from agentplane.subjects import ServiceAccountRef
 from agentplane.workload_auth.principal import POD_NAME_CLAIM, POD_UID_CLAIM, WorkloadPrincipalResolver
@@ -74,16 +67,7 @@ class Endpoint:
     reconcile: Callable[[], None]
 
     def client(self) -> SandboxServiceClient:
-        return SandboxServiceClient(
-            self.target,
-            gateway_target=self.target,
-            namespace=NAMESPACE,
-            token_file=self.token_file,
-            command_admission_timeout_s=20,
-            request_timeout_s=20,
-            lifecycle_timeout_s=310,
-            follow_timeout_s=960,
-        )
+        return connect(self.target, self.token_file, namespace=NAMESPACE, command_admission_timeout_s=20)
 
 
 @contextmanager
@@ -114,8 +98,8 @@ def backend(
             bindings,
             RunnerEndpoints(control=None, ingress=None),
         )
-        resources = Resources(
-            runner_admission_ack_timeout_s=1,
+        resources = build_resources(
+            engine,
             principals=WorkloadPrincipalResolver(
                 authentication=cast(k8s_client.AuthenticationV1Api, Authentication()),
                 audience=AUDIENCE,
@@ -124,17 +108,6 @@ def backend(
             destinations=DestinationResolver(inventory, core_api, runner_port),
             caller_accounts=frozenset({MANAGER}),
             platform_instructions=platform_instructions,
-            sessions=SessionRegistry(engine),
-            submissions=SubmissionStore(engine),
-            delivery=ChannelDelivery(
-                engine.url,
-                dispatches=DispatchStore(engine),
-                connections=ConnectionStore(engine),
-                leases=ConnectionLeases(),
-                liveness_s=1,
-            ),
-            control=ChannelControl(ConnectionLeases()),
-            session_changes=SessionChanges(engine.url),
         )
         with (
             (
