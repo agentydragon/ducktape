@@ -10,20 +10,16 @@ import json
 from cdk8s import ApiObjectMetadata, Duration, Size
 from cdk8s_plus_34 import (
     ContainerResources,
-    ContainerSecurityContextProps,
     Cpu,
     CpuResources,
-    Deployment,
     EnvValue,
     ImagePullPolicy,
     MemoryResources,
     PathMapping,
-    PodSecurityContextProps,
     Role,
     RoleBinding,
     RolePolicyRule,
     Secret,
-    Service,
     ServiceAccount,
     Volume,
 )
@@ -33,13 +29,12 @@ from agentplane.action_service.settings import CONFIG_FILE_ENV, Settings
 from agentplane.crd_group import GROUP
 from agentplane.subjects import ServiceAccountRef
 from agentplane.workload_auth.audience import WORKLOAD_TOKEN_AUDIENCE
-from cluster.cdk8s import cilium, node_scheduling, pod_policy
+from cluster.cdk8s import cilium
 from cluster.cdk8s.agentplane import database, notifications
 from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.agentplane.migrate_container import migrate_init_container
-from cluster.cdk8s.agentplane.pod_disruption_budget import add_pod_disruption_budget
+from cluster.cdk8s.agentplane.service_workload import ServiceWorkload, add_service_workload
 from cluster.cdk8s.api_resource import custom_resource
-from cluster.cdk8s.forgejo_registry.chart import forgejo_images_creds_secret_ref
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.probes import http_probe
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, Entity, IngressRule, NetworkPolicy
@@ -89,8 +84,6 @@ class Actions(Construct):
         self.service = service(env.namespace)
         self.mcp_oauth = mcp_oauth_secret(env.namespace)
 
-        service_account = self._add_service_account()
-        self._add_rbac(service_account)
         # These leaves come from the container's environment variables and arguments, not the settings file.
         supplied: list[tuple[str, ...]] = [("database_url",), ("token_audience",)]
         if env.actions.web_push_secret_name is not None:
@@ -104,22 +97,10 @@ class Actions(Construct):
             path="/etc/agentplane-actions/settings.yaml",
             supplied=supplied,
         )
-        deployment = self._add_deployment(service_account, settings)
-        self._add_service(deployment)
+        workload = self._add_workload(settings)
+        self._add_rbac(workload.account)
         self._add_http_route()
         self._add_network_policy()
-        if env.replicas.pdb_min_available is not None:
-            self._add_pdb(env.replicas.pdb_min_available)
-
-    def _add_service_account(self) -> ServiceAccount:
-        # cdk8s_plus_34 defaults ServiceAccounts to automount_token=False; the Action
-        # Service calls TokenReview as itself, so it needs its own mounted token.
-        return ServiceAccount(
-            self,
-            "serviceaccount",
-            metadata=ApiObjectMetadata(name=_NAME, namespace=self.env.namespace),
-            automount_token=True,
-        )
 
     def _add_rbac(self, service_account: ServiceAccount) -> None:
         namespace = self.env.namespace
@@ -236,43 +217,14 @@ class Actions(Construct):
             )
         return env
 
-    def _add_deployment(self, service_account: ServiceAccount, settings: SettingsFile) -> Deployment:
-        namespace = self.env.namespace
+    def _add_workload(self, settings: SettingsFile) -> ServiceWorkload:
         env = self._container_env()
         secret_reload = ",".join([self.mcp_oauth.name, *self.env.actions.extra_reload_secrets])
-
-        deployment = Deployment(
+        workload = add_service_workload(
             self,
-            "deployment",
-            metadata=ApiObjectMetadata(
-                name=_NAME,
-                namespace=namespace,
-                labels=_LABELS,
-                annotations={
-                    "secret.reloader.stakater.com/reload": secret_reload,
-                    # No configMapGenerator hash rolls the Deployment on settings changes
-                    # (cluster/docs/cdk8s.md); reloader does.
-                    "configmap.reloader.stakater.com/reload": settings.config_map.name,
-                },
-            ),
-            pod_metadata=ApiObjectMetadata(labels=_LABELS),
-            replicas=self.env.replicas.count,
-            strategy=self.env.replicas.strategy,
-            min_ready=self.env.replicas.min_ready,
-            # 20s execution drain + 5s forced persistence, with room for HTTP/adapter teardown.
-            termination_grace_period=Duration.seconds(60),
-            service_account=service_account,
-            # cdk8s_plus_34 defaults this to False independent of the ServiceAccount's
-            # own automount_token -- opt in for the same reason as the ServiceAccount.
-            automount_service_account_token=True,
-            docker_registry_auth=forgejo_images_creds_secret_ref(self, "forgejo-images-creds-ref"),
-            security_context=PodSecurityContextProps(ensure_non_root=True, user=1000, group=1000, fs_group=1000),
-            init_containers=[
-                migrate_init_container(f"{_MIGRATE_IMAGE}:{_PLACEHOLDER_TAG}", name="migrate", env_variables=env)
-            ],
-        )
-        deployment.add_container(
-            name="actions",
+            self.env,
+            serves=[self.service],
+            container="actions",
             image=f"{_ACTIONS_IMAGE}:{_PLACEHOLDER_TAG}",
             image_pull_policy=ImagePullPolicy.ALWAYS,
             args=cli_args(Settings, host="0.0.0.0", port=self.service.pod_port, token_audience=WORKLOAD_TOKEN_AUDIENCE),
@@ -288,9 +240,17 @@ class Actions(Construct):
                 cpu=CpuResources(request=Cpu.millis(50)),
                 memory=MemoryResources(request=Size.mebibytes(128), limit=Size.mebibytes(512)),
             ),
-            # Writable: its root filesystem writes are unaudited.
-            security_context=ContainerSecurityContextProps(read_only_root_filesystem=False),
+            # 20s execution drain + 5s forced persistence, with room for HTTP/adapter teardown.
+            termination_grace=Duration.seconds(60),
+            migrate=migrate_init_container(f"{_MIGRATE_IMAGE}:{_PLACEHOLDER_TAG}", name="migrate", env_variables=env),
+            annotations={
+                "secret.reloader.stakater.com/reload": secret_reload,
+                # No configMapGenerator hash rolls the Deployment on settings changes
+                # (cluster/docs/cdk8s.md); reloader does.
+                "configmap.reloader.stakater.com/reload": settings.config_map.name,
+            },
         )
+        container = workload.container
 
         oauth_secret = Secret.from_secret_name(self, "mcp-oauth-secret", self.mcp_oauth.name)
         oauth_volume = Volume.from_secret(
@@ -300,8 +260,8 @@ class Actions(Construct):
             default_mode=0o440,
             items={key: PathMapping(path=key) for key in self.env.actions.oauth_secret_items},
         )
-        deployment.containers[0].mount("/etc/agentplane-mcp", oauth_volume, read_only=True)
-        settings.mount_into(deployment.containers[0], env=CONFIG_FILE_ENV)
+        container.mount("/etc/agentplane-mcp", oauth_volume, read_only=True)
+        settings.mount_into(container, env=CONFIG_FILE_ENV)
         if self.env.actions.github_mcp_client_secret_name is not None:
             github_secret = Secret.from_secret_name(
                 self, "github-mcp-client-secret", self.env.actions.github_mcp_client_secret_name
@@ -313,7 +273,7 @@ class Actions(Construct):
                 default_mode=0o440,
                 items={"client_secret": PathMapping(path="client_secret")},
             )
-            deployment.containers[0].mount("/etc/agentplane-github", github_volume, read_only=True)
+            container.mount("/etc/agentplane-github", github_volume, read_only=True)
         for mount in self.env.actions.bearer_mcp_mounts:
             bearer_secret = Secret.from_secret_name(self, f"{mount.name}-bearer-secret", mount.secret_name)
             bearer_volume = Volume.from_secret(
@@ -325,20 +285,8 @@ class Actions(Construct):
             )
             # Its own directory: a subPath file cannot be mounted inside the read-only
             # settings volume (runc: "not a directory").
-            deployment.containers[0].mount(f"/run/secrets/{mount.name}", bearer_volume, read_only=True)
-
-        pod_policy.place(deployment, node_scheduling.HIL_OVH)
-        pod_policy.harden(deployment)
-        return deployment
-
-    def _add_service(self, deployment: Deployment) -> None:
-        Service(
-            self,
-            "service",
-            metadata=ApiObjectMetadata(name=self.service.name, namespace=self.env.namespace),
-            selector=deployment,
-            ports=[self.service.port.service_port()],
-        )
+            container.mount(f"/run/secrets/{mount.name}", bearer_volume, read_only=True)
+        return workload
 
     def _add_http_route(self) -> None:
         # The Actions service owns OAuth and bearer verification; no browser forward-auth
@@ -384,15 +332,7 @@ class Actions(Construct):
                 # Claude's credentialless CIMD document; no wildcard hosts, ports, or redirects.
                 EgressRule.to_fqdns("claude.ai"),
                 EgressRule.to_entities(Entity.KUBE_APISERVER),
-                EgressRule.to_endpoints(
-                    {"k8s:io.kubernetes.pod.namespace": namespace, "k8s:cnpg.io/cluster": "postgres"},
-                    database.POSTGRES_PORT,
-                ),
+                database.egress(namespace),
                 *self.env.actions.extra_egress,
             ],
-        )
-
-    def _add_pdb(self, min_available: int) -> None:
-        add_pod_disruption_budget(
-            self, "pdb", name=_NAME, namespace=self.env.namespace, min_available=min_available, selector=_LABELS
         )

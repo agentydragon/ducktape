@@ -3,22 +3,17 @@ Runner Gateway before deleting it."""
 
 from typing import cast
 
-from cdk8s import ApiObject, ApiObjectMetadata, Duration, JsonPatch, Size
+from cdk8s import ApiObjectMetadata, Duration, Size
 from cdk8s_plus_34 import (
     ApiResource,
     ContainerResources,
-    ContainerSecurityContextProps,
     Cpu,
     CpuResources,
-    Deployment,
     IApiResource,
-    ImagePullPolicy,
     MemoryResources,
-    PodSecurityContextProps,
     Role,
     RoleBinding,
     RolePolicyRule,
-    Service,
     ServiceAccount,
     k8s,
 )
@@ -28,12 +23,11 @@ from agentplane.crd_group import GROUP
 from agentplane.sandbox_service.kubernetes_grants import ClusterRoleBindingGrant, RoleBindingGrant
 from agentplane.sandbox_service.settings import CONFIG_FILE_ENV, Settings
 from agentplane.subjects import ServiceAccountRef
-from cluster.cdk8s import cilium, node_scheduling, pod_policy
+from cluster.cdk8s import cilium
 from cluster.cdk8s.agentplane import egress, history_ingress, history_service, notifications, runner_gateway
 from cluster.cdk8s.agentplane.environment import Environment
-from cluster.cdk8s.agentplane.pod_disruption_budget import add_pod_disruption_budget
+from cluster.cdk8s.agentplane.service_workload import add_service_workload
 from cluster.cdk8s.api_resource import custom_resource, named_resource
-from cluster.cdk8s.forgejo_registry.chart import forgejo_images_creds_secret_ref
 from cluster.cdk8s.probes import grpc_probe
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, Entity, NetworkPolicy
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
@@ -60,10 +54,6 @@ class SandboxService(Construct):
         super().__init__(scope, id)
         self.env = env
         endpoint = service(env.namespace)
-        account = ServiceAccount(
-            self, "account", metadata=ApiObjectMetadata(name=NAME, namespace=env.namespace), automount_token=True
-        )
-        self._add_rbac(account)
         caller_accounts = {
             manager,
             ServiceAccountRef(namespace=env.namespace, name=notifications.NAME),
@@ -98,24 +88,12 @@ class SandboxService(Construct):
             },
             path="/etc/agentplane-sandbox-service/config.yaml",
         )
-        deployment = Deployment(
+        workload = add_service_workload(
             self,
-            "deployment",
-            metadata=ApiObjectMetadata(name=NAME, namespace=env.namespace, labels=_LABELS),
-            pod_metadata=ApiObjectMetadata(labels=_LABELS),
-            replicas=env.replicas.count,
-            strategy=env.replicas.strategy,
-            min_ready=env.replicas.min_ready,
-            termination_grace_period=Duration.seconds(60),
-            service_account=account,
-            automount_service_account_token=True,
-            docker_registry_auth=forgejo_images_creds_secret_ref(self, "images-creds"),
-            security_context=PodSecurityContextProps(ensure_non_root=True, user=1000, group=1000, fs_group=1000),
-        )
-        container = deployment.add_container(
-            name="sandbox-service",
+            env,
+            serves=[endpoint],
+            container="sandbox-service",
             image=f"{_IMAGE}:unset",
-            image_pull_policy=ImagePullPolicy.IF_NOT_PRESENT,
             ports=[endpoint.port.container_port()],
             readiness=grpc_probe(port=endpoint.port.number, initial_delay_seconds=3, period_seconds=10),
             liveness=grpc_probe(port=endpoint.port.number, initial_delay_seconds=20, period_seconds=30),
@@ -123,42 +101,12 @@ class SandboxService(Construct):
                 cpu=CpuResources(request=Cpu.millis(50)),
                 memory=MemoryResources(request=Size.mebibytes(128), limit=Size.mebibytes(512)),
             ),
-            security_context=ContainerSecurityContextProps(read_only_root_filesystem=False),
+            termination_grace=Duration.seconds(60),
         )
-        config.mount_into(container, env=CONFIG_FILE_ENV)
-        # A rotating workload token the Runner Gateway accepts from this account alone for SealSandbox.
-        ApiObject.of(deployment).add_json_patch(
-            JsonPatch.add(
-                "/spec/template/spec/volumes/-",
-                k8s.Volume(
-                    name="runner-gateway-token",
-                    projected=k8s.ProjectedVolumeSource(
-                        sources=[
-                            k8s.VolumeProjection(
-                                service_account_token=k8s.ServiceAccountTokenProjection(
-                                    audience=TOKEN_AUDIENCE, expiration_seconds=3600, path="token"
-                                )
-                            )
-                        ]
-                    ),
-                ),
-            )
-        )
-        ApiObject.of(deployment).add_json_patch(
-            JsonPatch.add(
-                "/spec/template/spec/containers/0/volumeMounts/-",
-                k8s.VolumeMount(name="runner-gateway-token", mount_path=_GATEWAY_TOKEN_DIR, read_only=True),
-            )
-        )
-        pod_policy.place(deployment, node_scheduling.HIL_OVH)
-        pod_policy.harden(deployment)
-        Service(
-            self,
-            "service",
-            metadata=ApiObjectMetadata(name=NAME, namespace=env.namespace, labels=_LABELS),
-            selector=deployment,
-            ports=[endpoint.port.service_port()],
-        )
+        self._add_rbac(workload.account)
+        config.mount_into(workload.container, env=CONFIG_FILE_ENV)
+        # The Runner Gateway accepts this token from this account alone for SealSandbox.
+        workload.project_tokens("runner-gateway-token", _GATEWAY_TOKEN_DIR, {"token": TOKEN_AUDIENCE})
         NetworkPolicy(
             self,
             "network-policy",
@@ -175,15 +123,6 @@ class SandboxService(Construct):
                 runner_gateway.service(env.namespace).egress(),
             ],
         )
-        if env.replicas.pdb_min_available is not None:
-            add_pod_disruption_budget(
-                self,
-                "pdb",
-                name=NAME,
-                namespace=env.namespace,
-                min_available=env.replicas.pdb_min_available,
-                selector=_LABELS,
-            )
 
     def _add_rbac(self, service_account: ServiceAccount) -> None:
         namespace = self.env.namespace

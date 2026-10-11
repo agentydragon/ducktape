@@ -964,85 +964,6 @@ spec:
             - port: "8080"
               protocol: TCP
 ---
-apiVersion: v1
-kind: ServiceAccount
-metadata:
-  name: agentplane-egress
-  namespace: agentplane-testing
-automountServiceAccountToken: true
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRole
-metadata:
-  name: agentplane-testing-egress-token-reviewer
-rules:
-  - apiGroups:
-      - authentication.k8s.io
-    resources:
-      - tokenreviews
-    verbs:
-      - create
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRoleBinding
-metadata:
-  name: agentplane-testing-egress-token-reviewer
-roleRef:
-  apiGroup: rbac.authorization.k8s.io
-  kind: ClusterRole
-  name: agentplane-testing-egress-token-reviewer
-subjects:
-  - apiGroup: ""
-    kind: ServiceAccount
-    name: agentplane-egress
-    namespace: agentplane-testing
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: Role
-metadata:
-  name: agentplane-egress
-  namespace: agentplane-testing
-rules:
-  - apiGroups:
-      - agentplane.allegedly.works
-    resources:
-      - egresspolicies
-    verbs:
-      - get
-      - list
-      - watch
-  - apiGroups:
-      - agentplane.allegedly.works
-    resources:
-      - egressbindings
-    verbs:
-      - get
-      - list
-      - watch
-  - apiGroups:
-      - agentplane.allegedly.works
-    resources:
-      - egresscredentials
-    verbs:
-      - get
-      - list
-      - watch
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: RoleBinding
-metadata:
-  name: agentplane-egress
-  namespace: agentplane-testing
-roleRef:
-  apiGroup: rbac.authorization.k8s.io
-  kind: Role
-  name: agentplane-egress
-subjects:
-  - apiGroup: ""
-    kind: ServiceAccount
-    name: agentplane-egress
-    namespace: agentplane-testing
----
 apiVersion: cert-manager.io/v1
 kind: Certificate
 metadata:
@@ -1134,6 +1055,13 @@ data:
       - agentplane-runner-control
       - agentplane-runner-ingress
 immutable: false
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: agentplane-egress
+  namespace: agentplane-testing
+automountServiceAccountToken: true
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -1297,6 +1225,8 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
+  labels:
+    app.kubernetes.io/name: agentplane-egress
   name: agentplane-egress
   namespace: agentplane-testing
 spec:
@@ -1313,6 +1243,78 @@ spec:
   selector:
     cdk8s.io/metadata.addr: agentplane-egress-deployment-c84e690f
   type: ClusterIP
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: agentplane-testing-egress-token-reviewer
+rules:
+  - apiGroups:
+      - authentication.k8s.io
+    resources:
+      - tokenreviews
+    verbs:
+      - create
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: agentplane-testing-egress-token-reviewer
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: agentplane-testing-egress-token-reviewer
+subjects:
+  - apiGroup: ""
+    kind: ServiceAccount
+    name: agentplane-egress
+    namespace: agentplane-testing
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: agentplane-egress
+  namespace: agentplane-testing
+rules:
+  - apiGroups:
+      - agentplane.allegedly.works
+    resources:
+      - egresspolicies
+    verbs:
+      - get
+      - list
+      - watch
+  - apiGroups:
+      - agentplane.allegedly.works
+    resources:
+      - egressbindings
+    verbs:
+      - get
+      - list
+      - watch
+  - apiGroups:
+      - agentplane.allegedly.works
+    resources:
+      - egresscredentials
+    verbs:
+      - get
+      - list
+      - watch
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: agentplane-egress
+  namespace: agentplane-testing
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: agentplane-egress
+subjects:
+  - apiGroup: ""
+    kind: ServiceAccount
+    name: agentplane-egress
+    namespace: agentplane-testing
 ---
 apiVersion: v1
 kind: Service
@@ -1861,11 +1863,164 @@ rules:
       - get
 ---
 apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: agentplane-sandbox-service-config
+  namespace: agentplane-testing
+data:
+  config.yaml: |
+    sandbox_namespace: agentplane-testing
+    caller_accounts:
+      - namespace: agentplane-testing
+        name: agentplane-app
+      - namespace: agentplane-testing
+        name: agentplane-history-service
+      - namespace: agentplane-testing
+        name: agentplane-notifications
+    token_audience: agentplane-sandbox-service
+    default_egress_policies:
+      - basic
+      - inference-experiments
+    kubernetes_grants: {}
+    kubernetes_binding_cleanup_namespaces: []
+    kubernetes_cluster_binding_cleanup: false
+    port: 8080
+    gateway_target: agentplane-runner-gateway.agentplane-testing.svc.cluster.local:8080
+    control_target: "{sandbox}-control.{namespace}.svc:8080"
+    gateway_token_file: /var/run/secrets/agentplane-runner-gateway/token
+    runner_control:
+      target: agentplane-runner-gateway.agentplane-testing.svc.cluster.local:8082
+      bearer: agentplane-credential-agentplane-runner-control
+      egress_policy: runner-control
+    runner_ingress:
+      target: agentplane-history-ingress.agentplane-testing.svc.cluster.local:8080
+      bearer: agentplane-credential-agentplane-runner-ingress
+      egress_policy: runner-ingress
+immutable: false
+---
+apiVersion: v1
 kind: ServiceAccount
 metadata:
   name: agentplane-sandbox-service
   namespace: agentplane-testing
 automountServiceAccountToken: true
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app.kubernetes.io/name: agentplane-sandbox-service
+  name: agentplane-sandbox-service
+  namespace: agentplane-testing
+spec:
+  minReadySeconds: 0
+  progressDeadlineSeconds: 600
+  replicas: 1
+  revisionHistoryLimit: 10
+  selector:
+    matchLabels:
+      cdk8s.io/metadata.addr: agentplane-sandbox-service-deployment-c8b904d8
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: agentplane-sandbox-service
+        cdk8s.io/metadata.addr: agentplane-sandbox-service-deployment-c8b904d8
+    spec:
+      automountServiceAccountToken: true
+      containers:
+        - env:
+            - name: AGENTPLANE_SANDBOX_SERVICE_CONFIG_FILE
+              value: /etc/agentplane-sandbox-service/config.yaml
+          image: git.allegedly.works/ducktape-ci/agentplane-sandbox-service:unset
+          imagePullPolicy: IfNotPresent
+          livenessProbe:
+            failureThreshold: 3
+            grpc:
+              port: 8080
+            initialDelaySeconds: 20
+            periodSeconds: 30
+          name: sandbox-service
+          ports:
+            - containerPort: 8080
+              name: grpc
+              protocol: TCP
+          readinessProbe:
+            failureThreshold: 3
+            grpc:
+              port: 8080
+            initialDelaySeconds: 3
+            periodSeconds: 10
+          resources:
+            limits:
+              memory: 512Mi
+            requests:
+              cpu: 50m
+              memory: 128Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            privileged: false
+            readOnlyRootFilesystem: false
+            runAsNonRoot: true
+          volumeMounts:
+            - mountPath: /etc/agentplane-sandbox-service
+              name: configmap-agentplane-sandbox-service-config
+              readOnly: true
+            - mountPath: /var/run/secrets/agentplane-runner-gateway
+              name: runner-gateway-token
+              readOnly: true
+      dnsPolicy: ClusterFirst
+      hostNetwork: false
+      imagePullSecrets:
+        - name: forgejo-images-creds
+      nodeSelector:
+        topology.kubernetes.io/zone: hil-ovh
+      restartPolicy: Always
+      securityContext:
+        fsGroup: 1000
+        fsGroupChangePolicy: Always
+        runAsGroup: 1000
+        runAsNonRoot: true
+        runAsUser: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      serviceAccountName: agentplane-sandbox-service
+      setHostnameAsFQDN: false
+      shareProcessNamespace: false
+      terminationGracePeriodSeconds: 60
+      volumes:
+        - configMap:
+            name: agentplane-sandbox-service-config
+          name: configmap-agentplane-sandbox-service-config
+        - name: runner-gateway-token
+          projected:
+            sources:
+              - serviceAccountToken:
+                  audience: agentplane-sandbox-service
+                  expirationSeconds: 3600
+                  path: token
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app.kubernetes.io/name: agentplane-sandbox-service
+  name: agentplane-sandbox-service
+  namespace: agentplane-testing
+spec:
+  externalIPs: []
+  ports:
+    - name: grpc
+      port: 8080
+      protocol: TCP
+      targetPort: 8080
+  selector:
+    cdk8s.io/metadata.addr: agentplane-sandbox-service-deployment-c8b904d8
+  type: ClusterIP
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
@@ -2004,159 +2159,6 @@ subjects:
     name: agentplane-sandbox-service
     namespace: agentplane-testing
 ---
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: agentplane-sandbox-service-config
-  namespace: agentplane-testing
-data:
-  config.yaml: |
-    sandbox_namespace: agentplane-testing
-    caller_accounts:
-      - namespace: agentplane-testing
-        name: agentplane-app
-      - namespace: agentplane-testing
-        name: agentplane-history-service
-      - namespace: agentplane-testing
-        name: agentplane-notifications
-    token_audience: agentplane-sandbox-service
-    default_egress_policies:
-      - basic
-      - inference-experiments
-    kubernetes_grants: {}
-    kubernetes_binding_cleanup_namespaces: []
-    kubernetes_cluster_binding_cleanup: false
-    port: 8080
-    gateway_target: agentplane-runner-gateway.agentplane-testing.svc.cluster.local:8080
-    control_target: "{sandbox}-control.{namespace}.svc:8080"
-    gateway_token_file: /var/run/secrets/agentplane-runner-gateway/token
-    runner_control:
-      target: agentplane-runner-gateway.agentplane-testing.svc.cluster.local:8082
-      bearer: agentplane-credential-agentplane-runner-control
-      egress_policy: runner-control
-    runner_ingress:
-      target: agentplane-history-ingress.agentplane-testing.svc.cluster.local:8080
-      bearer: agentplane-credential-agentplane-runner-ingress
-      egress_policy: runner-ingress
-immutable: false
----
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  labels:
-    app.kubernetes.io/name: agentplane-sandbox-service
-  name: agentplane-sandbox-service
-  namespace: agentplane-testing
-spec:
-  minReadySeconds: 0
-  progressDeadlineSeconds: 600
-  replicas: 1
-  revisionHistoryLimit: 10
-  selector:
-    matchLabels:
-      cdk8s.io/metadata.addr: agentplane-sandbox-service-deployment-c8b904d8
-  strategy:
-    type: Recreate
-  template:
-    metadata:
-      labels:
-        app.kubernetes.io/name: agentplane-sandbox-service
-        cdk8s.io/metadata.addr: agentplane-sandbox-service-deployment-c8b904d8
-    spec:
-      automountServiceAccountToken: true
-      containers:
-        - env:
-            - name: AGENTPLANE_SANDBOX_SERVICE_CONFIG_FILE
-              value: /etc/agentplane-sandbox-service/config.yaml
-          image: git.allegedly.works/ducktape-ci/agentplane-sandbox-service:unset
-          imagePullPolicy: IfNotPresent
-          livenessProbe:
-            failureThreshold: 3
-            grpc:
-              port: 8080
-            initialDelaySeconds: 20
-            periodSeconds: 30
-          name: sandbox-service
-          ports:
-            - containerPort: 8080
-              name: grpc
-              protocol: TCP
-          readinessProbe:
-            failureThreshold: 3
-            grpc:
-              port: 8080
-            initialDelaySeconds: 3
-            periodSeconds: 10
-          resources:
-            limits:
-              memory: 512Mi
-            requests:
-              cpu: 50m
-              memory: 128Mi
-          securityContext:
-            allowPrivilegeEscalation: false
-            capabilities:
-              drop:
-                - ALL
-            privileged: false
-            readOnlyRootFilesystem: false
-            runAsNonRoot: true
-          volumeMounts:
-            - mountPath: /etc/agentplane-sandbox-service
-              name: configmap-agentplane-sandbox-service-config
-              readOnly: true
-            - mountPath: /var/run/secrets/agentplane-runner-gateway
-              name: runner-gateway-token
-              readOnly: true
-      dnsPolicy: ClusterFirst
-      hostNetwork: false
-      imagePullSecrets:
-        - name: forgejo-images-creds
-      nodeSelector:
-        topology.kubernetes.io/zone: hil-ovh
-      restartPolicy: Always
-      securityContext:
-        fsGroup: 1000
-        fsGroupChangePolicy: Always
-        runAsGroup: 1000
-        runAsNonRoot: true
-        runAsUser: 1000
-        seccompProfile:
-          type: RuntimeDefault
-      serviceAccountName: agentplane-sandbox-service
-      setHostnameAsFQDN: false
-      shareProcessNamespace: false
-      terminationGracePeriodSeconds: 60
-      volumes:
-        - configMap:
-            name: agentplane-sandbox-service-config
-          name: configmap-agentplane-sandbox-service-config
-        - name: runner-gateway-token
-          projected:
-            sources:
-              - serviceAccountToken:
-                  audience: agentplane-sandbox-service
-                  expirationSeconds: 3600
-                  path: token
----
-apiVersion: v1
-kind: Service
-metadata:
-  labels:
-    app.kubernetes.io/name: agentplane-sandbox-service
-  name: agentplane-sandbox-service
-  namespace: agentplane-testing
-spec:
-  externalIPs: []
-  ports:
-    - name: grpc
-      port: 8080
-      protocol: TCP
-      targetPort: 8080
-  selector:
-    cdk8s.io/metadata.addr: agentplane-sandbox-service-deployment-c8b904d8
-  type: ClusterIP
----
 apiVersion: cilium.io/v2
 kind: CiliumNetworkPolicy
 metadata:
@@ -2212,103 +2214,6 @@ spec:
         - ports:
             - port: "8080"
               protocol: TCP
----
-apiVersion: v1
-kind: ServiceAccount
-metadata:
-  name: agentplane-runner-gateway
-  namespace: agentplane-testing
-automountServiceAccountToken: true
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRole
-metadata:
-  name: agentplane-testing-runner-gateway-token-reviewer
-rules:
-  - apiGroups:
-      - authentication.k8s.io
-    resources:
-      - tokenreviews
-    verbs:
-      - create
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRoleBinding
-metadata:
-  name: agentplane-testing-runner-gateway-token-reviewer
-roleRef:
-  apiGroup: rbac.authorization.k8s.io
-  kind: ClusterRole
-  name: agentplane-testing-runner-gateway-token-reviewer
-subjects:
-  - apiGroup: ""
-    kind: ServiceAccount
-    name: agentplane-runner-gateway
-    namespace: agentplane-testing
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: Role
-metadata:
-  name: agentplane-runner-gateway
-  namespace: agentplane-testing
-rules:
-  - apiGroups:
-      - agents.x-k8s.io
-    resources:
-      - sandboxes
-    verbs:
-      - get
-      - list
-      - watch
-  - apiGroups:
-      - ""
-    resources:
-      - pods
-    verbs:
-      - get
-      - list
-      - watch
-  - apiGroups:
-      - coordination.k8s.io
-    resources:
-      - leases
-    verbs:
-      - get
-      - list
-      - watch
-      - create
-      - update
-  - apiGroups:
-      - ""
-    resources:
-      - services
-    verbs:
-      - get
-      - create
-      - update
-  - apiGroups:
-      - discovery.k8s.io
-    resources:
-      - endpointslices
-    verbs:
-      - get
-      - create
-      - update
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: RoleBinding
-metadata:
-  name: agentplane-runner-gateway
-  namespace: agentplane-testing
-roleRef:
-  apiGroup: rbac.authorization.k8s.io
-  kind: Role
-  name: agentplane-runner-gateway
-subjects:
-  - apiGroup: ""
-    kind: ServiceAccount
-    name: agentplane-runner-gateway
-    namespace: agentplane-testing
 ---
 apiVersion: v1
 kind: ConfigMap
@@ -2546,6 +2451,13 @@ data:
     runner_port: 7000
 immutable: false
 ---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: agentplane-runner-gateway
+  namespace: agentplane-testing
+automountServiceAccountToken: true
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -2693,6 +2605,96 @@ spec:
     cdk8s.io/metadata.addr: agentplane-runner-gateway-deployment-c8a3e7b5
   type: ClusterIP
 ---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: agentplane-testing-runner-gateway-token-reviewer
+rules:
+  - apiGroups:
+      - authentication.k8s.io
+    resources:
+      - tokenreviews
+    verbs:
+      - create
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: agentplane-testing-runner-gateway-token-reviewer
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: agentplane-testing-runner-gateway-token-reviewer
+subjects:
+  - apiGroup: ""
+    kind: ServiceAccount
+    name: agentplane-runner-gateway
+    namespace: agentplane-testing
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: agentplane-runner-gateway
+  namespace: agentplane-testing
+rules:
+  - apiGroups:
+      - agents.x-k8s.io
+    resources:
+      - sandboxes
+    verbs:
+      - get
+      - list
+      - watch
+  - apiGroups:
+      - ""
+    resources:
+      - pods
+    verbs:
+      - get
+      - list
+      - watch
+  - apiGroups:
+      - coordination.k8s.io
+    resources:
+      - leases
+    verbs:
+      - get
+      - list
+      - watch
+      - create
+      - update
+  - apiGroups:
+      - ""
+    resources:
+      - services
+    verbs:
+      - get
+      - create
+      - update
+  - apiGroups:
+      - discovery.k8s.io
+    resources:
+      - endpointslices
+    verbs:
+      - get
+      - create
+      - update
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: agentplane-runner-gateway
+  namespace: agentplane-testing
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: agentplane-runner-gateway
+subjects:
+  - apiGroup: ""
+    kind: ServiceAccount
+    name: agentplane-runner-gateway
+    namespace: agentplane-testing
+---
 apiVersion: cilium.io/v2
 kind: CiliumNetworkPolicy
 metadata:
@@ -2824,13 +2826,6 @@ spec:
     matchLabels:
       app.kubernetes.io/name: agentplane-egress
 ---
-apiVersion: v1
-kind: ServiceAccount
-metadata:
-  name: agentplane-history-service
-  namespace: agentplane-testing
-automountServiceAccountToken: true
----
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
@@ -2881,6 +2876,13 @@ data:
       settle_deltas: true
     fold_shadow: true
 immutable: false
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: agentplane-history-service
+  namespace: agentplane-testing
+automountServiceAccountToken: true
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -3092,13 +3094,6 @@ spec:
             - port: "8080"
               protocol: TCP
 ---
-apiVersion: v1
-kind: ServiceAccount
-metadata:
-  name: agentplane-history-ingress
-  namespace: agentplane-testing
-automountServiceAccountToken: true
----
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
@@ -3138,6 +3133,13 @@ data:
     port: 8080
     settle_deltas: true
 immutable: false
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: agentplane-history-ingress
+  namespace: agentplane-testing
+automountServiceAccountToken: true
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -3461,127 +3463,9 @@ automountServiceAccountToken: false
 apiVersion: v1
 kind: ServiceAccount
 metadata:
-  name: agentplane-app
-  namespace: agentplane-testing
-automountServiceAccountToken: true
----
-apiVersion: v1
-kind: ServiceAccount
-metadata:
   name: agentplane-runner
   namespace: agentplane-testing
 automountServiceAccountToken: false
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRole
-metadata:
-  name: agentplane-testing-app-token-reviewer
-rules:
-  - apiGroups:
-      - authentication.k8s.io
-    resources:
-      - tokenreviews
-    verbs:
-      - create
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRoleBinding
-metadata:
-  name: agentplane-testing-app-token-reviewer
-roleRef:
-  apiGroup: rbac.authorization.k8s.io
-  kind: ClusterRole
-  name: agentplane-testing-app-token-reviewer
-subjects:
-  - apiGroup: ""
-    kind: ServiceAccount
-    name: agentplane-app
-    namespace: agentplane-testing
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: Role
-metadata:
-  name: agentplane-app
-  namespace: agentplane-testing
-rules:
-  - apiGroups:
-      - extensions.agents.x-k8s.io
-    resources:
-      - sandboxtemplates
-    verbs:
-      - get
-      - list
-  - apiGroups:
-      - agents.x-k8s.io
-    resources:
-      - sandboxes
-    verbs:
-      - get
-      - list
-      - watch
-  - apiGroups:
-      - ""
-    resources:
-      - pods
-    verbs:
-      - get
-      - list
-      - watch
-  - apiGroups:
-      - agentplane.allegedly.works
-    resources:
-      - egresspolicies
-    verbs:
-      - get
-      - list
-      - watch
-  - apiGroups:
-      - agentplane.allegedly.works
-    resources:
-      - egressbindings
-    verbs:
-      - get
-      - list
-      - watch
-  - apiGroups:
-      - agentplane.allegedly.works
-    resources:
-      - egresscredentials
-    verbs:
-      - get
-      - list
-      - watch
-  - apiGroups:
-      - agentplane.allegedly.works
-    resources:
-      - actionpolicysets
-    verbs:
-      - get
-      - list
-      - watch
-  - apiGroups:
-      - agentplane.allegedly.works
-    resources:
-      - actionpolicybindings
-    verbs:
-      - get
-      - list
-      - watch
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: RoleBinding
-metadata:
-  name: agentplane-app
-  namespace: agentplane-testing
-roleRef:
-  apiGroup: rbac.authorization.k8s.io
-  kind: Role
-  name: agentplane-app
-subjects:
-  - apiGroup: ""
-    kind: ServiceAccount
-    name: agentplane-app
-    namespace: agentplane-testing
 ---
 apiVersion: v1
 kind: ConfigMap
@@ -3695,6 +3579,13 @@ data:
       scope: openid
       mode: direct
 immutable: false
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: agentplane-app
+  namespace: agentplane-testing
+automountServiceAccountToken: true
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -3973,6 +3864,117 @@ spec:
   selector:
     cdk8s.io/metadata.addr: agentplane-app-deployment-c8d92233
   type: ClusterIP
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: agentplane-testing-app-token-reviewer
+rules:
+  - apiGroups:
+      - authentication.k8s.io
+    resources:
+      - tokenreviews
+    verbs:
+      - create
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: agentplane-testing-app-token-reviewer
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: agentplane-testing-app-token-reviewer
+subjects:
+  - apiGroup: ""
+    kind: ServiceAccount
+    name: agentplane-app
+    namespace: agentplane-testing
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: agentplane-app
+  namespace: agentplane-testing
+rules:
+  - apiGroups:
+      - extensions.agents.x-k8s.io
+    resources:
+      - sandboxtemplates
+    verbs:
+      - get
+      - list
+  - apiGroups:
+      - agents.x-k8s.io
+    resources:
+      - sandboxes
+    verbs:
+      - get
+      - list
+      - watch
+  - apiGroups:
+      - ""
+    resources:
+      - pods
+    verbs:
+      - get
+      - list
+      - watch
+  - apiGroups:
+      - agentplane.allegedly.works
+    resources:
+      - egresspolicies
+    verbs:
+      - get
+      - list
+      - watch
+  - apiGroups:
+      - agentplane.allegedly.works
+    resources:
+      - egressbindings
+    verbs:
+      - get
+      - list
+      - watch
+  - apiGroups:
+      - agentplane.allegedly.works
+    resources:
+      - egresscredentials
+    verbs:
+      - get
+      - list
+      - watch
+  - apiGroups:
+      - agentplane.allegedly.works
+    resources:
+      - actionpolicysets
+    verbs:
+      - get
+      - list
+      - watch
+  - apiGroups:
+      - agentplane.allegedly.works
+    resources:
+      - actionpolicybindings
+    verbs:
+      - get
+      - list
+      - watch
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: agentplane-app
+  namespace: agentplane-testing
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: agentplane-app
+subjects:
+  - apiGroup: ""
+    kind: ServiceAccount
+    name: agentplane-app
+    namespace: agentplane-testing
 ---
 apiVersion: gateway.networking.k8s.io/v1
 kind: HTTPRoute
@@ -4370,126 +4372,6 @@ spec:
   volumeClaimTemplatesPolicy: Overrides
 ---
 apiVersion: v1
-kind: ServiceAccount
-metadata:
-  name: agentplane-actions
-  namespace: agentplane-testing
-automountServiceAccountToken: true
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRole
-metadata:
-  name: agentplane-testing-actions-token-reviewer
-rules:
-  - apiGroups:
-      - authentication.k8s.io
-    resources:
-      - tokenreviews
-    verbs:
-      - create
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRoleBinding
-metadata:
-  name: agentplane-testing-actions-token-reviewer
-roleRef:
-  apiGroup: rbac.authorization.k8s.io
-  kind: ClusterRole
-  name: agentplane-testing-actions-token-reviewer
-subjects:
-  - apiGroup: ""
-    kind: ServiceAccount
-    name: agentplane-actions
-    namespace: agentplane-testing
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: Role
-metadata:
-  name: agentplane-actions
-  namespace: agentplane-testing
-rules:
-  - apiGroups:
-      - agentplane.allegedly.works
-    resources:
-      - actionpolicysets
-    verbs:
-      - get
-      - list
-      - watch
-  - apiGroups:
-      - agentplane.allegedly.works
-    resources:
-      - actionpolicybindings
-    verbs:
-      - get
-      - list
-      - watch
-  - apiGroups:
-      - agentplane.allegedly.works
-    resources:
-      - actionpolicysets/status
-    verbs:
-      - patch
-  - apiGroups:
-      - agentplane.allegedly.works
-    resources:
-      - actionpolicybindings/status
-    verbs:
-      - patch
-  - apiGroups:
-      - ""
-    resources:
-      - serviceaccounts
-    verbs:
-      - get
-      - list
-      - watch
-  - apiGroups:
-      - extensions.agents.x-k8s.io
-    resources:
-      - sandboxtemplates
-    verbs:
-      - get
-  - apiGroups:
-      - agents.x-k8s.io
-    resources:
-      - sandboxes
-    verbs:
-      - create
-      - get
-      - list
-      - watch
-      - delete
-  - apiGroups:
-      - ""
-    resources:
-      - pods
-    verbs:
-      - get
-  - apiGroups:
-      - ""
-    resources:
-      - pods/exec
-    verbs:
-      - get
-      - create
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: RoleBinding
-metadata:
-  name: agentplane-actions
-  namespace: agentplane-testing
-roleRef:
-  apiGroup: rbac.authorization.k8s.io
-  kind: Role
-  name: agentplane-actions
-subjects:
-  - apiGroup: ""
-    kind: ServiceAccount
-    name: agentplane-actions
-    namespace: agentplane-testing
----
-apiVersion: v1
 kind: ConfigMap
 metadata:
   name: agentplane-actions-settings
@@ -4538,6 +4420,13 @@ data:
             server_id: example
             auth: oauth
 immutable: false
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: agentplane-actions
+  namespace: agentplane-testing
+automountServiceAccountToken: true
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -4731,6 +4620,8 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
+  labels:
+    app.kubernetes.io/name: agentplane-actions
   name: agentplane-actions
   namespace: agentplane-testing
 spec:
@@ -4743,6 +4634,119 @@ spec:
   selector:
     cdk8s.io/metadata.addr: agentplane-actions-deployment-c8d4c10b
   type: ClusterIP
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: agentplane-testing-actions-token-reviewer
+rules:
+  - apiGroups:
+      - authentication.k8s.io
+    resources:
+      - tokenreviews
+    verbs:
+      - create
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: agentplane-testing-actions-token-reviewer
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: agentplane-testing-actions-token-reviewer
+subjects:
+  - apiGroup: ""
+    kind: ServiceAccount
+    name: agentplane-actions
+    namespace: agentplane-testing
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: agentplane-actions
+  namespace: agentplane-testing
+rules:
+  - apiGroups:
+      - agentplane.allegedly.works
+    resources:
+      - actionpolicysets
+    verbs:
+      - get
+      - list
+      - watch
+  - apiGroups:
+      - agentplane.allegedly.works
+    resources:
+      - actionpolicybindings
+    verbs:
+      - get
+      - list
+      - watch
+  - apiGroups:
+      - agentplane.allegedly.works
+    resources:
+      - actionpolicysets/status
+    verbs:
+      - patch
+  - apiGroups:
+      - agentplane.allegedly.works
+    resources:
+      - actionpolicybindings/status
+    verbs:
+      - patch
+  - apiGroups:
+      - ""
+    resources:
+      - serviceaccounts
+    verbs:
+      - get
+      - list
+      - watch
+  - apiGroups:
+      - extensions.agents.x-k8s.io
+    resources:
+      - sandboxtemplates
+    verbs:
+      - get
+  - apiGroups:
+      - agents.x-k8s.io
+    resources:
+      - sandboxes
+    verbs:
+      - create
+      - get
+      - list
+      - watch
+      - delete
+  - apiGroups:
+      - ""
+    resources:
+      - pods
+    verbs:
+      - get
+  - apiGroups:
+      - ""
+    resources:
+      - pods/exec
+    verbs:
+      - get
+      - create
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: agentplane-actions
+  namespace: agentplane-testing
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: agentplane-actions
+subjects:
+  - apiGroup: ""
+    kind: ServiceAccount
+    name: agentplane-actions
+    namespace: agentplane-testing
 ---
 apiVersion: gateway.networking.k8s.io/v1
 kind: HTTPRoute
@@ -4885,13 +4889,6 @@ spec:
             - port: "8080"
               protocol: TCP
 ---
-apiVersion: v1
-kind: ServiceAccount
-metadata:
-  name: agentplane-notifications
-  namespace: agentplane-testing
-automountServiceAccountToken: true
----
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
@@ -4917,6 +4914,43 @@ subjects:
     kind: ServiceAccount
     name: agentplane-notifications
     namespace: agentplane-testing
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: agentplane-notifications-settings
+  namespace: agentplane-testing
+data:
+  settings.yaml: |
+    namespace: agentplane-testing
+    token_audience: agentplane-notifications
+    operator_reader_account: agentplane-app
+    notice_debounce:
+      quiet_seconds: 60
+      max_wait_seconds: 120
+    actions:
+      url: http://agentplane-actions.agentplane-testing.svc.cluster.local:8080
+      token_file: /var/run/secrets/notifications/actions
+    sandbox_service:
+      target: agentplane-sandbox-service.agentplane-testing.svc.cluster.local:8080
+      gateway_target: agentplane-runner-gateway.agentplane-testing.svc.cluster.local:8080
+      control_target: "{sandbox}-control.{namespace}.svc:8080"
+      grpc_channel_options:
+        grpc.max_receive_message_length: 33554432
+      token_file: /var/run/secrets/notifications/sandboxes
+    history_service:
+      target: agentplane-history-service.agentplane-testing.svc.cluster.local:8080
+      grpc_channel_options:
+        grpc.max_receive_message_length: 33554432
+      token_file: /var/run/secrets/notifications/history
+immutable: false
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: agentplane-notifications
+  namespace: agentplane-testing
+automountServiceAccountToken: true
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -5057,36 +5091,6 @@ spec:
                   audience: agentplane-history-service
                   expirationSeconds: 3600
                   path: history
----
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: agentplane-notifications-settings
-  namespace: agentplane-testing
-data:
-  settings.yaml: |
-    namespace: agentplane-testing
-    token_audience: agentplane-notifications
-    operator_reader_account: agentplane-app
-    notice_debounce:
-      quiet_seconds: 60
-      max_wait_seconds: 120
-    actions:
-      url: http://agentplane-actions.agentplane-testing.svc.cluster.local:8080
-      token_file: /var/run/secrets/notifications/actions
-    sandbox_service:
-      target: agentplane-sandbox-service.agentplane-testing.svc.cluster.local:8080
-      gateway_target: agentplane-runner-gateway.agentplane-testing.svc.cluster.local:8080
-      control_target: "{sandbox}-control.{namespace}.svc:8080"
-      grpc_channel_options:
-        grpc.max_receive_message_length: 33554432
-      token_file: /var/run/secrets/notifications/sandboxes
-    history_service:
-      target: agentplane-history-service.agentplane-testing.svc.cluster.local:8080
-      grpc_channel_options:
-        grpc.max_receive_message_length: 33554432
-      token_file: /var/run/secrets/notifications/history
-immutable: false
 ---
 apiVersion: v1
 kind: Service

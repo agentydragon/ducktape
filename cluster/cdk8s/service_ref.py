@@ -96,6 +96,10 @@ class ServiceRef(_Service):
     def pod_port(self) -> int:
         return self.port.number if self.target_port is None else self.target_port
 
+    def service_port(self) -> ServicePort:
+        """This port on the Service, targeting the Pods' port."""
+        return ServicePort(name=self.port.name, port=self.port.number, target_port=self.pod_port, protocol=Protocol.TCP)
+
     def egress(self) -> CiliumNetworkPolicySpecEgress:
         """The client's rule. Cilium matches after socket-LB translation, so it names the Pods' port."""
         return EgressRule.to_endpoints(self.pods.cilium, self.pod_port)

@@ -1071,7 +1071,6 @@ flowchart TD
         ACTION_PROTOCOLS_CONCRETE[Candidate: concrete types for Action protocols]
         ACTION_OAUTH_REFERENCE_TYPE[Candidate: typed OAuth token reference]
         NOTIFICATION_GITHUB_PACKAGE[Candidate: one GitHub source package]
-        CDK8S_SERVICE_CONSTRUCT[Candidate: one cdk8s service construct]
         CDK8S_RUNNER_ENDPOINT_HELPER[Candidate: one runner-facing endpoint helper]
         GRPC_CHANNEL_OPTIONS_CONSTANT[Candidate: one gRPC channel options constant]
         CDK8S_RUNNER_TEMPLATE_MOVE[Candidate: runner Pod objects out of the app]
@@ -1256,12 +1255,6 @@ dataclass, and catches narrowed to the JWT, `ValueError` and `KeyError` failures
 **Candidate.** `github_state.py` at the package root beside `sources/github{,_client,_models}.py`
 becomes `sources/github/{source,client,models,state}.py`, and the Actions source's hard-coded
 `timeout=5` becomes a `request_timeout_s` setting like the other backends'.
-
-### `CDK8S_SERVICE_CONSTRUCT` — one cdk8s service construct
-
-**Candidate.** Seven constructs in `cluster/cdk8s/agentplane/` hand-write one Deployment skeleton
-(ServiceAccount, security context, probes, Service, PDB, projected-token `JsonPatch`), and the CNPG
-egress rule is spelled eight times. One construct, and `database.py` exports `egress(namespace)`.
 
 ### `CDK8S_RUNNER_ENDPOINT_HELPER` — one runner-facing endpoint helper
 

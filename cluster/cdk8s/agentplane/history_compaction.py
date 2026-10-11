@@ -33,7 +33,7 @@ from cluster.cdk8s import cilium, cnpg, node_scheduling, pod_policy
 from cluster.cdk8s.agentplane import database
 from cluster.cdk8s.agentplane.environment import CompactionRun, Environment
 from cluster.cdk8s.forgejo_registry.chart import forgejo_images_creds_secret_ref
-from cluster.cdk8s.providers.cilium.network_policy import EgressRule, NetworkPolicy
+from cluster.cdk8s.providers.cilium.network_policy import NetworkPolicy
 from cluster.cdk8s.secret_ref import SecretRef
 from util.settings_contract import env_name
 
@@ -141,9 +141,6 @@ class HistoryCompaction(Construct):
             endpoint_selector=_LABELS,
             egress=[
                 cilium.dns_egress(),
-                EgressRule.to_endpoints(
-                    {"k8s:io.kubernetes.pod.namespace": env.namespace, "k8s:cnpg.io/cluster": "postgres"},
-                    database.POSTGRES_PORT,
-                ),
+                database.egress(env.namespace),
             ],
         )
