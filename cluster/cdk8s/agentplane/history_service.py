@@ -33,7 +33,7 @@ from cdk8s_plus_34 import (
 from constructs import Construct
 
 from agentplane.egress.resources import placeholder_of
-from agentplane.history_service.settings import CONFIG_FILE_ENV, RUNNER_INGRESS_AUDIENCE, Settings
+from agentplane.history_service.settings import RUNNER_INGRESS_AUDIENCE, Settings
 from agentplane.sandbox_service.runner_endpoints import RunnerEndpoint
 from agentplane.subjects import ServiceAccountRef
 from cluster.cdk8s import cilium, node_scheduling, pod_policy
@@ -186,7 +186,7 @@ class HistoryService(Construct):
             ),
             security_context=ContainerSecurityContextProps(read_only_root_filesystem=False),
         )
-        config.mount_into(container, env=CONFIG_FILE_ENV)
+        config.mount_into(container, env=Settings.config_file_env)
         # A rotating, audience-scoped workload token for the ingester's Sandbox Service and Runner Gateway calls.
         ApiObject.of(deployment).add_json_patch(
             JsonPatch.add(

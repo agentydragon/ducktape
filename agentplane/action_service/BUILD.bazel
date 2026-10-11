@@ -1219,9 +1219,9 @@ py_library(
         ":push_settings",
         "//agentplane:subjects",
         "//agentplane/action_service/github_policy:visibility",
+        "//util:yaml_file_settings",
         "@pypi//pydantic",
         "@pypi//pydantic_settings",
-        "@pypi//pyyaml",
     ],
 )
 

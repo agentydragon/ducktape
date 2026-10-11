@@ -26,7 +26,7 @@ from constructs import Construct
 
 from agentplane.crd_group import GROUP
 from agentplane.sandbox_service.kubernetes_grants import ClusterRoleBindingGrant, RoleBindingGrant
-from agentplane.sandbox_service.settings import CONFIG_FILE_ENV, Settings
+from agentplane.sandbox_service.settings import Settings
 from agentplane.subjects import ServiceAccountRef
 from cluster.cdk8s import cilium, node_scheduling, pod_policy
 from cluster.cdk8s.agentplane import egress, history_service, notifications, runner_gateway
@@ -125,7 +125,7 @@ class SandboxService(Construct):
             ),
             security_context=ContainerSecurityContextProps(read_only_root_filesystem=False),
         )
-        config.mount_into(container, env=CONFIG_FILE_ENV)
+        config.mount_into(container, env=Settings.config_file_env)
         # A rotating workload token the Runner Gateway accepts from this account alone for SealSandbox.
         ApiObject.of(deployment).add_json_patch(
             JsonPatch.add(

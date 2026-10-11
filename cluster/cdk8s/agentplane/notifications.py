@@ -17,7 +17,7 @@ from cdk8s_plus_34 import (
 )
 from constructs import Construct
 
-from agentplane.notification_service.settings import CONFIG_FILE_ENV, TOKEN_AUDIENCE, Settings
+from agentplane.notification_service.settings import TOKEN_AUDIENCE, Settings
 from cluster.cdk8s import cilium, node_scheduling, pod_policy
 from cluster.cdk8s.agentplane import database
 from cluster.cdk8s.agentplane.environment import Environment
@@ -147,7 +147,7 @@ class Notifications(Construct):
                 container.env.add_variable(
                     env_name(Settings, "github", field), secret.key(key).env_value(self, f"github-{key}")
                 )
-        settings.mount_into(container, env=CONFIG_FILE_ENV)
+        settings.mount_into(container, env=Settings.config_file_env)
         ApiObject.of(deployment).add_json_patch(
             JsonPatch.add(
                 "/spec/template/spec/volumes/-",

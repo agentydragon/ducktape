@@ -86,7 +86,7 @@ Model with constructs, deploy with one props object per environment.
   files are rendered through the binary's pydantic-settings model
   (`util/settings_contract.py`: `cli_args`, `env_name`, `settings_file`,
   `checked_value`), so a renamed field fails at synth. The code package owns `Settings`
-  and its `CONFIG_FILE_ENV`; `cluster/cdk8s` owns where and how it runs. Nothing under
+  and its `config_file_env`; `cluster/cdk8s` owns where and how it runs. Nothing under
   `x/` or `haku/` imports `cluster/`. A project's own `deploy/` may hold a props-driven
   construct (tested with synthetic props); the cluster's instantiation of it lives here.
   The general rule is that configuration is typed by its consumer's own schema. Where

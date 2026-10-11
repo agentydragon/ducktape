@@ -55,8 +55,8 @@ from homeassistant.provisioner.components import settings as components
 from homeassistant.provisioner.endpoint import HomeAssistantEndpoint
 from homeassistant.provisioner.onboarding import settings as onboarding
 from homeassistant.provisioner.tokens import settings as tokens
-from homeassistant.provisioner.yaml_settings import YamlFileSettings
 from util.settings_contract import env_name, settings_file
+from util.yaml_file_settings import YamlFileSettings
 
 _OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/home-assistant/app"
 _NAME = "home-assistant"

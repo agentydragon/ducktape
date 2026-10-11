@@ -1,17 +1,15 @@
 """YAML deployment configuration; GitHub secrets are supplied through Secret-backed environment variables."""
 
-import os
 from datetime import date
 from pathlib import Path
+from typing import ClassVar
 
 from pydantic import AnyHttpUrl, BaseModel, ConfigDict, Field, SecretStr
-from pydantic_settings import BaseSettings, PydanticBaseSettingsSource, SettingsConfigDict, YamlConfigSettingsSource
+from pydantic_settings import SettingsConfigDict
 
 from util.urls import HttpEndpointUrl
+from util.yaml_file_settings import YamlFileSettings
 
-# gazelle:include_dep @pypi//pyyaml
-
-CONFIG_FILE_ENV = "AGENTPLANE_NOTIFICATIONS_CONFIG_FILE"
 TOKEN_AUDIENCE = "agentplane-notifications"
 
 
@@ -130,7 +128,8 @@ class QuotaSettings(BaseModel):
     )
 
 
-class Settings(BaseSettings):
+class Settings(YamlFileSettings):
+    config_file_env: ClassVar[str] = "AGENTPLANE_NOTIFICATIONS_CONFIG_FILE"
     model_config = SettingsConfigDict(
         env_prefix="AGENTPLANE_NOTIFICATIONS_",
         env_nested_delimiter="__",
@@ -165,19 +164,3 @@ class Settings(BaseSettings):
     github: GitHubSettings | None = Field(
         default=None, description="GitHub source configuration. Disabled when absent from both YAML and environment."
     )
-
-    @classmethod
-    def settings_customise_sources(
-        cls,
-        settings_cls: type[BaseSettings],
-        init_settings: PydanticBaseSettingsSource,
-        env_settings: PydanticBaseSettingsSource,
-        dotenv_settings: PydanticBaseSettingsSource,
-        file_secret_settings: PydanticBaseSettingsSource,
-    ) -> tuple[PydanticBaseSettingsSource, ...]:
-        sources = [init_settings, env_settings, dotenv_settings]
-        if config_file := os.environ.get(CONFIG_FILE_ENV):
-            if not Path(config_file).is_file():
-                raise ValueError("configured notification settings file is not a regular file")
-            sources.append(YamlConfigSettingsSource(settings_cls, yaml_file=config_file))
-        return (*sources, file_secret_settings)

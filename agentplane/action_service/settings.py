@@ -2,11 +2,10 @@
 
 from __future__ import annotations
 
-import os
-from pathlib import Path
+from typing import ClassVar
 
 from pydantic import BaseModel, ConfigDict, Field, field_serializer, model_validator
-from pydantic_settings import BaseSettings, PydanticBaseSettingsSource, SettingsConfigDict, YamlConfigSettingsSource
+from pydantic_settings import SettingsConfigDict
 
 from agentplane.action_service.catalog import ActionGroup, Key
 from agentplane.action_service.github_policy.visibility import API_BASE_URL, CACHE_TTL_SECONDS
@@ -15,13 +14,10 @@ from agentplane.action_service.oauth_settings import OAuthSettings
 from agentplane.action_service.operator_oidc_settings import OperatorOidcSettings
 from agentplane.action_service.push_settings import WebPushSettings
 from agentplane.subjects import ServiceAccountRef
+from util.yaml_file_settings import YamlFileSettings
 
-# YamlConfigSettingsSource loads yaml lazily inside pydantic-settings; gazelle cannot see the dependency.
-# gazelle:include_dep @pypi//pyyaml
 DEFAULT_MAX_WAIT_SECONDS = 30.0
 DEFAULT_DIRECT_WAIT_SECONDS = 30.0
-# Names the YAML settings file a deployment mounts; not a field, so not a flag.
-CONFIG_FILE_ENV = "AGENTPLANE_ACTIONS_CONFIG_FILE"
 
 
 def _validate_shared_mcp_client_metadata(
@@ -92,7 +88,7 @@ class ActionServiceDeploymentSettings(BaseModel):
         return self
 
 
-class Settings(BaseSettings):
+class Settings(YamlFileSettings):
     """The service's configuration.
 
     Each field is a `--flag`, an `AGENTPLANE_ACTIONS_*` environment variable, and a key of the YAML
@@ -100,6 +96,7 @@ class Settings(BaseSettings):
     keeps the ActionGroup catalog in that file so backend/account changes need only a restart.
     """
 
+    config_file_env: ClassVar[str] = "AGENTPLANE_ACTIONS_CONFIG_FILE"
     model_config = SettingsConfigDict(
         env_prefix="AGENTPLANE_ACTIONS_",
         env_nested_delimiter="__",
@@ -152,22 +149,3 @@ class Settings(BaseSettings):
     def shared_mcp_client_metadata(self) -> Settings:
         _validate_shared_mcp_client_metadata(self.mcp_servers, self.mcp_client_metadata)
         return self
-
-    @classmethod
-    def settings_customise_sources(
-        cls,
-        settings_cls: type[BaseSettings],
-        init_settings: PydanticBaseSettingsSource,
-        env_settings: PydanticBaseSettingsSource,
-        dotenv_settings: PydanticBaseSettingsSource,
-        file_secret_settings: PydanticBaseSettingsSource,
-    ) -> tuple[PydanticBaseSettingsSource, ...]:
-        sources: list[PydanticBaseSettingsSource] = [init_settings, env_settings, dotenv_settings]
-        if config_file := os.environ.get(CONFIG_FILE_ENV):
-            # pydantic-settings silently ignores absent YAML files. An explicit deployment
-            # binding must never turn into a healthy service with an empty catalog.
-            if not Path(config_file).is_file():
-                raise ValueError("configured Action Service settings file is not a regular file")
-            sources.append(YamlConfigSettingsSource(settings_cls, yaml_file=config_file))
-        sources.append(file_secret_settings)
-        return tuple(sources)

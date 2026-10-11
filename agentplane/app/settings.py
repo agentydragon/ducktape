@@ -2,26 +2,19 @@
 
 from __future__ import annotations
 
-import os
 from enum import StrEnum
 from pathlib import Path
-from typing import Any
+from typing import ClassVar
 
 from pydantic import Field
-from pydantic_settings import BaseSettings, PydanticBaseSettingsSource, SettingsConfigDict, YamlConfigSettingsSource
+from pydantic_settings import SettingsConfigDict
 
 from agentplane.app.action_federation_settings import ActionFederationSettings
 from agentplane.app.model_catalog import ModelCatalog
 from agentplane.app.presets import SandboxPreset, ThreadPreset
 from agentplane.sandbox_service.kubernetes_grants import KubernetesGrant
 from util.urls import HttpEndpointUrl
-
-# YamlConfigSettingsSource loads yaml lazily inside pydantic-settings; gazelle cannot see the dependency.
-# gazelle:include_dep @pypi//pyyaml
-
-
-# Names the YAML settings file a deployment mounts; not a field, so not a flag.
-CONFIG_FILE_ENV = "AGENTPLANE_CONFIG_FILE"
+from util.yaml_file_settings import YamlFileSettings
 
 
 class ThreadReads(StrEnum):
@@ -29,13 +22,14 @@ class ThreadReads(StrEnum):
     HISTORY_SERVICE = "history_service"
 
 
-class AppSettingsConfig(BaseSettings):
+class AppSettingsConfig(YamlFileSettings):
     """Deployment-authored app settings, before runtime-only inputs arrive.
 
     The runtime `Settings` model extends this, so cdk8s can construct this typed fragment
     without fabricating the app's namespace, Sandbox Service target, or database URL.
     """
 
+    config_file_env: ClassVar[str] = "AGENTPLANE_CONFIG_FILE"
     model_config = SettingsConfigDict(env_prefix="AGENTPLANE_", cli_parse_args=True, cli_kebab_case=True)
 
     models: ModelCatalog = Field(
@@ -140,23 +134,3 @@ class Settings(AppSettingsConfig):
         '["system:serviceaccount:ns:sa"]. A token for any other subject is refused however it was '
         "minted, and the default accepts none at all, leaving an OIDC session the only way in.",
     )
-
-    def __init__(self, **values: Any) -> None:
-        # BaseSettings fills required fields from its sources; spell that out because the mypy plugin
-        # derives a required-argument signature from the fields.
-        super().__init__(**values)
-
-    @classmethod
-    def settings_customise_sources(
-        cls,
-        settings_cls: type[BaseSettings],
-        init_settings: PydanticBaseSettingsSource,
-        env_settings: PydanticBaseSettingsSource,
-        dotenv_settings: PydanticBaseSettingsSource,
-        file_secret_settings: PydanticBaseSettingsSource,
-    ) -> tuple[PydanticBaseSettingsSource, ...]:
-        sources: list[PydanticBaseSettingsSource] = [init_settings, env_settings, dotenv_settings]
-        if config_file := os.environ.get(CONFIG_FILE_ENV):
-            sources.append(YamlConfigSettingsSource(settings_cls, yaml_file=config_file))
-        sources.append(file_secret_settings)
-        return tuple(sources)

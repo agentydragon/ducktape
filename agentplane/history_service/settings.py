@@ -2,18 +2,15 @@
 
 from __future__ import annotations
 
-import os
 from pathlib import Path
-from typing import Any
+from typing import ClassVar
 
 from pydantic import BaseModel, ConfigDict, Field
-from pydantic_settings import BaseSettings, PydanticBaseSettingsSource, SettingsConfigDict, YamlConfigSettingsSource
+from pydantic_settings import SettingsConfigDict
 
-# YamlConfigSettingsSource loads yaml lazily inside pydantic-settings; gazelle cannot see the dependency.
-# gazelle:include_dep @pypi//pyyaml
 from agentplane.subjects import ServiceAccountRef
+from util.yaml_file_settings import YamlFileSettings
 
-CONFIG_FILE_ENV = "AGENTPLANE_HISTORY_SERVICE_CONFIG_FILE"
 RUNNER_INGRESS_AUDIENCE = "agentplane-runner-ingress"
 
 
@@ -80,7 +77,8 @@ class IngressSettings(BaseModel):
     )
 
 
-class Settings(BaseSettings):
+class Settings(YamlFileSettings):
+    config_file_env: ClassVar[str] = "AGENTPLANE_HISTORY_SERVICE_CONFIG_FILE"
     model_config = SettingsConfigDict(
         env_prefix="AGENTPLANE_HISTORY_SERVICE_", cli_parse_args=True, cli_kebab_case=True
     )
@@ -104,21 +102,3 @@ class Settings(BaseSettings):
     watch_lease_s: float = Field(
         default=300, gt=0, description="Seconds a WatchSessionSummaries stream lasts before planned renewal."
     )
-
-    def __init__(self, **values: Any) -> None:
-        super().__init__(**values)
-
-    @classmethod
-    def settings_customise_sources(
-        cls,
-        settings_cls: type[BaseSettings],
-        init_settings: PydanticBaseSettingsSource,
-        env_settings: PydanticBaseSettingsSource,
-        dotenv_settings: PydanticBaseSettingsSource,
-        file_secret_settings: PydanticBaseSettingsSource,
-    ) -> tuple[PydanticBaseSettingsSource, ...]:
-        sources = [init_settings, env_settings, dotenv_settings]
-        if config_file := os.environ.get(CONFIG_FILE_ENV):
-            sources.append(YamlConfigSettingsSource(settings_cls, yaml_file=config_file))
-        sources.append(file_secret_settings)
-        return tuple(sources)

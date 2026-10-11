@@ -37,7 +37,7 @@ from constructs import Construct
 
 from agentplane.egress.resources import placeholder_of
 from agentplane.runner_gateway.instructions import combine_instructions, render_platform_instructions
-from agentplane.runner_gateway.settings import CONFIG_FILE_ENV, RUNNER_CONTROL_AUDIENCE, Settings
+from agentplane.runner_gateway.settings import RUNNER_CONTROL_AUDIENCE, Settings
 from agentplane.sandbox_service.runner_endpoints import RunnerEndpoint
 from agentplane.subjects import ServiceAccountRef
 from cluster.cdk8s import cilium, node_scheduling, pod_policy
@@ -209,7 +209,7 @@ class RunnerGateway(Construct):
             ),
             security_context=ContainerSecurityContextProps(read_only_root_filesystem=False),
         )
-        config.mount_into(container, env=CONFIG_FILE_ENV)
+        config.mount_into(container, env=Settings.config_file_env)
         pod_policy.place(deployment, node_scheduling.HIL_OVH)
         pod_policy.harden(deployment)
         Service(

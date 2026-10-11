@@ -59,7 +59,7 @@ from constructs import Construct
 
 from agentplane.action_service.sandbox.binding import DESCRIPTION_ANNOTATION
 from agentplane.app.oidc import OIDCSettings
-from agentplane.app.settings import CONFIG_FILE_ENV, Settings, ThreadReads
+from agentplane.app.settings import Settings, ThreadReads
 from agentplane.crd_group import GROUP
 from cluster.cdk8s import cilium, node_scheduling, pod_policy
 from cluster.cdk8s.agentplane import (
@@ -326,7 +326,7 @@ class App(Construct):
             # Writable: its root filesystem writes are unaudited.
             security_context=ContainerSecurityContextProps(read_only_root_filesystem=False),
         )
-        config.mount_into(deployment.containers[0], env=CONFIG_FILE_ENV)
+        config.mount_into(deployment.containers[0], env=Settings.config_file_env)
         # A rotating, audience-scoped workload token, separate from the API-server token.
         ApiObject.of(deployment).add_json_patch(
             JsonPatch.add(

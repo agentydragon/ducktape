@@ -8,7 +8,7 @@ from typing import ClassVar
 from pydantic import BaseModel, Field
 from pydantic_settings import SettingsConfigDict
 
-from homeassistant.provisioner.yaml_settings import YamlFileSettings
+from util.yaml_file_settings import YamlFileSettings
 
 
 class ComponentConfig(BaseModel):

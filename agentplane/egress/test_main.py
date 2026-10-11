@@ -10,8 +10,6 @@ from pydantic import ValidationError
 
 from agentplane.egress.settings import Settings
 
-CONFIG_FILE_ENV = "AGENTPLANE_EGRESS_CONFIG_FILE"
-
 
 def _args(tmp_path: Path) -> list[str]:
     return [
@@ -29,7 +27,7 @@ def test_a_second_workload_namespace_is_another_list_entry(tmp_path: Path, monke
     """What hosting an agent elsewhere costs: one more entry in the settings file."""
     config = tmp_path / "settings.yaml"
     config.write_text("allowed_service_account_namespaces:\n  - egress-test\n  - other-workloads\n")
-    monkeypatch.setenv(CONFIG_FILE_ENV, str(config))
+    monkeypatch.setenv(Settings.config_file_env, str(config))
 
     settings = Settings(_cli_parse_args=_args(tmp_path))
 
@@ -41,7 +39,7 @@ def test_a_deployment_naming_no_workload_namespace_is_refused(tmp_path: Path, mo
     is a misconfiguration to fail on at startup rather than serve."""
     config = tmp_path / "settings.yaml"
     config.write_text("{}\n")
-    monkeypatch.setenv(CONFIG_FILE_ENV, str(config))
+    monkeypatch.setenv(Settings.config_file_env, str(config))
 
     with pytest.raises(ValidationError, match="allowed_service_account_namespaces"):
         Settings(_cli_parse_args=_args(tmp_path))
@@ -50,21 +48,12 @@ def test_a_deployment_naming_no_workload_namespace_is_refused(tmp_path: Path, mo
 def test_a_deployment_must_choose_its_credentials_namespace(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     config = tmp_path / "settings.yaml"
     config.write_text("allowed_service_account_namespaces: [egress-test]\n")
-    monkeypatch.setenv(CONFIG_FILE_ENV, str(config))
+    monkeypatch.setenv(Settings.config_file_env, str(config))
     monkeypatch.delenv("AGENTPLANE_EGRESS_CREDENTIALS_NAMESPACE", raising=False)
     args = [arg for arg in _args(tmp_path) if not arg.startswith("--credentials-namespace=")]
 
     with pytest.raises(ValidationError, match="credentials_namespace"):
         Settings(_cli_parse_args=args)
-
-
-def test_a_settings_file_that_is_not_there_is_refused(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """pydantic-settings ignores an absent YAML file, which would leave a bound deployment running on
-    defaults. A path the deployment names and the cluster does not mount has to be fatal instead."""
-    monkeypatch.setenv(CONFIG_FILE_ENV, str(tmp_path / "never-written.yaml"))
-
-    with pytest.raises(ValueError, match="not a regular file"):
-        Settings(_cli_parse_args=_args(tmp_path))
 
 
 if __name__ == "__main__":

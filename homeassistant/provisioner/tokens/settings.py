@@ -8,7 +8,7 @@ from pydantic import BaseModel, Field, SecretStr
 from pydantic_settings import SettingsConfigDict
 
 from homeassistant.provisioner.endpoint import HomeAssistantEndpoint
-from homeassistant.provisioner.yaml_settings import YamlFileSettings
+from util.yaml_file_settings import YamlFileSettings
 
 
 class TokenConfig(BaseModel):

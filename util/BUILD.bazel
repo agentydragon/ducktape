@@ -437,3 +437,25 @@ py_test(
         "@pypi//sqlalchemy",
     ],
 )
+
+py_library(
+    name = "yaml_file_settings",
+    srcs = ["yaml_file_settings.py"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "@pypi//pydantic_settings",
+        "@pypi//pyyaml",
+    ],
+)
+
+py_test(
+    name = "test_yaml_file_settings",
+    srcs = ["test_yaml_file_settings.py"],
+    deps = [
+        ":yaml_file_settings",
+        "//:conftest",
+        "@pypi//pydantic_settings",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)

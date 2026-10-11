@@ -2,24 +2,20 @@
 
 from __future__ import annotations
 
-import os
 from pathlib import Path
-from typing import Any
+from typing import ClassVar
 
 from pydantic import Field
-from pydantic_settings import BaseSettings, PydanticBaseSettingsSource, SettingsConfigDict, YamlConfigSettingsSource
+from pydantic_settings import SettingsConfigDict
 
 from agentplane.sandbox_service.kubernetes_grants import KubernetesGrant
 from agentplane.sandbox_service.runner_endpoints import RunnerEndpoint
 from agentplane.subjects import ServiceAccountRef
-
-# YamlConfigSettingsSource loads yaml lazily inside pydantic-settings; gazelle cannot see the dependency.
-# gazelle:include_dep @pypi//pyyaml
-
-CONFIG_FILE_ENV = "AGENTPLANE_SANDBOX_SERVICE_CONFIG_FILE"
+from util.yaml_file_settings import YamlFileSettings
 
 
-class Settings(BaseSettings):
+class Settings(YamlFileSettings):
+    config_file_env: ClassVar[str] = "AGENTPLANE_SANDBOX_SERVICE_CONFIG_FILE"
     model_config = SettingsConfigDict(
         env_prefix="AGENTPLANE_SANDBOX_SERVICE_", cli_parse_args=True, cli_kebab_case=True
     )
@@ -50,21 +46,3 @@ class Settings(BaseSettings):
         description="This Pod's projected token for the gateway, of audience `token_audience`; the gateway accepts "
         "it from the Sandbox Service alone for `SealSandbox`."
     )
-
-    def __init__(self, **values: Any) -> None:
-        super().__init__(**values)
-
-    @classmethod
-    def settings_customise_sources(
-        cls,
-        settings_cls: type[BaseSettings],
-        init_settings: PydanticBaseSettingsSource,
-        env_settings: PydanticBaseSettingsSource,
-        dotenv_settings: PydanticBaseSettingsSource,
-        file_secret_settings: PydanticBaseSettingsSource,
-    ) -> tuple[PydanticBaseSettingsSource, ...]:
-        sources = [init_settings, env_settings, dotenv_settings]
-        if config_file := os.environ.get(CONFIG_FILE_ENV):
-            sources.append(YamlConfigSettingsSource(settings_cls, yaml_file=config_file))
-        sources.append(file_secret_settings)
-        return tuple(sources)

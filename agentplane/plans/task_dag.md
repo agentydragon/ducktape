@@ -1036,7 +1036,6 @@ flowchart TD
     APP_PROJECTOR_RETIRE[Delete app projector]
     subgraph COHERENCE_REFACTORS[Coherence refactors]
         RUNNER_GATEWAY_AUDIENCE[Candidate: the Runner Gateway's own token audience]
-        SERVICE_SETTINGS_BASE[Candidate: one config-file settings base]
         SERVICE_PROCESS_MODULE[Candidate: one service process module]
         REQUIRED_SERVICE_WIRING[Candidate: no footgun defaults on service wiring]
         GATEWAY_NAME_SWEEP[Candidate: code says Runner Gateway for the gateway]
@@ -1083,13 +1082,6 @@ flowchart TD
 for one service is accepted by the other. Give the gateway `agentplane-runner-gateway` with its own
 token mount on each caller, drop both settings' literal audience defaults, and use
 `WORKLOAD_TOKEN_AUDIENCE` for the literal in `notifications.py`. Pairs with `GATEWAY_CLIENT_SPLIT`.
-
-### `SERVICE_SETTINGS_BASE` — one config-file settings base
-
-**Candidate.** `settings_customise_sources` is pasted into nine `Settings` classes and has drifted:
-four refuse a missing config file, the rest silently start on defaults. Move
-`homeassistant/provisioner/yaml_settings.py:YamlFileSettings` to `util/`, keep its missing-file
-check, subclass it in every service, and drop the no-op `__init__(self, **values)` overrides.
 
 ### `SERVICE_PROCESS_MODULE` — one service process module
 
