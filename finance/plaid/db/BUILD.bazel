@@ -82,6 +82,26 @@ filegroup(
     visibility = ["//finance/budget:__pkg__"],
 )
 
+py_library(
+    name = "testing",
+    testonly = True,
+    srcs = ["testing.py"],
+    visibility = [
+        "//finance/budget:__pkg__",
+        "//finance/plaid:__subpackages__",
+    ],
+    deps = [
+        ":link_store",
+        "//util/testing:postgres",
+        "@pypi//asyncpg",
+        "@pypi//psycopg",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",
+        "@pypi//sqlalchemy",
+        "@pypi//testcontainers",
+    ],
+)
+
 py_test(
     name = "test_link_store",
     size = "medium",
@@ -205,10 +225,9 @@ py_library(
     srcs = ["conftest.py"],
     deps = [
         ":link_store",
-        "//util/testing:postgres",
+        ":schema",
+        ":testing",
         "//util/testing:postgres_fixtures",
         "@pypi//pytest",
-        "@pypi//sqlalchemy",
-        "@pypi//testcontainers",
     ],
 )

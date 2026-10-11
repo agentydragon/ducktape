@@ -106,13 +106,9 @@ py_test(
         ":models",
         ":service",
         "//:conftest",
-        "//finance/plaid/db:link_store",
-        "//util/testing:postgres",
         "@pypi//asyncpg",
-        "@pypi//pytest",
         "@pypi//pytest_asyncio",
         "@pypi//pytest_bazel",
-        "@pypi//sqlalchemy",
     ],
 )
 
@@ -178,8 +174,9 @@ py_library(
     srcs = ["conftest.py"],
     visibility = ["//finance/plaid/spend:__subpackages__"],
     deps = [
+        "//finance/plaid/db:testing",
         "//util/testing:postgres_fixtures",
         "@pypi//pytest",
-        "@pypi//testcontainers",
+        "@pypi//sqlalchemy",
     ],
 )

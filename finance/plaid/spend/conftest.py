@@ -1,15 +1,15 @@
-"""Postgres testcontainer wiring for the spend-service tests."""
+"""Postgres database fixture wiring for the Spend Service tests."""
 
 from __future__ import annotations
 
 import pytest
-from testcontainers.postgres import PostgresContainer
+from sqlalchemy.engine import make_url
 
+from finance.plaid.db.testing import plaid_database_template, plaid_database_url
 from util.testing.postgres_fixtures import postgres_container
 
 
-@pytest.fixture(scope="session")
-def postgres_admin_url(postgres_container: PostgresContainer) -> str:
-    host = postgres_container.get_container_host_ip()
-    port = int(postgres_container.get_exposed_port(5432))
-    return f"postgresql+asyncpg://postgres:postgres@{host}:{port}/postgres"
+@pytest.fixture
+def postgres_url(plaid_database_url: str) -> str:
+    """Return the cloned Plaid database URL in the form asyncpg accepts directly."""
+    return make_url(plaid_database_url).set(drivername="postgresql").render_as_string(hide_password=False)

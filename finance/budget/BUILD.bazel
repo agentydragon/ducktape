@@ -31,9 +31,6 @@ py_test(
     name = "test_sql_read_model",
     size = "medium",
     srcs = ["test_sql_read_model.py"],
-    data = [
-        "//finance/plaid/db:migrations",
-    ],
     requires_docker = True,
     deps = [
         ":conftest",
@@ -41,9 +38,6 @@ py_test(
         ":sql_read_model",
         "//:conftest",
         "//finance/plaid/db:schema",
-        "//util/bazel:runfiles",
-        "//util/testing:postgres",
-        "@pypi//alembic",
         "@pypi//pydantic",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",
@@ -88,8 +82,7 @@ py_library(
     testonly = True,
     srcs = ["conftest.py"],
     deps = [
+        "//finance/plaid/db:testing",
         "//util/testing:postgres_fixtures",
-        "@pypi//pytest",
-        "@pypi//testcontainers",
     ],
 )
