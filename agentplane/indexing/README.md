@@ -43,50 +43,25 @@ memory during ingestion, so size the pod for the tree plus parsing and database 
 
 Provide PostgreSQL with the pgvector extension available. Startup creates the extension and
 the service-owned `agentplane_index` schema, so the initial database role needs those
-privileges. Existing Haku tables and migrations are not used. This initial schema has no
-upgrade migrations; incompatible future changes must ship an explicit migration or require
-a separate database. Startup rejects a changed model or chunking configuration.
+privileges. Existing Haku tables and migrations are not used. The schema has no upgrade
+migrations; an incompatible change must ship one or require a separate database. Startup
+rejects a changed model or chunking configuration.
 
 The worker needs network access to the Git remote, PostgreSQL, and the embedding endpoint,
-and a writable `CHECKOUT_DIR` sized for the clone. It needs no Kubernetes API access. A
-private remote gets `GIT_USERNAME`/`GIT_PASSWORD` from a Secret; a public one needs nothing.
-Deploy one replica initially; database advisory locks also serialize mutations from
-overlapping replicas during a rollout. Give the pod a Service on port 8080 with
-readiness/liveness probes at `/healthz`. Mount secrets through `secretKeyRef` or `envFrom`;
-configure `imagePullSecrets` for the Forgejo registry. A typical Deployment container
-configuration is:
+and a writable `CHECKOUT_DIR` sized for the clone. It needs no Kubernetes API access.
+Database advisory locks serialize mutations from overlapping replicas during a rollout.
+`GET /healthz` serves readiness and liveness probes. Use TLS for bearer-authenticated
+requests outside a trusted internal network.
 
-```yaml
-name: index
-image: git.allegedly.works/ducktape-ci/agentplane-index:<published-tag>
-envFrom:
-  - secretRef:
-      name: agentplane-index
-env:
-  - name: AGENTPLANE_INDEX_REPOSITORY_URL
-    value: https://git.example/owner/repository.git
-  - name: AGENTPLANE_INDEX_BRANCH
-    value: main
-  - name: AGENTPLANE_INDEX_CHECKOUT_DIR
-    value: /var/lib/agentplane-index/repository
-  - name: AGENTPLANE_INDEX_IGNORE
-    value: |
-      generated/
-      *.gz
-volumeMounts:
-  - name: repository
-    mountPath: /var/lib/agentplane-index
-ports:
-  - containerPort: 8080
-readinessProbe:
-  httpGet: { path: /healthz, port: 8080 }
-livenessProbe:
-  httpGet: { path: /healthz, port: 8080 }
-```
+## Deployment
 
-Choose the remote and dedicated database when deploying. Place the deployment behind the
-intended private service boundary and use TLS for
-bearer-authenticated requests outside a trusted internal network.
+[`cluster/cdk8s/agentplane_index/workers.py`](../../cluster/cdk8s/agentplane_index/workers.py)
+renders the `agentplane-index` namespace: one CNPG cluster with a pgvector database per
+indexed repository, a minted read token, and a worker Deployment and Service each for
+ducktape (`devel` on GitHub) and haku-state (`main` on the in-cluster Forgejo, with Git
+credentials from a Secret). The workers share a ConfigMap for the embedding endpoint
+(in-cluster Ollama), checkout path, and CA bundle, and clone into an `emptyDir`. The image tag
+there is a placeholder that Flux image automation overrides.
 
 ## Read API
 

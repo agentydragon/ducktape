@@ -1066,7 +1066,6 @@ flowchart TD
         HISTORY_GRPC_CONFORM[Candidate: the History Service follows grpc_services.md]
         THREAD_FOLD_SINGLE_OWNER[Blocked: the fold has one owner]
         SETTLE_DELTAS_ALWAYS_ON[Delta settlement always on]
-        INDEX_DOCS[Candidate: indexing README points at the deployment]
         APP_SERVICE_NAMES[Blocked: app names the right services]
         APP_TEST_CLIENT_MOVE[Candidate: app test client out of production]
         KUBEVIRT_GUEST_CONTROL[Candidate: KubeVirt guest dials out]
@@ -1231,12 +1230,6 @@ under `history_service/`.
 silently stops settling. Settlement becomes unconditional: delete the setting,
 `Environment.settle_deltas` and the `Store` flag (the ingester's copy goes with
 `FOLLOW_PATH_RETIRE`). `SESSION_EVENT_COMPACTION` does not wait for this.
-
-### `INDEX_DOCS` — indexing README points at the deployment
-
-**Candidate.** `agentplane/indexing/README.md` ships a hypothetical Deployment and "initial version"
-phrasing; point at `cluster/cdk8s/agentplane_index/workers.py` instead, and make
-`Maintenance.embedding_timeout_seconds` required.
 
 ### `APP_SERVICE_NAMES` — the app names the right services
 

@@ -24,7 +24,7 @@ class Maintenance:
     poll_seconds: float
     gc_seconds: float
     gc_grace: timedelta
-    embedding_timeout_seconds: float = 60
+    embedding_timeout_seconds: float
     source_error: str | None = None
     embedding_error: str | None = None
     gc_error: str | None = None

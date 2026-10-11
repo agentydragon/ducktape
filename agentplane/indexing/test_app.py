@@ -40,7 +40,13 @@ async def harness(store: Store, embedder: FakeEmbedder, upstream: Upstream, tmp_
         limits=SnapshotLimits(),
     )
     maintenance = Maintenance(
-        store=store, source=source, embedder=embedder, poll_seconds=60, gc_seconds=60, gc_grace=timedelta(days=1)
+        store=store,
+        source=source,
+        embedder=embedder,
+        poll_seconds=60,
+        gc_seconds=60,
+        gc_grace=timedelta(days=1),
+        embedding_timeout_seconds=60,
     )
     app = create_app(store=store, embedder=embedder, maintenance=maintenance, read_token=SecretStr("test-read-token"))
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://index.test") as client:
