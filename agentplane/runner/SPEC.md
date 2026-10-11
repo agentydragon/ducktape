@@ -84,18 +84,12 @@ Thread-page projection. Their cross-layer contract is [Thread, runner, and harne
 
 - Given `--channel-target`, the runner also dials the Sandbox Service's
   [runner channel](../docs/runner_channel.md) and keeps one `Connect` stream for as long as it runs,
-  reconnecting on a fresh connection after any loss. It offers `commands`, `events` and `lifecycle`.
+  reconnecting on a fresh connection after any loss. It offers `commands` and `lifecycle`.
 - A delivered command is admitted exactly as an `Attach` command is, and answered from the journal:
   its `CommandAdmitted` entry, also when the command was already journaled with the same payload.
   Otherwise it is refused with its cause: an unknown session, a harness that is not running or a
   sealed journal, a command ID already used for other work, or a command without an ID and an
   operation. Delivery never creates a session or starts a harness.
-- Each `OpenFollow` is answered on its own `Follow` RPC on the same connection: the session's
-  `Attached` snapshot, its journal after the requested cursor and then its live entries, ending
-  `sealed` at the journal's final cursor; or a refusal for an unknown session or a cursor beyond the
-  journal. A connection carries at most 64 follows; past that, the asked-for `Follow` ends without
-  a frame. `CloseFollow` and the connection's end end its follows, and ending one never interrupts a
-  turn or stops a harness.
 - Each control request is answered once, by its request ID, with its verb's result or a refusal
   naming the cause. `ListSessions` and `Seal` answer as the RPCs of the same name do, and
   `Initialize` with the attempt's terminal event once it has ended. `OpenSession` creates a session
@@ -108,12 +102,28 @@ Thread-page projection. Their cross-layer contract is [Thread, runner, and harne
 - The bearer it sends is a placeholder the egress proxy substitutes; the runner never holds the
   channel token.
 
+## Event ingress
+
+- Given `--ingress-target`, the runner pushes every session's journal to that
+  [ingress](../docs/runner_channel.md#event-ingress), one `Push` call per session until the ingress
+  acknowledges the session's seal: at startup, when a session is created, and after a call is lost.
+  Each call announces the session's `Attached` snapshot and sends the journal's entries after the
+  ingress's first acknowledgement, replayed and then live, at most 1024 beyond the latest
+  acknowledgement, then `Sealed` once the journal is sealed.
+- The runner records each session's latest acknowledgement on its state volume and deletes no
+  journal entry on it. A lost call retries with the channel's backoff; one the ingress refuses as
+  another writer's, or whose first acknowledgement is beyond the journal, retries at the maximum.
+  Neither holds up another session, a command or a lifecycle request: the journal is the buffer.
+- The bearer it sends is a placeholder the egress proxy substitutes for the ingress's own audience.
+
 ## Teardown seal
 
 - `Seal` is for Sandbox teardown only. The runner first records, durably, that the Sandbox is sealed;
   from then on, including after a restart, it refuses `Open` with a spec, so no session is created
   or resumed. It then stops every setup script and harness, and seals each session's journal at its
-  final cursor, returning those cursors. Sealing again returns the same cursors.
+  final cursor, returning those cursors. Sealing again returns the same cursors. Each cursor comes
+  with `flushed`: whether the ingress has acknowledged that seal, as the runner recorded it, so it
+  holds across a restart and is false for a runner that pushes nothing.
 - A sealed journal takes no further Events, so its commands are refused.
 - `Open` without a spec still follows a sealed session: it replays every entry through the seal's
   cursor, then ends the stream with `Sealed`. A stream already following the session when it is

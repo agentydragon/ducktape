@@ -22,6 +22,7 @@ import typer
 
 from agentplane.runner.channel import ChannelTiming, RunnerChannelClient
 from agentplane.runner.config import ClaudeLaunch, CodexLaunch, DebugCheckpoint, RunnerConfig
+from agentplane.runner.ingress import IngressPusher
 from agentplane.runner.service import serve
 
 logger = logging.getLogger(__name__)
@@ -93,6 +94,12 @@ def main(
     channel_bearer: Annotated[
         str | None, typer.Option(help="Bearer placeholder the egress proxy substitutes on the runner channel.")
     ] = None,
+    ingress_target: Annotated[
+        str | None, typer.Option(help="Runner ingress host:port to push every Session's Events to; omit to push none.")
+    ] = None,
+    ingress_bearer: Annotated[
+        str | None, typer.Option(help="Bearer placeholder the egress proxy substitutes on the runner ingress.")
+    ] = None,
     test_debug_checkpoint_name: Annotated[
         str | None, typer.Option(hidden=True, help="Test-only crash-test checkpoint name.")
     ] = None,
@@ -115,6 +122,8 @@ def main(
         codex = CodexLaunch(binary=codex_binary, base_url=openai_base_url, api_key=os.environ["OPENAI_API_KEY"])
     if (channel_target is None) != (channel_bearer is None):
         raise typer.BadParameter("--channel-target and --channel-bearer must be set together")
+    if (ingress_target is None) != (ingress_bearer is None):
+        raise typer.BadParameter("--ingress-target and --ingress-bearer must be set together")
     if (test_debug_checkpoint_name is None) != (test_debug_checkpoint_command_id is None):
         raise typer.BadParameter("both test debug checkpoint options must be set together")
     config = RunnerConfig(
@@ -131,10 +140,13 @@ def main(
         ),
     )
     channel = (channel_target, channel_bearer) if channel_target is not None and channel_bearer is not None else None
-    asyncio.run(async_main(config, listen, channel))
+    ingress = (ingress_target, ingress_bearer) if ingress_target is not None and ingress_bearer is not None else None
+    asyncio.run(async_main(config, listen, channel, ingress))
 
 
-async def async_main(config: RunnerConfig, listen: str, channel: tuple[str, str] | None) -> None:
+async def async_main(
+    config: RunnerConfig, listen: str, channel: tuple[str, str] | None, ingress: tuple[str, str] | None
+) -> None:
     server, runner, port = await serve(config, address=listen)
     host = listen.rsplit(":", 1)[0]
     # The line a supervisor or test reads to find the port.
@@ -143,28 +155,38 @@ async def async_main(config: RunnerConfig, listen: str, channel: tuple[str, str]
     loop = asyncio.get_running_loop()
     for signum in (signal.SIGINT, signal.SIGTERM):
         loop.add_signal_handler(signum, stopping.set)
-    dialing = None
+    # A broken channel or ingress push must not take the harnesses down with it, nor each other.
+    dialing: list[asyncio.Task[None]] = []
     if channel is not None:
         target, bearer = channel
-        dialing = asyncio.create_task(
-            RunnerChannelClient(runner, target=target, bearer=bearer, timing=ChannelTiming()).run(),
-            name="runner-channel",
+        dialing.append(
+            asyncio.create_task(
+                RunnerChannelClient(runner, target=target, bearer=bearer, timing=ChannelTiming()).run(),
+                name="runner channel",
+            )
         )
-        # A broken channel must not take the harnesses down with it; Attach keeps serving.
-        dialing.add_done_callback(_report_channel_end)
+    if ingress is not None:
+        target, bearer = ingress
+        dialing.append(
+            asyncio.create_task(
+                IngressPusher(runner, target=target, bearer=bearer, timing=ChannelTiming()).run(), name="ingress push"
+            )
+        )
+    for task in dialing:
+        task.add_done_callback(_report_dialing_end)
     await stopping.wait()
-    if dialing is not None:
-        dialing.remove_done_callback(_report_channel_end)
-        dialing.cancel()
-        await asyncio.gather(dialing, return_exceptions=True)
+    for task in dialing:
+        task.remove_done_callback(_report_dialing_end)
+        task.cancel()
+    await asyncio.gather(*dialing, return_exceptions=True)
     logger.info("stopping: %d session(s)", len(runner.sessions))
     await runner.stop()
     await server.stop(grace=5)
 
 
-def _report_channel_end(task: asyncio.Task[None]) -> None:
+def _report_dialing_end(task: asyncio.Task[None]) -> None:
     if not task.cancelled() and (error := task.exception()) is not None:
-        logger.error("runner channel stopped; commands routed to it are unavailable", exc_info=error)
+        logger.error("%s stopped", task.get_name(), exc_info=error)
 
 
 if __name__ == "__main__":

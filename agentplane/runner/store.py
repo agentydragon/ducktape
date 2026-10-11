@@ -124,6 +124,13 @@ class SessionRecord(BaseModel):
         )
 
 
+class IngressAcknowledgement(BaseModel):
+    """The latest acknowledgement the runner's ingress sent for a Session's journal."""
+
+    cursor: int = Field(ge=0, description="Every entry through this cursor is committed at the ingress.")
+    sealed: bool = Field(description="The ingress committed the journal's seal at `cursor`.")
+
+
 def validate_session_id(session_id: str) -> str:
     if not _SESSION_ID.match(session_id):
         raise ValueError(f"invalid {session_id=}: expected [A-Za-z0-9][A-Za-z0-9._-]{{0,127}}")
@@ -159,12 +166,23 @@ class SessionStore:
         return SessionRecord.model_validate_json((self.directory(session_id) / "session.json").read_bytes())
 
     def write(self, session_id: str, record: SessionRecord) -> None:
+        self._replace(session_id, "session.json", record)
+
+    def read_acknowledgement(self, session_id: str) -> IngressAcknowledgement | None:
+        """None until the ingress first acknowledged the Session."""
+        path = self.directory(session_id) / "acknowledgement.json"
+        return IngressAcknowledgement.model_validate_json(path.read_bytes()) if path.is_file() else None
+
+    def write_acknowledgement(self, session_id: str, acknowledgement: IngressAcknowledgement) -> None:
+        self._replace(session_id, "acknowledgement.json", acknowledgement)
+
+    def _replace(self, session_id: str, name: str, model: BaseModel) -> None:
         directory = self.directory(session_id)
         make_directory(directory)
-        staged = directory / "session.json.tmp"
+        staged = directory / f"{name}.tmp"
         with staged.open("wb") as output:
-            output.write(record.model_dump_json(indent=2).encode())
+            output.write(model.model_dump_json(indent=2).encode())
             output.flush()
             os.fsync(output.fileno())
-        staged.replace(directory / "session.json")
+        staged.replace(directory / name)
         sync_directory(directory)

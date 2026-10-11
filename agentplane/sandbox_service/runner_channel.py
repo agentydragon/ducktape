@@ -15,7 +15,6 @@ from typing import override
 from uuid import UUID
 
 import grpc
-from google.protobuf import empty_pb2
 from kubernetes_asyncio import client as k8s_client
 from sqlalchemy.exc import SQLAlchemyError
 
@@ -147,13 +146,6 @@ class RunnerChannelService(protocol_pb2_grpc.RunnerChannelServicer):
             raise WorkloadPrincipalRejectedError("invalid bearer metadata")
         principal = await self.principals.resolve_workload(token)
         return principal, await resolve_peer(principal, inventory=self.inventory, core=self.core)
-
-    @override
-    async def Follow(
-        self, request_iterator: AsyncIterator[protocol_pb2.FollowFrame], context: grpc.aio.ServicerContext
-    ) -> empty_pb2.Empty:
-        # Staged for the Sandbox Service side of event following; until then no Welcome agrees `events`.
-        await context.abort(grpc.StatusCode.UNIMPLEMENTED, "event following is not served yet")
 
     # mypy-protobuf types the handler as returning an iterator; explicit writes keep every send
     # inside the liveness bound.

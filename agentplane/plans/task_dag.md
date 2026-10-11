@@ -333,8 +333,6 @@ flowchart LR
     VM_PROCESS_ISOLATION[Blocked: harness/process resource boundary]
     VM_LIFECYCLE[Blocked: integrated lifecycle]
     RUNNER_OUTBOUND_LIFECYCLE --> VM_CONTROL_NETWORKING
-    RUNNER_INGRESS_PUSH[Runner pushes Events to its ingress] --> VM_CONTROL_NETWORKING
-    RUNNER_INGRESS_PUSH --> RUNNER_OUTBOUND_ROLLOUT
     HISTORY_INGRESS[History Service ingress] --> RUNNER_OUTBOUND_ROLLOUT
     SANDBOX_RUNNER_ENDPOINTS[Sandboxes name their runner's endpoints] --> RUNNER_OUTBOUND_ROLLOUT
     CLIENT_SESSION_IDS[Clients mint Session IDs] --> RUNNER_OUTBOUND_ROLLOUT
@@ -366,8 +364,8 @@ manifests once their images carry it. `LookupSession`'s journal scan waits on ho
 ### `RUNNER_OUTBOUND_ROLLOUT` — every template dials out
 
 **Blocked on lifecycle requests and the [ingress and control split](#11-runner-ingress-and-control-split).**
-Every Sandbox template starts its runner pushing Events to its ingress and holding its control
-stream, and the canary template goes. Pre-cutover Sandboxes are not upgraded: a clean cutover
+Every Sandbox template starts its runner pushing Events to its ingress (`--ingress-target`) and
+holding its control stream, and the canary template goes. Pre-cutover Sandboxes are not upgraded: a clean cutover
 (operator, 2026-10-10 PDT), with the operator stopping their one running Sandbox for it.
 
 ### `LEGACY_SANDBOX_RETIRE` — delete pre-cutover Sandboxes
@@ -903,7 +901,6 @@ nodes and section 9 are unaffected.
 ```mermaid
 flowchart TD
     HISTORY_INGRESS[Candidate: History Service ingress]
-    RUNNER_INGRESS_PUSH[Candidate: runner pushes Events to its ingress]
     SANDBOX_RUNNER_ENDPOINTS[Candidate: Sandboxes name their runner's endpoints]
     CLIENT_SESSION_IDS[Candidate: clients mint Session IDs]
     APP_LIVE_FROM_HISTORY[Candidate: no live reads through the Sandbox Service]
@@ -917,9 +914,7 @@ flowchart TD
     SEAL_FINALIZER[Blocked: seal as a finalizer on every delete]
     COMMAND_RECORDS_RETIRE[Unscheduled: drop command submission records]
     HISTORY_INGRESS --> SEAL_ON_INGRESS_ACK
-    RUNNER_INGRESS_PUSH --> SEAL_ON_INGRESS_ACK
     HISTORY_INGRESS --> RUNNER_OUTBOUND_ROLLOUT
-    RUNNER_INGRESS_PUSH --> RUNNER_OUTBOUND_ROLLOUT
     SANDBOX_RUNNER_ENDPOINTS --> RUNNER_OUTBOUND_ROLLOUT
     CLIENT_SESSION_IDS --> RUNNER_OUTBOUND_ROLLOUT
     CLIENT_SESSION_IDS --> RUNNER_INBOUND_RETIRE[Retire inbound runner access]
@@ -939,14 +934,6 @@ flowchart TD
 from its read API, since it takes untrusted input. Its store appends exactly as the follower
 ingester does now and acknowledges only after commit. Test duplicate and out-of-order pushes, a
 second writer identity refused, and resume after a History Service restart.
-
-### `RUNNER_INGRESS_PUSH` — runner pushes Events to its ingress
-
-**Candidate.** The runner pushes from its journal by reshaping the replay of its
-`Follow` side (#9853) into the push, and deletes `Follow` and the `events` capability, which the
-Sandbox Service never agrees (its `Follow` stub returns `UNIMPLEMENTED`). It keeps the last acknowledged cursor per Session on its volume, reports `flushed` in its `Seal`
-result from it, and never deletes a journal entry on acknowledgement. An unreachable ingress only lags; commands keep
-flowing.
 
 ### `SANDBOX_RUNNER_ENDPOINTS` — Sandboxes name their runner's endpoints
 
@@ -972,8 +959,9 @@ replicates its projection). Remove any remaining app or Notification Service use
 
 ### `SEAL_ON_INGRESS_ACK` — seal waits on the ingress acknowledgement
 
-**Blocked on the ingress and the runner push.** Teardown waits until the runner reports the
-ingress has acknowledged through every seal cursor, instead of on History Service holds. A runner
+**Blocked on the ingress.** Teardown waits until the runner reports every Session's seal `flushed`,
+which the runner already reports from its recorded acknowledgements, instead of on History Service
+holds. A runner
 that cannot report keeps the Sandbox in sealing for the operator, as today.
 
 ### `FOLLOW_PATH_RETIRE` — delete following, WatchSessions and holds

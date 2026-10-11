@@ -16,9 +16,10 @@ bbr test //agentplane/runner/...
 - `service.py`: the `Attach` RPC, session lookup, and `serve()`; `main.py` is the process entry
   point, configured by flags and credentialed from its environment.
 - `channel.py`: the runner's peer of the [runner channel](../docs/runner_channel.md), off unless
-  `--channel-target` is given.
-- `session.py`: one session's harness process and derived state; `store.py` the session metadata
-  and durable directory creation.
+  `--channel-target` is given; `ingress.py` pushes every session's journal to the runner's ingress,
+  off unless `--ingress-target` is given.
+- `session.py`: one session's harness process and derived state; `store.py` the session metadata,
+  ingress acknowledgements and durable directory creation.
 - `journal.py`: one SQLite database per durable runner session. SQLAlchemy/aiosqlite transactions
   commit command admission/outcome state with their exact protobuf `EventEntry` bytes. Coalesced
   receipts link all originating commands to one Event in the same transaction. Publication and

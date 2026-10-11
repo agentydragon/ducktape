@@ -109,8 +109,10 @@ message Heartbeat {}
 
 ## Event ingress
 
-Status: **accepted design (operator, 2026-10-10 PDT), not built.** Until it is, every runner's
-Events are read through `Attach`.
+Status: **accepted design (operator, 2026-10-10 PDT); the runner side is built, the ingress is
+not.** The runner pushes when started with `--ingress-target` (`runner/ingress.py`), which no
+template sets yet, and reports `flushed` from what it recorded. No server implements the ingress
+yet, so every runner's Events are still read through `Attach`.
 
 The runner pushes each Session's journal to one **ingress**, the endpoint its Sandbox names, and
 nothing else reads its journals. The History Service is the ingress when history is kept. A client
@@ -215,10 +217,6 @@ its recorded acknowledgements, so the report survives a runner restart. Sealing 
 same cursors and the current `flushed`, so teardown repeats `Seal` every 10 s until every Session
 is flushed, and only then may the Sandbox's volume go. A runner that cannot report leaves the
 Sandbox in sealing for the operator.
-
-`Follow`, `OpenFollow`, `CloseFollow` and the `events` capability are still in
-`runner_channel.v1` while the runner serves follows, and go with that code. The Sandbox Service
-never agrees `events` and its `Follow` returns `UNIMPLEMENTED`.
 
 ## Connection records in Kubernetes
 

@@ -89,6 +89,8 @@ class Runner:
             self._state_owner.close()
             raise
         self.sessions: dict[str, Session] = {}
+        # Called with each Session as this process first loads it, such as when it is created.
+        self.session_loaded: list[Callable[[Session], None]] = []
         self._sessions_lock = asyncio.Lock()
         # Held from the existence check through writing the record, so two concurrent creates of one
         # session cannot each write a record with its own event source.
@@ -212,6 +214,8 @@ class Runner:
                     make_adapter=make_adapter,
                 )
                 await self.sessions[session_id].load_setup_state()
+                for loaded in self.session_loaded:
+                    loaded(self.sessions[session_id])
             return self.sessions[session_id]
 
     async def stored_session(self, session_id: str) -> Session | None:
@@ -343,9 +347,15 @@ class Runner:
         sessions = [await self._load(session_id) for session_id in self.store.session_ids()]
         cursors = await asyncio.gather(*(session.seal() for session in sessions))
         return [
-            protocol_pb2.SessionSeal(session_id=session.session_id, cursor=cursor)
+            protocol_pb2.SessionSeal(
+                session_id=session.session_id, cursor=cursor, flushed=self._flushed(session.session_id, cursor)
+            )
             for session, cursor in zip(sessions, cursors, strict=True)
         ]
+
+    def _flushed(self, session_id: str, cursor: int) -> bool:
+        acknowledged = self.store.read_acknowledgement(session_id)
+        return acknowledged is not None and acknowledged.sealed and acknowledged.cursor == cursor
 
     def _validate_workspace(self, cwd: str) -> None:
         workspace_root = self.config.workspace_root

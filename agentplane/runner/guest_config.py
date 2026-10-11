@@ -161,7 +161,7 @@ def main() -> None:
     config = read_guest_config()
     runner_config = make_runner_config(config)
     configure_runner_network_environment(runner_config.harness_environment)
-    asyncio.run(async_main(runner_config, config.listen, None))
+    asyncio.run(async_main(runner_config, config.listen, None, None))
 
 
 def validate_main() -> None:

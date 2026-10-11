@@ -1,12 +1,10 @@
 """The runner's channel peer against a scripted Sandbox Service: delivered commands are admitted once
-and answered from the journal, refusals name their cause, follows stream the journal on their own
-RPCs and end without touching the harness, lifecycle requests start a harness only when they say so,
-and a lost connection is replaced by a fresh one."""
+and answered from the journal, refusals name their cause, lifecycle requests start a harness only when
+they say so, and a lost connection is replaced by a fresh one."""
 
 import asyncio
 from collections.abc import AsyncIterator, Callable, Mapping
 from dataclasses import dataclass, field
-from enum import Enum
 from pathlib import Path
 from typing import Any, cast, override
 
@@ -14,12 +12,11 @@ import grpc
 import httpx
 import pytest
 import pytest_bazel
-from google.protobuf import empty_pb2
 
 from agentplane.protocol import command_pb2, event_pb2
 from agentplane.runner import protocol_pb2
 from agentplane.runner.adapter import HarnessAdapter
-from agentplane.runner.channel import EPOCH_METADATA, FOLLOW_LIMIT, FOLLOW_METADATA, ChannelTiming, RunnerChannelClient
+from agentplane.runner.channel import ChannelTiming, RunnerChannelClient
 from agentplane.runner.config import ClaudeLaunch, RunnerConfig
 from agentplane.runner.harness_process import HarnessProcess
 from agentplane.runner.model_config import HttpModelConfigResolver
@@ -71,13 +68,6 @@ class RecordingAdapter(HarnessAdapter):
         raise AssertionError(f"unexpected native frame {source_sequence}")
 
 
-class Ended(Enum):
-    ENDED = "ended"
-
-
-ENDED = Ended.ENDED
-
-
 class RunningProcess:
     def __init__(self) -> None:
         self.running = True
@@ -101,14 +91,11 @@ class ScriptedService(protocol_pb2_grpc.RunnerChannelServicer):
     authorizations: list[str] = field(default_factory=list)
     receipts: asyncio.Queue[channel_pb2.CommandReceipt] = field(default_factory=asyncio.Queue)
     control_results: asyncio.Queue[channel_pb2.ControlResult] = field(default_factory=asyncio.Queue)
-    capabilities: list[str] = field(default_factory=lambda: ["commands", "events", "lifecycle"])
+    capabilities: list[str] = field(default_factory=lambda: ["commands", "lifecycle"])
     # Each connection's send queue, holding its scripted frames, for the test to push more to.
     connected: asyncio.Queue[asyncio.Queue[channel_pb2.ServiceFrame | grpc.StatusCode]] = field(
         default_factory=asyncio.Queue
     )
-    follow_metadata: dict[str, dict[str, str]] = field(default_factory=dict)
-    # Every follow's frames by follow ID, each follow closed by `ENDED` when its stream ends.
-    followed: asyncio.Queue[tuple[str, channel_pb2.FollowFrame | Ended]] = field(default_factory=asyncio.Queue)
     dial: Callable[[], None] = lambda: None
 
     @override
@@ -151,20 +138,6 @@ class ScriptedService(protocol_pb2_grpc.RunnerChannelServicer):
             await context.abort(item, "test service ends this connection")
         finally:
             receiving.cancel()
-
-    @override
-    async def Follow(
-        self, request_iterator: AsyncIterator[channel_pb2.FollowFrame], context: grpc.aio.ServicerContext
-    ) -> empty_pb2.Empty:
-        metadata = {key: str(value) for key, value in context.invocation_metadata() or ()}
-        follow_id = metadata[FOLLOW_METADATA]
-        self.follow_metadata[follow_id] = metadata
-        try:
-            async for frame in request_iterator:
-                self.followed.put_nowait((follow_id, frame))
-        finally:
-            self.followed.put_nowait((follow_id, ENDED))
-        return empty_pb2.Empty()
 
 
 @pytest.fixture
@@ -252,7 +225,7 @@ async def test_a_redelivered_command_is_admitted_once_and_answered_from_the_jour
     assert first == second
     assert first.admitted.event.command_admitted.command == submit("test-input")
     assert (await runner.sessions[RUNNING].journal.admitted_entry("test-input")) == first.admitted
-    assert service.hellos[0].capabilities == ["commands", "events", "lifecycle"]
+    assert service.hellos[0].capabilities == ["commands", "lifecycle"]
     assert service.authorizations == ["Bearer test-placeholder"]
 
 
@@ -291,145 +264,6 @@ async def test_a_lost_connection_is_replaced_by_a_fresh_one(ending: str, service
     # One runner process: the same boot ID, over a new HTTP/2 connection.
     assert service.hellos[0].runner_boot_id == service.hellos[1].runner_boot_id
     assert service.peers[0] != service.peers[1]
-
-
-def open_follow(follow_id: str, session_id: str = RUNNING, after_cursor: int = 0) -> channel_pb2.ServiceFrame:
-    return channel_pb2.ServiceFrame(
-        open_follow=channel_pb2.OpenFollow(follow_id=follow_id, session_id=session_id, after_cursor=after_cursor)
-    )
-
-
-def close_follow(follow_id: str) -> channel_pb2.ServiceFrame:
-    return channel_pb2.ServiceFrame(close_follow=channel_pb2.CloseFollow(follow_id=follow_id))
-
-
-async def journal_stderr(runner: Runner, session_id: str, count: int) -> list[int]:
-    session = await runner.stored_session(session_id)
-    assert session is not None
-    return [
-        (await session.journal.append(event_pb2.HarnessStderr(text=f"test line {index}"))).cursor
-        for index in range(count)
-    ]
-
-
-async def next_follow_frame(service: ScriptedService, follow_id: str) -> channel_pb2.FollowFrame | Ended:
-    async with asyncio.timeout(10):
-        received, frame = await service.followed.get()
-    assert received == follow_id
-    return frame
-
-
-async def test_a_follow_replays_after_its_cursor_then_streams_live_entries(
-    runner: Runner, service: ScriptedService
-) -> None:
-    first, *replayed = await journal_stderr(runner, RUNNING, 3)
-    service.frames.append(open_follow("test-follow", after_cursor=first))
-    service.dial()
-    attached = await next_follow_frame(service, "test-follow")
-    assert isinstance(attached, channel_pb2.FollowFrame)
-    assert (attached.attached.session_id, attached.attached.last_cursor) == (RUNNING, replayed[-1])
-    assert [
-        frame.entry.cursor
-        for _ in replayed
-        if isinstance(frame := await next_follow_frame(service, "test-follow"), channel_pb2.FollowFrame)
-    ] == replayed
-    live = await journal_stderr(runner, RUNNING, 1)
-    entry = await next_follow_frame(service, "test-follow")
-    assert isinstance(entry, channel_pb2.FollowFrame)
-    assert (entry.entry.cursor, entry.entry.event.harness_stderr.text) == (live[0], "test line 0")
-    metadata = service.follow_metadata["test-follow"]
-    assert (metadata["authorization"], metadata[EPOCH_METADATA]) == ("Bearer test-placeholder", "1")
-
-
-async def test_sealing_the_journal_ends_a_follow_with_its_final_cursor(
-    runner: Runner, service: ScriptedService
-) -> None:
-    (cursor,) = await journal_stderr(runner, RUNNING, 1)
-    service.frames.append(open_follow("test-follow"))
-    service.dial()
-    kinds = [(await next_follow_frame(service, "test-follow")) for _ in range(2)]
-    assert [frame.WhichOneof("frame") for frame in kinds if isinstance(frame, channel_pb2.FollowFrame)] == [
-        "attached",
-        "entry",
-    ]
-    await runner.sessions[RUNNING].journal.seal()
-    sealed = await next_follow_frame(service, "test-follow")
-    assert isinstance(sealed, channel_pb2.FollowFrame)
-    assert sealed.sealed == cursor
-    assert await next_follow_frame(service, "test-follow") is ENDED
-
-
-@pytest.mark.parametrize(
-    ("session_id", "after_cursor", "reason"),
-    [
-        ("test-unknown-session", 0, channel_pb2.FollowRefused.REASON_SESSION_UNKNOWN),
-        (STOPPED, 1, channel_pb2.FollowRefused.REASON_CURSOR_BEYOND_JOURNAL),
-    ],
-)
-async def test_a_follow_the_runner_cannot_serve_is_refused(
-    session_id: str, after_cursor: int, reason: channel_pb2.FollowRefused.Reason, service: ScriptedService
-) -> None:
-    service.frames.append(open_follow("test-follow", session_id, after_cursor))
-    service.dial()
-    refused = await next_follow_frame(service, "test-follow")
-    assert isinstance(refused, channel_pb2.FollowFrame)
-    assert refused.refused.reason == reason
-    assert await next_follow_frame(service, "test-follow") is ENDED
-
-
-async def test_closing_a_follow_leaves_the_connection_and_the_harness_running(
-    runner: Runner, service: ScriptedService
-) -> None:
-    service.frames.append(open_follow("test-follow"))
-    service.dial()
-    assert isinstance(await next_follow_frame(service, "test-follow"), channel_pb2.FollowFrame)
-    connection = await service.connected.get()
-    await connection.put(close_follow("test-follow"))
-    assert await next_follow_frame(service, "test-follow") is ENDED
-    await connection.put(deliver(RUNNING, submit("test-after-close")))
-    async with asyncio.timeout(10):
-        assert (await service.receipts.get()).HasField("admitted")
-    assert runner.sessions[RUNNING].running
-    assert len(service.hellos) == 1
-
-
-async def test_a_lost_connection_ends_its_follows(service: ScriptedService) -> None:
-    service.dial()
-    connection = await service.connected.get()
-    await connection.put(open_follow("test-follow"))
-    assert isinstance(await next_follow_frame(service, "test-follow"), channel_pb2.FollowFrame)
-    await connection.put(grpc.StatusCode.ABORTED)
-    assert await next_follow_frame(service, "test-follow") is ENDED
-    async with asyncio.timeout(10):
-        await service.connected.get()
-    assert service.followed.empty()
-
-
-async def test_a_follow_past_the_per_connection_limit_is_refused(service: ScriptedService) -> None:
-    service.frames += [open_follow(f"test-follow-{index}") for index in range(FOLLOW_LIMIT + 1)]
-    service.dial()
-    async with asyncio.timeout(10):
-        firsts: dict[str, channel_pb2.FollowFrame | Ended] = {}
-        while len(firsts) < FOLLOW_LIMIT + 1:
-            follow_id, frame = await service.followed.get()
-            firsts.setdefault(follow_id, frame)
-    refused = firsts.pop(f"test-follow-{FOLLOW_LIMIT}")
-    assert isinstance(refused, channel_pb2.FollowFrame)
-    assert refused.refused.reason == channel_pb2.FollowRefused.REASON_FOLLOW_LIMIT
-    assert {frame.WhichOneof("frame") for frame in firsts.values() if isinstance(frame, channel_pb2.FollowFrame)} == {
-        "attached"
-    }
-    assert len(firsts) == FOLLOW_LIMIT
-
-
-async def test_a_follow_on_a_connection_that_did_not_agree_events_fails_the_stream(service: ScriptedService) -> None:
-    service.capabilities = ["commands"]
-    service.frames.append(open_follow("test-follow"))
-    service.dial()
-    async with asyncio.timeout(10):
-        while len(service.hellos) < 2:
-            await service.connected.get()
-    assert service.followed.empty()
 
 
 def control(request: channel_pb2.ControlRequest) -> channel_pb2.ServiceFrame:
@@ -555,15 +389,39 @@ async def test_a_seal_lands_after_the_commands_delivered_before_it_and_before_th
         return await get(command_id)
 
     monkeypatch.setattr(journal, "get", held_get)
+    # The runner handles each frame before reading the next, so asking for the frame after the
+    # later delivery shows the Seal and that delivery were both read.
+    read_through: list[channel_pb2.ServiceFrame] = []
+    read_past_last = asyncio.Event()
+    serve = RunnerChannelClient.serve
+
+    class ObservedCall:
+        def __init__(self, call: Any) -> None:
+            self.call = call
+
+        def __getattr__(self, name: str) -> Any:
+            return getattr(self.call, name)
+
+        async def read(self) -> object:
+            if len(read_through) == 3:
+                read_past_last.set()
+            frame = await self.call.read()
+            if isinstance(frame, channel_pb2.ServiceFrame) and frame.WhichOneof("frame") != "heartbeat":
+                read_through.append(frame)
+            return frame
+
+    async def observed_serve(client: RunnerChannelClient, call: Any, welcome: channel_pb2.Welcome) -> None:
+        await serve(client, cast(Any, ObservedCall(call)), welcome)
+
+    monkeypatch.setattr(RunnerChannelClient, "serve", observed_serve)
     service.frames += [
         deliver(RUNNING, submit("test-before-seal")),
         seal("test-seal"),
         deliver(RUNNING, submit("test-after-seal")),
-        # Follows are not ordered behind a Seal, so this one's first frame shows the Seal was read.
-        open_follow("test-follow", STOPPED),
     ]
     service.dial()
-    assert isinstance(await next_follow_frame(service, "test-follow"), channel_pb2.FollowFrame)
+    async with asyncio.timeout(10):
+        await read_past_last.wait()
     unblocked.set()
     async with asyncio.timeout(10):
         receipts = {receipt.command_id: receipt for receipt in [await service.receipts.get() for _ in range(2)]}
@@ -591,7 +449,7 @@ async def test_sealing_again_returns_the_same_cursors_and_opening_is_refused(
 async def test_a_control_request_on_a_connection_that_did_not_agree_lifecycle_fails_the_stream(
     runner: Runner, service: ScriptedService
 ) -> None:
-    service.capabilities = ["commands", "events"]
+    service.capabilities = ["commands"]
     service.frames.append(seal("test-seal"))
     service.dial()
     async with asyncio.timeout(10):
