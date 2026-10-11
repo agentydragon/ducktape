@@ -508,13 +508,11 @@ class RunnerTemplate(Construct):
         description: str,
         buildbuddy_secret: bool = False,
         extra_harness_env: Sequence[str] = (),
-        dial_channel: bool = False,
     ) -> None:
         super().__init__(scope, id)
         self.env = env
         self.buildbuddy_secret = buildbuddy_secret
         self.extra_harness_env = extra_harness_env
-        self.dial_channel = dial_channel
         self._add_sandbox_template(name=name, image=image, description=description)
 
     def _runner_container(self, image: str) -> SandboxTemplateSpecPodTemplateSpecContainers:
@@ -559,17 +557,6 @@ class RunnerTemplate(Construct):
             args.extend(["--harness-env", entry])
         for name in self.env.harness_inherited_env:
             args.extend(["--harness-inherit-env", name])
-        if self.dial_channel:
-            # Through the egress proxy, which swaps the placeholder bearer for this Pod's token.
-            channel = sandbox_service.runner_channel(self.env.namespace)
-            args.extend(
-                [
-                    "--channel-target",
-                    f"{channel.fqdn}:{channel.port.number}",
-                    "--channel-bearer",
-                    sandbox_service.RUNNER_CHANNEL_BEARER,
-                ]
-            )
         return SandboxTemplateSpecPodTemplateSpecContainers(
             name="runner",
             image=f"{image}:{_PLACEHOLDER_TAG}",

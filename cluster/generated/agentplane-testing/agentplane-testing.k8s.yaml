@@ -2257,7 +2257,6 @@ data:
     default_egress_policies:
       - basic
       - inference-experiments
-      - runner-channel
     kubernetes_grants: {}
     kubernetes_binding_cleanup_namespaces: []
     kubernetes_cluster_binding_cleanup: false

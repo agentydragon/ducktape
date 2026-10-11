@@ -16,8 +16,14 @@ import yaml
 from more_itertools import one
 
 from agentplane.action_service.sandbox.binding import DESCRIPTION_ANNOTATION, SandboxExecutorBinding
-from cluster.cdk8s.agentplane import notifications
+from agentplane.egress.resources import placeholder_of
+from agentplane.sandbox_service.runner_endpoints import RunnerEndpoint
+from cluster.cdk8s.agentplane import notifications, sandbox_service
 from cluster.cdk8s.agentplane.conftest import NAMESPACES
+
+
+def _by_name(docs: list[dict[str, Any]], kind: str, name: str) -> dict[str, Any]:
+    return one(doc for doc in docs if doc["kind"] == kind and doc["metadata"]["name"] == name)
 
 
 def test_every_offered_template_exists_and_describes_itself(
@@ -170,26 +176,36 @@ def test_model_configs_are_generated_into_the_llm_ingress_configmap(
             assert "AGENTPLANE_MODEL_CONTEXT_WINDOWS" not in {entry["name"] for entry in runner["env"]}
 
 
-def test_channel_canary_only_adds_the_channel_flags_to_the_generic_runner(
+def test_runner_control_names_the_channel_its_egress_policy_admits(
     agentplane_manifests: dict[str, list[dict[str, Any]]],
 ) -> None:
-    for namespace, docs in agentplane_manifests.items():
-        templates = {doc["metadata"]["name"]: doc for doc in docs if doc["kind"] == "SandboxTemplate"}
-        if namespace != "agentplane-staging":
-            assert "runner-channel-canary" not in templates
+    checked = 0
+    for namespace in NAMESPACES:
+        docs = agentplane_manifests[namespace]
+        config = yaml.safe_load(_by_name(docs, "ConfigMap", f"{sandbox_service.NAME}-config")["data"]["config.yaml"])
+        if "runner_control" not in config:
             continue
-        canary = deepcopy(templates["runner-channel-canary"]["spec"])
-        args = canary["podTemplate"]["spec"]["containers"][0]["args"]
-        target = args.index("--channel-target")
-        # The exact host and placeholder the runner-channel EgressPolicy and EgressCredential match.
-        assert args[target : target + 4] == [
-            "--channel-target",
-            f"agentplane-sandbox-service.{namespace}.svc.cluster.local:8082",
-            "--channel-bearer",
-            "agentplane-credential-agentplane-runner-channel",
-        ]
-        del args[target : target + 4]
-        assert canary == templates["runner"]["spec"]
+        endpoint = RunnerEndpoint.model_validate(config["runner_control"])
+        host, port = endpoint.target.rsplit(":", 1)
+        service_ports = _by_name(docs, "Service", sandbox_service.NAME)["spec"]["ports"]
+        assert int(port) == one(entry for entry in service_ports if entry["name"] == "runner-channel")["port"]
+        # The proxy matches the host on the exact string the policy names, and swaps the bearer only
+        # where it is the placeholder of the credential that rule substitutes.
+        rule = one(_by_name(docs, "EgressPolicy", endpoint.egress_policy)["spec"]["rules"])
+        assert host in rule["hosts"], (namespace, rule)
+        assert endpoint.bearer == placeholder_of(rule["credentialRef"]["name"]), namespace
+        # The Sandbox Service refuses a template whose runner already names its control endpoint.
+        for template in docs:
+            if template["kind"] != "SandboxTemplate":
+                continue
+            for container in template["spec"]["podTemplate"]["spec"]["containers"]:
+                assert not {"--channel-target", "--channel-bearer"} & set(container.get("args", [])), (
+                    namespace,
+                    template["metadata"]["name"],
+                )
+        checked += 1
+    # Keeps this from passing vacuously should no environment set runner_control.
+    assert checked
 
 
 if __name__ == "__main__":

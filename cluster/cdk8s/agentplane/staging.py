@@ -32,7 +32,7 @@ from agentplane.app.settings import ThreadReads
 from cluster.cdk8s import agent_access_profiles, cilium, external_creds, ha_mcp, node_scheduling
 from cluster.cdk8s.agentplane import actions, command_sandbox, notifications, staging_config
 from cluster.cdk8s.agentplane.actions_staging_policies import add_staging_action_policies
-from cluster.cdk8s.agentplane.app import RUNNER_IMAGE, RunnerTemplate
+from cluster.cdk8s.agentplane.app import RunnerTemplate
 from cluster.cdk8s.agentplane.chart import environment_chart
 from cluster.cdk8s.agentplane.egress_credentials import (
     EXTERNAL_CREDS_STORE,
@@ -325,6 +325,7 @@ ENV = Environment(
     history_writer=HistoryWriter.HISTORY_SERVICE,
     fold_shadow=True,
     thread_reads=ThreadReads.HISTORY_SERVICE,
+    runner_control=True,
     notifications_github=GitHubAppProps(app_id=5188971, secret_name="agentplane-github-app"),
     kubernetes_binding_cleanup_namespaces=frozenset(agent_access_profiles.cleanup_namespaces()),
     kubernetes_cluster_binding_cleanup=True,
@@ -419,18 +420,6 @@ def chart(app: App) -> Chart:
             "Public ducktape development: the runner and harnesses plus the repository's shared "
             "bb/bbr, Bazelisk, pre-commit, formatters and Gazelle. Same container isolation and "
             "permissions as the generic runner except for a mounted BuildBuddy key; use remote execution for builds."
-        ),
-    )
-    RunnerTemplate(
-        chart,
-        "channel-canary-runner-template",
-        ENV,
-        name="runner-channel-canary",
-        image=RUNNER_IMAGE,
-        dial_channel=True,
-        description=(
-            "Canary of the generic runner that receives commands over the runner channel it dials "
-            "out to, instead of through the inbound Attach RPC. Sessions are created by public ID."
         ),
     )
     notification_service = notifications.service(STAGING_NAMESPACE)

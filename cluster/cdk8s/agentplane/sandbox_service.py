@@ -38,6 +38,7 @@ from constructs import Construct
 from agentplane.egress.resources import placeholder_of
 from agentplane.sandbox_service.instructions import combine_instructions, render_platform_instructions
 from agentplane.sandbox_service.kubernetes_grants import ClusterRoleBindingGrant, RoleBindingGrant
+from agentplane.sandbox_service.runner_endpoints import RunnerEndpoint
 from agentplane.sandbox_service.settings import CONFIG_FILE_ENV, RUNNER_CHANNEL_AUDIENCE, Settings
 from agentplane.subjects import ServiceAccountRef
 from cluster.cdk8s import cilium, node_scheduling, pod_policy
@@ -69,7 +70,7 @@ KUBERNETES_ADMIN_INSTRUCTIONS = (
 )
 
 
-# Bound to every Sandbox at creation (`default_egress_policies`), so no launch selection can cut a
+# Granted by this service with its `runner_control` endpoint, so no launch selection can cut a
 # Sandbox off from its own control plane.
 RUNNER_CHANNEL_POLICY = "runner-channel"
 RUNNER_CHANNEL_CREDENTIAL = "agentplane-runner-channel"
@@ -132,7 +133,7 @@ class SandboxService(Construct):
                     ),
                     KUBERNETES_ADMIN_INSTRUCTIONS,
                 ),
-                "default_egress_policies": [*egress.DEFAULT_POLICIES, RUNNER_CHANNEL_POLICY],
+                "default_egress_policies": list(egress.DEFAULT_POLICIES),
                 "kubernetes_grants": {
                     name: grant.model_dump(mode="json", exclude_none=True)
                     for name, grant in env.app_config.kubernetes_grants.items()
@@ -146,6 +147,18 @@ class SandboxService(Construct):
                 "health_port": _HEALTH.number,
                 "runner_port": RUNNER_PORT,
                 "ingest_history": env.history_writer is HistoryWriter.SANDBOX_SERVICE,
+                **(
+                    {
+                        # Through the egress proxy, which swaps the placeholder bearer for the Pod's token.
+                        "runner_control": RunnerEndpoint(
+                            target=f"{channel.fqdn}:{channel.port.number}",
+                            bearer=RUNNER_CHANNEL_BEARER,
+                            egress_policy=RUNNER_CHANNEL_POLICY,
+                        ).model_dump()
+                    }
+                    if env.runner_control
+                    else {}
+                ),
             },
             path="/etc/agentplane-sandbox-service/config.yaml",
             supplied=[("database_url",), ("commands_database_url",), ("pod_ip",)],
