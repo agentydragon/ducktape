@@ -23,5 +23,81 @@ an MCP approval gateway for any MCP-capable LLM product.
 - [Integration app](app/README.md): the human-facing frontend over the services above, and a
   client of them.
 
+## System overview
+
+What staging runs ([`cluster/cdk8s/agentplane/`](../cluster/cdk8s/agentplane/chart.py)). Dashed
+edges are deployed but carry no traffic yet.
+
+```mermaid
+flowchart TB
+    browser([Browser])
+    mcp_client([MCP client, e.g. claude.ai])
+    app[Integration app]
+    subgraph services[Backend services]
+        ss[Sandbox Service]
+        hs[History Service]
+        hi[History ingress]
+        notif[Notification service]
+        actions[Action Service]
+    end
+    subgraph sandbox[Sandbox Pod]
+        runner[Runner + native drivers]
+        sidecar[Egress sidecar]
+    end
+    proxy[Egress proxy]
+    llm[LLM ingress]
+    k8s[Kubernetes API, agent-sandbox controller]
+    electric[Electric]
+    hist_db[(history DB)]
+    outside((LiteLLM, internet, cluster services))
+
+    browser -->|HTTPS, SSE| app
+    mcp_client -->|MCP over OAuth| actions
+    app -->|gRPC: Sandboxes, Sessions, commands| ss
+    app -->|gRPC: Session and Thread reads| hs
+    app -->|HTTP| notif
+    app -->|HTTP: operator decisions| actions
+    app -->|Thread shapes for the browser| electric
+    electric -->|logical replication| hist_db
+
+    ss -->|Sandbox CRs, control Services, Leases| k8s
+    k8s -->|creates| sandbox
+    ss -->|gRPC Attach: event follow| runner
+    hs -->|WatchSessions, FollowSession, holds| ss
+    hs -->|ingest, fold, read| hist_db
+    hi -.->|append| hist_db
+    notif -->|commands| ss
+    notif -->|command receipts| hs
+    notif --> actions
+    actions -->|execute| k8s
+
+    runner --> sidecar -->|all outbound traffic| proxy
+    proxy -->|RunnerChannel Connect: commands, lifecycle| ss
+    proxy -.->|RunnerIngress Push: Events| hi
+    proxy -->|MCP| actions
+    proxy -->|HTTP| notif
+    proxy -->|model calls| llm --> outside
+    proxy -->|credentials substituted| outside
+```
+
+- **Sessions and Threads.** A Session is a runner's raw Event stream; a Thread is its
+  conversation view, folded by the History Service. Today the History Service ingests Events by
+  following each Session through the Sandbox Service, which reads them from the runner over
+  `Attach`. The History ingress replaces that path once runners are configured to push to it.
+- **Runner traffic is outbound.** Everything a runner sends goes through its Pod's egress
+  sidecar to the egress proxy, which authenticates the Pod and substitutes credentials. Commands
+  reach staging's runners over the `RunnerChannel` stream they dial to the Sandbox Service, routed
+  per Sandbox by its `<sandbox>-control` Service and `<sandbox>-runner` Lease
+  ([runner channel](docs/runner_channel.md)). The testing environment still delivers commands
+  over `Attach`.
+- **Databases.** Each service owns a database on one shared CNPG cluster: `app`,
+  `sandbox_commands` (Sandbox Service command admission), `sandbox_service` (Session history,
+  written by the History Service and its ingress), `actions`, `egress` and `notifications`. Only
+  the history database is drawn. A second Electric over the `app` database still runs, but
+  staging's app reads Threads through the history one.
+- **Runner Gateway split.** The Sandbox Service runs as one Deployment. Its runner-facing half
+  (Sessions, commands, the runner channel) is moving into a separate Runner Gateway service and
+  image; until that ships, both halves are the box above.
+
 Status, open work and design gates: [`plans/`](plans/README.md). Implemented contracts:
 [`docs/`](docs/).
