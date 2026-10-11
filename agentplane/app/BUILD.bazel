@@ -979,7 +979,7 @@ py_test(
         "//agentplane/thread_fold:views",
         "//util:visual_review",
         "//util/bazel:runfiles",
-        "//util/testing:postgres_fixtures",
+        "//util/testing:postgres",
         "//util/testing:undeclared_outputs",
         "//util/testing:viewports",
         "//util/testing:visual_review",

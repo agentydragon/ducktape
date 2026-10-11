@@ -60,7 +60,7 @@ from agentplane.thread_fold.models import (
 )
 from agentplane.thread_fold.views import ThreadFeedErrorState, ThreadOperationalState, ThreadViewState
 from util.bazel.runfiles import get_required_path
-from util.testing.postgres_fixtures import DatabaseNames
+from util.testing.postgres import DatabaseNames
 from util.testing.undeclared_outputs import undeclared_outputs_dir
 from util.testing.viewports import DESKTOP, MOBILE, SMALL_MOBILE, Viewport
 from util.testing.visual_review import upsert_review_asset
