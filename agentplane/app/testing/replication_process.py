@@ -216,7 +216,6 @@ async def _serve(
             command_admission_timeout_s=10,
             request_timeout_s=10,
             lifecycle_timeout_s=10,
-            follow_timeout_s=10,
         )
         history = HistoryServiceClient(history_target, token_file=history_token_file, request_timeout_s=10)
         summaries = Summaries(engine, history)

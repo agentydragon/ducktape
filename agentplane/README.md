@@ -71,7 +71,7 @@ flowchart TB
     ss -->|SealSandbox| gw
     k8s -->|creates| sandbox
     gw -->|control Services, Leases| k8s
-    gw -->|gRPC Attach: event follow| runner
+    gw -->|gRPC Attach: commands, lifecycle without control| runner
     hs -->|ingest, fold, read| hist_db
     notif -->|Sandbox lookups| ss
     notif -->|commands| gw

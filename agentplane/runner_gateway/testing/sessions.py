@@ -14,7 +14,6 @@ from agentplane.proto.sandbox_service_pb2 import SandboxDestination
 from agentplane.runner.client import RunnerClient
 from agentplane.runner_gateway.commands.db import Session
 from agentplane.runner_gateway.grpc_api import Resources
-from agentplane.runner_gateway.session_registry import next_change_position
 from agentplane.sandbox_service.destinations import DestinationUnavailableError
 from agentplane.sandbox_service.models import SandboxNotFoundError
 
@@ -38,7 +37,6 @@ async def register_session(
                 sandbox_name=sandbox_name,
                 sandbox_uid=sandbox_uid,
                 runner_session_id=runner_session_id,
-                change_position=await next_change_position(session),
             )
         )
 
@@ -46,7 +44,7 @@ async def register_session(
 @asynccontextmanager
 async def register_attached_sessions(resources: Resources, engine: AsyncEngine) -> AsyncIterator[None]:
     """Register every runner Session a test attached directly, bypassing CreateSession, under its own
-    UUID, so the History Service ingester under test follows it like any other."""
+    UUID, so the Session registry names it like any other."""
     sessions = resources.sessions
 
     async def discover() -> None:

@@ -120,7 +120,6 @@ def backend(
                 if register_attached
                 else nullcontext()
             ),
-            portal.wrap_async_context_manager(resources.session_changes.listener.listen()),
             portal.wrap_async_context_manager(service(resources, provisioning)) as target,
         ):
             yield Endpoint(target, token_file, lambda: portal.call(provisioning.reconcile_once))
