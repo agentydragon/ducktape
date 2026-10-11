@@ -17,6 +17,7 @@ py_library(
         ":egress",
         ":inventory",
         "//agentplane/sandbox_service/testing:fake_inventory",
+        "//agentplane/sandbox_service/testing:fixtures",
         "//agentplane/sandbox_service/testing:grpc_service",
         "//agentplane/sandbox_service/testing:kubernetes",
         "//util:kubernetes",
@@ -25,7 +26,6 @@ py_library(
         "@pypi//kubernetes_asyncio",
         "@pypi//pytest",
         "@pypi//sqlalchemy",
-        "@pypi//testcontainers",
     ],
 )
 

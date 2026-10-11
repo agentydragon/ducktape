@@ -162,8 +162,6 @@ py_library(
         "//util/testing:postgres_fixtures",
         "@pypi//kubernetes_asyncio",
         "@pypi//pytest",
-        "@pypi//sqlalchemy",
-        "@pypi//testcontainers",
     ],
 )
 

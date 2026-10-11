@@ -8,14 +8,8 @@ import pytest
 
 from finance.plaid.db.link_store import PlaidLinkStorage
 from finance.plaid.db.schema import async_session_factory
-from finance.plaid.db.testing import plaid_database_template, plaid_database_url
-from util.testing.postgres_fixtures import postgres_container
-
-
-@pytest.fixture
-def db_url(plaid_database_url: str) -> str:
-    """Keep the existing fixture name for tests that need direct database access."""
-    return plaid_database_url
+from finance.plaid.db.testing import db_url, plaid_database_template
+from util.testing.postgres_fixtures import database_clones, database_names, postgres_admin_url, postgres_container
 
 
 @pytest.fixture

@@ -64,6 +64,7 @@ py_library(
     srcs = ["postgres.py"],
     visibility = ["//visibility:public"],
     deps = [
+        "//util:db_migrations",
         "@pypi//asyncpg",
         "@pypi//psycopg2_binary",
         "@pypi//sqlalchemy",
@@ -92,11 +93,14 @@ py_library(
     srcs = ["postgres_fixtures.py"],
     visibility = ["//visibility:public"],
     deps = [
+        ":postgres",
         ":undeclared_outputs",
         "//third_party/containers:postgres_18",
         "//third_party/containers:ryuk",
         "//util:oci",
+        "@pypi//psycopg",
         "@pypi//pytest",
+        "@pypi//sqlalchemy",
         "@pypi//testcontainers",
     ],
 )

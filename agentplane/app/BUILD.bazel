@@ -189,7 +189,7 @@ py_library(
         "//agentplane/sandbox_service/testing:backend",
         "//agentplane/sandbox_service/testing:fake_inventory",
         "//agentplane/sandbox_service/testing:fake_rbac",
-        "//agentplane/sandbox_service/testing:history",
+        "//agentplane/sandbox_service/testing:fixtures",
         "//agentplane/thread_fold:projection_lease",
         "//util/testing:postgres",
         "//util/testing:postgres_fixtures",
@@ -198,7 +198,6 @@ py_library(
         "@pypi//psycopg",
         "@pypi//pytest",
         "@pypi//sqlalchemy",
-        "@pypi//testcontainers",
     ],
 )
 
@@ -985,6 +984,7 @@ py_test(
         "//agentplane/thread_fold:views",
         "//util:visual_review",
         "//util/bazel:runfiles",
+        "//util/testing:postgres",
         "//util/testing:undeclared_outputs",
         "//util/testing:viewports",
         "//util/testing:visual_review",

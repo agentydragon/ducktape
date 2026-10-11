@@ -8,22 +8,21 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qsl, urlsplit
-from uuid import UUID, uuid4
+from uuid import UUID
 
 import httpx
 import pytest
 from pydantic import SecretStr
 from sqlalchemy.ext.asyncio import AsyncEngine
 from tenacity import AsyncRetrying, stop_after_delay, wait_fixed, wait_none
-from testcontainers.postgres import PostgresContainer
 
 from devinfra.claude.session_export.api import SessionCookie, SessionsApi
 from devinfra.claude.session_export.database_migrate import RUNNER
 from devinfra.claude.session_export.models import DEFAULT_ATTESTATION_STATUS, SESSION_STATUS_ARCHIVED, SessionSummary
 from devinfra.claude.session_export.oauth import CredentialStore, OAuthCredential
 from devinfra.claude.session_export.store import SessionStore, make_engine
-from util.testing.postgres import PostgresDatabaseTemplate
-from util.testing.postgres_fixtures import postgres_container
+from util.testing.postgres import DatabaseClones, PostgresDatabaseTemplate, migrated_database_template
+from util.testing.postgres_fixtures import database_clones, database_names, postgres_admin_url, postgres_container
 
 TEST_ORG_UUID = "test-org-uuid"
 TEST_COOKIE = SessionCookie(session_key=SecretStr("test-session-key"), org_uuid=TEST_ORG_UUID)
@@ -290,22 +289,16 @@ def credential_store(tmp_path: Path) -> Callable[..., CredentialStore]:
 
 
 @pytest.fixture(scope="session")
-def session_export_database_template(postgres_container: PostgresContainer) -> Iterator[PostgresDatabaseTemplate]:
+def session_export_database_template(postgres_admin_url: str) -> Iterator[PostgresDatabaseTemplate]:
     """One migrated session-export database per test process, cloned for each case."""
-    admin_url = (
-        f"postgresql+psycopg://postgres:postgres@{postgres_container.get_container_host_ip()}"
-        f":{postgres_container.get_exposed_port(5432)}/postgres"
-    )
-    with PostgresDatabaseTemplate(admin_url, f"session_export_template_{uuid4().hex}") as template:
-        RUNNER.apply(template.url)
+    with migrated_database_template(postgres_admin_url, "session_export_template", RUNNER) as template:
         yield template
 
 
 @pytest.fixture
-def database_url(session_export_database_template: PostgresDatabaseTemplate) -> Iterator[str]:
+def database_url(session_export_database_template: PostgresDatabaseTemplate, database_clones: DatabaseClones) -> str:
     """A fresh writable clone of the migrated session-export schema for this case."""
-    with session_export_database_template.clone(f"sessions_{uuid4().hex}") as url:
-        yield url
+    return database_clones.clone(session_export_database_template, drivername="postgresql+asyncpg")
 
 
 @pytest.fixture

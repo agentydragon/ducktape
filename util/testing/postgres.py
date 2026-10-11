@@ -4,12 +4,14 @@ from __future__ import annotations
 
 import re
 from collections.abc import Iterator, Sequence
-from contextlib import contextmanager
+from contextlib import ExitStack, contextmanager
 from hashlib import sha256
 
 from sqlalchemy import create_engine, text
 from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import create_async_engine
+
+from util.db_migrations import MigrationRunner
 
 # The dialect is chosen by the admin_url scheme the caller passes (sync callers use
 # the postgresql:// default -> psycopg2, async callers postgresql+asyncpg://);
@@ -24,11 +26,47 @@ _TERMINATE_SQL = text(
 _SAFE_DB_NAME = re.compile(r"^[a-zA-Z0-9_]+$")
 
 
-def database_name_for_test(node_id: str) -> str:
-    """Return a readable, collision-resistant PostgreSQL identifier for a pytest node id."""
-    readable = re.sub(r"[^a-zA-Z0-9_]+", "_", node_id).strip("_") or "test"
-    suffix = sha256(node_id.encode()).hexdigest()[:10]
+def database_name_for_test(node_id: str, *, counter: int | None = None) -> str:
+    """Return a readable, collision-resistant PostgreSQL identifier for a pytest node id.
+
+    ``counter`` lets one test allocate several independent databases without relying on randomness.
+    """
+    identity = node_id if counter is None else f"{node_id}_{counter}"
+    readable = re.sub(r"[^a-zA-Z0-9_]+", "_", identity).strip("_") or "test"
+    suffix = sha256(identity.encode()).hexdigest()[:10]
     return f"{readable[:52].rstrip('_')}_{suffix}"
+
+
+class DatabaseNames:
+    """Allocate safe, distinct PostgreSQL database names for one pytest node."""
+
+    def __init__(self, node_id: str) -> None:
+        self.node_id = node_id
+        self._counter = 0
+
+    def __call__(self) -> str:
+        name = database_name_for_test(self.node_id, counter=self._counter)
+        self._counter += 1
+        return name
+
+
+class DatabaseClones:
+    """Own per-test template clones and drop them together when their pytest fixture ends."""
+
+    def __init__(self, names: DatabaseNames) -> None:
+        self._names = names
+        self._stack = ExitStack()
+
+    def __enter__(self) -> DatabaseClones:
+        return self
+
+    def __exit__(self, *_exc: object) -> None:
+        self._stack.close()
+
+    def clone(self, template: PostgresDatabaseTemplate, *, drivername: str) -> str:
+        """Create and register a writable clone, returning its URL with the requested driver."""
+        url = self._stack.enter_context(template.clone(self._names()))
+        return make_url(url).set(drivername=drivername).render_as_string(hide_password=False)
 
 
 def _database_url(admin_url: str, db_name: str) -> str:
@@ -160,3 +198,20 @@ class PostgresDatabaseTemplate:
             yield url
         finally:
             force_drop_database_sync(self.admin_url, db_name)
+
+
+@contextmanager
+def migrated_database_template(
+    admin_url: str,
+    template_name: str,
+    runner: MigrationRunner,
+    *,
+    template: str | None = None,
+    extensions: Sequence[str] = (),
+) -> Iterator[PostgresDatabaseTemplate]:
+    """Create a template, apply its migration history once, and clean up on exit."""
+    with PostgresDatabaseTemplate(
+        admin_url, template_name, template=template, extensions=extensions
+    ) as migrated_template:
+        runner.apply(migrated_template.url)
+        yield migrated_template

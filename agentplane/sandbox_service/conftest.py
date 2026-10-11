@@ -1,15 +1,12 @@
 """Fake Kubernetes fixtures and a caller bearer file, with no integration app or app database."""
 
-from collections.abc import AsyncIterator, Iterator
+from collections.abc import AsyncIterator
 from pathlib import Path
 from typing import cast
-from uuid import uuid4
 
 import pytest
 from kubernetes_asyncio import client as k8s_client
-from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
-from testcontainers.postgres import PostgresContainer
 
 from agentplane.sandbox_service.egress import EgressInventory
 from agentplane.sandbox_service.inventory import SandboxInventory
@@ -19,12 +16,12 @@ from agentplane.sandbox_service.testing.fake_inventory import (
     FakeCustomObjectsApi,
     close_fake_api_clients,
 )
+from agentplane.sandbox_service.testing.fixtures import service_database_template
 from agentplane.sandbox_service.testing.grpc_service import CALLER_TOKEN
-from agentplane.sandbox_service.testing.history import initialize_service_database, service_database
 from agentplane.sandbox_service.testing.kubernetes import Cluster, kubernetes
 from util.kubernetes import CustomObjectsClient
-from util.testing.postgres import PostgresDatabaseTemplate, database_name_for_test
-from util.testing.postgres_fixtures import postgres_container
+from util.testing.postgres import DatabaseClones, PostgresDatabaseTemplate
+from util.testing.postgres_fixtures import database_clones, database_names, postgres_admin_url, postgres_container
 
 
 @pytest.fixture(autouse=True)
@@ -37,38 +34,6 @@ async def close_fake_clients() -> AsyncIterator[None]:
 async def cluster() -> AsyncIterator[Cluster]:
     async with kubernetes() as started:
         yield started
-
-
-@pytest.fixture(scope="session")
-def service_postgres_admin_url(postgres_container: PostgresContainer) -> str:
-    return (
-        f"postgresql+psycopg://postgres:postgres@{postgres_container.get_container_host_ip()}"
-        f":{postgres_container.get_exposed_port(5432)}/postgres"
-    )
-
-
-@pytest.fixture(scope="session")
-async def service_database_template(service_postgres_admin_url: str) -> AsyncIterator[PostgresDatabaseTemplate]:
-    """Create both service schemas once; each test gets a writable clone."""
-    with PostgresDatabaseTemplate(service_postgres_admin_url, f"sandbox_service_template_{uuid4().hex}") as template:
-        async with service_database(template.url) as engine:
-            await initialize_service_database(engine)
-        yield template
-
-
-@pytest.fixture
-def db_url(service_database_template: PostgresDatabaseTemplate, request: pytest.FixtureRequest) -> Iterator[str]:
-    with service_database_template.clone(database_name_for_test(request.node.nodeid)) as url:
-        yield make_url(url).set(drivername="postgresql+asyncpg").render_as_string(hide_password=False)
-
-
-@pytest.fixture
-async def engine(db_url: str) -> AsyncIterator[AsyncEngine]:
-    engine = create_async_engine(db_url)
-    try:
-        yield engine
-    finally:
-        await engine.dispose()
 
 
 @pytest.fixture
@@ -100,3 +65,17 @@ def token_file(tmp_path: Path) -> Path:
     path = tmp_path / "caller-token"
     path.write_text(CALLER_TOKEN)
     return path
+
+
+@pytest.fixture
+def db_url(service_database_template: PostgresDatabaseTemplate, database_clones: DatabaseClones) -> str:
+    return database_clones.clone(service_database_template, drivername="postgresql+asyncpg")
+
+
+@pytest.fixture
+async def engine(db_url: str) -> AsyncIterator[AsyncEngine]:
+    engine = create_async_engine(db_url)
+    try:
+        yield engine
+    finally:
+        await engine.dispose()

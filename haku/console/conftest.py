@@ -16,7 +16,6 @@ from __future__ import annotations
 
 import base64
 import json
-import re
 import textwrap
 import time
 from collections.abc import AsyncGenerator, Callable, Generator, Iterator
@@ -53,8 +52,14 @@ from haku.console.settings import Settings
 from haku.console.tool_call_actor import OperatorActor
 from haku.console.tool_calls import ToolCallStatus
 from third_party.containers import pgvector_pg18
-from util.testing.postgres import PostgresDatabaseTemplate, create_database_sync, force_drop_database_sync
-from util.testing.postgres_fixtures import start_postgres_container
+from util.testing.postgres import (
+    DatabaseClones,
+    DatabaseNames,
+    PostgresDatabaseTemplate,
+    create_database_sync,
+    force_drop_database_sync,
+)
+from util.testing.postgres_fixtures import database_clones, database_names, postgres_admin_url, start_postgres_container
 
 # TestClient drives the app over httpx, imported inside starlette; gazelle cannot see it.
 # gazelle:include_dep @pypi//httpx
@@ -294,17 +299,10 @@ def postgres_container() -> Generator[PostgresContainer]:
         container.stop()
 
 
-@pytest.fixture(scope="session")
-def postgres_admin_url(postgres_container: PostgresContainer) -> str:
-    host = postgres_container.get_container_host_ip()
-    port = int(postgres_container.get_exposed_port(5432))
-    return f"postgresql+psycopg://postgres:postgres@{host}:{port}/postgres"
-
-
 @pytest.fixture
-def db_url(postgres_admin_url: str, request: pytest.FixtureRequest) -> Generator[str]:
+def db_url(postgres_admin_url: str, database_names: DatabaseNames) -> Generator[str]:
     """A pristine, empty per-test database (no migrations)."""
-    db_name = re.sub(r"[^a-z0-9_]", "_", request.node.name.lower())[:45].rstrip("_") or "haku_console_test"
+    db_name = database_names()
     # `vector` here rather than in a migration: pgvector is untrusted, so only a superuser can
     # install it, which is why the deployed database gets it from CNPG's `Database` CR.
     db_url = create_database_sync(postgres_admin_url, db_name, extensions=("vector",))
@@ -317,18 +315,15 @@ def db_url(postgres_admin_url: str, request: pytest.FixtureRequest) -> Generator
 @pytest.fixture(scope="session")
 def migrated_database_template(postgres_admin_url: str) -> Iterator[PostgresDatabaseTemplate]:
     """Install vector and migrate once, then provide isolated clones to runtime tests."""
-    with PostgresDatabaseTemplate(
-        postgres_admin_url, f"haku_console_template_{uuid4().hex}", extensions=("vector",)
-    ) as template:
+    with PostgresDatabaseTemplate(postgres_admin_url, "haku_console_template", extensions=("vector",)) as template:
         apply_migrations(template.url)
         yield template
 
 
 @pytest.fixture
-def migrated_db_url(migrated_database_template: PostgresDatabaseTemplate) -> Iterator[str]:
+def migrated_db_url(migrated_database_template: PostgresDatabaseTemplate, database_clones: DatabaseClones) -> str:
     """A fresh writable clone at head; the app still runs its normal startup schema check."""
-    with migrated_database_template.clone(f"haku_console_{uuid4().hex}") as url:
-        yield make_url(url).set(drivername="postgresql+asyncpg").render_as_string(hide_password=False)
+    return database_clones.clone(migrated_database_template, drivername="postgresql+asyncpg")
 
 
 @pytest.fixture
