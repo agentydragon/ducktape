@@ -8,7 +8,7 @@ from pydantic import TypeAdapter, ValidationError
 from agentplane.llm_ingress.models import ModelConfig
 
 # The ingress answers an unconfigured route with a JSON `null` body.
-_LOOKUP_RESULT = TypeAdapter(ModelConfig | None)
+_LOOKUP_RESULT: TypeAdapter[ModelConfig | None] = TypeAdapter(ModelConfig | None)
 
 
 class ModelConfigLookupError(RuntimeError):
