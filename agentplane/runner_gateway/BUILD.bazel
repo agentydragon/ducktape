@@ -75,6 +75,7 @@ py_library(
     deps = [
         "//agentplane/proto:runner_gateway_pb2",
         "//agentplane/runner_gateway/commands:db",
+        "@pypi//protobuf",
         "@pypi//sqlalchemy",
     ],
 )

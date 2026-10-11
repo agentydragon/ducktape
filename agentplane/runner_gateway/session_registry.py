@@ -11,6 +11,9 @@ from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
 from agentplane.proto import runner_gateway_pb2
 from agentplane.runner_gateway.commands.db import Session
 
+# The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.
+# gazelle:include_dep @pypi//protobuf
+
 
 class SessionNotFoundError(LookupError):
     pass
