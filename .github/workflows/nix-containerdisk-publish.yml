@@ -21,6 +21,11 @@ on:
         required: false
         type: boolean
         default: false
+      attic:
+        description: Cache the built image in Attic on devel
+        required: false
+        type: boolean
+        default: false
       source_commit:
         description: Exact commit to check out and build (defaults to the triggering commit)
         required: false
@@ -128,6 +133,13 @@ jobs:
           else
             nix build ".#$FLAKE_OUTPUT" --print-build-logs
           fi
+
+      - name: Push to Attic
+        if: inputs.attic && github.event_name != 'pull_request_target' && github.ref_name == 'devel'
+        run: |
+          nix profile install nixpkgs#attic-client
+          attic login ducktape https://cache.allegedly.works "$ATTIC_TOKEN"
+          attic push ducktape:main result
 
       - name: Compute tag
         id: meta

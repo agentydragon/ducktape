@@ -8,9 +8,14 @@ Launcher admission and networking: [platform experiment](README.md).
 ## Build
 
 The [VM image workflow](../../../../.github/workflows/agentplane-runner-vm-image.yml)
-builds the current runner wheel and supplies `DUCKTAPE_ARTIFACT_OVERRIDES` to
-`.#agentplane-runner-vm-container-disk`. Without that override, a local Nix build
-uses the repository's pinned wheel, which may predate the guest entry points.
+uses the repository's pinned runner wheel by default. Automatic builds follow the
+Nix image inputs and artifact pins; runner Python edits take effect after a repin.
+The published image is cached in Attic for subsequent builds.
+
+For an experiment using unpublished runner changes, dispatch the workflow with
+`build_runner_wheel: true`. This builds the checkout's wheel and supplies
+`DUCKTAPE_ARTIFACT_OVERRIDES` to `.#agentplane-runner-vm-container-disk`.
+Feature branch source-wheel builds retain the image as a workflow artifact.
 Normal registry publication is restricted to `devel`; experiments use a separate
 tag and a digest-pinned containerDisk.
 

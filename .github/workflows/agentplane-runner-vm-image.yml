@@ -1,38 +1,48 @@
 # Build the NixOS Agentplane runner guest and publish its qcow2 containerDisk.
 name: Agentplane Runner VM Image
 
+# Python sources enter this image through the agentplane-runner artifact pin.
+# Keep automatic triggers on Nix/image inputs; source-wheel experiments are manual.
 on:
   push:
     branches: [devel]
     paths:
-      - ".github/actions/bb-remote/action.yml"
+      - ".github/actions/setup-ci-secrets/action.yml"
       - ".github/actions/setup-nix-attic/action.yml"
       - ".github/workflows/agentplane-runner-vm-image.yml"
       - ".github/workflows/nix-containerdisk-publish.yml"
-      - "agentplane/runner/**"
-      - "devinfra/ci/invocation_ids.py"
+      - "agentplane/runner/container-disk.nix"
+      - "agentplane/runner/package.nix"
+      - "agentplane/runner/vm.nix"
       - "devinfra/ci/pr_mergeability.py"
+      - "devinfra/secrets/ci_env.sh"
       - "flake.lock"
       - "flake.nix"
       - "nix/artifact-pins.json"
+      - "nix/attic-pubkeys.json"
       - "nix/flake/packages.nix"
+      - "nix/nixos/modules/base.nix"
       - "nix/nixos/modules/vm-hardware.nix"
   # Same-repository PRs can use pull_request directly. Fork PRs are skipped here
   # (their secrets are unavailable) and use pull_request_target below instead.
   pull_request:
     paths:
       # keep-sorted start
-      - ".github/actions/bb-remote/action.yml"
+      - ".github/actions/setup-ci-secrets/action.yml"
       - ".github/actions/setup-nix-attic/action.yml"
       - ".github/workflows/agentplane-runner-vm-image.yml"
       - ".github/workflows/nix-containerdisk-publish.yml"
-      - "agentplane/runner/**"
-      - "devinfra/ci/invocation_ids.py"
+      - "agentplane/runner/container-disk.nix"
+      - "agentplane/runner/package.nix"
+      - "agentplane/runner/vm.nix"
       - "devinfra/ci/pr_mergeability.py"
+      - "devinfra/secrets/ci_env.sh"
       - "flake.lock"
       - "flake.nix"
       - "nix/artifact-pins.json"
+      - "nix/attic-pubkeys.json"
       - "nix/flake/packages.nix"
+      - "nix/nixos/modules/base.nix"
       - "nix/nixos/modules/vm-hardware.nix"
       # keep-sorted end
   # Fork PRs use pull_request_target so repository secrets are available, with
@@ -41,20 +51,29 @@ on:
     branches: [devel]
     paths:
       # keep-sorted start
-      - ".github/actions/bb-remote/action.yml"
+      - ".github/actions/setup-ci-secrets/action.yml"
       - ".github/actions/setup-nix-attic/action.yml"
       - ".github/workflows/agentplane-runner-vm-image.yml"
       - ".github/workflows/nix-containerdisk-publish.yml"
-      - "agentplane/runner/**"
-      - "devinfra/ci/invocation_ids.py"
+      - "agentplane/runner/container-disk.nix"
+      - "agentplane/runner/package.nix"
+      - "agentplane/runner/vm.nix"
       - "devinfra/ci/pr_mergeability.py"
+      - "devinfra/secrets/ci_env.sh"
       - "flake.lock"
       - "flake.nix"
       - "nix/artifact-pins.json"
+      - "nix/attic-pubkeys.json"
       - "nix/flake/packages.nix"
+      - "nix/nixos/modules/base.nix"
       - "nix/nixos/modules/vm-hardware.nix"
       # keep-sorted end
   workflow_dispatch:
+    inputs:
+      build_runner_wheel:
+        description: Build the runner wheel from this checkout instead of the artifact pin
+        type: boolean
+        default: false
 
 concurrency:
   # Fork pull_request runs skip building; they must not cancel the trusted pull_request_target run.
@@ -103,7 +122,8 @@ jobs:
       flake_output: agentplane-runner-vm-container-disk
       image_name: agentplane-runner-vm
       image: git.allegedly.works/ducktape-ci/agentplane-runner-vm
-      build_runner_wheel: true
+      build_runner_wheel: ${{ github.event_name == 'workflow_dispatch' && inputs.build_runner_wheel }}
+      attic: true
       source_commit: ${{ needs.resolve-merge-commit.outputs.sha }}
       allow_unsafe_pr_checkout: ${{ github.event_name == 'pull_request_target' }}
       environment: >-
