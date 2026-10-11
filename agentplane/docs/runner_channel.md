@@ -109,8 +109,10 @@ message Heartbeat {}
 
 ## Event following
 
-Status: **accepted (operator, 2026-10-10 PDT), not built.** Until it is, every runner's Events are read through
-`Attach`.
+Status: **superseded (operator, 2026-10-11 PDT), not built on the Sandbox Service.** Runner traffic
+splits into ingress, where the runner pushes its Events to the Sandbox's ingress, and control, which
+carries commands and lifecycle requests only. Until the ingress lands, every runner's Events are read
+through `Attach`. The runner side below (`Follow`) is built and goes with that cutover.
 
 A runner that lists `events` in `Hello` serves its journal over the channel, and the Sandbox Service
 then reads that Sandbox's journals only that way: `FollowSession` for every subscriber, and its own
