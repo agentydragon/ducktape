@@ -8,7 +8,6 @@ import pytest_bazel
 from agentplane.app.action_policy import ActionPolicyInventory
 from agentplane.app.api import create_app
 from agentplane.app.conftest import AGENT_AUTH
-from agentplane.app.database_updates import DatabaseUpdates
 from agentplane.app.egress_access import EgressAccess
 from agentplane.app.electric import ElectricProxy
 from agentplane.app.identity import TokenReviewer
@@ -23,6 +22,7 @@ from agentplane.app.threads.store import ThreadStore
 from agentplane.app.threads.view.content import ContentStore
 from agentplane.egress.decisions_client import DecisionsClient
 from agentplane.history_service.testing.history import History
+from agentplane.postgres.wakeups import Wakeups
 from agentplane.proto import command_pb2, event_pb2
 from agentplane.runner.harness import Harness
 from agentplane.sandbox_service.client import SandboxServiceClient
@@ -37,7 +37,7 @@ async def test_lazy_scoped_evidence_and_native_expansion(
     event_logs: EventLogStore,
     content: ContentStore,
     history: History,
-    database_updates: DatabaseUpdates,
+    database_updates: Wakeups,
     operator_sessions: OperatorSessionStore,
     egress: EgressAccess,
     decisions: DecisionsClient,

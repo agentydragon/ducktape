@@ -13,8 +13,10 @@ from grpc_health.v1 import health_pb2, health_pb2_grpc
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
+from agentplane.changes import Changes
 from agentplane.grpc_serving import add_health, serving
 from agentplane.history_service import protocol_pb2
+from agentplane.history_service.channels import Channel, create_wakeups
 from agentplane.history_service.fold.models import (
     ThreadCheckpoint,
     ThreadEntity,
@@ -25,7 +27,6 @@ from agentplane.history_service.fold.models import (
 )
 from agentplane.history_service.fold.views import EntityKind
 from agentplane.history_service.fold_runner import FOLD_EPOCH, HEALTH_SERVICE, FoldBacklog, FoldRunner
-from agentplane.history_service.storage.history_changes import HistoryChanges
 from agentplane.history_service.storage.store import Store
 from agentplane.history_service.testing.delta_spans import claude_text
 from agentplane.proto import event_log_pb2, event_pb2
@@ -113,7 +114,7 @@ async def test_run_folds_without_waiting_out_the_interval_while_behind(engine: A
     entries = turn(1)
     session_id = await retained_session(history, entries)
     folder = FoldRunner(engine=engine, history=history, concurrency=1, page_size=PAGE_SIZE)
-    changes = HistoryChanges(engine.url)
+    wakeups = create_wakeups(engine.url)
     sessions = async_sessionmaker(engine)
 
     async def caught_up(cursor: int) -> None:
@@ -126,9 +127,11 @@ async def test_run_folds_without_waiting_out_the_interval_while_behind(engine: A
                 return
             await asyncio.sleep(0.05)
 
-    async with changes.listener.listen(), asyncio.TaskGroup() as tasks:
+    async with wakeups.listener.listen(), asyncio.TaskGroup() as tasks:
         # More than a page behind: an interval wait between pages would outlast the timeout.
-        running = tasks.create_task(folder.run(interval_s=3600, changes=changes, health=add_health(grpc.aio.server())))
+        running = tasks.create_task(
+            folder.run(interval_s=3600, changes=wakeups.changes[Channel.HISTORY], health=add_health(grpc.aio.server()))
+        )
         async with asyncio.timeout(30):
             await caught_up(len(entries))
             await history.append(session_id, [entry(len(entries) + 1, harness_started=event_pb2.HarnessStarted())])
@@ -260,7 +263,7 @@ async def test_an_unretried_error_stops_the_fold_and_reports_it(engine: AsyncEng
         grpc.aio.insecure_channel(f"127.0.0.1:{port}") as channel,
     ):
         async with asyncio.timeout(30):
-            await folder.run(interval_s=3600, changes=HistoryChanges(engine.url), health=health)
+            await folder.run(interval_s=3600, changes=Changes(), health=health)
         checked = await health_pb2_grpc.HealthStub(channel).Check(health_pb2.HealthCheckRequest(service=HEALTH_SERVICE))
         whole = await health_pb2_grpc.HealthStub(channel).Check(health_pb2.HealthCheckRequest())
     assert (checked.status, whole.status) == (

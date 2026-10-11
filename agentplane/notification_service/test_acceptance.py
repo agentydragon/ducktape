@@ -25,7 +25,7 @@ from agentplane.action_service.service import ActionService
 from agentplane.action_service.testing.callers import admitted_callers
 from agentplane.action_service.testing.fixtures import RecordingExecutor
 from agentplane.action_service.updates import ActionUpdates
-from agentplane.history_service.storage.history_changes import HistoryChanges
+from agentplane.history_service.channels import Channel, create_wakeups
 from agentplane.history_service.testing.backend import history_service, ingest
 from agentplane.notification_service.api import create_app
 from agentplane.notification_service.db import Inbox
@@ -106,7 +106,7 @@ async def test_listen_deliver_read_ack_and_recover_lost_response_without_app(
                 max_wait_seconds=30,
                 reader_accounts=frozenset({delegate}),
             )
-            history_changes = HistoryChanges(make_url(sandbox_service_db_url))
+            history_wakeups = create_wakeups(make_url(sandbox_service_db_url))
             token_file = tmp_path / "delegate-token"
             token_file.write_text("delegate-token")
             async with (
@@ -129,7 +129,7 @@ async def test_listen_deliver_read_ack_and_recover_lost_response_without_app(
                 ) as remote,
                 ingest(sandbox_service_db_url, remote),
                 history_service(sandbox_service_db_url, tmp_path / "history-token") as history,
-                history_changes.listener.listen(),
+                history_wakeups.listener.listen(),
             ):
                 source = Actions(action_http, token_file)
                 service = Service(
@@ -159,8 +159,8 @@ async def test_listen_deliver_read_ack_and_recover_lost_response_without_app(
                         (live,) = [
                             session for session in await native.list_sessions() if session.session_id == session_id
                         ]
-                        with history_changes.subscribe() as changed:
-                            changed.clear()
+                        changed = asyncio.Event()
+                        with history_wakeups.changes[Channel.HISTORY].subscribe(changed):
                             while (
                                 await history.read_session_events(session_id, limit=1)
                             ).last_cursor < live.last_cursor:

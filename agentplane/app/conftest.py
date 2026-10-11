@@ -19,7 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 from agentplane.app.action_policy import ActionPolicyInventory
 from agentplane.app.database import connect
 from agentplane.app.database_migrate import RUNNER
-from agentplane.app.database_updates import Channel, DatabaseUpdates
+from agentplane.app.database_updates import Channel, create_database_updates
 from agentplane.app.egress_access import EgressAccess
 from agentplane.app.electric import ElectricProxy
 from agentplane.app.identity import TokenReviewer
@@ -42,6 +42,7 @@ from agentplane.history_service.testing.backend import history_service
 from agentplane.history_service.testing.fixtures import service_database_template
 from agentplane.history_service.testing.history import History
 from agentplane.kubernetes_watch import Freshness
+from agentplane.postgres.wakeups import Wakeups
 from agentplane.runner.testing.failure_journal import pytest_runtest_makereport
 
 # The per-test database is created over psycopg, which SQLAlchemy loads from the URL scheme.
@@ -182,9 +183,9 @@ def content(engine: AsyncEngine, history_client: HistoryServiceClient) -> Conten
 @asynccontextmanager
 async def listening(
     engine: AsyncEngine, history_client: HistoryServiceClient, history_token_file: Path
-) -> AsyncIterator[DatabaseUpdates]:
+) -> AsyncIterator[Wakeups]:
     """A replica's notifications, woken by the History Service's fold commits as `main.py` wires them."""
-    updates = DatabaseUpdates(engine.url)
+    updates = create_database_updates(engine.url)
     async with (
         HistoryServiceClient(
             history_client.target, token_file=history_token_file, request_timeout_s=20
@@ -203,7 +204,7 @@ async def listening(
 @pytest.fixture
 async def database_updates(
     engine: AsyncEngine, history_client: HistoryServiceClient, history_token_file: Path
-) -> AsyncIterator[DatabaseUpdates]:
+) -> AsyncIterator[Wakeups]:
     async with listening(engine, history_client, history_token_file) as updates:
         yield updates
 
@@ -276,7 +277,7 @@ def bridge(
     event_logs: EventLogStore,
     content: ContentStore,
     ingester: Ingester,
-    database_updates: DatabaseUpdates,
+    database_updates: Wakeups,
 ) -> RunnerBridge:
     return RunnerBridge(runners=runners, event_logs=event_logs, content=content, ingester=ingester)
 
@@ -402,10 +403,7 @@ async def electric_http() -> AsyncIterator[httpx.AsyncClient]:
 
 @pytest.fixture
 def electric_proxy(
-    electric_http: httpx.AsyncClient,
-    content: ContentStore,
-    event_logs: EventLogStore,
-    database_updates: DatabaseUpdates,
+    electric_http: httpx.AsyncClient, content: ContentStore, event_logs: EventLogStore, database_updates: Wakeups
 ) -> ElectricProxy:
     return ElectricProxy(
         electric_http, content, event_logs=event_logs, thread_changes=database_updates.changes[Channel.THREADS]

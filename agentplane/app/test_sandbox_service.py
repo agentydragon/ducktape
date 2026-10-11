@@ -11,7 +11,6 @@ from google.protobuf.json_format import MessageToDict
 from kubernetes_asyncio import client as k8s_client
 from tenacity import AsyncRetrying, retry_if_exception_type, stop_after_delay, wait_fixed
 
-from agentplane.app.database_updates import DatabaseUpdates
 from agentplane.app.live import LiveIndex
 from agentplane.app.testing.history import SeededEventLogStore as EventLogStore
 from agentplane.app.threads.bridge import MalformedMessageError, RunnerBridge
@@ -19,6 +18,7 @@ from agentplane.app.threads.ingestion import Ingester
 from agentplane.app.threads.sessions import SandboxSessions
 from agentplane.app.threads.view.content import ContentStore
 from agentplane.history_service.testing.backend import ingest
+from agentplane.postgres.wakeups import Wakeups
 from agentplane.proto import command_pb2, runner_pb2
 from agentplane.runner.testing.fixtures import RunnerHandle
 from agentplane.runner.testing.scripted_model import ScriptedModel, Text
@@ -56,7 +56,7 @@ async def test_production_bridge_archives_native_evidence_across_bounded_service
     tmp_path: Path,
     event_logs: EventLogStore,
     content: ContentStore,
-    database_updates: DatabaseUpdates,
+    database_updates: Wakeups,
     runner: RunnerHandle,
     spec: runner_pb2.SessionSpec,
     model: ScriptedModel,

@@ -9,6 +9,7 @@ py_library(
     name = "api",
     srcs = ["api.py"],
     deps = [
+        ":channels",
         ":models",
         ":service",
         ":store",
@@ -105,6 +106,7 @@ py_library(
     name = "service",
     srcs = ["service.py"],
     deps = [
+        ":channels",
         ":db",
         ":models",
         ":settings",
@@ -136,14 +138,15 @@ py_library(
     name = "store",
     srcs = ["store.py"],
     deps = [
+        ":channels",
         ":db",
         ":models",
         ":settings",
-        ":updates",
         "//agentplane:subjects",
         "//agentplane/action_service:models",
         "//agentplane/notification_service/sources/github:models",
         "//agentplane/notification_service/sources/github:state",
+        "//agentplane/postgres:wakeups",
         "//agentplane/proto:event_log_pb2",
         "//agentplane/workload_auth:principal",
         "@pypi//protobuf",
@@ -183,7 +186,7 @@ py_test(
         "//agentplane/action_service:updates",
         "//agentplane/action_service/testing:callers",
         "//agentplane/action_service/testing:fixtures",
-        "//agentplane/history_service/storage:history_changes",
+        "//agentplane/history_service:channels",
         "//agentplane/history_service/testing:backend",
         "//agentplane/notification_service/sources:actions",
         "//agentplane/proto:command_pb2",
@@ -369,25 +372,26 @@ py_test(
 )
 
 py_library(
-    name = "updates",
-    srcs = ["updates.py"],
+    name = "channels",
+    srcs = ["channels.py"],
     deps = [
-        "//agentplane/postgres:listener",
+        "//agentplane/postgres:wakeups",
         "@pypi//sqlalchemy",
     ],
 )
 
 py_test(
-    name = "test_updates",
+    name = "test_wakeups",
     size = "medium",
-    srcs = ["test_updates.py"],
+    srcs = ["test_wakeups.py"],
     deps = [
+        ":channels",
         ":conftest",
         ":db",
         ":models",
         ":store",
-        ":updates",
         "//:conftest",
+        "//agentplane/postgres:wakeups",
         "//agentplane/workload_auth:principal",
         "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",

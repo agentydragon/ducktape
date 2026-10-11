@@ -201,6 +201,7 @@ py_library(
         "//agentplane/history_service/testing:history",
         "//agentplane/runner_gateway:session_registry",
         "//agentplane/runner_gateway/commands:db",
+        "//agentplane/postgres:wakeups",
         "@pypi//sqlalchemy",
     ],
 )

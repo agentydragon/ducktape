@@ -9,6 +9,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
 
+from agentplane.history_service.channels import Channel
 from agentplane.history_service.fold import projection_lease
 from agentplane.history_service.fold.lifecycle import project_lifecycle
 from agentplane.history_service.fold.model_activity import record_model_activity
@@ -16,7 +17,7 @@ from agentplane.history_service.fold.models import ThreadCheckpoint, ThreadHisto
 from agentplane.history_service.fold.projection_lease import ProjectionLease, ProjectionLeaseLostError
 from agentplane.history_service.fold.recording import EventReplicationError, record_thread_fold, set_operational
 from agentplane.history_service.storage.store import Store
-from agentplane.history_service.summary_changes import notify_summaries
+from agentplane.postgres.wakeups import notify
 from agentplane.sandbox_service.settled_cursors import next_stored, settled_ranges
 
 # gazelle:include_dep @pypi//protobuf
@@ -71,7 +72,7 @@ class HistoryProjector:
                 error="Session history projection stalled; retained events and the last verified view are unchanged.",
                 error_cursor=error.cursor if isinstance(error, EventReplicationError) else None,
             )
-            await notify_summaries(session)
+            await notify(session, Channel.SUMMARIES)
 
     async def _project_prefix(self, thread_id: UUID, *, lease: ProjectionLease, after: int) -> ProjectionProgress:
         page = await self._history.read_page(thread_id, after_cursor=after, limit=self._page_size)
@@ -110,7 +111,7 @@ class HistoryProjector:
                 raise EventReplicationError("missing fold summary")
             if not page.entries:
                 if await project_lifecycle(session, thread_id, summary, page, through_cursor=after):
-                    await notify_summaries(session)
+                    await notify(session, Channel.SUMMARIES)
                 return ProjectionProgress(after, page.last_cursor)
             source_id = page.entries[0].origin.source_id
             if any(entry.origin.source_id != source_id for entry in page.entries):
@@ -134,5 +135,5 @@ class HistoryProjector:
                     summary.last_turn_status = entry.event.turn_completed.status
 
             await project_lifecycle(session, thread_id, summary, page, through_cursor=page.entries[-1].cursor)
-            await notify_summaries(session)
+            await notify(session, Channel.SUMMARIES)
         return ProjectionProgress(page.entries[-1].cursor, page.last_cursor)

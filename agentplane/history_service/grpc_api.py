@@ -14,11 +14,11 @@ from kubernetes_asyncio import client as k8s_client
 from pydantic import ValidationError
 from sqlalchemy.exc import SQLAlchemyError
 
+from agentplane.changes import Changes
 from agentplane.history_service import protocol_pb2 as history_pb2, protocol_pb2_grpc
 from agentplane.history_service.evidence import EvidenceNotFoundError, EvidenceReader
 from agentplane.history_service.storage.store import HistoryNotFoundError, Store
 from agentplane.history_service.summaries import SummaryReader
-from agentplane.history_service.summary_changes import SummaryChanges
 from agentplane.history_service.thread_reads import ThreadReader, ThreadScopeResetError
 from agentplane.subjects import ServiceAccountRef
 from agentplane.workload_auth.grpc_caller import authenticate
@@ -40,7 +40,7 @@ class Resources:
     # A public Session UUID is not itself authority: only these accounts read transcripts.
     reader_accounts: frozenset[ServiceAccountRef]
     request_timeout_s: float
-    summary_changes: SummaryChanges
+    summary_changes: Changes
     # How long one WatchSessionSummaries stream lasts before it asks the caller to reconnect.
     watch_lease_s: float
 
@@ -166,7 +166,8 @@ class HistoryService(protocol_pb2_grpc.HistoryServiceServicer):
                 await self.resources.authenticate(context)
             deadline = asyncio.get_running_loop().time() + self.resources.watch_lease_s
             # Subscribed before the opening notice, so nothing committed after it goes unannounced.
-            with self.resources.summary_changes.subscribe() as changed:
+            changed = asyncio.Event()
+            with self.resources.summary_changes.subscribe(changed):
                 while True:
                     changed.clear()
                     async with asyncio.timeout(self.resources.request_timeout_s):

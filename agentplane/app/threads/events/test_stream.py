@@ -9,10 +9,10 @@ from uuid import uuid4
 import pytest
 import pytest_bazel
 
-from agentplane.app.changes import Changes
 from agentplane.app.threads.events.event_log import EventLogStore
 from agentplane.app.threads.events.stream import follow
 from agentplane.app.threads.summaries import FeedEnd, FeedSnapshot
+from agentplane.changes import Changes
 from agentplane.proto import event_log_pb2, runner_pb2
 
 # gazelle:include_dep @pypi//protobuf

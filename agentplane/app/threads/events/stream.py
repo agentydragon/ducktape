@@ -13,9 +13,9 @@ from uuid import UUID
 
 from google.protobuf.json_format import MessageToDict
 
-from agentplane.app.changes import Changes
 from agentplane.app.threads.events.event_log import EventLogStore, ThreadNotFoundError
 from agentplane.app.threads.summaries import FeedEnd, FeedError
+from agentplane.changes import Changes
 
 # gazelle:include_dep @pypi//protobuf
 

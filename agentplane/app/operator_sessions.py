@@ -37,9 +37,10 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
 from starlette.types import ASGIApp
 
-from agentplane.app.changes import Changes
 from agentplane.app.database import Base
-from agentplane.app.database_updates import Channel, notify
+from agentplane.app.database_updates import Channel
+from agentplane.changes import Changes
+from agentplane.postgres.wakeups import notify
 
 # How long a login may take from /auth/login to its callback.
 _PENDING_LOGIN = timedelta(minutes=10)

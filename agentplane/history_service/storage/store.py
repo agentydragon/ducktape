@@ -11,14 +11,15 @@ from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 from agentplane.history_service import protocol_pb2 as history_pb2
+from agentplane.history_service.channels import Channel
 from agentplane.history_service.storage.db import (
     SessionEvent,
     SessionEventSettledRange,
     SessionEventSettlement,
     SessionHistory,
 )
-from agentplane.history_service.storage.history_changes import notify_history
 from agentplane.history_service.storage.settlement import completion_target, settle, started_item
+from agentplane.postgres.wakeups import notify
 from agentplane.proto import event_log_pb2, runner_pb2
 
 # The generated protobuf stubs need the protobuf runtime as a direct mypy dependency.
@@ -115,7 +116,7 @@ class Store:
             ) or runner_session_id not in (None, row.runner_session_id):
                 raise HistoryConflictError(f"session {session_id} has a different locator")
             if created is not None:
-                await notify_history(session)
+                await notify(session, Channel.HISTORY)
 
     async def bind_writer(self, session_id: UUID, writer: Writer) -> Checkpoint:
         """Bind the Session to `writer` if it has no writer yet, creating its row; refuse any other.
@@ -143,7 +144,7 @@ class Store:
             elif (row.writer_namespace, row.writer_name, row.writer_uid) != (writer.namespace, writer.name, writer.uid):
                 raise WriterMismatchError(session_id)
             if created is not None:
-                await notify_history(session)
+                await notify(session, Channel.HISTORY)
             return _checkpoint(row)
 
     async def append(self, session_id: UUID, entries: Sequence[event_log_pb2.EventEntry]) -> int:
@@ -185,7 +186,7 @@ class Store:
                     ):
                         await record_settlement(session, session_id, entry.cursor, settled)
             if appended:
-                await notify_history(session)
+                await notify(session, Channel.HISTORY)
             return row.last_cursor
 
     async def record_feed_state(self, session_id: UUID, feed: history_pb2.SessionFeedState) -> None:
@@ -250,7 +251,7 @@ class Store:
             serialized = snapshot.SerializeToString(deterministic=True)
             if row.feed_state != serialized:
                 row.feed_state = serialized
-                await notify_history(session)
+                await notify(session, Channel.HISTORY)
 
     async def read(
         self, session_id: UUID, *, after_cursor: int = 0, limit: int = 128

@@ -23,9 +23,9 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field
 from starlette.types import Receive, Scope, Send
 
-from agentplane.app.changes import Changes
 from agentplane.app.threads.events.event_log import EventLogStore
 from agentplane.app.threads.view.content import ContentStore
+from agentplane.changes import Changes
 from agentplane.history_service.fold.views import EntityKind, PayloadField
 
 logger = logging.getLogger(__name__)

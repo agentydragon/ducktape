@@ -23,13 +23,14 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 from starlette.requests import ClientDisconnect
 from starlette.types import Message
 
-from agentplane.app.database_updates import Channel, DatabaseUpdates
+from agentplane.app.database_updates import Channel
 from agentplane.app.electric import SUBSET_BODY_LIMIT, SUBSET_ROW_LIMIT, ElectricProxy, router
 from agentplane.app.testing.history import SeededEventLogStore as EventLogStore
 from agentplane.app.testing.replication_source import SANDBOX, SESSION, Placements, ReplicationSource
 from agentplane.app.threads.view.content import ContentStore, ThreadScope
 from agentplane.history_service.client import HistoryServiceClient
 from agentplane.history_service.testing.history import History
+from agentplane.postgres.wakeups import Wakeups
 from agentplane.proto import event_pb2
 from util.db_url import render_postgresql_url
 from util.testing.postgres import PostgresDatabaseTemplate, database_name_for_test
@@ -98,7 +99,7 @@ MakeApp = Callable[[httpx.MockTransport], tuple[FastAPI, httpx.AsyncClient]]
 
 
 @pytest.fixture
-def make_app(content: ContentStore, event_logs: EventLogStore, database_updates: DatabaseUpdates) -> MakeApp:
+def make_app(content: ContentStore, event_logs: EventLogStore, database_updates: Wakeups) -> MakeApp:
     def make(upstream: httpx.MockTransport) -> tuple[FastAPI, httpx.AsyncClient]:
         electric = httpx.AsyncClient(transport=upstream, base_url="http://electric")
         proxy = ElectricProxy(
@@ -149,11 +150,7 @@ class ScopeReads(ContentStore):
 
 
 async def test_a_scope_read_before_the_first_fold_answers_once_it_is_recorded(
-    unfolded: Unfolded,
-    engine: AsyncEngine,
-    event_logs: EventLogStore,
-    history: History,
-    database_updates: DatabaseUpdates,
+    unfolded: Unfolded, engine: AsyncEngine, event_logs: EventLogStore, history: History, database_updates: Wakeups
 ) -> None:
     content = ScopeReads(engine, event_logs.reader)
     electric = httpx.AsyncClient(transport=httpx.MockTransport(_unexpected), base_url="http://electric")
@@ -177,7 +174,7 @@ async def test_a_scope_read_before_the_first_fold_answers_once_it_is_recorded(
 
 
 async def test_a_thread_still_without_a_fold_at_the_end_of_the_hold_is_answered_empty(
-    unfolded: Unfolded, content: ContentStore, event_logs: EventLogStore, database_updates: DatabaseUpdates
+    unfolded: Unfolded, content: ContentStore, event_logs: EventLogStore, database_updates: Wakeups
 ) -> None:
     electric = httpx.AsyncClient(transport=httpx.MockTransport(_unexpected), base_url="http://electric")
     proxy = ElectricProxy(

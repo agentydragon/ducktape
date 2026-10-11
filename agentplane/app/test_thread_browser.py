@@ -52,6 +52,7 @@ from agentplane.app.testing.thread_browser import (
 from agentplane.app.threads.store import ThreadStore
 from agentplane.app.threads.view.content import ContentStore
 from agentplane.grpc_serving import serving
+from agentplane.history_service.channels import Channel
 from agentplane.history_service.client import HistoryServiceClient
 from agentplane.history_service.fold.models import (
     ThreadCheckpoint,
@@ -63,8 +64,8 @@ from agentplane.history_service.fold.models import (
     ThreadPayloadManifest,
 )
 from agentplane.history_service.fold.views import ThreadFeedErrorState, ThreadOperationalState, ThreadViewState
-from agentplane.history_service.summary_changes import notify_summaries
 from agentplane.history_service.testing.history import History
+from agentplane.postgres.wakeups import notify
 from agentplane.proto import command_pb2, event_log_pb2, event_pb2
 from agentplane.sandbox_service.client import SandboxServiceClient
 from util.bazel.runfiles import get_required_path
@@ -2403,7 +2404,7 @@ async def test_unknown_projection_failure_keeps_verified_history_and_stops_brows
             }
         ).model_dump(mode="json")
         feed.end = {"message": "batch-wide projection invariant failed"}
-        await notify_summaries(session)
+        await notify(session, Channel.SUMMARIES)
 
     failure = page.get_by_role("alert")
     await expect(failure).to_contain_text("Projection failed: batch-wide projection invariant failed.")

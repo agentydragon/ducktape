@@ -40,13 +40,13 @@ from fastapi import FastAPI
 from sqlalchemy import ColumnElement, delete, inspect, select, update
 from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
 
-from agentplane.app.changes import Changes
 from agentplane.app.electric import ElectricProxy, router
 from agentplane.app.testing.electric_service import electric_service
 from agentplane.app.testing.history import SeededEventLogStore as EventLogStore
 from agentplane.app.testing.replication_source import SANDBOX, SESSION, Placements, ReplicationSource
 from agentplane.app.threads.summaries import Summaries
 from agentplane.app.threads.view.content import ContentStore
+from agentplane.changes import Changes
 from agentplane.history_service.fold.models import ThreadEntity, ThreadPayloadChunk
 from agentplane.history_service.fold.views import ThreadPayloadReference
 from agentplane.history_service.testing.backend import history_service

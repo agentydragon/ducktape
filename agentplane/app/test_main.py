@@ -23,7 +23,7 @@ from tenacity import AsyncRetrying, retry_if_exception_type, stop_after_delay, w
 from agentplane.app.action_policy import ActionPolicyInventory
 from agentplane.app.api import create_app
 from agentplane.app.conftest import AGENT_AUTH
-from agentplane.app.database_updates import DatabaseUpdates
+from agentplane.app.database_updates import create_database_updates
 from agentplane.app.egress_access import EgressAccess
 from agentplane.app.electric import ElectricProxy
 from agentplane.app.identity import TokenReviewer
@@ -41,6 +41,7 @@ from agentplane.app.threads.ingestion import Ingester
 from agentplane.app.threads.store import ThreadStore
 from agentplane.app.threads.view.content import ContentStore
 from agentplane.egress.decisions_client import DecisionsClient
+from agentplane.postgres.wakeups import Wakeups
 from agentplane.runner.harness import Harness
 from agentplane.sandbox_service.client import SandboxServiceClient
 from agentplane.sandbox_service.testing.backend import seed_runner
@@ -179,9 +180,9 @@ def sigterm_is_survivable() -> Iterator[None]:
 
 
 @pytest.fixture
-def database_updates(engine: AsyncEngine) -> DatabaseUpdates:
+def database_updates(engine: AsyncEngine) -> Wakeups:
     # Unlike the route-only fixtures, this test runs the production owner of the listener scope.
-    return DatabaseUpdates(engine.url)
+    return create_database_updates(engine.url)
 
 
 @pytest.fixture
@@ -210,7 +211,7 @@ async def test_sigterm_ends_open_streams_fails_readiness_and_closes_the_ingester
     inventory: SandboxServiceClient,
     bridge: RunnerBridge,
     store: ThreadStore,
-    database_updates: DatabaseUpdates,
+    database_updates: Wakeups,
     engine: AsyncEngine,
     operator_sessions: OperatorSessionStore,
     egress: EgressAccess,

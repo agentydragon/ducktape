@@ -17,6 +17,7 @@ from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, create_async_engine
 
 from agentplane.grpc_serving import serving
+from agentplane.history_service.channels import Channel, create_wakeups
 from agentplane.history_service.client import HistoryServiceClient
 from agentplane.history_service.evidence import EvidenceReader
 from agentplane.history_service.fold_runner import FoldRunner
@@ -24,8 +25,8 @@ from agentplane.history_service.grpc_api import Resources, add_service
 from agentplane.history_service.ingester import HistoryIngester
 from agentplane.history_service.storage.store import Store
 from agentplane.history_service.summaries import SummaryReader
-from agentplane.history_service.summary_changes import SummaryChanges, notify_summaries
 from agentplane.history_service.thread_reads import ThreadReader
+from agentplane.postgres.wakeups import notify
 from agentplane.sandbox_service.client import SandboxServiceClient
 from agentplane.subjects import ServiceAccountRef
 from agentplane.workload_auth.principal import POD_NAME_CLAIM, POD_UID_CLAIM, WorkloadPrincipalResolver
@@ -73,7 +74,7 @@ async def history_service(
 ) -> AsyncIterator[HistoryServiceClient]:
     async with _history_engine(database_url, read_only=True) as engine:
         history = Store(engine)
-        summary_changes = SummaryChanges(make_url(database_url))
+        wakeups = create_wakeups(make_url(database_url))
         server = grpc.aio.server()
         add_service(
             Resources(
@@ -88,7 +89,7 @@ async def history_service(
                 evidence=EvidenceReader(engine, history),
                 reader_accounts=frozenset({READER}),
                 request_timeout_s=10,
-                summary_changes=summary_changes,
+                summary_changes=wakeups.changes[Channel.SUMMARIES],
                 watch_lease_s=watch_lease_s,
             ),
             server,
@@ -97,7 +98,7 @@ async def history_service(
         async with (
             serving(server, "127.0.0.1:0", grace_s=0) as port,
             HistoryServiceClient(f"127.0.0.1:{port}", token_file=token_file, request_timeout_s=20) as client,
-            summary_changes.listener.listen(),
+            wakeups.listener.listen(),
         ):
             yield client
 
@@ -138,4 +139,4 @@ async def announce_fold_commit(database_url: str) -> None:
         engine.begin() as connection,
         AsyncSession(bind=connection) as session,
     ):
-        await notify_summaries(session)
+        await notify(session, Channel.SUMMARIES)

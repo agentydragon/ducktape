@@ -25,7 +25,7 @@ from agentplane.app.action_policy import ActionPolicyInventory, ActionPolicyUnav
 from agentplane.app.api import create_app
 from agentplane.app.conftest import stored_login
 from agentplane.app.database import connect
-from agentplane.app.database_updates import Channel, DatabaseUpdates
+from agentplane.app.database_updates import Channel, create_database_updates
 from agentplane.app.egress_access import EgressAccess
 from agentplane.app.electric import ElectricProxy
 from agentplane.app.identity import CallerIdentity, CallerKind, TokenReviewer
@@ -63,6 +63,7 @@ from agentplane.app.threads.summaries import Summaries
 from agentplane.app.threads.view.content import ContentStore
 from agentplane.egress.decisions_client import DecisionsClient
 from agentplane.history_service.client import HistoryServiceClient
+from agentplane.postgres.wakeups import Wakeups
 from agentplane.runner.harness import Harness
 from agentplane.sandbox_service.client import SandboxServiceClient
 from agentplane.sandbox_service.testing.backend import seed_runner
@@ -321,7 +322,7 @@ def app(
         event_log.EventLogStore(engine, history_reader=history, summaries=summaries),
         ContentStore(engine, history_reader=history),
     )
-    database_updates = DatabaseUpdates(engine.url)
+    database_updates = create_database_updates(engine.url)
     runners = SandboxSessions(live_index, inventory)
     bridge = RunnerBridge(
         runners=runners,
@@ -367,11 +368,7 @@ async def _next_threads(stream: AsyncIterator[str | bytes | memoryview]) -> Thre
 
 
 async def test_global_thread_stream_combines_replica_commits_and_sandbox_watch_changes(
-    seeded: LiveIndex,
-    store: ThreadStore,
-    event_logs: EventLogStore,
-    replica: Replica,
-    database_updates: DatabaseUpdates,
+    seeded: LiveIndex, store: ThreadStore, event_logs: EventLogStore, replica: Replica, database_updates: Wakeups
 ) -> None:
     drain = Drain()
     response = await live_threads(
@@ -411,7 +408,7 @@ async def test_global_thread_stream_combines_replica_commits_and_sandbox_watch_c
 
 
 async def test_global_thread_stream_carries_its_window_and_the_open_thread(
-    seeded: LiveIndex, event_logs: EventLogStore, replica: Replica, database_updates: DatabaseUpdates
+    seeded: LiveIndex, event_logs: EventLogStore, replica: Replica, database_updates: Wakeups
 ) -> None:
     oldest, _, newest = [await event_logs.open("runner-1", f"test-window-thread-{n}") for n in range(3)]
     drain = Drain()
@@ -430,7 +427,7 @@ async def test_global_thread_stream_carries_its_window_and_the_open_thread(
 
 
 async def test_global_thread_stream_reports_listener_loss_then_rereads_after_reconnect(
-    seeded: LiveIndex, event_logs: EventLogStore, replica: Replica, database_updates: DatabaseUpdates, db_url: str
+    seeded: LiveIndex, event_logs: EventLogStore, replica: Replica, database_updates: Wakeups, db_url: str
 ) -> None:
     drain = Drain()
     response = await live_threads(index=seeded, store=replica.store, updates=database_updates, shutdown=drain)

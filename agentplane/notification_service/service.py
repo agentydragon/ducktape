@@ -12,6 +12,7 @@ from pydantic import ValidationError
 from sqlalchemy.exc import SQLAlchemyError
 
 from agentplane.history_service.client import HistoryServiceClient
+from agentplane.notification_service.channels import Channel
 from agentplane.notification_service.db import Inbox, Notice
 from agentplane.notification_service.models import (
     ActionsSource,
@@ -308,7 +309,8 @@ class Service:
     async def run(self) -> None:
         next_cleanup = 0.0
         cleanup_cursor = None
-        with self.store.wakeups.subscribe() as changed:
+        changed = asyncio.Event()
+        with self.store.wakeups.changes[Channel.WORK].subscribe(changed):
             while True:
                 # Clear before reading: a commit racing with either query remains a wakeup.
                 changed.clear()

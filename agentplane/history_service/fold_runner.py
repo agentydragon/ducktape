@@ -20,12 +20,12 @@ from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
 
+from agentplane.changes import Changes
 from agentplane.history_service.fold import projection_lease
 from agentplane.history_service.fold.models import ThreadHistorySummary
 from agentplane.history_service.fold.projection_lease import ProjectionLease, ProjectionLeaseLostError
 from agentplane.history_service.fold.projector import HistoryProjector, ProjectionProgress
 from agentplane.history_service.storage.db import SessionHistory
-from agentplane.history_service.storage.history_changes import HistoryChanges
 from agentplane.history_service.storage.store import Store
 
 # gazelle:include_dep @pypi//protobuf
@@ -55,7 +55,7 @@ class FoldRunner:
         self._slots = asyncio.Semaphore(concurrency)
         self._leases: dict[UUID, ProjectionLease] = {}
 
-    async def run(self, *, interval_s: float, changes: HistoryChanges, health: health.aio.HealthServicer) -> None:
+    async def run(self, *, interval_s: float, changes: Changes, health: health.aio.HealthServicer) -> None:
         """Folds until cancelled, reporting `HEALTH_SERVICE` SERVING while it does. An error it does
         not retry stops the fold, not the process, so raw reads stay served: it is logged and
         `HEALTH_SERVICE` turns NOT_SERVING."""
@@ -66,10 +66,11 @@ class FoldRunner:
             logger.exception("Thread fold stopped")
             await health.set(HEALTH_SERVICE, health_pb2.HealthCheckResponse.NOT_SERVING)
 
-    async def _fold(self, *, interval_s: float, changes: HistoryChanges) -> None:
+    async def _fold(self, *, interval_s: float, changes: Changes) -> None:
         """Catch up immediately while behind; wait for commits or `interval_s` to retry."""
         try:
-            with changes.subscribe() as changed:
+            changed = asyncio.Event()
+            with changes.subscribe(changed):
                 while True:
                     changed.clear()
                     try:

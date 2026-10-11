@@ -21,7 +21,7 @@ from agentplane.app.action_federation import FederatedOperatorActions
 from agentplane.app.action_policy import ActionPolicyInventory
 from agentplane.app.api import create_app
 from agentplane.app.database import connect
-from agentplane.app.database_updates import Channel, DatabaseUpdates
+from agentplane.app.database_updates import Channel, create_database_updates
 from agentplane.app.egress_access import EgressAccess
 from agentplane.app.electric import ElectricProxy
 from agentplane.app.identity import TokenReviewer
@@ -42,6 +42,7 @@ from agentplane.app.threads.view.content import ContentStore
 from agentplane.egress.decisions_client import DecisionsClient
 from agentplane.history_service.client import HistoryServiceClient
 from agentplane.kubernetes_watch import STALE_AFTER_CYCLES, Freshness
+from agentplane.postgres.wakeups import Wakeups
 from agentplane.sandbox_service.client import SandboxServiceClient
 from agentplane.sandbox_service.egress_views import EgressReader
 from agentplane.service_process import background, configure_logging, kubernetes_configuration
@@ -146,7 +147,7 @@ async def async_main(settings: Settings) -> None:
             resync_seconds=settings.resync_seconds,
         )
         engine = connect(settings.database_url)
-        database_updates = DatabaseUpdates(engine.url)
+        database_updates = create_database_updates(engine.url)
         summaries = Summaries(engine, history)
         content = ContentStore(engine, history_reader=history)
         history_watch = HistoryWatch(
@@ -209,7 +210,7 @@ async def async_main(settings: Settings) -> None:
 
 
 async def serve_then_close(
-    server: uvicorn.Server, *, ingester: Ingester, database_updates: DatabaseUpdates, engine: AsyncEngine
+    server: uvicorn.Server, *, ingester: Ingester, database_updates: Wakeups, engine: AsyncEngine
 ) -> None:
     """Serve until told to exit, then let go in the order the budgets assume: Uvicorn's graceful-shutdown
     timeout bounds the requests and streams still open, and stopping discovery and closing the runner

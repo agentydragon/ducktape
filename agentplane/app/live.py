@@ -42,14 +42,15 @@ from pydantic import BaseModel, ConfigDict, Field
 from agentplane.action_service.policies import resources as policy_resources
 from agentplane.app.action_federation import OperatorFederationError, operator_actions, upstream_failure_detail
 from agentplane.app.action_policy import ActionPolicyInventory, ActionPolicyUnavailable, ActionPolicyView
-from agentplane.app.changes import Changes
-from agentplane.app.database_updates import Channel, DatabaseUpdates
+from agentplane.app.database_updates import Channel
 from agentplane.app.identity import CallerIdentity, require_caller
 from agentplane.app.sandbox_models import SandboxView, sandbox_view as http_sandbox_view
 from agentplane.app.shutdown import Shutdown
 from agentplane.app.threads.store import MAX_PAGE, ThreadStore
 from agentplane.app.threads.thread_view import ThreadView
+from agentplane.changes import Changes
 from agentplane.kubernetes_watch import Freshness
+from agentplane.postgres.wakeups import Wakeups
 from agentplane.sandbox_service.action_policy_views import ACTION_POLICY_API
 from agentplane.sandbox_service.egress_views import (
     BINDINGS_PLURAL,
@@ -371,16 +372,16 @@ def _store(request: Request) -> ThreadStore:
     return store
 
 
-def _database_updates(request: Request) -> DatabaseUpdates:
+def _database_updates(request: Request) -> Wakeups:
     updates = request.app.state.database_updates
-    if not isinstance(updates, DatabaseUpdates):
-        raise TypeError(f"app.state.database_updates is {type(updates).__name__}, not DatabaseUpdates")
+    if not isinstance(updates, Wakeups):
+        raise TypeError(f"app.state.database_updates is {type(updates).__name__}, not Wakeups")
     return updates
 
 
 Index = Annotated[LiveIndex, Depends(_index)]
 Store = Annotated[ThreadStore, Depends(_store)]
-Updates = Annotated[DatabaseUpdates, Depends(_database_updates)]
+Updates = Annotated[Wakeups, Depends(_database_updates)]
 ActionPolicy = Annotated[ActionPolicyInventory, Depends(_action_policy)]
 Caller = Annotated[CallerIdentity, Depends(require_caller)]
 

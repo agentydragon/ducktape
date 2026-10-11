@@ -6,13 +6,14 @@ from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
 
-from agentplane.app.database_updates import Channel, notify
+from agentplane.app.database_updates import Channel
 from agentplane.app.testing.replication_source import Placements
 from agentplane.app.threads.events.event_log import EventLogStore
 from agentplane.app.threads.models import EventLog
 from agentplane.app.threads.summaries import Summaries
 from agentplane.history_service.client import HistoryServiceClient
 from agentplane.history_service.testing.history import SANDBOX_NAMESPACE, History
+from agentplane.postgres.wakeups import notify
 
 # Aliased: the gateway's Session row, beside SQLAlchemy sessions.
 from agentplane.runner_gateway.commands.db import Session as GatewaySession

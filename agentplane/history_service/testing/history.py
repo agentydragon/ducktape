@@ -16,6 +16,7 @@ from sqlalchemy import func, insert, select
 from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker, create_async_engine
 
 from agentplane.history_service import protocol_pb2 as history_pb2
+from agentplane.history_service.channels import Channel
 from agentplane.history_service.fold import fold
 from agentplane.history_service.fold.models import (
     ThreadCheckpoint,
@@ -32,7 +33,7 @@ from agentplane.history_service.fold_runner import FoldRunner
 from agentplane.history_service.storage.database_migrate import RUNNER
 from agentplane.history_service.storage.db import SessionHistory
 from agentplane.history_service.storage.store import Store
-from agentplane.history_service.summary_changes import notify_summaries
+from agentplane.postgres.wakeups import notify
 from agentplane.proto import event_log_pb2, runner_pb2
 from util.testing.postgres import PostgresDatabaseTemplate, migrated_database_template
 
@@ -224,7 +225,7 @@ class History:
             # A folded failure state for UI tests, not a fake archive failure.
             async with self.sessions.begin() as session:
                 await set_operational(session, session_id, status="failed", error=error, error_cursor=error_cursor)
-                await notify_summaries(session)
+                await notify(session, Channel.SUMMARIES)
             return
         async with self.sessions() as session:
             row = await session.get(SessionHistory, session_id)

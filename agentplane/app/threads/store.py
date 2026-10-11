@@ -17,11 +17,12 @@ from sqlalchemy import String, cast, func, or_, select, tuple_
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
-from agentplane.app.database_updates import Channel, notify
+from agentplane.app.database_updates import Channel
 from agentplane.app.threads.events.event_log import SessionNotRegisteredError, ThreadNotFoundError
 from agentplane.app.threads.models import EventLog, Thread
 from agentplane.app.threads.summaries import FeedError, FoldSummary, Summaries
 from agentplane.app.threads.thread_view import ThreadView
+from agentplane.postgres.wakeups import notify
 from agentplane.proto import event_pb2, runner_gateway_pb2, runner_pb2
 from agentplane.runner.harness import Harness
 from agentplane.sandbox_service.client import SandboxServiceClient

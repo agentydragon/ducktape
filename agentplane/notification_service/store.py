@@ -13,6 +13,7 @@ from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 from agentplane.action_service.models import ActionEventView
+from agentplane.notification_service.channels import Channel, create_wakeups
 from agentplane.notification_service.db import (
     Entry,
     GitHubDelivery,
@@ -64,7 +65,7 @@ from agentplane.notification_service.sources.github.state import (
     fences_valid,
     github_lock,
 )
-from agentplane.notification_service.updates import Wakeups, notify
+from agentplane.postgres.wakeups import notify
 from agentplane.proto import event_log_pb2
 from agentplane.subjects import ServiceAccountRef
 from agentplane.workload_auth.principal import WorkloadPrincipal
@@ -183,7 +184,7 @@ async def check_active_subscription_quota(session: AsyncSession, inbox_id: UUID,
 class Store:
     def __init__(self, engine: AsyncEngine, *, quotas: QuotaSettings | None = None) -> None:
         self.quotas = quotas if quotas is not None else QuotaSettings()
-        self.wakeups = Wakeups(engine.url)
+        self.wakeups = create_wakeups(engine.url)
         self.sessions = async_sessionmaker(engine, expire_on_commit=False)
 
     async def owned(
@@ -338,7 +339,7 @@ class Store:
             session.add(row)
             inbox.updated_at = now
             inbox.next_attempt = now
-            await notify(session)
+            await notify(session, Channel.WORK)
             await session.flush()
             return await subscription_view(session, row)
 
@@ -399,7 +400,7 @@ class Store:
                 row.next_attempt = now
             row.version += 1
             inbox.next_attempt = datetime.now(UTC)
-            await notify(session)
+            await notify(session, Channel.WORK)
             return await subscription_view(session, row)
 
     async def sandbox_status(
@@ -616,7 +617,7 @@ class Store:
                 raise ConflictError("cursor is beyond the committed prefix")
             inbox.acknowledged = max(inbox.acknowledged, through)
             inbox.updated_at = datetime.now(UTC)
-            await notify(session)
+            await notify(session, Channel.WORK)
             return InboxView.model_validate(inbox)
 
     async def retire(self, owner: ServiceAccountRef, inbox_id: UUID) -> None:
@@ -633,7 +634,7 @@ class Store:
                 .where(Subscription.inbox_id == inbox_id, ~Subscription.cancelled)
                 .values(cancelled=True, version=Subscription.version + 1)
             )
-            await notify(session)
+            await notify(session, Channel.WORK)
 
     async def observe_stale(self, claim: Inbox, reason: str, confirmation_s: float) -> bool:
         """Release this claim with a durable recheck, or retire a confirmed stale incarnation."""
@@ -654,12 +655,12 @@ class Store:
                     .where(Subscription.inbox_id == row.id, ~Subscription.cancelled)
                     .values(cancelled=True, version=Subscription.version + 1)
                 )
-                await notify(session)
+                await notify(session, Channel.WORK)
                 return True
             row.next_attempt = row.stale_check_at
             row.claim_until = now
             row.delivery_error = f"destination pending retirement: {reason}"
-            await notify(session)
+            await notify(session, Channel.WORK)
             return False
 
     async def clear_stale(self, claim: Inbox) -> None:
@@ -681,7 +682,7 @@ class Store:
                 now = (await session.execute(select(func.clock_timestamp()))).scalar_one()
                 row.claim = uuid4()
                 row.claim_until = now + timedelta(seconds=30)
-                await notify(session)  # Other replicas must account for this lease's expiry.
+                await notify(session, Channel.WORK)  # Other replicas must account for this lease's expiry.
             return row
 
     async def fenced(self, session: AsyncSession, claim: Inbox) -> Inbox:
@@ -724,7 +725,7 @@ class Store:
             if row.stale_check_at is not None:
                 # A transient lookup failure must not confirm staleness or spin before the recheck.
                 row.next_attempt = max(row.stale_check_at, now + timedelta(seconds=5) if error is not None else now)
-            await notify(session)
+            await notify(session, Channel.WORK)
 
     async def get_next_work_at(self) -> datetime | None:
         """Next durable retry/source/lease deadline, not an interval for checking the queue."""
@@ -777,7 +778,7 @@ class Store:
                 )
                 row.actions_after_sequence = event.sequence
             inbox.updated_at = datetime.now(UTC) if events else inbox.updated_at
-            await notify(session)
+            await notify(session, Channel.WORK)
 
     async def append_event(
         self,
@@ -831,7 +832,7 @@ class Store:
                 row.error_kind = kind
                 row.error = error
                 row.error_observed_at = now
-                await notify(session)
+                await notify(session, Channel.WORK)
 
     async def ingest_github(
         self,
@@ -953,7 +954,7 @@ class Store:
                     )
                 )
                 inbox.next_attempt = now
-            await notify(session)
+            await notify(session, Channel.WORK)
             return True
 
     async def github_deliveries(self, source: Subscription, predicate: ColumnElement[bool]) -> list[GitHubDelivery]:
@@ -1017,7 +1018,7 @@ class Store:
                 or not await fences_valid(session, fences)
             ):
                 row.next_attempt = datetime.now(UTC)
-                await notify(session)
+                await notify(session, Channel.WORK)
                 return
             for delivery, identity in matched:
                 await self.append_event(session, inbox, row, identity, delivery.payload)
@@ -1030,7 +1031,7 @@ class Store:
             if repair_at <= datetime.now(UTC) or not await fences_valid(session, fences):
                 # Roll back the entire appended prefix if access expired while writing the page.
                 raise RefreshDeferredError(datetime.now(UTC))
-            await notify(session)
+            await notify(session, Channel.WORK)
 
     async def source_deferred(self, claim: Inbox, source: Subscription, until: datetime) -> None:
         async with self.sessions.begin() as session:
@@ -1039,7 +1040,7 @@ class Store:
             assert row is not None
             if not row.cancelled and row.version == source.version:
                 row.next_attempt = until
-                await notify(session)
+                await notify(session, Channel.WORK)
 
     async def get_pending_entry_times(self, claim: Inbox) -> tuple[datetime, datetime] | None:
         """Timestamp bounds of entries not yet covered, acknowledged or expired."""
@@ -1094,7 +1095,7 @@ class Store:
             )
             session.add(row)
             inbox.covered = inbox.last_cursor
-            await notify(session)
+            await notify(session, Channel.WORK)
             return row
 
     async def checkpoint_before_attempt(self, claim: Inbox, notice: Notice, entry: event_log_pb2.EventEntry) -> None:
@@ -1118,10 +1119,10 @@ class Store:
             assert row.command_id == notice.command_id
             if not row.attempted and max(inbox.acknowledged, inbox.expired_through) >= row.through_cursor:
                 row.error = "suppressed: acknowledged before submission"
-                await notify(session)
+                await notify(session, Channel.WORK)
                 return False
             row.attempted = True
-            await notify(session)
+            await notify(session, Channel.WORK)
             return True
 
     async def receipt(
@@ -1156,7 +1157,7 @@ class Store:
             if event.HasField("command_noop") and event.command_noop.command_id == command_id:
                 row.error = "runner command was a no-op; not confirmed"
             row.runner_cursor, row.runner_entry = entry.cursor, wire
-            await notify(session)
+            await notify(session, Channel.WORK)
 
     async def cleanup(self, after_id: UUID | None = None) -> UUID | None:
         async with self.sessions.begin() as session:

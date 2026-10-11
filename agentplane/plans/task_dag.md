@@ -968,7 +968,6 @@ flowchart TD
     subgraph COHERENCE_REFACTORS[Coherence refactors]
         REQUIRED_SERVICE_WIRING[Candidate: no footgun defaults on service wiring]
         GATEWAY_NAME_SWEEP[Candidate: code says Runner Gateway for the gateway]
-        POSTGRES_WAKEUPS_SHARED[Candidate: one PostgreSQL wakeup class]
         GATEWAY_SANDBOX_READS[Candidate: the gateway reads Sandboxes read-only]
         SANDBOX_DEAD_CODE[Candidate: delete KubernetesBindings.run]
         RUNNER_ERRORS_REHOME[Blocked: errors beside the client that raises them]
@@ -1004,13 +1003,6 @@ in `session_lifecycle.py`, and the runner's `control.py`, `main.py` flag help, `
 say "Sandbox Service" for the gateway; History Service docstrings say it writes and migrates the
 history store. Also the stale `sealer_accounts` comment, the `serve_channel` test helper, and the
 `CLEANUP` in `sandbox_service/teardown.py` that cites this plan.
-
-### `POSTGRES_WAKEUPS_SHARED` — one PostgreSQL wakeup class
-
-**Candidate.** `SummaryChanges`, `HistoryChanges`, `runner_gateway.SessionChanges` and
-`notification_service.Wakeups` are one payload-free listen-and-wake class with different channel
-names, and `app/changes.Changes` is its waiter set. One `agentplane/postgres/` class plus a
-`notify(session, channel)`, used by every site that outlives `FOLLOW_PATH_RETIRE`.
 
 ### `GATEWAY_SANDBOX_READS` — the gateway reads Sandboxes read-only
 

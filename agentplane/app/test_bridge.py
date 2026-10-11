@@ -28,10 +28,9 @@ from tenacity import AsyncRetrying, retry_if_exception_type, stop_after_delay, w
 
 from agentplane.app.action_policy import ActionPolicyInventory
 from agentplane.app.api import create_app
-from agentplane.app.changes import Changes
 from agentplane.app.conftest import AGENT_AUTH, listening
 from agentplane.app.database import connect
-from agentplane.app.database_updates import Channel, DatabaseUpdates
+from agentplane.app.database_updates import Channel
 from agentplane.app.egress_access import EgressAccess
 from agentplane.app.electric import ElectricProxy
 from agentplane.app.identity import TokenReviewer
@@ -47,11 +46,13 @@ from agentplane.app.threads.sessions import SandboxSessions
 from agentplane.app.threads.store import ThreadStore
 from agentplane.app.threads.summaries import Summaries
 from agentplane.app.threads.view.content import ContentStore
+from agentplane.changes import Changes
 from agentplane.egress.decisions_client import DecisionsClient
 from agentplane.history_service.client import HistoryServiceClient
 from agentplane.history_service.fold.models import ThreadCheckpoint, ThreadEntity, ThreadPayloadChunk
 from agentplane.history_service.testing.backend import history_service, ingest
 from agentplane.history_service.testing.history import History
+from agentplane.postgres.wakeups import Wakeups
 from agentplane.proto import command_pb2, event_log_pb2, event_pb2, runner_pb2, sandbox_service_pb2
 from agentplane.runner import service
 from agentplane.runner.harness import Harness
@@ -226,7 +227,7 @@ async def app_url(
     local_runners: SandboxSessions,
     inventory: SandboxServiceClient,
     store: ThreadStore,
-    database_updates: DatabaseUpdates,
+    database_updates: Wakeups,
     operator_sessions: OperatorSessionStore,
     egress: EgressAccess,
     decisions: DecisionsClient,
@@ -1203,7 +1204,7 @@ async def replicas(
     local_runners: SandboxSessions,
     live_index: LiveIndex,
     runner: RunnerHandle,
-    database_updates: DatabaseUpdates,
+    database_updates: Wakeups,
     db_url: str,
     event_logs: EventLogStore,
     content: ContentStore,
@@ -1413,7 +1414,7 @@ async def test_stored_thread_stream_does_not_require_reachable_runner(
     local_runners: SandboxSessions,
     live_index: LiveIndex,
     event_logs: EventLogStore,
-    database_updates: DatabaseUpdates,
+    database_updates: Wakeups,
     spec: runner_pb2.SessionSpec,
     content: ContentStore,
     history: History,

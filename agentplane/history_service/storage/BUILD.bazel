@@ -22,9 +22,10 @@ py_library(
     srcs = ["store.py"],
     deps = [
         ":db",
-        ":history_changes",
         ":settlement",
+        "//agentplane/history_service:channels",
         "//agentplane/history_service:protocol_pb2",
+        "//agentplane/postgres:wakeups",
         "//agentplane/proto:event_log_pb2",
         "//agentplane/proto:runner_pb2",
         "@pypi//protobuf",
@@ -63,9 +64,9 @@ py_test(
     srcs = ["test_store.py"],
     deps = [
         ":conftest",
-        ":history_changes",
         ":store",
         "//:conftest",
+        "//agentplane/history_service:channels",
         "//agentplane/history_service:conftest",
         "//agentplane/history_service:protocol_pb2",
         "//agentplane/history_service/testing:delta_spans",
@@ -141,19 +142,5 @@ py_test(
         "@pypi//protobuf",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
-    ],
-)
-
-py_library(
-    name = "history_changes",
-    srcs = ["history_changes.py"],
-    visibility = [
-        "//agentplane/history_service:__subpackages__",
-        "//agentplane/notification_service:__pkg__",
-        "//agentplane/sandbox_service:__subpackages__",
-    ],
-    deps = [
-        "//agentplane/postgres:listener",
-        "@pypi//sqlalchemy",
     ],
 )
