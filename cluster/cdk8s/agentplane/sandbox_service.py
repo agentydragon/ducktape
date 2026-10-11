@@ -24,7 +24,7 @@ from agentplane.sandbox_service.kubernetes_grants import ClusterRoleBindingGrant
 from agentplane.sandbox_service.settings import CONFIG_FILE_ENV, Settings
 from agentplane.subjects import ServiceAccountRef
 from cluster.cdk8s import cilium
-from cluster.cdk8s.agentplane import egress, history_ingress, history_service, notifications, runner_gateway
+from cluster.cdk8s.agentplane import egress, history_ingress, runner_gateway
 from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.agentplane.service_workload import add_service_workload
 from cluster.cdk8s.api_resource import custom_resource, named_resource
@@ -48,18 +48,10 @@ def service(namespace: str) -> ServiceRef:
 
 
 class SandboxService(Construct):
-    def __init__(
-        self, scope: Construct, id: str, env: Environment, *, manager: ServiceAccountRef, caller: ServiceRef
-    ) -> None:
+    def __init__(self, scope: Construct, id: str, env: Environment, *, callers: dict[ServiceAccountRef, Pods]) -> None:
         super().__init__(scope, id)
         self.env = env
         endpoint = service(env.namespace)
-        caller_accounts = {
-            manager,
-            ServiceAccountRef(namespace=env.namespace, name=notifications.NAME),
-            # Places retention holds for its ingester.
-            ServiceAccountRef(namespace=env.namespace, name=history_service.NAME),
-        }
         config = SettingsFile(
             self,
             "config",
@@ -69,7 +61,7 @@ class SandboxService(Construct):
                 "sandbox_namespace": env.namespace,
                 "caller_accounts": [
                     account.model_dump()
-                    for account in sorted(caller_accounts, key=lambda account: (account.namespace, account.name))
+                    for account in sorted(callers, key=lambda account: (account.namespace, account.name))
                 ],
                 "token_audience": TOKEN_AUDIENCE,
                 "default_egress_policies": list(egress.DEFAULT_POLICIES),
@@ -112,11 +104,7 @@ class SandboxService(Construct):
             "network-policy",
             metadata=ApiObjectMetadata(name=NAME, namespace=env.namespace),
             endpoint_selector=endpoint.pods.selector,
-            ingress=[
-                caller.pods.admit(endpoint.pod_port),
-                notifications.service(env.namespace).pods.admit(endpoint.pod_port),
-                history_service.service(env.namespace).pods.admit(endpoint.pod_port),
-            ],
+            ingress=[pods.admit(endpoint.pod_port) for pods in callers.values()],
             egress=[
                 cilium.dns_egress(),
                 EgressRule.to_entities(Entity.KUBE_APISERVER),

@@ -8,7 +8,7 @@ from constructs import Construct
 from agentplane.history_service.settings import CONFIG_FILE_ENV, Settings
 from agentplane.subjects import ServiceAccountRef
 from cluster.cdk8s import cilium
-from cluster.cdk8s.agentplane import database, notifications
+from cluster.cdk8s.agentplane import database
 from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.agentplane.migrate_container import migrate_init_container
 from cluster.cdk8s.agentplane.service_workload import add_service_workload
@@ -40,8 +40,7 @@ class HistoryService(Construct):
         id: str,
         env: Environment,
         *,
-        reader: ServiceAccountRef,
-        caller: ServiceRef,
+        callers: dict[ServiceAccountRef, Pods],
         sandboxes: ServiceRef,
         sandboxes_audience: str,
         gateway: ServiceRef,
@@ -62,10 +61,9 @@ class HistoryService(Construct):
             metadata=ApiObjectMetadata(name=f"{NAME}-config", namespace=env.namespace),
             model=Settings,
             content={
-                # The app reads Threads; the Notification Service reads command receipts.
                 "reader_accounts": [
-                    reader.model_dump(),
-                    ServiceAccountRef(namespace=env.namespace, name=notifications.NAME).model_dump(),
+                    reader.model_dump()
+                    for reader in sorted(callers, key=lambda reader: (reader.namespace, reader.name))
                 ],
                 "token_audience": TOKEN_AUDIENCE,
                 "port": endpoint.port.number,
@@ -115,10 +113,7 @@ class HistoryService(Construct):
             "network-policy",
             metadata=ApiObjectMetadata(name=NAME, namespace=env.namespace),
             endpoint_selector=endpoint.pods.selector,
-            ingress=[
-                caller.pods.admit(endpoint.pod_port),
-                notifications.service(env.namespace).pods.admit(endpoint.pod_port),
-            ],
+            ingress=[pods.admit(endpoint.pod_port) for pods in callers.values()],
             egress=[
                 cilium.dns_egress(),
                 EgressRule.to_entities(Entity.KUBE_APISERVER),

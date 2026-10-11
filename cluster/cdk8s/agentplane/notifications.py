@@ -12,7 +12,7 @@ from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.agentplane.migrate_container import migrate_init_container
 from cluster.cdk8s.agentplane.service_workload import add_service_workload
 from cluster.cdk8s.probes import http_probe
-from cluster.cdk8s.providers.cilium.network_policy import EgressRule, Entity, IngressRule, NetworkPolicy
+from cluster.cdk8s.providers.cilium.network_policy import EgressRule, Entity, NetworkPolicy
 from cluster.cdk8s.secret_ref import SecretRef
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 from cluster.cdk8s.settings_file import SettingsFile
@@ -44,7 +44,10 @@ class Notifications(Construct):
         gateway_control_target: str,
         history: ServiceRef,
         history_audience: str,
+        callers: list[Pods],
     ) -> None:
+        """Any ServiceAccount in the namespace may call with its workload token, a Sandbox's through the
+        egress proxy, so `callers` are the Pods the requests come from, not accounts."""
         super().__init__(scope, id)
         endpoint = service(env.namespace)
         token_reviewer_cluster_rbac(
@@ -128,10 +131,7 @@ class Notifications(Construct):
             "network-policy",
             metadata=ApiObjectMetadata(name=NAME, namespace=env.namespace),
             endpoint_selector=_LABELS,
-            ingress=[
-                IngressRule.from_endpoints(cilium.endpoint_labels(env.namespace, "agentplane-egress"), ports=[8080]),
-                IngressRule.from_endpoints(cilium.endpoint_labels(env.namespace, "agentplane-app"), ports=[8080]),
-            ],
+            ingress=[pods.admit(endpoint.pod_port) for pods in callers],
             egress=[
                 cilium.dns_egress(resolves=["*"]),
                 EgressRule.to_fqdns("api.github.com"),

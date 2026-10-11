@@ -113,12 +113,11 @@ class RunnerGateway(Construct):
         env: Environment,
         *,
         token_audience: str,
-        callers: dict[ServiceAccountRef, ServiceRef],
-        sealer: ServiceAccountRef,
-        sealer_pods: Pods,
+        callers: dict[ServiceAccountRef, Pods],
+        sealers: dict[ServiceAccountRef, Pods],
         runners: Pods,
     ) -> None:
-        """`callers` are the Session API's clients and their Pods; `sealer` alone may seal a Sandbox;
+        """`callers` are the Session API's clients and their Pods; `sealers` alone may seal a Sandbox;
         `runners` are the Pods this service dials."""
         super().__init__(scope, id)
         self.env = env
@@ -136,7 +135,10 @@ class RunnerGateway(Construct):
                     caller.model_dump()
                     for caller in sorted(callers, key=lambda caller: (caller.namespace, caller.name))
                 ],
-                "sealer_accounts": [sealer.model_dump()],
+                "sealer_accounts": [
+                    sealer.model_dump()
+                    for sealer in sorted(sealers, key=lambda sealer: (sealer.namespace, sealer.name))
+                ],
                 "token_audience": token_audience,
                 "platform_instructions": combine_instructions(
                     render_platform_instructions(
@@ -193,8 +195,7 @@ class RunnerGateway(Construct):
             metadata=ApiObjectMetadata(name=NAME, namespace=env.namespace),
             endpoint_selector=endpoint.pods.selector,
             ingress=[
-                *(caller.pods.admit(endpoint.pod_port) for caller in callers.values()),
-                sealer_pods.admit(endpoint.pod_port),
+                *(pods.admit(endpoint.pod_port) for pods in (*callers.values(), *sealers.values())),
                 egress.proxy(env.namespace).pods.admit(control.pod_port),
             ],
             egress=[
