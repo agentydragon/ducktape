@@ -1034,7 +1034,7 @@ flowchart TD
         HISTORY_GRPC_CONFORM[Candidate: the History Service follows grpc_services.md]
         THREAD_FOLD_SINGLE_OWNER[Blocked: the fold has one owner]
         SETTLE_DELTAS_ALWAYS_ON[Delta settlement always on]
-        INDEX_PRIMITIVES_CONSOLIDATE[Candidate: one Git index, table drop is a decision]
+        INDEX_PRIMITIVES_CONSOLIDATE[Candidate: one Git index]
         INDEX_DOCS[Candidate: indexing README points at the deployment]
         APP_SERVICE_NAMES[Blocked: app names the right services]
         APP_TEST_CLIENT_MOVE[Candidate: app test client out of production]
@@ -1191,8 +1191,7 @@ app's `history_service_watch_timeout_s`.
 `HistoryProjector` takes its `Store` instead of two single-implementation callables and drops its
 `grpc.RpcError` catch, the app's `HistoryWatch` calls the client directly, app-era wording goes,
 `EventLogStore.open` raises an app error instead of `EventReplicationError`, and `thread_fold` moves
-under `history_service/`. **Decision for the operator:** drop the writerless
-`ThreadHistorySummary.resumed_after_cursor` column with its `lifecycle.py` branch.
+under `history_service/`.
 
 ### `SETTLE_DELTAS_ALWAYS_ON` — delta settlement always on
 
@@ -1204,11 +1203,11 @@ silently stops settling. Settlement becomes unconditional: delete the setting,
 
 ### `INDEX_PRIMITIVES_CONSOLIDATE` — one Git index
 
-**Candidate; the table drop is a decision.** `haku/recall_index`'s `sync`, `store`, `git_tree`,
+**Candidate.** `haku/recall_index`'s `sync`, `store`, `git_tree`,
 `embedding_sync`, `config` and `schema` are deployed nowhere and duplicate `agentplane/indexing`;
 its live half serves only that package. Delete the dead modules and their tests and move the live
 primitives into `agentplane/indexing`; `vector_type` stays where the haku migration imports it.
-**Decision for the operator:** drop the haku console's `recall_index` tables, a new migration.
+A separate migration drops the haku console's `recall_index` schema and `vector` extension.
 
 ### `INDEX_DOCS` — indexing README points at the deployment
 
