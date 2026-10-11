@@ -20,12 +20,6 @@ authenticates with `flux-system/github-secrets-sync-pat`. That PAT needs
 GitHub Administration read/write because GitHub exposes rulesets under the
 repository-administration API.
 
-## Gazelle check transition
-
-Keep `.github/workflows/gazelle-diff.yml` until this module has reconciled and the
-live ruleset no longer requires `Gazelle diff`. The pre-commit hook provides the
-replacement gate; only then remove the redundant workflow.
-
 ## Bypass Actors
 
 - `RepositoryRole=admin` (`actor_id = 5`): owner pushes and in-cluster
