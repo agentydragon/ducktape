@@ -16,7 +16,6 @@ plans and evidence live here:
 - <plans/factor_vocabulary_rename.md> — internal naming and wire-format decisions.
 - <plans/module_proposals.md> — proposal metadata and granularity follow-ups.
 - <plans/purity_analysis.md> — purity annotation and redundant-hint follow-ups.
-- <SELECTOR_BUGS.md> — matcher/diagnostic bugs with anonymized examples.
 - <ARCHITECTURE_BACKLOG.md> — deeper refactors, urgent only when they block this
   queue.
 - `perf/` — measured performance notes. Update from real
@@ -45,9 +44,9 @@ The sections below hold details, not competing priority queues.
    Preserve ordering/hygiene and the independent Node differential oracle.
    Anonymous uniqueness uses coarse semantic-token buckets with exact equality;
    profile real workloads before adding more fingerprint machinery.
-4. **Remaining selector authoring gaps.** Follow <SELECTOR_BUGS.md> and the
-   minimizer work below. Keep near-miss ranking heuristics distinct from boolean
-   backtracking.
+4. **Remaining selector authoring gaps.** Follow the selector diagnostics above
+   and minimizer work below. Keep near-miss ranking heuristics distinct from
+   boolean backtracking.
 5. **Remaining responsibility seams.** Extract vendor/lowering boundaries only
    when they simplify real callers. Prefer deleting redundant setup over deleting
    behavioral assertions or adding test frameworks.
@@ -198,7 +197,7 @@ still open:
 Findings from a read-only code review (2026-09-30), each with where to look and
 how to confirm. An entry is deleted when it is reproduced and fixed with a test,
 or disproved. Status says how far it was checked; "reported" means nobody has
-confirmed it. Selector-matching findings are in <SELECTOR_BUGS.md>.
+confirmed it.
 
 - **One SCC reads differently by path in the peel kernel.** Status: reported,
   likely benign. The post-seed reporting in `peel/quotient.rs` keeps an SCC
