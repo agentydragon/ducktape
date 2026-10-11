@@ -95,7 +95,8 @@ Everything that holds a connection is closed by a context manager, never by a ha
 - `grpc.aio.server()`, register servicers, then serve through the shared context manager;
   `stop(grace=5)` on shutdown. A second listener exists only where a network fence admits different callers to it (the
   runner-facing port).
-- Liveness and readiness are HTTP `/healthz` on a separate `health_port`.
+- Health is the standard `grpc.health.v1.Health` service on the service's own gRPC port, probed by
+  Kubernetes' native `grpc` liveness and readiness probes. No separate HTTP health server.
 - Tests serve on `127.0.0.1:0` with no grace, through the same context manager, which yields the
   bound port. A test builds a `grpc.aio.server()`, registers the real servicer or a fake subclass,
   and enters it; per-service serving helpers add only what is specific to that service (its
