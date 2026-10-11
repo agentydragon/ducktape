@@ -11,6 +11,7 @@ from agentplane.history_service.evidence import EvidenceNotFoundError, EvidenceR
 from agentplane.history_service.fold_shadow import FOLD_EPOCH, FoldShadow
 from agentplane.history_service.storage.store import Store
 from agentplane.history_service.testing.delta_spans import claude_text
+from agentplane.history_service.testing.sessions import WRITER
 from agentplane.history_service.thread_reads import ThreadScopeResetError
 from agentplane.proto import event_log_pb2, event_pb2
 from agentplane.thread_fold.views import EntityKind
@@ -45,13 +46,7 @@ def reader(engine: AsyncEngine, history: Store) -> EvidenceReader:
 @pytest.fixture
 async def folded(engine: AsyncEngine, history: Store) -> UUID:
     session_id = uuid4()
-    await history.record_session(
-        session_id,
-        sandbox_namespace="test-namespace",
-        sandbox_name="test-sandbox",
-        sandbox_uid=None,
-        runner_session_id="test-runner-session",
-    )
+    await history.bind_writer(session_id, WRITER)
     await history.append(
         session_id,
         [
@@ -100,13 +95,7 @@ async def test_a_frame_settled_before_the_fold_forgets_its_link_is_unavailable(
     # 1-2 start, 3-6 two chunk pairs, 7-8 completion; the fold links chunk 4 to its frame 3.
     span = claude_text(["Hel", "lo"]).entries
     session_id = uuid4()
-    await settling.record_session(
-        session_id,
-        sandbox_namespace="test-namespace",
-        sandbox_name="test-sandbox",
-        sandbox_uid=None,
-        runner_session_id="test-runner-session",
-    )
+    await settling.bind_writer(session_id, WRITER)
     await settling.append(session_id, span[:6])
     await FoldShadow(engine=engine, history=settling, concurrency=1, page_size=1000).cycle()
     await settling.append(session_id, span[6:])

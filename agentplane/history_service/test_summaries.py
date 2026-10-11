@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 from agentplane.history_service.fold_shadow import FOLD_EPOCH, FoldShadow
 from agentplane.history_service.storage.store import Store
 from agentplane.history_service.summaries import SummaryReader
+from agentplane.history_service.testing.sessions import WRITER
 from agentplane.proto import event_log_pb2, event_pb2
 
 # gazelle:include_dep //agentplane/history_service/storage:conftest
@@ -42,15 +43,9 @@ def summaries(engine: AsyncEngine) -> SummaryReader:
     return SummaryReader(engine)
 
 
-async def session_in(history: Store, sandbox: str, entries: list[event_log_pb2.EventEntry]) -> UUID:
+async def session_in(history: Store, entries: list[event_log_pb2.EventEntry]) -> UUID:
     session_id = uuid4()
-    await history.record_session(
-        session_id,
-        sandbox_namespace="test-namespace",
-        sandbox_name=sandbox,
-        sandbox_uid=None,
-        runner_session_id=f"test-runner-{session_id}",
-    )
+    await history.bind_writer(session_id, WRITER)
     await history.append(session_id, entries)
     return session_id
 
@@ -58,10 +53,10 @@ async def session_in(history: Store, sandbox: str, entries: list[event_log_pb2.E
 async def test_a_summary_reports_the_fold_beside_committed_history(
     engine: AsyncEngine, history: Store, summaries: SummaryReader
 ) -> None:
-    folded = await session_in(history, "test-sandbox", started(20))
+    folded = await session_in(history, started(20))
     await FoldShadow(engine=engine, history=history, concurrency=2, page_size=1000).cycle()
     # Committed after the fold ran, so it lags.
-    lagging = await session_in(history, "test-sandbox", started(30))
+    lagging = await session_in(history, started(30))
 
     by_id = {UUID(summary.session_id): summary for summary in await summaries.get_many({folded, lagging})}
 
@@ -75,8 +70,8 @@ async def test_a_summary_reports_the_fold_beside_committed_history(
 
 
 async def test_a_batch_read_leaves_out_sessions_without_history(history: Store, summaries: SummaryReader) -> None:
-    named = {await session_in(history, "test-sandbox", started(minutes)) for minutes in (0, 1)}
-    await session_in(history, "test-sandbox", started(2))
+    named = {await session_in(history, started(minutes)) for minutes in (0, 1)}
+    await session_in(history, started(2))
 
     read = await summaries.get_many(named | {uuid4()})
 
