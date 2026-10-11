@@ -894,8 +894,8 @@ before dropping stored registry columns.
 Also follow-only, so deleted here: `follow_lease_s` and `SessionChanges`; the client's `follow_timeout_s` and `Attachment` with the app's
 `sandbox_service_follow_timeout_s` and the Notification Service's `follow_timeout_s`;
 `protocol.v1.Follow` once nothing sends `Open.follow`; `Store.read`; `SessionFeedState.ended` with
-its merge in `record_feed_state`, `FEED_STATUS_ENDED` and the app's `resume_pending` mask; and
-`register_attached_sessions` in `runner_gateway/testing`.
+its merge in `record_feed_state` (the fold derives the end from a stopped harness), `FEED_STATUS_ENDED`
+and the app's `resume_pending` mask; and `register_attached_sessions` in `runner_gateway/testing`.
 
 With the holds goes teardown's path for a runner that pushes nothing: `SealResponse.pushes`,
 `TEARDOWN_PHASE_SEALED`, `SandboxInventory.record_seal` and `delete_if_released`. Every teardown

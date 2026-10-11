@@ -28,6 +28,7 @@ from agentplane.history_service.fold_runner import FOLD_EPOCH, HEALTH_SERVICE, F
 from agentplane.history_service.storage.history_changes import HistoryChanges
 from agentplane.history_service.storage.store import Store
 from agentplane.history_service.testing.delta_spans import claude_text
+from agentplane.history_service.testing.sessions import WRITER
 from agentplane.proto import event_log_pb2, event_pb2
 
 # gazelle:include_dep //agentplane/history_service/storage:conftest
@@ -74,14 +75,7 @@ def history(engine: AsyncEngine) -> Store:
 
 async def retained_session(history: Store, entries: list[event_log_pb2.EventEntry]) -> UUID:
     session_id = uuid4()
-    # A deleted Sandbox's Session is folded like any other.
-    await history.record_session(
-        session_id,
-        sandbox_namespace="test-namespace",
-        sandbox_name="test-deleted-sandbox",
-        sandbox_uid=None,
-        runner_session_id=f"test-runner-{session_id}",
-    )
+    await history.bind_writer(session_id, WRITER)
     await history.append(session_id, entries)
     return session_id
 

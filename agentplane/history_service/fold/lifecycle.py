@@ -46,6 +46,9 @@ async def project_lifecycle(
         project_attached(attached, entry)
         # Any suffix invalidates EOF at the old prefix, including failed setup/restart.
         end = None
+    if end is None and attached.harness_state == runner_pb2.HARNESS_STATE_STOPPED:
+        # A pushed journal has no attachment to reach EOF; its stopped harness is where a followed one ended.
+        end = {}
     summary.attached = MessageToDict(attached)
     summary.end = end
     operational_changed = await set_operational(
