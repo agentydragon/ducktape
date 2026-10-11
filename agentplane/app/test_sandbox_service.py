@@ -22,7 +22,7 @@ from agentplane.app.threads.bridge import MalformedMessageError, RunnerBridge
 from agentplane.app.threads.events.debug import ThreadScopeChangedError
 from agentplane.app.threads.sessions import SandboxSessions
 from agentplane.app.threads.store import ThreadStore
-from agentplane.app.threads.summaries import AppSummaries, HistorySummaries
+from agentplane.app.threads.summaries import AppSummaries, FeedEnd, HistorySummaries
 from agentplane.app.threads.thread_view import ThreadView
 from agentplane.app.threads.view.content import ContentStore, HistoryContentStore
 from agentplane.history_service.testing.backend import fold_history, history_service, ingest
@@ -201,7 +201,10 @@ async def test_history_service_reads_match_the_app_projection(
                     assert any(entry.event.HasField("harness_exited") for entry in archived)
                     await fold_history(service_history_db_url)
                     assert await event_logs.last_cursor(thread) == archived[-1].cursor
-                    assert (await folded.get(thread)).folded_through == archived[-1].cursor
+                    history_summary = await folded.get(thread)
+                    assert history_summary.folded_through == archived[-1].cursor
+                    assert history_summary.feed is not None
+                    assert isinstance(history_summary.feed.end, FeedEnd), f"{history_summary.feed=}"
                     assert await app.folded_through(thread) == archived[-1].cursor
         finally:
             await ingester.close()
