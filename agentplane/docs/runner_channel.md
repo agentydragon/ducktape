@@ -199,10 +199,10 @@ since only an operator resolves them; a refused Session holds up no other. Unack
 bounded only by the state volume, and a Sandbox cannot finish teardown while any is left.
 
 **Endpoint and authentication.** The runner is started with its ingress and control targets, which
-only the component creating the Sandbox's Kubernetes objects sets: its request names the ingress,
-by default the History Service, and the control target is always the Sandbox Service. Pointing a
-Sandbox's ingress elsewhere sends its Events there, so it takes the authority to create the
-Sandbox. The runner reaches the ingress through its egress sidecar with a placeholder bearer, like
+only the component creating the Sandbox's Kubernetes objects sets, from its own configuration: one
+ingress for every Sandbox it creates (the History Service, or a historyless deployment's own
+sink), and the control target is always the Sandbox Service. A create request cannot choose
+either; an ingress per Sandbox is not built. The runner reaches the ingress through its egress sidecar with a placeholder bearer, like
 the channel ([Path through the egress proxy](#path-through-the-egress-proxy)). An egress policy
 the Sandbox Service binds at creation, not a launch-selectable one, admits the ingress host and
 substitutes the Pod's projected token for that ingress's own audience: `agentplane-runner-ingress`

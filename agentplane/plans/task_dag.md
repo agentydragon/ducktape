@@ -953,8 +953,9 @@ flowing.
 ### `SANDBOX_RUNNER_ENDPOINTS` — Sandboxes name their runner's endpoints
 
 **Candidate.** The component that creates a Sandbox's Kubernetes objects sets its
-runner's ingress and control endpoints, and only it can: the request names the ingress (default:
-the History Service), the control endpoint is always the hub. Egress grants admit both, each with
+runner's ingress and control endpoints from its own configuration, and only it can: one ingress
+for every Sandbox (operator, 2026-10-11 PDT: no per-request choice), the control endpoint is
+always the hub. Egress grants admit both, each with
 its own token audience.
 
 ### `CLIENT_SESSION_IDS` — clients mint Session IDs
