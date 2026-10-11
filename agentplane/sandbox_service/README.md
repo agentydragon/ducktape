@@ -30,6 +30,6 @@ a Sandbox for teardown.
 ## Deployment
 
 A separately built image, Deployment/Service/ServiceAccount, TokenReview and lifecycle/grant RBAC,
-and network isolation. One replica reconciles. Its callers are the app, the Notification Service and
+and network isolation. Its callers are the app, the Notification Service and
 the History Service; it reaches the Kubernetes API and the Runner Gateway. App-to-service calls
 require a Pod-bound workload TokenReview.
