@@ -571,7 +571,7 @@ node switches which service reads or writes it. Only the fold double-runs.
 
 ```mermaid
 flowchart TD
-    APP_PROJECTOR_RETIRE[Candidate: delete app projector code]
+    APP_PROJECTOR_RETIRE[In flight: delete app projector code]
     APP_PROJECTION_RETIRE[Blocked: drop app projection tables]
     HISTORY_SERVICE_OWNERSHIP[Capstone: History Service owns log and fold]
     SESSION_EVENT_COMPACTION[Candidate: settle stored history]
@@ -588,10 +588,9 @@ flowchart TD
 
 ### `APP_PROJECTOR_RETIRE` — delete the app projector
 
-**Candidate; Thread fold move lane.** Testing and staging read Threads from the History Service
-fold (`thread_reads`). Once staging's fold has caught up, compare materialized Threads (entities
-and bodies) with the app's on a bounded sample of Sessions; then remove the app projector, its
-leases' code, the `thread_reads` switch and the app's Electric deployment. Retained tables stay.
+**In flight: #9836; Thread fold move lane.** Testing and staging read Threads from the History
+Service fold (`thread_reads`), and the app's Electric deployment is gone (#9839). Remove the app
+projector, its leases' code and the `thread_reads` switch. Retained tables stay.
 
 ### `APP_PROJECTION_RETIRE` — drop the app projection
 
