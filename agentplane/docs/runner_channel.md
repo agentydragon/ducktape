@@ -246,8 +246,10 @@ Sandbox, hence `-control`.
 
 ## Lifecycle operations
 
-Status: **accepted (operator, 2026-10-10 PDT), not built.** Until it is, every runner's lifecycle calls use the
-inbound API.
+Status: **accepted (operator, 2026-10-10 PDT); the runner answers these requests, the Sandbox
+Service does not send them yet.** Until it does, every runner's lifecycle calls use the inbound API.
+A runner refuses `OpenSession` for a Session it created but could not start with `FAILED`; asked
+again, it confirms the stopped Session, so the Sandbox Service follows with `ResumeSession`.
 
 A runner that lists `lifecycle` in `Hello` takes every remaining inbound call over `Connect` as a
 control request. Each request names an explicit verb; nothing is inferred from which fields are
