@@ -26,7 +26,7 @@ scenario values stay with capture and `harness_tests`. Model-visible; new Sandbo
 `workload_auth/README.md` calls `agentplane-egress` a compatibility audience that may become
 `agentplane-workload`. Renaming needs every verifier to accept both until running Sandbox Pods carry
 the new projected token, or a Sandbox restart: an accept-both release, then dropping the old audience
-once `LEGACY_SANDBOX_RETIRE` has replaced old Pods.
+once every Sandbox Pod started after that release.
 
 ## Notifications and operations
 

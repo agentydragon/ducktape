@@ -349,9 +349,7 @@ flowchart LR
     VM_EGRESS[Candidate: production admission and egress integration]
     VM_PROCESS_ISOLATION[Blocked: harness/process resource boundary]
     VM_LIFECYCLE[Blocked: integrated lifecycle]
-    LEGACY_SANDBOX_RETIRE[Operator: delete every pre-push Sandbox]
-    LEGACY_SANDBOX_RETIRE --> RUNNER_INBOUND_RETIRE[Blocked: retire inbound runner access]
-    KUBEVIRT_GUEST_CONTROL[KubeVirt guest dials out] --> RUNNER_INBOUND_RETIRE
+    KUBEVIRT_GUEST_CONTROL[KubeVirt guest dials out] --> RUNNER_INBOUND_RETIRE[Blocked: retire inbound runner access]
     VM_PROVIDER --> VM_CONTROL_NETWORKING
     VM_CONTROL_NETWORKING --> VM_LIFECYCLE
     VM_IMAGE --> VM_PROCESS_ISOLATION
@@ -364,21 +362,9 @@ flowchart LR
     SANDBOX_VM_ISOLATION --> LOCAL_BAZEL[Blocked: bounded local Bazel client in VM]
 ```
 
-### `LEGACY_SANDBOX_RETIRE` — delete pre-push Sandboxes
-
-**The operator's step.** Every Sandbox created since both environments' Sandbox Service config set
-`runner_control` and `runner_ingress` (2026-10-11) pushes its Events and holds its control stream. The operator chose a clean cutover (2026-10-10 PDT) and deletes every
-Sandbox created before that through `DeleteSandbox`, so each runner seals its journals and
-retention holds keep it until the History Service has archived them. Exit: no live Sandbox's runner
-lacks the `--ingress-target` and `--control-target` flags.
-
-Pre-cutover Sandboxes are still archived the old way: the History Service follows them through the
-Sandbox Service and holds them until the seal, which is why `FOLLOW_PATH_RETIRE` waits for this
-node.
-
 ### `RUNNER_INBOUND_RETIRE` — remove inbound runner access
 
-**Blocked on legacy Sandbox retirement and `KUBEVIRT_GUEST_CONTROL`.** Remove
+**Blocked on `KUBEVIRT_GUEST_CONTROL`.** Remove
 `Attach` command submission, the pull ingester, the runner control port and its network policy.
 With no inbound route left, the `runner_connection` table goes (a drop migration the operator
 merges) together with the routing check on its operations in `SubmitCommand`. Capability
@@ -644,7 +630,6 @@ flowchart TD
     THREAD_SUCCESSOR_DELIVERY[Blocked: commands unsettled across incarnations]
     HOSTED_THREAD_SURFACES[Blocked: show and revive Sessions without a Sandbox]
     HISTORY_SERVICE_OWNERSHIP[History Service ownership]
-    LEGACY_SANDBOX_RETIRE[Retire pre-dial-out Sandboxes]
     DURABLE_SESSION_LIFECYCLE --> SESSION_STATE_VOLUME_DESIGN
     DURABLE_SESSION_LIFECYCLE --> SESSION_INCARNATIONS
     SESSION_STATE_VOLUME_DESIGN --> CLAUDE_PORTABLE_STATE
@@ -657,7 +642,6 @@ flowchart TD
     SESSION_REVIVE --> THREAD_SUCCESSOR_DELIVERY
     SESSION_REVIVE --> HOSTED_THREAD_SURFACES
     HISTORY_SERVICE_OWNERSHIP --> HOSTED_THREAD_SURFACES
-    STATE_VOLUME_RETENTION -. if first, retire keeps old volumes .-> LEGACY_SANDBOX_RETIRE
 ```
 
 ### `DURABLE_SESSION_LIFECYCLE` — Session lifetime beyond its Sandbox
@@ -824,9 +808,7 @@ that code. Upstream-gated tombstones with a verifiable condition in code (`keepi
 ```mermaid
 flowchart TD
     APP_THREAD_VIEW_CLEANUP[Blocked: app Thread view shims]
-    RUNNER_SESSION_RECORD_SHIMS[Blocked: drop runner session record compatibility]
-    LEGACY_SANDBOX_RETIRE[Retire pre-dial-out Sandboxes]
-    LEGACY_SANDBOX_RETIRE --> RUNNER_SESSION_RECORD_SHIMS
+    RUNNER_SESSION_RECORD_SHIMS[Candidate: drop runner session record compatibility]
     HISTORY_FOLD_ALWAYS_ON[Blocked: the History Service always folds]
     APP_PROJECTOR_RETIRE[Delete app projector] --> HISTORY_FOLD_ALWAYS_ON
     APP_PROJECTOR_RETIRE --> APP_THREAD_VIEW_CLEANUP
@@ -841,12 +823,12 @@ flowchart TD
 
 ### `RUNNER_SESSION_RECORD_SHIMS` — drop runner session record compatibility
 
-**Blocked on legacy Sandbox retirement; Legacy burn-down lane.** The runner's `SessionRecord` reads
+**Candidate; Legacy burn-down lane.** The runner's `SessionRecord` reads
 `session.json` written by older images: `context_budget_resolved` (False only for records from before
 budget resolution, 2026-10-10 PDT) re-resolves the budget at Open, and `instructions` and
-`event_source_id` have defaults that fill records predating them. Staging Sandboxes created before
-then still resume on these records. Once none remains, delete the flag and its Open branch, make
-both fields required, and have `from_spec` set `event_source_id` explicitly.
+`event_source_id` have defaults that fill records predating them. The operator deleted every
+Sandbox created before then (2026-10-11 PDT), so delete the flag and its Open branch, make both
+fields required, and have `from_spec` set `event_source_id` explicitly.
 
 ### `APP_THREAD_VIEW_CLEANUP` — app Thread view shims
 
@@ -908,8 +890,7 @@ nodes and section 9 are unaffected.
 
 ```mermaid
 flowchart TD
-    LEGACY_SANDBOX_RETIRE[Retire pre-push Sandboxes]
-    FOLLOW_PATH_RETIRE[Blocked: delete following, WatchSessions and holds]
+    FOLLOW_PATH_RETIRE[Under way: delete following, WatchSessions and holds]
     GATEWAY_CLIENT_SPLIT[Unscheduled: Session messages and client move to the gateway]
     AGENTPLANE_SANDBOX_RESOURCE[Decision: our own Sandbox resource]
     POD_INCARNATION[Decision: a Pod is the incarnation]
@@ -917,16 +898,13 @@ flowchart TD
     COMMAND_RECORDS_RETIRE[Unscheduled: drop command submission records]
     SESSION_ID_MINT_RETIRE[Blocked: clients always name the Session ID]
     LOOKUP_SESSION_RETIRE[Candidate: Session status from history, no Open reservation]
-    LEGACY_SANDBOX_RETIRE --> FOLLOW_PATH_RETIRE
     AGENTPLANE_SANDBOX_RESOURCE -. to seal a suspended Sandbox on delete .-> SEAL_FINALIZER
     POD_INCARNATION -. if chosen, rewrites .-> SESSION_STATE_VOLUME_DESIGN[State volume design]
-    LEGACY_SANDBOX_RETIRE --> SESSION_ID_MINT_RETIRE
 ```
 
 ### `SESSION_ID_MINT_RETIRE` — clients always name the Session ID
 
-**Blocked on the deployed app sending `session_id` on every create, and on legacy Sandbox
-retirement.** `CreateSessionRequest.session_id` becomes required. The Runner Gateway stops
+**Blocked on the deployed app sending `session_id` on every create.** `CreateSessionRequest.session_id` becomes required. The Runner Gateway stops
 minting IDs and handing the runner an `r-` locator (the `CLEANUP` tombstones in `grpc_api.py`'s
 `CreateSession` and `session_registry.py`), and the app stops sending the ID again as
 `idempotency_key` for older Sandbox Services. The gateway's `session.runner_session_id` then always
@@ -944,19 +922,14 @@ the operator before the drop).
 
 ### `FOLLOW_PATH_RETIRE` — delete following, WatchSessions and holds
 
-**Blocked on legacy Sandbox retirement.** Delete `FollowSession`,
-`WatchSessions` and its change feed (the gateway's `session.change_position`, its index and the
-`session_change_position` sequence), the History Service follower ingester, and the hold API and
-`retention-holds` annotation. With the follower go `Store.record_session` and `SessionSummary`'s
-Sandbox fields; tests that copy history with the follower
-(`history_service.testing.backend.ingest`, used by the app and Notification Service acceptance
-tests) push through the ingress instead. The history columns the follower filled are dropped by
-`HISTORY_SANDBOX_LOCATOR_DROP`. Stops for the operator before dropping stored registry columns.
+**Under way.** The History Service no longer follows (its ingester, settings and caller accounts are
+gone). Delete `FollowSession`, `WatchSessions` and its change feed (the gateway's
+`session.change_position`, its index and the `session_change_position` sequence), and the hold API
+and `retention-holds` annotation, and with them `SessionSummary`'s Sandbox fields. The history
+columns the follower filled are dropped by `HISTORY_SANDBOX_LOCATOR_DROP`. Stops for the operator
+before dropping stored registry columns.
 
-Also follow-only, so deleted here: the History Service's `SandboxServiceSettings` and
-`IngesterSettings` (with the duplicate `ingester.settle_deltas`), its `sandbox_service` config block
-and token volume in cdk8s, and its caller account on the Sandbox Service; `follow_lease_s` and
-`SessionChanges`; the client's `follow_timeout_s` and `Attachment` with the app's
+Also follow-only, so deleted here: `follow_lease_s` and `SessionChanges`; the client's `follow_timeout_s` and `Attachment` with the app's
 `sandbox_service_follow_timeout_s` and the Notification Service's `follow_timeout_s`;
 `protocol.v1.Follow` once nothing sends `Open.follow`; `Store.read`; `SessionFeedState.ended` with
 its merge in `record_feed_state`, `FEED_STATUS_ENDED` and the app's `resume_pending` mask; and

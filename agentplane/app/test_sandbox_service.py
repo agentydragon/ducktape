@@ -90,7 +90,7 @@ async def test_production_bridge_archives_native_evidence_across_bounded_service
         authenticated_service(
             cluster, runner.port, tmp_path / "service-token", database_url=service_history_db_url
         ) as remote,
-        ingest(service_history_db_url, remote),
+        ingest(service_history_db_url, runner.runner),
         history_service(service_history_db_url, tmp_path / "history-service-token") as history,
     ):
         event_logs = EventLogStore(event_logs.engine, peer=event_logs.peer, history_reader=history)
@@ -166,7 +166,7 @@ async def test_history_service_reads_match_the_app_projection(
         authenticated_service(
             cluster, runner.port, tmp_path / "service-token", database_url=service_history_db_url
         ) as remote,
-        ingest(service_history_db_url, remote),
+        ingest(service_history_db_url, runner.runner),
         history_service(service_history_db_url, tmp_path / "history-service-token") as history,
     ):
         event_logs = EventLogStore(engine, peer=event_logs.peer, history_reader=history)
