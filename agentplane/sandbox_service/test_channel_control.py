@@ -59,7 +59,7 @@ HELLO = protocol_pb2.RunnerFrame(
 )
 HOLDER = ConnectionHolder(pod_name="test-replica", pod_ip="192.0.2.1", port=18080)
 OTHER = ConnectionHolder(pod_name="test-other-replica", pod_ip="192.0.2.2", port=18080)
-SPEC = {"harness": "HARNESS_CLAUDE", "cwd": "/test-workspace/{session_id}", "model": "test-model"}
+SPEC: dict[str, object] = {"harness": "HARNESS_CLAUDE", "cwd": "/test-workspace/{session_id}", "model": "test-model"}
 Reason = protocol_pb2.ControlRefused.Reason
 
 type Connect = grpc.aio.StreamStreamCall[protocol_pb2.RunnerFrame, protocol_pb2.ServiceFrame]
