@@ -27,6 +27,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession
 
 from agentplane.history_service.client import HistoryServiceClient
 from agentplane.notification_service.api import authenticated_caller, create_app
+from agentplane.notification_service.channels import Channel
 from agentplane.notification_service.database_migrate import RUNNER
 from agentplane.notification_service.db import (
     GitHubDelivery,
@@ -1113,8 +1114,9 @@ async def test_webhook_wakes_idle_source_and_fences_concurrent_ingress(
     await github.reconcile(store, claim, row, SOURCE)
     await store.release(claim, None)
     assert await store.get_next_work_at() is not None
+    changed = asyncio.Event()
     async with store.wakeups.listener.listen():
-        with store.wakeups.subscribe() as changed:
+        with store.wakeups.changes[Channel.WORK].subscribe(changed):
             await ingest(github, store, comment())
             async with asyncio.timeout(10):
                 await changed.wait()

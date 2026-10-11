@@ -60,6 +60,7 @@ py_test(
         "//agentplane:subjects",
         "//agentplane/history_service:client",
         "//agentplane/notification_service:api",
+        "//agentplane/notification_service:channels",
         "//agentplane/notification_service:conftest",
         "//agentplane/notification_service:database_migrate",
         "//agentplane/notification_service:db",
