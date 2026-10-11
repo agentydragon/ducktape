@@ -8,10 +8,10 @@ import asyncpg
 import pytest
 import pytest_bazel
 from sqlalchemy import text
-from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 
 from finance.plaid.db.link_store import ApiEvent, PlaidLinkStorage, SyncAlreadyRunningError
+from util.db_url import render_postgresql_url
 
 
 async def test_successful_sync_run_marks_investment_only_link_synced(
@@ -46,7 +46,7 @@ async def test_spend_changed_notifies_after_commit_and_on_link_removal(
     storage: PlaidLinkStorage, add_link: Callable[[str], Awaitable[None]], db_url: str, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     await add_link("item-investments")
-    listener_url = make_url(db_url).set(drivername="postgresql").render_as_string(hide_password=False)
+    listener_url = render_postgresql_url(db_url, "postgresql")
     listener = await asyncpg.connect(listener_url)
     notifications: asyncio.Queue[tuple[str, str]] = asyncio.Queue()
     await listener.add_listener(

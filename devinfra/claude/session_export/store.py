@@ -41,6 +41,7 @@ from devinfra.claude.session_export.models import (
     canonical_id,
     parse_timestamp,
 )
+from util.db_url import render_postgresql_url
 
 # gazelle:include_dep @pypi//asyncpg
 
@@ -259,9 +260,7 @@ class SessionStore:
     @asynccontextmanager
     async def listen_for_changes(self) -> AsyncIterator[asyncio.Event]:
         """Listen for durable DB changes; notifications only wake readers to replay the journal."""
-        connection = await asyncpg.connect(
-            self._engine.url.set(drivername="postgresql").render_as_string(hide_password=False)
-        )
+        connection = await asyncpg.connect(render_postgresql_url(self._engine.url, "postgresql"))
         notified = asyncio.Event()
 
         async def on_notification(_connection: object, _pid: int, _channel: str, _payload: object, /) -> None:

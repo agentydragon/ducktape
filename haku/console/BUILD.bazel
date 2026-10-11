@@ -116,6 +116,7 @@ py_library(
     deps = [
         ":database_schema",
         "//haku/recall_index:vector_type",
+        "//util:db_url",
         "@pypi//alembic",
         "@pypi//psycopg",
         "@pypi//pydantic",

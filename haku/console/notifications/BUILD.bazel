@@ -8,10 +8,10 @@ py_library(
     deps = [
         "//haku/console/identity:operator_auth",
         "//haku/console/identity:operator_identity_store",
+        "//util:db_url",
         "@pypi//asyncpg",
         "@pypi//fastapi",
         "@pypi//pydantic",
-        "@pypi//sqlalchemy",
     ],
 )
 

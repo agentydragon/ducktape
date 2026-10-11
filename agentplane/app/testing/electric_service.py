@@ -10,7 +10,6 @@ from time import monotonic, sleep
 
 import httpx
 from sqlalchemy import create_engine, text
-from sqlalchemy.engine import make_url
 from testcontainers.core.network import Network
 
 # SQLAlchemy loads the driver selected by the URL scheme at runtime.
@@ -18,6 +17,7 @@ from testcontainers.core.network import Network
 from agentplane.app.database_migrate import RUNNER
 from agentplane.testing.electric_role import ensure_electric_role
 from third_party.containers import electric_1_8_1, postgres_18, ryuk
+from util.db_url import render_postgresql_url
 from util.oci import load_oci_image
 from util.testing.container_logs import LoggedContainer
 from util.testing.postgres import PostgresDatabaseTemplate, migrated_database_template
@@ -81,7 +81,7 @@ def browser_postgres_server() -> Iterator[BrowserPostgres]:
 async def browser_electric_service(postgres: BrowserPostgres, database_name: str) -> AsyncIterator[ElectricService]:
     """Run a fresh Electric process against a fresh clone of the shard's migrated database."""
     with postgres.template.clone(database_name) as database_url:
-        app_url = make_url(database_url).set(drivername="postgresql+asyncpg").render_as_string(hide_password=False)
+        app_url = render_postgresql_url(database_url, "postgresql+asyncpg")
         electric_url = f"postgresql://electric:electric@postgres:5432/{database_name}?sslmode=disable"
         with postgres.replication_slot_cleanup(database_name):
             async with _electric_process(
@@ -219,9 +219,7 @@ async def electric_service(
             address = f"{postgres.get_container_host_ip()}:{postgres.get_exposed_port(5432)}"
             admin_url = f"postgresql+psycopg://postgres:postgres@{address}/postgres"
             await asyncio.to_thread(ensure_electric_role, admin_url, ready_timeout_s=60)
-            database_url = (
-                make_url(admin_url).set(drivername="postgresql+asyncpg").render_as_string(hide_password=False)
-            )
+            database_url = render_postgresql_url(admin_url, "postgresql+asyncpg")
             await asyncio.to_thread(RUNNER.apply, database_url)
             async with _electric_process(
                 network,

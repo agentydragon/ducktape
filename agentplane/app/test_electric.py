@@ -20,7 +20,6 @@ import httpx
 import pytest
 import pytest_bazel
 from fastapi import FastAPI, Request
-from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import AsyncEngine
 from starlette.requests import ClientDisconnect
 from starlette.types import Message
@@ -33,6 +32,7 @@ from agentplane.app.threads.view.content import ContentStore, ThreadScope
 from agentplane.history_service.client import HistoryServiceClient
 from agentplane.proto import event_pb2
 from agentplane.thread_fold.projection_lease import ProjectionLease
+from util.db_url import render_postgresql_url
 from util.testing.postgres import PostgresDatabaseTemplate, database_name_for_test
 
 # The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.
@@ -52,7 +52,7 @@ class Seeded:
 @pytest.fixture(scope="module")
 def db_url(app_database_template: PostgresDatabaseTemplate) -> Iterator[str]:
     with app_database_template.clone(database_name_for_test("agentplane.app.test_electric")) as url:
-        yield make_url(url).set(drivername="postgresql+asyncpg").render_as_string(hide_password=False)
+        yield render_postgresql_url(url, "postgresql+asyncpg")
 
 
 @dataclass(frozen=True)

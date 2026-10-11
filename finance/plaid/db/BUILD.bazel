@@ -92,12 +92,12 @@ py_library(
     ],
     deps = [
         ":link_store",
+        "//util:db_url",
         "//util/testing:postgres",
         "@pypi//asyncpg",
         "@pypi//psycopg",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",
-        "@pypi//sqlalchemy",
     ],
 )
 
@@ -110,6 +110,7 @@ py_test(
         ":conftest",
         ":link_store",
         "//:conftest",
+        "//util:db_url",
         "@pypi//asyncpg",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
