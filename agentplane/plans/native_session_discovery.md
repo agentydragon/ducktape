@@ -135,6 +135,12 @@ any other; the History Service indexes and serves them, and the app presents the
 Threads. The Sandbox Service takes no part in discovery: it routes commands and lifecycle requests,
 and a read-only child receives neither.
 
+Scope is every native session the runner observes in its container, not only children of Sessions
+created through Agentplane (operator, 2026-10-10 PDT): the container is Agentplane's, and whatever
+runs in it got there through Agentplane transitively. A native root nobody created through
+`CreateSession` is declared like a child, as an unparented Session with no spec, and nothing
+filters it out as foreign.
+
 This does not require adding an Agentplane-specific declaration API to Claude Code or Codex. Their
 existing messages are the declaration inputs. The adapter is responsible for translating those
 messages into a small shared vocabulary without manufacturing capabilities the harness lacks.
@@ -183,7 +189,7 @@ storage paths to be rekeyed here.
 A session descriptor should carry:
 
 - Logical session ID, execution-owner ID, and parent ID when established.
-- Origin kind: explicitly opened root or harness-discovered child.
+- Origin kind: explicitly opened root, discovered root, or harness-discovered child.
 - Native harness kind and qualified native handle, including its identity scope.
 - Discovery evidence and the spawning call's native identity when available.
 - Observed activity/availability, transcript coverage, and supported access modes.
