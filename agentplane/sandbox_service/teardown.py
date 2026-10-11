@@ -1,8 +1,9 @@
 """DeleteSandbox's teardown, driven by the controller: seal every Session, then delete.
 
 `SandboxInventory.begin_teardown` runs the suspended Sandbox again. Here its runner seals every
-Session; the seal cursors go into the retention holds and the Sandbox is suspended again; it is
-deleted once every hold is confirmed through its seal. While the runner is unreachable, the Sandbox
+Session; the seal cursors go into the retention holds, and the Sandbox runs on until every hold is
+confirmed through its seal, since a holder confirms by following its Session to the seal; then it is
+deleted. While the runner is unreachable, the Sandbox
 stays in `TEARDOWN_PHASE_SEALING` for the operator: nothing deletes an unsealed Sandbox. A Sandbox
 whose runner connection agreed `lifecycle` is sealed over that connection, by the replica holding it.
 
@@ -67,8 +68,9 @@ class Teardown:
                     raise SealNotFlushedError(f"{sandbox.name}: ingress has not acknowledged {unflushed=}")
                 await inventory.delete_flushed(sandbox.name, uid=sandbox.uid)
             case TeardownPhase.TEARDOWN_PHASE_SEALED:
-                # Otherwise a hold change reconciles it again.
-                await inventory.delete_if_released(sandbox.name, uid=sandbox.uid)
+                if not await inventory.delete_if_released(sandbox.name, uid=sandbox.uid):
+                    # A hold change reconciles it again.
+                    logger.info("%s is sealed; waiting for its retention holds to confirm the seal", sandbox.name)
 
     async def _seal(self, sandbox: Sandbox) -> runner_pb2.SealResponse:
         sandbox_uid = UUID(sandbox.uid)

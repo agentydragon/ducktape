@@ -238,7 +238,7 @@ async def test_teardown_runs_a_suspended_sandbox_fenced_until_sealed(
         await inventory.delete_if_released("paused", uid=paused.uid)
     await inventory.record_seal("paused", uid=paused.uid, cursors={"test-session": 3})
     view = await inventory.get("paused")
-    assert (view.teardown, view.operating_mode) == (TeardownPhase.TEARDOWN_PHASE_SEALED, OperatingMode.SUSPENDED)
+    assert (view.teardown, view.operating_mode) == (TeardownPhase.TEARDOWN_PHASE_SEALED, OperatingMode.RUNNING)
     assert await inventory.list_holds("paused", uid=paused.uid) == []
     assert await inventory.delete_if_released("paused", uid=paused.uid)
 

@@ -184,7 +184,9 @@ async def test_sealed_sessions_hold_the_deletion_until_confirmed(
 
     await teardown.advance(sandbox)
     sealed = await inventory.get(NAME)
-    assert (sealed.teardown, sealed.operating_mode) == (TeardownPhase.TEARDOWN_PHASE_SEALED, OperatingMode.SUSPENDED)
+    # Still running: the holders follow their Sessions to the seal through the runner.
+    assert (sealed.teardown, sealed.operating_mode) == (TeardownPhase.TEARDOWN_PHASE_SEALED, OperatingMode.RUNNING)
+    await destinations.resolve(destination(sandbox), writes=False)
     # Holders name a Session by its public ID, or a legacy one by the runner's own.
     assert await inventory.place_hold(NAME, uid=sandbox.uid, session_id=LEGACY, holder="test") == Hold(
         session_id=LEGACY, holder="test", seal_cursor=2
@@ -196,6 +198,26 @@ async def test_sealed_sessions_hold_the_deletion_until_confirmed(
 
     await inventory.confirm_hold(NAME, uid=sandbox.uid, session_id=str(public), holder="test", through_cursor=4)
     await teardown.advance(sealed)
+    assert (SANDBOXES_PLURAL, NAME) not in custom_objects.objects
+
+
+async def test_a_suspended_sealed_sandbox_runs_again_until_its_holds_confirm(
+    sandbox: Sandbox,
+    inventory: SandboxInventory,
+    teardown: Teardown,
+    runner: ScriptedRunner,
+    custom_objects: FakeCustomObjectsApi,
+) -> None:
+    # A holder confirms by following its Session to the seal, which needs a running runner.
+    runner.seals = {"test-held": 4}
+    await inventory.place_hold(NAME, uid=sandbox.uid, session_id="test-held", holder="test")
+    await teardown.advance(sandbox)
+    custom_objects.objects[(SANDBOXES_PLURAL, NAME)]["spec"]["operatingMode"] = OperatingMode.SUSPENDED
+    await teardown.advance(await inventory.get(NAME))
+    assert (await inventory.get(NAME)).operating_mode == OperatingMode.RUNNING
+
+    await inventory.confirm_hold(NAME, uid=sandbox.uid, session_id="test-held", holder="test", through_cursor=4)
+    await teardown.advance(await inventory.get(NAME))
     assert (SANDBOXES_PLURAL, NAME) not in custom_objects.objects
 
 

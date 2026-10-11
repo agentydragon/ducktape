@@ -86,10 +86,11 @@ namespaced annotations, not competing Sandbox status conditions.
 3. If the runner pushes its Events to an ingress, deletes the Sandbox, and its volume, once that
    ingress has acknowledged every seal (`flushed`), sealing again every 10 s until then. Holds are
    not consulted: history already has every Session through its seal.
-4. Otherwise records the cursors as the [retention holds'](#retention-holds) seal cursors and
-   suspends the Sandbox again, in one write (`TEARDOWN_PHASE_SEALED`). A Session is keyed by its
-   public ID, or by the runner's ID for one opened with a caller-chosen ID. It deletes the Sandbox,
-   and its volume, once every hold is satisfied.
+4. Otherwise records the cursors as the [retention holds'](#retention-holds) seal cursors
+   (`TEARDOWN_PHASE_SEALED`). A Session is keyed by its public ID, or by the runner's ID for one
+   opened with a caller-chosen ID. The Sandbox keeps running, fenced, since a holder confirms its
+   hold by following the Session to the seal; one found suspended is run again. It deletes the
+   Sandbox, and its volume, once every hold is satisfied.
 
 While the runner is unreachable the Sandbox stays in `TEARDOWN_PHASE_SEALING`, retried with backoff,
 for the operator to decide: nothing deletes an unsealed Sandbox.

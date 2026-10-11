@@ -370,7 +370,8 @@ class SandboxInventory:
 
     @_retry_on_conflict
     async def record_seal(self, name: str, *, uid: str, cursors: Mapping[str, int]) -> None:
-        """Record each Session's final cursor and suspend the sealed Sandbox, in one write."""
+        """Record each Session's final cursor. The Sandbox keeps running: a holder confirms a hold by
+        following its Session to the seal, which needs the runner."""
         sandbox = await self._incarnation(name, uid=uid)
         match sandbox.teardown:
             case TeardownPhase.TEARDOWN_PHASE_SEALED:
@@ -388,7 +389,6 @@ class SandboxInventory:
                         RETENTION_HOLDS_ANNOTATION: self._holds(sandbox).seal(cursors).model_dump_json(),
                     },
                 },
-                "spec": {"operatingMode": OperatingMode.SUSPENDED},
             },
         )
 
@@ -397,6 +397,9 @@ class SandboxInventory:
         """Delete a sealed Sandbox unless a retention hold is unsatisfied; the controller removes its
         Pod and PVC. Whether it was deleted.
 
+        A Sandbox an unsatisfied hold keeps is run again if it is suspended, since its holder can only
+        reach the seal through the runner.
+
         The delete is conditional on the resourceVersion the holds were read at, so a hold placed
         concurrently either lands first and keeps the Sandbox, or finds the deletion committed and is
         refused itself."""
@@ -404,6 +407,14 @@ class SandboxInventory:
         if sandbox.teardown != TeardownPhase.TEARDOWN_PHASE_SEALED:
             raise SandboxConflictError(name)
         if self._holds(sandbox).blocking():
+            if sandbox.spec.operating_mode != OperatingMode.RUNNING:
+                await self._patch(
+                    name,
+                    {
+                        "metadata": {"uid": uid, "resourceVersion": sandbox.metadata.resource_version},
+                        "spec": {"operatingMode": OperatingMode.RUNNING},
+                    },
+                )
             return False
         await self._delete(name, uid=uid, resource_version=sandbox.metadata.resource_version)
         return True
