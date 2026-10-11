@@ -29,7 +29,7 @@ from agentplane.sandbox_service.kubernetes_grants import ClusterRoleBindingGrant
 from agentplane.sandbox_service.settings import CONFIG_FILE_ENV, Settings
 from agentplane.subjects import ServiceAccountRef
 from cluster.cdk8s import cilium, node_scheduling, pod_policy
-from cluster.cdk8s.agentplane import egress, history_ingress, history_service, notifications, runner_gateway
+from cluster.cdk8s.agentplane import egress, history_ingress, notifications, runner_gateway
 from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.agentplane.pod_disruption_budget import add_pod_disruption_budget
 from cluster.cdk8s.api_resource import custom_resource, named_resource
@@ -64,12 +64,7 @@ class SandboxService(Construct):
             self, "account", metadata=ApiObjectMetadata(name=NAME, namespace=env.namespace), automount_token=True
         )
         self._add_rbac(account)
-        caller_accounts = {
-            manager,
-            ServiceAccountRef(namespace=env.namespace, name=notifications.NAME),
-            # Places retention holds for its ingester.
-            ServiceAccountRef(namespace=env.namespace, name=history_service.NAME),
-        }
+        caller_accounts = {manager, ServiceAccountRef(namespace=env.namespace, name=notifications.NAME)}
         config = SettingsFile(
             self,
             "config",
@@ -167,7 +162,6 @@ class SandboxService(Construct):
             ingress=[
                 caller.pods.admit(endpoint.pod_port),
                 notifications.service(env.namespace).pods.admit(endpoint.pod_port),
-                history_service.service(env.namespace).pods.admit(endpoint.pod_port),
             ],
             egress=[
                 cilium.dns_egress(),
