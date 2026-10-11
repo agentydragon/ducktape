@@ -2,9 +2,6 @@ load("@protobuf//bazel:proto_library.bzl", "proto_library")
 load("//devinfra/python:grpc.bzl", "py_grpc_service_library")
 load("//devinfra/python:proto.bzl", "py_proto_library_with_mypy_stubs")
 
-# gazelle:resolve py agentplane.proto.runner_ingress_pb2 //agentplane/proto:runner_ingress_pb2
-# gazelle:resolve py agentplane.proto.runner_ingress_pb2_grpc //agentplane/proto:runner_ingress_pb2_grpc
-
 package(default_visibility = ["//agentplane:__subpackages__"])
 
 proto_library(
