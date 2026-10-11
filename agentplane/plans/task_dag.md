@@ -935,7 +935,6 @@ from its read API, since it takes untrusted input. Its store appends exactly as 
 ingester does now and acknowledges only after commit. Test duplicate and out-of-order pushes, a
 second writer identity refused, and resume after a History Service restart.
 
-
 ### `CLIENT_SESSION_IDS` — clients mint Session IDs
 
 **Candidate; operator, 2026-10-10 PDT.** The client puts a fresh UUID in the
