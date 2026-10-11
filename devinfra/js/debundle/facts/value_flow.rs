@@ -7,7 +7,7 @@
 //! the other. This is context-insensitive; it makes no claim about values from
 //! other chunks.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
 use swc_ecma_ast::*;
 use swc_ecma_visit::{Visit, VisitWith};
@@ -30,6 +30,53 @@ pub(crate) enum ValueOrigin {
 
 type Values = BTreeSet<ValueOrigin>;
 
+/// Candidate-object reachability for repeated escape checks. The value-flow
+/// graph is immutable after analysis, so propagate each candidate backwards
+/// through return/property edges once instead of walking the whole graph at
+/// every call or write site.
+pub(crate) struct CandidateObjectIndex {
+    objects: Vec<ValueOrigin>,
+    reachable: BTreeMap<ValueOrigin, Vec<u64>>,
+    bindings: BTreeMap<Id, Vec<u64>>,
+}
+
+impl CandidateObjectIndex {
+    fn visit_bits(&self, bits: &[u64], mut visit: impl FnMut(ValueOrigin)) {
+        for (word_index, word) in bits.iter().copied().enumerate() {
+            let mut remaining = word;
+            while remaining != 0 {
+                let bit = remaining.trailing_zeros() as usize;
+                visit(self.objects[word_index * 64 + bit]);
+                remaining &= remaining - 1;
+            }
+        }
+    }
+
+    pub(crate) fn for_binding(&self, id: &Id, visit: impl FnMut(ValueOrigin)) {
+        if let Some(bits) = self.bindings.get(id) {
+            self.visit_bits(bits, visit);
+        }
+    }
+
+    pub(crate) fn for_values(&self, values: &Values, mut visit: impl FnMut(ValueOrigin)) {
+        for value in values {
+            if let Some(bits) = self.reachable.get(value) {
+                self.visit_bits(bits, &mut visit);
+            }
+        }
+    }
+}
+
+fn union_bits(into: &mut [u64], from: &[u64]) -> bool {
+    let mut changed = false;
+    for (slot, bits) in into.iter_mut().zip(from) {
+        let merged = *slot | bits;
+        changed |= merged != *slot;
+        *slot = merged;
+    }
+    changed
+}
+
 #[derive(Debug, Clone, Default)]
 pub(crate) struct ChunkValueFlow {
     declared_ids: BTreeSet<Id>,
@@ -43,6 +90,72 @@ pub(crate) struct ChunkValueFlow {
 }
 
 impl ChunkValueFlow {
+    pub(crate) fn candidate_object_index(
+        &self,
+        candidates: &BTreeSet<ValueOrigin>,
+    ) -> CandidateObjectIndex {
+        let objects: Vec<_> = candidates.iter().copied().collect();
+        let words = objects.len().div_ceil(64);
+        let mut reverse: BTreeMap<ValueOrigin, BTreeSet<ValueOrigin>> = BTreeMap::new();
+        for (function, values) in &self.returns {
+            for value in values {
+                reverse
+                    .entry(*value)
+                    .or_default()
+                    .insert(ValueOrigin::Function(*function));
+            }
+        }
+        for ((object, _), values) in &self.properties {
+            for value in values {
+                reverse
+                    .entry(*value)
+                    .or_default()
+                    .insert(ValueOrigin::Object(*object));
+            }
+        }
+        let mut reachable = BTreeMap::new();
+        let mut pending = VecDeque::new();
+        let mut queued = BTreeSet::new();
+        for (index, object) in objects.iter().copied().enumerate() {
+            let bits = reachable.entry(object).or_insert_with(|| vec![0; words]);
+            bits[index / 64] |= 1 << (index % 64);
+            pending.push_back(object);
+            queued.insert(object);
+        }
+        while let Some(value) = pending.pop_front() {
+            queued.remove(&value);
+            let bits = reachable[&value].clone();
+            for predecessor in reverse.get(&value).into_iter().flatten() {
+                let target = reachable
+                    .entry(*predecessor)
+                    .or_insert_with(|| vec![0; words]);
+                if union_bits(target, &bits) && queued.insert(*predecessor) {
+                    pending.push_back(*predecessor);
+                }
+            }
+        }
+        let bindings = self
+            .bindings
+            .iter()
+            .filter_map(|(id, values)| {
+                let mut bits = vec![0; words];
+                for value in values {
+                    if let Some(found) = reachable.get(value) {
+                        union_bits(&mut bits, found);
+                    }
+                }
+                bits.iter()
+                    .any(|word| *word != 0)
+                    .then_some((id.clone(), bits))
+            })
+            .collect();
+        CandidateObjectIndex {
+            objects,
+            reachable,
+            bindings,
+        }
+    }
+
     pub(crate) fn analyze(body: &[TopLevelItemView<'_>]) -> Self {
         let mut flow = Self::default();
         let mut declarations = DeclaredBindingCollector::default();
@@ -196,10 +309,6 @@ impl ChunkValueFlow {
         self.canonical.get(&origin)
     }
 
-    pub(crate) fn return_values(&self, function: u32) -> Option<&Values> {
-        self.returns.get(&function)
-    }
-
     pub(crate) fn values_of_property(&self, object: u32, property: &str) -> Option<&Values> {
         self.properties.get(&(object, property.to_owned()))
     }
@@ -215,34 +324,6 @@ impl ChunkValueFlow {
             }
         }
         aliases
-    }
-
-    /// Walk return and property edges once for all candidate objects at an
-    /// escape site. Unknown values remain the caller's conservative case.
-    pub(crate) fn reachable_objects(&self, values: &Values) -> BTreeSet<ValueOrigin> {
-        let mut pending: Vec<ValueOrigin> = values.iter().copied().collect();
-        let mut seen = BTreeSet::new();
-        let mut objects = BTreeSet::new();
-        while let Some(value) = pending.pop() {
-            if !seen.insert(value) {
-                continue;
-            }
-            if let ValueOrigin::Function(function) = value
-                && let Some(returns) = self.return_values(function)
-            {
-                pending.extend(returns.iter().copied());
-            }
-            if let ValueOrigin::Object(object) = value {
-                objects.insert(value);
-                pending.extend(
-                    self.properties
-                        .range((object, String::new())..)
-                        .take_while(|((owner, _), _)| *owner == object)
-                        .flat_map(|(_, values)| values.iter().copied()),
-                );
-            }
-        }
-        objects
     }
 
     /// Add call targets discovered through parameters, aliases, returns and

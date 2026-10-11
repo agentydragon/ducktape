@@ -115,6 +115,9 @@ pub(crate) fn collect_plain_data_bindings(
         shadowing_scopes: Vec::new(),
         parameter_scopes: Vec::new(),
         value_flow: Some(value_flow),
+        candidate_index: Some(
+            value_flow.candidate_object_index(&object_to_names.keys().copied().collect()),
+        ),
         object_to_names,
         return_exempt,
     };
@@ -204,6 +207,7 @@ pub(crate) fn collect_plain_array_bindings(
         shadowing_scopes: Vec::new(),
         parameter_scopes: Vec::new(),
         value_flow: None,
+        candidate_index: None,
         object_to_names: BTreeMap::new(),
         return_exempt: BTreeSet::new(),
     };
@@ -539,6 +543,7 @@ pub(crate) struct PlainDataWriteScanner<'a> {
     shadowing_scopes: Vec<BTreeSet<String>>,
     parameter_scopes: Vec<BTreeSet<String>>,
     value_flow: Option<&'a crate::facts::ChunkValueFlow>,
+    candidate_index: Option<crate::facts::CandidateObjectIndex>,
     object_to_names: BTreeMap<crate::facts::ValueOrigin, BTreeSet<String>>,
     return_exempt: BTreeSet<String>,
 }
@@ -658,11 +663,13 @@ impl PlainDataWriteScanner<'_> {
         }
         let mut referenced = ReferencedIds(BTreeSet::new());
         expr.visit_with(&mut referenced);
-        let mut values = if referenced.0.is_empty() {
-            flow.values_of_expr(expr)
-        } else {
-            BTreeSet::new()
-        };
+        let index = self.candidate_index.as_ref().unwrap();
+        let mut escaped = BTreeSet::new();
+        if referenced.0.is_empty() {
+            index.for_values(&flow.values_of_expr(expr), |object| {
+                escaped.insert(object);
+            });
+        }
         for id in referenced.0 {
             if self
                 .parameter_scopes
@@ -671,9 +678,11 @@ impl PlainDataWriteScanner<'_> {
             {
                 continue;
             }
-            values.extend(flow.values_of_binding(&id));
+            index.for_binding(&id, |object| {
+                escaped.insert(object);
+            });
         }
-        for object in flow.reachable_objects(&values) {
+        for object in escaped {
             if let Some(aliases) = self.object_to_names.get(&object) {
                 self.disqualified.extend(aliases.iter().cloned());
             }

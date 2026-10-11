@@ -40,7 +40,7 @@ use crate::SourceLocation;
 use crate::facts::{
     ChunkValueFlow, TopLevelItemView, compute_shadowed_globals, top_level_item_views,
 };
-use crate::purity::{ChunkCodeGraph, Purity};
+use crate::purity::{ChunkCodeGraph, Purity, collect_plain_data_bindings};
 
 /// Stable key identifying a module in the program (the chunk name).
 pub type ModuleKey = String;
@@ -74,7 +74,7 @@ pub struct ModulePurityFacts<'a> {
 struct PreparedModulePurityFacts<'a> {
     views: Vec<TopLevelItemView<'a>>,
     shadowed: BTreeSet<&'static str>,
-    value_flow: ChunkValueFlow,
+    plain_data_bindings: Vec<String>,
 }
 
 impl<'a> ModulePurityFacts<'a> {
@@ -82,10 +82,11 @@ impl<'a> ModulePurityFacts<'a> {
         let views = top_level_item_views(self.body);
         let shadowed = compute_shadowed_globals(&views);
         let value_flow = ChunkValueFlow::analyze(&views);
+        let plain_data_bindings = collect_plain_data_bindings(&views, &shadowed, &value_flow);
         PreparedModulePurityFacts {
             views,
             shadowed,
-            value_flow,
+            plain_data_bindings,
         }
     }
 
@@ -110,15 +111,15 @@ impl<'a> ModulePurityFacts<'a> {
                 start_column: Some(start_column),
             })
         };
-        ChunkCodeGraph::build_full_with_locations_and_flow(
+        ChunkCodeGraph::build_full_with_prepared_plain_data(
             &prepared.views,
-            &prepared.value_flow,
             &prepared.shadowed,
             &BTreeSet::new(),
             &BTreeSet::new(),
             &BTreeMap::new(),
             imported,
             &BTreeSet::new(),
+            &prepared.plain_data_bindings,
             Some(&mut locate),
         )
     }
