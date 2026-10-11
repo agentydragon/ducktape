@@ -39,8 +39,8 @@ async def cluster() -> AsyncIterator[Cluster]:
 
 
 @pytest.fixture
-def ingest_sandbox_history() -> bool:
-    # The Sandbox Service fixture's ingester writes the history; the app only reads it.
+def register_attached_sessions() -> bool:
+    # The History Service ingester writes the history; the app only reads it.
     return True
 
 
