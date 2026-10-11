@@ -35,6 +35,7 @@ filegroup(
         "//agentplane/app/migrations/versions:0028_event_log_copies_nullable.py",
         "//agentplane/app/migrations/versions:0029_event_log_copies_drop.py",
         "//agentplane/app/migrations/versions:0030_thread_resume.py",
+        "//agentplane/app/migrations/versions:0031_app_electric_retire.py",
     ],
     visibility = ["//agentplane/app:__pkg__"],
 )

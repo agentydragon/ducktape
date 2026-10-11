@@ -179,8 +179,7 @@ Scrolling checks cover live growth, reader anchors, desktop/phone layouts, and r
 bottom before a queued scroll event. Larger history-window, collection-retention and resource
 proofs are tracked in [the acceptance matrix](../debug/conversation_acceptance.md).
 
-The app database still carries the retired `thread_*` fold tables, their `electric` grants and the
-`electric_publication_agentplane_conversation` publication; nothing writes or reads them.
+The app database still carries the retired `thread_*` fold tables; nothing writes or reads them.
 
 Staging runs two app replicas on separate nodes with `RollingUpdate` (`maxUnavailable: 0`,
 `maxSurge: 1`) and a PodDisruptionBudget of one available; testing stays at one replica.

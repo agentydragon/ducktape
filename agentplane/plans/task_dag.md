@@ -728,7 +728,7 @@ flowchart TD
     HISTORY_SANDBOX_LOCATOR_DROP[Blocked: drop the Sandbox locator from the history database]
     HISTORY_DATABASE_RENAME[Blocked: rename the sandbox_service database and role]
     SANDBOX_DATABASE_RENAME[Candidate: name the sandbox_commands database for the Runner Gateway]
-    APP_ELECTRIC_RETIRE[Blocked: remove Electric's access to the app database]
+    ELECTRIC_DEPLOYMENT_RENAME[Candidate: give Electric its plain name]
     PROTO_DIRECTORY[Candidate: protos under agentplane/proto, packages named by path]
     ACTION_SANDBOX_DESIGN[Decision: Action Service Sandboxes through the Sandbox Service]
     ACTION_SANDBOX_PROVISIONING[Blocked: the Action Service stops creating Sandboxes]
@@ -784,11 +784,10 @@ binding or runner. Design what the Sandbox Service's API offers them (a Sandbox 
 inventory and the Action Service's RBAC on `Sandbox` objects go, as does `TODO(sandbox-lifetime)`
 once the Sandbox Service's lifetime handling covers them (`SANDBOX_IDLE_EXPIRY`).
 
-### `APP_ELECTRIC_RETIRE` — Electric no longer reads the app database
+### `ELECTRIC_DEPLOYMENT_RENAME` — one Electric, plainly named
 
-**Blocked on the app projector's deletion.** Drop the publication and replication slot on the `app`
-database and the `electric` role's grants there, and give the remaining Electric deployment the
-plain name if it carries a history-specific one.
+**Candidate.** Give the remaining Electric deployment the plain name; it still carries the
+history-specific `agentplane-electric-history`.
 
 ### `PROTO_DIRECTORY` — protocols in one place
 
