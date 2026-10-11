@@ -74,10 +74,7 @@ py_library(
     name = "session_registry",
     srcs = ["session_registry.py"],
     deps = [
-        ":session_changes",
-        "//agentplane/proto:sandbox_service_pb2",
         "//agentplane/runner_gateway/commands:db",
-        "@pypi//protobuf",
         "@pypi//sqlalchemy",
     ],
 )
@@ -254,7 +251,6 @@ py_library(
         ":lifecycle_control",
         ":runner_control",
         ":sealing",
-        ":session_changes",
         ":session_lifecycle",
         ":session_registry",
         "//agentplane:subjects",
@@ -288,7 +284,6 @@ py_library(
         ":grpc_api",
         ":lifecycle_control",
         ":runner_control",
-        ":session_changes",
         ":session_registry",
         ":settings",
         "//agentplane:grpc_process",
@@ -390,7 +385,6 @@ py_test(
     deps = [
         ":conftest",
         ":grpc_api",
-        ":session_changes",
         ":session_registry",
         "//:conftest",
         "//agentplane:grpc_serving",
@@ -447,6 +441,7 @@ py_test(
         "//agentplane/proto:event_log_pb2",
         "//agentplane/proto:runner_pb2",
         "//agentplane/proto:sandbox_service_pb2",
+        "//agentplane/runner:client",
         "//agentplane/runner:errors",
         "//agentplane/runner/testing:events",
         "//agentplane/runner/testing:fixtures",
@@ -460,19 +455,12 @@ py_test(
         "//agentplane/testing:fake_apiserver",
         "@pypi//grpcio",
         "@pypi//kubernetes_asyncio",
+        "@pypi//more_itertools",
         "@pypi//protobuf",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
-    ],
-)
-
-py_library(
-    name = "session_changes",
-    srcs = ["session_changes.py"],
-    deps = [
-        "//agentplane/postgres:listener",
-        "@pypi//sqlalchemy",
+        "@pypi//tenacity",
     ],
 )
 

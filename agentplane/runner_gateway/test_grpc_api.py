@@ -15,24 +15,22 @@ import pytest_bazel
 from google.protobuf.empty_pb2 import Empty
 from google.protobuf.json_format import MessageToDict, ParseDict
 from kubernetes_asyncio import client as k8s_client
-from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from agentplane.grpc_serving import serving
 from agentplane.proto import command_pb2, event_log_pb2, event_pb2, runner_pb2, runner_pb2_grpc, sandbox_service_pb2
 from agentplane.proto.sandbox_service_pb2 import ResolvedGrant, SandboxDestination
-from agentplane.runner.errors import RunnerError, StreamClosedError
+from agentplane.runner.errors import RunnerError
 from agentplane.runner_gateway.commands.connections import ConnectionStore
 from agentplane.runner_gateway.commands.store import CommandSubmission, SubmissionState, SubmissionStore
 from agentplane.runner_gateway.grpc_api import Resources
-from agentplane.runner_gateway.session_changes import SessionChanges
 from agentplane.runner_gateway.session_registry import SessionRegistry
 from agentplane.runner_gateway.testing.grpc_service import service_client
-from agentplane.runner_gateway.testing.journal import admission, entry, journal_entry
+from agentplane.runner_gateway.testing.journal import admission, entry
 from agentplane.runner_gateway.testing.resources import build_resources
 from agentplane.runner_gateway.testing.sessions import register_session
 from agentplane.sandbox_service import wire
-from agentplane.sandbox_service.client import ReconnectRequiredError, SandboxServiceClient, SealedError, ServiceError
+from agentplane.sandbox_service.client import SandboxServiceClient, ServiceError
 from agentplane.sandbox_service.destinations import DestinationResolver
 from agentplane.sandbox_service.kubernetes_grants import RoleBindingGrant, RoleRef
 from agentplane.sandbox_service.kubernetes_views import (
@@ -173,7 +171,6 @@ def resources(cluster: Cluster, peer: Peer, engine: AsyncEngine) -> Resources:
             caller_accounts=frozenset({OWNER}),
             platform_instructions="Test guidance",
         ),
-        follow_lease_s=0.5,
         admission_timeout_s=1,
     )
 
@@ -225,12 +222,6 @@ async def test_managed_open_uses_the_client_session_id_and_retries_frozen_launch
         assert conflict.value.code == grpc.StatusCode.INVALID_ARGUMENT
         assert peer.attachments.empty()
 
-        attachment = await runner.attach(public)
-        following = await peer.attachments.get()
-        assert following.opened.session_id == public
-        assert attachment.attached.session_id == public
-        attachment.cancel()
-        await following.closed.wait()
         command = command_pb2.Command(command_id="managed-command", submit_input=command_pb2.SubmitInput(text="hi"))
         async with asyncio.TaskGroup() as tasks:
             pending = tasks.create_task(runner.command(public, command, after_cursor=0))
@@ -561,209 +552,6 @@ async def test_admission_is_exact_native_evidence(remote: SandboxServiceClient, 
         await connection.closed.wait()
 
 
-async def test_idle_follow_renews_with_ok_status_not_native_end(
-    cluster: Cluster, resources: Resources, token_file: Path, peer: Peer
-) -> None:
-    # Longer than admission/write deadlines: idle native reads must not use those deadlines.
-    async with service_client(
-        replace(resources, admission_timeout_s=0.2, follow_lease_s=0.6), token_file, cluster.provisioning
-    ) as remote:
-        async with asyncio.timeout(8):
-            call = remote.gateway.FollowSession(
-                sandbox_service_pb2.FollowSessionRequest(
-                    destination=sandbox_service_pb2.SessionDestination(sandbox=DESTINATION, session_id="session")
-                ),
-                metadata=await remote.metadata(),
-                timeout=5,
-            )
-            try:
-                assert (await call.read()).HasField("attached")
-                connection = await peer.attachments.get()
-                assert (await call.read()).HasField("reconnect_required")
-                assert await call.read() is grpc.aio.EOF
-                assert await call.code() == grpc.StatusCode.OK
-                await connection.closed.wait()
-            finally:
-                call.cancel()
-
-
-async def test_stalled_downstream_write_expires_before_follow_renewal(
-    cluster: Cluster, resources: Resources, token_file: Path, peer: Peer
-) -> None:
-    async with service_client(
-        replace(resources, admission_timeout_s=1, follow_lease_s=30), token_file, cluster.provisioning
-    ) as remote:
-        async with asyncio.timeout(8):
-            attachment = await remote.runner(DESTINATION).attach("session")
-            connection = await peer.attachments.get()
-            try:
-                # Exceed the gRPC receive window without reading from the downstream stream.
-                message = runner_pb2.ServerMessage(
-                    event_entry=event_log_pb2.EventEntry(
-                        cursor=1, event=event_pb2.Event(native=event_pb2.Native(line="x" * 1024 * 1024))
-                    )
-                )
-                for _ in range(64):
-                    connection.responses.put_nowait(message)
-                await connection.closed.wait()
-
-                # A failed write is a deadline, not a successful planned renewal or native EOF.
-                async def drain() -> None:
-                    while True:
-                        await attachment.next_entry()
-
-                with pytest.raises(TimeoutError, match="follow deadline"):
-                    await drain()
-            finally:
-                attachment.cancel()
-
-
-async def test_follow_safety_deadline_is_not_planned_renewal(remote: SandboxServiceClient, peer: Peer) -> None:
-    remote.follow_timeout_s = 0.2
-    async with asyncio.timeout(8):
-        attachment = await remote.runner(DESTINATION).attach("session")
-        connection = await peer.attachments.get()
-        with pytest.raises(TimeoutError, match="follow deadline"):
-            await attachment.next_entry()
-        await connection.closed.wait()
-
-
-async def test_client_initial_attachment_keeps_short_deadline(remote: SandboxServiceClient, peer: Peer) -> None:
-    remote.request_timeout_s = 0.2
-    peer.answer_open = False
-    async with asyncio.timeout(8):
-        with pytest.raises(TimeoutError):
-            await remote.runner(DESTINATION).attach("session")
-        connection = await peer.attachments.get()
-        await connection.closed.wait()
-
-
-async def test_follow_reconnect_rechecks_token_and_preserves_cursor(
-    remote: SandboxServiceClient, peer: Peer, cluster: Cluster
-) -> None:
-    async with asyncio.timeout(8):
-        runner = remote.runner(DESTINATION)
-        attachment = await runner.attach("session", after_cursor=11)
-        connection = await peer.attachments.get()
-        assert connection.opened.follow.after_cursor == 11
-        assert attachment.attached.session_id == "session"
-        receipt = admission(command_pb2.Command(command_id="recorded"), 12)
-        connection.responses.put_nowait(runner_pb2.ServerMessage(event_entry=receipt))
-        assert await attachment.next_entry() == receipt
-        with pytest.raises(ReconnectRequiredError):
-            await attachment.next_entry()
-        await connection.closed.wait()
-        second = await runner.attach("session", after_cursor=12)
-        next_connection = await peer.attachments.get()
-        assert next_connection.opened.follow.after_cursor == 12
-        second.cancel()
-        await next_connection.closed.wait()
-        # Rotation is read per request; a stale or revoked credential cannot reuse the channel's identity.
-        remote.token_file.write_text("invalid-token")
-        with pytest.raises(ServiceError) as rejected:
-            await runner.attach("session", after_cursor=12)
-        assert rejected.value.code == grpc.StatusCode.UNAUTHENTICATED
-        assert peer.attachments.empty()
-        remote.token_file.write_text(CALLER_TOKEN)
-        cluster.fake.tokens.clear()
-        with pytest.raises(ServiceError) as revoked:
-            await runner.attach("session", after_cursor=12)
-        assert revoked.value.code == grpc.StatusCode.UNAUTHENTICATED
-        assert peer.attachments.empty()
-
-
-# The fixture's Resources has no history store: entries can only come from the runner journal.
-@pytest.mark.parametrize("after_cursor", [2, 5], ids=["mid-journal", "live-edge"])
-async def test_follow_replays_runner_journal_then_continues_live(
-    remote: SandboxServiceClient, peer: Peer, after_cursor: int
-) -> None:
-    peer.history["session"] = [journal_entry(cursor) for cursor in range(1, 6)]
-    async with asyncio.timeout(8):
-        attachment = await remote.runner(DESTINATION).attach("session", after_cursor=after_cursor)
-        connection = await peer.attachments.get()
-        try:
-            assert connection.opened.follow.after_cursor == after_cursor
-            assert attachment.attached.last_cursor == 5
-            replayed = [await attachment.next_entry() for _ in range(5 - after_cursor)]
-            assert replayed == peer.history["session"][after_cursor:]
-            connection.responses.put_nowait(runner_pb2.ServerMessage(event_entry=journal_entry(6)))
-            assert await attachment.next_entry() == journal_entry(6)
-        finally:
-            attachment.cancel()
-        await connection.closed.wait()
-
-
-async def test_follow_renewal_mid_replay_resumes_without_gap_or_duplicate(
-    remote: SandboxServiceClient, peer: Peer
-) -> None:
-    peer.history["session"] = [journal_entry(cursor) for cursor in range(1, 7)]
-    peer.replay_paused_after = 3
-    runner = remote.runner(DESTINATION)
-    received: list[event_log_pb2.EventEntry] = []
-    renewed_during_replay = False
-    async with asyncio.timeout(8):
-        cursor = 1
-        while cursor < 7:
-            attachment = await runner.attach("session", after_cursor=cursor)
-            connection = await peer.attachments.get()
-            try:
-                while cursor < 7:
-                    if cursor == 6:
-                        connection.responses.put_nowait(runner_pb2.ServerMessage(event_entry=journal_entry(7)))
-                    try:
-                        entry = await attachment.next_entry()
-                    except ReconnectRequiredError:
-                        renewed_during_replay |= cursor < attachment.attached.last_cursor
-                        peer.replay_released.set()
-                        break
-                    received.append(entry)
-                    cursor = entry.cursor
-            finally:
-                attachment.cancel()
-            await connection.closed.wait()
-    assert renewed_during_replay
-    assert received == [journal_entry(cursor) for cursor in range(2, 8)]
-
-
-@pytest.mark.parametrize("ending", [None, grpc.StatusCode.UNAVAILABLE])
-async def test_native_eof_is_distinct_from_backend_failure(
-    remote: SandboxServiceClient, peer: Peer, ending: grpc.StatusCode | None
-) -> None:
-    async with asyncio.timeout(8):
-        attachment = await remote.runner(DESTINATION).attach("session")
-        connection = await peer.attachments.get()
-        connection.responses.put_nowait(ending)
-        if ending is None:
-            with pytest.raises(StreamClosedError):
-                await attachment.next_entry()
-        else:
-            with pytest.raises(ServiceError) as unavailable:
-                await attachment.next_entry()
-            assert unavailable.value.code == grpc.StatusCode.UNAVAILABLE
-        await connection.closed.wait()
-
-
-async def test_follow_relays_the_runner_seal(remote: SandboxServiceClient, peer: Peer) -> None:
-    peer.history["session"] = [journal_entry(cursor) for cursor in range(1, 3)]
-    async with asyncio.timeout(8):
-        attachment = await remote.runner(DESTINATION).attach("session")
-        connection = await peer.attachments.get()
-        assert [await attachment.next_entry() for _ in range(2)] == peer.history["session"]
-        connection.responses.put_nowait(runner_pb2.ServerMessage(sealed=runner_pb2.Sealed(cursor=2)))
-        with pytest.raises(SealedError) as sealed:
-            await attachment.next_entry()
-        assert sealed.value.cursor == 2
-        await connection.closed.wait()
-
-
-async def test_cancellation_closes_runner_attachment(remote: SandboxServiceClient, peer: Peer) -> None:
-    async with asyncio.timeout(8):
-        attachment = await remote.runner(DESTINATION).attach("session")
-        connection = await peer.attachments.get()
-        attachment.cancel()
-        await connection.closed.wait()
-
-
 async def test_unanswered_runner_open_is_a_deadline_not_a_state_rejection(
     remote: SandboxServiceClient, peer: Peer, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -771,7 +559,11 @@ async def test_unanswered_runner_open_is_a_deadline_not_a_state_rejection(
     monkeypatch.setattr("agentplane.runner.client.OBSERVE_ANSWER_S", 0.05)
     async with asyncio.timeout(8):
         with pytest.raises(TimeoutError, match="uncertain"):
-            await remote.runner(DESTINATION).attach("session")
+            await remote.runner(DESTINATION).command(
+                "session",
+                command_pb2.Command(command_id="unanswered", submit_input=command_pb2.SubmitInput(text="hi")),
+                after_cursor=0,
+            )
         connection = await peer.attachments.get()
         await connection.closed.wait()
         assert connection.commands.empty()
@@ -864,7 +656,7 @@ async def test_destination_authority_and_incarnation(
     else:
         destination.sandbox_uid = str(change["sandbox_uid"])
     with pytest.raises(ServiceError) as rejected:
-        await remote.runner(destination).attach("session")
+        await remote.runner(destination).list_sessions()
     assert rejected.value.code == code
     assert peer.attachments.empty()
 
@@ -918,7 +710,7 @@ async def test_unlisted_callers_rejected_before_lookup(
                 await remote.unary(call, request)
             assert rejected.value.code == grpc.StatusCode.PERMISSION_DENIED
         with pytest.raises(ServiceError) as rejected:
-            await remote.runner(DESTINATION).attach("session")
+            await remote.runner(DESTINATION).list_sessions()
         assert rejected.value.code == grpc.StatusCode.PERMISSION_DENIED
     assert cluster.fake.pod_reads == 0
     assert peer.attachments.empty()
@@ -1026,7 +818,7 @@ async def test_unverified_pod_owner_is_unavailable(
         False if field == "controller" else "test-foreign"
     )
     with pytest.raises(ServiceError) as rejected:
-        await remote.runner(DESTINATION).attach("session")
+        await remote.runner(DESTINATION).list_sessions()
     assert rejected.value.code == grpc.StatusCode.UNAVAILABLE
     assert peer.attachments.empty()
 
@@ -1044,99 +836,9 @@ async def test_unavailable_destination_does_not_contact_runner(
         case "deleting":
             stored["metadata"]["deletionTimestamp"] = "2026-09-01T12:00:00Z"
     with pytest.raises(ServiceError) as rejected:
-        await remote.runner(DESTINATION).attach("session")
+        await remote.runner(DESTINATION).list_sessions()
     assert rejected.value.code == grpc.StatusCode.UNAVAILABLE
     assert peer.attachments.empty()
-
-
-@pytest.fixture
-async def session_changes(db_url: str) -> AsyncIterator[SessionChanges]:
-    changes = SessionChanges(make_url(db_url))
-    async with changes.listener.listen():
-        yield changes
-
-
-async def test_watch_sessions_resumes_after_disconnect_and_wakes_on_other_writers(
-    cluster: Cluster,
-    resources: Resources,
-    token_file: Path,
-    engine: AsyncEngine,
-    sessions: SessionRegistry,
-    session_changes: SessionChanges,
-) -> None:
-    legacy_id, current_id = uuid4(), uuid4()
-    await register_session(
-        engine,
-        legacy_id,
-        sandbox_namespace=SANDBOX_NAMESPACE,
-        sandbox_name="deleted-sandbox",
-        sandbox_uid=None,
-        runner_session_id="legacy-runner",
-    )
-    await register(engine, current_id, f"r-{current_id}")
-    configured = replace(resources, session_changes=session_changes, follow_lease_s=2)
-    async with service_client(configured, token_file, cluster.provisioning) as remote:
-        first_call = remote.gateway.WatchSessions(
-            sandbox_service_pb2.WatchSessionsRequest(), metadata=await remote.metadata(), timeout=10
-        )
-        legacy = (await first_call.read()).change
-        assert (legacy.session_id, legacy.sandbox, legacy.sandbox_uid) == (str(legacy_id), "deleted-sandbox", "")
-        assert not legacy.HasField("owner")  # no live incarnation to follow
-        first_call.cancel()  # disconnect before acknowledging the second Session
-
-        resumed = remote.gateway.WatchSessions(
-            sandbox_service_pb2.WatchSessionsRequest(after_position=legacy.position),
-            metadata=await remote.metadata(),
-            timeout=10,
-        )
-        current = (await resumed.read()).change
-        assert (current.session_id, current.sandbox, current.sandbox_uid) == (str(current_id), SANDBOX, SANDBOX_UID)
-        # The owner completes a SessionDestination a watcher can follow.
-        assert current.owner == DESTINATION.owner
-        assert current.position > legacy.position
-
-        # Another replica's commit reaches this stream through NOTIFY, not this replica's Store.
-        reserved = await sessions.reserve(
-            session_id=None,
-            caller_namespace=OWNER.namespace,
-            caller_name=OWNER.name,
-            sandbox_namespace=SANDBOX_NAMESPACE,
-            sandbox_name=SANDBOX,
-            sandbox_uid=UUID(SANDBOX_UID),
-            open_key="watched-key",
-            open_request=b"watched inputs",
-            launch_spec=lambda _: b"watched launch",
-        )
-        created = (await resumed.read()).change
-        assert created.session_id == str(reserved.session_id)
-        assert created.position > current.position
-        assert (await resumed.read()).HasField("reconnect_required")
-        assert await resumed.read() is grpc.aio.EOF
-        assert await resumed.code() == grpc.StatusCode.OK
-
-
-async def test_watch_sessions_requires_allowed_caller(
-    cluster: Cluster,
-    resources: Resources,
-    token_file: Path,
-    engine: AsyncEngine,
-    sessions: SessionRegistry,
-    session_changes: SessionChanges,
-) -> None:
-    await register(engine, uuid4(), "unwatchable-runner")
-    # The token authenticates OWNER, which this configuration does not allow as a service caller.
-    configured = replace(
-        resources,
-        session_changes=session_changes,
-        caller_accounts=frozenset({ServiceAccountRef(namespace=SANDBOX_NAMESPACE, name="allowed-service")}),
-    )
-    async with service_client(configured, token_file, cluster.provisioning) as remote:
-        call = remote.gateway.WatchSessions(
-            sandbox_service_pb2.WatchSessionsRequest(), metadata=await remote.metadata()
-        )
-        with pytest.raises(grpc.aio.AioRpcError) as denied:
-            await call.read()
-        assert denied.value.code() == grpc.StatusCode.PERMISSION_DENIED
 
 
 if __name__ == "__main__":

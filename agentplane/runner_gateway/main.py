@@ -23,7 +23,6 @@ from agentplane.runner_gateway.connection_records import ConnectionHolder, Conne
 from agentplane.runner_gateway.grpc_api import Resources, add_service
 from agentplane.runner_gateway.lifecycle_control import LifecycleControl
 from agentplane.runner_gateway.runner_control import ControlTiming, RunnerControlService
-from agentplane.runner_gateway.session_changes import SessionChanges
 from agentplane.runner_gateway.session_registry import SessionRegistry
 from agentplane.runner_gateway.settings import Settings
 from agentplane.sandbox_service.destinations import DestinationResolver
@@ -67,7 +66,6 @@ async def gateway(
         leases=leases,
         liveness_s=timing.liveness_s,
     )
-    session_changes = SessionChanges(commands_engine.url)
     resources = Resources(
         principals=WorkloadPrincipalResolver(
             authentication=k8s_client.AuthenticationV1Api(api),
@@ -80,11 +78,9 @@ async def gateway(
         submissions=submissions,
         delivery=delivery,
         control=control,
-        session_changes=session_changes,
         destinations=destinations,
         admission_timeout_s=settings.admission_timeout_s,
         runner_admission_ack_timeout_s=settings.runner_admission_ack_timeout_s,
-        follow_lease_s=settings.follow_lease_s,
         caller_accounts=settings.caller_accounts,
         sealer_accounts=settings.sealer_accounts,
         platform_instructions=settings.platform_instructions,
@@ -118,7 +114,6 @@ async def gateway(
         control_server,
     )
     async with AsyncExitStack() as stack:
-        await stack.enter_async_context(session_changes.listener.listen())
         await stack.enter_async_context(delivery.listener.listen())
         await stack.enter_async_context(
             serving(control_server, f"{settings.host}:{settings.runner_control_port}", grace_s=5)

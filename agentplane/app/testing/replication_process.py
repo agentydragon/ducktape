@@ -288,7 +288,6 @@ async def _serve(
             command_admission_timeout_s=10,
             request_timeout_s=10,
             lifecycle_timeout_s=10,
-            follow_timeout_s=10,
         )
         # The scripted peer serves both services' methods on one port.
         history = HistoryServiceClient(f"127.0.0.1:{runner_port}", token_file=token_file, request_timeout_s=10)
