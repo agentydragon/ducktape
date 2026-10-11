@@ -50,8 +50,7 @@ from agentplane.app.electric import SUBSET_ROW_LIMIT, SubsetRequest, ThreadScope
 from agentplane.app.sandbox_models import SandboxView
 from agentplane.native.claude import wire as claude_wire  # Both harnesses name their frame module `wire`.
 from agentplane.native.codex import wire as codex_wire
-from agentplane.proto import event_pb2
-from agentplane.runner import protocol_pb2
+from agentplane.proto import event_pb2, runner_pb2
 from agentplane.runner.harness import Harness
 from agentplane.thread_fold.fold import PayloadField
 from agentplane.thread_fold.views import EntityKind, ThreadItemState, ThreadPayloadReference
@@ -141,18 +140,18 @@ def _timed(seconds: dict[Stage, float], stage: Stage) -> Iterator[None]:
     seconds[stage] = time.monotonic() - started
 
 
-def _harness_seconds(harness: protocol_pb2.Harness, native: list[str]) -> float:
+def _harness_seconds(harness: runner_pb2.Harness, native: list[str]) -> float:
     """The turn's duration as the harness reports it in the frame that ends the turn."""
     frames = [json.loads(line) for line in native]
     milliseconds: int | None
     match harness:
-        case protocol_pb2.HARNESS_CLAUDE:
+        case runner_pb2.HARNESS_CLAUDE:
             milliseconds = one(
                 frame.duration_ms
                 for frame in map(claude_wire.parse_frame, frames)
                 if isinstance(frame, claude_wire.ResultFrame)
             )
-        case protocol_pb2.HARNESS_CODEX:
+        case runner_pb2.HARNESS_CODEX:
             milliseconds = one(
                 frame.params.turn.duration_ms
                 for frame in map(codex_wire.parse_frame, frames)
@@ -222,7 +221,7 @@ async def _open_thread(http: httpx.AsyncClient, thread_id: UUID) -> ThreadOpen:
 
 
 async def test_a_one_word_turn_answers_and_its_thread_opens_in_time(
-    client: Client, base_url: str, token: str, sandbox: Sandboxes, harness: protocol_pb2.Harness, model: str
+    client: Client, base_url: str, token: str, sandbox: Sandboxes, harness: runner_pb2.Harness, model: str
 ) -> None:
     view = await sandbox(f"accept-latency-{harness}")
     agent = await Agent.open(client, sandbox=view.name, harness=harness, model=model)
@@ -238,7 +237,7 @@ async def test_a_one_word_turn_answers_and_its_thread_opens_in_time(
         warm = await _open_thread(http, agent.thread_id)
 
     timings = Timings(
-        harness=Harness(protocol_pb2.Harness.Name(harness)),
+        harness=Harness(runner_pb2.Harness.Name(harness)),
         model=model,
         thread_id=agent.thread_id,
         turn_seconds=turn_seconds,

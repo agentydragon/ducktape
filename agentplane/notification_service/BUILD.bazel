@@ -3,7 +3,6 @@ load("@rules_oci//oci:defs.bzl", "oci_image")
 load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
 load("//props:oci.bzl", "py_image_entrypoint", "py_image_env")
 
-# gazelle:resolve py agentplane.runner.protocol_pb2 //agentplane/runner:protocol_pb2
 # gazelle:resolve py agentplane.sandbox_service.protocol_pb2 //agentplane/sandbox_service:protocol_pb2
 
 package(default_visibility = ["//agentplane/notification_service:__subpackages__"])
@@ -130,8 +129,8 @@ py_library(
         "//agentplane/notification_service/sources:github_client",
         "//agentplane/proto:command_pb2",
         "//agentplane/proto:event_log_pb2",
+        "//agentplane/proto:runner_pb2",
         "//agentplane/runner:errors",
-        "//agentplane/runner:protocol_pb2",
         "//agentplane/sandbox_service:client",
         "//agentplane/sandbox_service:models",
         "//agentplane/sandbox_service:protocol_pb2",
@@ -200,7 +199,7 @@ py_test(
         "//agentplane/notification_service/sources:actions",
         "//agentplane/proto:command_pb2",
         "//agentplane/proto:event_log_pb2",
-        "//agentplane/runner:protocol_pb2",
+        "//agentplane/proto:runner_pb2",
         "//agentplane/runner/testing:fixtures",
         "//agentplane/runner/testing:scripted_model",
         "//agentplane/sandbox_service:client",

@@ -17,8 +17,7 @@ from kubernetes_asyncio import client as k8s_client
 from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from agentplane.proto import command_pb2, event_log_pb2, event_pb2
-from agentplane.runner import protocol_pb2 as runner_pb2
+from agentplane.proto import command_pb2, event_log_pb2, event_pb2, runner_pb2
 from agentplane.runner.errors import RunnerError, StreamClosedError
 from agentplane.sandbox_service import protocol_pb2, wire
 from agentplane.sandbox_service.channel_control import ChannelControl
@@ -152,7 +151,7 @@ async def peer() -> AsyncIterator[Peer]:
     server.add_generic_rpc_handlers(
         [
             grpc.method_handlers_generic_handler(
-                "ducktape.agentplane.runner.v1.Runner",
+                "agentplane.proto.runner.Runner",
                 {
                     "ListSessions": grpc.unary_unary_rpc_method_handler(
                         peer.list_sessions,

@@ -56,7 +56,7 @@ import {
 import { SANDBOX_STATUS_MARKS } from "./status_mark";
 import { StaleNotice } from "./stream_status";
 import { TopbarTitle } from "./topbar";
-import { HarnessState, SessionSpecSchema, SetupState, type SessionSummary } from "../../runner/protocol_pb";
+import { HarnessState, SessionSpecSchema, SetupState, type SessionSummary } from "../../proto/runner_pb";
 
 // Persist only the Session ID, never instructions or setup scripts (which can contain secrets).
 function pendingOpenKey(sandbox: string): string {

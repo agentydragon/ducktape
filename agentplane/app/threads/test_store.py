@@ -12,8 +12,7 @@ from agentplane.app.testing.retained_history import seed_retained_session
 from agentplane.app.threads.models import EventLog
 from agentplane.app.threads.store import ThreadStore
 from agentplane.app.threads.summaries import AppSummaries
-from agentplane.proto import event_pb2
-from agentplane.runner import protocol_pb2
+from agentplane.proto import event_pb2, runner_pb2
 from agentplane.runner.harness import Harness
 from agentplane.thread_fold.models import ThreadCheckpoint, ThreadHistorySummary
 
@@ -31,8 +30,8 @@ async def seed_projection(engine: AsyncEngine, *, sandbox: str, cursor: int) -> 
                 thread_id=thread,
                 last_event_at=datetime(2026, 1, 1, tzinfo=UTC),
                 attached=MessageToDict(
-                    protocol_pb2.Attached(
-                        last_cursor=cursor, harness_state=protocol_pb2.HARNESS_STATE_RUNNING, active_turn_id="turn"
+                    runner_pb2.Attached(
+                        last_cursor=cursor, harness_state=runner_pb2.HARNESS_STATE_RUNNING, active_turn_id="turn"
                     )
                 ),
             )
@@ -85,10 +84,10 @@ async def test_harness_model_and_cwd_come_from_the_attached_runner_spec(engine: 
         for thread in (attached, unattached):
             session.add(EventLog(id=thread, sandbox="one"))
         await session.flush()
-        spec = protocol_pb2.SessionSpec(
-            harness=protocol_pb2.HARNESS_CODEX, cwd="/test-attached", model="test-attached-model"
+        spec = runner_pb2.SessionSpec(
+            harness=runner_pb2.HARNESS_CODEX, cwd="/test-attached", model="test-attached-model"
         )
-        session.add(ThreadHistorySummary(thread_id=attached, attached=MessageToDict(protocol_pb2.Attached(spec=spec))))
+        session.add(ThreadHistorySummary(thread_id=attached, attached=MessageToDict(runner_pb2.Attached(spec=spec))))
         session.add(ThreadHistorySummary(thread_id=unattached))
     views = {view.id: view for view in await ThreadStore(engine, AppSummaries(engine)).list_threads()}
     assert (views[attached].harness, views[attached].model, views[attached].cwd) == (

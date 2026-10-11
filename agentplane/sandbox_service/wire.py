@@ -4,7 +4,7 @@ from uuid import UUID
 
 from google.protobuf.json_format import MessageToDict, ParseDict
 
-from agentplane.runner import protocol_pb2 as runner_pb2
+from agentplane.proto import runner_pb2
 from agentplane.sandbox_service import protocol_pb2
 
 # gazelle:include_dep @pypi//protobuf

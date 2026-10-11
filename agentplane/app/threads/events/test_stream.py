@@ -13,8 +13,7 @@ from agentplane.app.changes import Changes
 from agentplane.app.threads.events.event_log import EventLogStore, ServiceSessionReference
 from agentplane.app.threads.events.stream import follow
 from agentplane.app.threads.summaries import FeedEnd, FeedSnapshot
-from agentplane.proto import event_log_pb2
-from agentplane.runner import protocol_pb2
+from agentplane.proto import event_log_pb2, runner_pb2
 
 # gazelle:include_dep @pypi//protobuf
 
@@ -22,7 +21,7 @@ from agentplane.runner import protocol_pb2
 async def test_terminal_stream_waits_without_spinning_for_service_suffix() -> None:
     logs = AsyncMock(spec=EventLogStore)
     logs.service_session.return_value = ServiceSessionReference("sb", "s-1")
-    logs.feed_state.return_value = FeedSnapshot(protocol_pb2.Attached(last_cursor=1), FeedEnd())
+    logs.feed_state.return_value = FeedSnapshot(runner_pb2.Attached(last_cursor=1), FeedEnd())
     logs.last_cursor.return_value = 1
     logs.events.side_effect = [[], [event_log_pb2.EventEntry(cursor=1)], []]
     with patch("agentplane.app.threads.events.stream.KEEPALIVE_S", 0.01):

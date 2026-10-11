@@ -2,7 +2,7 @@
 
 import pytest_bazel
 
-from agentplane.runner import protocol_pb2
+from agentplane.proto import runner_pb2
 from agentplane.sandbox_service.instructions import combine_instructions
 from agentplane.sandbox_service.protocol_pb2 import (
     SandboxBinding,
@@ -35,7 +35,7 @@ def _launched_instructions(overrides: dict[str, object]) -> str:
         overrides,
         binding=SandboxBinding(
             session_defaults=SessionDefaults(
-                harness=protocol_pb2.HARNESS_CODEX, model="test-model", cwd="/test", instructions="Test preset task."
+                harness=runner_pb2.HARNESS_CODEX, model="test-model", cwd="/test", instructions="Test preset task."
             )
         ),
         platform_instructions="Test platform guidance.",

@@ -10,15 +10,14 @@ import grpc
 
 from agentplane.app.testing.history_service import HistoryService
 from agentplane.history_service import protocol_pb2 as history_pb2
-from agentplane.proto import command_pb2, event_log_pb2, event_pb2
-from agentplane.runner import protocol_pb2
+from agentplane.proto import command_pb2, event_log_pb2, event_pb2, runner_pb2
 from agentplane.sandbox_service import protocol_pb2 as service_pb2
 
 # gazelle:include_dep @pypi//protobuf
 
 SANDBOX = "test-replication-sandbox"
 SESSION = "test-replication-session"
-SPEC = protocol_pb2.SessionSpec(harness=protocol_pb2.HARNESS_CODEX, model="test-model-before", cwd="/test-workspace")
+SPEC = runner_pb2.SessionSpec(harness=runner_pb2.HARNESS_CODEX, model="test-model-before", cwd="/test-workspace")
 
 
 @dataclass
@@ -35,8 +34,8 @@ class ReplicationSource(HistoryService):
         self.session_id = uuid5(NAMESPACE_URL, SANDBOX + "/" + SESSION)
         self.open(self.session_id)
         self.entries = self.histories[str(self.session_id)].entries
-        self.attached = protocol_pb2.Attached(
-            session_id=SESSION, spec=SPEC, harness_state=protocol_pb2.HARNESS_STATE_RUNNING
+        self.attached = runner_pb2.Attached(
+            session_id=SESSION, spec=SPEC, harness_state=runner_pb2.HARNESS_STATE_RUNNING
         )
         self.opened: asyncio.Queue[Opened] = asyncio.Queue()
         self.hold_next_replay = True
@@ -82,10 +81,10 @@ class ReplicationSource(HistoryService):
 
     async def list_sessions(
         self, request: service_pb2.SandboxRequest, context: grpc.aio.ServicerContext
-    ) -> protocol_pb2.ListSessionsResponse:
-        return protocol_pb2.ListSessionsResponse(
+    ) -> runner_pb2.ListSessionsResponse:
+        return runner_pb2.ListSessionsResponse(
             sessions=[
-                protocol_pb2.SessionSummary(
+                runner_pb2.SessionSummary(
                     session_id=str(self.session_id),
                     spec=self.attached.spec,
                     last_cursor=self.attached.last_cursor,
@@ -112,7 +111,7 @@ class ReplicationSource(HistoryService):
                         "ListSessions": grpc.unary_unary_rpc_method_handler(
                             self.list_sessions,
                             request_deserializer=service_pb2.SandboxRequest.FromString,
-                            response_serializer=protocol_pb2.ListSessionsResponse.SerializeToString,
+                            response_serializer=runner_pb2.ListSessionsResponse.SerializeToString,
                         ),
                     },
                 ),

@@ -122,7 +122,7 @@ ts_library(
         "//:node_modules/openapi-fetch",
         "//agentplane/proto:command_pb",
         "//agentplane/proto:event_log_pb",
-        "//agentplane/runner:protocol_pb",
+        "//agentplane/proto:runner_pb",
     ],
 )
 
@@ -697,7 +697,7 @@ ts_library(
         "//:node_modules/react",
         "//:node_modules/react-router",
         "//agentplane/app/frontend/actions:policy",
-        "//agentplane/runner:protocol_pb",
+        "//agentplane/proto:runner_pb",
     ],
 )
 
@@ -1005,7 +1005,7 @@ ts_library(
         "//:node_modules/react-dom",
         "//agentplane/app/frontend/actions:action_client",
         "//agentplane/app/frontend/threads:local_commands",
-        "//agentplane/runner:protocol_pb",
+        "//agentplane/proto:runner_pb",
     ],
 )
 

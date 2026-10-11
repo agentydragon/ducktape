@@ -7,7 +7,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from agentplane.llm_ingress.models import ModelConfig
-from agentplane.runner import protocol_pb2
+from agentplane.proto import runner_pb2
 from agentplane.runner.cgroups import AgentCgroups
 from agentplane.runner.model_config import HttpModelConfigResolver, ModelConfigLookupError
 
@@ -77,11 +77,11 @@ class RunnerConfig:
 
     async def resolve_model_config(self, *, harness: int, model: str) -> ModelConfig | None:
         """Resolve a route using the selected harness's proxy endpoint and workload credential."""
-        if harness == protocol_pb2.HARNESS_CLAUDE:
+        if harness == runner_pb2.HARNESS_CLAUDE:
             if self.claude is None:
                 raise ModelConfigLookupError("Claude is not configured on this runner")
             base_url, token = self.claude.base_url, self.claude.auth_token
-        elif harness == protocol_pb2.HARNESS_CODEX:
+        elif harness == runner_pb2.HARNESS_CODEX:
             if self.codex is None:
                 raise ModelConfigLookupError("Codex is not configured on this runner")
             base_url, token = self.codex.base_url, self.codex.api_key

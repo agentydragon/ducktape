@@ -5,7 +5,7 @@ package ducktape.agentplane.sandbox.v1;
 
 import "agentplane/proto/command.proto";
 import "agentplane/proto/event_log.proto";
-import "agentplane/runner/protocol.proto";
+import "agentplane/proto/runner.proto";
 import "google/protobuf/empty.proto";
 import "google/protobuf/field_mask.proto";
 import "google/protobuf/struct.proto";
@@ -28,12 +28,12 @@ service SandboxService {
   rpc GrantEgress(GrantEgressRequest) returns (GrantEgressResponse);
   rpc RevokeEgress(RevokeEgressRequest) returns (google.protobuf.Empty);
 
-  rpc ListSessions(SandboxRequest) returns (ducktape.agentplane.runner.v1.ListSessionsResponse);
+  rpc ListSessions(SandboxRequest) returns (.agentplane.proto.runner.ListSessionsResponse);
   // Opens the Session the client named. A retry with the same ID and inputs returns it again.
   rpc CreateSession(CreateSessionRequest) returns (CreateSessionResponse);
   // Read-only reconciliation by the original caller, sandbox incarnation and Open key.
   rpc LookupSession(LookupSessionRequest) returns (LookupSessionResponse);
-  rpc ResumeSession(SessionRequest) returns (ducktape.agentplane.runner.v1.Attached);
+  rpc ResumeSession(SessionRequest) returns (.agentplane.proto.runner.Attached);
   // Returns the original matching CommandAdmitted entry, not command completion.
   rpc SubmitCommand(SubmitCommandRequest) returns (.agentplane.proto.event_log.EventEntry);
   // A command submitted to a public Session ID, as retained: never contacts the runner.
@@ -85,7 +85,7 @@ message CreateSessionRequest {
   // Opaque to the service, scoped to the authenticated caller and Sandbox UID; LookupSession finds
   // the Session by it. Optional when session_id is set.
   string idempotency_key = 2;
-  ducktape.agentplane.runner.v1.SessionSpec spec = 3;
+  .agentplane.proto.runner.SessionSpec spec = 3;
   // Which spec fields replace the Sandbox defaults (proto field names). Proto3 scalar
   // fields cannot distinguish absent from explicitly empty; e.g. instructions=""
   // with "instructions" in this mask clears inherited instructions. An empty mask
@@ -101,7 +101,7 @@ message CreateSessionRequest {
 message CreateSessionResponse {
   // Public Session ID (UUID): the request's session_id when it set one. Not the harness session ID.
   string session_id = 1;
-  ducktape.agentplane.runner.v1.Attached attached = 2;
+  .agentplane.proto.runner.Attached attached = 2;
 }
 
 message LookupSessionRequest {
@@ -114,7 +114,7 @@ message LookupSessionResponse {
   string session_id = 1;
   // Only set after evidence that native Open succeeded; inventory alone also includes failed Opens.
   // This is app-facing only and may contain the frozen spec: never forward it to the browser.
-  ducktape.agentplane.runner.v1.SessionSummary summary = 2;
+  .agentplane.proto.runner.SessionSummary summary = 2;
   // The runner has terminal setup/launch failure evidence without a successful native start.
   // A reserved but still in-flight Open leaves both summary and failed unset.
   bool failed = 3;
@@ -179,7 +179,7 @@ message WatchSessionsResponse {
 
 // Internal frozen launch snapshot, committed before contacting the runner.
 message FrozenLaunch {
-  ducktape.agentplane.runner.v1.Open open = 1;
+  .agentplane.proto.runner.Open open = 1;
   string bootstrap = 2;
 }
 
@@ -250,7 +250,7 @@ message Sealed {
 message FollowSessionResponse {
   oneof observation {
     // Its last_cursor is the journal end at attach time: entries up to it are replayed, later ones live.
-    ducktape.agentplane.runner.v1.Attached attached = 1;
+    .agentplane.proto.runner.Attached attached = 1;
     // Replayed and live entries have the same shape, with consecutive cursors.
     .agentplane.proto.event_log.EventEntry entry = 2;
     // Runner attachment reached native EOF. This is not a fabricated execution Event.
@@ -265,7 +265,7 @@ message FollowSessionResponse {
 }
 
 message SessionDefaults {
-  optional ducktape.agentplane.runner.v1.Harness harness = 1;
+  optional .agentplane.proto.runner.Harness harness = 1;
   optional string model = 2;
   optional string cwd = 3;
   optional string reasoning_effort = 4;

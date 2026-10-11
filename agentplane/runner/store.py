@@ -12,7 +12,7 @@ from uuid import UUID, uuid4
 
 from pydantic import BaseModel, Field
 
-from agentplane.runner import protocol_pb2
+from agentplane.proto import runner_pb2
 
 # The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.
 # gazelle:include_dep @pypi//protobuf
@@ -101,10 +101,10 @@ class SessionRecord(BaseModel):
 
     @classmethod
     def from_spec(
-        cls, spec: protocol_pb2.SessionSpec, *, setup_script: str = "", total_context_budget_tokens: int | None = None
+        cls, spec: runner_pb2.SessionSpec, *, setup_script: str = "", total_context_budget_tokens: int | None = None
     ) -> SessionRecord:
         return cls(
-            harness=protocol_pb2.Harness.Name(spec.harness),
+            harness=runner_pb2.Harness.Name(spec.harness),
             cwd=spec.cwd,
             model=spec.model,
             total_context_budget_tokens=total_context_budget_tokens,
@@ -114,9 +114,9 @@ class SessionRecord(BaseModel):
             setup_script_sha256=hashlib.sha256(setup_script.encode()).hexdigest() if setup_script else None,
         )
 
-    def spec(self) -> protocol_pb2.SessionSpec:
-        return protocol_pb2.SessionSpec(
-            harness=cast(protocol_pb2.Harness, protocol_pb2.Harness.Value(self.harness)),
+    def spec(self) -> runner_pb2.SessionSpec:
+        return runner_pb2.SessionSpec(
+            harness=cast(runner_pb2.Harness, runner_pb2.Harness.Value(self.harness)),
             cwd=self.cwd,
             model=self.model,
             reasoning_effort=self.reasoning_effort,

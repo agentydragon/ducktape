@@ -15,7 +15,7 @@ from kubernetes_asyncio import client as k8s_client
 from more_itertools import one
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from agentplane.runner import protocol_pb2 as runner_pb2
+from agentplane.proto import runner_pb2
 from agentplane.runner.errors import RunnerError
 from agentplane.sandbox_service import protocol_pb2
 from agentplane.sandbox_service.action_policy import ActionPolicyBindings

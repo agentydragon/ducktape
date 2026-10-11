@@ -19,8 +19,7 @@ from uuid import UUID, uuid4
 import grpc
 
 from agentplane.grpc_options import grpc_channel_option_kvps
-from agentplane.proto import runner_channel_pb2 as channel_pb2
-from agentplane.runner import protocol_pb2 as runner_pb2
+from agentplane.proto import runner_channel_pb2 as channel_pb2, runner_pb2
 from agentplane.runner.client import RunnerClient
 from agentplane.sandbox_service.channel_control import ChannelControl, ConnectionNotHeldError
 from agentplane.sandbox_service.commands.connections import ConnectionStore

@@ -5,7 +5,7 @@ package ducktape.agentplane.history.v1;
 
 import "agentplane/proto/event.proto";
 import "agentplane/proto/event_log.proto";
-import "agentplane/runner/protocol.proto";
+import "agentplane/proto/runner.proto";
 import "agentplane/sandbox_service/protocol.proto";
 import "google/protobuf/empty.proto";
 import "google/protobuf/timestamp.proto";
@@ -71,7 +71,7 @@ message SettledDeltas {
 }
 
 message SessionFeedState {
-  ducktape.agentplane.runner.v1.Attached attached = 1;
+  .agentplane.proto.runner.Attached attached = 1;
   // True only after runner EOF at exactly attached.last_cursor. False means
   // unconfirmed, not evidence of current connectivity or a running harness.
   bool ended = 2;
@@ -154,7 +154,7 @@ message SessionSummary {
   // Inferred from model-originated events, not an observed provider request.
   google.protobuf.Timestamp last_model_activity_at = 9;
   optional .agentplane.proto.event.TurnStatus last_turn_status = 10;
-  ducktape.agentplane.runner.v1.Attached attached = 11;
+  .agentplane.proto.runner.Attached attached = 11;
   FeedStatus feed_status = 12;
   // With FEED_STATUS_FAILED: why the runner's history was rejected.
   optional string feed_error = 13;

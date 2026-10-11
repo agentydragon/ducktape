@@ -8,8 +8,7 @@ from collections.abc import Callable
 import pytest
 import pytest_bazel
 
-from agentplane.proto import event_log_pb2, event_pb2
-from agentplane.runner import protocol_pb2
+from agentplane.proto import event_log_pb2, event_pb2, runner_pb2
 from agentplane.runner.client import Attachment, RunnerClient
 from agentplane.runner.testing import events
 from agentplane.runner.testing.commands import change_model, change_reasoning_effort, interrupt_turn, submit_input
@@ -22,10 +21,10 @@ WAIT_COMMAND = 'sh -c \'printf "wait_started\\n"; sleep 3; printf "wait_finished
 
 
 async def test_one_turn_streams_reasoning_and_text(
-    client: RunnerClient, model: ScriptedModel, spec: protocol_pb2.SessionSpec
+    client: RunnerClient, model: ScriptedModel, spec: runner_pb2.SessionSpec
 ) -> None:
     async with await client.attach("turn-1", spec=spec) as session:
-        assert session.attached.harness_state == protocol_pb2.HARNESS_STATE_RUNNING
+        assert session.attached.harness_state == runner_pb2.HARNESS_STATE_RUNNING
         assert session.attached.active_turn_id == ""
         await submit_input(session, "input-1", "Reply with exactly: BASELINE_OK")
 
@@ -65,9 +64,9 @@ async def test_one_turn_streams_reasoning_and_text(
 
 
 async def test_effort_change_is_confirmed_and_used_by_next_model_request(
-    client: RunnerClient, model: ScriptedModel, spec: protocol_pb2.SessionSpec
+    client: RunnerClient, model: ScriptedModel, spec: runner_pb2.SessionSpec
 ) -> None:
-    if spec.harness == protocol_pb2.HARNESS_CLAUDE:
+    if spec.harness == runner_pb2.HARNESS_CLAUDE:
         # Haiku rejects the native effort setting before a model request; use an effort-capable model.
         spec.model = "agentplane-test/claude-opus-4-6"
         model.model = spec.model
@@ -79,7 +78,7 @@ async def test_effort_change_is_confirmed_and_used_by_next_model_request(
             admitted = await session.until(events.is_kind("command_admitted"))
             assert admitted.event.command_admitted.command.command_id == command_id
             assert admitted.event.command_admitted.command.change_reasoning_effort.effort == effort
-            if spec.harness == protocol_pb2.HARNESS_CLAUDE:
+            if spec.harness == runner_pb2.HARNESS_CLAUDE:
                 # Claude's settings control response is the proof. Merely sending it is not.
                 changed = await session.until(events.is_kind("reasoning_effort_changed"))
                 assert changed.event.reasoning_effort_changed.command_id == command_id
@@ -88,7 +87,7 @@ async def test_effort_change_is_confirmed_and_used_by_next_model_request(
             request = await model.request()
             assert request.effort == effort
             await model.reply(request, Text(f"EFFORT_{index}_OK"))
-            if spec.harness == protocol_pb2.HARNESS_CODEX:
+            if spec.harness == runner_pb2.HARNESS_CODEX:
                 # The matched turn/start answer, not command admission, settles Codex's effect.
                 changed = await session.until(events.is_kind("reasoning_effort_changed"))
                 assert changed.event.reasoning_effort_changed.command_id == command_id
@@ -99,7 +98,7 @@ async def test_effort_change_is_confirmed_and_used_by_next_model_request(
 
 
 async def test_tool_call_reports_arguments_and_result(
-    client: RunnerClient, model: ScriptedModel, spec: protocol_pb2.SessionSpec
+    client: RunnerClient, model: ScriptedModel, spec: runner_pb2.SessionSpec
 ) -> None:
     async with await client.attach("tool-1", spec=spec) as session:
         await submit_input(session, "input-1", "Run the tool and report TOOL_DONE.")
@@ -136,7 +135,7 @@ async def test_tool_call_reports_arguments_and_result(
 
 @pytest.mark.parametrize("partial", [False, True], ids=["exhausted-before-content", "retry-after-visible-text"])
 async def test_model_connection_loss_through_runner(
-    client: RunnerClient, model: ScriptedModel, spec: protocol_pb2.SessionSpec, partial: bool
+    client: RunnerClient, model: ScriptedModel, spec: runner_pb2.SessionSpec, partial: bool
 ) -> None:
     """Pin native retries, runner outcomes, and a later input in the same session."""
     async with await client.attach(f"model-failure-{partial}", spec=spec) as session:
@@ -179,7 +178,7 @@ async def test_model_connection_loss_through_runner(
 
 
 async def test_model_http_error_through_runner(
-    client: RunnerClient, model: ScriptedModel, spec: protocol_pb2.SessionSpec
+    client: RunnerClient, model: ScriptedModel, spec: runner_pb2.SessionSpec
 ) -> None:
     """HTTP failure is a failed turn, not a lost admission or a reason to resend input."""
     async with await client.attach("http-error", spec=spec) as session:
@@ -208,7 +207,7 @@ async def test_model_http_error_through_runner(
 
 
 async def test_failed_tool_is_reported_as_failed(
-    client: RunnerClient, model: ScriptedModel, spec: protocol_pb2.SessionSpec
+    client: RunnerClient, model: ScriptedModel, spec: runner_pb2.SessionSpec
 ) -> None:
     async with await client.attach("tool-2", spec=spec) as session:
         await submit_input(session, "input-1", "Run the failing tool.")
@@ -225,9 +224,9 @@ async def test_failed_tool_is_reported_as_failed(
         assert not events.completed(session.seen, call).tool.succeeded
 
 
-@pytest.mark.parametrize("harness", [protocol_pb2.HARNESS_CODEX])
+@pytest.mark.parametrize("harness", [runner_pb2.HARNESS_CODEX])
 async def test_codex_input_during_a_turn_joins_it(
-    client: RunnerClient, model: ScriptedModel, spec: protocol_pb2.SessionSpec
+    client: RunnerClient, model: ScriptedModel, spec: runner_pb2.SessionSpec
 ) -> None:
     async with await client.attach("join-1", spec=spec) as session:
         await submit_input(session, "input-1", "Wait with the shell, then reply.")
@@ -265,9 +264,9 @@ async def test_codex_input_during_a_turn_joins_it(
         ] == [["input-1"], ["input-2"]]
 
 
-@pytest.mark.parametrize("harness", [protocol_pb2.HARNESS_CLAUDE])
+@pytest.mark.parametrize("harness", [runner_pb2.HARNESS_CLAUDE])
 async def test_claude_inputs_during_a_tool_are_confirmed_from_the_started_cohort(
-    client: RunnerClient, model: ScriptedModel, spec: protocol_pb2.SessionSpec
+    client: RunnerClient, model: ScriptedModel, spec: runner_pb2.SessionSpec
 ) -> None:
     """Claude folds active-turn inputs into its tool-result continuation, without a user echo."""
     async with await client.attach("claude-tool-input-1", spec=spec) as session:
@@ -300,13 +299,13 @@ async def test_claude_inputs_during_a_tool_are_confirmed_from_the_started_cohort
 
 
 async def test_model_change_then_input_is_admitted_without_waiting_for_model_effect(
-    client: RunnerClient, model: ScriptedModel, harness: protocol_pb2.Harness, spec: protocol_pb2.SessionSpec
+    client: RunnerClient, model: ScriptedModel, harness: runner_pb2.Harness, spec: runner_pb2.SessionSpec
 ) -> None:
     """The next input may follow model admission; the harness evidence still defines the effect."""
     async with await client.attach("switch-model-1", spec=spec) as attached:
         selected = (
             "agentplane-switched/claude-haiku-4-5-20251001"
-            if harness == protocol_pb2.HARNESS_CLAUDE
+            if harness == runner_pb2.HARNESS_CLAUDE
             else "agentplane-switched-model"
         )
         await change_model(attached, "switch-1", selected)
@@ -326,9 +325,9 @@ async def test_model_change_then_input_is_admitted_without_waiting_for_model_eff
         ] == ["switch-1", "input-1"]
 
 
-@pytest.mark.parametrize("harness", [protocol_pb2.HARNESS_CLAUDE])
+@pytest.mark.parametrize("harness", [runner_pb2.HARNESS_CLAUDE])
 async def test_claude_active_turn_model_command_has_a_native_causal_outcome(
-    client: RunnerClient, model: ScriptedModel, spec: protocol_pb2.SessionSpec
+    client: RunnerClient, model: ScriptedModel, spec: runner_pb2.SessionSpec
 ) -> None:
     """Claude's set-model control request can settle while a model request is still active."""
     async with await client.attach("switch-model-active-1", spec=spec) as session:
@@ -353,9 +352,9 @@ async def test_claude_active_turn_model_command_has_a_native_causal_outcome(
         assert events.kind(outcome) == "model_changed"
 
 
-@pytest.mark.parametrize("harness", [protocol_pb2.HARNESS_CODEX])
+@pytest.mark.parametrize("harness", [runner_pb2.HARNESS_CODEX])
 async def test_codex_active_turn_model_command_takes_effect_on_its_next_turn_start(
-    client: RunnerClient, model: ScriptedModel, spec: protocol_pb2.SessionSpec
+    client: RunnerClient, model: ScriptedModel, spec: runner_pb2.SessionSpec
 ) -> None:
     """Codex cannot select a model until its later turn/start response proves that selection."""
     async with await client.attach("switch-model-active-1", spec=spec) as session:
@@ -383,7 +382,7 @@ async def test_codex_active_turn_model_command_takes_effect_on_its_next_turn_sta
 
 
 async def test_interrupt_ends_the_turn_as_interrupted(
-    client: RunnerClient, model: ScriptedModel, spec: protocol_pb2.SessionSpec
+    client: RunnerClient, model: ScriptedModel, spec: runner_pb2.SessionSpec
 ) -> None:
     async with await client.attach("interrupt-1", spec=spec) as session:
         await submit_input(session, "input-1", "Wait; do not answer early.")
@@ -421,9 +420,9 @@ def _is_streamed(words: str) -> Callable[[event_log_pb2.EventEntry], bool]:
     return lambda entry: events.kind(entry) == "text_delta" and entry.event.text_delta.text == words
 
 
-@pytest.mark.parametrize("harness", [protocol_pb2.HARNESS_CLAUDE])
+@pytest.mark.parametrize("harness", [runner_pb2.HARNESS_CLAUDE])
 async def test_claude_interrupt_right_after_thinking_reports_it_absent_and_does_not_replay_it(
-    client: RunnerClient, model: ScriptedModel, spec: protocol_pb2.SessionSpec
+    client: RunnerClient, model: ScriptedModel, spec: runner_pb2.SessionSpec
 ) -> None:
     """Claude keeps a thinking block only beside another block of its message, which the interrupt
     came too early to write; `harness_tests/claude/test_turns.py` pins that on the real binary."""
@@ -448,9 +447,9 @@ async def test_claude_interrupt_right_after_thinking_reports_it_absent_and_does_
         await session.until(events.turn_completed)
 
 
-@pytest.mark.parametrize("harness", [protocol_pb2.HARNESS_CLAUDE])
+@pytest.mark.parametrize("harness", [runner_pb2.HARNESS_CLAUDE])
 async def test_claude_interrupt_after_thinking_and_some_text_keeps_the_thinking(
-    client: RunnerClient, model: ScriptedModel, spec: protocol_pb2.SessionSpec
+    client: RunnerClient, model: ScriptedModel, spec: runner_pb2.SessionSpec
 ) -> None:
     async with await client.attach("interrupt-thinking-2", spec=spec) as session:
         await submit_input(session, "input-1", "Think, then answer.")
@@ -473,9 +472,9 @@ async def test_claude_interrupt_after_thinking_and_some_text_keeps_the_thinking(
         await session.until(events.turn_completed)
 
 
-@pytest.mark.parametrize("harness", [protocol_pb2.HARNESS_CLAUDE])
+@pytest.mark.parametrize("harness", [runner_pb2.HARNESS_CLAUDE])
 async def test_claude_interrupt_after_thinking_and_a_tool_call_keeps_the_thinking(
-    client: RunnerClient, model: ScriptedModel, spec: protocol_pb2.SessionSpec
+    client: RunnerClient, model: ScriptedModel, spec: runner_pb2.SessionSpec
 ) -> None:
     async with await client.attach("interrupt-thinking-3", spec=spec) as session:
         await submit_input(session, "input-1", "Think, then run the shell.")

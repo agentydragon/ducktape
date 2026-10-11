@@ -88,7 +88,7 @@ from agentplane.app.threads.store import ThreadStore
 from agentplane.app.threads.thread_view import ThreadView
 from agentplane.app.threads.view.content import CommandIdConflictError, ContentStore
 from agentplane.history_service.client import HistoryServiceError
-from agentplane.runner import protocol_pb2
+from agentplane.proto import runner_pb2
 from agentplane.runner.errors import OpenTimeoutError, RunnerError
 from agentplane.runner.harness import Harness
 from agentplane.sandbox_service.action_policy_views import UnknownPolicySetError
@@ -798,7 +798,7 @@ async def archive_thread(store: Store, bridge: runner_bridge.Bridge, inventory: 
                 )
             sessions = await bridge.list_sessions(thread.sandbox)
             if any(
-                session.session_id == str(thread.id) and session.harness_state == protocol_pb2.HARNESS_STATE_RUNNING
+                session.session_id == str(thread.id) and session.harness_state == runner_pb2.HARNESS_STATE_RUNNING
                 for session in sessions
             ):
                 raise HTTPException(status.HTTP_409_CONFLICT, "stop the harness before archiving this thread")

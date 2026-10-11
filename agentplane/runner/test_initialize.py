@@ -8,7 +8,7 @@ import grpc
 import pytest
 import pytest_bazel
 
-from agentplane.runner import protocol_pb2
+from agentplane.proto import runner_pb2
 from agentplane.runner.config import RunnerConfig
 from agentplane.runner.service import serve
 from agentplane.runner.testing.fixtures import RunnerClientFactory
@@ -17,7 +17,7 @@ from agentplane.runner.testing.fixtures import RunnerClientFactory
 # gazelle:include_dep @pypi//protobuf
 
 
-async def collect(call: grpc.aio.UnaryStreamCall) -> list[protocol_pb2.InitializationEvent]:
+async def collect(call: grpc.aio.UnaryStreamCall) -> list[runner_pb2.InitializationEvent]:
     return [event async for event in call]
 
 
@@ -38,8 +38,8 @@ async def test_initialize_executes_once_and_replays_its_output(
         await server.stop(0)
 
     assert [(event.sequence, event.attempt) for event in first] == [(1, 1), (2, 1)]
-    assert first[0].output == protocol_pb2.InitializationOutput(
-        stream=protocol_pb2.INITIALIZATION_STREAM_STDOUT, data=b"ready\n"
+    assert first[0].output == runner_pb2.InitializationOutput(
+        stream=runner_pb2.INITIALIZATION_STREAM_STDOUT, data=b"ready\n"
     )
     assert (first[-1].result.executed, first[-1].result.exit_code) == (True, 0)
     assert repeated == first
@@ -57,7 +57,7 @@ async def test_initialize_reconnect_replays_after_the_client_cursor(
     try:
         disconnected = client.initialize_events(script)
         first = await disconnected.read()
-        assert isinstance(first, protocol_pb2.InitializationEvent)
+        assert isinstance(first, runner_pb2.InitializationEvent)
         disconnected.cancel()
         (state / "continue").touch()
         resumed = await collect(client.initialize_events(script, after_sequence=first.sequence))
@@ -68,8 +68,8 @@ async def test_initialize_reconnect_replays_after_the_client_cursor(
 
     assert first.output.data == b"first\n"
     assert [event.sequence for event in resumed] == [2, 3]
-    assert resumed[0].output == protocol_pb2.InitializationOutput(
-        stream=protocol_pb2.INITIALIZATION_STREAM_STDERR, data=b"second\n"
+    assert resumed[0].output == runner_pb2.InitializationOutput(
+        stream=runner_pb2.INITIALIZATION_STREAM_STDERR, data=b"second\n"
     )
     assert resumed[1].result.exit_code == 0
 

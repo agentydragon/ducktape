@@ -17,8 +17,7 @@ from agentplane.app.threads.events.event_log import ThreadNotFoundError
 from agentplane.app.threads.models import EventLog, Thread
 from agentplane.app.threads.summaries import AppSummaries, FeedError, FoldSummary, HistorySummaries
 from agentplane.app.threads.thread_view import ThreadView
-from agentplane.proto import event_pb2
-from agentplane.runner import protocol_pb2
+from agentplane.proto import event_pb2, runner_pb2
 from agentplane.runner.harness import Harness
 
 # The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.
@@ -94,12 +93,12 @@ def _view(log: EventLog, thread: Thread | None, summary: FoldSummary | None) -> 
     last_turn_status = None if summary.last_turn_status is None else event_pb2.TurnStatus.Name(summary.last_turn_status)
     attachment = summary.feed.attached if summary.feed is not None else None
     end = summary.feed.end if summary.feed is not None else None
-    harness_state = attachment.harness_state if attachment is not None else protocol_pb2.HARNESS_STATE_UNSPECIFIED
+    harness_state = attachment.harness_state if attachment is not None else runner_pb2.HARNESS_STATE_UNSPECIFIED
     spec = attachment.spec if attachment is not None and attachment.HasField("spec") else None
     return ThreadView(
         id=log.id,
         sandbox=log.sandbox,
-        harness=None if spec is None else Harness(protocol_pb2.Harness.Name(spec.harness)),
+        harness=None if spec is None else Harness(runner_pb2.Harness.Name(spec.harness)),
         model=None if spec is None else spec.model,
         cwd=None if spec is None else spec.cwd,
         created_at=log.created_at,
@@ -108,8 +107,8 @@ def _view(log: EventLog, thread: Thread | None, summary: FoldSummary | None) -> 
         last_cursor=summary.folded_through,
         last_event_at=summary.last_event_at,
         last_model_activity_at=summary.last_model_activity_at,
-        harness_state=protocol_pb2.HarnessState.Name(harness_state),
-        setup_state=protocol_pb2.SetupState.Name(attachment.setup_state) if attachment is not None else None,
+        harness_state=runner_pb2.HarnessState.Name(harness_state),
+        setup_state=runner_pb2.SetupState.Name(attachment.setup_state) if attachment is not None else None,
         active_turn_id=(attachment.active_turn_id or None) if attachment is not None else None,
         feed_status=(
             None

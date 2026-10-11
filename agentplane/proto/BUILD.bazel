@@ -10,7 +10,7 @@ proto_library(
     srcs = ["runner_ingress.proto"],
     deps = [
         ":event_log_proto",
-        "//agentplane/runner:protocol_proto",
+        ":runner_proto",
     ],
 )
 
@@ -31,7 +31,7 @@ proto_library(
     deps = [
         ":command_proto",
         ":event_log_proto",
-        "//agentplane/runner:protocol_proto",
+        ":runner_proto",
     ],
 )
 
@@ -111,4 +111,42 @@ ts_proto_library(
     proto = ":event_log_proto",
     visibility = ["//visibility:public"],
     deps = [":event_pb"],
+)
+
+proto_library(
+    name = "runner_proto",
+    srcs = ["runner.proto"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":command_proto",
+        ":event_log_proto",
+    ],
+)
+
+py_proto_library_with_mypy_stubs(
+    name = "runner_pb2",
+    visibility = ["//visibility:public"],
+    deps = [":runner_proto"],
+)
+
+py_grpc_service_library(
+    name = "runner_pb2_grpc",
+    proto = ":runner_proto",
+    py_proto = ":runner_pb2",
+    visibility = [
+        "//agentplane/runner:__subpackages__",
+        "//agentplane/sandbox_service:__subpackages__",
+    ],
+)
+
+ts_proto_library(
+    name = "runner_pb",
+    copy_files = False,
+    node_modules = "//:node_modules",
+    proto = ":runner_proto",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":command_pb",
+        ":event_log_pb",
+    ],
 )

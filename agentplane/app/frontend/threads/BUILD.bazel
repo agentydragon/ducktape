@@ -133,7 +133,7 @@ agentplane_vitest_test(
         ":local_commands",
         "//:node_modules/@bufbuild/protobuf",
         "//:node_modules/vitest",
-        "//agentplane/runner:protocol_pb",
+        "//agentplane/proto:runner_pb",
     ],
 )
 

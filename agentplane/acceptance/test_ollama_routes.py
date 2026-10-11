@@ -14,8 +14,7 @@ from agentplane.acceptance.agent import Agent
 from agentplane.acceptance.ollama_catalog import ollama_cases
 from agentplane.app.client import Client
 from agentplane.app.sandbox_models import SandboxView
-from agentplane.proto import event_pb2
-from agentplane.runner import protocol_pb2
+from agentplane.proto import event_pb2, runner_pb2
 from agentplane.runner.harness import Harness
 from util.bazel.runfiles import get_required_path
 from util.testing.undeclared_outputs import undeclared_outputs_dir
@@ -26,9 +25,9 @@ Sandboxes = Callable[..., Awaitable[SandboxView]]
 CASES = ollama_cases(get_required_path("ducktape/cluster/generated/agentplane-testing/agentplane-testing.k8s.yaml"))
 
 
-def _id(case: tuple[protocol_pb2.Harness, str]) -> str:
+def _id(case: tuple[runner_pb2.Harness, str]) -> str:
     harness, route = case
-    return f"{protocol_pb2.Harness.Name(harness).lower()}-{route.replace('/', '-')}"
+    return f"{runner_pb2.Harness.Name(harness).lower()}-{route.replace('/', '-')}"
 
 
 selected = os.environ.get("OLLAMA_SMOKE_CASE")
@@ -39,11 +38,11 @@ if selected:
 
 
 @pytest.mark.parametrize(("harness", "route"), CASES, ids=[_id(case) for case in CASES])
-async def test_ollama_tool_call(client: Client, sandbox: Sandboxes, harness: protocol_pb2.Harness, route: str) -> None:
+async def test_ollama_tool_call(client: Client, sandbox: Sandboxes, harness: runner_pb2.Harness, route: str) -> None:
     case_id = _id((harness, route))
     evidence: dict[str, object] = {"case": case_id, "route": route, "status": "started"}
     try:
-        offered = (await client.models()).harnesses[Harness(protocol_pb2.Harness.Name(harness))]
+        offered = (await client.models()).harnesses[Harness(runner_pb2.Harness.Name(harness))]
         assert route in offered, f"route absent from offered models for {case_id}"
         view = await sandbox("accept-ollama-smoke")
         evidence["sandbox"] = view.name

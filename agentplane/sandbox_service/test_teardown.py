@@ -13,7 +13,7 @@ import pytest_bazel
 from kubernetes_asyncio import client as k8s_client
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from agentplane.runner import protocol_pb2 as runner_pb2
+from agentplane.proto import runner_pb2
 from agentplane.sandbox_service.channel_control import ChannelControl
 from agentplane.sandbox_service.commands import db as commands_db
 from agentplane.sandbox_service.commands.connections import ConnectionStore
@@ -93,7 +93,7 @@ async def runner() -> AsyncIterator[ScriptedRunner]:
     server.add_generic_rpc_handlers(
         [
             grpc.method_handlers_generic_handler(
-                "ducktape.agentplane.runner.v1.Runner",
+                "agentplane.proto.runner.Runner",
                 {
                     "Seal": grpc.unary_unary_rpc_method_handler(
                         runner.seal,

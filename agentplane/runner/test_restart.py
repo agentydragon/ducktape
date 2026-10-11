@@ -17,8 +17,7 @@ import pytest_bazel
 
 from agentplane.harness_tests.claude.messages import AnthropicMessages
 from agentplane.harness_tests.codex.responses import OpenAIResponses
-from agentplane.proto import event_pb2
-from agentplane.runner import protocol_pb2
+from agentplane.proto import event_pb2, runner_pb2
 from agentplane.runner.errors import RunnerError
 from agentplane.runner.harness_process import HarnessProcess
 from agentplane.runner.store import StateOwner
@@ -86,7 +85,7 @@ async def _exited(pid: int) -> None:
 
 
 async def test_runner_shutdown_interrupts_setup_without_rerunning_it(
-    spec: protocol_pb2.SessionSpec,
+    spec: runner_pb2.SessionSpec,
     start_runner: Callable[..., Awaitable[RunnerProcess]],
     runner_client_factory: RunnerClientFactory,
 ) -> None:
@@ -102,7 +101,7 @@ async def test_runner_shutdown_interrupts_setup_without_rerunning_it(
     second_runner = await start_runner()
     second_client = runner_client_factory(second_runner.target, capture_history=True)
     second = await second_client.attach("setup-interrupted", spec=spec)
-    assert second.attached.setup_state == protocol_pb2.SETUP_STATE_INTERRUPTED
+    assert second.attached.setup_state == runner_pb2.SETUP_STATE_INTERRUPTED
     await second.drain_until_end()
     assert len(events.of_kind(second.seen, "setup_started")) == 1
     assert len(events.of_kind(second.seen, "setup_interrupted")) == 1
@@ -118,7 +117,7 @@ async def test_runner_death_interrupts_bootstrap_without_rerunning_it(
     first_client = runner_client_factory(first_runner.target)
     call = first_client.initialize_events(script)
     started = await call.read()
-    assert isinstance(started, protocol_pb2.InitializationEvent)
+    assert isinstance(started, runner_pb2.InitializationEvent)
     await first_runner.crash([int(started.output.data)])
     await first_client.close()
 
@@ -149,7 +148,7 @@ def _runner_environment(tmp_path: Path) -> dict[str, str]:
 
 @pytest.fixture
 async def start_runner(
-    harness: protocol_pb2.Harness, endpoint: AnthropicMessages | OpenAIResponses, tmp_path: Path
+    harness: runner_pb2.Harness, endpoint: AnthropicMessages | OpenAIResponses, tmp_path: Path
 ) -> AsyncIterator[Callable[..., Awaitable[RunnerProcess]]]:
     started: list[RunnerProcess] = []
 
@@ -175,10 +174,10 @@ async def start_runner(
 
 
 async def test_competing_runner_cannot_take_state_or_dispatch_before_replacement(
-    harness: protocol_pb2.Harness,
+    harness: runner_pb2.Harness,
     endpoint: AnthropicMessages | OpenAIResponses,
     model: ScriptedModel,
-    spec: protocol_pb2.SessionSpec,
+    spec: runner_pb2.SessionSpec,
     start_runner: Callable[..., Awaitable[RunnerProcess]],
     tmp_path: Path,
     runner_client_factory: RunnerClientFactory,
@@ -233,7 +232,7 @@ async def test_competing_runner_cannot_take_state_or_dispatch_before_replacement
 
 
 async def test_state_fence_survives_native_leader_exit_until_its_child_group_is_stopped(
-    harness: protocol_pb2.Harness,
+    harness: runner_pb2.Harness,
     endpoint: AnthropicMessages | OpenAIResponses,
     start_runner: Callable[..., Awaitable[RunnerProcess]],
     tmp_path: Path,
@@ -325,10 +324,10 @@ async def test_native_leader_exit_stops_background_tool(tmp_path: Path) -> None:
 
 
 async def test_runner_sigkill_fences_an_active_native_group_before_successor_dispatch(
-    harness: protocol_pb2.Harness,
+    harness: runner_pb2.Harness,
     endpoint: AnthropicMessages | OpenAIResponses,
     model: ScriptedModel,
-    spec: protocol_pb2.SessionSpec,
+    spec: runner_pb2.SessionSpec,
     start_runner: Callable[..., Awaitable[RunnerProcess]],
     tmp_path: Path,
     runner_client_factory: RunnerClientFactory,
@@ -383,7 +382,7 @@ async def test_runner_sigkill_fences_an_active_native_group_before_successor_dis
 async def test_a_restarted_runner_reports_the_loss_and_resumes_the_conversation(
     start_runner: Callable[[], Awaitable[RunnerProcess]],
     model: ScriptedModel,
-    spec: protocol_pb2.SessionSpec,
+    spec: runner_pb2.SessionSpec,
     runner_client_factory: RunnerClientFactory,
 ) -> None:
     first_runner = await start_runner()
@@ -421,7 +420,7 @@ async def test_a_restarted_runner_reports_the_loss_and_resumes_the_conversation(
 async def test_crash_after_runner_receipt_before_native_dispatch_retries_once(
     start_runner: Callable[..., Awaitable[RunnerProcess]],
     model: ScriptedModel,
-    spec: protocol_pb2.SessionSpec,
+    spec: runner_pb2.SessionSpec,
     runner_client_factory: RunnerClientFactory,
 ) -> None:
     """This is intentionally a real runner/harness process test, not a mocked Session method.
@@ -469,11 +468,11 @@ async def test_crash_after_runner_receipt_before_native_dispatch_retries_once(
     await client.close()
 
 
-@pytest.mark.parametrize("harness", [protocol_pb2.HARNESS_CODEX], ids=["codex"])
+@pytest.mark.parametrize("harness", [runner_pb2.HARNESS_CODEX], ids=["codex"])
 async def test_codex_acceptance_before_confirmation_crash_replays_input_with_original_provenance(
-    harness: protocol_pb2.Harness,
+    harness: runner_pb2.Harness,
     model: ScriptedModel,
-    spec: protocol_pb2.SessionSpec,
+    spec: runner_pb2.SessionSpec,
     start_runner: Callable[..., Awaitable[RunnerProcess]],
     runner_client_factory: RunnerClientFactory,
 ) -> None:
@@ -566,7 +565,7 @@ async def test_codex_acceptance_before_confirmation_crash_replays_input_with_ori
 async def test_crash_after_terminal_effect_persists_replays_that_effect(
     start_runner: Callable[..., Awaitable[RunnerProcess]],
     model: ScriptedModel,
-    spec: protocol_pb2.SessionSpec,
+    spec: runner_pb2.SessionSpec,
     runner_client_factory: RunnerClientFactory,
 ) -> None:
     """A committed terminal effect replays exactly after process death, without receipt repair."""
@@ -631,7 +630,7 @@ async def test_crash_after_terminal_effect_persists_replays_that_effect(
 async def test_sigterm_stops_the_harness_cleanly_and_the_next_runner_resumes(
     start_runner: Callable[[], Awaitable[RunnerProcess]],
     model: ScriptedModel,
-    spec: protocol_pb2.SessionSpec,
+    spec: runner_pb2.SessionSpec,
     runner_client_factory: RunnerClientFactory,
 ) -> None:
     first_runner = await start_runner()
@@ -642,7 +641,7 @@ async def test_sigterm_stops_the_harness_cleanly_and_the_next_runner_resumes(
         await first.until(events.turn_completed)
         (running,) = await client.list_sessions()
         assert running.session_id == "sigterm-1"
-        assert running.harness_state == protocol_pb2.HARNESS_STATE_RUNNING
+        assert running.harness_state == runner_pb2.HARNESS_STATE_RUNNING
         assert running.spec == spec
         # Native frames after the turn's result may still be arriving.
         assert running.last_cursor >= first.cursor
@@ -653,7 +652,7 @@ async def test_sigterm_stops_the_harness_cleanly_and_the_next_runner_resumes(
     second_runner = await start_runner()
     client = runner_client_factory(second_runner.target, capture_history=True)
     (stopped,) = await client.list_sessions()
-    assert stopped.harness_state == protocol_pb2.HARNESS_STATE_STOPPED
+    assert stopped.harness_state == runner_pb2.HARNESS_STATE_STOPPED
     assert stopped.last_cursor > first.cursor
     second = await client.attach("sigterm-1", spec=spec, after_cursor=first.cursor)
     exited = await second.until(events.is_kind("harness_exited"))
@@ -676,7 +675,7 @@ async def test_sigterm_stops_the_harness_cleanly_and_the_next_runner_resumes(
 async def test_a_reasoning_item_cut_off_by_a_harness_kill_is_reported_absent_and_not_replayed(
     start_runner: Callable[[], Awaitable[RunnerProcess]],
     model: ScriptedModel,
-    spec: protocol_pb2.SessionSpec,
+    spec: runner_pb2.SessionSpec,
     runner_client_factory: RunnerClientFactory,
 ) -> None:
     first_runner = await start_runner()

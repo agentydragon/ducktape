@@ -9,8 +9,7 @@ from typing import Self
 
 import grpc
 
-from agentplane.proto import command_pb2, event_log_pb2
-from agentplane.runner import protocol_pb2, protocol_pb2_grpc
+from agentplane.proto import command_pb2, event_log_pb2, runner_pb2, runner_pb2_grpc
 from agentplane.runner.errors import OpenTimeoutError, RunnerError, SessionSealedError, StreamClosedError
 
 # The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.
@@ -28,8 +27,8 @@ LAUNCH_ANSWER_S = 150
 class Attachment:
     def __init__(
         self,
-        call: grpc.aio.StreamStreamCall[protocol_pb2.ClientMessage, protocol_pb2.ServerMessage],
-        attached: protocol_pb2.Attached,
+        call: grpc.aio.StreamStreamCall[runner_pb2.ClientMessage, runner_pb2.ServerMessage],
+        attached: runner_pb2.Attached,
         *,
         after_cursor: int = 0,
         capture_history: bool = False,
@@ -60,7 +59,7 @@ class Attachment:
         return self._cursor
 
     async def command(self, command: command_pb2.Command) -> None:
-        await self._call.write(protocol_pb2.ClientMessage(command=command))
+        await self._call.write(runner_pb2.ClientMessage(command=command))
 
     async def stop_runner_session(self, command_id: str) -> None:
         await self.command(
@@ -74,14 +73,14 @@ class Attachment:
         if self._call.done():
             self._detach_sent = True
             return
-        await self._call.write(protocol_pb2.ClientMessage(detach=protocol_pb2.Detach()))
+        await self._call.write(runner_pb2.ClientMessage(detach=runner_pb2.Detach()))
         self._detach_sent = True
 
     async def next_entry(self) -> event_log_pb2.EventEntry:
         message = await self._call.read()
         if message is grpc.aio.EOF:
             raise StreamClosedError
-        assert isinstance(message, protocol_pb2.ServerMessage)
+        assert isinstance(message, runner_pb2.ServerMessage)
         if message.HasField("error"):
             raise RunnerError(message.error)
         if message.HasField("sealed"):
@@ -124,13 +123,13 @@ class RunnerClient:
         """Wrap a channel; `close()` owns and closes the supplied channel."""
         self._capture_history = capture_history
         self._channel = channel
-        self._stub = protocol_pb2_grpc.RunnerStub(self._channel)
+        self._stub = runner_pb2_grpc.RunnerStub(self._channel)
 
     async def attach(
         self,
         session_id: str,
         *,
-        spec: protocol_pb2.SessionSpec | None = None,
+        spec: runner_pb2.SessionSpec | None = None,
         setup_script: str | None = None,
         after_cursor: int = 0,
     ) -> Attachment:
@@ -141,8 +140,8 @@ class RunnerClient:
         try:
             async with asyncio.timeout(answer_s):
                 await call.write(
-                    protocol_pb2.ClientMessage(
-                        open=protocol_pb2.Open(
+                    runner_pb2.ClientMessage(
+                        open=runner_pb2.Open(
                             session_id=session_id,
                             spec=spec,
                             follow=event_log_pb2.Follow(after_cursor=after_cursor),
@@ -158,7 +157,7 @@ class RunnerClient:
             ) from error
         if message is grpc.aio.EOF:
             raise RunnerError("the runner ended the stream before answering Open")
-        assert isinstance(message, protocol_pb2.ServerMessage)
+        assert isinstance(message, runner_pb2.ServerMessage)
         if message.HasField("error"):
             raise RunnerError(message.error)
         assert message.HasField("attached"), "the first server message must be Attached"
@@ -166,13 +165,13 @@ class RunnerClient:
 
     def initialize_events(
         self, script: str, *, after_sequence: int = 0
-    ) -> grpc.aio.UnaryStreamCall[protocol_pb2.InitializeRequest, protocol_pb2.InitializationEvent]:
+    ) -> grpc.aio.UnaryStreamCall[runner_pb2.InitializeRequest, runner_pb2.InitializationEvent]:
         """Replay initialization events after a cursor, then follow live output through completion."""
-        return self._stub.Initialize(protocol_pb2.InitializeRequest(script=script, after_sequence=after_sequence))
+        return self._stub.Initialize(runner_pb2.InitializeRequest(script=script, after_sequence=after_sequence))
 
-    async def initialize(self, script: str) -> protocol_pb2.InitializeResult:
+    async def initialize(self, script: str) -> runner_pb2.InitializeResult:
         """Run or replay initialization and return its terminal result."""
-        result: protocol_pb2.InitializeResult | None = None
+        result: runner_pb2.InitializeResult | None = None
         async for event in self.initialize_events(script):
             if event.HasField("result"):
                 result = event.result
@@ -182,12 +181,12 @@ class RunnerClient:
             raise RunnerError("the initialization stream ended without a result")
         return result
 
-    async def list_sessions(self) -> list[protocol_pb2.SessionSummary]:
-        response = await self._stub.ListSessions(protocol_pb2.ListSessionsRequest())
+    async def list_sessions(self) -> list[runner_pb2.SessionSummary]:
+        response = await self._stub.ListSessions(runner_pb2.ListSessionsRequest())
         return list(response.sessions)
 
-    async def seal(self) -> protocol_pb2.SealResponse:
-        return await self._stub.Seal(protocol_pb2.SealRequest())
+    async def seal(self) -> runner_pb2.SealResponse:
+        return await self._stub.Seal(runner_pb2.SealRequest())
 
     async def close(self) -> None:
         await self._channel.close()

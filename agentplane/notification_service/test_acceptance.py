@@ -32,8 +32,7 @@ from agentplane.notification_service.service import Service
 from agentplane.notification_service.settings import NoticeDebounceSettings
 from agentplane.notification_service.sources.actions import Actions
 from agentplane.notification_service.store import Store
-from agentplane.proto import command_pb2, event_log_pb2
-from agentplane.runner import protocol_pb2
+from agentplane.proto import command_pb2, event_log_pb2, runner_pb2
 from agentplane.runner.testing.fixtures import RunnerHandle
 from agentplane.runner.testing.scripted_model import ScriptedModel, Text
 from agentplane.sandbox_service.client import Runner
@@ -65,7 +64,7 @@ async def test_listen_deliver_read_ack_and_recover_lost_response_without_app(
     echo_catalog: ActionCatalog,
     echo_executor: RecordingExecutor,
     runner: RunnerHandle,
-    spec: protocol_pb2.SessionSpec,
+    spec: runner_pb2.SessionSpec,
     model: ScriptedModel,
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

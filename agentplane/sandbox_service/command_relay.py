@@ -1,7 +1,6 @@
 """Forward a command without starting a harness; the runner remains the admission authority."""
 
-from agentplane.proto import command_pb2, event_log_pb2
-from agentplane.runner import protocol_pb2
+from agentplane.proto import command_pb2, event_log_pb2, runner_pb2
 from agentplane.runner.client import RunnerClient
 from agentplane.runner.errors import RunnerError
 
@@ -24,7 +23,7 @@ async def admit_running_command(
     """
     attachment = await client.attach(session_id, after_cursor=after_cursor)
     try:
-        if attachment.attached.harness_state != protocol_pb2.HARNESS_STATE_RUNNING:
+        if attachment.attached.harness_state != runner_pb2.HARNESS_STATE_RUNNING:
             raise RunnerError("session is stopped; explicitly open it before sending commands")
         await attachment.command(command)
         await attachment.detach()

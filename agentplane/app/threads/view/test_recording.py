@@ -16,8 +16,7 @@ from agentplane.app.testing.history import ProjectedHistory as Ingestion, Seeded
 from agentplane.app.testing.projection_lease import LeaseFactory
 from agentplane.app.testing.thread_test_support import SPEC, Replica, event_entry
 from agentplane.app.threads.store import ThreadStore
-from agentplane.proto import command_pb2, event_pb2
-from agentplane.runner import protocol_pb2
+from agentplane.proto import command_pb2, event_pb2, runner_pb2
 from agentplane.runner.codex import CodexAdapter
 from agentplane.runner.config import CodexLaunch
 from agentplane.runner.observation import Observation
@@ -55,7 +54,7 @@ async def test_feed_failure_is_a_synced_operational_state_without_advancing_the_
 ) -> None:
     thread = await event_logs.open("sb-1", "s-operational")
     lease = await lease_for(thread)
-    attached = protocol_pb2.Attached(session_id="s-operational", spec=SPEC)
+    attached = runner_pb2.Attached(session_id="s-operational", spec=SPEC)
     await ingestion.set_attached(thread, attached, lease=lease)
     await ingestion.record(thread, [event_entry(1, harness_started=event_pb2.HarnessStarted())], lease=lease)
     async with replica.store._sessions() as session:
@@ -85,7 +84,7 @@ async def test_feed_failure_is_a_synced_operational_state_without_advancing_the_
     }
 
     await ingestion.set_attached(
-        thread, protocol_pb2.Attached(session_id="s-operational", spec=SPEC, last_cursor=1), lease=lease
+        thread, runner_pb2.Attached(session_id="s-operational", spec=SPEC, last_cursor=1), lease=lease
     )
     async with replica.store._sessions() as session:
         view_reset = await session.get(

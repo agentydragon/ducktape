@@ -74,7 +74,7 @@ py_test(
         "//agentplane/app:conftest",
         "//agentplane/app/threads:summaries",
         "//agentplane/proto:event_log_pb2",
-        "//agentplane/runner:protocol_pb2",
+        "//agentplane/proto:runner_pb2",
         "@pypi//protobuf",
         "@pypi//pytest",
         "@pypi//pytest_bazel",

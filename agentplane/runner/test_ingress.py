@@ -15,8 +15,7 @@ import grpc
 import pytest
 import pytest_bazel
 
-from agentplane.proto import event_log_pb2, event_pb2, runner_ingress_pb2, runner_ingress_pb2_grpc
-from agentplane.runner import protocol_pb2
+from agentplane.proto import event_log_pb2, event_pb2, runner_ingress_pb2, runner_ingress_pb2_grpc, runner_pb2
 from agentplane.runner.channel import ChannelTiming
 from agentplane.runner.config import IngressEndpoint, RunnerConfig
 from agentplane.runner.ingress import IngressPusher
@@ -25,7 +24,7 @@ from agentplane.runner.store import SessionRecord
 
 # gazelle:include_dep @pypi//protobuf
 
-SPEC = protocol_pb2.SessionSpec(harness=protocol_pb2.HARNESS_CLAUDE, cwd="/test-workspace", model="test-model")
+SPEC = runner_pb2.SessionSpec(harness=runner_pb2.HARNESS_CLAUDE, cwd="/test-workspace", model="test-model")
 A = "test-session-a"
 B = "test-session-b"
 TIMING = ChannelTiming(heartbeat_s=0.1, liveness_s=0.5, backoff_initial_s=0.01, backoff_max_s=0.05)

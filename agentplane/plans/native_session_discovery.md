@@ -373,7 +373,7 @@ an explicit unresolved state when it cannot be resolved.
 
 ### Runner protocol and storage seams
 
-Today [`runner/protocol.proto`](../runner/protocol.proto), [`Session`](../runner/session.py), and
+Today [`proto/runner.proto`](../proto/runner.proto), [`Session`](../runner/session.py), and
 [`SessionRecord`](../runner/store.py) couple a session to a launch spec, native persistence, process,
 and active turn, and `Attached`, the ingress announcement, carries that spec. The first
 implementation must separate the logical-session descriptor from execution ownership.

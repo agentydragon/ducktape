@@ -7,7 +7,7 @@ package agentplane.proto.runner_channel;
 
 import "agentplane/proto/command.proto";
 import "agentplane/proto/event_log.proto";
-import "agentplane/runner/protocol.proto";
+import "agentplane/proto/runner.proto";
 
 service RunnerChannel {
   rpc Connect(stream RunnerFrame) returns (stream ServiceFrame);
@@ -82,11 +82,11 @@ message Heartbeat {}
 message ControlRequest {
   string request_id = 1;  // chosen by the service; the runner answers each once
   oneof verb {
-    ducktape.agentplane.runner.v1.ListSessionsRequest list_sessions = 2;
+    agentplane.proto.runner.ListSessionsRequest list_sessions = 2;
     Initialize initialize = 3;
     OpenSession open = 4;
     ResumeSession resume = 5;
-    ducktape.agentplane.runner.v1.SealRequest seal = 6;
+    agentplane.proto.runner.SealRequest seal = 6;
   }
 }
 
@@ -99,7 +99,7 @@ message Initialize {
 // restarted: its `spec`, and `setup_script` when present, must equal the stored ones.
 message OpenSession {
   string session_id = 1;
-  ducktape.agentplane.runner.v1.SessionSpec spec = 2;
+  agentplane.proto.runner.SessionSpec spec = 2;
   optional string setup_script = 3;  // selected only at creation
 }
 
@@ -111,12 +111,12 @@ message ResumeSession {
 message ControlResult {
   string request_id = 1;
   oneof outcome {
-    ducktape.agentplane.runner.v1.ListSessionsResponse list_sessions = 2;
+    agentplane.proto.runner.ListSessionsResponse list_sessions = 2;
     // The attempt's terminal event, `result` or `interrupted`; its output is not carried.
-    ducktape.agentplane.runner.v1.InitializationEvent initialize = 3;
-    ducktape.agentplane.runner.v1.Attached open = 4;
-    ducktape.agentplane.runner.v1.Attached resume = 5;
-    ducktape.agentplane.runner.v1.SealResponse seal = 6;
+    agentplane.proto.runner.InitializationEvent initialize = 3;
+    agentplane.proto.runner.Attached open = 4;
+    agentplane.proto.runner.Attached resume = 5;
+    agentplane.proto.runner.SealResponse seal = 6;
     ControlRefused refused = 9;
   }
 }

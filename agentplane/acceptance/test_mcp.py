@@ -45,9 +45,9 @@ from agentplane.action_service.policy_evaluation import PROVIDER_NAME
 from agentplane.app.client import Client
 from agentplane.app.sandbox_models import SandboxView
 from agentplane.crd_group import GROUP, VERSION
-from agentplane.runner import protocol_pb2
+from agentplane.proto import runner_pb2
 
-# `protocol_pb2.pyi` imports google.protobuf, which mypy follows for this direct dependency.
+# `runner_pb2.pyi` imports google.protobuf, which mypy follows for this direct dependency.
 # gazelle:include_dep @pypi//protobuf
 
 # A status write follows the informer's next watch event; the bound covers a relist after a
@@ -155,7 +155,7 @@ def policy_objects() -> Iterator[PolicyObjects]:
 async def test_agent_executes_mcp_action(
     client: Client,
     sandbox: Callable[..., Awaitable[SandboxView]],
-    harness: protocol_pb2.Harness,
+    harness: runner_pb2.Harness,
     model: str,
     policy_objects: PolicyObjects,
 ) -> None:
@@ -184,7 +184,7 @@ async def test_operator_links_oauth_mcp_server(
     operator_credentials: OperatorCredentials,
     client: Client,
     sandbox: Callable[..., Awaitable[SandboxView]],
-    harness: protocol_pb2.Harness,
+    harness: runner_pb2.Harness,
     model: str,
     policy_objects: PolicyObjects,
 ) -> None:
@@ -301,7 +301,7 @@ async def test_agent_mcp_bff_decision(
     operator_credentials: OperatorCredentials,
     client: Client,
     sandbox: Callable[..., Awaitable[SandboxView]],
-    harness: protocol_pb2.Harness,
+    harness: runner_pb2.Harness,
     model: str,
     verdict: Verdict,
 ) -> None:
@@ -436,7 +436,7 @@ async def test_policy_binding_auto_approves_the_bound_sandbox(
     operator_bff: httpx.AsyncClient,
     client: Client,
     sandbox: Callable[..., Awaitable[SandboxView]],
-    harness: protocol_pb2.Harness,
+    harness: runner_pb2.Harness,
     model: str,
     policy_objects: PolicyObjects,
 ) -> None:

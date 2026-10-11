@@ -13,8 +13,7 @@ import grpc
 import pytest
 import pytest_bazel
 
-from agentplane.proto import event_pb2
-from agentplane.runner import protocol_pb2
+from agentplane.proto import event_pb2, runner_pb2
 from agentplane.runner.client import RunnerClient
 from agentplane.runner.config import RunnerConfig
 from agentplane.runner.service import serve
@@ -99,10 +98,10 @@ async def running_client(config: RunnerConfig) -> AsyncIterator[RunnerClient]:
 
 @pytest.mark.parametrize("history_size", [1, 10, 100])
 async def test_native_history_and_resume_resources(
-    harness: protocol_pb2.Harness,
+    harness: runner_pb2.Harness,
     config: RunnerConfig,
     model: ScriptedModel[Any],
-    spec: protocol_pb2.SessionSpec,
+    spec: runner_pb2.SessionSpec,
     history_size: int,
 ) -> None:
     """The loopback upstream receives the real native request, including resumed history.
@@ -110,7 +109,7 @@ async def test_native_history_and_resume_resources(
     This deliberately records measurements without asserting constant native memory or
     context. Agentplane's bounded journal does not control the native harness's context.
     """
-    name = "claude" if harness == protocol_pb2.HARNESS_CLAUDE else "codex"
+    name = "claude" if harness == runner_pb2.HARNESS_CLAUDE else "codex"
     session_id = "native-resource-profile"
     directory = config.state_dir / "sessions" / session_id / name
     inputs = [f"User marker {index}: " + "u" * 2048 for index in range(history_size + 1)]

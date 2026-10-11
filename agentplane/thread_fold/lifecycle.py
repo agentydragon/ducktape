@@ -6,8 +6,7 @@ from google.protobuf.json_format import MessageToDict, ParseDict
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from agentplane.history_service import protocol_pb2 as history_pb2
-from agentplane.proto import event_log_pb2
-from agentplane.runner import protocol_pb2 as runner_pb2
+from agentplane.proto import event_log_pb2, runner_pb2
 from agentplane.thread_fold.models import ThreadHistorySummary
 from agentplane.thread_fold.recording import EventReplicationError, set_operational
 

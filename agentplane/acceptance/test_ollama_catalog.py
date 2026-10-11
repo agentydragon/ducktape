@@ -7,7 +7,7 @@ import pytest_bazel
 import yaml
 
 from agentplane.acceptance.ollama_catalog import ollama_cases
-from agentplane.runner import protocol_pb2
+from agentplane.proto import runner_pb2
 from util.bazel.runfiles import get_required_path
 
 # gazelle:include_dep @pypi//protobuf
@@ -42,9 +42,9 @@ def test_cases_use_offered_harnesses_and_prioritize_128k(tmp_path: Path) -> None
     small = "ollama/oai-chat/example-128k"
     path = _manifest(tmp_path, {"HARNESS_CLAUDE": [large, small, "other/messages/example"], "HARNESS_CODEX": [small]})
     assert ollama_cases(path) == [
-        (protocol_pb2.HARNESS_CLAUDE, small),
-        (protocol_pb2.HARNESS_CODEX, small),
-        (protocol_pb2.HARNESS_CLAUDE, large),
+        (runner_pb2.HARNESS_CLAUDE, small),
+        (runner_pb2.HARNESS_CODEX, small),
+        (runner_pb2.HARNESS_CLAUDE, large),
     ]
 
 
@@ -58,7 +58,7 @@ def test_committed_app_config_supplies_smoke_cases() -> None:
     path = get_required_path("ducktape/cluster/generated/agentplane-testing/agentplane-testing.k8s.yaml")
     cases = ollama_cases(path)
     assert len(cases) == len(set(cases))
-    assert {harness for harness, _ in cases} == {protocol_pb2.HARNESS_CODEX}
+    assert {harness for harness, _ in cases} == {runner_pb2.HARNESS_CODEX}
 
 
 if __name__ == "__main__":

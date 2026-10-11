@@ -8,8 +8,7 @@ import httpx
 import pytest
 import pytest_bazel
 
-from agentplane.proto import event_pb2
-from agentplane.runner import protocol_pb2
+from agentplane.proto import event_pb2, runner_pb2
 from agentplane.runner.client import RunnerClient
 from agentplane.runner.config import ClaudeLaunch, CodexLaunch, RunnerConfig
 from agentplane.runner.errors import RunnerError
@@ -39,7 +38,7 @@ def harness_binary(tmp_path: Path) -> Path:
 
 
 @pytest.fixture
-def config(harness: protocol_pb2.Harness, harness_binary: Path, tmp_path: Path) -> RunnerConfig:
+def config(harness: runner_pb2.Harness, harness_binary: Path, tmp_path: Path) -> RunnerConfig:
     """Overrides the package fixture: the session's harness is `harness_binary`, not the pinned one."""
     return RunnerConfig(
         state_dir=tmp_path / "state",
@@ -50,10 +49,10 @@ def config(harness: protocol_pb2.Harness, harness_binary: Path, tmp_path: Path) 
         ),
         native_state_dir=tmp_path / "native-state",
         claude=ClaudeLaunch(binary=harness_binary, base_url=TEST_ENDPOINT, auth_token="test-token")
-        if harness == protocol_pb2.HARNESS_CLAUDE
+        if harness == runner_pb2.HARNESS_CLAUDE
         else None,
         codex=CodexLaunch(binary=harness_binary, base_url=f"{TEST_ENDPOINT}/v1", api_key="test-token")
-        if harness == protocol_pb2.HARNESS_CODEX
+        if harness == runner_pb2.HARNESS_CODEX
         else None,
     )
 
@@ -64,7 +63,7 @@ async def test_failed_session_shutdown_still_closes_its_database(
     runner = Runner(RunnerConfig(state_dir=tmp_path, harness_environment={}))
     runner.store.write(
         "test-session",
-        SessionRecord.from_spec(protocol_pb2.SessionSpec(harness=protocol_pb2.HARNESS_CLAUDE, model="test-model")),
+        SessionRecord.from_spec(runner_pb2.SessionSpec(harness=runner_pb2.HARNESS_CLAUDE, model="test-model")),
     )
     session = await runner._load("test-session")
 
@@ -81,20 +80,20 @@ async def test_failed_session_shutdown_still_closes_its_database(
 
 
 async def test_a_harness_that_dies_in_its_handshake_names_its_exit_and_stderr(
-    client: RunnerClient, config: RunnerConfig, harness: protocol_pb2.Harness, spec: protocol_pb2.SessionSpec
+    client: RunnerClient, config: RunnerConfig, harness: runner_pb2.Harness, spec: runner_pb2.SessionSpec
 ) -> None:
     with pytest.raises(RunnerError) as raised:
         await client.attach("launch-failure-1", spec=spec)
     assert "exit_code=3" in str(raised.value)
     assert REFUSAL in str(raised.value)
     assert config.native_state_dir is not None
-    native_home = "claude" if harness == protocol_pb2.HARNESS_CLAUDE else "codex"
+    native_home = "claude" if harness == runner_pb2.HARNESS_CLAUDE else "codex"
     assert (config.native_state_dir / "launch-failure-1" / native_home).is_dir()
 
 
 @pytest.mark.parametrize("harness_binary", [Path("/nonexistent/agentplane-test-harness")])
 async def test_a_harness_the_supervisor_cannot_start_names_the_spawn_failure(
-    client: RunnerClient, spec: protocol_pb2.SessionSpec
+    client: RunnerClient, spec: runner_pb2.SessionSpec
 ) -> None:
     with pytest.raises(RunnerError) as raised:
         await client.attach("launch-failure-2", spec=spec)
@@ -106,7 +105,7 @@ async def test_summaries_report_the_published_log_not_a_batch_in_progress(tmp_pa
     runner = Runner(RunnerConfig(state_dir=tmp_path, harness_environment={}))
     runner.store.write(
         "test-session",
-        SessionRecord.from_spec(protocol_pb2.SessionSpec(harness=protocol_pb2.HARNESS_CLAUDE, model="test-model")),
+        SessionRecord.from_spec(runner_pb2.SessionSpec(harness=runner_pb2.HARNESS_CLAUDE, model="test-model")),
     )
     session = await runner._load("test-session")
     try:

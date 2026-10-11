@@ -9,8 +9,6 @@ package(default_visibility = [
 ])
 
 # gazelle:resolve py agentplane.runner.client //agentplane/runner:client_for_testing
-# gazelle:resolve py agentplane.runner.protocol_pb2 //agentplane/runner:protocol_pb2
-# gazelle:resolve py agentplane.runner.protocol_pb2_grpc //agentplane/runner:protocol_pb2_grpc
 # gazelle:resolve py agentplane.history_service.protocol_pb2 //agentplane/history_service:protocol_pb2
 # gazelle:resolve py httpx_sse @pypi//httpx_sse
 
@@ -73,9 +71,9 @@ py_library(
         "//agentplane/app/threads/events:stream",
         "//agentplane/app/threads/view:content",
         "//agentplane/history_service:client",
+        "//agentplane/proto:runner_pb2",
         "//agentplane/runner:errors",
         "//agentplane/runner:harness",
-        "//agentplane/runner:protocol_pb2",
         "//agentplane/sandbox_service:action_policy_views",
         "//agentplane/sandbox_service:client",
         "//agentplane/sandbox_service:egress_views",
@@ -296,8 +294,8 @@ py_test(
         "//agentplane/app/threads:store",
         "//agentplane/app/threads/view:content",
         "//agentplane/proto:event_log_pb2",
+        "//agentplane/proto:runner_pb2",
         "//agentplane/runner:harness",
-        "//agentplane/runner:protocol_pb2",
         "//agentplane/sandbox_service:client",
         "//agentplane/sandbox_service:kubernetes_grants",
         "//agentplane/sandbox_service:protocol_pb2",
@@ -369,8 +367,8 @@ py_test(
         "//agentplane/proto:command_pb2",
         "//agentplane/proto:event_log_pb2",
         "//agentplane/proto:event_pb2",
+        "//agentplane/proto:runner_pb2",
         "//agentplane/runner:harness",
-        "//agentplane/runner:protocol_pb2",
         "//agentplane/runner:service",
         "//agentplane/runner:session",
         "//agentplane/runner/testing:fixtures",
@@ -733,7 +731,7 @@ py_library(
         "//agentplane/app/threads:thread_view",
         "//agentplane/proto:command_pb2",
         "//agentplane/proto:event_log_pb2",
-        "//agentplane/runner:protocol_pb2",
+        "//agentplane/proto:runner_pb2",
         "//agentplane/sandbox_service:egress_views",
         "@pypi//httpx",
         "@pypi//protobuf",
@@ -938,7 +936,7 @@ py_test(
         "//agentplane/proto:command_pb2",
         "//agentplane/proto:event_log_pb2",
         "//agentplane/proto:event_pb2",
-        "//agentplane/runner:protocol_pb2",
+        "//agentplane/proto:runner_pb2",
         "//agentplane/thread_fold:models",
         "@pypi//asyncpg",
         "@pypi//httpx",
@@ -1322,7 +1320,7 @@ py_test(
         "//agentplane/app/threads/view:content",
         "//agentplane/history_service/testing:backend",
         "//agentplane/proto:command_pb2",
-        "//agentplane/runner:protocol_pb2",
+        "//agentplane/proto:runner_pb2",
         "//agentplane/runner/testing:fixtures",
         "//agentplane/runner/testing:scripted_model",
         "//agentplane/sandbox_service:client",

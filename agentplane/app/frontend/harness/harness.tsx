@@ -27,7 +27,7 @@ import {
   SessionSummarySchema,
   type SessionSpec,
   type SessionSummary,
-} from "../../../runner/protocol_pb";
+} from "../../../proto/runner_pb";
 import { DisclosureVisual } from "./disclosure_visual";
 import { LocalCommands } from "../threads/local_commands";
 import { streamRegistry } from "../stream_status";

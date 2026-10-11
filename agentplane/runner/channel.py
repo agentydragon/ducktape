@@ -15,8 +15,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from tenacity import AsyncRetrying, RetryCallState, retry_if_exception_type, wait_random_exponential
 
 from agentplane.grpc_options import grpc_channel_option_kvps
-from agentplane.proto import command_pb2, runner_channel_pb2 as channel_pb2, runner_channel_pb2_grpc
-from agentplane.runner import protocol_pb2
+from agentplane.proto import command_pb2, runner_channel_pb2 as channel_pb2, runner_channel_pb2_grpc, runner_pb2
 from agentplane.runner.journal import CommandConflictError, JournalSealedError
 from agentplane.runner.service import (
     InitializationConflictError,
@@ -96,7 +95,7 @@ async def receipt(runner: Runner, deliver: channel_pb2.DeliverCommand) -> channe
     )
 
 
-def _attached(session: Session) -> protocol_pb2.Attached:
+def _attached(session: Session) -> runner_pb2.Attached:
     return build_attached(session, session.journal.recovery_state)
 
 
@@ -119,7 +118,7 @@ async def control(runner: Runner, request: channel_pb2.ControlRequest) -> channe
             case "initialize":
                 try:
                     log, execution = await runner.initialize(
-                        protocol_pb2.InitializeRequest(script=request.initialize.script)
+                        runner_pb2.InitializeRequest(script=request.initialize.script)
                     )
                 except ValueError as error:
                     raise InvalidRequestError(str(error)) from error

@@ -1,7 +1,8 @@
 # Agentplane runner
 
 A gRPC service that runs one native harness per session, Claude Code or Codex, and exposes both
-through one protocol. The contract is in <SPEC.md>; the wire definition is `protocol.proto`.
+through one protocol. The contract is in <SPEC.md>; the wire definition is
+[`agentplane/proto/runner.proto`](../proto/runner.proto).
 
 ```sh
 bbr test //agentplane/runner/...
@@ -9,10 +10,6 @@ bbr test //agentplane/runner/...
 
 ## Layout
 
-- `protocol.proto`: the contract. Its messages (`protocol_pb2`) are generated through standard
-  `proto_library` and `py_proto_library` rules; the service-only `protocol_pb2_grpc` module uses
-  the narrow `py_grpc_service_library` fallback in `devinfra/python/grpc.bzl` with the pinned
-  `grpcio-tools` and `mypy-protobuf` plugins.
 - `service.py`: the `Attach` RPC, session lookup, and `serve()`; `main.py` is the process entry
   point, configured by flags and credentialed from its environment.
 - `channel.py`: the runner's peer of the [runner channel](../docs/runner_channel.md), off unless

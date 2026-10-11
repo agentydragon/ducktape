@@ -55,8 +55,8 @@ from agentplane.app.threads.store import ThreadStore
 from agentplane.app.threads.view.content import ContentStore
 from agentplane.history_service.client import HistoryServiceClient
 from agentplane.history_service.testing.backend import history_service, ingest
-from agentplane.proto import command_pb2, event_log_pb2, event_pb2
-from agentplane.runner import protocol_pb2, service
+from agentplane.proto import command_pb2, event_log_pb2, event_pb2, runner_pb2
+from agentplane.runner import service
 from agentplane.runner.harness import Harness
 from agentplane.runner.session import Session
 from agentplane.runner.testing.fixtures import RunnerClientFactory, RunnerHandle
@@ -102,7 +102,7 @@ async def failed_native_journal(
     )
 
 
-async def _create(http: httpx.AsyncClient, spec: protocol_pb2.SessionSpec, session_id: UUID) -> str:
+async def _create(http: httpx.AsyncClient, spec: runner_pb2.SessionSpec, session_id: UUID) -> str:
     """Create a Session through the app; its public ID is the Thread's."""
     opened = await http.post(SESSIONS, json={"session_id": str(session_id), "spec": MessageToDict(spec)})
     assert opened.status_code == 201, opened.text
@@ -259,7 +259,7 @@ async def app_url(
 
 
 async def test_the_bridge_streams_a_turn_to_every_tab_and_resumes_from_the_last_event_id(
-    app_url: str, model: ScriptedModel, spec: protocol_pb2.SessionSpec, failed_native_journal: None
+    app_url: str, model: ScriptedModel, spec: runner_pb2.SessionSpec, failed_native_journal: None
 ) -> None:
     async with httpx.AsyncClient(base_url=app_url, timeout=60, headers=AGENT_AUTH) as http:
         session_id = uuid4()
@@ -380,7 +380,7 @@ async def test_the_bridge_streams_a_turn_to_every_tab_and_resumes_from_the_last_
         resumed = await http.post(f"/threads/{thread_id}/resume")
         assert resumed.status_code == 200, resumed.text
         assert resumed.json()["sessionId"] == thread_id
-        assert resumed.json()["spec"]["harness"] == protocol_pb2.Harness.Name(spec.harness)
+        assert resumed.json()["spec"]["harness"] == runner_pb2.Harness.Name(spec.harness)
         assert resumed.json()["harnessState"] == "HARNESS_STATE_RUNNING"
         assert (await http.get("/threads")).json()[0]["id"] == thread_id
 
@@ -500,7 +500,7 @@ async def _next_model_request(model: ScriptedModel) -> Any:
 
 
 async def _open_thread_with_seed(
-    http: httpx.AsyncClient, model: ScriptedModel, spec: protocol_pb2.SessionSpec, *, seed_prompt: str, seed_answer: str
+    http: httpx.AsyncClient, model: ScriptedModel, spec: runner_pb2.SessionSpec, *, seed_prompt: str, seed_answer: str
 ) -> str:
     thread_id = await _create(http, spec, uuid4())
     accepted = await http.post(
@@ -519,7 +519,7 @@ def _has_turn_status(entries: list[dict[str, Any]], status: str) -> bool:
 
 
 async def test_http_error_is_archived_as_failed_turn_and_follow_up_succeeds(
-    app_url: str, model: ScriptedModel, spec: protocol_pb2.SessionSpec, failed_native_journal: None
+    app_url: str, model: ScriptedModel, spec: runner_pb2.SessionSpec, failed_native_journal: None
 ) -> None:
     """A failed model turn stays admitted and replayable; a later input is a separate turn."""
     async with httpx.AsyncClient(base_url=app_url, timeout=60, headers=AGENT_AUTH) as http:
@@ -595,7 +595,7 @@ async def test_stream_recovery_reports_the_content_the_model_receives(
     model: ScriptedModel,
     runner: RunnerHandle,
     store: ThreadStore,
-    spec: protocol_pb2.SessionSpec,
+    spec: runner_pb2.SessionSpec,
     failed_native_journal: None,
     stop_mode: str,
 ) -> None:
@@ -719,7 +719,7 @@ async def test_tool_recovery_reports_context_without_repeating_side_effects(
     model: ScriptedModel,
     runner: RunnerHandle,
     store: ThreadStore,
-    spec: protocol_pb2.SessionSpec,
+    spec: runner_pb2.SessionSpec,
     workspace: Path,
     failed_native_journal: None,
     stop_mode: str,
@@ -815,7 +815,7 @@ async def test_resume_after_tool_completion_preserves_the_result_and_does_not_re
     model: ScriptedModel,
     runner: RunnerHandle,
     store: ThreadStore,
-    spec: protocol_pb2.SessionSpec,
+    spec: runner_pb2.SessionSpec,
     workspace: Path,
     failed_native_journal: None,
     stop_mode: str,
@@ -919,7 +919,7 @@ async def test_thread_resume_reports_missing_runner_recovery_state(app_url: str,
 
 
 async def test_the_feed_records_a_turn_nobody_is_watching(
-    app_url: str, model: ScriptedModel, spec: protocol_pb2.SessionSpec
+    app_url: str, model: ScriptedModel, spec: runner_pb2.SessionSpec
 ) -> None:
     """Opening a session starts its feed, so a turn driven over REST alone lands in the store."""
     async with httpx.AsyncClient(base_url=app_url, timeout=60, headers=AGENT_AUTH) as http:
@@ -958,7 +958,7 @@ async def test_thread_command_reports_id_conflict_after_runner_admitted_before_a
     app_url: str,
     runner: RunnerHandle,
     event_logs: EventLogStore,
-    spec: protocol_pb2.SessionSpec,
+    spec: runner_pb2.SessionSpec,
     failed_native_journal: None,
     runner_client_factory: RunnerClientFactory,
 ) -> None:
@@ -995,7 +995,7 @@ async def test_thread_command_reports_id_conflict_after_runner_admitted_before_a
 
 
 async def test_command_status_reads_what_the_sandbox_service_retained(
-    app_url: str, spec: protocol_pb2.SessionSpec, failed_native_journal: None
+    app_url: str, spec: runner_pb2.SessionSpec, failed_native_journal: None
 ) -> None:
     async with httpx.AsyncClient(base_url=app_url, timeout=60, headers=AGENT_AUTH) as http:
         thread_id = await _create(http, spec, uuid4())
@@ -1012,7 +1012,7 @@ async def test_command_status_reads_what_the_sandbox_service_retained(
 async def test_stop_command_returns_after_admission_before_native_shutdown_effect(
     app_url: str,
     runner: RunnerHandle,
-    spec: protocol_pb2.SessionSpec,
+    spec: runner_pb2.SessionSpec,
     monkeypatch: pytest.MonkeyPatch,
     failed_native_journal: None,
 ) -> None:
@@ -1054,7 +1054,7 @@ async def test_command_relay_waits_for_runner_admission_before_closing(
     app_url: str,
     model: ScriptedModel,
     runner: RunnerHandle,
-    spec: protocol_pb2.SessionSpec,
+    spec: runner_pb2.SessionSpec,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """A relay cancellation before the runner reads its frames must not discard the Command."""
@@ -1066,7 +1066,7 @@ async def test_command_relay_waits_for_runner_admission_before_closing(
 
         async def gated_consume(
             session: Session,
-            requests: AsyncIterator[protocol_pb2.ClientMessage],
+            requests: AsyncIterator[runner_pb2.ClientMessage],
             closing: asyncio.Event,
             failure: list[str],
         ) -> None:
@@ -1103,7 +1103,7 @@ async def test_command_relay_waits_for_runner_admission_before_closing(
 
 
 async def test_command_admission_timeout_is_not_an_internal_server_error(
-    app_url: str, spec: protocol_pb2.SessionSpec, monkeypatch: pytest.MonkeyPatch, failed_native_journal: None
+    app_url: str, spec: runner_pb2.SessionSpec, monkeypatch: pytest.MonkeyPatch, failed_native_journal: None
 ) -> None:
     async with httpx.AsyncClient(base_url=app_url, timeout=60, headers=AGENT_AUTH) as http:
         thread_id = await _create(http, spec, uuid4())
@@ -1238,7 +1238,7 @@ async def frame_lines(frames: AsyncIterator[bytes]) -> AsyncIterator[str]:
 
 
 async def test_replica_commands_and_database_stream_survive_ingestion_owner_exit(
-    replicas: Replicas, event_logs: EventLogStore, model: ScriptedModel, spec: protocol_pb2.SessionSpec
+    replicas: Replicas, event_logs: EventLogStore, model: ScriptedModel, spec: runner_pb2.SessionSpec
 ) -> None:
     thread = UUID((await replicas.owner.create_session(SANDBOX, uuid4(), MessageToDict(spec))).session_id)
     async for attempt in AsyncRetrying(
@@ -1292,7 +1292,7 @@ async def test_inventory_change_discovers_existing_runner_session_without_browse
     store: ThreadStore,
     event_logs: EventLogStore,
     model: ScriptedModel,
-    spec: protocol_pb2.SessionSpec,
+    spec: runner_pb2.SessionSpec,
     monkeypatch: pytest.MonkeyPatch,
     ingestion: Ingestion,
     live_index: LiveIndex,
@@ -1340,7 +1340,7 @@ async def test_inventory_change_discovers_existing_runner_session_without_browse
 
 
 async def test_resumed_session_stream_does_not_end_at_previous_shutdown(
-    replicas: Replicas, event_logs: EventLogStore, model: ScriptedModel, spec: protocol_pb2.SessionSpec
+    replicas: Replicas, event_logs: EventLogStore, model: ScriptedModel, spec: runner_pb2.SessionSpec
 ) -> None:
     thread = UUID((await replicas.owner.create_session(SANDBOX, uuid4(), MessageToDict(spec))).session_id)
     await replicas.survivor.command(
@@ -1396,7 +1396,7 @@ async def test_stored_thread_stream_does_not_require_reachable_runner(
     live_index: LiveIndex,
     event_logs: EventLogStore,
     database_updates: DatabaseUpdates,
-    spec: protocol_pb2.SessionSpec,
+    spec: runner_pb2.SessionSpec,
     content: ContentStore,
     ingestion: Ingestion,
 ) -> None:
@@ -1440,7 +1440,7 @@ async def test_open_and_resume_reply_before_archive_catches_up(
     content: ContentStore,
     ingestion: Ingestion,
     model: ScriptedModel,
-    spec: protocol_pb2.SessionSpec,
+    spec: runner_pb2.SessionSpec,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Runner receipts and a committed Thread mapping suffice; copying the feed is independent."""
@@ -1480,10 +1480,10 @@ async def test_open_and_resume_reply_before_archive_catches_up(
     ):
         with attempt:
             (summary,) = await local_runners.client(SANDBOX).list_sessions()
-            assert summary.harness_state == protocol_pb2.HARNESS_STATE_STOPPED
+            assert summary.harness_state == runner_pb2.HARNESS_STATE_STOPPED
     resumed = await asyncio.wait_for(
         bridge.resume_thread(
-            thread_id, expected_harness=Harness(protocol_pb2.Harness.Name(spec.harness)), expected_cwd=spec.cwd
+            thread_id, expected_harness=Harness(runner_pb2.Harness.Name(spec.harness)), expected_cwd=spec.cwd
         ),
         timeout=10,
     )

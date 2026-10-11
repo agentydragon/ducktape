@@ -25,8 +25,7 @@ from pydantic import BaseModel
 from tenacity import AsyncRetrying, retry_if_exception, stop_after_delay, wait_fixed
 
 from agentplane.app.client import Client
-from agentplane.proto import command_pb2, event_pb2
-from agentplane.runner import protocol_pb2
+from agentplane.proto import command_pb2, event_pb2, runner_pb2
 
 # A turn on the cheap model with a few tool calls. A harness that stops making progress should fail
 # its scenario rather than hold the suite until Bazel's clock runs out.
@@ -117,7 +116,7 @@ class Agent:
 
     @classmethod
     async def open(
-        cls, client: Client, *, sandbox: str, harness: protocol_pb2.Harness, model: str, instructions: str = ""
+        cls, client: Client, *, sandbox: str, harness: runner_pb2.Harness, model: str, instructions: str = ""
     ) -> Agent:
         """Open a session, waiting out a runner that is up but not yet listening.
 
@@ -127,7 +126,7 @@ class Agent:
         `instructions` are the session's standing orders, in front of the model on every turn; empty
         is the proto's own default and opens the session the runner would open without the field.
         """
-        spec = protocol_pb2.SessionSpec(
+        spec = runner_pb2.SessionSpec(
             harness=harness, cwd=WORKING_DIRECTORY, model=model, reasoning_effort="low", instructions=instructions
         )
         # Retry the same desired session even if an earlier Open reached the runner.

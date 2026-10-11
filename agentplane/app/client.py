@@ -25,8 +25,7 @@ from agentplane.app.presets import SandboxPresetView
 from agentplane.app.sandbox_models import NewSandbox, SandboxView
 from agentplane.app.threads.bridge import NewSession
 from agentplane.app.threads.thread_view import ThreadView
-from agentplane.proto import command_pb2, event_log_pb2
-from agentplane.runner import protocol_pb2
+from agentplane.proto import command_pb2, event_log_pb2, runner_pb2
 from agentplane.sandbox_service.egress_views import BindingView, PolicyView
 
 # The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.
@@ -43,7 +42,7 @@ class SessionStreamError(Exception):
 class Attachment:
     """What opening a session answers: the session's spec, and where its log stands."""
 
-    attached: protocol_pb2.Attached
+    attached: runner_pb2.Attached
 
     @property
     def last_cursor(self) -> int:
@@ -124,12 +123,12 @@ class Client:
         """
         body = NewSession(session_id=session_id, spec=overrides or {})
         answered = await self._json("POST", f"/sandboxes/{name}/sessions", json=body.model_dump(mode="json"))
-        return Attachment(ParseDict(answered, protocol_pb2.Attached()))
+        return Attachment(ParseDict(answered, runner_pb2.Attached()))
 
     async def resume_thread(self, thread_id: UUID) -> Attachment:
         """Resume the runner session already bound to this Thread."""
         answered = await self._json("POST", f"/threads/{thread_id}/resume")
-        return Attachment(ParseDict(answered, protocol_pb2.Attached()))
+        return Attachment(ParseDict(answered, runner_pb2.Attached()))
 
     async def thread(self, thread_id: UUID) -> ThreadView:
         """The persistent Thread of a created Session; its ID is the Session's public ID."""

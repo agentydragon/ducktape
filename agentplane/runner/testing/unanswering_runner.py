@@ -6,7 +6,7 @@ from contextlib import asynccontextmanager
 
 import grpc
 
-from agentplane.runner import protocol_pb2
+from agentplane.proto import runner_pb2
 
 # gazelle:include_dep @pypi//protobuf
 # gazelle:include_dep @pypi//grpcio
@@ -17,7 +17,7 @@ class UnansweringRunner:
         self.cancelled: asyncio.Queue[str] = asyncio.Queue()
 
     async def attach(
-        self, requests: AsyncIterator[protocol_pb2.ClientMessage], context: grpc.aio.ServicerContext
+        self, requests: AsyncIterator[runner_pb2.ClientMessage], context: grpc.aio.ServicerContext
     ) -> None:
         del context
         first = await anext(requests)
@@ -29,11 +29,11 @@ class UnansweringRunner:
             raise
 
     async def list_sessions(
-        self, request: protocol_pb2.ListSessionsRequest, context: grpc.aio.ServicerContext
-    ) -> protocol_pb2.ListSessionsResponse:
+        self, request: runner_pb2.ListSessionsRequest, context: grpc.aio.ServicerContext
+    ) -> runner_pb2.ListSessionsResponse:
         """None, so an app ingester that discovers sessions here opens no feeds of its own."""
         del request, context
-        return protocol_pb2.ListSessionsResponse()
+        return runner_pb2.ListSessionsResponse()
 
     @asynccontextmanager
     async def serve(self) -> AsyncIterator[int]:
@@ -41,17 +41,17 @@ class UnansweringRunner:
         server.add_generic_rpc_handlers(
             [
                 grpc.method_handlers_generic_handler(
-                    "ducktape.agentplane.runner.v1.Runner",
+                    "agentplane.proto.runner.Runner",
                     {
                         "Attach": grpc.stream_stream_rpc_method_handler(
                             self.attach,
-                            request_deserializer=protocol_pb2.ClientMessage.FromString,
-                            response_serializer=protocol_pb2.ServerMessage.SerializeToString,
+                            request_deserializer=runner_pb2.ClientMessage.FromString,
+                            response_serializer=runner_pb2.ServerMessage.SerializeToString,
                         ),
                         "ListSessions": grpc.unary_unary_rpc_method_handler(
                             self.list_sessions,
-                            request_deserializer=protocol_pb2.ListSessionsRequest.FromString,
-                            response_serializer=protocol_pb2.ListSessionsResponse.SerializeToString,
+                            request_deserializer=runner_pb2.ListSessionsRequest.FromString,
+                            response_serializer=runner_pb2.ListSessionsResponse.SerializeToString,
                         ),
                     },
                 )

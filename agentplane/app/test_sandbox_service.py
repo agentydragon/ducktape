@@ -25,8 +25,7 @@ from agentplane.app.threads.store import ThreadStore
 from agentplane.app.threads.summaries import AppSummaries, HistorySummaries
 from agentplane.app.threads.view.content import ContentStore, HistoryContentStore
 from agentplane.history_service.testing.backend import fold_history, history_service, ingest
-from agentplane.proto import command_pb2
-from agentplane.runner import protocol_pb2
+from agentplane.proto import command_pb2, runner_pb2
 from agentplane.runner.testing.fixtures import RunnerHandle
 from agentplane.runner.testing.scripted_model import ScriptedModel, Text
 from agentplane.sandbox_service.client import ServiceError
@@ -61,7 +60,7 @@ async def test_production_bridge_archives_native_evidence_across_bounded_service
     content: ContentStore,
     database_updates: DatabaseUpdates,
     runner: RunnerHandle,
-    spec: protocol_pb2.SessionSpec,
+    spec: runner_pb2.SessionSpec,
     model: ScriptedModel,
     caplog: pytest.LogCaptureFixture,
     service_history_db_url: str,
@@ -136,7 +135,7 @@ async def test_history_service_reads_match_the_app_projection(
     ingestion: Ingestion,
     content: ContentStore,
     runner: RunnerHandle,
-    spec: protocol_pb2.SessionSpec,
+    spec: runner_pb2.SessionSpec,
     model: ScriptedModel,
     service_history_db_url: str,
 ) -> None:

@@ -137,9 +137,9 @@ service RunnerIngress {
 
 message PushFrame {
   oneof frame {
-    ducktape.agentplane.runner.v1.Attached announce = 1;  // first frame, exactly once
+    agentplane.proto.runner.Attached announce = 1;  // first frame, exactly once
     agentplane.proto.event_log.EventEntry entry = 2; // the journal's, verbatim, in cursor order
-    ducktape.agentplane.runner.v1.Sealed sealed = 3;      // terminal
+    agentplane.proto.runner.Sealed sealed = 3;      // terminal
     Heartbeat heartbeat = 4;
   }
 }

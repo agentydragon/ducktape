@@ -9,7 +9,7 @@ from pathlib import Path
 import pytest
 import pytest_bazel
 
-from agentplane.runner import protocol_pb2
+from agentplane.proto import runner_pb2
 from agentplane.runner.store import SessionRecord, SessionStore, StateOwner, StateOwnershipError
 from agentplane.runner.testing.storage_image import StorageImage
 
@@ -18,8 +18,8 @@ from agentplane.runner.testing.storage_image import StorageImage
 
 
 def test_a_stored_record_reproduces_the_spec_it_was_created_from(tmp_path: Path) -> None:
-    spec = protocol_pb2.SessionSpec(
-        harness=protocol_pb2.HARNESS_CLAUDE,
+    spec = runner_pb2.SessionSpec(
+        harness=runner_pb2.HARNESS_CLAUDE,
         cwd="/session/workspace",
         model="test-backend/test-model",
         reasoning_effort="low",
@@ -57,7 +57,7 @@ def test_new_session_and_replaced_metadata_remain_findable(storage: StorageImage
         SessionStore(storage.root / "state" / "sessions")
     storage.fail_path = None
     store = SessionStore(storage.root / "state" / "sessions")
-    record = SessionRecord.from_spec(protocol_pb2.SessionSpec(harness=protocol_pb2.HARNESS_CLAUDE, model="test-model"))
+    record = SessionRecord.from_spec(runner_pb2.SessionSpec(harness=runner_pb2.HARNESS_CLAUDE, model="test-model"))
     store.write("test-session", record)
     record.native_session_id = "test-native-session"
     store.write("test-session", record)

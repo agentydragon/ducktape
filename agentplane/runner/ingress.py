@@ -11,8 +11,7 @@ import grpc
 from tenacity import AsyncRetrying, RetryCallState, retry_if_exception_type, wait_random_exponential
 
 from agentplane.grpc_options import grpc_channel_option_kvps
-from agentplane.proto import runner_ingress_pb2, runner_ingress_pb2_grpc
-from agentplane.runner import protocol_pb2
+from agentplane.proto import runner_ingress_pb2, runner_ingress_pb2_grpc, runner_pb2
 from agentplane.runner.channel import ChannelTiming
 from agentplane.runner.service import Runner, build_attached, follow_journal
 from agentplane.runner.session import Session
@@ -121,7 +120,7 @@ class _Push:
                 await self.write(runner_ingress_pb2.PushFrame(entry=entry))
                 cursor = entry.cursor
         self.sealed_sent = True
-        await self.write(runner_ingress_pb2.PushFrame(sealed=protocol_pb2.Sealed(cursor=cursor)))
+        await self.write(runner_ingress_pb2.PushFrame(sealed=runner_pb2.Sealed(cursor=cursor)))
         async with self.writing:
             await self.call.done_writing()
 

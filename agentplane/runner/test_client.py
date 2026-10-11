@@ -9,8 +9,7 @@ import grpc
 import pytest
 import pytest_bazel
 
-from agentplane.proto import event_log_pb2
-from agentplane.runner import protocol_pb2
+from agentplane.proto import event_log_pb2, runner_pb2
 from agentplane.runner.client import Attachment
 from agentplane.runner.errors import OpenTimeoutError
 from agentplane.runner.testing.fixtures import RunnerClientFactory
@@ -22,13 +21,13 @@ from agentplane.runner.testing.unanswering_runner import UnansweringRunner
 
 class FakeAttachmentCall:
     def __init__(self) -> None:
-        self.writes: list[protocol_pb2.ClientMessage] = []
+        self.writes: list[runner_pb2.ClientMessage] = []
         self.reads = 0
         self.cancelled = False
         self.ended = False
-        self.events: list[protocol_pb2.ServerMessage] = []
+        self.events: list[runner_pb2.ServerMessage] = []
 
-    async def write(self, message: protocol_pb2.ClientMessage) -> None:
+    async def write(self, message: runner_pb2.ClientMessage) -> None:
         self.writes.append(message)
 
     async def read(self) -> object:
@@ -48,8 +47,8 @@ class FakeAttachmentCall:
 
 def attachment(call: FakeAttachmentCall) -> Attachment:
     return Attachment(
-        cast(grpc.aio.StreamStreamCall[protocol_pb2.ClientMessage, protocol_pb2.ServerMessage], call),
-        protocol_pb2.Attached(session_id="test-session"),
+        cast(grpc.aio.StreamStreamCall[runner_pb2.ClientMessage, runner_pb2.ServerMessage], call),
+        runner_pb2.Attached(session_id="test-session"),
     )
 
 
@@ -60,7 +59,7 @@ async def test_normal_context_exit_detaches_once_and_drains() -> None:
     async with attached:
         await attached.detach()
 
-    assert call.writes == [protocol_pb2.ClientMessage(detach=protocol_pb2.Detach())]
+    assert call.writes == [runner_pb2.ClientMessage(detach=runner_pb2.Detach())]
     assert call.reads == 1
     assert not call.cancelled
 
@@ -98,11 +97,11 @@ async def test_cursor_is_independent_of_opt_in_history_capture() -> None:
     for capture in (False, True):
         call = FakeAttachmentCall()
         call.events = [
-            protocol_pb2.ServerMessage(event_entry=event_log_pb2.EventEntry(cursor=cursor)) for cursor in range(41, 45)
+            runner_pb2.ServerMessage(event_entry=event_log_pb2.EventEntry(cursor=cursor)) for cursor in range(41, 45)
         ]
         attached = Attachment(
-            cast(grpc.aio.StreamStreamCall[protocol_pb2.ClientMessage, protocol_pb2.ServerMessage], call),
-            protocol_pb2.Attached(session_id="test-session"),
+            cast(grpc.aio.StreamStreamCall[runner_pb2.ClientMessage, runner_pb2.ServerMessage], call),
+            runner_pb2.Attached(session_id="test-session"),
             after_cursor=40,
             capture_history=capture,
         )
@@ -116,12 +115,12 @@ async def test_cursor_is_independent_of_opt_in_history_capture() -> None:
 
 @pytest.mark.parametrize(
     ("spec", "bound"),
-    [(None, "OBSERVE_ANSWER_S"), (protocol_pb2.SessionSpec(model="test-model"), "LAUNCH_ANSWER_S")],
+    [(None, "OBSERVE_ANSWER_S"), (runner_pb2.SessionSpec(model="test-model"), "LAUNCH_ANSWER_S")],
     ids=["observe", "launch"],
 )
 async def test_an_unanswered_open_fails_on_its_bound_and_cancels_the_call(
     monkeypatch: pytest.MonkeyPatch,
-    spec: protocol_pb2.SessionSpec | None,
+    spec: runner_pb2.SessionSpec | None,
     bound: str,
     runner_client_factory: RunnerClientFactory,
 ) -> None:

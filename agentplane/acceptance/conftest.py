@@ -17,10 +17,10 @@ from tenacity import AsyncRetrying, stop_after_delay, wait_fixed
 
 from agentplane.app.client import Client
 from agentplane.app.sandbox_models import NewSandbox, SandboxView, SessionDefaults, sandbox_has_ready_pod
-from agentplane.runner import protocol_pb2
+from agentplane.proto import runner_pb2
 from agentplane.runner.harness import Harness
 
-# `protocol_pb2.pyi` imports google.protobuf, which mypy follows for this direct dependency.
+# `runner_pb2.pyi` imports google.protobuf, which mypy follows for this direct dependency.
 # gazelle:include_dep @pypi//protobuf
 
 BASE_URL = "AGENTPLANE_ACCEPTANCE_URL"
@@ -95,17 +95,17 @@ async def client(base_url: str, token: str) -> AsyncIterator[Client]:
         yield opened
 
 
-@pytest.fixture(params=[protocol_pb2.HARNESS_CLAUDE, protocol_pb2.HARNESS_CODEX], ids=["claude", "codex"])
-def harness(request: pytest.FixtureRequest) -> protocol_pb2.Harness:
+@pytest.fixture(params=[runner_pb2.HARNESS_CLAUDE, runner_pb2.HARNESS_CODEX], ids=["claude", "codex"])
+def harness(request: pytest.FixtureRequest) -> runner_pb2.Harness:
     """Every scenario runs on every harness: one runner protocol, so one test body covers both."""
-    return cast(protocol_pb2.Harness, request.param)
+    return cast(runner_pb2.Harness, request.param)
 
 
 @pytest.fixture
-async def model(client: Client, harness: protocol_pb2.Harness) -> str:
+async def model(client: Client, harness: runner_pb2.Harness) -> str:
     """A model this deployment offers for this harness, asked of the app rather than hardcoded."""
     catalog = await client.models()
-    config_harness = Harness(protocol_pb2.Harness.Name(harness))
+    config_harness = Harness(runner_pb2.Harness.Name(harness))
     offered = catalog.harnesses[config_harness]
     assert offered, f"the deployment offers no model for {harness}"
     return offered[0]

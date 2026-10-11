@@ -17,8 +17,7 @@ import grpc
 from cdk8s import App, Chart
 from kubernetes_asyncio import client as k8s_client, config as k8s_config
 
-from agentplane.proto import command_pb2, event_log_pb2, event_pb2
-from agentplane.runner import protocol_pb2
+from agentplane.proto import command_pb2, event_log_pb2, event_pb2, runner_pb2
 from agentplane.runner.client import RunnerClient
 from cluster.cdk8s.agentplane.kubevirt_experiment.policy import MANAGED_LABEL, SERVICE_ACCOUNT_ANNOTATION
 from cluster.cdk8s.agentplane.kubevirt_experiment.vm import runner_vm
@@ -655,8 +654,8 @@ async def inspect(args: argparse.Namespace) -> None:
             result["sessions"] = [
                 {
                     "session_id": item.session_id,
-                    "harness": protocol_pb2.Harness.Name(item.spec.harness),
-                    "harness_state": protocol_pb2.HarnessState.Name(item.harness_state),
+                    "harness": runner_pb2.Harness.Name(item.spec.harness),
+                    "harness_state": runner_pb2.HarnessState.Name(item.harness_state),
                     "last_cursor": item.last_cursor,
                 }
                 for item in summaries
@@ -711,11 +710,11 @@ async def replace_image(args: argparse.Namespace) -> None:
         )
 
 
-def _probe_output(events: list[protocol_pb2.InitializationEvent]) -> dict[str, str]:
+def _probe_output(events: list[runner_pb2.InitializationEvent]) -> dict[str, str]:
     output = b"".join(
         event.output.data
         for event in events
-        if event.HasField("output") and event.output.stream == protocol_pb2.INITIALIZATION_STREAM_STDOUT
+        if event.HasField("output") and event.output.stream == runner_pb2.INITIALIZATION_STREAM_STDOUT
     ).decode("utf-8")
     markers = dict(
         re.findall(r"^(UID|GID|CGROUP|STATE_SESSIONS|CGROUP_MEMORY_MAX|WORKSPACE_SHA256)=(.*)$", output, re.MULTILINE)
@@ -783,7 +782,7 @@ async def initialize(args: argparse.Namespace) -> None:
     try:
         sessions = await _within(runner.list_sessions(), deadline)
 
-        async def collect() -> list[protocol_pb2.InitializationEvent]:
+        async def collect() -> list[runner_pb2.InitializationEvent]:
             return [event async for event in runner.initialize_events(_PROBE_SCRIPT)]
 
         events = await _within(collect(), deadline)
@@ -814,8 +813,8 @@ async def initialize(args: argparse.Namespace) -> None:
     )
 
 
-def _harness(value: str) -> protocol_pb2.Harness:
-    return {"claude": protocol_pb2.HARNESS_CLAUDE, "codex": protocol_pb2.HARNESS_CODEX}[value]
+def _harness(value: str) -> runner_pb2.Harness:
+    return {"claude": runner_pb2.HARNESS_CLAUDE, "codex": runner_pb2.HARNESS_CODEX}[value]
 
 
 def _turn_text(entries: list[event_log_pb2.EventEntry]) -> str:
@@ -838,7 +837,7 @@ async def _run_turn(
     runner: RunnerClient,
     *,
     session_id: str,
-    spec: protocol_pb2.SessionSpec,
+    spec: runner_pb2.SessionSpec,
     prompt: str,
     timeout_s: float,
     setup_script: str | None = None,
@@ -881,7 +880,7 @@ async def session(args: argparse.Namespace) -> None:
     setup_script = f"mkdir -p {workdir}"
     runner = RunnerClient(grpc.aio.insecure_channel(args.target), capture_history=True)
     try:
-        spec = protocol_pb2.SessionSpec(
+        spec = runner_pb2.SessionSpec(
             harness=_harness(args.harness), cwd=workdir, model=args.model, reasoning_effort=args.reasoning_effort
         )
         _, entries = await _run_turn(
@@ -932,7 +931,7 @@ async def setup_probe(args: argparse.Namespace) -> None:
         attachment = await _within(
             runner.attach(
                 session_id,
-                spec=protocol_pb2.SessionSpec(
+                spec=runner_pb2.SessionSpec(
                     harness=_harness(args.harness),
                     cwd=workdir,
                     model=args.model,
@@ -1005,7 +1004,7 @@ async def setup_probe(args: argparse.Namespace) -> None:
             raise RuntimeError(f"setup probe did not emit expected marker {key}; {details}")
     if args.expect_failure:
         if terminal_kind == "setup_interrupted":
-            if summary.setup_state != protocol_pb2.SETUP_STATE_INTERRUPTED:
+            if summary.setup_state != runner_pb2.SETUP_STATE_INTERRUPTED:
                 raise RuntimeError(f"ListSessions did not report the interrupted setup probe; {details}")
         elif exit_code == 0:
             raise RuntimeError(f"setup probe was expected to fail but exited successfully; {details}")
@@ -1014,11 +1013,11 @@ async def setup_probe(args: argparse.Namespace) -> None:
     elif exit_code != args.expected_exit_code:
         raise RuntimeError(f"setup probe exited with {exit_code}; expected {args.expected_exit_code}; {details}")
     expected_setup_state = (
-        protocol_pb2.SETUP_STATE_INTERRUPTED
+        runner_pb2.SETUP_STATE_INTERRUPTED
         if terminal_kind == "setup_interrupted"
-        else protocol_pb2.SETUP_STATE_FAILED
+        else runner_pb2.SETUP_STATE_FAILED
         if exit_code
-        else protocol_pb2.SETUP_STATE_SUCCEEDED
+        else runner_pb2.SETUP_STATE_SUCCEEDED
     )
     if summary.setup_state != expected_setup_state:
         raise RuntimeError(f"ListSessions did not report the setup probe's terminal state; {details}")

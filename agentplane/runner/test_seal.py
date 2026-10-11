@@ -7,8 +7,7 @@ import grpc
 import pytest
 import pytest_bazel
 
-from agentplane.proto import event_pb2
-from agentplane.runner import protocol_pb2
+from agentplane.proto import event_pb2, runner_pb2
 from agentplane.runner.client import Attachment, RunnerClient
 from agentplane.runner.config import RunnerConfig
 from agentplane.runner.errors import RunnerError, SessionSealedError
@@ -17,7 +16,7 @@ from agentplane.runner.store import SessionRecord
 
 # gazelle:include_dep @pypi//protobuf
 
-SPEC = protocol_pb2.SessionSpec(harness=protocol_pb2.HARNESS_CLAUDE, cwd="/test-workspace", model="test-model")
+SPEC = runner_pb2.SessionSpec(harness=runner_pb2.HARNESS_CLAUDE, cwd="/test-workspace", model="test-model")
 SESSIONS = ("test-session-a", "test-session-b")
 
 

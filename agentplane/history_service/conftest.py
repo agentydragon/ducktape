@@ -17,8 +17,7 @@ import grpc
 import pytest
 from google.protobuf.empty_pb2 import Empty
 
-from agentplane.proto import event_log_pb2
-from agentplane.runner import protocol_pb2 as runner_pb2
+from agentplane.proto import event_log_pb2, runner_pb2
 from agentplane.sandbox_service import protocol_pb2
 from agentplane.sandbox_service.client import SandboxServiceClient
 

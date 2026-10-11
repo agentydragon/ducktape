@@ -7,7 +7,7 @@
 
 syntax = "proto3";
 
-package ducktape.agentplane.runner.v1;
+package agentplane.proto.runner;
 
 import "agentplane/proto/command.proto";
 import "agentplane/proto/event_log.proto";

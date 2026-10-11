@@ -2,7 +2,7 @@
 
 One gRPC contract over the native Claude Code and Codex harnesses. A caller drives a session
 through it without knowing which harness is behind it: the only harness-selection field it ever
-sets is `SessionSpec.harness`. The wire definition is [`protocol.proto`](protocol.proto); this
+sets is `SessionSpec.harness`. The wire definition is [`proto/runner.proto`](../proto/runner.proto); this
 page is what the runner guarantees about it.
 
 The runner does not own product Threads, app command persistence, Kubernetes lifecycle, or the

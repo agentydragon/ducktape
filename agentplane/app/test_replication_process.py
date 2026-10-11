@@ -23,8 +23,7 @@ from agentplane.app.testing.replication_process import CommitBoundary, app_proce
 from agentplane.app.testing.replication_source import SANDBOX, SESSION, ReplicationSource
 from agentplane.app.threads.store import ThreadStore
 from agentplane.app.threads.view.content import ContentStore
-from agentplane.proto import command_pb2, event_log_pb2, event_pb2
-from agentplane.runner import protocol_pb2
+from agentplane.proto import command_pb2, event_log_pb2, event_pb2, runner_pb2
 from agentplane.thread_fold.models import SessionProjectionLease
 
 # gazelle:include_dep @pypi//protobuf
@@ -43,7 +42,7 @@ async def next_entry(stream: AsyncIterator[ServerSentEvent]) -> event_log_pb2.Ev
 
 async def wait_snapshot(
     event_logs: EventLogStore, updates: DatabaseUpdates, thread: UUID, cursor: int
-) -> protocol_pb2.Attached:
+) -> runner_pb2.Attached:
     changed = asyncio.Event()
     with updates.changes[Channel.THREADS].subscribe(changed):
         while True:
@@ -174,7 +173,7 @@ async def test_killed_ingester_recovers_exact_prefix_and_browser_handoff(
                     stream = resumed.aiter_sse()
                     snapshot = await anext(stream)
                     assert snapshot.event == "attached"
-                    assert ParseDict(snapshot.json(), protocol_pb2.Attached()) == before_death.attached
+                    assert ParseDict(snapshot.json(), runner_pb2.Attached()) == before_death.attached
                     replay.replay.set()
                     assert await next_entry(stream) == source.entries[3]
                     # Append during browser catch-up: replay and live share exactly one prefix.

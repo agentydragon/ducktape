@@ -19,7 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
 from agentplane.app.database_updates import Channel, notify
 from agentplane.history_service import protocol_pb2 as history_pb2
 from agentplane.history_service.client import HistoryServiceClient, HistoryServiceError
-from agentplane.runner import protocol_pb2
+from agentplane.proto import runner_pb2
 from agentplane.thread_fold.models import ThreadCheckpoint, ThreadHistorySummary
 
 # The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.
@@ -40,7 +40,7 @@ class FeedError:
 
 @dataclass(frozen=True)
 class FeedSnapshot:
-    attached: protocol_pb2.Attached
+    attached: runner_pb2.Attached
     end: FeedEnd | FeedError | None
 
 
@@ -98,7 +98,7 @@ class AppSummaries:
             if state is not None and state.end == {}:
                 state.end = None
                 if state.attached is not None:
-                    state.resumed_after_cursor = ParseDict(state.attached, protocol_pb2.Attached()).last_cursor
+                    state.resumed_after_cursor = ParseDict(state.attached, runner_pb2.Attached()).last_cursor
                 await notify(session, Channel.THREADS)
 
 
@@ -173,7 +173,7 @@ def _app_summary(summary: ThreadHistorySummary, through_cursor: int | None) -> F
     feed = None
     if summary.attached is not None:
         end = None if summary.end is None else FeedError(summary.end["message"]) if summary.end else FeedEnd()
-        feed = FeedSnapshot(ParseDict(summary.attached, protocol_pb2.Attached()), end)
+        feed = FeedSnapshot(ParseDict(summary.attached, runner_pb2.Attached()), end)
     return FoldSummary(
         folded_through=through_cursor or 0,
         last_event_at=summary.last_event_at,

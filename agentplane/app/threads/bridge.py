@@ -15,12 +15,11 @@ from agentplane.app.threads.ingestion import Ingester
 from agentplane.app.threads.sessions import SandboxSessions
 from agentplane.app.threads.summaries import FeedError
 from agentplane.app.threads.view.content import ContentStore
-from agentplane.proto import command_pb2, event_log_pb2
-from agentplane.runner import protocol_pb2
+from agentplane.proto import command_pb2, event_log_pb2, runner_pb2
 from agentplane.runner.errors import RunnerError
 from agentplane.runner.harness import Harness
 
-# Not `protocol_pb2`: that name is the runner's protocol here.
+# Not `runner_pb2`: that name is the runner's protocol here.
 from agentplane.sandbox_service import protocol_pb2 as service_pb2
 
 # gazelle:include_dep @pypi//protobuf
@@ -85,12 +84,12 @@ class RunnerBridge:
         self._content = content
         self._ingester = ingester
 
-    async def list_sessions(self, sandbox: str) -> list[protocol_pb2.SessionSummary]:
+    async def list_sessions(self, sandbox: str) -> list[runner_pb2.SessionSummary]:
         return await self._runners.client(sandbox).list_sessions()
 
     async def create_session(
         self, sandbox: str, session_id: UUID, spec: dict[str, object], setup_script: str | None = None
-    ) -> protocol_pb2.Attached:
+    ) -> runner_pb2.Attached:
         """Use the service's public ID; the app only materializes its Thread projection."""
         try:
             created = await self._runners.client(sandbox).create(
@@ -104,7 +103,7 @@ class RunnerBridge:
             raise RunnerError("service Session ID conflicts with the retained Thread identity")
         await self._event_logs.resume_pending(thread_id)
         await self._ingester.start()
-        attached = protocol_pb2.Attached()
+        attached = runner_pb2.Attached()
         attached.CopyFrom(created.attached)
         return attached
 
@@ -131,7 +130,7 @@ class RunnerBridge:
 
     async def resume_thread(
         self, thread_id: UUID, *, expected_harness: Harness | None, expected_cwd: str | None
-    ) -> protocol_pb2.Attached:
+    ) -> runner_pb2.Attached:
         """Resume the native session already bound to this Thread, using its runner-owned spec.
 
         The expectations are the Thread's view of its harness and workspace; None, before any
@@ -149,15 +148,15 @@ class RunnerBridge:
             raise RunnerError(
                 f"runner has no retained session {runner_session.session_id!r}; this Thread cannot be resumed"
             )
-        if summary.setup_state in (protocol_pb2.SETUP_STATE_FAILED, protocol_pb2.SETUP_STATE_INTERRUPTED):
+        if summary.setup_state in (runner_pb2.SETUP_STATE_FAILED, runner_pb2.SETUP_STATE_INTERRUPTED):
             raise RunnerError("Thread setup failed or was interrupted; create a new Thread to try again")
         if (
-            summary.spec.harness not in (protocol_pb2.HARNESS_CLAUDE, protocol_pb2.HARNESS_CODEX)
+            summary.spec.harness not in (runner_pb2.HARNESS_CLAUDE, runner_pb2.HARNESS_CODEX)
             or not summary.spec.cwd
             or not summary.spec.model
         ):
             raise RunnerError(f"runner session {runner_session.session_id!r} has no recoverable session spec")
-        if (expected_harness is not None and protocol_pb2.Harness.Name(summary.spec.harness) != expected_harness) or (
+        if (expected_harness is not None and runner_pb2.Harness.Name(summary.spec.harness) != expected_harness) or (
             expected_cwd is not None and summary.spec.cwd != expected_cwd
         ):
             raise RunnerError("runner's retained session spec does not match this Thread's harness and workspace")
@@ -213,7 +212,7 @@ class RunnerBridge:
         return await self._runners.client(sandbox).command(session_id, command, after_cursor=after_cursor)
 
 
-def _parse[M: command_pb2.Command | protocol_pb2.SessionSpec](message: M, body: dict[str, object]) -> M:
+def _parse[M: command_pb2.Command | runner_pb2.SessionSpec](message: M, body: dict[str, object]) -> M:
     try:
         return ParseDict(body, message)
     except ParseError as error:
@@ -245,7 +244,7 @@ async def list_sessions(bridge: Bridge, name: str) -> list[dict[str, object]]:
 
 @router.post("", status_code=status.HTTP_201_CREATED)
 async def create_session(bridge: Bridge, name: str, body: NewSession) -> dict[str, object]:
-    _parse(protocol_pb2.SessionSpec(), body.spec)  # Validate without losing explicit empty overrides.
+    _parse(runner_pb2.SessionSpec(), body.spec)  # Validate without losing explicit empty overrides.
     return MessageToDict(await bridge.create_session(name, body.session_id, body.spec, body.setup_script))
 
 

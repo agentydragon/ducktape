@@ -13,8 +13,13 @@ import httpx
 import pytest
 import pytest_bazel
 
-from agentplane.proto import command_pb2, event_pb2, runner_channel_pb2 as channel_pb2, runner_channel_pb2_grpc
-from agentplane.runner import protocol_pb2
+from agentplane.proto import (
+    command_pb2,
+    event_pb2,
+    runner_channel_pb2 as channel_pb2,
+    runner_channel_pb2_grpc,
+    runner_pb2,
+)
 from agentplane.runner.adapter import HarnessAdapter
 from agentplane.runner.channel import ChannelTiming, RunnerChannelClient
 from agentplane.runner.config import ClaudeLaunch, RunnerConfig
@@ -29,7 +34,7 @@ from agentplane.runner.store import SessionRecord
 RUNNING = "test-running-session"
 STOPPED = "test-stopped-session"
 FAILED_SETUP = "test-failed-setup-session"
-SPEC = protocol_pb2.SessionSpec(harness=protocol_pb2.HARNESS_CLAUDE, cwd="/test-workspace", model="test-model")
+SPEC = runner_pb2.SessionSpec(harness=runner_pb2.HARNESS_CLAUDE, cwd="/test-workspace", model="test-model")
 TIMING = ChannelTiming(heartbeat_s=0.1, liveness_s=0.5, backoff_initial_s=0.01, backoff_max_s=0.05)
 Reason = channel_pb2.CommandRefused
 Refused = channel_pb2.ControlRefused
@@ -294,7 +299,7 @@ def control(request: channel_pb2.ControlRequest) -> channel_pb2.ServiceFrame:
 
 
 def open_session(
-    request_id: str, session_id: str, spec: protocol_pb2.SessionSpec = SPEC, setup_script: str | None = None
+    request_id: str, session_id: str, spec: runner_pb2.SessionSpec = SPEC, setup_script: str | None = None
 ) -> channel_pb2.ServiceFrame:
     return control(
         channel_pb2.ControlRequest(
@@ -311,7 +316,7 @@ def resume(request_id: str, session_id: str) -> channel_pb2.ServiceFrame:
 
 
 def seal(request_id: str) -> channel_pb2.ServiceFrame:
-    return control(channel_pb2.ControlRequest(request_id=request_id, seal=protocol_pb2.SealRequest()))
+    return control(channel_pb2.ControlRequest(request_id=request_id, seal=runner_pb2.SealRequest()))
 
 
 async def control_results(service: ScriptedService, count: int) -> dict[str, channel_pb2.ControlResult]:
@@ -324,14 +329,14 @@ async def control_results(service: ScriptedService, count: int) -> dict[str, cha
 
 async def test_list_sessions_reports_every_session(service: ScriptedService) -> None:
     service.frames.append(
-        control(channel_pb2.ControlRequest(request_id="test-list", list_sessions=protocol_pb2.ListSessionsRequest()))
+        control(channel_pb2.ControlRequest(request_id="test-list", list_sessions=runner_pb2.ListSessionsRequest()))
     )
     service.dial()
     listed = (await control_results(service, 1))["test-list"]
     assert {(row.session_id, row.harness_state, row.setup_state) for row in listed.list_sessions.sessions} == {
-        (RUNNING, protocol_pb2.HARNESS_STATE_RUNNING, protocol_pb2.SETUP_STATE_NOT_REQUIRED),
-        (STOPPED, protocol_pb2.HARNESS_STATE_STOPPED, protocol_pb2.SETUP_STATE_NOT_REQUIRED),
-        (FAILED_SETUP, protocol_pb2.HARNESS_STATE_STOPPED, protocol_pb2.SETUP_STATE_FAILED),
+        (RUNNING, runner_pb2.HARNESS_STATE_RUNNING, runner_pb2.SETUP_STATE_NOT_REQUIRED),
+        (STOPPED, runner_pb2.HARNESS_STATE_STOPPED, runner_pb2.SETUP_STATE_NOT_REQUIRED),
+        (FAILED_SETUP, runner_pb2.HARNESS_STATE_STOPPED, runner_pb2.SETUP_STATE_FAILED),
     }
 
 
@@ -344,7 +349,7 @@ async def test_open_creates_a_session_and_starts_it(
     assert (opened.open.session_id, opened.open.spec, opened.open.harness_state) == (
         "test-new-session",
         SPEC,
-        protocol_pb2.HARNESS_STATE_RUNNING,
+        runner_pb2.HARNESS_STATE_RUNNING,
     )
     assert started == ["test-new-session"]
     assert runner.store.exists("test-new-session")
@@ -356,19 +361,19 @@ async def test_opening_an_existing_session_confirms_it_without_restarting_its_ha
     service.frames.append(open_session("test-open", STOPPED))
     service.dial()
     opened = (await control_results(service, 1))["test-open"]
-    assert (opened.open.session_id, opened.open.harness_state) == (STOPPED, protocol_pb2.HARNESS_STATE_STOPPED)
+    assert (opened.open.session_id, opened.open.harness_state) == (STOPPED, runner_pb2.HARNESS_STATE_STOPPED)
     assert started == []
 
 
 @pytest.mark.parametrize(
     ("spec", "setup_script"),
     [
-        (protocol_pb2.SessionSpec(harness=SPEC.harness, cwd=SPEC.cwd, model="test-other-model"), None),
+        (runner_pb2.SessionSpec(harness=SPEC.harness, cwd=SPEC.cwd, model="test-other-model"), None),
         (SPEC, "test other setup"),
     ],
 )
 async def test_opening_an_existing_session_with_another_spec_is_refused(
-    spec: protocol_pb2.SessionSpec, setup_script: str | None, service: ScriptedService, started: list[str]
+    spec: runner_pb2.SessionSpec, setup_script: str | None, service: ScriptedService, started: list[str]
 ) -> None:
     service.frames.append(open_session("test-open", STOPPED, spec, setup_script))
     service.dial()
@@ -382,7 +387,7 @@ async def test_resume_restarts_a_stopped_harness_on_its_retained_spec(
     service.frames.append(resume("test-resume", STOPPED))
     service.dial()
     resumed = (await control_results(service, 1))["test-resume"]
-    assert (resumed.resume.spec, resumed.resume.harness_state) == (SPEC, protocol_pb2.HARNESS_STATE_RUNNING)
+    assert (resumed.resume.spec, resumed.resume.harness_state) == (SPEC, runner_pb2.HARNESS_STATE_RUNNING)
     assert started == [STOPPED]
 
 

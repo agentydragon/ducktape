@@ -40,8 +40,7 @@ from agentplane.app.threads.bridge import RunnerBridge
 from agentplane.app.threads.sessions import SandboxSessions
 from agentplane.app.threads.store import ThreadStore
 from agentplane.app.threads.view.content import ContentStore
-from agentplane.proto import event_log_pb2
-from agentplane.runner import protocol_pb2
+from agentplane.proto import event_log_pb2, runner_pb2
 from agentplane.runner.harness import Harness
 from agentplane.sandbox_service import protocol_pb2 as service_pb2
 from agentplane.sandbox_service.client import SandboxServiceClient
@@ -514,10 +513,10 @@ def test_bound_thread_forwards_overrides_without_app_bootstrap_or_default_assemb
 
     async def create_session(
         name: str, session_id: UUID, spec: dict[str, object], setup_script: str | None = None
-    ) -> protocol_pb2.Attached:
+    ) -> runner_pb2.Attached:
         calls.append(("create", spec))
         setup_scripts.append(setup_script)
-        return protocol_pb2.Attached(session_id=str(uuid4()))
+        return runner_pb2.Attached(session_id=str(uuid4()))
 
     monkeypatch.setattr(bridge, "create_session", create_session)
 
@@ -550,9 +549,9 @@ def test_thread_resume_for_regular_sandbox_reaches_the_bridge(
 
     async def resume_thread(
         thread: UUID, *, expected_harness: Harness | None, expected_cwd: str | None
-    ) -> protocol_pb2.Attached:
+    ) -> runner_pb2.Attached:
         calls.append((thread, expected_harness, expected_cwd))
-        return protocol_pb2.Attached(session_id="regular-session")
+        return runner_pb2.Attached(session_id="regular-session")
 
     monkeypatch.setattr(store, "get_thread", get_thread)
     monkeypatch.setattr(bridge, "resume_thread", resume_thread)
@@ -570,9 +569,9 @@ def test_direct_session_launch_leaves_platform_instructions_to_service(
 
     async def create_session(
         name: str, session_id: UUID, spec: dict[str, object], setup_script: str | None = None
-    ) -> protocol_pb2.Attached:
+    ) -> runner_pb2.Attached:
         captured.append(spec)
-        return protocol_pb2.Attached(session_id=str(uuid4()))
+        return runner_pb2.Attached(session_id=str(uuid4()))
 
     monkeypatch.setattr(bridge, "create_session", create_session)
     response = client.post(
@@ -594,7 +593,7 @@ def test_service_launch_failure_preserves_uncertainty(
 ) -> None:
     async def failed_create(
         name: str, session_id: UUID, spec: dict[str, object], setup_script: str | None = None
-    ) -> protocol_pb2.Attached:
+    ) -> runner_pb2.Attached:
         raise error_type("test upstream failure")
 
     monkeypatch.setattr(bridge, "create_session", failed_create)
@@ -615,9 +614,9 @@ def test_create_session_answers_the_service_id(
 
     async def create_session(
         sandbox: str, session_id: UUID, spec: dict[str, object], setup_script: str | None = None
-    ) -> protocol_pb2.Attached:
+    ) -> runner_pb2.Attached:
         received.append((sandbox, session_id, spec, setup_script))
-        return protocol_pb2.Attached(session_id=public_id)
+        return runner_pb2.Attached(session_id=public_id)
 
     monkeypatch.setattr(bridge, "create_session", create_session)
     path = "/sandboxes/live/sessions"
@@ -639,11 +638,9 @@ async def test_open_lookup_reconciles_only_runner_confirmed_sessions(
         transport=httpx.ASGITransport(app=client.app), base_url="http://testserver", headers=AGENT_AUTH
     ) as http:
         public_id = str(uuid4())
-        summary = protocol_pb2.SessionSummary(
+        summary = runner_pb2.SessionSummary(
             session_id=public_id,
-            spec=protocol_pb2.SessionSpec(
-                harness=protocol_pb2.HARNESS_CLAUDE, cwd="/w", model="m", instructions="secret"
-            ),
+            spec=runner_pb2.SessionSpec(harness=runner_pb2.HARNESS_CLAUDE, cwd="/w", model="m", instructions="secret"),
         )
         result = service_pb2.LookupSessionResponse()
         calls: list[str] = []
@@ -1146,16 +1143,16 @@ async def test_a_running_thread_cannot_be_archived(
     notifications_token_file: Path,
 ) -> None:
     custom_objects.objects[("sandboxes", "live")], core_v1.pods["live"] = seed_runner(custom_objects, core_v1, "live")
-    spec = protocol_pb2.SessionSpec(harness=protocol_pb2.HARNESS_CLAUDE, cwd="/w", model="test-model")
+    spec = runner_pb2.SessionSpec(harness=runner_pb2.HARNESS_CLAUDE, cwd="/w", model="test-model")
     thread_id = await event_logs.open("live", "s-1")
 
     consulted: list[str] = []
 
-    async def running_sessions(sandbox: str) -> list[protocol_pb2.SessionSummary]:
+    async def running_sessions(sandbox: str) -> list[runner_pb2.SessionSummary]:
         consulted.append(sandbox)
         return [
-            protocol_pb2.SessionSummary(
-                session_id=str(thread_id), spec=spec, harness_state=protocol_pb2.HARNESS_STATE_RUNNING
+            runner_pb2.SessionSummary(
+                session_id=str(thread_id), spec=spec, harness_state=runner_pb2.HARNESS_STATE_RUNNING
             )
         ]
 

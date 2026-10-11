@@ -15,8 +15,7 @@ from pathlib import Path
 from pydantic import BaseModel
 
 from agentplane.native.transport import Frame, FrameMatcher, NativeReceipt
-from agentplane.proto import command_pb2, event_log_pb2, event_pb2
-from agentplane.runner import protocol_pb2
+from agentplane.proto import command_pb2, event_log_pb2, event_pb2, runner_pb2
 from agentplane.runner.adapter import HarnessAdapter
 from agentplane.runner.config import RunnerConfig
 from agentplane.runner.harness_process import HarnessProcess
@@ -95,9 +94,9 @@ class Session:
         self._lock = asyncio.Lock()
         self._shutdown_lock = asyncio.Lock()
         self.setup_state = (
-            protocol_pb2.SETUP_STATE_RUNNING
+            runner_pb2.SETUP_STATE_RUNNING
             if record.setup_script_sha256 is not None
-            else protocol_pb2.SETUP_STATE_NOT_REQUIRED
+            else runner_pb2.SETUP_STATE_NOT_REQUIRED
         )
         self._setup_task: asyncio.Task[None] | None = None
 
@@ -115,17 +114,17 @@ class Session:
                 kind = entry.event.WhichOneof("observation")
                 if kind == "setup_finished":
                     self.setup_state = (
-                        protocol_pb2.SETUP_STATE_SUCCEEDED
+                        runner_pb2.SETUP_STATE_SUCCEEDED
                         if entry.event.setup_finished.exit_code == 0
-                        else protocol_pb2.SETUP_STATE_FAILED
+                        else runner_pb2.SETUP_STATE_FAILED
                     )
                     return
                 if kind == "setup_interrupted":
-                    self.setup_state = protocol_pb2.SETUP_STATE_INTERRUPTED
+                    self.setup_state = runner_pb2.SETUP_STATE_INTERRUPTED
                     return
 
     def start_setup(self, script: str) -> None:
-        if self.setup_state != protocol_pb2.SETUP_STATE_RUNNING or self._setup_task is not None:
+        if self.setup_state != runner_pb2.SETUP_STATE_RUNNING or self._setup_task is not None:
             raise RuntimeError("session setup was already started or completed")
         self._setup_task = asyncio.create_task(self._run_setup(script), name=f"{self.session_id}-setup")
 
@@ -168,7 +167,7 @@ class Session:
                 if not reader.done():
                     reader.cancel()
             await asyncio.gather(*readers, return_exceptions=True)
-            if self.setup_state == protocol_pb2.SETUP_STATE_RUNNING:
+            if self.setup_state == runner_pb2.SETUP_STATE_RUNNING:
                 await self.emit(event_pb2.SetupInterrupted(), sources=[])
         finally:
             if process is not None and process.running:
@@ -206,12 +205,12 @@ class Session:
         match entry.event.WhichOneof("observation"):
             case "setup_finished":
                 self.setup_state = (
-                    protocol_pb2.SETUP_STATE_SUCCEEDED
+                    runner_pb2.SETUP_STATE_SUCCEEDED
                     if entry.event.setup_finished.exit_code == 0
-                    else protocol_pb2.SETUP_STATE_FAILED
+                    else runner_pb2.SETUP_STATE_FAILED
                 )
             case "setup_interrupted":
-                self.setup_state = protocol_pb2.SETUP_STATE_INTERRUPTED
+                self.setup_state = runner_pb2.SETUP_STATE_INTERRUPTED
             case "harness_started":
                 self.harness_running = True
             case "harness_lost" | "harness_exited":
@@ -226,7 +225,7 @@ class Session:
 
     async def recover_after_restart(self) -> None:
         """The runner that wrote the log is gone, and so is any harness it was running."""
-        if self.setup_state == protocol_pb2.SETUP_STATE_RUNNING:
+        if self.setup_state == runner_pb2.SETUP_STATE_RUNNING:
             await self.emit(event_pb2.SetupInterrupted(), sources=[])
         if not self.harness_running:
             return
@@ -374,7 +373,7 @@ class Session:
                 return
             try:
                 model_config = await self.config.resolve_model_config(
-                    harness=protocol_pb2.Harness.Value(self.record.harness), model=model
+                    harness=runner_pb2.Harness.Value(self.record.harness), model=model
                 )
             except ModelConfigLookupError as error:
                 await self._fail(command_id, str(error), sources=[])
@@ -723,7 +722,7 @@ class Session:
         if self._setup_task is not None and not self._setup_task.done():
             self._setup_task.cancel()
             await asyncio.gather(self._setup_task, return_exceptions=True)
-            if self.setup_state == protocol_pb2.SETUP_STATE_RUNNING:
+            if self.setup_state == runner_pb2.SETUP_STATE_RUNNING:
                 await self.emit(event_pb2.SetupInterrupted(), sources=[])
         async with self._shutdown_lock:
             if self.process is not None and self.running:

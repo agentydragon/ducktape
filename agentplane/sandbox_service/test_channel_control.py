@@ -14,8 +14,7 @@ import pytest_bazel
 from kubernetes_asyncio import client as k8s_client
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from agentplane.proto import runner_channel_pb2, runner_channel_pb2_grpc
-from agentplane.runner import protocol_pb2 as runner_pb2
+from agentplane.proto import runner_channel_pb2, runner_channel_pb2_grpc, runner_pb2
 from agentplane.runner.errors import RunnerError
 from agentplane.sandbox_service.channel_control import (
     ChannelControl,

@@ -14,8 +14,7 @@ from google.protobuf.empty_pb2 import Empty
 from google.protobuf.message import Message
 
 from agentplane.grpc_options import grpc_channel_option_kvps
-from agentplane.proto import command_pb2, event_log_pb2
-from agentplane.runner import protocol_pb2 as runner_pb2
+from agentplane.proto import command_pb2, event_log_pb2, runner_pb2
 from agentplane.runner.errors import RunnerError, StreamClosedError
 from agentplane.sandbox_service import protocol_pb2, protocol_pb2_grpc, wire
 from agentplane.sandbox_service.models import SandboxNotFoundError

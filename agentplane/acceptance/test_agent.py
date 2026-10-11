@@ -10,8 +10,7 @@ import pytest_bazel
 
 from agentplane.acceptance.agent import Agent
 from agentplane.app.client import Attachment, Client
-from agentplane.proto import event_log_pb2, event_pb2
-from agentplane.runner import protocol_pb2
+from agentplane.proto import event_log_pb2, event_pb2, runner_pb2
 
 # gazelle:include_dep @pypi//protobuf
 
@@ -24,11 +23,11 @@ async def test_agent_open_retries_unavailable_without_creating_another_session()
     client = create_autospec(Client, instance=True)
     client.create_session.side_effect = [
         unavailable,
-        Attachment(protocol_pb2.Attached(session_id="00000000-0000-4000-8000-000000000001", last_cursor=7)),
+        Attachment(runner_pb2.Attached(session_id="00000000-0000-4000-8000-000000000001", last_cursor=7)),
     ]
     client.thread.return_value = Mock(id=UUID("00000000-0000-4000-8000-000000000001"))
 
-    await Agent.open(client, sandbox="test-sandbox", harness=protocol_pb2.HARNESS_CODEX, model="test-model")
+    await Agent.open(client, sandbox="test-sandbox", harness=runner_pb2.HARNESS_CODEX, model="test-model")
 
     first, retry = client.create_session.call_args_list
     assert first == retry
@@ -45,7 +44,7 @@ async def test_startup_refusals_and_other_server_failures_are_not_retried(status
     client = create_autospec(Client, instance=True)
     client.create_session.side_effect = httpx.HTTPStatusError("open refused", request=request, response=response)
     with pytest.raises(httpx.HTTPStatusError) as caught:
-        await Agent.open(client, sandbox="test-sandbox", harness=protocol_pb2.HARNESS_CODEX, model="test-model")
+        await Agent.open(client, sandbox="test-sandbox", harness=runner_pb2.HARNESS_CODEX, model="test-model")
     assert caught.value.response is response
     client.create_session.assert_awaited_once()
     client.thread.assert_not_awaited()

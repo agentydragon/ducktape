@@ -10,7 +10,7 @@ from pathlib import Path
 
 from google.protobuf.json_format import MessageToDict, ParseDict
 
-from agentplane.runner import protocol_pb2
+from agentplane.proto import runner_pb2
 
 
 class InitializationLog:
@@ -18,7 +18,7 @@ class InitializationLog:
 
     def __init__(self, path: Path) -> None:
         self.path = path
-        self._events: list[protocol_pb2.InitializationEvent] = []
+        self._events: list[runner_pb2.InitializationEvent] = []
         if path.exists():
             self._load()
         self._file = path.open("ab")
@@ -31,7 +31,7 @@ class InitializationLog:
             line = raw.strip()
             if line:
                 try:
-                    self._events.append(ParseDict(json.loads(line), protocol_pb2.InitializationEvent()))
+                    self._events.append(ParseDict(json.loads(line), runner_pb2.InitializationEvent()))
                 except ValueError as error:
                     if offset + len(raw) < len(data):
                         raise ValueError(f"corrupt initialization log {self.path} at byte {offset}") from error
@@ -53,31 +53,31 @@ class InitializationLog:
         """The attempt has a recorded result or interruption. Nothing is appended after either."""
         return bool(self._events and self._events[-1].WhichOneof("observation") in ("result", "interrupted"))
 
-    def since(self, after_sequence: int) -> Sequence[protocol_pb2.InitializationEvent]:
+    def since(self, after_sequence: int) -> Sequence[runner_pb2.InitializationEvent]:
         return self._events[after_sequence:]
 
-    def append_output(self, attempt: int, stream: protocol_pb2.InitializationStream, data: bytes) -> None:
+    def append_output(self, attempt: int, stream: runner_pb2.InitializationStream, data: bytes) -> None:
         self._append(
-            protocol_pb2.InitializationEvent(
+            runner_pb2.InitializationEvent(
                 sequence=self.last_sequence + 1,
                 attempt=attempt,
-                output=protocol_pb2.InitializationOutput(stream=stream, data=data),
+                output=runner_pb2.InitializationOutput(stream=stream, data=data),
             )
         )
 
-    def append_result(self, attempt: int, exit_code: int) -> protocol_pb2.InitializeResult:
-        result = protocol_pb2.InitializeResult(executed=True, exit_code=exit_code)
-        self._append(protocol_pb2.InitializationEvent(sequence=self.last_sequence + 1, attempt=attempt, result=result))
+    def append_result(self, attempt: int, exit_code: int) -> runner_pb2.InitializeResult:
+        result = runner_pb2.InitializeResult(executed=True, exit_code=exit_code)
+        self._append(runner_pb2.InitializationEvent(sequence=self.last_sequence + 1, attempt=attempt, result=result))
         return result
 
     def append_interrupted(self, attempt: int) -> None:
         self._append(
-            protocol_pb2.InitializationEvent(
-                sequence=self.last_sequence + 1, attempt=attempt, interrupted=protocol_pb2.InitializationInterrupted()
+            runner_pb2.InitializationEvent(
+                sequence=self.last_sequence + 1, attempt=attempt, interrupted=runner_pb2.InitializationInterrupted()
             )
         )
 
-    def _append(self, event: protocol_pb2.InitializationEvent) -> None:
+    def _append(self, event: runner_pb2.InitializationEvent) -> None:
         self._file.write(json.dumps(MessageToDict(event, preserving_proto_field_name=True)).encode() + b"\n")
         self._file.flush()
         os.fsync(self._file.fileno())

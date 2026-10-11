@@ -6,8 +6,7 @@ from uuid import UUID
 
 from google.protobuf.json_format import MessageToDict, MessageToJson, ParseDict
 
-from agentplane.proto import runner_channel_pb2 as channel_pb2
-from agentplane.runner import protocol_pb2
+from agentplane.proto import runner_channel_pb2 as channel_pb2, runner_pb2
 from agentplane.runner.client import RunnerClient
 from agentplane.runner.errors import RunnerError
 from agentplane.sandbox_service.channel_control import ChannelControl
@@ -24,13 +23,13 @@ def launch_spec(
     binding: SandboxBinding | None,
     platform_instructions: str,
     sandbox_namespace: str | None = None,
-) -> protocol_pb2.SessionSpec:
+) -> runner_pb2.SessionSpec:
     defaults = binding.session_defaults if binding is not None and binding.HasField("session_defaults") else None
     values = MessageToDict(defaults) if defaults is not None else {}
     values.pop("setupScript", None)
     if "cwd" in values:
         values["cwd"] = values["cwd"].replace("{session_id}", destination.session_id)
-    spec = ParseDict(values | overrides, protocol_pb2.SessionSpec())
+    spec = ParseDict(values | overrides, runner_pb2.SessionSpec())
     validate_spec(spec)
     context = (
         "Your explicit Sandbox Service session destination is:\n"
@@ -52,8 +51,8 @@ def launch_spec(
     return spec
 
 
-def validate_spec(spec: protocol_pb2.SessionSpec) -> None:
-    if spec.harness not in (protocol_pb2.HARNESS_CLAUDE, protocol_pb2.HARNESS_CODEX) or not spec.cwd or not spec.model:
+def validate_spec(spec: runner_pb2.SessionSpec) -> None:
+    if spec.harness not in (runner_pb2.HARNESS_CLAUDE, runner_pb2.HARNESS_CODEX) or not spec.cwd or not spec.model:
         raise ValueError("a supported harness, cwd, and model are required")
     if not PurePosixPath(spec.cwd).is_absolute():
         raise ValueError("cwd must be absolute")
@@ -62,11 +61,11 @@ def validate_spec(spec: protocol_pb2.SessionSpec) -> None:
 async def open_session(
     client: RunnerClient,
     runner_session_id: str,
-    spec: protocol_pb2.SessionSpec,
+    spec: runner_pb2.SessionSpec,
     *,
     bootstrap: str,
     setup_script: str | None,
-) -> protocol_pb2.Attached:
+) -> runner_pb2.Attached:
     if bootstrap:
         result = await client.initialize(bootstrap)
         if result.exit_code != 0:
@@ -78,12 +77,12 @@ async def open_session(
         attachment.cancel()
 
 
-async def resume_session(client: RunnerClient, session_id: str) -> protocol_pb2.Attached:
+async def resume_session(client: RunnerClient, session_id: str) -> runner_pb2.Attached:
     # Never assemble a new spec from today's configuration. No retained session means no resume.
     summary = next((row for row in await client.list_sessions() if row.session_id == session_id), None)
     if summary is None:
         raise RunnerError("runner has no retained session to resume")
-    if summary.setup_state in (protocol_pb2.SETUP_STATE_FAILED, protocol_pb2.SETUP_STATE_INTERRUPTED):
+    if summary.setup_state in (runner_pb2.SETUP_STATE_FAILED, runner_pb2.SETUP_STATE_INTERRUPTED):
         raise RunnerError("session setup failed or was interrupted; create a new session")
     try:
         validate_spec(summary.spec)
@@ -100,11 +99,11 @@ async def open_channel_session(
     control: ChannelControl,
     sandbox_uid: UUID,
     runner_session_id: str,
-    spec: protocol_pb2.SessionSpec,
+    spec: runner_pb2.SessionSpec,
     *,
     bootstrap: str,
     setup_script: str | None,
-) -> protocol_pb2.Attached:
+) -> runner_pb2.Attached:
     """`open_session` over the runner channel, for a Sandbox whose connection agreed `lifecycle`."""
     if bootstrap:
         initialize = channel_pb2.ControlRequest(initialize=channel_pb2.Initialize(script=bootstrap))
@@ -120,9 +119,9 @@ async def open_channel_session(
     # OpenSession only confirms an existing Session, so a retried create would leave a harness that
     # an earlier attempt could not start (refused FAILED) stopped. Start it, as inbound Open with a
     # spec does; a Session still in setup starts once its setup succeeds.
-    if attached.harness_state == protocol_pb2.HARNESS_STATE_STOPPED and attached.setup_state in (
-        protocol_pb2.SETUP_STATE_NOT_REQUIRED,
-        protocol_pb2.SETUP_STATE_SUCCEEDED,
+    if attached.harness_state == runner_pb2.HARNESS_STATE_STOPPED and attached.setup_state in (
+        runner_pb2.SETUP_STATE_NOT_REQUIRED,
+        runner_pb2.SETUP_STATE_SUCCEEDED,
     ):
         return await resume_channel_session(control, sandbox_uid, runner_session_id)
     return attached
@@ -130,7 +129,7 @@ async def open_channel_session(
 
 async def resume_channel_session(
     control: ChannelControl, sandbox_uid: UUID, runner_session_id: str
-) -> protocol_pb2.Attached:
+) -> runner_pb2.Attached:
     """Restart a stopped harness on its retained spec; the runner refuses an unknown Session or one
     whose setup failed."""
     resuming = channel_pb2.ControlRequest(resume=channel_pb2.ResumeSession(session_id=runner_session_id))

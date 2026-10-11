@@ -10,7 +10,7 @@ import pytest_bazel
 from agentplane.acceptance.agent import Agent, runner_startup_retries
 from agentplane.app.client import Client
 from agentplane.app.sandbox_models import SandboxView, SessionDefaults
-from agentplane.runner import protocol_pb2
+from agentplane.proto import runner_pb2
 from agentplane.runner.harness import Harness
 
 # The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.
@@ -51,7 +51,7 @@ async def test_public_coder_preset_launches_an_initialized_editable_codex_thread
         with attempt:
             first = await client.create_session(view.name, first_id)
     assert (first.attached.spec.harness, first.attached.spec.model, first.attached.spec.reasoning_effort) == (
-        protocol_pb2.HARNESS_CODEX,
+        runner_pb2.HARNESS_CODEX,
         preset.session_defaults.model,
         preset.session_defaults.reasoning_effort,
     )

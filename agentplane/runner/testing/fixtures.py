@@ -17,7 +17,7 @@ import pytest
 
 from agentplane.harness_tests.claude.messages import AnthropicMessages
 from agentplane.harness_tests.codex.responses import OpenAIResponses
-from agentplane.runner import protocol_pb2
+from agentplane.proto import runner_pb2
 from agentplane.runner.client import RunnerClient
 from agentplane.runner.config import RunnerConfig
 from agentplane.runner.service import Runner, serve
@@ -31,17 +31,17 @@ from agentplane.runner.testing.scripted_model import ScriptedModel
 # gazelle:include_dep @pypi//grpcio
 
 
-@pytest.fixture(params=[protocol_pb2.HARNESS_CLAUDE, protocol_pb2.HARNESS_CODEX], ids=["claude", "codex"])
-def harness(request: pytest.FixtureRequest) -> protocol_pb2.Harness:
-    return cast(protocol_pb2.Harness, request.param)
+@pytest.fixture(params=[runner_pb2.HARNESS_CLAUDE, runner_pb2.HARNESS_CODEX], ids=["claude", "codex"])
+def harness(request: pytest.FixtureRequest) -> runner_pb2.Harness:
+    return cast(runner_pb2.Harness, request.param)
 
 
 ModelEndpoint = AnthropicMessages | OpenAIResponses
 
 
 @pytest.fixture
-async def endpoint(harness: protocol_pb2.Harness) -> AsyncIterator[ModelEndpoint]:
-    server: ModelEndpoint = AnthropicMessages() if harness == protocol_pb2.HARNESS_CLAUDE else OpenAIResponses()
+async def endpoint(harness: runner_pb2.Harness) -> AsyncIterator[ModelEndpoint]:
+    server: ModelEndpoint = AnthropicMessages() if harness == runner_pb2.HARNESS_CLAUDE else OpenAIResponses()
     await server.start()
     try:
         yield server
@@ -50,11 +50,11 @@ async def endpoint(harness: protocol_pb2.Harness) -> AsyncIterator[ModelEndpoint
 
 
 @pytest.fixture
-def model(harness: protocol_pb2.Harness, endpoint: ModelEndpoint) -> ScriptedModel[Any]:
-    if harness == protocol_pb2.HARNESS_CLAUDE:
+def model(harness: runner_pb2.Harness, endpoint: ModelEndpoint) -> ScriptedModel[Any]:
+    if harness == runner_pb2.HARNESS_CLAUDE:
         assert isinstance(endpoint, AnthropicMessages)
         return ClaudeModel(endpoint)
-    if harness == protocol_pb2.HARNESS_CODEX:
+    if harness == runner_pb2.HARNESS_CODEX:
         assert isinstance(endpoint, OpenAIResponses)
         return CodexModel(endpoint)
     raise ValueError(f"unsupported {harness=}")
@@ -68,12 +68,12 @@ def workspace(tmp_path: Path) -> Path:
 
 
 @pytest.fixture
-def spec(harness: protocol_pb2.Harness, workspace: Path) -> protocol_pb2.SessionSpec:
+def spec(harness: runner_pb2.Harness, workspace: Path) -> runner_pb2.SessionSpec:
     return launches.spec(harness, workspace)
 
 
 @pytest.fixture
-def config(harness: protocol_pb2.Harness, endpoint: ModelEndpoint, tmp_path: Path) -> RunnerConfig:
+def config(harness: runner_pb2.Harness, endpoint: ModelEndpoint, tmp_path: Path) -> RunnerConfig:
     return launches.config(harness, endpoint.origin, state_dir=tmp_path / "state", home=tmp_path / "home")
 
 

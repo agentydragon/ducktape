@@ -1,53 +1,8 @@
-load("@aspect_rules_ts//ts:proto.bzl", "ts_proto_library")
-load("@protobuf//bazel:proto_library.bzl", "proto_library")
 load("@rules_python//python:packaging.bzl", "py_package", "py_wheel")
 load("@rules_rust//rust:defs.bzl", "rust_binary", "rust_test")
 load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
-load("//devinfra/python:grpc.bzl", "py_grpc_service_library")
-load("//devinfra/python:proto.bzl", "py_proto_library_with_mypy_stubs")
 
 package(default_visibility = ["//visibility:public"])
-
-# The runner transport imports the shared Command/Event log messages.
-exports_files(["protocol.proto"])
-
-# gazelle:resolve py agentplane.runner.protocol_pb2 //agentplane/runner:protocol_pb2
-# gazelle:resolve py agentplane.runner.protocol_pb2_grpc //agentplane/runner:protocol_pb2_grpc
-
-proto_library(
-    name = "protocol_proto",
-    srcs = ["protocol.proto"],
-    deps = [
-        "//agentplane/proto:command_proto",
-        "//agentplane/proto:event_log_proto",
-    ],
-)
-
-py_proto_library_with_mypy_stubs(
-    name = "protocol_pb2",
-    deps = [":protocol_proto"],
-)
-
-py_grpc_service_library(
-    name = "protocol_pb2_grpc",
-    proto = ":protocol_proto",
-    py_proto = ":protocol_pb2",
-    visibility = [
-        "//agentplane/runner:__subpackages__",
-        "//agentplane/sandbox_service:__subpackages__",
-    ],
-)
-
-ts_proto_library(
-    name = "protocol_pb",
-    copy_files = False,
-    node_modules = "//:node_modules",
-    proto = ":protocol_proto",
-    deps = [
-        "//agentplane/proto:command_pb",
-        "//agentplane/proto:event_log_pb",
-    ],
-)
 
 py_binary(
     name = "main_bin",
@@ -95,8 +50,8 @@ py_library(
         ":errors",
         "//agentplane/proto:command_pb2",
         "//agentplane/proto:event_log_pb2",
-        "//agentplane/runner:protocol_pb2",
-        "//agentplane/runner:protocol_pb2_grpc",
+        "//agentplane/proto:runner_pb2",
+        "//agentplane/proto:runner_pb2_grpc",
         "@pypi//grpcio",
         "@pypi//protobuf",
     ],
@@ -126,7 +81,7 @@ py_library(
         ":cgroups",
         ":model_config",
         "//agentplane/llm_ingress:models",
-        "//agentplane/runner:protocol_pb2",
+        "//agentplane/proto:runner_pb2",
         "@pypi//protobuf",  # keep: mypy follows generated protobuf interfaces
         "@pypi//types_protobuf",  # keep: mypy follows generated protobuf interfaces
     ],
@@ -215,8 +170,8 @@ py_library(
         ":session",
         ":store",
         "//agentplane/proto:event_log_pb2",
-        "//agentplane/runner:protocol_pb2",
-        "//agentplane/runner:protocol_pb2_grpc",
+        "//agentplane/proto:runner_pb2",
+        "//agentplane/proto:runner_pb2_grpc",
         "@pypi//grpcio",
         "@pypi//protobuf",
     ],
@@ -238,7 +193,7 @@ py_library(
         "//agentplane/proto:command_pb2",
         "//agentplane/proto:event_log_pb2",
         "//agentplane/proto:event_pb2",
-        "//agentplane/runner:protocol_pb2",
+        "//agentplane/proto:runner_pb2",
         "@pypi//protobuf",
         "@pypi//pydantic",
     ],
@@ -248,7 +203,7 @@ py_library(
     name = "store",
     srcs = ["store.py"],
     deps = [
-        "//agentplane/runner:protocol_pb2",
+        "//agentplane/proto:runner_pb2",
         "@pypi//protobuf",
         "@pypi//pydantic",
     ],
@@ -263,7 +218,7 @@ py_test(
         ":errors",
         "//:conftest",
         "//agentplane/proto:event_log_pb2",
-        "//agentplane/runner:protocol_pb2",
+        "//agentplane/proto:runner_pb2",
         "//agentplane/runner/testing:fixtures",
         "//agentplane/runner/testing:unanswering_runner",
         "@pypi//grpcio",
@@ -337,7 +292,7 @@ py_test(
         ":errors",
         "//:conftest",
         "//agentplane/proto:event_pb2",
-        "//agentplane/runner:protocol_pb2",
+        "//agentplane/proto:runner_pb2",
         "//agentplane/runner/testing:commands",
         "//agentplane/runner/testing:events",
         "//agentplane/runner/testing:scripted_model",
@@ -367,7 +322,7 @@ py_test(
         ":service",
         "//:conftest",
         "//agentplane/proto:event_pb2",
-        "//agentplane/runner:protocol_pb2",
+        "//agentplane/proto:runner_pb2",
         "//agentplane/runner/testing:commands",
         "//agentplane/runner/testing:events",
         "//agentplane/runner/testing:scripted_model",
@@ -403,7 +358,7 @@ py_test(
         "//agentplane/harness_tests/claude:messages",
         "//agentplane/harness_tests/codex:responses",
         "//agentplane/proto:event_pb2",
-        "//agentplane/runner:protocol_pb2",
+        "//agentplane/proto:runner_pb2",
         "//agentplane/runner/testing:commands",
         "//agentplane/runner/testing:events",
         "//agentplane/runner/testing:fixtures",
@@ -435,7 +390,7 @@ py_test(
         "//:conftest",
         "//agentplane/proto:event_log_pb2",
         "//agentplane/proto:event_pb2",
-        "//agentplane/runner:protocol_pb2",
+        "//agentplane/proto:runner_pb2",
         "//agentplane/runner/testing:commands",
         "//agentplane/runner/testing:events",
         "//agentplane/runner/testing:scripted_model",
@@ -503,7 +458,7 @@ py_test(
         ":conftest",
         ":service",
         "//:conftest",
-        "//agentplane/runner:protocol_pb2",
+        "//agentplane/proto:runner_pb2",
         "//agentplane/runner/testing:fixtures",
         "@pypi//grpcio",
         "@pypi//protobuf",
@@ -555,7 +510,7 @@ py_test(
         ":client",
         ":conftest",
         "//:conftest",
-        "//agentplane/runner:protocol_pb2",
+        "//agentplane/proto:runner_pb2",
         "//agentplane/runner/testing:commands",
         "//agentplane/runner/testing:events",
         "//agentplane/runner/testing:scripted_model",
@@ -571,7 +526,7 @@ py_test(
         ":conftest",
         ":store",
         "//:conftest",
-        "//agentplane/runner:protocol_pb2",
+        "//agentplane/proto:runner_pb2",
         "//agentplane/runner/testing:storage_image",
         "@pypi//protobuf",
         "@pypi//pytest",
@@ -583,7 +538,7 @@ py_library(
     name = "initialization",
     srcs = ["initialization.py"],
     deps = [
-        "//agentplane/runner:protocol_pb2",
+        "//agentplane/proto:runner_pb2",
         "@pypi//protobuf",
     ],
 )
@@ -679,7 +634,7 @@ py_test(
         ":store",
         "//:conftest",
         "//agentplane/proto:event_pb2",
-        "//agentplane/runner:protocol_pb2",
+        "//agentplane/proto:runner_pb2",
         "@pypi//httpx",
         "@pypi//protobuf",
         "@pypi//pytest",
@@ -848,7 +803,7 @@ py_test(
         ":store",
         "//:conftest",
         "//agentplane/proto:event_pb2",
-        "//agentplane/runner:protocol_pb2",
+        "//agentplane/proto:runner_pb2",
         "@pypi//grpcio",
         "@pypi//protobuf",
         "@pypi//pytest",
@@ -867,7 +822,7 @@ py_library(
         "//agentplane/proto:command_pb2",
         "//agentplane/proto:runner_channel_pb2",
         "//agentplane/proto:runner_channel_pb2_grpc",
-        "//agentplane/runner:protocol_pb2",
+        "//agentplane/proto:runner_pb2",
         "@pypi//grpcio",
         "@pypi//protobuf",
         "@pypi//sqlalchemy",
@@ -893,7 +848,7 @@ py_test(
         "//agentplane/proto:event_pb2",
         "//agentplane/proto:runner_channel_pb2",
         "//agentplane/proto:runner_channel_pb2_grpc",
-        "//agentplane/runner:protocol_pb2",
+        "//agentplane/proto:runner_pb2",
         "@pypi//grpcio",
         "@pypi//httpx",
         "@pypi//protobuf",
@@ -913,7 +868,7 @@ py_library(
         "//agentplane:grpc_options",
         "//agentplane/proto:runner_ingress_pb2",
         "//agentplane/proto:runner_ingress_pb2_grpc",
-        "//agentplane/runner:protocol_pb2",
+        "//agentplane/proto:runner_pb2",
         "@pypi//grpcio",
         "@pypi//protobuf",
         "@pypi//tenacity",
@@ -935,7 +890,7 @@ py_test(
         "//agentplane/proto:event_pb2",
         "//agentplane/proto:runner_ingress_pb2",
         "//agentplane/proto:runner_ingress_pb2_grpc",
-        "//agentplane/runner:protocol_pb2",
+        "//agentplane/proto:runner_pb2",
         "@pypi//grpcio",
         "@pypi//protobuf",
         "@pypi//pytest",

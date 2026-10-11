@@ -77,7 +77,7 @@ py_test(
         "//:conftest",
         "//agentplane/history_service:protocol_pb2",
         "//agentplane/proto:event_log_pb2",
-        "//agentplane/runner:protocol_pb2",
+        "//agentplane/proto:runner_pb2",
         "//agentplane/sandbox_service:conftest",
         "//agentplane/sandbox_service:protocol_pb2",
         "//agentplane/sandbox_service/testing:delta_spans",

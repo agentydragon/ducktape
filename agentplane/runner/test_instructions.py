@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest_bazel
 
-from agentplane.runner import protocol_pb2
+from agentplane.proto import runner_pb2
 from agentplane.runner.client import RunnerClient
 from agentplane.runner.testing import events
 from agentplane.runner.testing.commands import submit_input
@@ -16,8 +16,8 @@ from agentplane.runner.testing.scripted_model import ScriptedModel, Text
 INSTRUCTIONS = "Standing order for this session: the operator's name is Wren."
 
 
-def with_instructions(spec: protocol_pb2.SessionSpec, instructions: str) -> protocol_pb2.SessionSpec:
-    return protocol_pb2.SessionSpec(
+def with_instructions(spec: runner_pb2.SessionSpec, instructions: str) -> runner_pb2.SessionSpec:
+    return runner_pb2.SessionSpec(
         harness=spec.harness,
         cwd=spec.cwd,
         model=spec.model,
@@ -27,7 +27,7 @@ def with_instructions(spec: protocol_pb2.SessionSpec, instructions: str) -> prot
 
 
 async def test_a_session_without_instructions_sends_none(
-    client: RunnerClient, model: ScriptedModel, spec: protocol_pb2.SessionSpec
+    client: RunnerClient, model: ScriptedModel, spec: runner_pb2.SessionSpec
 ) -> None:
     async with await client.attach("no-instructions-1", spec=spec) as attachment:
         assert attachment.attached.spec.instructions == ""
@@ -39,7 +39,7 @@ async def test_a_session_without_instructions_sends_none(
 
 
 async def test_instructions_reach_the_model_on_every_turn_and_after_a_resume(
-    client: RunnerClient, model: ScriptedModel, spec: protocol_pb2.SessionSpec
+    client: RunnerClient, model: ScriptedModel, spec: runner_pb2.SessionSpec
 ) -> None:
     first = await client.attach("instructions-1", spec=with_instructions(spec, INSTRUCTIONS))
     await submit_input(first, "input-1", "Reply with exactly: SEED_OK")

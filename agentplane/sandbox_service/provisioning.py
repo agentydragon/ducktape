@@ -12,7 +12,7 @@ from dataclasses import dataclass
 from google.protobuf.json_format import MessageToDict
 from more_itertools import unique_everseen
 
-from agentplane.runner import protocol_pb2 as runner_pb2
+from agentplane.proto import runner_pb2
 from agentplane.sandbox_service.action_policy import ActionPolicyBindings
 from agentplane.sandbox_service.binding_storage import write_binding
 from agentplane.sandbox_service.egress import EgressInventory
