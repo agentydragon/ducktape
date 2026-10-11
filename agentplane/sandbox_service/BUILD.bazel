@@ -173,6 +173,7 @@ py_library(
         ":action_policy",
         ":admission_reconciliation",
         ":channel_delivery",
+        ":connection_records",
         ":controller",
         ":destinations",
         ":egress",
@@ -381,6 +382,7 @@ py_test(
         ":channel_delivery",
         ":client",
         ":conftest",
+        ":connection_records",
         ":destinations",
         ":egress",
         ":grpc_api",
@@ -523,6 +525,7 @@ py_test(
         ":channel_delivery",
         ":client",
         ":conftest",
+        ":connection_records",
         ":destinations",
         ":grpc_api",
         ":kubernetes_grants",
@@ -578,6 +581,7 @@ py_test(
         ":channel_delivery",
         ":client",
         ":conftest",
+        ":connection_records",
         ":destinations",
         ":grpc_api",
         ":session_registry",
@@ -770,6 +774,7 @@ py_library(
     srcs = ["runner_channel.py"],
     deps = [
         ":channel_delivery",
+        ":connection_records",
         ":inventory",
         ":models",
         "//agentplane/runner_channel:protocol_pb2",
@@ -795,6 +800,7 @@ py_test(
         ":channel_delivery",
         ":client",
         ":conftest",
+        ":connection_records",
         ":destinations",
         ":egress",
         ":grpc_api",
@@ -836,6 +842,7 @@ py_test(
     deps = [
         ":channel_delivery",
         ":conftest",
+        ":connection_records",
         ":destinations",
         ":runner_channel",
         "//:conftest",
@@ -862,9 +869,22 @@ py_test(
 )
 
 py_library(
+    name = "connection_records",
+    srcs = ["connection_records.py"],
+    deps = [
+        "//util:agent_sandbox",
+        "//util:kubernetes_watch",
+        "@pypi//kubernetes_asyncio",
+        "@pypi//more_itertools",
+        "@pypi//tenacity",
+    ],
+)
+
+py_library(
     name = "channel_delivery",
     srcs = ["channel_delivery.py"],
     deps = [
+        ":connection_records",
         ":destinations",
         "//agentplane/postgres:listener",
         "//agentplane/protocol:event_log_pb2",

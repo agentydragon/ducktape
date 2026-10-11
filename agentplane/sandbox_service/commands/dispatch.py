@@ -11,7 +11,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from uuid import UUID
 
-from sqlalchemy import and_, case, exists, func, select, update
+from sqlalchemy import and_, case, func, select, update
 from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
 
 from agentplane.protocol import command_pb2, event_log_pb2
@@ -114,10 +114,10 @@ class DispatchStore:
     async def claim(self, key: CommandKey, *, sandbox_uid: UUID, epoch: int) -> Delivery | None:
         """Mark the attempt sent on `epoch`, or None if it is not this connection's to send now.
 
-        Succeeds only before the deadline, for a still-pending unrefused submission, while `epoch` is
-        the Sandbox's current connection and the attempt was not already sent on it or a later one.
+        Succeeds only before the deadline, for a still-pending unrefused submission not already sent on
+        `epoch` or a later one. The caller checks that `epoch` is the Sandbox's current connection.
         """
-        submission, connection = db.CommandSubmission, db.RunnerConnection
+        submission = db.CommandSubmission
         async with self._sessions.begin() as session:
             row = (
                 await session.execute(
@@ -130,7 +130,6 @@ class DispatchStore:
                         submission.attempt_refusal.is_(None),
                         submission.attempt_sent_epoch.is_(None) | (submission.attempt_sent_epoch < epoch),
                         submission.state == SubmissionState.PENDING_ADMISSION,
-                        exists().where(connection.sandbox_uid == sandbox_uid, connection.connection_epoch == epoch),
                     )
                     .values(attempt_sent_epoch=epoch)
                     .returning(

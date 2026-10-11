@@ -20,6 +20,8 @@ from cdk8s_plus_34 import (
     Cpu,
     CpuResources,
     Deployment,
+    EnvFieldPaths,
+    EnvValue,
     IApiResource,
     ImagePullPolicy,
     MemoryResources,
@@ -53,6 +55,7 @@ from cluster.cdk8s.secret_ref import SecretRef
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 from cluster.cdk8s.settings_file import SettingsFile
 from cluster.cdk8s.token_reviewer_rbac import token_reviewer_cluster_rbac
+from util.settings_contract import env_name
 
 NAME = "agentplane-sandbox-service"
 TOKEN_AUDIENCE = "agentplane-sandbox-service"
@@ -145,7 +148,7 @@ class SandboxService(Construct):
                 "ingest_history": env.history_writer is HistoryWriter.SANDBOX_SERVICE,
             },
             path="/etc/agentplane-sandbox-service/config.yaml",
-            supplied=[("database_url",), ("commands_database_url",)],
+            supplied=[("database_url",), ("commands_database_url",), ("pod_ip",)],
         )
         # Like the other database-backed services, a migration failure blocks Pod
         # startup, including existing lifecycle RPCs. The command has no retry loop.
@@ -192,7 +195,10 @@ class SandboxService(Construct):
         container = deployment.add_container(
             name="sandbox-service",
             image=f"{_IMAGE}:unset",
-            env_variables=migration_env | commands_migration_env,
+            env_variables=migration_env
+            | commands_migration_env
+            # Where the Sandbox control Services this replica writes point (runner_channel.md).
+            | {env_name(Settings, "pod_ip"): EnvValue.from_field_ref(EnvFieldPaths.POD_IP)},
             image_pull_policy=ImagePullPolicy.IF_NOT_PRESENT,
             ports=[endpoint.port.container_port(), channel.port.container_port(), _HEALTH.container_port()],
             readiness=http_probe("/healthz", port=_HEALTH.number, initial_delay_seconds=3, period_seconds=10),
@@ -398,6 +404,16 @@ class SandboxService(Construct):
                     verbs=["create", "get", "list", "watch", "patch", "delete"],
                 ),
                 RolePolicyRule(resources=[cast(IApiResource, ApiResource.PODS)], verbs=["get", "list", "watch"]),
+                # Runner connection records, each owned by its Sandbox: the Lease every replica
+                # watches, and the control Service and EndpointSlice its holder points at itself.
+                RolePolicyRule(
+                    resources=[custom_resource("coordination.k8s.io", "leases")],
+                    verbs=["get", "list", "watch", "create", "update"],
+                ),
+                RolePolicyRule(
+                    resources=[custom_resource("", "services"), custom_resource("discovery.k8s.io", "endpointslices")],
+                    verbs=["get", "create", "update"],
+                ),
                 # Read the UID-owned ServiceAccount metadata when replaying Create; never read its tokens.
                 RolePolicyRule(
                     resources=[custom_resource("", "serviceaccounts")], verbs=["create", "get", "patch", "delete"]

@@ -16,6 +16,7 @@ from agentplane.sandbox_service.client import SandboxServiceClient
 from agentplane.sandbox_service.commands.connections import ConnectionStore
 from agentplane.sandbox_service.commands.dispatch import DispatchStore
 from agentplane.sandbox_service.commands.store import SubmissionStore
+from agentplane.sandbox_service.connection_records import ConnectionLeases
 from agentplane.sandbox_service.destinations import DestinationResolver
 from agentplane.sandbox_service.egress import EgressInventory
 from agentplane.sandbox_service.grpc_api import Resources
@@ -59,7 +60,10 @@ class Cluster:
 
 @asynccontextmanager
 async def kubernetes() -> AsyncIterator[Cluster]:
-    async with fake_apiserver() as fake:
+    # Everything the service reads or writes through this server is in the Sandbox namespace.
+    async with fake_apiserver(
+        dict.fromkeys((SANDBOXES_PLURAL, "leases", "services", "endpointslices"), SANDBOX_NAMESPACE)
+    ) as fake:
         fake.put(
             SANDBOXES_PLURAL,
             {
@@ -138,7 +142,11 @@ async def authenticated_service(
             sessions=SessionRegistry(engine),
             submissions=SubmissionStore(engine),
             delivery=ChannelDelivery(
-                engine.url, dispatches=DispatchStore(engine), connections=ConnectionStore(engine), liveness_s=1
+                engine.url,
+                dispatches=DispatchStore(engine),
+                connections=ConnectionStore(engine),
+                leases=ConnectionLeases(),
+                liveness_s=1,
             ),
             session_changes=SessionChanges(engine.url),
         )

@@ -1,8 +1,10 @@
 """The channel listener against a fake API server and a migrated commands database."""
 
 import asyncio
-from collections.abc import AsyncIterator
-from contextlib import asynccontextmanager
+from collections.abc import AsyncIterator, Callable
+from contextlib import AbstractAsyncContextManager, asynccontextmanager, suppress
+from datetime import UTC, datetime, timedelta
+from typing import Any
 from uuid import UUID, uuid4
 
 import grpc
@@ -17,13 +19,23 @@ from agentplane.sandbox_service.channel_delivery import ChannelDelivery, Command
 from agentplane.sandbox_service.commands.connections import ConnectionStore
 from agentplane.sandbox_service.commands.dispatch import DispatchStore
 from agentplane.sandbox_service.commands.store import CommandSubmission, SubmissionStore
+from agentplane.sandbox_service.connection_records import (
+    CONNECTION_EPOCH_ANNOTATION,
+    CONNECTION_LABEL,
+    POD_UID_ANNOTATION,
+    RUNNER_BOOT_ID_ANNOTATION,
+    ConnectionHolder,
+    ConnectionLeases,
+    ConnectionRecords,
+    RecordOwner,
+)
 from agentplane.sandbox_service.destinations import DestinationUnavailableError
 from agentplane.sandbox_service.runner_channel import ChannelTiming, RunnerChannelService
-from agentplane.sandbox_service.testing.kubernetes import ACCOUNT, SANDBOX, Cluster
+from agentplane.sandbox_service.testing.kubernetes import ACCOUNT, SANDBOX, SANDBOX_UID, Cluster
 from agentplane.subjects import ServiceAccountRef
 from agentplane.testing.fake_apiserver import SANDBOX_NAMESPACE, TokenVerdict
 from agentplane.workload_auth.principal import WorkloadPrincipalResolver
-from util.agent_sandbox import SANDBOXES_PLURAL
+from util.agent_sandbox import SANDBOX_KIND, SANDBOXES_PLURAL
 
 # gazelle:include_dep @pypi//protobuf
 # gazelle:include_dep //agentplane/sandbox_service/commands:conftest
@@ -37,51 +49,91 @@ RUNNER_SESSION = "test-runner-session"
 HELLO = protocol_pb2.RunnerFrame(
     hello=protocol_pb2.Hello(runner_boot_id="test-boot", capabilities=["commands", "test-future-capability"])
 )
+REPLICA = ConnectionHolder(pod_name="test-replica", pod_ip="192.0.2.1", port=18080)
+OTHER_REPLICA = ConnectionHolder(pod_name="test-other-replica", pod_ip="192.0.2.2", port=18080)
+OWNER = RecordOwner(name=SANDBOX, uid=UUID(SANDBOX_UID))
+
+type Replica = Callable[[ConnectionHolder], AbstractAsyncContextManager[protocol_pb2_grpc.RunnerChannelAsyncStub]]
 
 
 @pytest.fixture
-async def delivery(engine: AsyncEngine) -> AsyncIterator[ChannelDelivery]:
+async def leases(cluster: Cluster) -> AsyncIterator[ConnectionLeases]:
+    leases = ConnectionLeases()
+    watch = asyncio.create_task(
+        leases.watch(k8s_client.CoordinationV1Api(cluster.api), SANDBOX_NAMESPACE, resync_seconds=60).run()
+    )
+    try:
+        yield leases
+    finally:
+        watch.cancel()
+        with suppress(asyncio.CancelledError):
+            await watch
+
+
+@pytest.fixture
+async def delivery(engine: AsyncEngine, leases: ConnectionLeases) -> AsyncIterator[ChannelDelivery]:
     delivery = ChannelDelivery(
-        engine.url, dispatches=DispatchStore(engine), connections=ConnectionStore(engine), liveness_s=1, recheck_s=0.1
+        engine.url,
+        dispatches=DispatchStore(engine),
+        connections=ConnectionStore(engine),
+        leases=leases,
+        liveness_s=1,
+        recheck_s=0.1,
     )
     async with delivery.listener.listen():
         yield delivery
 
 
 @pytest.fixture
-async def channel(
-    cluster: Cluster, engine: AsyncEngine, delivery: ChannelDelivery
-) -> AsyncIterator[protocol_pb2_grpc.RunnerChannelAsyncStub]:
+def replica(cluster: Cluster, engine: AsyncEngine, delivery: ChannelDelivery) -> Replica:
+    """Start a channel listener as one Sandbox Service replica; replicas share the cluster and database."""
     cluster.fake.tokens[TOKEN] = TokenVerdict(
         username=f"system:serviceaccount:{SANDBOX_NAMESPACE}:{ACCOUNT}",
         pod_name=SANDBOX,
         pod_uid="test-pod-uid",
         audiences=(AUDIENCE,),
     )
-    server = grpc.aio.server()
-    protocol_pb2_grpc.add_RunnerChannelServicer_to_server(
-        RunnerChannelService(
-            principals=WorkloadPrincipalResolver(
-                authentication=k8s_client.AuthenticationV1Api(cluster.api),
-                audience=AUDIENCE,
-                allowed_service_account_namespaces={SANDBOX_NAMESPACE},
+
+    @asynccontextmanager
+    async def start(holder: ConnectionHolder) -> AsyncIterator[protocol_pb2_grpc.RunnerChannelAsyncStub]:
+        server = grpc.aio.server()
+        protocol_pb2_grpc.add_RunnerChannelServicer_to_server(
+            RunnerChannelService(
+                principals=WorkloadPrincipalResolver(
+                    authentication=k8s_client.AuthenticationV1Api(cluster.api),
+                    audience=AUDIENCE,
+                    allowed_service_account_namespaces={SANDBOX_NAMESPACE},
+                ),
+                inventory=cluster.inventory,
+                core=k8s_client.CoreV1Api(cluster.api),
+                connections=ConnectionStore(engine),
+                records=ConnectionRecords(cluster.api, namespace=SANDBOX_NAMESPACE, holder=holder),
+                delivery=delivery,
+                timing=ChannelTiming(heartbeat_s=0.05, liveness_s=1, touch_s=0.1, max_age_s=60),
             ),
-            inventory=cluster.inventory,
-            core=k8s_client.CoreV1Api(cluster.api),
-            connections=ConnectionStore(engine),
-            delivery=delivery,
-            replica="test-replica",
-            timing=ChannelTiming(heartbeat_s=0.05, liveness_s=1, touch_s=0.1, max_age_s=60),
-        ),
-        server,
-    )
-    port = server.add_insecure_port("127.0.0.1:0")
-    await server.start()
-    try:
-        async with grpc.aio.insecure_channel(f"127.0.0.1:{port}") as connection:
-            yield protocol_pb2_grpc.RunnerChannelStub(connection)
-    finally:
-        await server.stop(0)
+            server,
+        )
+        port = server.add_insecure_port("127.0.0.1:0")
+        await server.start()
+        try:
+            async with grpc.aio.insecure_channel(f"127.0.0.1:{port}") as connection:
+                yield protocol_pb2_grpc.RunnerChannelStub(connection)
+        finally:
+            await server.stop(0)
+
+    return start
+
+
+@pytest.fixture
+async def channel(replica: Replica) -> AsyncIterator[protocol_pb2_grpc.RunnerChannelAsyncStub]:
+    async with replica(REPLICA) as stub:
+        yield stub
+
+
+async def until_cached(leases: ConnectionLeases, condition: Callable[[], bool]) -> None:
+    """Wait for the Lease cache to catch up with what the API server holds."""
+    async with asyncio.timeout(5):
+        await leases.wait_for(condition)
 
 
 def run_sandbox_as(cluster: Cluster, account: str) -> None:
@@ -131,6 +183,110 @@ async def test_newest_connection_supersedes_the_previous_one(channel: protocol_p
             assert await status_of(first) == grpc.StatusCode.ABORTED
             await second.write(protocol_pb2.RunnerFrame(heartbeat=protocol_pb2.Heartbeat()))
             assert (await read_frame(second)).HasField("heartbeat")
+
+
+def owners(obj: dict[str, Any]) -> list[tuple[str, str]]:
+    return [(ref["kind"], ref["uid"]) for ref in obj["metadata"]["ownerReferences"]]
+
+
+async def test_accepting_records_the_connection_on_the_sandbox(
+    channel: protocol_pb2_grpc.RunnerChannelAsyncStub, cluster: Cluster
+) -> None:
+    async with connect(channel) as call:
+        await call.write(HELLO)
+        assert (await read_frame(call)).welcome.connection_epoch == 1
+    lease = cluster.fake.objects["leases"][OWNER.lease_name]
+    service = cluster.fake.objects["services"][OWNER.control_name]
+    endpoints = cluster.fake.objects["endpointslices"][OWNER.control_name]
+    # Deleting the Sandbox deletes all three.
+    for record in (lease, service, endpoints):
+        assert owners(record) == [(SANDBOX_KIND, SANDBOX_UID)]
+    assert (lease["spec"]["holderIdentity"], lease["spec"]["leaseTransitions"]) == (REPLICA.pod_name, 1)
+    assert lease["metadata"]["annotations"] == {
+        POD_UID_ANNOTATION: "test-pod-uid",
+        RUNNER_BOOT_ID_ANNOTATION: "test-boot",
+    }
+    assert service["spec"]["clusterIP"] == "None"
+    assert "selector" not in service["spec"]
+    assert endpoints["metadata"]["labels"]["kubernetes.io/service-name"] == service["metadata"]["name"]
+    assert endpoints["metadata"]["annotations"][CONNECTION_EPOCH_ANNOTATION] == "1"
+    assert endpoints["endpoints"][0]["addresses"] == [REPLICA.pod_ip]
+    assert [port["name"] for port in endpoints["ports"]] == [port["name"] for port in service["spec"]["ports"]]
+
+
+async def test_a_connection_through_another_replica_supersedes_this_one(replica: Replica, cluster: Cluster) -> None:
+    async with replica(REPLICA) as this, replica(OTHER_REPLICA) as other, connect(this) as first:
+        await first.write(HELLO)
+        assert (await read_frame(first)).welcome.connection_epoch == 1
+        async with connect(other) as second:
+            await second.write(HELLO)
+            assert (await read_frame(second)).welcome.connection_epoch == 2
+            # The first replica learns it on its next renewal.
+            assert await status_of(first) == grpc.StatusCode.ABORTED
+    lease = cluster.fake.objects["leases"][OWNER.lease_name]
+    assert (lease["spec"]["holderIdentity"], lease["spec"]["leaseTransitions"]) == (OTHER_REPLICA.pod_name, 2)
+    endpoints = cluster.fake.objects["endpointslices"][OWNER.control_name]
+    assert endpoints["metadata"]["annotations"][CONNECTION_EPOCH_ANNOTATION] == "2"
+    assert endpoints["endpoints"][0]["addresses"] == [OTHER_REPLICA.pod_ip]
+
+
+def owned_by_sandbox(name: str, **fields: Any) -> dict[str, Any]:
+    owner = OWNER.reference()
+    reference = {"apiVersion": owner.api_version, "kind": owner.kind, "name": owner.name, "uid": owner.uid}
+    return {"name": name, "namespace": SANDBOX_NAMESPACE, "ownerReferences": [reference], **fields}
+
+
+async def test_an_older_epoch_never_overwrites_the_control_endpoints(
+    channel: protocol_pb2_grpc.RunnerChannelAsyncStub, cluster: Cluster
+) -> None:
+    # Written by a newer connection's owner that won the race to the EndpointSlice.
+    newer: dict[str, Any] = {
+        "apiVersion": "discovery.k8s.io/v1",
+        "kind": "EndpointSlice",
+        "metadata": owned_by_sandbox(
+            OWNER.control_name,
+            labels={"kubernetes.io/service-name": OWNER.control_name},
+            annotations={CONNECTION_EPOCH_ANNOTATION: "7"},
+        ),
+        "addressType": "IPv4",
+        "endpoints": [{"addresses": ["192.0.2.99"]}],
+        "ports": [{"name": "grpc", "port": REPLICA.port}],
+    }
+    cluster.fake.put("endpointslices", newer)
+    async with connect(channel) as call:
+        await call.write(HELLO)
+        assert (await read_frame(call)).welcome.connection_epoch == 1
+    endpoints = cluster.fake.objects["endpointslices"][OWNER.control_name]
+    assert (endpoints["metadata"]["annotations"], endpoints["endpoints"]) == (
+        newer["metadata"]["annotations"],
+        newer["endpoints"],
+    )
+
+
+def connection_lease(*, epoch: int, renewed_at: datetime) -> dict[str, Any]:
+    return {
+        "apiVersion": "coordination.k8s.io/v1",
+        "kind": "Lease",
+        "metadata": owned_by_sandbox(OWNER.lease_name, labels={CONNECTION_LABEL: "true"}),
+        "spec": {
+            "holderIdentity": OTHER_REPLICA.pod_name,
+            "leaseTransitions": epoch,
+            "renewTime": f"{renewed_at:%Y-%m-%dT%H:%M:%S.%fZ}",
+            "leaseDurationSeconds": 30,
+        },
+    }
+
+
+async def test_liveness_is_read_from_the_watched_leases(leases: ConnectionLeases, cluster: Cluster) -> None:
+    sandbox_uid = UUID(SANDBOX_UID)
+    cluster.fake.put("leases", connection_lease(epoch=3, renewed_at=datetime.now(UTC)))
+    await until_cached(leases, lambda: leases.read_live_epoch(sandbox_uid, liveness_s=30) == 3)
+    # A connection that stopped renewing is no longer live, but stays the current one.
+    cluster.fake.put("leases", connection_lease(epoch=4, renewed_at=datetime.now(UTC) - timedelta(seconds=31)))
+    await until_cached(leases, lambda: leases.read_epoch(sandbox_uid) == 4)
+    assert leases.read_live_epoch(sandbox_uid, liveness_s=30) is None
+    cluster.fake.delete("leases", OWNER.lease_name)
+    await until_cached(leases, lambda: leases.read_epoch(sandbox_uid) is None)
 
 
 @pytest.mark.parametrize(
@@ -184,7 +340,7 @@ async def session_id(engine: AsyncEngine) -> UUID:
 def deliver(delivery: ChannelDelivery, cluster: Cluster, session_id: UUID) -> asyncio.Task[event_log_pb2.EventEntry]:
     return asyncio.create_task(
         delivery.deliver(
-            sandbox_uid=UUID(cluster.fake.objects[SANDBOXES_PLURAL][SANDBOX]["metadata"]["uid"]),
+            sandbox_uid=UUID(SANDBOX_UID),
             session_id=session_id,
             command_id=COMMAND.command_id,
             runner_session_id=RUNNER_SESSION,
@@ -210,6 +366,9 @@ async def test_delivered_command_returns_the_runner_receipt(
     async with connect(channel) as call:
         await call.write(HELLO)
         assert (await read_frame(call)).HasField("welcome")
+        await until_cached(
+            delivery.leases, lambda: delivery.leases.read_live_epoch(UUID(SANDBOX_UID), liveness_s=1) is not None
+        )
         waiting = deliver(delivery, cluster, session_id)
         sent = await next_delivery(call)
         assert (sent.session_id, sent.command) == (RUNNER_SESSION, COMMAND)
@@ -230,6 +389,9 @@ async def test_refusal_reaches_the_caller(
     async with connect(channel) as call:
         await call.write(HELLO)
         assert (await read_frame(call)).HasField("welcome")
+        await until_cached(
+            delivery.leases, lambda: delivery.leases.read_live_epoch(UUID(SANDBOX_UID), liveness_s=1) is not None
+        )
         waiting = deliver(delivery, cluster, session_id)
         sent = await next_delivery(call)
         await call.write(
@@ -252,7 +414,7 @@ async def test_unconnected_runner_is_unavailable(delivery: ChannelDelivery, clus
 async def test_agreed_operations_stick_to_the_sandbox(
     channel: protocol_pb2_grpc.RunnerChannelAsyncStub, cluster: Cluster, engine: AsyncEngine
 ) -> None:
-    sandbox_uid = UUID(cluster.fake.objects[SANDBOXES_PLURAL][SANDBOX]["metadata"]["uid"])
+    sandbox_uid = UUID(SANDBOX_UID)
     connections = ConnectionStore(engine)
     async with connect(channel) as call:
         await call.write(HELLO)

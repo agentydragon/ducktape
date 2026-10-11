@@ -20,6 +20,7 @@ from agentplane.sandbox_service.channel_delivery import ChannelDelivery
 from agentplane.sandbox_service.commands.connections import ConnectionStore
 from agentplane.sandbox_service.commands.dispatch import DispatchStore
 from agentplane.sandbox_service.commands.store import SubmissionStore
+from agentplane.sandbox_service.connection_records import ConnectionHolder, ConnectionLeases, ConnectionRecords
 from agentplane.sandbox_service.controller import SandboxController
 from agentplane.sandbox_service.destinations import DestinationResolver
 from agentplane.sandbox_service.egress import EgressInventory
@@ -110,11 +111,13 @@ async def serve_with_engines(
         sessions = SessionRegistry(commands_engine)
         submissions = SubmissionStore(commands_engine)
         connections = ConnectionStore(commands_engine)
+        leases = ConnectionLeases()
         timing = ChannelTiming()
         delivery = ChannelDelivery(
             commands_engine.url,
             dispatches=DispatchStore(commands_engine),
             connections=connections,
+            leases=leases,
             liveness_s=timing.liveness_s,
         )
         resources = Resources(
@@ -152,8 +155,14 @@ async def serve_with_engines(
                     inventory=inventory,
                     core=core,
                     connections=connections,
+                    records=ConnectionRecords(
+                        api,
+                        namespace=settings.sandbox_namespace,
+                        holder=ConnectionHolder(
+                            pod_name=socket.gethostname(), pod_ip=settings.pod_ip, port=settings.port
+                        ),
+                    ),
                     delivery=delivery,
-                    replica=socket.gethostname(),  # the Pod name
                     timing=timing,
                 ),
                 channel_server,
@@ -168,6 +177,10 @@ async def serve_with_engines(
 
             teardown = Teardown(
                 resources.destinations, sessions, runner_grpc_channel_options=settings.runner_grpc_channel_options
+            )
+            lease_watch = asyncio.create_task(
+                leases.watch(k8s_client.CoordinationV1Api(api), settings.sandbox_namespace, resync_seconds=300).run(),
+                name="runner-connection-leases",
             )
             reconcile = asyncio.create_task(
                 SandboxController(provisioning, teardown).run(), name="sandbox-provisioning"
@@ -202,7 +215,7 @@ async def serve_with_engines(
             finally:
                 await server.stop(grace=5)
                 await channel_server.stop(grace=5)
-                for task in (reconcile, admissions):
+                for task in (lease_watch, reconcile, admissions):
                     task.cancel()
                     with suppress(asyncio.CancelledError):
                         await task

@@ -18,6 +18,7 @@ from agentplane.sandbox_service.client import SandboxServiceClient, ServiceError
 from agentplane.sandbox_service.commands.connections import ConnectionStore
 from agentplane.sandbox_service.commands.dispatch import DispatchStore
 from agentplane.sandbox_service.commands.store import SubmissionStore
+from agentplane.sandbox_service.connection_records import ConnectionLeases
 from agentplane.sandbox_service.destinations import DestinationResolver
 from agentplane.sandbox_service.egress import EgressInventory
 from agentplane.sandbox_service.grpc_api import Resources
@@ -131,7 +132,11 @@ async def api(
         sessions=SessionRegistry(engine),
         submissions=SubmissionStore(engine),
         delivery=ChannelDelivery(
-            engine.url, dispatches=DispatchStore(engine), connections=ConnectionStore(engine), liveness_s=1
+            engine.url,
+            dispatches=DispatchStore(engine),
+            connections=ConnectionStore(engine),
+            leases=ConnectionLeases(),
+            liveness_s=1,
         ),
         session_changes=SessionChanges(engine.url),
     )

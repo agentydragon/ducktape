@@ -19,9 +19,10 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from agentplane.runner_channel import protocol_pb2, protocol_pb2_grpc
 from agentplane.sandbox_service.channel_delivery import ChannelDelivery
-from agentplane.sandbox_service.commands.connections import ConnectionStore, ConnectionSupersededError
+from agentplane.sandbox_service.commands.connections import ConnectionStore
 from agentplane.sandbox_service.commands.dispatch import CommandKey, ReceiptMismatchError
 from agentplane.sandbox_service.commands.store import SubmissionConflictError
+from agentplane.sandbox_service.connection_records import ConnectionRecords, ConnectionSupersededError, RecordOwner
 from agentplane.sandbox_service.inventory import SandboxInventory
 from agentplane.sandbox_service.models import SandboxNotFoundError
 from agentplane.workload_auth.bearer import parse_bearer, sole_header
@@ -51,6 +52,10 @@ class ChannelPeer:
     sandbox_name: str
     sandbox_uid: UUID
     pod_uid: str
+
+    @property
+    def record_owner(self) -> RecordOwner:
+        return RecordOwner(name=self.sandbox_name, uid=self.sandbox_uid)
 
 
 @dataclass(frozen=True)
@@ -114,16 +119,16 @@ class RunnerChannelService(protocol_pb2_grpc.RunnerChannelServicer):
         inventory: SandboxInventory,
         core: k8s_client.CoreV1Api,
         connections: ConnectionStore,
+        records: ConnectionRecords,
         delivery: ChannelDelivery,
-        replica: str,
         timing: ChannelTiming,
     ) -> None:
         self.principals = principals
         self.inventory = inventory
         self.core = core
         self.connections = connections
+        self.records = records
         self.delivery = delivery
-        self.replica = replica
         self.timing = timing
 
     async def authenticate(self, context: grpc.aio.ServicerContext) -> tuple[WorkloadPrincipal, ChannelPeer]:
@@ -161,13 +166,10 @@ class RunnerChannelService(protocol_pb2_grpc.RunnerChannelServicer):
             if hello.WhichOneof("frame") != "hello" or not hello.hello.runner_boot_id:
                 raise _ChannelClosedError(grpc.StatusCode.INVALID_ARGUMENT, "the first frame must be Hello")
             capabilities = set(hello.hello.capabilities) & set(ChannelOperation)
-            epoch = await self.connections.accept(
-                sandbox_uid=peer.sandbox_uid,
-                pod_uid=peer.pod_uid,
-                owner_replica=self.replica,
-                runner_boot_id=hello.hello.runner_boot_id,
-                operations=capabilities,
+            epoch = await self.records.accept(
+                peer.record_owner, pod_uid=peer.pod_uid, runner_boot_id=hello.hello.runner_boot_id
             )
+            await self.connections.record_operations(peer.sandbox_uid, capabilities)
             async with asyncio.timeout(self.timing.liveness_s):
                 await context.write(
                     protocol_pb2.ServiceFrame(
@@ -236,6 +238,9 @@ class RunnerChannelService(protocol_pb2_grpc.RunnerChannelServicer):
                     del unreceipted[expired]
                 if len(unreceipted) >= MAX_UNRECEIPTED:
                     continue
+                # Superseded, or this replica's cache has not seen the accept yet: the waiter re-notifies.
+                if self.delivery.leases.read_epoch(peer.sandbox_uid) != epoch:
+                    continue
                 delivery = await self.delivery.dispatches.claim(key, sandbox_uid=peer.sandbox_uid, epoch=epoch)
                 if delivery is None:
                     continue
@@ -259,7 +264,7 @@ class RunnerChannelService(protocol_pb2_grpc.RunnerChannelServicer):
                     raise _ChannelClosedError(grpc.StatusCode.UNAVAILABLE, "maximum connection age reached")
                 if now - last_touch >= self.timing.touch_s:
                     try:
-                        await self.connections.touch(sandbox_uid=peer.sandbox_uid, epoch=epoch, seen_at=last_frame_at)
+                        await self.records.renew(peer.record_owner, epoch=epoch, seen_at=last_frame_at)
                     except ConnectionSupersededError as error:
                         raise _ChannelClosedError(
                             grpc.StatusCode.ABORTED, "superseded by a newer connection"

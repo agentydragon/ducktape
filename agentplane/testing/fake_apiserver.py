@@ -1,4 +1,5 @@
-"""An in-memory API server for informer tests: TokenReview, Pod reads, list/watch, status patches.
+"""An in-memory API server for informer tests: TokenReview, Pod reads, list/watch, creates,
+replacements and status patches.
 
 Objects are kept in wire shape, with a global `resourceVersion` counter the way the real server
 stamps them, so the informer's list-then-watch-from-version protocol is exercised for real: a watch
@@ -242,6 +243,29 @@ class FakeApiServer:
             return web.json_response({"kind": "Status", "code": 404, "reason": "NotFound"}, status=404)
         return web.json_response(obj)
 
+    async def create_object(self, request: web.Request) -> web.Response:
+        plural = request.match_info["plural"]
+        assert request.match_info["namespace"] == self.namespace_of[plural]
+        body = await request.json()
+        if body["metadata"]["name"] in self.objects[plural]:
+            return web.json_response({"kind": "Status", "code": 409, "reason": "AlreadyExists"}, status=409)
+        self.put(plural, body)
+        return web.json_response(self.objects[plural][body["metadata"]["name"]], status=201)
+
+    async def replace_object(self, request: web.Request) -> web.Response:
+        """PUT, with the `resourceVersion` precondition the real server applies when the body names one."""
+        plural, name = request.match_info["plural"], request.match_info["name"]
+        assert request.match_info["namespace"] == self.namespace_of[plural]
+        body = await request.json()
+        current = self.objects[plural].get(name)
+        if current is None:
+            return web.json_response({"kind": "Status", "code": 404, "reason": "NotFound"}, status=404)
+        expected = body["metadata"].get("resourceVersion")
+        if expected is not None and expected != current["metadata"]["resourceVersion"]:
+            return web.json_response({"kind": "Status", "code": 409, "reason": "Conflict"}, status=409)
+        self.put(plural, body)
+        return web.json_response(self.objects[plural][name])
+
     async def patch_status(self, request: web.Request) -> web.Response:
         plural, name = request.match_info["plural"], request.match_info["name"]
         assert request.match_info["namespace"] == self.namespace_of[plural]
@@ -366,8 +390,13 @@ async def fake_apiserver(namespace_of: dict[str, str] | None = None) -> AsyncIte
     app.router.add_get("/api/v1/namespaces/{namespace}/pods/{name}", fake.get_pod)
     app.router.add_get("/api/v1/namespaces/{namespace}/pods", fake.list_pods)
     app.router.add_get("/api/v1/namespaces/{namespace}/{plural}", fake.list_or_watch)
+    app.router.add_get("/api/v1/namespaces/{namespace}/{plural}/{name}", fake.get_object)
+    app.router.add_post("/api/v1/namespaces/{namespace}/{plural}", fake.create_object)
+    app.router.add_put("/api/v1/namespaces/{namespace}/{plural}/{name}", fake.replace_object)
     app.router.add_get("/apis/{group}/{version}/namespaces/{namespace}/{plural}", fake.list_or_watch)
     app.router.add_get("/apis/{group}/{version}/namespaces/{namespace}/{plural}/{name}", fake.get_object)
+    app.router.add_post("/apis/{group}/{version}/namespaces/{namespace}/{plural}", fake.create_object)
+    app.router.add_put("/apis/{group}/{version}/namespaces/{namespace}/{plural}/{name}", fake.replace_object)
     app.router.add_patch("/apis/{group}/{version}/namespaces/{namespace}/{plural}/{name}/status", fake.patch_status)
     # handler_cancellation: a watch handler outliving its disconnected client would otherwise
     # stall cleanup for the shutdown timeout.

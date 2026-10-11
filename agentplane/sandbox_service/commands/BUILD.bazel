@@ -143,7 +143,6 @@ py_test(
     requires_docker = True,
     deps = [
         ":conftest",
-        ":connections",
         ":dispatch",
         ":store",
         "//:conftest",

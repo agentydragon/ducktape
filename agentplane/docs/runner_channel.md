@@ -408,23 +408,29 @@ and an old runner that never dials out keeps working unchanged.
 
 ## Connection ownership and fencing
 
-The Sandbox Service keeps one row per Sandbox in its own database:
+The replica holding a Sandbox's connection records it in Kubernetes, in the Sandbox's namespace and
+owned by the `Sandbox`, so deleting it removes them:
 
-| column             | meaning                                             |
-| ------------------ | --------------------------------------------------- |
-| `sandbox_uid`      | primary key                                         |
-| `pod_uid`          | the Pod the current connection authenticated as     |
-| `connection_epoch` | increases by one for every accepted connection      |
-| `owner_replica`    | the service replica holding the current connection  |
-| `runner_boot_id`   | from `Hello`                                        |
-| `last_seen_at`     | last frame received, written at most every 15 s     |
-| `operations`       | every operation a connection has agreed; grows only |
+- a `coordination.k8s.io/v1` Lease `<sandbox>-runner`: `holderIdentity` is the replica's Pod name,
+  `leaseTransitions` the connection epoch (one more for every accepted connection), `renewTime` the
+  last frame received (written at most every 15 s), `leaseDurationSeconds` 30, and annotations
+  `agentplane.ducktape.dev/pod-uid` and `agentplane.ducktape.dev/runner-boot-id` the Pod the
+  connection authenticated as and the boot ID from `Hello`;
+- a headless, selector-less Service `<sandbox>-control` on the Sandbox Service's gRPC port, and its
+  EndpointSlice `<sandbox>-control`, naming the holder's Pod IP and annotated
+  `agentplane.ducktape.dev/connection-epoch`.
 
-Accepting a connection increments the epoch and sets the owner in one transaction, commits, then
-sends `Welcome` with the new epoch. The previous owner, if it still holds a stream, sees its epoch
-superseded at its next send check or heartbeat write and ends it with `ABORTED`. A runner keeps at
-most one `Connect` stream: it cancels the old one before opening a new one, and acts only on frames from the
-connection that received its latest `Welcome`.
+Accepting a connection updates the Lease with the `resourceVersion` it read (creating it if absent),
+re-reading and retrying on a conflict; then writes the EndpointSlice unless it already names a newer
+epoch; then sends `Welcome` with the new epoch. The previous owner, if it still holds a stream, finds
+another holder or a newer epoch at its next renewal and ends the stream with `ABORTED`. A runner
+keeps at most one `Connect` stream: it cancels the old one before opening a new one, and acts only
+on frames from the connection that received its latest `Welcome`.
+
+Every replica keeps a watch cache of these Leases. Liveness reads and the owner's check before
+claiming an attempt come from it, never from the API server per request. Nothing reads the
+EndpointSlice as proof of ownership. Agreed operations stay in the service's own database, one row
+per Sandbox that only grows.
 
 Stale sends are harmless rather than impossible. A replica that has not yet noticed it was
 superseded can write to a dead stream, and a command that reaches the runner twice is deduplicated
@@ -448,8 +454,8 @@ ID, which the runner already deduplicates on; no separate attempt ID exists.
 
 1. The replica serving the submit RPC persists the submission and opens its attempt, commits, then
    sends `NOTIFY runner_dispatch` with the Sandbox UID, Session ID and command ID.
-2. Every replica listens on that channel. The one owning the Sandbox's current epoch claims the
-   attempt with a conditional update that succeeds only before the deadline and when `sent_epoch`
+2. Every replica listens on that channel. The one whose connection holds the Sandbox's current
+   epoch, as its Lease cache shows it, claims the attempt with a conditional update that succeeds only before the deadline and when `sent_epoch`
    is none or older than its epoch, and sends `DeliverCommand` after that commits. An attempt is
    therefore sent at most once per connection epoch and never after its deadline. No transaction or
    row lock is held across the send.
@@ -479,8 +485,8 @@ attempt waits for its next re-notification.
 
 Each side sends `Heartbeat` on `Connect` every 10 s, and ends the stream after 30 s without any
 frame from the peer. A runner reconnects with exponential backoff and jitter, from 0.5 s up to 30 s, and
-retries indefinitely. The service reports a runner as connected while its current epoch's
-`last_seen_at` is under 30 s old. Connected is not ready to act: it says nothing about harness
+retries indefinitely. The service reports a runner as connected while its Lease's `renewTime` is
+under 30 s old. Connected is not ready to act: it says nothing about harness
 state, an active turn or whether a command was carried out, and losing the connection proves none of
 those either.
 

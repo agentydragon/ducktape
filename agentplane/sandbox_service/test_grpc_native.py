@@ -26,6 +26,7 @@ from agentplane.sandbox_service.commands import db as commands_db
 from agentplane.sandbox_service.commands.connections import ConnectionStore
 from agentplane.sandbox_service.commands.dispatch import DispatchStore
 from agentplane.sandbox_service.commands.store import SubmissionStore
+from agentplane.sandbox_service.connection_records import ConnectionLeases
 from agentplane.sandbox_service.destinations import DestinationResolver
 from agentplane.sandbox_service.grpc_api import Resources
 from agentplane.sandbox_service.protocol_pb2 import SandboxBinding, SandboxDestination, SessionDefaults
@@ -89,6 +90,7 @@ def resources(cluster: Cluster, runner: RunnerHandle, commands_engine: AsyncEngi
             commands_engine.url,
             dispatches=DispatchStore(commands_engine),
             connections=ConnectionStore(commands_engine),
+            leases=ConnectionLeases(),
             liveness_s=1,
         ),
         session_changes=SessionChanges(commands_engine.url),

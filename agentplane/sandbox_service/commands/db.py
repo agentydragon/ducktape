@@ -156,18 +156,18 @@ class AdmissionReconciliation(Base):
 
 
 class RunnerConnection(Base):
-    """The Sandbox's current runner channel connection; the newest accepted connection owns it."""
+    """The channel operations a Sandbox's runner connections have agreed."""
 
     __tablename__ = "runner_connection"
     __table_args__ = (CheckConstraint("connection_epoch > 0", name="connection_epoch_positive"),)
 
     sandbox_uid: Mapped[UUID] = mapped_column(primary_key=True)
-    pod_uid: Mapped[str] = mapped_column(String)
-    # Increases by one per accepted connection, never reset, so a superseded owner can tell.
-    connection_epoch: Mapped[int] = mapped_column(BigInteger)
-    owner_replica: Mapped[str] = mapped_column(String)
-    runner_boot_id: Mapped[str] = mapped_column(String)
-    last_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    # Unread and no longer written: the Sandbox's Lease holds the connection. They go with the table.
+    pod_uid: Mapped[str | None] = mapped_column(String)
+    connection_epoch: Mapped[int | None] = mapped_column(BigInteger)
+    owner_replica: Mapped[str | None] = mapped_column(String)
+    runner_boot_id: Mapped[str | None] = mapped_column(String)
+    last_seen_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     # Every channel operation a connection of this Sandbox has agreed in its handshake. It only
     # grows, so once a runner carries an operation over the channel it never falls back inbound.
     operations: Mapped[list[str]] = mapped_column(ARRAY(String))

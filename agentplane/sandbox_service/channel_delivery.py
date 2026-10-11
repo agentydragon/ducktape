@@ -27,6 +27,7 @@ from agentplane.sandbox_service.commands.dispatch import (
     parse_dispatch,
     parse_outcome,
 )
+from agentplane.sandbox_service.connection_records import ConnectionLeases
 from agentplane.sandbox_service.destinations import DestinationUnavailableError
 
 # The generated message stubs import google.protobuf; mypy reads stubs only from direct deps.
@@ -51,11 +52,13 @@ class ChannelDelivery:
         *,
         dispatches: DispatchStore,
         connections: ConnectionStore,
+        leases: ConnectionLeases,
         liveness_s: float,
         recheck_s: float = 2,
     ) -> None:
         self.dispatches = dispatches
         self.connections = connections
+        self.leases = leases
         self.liveness_s = liveness_s
         self.recheck_s = recheck_s
         self._routes: dict[UUID, asyncio.Queue[CommandKey]] = {}
@@ -87,7 +90,7 @@ class ChannelDelivery:
         Raises `CommandRefusedError` on a refusal and `TimeoutError` at the deadline, leaving the
         submission pending either way.
         """
-        if await self.connections.read_live_epoch(sandbox_uid, liveness_s=self.liveness_s) is None:
+        if self.leases.read_live_epoch(sandbox_uid, liveness_s=self.liveness_s) is None:
             raise DestinationUnavailableError("runner channel not connected")
         key = CommandKey(session_id, command_id)
         await self.dispatches.open(

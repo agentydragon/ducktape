@@ -1925,6 +1925,32 @@ rules:
       - list
       - watch
   - apiGroups:
+      - coordination.k8s.io
+    resources:
+      - leases
+    verbs:
+      - get
+      - list
+      - watch
+      - create
+      - update
+  - apiGroups:
+      - ""
+    resources:
+      - services
+    verbs:
+      - get
+      - create
+      - update
+  - apiGroups:
+      - discovery.k8s.io
+    resources:
+      - endpointslices
+    verbs:
+      - get
+      - create
+      - update
+  - apiGroups:
       - ""
     resources:
       - serviceaccounts
@@ -2281,6 +2307,10 @@ spec:
                 secretKeyRef:
                   key: uri
                   name: postgres-sandbox-commands
+            - name: AGENTPLANE_SANDBOX_SERVICE_POD_IP
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.podIP
             - name: AGENTPLANE_SANDBOX_SERVICE_CONFIG_FILE
               value: /etc/agentplane-sandbox-service/config.yaml
           image: git.allegedly.works/ducktape-ci/agentplane-sandbox-service:unset

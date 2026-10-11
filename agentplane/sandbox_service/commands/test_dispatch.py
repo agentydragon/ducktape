@@ -1,4 +1,4 @@
-"""Dispatch attempts against migrated PostgreSQL: epoch fencing, deadlines and receipt evidence."""
+"""Dispatch attempts against migrated PostgreSQL: once per epoch, deadlines and receipt evidence."""
 
 from uuid import UUID, uuid4
 
@@ -8,7 +8,6 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 
 from agentplane.protocol import command_pb2, event_log_pb2
 from agentplane.runner_channel import protocol_pb2 as channel_pb2
-from agentplane.sandbox_service.commands.connections import ConnectionStore
 from agentplane.sandbox_service.commands.dispatch import CommandKey, DispatchStore, ReceiptMismatchError, Refused
 from agentplane.sandbox_service.commands.store import CommandSubmission, SubmissionState, SubmissionStore
 from agentplane.subjects import ServiceAccountRef
@@ -19,6 +18,7 @@ CALLER = ServiceAccountRef(namespace="testing", name="caller")
 COMMAND = command_pb2.Command(command_id="test-command", submit_input=command_pb2.SubmitInput(text="hello"))
 RUNNER_SESSION = "test-runner-session"
 REFUSED = channel_pb2.CommandRefused(reason=channel_pb2.CommandRefused.REASON_HARNESS_STOPPED)
+EPOCH = 1
 
 
 def admission(command: command_pb2.Command) -> event_log_pb2.EventEntry:
@@ -32,11 +32,6 @@ def admission(command: command_pb2.Command) -> event_log_pb2.EventEntry:
 @pytest.fixture
 def dispatches(engine: AsyncEngine) -> DispatchStore:
     return DispatchStore(engine)
-
-
-@pytest.fixture
-def connections(engine: AsyncEngine) -> ConnectionStore:
-    return ConnectionStore(engine)
 
 
 @pytest.fixture
@@ -54,16 +49,6 @@ async def submissions(engine: AsyncEngine, session_id: UUID) -> SubmissionStore:
     store = SubmissionStore(engine)
     await store.accept(session_id, CommandSubmission(command=COMMAND), caller=CALLER)
     return store
-
-
-async def connect(connections: ConnectionStore, sandbox_uid: UUID) -> int:
-    return await connections.accept(
-        sandbox_uid=sandbox_uid,
-        pod_uid="test-pod",
-        owner_replica="test-replica",
-        runner_boot_id="test-boot",
-        operations={"commands"},
-    )
 
 
 def key_of(session_id: UUID) -> CommandKey:
@@ -86,42 +71,34 @@ def receipt(
 
 @pytest.mark.usefixtures("submissions")
 async def test_attempt_is_sent_at_most_once_per_connection_epoch(
-    dispatches: DispatchStore, connections: ConnectionStore, sandbox_uid: UUID, session_id: UUID
+    dispatches: DispatchStore, sandbox_uid: UUID, session_id: UUID
 ) -> None:
     key = key_of(session_id)
-    first = await connect(connections, sandbox_uid)
     await open_attempt(dispatches, sandbox_uid, session_id)
-    delivery = await dispatches.claim(key, sandbox_uid=sandbox_uid, epoch=first)
+    delivery = await dispatches.claim(key, sandbox_uid=sandbox_uid, epoch=2)
     assert delivery is not None
     assert (delivery.runner_session_id, delivery.command) == (RUNNER_SESSION, COMMAND)
-    assert await dispatches.claim(key, sandbox_uid=sandbox_uid, epoch=first) is None
-    # The newer connection may resend; the superseded one may no longer send anything.
-    second = await connect(connections, sandbox_uid)
-    assert await dispatches.claim(key, sandbox_uid=sandbox_uid, epoch=first) is None
-    assert await dispatches.claim(key, sandbox_uid=sandbox_uid, epoch=second) is not None
-    assert await dispatches.claim(key, sandbox_uid=uuid4(), epoch=second) is None
+    assert await dispatches.claim(key, sandbox_uid=sandbox_uid, epoch=2) is None
+    # A newer connection may resend; an older one may not send what a newer one already has.
+    assert await dispatches.claim(key, sandbox_uid=sandbox_uid, epoch=1) is None
+    assert await dispatches.claim(key, sandbox_uid=sandbox_uid, epoch=3) is not None
+    assert await dispatches.claim(key, sandbox_uid=uuid4(), epoch=4) is None
 
 
 @pytest.mark.usefixtures("submissions")
 async def test_expired_attempt_is_never_sent_but_a_late_receipt_counts(
-    dispatches: DispatchStore, connections: ConnectionStore, sandbox_uid: UUID, session_id: UUID
+    dispatches: DispatchStore, sandbox_uid: UUID, session_id: UUID
 ) -> None:
-    epoch = await connect(connections, sandbox_uid)
     await open_attempt(dispatches, sandbox_uid, session_id, deadline_s=0)
-    assert await dispatches.claim(key_of(session_id), sandbox_uid=sandbox_uid, epoch=epoch) is None
+    assert await dispatches.claim(key_of(session_id), sandbox_uid=sandbox_uid, epoch=EPOCH) is None
     await dispatches.record(sandbox_uid, receipt(admitted=admission(COMMAND)))
     assert await dispatches.read_outcome(key_of(session_id)) == admission(COMMAND)
 
 
 async def test_admission_never_regresses_and_ends_delivery(
-    dispatches: DispatchStore,
-    connections: ConnectionStore,
-    submissions: SubmissionStore,
-    sandbox_uid: UUID,
-    session_id: UUID,
+    dispatches: DispatchStore, submissions: SubmissionStore, sandbox_uid: UUID, session_id: UUID
 ) -> None:
     key = key_of(session_id)
-    epoch = await connect(connections, sandbox_uid)
     await open_attempt(dispatches, sandbox_uid, session_id)
     await dispatches.record(sandbox_uid, receipt(refused=REFUSED))
     assert await dispatches.read_outcome(key) == Refused(REFUSED)
@@ -132,26 +109,25 @@ async def test_admission_never_regresses_and_ends_delivery(
     assert await dispatches.read_outcome(key) == admission(COMMAND)
     # Nothing is delivered after admission, even when a submit reopens the attempt.
     await open_attempt(dispatches, sandbox_uid, session_id)
-    assert await dispatches.claim(key, sandbox_uid=sandbox_uid, epoch=epoch) is None
+    assert await dispatches.claim(key, sandbox_uid=sandbox_uid, epoch=EPOCH) is None
 
 
 @pytest.mark.usefixtures("submissions")
 async def test_a_resubmit_reopens_a_refused_attempt_but_not_an_open_one(
-    dispatches: DispatchStore, connections: ConnectionStore, sandbox_uid: UUID, session_id: UUID
+    dispatches: DispatchStore, sandbox_uid: UUID, session_id: UUID
 ) -> None:
     key = key_of(session_id)
-    epoch = await connect(connections, sandbox_uid)
     await open_attempt(dispatches, sandbox_uid, session_id)
-    assert await dispatches.claim(key, sandbox_uid=sandbox_uid, epoch=epoch) is not None
+    assert await dispatches.claim(key, sandbox_uid=sandbox_uid, epoch=EPOCH) is not None
     # While the attempt is open, a resubmit does not send it again on the same connection.
     await open_attempt(dispatches, sandbox_uid, session_id)
-    assert await dispatches.claim(key, sandbox_uid=sandbox_uid, epoch=epoch) is None
+    assert await dispatches.claim(key, sandbox_uid=sandbox_uid, epoch=EPOCH) is None
     await dispatches.record(sandbox_uid, receipt(refused=REFUSED))
-    assert await dispatches.claim(key, sandbox_uid=sandbox_uid, epoch=epoch) is None
+    assert await dispatches.claim(key, sandbox_uid=sandbox_uid, epoch=EPOCH) is None
     # After the refusal, a resubmit (say, once the harness is resumed) may send it again.
     await open_attempt(dispatches, sandbox_uid, session_id)
     assert await dispatches.read_outcome(key) is None
-    assert await dispatches.claim(key, sandbox_uid=sandbox_uid, epoch=epoch) is not None
+    assert await dispatches.claim(key, sandbox_uid=sandbox_uid, epoch=EPOCH) is not None
 
 
 @pytest.mark.usefixtures("submissions")

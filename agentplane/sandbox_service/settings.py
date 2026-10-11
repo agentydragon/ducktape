@@ -57,6 +57,10 @@ class Settings(BaseSettings):
         default_factory=dict,
         description="gRPC options for Sandbox Service-to-runner channels; receives retained journal events up to the configured limit.",
     )
+    pod_ip: str = Field(
+        min_length=1,
+        description="This replica's Pod IP, where a Sandbox's control Service points while it holds the runner connection.",
+    )
     host: str = "0.0.0.0"
     port: int = Field(default=8080, ge=1, le=65535)
     health_port: int = Field(default=8081, ge=1, le=65535)

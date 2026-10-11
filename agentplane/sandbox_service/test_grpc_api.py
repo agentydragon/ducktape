@@ -29,6 +29,7 @@ from agentplane.sandbox_service.commands import db as commands_db
 from agentplane.sandbox_service.commands.connections import ConnectionStore
 from agentplane.sandbox_service.commands.dispatch import DispatchStore
 from agentplane.sandbox_service.commands.store import CommandSubmission, SubmissionState, SubmissionStore
+from agentplane.sandbox_service.connection_records import ConnectionLeases
 from agentplane.sandbox_service.destinations import DestinationResolver
 from agentplane.sandbox_service.grpc_api import Resources
 from agentplane.sandbox_service.kubernetes_grants import RoleBindingGrant, RoleRef
@@ -204,7 +205,11 @@ def resources(
         sessions=sessions,
         submissions=submissions,
         delivery=ChannelDelivery(
-            engine.url, dispatches=DispatchStore(engine), connections=ConnectionStore(engine), liveness_s=1
+            engine.url,
+            dispatches=DispatchStore(engine),
+            connections=ConnectionStore(engine),
+            leases=ConnectionLeases(),
+            liveness_s=1,
         ),
         session_changes=SessionChanges(engine.url),
     )
@@ -434,14 +439,8 @@ async def test_channel_routed_command_never_falls_back_to_the_relay(
     sessions: SessionRegistry,
     submissions: SubmissionStore,
 ) -> None:
-    # A runner agreed commands once, and nothing has been heard from it since.
-    await ConnectionStore(engine).accept(
-        sandbox_uid=UUID(SANDBOX_UID),
-        pod_uid="test-pod-uid",
-        owner_replica="test-replica",
-        runner_boot_id="test-boot",
-        operations={"commands"},
-    )
+    # A runner agreed commands once, and no connection holds the Sandbox's Lease now.
+    await ConnectionStore(engine).record_operations(UUID(SANDBOX_UID), {"commands"})
     session_id = uuid4()
     await register_session(
         engine,
@@ -451,11 +450,8 @@ async def test_channel_routed_command_never_falls_back_to_the_relay(
         sandbox_uid=UUID(SANDBOX_UID),
         runner_session_id=f"r-{session_id}",
     )
-    delivery = ChannelDelivery(
-        engine.url, dispatches=DispatchStore(engine), connections=ConnectionStore(engine), liveness_s=0
-    )
     command = command_pb2.Command(command_id="channel", submit_input=command_pb2.SubmitInput(text="hi"))
-    async with service_client(replace(resources, delivery=delivery), token_file) as remote:
+    async with service_client(resources, token_file) as remote:
         runner = remote.runner(DESTINATION)
         for session in (str(session_id), "legacy-runner-session"):
             with pytest.raises(ServiceError) as unavailable:
