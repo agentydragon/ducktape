@@ -12,12 +12,13 @@ every seal is flushed, and sealed again every `FLUSH_RETRY_S` until then.
 """
 
 import logging
-from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 
 from agentplane.proto import runner_pb2
+from agentplane.runner_gateway.sealing import Sealing
+from agentplane.sandbox_service.client import SandboxServiceClient
 from agentplane.sandbox_service.inventory import SandboxInventory
-from agentplane.sandbox_service.protocol_pb2 import Sandbox, TeardownPhase
+from agentplane.sandbox_service.protocol_pb2 import Sandbox, SandboxDestination, TeardownPhase
 
 # gazelle:include_dep @pypi//protobuf
 
@@ -25,8 +26,17 @@ logger = logging.getLogger(__name__)
 
 FLUSH_RETRY_S = 10
 
-# Each Session's seal, keyed as retention holders name the Session (`Sealing.seal`).
-type Seal = Callable[[Sandbox], Awaitable[runner_pb2.SealResponse]]
+
+@dataclass(frozen=True)
+class GatewaySealing:
+    """Seals through the Runner Gateway, which reaches the Sandbox's runner. Each Session in the
+    result is named as retention holders name it."""
+
+    gateway: SandboxServiceClient
+
+    async def seal(self, sandbox: Sandbox) -> runner_pb2.SealResponse:
+        destination = SandboxDestination(owner=sandbox.service_account, sandbox=sandbox.name, sandbox_uid=sandbox.uid)
+        return await self.gateway.runner(destination).seal()
 
 
 class SealNotFlushedError(Exception):
@@ -36,12 +46,14 @@ class SealNotFlushedError(Exception):
 @dataclass(frozen=True)
 class Teardown:
     inventory: SandboxInventory
-    seal: Seal
+    # CLEANUP(added 2026-10-11): narrow to `GatewaySealing` once combined mode, which seals in-process,
+    #   is deleted (SANDBOX_SERVICE_DEPLOYMENT_SPLIT's manifest PR).
+    sealing: GatewaySealing | Sealing
 
     async def advance(self, sandbox: Sandbox) -> None:
         match sandbox.teardown:
             case TeardownPhase.TEARDOWN_PHASE_SEALING:
-                seal = await self.seal(sandbox)
+                seal = await self.sealing.seal(sandbox)
                 if not seal.pushes:
                     # CLEANUP(added 2026-10-11): FOLLOW_PATH_RETIRE deletes this branch, the holds and
                     #   SealResponse.pushes once every runner pushes (agentplane/plans/task_dag.md).

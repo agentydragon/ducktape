@@ -13,7 +13,7 @@ import pytest_bazel
 from kubernetes_asyncio import client as k8s_client
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from agentplane.proto import runner_pb2
+from agentplane.proto import runner_pb2, runner_pb2_grpc
 from agentplane.runner.testing.runner_server import serve_runner
 from agentplane.runner_gateway.commands import db as commands_db
 from agentplane.runner_gateway.commands.connections import ConnectionStore
@@ -41,7 +41,7 @@ LEGACY = "test-legacy-session"
 
 
 @dataclass
-class ScriptedRunner:
+class ScriptedRunner(runner_pb2_grpc.RunnerServicer):
     """Seal, ListSessions and an Attach that answers StopRunnerSession by ending the stream."""
 
     harness_states: dict[str, runner_pb2.HarnessState] = field(default_factory=dict)
@@ -53,7 +53,9 @@ class ScriptedRunner:
     stopped: list[tuple[str, int]] = field(default_factory=list)
     port: int = 0
 
-    async def seal(self, request: runner_pb2.SealRequest, context: grpc.aio.ServicerContext) -> runner_pb2.SealResponse:
+    async def Seal(  # noqa: N802  # gRPC names servicer methods after the RPC
+        self, request: runner_pb2.SealRequest, context: grpc.aio.ServicerContext
+    ) -> runner_pb2.SealResponse:
         if self.seals is None:
             await context.abort(grpc.StatusCode.UNIMPLEMENTED, "test runner predates Seal")
         return runner_pb2.SealResponse(
@@ -64,7 +66,7 @@ class ScriptedRunner:
             pushes=self.pushes,
         )
 
-    async def list_sessions(
+    async def ListSessions(  # noqa: N802  # gRPC names servicer methods after the RPC
         self, request: runner_pb2.ListSessionsRequest, context: grpc.aio.ServicerContext
     ) -> runner_pb2.ListSessionsResponse:
         return runner_pb2.ListSessionsResponse(
@@ -74,7 +76,7 @@ class ScriptedRunner:
             ]
         )
 
-    async def attach(
+    async def Attach(  # noqa: N802  # gRPC names servicer methods after the RPC
         self, requests: AsyncIterator[runner_pb2.ClientMessage], context: grpc.aio.ServicerContext
     ) -> AsyncIterator[runner_pb2.ServerMessage]:
         opened = (await anext(requests)).open
@@ -91,7 +93,7 @@ class ScriptedRunner:
 @pytest.fixture
 async def runner() -> AsyncIterator[ScriptedRunner]:
     runner = ScriptedRunner()
-    async with serve_runner(attach=runner.attach, list_sessions=runner.list_sessions, seal=runner.seal) as port:
+    async with serve_runner(runner) as port:
         runner.port = port
         yield runner
 
@@ -117,7 +119,7 @@ async def teardown(destinations: DestinationResolver, engine: AsyncEngine) -> Te
         control=LifecycleControl(ConnectionLeases()),
         runner_grpc_channel_options={},
     )
-    return Teardown(destinations.inventory, sealing.seal)
+    return Teardown(destinations.inventory, sealing)
 
 
 @pytest.fixture

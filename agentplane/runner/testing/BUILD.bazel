@@ -109,6 +109,7 @@ py_library(
     deps = [
         ":runner_server",
         "//agentplane/proto:runner_pb2",
+        "//agentplane/proto:runner_pb2_grpc",
         "@pypi//grpcio",
         "@pypi//protobuf",
     ],
@@ -124,6 +125,7 @@ py_library(
     srcs = ["runner_server.py"],
     deps = [
         "//agentplane/proto:runner_pb2",
+        "//agentplane/proto:runner_pb2_grpc",
         "@pypi//grpcio",
         "@pypi//protobuf",
     ],

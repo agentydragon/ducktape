@@ -6,18 +6,18 @@ from contextlib import asynccontextmanager
 
 import grpc
 
-from agentplane.proto import runner_pb2
+from agentplane.proto import runner_pb2, runner_pb2_grpc
 from agentplane.runner.testing.runner_server import serve_runner
 
 # gazelle:include_dep @pypi//protobuf
 # gazelle:include_dep @pypi//grpcio
 
 
-class UnansweringRunner:
+class UnansweringRunner(runner_pb2_grpc.RunnerServicer):
     def __init__(self) -> None:
         self.cancelled: asyncio.Queue[str] = asyncio.Queue()
 
-    async def attach(
+    async def Attach(  # noqa: N802  # gRPC names servicer methods after the RPC
         self, requests: AsyncIterator[runner_pb2.ClientMessage], context: grpc.aio.ServicerContext
     ) -> None:
         del context
@@ -29,7 +29,7 @@ class UnansweringRunner:
             self.cancelled.put_nowait(first.open.session_id)
             raise
 
-    async def list_sessions(
+    async def ListSessions(  # noqa: N802  # gRPC names servicer methods after the RPC
         self, request: runner_pb2.ListSessionsRequest, context: grpc.aio.ServicerContext
     ) -> runner_pb2.ListSessionsResponse:
         """None, so an app ingester that discovers sessions here opens no feeds of its own."""
@@ -38,5 +38,5 @@ class UnansweringRunner:
 
     @asynccontextmanager
     async def serve(self) -> AsyncIterator[int]:
-        async with serve_runner(attach=self.attach, list_sessions=self.list_sessions) as port:
+        async with serve_runner(self) as port:
             yield port

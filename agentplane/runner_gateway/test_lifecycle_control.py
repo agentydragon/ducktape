@@ -33,8 +33,8 @@ from agentplane.runner_gateway.testing.runner_control import OTHER_REPLICA, REPL
 from agentplane.runner_gateway.testing.sessions import register_session
 from agentplane.sandbox_service.client import SandboxServiceClient, ServiceError
 from agentplane.sandbox_service.destinations import DestinationResolver
-from agentplane.sandbox_service.protocol_pb2 import Sandbox, SandboxDestination, TeardownPhase
-from agentplane.sandbox_service.teardown import Teardown
+from agentplane.sandbox_service.protocol_pb2 import TeardownPhase
+from agentplane.sandbox_service.teardown import GatewaySealing, Teardown
 from agentplane.sandbox_service.testing.grpc_service import CALLER_TOKEN, connect
 from agentplane.sandbox_service.testing.kubernetes import DESTINATION, SANDBOX, SANDBOX_UID, Cluster
 from agentplane.subjects import ServiceAccountRef
@@ -321,11 +321,7 @@ async def test_an_answer_for_another_verb_fails_the_request(holder: Replica) -> 
 
 
 def sandbox_service_teardown(cluster: Cluster, gateway: SandboxServiceClient) -> Teardown:
-    async def seal(sandbox: Sandbox) -> runner_pb2.SealResponse:
-        destination = SandboxDestination(owner=sandbox.service_account, sandbox=sandbox.name, sandbox_uid=sandbox.uid)
-        return await gateway.runner(destination).seal()
-
-    return Teardown(cluster.inventory, seal)
+    return Teardown(cluster.inventory, GatewaySealing(gateway))
 
 
 async def test_teardown_seals_over_the_holders_connection(

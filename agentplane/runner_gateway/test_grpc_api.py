@@ -17,7 +17,7 @@ from kubernetes_asyncio import client as k8s_client
 from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from agentplane.proto import command_pb2, event_log_pb2, event_pb2, runner_pb2
+from agentplane.proto import command_pb2, event_log_pb2, event_pb2, runner_pb2, runner_pb2_grpc
 from agentplane.runner.errors import RunnerError, StreamClosedError
 from agentplane.runner.testing.runner_server import serve_runner
 from agentplane.runner_gateway.commands.connections import ConnectionStore
@@ -59,7 +59,7 @@ class PeerAttachment:
     closed: asyncio.Event = field(default_factory=asyncio.Event)
 
 
-class Peer:
+class Peer(runner_pb2_grpc.RunnerServicer):
     def __init__(self) -> None:
         self.attachments: asyncio.Queue[PeerAttachment] = asyncio.Queue()
         self.port = 0
@@ -72,7 +72,7 @@ class Peer:
         self.replay_paused_after: int | None = None
         self.replay_released = asyncio.Event()
 
-    async def list_sessions(
+    async def ListSessions(  # noqa: N802  # gRPC names servicer methods after the RPC
         self, request: runner_pb2.ListSessionsRequest, context: grpc.aio.ServicerContext
     ) -> runner_pb2.ListSessionsResponse:
         return runner_pb2.ListSessionsResponse(
@@ -88,7 +88,7 @@ class Peer:
             ]
         )
 
-    async def attach(
+    async def Attach(  # noqa: N802  # gRPC names servicer methods after the RPC
         self, requests: AsyncIterator[runner_pb2.ClientMessage], context: grpc.aio.ServicerContext
     ) -> AsyncIterator[runner_pb2.ServerMessage]:
         first = await anext(requests)
@@ -135,7 +135,7 @@ class Peer:
 @pytest.fixture
 async def peer() -> AsyncIterator[Peer]:
     peer = Peer()
-    async with serve_runner(attach=peer.attach, list_sessions=peer.list_sessions) as port:
+    async with serve_runner(peer) as port:
         peer.port = port
         yield peer
 
