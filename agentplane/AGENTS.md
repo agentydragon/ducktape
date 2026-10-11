@@ -19,6 +19,10 @@ See [the dependency rule](docs/service_boundaries.md).
 - Acceptance for an extracted backend path must exercise it with the integration app unavailable.
   Do not add another command queue, event authority, or credential issuer as an incidental refactor.
 
+# gRPC services
+
+Servicers, clients, auth, errors and server wiring follow [one pattern](docs/grpc_services.md).
+
 ## System overview diagram
 
 A PR that adds, removes, splits or renames a service or Deployment, or changes the traffic between
