@@ -70,10 +70,6 @@ whole repository, including when other hooks receive only changed files. The
 binary is included in `.#precommit`; CI shares checkout and Nix setup with the
 other pre-commit checks. It needs no Bazel invocation or BuildBuddy connection.
 
-The separate `.github/workflows/gazelle-diff.yml` temporarily remains while the
-GitOps ruleset drops its old `Gazelle diff` required-check entry. Remove that
-workflow only after the live ruleset has reconciled.
-
 The binary is the ordinary artifact pipeline: `//devinfra:gazelle_python_binary`
 is a row in <../ci/artifact_targets.json>, released from devel pushes and pinned
 into `nix/artifact-pins.json` by sync-pins. A PR that changes the binary itself
