@@ -14,7 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
 
 from agentplane.app.database_updates import Channel, notify
 from agentplane.app.threads.models import Thread
-from agentplane.history_service import runner_pb2 as history_pb2
+from agentplane.history_service import protocol_pb2 as history_pb2
 from agentplane.history_service.client import HistoryServiceClient, HistoryServiceError
 from agentplane.proto import runner_pb2
 

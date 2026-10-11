@@ -15,8 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker, create_async
 from agentplane.history_service import protocol_pb2 as history_pb2
 from agentplane.history_service.fold_shadow import FoldShadow
 from agentplane.history_service.summary_changes import notify_summaries
-from agentplane.proto import event_log_pb2
-from agentplane.runner import protocol_pb2 as runner_pb2
+from agentplane.proto import event_log_pb2, runner_pb2
 from agentplane.sandbox_service.session_history.database_migrate import RUNNER
 from agentplane.sandbox_service.session_history.db import SessionHistory
 from agentplane.sandbox_service.session_history.store import Store
