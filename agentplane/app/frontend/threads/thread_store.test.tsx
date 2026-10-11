@@ -493,33 +493,6 @@ it("keeps a failed settings command in the shared window after a different brows
   );
 });
 
-it("reads persisted command rows that predate requested_value", async () => {
-  const sync = stubSync();
-  const legacy = command("legacy-command", 2);
-  legacy.state = JSON.stringify({
-    operation: "change_model",
-    outcome: "failed",
-    outcome_cursor: "3",
-    outcome_reason: "Model unavailable",
-  });
-  sync.entities = [viewState(sync.through), legacy];
-  const container = await renderThread(
-    <Shown>
-      {(rows) => (
-        <p data-testid="legacy-command">
-          {rows
-            .filter((row) => row.entityKind === "command")
-            .map((row) => ("outcome" in row.state && row.state.requested_value === null ? row.entityId : "invalid"))
-            .join(",")}
-        </p>
-      )}
-    </Shown>
-  );
-  await vi.waitFor(() =>
-    expect(container.querySelector('[data-testid="legacy-command"]')?.textContent).toBe("legacy-command")
-  );
-});
-
 it("opens one shape on the tail and pages older rows into it", async () => {
   const sync = stubSync();
   thread(sync, 130);

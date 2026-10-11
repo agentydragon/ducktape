@@ -801,7 +801,7 @@ tombstones with a verifiable condition in code (`keepingOffset` in
 
 ```mermaid
 flowchart TD
-    APP_THREAD_VIEW_CLEANUP[Candidate: app Thread view shims]
+    APP_THREAD_VIEW_CLEANUP[Candidate: drop AGENTPLANE_THREAD_READS]
     RUNNER_SESSION_RECORD_SHIMS[Blocked: drop runner session record compatibility]
     LEGACY_SANDBOX_RETIRE[Retire pre-dial-out Sandboxes]
     LEGACY_SANDBOX_RETIRE --> RUNNER_SESSION_RECORD_SHIMS
@@ -824,12 +824,11 @@ budget resolution, 2026-10-10 PDT) re-resolves the budget at Open, and `instruct
 then still resume on these records. Once none remains, delete the flag and its Open branch, make
 both fields required, and have `from_spec` set `event_source_id` explicitly.
 
-### `APP_THREAD_VIEW_CLEANUP` — app Thread view shims
+### `APP_THREAD_VIEW_CLEANUP` — drop `AGENTPLANE_THREAD_READS`
 
-**Candidate; Thread fold move lane.** The frontend reads `requested_value` with a `.default(null)`
-for Command rows written before the field existed; a fold rebuilt in a new epoch has none.
-Once staging and testing serve an app image without `Settings.thread_reads`, drop the manifests'
-`AGENTPLANE_THREAD_READS` (its CLEANUP tombstone in `cluster/cdk8s/agentplane/app.py`).
+**Candidate; Thread fold move lane.** Once staging and testing serve an app image without
+`Settings.thread_reads`, drop the manifests' `AGENTPLANE_THREAD_READS` (its CLEANUP tombstone in
+`cluster/cdk8s/agentplane/app.py`).
 
 ### `HISTORY_FOLD_ALWAYS_ON` — the History Service always folds
 

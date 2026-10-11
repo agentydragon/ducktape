@@ -130,7 +130,10 @@ class FoldShadow:
                 logger.warning("fold shadow stalled for %s", session_id, exc_info=True)
                 return None
             logger.debug(
-                "fold shadow %s: through=%s committed=%s", session_id, progress.through_cursor, progress.committed_cursor
+                "fold shadow %s: through=%s committed=%s",
+                session_id,
+                progress.through_cursor,
+                progress.committed_cursor,
             )
             return progress
 
