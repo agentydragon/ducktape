@@ -7,10 +7,8 @@ hardening live in the [freezer](task_freezer.md), not the execution graph.
 
 ## Current state and scheduling
 
-Session Event archive backfill and full-history verification are done; do not repeat them. The six
-empty staging Sessions stay excluded from extra checks. Audit metadata consumers (`sandbox`,
-`harness`, `model`, `cwd`, summary/activity fields) before deleting useful UI projections. Squash
-Alembic only once the app schema settles.
+Audit metadata consumers (`sandbox`, `harness`, `model`, `cwd`, summary/activity fields) before
+deleting useful UI projections. Squash Alembic only once the app schema settles.
 
 States: **in flight** means reported work is underway; **decision** needs a reviewed outcome;
 **blocked** names prerequisites; **candidate** is dispatchable when selected, not a priority claim.
@@ -251,12 +249,12 @@ deleted Sandboxes and revocation with deterministic service tests plus a bounded
 
 ### `AGENT_MESSAGING_DESIGN` — send and receive contract
 
-**Decision.** Merge the former overlapping `CROSS_THREAD_DELIVERY` design here. Present examples
-of sender authentication, recipient discovery/opt-in, send grants, recipient read/ack grants and
-administration. Compare Notification Service inbox delivery with direct session input and an
-existing messaging channel; recommend the smallest fit. Define accepted, delivered, handled and
-acknowledged separately; decide offline behavior, retention, batching, abuse limits and mailbox
-ownership after Sandbox deletion. Reading a transcript does not authorize sending or acking.
+**Decision.** Present examples of sender authentication, recipient discovery/opt-in, send grants,
+recipient read/ack grants and administration. Compare Notification Service inbox delivery with
+direct session input and an existing messaging channel; recommend the smallest fit. Define
+accepted, delivered, handled and acknowledged separately; decide offline behavior, retention,
+batching, abuse limits and mailbox ownership after Sandbox deletion. Reading a transcript does not
+authorize sending or acking.
 
 Output includes the selected owner/API and explicit conditional prerequisites: a direct-input
 implementation reuses durable `SubmitCommand` and separately reviewed provenance reads; a notification source reuses
@@ -441,7 +439,7 @@ absence of every imaginable failure, establishes the delivered contract.
 **Blocked on VM capstone.** Wire Bazelisk, storage and authenticated RBE/cache/BES; set CPU/memory/disk
 budgets and cleanup. Run a representative build/test with the client inside the VM and actions
 remote; check cancellation/cleanup while the harness stays responsive. Installed tools and working
-hosted builds do not authorize local Bazel in agent containers. Hosted build acceptance is complete.
+hosted builds do not authorize local Bazel in agent containers.
 
 ## 5. Independent UI and narrowly scoped service work
 
@@ -450,9 +448,11 @@ app/Sandbox Service database changes requires its own migration safety review.
 
 ### `THREAD_NOTIFICATION_INDICATOR` — pending notice status in the sidebar
 
-**Candidate.** Expose authorized pending/next-eligible notice state and distinguish queued,
-delivered and acknowledged states. Reconnect against backend state; any countdown is an estimate.
-Independent of compact delivered-message rendering. Never acknowledge from viewing the sidebar.
+**Candidate.** The Notification Service streams each Session's notice state
+(`GET /operator/v1/notices/stream`); proxy it through the app and badge the sidebar, distinguishing
+queued, delivered and acknowledged states. Reconnect against backend state; any countdown is an
+estimate. Independent of compact delivered-message rendering. Never acknowledge from viewing the
+sidebar.
 
 ### `THREAD_BROWSE_PAGINATE` — bounded history browsing
 
@@ -609,7 +609,7 @@ leases. The data is derived and rebuildable from the raw log.
 
 ### `HISTORY_SERVICE_OWNERSHIP` — capstone
 
-**Blocked on projection and local-store retirement.** The History Service is
+**Blocked on projection retirement and the store move.** The History Service is
 the only owner of the raw log and fold; the app is a facade over it. Each service's README states
 what unrelated agents can still do while it is down or rolling.
 
@@ -829,11 +829,10 @@ under both names until every client calls the new one.
 
 Dead code, finished gates, compatibility shims and stale names found by the 2026-10-10 PDT audit of
 devel. A gate counts as legacy once its rollout is finished on both testing and staging or nothing
-reads it; mid-rollout gates (read cutover, the Sandbox Service's `Recreate`, `history_writer`,
-delta settlement) stay with their own nodes above. Lane named per node; leftovers of in-flight work
-belong to the lane already changing that code. Upstream-gated tombstones with a verifiable condition
-in code (`keepingOffset` in `thread_store.tsx`, the jsdom pragma in `markdown.test.tsx`) need no
-node.
+reads it; mid-rollout gates (read cutover, `history_writer`, delta settlement) stay with their own
+nodes above. Lane named per node; leftovers of in-flight work belong to the lane already changing
+that code. Upstream-gated tombstones with a verifiable condition in code (`keepingOffset` in
+`thread_store.tsx`, the jsdom pragma in `markdown.test.tsx`) need no node.
 
 ```mermaid
 flowchart TD
@@ -1035,15 +1034,10 @@ history instead.
 
 - Notifications keep workers in the HTTP service. Retention, worker extraction, idle-polling
   optimization and new-source wiring are frozen with triggers, not hidden release prerequisites.
-- Existing GitHub error/backoff visibility, durable refresh reuse, hosted-build authentication and
-  the Ducktape preset are accepted. No live provider-outage injection or repeat staging exercise is
-  pending. Remaining broad provider-matrix exploration is frozen; ordinary auth/signature denial
-  regression coverage belongs with the implementation, not an unbounded production checklist.
-- Native subsessions and runner durability/thin-adapter redesign remain frozen. Transport direction
-  has its own decision co-sequenced with VMs; neither that nor multiagent design unfreezes the broader
-  runner-state redesign.
-- `CROSS_THREAD_DELIVERY` is consolidated into `AGENT_MESSAGING_DESIGN`. Do not dispatch duplicate work under
-  the old name.
+- Broad provider-matrix exploration is frozen; ordinary auth/signature denial regression coverage
+  belongs with the implementation, not an unbounded production checklist.
+- Native subsessions and runner durability/thin-adapter redesign remain frozen. Neither the runner
+  channel nor multiagent design unfreezes the broader runner-state redesign.
 - Existing security boundaries, data-preserving migration checks and representative deployment
   integration checks remain requirements. The freezer is not a waiver for a known data-loss or
   unauthorized-access bug; promote one when evidence makes it concrete.

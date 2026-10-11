@@ -42,10 +42,6 @@ Properties the target keeps:
 - **History Service outage:** runners keep running and commands keep flowing. The runner journal
   is the buffer, so an outage is unacknowledged lag; teardown waits until the ingress has
   acknowledged through every seal cursor.
-- **Settlement beside the fold:** the log, settlement and fold evidence live in one database,
-  and a settlement commits with the completion it settles, so every page carrying that completion
-  carries the settlement and the fold drops the chunks' evidence when it reaches it. Readers outside
-  the History Service see settled ranges only through its read API.
 - **Sessions can outlive a Sandbox later:** the History Service keys by Session and records each
   Sandbox as an incarnation, and a teardown seal ends an incarnation, not the Session, so reviving a
   Session in a new Sandbox ([task DAG section 8](task_dag.md#8-sessions-that-outlive-their-sandbox))
@@ -70,59 +66,18 @@ Properties the target keeps:
 
 ## Decided (operator, 2026-10-10 PDT)
 
-- **Store placement:** the History Service takes over the existing `sandbox_service` database and
-  role; the Sandbox Service gets a new `sandbox_commands` database for command admission. A `TODO` at the database
-  declaration records that the name is then a misnomer. Rejected: a new database with a one-off
-  copy of `session_event`, which is a second migration like the one just finished; its one
-  advantage, returning disk by dropping the old copy, `pg_repack` also gives in place.
 - **No rename:** `session_event` keeps its name.
-- **Fold data:** the History Service projection is rebuilt from the raw log, not copied from the
-  app. It is a long migration and runs as resumable, rate-bounded background work.
-- **Live updates:** Electric replicates the history database behind the app's unchanged
-  authorization proxy, at least for now. A History Service subscription API stays one of the
-  [thread sync](thread_sync/README.md#a-second-implementation) candidates.
-- **Admission reconciliation:** the Sandbox Service settles an ambiguous submission by delivering
-  the same `command_id` again over the control stream, which returns the original receipt; it
-  reads no journal and waits on no subscriber
-  ([runner channel](../docs/runner_channel.md#dispatch-attempts)). Positive admission evidence still
-  cannot regress.
 - **Fold placement:** the projector and fold (`thread_fold/`, shared by the app and the History
   Service), the projection tables above with their per-Session leases, and
   `thread_history_summary` (every field derived from the log) move. Thread `name` and `archived`,
   which the operator authors, stay in the app, as does `event_log` reduced to the Thread → Session
-  link, its harness, model and cwd copies dropped. The read API keys by public Session ID and serves
-  list summaries, an entity window, payloads by reference and raw/debug reads.
+  link.
 - **Reads:** for now only the app's ServiceAccount reads history, for every Session; agent reads
   come with `THREAD_READ_POLICY`, enforced in the History Service.
 - **Existing runners:** not upgraded in place. Sandboxes on images that cannot dial out are archived
   and deleted, and inbound access is retired once none is left.
-
-## Decided (operator, 2026-10-10 PDT)
-
-- **Ingress and control split:** the runner dials out twice, pushing Events to its ingress and
-  holding a control stream to the Sandbox Service, which stays one service for Sandbox lifecycle
-  and control. Rejected: following runners through the Sandbox Service, which made it fan out a
-  journal it does not keep and needed holds for durability; and merging the raw log into the
-  Sandbox Service, which reverses the symmetric-client decision and couples live delivery to the
-  history database.
-- **One ingress per Sandbox:** fan-out, if needed, is its own service.
-- **Session IDs:** the client mints a UUID when creating a Session; the History Service's index
-  records which Sessions exist.
 - **Command submission records** stay in the Sandbox Service for now.
 - **Cutover:** clean, like the dial-out cutover; Sandboxes from before it are archived the old way
   and deleted.
 - **Deployments:** the controller and the runner-facing hub run separately, with separate
   ServiceAccounts.
-
-## APIs
-
-The implemented APIs are `sandbox_service/protocol.proto` and `history_service/protocol.proto`
-([Sandbox Service API](../sandbox_service/API.md)). Live browser updates are not an RPC: Electric
-replicates the projection tables behind the app's authorization proxy.
-
-| Caller               | Sandbox Service                      | History Service                    |
-| -------------------- | ------------------------------------ | ---------------------------------- |
-| App                  | sandboxes, Sessions, `SubmitCommand` | summaries, entities, payloads, raw |
-| Runner               | control stream                       | ingress                            |
-| Historyless client   | Sessions, `SubmitCommand`            | (implements its own ingress)       |
-| Notification Service | `SubmitCommand`                      |                                    |

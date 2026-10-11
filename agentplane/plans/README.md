@@ -32,7 +32,7 @@ execution sequence. This is a priority decision, not a technical dependency.
 - [User stories](user_stories.md) — north-star product context, not an implementation queue
 - [Input metadata](notification_presentation.md) — a sequenced follow-up to command admission
 - [History Service](history_service.md) — target split (runner, Sandbox Service, History Service,
-  app facade) and the gated sequence for moving the raw log and thread fold, runner dial-out and
+  app facade) and the decisions behind moving the raw log and thread fold, runner dial-out and
   delta settlement
 - [Subscriptions and notifications](notifications.md) — standalone service design: SA-authorized session scope,
   explicit inbox acknowledgement, shipped Actions/GitHub delivery, remaining reliability acceptance,

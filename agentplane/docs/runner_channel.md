@@ -124,6 +124,11 @@ that keeps no history implements the ingress itself and sends commands and lifec
 the Sandbox Service like any other client. Fan-out to further readers is the ingress's concern, or
 a service's behind it, never a second destination on the runner.
 
+Rejected: following runners through the Sandbox Service, which made it fan out a journal it does
+not keep and needed retention holds for durability; and merging the raw log into the Sandbox
+Service, which makes a historyless client unlike any other and couples live delivery to the history
+database.
+
 ```protobuf
 // agentplane/proto/runner_ingress.proto
 service RunnerIngress {
