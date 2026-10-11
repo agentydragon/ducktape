@@ -18,13 +18,9 @@ from cdk8s_plus_34 import (
     ConfigMap,
     ContainerPort,
     ContainerResources,
-    ContainerSecurityContextProps,
     Cpu,
     CpuResources,
-    Deployment,
-    ImagePullPolicy,
     MemoryResources,
-    PodSecurityContextProps,
     Protocol,
     Role,
     RoleBinding,
@@ -32,7 +28,6 @@ from cdk8s_plus_34 import (
     Secret,
     Service,
     ServiceAccount,
-    ServicePort,
     Volume,
 )
 from constructs import Construct
@@ -54,16 +49,15 @@ from agentplane.egress.settings import CONFIG_FILE_ENV, Settings
 from agentplane.history_service.settings import RUNNER_INGRESS_AUDIENCE
 from agentplane.runner_gateway.settings import RUNNER_CONTROL_AUDIENCE
 from agentplane.workload_auth.audience import WORKLOAD_TOKEN_AUDIENCE
-from cluster.cdk8s import cilium, node_scheduling, pod_policy
+from cluster.cdk8s import cilium
 from cluster.cdk8s.agentplane import actions, database, llm_ingress, notifications
 from cluster.cdk8s.agentplane.egress_credentials import BUILDBUDDY_API_KEY_SECRET, GITHUB_PAT_SECRET
 from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.agentplane.migrate_container import migrate_init_container
-from cluster.cdk8s.agentplane.pod_disruption_budget import add_pod_disruption_budget
+from cluster.cdk8s.agentplane.service_workload import ServiceWorkload, add_service_workload
 from cluster.cdk8s.api_resource import custom_resource
 from cluster.cdk8s.cert_manager.interception_ca import interception_root_ca
 from cluster.cdk8s.forgejo import app as forgejo  # a bare `app.HTTP` would not say whose
-from cluster.cdk8s.forgejo_registry.chart import forgejo_images_creds_secret_ref
 from cluster.cdk8s.home_assistant import app as home_assistant  # a bare `app.SERVICE` would not say whose
 from cluster.cdk8s.litellm import proxy as litellm_proxy
 from cluster.cdk8s.litellm.credentials import CHEAP_EXPERIMENTS_KEY
@@ -550,12 +544,6 @@ class Egress(Construct):
         self.agent_api = agent_api(env.namespace)
         self.admin = admin(env.namespace)
 
-        # cdk8s_plus_34 defaults ServiceAccounts to automount_token=False; the proxy
-        # calls TokenReview as itself, so it needs its own mounted token.
-        service_account = ServiceAccount(
-            self, "serviceaccount", metadata=ApiObjectMetadata(name=NAME, namespace=env.namespace), automount_token=True
-        )
-        self._add_rbac(service_account)
         self._add_certificate_and_bundle()
         self.upstream_bundle = self._add_upstream_bundle()
         # Settings this deployment supplies as YAML rather than flags, so a list is a list.
@@ -577,11 +565,16 @@ class Egress(Construct):
             # can mount inside a read-only ConfigMap volume.
             path="/etc/agentplane-egress/settings/settings.yaml",
         )
-        deployment = self._add_deployment(service_account, settings)
-        self._add_services(deployment)
+        workload = self._add_workload(settings)
+        self._add_rbac(workload.account)
+        Service(
+            self,
+            "service-admin",
+            metadata=ApiObjectMetadata(name=self.admin.name, namespace=env.namespace),
+            selector=workload.deployment,
+            ports=[self.admin.port.service_port()],
+        )
         self._add_network_policy()
-        if env.replicas.pdb_min_available is not None:
-            self._add_pdb(env.replicas.pdb_min_available)
         _egress_credentials(self, namespace=env.namespace)
         _egress_policies(self, namespace=env.namespace)
 
@@ -683,7 +676,7 @@ class Egress(Construct):
             ),
         )
 
-    def _add_deployment(self, service_account: ServiceAccount, settings: SettingsFile) -> Deployment:
+    def _add_workload(self, settings: SettingsFile) -> ServiceWorkload:
         ca_secret = Secret.from_secret_name(self, "ca-secret-ref", self.env.egress.ca_secret_name)
         ca_volume = Volume.from_secret(self, "ca-volume", ca_secret, name="ca")
         confdir_volume = Volume.from_empty_dir(self, "confdir-volume", "confdir")
@@ -700,29 +693,12 @@ class Egress(Construct):
             env_name(MigrationSettings, "database_url"): database_url.env_value(self, "postgres-egress-secret")
         }
 
-        deployment = Deployment(
+        workload = add_service_workload(
             self,
-            "deployment",
-            metadata=ApiObjectMetadata(name=NAME, namespace=self.env.namespace, labels=_LABELS),
-            pod_metadata=ApiObjectMetadata(labels=_LABELS),
-            replicas=self.env.replicas.count,
-            strategy=self.env.replicas.strategy,
-            min_ready=self.env.replicas.min_ready,
-            termination_grace_period=Duration.seconds(60),
-            service_account=service_account,
-            automount_service_account_token=True,
-            docker_registry_auth=forgejo_images_creds_secret_ref(self, "forgejo-images-creds-ref"),
-            security_context=PodSecurityContextProps(ensure_non_root=True, user=1000, group=1000, fs_group=1000),
-            init_containers=[
-                migrate_init_container(
-                    f"{_MIGRATE_IMAGE}:{_PLACEHOLDER_TAG}", name="migrate", env_variables=migrate_env
-                )
-            ],
-        )
-        deployment.add_container(
-            name="proxy",
+            self.env,
+            serves=[self.agent_api, self.proxy],
+            container="proxy",
             image=f"{_PROXY_IMAGE}:{_PLACEHOLDER_TAG}",
-            image_pull_policy=ImagePullPolicy.IF_NOT_PRESENT,
             args=cli_args(
                 Settings,
                 rules_namespace=self.env.namespace,
@@ -750,46 +726,17 @@ class Egress(Construct):
                 cpu=CpuResources(request=Cpu.millis(50)),
                 memory=MemoryResources(request=Size.mebibytes(256), limit=Size.gibibytes(1)),
             ),
-            # Writable: its root filesystem writes are unaudited.
-            security_context=ContainerSecurityContextProps(read_only_root_filesystem=False),
+            termination_grace=Duration.seconds(60),
+            migrate=migrate_init_container(
+                f"{_MIGRATE_IMAGE}:{_PLACEHOLDER_TAG}", name="migrate", env_variables=migrate_env
+            ),
+            tolerate_control_plane=True,
         )
-        deployment.containers[0].mount("/etc/agentplane-egress/ca", ca_volume, read_only=True)
-        deployment.containers[0].mount(_UPSTREAM_CA_DIR, upstream_ca_volume, read_only=True)
-        deployment.containers[0].mount("/var/lib/agentplane-egress", confdir_volume)
-        settings.mount_into(deployment.containers[0], env=CONFIG_FILE_ENV)
-
-        pod_policy.place(deployment, node_scheduling.HIL_OVH, tolerate_control_plane=True)
-        pod_policy.harden(deployment)
-        return deployment
-
-    def _add_services(self, deployment: Deployment) -> None:
-        Service(
-            self,
-            "service",
-            metadata=ApiObjectMetadata(name=self.proxy.name, namespace=self.env.namespace),
-            selector=deployment,
-            ports=[
-                ServicePort(
-                    name=self.agent_api.port.name,
-                    port=self.agent_api.port.number,
-                    target_port=self.agent_api.pod_port,
-                    protocol=Protocol.TCP,
-                ),
-                self.proxy.port.service_port(),
-            ],
-        )
-        Service(
-            self,
-            "service-admin",
-            metadata=ApiObjectMetadata(name=self.admin.name, namespace=self.env.namespace),
-            selector=deployment,
-            ports=[self.admin.port.service_port()],
-        )
-
-    def _add_pdb(self, min_available: int) -> None:
-        add_pod_disruption_budget(
-            self, "pdb", name=NAME, namespace=self.env.namespace, min_available=min_available, selector=_LABELS
-        )
+        workload.container.mount("/etc/agentplane-egress/ca", ca_volume, read_only=True)
+        workload.container.mount(_UPSTREAM_CA_DIR, upstream_ca_volume, read_only=True)
+        workload.container.mount("/var/lib/agentplane-egress", confdir_volume)
+        settings.mount_into(workload.container, env=CONFIG_FILE_ENV)
+        return workload
 
     def _add_network_policy(self) -> None:
         namespace = self.env.namespace
@@ -813,10 +760,7 @@ class Egress(Construct):
                 self.agent_api.pods.admit(self.agent_api.pod_port),
             ],
             egress=[
-                EgressRule.to_endpoints(
-                    {"k8s:io.kubernetes.pod.namespace": namespace, "k8s:cnpg.io/cluster": "postgres"},
-                    database.POSTGRES_PORT,
-                ),
+                database.egress(namespace),
                 EgressRule.to_entities(Entity.KUBE_APISERVER),
                 self.agent_api.egress(),
                 llm_ingress.service(namespace).egress(),

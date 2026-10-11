@@ -25,7 +25,7 @@ from cluster.cdk8s import cilium, node_scheduling, pod_policy
 from cluster.cdk8s.agentplane import database
 from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.probes import http_probe
-from cluster.cdk8s.providers.cilium.network_policy import EgressRule, IngressRule, NetworkPolicy
+from cluster.cdk8s.providers.cilium.network_policy import IngressRule, NetworkPolicy
 from cluster.cdk8s.secret_ref import SecretRef
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 
@@ -138,11 +138,5 @@ class Electric(Construct):
                     cilium.endpoint_labels(env.namespace, "agentplane-app"), ports=[electric.pod_port]
                 )
             ],
-            egress=[
-                cilium.dns_egress(),
-                EgressRule.to_endpoints(
-                    {"k8s:io.kubernetes.pod.namespace": env.namespace, "k8s:cnpg.io/cluster": "postgres"},
-                    database.POSTGRES_PORT,
-                ),
-            ],
+            egress=[cilium.dns_egress(), database.egress(env.namespace)],
         )

@@ -1,30 +1,17 @@
 """Notification-owned persistence and workload API; only the Runner Gateway reaches runners, and
 receipts are read from the History Service."""
 
-from cdk8s import ApiObject, ApiObjectMetadata, Duration, JsonPatch, Size
-from cdk8s_plus_34 import (
-    ContainerResources,
-    ContainerSecurityContextProps,
-    Cpu,
-    CpuResources,
-    Deployment,
-    ImagePullPolicy,
-    MemoryResources,
-    PodSecurityContextProps,
-    Service,
-    ServiceAccount,
-    k8s,
-)
+from cdk8s import ApiObjectMetadata, Duration, Size
+from cdk8s_plus_34 import ContainerResources, Cpu, CpuResources, MemoryResources
 from constructs import Construct
 
 from agentplane.notification_service.settings import CONFIG_FILE_ENV, TOKEN_AUDIENCE, Settings
 from agentplane.workload_auth.audience import WORKLOAD_TOKEN_AUDIENCE
-from cluster.cdk8s import cilium, node_scheduling, pod_policy
+from cluster.cdk8s import cilium
 from cluster.cdk8s.agentplane import database
 from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.agentplane.migrate_container import migrate_init_container
-from cluster.cdk8s.agentplane.pod_disruption_budget import add_pod_disruption_budget
-from cluster.cdk8s.forgejo_registry.chart import forgejo_images_creds_secret_ref
+from cluster.cdk8s.agentplane.service_workload import add_service_workload
 from cluster.cdk8s.probes import http_probe
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, Entity, IngressRule, NetworkPolicy
 from cluster.cdk8s.secret_ref import SecretRef
@@ -63,9 +50,6 @@ class Notifications(Construct):
     ) -> None:
         super().__init__(scope, id)
         endpoint = service(env.namespace)
-        account = ServiceAccount(
-            self, "account", metadata=ApiObjectMetadata(name=NAME, namespace=env.namespace), automount_token=True
-        )
         token_reviewer_cluster_rbac(
             self,
             "token-reviewer",
@@ -78,23 +62,6 @@ class Notifications(Construct):
             .key("uri")
             .env_value(self, "database")
         }
-        deployment = Deployment(
-            self,
-            "deployment",
-            metadata=ApiObjectMetadata(name=NAME, namespace=env.namespace, labels=_LABELS),
-            pod_metadata=ApiObjectMetadata(labels=_LABELS),
-            replicas=env.replicas.count,
-            strategy=env.replicas.strategy,
-            min_ready=env.replicas.min_ready,
-            termination_grace_period=Duration.seconds(30),
-            service_account=account,
-            automount_service_account_token=True,
-            docker_registry_auth=forgejo_images_creds_secret_ref(self, "images-creds"),
-            security_context=PodSecurityContextProps(ensure_non_root=True, user=1000, group=1000, fs_group=1000),
-            init_containers=[
-                migrate_init_container(f"{_IMAGE}-migrate:unset", name="migrate", env_variables=variables)
-            ],
-        )
         github = env.notifications_github
         supplied: list[tuple[str, ...]] = [("database_url",)]
         if github is not None:
@@ -131,10 +98,12 @@ class Notifications(Construct):
             },
             supplied=supplied,
         )
-        container = deployment.add_container(
-            name="notifications",
+        workload = add_service_workload(
+            self,
+            env,
+            serves=[endpoint],
+            container="notifications",
             image=f"{_IMAGE}:unset",
-            image_pull_policy=ImagePullPolicy.IF_NOT_PRESENT,
             env_variables=variables,
             ports=[endpoint.port.container_port()],
             readiness=http_probe("/readyz", port=8080, initial_delay_seconds=3, period_seconds=10),
@@ -143,52 +112,25 @@ class Notifications(Construct):
                 cpu=CpuResources(request=Cpu.millis(50)),
                 memory=MemoryResources(request=Size.mebibytes(128), limit=Size.mebibytes(512)),
             ),
-            security_context=ContainerSecurityContextProps(read_only_root_filesystem=False),
+            termination_grace=Duration.seconds(30),
+            migrate=migrate_init_container(f"{_IMAGE}-migrate:unset", name="migrate", env_variables=variables),
         )
         if github is not None:
             secret = SecretRef(namespace=env.namespace, name=github.secret_name)
             for field, key in [("private_key", "private-key"), ("webhook_secret", "webhook-secret")]:
-                container.env.add_variable(
+                workload.container.env.add_variable(
                     env_name(Settings, "github", field), secret.key(key).env_value(self, f"github-{key}")
                 )
-        settings.mount_into(container, env=CONFIG_FILE_ENV)
-        ApiObject.of(deployment).add_json_patch(
-            JsonPatch.add(
-                "/spec/template/spec/volumes/-",
-                k8s.Volume(
-                    name="service-tokens",
-                    projected=k8s.ProjectedVolumeSource(
-                        sources=[
-                            k8s.VolumeProjection(
-                                service_account_token=k8s.ServiceAccountTokenProjection(
-                                    audience=audience, expiration_seconds=3600, path=path
-                                )
-                            )
-                            for path, audience in [
-                                ("actions", WORKLOAD_TOKEN_AUDIENCE),
-                                ("sandboxes", sandboxes_audience),
-                                ("gateway", gateway_audience),
-                                ("history", history_audience),
-                            ]
-                        ]
-                    ),
-                ),
-            )
-        )
-        ApiObject.of(deployment).add_json_patch(
-            JsonPatch.add(
-                "/spec/template/spec/containers/0/volumeMounts/-",
-                k8s.VolumeMount(name="service-tokens", mount_path="/var/run/secrets/notifications", read_only=True),
-            )
-        )
-        pod_policy.place(deployment, node_scheduling.HIL_OVH)
-        pod_policy.harden(deployment)
-        Service(
-            self,
-            "service",
-            metadata=ApiObjectMetadata(name=NAME, namespace=env.namespace, labels=_LABELS),
-            selector=deployment,
-            ports=[endpoint.port.service_port()],
+        settings.mount_into(workload.container, env=CONFIG_FILE_ENV)
+        workload.project_tokens(
+            "service-tokens",
+            "/var/run/secrets/notifications",
+            {
+                "actions": WORKLOAD_TOKEN_AUDIENCE,
+                "sandboxes": sandboxes_audience,
+                "gateway": gateway_audience,
+                "history": history_audience,
+            },
         )
         NetworkPolicy(
             self,
@@ -207,18 +149,6 @@ class Notifications(Construct):
                 sandboxes.egress(),
                 gateway.egress(),
                 history.egress(),
-                EgressRule.to_endpoints(
-                    {"k8s:io.kubernetes.pod.namespace": env.namespace, "k8s:cnpg.io/cluster": "postgres"},
-                    database.POSTGRES_PORT,
-                ),
+                database.egress(env.namespace),
             ],
         )
-        if env.replicas.pdb_min_available is not None:
-            add_pod_disruption_budget(
-                self,
-                "pdb",
-                name=NAME,
-                namespace=env.namespace,
-                min_available=env.replicas.pdb_min_available,
-                selector=_LABELS,
-            )

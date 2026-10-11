@@ -7,6 +7,7 @@ Both environments are non-production; data loss in either's Postgres is acceptab
 from __future__ import annotations
 
 from cdk8s import ApiObjectMetadata
+from cilium_crds.io.cilium import CiliumNetworkPolicySpecEgress
 from cnpg_cluster_crds.io.cnpg.postgresql import (
     ClusterSpecManaged,
     ClusterSpecManagedRoles,
@@ -20,13 +21,12 @@ from constructs import Construct
 from cluster.cdk8s import cnpg, node_scheduling
 from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.external_secrets.minted_secret import mint_db_role_secret
+from cluster.cdk8s.providers.cilium.network_policy import EgressRule
 from cluster.cdk8s.providers.cnpg.database import Database
 
 _STORAGE_CLASS = "local-path-ovh-ssd"
 _STORAGE_SIZE = "5Gi"
-# CNPG's fixed Postgres port -- egress/actions/app's CiliumNetworkPolicy rules allowing
-# traffic to this Cluster name the same port.
-POSTGRES_PORT = 5432
+_CLUSTER_NAME = "postgres"
 
 # The logical databases services own on the shared Cluster; the initdb-owned
 # "app"/trajectory database needs no Database/role of its own.
@@ -45,7 +45,14 @@ def _role_secret_name(role: str) -> str:
 
 def postgres(env: Environment) -> cnpg.PostgresRef:
     """The environment's shared Cluster."""
-    return cnpg.PostgresRef.generated(name="postgres", namespace=env.namespace)
+    return cnpg.PostgresRef.generated(name=_CLUSTER_NAME, namespace=env.namespace)
+
+
+def egress(namespace: str) -> CiliumNetworkPolicySpecEgress:
+    """A client's rule reaching the environment's shared Cluster."""
+    return EgressRule.to_endpoints(
+        {"k8s:io.kubernetes.pod.namespace": namespace, "k8s:cnpg.io/cluster": _CLUSTER_NAME}, cnpg.PORT.number
+    )
 
 
 def _role_credentials(

@@ -1011,7 +1011,6 @@ flowchart TD
         KUBEVIRT_GUEST_CONTROL[Candidate: KubeVirt guest dials out]
         RUNNER_CORE_SPLIT[Blocked: runner core out of the inbound servicer]
         ACTION_PROTOCOLS_CONCRETE[Candidate: concrete external-grant authority]
-        CDK8S_SERVICE_CONSTRUCT[Candidate: one cdk8s service construct]
         CDK8S_RUNNER_ENDPOINT_HELPER[Candidate: one runner-facing endpoint helper]
         GRPC_CHANNEL_OPTIONS_CONSTANT[Candidate: one gRPC channel options constant]
         CDK8S_RUNNER_TEMPLATE_MOVE[Candidate: runner Pod objects out of the app]
@@ -1124,12 +1123,6 @@ lost-stream error and backoff, `IngressPusher` stops borrowing `ControlTiming`, 
 **Candidate.** `ActionStore`'s `ExternalGrantAuthority` Protocol (also a footgun `| None = None`) has
 one production implementation, `ConnectionAuthority`. `db.py` cannot name it, because `connections.py`
 imports `db.py`'s rows: `ActionStore` first moves out of `db.py`, then takes a `ConnectionAuthority`.
-
-### `CDK8S_SERVICE_CONSTRUCT` — one cdk8s service construct
-
-**Candidate.** Seven constructs in `cluster/cdk8s/agentplane/` hand-write one Deployment skeleton
-(ServiceAccount, security context, probes, Service, PDB, projected-token `JsonPatch`), and the CNPG
-egress rule is spelled eight times. One construct, and `database.py` exports `egress(namespace)`.
 
 ### `CDK8S_RUNNER_ENDPOINT_HELPER` — one runner-facing endpoint helper
 

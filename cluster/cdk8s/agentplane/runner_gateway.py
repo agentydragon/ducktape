@@ -17,20 +17,15 @@ from cdk8s import ApiObjectMetadata, Duration, Size
 from cdk8s_plus_34 import (
     ApiResource,
     ContainerResources,
-    ContainerSecurityContextProps,
     Cpu,
     CpuResources,
-    Deployment,
     EnvFieldPaths,
     EnvValue,
     IApiResource,
-    ImagePullPolicy,
     MemoryResources,
-    PodSecurityContextProps,
     Role,
     RoleBinding,
     RolePolicyRule,
-    Service,
     ServiceAccount,
 )
 from constructs import Construct
@@ -40,13 +35,12 @@ from agentplane.runner_gateway.instructions import combine_instructions, render_
 from agentplane.runner_gateway.settings import CONFIG_FILE_ENV, RUNNER_CONTROL_AUDIENCE, Settings
 from agentplane.sandbox_service.runner_endpoints import RunnerEndpoint
 from agentplane.subjects import ServiceAccountRef
-from cluster.cdk8s import cilium, node_scheduling, pod_policy
+from cluster.cdk8s import cilium
 from cluster.cdk8s.agentplane import actions, database, egress, notifications
 from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.agentplane.migrate_container import migrate_init_container
-from cluster.cdk8s.agentplane.pod_disruption_budget import add_pod_disruption_budget
+from cluster.cdk8s.agentplane.service_workload import add_service_workload
 from cluster.cdk8s.api_resource import custom_resource
-from cluster.cdk8s.forgejo_registry.chart import forgejo_images_creds_secret_ref
 from cluster.cdk8s.probes import grpc_probe
 from cluster.cdk8s.providers.agentplane.egress_credential import EgressCredential, Source
 from cluster.cdk8s.providers.agentplane.egress_policy import EgressPolicy
@@ -128,10 +122,6 @@ class RunnerGateway(Construct):
         self.env = env
         endpoint = service(env.namespace)
         control = runner_control(env.namespace)
-        account = ServiceAccount(
-            self, "account", metadata=ApiObjectMetadata(name=NAME, namespace=env.namespace), automount_token=True
-        )
-        self._add_rbac(account)
         actions_service = actions.service(env.namespace)
         config = SettingsFile(
             self,
@@ -168,38 +158,17 @@ class RunnerGateway(Construct):
             .key("uri")
             .env_value(self, "commands-database")
         )
-        # Like the other database-backed services, a migration failure blocks Pod startup. The command
-        # has no retry loop.
-        deployment = Deployment(
+        workload = add_service_workload(
             self,
-            "deployment",
-            metadata=ApiObjectMetadata(name=NAME, namespace=env.namespace, labels=_LABELS),
-            pod_metadata=ApiObjectMetadata(labels=_LABELS),
-            replicas=env.replicas.count,
-            strategy=env.replicas.strategy,
-            min_ready=env.replicas.min_ready,
-            termination_grace_period=Duration.seconds(60),
-            service_account=account,
-            automount_service_account_token=True,
-            docker_registry_auth=forgejo_images_creds_secret_ref(self, "images-creds"),
-            security_context=PodSecurityContextProps(ensure_non_root=True, user=1000, group=1000, fs_group=1000),
-            init_containers=[
-                migrate_init_container(
-                    "git.allegedly.works/ducktape-ci/agentplane-sandbox-commands-migrate:unset",
-                    name="migrate-commands",
-                    env_variables={"AGENTPLANE_SANDBOX_SERVICE_COMMANDS_DATABASE_URL": commands_database},
-                )
-            ],
-        )
-        container = deployment.add_container(
-            name="runner-gateway",
+            env,
+            serves=[endpoint, control],
+            container="runner-gateway",
             image=f"{_IMAGE}:unset",
             env_variables={
                 env_name(Settings, "commands_database_url"): commands_database,
                 # Where the Sandbox control Services this replica writes point (runner_control.md).
                 env_name(Settings, "pod_ip"): EnvValue.from_field_ref(EnvFieldPaths.POD_IP),
             },
-            image_pull_policy=ImagePullPolicy.IF_NOT_PRESENT,
             ports=[endpoint.port.container_port(), control.port.container_port()],
             readiness=grpc_probe(port=endpoint.port.number, initial_delay_seconds=3, period_seconds=10),
             liveness=grpc_probe(port=endpoint.port.number, initial_delay_seconds=20, period_seconds=30),
@@ -207,18 +176,15 @@ class RunnerGateway(Construct):
                 cpu=CpuResources(request=Cpu.millis(50)),
                 memory=MemoryResources(request=Size.mebibytes(128), limit=Size.mebibytes(512)),
             ),
-            security_context=ContainerSecurityContextProps(read_only_root_filesystem=False),
+            termination_grace=Duration.seconds(60),
+            migrate=migrate_init_container(
+                "git.allegedly.works/ducktape-ci/agentplane-sandbox-commands-migrate:unset",
+                name="migrate-commands",
+                env_variables={"AGENTPLANE_SANDBOX_SERVICE_COMMANDS_DATABASE_URL": commands_database},
+            ),
         )
-        config.mount_into(container, env=CONFIG_FILE_ENV)
-        pod_policy.place(deployment, node_scheduling.HIL_OVH)
-        pod_policy.harden(deployment)
-        Service(
-            self,
-            "service",
-            metadata=ApiObjectMetadata(name=NAME, namespace=env.namespace, labels=_LABELS),
-            selector=deployment,
-            ports=[endpoint.port.service_port(), control.port.service_port()],
-        )
+        self._add_rbac(workload.account)
+        config.mount_into(workload.container, env=CONFIG_FILE_ENV)
         NetworkPolicy(
             self,
             "network-policy",
@@ -232,23 +198,11 @@ class RunnerGateway(Construct):
             egress=[
                 cilium.dns_egress(),
                 EgressRule.to_entities(Entity.KUBE_APISERVER),
-                EgressRule.to_endpoints(
-                    {"k8s:io.kubernetes.pod.namespace": env.namespace, "k8s:cnpg.io/cluster": "postgres"},
-                    database.POSTGRES_PORT,
-                ),
+                database.egress(env.namespace),
                 EgressRule.to_endpoints(cilium.endpoint_labels(env.namespace, "agentplane-runner"), RUNNER_PORT),
             ],
         )
         self._add_runner_control_egress(control)
-        if env.replicas.pdb_min_available is not None:
-            add_pod_disruption_budget(
-                self,
-                "pdb",
-                name=NAME,
-                namespace=env.namespace,
-                min_available=env.replicas.pdb_min_available,
-                selector=_LABELS,
-            )
 
     def _add_runner_control_egress(self, control: ServiceRef) -> None:
         """The egress path a runner dials the control listener on: the proxy swaps the placeholder for the

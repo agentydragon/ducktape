@@ -34,25 +34,19 @@ from agent_sandbox_sandboxtemplate_crds.io.x_k8s.agents.extensions import (
     SandboxTemplateSpecVolumeClaimTemplatesSpecResources,
     SandboxTemplateSpecVolumeClaimTemplatesSpecResourcesRequests,
 )
-from cdk8s import ApiObject, ApiObjectMetadata, Duration, JsonPatch, Size
+from cdk8s import ApiObjectMetadata, Duration, Size
 from cdk8s_plus_34 import (
     ApiResource,
     ContainerResources,
-    ContainerSecurityContextProps,
     Cpu,
     CpuResources,
-    Deployment,
     EnvValue,
     IApiResource,
-    ImagePullPolicy,
     MemoryResources,
-    PodSecurityContextProps,
     Role,
     RoleBinding,
     RolePolicyRule,
-    Service,
     ServiceAccount,
-    k8s,
 )
 from cilium_crds.io.cilium import CiliumNetworkPolicySpecEgress
 from constructs import Construct
@@ -61,7 +55,7 @@ from agentplane.action_service.sandbox.binding import DESCRIPTION_ANNOTATION
 from agentplane.app.oidc import OIDCSettings
 from agentplane.app.settings import CONFIG_FILE_ENV, Settings
 from agentplane.crd_group import GROUP
-from cluster.cdk8s import cilium, node_scheduling, pod_policy
+from cluster.cdk8s import cilium
 from cluster.cdk8s.agentplane import (
     actions,
     database,
@@ -76,9 +70,9 @@ from cluster.cdk8s.agentplane import (
 )
 from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.agentplane.migrate_container import migrate_init_container
-from cluster.cdk8s.agentplane.pod_disruption_budget import add_pod_disruption_budget
+from cluster.cdk8s.agentplane.service_workload import ServiceWorkload, add_service_workload
 from cluster.cdk8s.api_resource import custom_resource
-from cluster.cdk8s.forgejo_registry.chart import forgejo_images_creds_external_secret, forgejo_images_creds_secret_ref
+from cluster.cdk8s.forgejo_registry.chart import forgejo_images_creds_external_secret
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.probes import http_probe
 from cluster.cdk8s.providers.agent_sandbox.sandbox_template import SandboxTemplate
@@ -129,8 +123,7 @@ class App(Construct):
         self.oidc = oidc_secret(env.namespace)
 
         forgejo_images_creds_external_secret(self, "forgejo-images-creds", namespace=env.namespace)
-        app_service_account = self._add_service_accounts()
-        self._add_rbac(app_service_account)
+        self._add_service_accounts()
         config = SettingsFile(
             self,
             "config",
@@ -139,12 +132,10 @@ class App(Construct):
             content=env.app_config.model_dump(mode="json", exclude_unset=True),
             path="/etc/agentplane/config.yaml",
         )
-        deployment = self._add_deployment(app_service_account, config)
-        self._add_service(deployment)
+        workload = self._add_workload(config)
+        self._add_rbac(workload.account)
         self._add_http_route()
         self._add_network_policy()
-        if env.replicas.pdb_min_available is not None:
-            self._add_pdb(env.replicas.pdb_min_available)
         RunnerTemplate(
             self,
             "runner-template",
@@ -157,7 +148,7 @@ class App(Construct):
             ),
         )
 
-    def _add_service_accounts(self) -> ServiceAccount:
+    def _add_service_accounts(self) -> None:
         namespace = self.env.namespace
         # The identity an agent presents to the app's own API; no Pod runs as it, so no
         # mounted token.
@@ -167,11 +158,6 @@ class App(Construct):
             metadata=ApiObjectMetadata(name="agentplane-agent", namespace=namespace),
             automount_token=False,
         )
-        # cdk8s_plus_34 defaults ServiceAccounts to automount_token=False; the app
-        # mounts its own token to call TokenReview as itself.
-        app_service_account = ServiceAccount(
-            self, "serviceaccount-app", metadata=ApiObjectMetadata(name=NAME, namespace=namespace), automount_token=True
-        )
         # The runner Pods' identity, with no RBAC of its own.
         ServiceAccount(
             self,
@@ -179,7 +165,6 @@ class App(Construct):
             metadata=ApiObjectMetadata(name="agentplane-runner", namespace=namespace),
             automount_token=False,
         )
-        return app_service_account
 
     def _add_rbac(self, app_service_account: ServiceAccount) -> None:
         namespace = self.env.namespace
@@ -253,49 +238,18 @@ class App(Construct):
             env_name(Settings, "token_subjects"): EnvValue.from_value(token_subjects),
         }
 
-    def _add_deployment(self, app_service_account: ServiceAccount, config: SettingsFile) -> Deployment:
+    def _add_workload(self, config: SettingsFile) -> ServiceWorkload:
         namespace = self.env.namespace
         env = self._container_env()
         oidc_secret_reload = self.oidc.name
         if self.env.app.oidc_session_secret_name != self.oidc.name:
             oidc_secret_reload += f",{self.env.app.oidc_session_secret_name}"
-        deployment = Deployment(
+        workload = add_service_workload(
             self,
-            "deployment",
-            metadata=ApiObjectMetadata(
-                name=NAME,
-                namespace=namespace,
-                labels=_LABELS,
-                annotations={
-                    # A re-minted client secret otherwise leaves the pod on the old
-                    # one, and every login 401s.
-                    "secret.reloader.stakater.com/reload": oidc_secret_reload,
-                    "configmap.reloader.stakater.com/reload": config.config_map.name,
-                },
-            ),
-            pod_metadata=ApiObjectMetadata(labels=_LABELS),
-            replicas=self.env.replicas.count,
-            strategy=self.env.replicas.strategy,
-            min_ready=self.env.replicas.min_ready,
-            # 5s HTTP/SSE drain (--shutdown-timeout), with room for the bridge's lease
-            # release and the store's close.
-            termination_grace_period=Duration.seconds(60),
-            service_account=app_service_account,
-            # cdk8s_plus_34 defaults this to False independent of the ServiceAccount's
-            # own automount_token -- opt in for the same reason as the ServiceAccount.
-            automount_service_account_token=True,
-            docker_registry_auth=forgejo_images_creds_secret_ref(self, "forgejo-images-creds-ref"),
-            security_context=PodSecurityContextProps(ensure_non_root=True, user=1000, group=1000, fs_group=1000),
-            # The app's Alembic history. The app itself creates no tables; it verifies
-            # the migrated schema at startup and fails if this hasn't run.
-            init_containers=[
-                migrate_init_container(f"{_MIGRATE_IMAGE}:{_PLACEHOLDER_TAG}", name="migrate", env_variables=env)
-            ],
-        )
-        deployment.add_container(
-            name="app",
+            self.env,
+            serves=[self.service],
+            container="app",
             image=f"{_APP_IMAGE}:{_PLACEHOLDER_TAG}",
-            image_pull_policy=ImagePullPolicy.IF_NOT_PRESENT,
             args=cli_args(
                 Settings,
                 namespace=namespace,
@@ -321,135 +275,28 @@ class App(Construct):
                 cpu=CpuResources(request=Cpu.millis(50)),
                 memory=MemoryResources(request=Size.mebibytes(128), limit=Size.mebibytes(512)),
             ),
-            # Writable: its root filesystem writes are unaudited.
-            security_context=ContainerSecurityContextProps(read_only_root_filesystem=False),
+            # 5s HTTP/SSE drain (--shutdown-timeout), with room for the bridge's lease
+            # release and the store's close.
+            termination_grace=Duration.seconds(60),
+            # The app's Alembic history. The app itself creates no tables; it verifies
+            # the migrated schema at startup and fails if this hasn't run.
+            migrate=migrate_init_container(f"{_MIGRATE_IMAGE}:{_PLACEHOLDER_TAG}", name="migrate", env_variables=env),
+            annotations={
+                # A re-minted client secret otherwise leaves the pod on the old
+                # one, and every login 401s.
+                "secret.reloader.stakater.com/reload": oidc_secret_reload,
+                "configmap.reloader.stakater.com/reload": config.config_map.name,
+            },
         )
-        config.mount_into(deployment.containers[0], env=CONFIG_FILE_ENV)
-        # A rotating, audience-scoped workload token, separate from the API-server token.
-        ApiObject.of(deployment).add_json_patch(
-            JsonPatch.add(
-                "/spec/template/spec/volumes/-",
-                k8s.Volume(
-                    name="sandbox-service-token",
-                    projected=k8s.ProjectedVolumeSource(
-                        sources=[
-                            k8s.VolumeProjection(
-                                service_account_token=k8s.ServiceAccountTokenProjection(
-                                    audience=sandbox_service.TOKEN_AUDIENCE, expiration_seconds=3600, path="token"
-                                )
-                            )
-                        ]
-                    ),
-                ),
-            )
-        )
-        ApiObject.of(deployment).add_json_patch(
-            JsonPatch.add(
-                "/spec/template/spec/containers/0/volumeMounts/-",
-                k8s.VolumeMount(
-                    name="sandbox-service-token",
-                    mount_path="/var/run/secrets/agentplane-sandbox-service",
-                    read_only=True,
-                ),
-            )
-        )
-
-        ApiObject.of(deployment).add_json_patch(
-            JsonPatch.add(
-                "/spec/template/spec/volumes/-",
-                k8s.Volume(
-                    name="runner-gateway-token",
-                    projected=k8s.ProjectedVolumeSource(
-                        sources=[
-                            k8s.VolumeProjection(
-                                service_account_token=k8s.ServiceAccountTokenProjection(
-                                    audience=runner_gateway.TOKEN_AUDIENCE, expiration_seconds=3600, path="token"
-                                )
-                            )
-                        ]
-                    ),
-                ),
-            )
-        )
-        ApiObject.of(deployment).add_json_patch(
-            JsonPatch.add(
-                "/spec/template/spec/containers/0/volumeMounts/-",
-                k8s.VolumeMount(
-                    name="runner-gateway-token", mount_path="/var/run/secrets/agentplane-runner-gateway", read_only=True
-                ),
-            )
-        )
-
-        ApiObject.of(deployment).add_json_patch(
-            JsonPatch.add(
-                "/spec/template/spec/volumes/-",
-                k8s.Volume(
-                    name="history-service-token",
-                    projected=k8s.ProjectedVolumeSource(
-                        sources=[
-                            k8s.VolumeProjection(
-                                service_account_token=k8s.ServiceAccountTokenProjection(
-                                    audience=history_service.TOKEN_AUDIENCE, expiration_seconds=3600, path="token"
-                                )
-                            )
-                        ]
-                    ),
-                ),
-            )
-        )
-        ApiObject.of(deployment).add_json_patch(
-            JsonPatch.add(
-                "/spec/template/spec/containers/0/volumeMounts/-",
-                k8s.VolumeMount(
-                    name="history-service-token",
-                    mount_path="/var/run/secrets/agentplane-history-service",
-                    read_only=True,
-                ),
-            )
-        )
-
-        ApiObject.of(deployment).add_json_patch(
-            JsonPatch.add(
-                "/spec/template/spec/volumes/-",
-                k8s.Volume(
-                    name="notifications-token",
-                    projected=k8s.ProjectedVolumeSource(
-                        sources=[
-                            k8s.VolumeProjection(
-                                service_account_token=k8s.ServiceAccountTokenProjection(
-                                    audience=notifications.TOKEN_AUDIENCE, expiration_seconds=3600, path="token"
-                                )
-                            )
-                        ]
-                    ),
-                ),
-            )
-        )
-        ApiObject.of(deployment).add_json_patch(
-            JsonPatch.add(
-                "/spec/template/spec/containers/0/volumeMounts/-",
-                k8s.VolumeMount(
-                    name="notifications-token", mount_path="/var/run/secrets/agentplane-notifications", read_only=True
-                ),
-            )
-        )
-
-        # With the database (cnpg_conventions R5). Unlike llm-ingress/egress, the app
-        # carries no control-plane toleration.
-        pod_policy.place(deployment, node_scheduling.HIL_OVH)
-        pod_policy.harden(deployment)
-        return deployment
-
-    def _add_service(self, deployment: Deployment) -> None:
-        Service(
-            self,
-            "service",
-            metadata=ApiObjectMetadata(
-                name=self.service.name, namespace=self.env.namespace, labels=self.service.labels
-            ),
-            selector=deployment,
-            ports=[self.service.port.service_port()],
-        )
+        config.mount_into(workload.container, env=CONFIG_FILE_ENV)
+        for volume, audience, mount_path in [
+            ("sandbox-service-token", sandbox_service.TOKEN_AUDIENCE, "/var/run/secrets/agentplane-sandbox-service"),
+            ("runner-gateway-token", runner_gateway.TOKEN_AUDIENCE, "/var/run/secrets/agentplane-runner-gateway"),
+            ("history-service-token", history_service.TOKEN_AUDIENCE, "/var/run/secrets/agentplane-history-service"),
+            ("notifications-token", notifications.TOKEN_AUDIENCE, "/var/run/secrets/agentplane-notifications"),
+        ]:
+            workload.project_tokens(volume, mount_path, {"token": audience})
+        return workload
 
     def _add_http_route(self) -> None:
         namespace = self.env.namespace
@@ -509,16 +356,8 @@ class App(Construct):
                 # network reachability grants no review authority.
                 actions.service(namespace).egress(),
                 electric.service(namespace, electric.HISTORY).egress(),
-                EgressRule.to_endpoints(
-                    {"k8s:io.kubernetes.pod.namespace": namespace, "k8s:cnpg.io/cluster": "postgres"},
-                    database.POSTGRES_PORT,
-                ),
+                database.egress(namespace),
             ],
-        )
-
-    def _add_pdb(self, min_available: int) -> None:
-        add_pod_disruption_budget(
-            self, "pdb", name=NAME, namespace=self.env.namespace, min_available=min_available, selector=_LABELS
         )
 
 
