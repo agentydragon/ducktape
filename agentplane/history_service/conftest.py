@@ -179,7 +179,7 @@ class ScriptedSandboxService:
         server.add_generic_rpc_handlers(
             [
                 grpc.method_handlers_generic_handler(
-                    "ducktape.agentplane.runner_gateway.v1.RunnerGateway",
+                    "agentplane.proto.runner_gateway.RunnerGateway",
                     {
                         "WatchSessions": grpc.unary_stream_rpc_method_handler(
                             self.watch,

@@ -9,7 +9,6 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
 
-import grpc
 import pytest
 import pytest_bazel
 
@@ -87,7 +86,7 @@ def sample_native(pid: int, directory: Path) -> NativeSample:
 @asynccontextmanager
 async def running_client(config: RunnerConfig) -> AsyncIterator[RunnerClient]:
     server, runner, port = await serve(config)
-    client = RunnerClient(grpc.aio.insecure_channel(f"127.0.0.1:{port}"))
+    client = RunnerClient(f"127.0.0.1:{port}", channel_options=None)
     try:
         yield client
     finally:

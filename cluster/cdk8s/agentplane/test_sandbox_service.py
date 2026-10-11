@@ -1,4 +1,5 @@
-"""Production routing/authority cutover must not leave a direct-runner fallback."""
+"""Production routing/authority cutover must not leave a direct-runner fallback, and the Sandbox Service and
+Runner Gateway run apart."""
 
 from typing import Any
 
@@ -7,7 +8,7 @@ import pytest_bazel
 import yaml
 from more_itertools import one
 
-from cluster.cdk8s.agentplane import app, history_service, notifications, sandbox_service
+from cluster.cdk8s.agentplane import app, history_service, notifications, runner_gateway, sandbox_service
 from cluster.cdk8s.agentplane.conftest import NAMESPACES
 
 
@@ -50,21 +51,26 @@ def test_app_uses_independent_service(namespace: str, agentplane_manifests: dict
     service_pod = resource("Deployment", sandbox_service.NAME)["spec"]["template"]["spec"]
     assert service_pod["serviceAccountName"] == sandbox_service.NAME
     assert all("persistentVolumeClaim" not in volume for volume in service_pod.get("volumes", []))
-    # The migration blocks startup; the service also needs the URL for explicit Open.
-    commands_migration = one(service_pod["initContainers"])
+    gateway_pod = resource("Deployment", runner_gateway.NAME)["spec"]["template"]["spec"]
+    assert gateway_pod["serviceAccountName"] == runner_gateway.NAME
+    # The migration blocks startup; the gateway also needs the URL for explicit Open.
+    commands_migration = one(gateway_pod["initContainers"])
     assert commands_migration["env"] == [
         {
             "name": "AGENTPLANE_SANDBOX_SERVICE_COMMANDS_DATABASE_URL",
             "valueFrom": {"secretKeyRef": {"name": "postgres-sandbox-commands", "key": "uri"}},
         }
     ]
-    service_container = one(item for item in service_pod["containers"] if item["name"] == "sandbox-service")
-    assert commands_migration["env"][0] in service_container["env"]
-    # History belongs to the History Service: only it holds the history database's credential.
+    gateway_container = one(item for item in gateway_pod["containers"] if item["name"] == "runner-gateway")
+    assert commands_migration["env"][0]["valueFrom"] in [item.get("valueFrom") for item in gateway_container["env"]]
+    # History belongs to the History Service, and command admission to the gateway: the Sandbox Service holds
+    # no database credential.
     history_secret = {"secretKeyRef": {"name": "postgres-sandbox-service", "key": "uri"}}
+    assert "initContainers" not in service_pod
+    assert not any("valueFrom" in item for container in service_pod["containers"] for item in container.get("env", []))
     assert all(
         item.get("valueFrom") != history_secret
-        for container in [*service_pod["initContainers"], *service_pod["containers"]]
+        for container in [*gateway_pod["initContainers"], *gateway_pod["containers"]]
         for item in container.get("env", [])
     )
     history_pod = resource("Deployment", history_service.NAME)["spec"]["template"]["spec"]
@@ -75,9 +81,10 @@ def test_app_uses_independent_service(namespace: str, agentplane_manifests: dict
     for rule in resource("Role", app.NAME)["rules"]:
         assert set(rule["verbs"]) <= {"get", "list", "watch"}
     backend_config = yaml.safe_load(resource("ConfigMap", f"{sandbox_service.NAME}-config")["data"]["config.yaml"])
-    # The Sandbox Service supplies this platform block to every harness/preset in both environments.
-    platform = backend_config["platform_instructions"]
-    assert platform.count(sandbox_service.KUBERNETES_ADMIN_INSTRUCTIONS) == 1
+    gateway_config = yaml.safe_load(resource("ConfigMap", f"{runner_gateway.NAME}-config")["data"]["config.yaml"])
+    # The Runner Gateway supplies this platform block to every harness/preset in both environments.
+    platform = gateway_config["platform_instructions"]
+    assert platform.count(runner_gateway.KUBERNETES_ADMIN_INSTRUCTIONS) == 1
     assert "kubernetes_admin" in platform
     assert "pods_exec" in platform
     assert f"http://agentplane-actions.{namespace}.svc.cluster.local:8080" in platform
@@ -89,10 +96,27 @@ def test_app_uses_independent_service(namespace: str, agentplane_manifests: dict
         {"namespace": namespace, "name": history_service.NAME},
         {"namespace": namespace, "name": notifications.NAME},
     ]
+    assert gateway_config["caller_accounts"] == backend_config["caller_accounts"]
+    # Only the Sandbox Service may seal a Sandbox, with the token it is configured to send.
+    assert gateway_config["sealer_accounts"] == [{"namespace": namespace, "name": sandbox_service.NAME}]
+    gateway_token = one(volume for volume in service_pod["volumes"] if volume["name"] == "runner-gateway-token")
+    assert (
+        one(gateway_token["projected"]["sources"])["serviceAccountToken"]["audience"]
+        == gateway_config["token_audience"]
+    )
+    gateway_mount = one(
+        mount
+        for container in service_pod["containers"]
+        for mount in container["volumeMounts"]
+        if mount["name"] == "runner-gateway-token"
+    )
+    assert backend_config["gateway_token_file"] == f"{gateway_mount['mountPath']}/token"
+    gateway = runner_gateway.service(namespace)
+    assert backend_config["gateway_target"] == f"{gateway.fqdn}:{gateway.pod_port}"
     runner_policy = resource("CiliumNetworkPolicy", "agentplane-runner")["spec"]
     assert runner_policy["ingress"] == [
         {
-            "fromEndpoints": [{"matchLabels": target.pods.cilium}],
+            "fromEndpoints": [{"matchLabels": gateway.pods.cilium}],
             "toPorts": [{"ports": [{"port": "7000", "protocol": "TCP"}]}],
         }
     ]

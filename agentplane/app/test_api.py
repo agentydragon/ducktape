@@ -760,7 +760,7 @@ async def unanswered_command_service(
     server.add_generic_rpc_handlers(
         [
             grpc.method_handlers_generic_handler(
-                "ducktape.agentplane.runner_gateway.v1.RunnerGateway",
+                "agentplane.proto.runner_gateway.RunnerGateway",
                 {
                     "SubmitCommand": grpc.unary_unary_rpc_method_handler(
                         submit,

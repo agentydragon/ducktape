@@ -3707,6 +3707,10 @@ spec:
       namespace: agentplane-testing
     - apiVersion: apps/v1
       kind: Deployment
+      name: agentplane-runner-gateway
+      namespace: agentplane-testing
+    - apiVersion: apps/v1
+      kind: Deployment
       name: agentplane-history-service
       namespace: agentplane-testing
     - apiVersion: apps/v1
@@ -3902,6 +3906,10 @@ spec:
     - apiVersion: apps/v1
       kind: Deployment
       name: agentplane-sandbox-service
+      namespace: agentplane-staging
+    - apiVersion: apps/v1
+      kind: Deployment
+      name: agentplane-runner-gateway
       namespace: agentplane-staging
     - apiVersion: apps/v1
       kind: Deployment

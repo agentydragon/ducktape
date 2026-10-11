@@ -69,6 +69,7 @@ from cluster.cdk8s.agentplane import (
     history_service,
     llm_ingress,
     notifications,
+    runner_gateway,
     sandbox_pod,
     sandbox_service,
 )
@@ -305,7 +306,8 @@ class App(Construct):
                 # runner ServiceAccount out of here.
                 sandbox_namespace=namespace,
                 sandbox_service_target=f"{sandbox_service.service(namespace).fqdn}:{sandbox_service.service(namespace).pod_port}",
-                sandbox_service_control_target=sandbox_service.control_target(namespace),
+                runner_gateway_target=runner_gateway.target(namespace),
+                sandbox_service_control_target=runner_gateway.control_target(namespace),
                 history_service_target=f"{history_service.service(namespace).fqdn}:{history_service.service(namespace).pod_port}",
                 notifications_url=f"http://{notifications.service(namespace).fqdn}:{notifications.service(namespace).port.number}",
                 notifications_token_file="/var/run/secrets/agentplane-notifications/token",
@@ -449,18 +451,18 @@ class App(Construct):
         runner = Pods(namespace=namespace, labels=tuple(_RUNNER_LABELS.items()))
         dns_egress = cilium.dns_egress()
         # Runner Pods reach DNS and the egress proxy's listener, which the sidecar
-        # relays to; only Sandbox Service can connect to the control port.
+        # relays to; only the Runner Gateway can connect to the control port.
         # TODO: replace network-only runner authentication with authenticated transport.
         NetworkPolicy(
             self,
             "networkpolicy-runner",
             metadata=ApiObjectMetadata(name="agentplane-runner", namespace=namespace),
             endpoint_selector=runner.selector,
-            ingress=[sandbox_service.service(namespace).pods.admit(sandbox_service.RUNNER_PORT)],
+            ingress=[runner_gateway.service(namespace).pods.admit(runner_gateway.RUNNER_PORT)],
             egress=[dns_egress, egress.proxy(namespace).egress()],
         )
         # The app takes browser traffic straight from the gateway and reaches DNS, the
-        # API server, the OIDC provider, Sandbox Service, History Service, the egress
+        # API server, the OIDC provider, Sandbox Service, Runner Gateway, History Service, the egress
         # proxy's admin port, the Action Service, and the trajectory store.
         NetworkPolicy(
             self,
@@ -473,6 +475,7 @@ class App(Construct):
                 EgressRule.to_entities(Entity.KUBE_APISERVER),
                 *self._oidc_egress_rules(),
                 sandbox_service.service(namespace).egress(),
+                runner_gateway.service(namespace).egress(),
                 history_service.service(namespace).egress(),
                 notifications.service(namespace).egress(),
                 egress.admin(namespace).egress(),
@@ -543,7 +546,7 @@ class RunnerTemplate(Construct):
             "--state-dir",
             _STATE_DIR,
             "--listen",
-            f"0.0.0.0:{sandbox_service.RUNNER_PORT}",
+            f"0.0.0.0:{runner_gateway.RUNNER_PORT}",
             # Where the runner image (agentplane/runner/image.nix) links nixpkgs' harnesses.
             "--claude-binary",
             "/bin/claude",
@@ -567,7 +570,7 @@ class RunnerTemplate(Construct):
             working_dir=_STATE_DIR,
             ports=[
                 SandboxTemplateSpecPodTemplateSpecContainersPorts(
-                    name="runner", container_port=sandbox_service.RUNNER_PORT
+                    name="runner", container_port=runner_gateway.RUNNER_PORT
                 )
             ],
             security_context=sandbox_pod.workload_security_context(),

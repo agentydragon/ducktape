@@ -39,9 +39,11 @@ follows it; code that differs converges on it.
 
 - Callers send `authorization: Bearer <token>` metadata, reading the projected token file for every
   call: projected tokens rotate.
-- A servicer admits its caller first thing in each RPC through the one shared caller check in
-  `agentplane/workload_auth` (bearer parsing, TokenReview, ServiceAccount allowlist). Services never
-  carry their own copy of the bearer parsing.
+- A servicer admits its caller first thing in each RPC through `agentplane/workload_auth/grpc_caller`:
+  `authenticate` checks the caller's account against an allowlist, and `resolve_caller` returns the
+  whole principal for a door that authorizes on more than the account (the runner ingress binds a
+  Session to its writer; runner control resolves the Sandbox Pod). Services never carry their own
+  copy of the bearer parsing.
 
 ## Errors
 

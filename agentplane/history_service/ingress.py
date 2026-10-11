@@ -26,7 +26,7 @@ from agentplane.history_service.storage.store import (
 )
 from agentplane.proto import event_log_pb2, runner_ingress_pb2, runner_ingress_pb2_grpc, runner_pb2
 from agentplane.sandbox_service.protocol_pb2 import Sealed
-from agentplane.workload_auth.bearer import parse_bearer, sole_header
+from agentplane.workload_auth.grpc_caller import resolve_caller
 from agentplane.workload_auth.principal import WorkloadPrincipalRejectedError, WorkloadPrincipalResolver
 
 # gazelle:include_dep @pypi//protobuf
@@ -231,12 +231,7 @@ class RunnerIngressService(runner_ingress_pb2_grpc.RunnerIngressServicer):
                     raise RefusedError(grpc.StatusCode.INVALID_ARGUMENT, "unexpected frame")
 
     async def _authenticate(self, context: grpc.aio.ServicerContext) -> Writer:
-        values = [value for key, value in (context.invocation_metadata() or ()) if key == "authorization"]
-        value = sole_header([value for value in values if isinstance(value, str)])
-        token = parse_bearer(value) if value is not None else None
-        if token is None:
-            raise WorkloadPrincipalRejectedError("invalid bearer metadata")
-        principal = await self.resources.principals.resolve_workload(token)
+        principal = await resolve_caller(self.resources.principals, context)
         return Writer(
             namespace=principal.namespace, name=principal.service_account_name, uid=principal.service_account_uid
         )

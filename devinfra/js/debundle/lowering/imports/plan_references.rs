@@ -1,12 +1,11 @@
 //! Plan what each lowered module needs to import from sibling modules,
 //! the source chunk, or the residual entry. `plan_module_reference_needs`
 //! walks the post-naturalize body facts and resolves each referenced Id
-//! to its provider. Includes the PR #1633 reverse-lookup bridge that
-//! pairs a body Id with the heuristic-rename pre-sym to find the
-//! runtime-import entry.
+//! to its provider through the naturalizer's original-name projection.
 
 use crate::body_facts::ModuleBodyFacts;
 use crate::imports::{RuntimeImportFacts, RuntimeImportInfo};
+use crate::naturalize::NaturalizedRenames;
 use analysis::{BindingKind, LogicalModuleIndex, ModuleId};
 use anyhow::{Context, Result};
 use artifact::{ArtifactIndexes, ArtifactSourceImportResolver, ChunkBundle};
@@ -154,16 +153,11 @@ pub(crate) fn collect_imported_reexports_by_module(
     by_module
 }
 
-/// Runtime-import lookup that bridges post-rename body syms back to the
-/// pre-rename keys of the source chunk's import map by consulting the
-/// inverse projection of the module's sealed rename map.
-pub(crate) struct RuntimeImportLookup<'a> {
-    pub(crate) imports: &'a RuntimeImportFacts,
-    /// Post-rename sym → original sym: the inverse of the module's
-    /// sealed merged rename map. Injective by seal's target-collision
-    /// rules (explicit duplicates are hard errors; heuristic target
-    /// collisions drop both sides), so the inversion is lossless.
-    pub(crate) original_by_renamed: BTreeMap<String, String>,
+/// Maps emitted identifiers back to source bindings and retains source
+/// import facts for references that originated outside the chunk.
+pub(crate) struct SourceReferenceLookup<'a, 'b> {
+    pub(crate) runtime_imports: &'a RuntimeImportFacts,
+    pub(crate) renames: &'b NaturalizedRenames,
 }
 
 pub(crate) fn plan_module_reference_needs<'a>(
@@ -173,30 +167,23 @@ pub(crate) fn plan_module_reference_needs<'a>(
     declaration_by_name: &HashMap<Id, Vec<usize>>,
     binding_assignment: &HashMap<Id, usize>,
     entry_exports_by_original_local: &HashMap<Id, EntryExport>,
-    runtime_imports: RuntimeImportLookup<'a>,
+    lookup: SourceReferenceLookup<'a, '_>,
 ) -> ModuleReferenceNeeds<'a> {
     let mut needs = ModuleReferenceNeeds::default();
     for body_id in &body_facts.referenced_idents {
-        // body_id is the hygiene-aware (sym, ctxt) of one referenced ident.
-        // Some spec-derived lookup tables are still String-keyed by sym
-        // (`declaration_by_name`, `binding_assignment`,
-        // `entry_exports_by_original_local`), while owner lookup and
-        // `runtime_imports.imports` are Id-keyed.
+        // Naturalization mutates the identifier's sym, preserving its ctxt.
+        // Source facts and owner assignments still use the pre-rename Id;
+        // import locals in the emitted module use body_id.
+        let original_id = lookup.renames.original_id(body_id);
         let name_str = body_id.0.as_ref();
         if let Some(ModuleId(LogicalModuleIndex(provider_index))) =
-            factorization.analysis.owner_of(body_id)
+            factorization.analysis.owner_of(&original_id)
         {
-            // provider.rename_map is now Id-keyed; reconstruct the
-            // provider's Id from the body ident's sym + ctxt. Within
-            // a chunk all top-level bindings share the chunk's
-            // top_level_mark, so body_id.1 matches the provider's
-            // binding ctxt.
-            let provider_key: Id = (body_id.0.clone(), body_id.1);
             if provider_index != module_index
                 && let Some(provider) = factorization
                     .analysis
                     .logical_module(LogicalModuleIndex(provider_index))
-                && let Some(exported_name) = provider.rename_map.get(&provider_key)
+                && let Some(exported_name) = provider.rename_map.get(&original_id)
             {
                 needs
                     .cross_module_imports_by_provider
@@ -208,10 +195,10 @@ pub(crate) fn plan_module_reference_needs<'a>(
         }
 
         if !body_facts.provided_locals.contains(body_id)
-            && !binding_assignment.contains_key(body_id)
-            && declaration_by_name.contains_key(body_id)
+            && !binding_assignment.contains_key(&original_id)
+            && declaration_by_name.contains_key(&original_id)
         {
-            if let Some(entry_export) = entry_exports_by_original_local.get(body_id) {
+            if let Some(entry_export) = entry_exports_by_original_local.get(&original_id) {
                 needs
                     .residual_entry_imports
                     .insert(name_str.to_string(), entry_export.clone());
@@ -224,27 +211,7 @@ pub(crate) fn plan_module_reference_needs<'a>(
         if body_facts.imported_locals.contains(body_id) {
             continue;
         }
-        // Direct hit when the body still uses the original local. Fall
-        // back to the sealed map's inverse projection when a naturalizer
-        // pass renamed the binding (e.g. `sA` → `propKeyA` from a
-        // return-object alias collapse): the body now references
-        // `(propKeyA, ctxt=X)`, but the source chunk's import map is
-        // keyed by `(sA, ctxt=X)`. The recovered `RuntimeImportInfo`
-        // keeps `imported = "sA"`, so emit produces
-        // `import { sA as propKeyA } from "<src>"` via
-        // `runtime_reimport_specifier`'s local-vs-imported branch. The
-        // naturalizer's in-place sym mutation preserves `ctxt`, so the
-        // pre-rename Id is the inverse-mapped sym paired with the body
-        // Id's own ctxt.
-        let info = runtime_imports.imports.imports.get(body_id).or_else(|| {
-            runtime_imports
-                .original_by_renamed
-                .get(name_str)
-                .and_then(|pre| {
-                    let pre_id: Id = (pre.as_str().into(), body_id.1);
-                    runtime_imports.imports.imports.get(&pre_id)
-                })
-        });
+        let info = lookup.runtime_imports.imports.get(&original_id);
         if let Some(info) = info {
             needs.runtime_reimports.insert(body_id.clone(), info);
         }

@@ -14,11 +14,8 @@ from google.protobuf.empty_pb2 import Empty
 from google.protobuf.message import Message
 
 from agentplane.grpc_options import grpc_channel_option_kvps
-from agentplane.proto import command_pb2, event_log_pb2, runner_pb2
+from agentplane.proto import command_pb2, event_log_pb2, runner_gateway_pb2_grpc, runner_pb2
 from agentplane.runner.errors import RunnerError, StreamClosedError
-
-# Aliased: `protocol_pb2_grpc` is the Sandbox Service's stubs.
-from agentplane.runner_gateway import protocol_pb2_grpc as gateway_pb2_grpc
 from agentplane.sandbox_service import protocol_pb2, protocol_pb2_grpc, wire
 from agentplane.sandbox_service.models import SandboxNotFoundError
 from agentplane.sandbox_service.protocol_pb2 import CreateSandboxRequest, Sandbox, SandboxDestination
@@ -131,7 +128,7 @@ class SandboxServiceClient:
         self._channel: grpc.aio.Channel | None = None
         self._stub: protocol_pb2_grpc.SandboxServiceAsyncStub | None = None
         self._gateway_channel: grpc.aio.Channel | None = None
-        self._gateway_stub: gateway_pb2_grpc.RunnerGatewayAsyncStub | None = None
+        self._gateway_stub: runner_gateway_pb2_grpc.RunnerGatewayAsyncStub | None = None
 
     def dial(self, target: str) -> grpc.aio.Channel:
         # No retry service config: uncertain mutations need domain-specific reconciliation.
@@ -152,10 +149,10 @@ class SandboxServiceClient:
         return self._stub
 
     @property
-    def gateway(self) -> gateway_pb2_grpc.RunnerGatewayAsyncStub:
+    def gateway(self) -> runner_gateway_pb2_grpc.RunnerGatewayAsyncStub:
         if self._gateway_stub is None:
             self._gateway_channel = self.dial(self.gateway_target)
-            self._gateway_stub = gateway_pb2_grpc.RunnerGatewayStub(self._gateway_channel)
+            self._gateway_stub = runner_gateway_pb2_grpc.RunnerGatewayStub(self._gateway_channel)
         return self._gateway_stub
 
     async def metadata(self) -> tuple[tuple[str, str], ...]:
@@ -174,7 +171,7 @@ class SandboxServiceClient:
     async def held_unary[T](
         self,
         destination: SandboxDestination,
-        call: Callable[[gateway_pb2_grpc.RunnerGatewayAsyncStub], Callable[..., Awaitable[T]]],
+        call: Callable[[runner_gateway_pb2_grpc.RunnerGatewayAsyncStub], Callable[..., Awaitable[T]]],
         request: Message,
         *,
         timeout_s: float | None = None,
@@ -187,7 +184,9 @@ class SandboxServiceClient:
                 self.control_target.format(sandbox=destination.sandbox, namespace=destination.owner.namespace)
             )
             try:
-                return await self.unary(call(gateway_pb2_grpc.RunnerGatewayStub(channel)), request, timeout_s=timeout_s)
+                return await self.unary(
+                    call(runner_gateway_pb2_grpc.RunnerGatewayStub(channel)), request, timeout_s=timeout_s
+                )
             except ServiceError as error:
                 if error.code != grpc.StatusCode.UNAVAILABLE:
                     raise
