@@ -38,15 +38,14 @@ def _preview() -> dict[str, Any]:
     }
 
 
-class Tokens:
-    async def token(self) -> str:
-        return "test-only-token"
+async def token() -> str:
+    return "test-only-token"
 
 
 @asynccontextmanager
 async def _client(downstream: httpx.MockTransport) -> AsyncIterator[OperatorActionServiceClient]:
     async with httpx.AsyncClient(transport=downstream, base_url="https://actions.test") as http:
-        yield OperatorActionServiceClient(http, Tokens())
+        yield OperatorActionServiceClient(http, token)
 
 
 async def _stored(row: SessionRow) -> dict[str, Any]:

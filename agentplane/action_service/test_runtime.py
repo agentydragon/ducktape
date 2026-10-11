@@ -36,7 +36,6 @@ from agentplane.action_service.models import (
     ActionState,
     CallerPrincipal,
     DecisionInput,
-    ExecutionLease,
     ExecutionRequest,
     ExecutionState,
     OperatorPrincipal,
@@ -46,7 +45,7 @@ from agentplane.action_service.policies.resources import BINDINGS_PLURAL, POLICY
 from agentplane.action_service.policy_evaluation import PROVIDER_NAME
 from agentplane.action_service.policy_informer import PolicyIndex
 from agentplane.action_service.runtime import running_executor
-from agentplane.action_service.service import ActionService, UnsupportedActionError
+from agentplane.action_service.service import ActionService, ExecutionLease, UnsupportedActionError
 from agentplane.action_service.settings import Settings
 from agentplane.action_service.testing.callers import in_sync_index
 from agentplane.action_service.testing.lifecycle import wait_available

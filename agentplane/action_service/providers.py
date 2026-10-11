@@ -1,14 +1,12 @@
-"""The DecisionProvider seam: what a provider is given at admission, and what it answers with."""
+"""What a DecisionProvider is given at admission."""
 
 from __future__ import annotations
 
-from typing import Protocol
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, JsonValue
 
 from agentplane.action_service.catalog import ActionIdentity
-from agentplane.action_service.models import ProviderOutcome
 from agentplane.action_service.policies.resources import ActionPolicyBinding, ActionPolicySet
 from agentplane.subjects import ServiceAccountRef
 
@@ -38,12 +36,3 @@ class DecisionContext(BaseModel):
     bindings: tuple[ResolvedBinding, ...] = Field(
         description="Empty while the informer's copy is not in sync, and for a caller nothing names: human-only."
     )
-
-
-class DecisionProvider(Protocol):
-    """A synchronous non-human policy adapter; its outcome is authoritative within the provider."""
-
-    @property
-    def name(self) -> str: ...
-
-    async def decide(self, context: DecisionContext) -> ProviderOutcome: ...

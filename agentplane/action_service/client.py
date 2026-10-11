@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
-from typing import Protocol, cast
+from typing import cast
 from uuid import UUID
 
 import httpx
@@ -30,19 +30,16 @@ from agentplane.action_service.policy_view import SubjectActionPolicyView
 from agentplane.subjects import ServiceAccountRef
 
 
-class AccessTokenProvider(Protocol):
-    async def token(self) -> str: ...
-
-
 class OperatorActionServiceClient:
     """BFF-facing client; its authenticator and paths are distinct from Sandbox workload auth."""
 
-    def __init__(self, http: httpx.AsyncClient, tokens: AccessTokenProvider) -> None:
+    def __init__(self, http: httpx.AsyncClient, token: Callable[[], Awaitable[str]]) -> None:
+        """`token` is awaited before each request, for the bearer that request carries."""
         self._http = http
-        self._tokens = tokens
+        self._token = token
 
     async def _request(self, method: str, url: str, **kwargs) -> httpx.Response:
-        token = await self._tokens.token()
+        token = await self._token()
         headers = kwargs.pop("headers", {})
         headers["Authorization"] = f"Bearer {token}"
         response = await self._http.request(method, url, headers=headers, **kwargs)
@@ -147,7 +144,7 @@ class OperatorActionServiceClient:
         self, path: str, *, params: dict[str, str] | None = None
     ) -> AsyncIterator[AsyncIterator[bytes]]:
         """Operator SSE open/check/close, with a fresh exchanged token for each open."""
-        token = await self._tokens.token()
+        token = await self._token()
         request = self._http.build_request("GET", path, params=params, headers={"Authorization": f"Bearer {token}"})
         response = await self._http.send(request, stream=True)
         try:

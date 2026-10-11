@@ -1052,7 +1052,7 @@ flowchart TD
         KUBEVIRT_GUEST_CONTROL[Candidate: KubeVirt guest dials out]
         RUNNER_CORE_SPLIT[Blocked: runner core out of the inbound servicer]
         LLM_INGRESS_MODEL_CONFIG_CONTRACT[Candidate: structural absent model config]
-        ACTION_PROTOCOLS_CONCRETE[Candidate: concrete types for Action protocols]
+        ACTION_PROTOCOLS_CONCRETE[Candidate: concrete external-grant authority]
         CDK8S_SERVICE_CONSTRUCT[Candidate: one cdk8s service construct]
         CDK8S_RUNNER_ENDPOINT_HELPER[Candidate: one runner-facing endpoint helper]
         GRPC_CHANNEL_OPTIONS_CONSTANT[Candidate: one gRPC channel options constant]
@@ -1187,11 +1187,11 @@ lost-stream error and backoff, `IngressPusher` stops borrowing `ControlTiming`, 
 `runner/model_config.py` string-matches. Carry the absent state structurally (204, or 200 with a
 nullable body).
 
-### `ACTION_PROTOCOLS_CONCRETE` — concrete types for Action protocols
+### `ACTION_PROTOCOLS_CONCRETE` — concrete external-grant authority
 
-**Candidate.** `AccessTokenProvider`, `ExternalGrantAuthority` (also a footgun `| None = None`),
-`DecisionProvider` and `ExecutionLease` each have one production implementation, and
-`OperatorAuthenticator` is a union of two. Name the concrete types or unions.
+**Candidate.** `ActionStore`'s `ExternalGrantAuthority` Protocol (also a footgun `| None = None`) has
+one production implementation, `ConnectionAuthority`. `db.py` cannot name it, because `connections.py`
+imports `db.py`'s rows: `ActionStore` first moves out of `db.py`, then takes a `ConnectionAuthority`.
 
 ### `CDK8S_SERVICE_CONSTRUCT` — one cdk8s service construct
 

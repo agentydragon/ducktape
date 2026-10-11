@@ -78,9 +78,8 @@ class StubActions(FederatedOperatorActions):
         return self.client
 
 
-class Tokens:
-    async def token(self) -> str:
-        return "test-token"
+async def token() -> str:
+    return "test-token"
 
 
 class OpenStream(httpx.AsyncByteStream):
@@ -176,7 +175,7 @@ async def app(
     async with httpx.AsyncClient(
         base_url="https://test-actions.invalid", transport=httpx.MockTransport(answer)
     ) as http:
-        app.state.operator_actions = StubActions(OperatorActionServiceClient(http, Tokens()))
+        app.state.operator_actions = StubActions(OperatorActionServiceClient(http, token))
         yield app
         # Nothing a failed test left parked outlives it.
         gate.open()

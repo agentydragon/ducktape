@@ -50,7 +50,6 @@ from agentplane.action_service.models import (
     ActionState,
     CallerPrincipal,
     DecisionInput,
-    ExecutionLease,
     ExecutionRequest,
     ExecutionState,
     OperatorPrincipal,
@@ -58,7 +57,7 @@ from agentplane.action_service.models import (
 )
 from agentplane.action_service.oauth_settings import OAuthSettings
 from agentplane.action_service.runtime import running_executor
-from agentplane.action_service.service import ActionService, ExecutionOutcomeUnknownError
+from agentplane.action_service.service import ActionService, ExecutionLease, ExecutionOutcomeUnknownError
 from agentplane.action_service.settings import Settings
 from agentplane.action_service.testing.lifecycle import wait_available, wait_retry
 from agentplane.subjects import ServiceAccountRef

@@ -16,6 +16,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
+from abc import ABC, abstractmethod
 from collections.abc import Callable, Coroutine, Mapping, Sequence
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -34,10 +35,9 @@ from agentplane.action_service.models import (
     CancellationResult,
     DecisionInput,
     ExecutionClaim,
-    ExecutionLease,
+    ExecutionRequest,
     ExecutionResult,
     ExecutionState,
-    Executor,
     ExternalGrantProvenance,
     OperatorPrincipal,
     Principal,
@@ -47,7 +47,7 @@ from agentplane.action_service.models import (
     ReadPrincipal,
     UnknownOutcomeReason,
 )
-from agentplane.action_service.policy_evaluation import auto_approvable, resolve_bindings
+from agentplane.action_service.policy_evaluation import PolicySetDecisionProvider, auto_approvable, resolve_bindings
 from agentplane.action_service.policy_informer import PolicyIndex
 from agentplane.action_service.policy_view import (
     CallerActionPolicyView,
@@ -55,7 +55,7 @@ from agentplane.action_service.policy_view import (
     caller_view,
     subject_view,
 )
-from agentplane.action_service.providers import DecisionContext, DecisionProvider
+from agentplane.action_service.providers import DecisionContext
 from agentplane.kubernetes_watch import Freshness
 from agentplane.subjects import ServiceAccountRef
 
@@ -107,8 +107,11 @@ def _decisive(votes: Sequence[ProviderVote]) -> ProviderVote | None:
     return None
 
 
-class _StoreBackedLease:
-    """The seam a future out-of-process worker would present over the wire, called in-process for v0."""
+class ExecutionLease:
+    """Handle an executor holds for the one Execution it is currently attempting.
+
+    The seam a future out-of-process worker would present over the wire, called in-process for v0.
+    """
 
     def __init__(self, store: ActionStore, claim: ExecutionClaim, lease_duration: timedelta) -> None:
         self._store = store
@@ -117,15 +120,44 @@ class _StoreBackedLease:
 
     @property
     def renewal_interval(self) -> timedelta:
+        """Maximum interval and RPC timeout for renewals, each below half the lease window."""
         return self._lease_duration / 3
 
     async def heartbeat(self) -> bool:
+        """Renew the lease. False means it is no longer recognized as the owner —
+        the external effect may still be in flight and must not be retried."""
         return await self._store.heartbeat_execution(
             self._claim.request_id,
             self._claim.executor_id,
             self._claim.lease_token,
             lease_duration=self._lease_duration,
         )
+
+
+class Executor(ABC):
+    """One backend the service dispatches Executions to.
+
+    A base class and not a Protocol because the implementers are nameable and few, and because
+    winding down is the rarer half: inheriting supplies it, so a backend holding nothing says so by
+    not overriding rather than by restating the no-op.
+    """
+
+    @abstractmethod
+    async def execute(self, request: ExecutionRequest, lease: ExecutionLease) -> ExecutionResult: ...
+
+    def begin_drain(self) -> None:
+        """Stop offering this backend, without waiting for anything.
+
+        Deliberately synchronous and deliberately only the first half: shutdown marks every
+        executor unavailable in one pass and awaits their teardown afterwards, so that the second
+        backend stops being advertised at the same moment as the first rather than after it has
+        finished closing. Awaiting the rest is `close`'s, where a backend has one.
+
+        Nothing by default, which is what a backend owning no connection and no work of its own
+        has to do: what stops new dispatches reaching it is the service's own drain. The explicit
+        return says the empty body is the implementation and not a missing `abstractmethod`.
+        """
+        return
 
 
 async def renew_lease(lease: ExecutionLease) -> None:
@@ -178,7 +210,7 @@ class ActionService:
         catalog: ActionCatalog,
         executors: Mapping[str, Executor],
         *,
-        providers: Sequence[DecisionProvider] = (),
+        providers: Sequence[PolicySetDecisionProvider] = (),
         policies: PolicyIndex | None = None,
         clock: Callable[[], datetime] = lambda: datetime.now(UTC),
         provider_timeout_seconds: float = DEFAULT_PROVIDER_TIMEOUT_SECONDS,
@@ -360,7 +392,7 @@ class ActionService:
         )
         return list(await asyncio.gather(*(self._ask(provider, context) for provider in self._providers)))
 
-    async def _ask(self, provider: DecisionProvider, context: DecisionContext) -> ProviderVote:
+    async def _ask(self, provider: PolicySetDecisionProvider, context: DecisionContext) -> ProviderVote:
         try:
             outcome = await asyncio.wait_for(provider.decide(context), timeout=self._provider_timeout_seconds)
         except TimeoutError:
@@ -515,7 +547,7 @@ class ActionService:
             raise
 
     async def _execute_claim(self, claim: ExecutionClaim) -> None:
-        lease = _StoreBackedLease(self._store, claim, self._lease_duration)
+        lease = ExecutionLease(self._store, claim, self._lease_duration)
         try:
             request = await self._store.mark_running(claim.request_id)
             result = await self._resolve_executor(request.action).execute(request, lease)
@@ -544,7 +576,7 @@ class ActionService:
             renewal.cancel()
             await asyncio.gather(completion, renewal, return_exceptions=True)
 
-    async def _renew_completion_lease(self, lease: _StoreBackedLease) -> None:
+    async def _renew_completion_lease(self, lease: ExecutionLease) -> None:
         # A known result remains worth delivering even when renewal fails: finish_execution
         # authenticates the original claim and supports late reconciliation, not replay.
         while True:

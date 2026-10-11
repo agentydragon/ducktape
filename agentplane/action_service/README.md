@@ -489,9 +489,9 @@ ServiceAccount that Pod runs as, derived only from what the bearer proved. Ident
 never authorization. Thread and Agent fields remain untrusted until an authoritative binding exists;
 workload authentication performs no Thread or Agent lookup.
 
-Operator/BFF calls use the separate `/v1/operator/...` surface and a separate replaceable
-`OperatorAuthenticator`: the OIDC adapter below when `operator_oidc` is set, otherwise
-`DisabledOperatorAuthenticator`, which refuses every operator bearer.
+Operator/BFF calls use the separate `/v1/operator/...` surface and their own `OperatorAuthenticator`:
+the OIDC adapter below when `operator_oidc` is set, otherwise `DisabledOperatorAuthenticator`, which
+refuses every operator bearer.
 
 Migrations run separately through `:migrate`; the server verifies the migrated schema and never
 creates tables at startup. `:image` and `:migration_image` are separate OCI targets. Each deployed

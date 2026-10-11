@@ -47,7 +47,6 @@ from agentplane.action_service.models import (
     DecisionInput,
     ExecutionResult,
     ExecutionState,
-    Executor,
     OperatorPrincipal,
     Verdict,
     service_account_key,
@@ -57,7 +56,7 @@ from agentplane.action_service.policy_informer import PolicyIndex
 from agentplane.action_service.policy_view import CallerActionPolicyView
 from agentplane.action_service.sandbox.binding import SandboxExecutorBinding
 from agentplane.action_service.sandbox.models import ExecResult
-from agentplane.action_service.service import ActionService
+from agentplane.action_service.service import ActionService, Executor
 from agentplane.action_service.testing.callers import in_sync_index
 from agentplane.action_service.testing.credentials import WORKLOAD_CREDENTIAL_PLACEHOLDER
 from agentplane.action_service.testing.fixtures import ScriptedExecutor, lifespan_in_own_task

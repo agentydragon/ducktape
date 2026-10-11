@@ -2,15 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Protocol
-
-from agentplane.action_service.models import OperatorPrincipal
-
-
-class OperatorAuthenticator(Protocol):
-    """Replaceable BFF/operator boundary; deliberately separate from workload auth."""
-
-    async def authenticate(self, token: str) -> OperatorPrincipal | None: ...
+from agentplane.action_service.operator_oidc import OidcOperatorAuthenticator
 
 
 class DisabledOperatorAuthenticator:
@@ -18,3 +10,7 @@ class DisabledOperatorAuthenticator:
 
     async def authenticate(self, token: str) -> None:
         del token
+
+
+# The BFF/operator boundary; deliberately separate from workload auth.
+OperatorAuthenticator = OidcOperatorAuthenticator | DisabledOperatorAuthenticator

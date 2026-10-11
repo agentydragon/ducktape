@@ -12,6 +12,7 @@ from __future__ import annotations
 import logging
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
+from functools import partial
 
 import httpx
 import httpx2
@@ -88,7 +89,7 @@ class FederatedOperatorActions:
         self._target = resolver_for(config.target)
 
     def for_request(self, request: Request) -> OperatorActionServiceClient:
-        return OperatorActionServiceClient(self._http, _SessionToken(self, operator_session_row(request)))
+        return OperatorActionServiceClient(self._http, partial(self.exchange, operator_session_row(request)))
 
     async def exchange(self, row: SessionRow) -> str:
         """A target token for the operator whose login `row` holds, renewing the login token first if
@@ -200,15 +201,6 @@ class FederatedOperatorActions:
             expires_at=response.expires_at,
             refresh_token=response.refresh_token or refresh_token,
         )
-
-
-class _SessionToken:
-    def __init__(self, provider: FederatedOperatorActions, row: SessionRow) -> None:
-        self._provider = provider
-        self._row = row
-
-    async def token(self) -> str:
-        return await self._provider.exchange(self._row)
 
 
 def operator_actions(request: Request, caller: CallerIdentity) -> OperatorActionServiceClient:

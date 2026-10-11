@@ -24,17 +24,15 @@ from agentplane.action_service.models import (
     CallerPrincipal,
     DecisionInput,
     ExecutionClaim,
-    ExecutionLease,
     ExecutionRequest,
     ExecutionResult,
     ExecutionState,
-    Executor,
     OperatorPrincipal,
     ReconciliationSource,
     UnknownOutcomeReason,
     Verdict,
 )
-from agentplane.action_service.service import ActionService, ServiceDrainingError
+from agentplane.action_service.service import ActionService, ExecutionLease, Executor, ServiceDrainingError
 from agentplane.subjects import ServiceAccountRef
 
 CALLER = CallerPrincipal(account=ServiceAccountRef(namespace="agentplane-test", name="test-workload-a"))

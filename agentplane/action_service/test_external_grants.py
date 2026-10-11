@@ -290,7 +290,7 @@ async def test_service_preserves_human_approval_and_canonical_external_provenanc
     """Providers see an external submission as its ServiceAccount caller; the provenance rides
     through to the executor untouched."""
 
-    class RecordingProvider:
+    class RecordingProvider(PolicySetDecisionProvider):
         name = "recording-provider"
 
         def __init__(self) -> None:
