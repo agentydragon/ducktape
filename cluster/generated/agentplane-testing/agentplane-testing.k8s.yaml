@@ -2600,7 +2600,6 @@ data:
       grpc_channel_options:
         grpc.max_receive_message_length: 33554432
     ingester:
-      enabled: true
       settle_deltas: true
     fold_shadow: true
 immutable: false

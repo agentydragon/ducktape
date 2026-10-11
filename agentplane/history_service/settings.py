@@ -46,9 +46,6 @@ class SandboxServiceSettings(BaseModel):
 
 class IngesterSettings(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    # CLEANUP(added 2026-10-11): delete once an image with this default is deployed and its manifest
-    #   no longer sets the key (HISTORY_WRITER_SWITCH_RETIRE, agentplane/plans/task_dag.md).
-    enabled: bool = Field(default=True, description="Copy runner journals into the history tables.")
     concurrency: int = Field(
         default=16, ge=1, le=64, description="Sessions followed at once per replica; the rest wait for a free slot."
     )

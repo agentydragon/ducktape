@@ -739,7 +739,6 @@ are irreplaceable, and a node that deletes a column or row stops for the operato
 flowchart TD
     HISTORY_SANDBOX_LOCATOR_DROP[Blocked: drop the Sandbox locator from the history database]
     HISTORY_MIGRATE_IMAGE_RENAME[Blocked: name the history migration image for the History Service]
-    HISTORY_WRITER_SWITCH_RETIRE[Blocked: delete the history_writer switch]
     HISTORY_DATABASE_RENAME[Blocked: rename the sandbox_service database and role]
     SANDBOX_DATABASE_RENAME[Blocked: name the sandbox_commands database for the Sandbox Service]
     APP_ELECTRIC_RETIRE[Blocked: remove Electric's access to the app database]
@@ -770,13 +769,6 @@ Stops for the operator.
 the registry, point the History Service's init container (`cluster/cdk8s/agentplane/history_service.py`)
 and both image-pin Components at it, then delete the old `image_targets.json` entry and its
 `IMAGES` entry in `cluster/cdk8s/forgejo_registry/image_automation.py`.
-
-### `HISTORY_WRITER_SWITCH_RETIRE` — one ingester, no switch
-
-**Blocked on the History Service image that defaults `ingester.enabled` to true.** Then, in one
-change, delete `Environment.history_writer` (its `SANDBOX_SERVICE` value has no ingester behind it
-since the Sandbox Service's was deleted), the manifest's `ingester.enabled` and the field itself. Not
-before: the old image reads a missing key as off and stops copying journals until it rolls.
 
 ### `HISTORY_DATABASE_RENAME` — name the database for its owner
 
@@ -815,7 +807,7 @@ roll.
 
 Dead code, finished gates, compatibility shims and stale names found by the 2026-10-10 PDT audit of
 devel. A gate counts as legacy once its rollout is finished on both testing and staging or nothing
-reads it; mid-rollout gates (read cutover, `history_writer`, delta settlement) stay with their own
+reads it; mid-rollout gates (read cutover, delta settlement) stay with their own
 nodes above. Lane named per node; leftovers of in-flight work belong to the lane already changing
 that code. Upstream-gated tombstones with a verifiable condition in code (`keepingOffset` in
 `thread_store.tsx`, the jsdom pragma in `markdown.test.tsx`) need no node.

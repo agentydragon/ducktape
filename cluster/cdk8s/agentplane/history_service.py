@@ -21,7 +21,7 @@ from agentplane.history_service.settings import CONFIG_FILE_ENV, Settings
 from agentplane.subjects import ServiceAccountRef
 from cluster.cdk8s import cilium, node_scheduling, pod_policy
 from cluster.cdk8s.agentplane import database, notifications
-from cluster.cdk8s.agentplane.environment import Environment, HistoryWriter
+from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.agentplane.migrate_container import migrate_init_container
 from cluster.cdk8s.agentplane.pod_disruption_budget import add_pod_disruption_budget
 from cluster.cdk8s.forgejo_registry.chart import forgejo_images_creds_secret_ref
@@ -91,10 +91,7 @@ class HistoryService(Construct):
                     "token_file": f"{_SANDBOX_SERVICE_TOKEN_DIR}/token",
                     "grpc_channel_options": env.app_config.sandbox_service_grpc_channel_options,
                 },
-                "ingester": {
-                    "enabled": env.history_writer is HistoryWriter.HISTORY_SERVICE,
-                    "settle_deltas": env.settle_deltas,
-                },
+                "ingester": {"settle_deltas": env.settle_deltas},
                 "fold_shadow": env.fold_shadow,
             },
             path="/etc/agentplane-history-service/config.yaml",

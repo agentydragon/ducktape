@@ -6,7 +6,6 @@ written once.
 
 from __future__ import annotations
 
-import enum
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 
@@ -17,11 +16,6 @@ from cilium_crds.io.cilium import CiliumNetworkPolicySpecEgress
 from agentplane.action_service.settings import ActionServiceDeploymentSettings
 from agentplane.app.settings import AppSettingsConfig, ThreadReads
 from agentplane.llm_ingress.models import ModelConfig
-
-
-class HistoryWriter(enum.Enum):
-    SANDBOX_SERVICE = enum.auto()
-    HISTORY_SERVICE = enum.auto()
 
 
 @dataclass(frozen=True)
@@ -127,8 +121,6 @@ class Environment:
     app_config: AppSettingsConfig
     # Options for Sandbox Service's gRPC channel to the runner, authored into its ConfigMap.
     runner_grpc_channel_options: Mapping[str, int | str]
-    # Which service copies runner journals into the history tables; the other's ingester is off.
-    history_writer: HistoryWriter
     # Whether the History Service rebuilds the thread fold from the raw log beside the app's.
     fold_shadow: bool
     # Whether the History Service's writers remove an item's streamed delta entries once its

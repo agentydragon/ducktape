@@ -97,16 +97,11 @@ async def serve(settings: Settings) -> None:
             try:
                 # An ingester failure ends the process rather than leaving reads served with no writer.
                 async with asyncio.TaskGroup() as tasks:
-                    ingesting = (
-                        tasks.create_task(ingest(settings, url), name="history-ingester")
-                        if settings.ingester.enabled
-                        else None
-                    )
+                    ingesting = tasks.create_task(ingest(settings, url), name="history-ingester")
                     await uvicorn.Server(
                         uvicorn.Config(health, host=settings.host, port=settings.health_port, access_log=False)
                     ).serve()
-                    if ingesting is not None:
-                        ingesting.cancel()
+                    ingesting.cancel()
             finally:
                 await server.stop(grace=5)
                 if shadow is not None:

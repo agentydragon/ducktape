@@ -55,7 +55,6 @@ from cluster.cdk8s.agentplane.environment import (
     DbProps,
     EgressProps,
     Environment,
-    HistoryWriter,
     LlmIngressProps,
     ReplicaProfile,
 )
@@ -162,7 +161,6 @@ ENV = Environment(
         history_service_grpc_channel_options=LARGE_EVENT_GRPC_CHANNEL_OPTIONS,
     ),
     runner_grpc_channel_options=LARGE_EVENT_GRPC_CHANNEL_OPTIONS,
-    history_writer=HistoryWriter.HISTORY_SERVICE,
     fold_shadow=True,
     settle_deltas=True,
     thread_reads=ThreadReads.HISTORY_SERVICE,
