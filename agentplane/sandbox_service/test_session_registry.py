@@ -62,11 +62,11 @@ async def test_client_session_id_is_stable_across_retries_and_replicas(
     assert await registry.runner_id(
         session_id, sandbox_namespace="testing", sandbox_name="worker", sandbox_uid=uid
     ) == str(session_id)
-    with pytest.raises(HistoryConflictError, match="different inputs"):
+    with pytest.raises(OpenConflictError, match="different inputs"):
         await reserve(registry, payload=b"different caller request")
-    with pytest.raises(HistoryConflictError, match="could not be reserved"):
+    with pytest.raises(OpenConflictError, match="could not be reserved"):
         await reserve(registry, caller_name="other")
-    with pytest.raises(HistoryConflictError, match="could not be reserved"):
+    with pytest.raises(OpenConflictError, match="could not be reserved"):
         await reserve(registry, sandbox_uid=uuid4())
     assert await reserve(replica) == first  # a refused retry does not change the reservation
 
@@ -82,7 +82,7 @@ async def test_client_session_id_is_stable_across_retries_and_replicas(
         )
         == keyed.session_id
     )
-    with pytest.raises(HistoryConflictError, match="could not be reserved"):
+    with pytest.raises(OpenConflictError, match="could not be reserved"):
         await reserve(registry, requested=uuid4(), key="open-1")
 
 
