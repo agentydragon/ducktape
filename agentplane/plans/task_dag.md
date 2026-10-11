@@ -352,11 +352,12 @@ flowchart LR
 
 **Blocked on the [ingress and control split](#11-runner-ingress-and-control-split).**
 Every Sandbox template starts its runner pushing Events to its ingress and holding its control
-stream, and the canary template goes. The Sandbox Service sets both endpoints at creation once its
-config carries `runner_control` and `runner_ingress`, and no template may then
-pass `--channel-target` itself, so that config and the canary's removal land together, after the
-images that read them are published. Pre-cutover Sandboxes are not upgraded: a clean cutover
-(operator, 2026-10-10 PDT), with the operator stopping their one running Sandbox for it.
+stream. The Sandbox Service sets both endpoints at creation once its config carries
+`runner_control` and `runner_ingress` (staging has `runner_control`), after the images that read
+them are published. `runner_control` and `runner_ingress` then become required settings (the
+`CLEANUP` tombstone in `sandbox_service/settings.py`). Pre-cutover Sandboxes are not upgraded: a
+clean cutover (operator, 2026-10-10 PDT), with the operator stopping their one running Sandbox for
+it.
 
 ### `LEGACY_SANDBOX_RETIRE` — delete pre-cutover Sandboxes
 
@@ -375,9 +376,10 @@ node.
 `Attach` command submission, the pull ingester, the runner control port and its network policy.
 With no inbound route left, the `runner_connection` table goes (a drop migration the operator
 merges) together with the routing check on its operations in `SubmitCommand`, leaving
-`Hello`/`Welcome` capabilities to negotiate only what a connection carries. The legacy caller-chosen runner Session ID
-path goes too, as do the runner SPEC's and Sandbox Service README's notes on the unauthenticated
-inbound listener.
+`Hello`/`Welcome` capabilities to negotiate only what a connection carries. The legacy
+caller-chosen runner Session ID path goes too, as does the client's fallback to the service when a
+Sandbox has no control Service (the `CLEANUP` tombstone in `sandbox_service/client.py`), as do the
+runner SPEC's and Sandbox Service README's notes on the unauthenticated inbound listener.
 
 Also inbound-only, so deleted here: teardown's inbound seal branch and `_stop_legacy` for runner
 images without `Seal`; `SubmitCommandRequest.follow` with the client's `command(after_cursor=...)`
@@ -921,13 +923,32 @@ flowchart TD
     COMMAND_RECORDS_RETIRE[Unscheduled: drop command submission records]
     RUNNER_CONTROL_RENAME[Candidate: name the runner's control endpoint control]
     RUNNER_CONTROL_RENAME --> RUNNER_OUTBOUND_ROLLOUT
+    SESSION_ID_MINT_RETIRE[Blocked: clients always name the Session ID]
+    LOOKUP_SESSION_RETIRE[Candidate: Session status from history, no Open reservation]
     SEAL_ON_INGRESS_ACK --> RUNNER_OUTBOUND_ROLLOUT
     RUNNER_OUTBOUND_ROLLOUT --> LEGACY_SANDBOX_RETIRE
     LEGACY_SANDBOX_RETIRE --> FOLLOW_PATH_RETIRE
     SEAL_ON_INGRESS_ACK --> SEAL_FINALIZER
     AGENTPLANE_SANDBOX_RESOURCE -. to seal a suspended Sandbox on delete .-> SEAL_FINALIZER
     POD_INCARNATION -. if chosen, rewrites .-> SESSION_STATE_VOLUME_DESIGN[State volume design]
+    LEGACY_SANDBOX_RETIRE --> SESSION_ID_MINT_RETIRE
 ```
+
+### `SESSION_ID_MINT_RETIRE` — clients always name the Session ID
+
+**Blocked on the deployed app sending `session_id` on every create, and on legacy Sandbox
+retirement.** `CreateSessionRequest.session_id` becomes required. The Sandbox Service stops
+minting IDs and handing the runner an `r-` locator (the `CLEANUP` tombstones in `grpc_api.py`'s
+`CreateSession` and `session_registry.py`), and the app stops sending the ID again as
+`idempotency_key` for older Sandbox Services.
+
+### `LOOKUP_SESSION_RETIRE` — Session status from history, no Open reservation
+
+**Candidate.** After a reload the browser keeps only the Session ID, so it asks `LookupSession`
+whether the runner started it, and the Sandbox Service keeps an Open reservation (spec frozen per
+key) for a retried create. The History Service's index records which Sessions a runner announced
+on ingress, so the browser reads that instead. `LookupSession`, its journal scan over the inbound
+API, the Open reservation and the Open key go.
 
 ### `SEAL_ON_INGRESS_ACK` — seal waits on the ingress acknowledgement
 
