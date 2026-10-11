@@ -51,14 +51,15 @@ follower, so both paths can write one Session during the cutover.
 
 ## Delta settlement
 
-With `ingester.settle_deltas` set, each `Store.append` batch that completes an item drops that
+Each `Store.append` batch that completes an item drops that
 item's streamed delta entries (native frames and their derived deltas) from `session_event`, in
 the same transaction, when every frame matches an exact versioned template
 (`agentplane/native/delta_templates.py`) and the retained completion holds exactly their
 concatenation. Anything else in the span keeps every entry. The dropped cursors are recorded as a
 `SettledDeltas` with its ranges, and read pages report the settlements that cover or complete in
 them; the fold and the app's raw-history readers treat a settled cursor as absent. The runner
-journal keeps every entry. Off by default; on in testing and staging. Why and what it drops:
+journal keeps every entry. On by default; setting `ingester.settle_deltas` or
+`ingress.settle_deltas` to false keeps every stored entry, for debugging. Why and what it drops:
 [delta settlement ADR](../docs/adr_delta_settlement.md).
 
 `agentplane-history-compact` (`compaction_main.py`) is a one-off Job that settles history stored

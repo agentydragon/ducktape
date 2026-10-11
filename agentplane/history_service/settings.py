@@ -56,9 +56,9 @@ class IngesterSettings(BaseModel):
         description="Delay before following again a Session that ended, failed or is claimed by another replica.",
     )
     settle_deltas: bool = Field(
-        default=False,
+        default=True,
         description="Remove an item's streamed delta entries from stored history once its retained "
-        "completion provably holds their concatenation.",
+        "completion provably holds their concatenation. Turn off to keep every entry for debugging.",
     )
 
 
@@ -77,9 +77,9 @@ class IngressSettings(BaseModel):
         description="The ingress's own listener, so the network fence admits Sandboxes to it and nothing else.",
     )
     settle_deltas: bool = Field(
-        default=False,
+        default=True,
         description="Remove an item's streamed delta entries from stored history once its retained "
-        "completion provably holds their concatenation.",
+        "completion provably holds their concatenation. Turn off to keep every entry for debugging.",
     )
 
 
