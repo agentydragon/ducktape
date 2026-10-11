@@ -59,7 +59,8 @@ the same transaction, when every frame matches an exact versioned template
 (`agentplane/native/delta_templates.py`) and the retained completion holds exactly their
 concatenation. Anything else in the span keeps every entry. The dropped cursors are recorded as a
 `SettledDeltas` with its ranges, and read pages report the settlements that cover or complete in
-them. The runner journal keeps every entry. Off by default.
+them; the fold and the app's raw-history readers treat a settled cursor as absent. The runner
+journal keeps every entry. Off by default; on in testing and staging.
 
 ## Thread fold
 

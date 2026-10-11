@@ -577,7 +577,6 @@ flowchart TD
     APP_PROJECTOR_RETIRE[Candidate: delete app projector code]
     APP_PROJECTION_RETIRE[Blocked: drop app projection tables]
     HISTORY_SERVICE_OWNERSHIP[Capstone: History Service owns log and fold]
-    SESSION_EVENT_RETENTION_ENABLE[Candidate, needs operator go-ahead: enable delta settlement and re-measure]
     SESSION_EVENT_COMPACTION_PLAN[Decision: approve compaction of stored history]
     SESSION_EVENT_COMPACTION[Blocked: settle stored history]
     HISTORY_REPACK[Blocked: return freed space to the volume]
@@ -585,7 +584,6 @@ flowchart TD
     THREAD_READ_POLICY[Scoped archive reads]
     APP_PROJECTOR_RETIRE --> APP_PROJECTION_RETIRE
     APP_PROJECTION_RETIRE --> HISTORY_SERVICE_OWNERSHIP
-    SESSION_EVENT_RETENTION_ENABLE --> SESSION_EVENT_COMPACTION_PLAN
     SESSION_EVENT_COMPACTION_PLAN --> SESSION_EVENT_COMPACTION
     SESSION_EVENT_COMPACTION --> HISTORY_REPACK
     APP_PROJECTION_RETIRE --> HISTORY_REPACK
@@ -610,13 +608,6 @@ leases. The data is derived and rebuildable from the raw log.
 **Blocked on projection retirement.** The History Service is
 the only owner of the raw log and fold; the app is a facade over it. Each service's README states
 what unrelated agents can still do while it is down or rolling.
-
-### `SESSION_EVENT_RETENTION_ENABLE` — turn it on and measure
-
-**Candidate; needs the operator's go-ahead.** Settlement is built behind the
-History Service's `ingester.settle_deltas` ([History Service](../history_service/README.md#delta-settlement)),
-and its fold and the app's raw-history readers treat settled ranges as covered. Enable on testing,
-then staging, and re-measure `session_event` and evidence growth against the 2026-10-10 sample.
 
 ### `SESSION_EVENT_COMPACTION_PLAN` — approve settling stored history
 
