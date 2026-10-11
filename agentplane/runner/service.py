@@ -10,7 +10,7 @@ import os
 from collections.abc import AsyncGenerator, AsyncIterator, Awaitable, Callable
 from contextlib import AsyncExitStack, aclosing, suppress
 from pathlib import Path, PurePosixPath
-from typing import Any
+from typing import Any, override
 
 import grpc
 
@@ -417,7 +417,8 @@ class RunnerService(runner_pb2_grpc.RunnerServicer):
     def __init__(self, runner: Runner) -> None:
         self.runner = runner
 
-    async def Initialize(  # noqa: N802  # gRPC names servicer methods after the RPC
+    @override
+    async def Initialize(
         self, request: runner_pb2.InitializeRequest, context: grpc.aio.ServicerContext
     ) -> AsyncIterator[runner_pb2.InitializationEvent]:
         try:
@@ -449,19 +450,20 @@ class RunnerService(runner_pb2_grpc.RunnerServicer):
                 return
             await log.wait_beyond(cursor)
 
-    async def ListSessions(  # noqa: N802  # gRPC names servicer methods after the RPC
+    @override
+    async def ListSessions(
         self, request: runner_pb2.ListSessionsRequest, context: grpc.aio.ServicerContext
     ) -> runner_pb2.ListSessionsResponse:
         del request, context
         return runner_pb2.ListSessionsResponse(sessions=self.runner.summaries())
 
-    async def Seal(  # noqa: N802  # gRPC names servicer methods after the RPC
-        self, request: runner_pb2.SealRequest, context: grpc.aio.ServicerContext
-    ) -> runner_pb2.SealResponse:
+    @override
+    async def Seal(self, request: runner_pb2.SealRequest, context: grpc.aio.ServicerContext) -> runner_pb2.SealResponse:
         del request, context
         return await self.runner.seal()
 
-    async def Attach(  # noqa: N802  # gRPC names servicer methods after the RPC
+    @override
+    async def Attach(
         self, request_iterator: AsyncIterator[runner_pb2.ClientMessage], context: grpc.aio.ServicerContext
     ) -> AsyncIterator[runner_pb2.ServerMessage]:
         del context

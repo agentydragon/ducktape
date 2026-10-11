@@ -9,7 +9,8 @@ import grpc
 import pytest
 import pytest_bazel
 
-from agentplane.proto import event_log_pb2, runner_pb2
+from agentplane.grpc_process import serving
+from agentplane.proto import event_log_pb2, runner_pb2, runner_pb2_grpc
 from agentplane.runner.client import Attachment
 from agentplane.runner.errors import OpenTimeoutError
 from agentplane.runner.testing.fixtures import RunnerClientFactory
@@ -128,7 +129,9 @@ async def test_an_unanswered_open_fails_on_its_bound_and_cancels_the_call(
     for name in ("OBSERVE_ANSWER_S", "LAUNCH_ANSWER_S"):
         monkeypatch.setattr(f"agentplane.runner.client.{name}", 1 if name == bound else 3600)
     wedged = UnansweringRunner()
-    async with wedged.serve() as port:
+    server = grpc.aio.server()
+    runner_pb2_grpc.add_RunnerServicer_to_server(wedged, server)
+    async with serving(server, "127.0.0.1:0", grace_s=0) as port:
         client = runner_client_factory(f"127.0.0.1:{port}")
         try:
             async with asyncio.timeout(10):

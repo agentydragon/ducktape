@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import cast
 from urllib.parse import urlsplit
 
+import grpc
 import pytest
 from playwright.async_api import Locator, Page, TimeoutError as PlaywrightTimeoutError, async_playwright
 
@@ -21,9 +22,16 @@ from agentplane.app.testing.electric_service import ElectricService, electric_se
 from agentplane.app.testing.history import SeededEventLogStore as EventLogStore
 from agentplane.app.testing.http2_proxy import BrowserCertificate, Ingress, browser_certificate, http2_proxy
 from agentplane.app.testing.replication_process import AppProcess, app_process
-from agentplane.app.testing.replication_source import SANDBOX, SESSION, Opened, ReplicationSource
+from agentplane.app.testing.replication_source import (
+    SANDBOX,
+    SESSION,
+    Opened,
+    ReplicationSource,
+    add_replication_source,
+)
 from agentplane.app.threads.store import ThreadStore
 from agentplane.app.threads.view.content import ContentStore
+from agentplane.grpc_process import serving
 from agentplane.proto import event_log_pb2, event_pb2
 from util.bazel.runfiles import get_required_path
 from util.testing.frontend_visual import CONTAINER_BASE_BROWSER_ARGS, chromium_executable
@@ -161,8 +169,10 @@ async def thread_browser(
     thread_id = await event_logs.open(SANDBOX, SESSION)
     await store.rename(thread_id, "Browser thread")
     directory = get_required_path("_main/agentplane/app/frontend/dist/index.html").parent
+    server = grpc.aio.server()
+    add_replication_source(source, server)
     async with (
-        source.serve() as runner_port,
+        serving(server, "127.0.0.1:0", grace_s=0) as runner_port,
         app_process(
             db_url, runner_port, frontend_directory=directory, replay_after=replay_after, electric_url=electric.url
         ) as app,

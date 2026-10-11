@@ -15,6 +15,7 @@ import grpc
 import pytest
 import pytest_bazel
 
+from agentplane.grpc_process import serving
 from agentplane.proto import event_log_pb2, event_pb2, runner_ingress_pb2, runner_ingress_pb2_grpc, runner_pb2
 from agentplane.runner.config import IngressEndpoint, RunnerConfig
 from agentplane.runner.control import ControlTiming
@@ -144,12 +145,8 @@ async def ingress() -> AsyncIterator[tuple[ScriptedIngress, str]]:
     service = ScriptedIngress()
     server = grpc.aio.server()
     runner_ingress_pb2_grpc.add_RunnerIngressServicer_to_server(service, server)
-    port = server.add_insecure_port("127.0.0.1:0")
-    await server.start()
-    try:
+    async with serving(server, "127.0.0.1:0", grace_s=0) as port:
         yield service, f"127.0.0.1:{port}"
-    finally:
-        await server.stop(0)
 
 
 @asynccontextmanager

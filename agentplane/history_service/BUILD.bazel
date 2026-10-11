@@ -9,7 +9,6 @@ load("//props:oci.bzl", "py_image_entrypoint", "py_image_env")
 package(default_visibility = ["//agentplane/history_service:__subpackages__"])
 
 # gazelle:resolve py agentplane.history_service.protocol_pb2 //agentplane/history_service:protocol_pb2
-# gazelle:resolve py agentplane.history_service.protocol_pb2_grpc //agentplane/history_service:protocol_pb2_grpc
 # gazelle:resolve py agentplane.sandbox_service.protocol_pb2 //agentplane/sandbox_service:protocol_pb2
 
 proto_library(
@@ -268,9 +267,11 @@ py_library(
     srcs = ["conftest.py"],
     deps = [
         "//agentplane/proto:event_log_pb2",
+        "//agentplane/proto:runner_gateway_pb2_grpc",
         "//agentplane/proto:runner_pb2",
         "//agentplane/sandbox_service:client",
         "//agentplane/sandbox_service:protocol_pb2",
+        "//agentplane/sandbox_service:protocol_pb2_grpc",
         "@pypi//grpcio",
         "@pypi//protobuf",
         "@pypi//pytest",
@@ -285,12 +286,16 @@ py_test(
         ":conftest",
         ":ingester",
         "//:conftest",
+        "//agentplane:grpc_process",
         "//agentplane/history_service:protocol_pb2",
         "//agentplane/history_service/storage:conftest",
         "//agentplane/history_service/storage:store",
         "//agentplane/proto:event_log_pb2",
         "//agentplane/proto:event_pb2",
+        "//agentplane/proto:runner_gateway_pb2_grpc",
         "//agentplane/sandbox_service:protocol_pb2",
+        "//agentplane/sandbox_service:protocol_pb2_grpc",
+        "@pypi//grpcio",
         "@pypi//protobuf",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
@@ -339,14 +344,13 @@ py_library(
     deps = [
         ":ingress",
         ":ingress_settings",
+        "//agentplane:grpc_process",
         "//agentplane/history_service/storage:store",
         "//agentplane/workload_auth:principal",
         "@pypi//asyncpg",
-        "@pypi//fastapi",
         "@pypi//grpcio",
         "@pypi//kubernetes_asyncio",
         "@pypi//sqlalchemy",
-        "@pypi//uvicorn",
     ],
 )
 
@@ -373,6 +377,7 @@ py_test(
         ":conftest",
         ":ingress",
         "//:conftest",
+        "//agentplane:grpc_process",
         "//agentplane/history_service/storage:conftest",
         "//agentplane/history_service/storage:store",
         "//agentplane/proto:event_log_pb2",
@@ -402,16 +407,15 @@ py_library(
         ":summaries",
         ":summary_changes",
         ":thread_reads",
+        "//agentplane:grpc_process",
         "//agentplane/history_service/storage:history_changes",
         "//agentplane/history_service/storage:store",
         "//agentplane/sandbox_service:client",
         "//agentplane/workload_auth:principal",
         "@pypi//asyncpg",
-        "@pypi//fastapi",
         "@pypi//grpcio",
         "@pypi//kubernetes_asyncio",
         "@pypi//sqlalchemy",
-        "@pypi//uvicorn",
     ],
 )
 
@@ -427,6 +431,7 @@ py_test(
         ":summary_changes",
         ":thread_reads",
         "//:conftest",
+        "//agentplane:grpc_process",
         "//agentplane:subjects",
         "//agentplane/history_service:protocol_pb2",
         "//agentplane/history_service:protocol_pb2_grpc",

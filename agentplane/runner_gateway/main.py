@@ -12,7 +12,7 @@ from kubernetes_asyncio import client as k8s_client
 from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 
-from agentplane.grpc_process import background, kubernetes_configuration, serve_health, started
+from agentplane.grpc_process import background, kubernetes_configuration, serve_health, serving
 from agentplane.proto import runner_control_pb2_grpc
 from agentplane.runner_gateway.command_delivery import CommandDelivery
 from agentplane.runner_gateway.commands.connections import ConnectionStore
@@ -116,11 +116,12 @@ async def gateway(
         ),
         control_server,
     )
-    control_server.add_insecure_port(f"{settings.host}:{settings.runner_control_port}")
     async with AsyncExitStack() as stack:
         await stack.enter_async_context(session_changes.listener.listen())
         await stack.enter_async_context(delivery.listener.listen())
-        await stack.enter_async_context(started(control_server))
+        await stack.enter_async_context(
+            serving(control_server, f"{settings.host}:{settings.runner_control_port}", grace_s=5)
+        )
         await stack.enter_async_context(
             background(
                 leases.watch(k8s_client.CoordinationV1Api(api), settings.sandbox_namespace, resync_seconds=300).run(),
@@ -139,8 +140,7 @@ async def serve(settings: Settings) -> None:
         ):
             server = grpc.aio.server()
             await stack.enter_async_context(gateway(settings, api, server, commands_engine))
-            server.add_insecure_port(f"{settings.host}:{settings.port}")
-            await stack.enter_async_context(started(server))
+            await stack.enter_async_context(serving(server, f"{settings.host}:{settings.port}", grace_s=5))
             await serve_health(settings.host, settings.health_port)
     finally:
         await commands_engine.dispose()
