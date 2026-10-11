@@ -7,18 +7,12 @@ There is no transparent runner tunnel or caller-supplied runner URL.
 Production callers and service acceptance tests use this same gRPC interface; there is no separate
 HTTP service adapter.
 
-It is two gRPC services, each its own server and image:
-
-- `SandboxService` ([`sandbox_service.proto`](../proto/sandbox_service.proto)), served by the Sandbox Service: Sandbox
-  inventory and lifecycle, templates and egress grants. One
-  replica reconciles, and it alone holds the RBAC, ServiceAccount and egress grant permissions.
-- `RunnerGateway` ([`../proto/runner_gateway.proto`](../proto/runner_gateway.proto)), served by
-  the [Runner Gateway](../runner_gateway/README.md): Sessions and commands. Its
-  replicas hold the runner connections; a Sandbox's `<sandbox>-control` Service reaches the replica
-  holding its runner.
-
-`SandboxServiceClient` takes one target per service: `target` for the Sandbox Service and
-`gateway_target` for the Runner Gateway.
+The Sandbox Service serves `SandboxService`: Sandbox inventory and lifecycle, templates and egress
+grants. One replica reconciles, and it alone holds the RBAC, ServiceAccount and egress grant
+permissions. Sessions and commands are the [Runner Gateway's API](../runner_gateway/API.md), its own
+server and image. `SandboxServiceClient` takes one target per service: `target` for the Sandbox
+Service and `gateway_target` for the Runner Gateway; authentication and destinations below apply to
+both.
 
 ## Authentication and destinations
 
@@ -72,8 +66,7 @@ The same service-caller allowlist gates every RPC. Provisioning is always enable
 
 Create retries by exact caller, name, and request while the CR exists; after deletion no
 name-only receipt can prove whether a past Create succeeded. The client disables automatic gRPC
-retries. Existing Kubernetes ownership labels, stored bindings, identities, and PVC policy remain
-unchanged.
+retries.
 
 The Sandbox Service controller lists and watches its managed Sandbox CRs from a Kubernetes
 `resourceVersion`. It queues changed names, reads the current incarnation for each reconciliation,
@@ -93,106 +86,13 @@ namespaced annotations, not competing Sandbox status conditions.
 2. Asks the Runner Gateway to seal it (`RunnerGateway.SealSandbox`, through the Sandbox's control
    Service; only the gateway's `sealer_accounts` may call it). The gateway calls the runner's
    [`Seal`](../runner/SPEC.md#teardown-seal), which stops every harness and returns
-   each Session's final cursor. A runner image without `Seal` has every running harness stopped
-   instead, and each journal's head is taken as its final cursor; only this service's fence keeps
-   new work out of it.
+   each Session's final cursor.
 3. Deletes the Sandbox, and its volume, once the runner's ingress has acknowledged every seal
    (`flushed`), sealing again every 10 s until then: history then has every Session through its
    seal.
 
 While the runner is unreachable the Sandbox stays in `TEARDOWN_PHASE_SEALING`, retried with backoff,
 for the operator to decide: nothing deletes an unsealed Sandbox.
-
-## Sessions and commands
-
-The Sandbox Service keeps no Session history; the [History Service](../history_service/README.md)
-copies each runner's Events and serves reads. Legacy rows without a known Sandbox UID stay
-registered but are not followed until their binding is established by a verified handoff.
-
-- `ListSessions`: Sandbox destination; the runner's Sessions registered in this Sandbox
-  incarnation. Runner sessions the registry does not know are left out.
-- `CreateSession`: explicit Open with Sandbox destination, the client's fresh Session UUID and
-  selected overrides. The UUID is the public
-  Session ID and the runner's Session ID alike. The Session is registered in its
-  Sandbox incarnation before runner contact; the Service returns the UUID and an attachment
-  snapshot with it. A `{session_id}` placeholder in a selected `cwd` override is expanded to that
-  UUID, just like the stored default cwd. A retry with the same UUID and inputs returns the Session
-  again; the runner refuses changed inputs and the Runner Gateway refuses another Sandbox; a request
-  without a UUID is invalid. `ResumeSession` accepts the public ID of a Session registered within the
-  pinned Sandbox UID. The UUID does not apply to runner-discovered native child sessions. The app
-  opens every new Thread through it.
-- `CreateSession`'s bootstrap
-  and setup use the runner's existing idempotence; the response is the native attachment snapshot, not
-  a claim that all setup or a model turn has completed.
-- `ResumeSession`: uses exactly the runner-retained spec, without applying today's defaults/instructions
-  or rerunning setup. Missing sessions and failed/interrupted setup are refused.
-- `SubmitCommand`: names the public Session ID alone; the gateway routes it to the Sandbox
-  incarnation the Session was opened in, and refuses one that is gone or being torn down. It forwards
-  an unchanged common-protocol `Command` only to a running harness and returns the original
-  `EventEntry` containing its exact matching `CommandAdmitted`. The submission is recorded in the `sandbox_commands` database before the runner is contacted, keyed by
-  Session and command ID with the caller's identity. An exact retry by the same caller returns the
-  retained receipt without contacting the runner once the admission is known; a different command or
-  caller under the same ID is `ALREADY_EXISTS`. A submission whose reply was lost is settled only by
-  delivering it again: an exact retry sends the same command, and the runner answers a command it
-  already journaled with its original receipt. Nothing reads the runner journal or delivers it again in
-  the background, so a submission nobody retries stays `PENDING_ADMISSION`. The command reaches the
-  runner over its [runner control stream](../docs/runner_control.md), through the submission's dispatch
-  attempt; with no live runner connection the call is `UNAVAILABLE`. A runner refusal returns
-  `FAILED_PRECONDITION` (`ALREADY_EXISTS` for a conflicting command, `INVALID_ARGUMENT` for an
-  invalid one) and leaves the submission pending; an exact retry reopens the attempt and is answered
-  with the original receipt even after the harness stopped or its journal was sealed. A recorded
-  admission or rejection never changes, and submissions are kept forever: nothing expires or deletes
-  them.
-- `GetCommand`, `ListCommands`: what the service retained for a public Session's submissions, for any
-  allowed caller, without contacting the runner: the command, its state (`PENDING_ADMISSION`,
-  `ADMITTED` with the same receipt `SubmitCommand` returns, or `REJECTED` with the runner's refusal),
-  and when it was accepted. This is how a caller whose `SubmitCommand` response was lost, or that
-  reconnects, learns the outcome; a pending command is settled only by an exact retry or a late
-  receipt for a delivery already sent, and `PENDING_ADMISSION` does not say whether the runner
-  journaled it. Admission is the runner journaling the command, not the harness acting on
-  it. They name the public Session ID alone, and answer after its Sandbox is gone: the
-  submissions outlive it. `ListCommands` pages in acceptance order and filters by state.
-
-Session listing and command RPCs never provision, resume, or wake a Sandbox or harness.
-
-### Launch overrides and field presence
-
-`CreateSessionRequest.spec` uses the runner `SessionSpec`. Its
-`override_mask` names the exact proto fields to replace in stored defaults, including fields
-explicitly set to empty/default values.
-For example, `paths: ["model", "instructions"]` selects `spec.model` and `spec.instructions`; an empty
-instructions string clears the caller's inherited instructions, but not backend platform guidance.
-Nested paths, unknown paths, duplicate paths, and supplied nondefault fields outside the mask are
-refused. An empty mask means no overrides. Optional `setup_script` distinguishes omitted from empty.
-
-`platform_instructions` in deployment configuration is the complete deployment-wide platform instruction
-block; deployment construction supplies service URLs and assembles all shared guidance into this value.
-The Sandbox Service passes it through unchanged. On `CreateSession`, the backend prepends the explicit
-Sandbox/session destination (and notification destination when configured), then appends the effective
-session `instructions`, stored or overridden. A non-empty `platform_instructions` value is required; there is
-no runtime default. Stored specs are never rewritten. `CreateSession` persists the original effective
-settings under the caller's key, so changed defaults cannot change a response-lost retry.
-
-Resume also needs the native harness's retained conversation. The pinned Claude harness can refuse
-resuming an empty conversation that never persisted a turn. The service surfaces that refusal; it does
-not fabricate native history or claim runner admission proves native persistence.
-
-## Events
-
-The service serves no Events. Runners push their journals to the
-[History Service](../history_service/README.md)'s ingress, which serves reads. To inspect a
-session's harness and setup state, read its `ListSessions` summary. There is no separate
-inspection or bootstrap RPC added for tests. Bootstrap runs through `CreateSession`; exact retries
-use the runner's stored bootstrap result.
-
-## Session placement
-
-`BatchGetSessionSandboxes` and `FindSessions` are open to every `caller_accounts` caller and carry
-no transcript. Each answers from the gateway's registry, deleted Sandboxes included: a Session's
-public ID, Sandbox namespace and name, and incarnation UID (empty for imported Sessions without
-one). `BatchGetSessionSandboxes` takes at most 1000 IDs and leaves out any the gateway never
-registered; `FindSessions` returns every Session in a Sandbox with exactly the given name, or whose
-name contains the given text, ignoring case.
 
 ## Errors and uncertain outcomes
 
@@ -201,43 +101,29 @@ name contains the given text, ignoring case.
 - `NOT_FOUND`: missing/stale Sandbox incarnation.
 - `INVALID_ARGUMENT`: malformed request or invalid concrete grant selection.
 - `FAILED_PRECONDITION`: runner or Sandbox state refuses the operation.
-- `ALREADY_EXISTS`: a `SubmitCommand` command ID already belongs to a different submission.
 - `UNAVAILABLE`: destination/backend unavailable; no offline admission.
 - `DEADLINE_EXCEEDED`: operation or transport safety deadline expired.
 
-Neither a successful write nor a timeout proves admission/rejection. A mutation may commit before
-its response is lost. Settle a command by retrying it with the unchanged ID/payload; admission
-is neither harness consumption nor command completion nor inbox acknowledgement. A recorded submission
-is not a queue: nothing delivers it later, and the runner journal stays the receipt authority.
+Neither a successful write nor a timeout proves the outcome: a mutation may commit before its
+response is lost. Command outcomes: [Runner Gateway API](../runner_gateway/API.md#errors-and-uncertain-outcomes).
 
 ## Server configuration
 
 `//agentplane/sandbox_service:server` uses `AGENTPLANE_SANDBOX_SERVICE_*` environment variables or
-kebab-case CLI flags, and `//agentplane/runner_gateway:server` uses `AGENTPLANE_RUNNER_GATEWAY_*`
-(`AGENTPLANE_RUNNER_GATEWAY_CONFIG_FILE` for its YAML file). The Sandbox Service reaches the gateway
-at `gateway_target`, and a Sandbox's holder replica through `control_target`, with the token in
-`gateway_token_file`; the gateway accepts that account for `SealSandbox` through `sealer_accounts`.
+kebab-case CLI flags. The Sandbox Service reaches the gateway at `gateway_target`, and a Sandbox's
+holder replica through `control_target`, with the token in `gateway_token_file`; the gateway accepts
+that account for `SealSandbox` through `sealer_accounts`.
 Required settings are `sandbox_namespace`, `caller_accounts` (nonempty), `token_audience`,
 `gateway_target`, `control_target` and `gateway_token_file`. TokenReview namespaces are derived from
 that allowlist. Kubernetes access is in-cluster unless `kubeconfig` is supplied.
 
 `port` defaults to 8080 for gRPC, which also serves the unauthenticated `grpc.health.v1.Health`;
 it is liveness, not proof that Kubernetes or a particular destination is ready. Admission requests
-are bounded by `admission_timeout_s` (default 15); `SubmitCommand` instead uses
-`runner_admission_ack_timeout_s` (default 15) for runner journal admission. Configure the
-app client's `sandbox_service_command_admission_timeout_s` (default 20) above that server budget.
-Management uses `lifecycle_timeout_s` (default 300).
-Service-to-runner calls are unauthenticated plaintext behind a network policy; the
-[runner control stream](../docs/runner_control.md) replaces that route rather than securing it.
+are bounded by `admission_timeout_s` (default 15); management uses `lifecycle_timeout_s` (default
+300).
 
-`runner_control_port` (default 8082) is a separate gRPC listener serving only the
-[runner control stream](../docs/runner_control.md), so a Sandbox's network fence can admit it alone. It
-accepts Pod tokens for `runner_control_audience` (default `agentplane-runner-control`), and
-`commands_database_url` holds its connection rows next to command admission.
-
-Deployment must grant the service the appropriate Kubernetes/TokenReview/provisioning permissions,
-project an audience-correct token for app-to-service calls, and enforce sole normal production access
-to runner control/event RPCs. Do not leave a direct-runner app fallback or two provisioning reconcilers.
+Deployment must grant the service the appropriate Kubernetes/TokenReview/provisioning permissions
+and project an audience-correct token for app-to-service calls, with one provisioning reconciler.
 
 Each service has its own token audience, `agentplane-sandbox-service` and `agentplane-runner-gateway`,
 so a token for one is refused by the other. Every caller mounts a rotating projected token per service

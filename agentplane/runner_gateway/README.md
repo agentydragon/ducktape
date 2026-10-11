@@ -2,8 +2,8 @@
 
 The Sandbox runners' side of Agentplane: Sessions, command admission and delivery, and the
 [runner control stream](../docs/runner_control.md) runners dial. Its own server (`:server`, image `:image`)
-serves the `RunnerGateway` gRPC service ([`runner_gateway.proto`](../proto/runner_gateway.proto), described in the
-Sandbox Service's [API](../sandbox_service/API.md)) with replicas, apart from the Sandbox Service's
+serves the `RunnerGateway` gRPC service ([API](API.md), [`runner_gateway.proto`](../proto/runner_gateway.proto)) with
+replicas, apart from the Sandbox Service's
 single reconciler and its RBAC. It reads Sandboxes through the Sandbox Service's read-only
 `SandboxReader` (`agentplane.sandbox_service.reader`) and does not provision or delete them.
 

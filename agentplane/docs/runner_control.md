@@ -95,7 +95,7 @@ message Heartbeat {}
   journaled with the same payload returns its existing `CommandAdmitted` entry, which the runner
   already guarantees by deduplicating on `command_id`. The service never infers admission from a
   stream write, a heartbeat or HTTP/2 flow-control progress. Which refusal reasons are terminal for
-  a submission is the [command admission](../sandbox_service/API.md#sessions-and-commands)
+  a submission is the [command admission](../runner_gateway/API.md#sessions-and-commands)
   contract's decision, not the control stream's; today none is, and a refusal leaves it pending.
 - **Status codes.** The service ends a stream with a gRPC status naming the cause:
   `UNAUTHENTICATED`, `PERMISSION_DENIED` (not a Sandbox Pod of this service), `ABORTED` (superseded by a

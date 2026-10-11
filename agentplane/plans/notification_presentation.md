@@ -1,7 +1,7 @@
 # Notification presentation and input metadata
 
 Status: open. Builds on durable command admission, whose contract is in the
-[Sandbox Service API](../sandbox_service/API.md#sessions-and-commands). The
+[Sandbox Service API](../runner_gateway/API.md#sessions-and-commands). The
 [task DAG](task_dag.md#notification_presentation--compact-notification-rendering) tracks the
 dependencies.
 
@@ -72,7 +72,7 @@ read APIs must enforce session access and return only authorized fields.
 
 ## Admission dependency and metadata persistence
 
-The [command admission contract](../sandbox_service/API.md#sessions-and-commands) owns base
+The [command admission contract](../runner_gateway/API.md#sessions-and-commands) owns base
 persistence, immediate dispatch, retry and redelivery for all runner Commands. This extension must
 not add another input-only queue.
 

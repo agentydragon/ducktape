@@ -447,7 +447,7 @@ content to the runner under a stable preset identity. The runner executes it ide
 persistent state volume; a failure refuses the session open. The existing full `SessionSpec` API is
 available when no preset is selected. The app composes no instructions: the Sandbox Service prepends its
 configured platform instructions to every launch's preset or task instructions, including direct
-`SessionSpec` API launches ([API.md](../sandbox_service/API.md#launch-overrides-and-field-presence)). The
+`SessionSpec` API launches ([API.md](../runner_gateway/API.md#launch-overrides-and-field-presence)). The
 shared block teaches agents the platform's egress and Actions Service protocol and how to query their
 effective Kubernetes permissions; a preset and the per-turn task remain the place for workload-specific
 constraints and the requested outcome.
