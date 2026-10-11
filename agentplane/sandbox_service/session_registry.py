@@ -34,15 +34,6 @@ class OpenReservation:
     launch_spec: bytes
 
 
-@dataclass(frozen=True)
-class HistoryLocator:
-    session_id: UUID
-    sandbox_namespace: str
-    sandbox_name: str
-    sandbox_uid: UUID
-    runner_session_id: str
-
-
 async def next_change_position(session: AsyncSession) -> int:
     """Allocate a WatchSessions position that becomes visible in commit order, and wake watchers.
 
@@ -198,22 +189,3 @@ class SessionRegistry:
                     )
                 ),
             )
-
-    async def runnable_locators(self, namespace: str, sandbox_names: list[str]) -> list[HistoryLocator]:
-        """Only current-Sandbox locators; deleted/Suspended histories remain retained."""
-        if not sandbox_names:
-            return []
-        async with self._sessions() as session:
-            rows = await session.scalars(
-                select(Session).where(
-                    Session.sandbox_namespace == namespace,
-                    Session.sandbox_name.in_(sandbox_names),
-                    Session.sandbox_uid.is_not(None),
-                    Session.runner_session_id.is_not(None),
-                )
-            )
-            return [
-                HistoryLocator(row.id, row.sandbox_namespace, row.sandbox_name, row.sandbox_uid, row.runner_session_id)
-                for row in rows
-                if row.sandbox_uid is not None and row.runner_session_id is not None
-            ]
