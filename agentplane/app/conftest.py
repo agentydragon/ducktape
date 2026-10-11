@@ -12,7 +12,6 @@ from uuid import UUID
 import httpx
 import pytest
 from kubernetes_asyncio.client import CoreV1Api
-from sqlalchemy import create_engine, text
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from agentplane.app.action_policy import ActionPolicyInventory
@@ -69,6 +68,7 @@ from agentplane.sandbox_service.testing.fake_inventory import (
 )
 from agentplane.sandbox_service.testing.fake_rbac import FakeRbac
 from agentplane.sandbox_service.testing.fixtures import service_database_template
+from agentplane.testing.electric_role import ensure_electric_role
 from agentplane.thread_fold.projection_lease import ProjectionLease
 from util.testing.postgres import DatabaseClones, PostgresDatabaseTemplate, migrated_database_template
 from util.testing.postgres_fixtures import database_clones, database_names, postgres_admin_url, postgres_container
@@ -98,18 +98,7 @@ _CALL_REPORT = pytest.StashKey[pytest.TestReport]()
 @pytest.fixture(scope="session")
 def app_database_template(postgres_admin_url: str) -> Iterator[PostgresDatabaseTemplate]:
     """The app schema migrated once; each default `db_url` is a fresh clone of this template."""
-    admin_engine = create_engine(postgres_admin_url, isolation_level="AUTOCOMMIT")
-    try:
-        with admin_engine.connect() as connection:
-            connection.execute(
-                text(
-                    "DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'electric') "
-                    "THEN CREATE ROLE electric LOGIN REPLICATION PASSWORD 'electric'; END IF; END $$"
-                )
-            )
-    finally:
-        admin_engine.dispose()
-
+    ensure_electric_role(postgres_admin_url)
     with migrated_database_template(postgres_admin_url, "agentplane_app_test_template", RUNNER) as template:
         yield template
 

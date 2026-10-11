@@ -48,6 +48,7 @@ py_library(
     srcs = ["conftest.py"],
     deps = [
         ":database_migrate",
+        "//agentplane/testing:electric_role",
         "//util/testing:postgres",
         "//util/testing:postgres_fixtures",
         "//util/testing:sqlalchemy_engines",
