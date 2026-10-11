@@ -388,7 +388,7 @@ async def _settle(session: AsyncSession, session_id: UUID, completion: event_log
             span.append(entry)
             if floor is None and started_item(entry) == target.item_id:
                 # The item's native start frame precedes its derived ItemStarted.
-                floor = min(cursor, *entry.event.source_sequences)
+                floor = min([cursor, *entry.event.source_sequences])
         upper = rows[-1].cursor
     span.reverse()
     settled = settle(span)

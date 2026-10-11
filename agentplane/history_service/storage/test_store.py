@@ -17,7 +17,7 @@ from agentplane.history_service.storage.store import (
     Writer,
     WriterMismatchError,
 )
-from agentplane.proto import event_log_pb2, runner_pb2, sandbox_service_pb2
+from agentplane.proto import event_log_pb2, event_pb2, runner_pb2, sandbox_service_pb2
 from agentplane.sandbox_service.testing.delta_spans import claude_text
 
 # gazelle:include_dep @pypi//protobuf
@@ -340,6 +340,27 @@ async def test_settling_store_drops_matched_chunks_once_their_item_completes(eng
         8, [(7, "native"), (8, "item_completed")], []
     )
     assert (await store.read_observations(session_id, limit=3)).settled == [(3, 6)]
+
+
+@pytest.mark.asyncio
+async def test_an_item_without_native_frames_completes_unsettled(engine: AsyncEngine) -> None:
+    store = Store(engine, settle_deltas=True)
+    session_id = uuid4()
+    await opened(store, session_id)
+    events = [
+        event_pb2.Event(item_started=event_pb2.ItemStarted(item_id="test-reply")),
+        event_pb2.Event(text_delta=event_pb2.TextDelta(item_id="test-reply", text="Hi")),
+        event_pb2.Event(item_completed=event_pb2.ItemCompleted(item_id="test-reply", text="Hi")),
+    ]
+    span = [
+        event_log_pb2.EventEntry(
+            cursor=cursor, origin=event_log_pb2.EventOrigin(source_id="source", sequence=cursor), event=event
+        )
+        for cursor, event in enumerate(events, start=1)
+    ]
+    assert await store.append(session_id, span) == 3
+    page = await store.read_page(session_id)
+    assert (len(page.entries), settled(page)) == (3, [])
 
 
 @pytest.mark.asyncio
