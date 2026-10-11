@@ -378,7 +378,9 @@ runner SPEC's and Sandbox Service README's notes on the unauthenticated inbound 
 Also inbound-only, so deleted here: teardown's inbound seal branch and `_stop_legacy` for runner
 images without `Seal`; `SubmitCommandRequest.follow` with the client's `command(after_cursor=...)`
 and the app's `last_cursor` lookup for it, read only by the relay; the `runner_grpc_channel_options`
-setting and `Environment` field; and the runner's own gRPC server, its `--listen` flag and the
+setting and `Environment` field; `protocol.v1.Follow` once nothing sends `Open.follow`;
+`register_attached_sessions` in `runner_gateway/testing`, which registers Sessions tests open
+over `Attach`; and the runner's own gRPC server, its `--listen` flag and the
 `Runner` service RPCs the channel duplicates. The Sandbox Service README, which still describes
 the relay as its foundation, is rewritten for the channel.
 
@@ -539,8 +541,7 @@ unless the operator reviews a change. Separate Sandbox initialization from per-s
 **Candidate.** Draft [#7859](https://github.com/agentydragon/ducktape/pull/7859)
 expires idle Sandboxes (`TODO(sandbox-lifetime)` in `action_service/sandbox/inventory.py`). Deleting
 one goes through [teardown](../sandbox_service/API.md#teardown), which waits until history is
-archived through the seal (the ingress acknowledgement, or a retention hold for a runner that pushes
-to no ingress).
+archived through the seal (the ingress acknowledgement).
 
 ## 7. History Service extraction and delta settlement
 
@@ -717,7 +718,7 @@ are irreplaceable, and a node that deletes a column or row stops for the operato
 
 ```mermaid
 flowchart TD
-    HISTORY_SANDBOX_LOCATOR_DROP[Blocked: drop the Sandbox locator from the history database]
+    HISTORY_SANDBOX_LOCATOR_DROP[Candidate: drop the Sandbox locator from the history database]
     HISTORY_DATABASE_RENAME[Blocked: rename the sandbox_service database and role]
     SANDBOX_DATABASE_RENAME[Candidate: name the sandbox_commands database for the Runner Gateway]
     APP_ELECTRIC_RETIRE[Blocked: remove Electric's access to the app database]
@@ -727,20 +728,19 @@ flowchart TD
     ACTION_SANDBOX_DESIGN --> ACTION_SANDBOX_PROVISIONING
     APP_PROJECTOR_RETIRE[Delete app projector]
     HISTORY_SERVICE_OWNERSHIP[History Service ownership]
-    FOLLOW_PATH_RETIRE[Delete holds and follow leftovers] --> HISTORY_SANDBOX_LOCATOR_DROP
     HISTORY_SANDBOX_LOCATOR_DROP --> HISTORY_DATABASE_RENAME
     APP_PROJECTOR_RETIRE --> APP_ELECTRIC_RETIRE
 ```
 
 ### `HISTORY_SANDBOX_LOCATOR_DROP` — rows name only their Session and writer
 
-**Blocked on the follow path's retirement**, because the followers address Sessions by Sandbox and
-`runner_session_id`. Under the ingress, a Session arrives under its client-minted public ID, which
+**Candidate.** Under the ingress, a Session arrives under its client-minted public ID, which
 is also the runner's, and its row names the writer that pushed it. The Sandbox locator columns
 (`sandbox_namespace`, `sandbox_name`, `sandbox_uid`) and `runner_session_id` then only describe
 rows the followers wrote, and `source_id` is never set. Rewrite feed snapshots stored under a
-runner session ID under the public ID, then drop those columns with `ux_history_runner_locator`.
-Stops for the operator.
+runner session ID under the public ID, then drop those columns with `ux_history_runner_locator`,
+and with them `SessionSummary`'s Sandbox fields, the summaries' Sandbox filter and
+`record_follower_session` in `history_service/testing`. Stops for the operator.
 
 ### `HISTORY_DATABASE_RENAME` — name the database for its owner
 
@@ -814,7 +814,6 @@ flowchart TD
     APP_PROJECTOR_RETIRE --> APP_THREAD_VIEW_CLEANUP
     ACTION_EXECUTION_AUDIT_TRIM[Decision: execution reconciliation columns]
     REFACTOR_COHERENCE_AUDIT[Blocked: whole-refactor coherence audit]
-    FOLLOW_PATH_RETIRE[Delete holds and follow leftovers] --> REFACTOR_COHERENCE_AUDIT
     RUNNER_INBOUND_RETIRE[Retire inbound runner access] --> REFACTOR_COHERENCE_AUDIT
     HISTORY_SERVICE_OWNERSHIP[History Service ownership] --> REFACTOR_COHERENCE_AUDIT
     RUNNER_SESSION_RECORD_SHIMS --> REFACTOR_COHERENCE_AUDIT
@@ -890,7 +889,6 @@ nodes and section 9 are unaffected.
 
 ```mermaid
 flowchart TD
-    FOLLOW_PATH_RETIRE[Under way: delete holds and follow leftovers]
     GATEWAY_CLIENT_SPLIT[Unscheduled: Session messages and client move to the gateway]
     AGENTPLANE_SANDBOX_RESOURCE[Decision: our own Sandbox resource]
     POD_INCARNATION[Decision: a Pod is the incarnation]
@@ -919,23 +917,6 @@ on ingress, so the browser reads that instead. `LookupSession`, its journal scan
 API, the Open reservation and the Open key go, with the gateway `session` columns `open_key`,
 `open_request`, `launch_spec`, `caller_namespace`, `caller_name` and `ux_session_open_key` (stops for
 the operator before the drop).
-
-### `FOLLOW_PATH_RETIRE` — delete holds and follow leftovers
-
-**Under way.** Nothing follows Sessions any more: the History Service's ingester, `FollowSession`,
-`WatchSessions` and its change feed are gone. Delete the hold API and `retention-holds`
-annotation, and with them `SessionSummary`'s Sandbox fields. The history columns the follower
-filled are dropped by `HISTORY_SANDBOX_LOCATOR_DROP`. Stops for the operator before dropping
-stored registry columns.
-
-Also follow-only, so deleted here: `protocol.v1.Follow` once nothing sends `Open.follow`;
-`Store.read`; `SessionFeedState.ended` with its merge in `record_feed_state` (the fold derives the
-end from a stopped harness), `FEED_STATUS_ENDED` and the app's `resume_pending` mask; and
-`register_attached_sessions` in `runner_gateway/testing`.
-
-With the holds goes teardown's path for a runner that pushes nothing: `SealResponse.pushes`,
-`TEARDOWN_PHASE_SEALED`, `SandboxInventory.record_seal` and `delete_if_released`. Every teardown
-then waits for every seal to be `flushed`.
 
 ### `GATEWAY_CLIENT_SPLIT` — Session messages and client move to the gateway
 
@@ -1091,7 +1072,7 @@ clock-went-backwards guard) and egress `policy.py`/`admin.py` reimplement it. Bo
 
 **Candidate.** `SummaryChanges`, `HistoryChanges` and `notification_service.Wakeups` are one payload-free listen-and-wake class with different channel
 names, and `app/changes.Changes` is its waiter set. One `agentplane/postgres/` class plus a
-`notify(session, channel)`, used by every site that outlives `FOLLOW_PATH_RETIRE`.
+`notify(session, channel)`, used by every site.
 
 ### `GATEWAY_SANDBOX_READS` — the gateway reads Sandboxes read-only
 
@@ -1118,7 +1099,9 @@ its own error type.
 `HistoryProjector` takes its `Store` instead of two single-implementation callables and drops its
 `grpc.RpcError` catch, the app's `HistoryWatch` calls the client directly, app-era wording goes,
 `EventLogStore.open` raises an app error instead of `EventReplicationError`, and `thread_fold` moves
-under `history_service/`.
+under `history_service/`. `SessionFeedState.ended`, which only the retired follower set, goes with
+its merge in `Store.record_feed_state`, the fold's branch reading it, `FEED_STATUS_ENDED` and the
+app's `resume_pending` mask: the fold derives the end from a stopped harness.
 
 ### `SETTLE_DELTAS_ALWAYS_ON` — delta settlement always on
 

@@ -50,12 +50,12 @@ async def test_replay_survives_new_store_and_deleted_sandbox(engine: AsyncEngine
     native.event.native.line = "frame with a NUL\x00 and provider bytes"
     assert await store.append(session_id, [entry(1), entry(2, resumed=True)]) == 2
     assert await Store(engine).append(session_id, [entry(1), entry(2, resumed=True), native]) == 3
-    high_water, events = await Store(engine).read(session_id, after_cursor=1, limit=2)
-    assert high_water == 3
-    assert events == [entry(2, resumed=True), native]
-    assert await Store(engine).read(session_id, after_cursor=3) == (3, [])
+    page = await Store(engine).read_page(session_id, after_cursor=1, limit=2)
+    assert (page.last_cursor, list(page.entries)) == (3, [entry(2, resumed=True), native])
+    page = await Store(engine).read_page(session_id, after_cursor=3)
+    assert (page.last_cursor, list(page.entries)) == (3, [])
     with pytest.raises(ValueError, match="beyond"):
-        await store.read(session_id, after_cursor=4)
+        await store.read_page(session_id, after_cursor=4)
 
 
 @pytest.mark.asyncio
@@ -65,12 +65,12 @@ async def test_bad_batch_rolls_back_and_conflicting_duplicate_rejected(engine: A
     await opened(store, session_id)
     with pytest.raises(HistoryConflictError, match="expected 2"):
         await store.append(session_id, [entry(1), entry(3)])
-    assert await store.read(session_id) == (0, [])
+    assert not (await store.read_page(session_id)).entries
     assert await store.append(session_id, [entry(1), entry(2)]) == 2
     for bad in ([entry(2, resumed=True)], [entry(3, "other")], [entry(4)]):
         with pytest.raises(HistoryConflictError):
             await store.append(session_id, bad)
-    assert await store.read(session_id) == (2, [entry(1), entry(2)])
+    assert list((await store.read_page(session_id)).entries) == [entry(1), entry(2)]
     with pytest.raises(HistoryNotFoundError):
         await store.append(uuid4(), [entry(1)])
 
@@ -84,7 +84,7 @@ async def test_two_replica_writers_serialize_on_history_row(engine: AsyncEngine)
         left.append(session_id, [entry(1), entry(2)]), right.append(session_id, [entry(1), entry(2)])
     )
     assert list(results) == [2, 2]
-    assert await right.read(session_id) == (2, [entry(1), entry(2)])
+    assert list((await right.read_page(session_id)).entries) == [entry(1), entry(2)]
 
 
 async def test_a_session_binds_to_its_first_writer(engine: AsyncEngine) -> None:

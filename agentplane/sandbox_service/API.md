@@ -10,10 +10,10 @@ HTTP service adapter.
 It is two gRPC services, each its own server and image:
 
 - `SandboxService` ([`sandbox_service.proto`](../proto/sandbox_service.proto)), served by the Sandbox Service: Sandbox
-  inventory and lifecycle, templates, egress grants and [retention holds](#retention-holds). One
+  inventory and lifecycle, templates and egress grants. One
   replica reconciles, and it alone holds the RBAC, ServiceAccount and egress grant permissions.
 - `RunnerGateway` ([`../proto/runner_gateway.proto`](../proto/runner_gateway.proto)), served by
-  the [Runner Gateway](../runner_gateway/README.md): Sessions, commands and event following. Its
+  the [Runner Gateway](../runner_gateway/README.md): Sessions and commands. Its
   replicas hold the runner connections; a Sandbox's `<sandbox>-control` Service reaches the replica
   holding its runner.
 
@@ -90,52 +90,19 @@ namespaced annotations, not competing Sandbox status conditions.
 `teardown` phase, and repeating the call changes nothing. The controller then:
 
 1. Runs the Sandbox again (`TEARDOWN_PHASE_SEALING`). From now on it refuses new Sessions and
-   commands, and suspend and resume; its Sessions can still be listed and followed.
+   commands, and suspend and resume; its Sessions can still be listed and read.
 2. Asks the Runner Gateway to seal it (`RunnerGateway.SealSandbox`, through the Sandbox's control
    Service; only the gateway's `sealer_accounts` may call it). The gateway calls the runner's
    [`Seal`](../runner/SPEC.md#teardown-seal), which stops every harness and returns
    each Session's final cursor. A runner image without `Seal` has every running harness stopped
    instead, and each journal's head is taken as its final cursor; only this service's fence keeps
    new work out of it.
-3. If the runner pushes its Events to an ingress, deletes the Sandbox, and its volume, once that
-   ingress has acknowledged every seal (`flushed`), sealing again every 10 s until then. Holds are
-   not consulted: history already has every Session through its seal.
-4. Otherwise records the cursors as the [retention holds'](#retention-holds) seal cursors
-   (`TEARDOWN_PHASE_SEALED`). A Session is keyed by its public ID, or by the runner's ID for one
-   opened with a caller-chosen ID. The Sandbox keeps running, fenced, since a holder confirms its
-   hold by following the Session to the seal; one found suspended is run again. It deletes the
-   Sandbox, and its volume, once every hold is satisfied.
+3. Deletes the Sandbox, and its volume, once the runner's ingress has acknowledged every seal
+   (`flushed`), sealing again every 10 s until then: history then has every Session through its
+   seal.
 
 While the runner is unreachable the Sandbox stays in `TEARDOWN_PHASE_SEALING`, retried with backoff,
 for the operator to decide: nothing deletes an unsealed Sandbox.
-
-## Retention holds
-
-A hold says "do not delete this Sandbox until I have its Session through the seal". `PlaceHold`,
-`ConfirmHold` and `ReleaseHold` take a `SessionDestination` and a caller-chosen `holder` name, so a
-hold belongs to one Session in one Sandbox incarnation; a later incarnation starts without holds.
-Any allowed service caller may place, confirm or release any hold, and holds never expire.
-
-- `PlaceHold` is idempotent per Session and holder and keeps an existing confirmation. It is refused
-  (`NOT_FOUND`) once the Sandbox's deletion is committed, and (`INVALID_ARGUMENT`) for a Session
-  without a seal once the Sandbox is sealed, since it could never be satisfied.
-- `ConfirmHold` records the last cursor the holder has durably committed. It never moves backwards,
-  so an out-of-order retry is harmless. A missing hold is `NOT_FOUND`.
-- `ReleaseHold` is idempotent. An operator clears a stale hold with it.
-- A hold is satisfied once its Session has a seal cursor and `confirmed_through >= seal_cursor`.
-  Teardown deletes the sealed Sandbox only once every hold is satisfied; a hold on a Session the
-  runner did not report keeps it until released. `ListHolds` takes a `SandboxDestination` and lists
-  every hold on that incarnation with its confirmed and seal cursors, so it shows which one blocks
-  deletion. With no holds, deletion follows the seal.
-- A seal ends the Session's incarnation in this Sandbox, not the Session.
-
-The holds are one annotation on the Sandbox CR (`agentplane.allegedly.works/retention-holds`), so
-they are deleted with the incarnation they hold. Hold writes and the deletion are both
-conditional on the `resourceVersion` they read: a hold placed while a deletion is in flight either
-lands first and keeps the Sandbox, or finds the deletion committed and is refused itself.
-Each advancing confirmation is a Kubernetes write that the controller and UI informers observe;
-only a confirmation at or past the seal changes the deletion gate, so holders need not confirm
-every batch.
 
 ## Sessions and commands
 
@@ -239,10 +206,9 @@ use the runner's stored bootstrap result.
 
 - `UNAUTHENTICATED`: invalid workload bearer.
 - `PERMISSION_DENIED`: authenticated but unlisted service caller.
-- `NOT_FOUND`: missing/stale Sandbox incarnation, or a missing retention hold.
+- `NOT_FOUND`: missing/stale Sandbox incarnation.
 - `INVALID_ARGUMENT`: malformed request or invalid concrete grant selection.
-- `FAILED_PRECONDITION`: runner or Sandbox state refuses the operation, including deletion blocked
-  by a retention hold.
+- `FAILED_PRECONDITION`: runner or Sandbox state refuses the operation.
 - `ALREADY_EXISTS`: a `SubmitCommand` command ID already belongs to a different submission.
 - `UNAVAILABLE`: destination/backend unavailable; no offline admission.
 - `DEADLINE_EXCEEDED`: operation or transport safety deadline expired.

@@ -6,10 +6,15 @@ from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from pathlib import Path
 from typing import cast
+from uuid import UUID
 
 from kubernetes_asyncio import client as k8s_client
 
 from agentplane.proto.sandbox_service_pb2 import SandboxBinding, SandboxDestination, ServiceAccount
+from agentplane.runner.service import Runner
+from agentplane.runner.testing.fixtures import RunnerHandle
+from agentplane.runner_gateway.grpc_api import Resources
+from agentplane.runner_gateway.testing.control_listener import control_plane, dialing, wait_connected
 from agentplane.runner_gateway.testing.grpc_service import service_client
 from agentplane.runner_gateway.testing.resources import build_resources
 from agentplane.sandbox_service.action_policy import ActionPolicyBindings
@@ -35,6 +40,9 @@ SANDBOX = "test-runner"
 SANDBOX_UID = "40e373bd-2742-43de-8d1c-1ef97c4d4801"
 ACCOUNT = "test-runner-account"
 OWNER = ServiceAccountRef(namespace=SANDBOX_NAMESPACE, name=ACCOUNT)
+_POD_UID = "test-pod-uid"
+_RUNNER_AUDIENCE = "test-app-runner-control"
+_RUNNER_TOKEN = "test-app-runner-token"
 DESTINATION = SandboxDestination(
     owner=ServiceAccount(namespace=OWNER.namespace, name=OWNER.name), sandbox=SANDBOX, sandbox_uid=SANDBOX_UID
 )
@@ -85,7 +93,7 @@ async def kubernetes() -> AsyncIterator[Cluster]:
                 "spec": {"podTemplate": {"spec": {"serviceAccountName": ACCOUNT}}},
             },
         )
-        pod = pod_for(fake, SANDBOX, pod_uid="test-pod-uid", ip="127.0.0.1")
+        pod = pod_for(fake, SANDBOX, pod_uid=_POD_UID, ip="127.0.0.1")
         pod["spec"] = {
             "serviceAccountName": ACCOUNT,
             "containers": [{"name": "runner", "image": "registry.test/runner:unused"}],
@@ -115,7 +123,7 @@ async def kubernetes() -> AsyncIterator[Cluster]:
 @asynccontextmanager
 async def authenticated_service(
     cluster: Cluster,
-    runner_port: int,
+    runner: RunnerHandle,
     token_file: Path,
     *,
     database_url: str,
@@ -124,6 +132,7 @@ async def authenticated_service(
     audience: str = "test-app-sandbox-service",
     platform_instructions: str = "Backend guidance for app-launched sessions.",
 ) -> AsyncIterator[SandboxServiceClient]:
+    """The service over `cluster`, with `runner` as `SANDBOX`'s runner, connected over the control stream."""
     manager = manager or ServiceAccountRef(namespace=SANDBOX_NAMESPACE, name="test-app")
     await asyncio.to_thread(token_file.write_text, token)
     cluster.fake.tokens[token] = TokenVerdict(
@@ -136,9 +145,31 @@ async def authenticated_service(
         resources = build_resources(
             engine,
             principals=cluster.build_principal_resolver(audience),
-            destinations=DestinationResolver(cluster.inventory, k8s_client.CoreV1Api(cluster.api), runner_port),
+            destinations=DestinationResolver(cluster.inventory, k8s_client.CoreV1Api(cluster.api), runner.port),
             caller_accounts=frozenset({manager}),
             platform_instructions=platform_instructions,
         )
-        async with service_client(resources, token_file, cluster.provisioning) as client:
+        async with (
+            runner_connected(cluster, resources, runner.runner),
+            service_client(resources, token_file, cluster.provisioning) as client,
+        ):
             yield client
+
+
+@asynccontextmanager
+async def runner_connected(cluster: Cluster, resources: Resources, runner: Runner) -> AsyncIterator[None]:
+    """`runner`, as `SANDBOX`'s, holds a control stream to the gateway `resources` back."""
+    cluster.fake.tokens[_RUNNER_TOKEN] = TokenVerdict(
+        username=f"system:serviceaccount:{SANDBOX_NAMESPACE}:{ACCOUNT}",
+        pod_name=SANDBOX,
+        pod_uid=_POD_UID,
+        audiences=(_RUNNER_AUDIENCE,),
+    )
+    async with (
+        control_plane(
+            resources, principals=cluster.build_principal_resolver(_RUNNER_AUDIENCE), api=cluster.api
+        ) as target,
+        dialing(runner, target, _RUNNER_TOKEN),
+    ):
+        await wait_connected(resources, UUID(SANDBOX_UID))
+        yield

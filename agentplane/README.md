@@ -106,8 +106,8 @@ flowchart TB
   `egress` and `notifications`; the Sandbox Service has none. Only the history database is drawn.
   A second Electric over the `app` database still runs, but the app reads Threads through the
   History Service and its Electric.
-- **Sandbox Service and Runner Gateway.** The Sandbox Service owns Sandbox lifecycle, grants,
-  retention holds and teardown; the Runner Gateway owns everything that talks to a runner: Sessions,
+- **Sandbox Service and Runner Gateway.** The Sandbox Service owns Sandbox lifecycle, grants
+  and teardown; the Runner Gateway owns everything that talks to a runner: Sessions,
   commands and the runner control stream. They run as separate Deployments with their own accounts,
   and the Sandbox Service seals a Sandbox through the gateway before deleting it.
 

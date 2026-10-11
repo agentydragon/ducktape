@@ -143,7 +143,7 @@ async def push(
 
 
 async def committed(engine: AsyncEngine, session_id: UUID) -> list[str]:
-    _, stored = await Store(engine).read(session_id, limit=100)
+    stored = list((await Store(engine).read_page(session_id, limit=100)).entries)
     return [stored_entry.event.harness_stderr.text for stored_entry in stored]
 
 
