@@ -26,7 +26,6 @@ from agentplane.app.action_policy import ActionPolicyInventory
 from agentplane.app.api import create_app
 from agentplane.app.conftest import AGENT, AGENT_AUTH, AUDIENCE, STRANGER_AUTH
 from agentplane.app.database_updates import DatabaseUpdates
-from agentplane.app.decisions import DecisionsClient
 from agentplane.app.egress_access import EgressAccess
 from agentplane.app.electric import ElectricProxy
 from agentplane.app.identity import TokenReviewer
@@ -39,6 +38,7 @@ from agentplane.app.testing.model_test_data import TEST_REASONING_EFFORTS
 from agentplane.app.threads.bridge import RunnerBridge
 from agentplane.app.threads.store import ThreadStore
 from agentplane.app.threads.view.content import ContentStore
+from agentplane.egress.decisions_client import DecisionsClient
 from agentplane.runner.harness import Harness
 from agentplane.sandbox_service.client import SandboxServiceClient
 from agentplane.sandbox_service.testing.fake_inventory import TEMPLATE, FakeAuthenticationV1Api

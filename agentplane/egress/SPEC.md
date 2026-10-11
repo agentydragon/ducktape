@@ -173,7 +173,7 @@ substitutes. The design it implements is [the ADR](../docs/adr_sandbox_proxy_gat
 - Decisions are admissions, not upstream completions. CONNECT and HTTP requests are distinct
   events correlated by connection ID, with event time and stable producer/event IDs. The IDs
   support correlation, not global causal order.
-- A record carries names, never values. Paths are always null, for denied requests too: query
+- A record carries names, never values. It has no path, for denied requests too: query
   stripping cannot protect secrets embedded in arbitrary paths. Bodies, headers, query strings,
   raw exceptions, and Kubernetes object payloads are not recorded. An unauthenticated attempt has
   no claimed identity; a recorded Pod UID is a snapshot, not a reference to a live object.

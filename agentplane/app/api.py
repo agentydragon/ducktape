@@ -48,7 +48,6 @@ from agentplane.app.consent import (
     preview_enrollment,
 )
 from agentplane.app.database_updates import Channel, DatabaseUpdates
-from agentplane.app.decisions import Decision, DecisionsClient, DecisionsUnavailableError
 from agentplane.app.egress_access import EgressAccess
 from agentplane.app.electric import ElectricProxy, router as electric_router
 from agentplane.app.identity import CallerIdentity, CallerKind, TokenReviewer, require_caller
@@ -87,6 +86,8 @@ from agentplane.app.threads.sessions import SandboxNotReachableError
 from agentplane.app.threads.store import MAX_PAGE, InvalidPageTokenError, ThreadPage, ThreadStore
 from agentplane.app.threads.thread_view import ThreadView
 from agentplane.app.threads.view.content import CommandIdConflictError, ContentStore
+from agentplane.egress.decisions import Decision
+from agentplane.egress.decisions_client import DecisionsClient, DecisionsUnavailableError
 from agentplane.history_service.client import HistoryServiceError
 from agentplane.proto import runner_pb2
 from agentplane.runner.errors import OpenTimeoutError, RunnerError

@@ -1066,7 +1066,6 @@ flowchart TD
         KUBEVIRT_GUEST_CONTROL[Candidate: KubeVirt guest dials out]
         RUNNER_CORE_SPLIT[Blocked: runner core out of the inbound servicer]
         NATIVE_PROCESS_DEDUP[Candidate: one native process wrapper]
-        EGRESS_DECISIONS_CLIENT[Candidate: egress decisions client beside the server]
         LLM_INGRESS_MODEL_CONFIG_CONTRACT[Candidate: structural absent model config]
         ACTION_SETTINGS_SINGLE_MODEL[Candidate: one Action Service settings model]
         ACTION_PROTOCOLS_CONCRETE[Candidate: concrete types for Action protocols]
@@ -1227,12 +1226,6 @@ lost-stream error and backoff, `IngressPusher` stops borrowing `ControlTiming`, 
 only by test code, not `testonly`) and `runner/harness_process.py` wrap one process, with the 64 MiB
 line limit kept aligned by comment. Move capture onto `AsyncNativeProcess`, delete the sync wrapper,
 and make `async_process` test-only.
-
-### `EGRESS_DECISIONS_CLIENT` — egress decisions client beside the server
-
-**Candidate.** `app/decisions.py` mirrors egress `Outcome`/`Decision` and holds the client for the
-egress `/decisions` route. Move model and client into `agentplane/egress/`, drop the never-set
-`DecisionRecord.path`, and say at the model which written-but-unread columns operators query.
 
 ### `LLM_INGRESS_MODEL_CONFIG_CONTRACT` — structural absent model config
 

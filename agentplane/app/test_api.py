@@ -21,7 +21,6 @@ from agentplane.app.action_policy import ActionPolicyInventory
 from agentplane.app.api import create_app, upstream_http_error
 from agentplane.app.conftest import AGENT_AUTH
 from agentplane.app.database_updates import DatabaseUpdates
-from agentplane.app.decisions import DecisionsClient
 from agentplane.app.egress_access import EgressAccess
 from agentplane.app.electric import ElectricProxy
 from agentplane.app.identity import CallerIdentity, CallerKind, TokenReviewer, require_caller
@@ -40,6 +39,7 @@ from agentplane.app.threads.bridge import RunnerBridge
 from agentplane.app.threads.sessions import SandboxSessions
 from agentplane.app.threads.store import ThreadStore
 from agentplane.app.threads.view.content import ContentStore
+from agentplane.egress.decisions_client import DecisionsClient
 from agentplane.grpc_serving import serving
 from agentplane.proto import event_log_pb2, runner_gateway_pb2_grpc, runner_pb2, sandbox_service_pb2
 from agentplane.runner.harness import Harness
@@ -902,18 +902,18 @@ def test_a_grant_naming_a_policy_that_does_not_exist_is_refused(
 
 def test_egress_decisions_come_from_the_proxy(client: TestClient, egress_admin: FakeEgressAdmin) -> None:
     egress_admin.decisions[(NAMESPACE, "live")] = [
-        decision("2026-09-02T10:00:00Z", "CONNECT", "api.github.com", None, "allow"),
-        decision("2026-09-02T10:00:01Z", "GET", "api.github.com", "/repos/x/y", "allow", address="140.82.116.5"),
-        decision("2026-09-02T10:00:02Z", "POST", "pypi.org", "/simple/", "deny", reason="no-rule"),
+        decision("2026-09-02T10:00:00Z", "CONNECT", "api.github.com", "allow"),
+        decision("2026-09-02T10:00:01Z", "GET", "api.github.com", "allow", address="140.82.116.5"),
+        decision("2026-09-02T10:00:02Z", "POST", "pypi.org", "deny", reason="no-rule"),
     ]
 
     response = client.get("/sandboxes/live/egress/decisions")
 
     assert response.status_code == 200, response.text
-    assert [(d["method"], d["host"], d["path"], d["outcome"], d["reason"]) for d in response.json()] == [
-        ("CONNECT", "api.github.com", None, "allow", None),
-        ("GET", "api.github.com", "/repos/x/y", "allow", None),
-        ("POST", "pypi.org", "/simple/", "deny", "no-rule"),
+    assert [(d["method"], d["host"], d["outcome"], d["reason"]) for d in response.json()] == [
+        ("CONNECT", "api.github.com", "allow", None),
+        ("GET", "api.github.com", "allow", None),
+        ("POST", "pypi.org", "deny", "no-rule"),
     ]
     # The proxy resolves and pins the host itself; the address it dialled reaches the page.
     assert [d["address"] for d in response.json()] == [None, "140.82.116.5", None]

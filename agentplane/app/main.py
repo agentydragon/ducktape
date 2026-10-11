@@ -24,7 +24,6 @@ from agentplane.app.action_policy import ActionPolicyInventory
 from agentplane.app.api import create_app
 from agentplane.app.database import connect
 from agentplane.app.database_updates import Channel, DatabaseUpdates, notify_threads
-from agentplane.app.decisions import DecisionsClient
 from agentplane.app.egress_access import EgressAccess
 from agentplane.app.electric import ElectricProxy
 from agentplane.app.identity import TokenReviewer
@@ -42,6 +41,7 @@ from agentplane.app.threads.sessions import SandboxSessions
 from agentplane.app.threads.store import ThreadStore
 from agentplane.app.threads.summaries import AppSummaries, HistorySummaries
 from agentplane.app.threads.view.content import ContentStore, HistoryContentStore
+from agentplane.egress.decisions_client import DecisionsClient
 from agentplane.history_service.client import HistoryServiceClient
 from agentplane.kubernetes_watch import STALE_AFTER_CYCLES
 from agentplane.sandbox_service.client import SandboxServiceClient

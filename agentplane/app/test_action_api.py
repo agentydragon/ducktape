@@ -60,7 +60,6 @@ from agentplane.app.conftest import AGENT_AUTH
 from agentplane.app.consent import ConsentAllow
 from agentplane.app.database import connect
 from agentplane.app.database_updates import DatabaseUpdates
-from agentplane.app.decisions import DecisionsClient
 from agentplane.app.egress_access import EgressAccess
 from agentplane.app.electric import ElectricProxy
 from agentplane.app.identity import TokenReviewer
@@ -75,6 +74,7 @@ from agentplane.app.threads.bridge import RunnerBridge
 from agentplane.app.threads.store import ThreadStore
 from agentplane.app.threads.summaries import AppSummaries
 from agentplane.app.threads.view.content import ContentStore
+from agentplane.egress.decisions_client import DecisionsClient
 from agentplane.history_service.client import HistoryServiceClient
 from agentplane.runner.harness import Harness
 from agentplane.sandbox_service.action_policy_views import MANAGED_BY_APP, MANAGED_BY_LABEL

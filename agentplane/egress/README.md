@@ -28,8 +28,8 @@ bbr test //agentplane/egress/...
   independently authenticated FastAPI listener and shared `RulesProjection`; `addon.py` is the
   ordinary egress-policy/substitution gate. `decisions.py` defines admission records;
   `decision_log.py` queues them for `decision_store.py`. `admin.py` serves history, local
-  binding observations, readiness and liveness. `listener.py` hosts both FastAPI apps under
-  uvicorn in the proxy's event loop.
+  binding observations, readiness and liveness; `decisions_client.py` reads that history.
+  `listener.py` hosts both FastAPI apps under uvicorn in the proxy's event loop.
 - `proxy.py`: mitmproxy hosted in-process with the fail-closed options pinned; `main.py` the
   entry point and its `Settings` (`--flags` and `AGENTPLANE_EGRESS_*`).
 - `sidecar.py`: the per-sandbox relay, image `agentplane-egress-sidecar`: reads the Pod's

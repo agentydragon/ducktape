@@ -39,7 +39,7 @@ intended consequences.
 create, because they are one principal. The operation is closed: no chain gains authority.
 
 **Egress attribution collapses per principal in the app's view, not in the record.**
-`DecisionsClient.recent` (<../../app/decisions.py>) asks the proxy for decisions _by ServiceAccount_
+`DecisionsClient.recent` (<../../egress/decisions_client.py>) asks the proxy for decisions _by ServiceAccount_
 and projects a `Decision` with no Pod field, so `GET /sandboxes/{name}/egress/decisions` returns one
 combined stream for every sandbox of one account. The proxy's own record does carry
 `source_pod_uid`, persisted with the rest (<../../egress/decisions.py>), so per-box attribution is a
