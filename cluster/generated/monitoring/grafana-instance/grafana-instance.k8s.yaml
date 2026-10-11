@@ -274,6 +274,22 @@ spec:
 apiVersion: grafana.integreatly.org/v1beta1
 kind: GrafanaDashboard
 metadata:
+  name: cluster-disk-usage
+  namespace: monitoring
+spec:
+  configMapRef:
+    key: cluster-disk-usage.json
+    name: cluster-disk-usage-dashboard
+  datasources:
+    - datasourceName: Mimir
+      inputName: DS_MIMIR
+  instanceSelector:
+    matchLabels:
+      dashboards: grafana
+---
+apiVersion: grafana.integreatly.org/v1beta1
+kind: GrafanaDashboard
+metadata:
   name: home-network-overview
   namespace: monitoring
 spec:

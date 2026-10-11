@@ -1,0 +1,730 @@
+{
+  "annotations": {
+    "list": [
+      {
+        "builtIn": 1,
+        "datasource": {
+          "type": "grafana",
+          "uid": "-- Grafana --"
+        },
+        "enable": true,
+        "hide": true,
+        "iconColor": "rgba(0, 211, 255, 1)",
+        "name": "Annotations & Alerts",
+        "type": "dashboard"
+      }
+    ]
+  },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "links": [],
+  "panels": [
+    {
+      "id": 1,
+      "title": "How to read this dashboard",
+      "type": "text",
+      "gridPos": {
+        "h": 5,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      },
+      "options": {
+        "mode": "markdown",
+        "content": "This dashboard shows **current size and growth over time** from existing collectors. The node filesystem totals cover scraped ext4/XFS filesystems and count each node/device once; they include operating-system and application files. They are not a complete inventory of every PVC.\n\n**Accounting layers overlap.** CNPG database sizes, ClickHouse disk use, SeaweedFS bucket sizes, SeaweedFS collection bytes, volume-server disk use, and node filesystem use must not be added together. CNPG database sizes deduplicate replica reporters. SeaweedFS bucket logical bytes describe object data; bucket physical bytes and collection bytes include replicated storage. Collection bytes sum volume-server copies. The volume-server capacity metrics describe the underlying disks. No hostPath PVC or table-size scan is used. Missing samples and newly created databases or buckets do not imply zero use."
+      }
+    },
+    {
+      "id": 2,
+      "title": "Scraped node filesystems: used",
+      "description": "Used bytes across ext4/XFS filesystems, deduplicated by node and device. Excludes unscraped or offline nodes.",
+      "type": "stat",
+      "gridPos": {
+        "h": 5,
+        "w": 12,
+        "x": 0,
+        "y": 5
+      },
+      "datasource": "${DS_MIMIR}",
+      "targets": [
+        {
+          "expr": "sum(max by (node, device) (max by (node, device, mountpoint) ((node_filesystem_size_bytes{fstype=~\"ext4|xfs\",device!=\"\"} - node_filesystem_avail_bytes{fstype=~\"ext4|xfs\",device!=\"\"}) * on (namespace, pod) group_left (node) max by (namespace, pod, node) (kube_pod_info{namespace=\"monitoring\",pod=~\"prometheus-node-exporter-.+\"}))))",
+          "instant": true,
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes"
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto",
+        "colorMode": "value"
+      }
+    },
+    {
+      "id": 3,
+      "title": "Scraped node filesystems: capacity",
+      "description": "Total ext4/XFS filesystem capacity, deduplicated by node and device.",
+      "type": "stat",
+      "gridPos": {
+        "h": 5,
+        "w": 12,
+        "x": 12,
+        "y": 5
+      },
+      "datasource": "${DS_MIMIR}",
+      "targets": [
+        {
+          "expr": "sum(max by (node, device) (max by (node, device, mountpoint) (node_filesystem_size_bytes{fstype=~\"ext4|xfs\",device!=\"\"} * on (namespace, pod) group_left (node) max by (namespace, pod, node) (kube_pod_info{namespace=\"monitoring\",pod=~\"prometheus-node-exporter-.+\"}))))",
+          "instant": true,
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes"
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto",
+        "colorMode": "value"
+      }
+    },
+    {
+      "id": 4,
+      "title": "Node filesystem used now",
+      "description": "Used bytes per filesystem mount; repeated mounts are visible here but counted once per device in the totals.",
+      "type": "table",
+      "gridPos": {
+        "h": 9,
+        "w": 12,
+        "x": 0,
+        "y": 10
+      },
+      "datasource": "${DS_MIMIR}",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes"
+        },
+        "overrides": []
+      },
+      "options": {
+        "cellHeight": "sm",
+        "footer": {
+          "show": false
+        },
+        "showHeader": true
+      },
+      "targets": [
+        {
+          "expr": "sort_desc(max by (node, device, mountpoint) ((node_filesystem_size_bytes{fstype=~\"ext4|xfs\",device!=\"\"} - node_filesystem_avail_bytes{fstype=~\"ext4|xfs\",device!=\"\"}) * on (namespace, pod) group_left (node) max by (namespace, pod, node) (kube_pod_info{namespace=\"monitoring\",pod=~\"prometheus-node-exporter-.+\"})))",
+          "format": "table",
+          "instant": true,
+          "legendFormat": "{{node}} {{device}} {{mountpoint}}",
+          "refId": "A"
+        }
+      ],
+      "transformations": [
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true
+            },
+            "indexByName": {},
+            "renameByName": {}
+          }
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "title": "Largest node filesystems over time",
+      "description": "Top ten filesystem mounts by used bytes at each point in time.",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 9,
+        "w": 12,
+        "x": 12,
+        "y": 10
+      },
+      "datasource": "${DS_MIMIR}",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "expr": "topk(10, max by (node, device, mountpoint) ((node_filesystem_size_bytes{fstype=~\"ext4|xfs\",device!=\"\"} - node_filesystem_avail_bytes{fstype=~\"ext4|xfs\",device!=\"\"}) * on (namespace, pod) group_left (node) max by (namespace, pod, node) (kube_pod_info{namespace=\"monitoring\",pod=~\"prometheus-node-exporter-.+\"})))",
+          "legendFormat": "{{node}} {{mountpoint}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "title": "CNPG database size now",
+      "description": "One size per namespace, cluster job, and database; replica reports are deduplicated.",
+      "type": "table",
+      "gridPos": {
+        "h": 9,
+        "w": 12,
+        "x": 0,
+        "y": 19
+      },
+      "datasource": "${DS_MIMIR}",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes"
+        },
+        "overrides": []
+      },
+      "options": {
+        "cellHeight": "sm",
+        "footer": {
+          "show": false
+        },
+        "showHeader": true
+      },
+      "targets": [
+        {
+          "expr": "sort_desc(max by (namespace, job, datname) (cnpg_pg_database_size_bytes{datname!~\"template0|template1\"}))",
+          "format": "table",
+          "instant": true,
+          "legendFormat": "{{namespace}} {{job}} {{datname}}",
+          "refId": "A"
+        }
+      ],
+      "transformations": [
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true
+            },
+            "indexByName": {},
+            "renameByName": {}
+          }
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "title": "Largest CNPG databases over time",
+      "description": "Top ten logical databases by size at each point in time.",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 9,
+        "w": 12,
+        "x": 12,
+        "y": 19
+      },
+      "datasource": "${DS_MIMIR}",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "expr": "topk(10, max by (namespace, job, datname) (cnpg_pg_database_size_bytes{datname!~\"template0|template1\"}))",
+          "legendFormat": "{{namespace}} {{job}} {{datname}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 8,
+      "title": "SeaweedFS volume-server disks now",
+      "description": "Capacity, used, and write-available bytes per volume-server disk; see the type column.",
+      "type": "table",
+      "gridPos": {
+        "h": 9,
+        "w": 12,
+        "x": 0,
+        "y": 28
+      },
+      "datasource": "${DS_MIMIR}",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes"
+        },
+        "overrides": []
+      },
+      "options": {
+        "cellHeight": "sm",
+        "footer": {
+          "show": false
+        },
+        "showHeader": true
+      },
+      "targets": [
+        {
+          "expr": "sort_desc(max by (pod, name, type) (SeaweedFS_volumeServer_resource{namespace=\"seaweedfs\",type=~\"all|avail|used\"}))",
+          "format": "table",
+          "instant": true,
+          "legendFormat": "{{pod}} {{name}} {{type}}",
+          "refId": "A"
+        }
+      ],
+      "transformations": [
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true
+            },
+            "indexByName": {},
+            "renameByName": {}
+          }
+        }
+      ]
+    },
+    {
+      "id": 9,
+      "title": "SeaweedFS volume-server disk use over time",
+      "description": "Physical disk use on each volume server.",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 9,
+        "w": 12,
+        "x": 12,
+        "y": 28
+      },
+      "datasource": "${DS_MIMIR}",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "expr": "max by (pod, name) (SeaweedFS_volumeServer_resource{namespace=\"seaweedfs\",type=\"used\"})",
+          "legendFormat": "{{pod}} {{name}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 10,
+      "title": "SeaweedFS S3 logical bucket size now",
+      "description": "Object bytes by bucket before replication.",
+      "type": "table",
+      "gridPos": {
+        "h": 9,
+        "w": 12,
+        "x": 0,
+        "y": 37
+      },
+      "datasource": "${DS_MIMIR}",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes"
+        },
+        "overrides": []
+      },
+      "options": {
+        "cellHeight": "sm",
+        "footer": {
+          "show": false
+        },
+        "showHeader": true
+      },
+      "targets": [
+        {
+          "expr": "sort_desc(max by (bucket) (SeaweedFS_s3_bucket_size_bytes{namespace=\"seaweedfs\",bucket!=\"\"}))",
+          "format": "table",
+          "instant": true,
+          "legendFormat": "{{bucket}}",
+          "refId": "A"
+        }
+      ],
+      "transformations": [
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true
+            },
+            "indexByName": {},
+            "renameByName": {}
+          }
+        }
+      ]
+    },
+    {
+      "id": 11,
+      "title": "Largest S3 logical buckets over time",
+      "description": "Top ten buckets by logical bytes at each point in time.",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 9,
+        "w": 12,
+        "x": 12,
+        "y": 37
+      },
+      "datasource": "${DS_MIMIR}",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "expr": "topk(10, max by (bucket) (SeaweedFS_s3_bucket_size_bytes{namespace=\"seaweedfs\",bucket!=\"\"}))",
+          "legendFormat": "{{bucket}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 12,
+      "title": "SeaweedFS S3 physical bucket size now",
+      "description": "Bucket physical size reported by SeaweedFS; overlaps collection and volume-server views.",
+      "type": "table",
+      "gridPos": {
+        "h": 9,
+        "w": 12,
+        "x": 0,
+        "y": 46
+      },
+      "datasource": "${DS_MIMIR}",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes"
+        },
+        "overrides": []
+      },
+      "options": {
+        "cellHeight": "sm",
+        "footer": {
+          "show": false
+        },
+        "showHeader": true
+      },
+      "targets": [
+        {
+          "expr": "sort_desc(max by (bucket) (SeaweedFS_s3_bucket_physical_size_bytes{namespace=\"seaweedfs\",bucket!=\"\"}))",
+          "format": "table",
+          "instant": true,
+          "legendFormat": "{{bucket}}",
+          "refId": "A"
+        }
+      ],
+      "transformations": [
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true
+            },
+            "indexByName": {},
+            "renameByName": {}
+          }
+        }
+      ]
+    },
+    {
+      "id": 13,
+      "title": "Largest S3 physical buckets over time",
+      "description": "Top ten buckets by physical bytes at each point in time.",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 9,
+        "w": 12,
+        "x": 12,
+        "y": 46
+      },
+      "datasource": "${DS_MIMIR}",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "expr": "topk(10, max by (bucket) (SeaweedFS_s3_bucket_physical_size_bytes{namespace=\"seaweedfs\",bucket!=\"\"}))",
+          "legendFormat": "{{bucket}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 14,
+      "title": "SeaweedFS collection bytes now",
+      "description": "Normal stored bytes summed across volume-server copies for each collection.",
+      "type": "table",
+      "gridPos": {
+        "h": 9,
+        "w": 12,
+        "x": 0,
+        "y": 55
+      },
+      "datasource": "${DS_MIMIR}",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes"
+        },
+        "overrides": []
+      },
+      "options": {
+        "cellHeight": "sm",
+        "footer": {
+          "show": false
+        },
+        "showHeader": true
+      },
+      "targets": [
+        {
+          "expr": "sort_desc(sum by (collection) (max by (collection, pod) (SeaweedFS_volumeServer_total_disk_size{namespace=\"seaweedfs\",type=\"normal\",collection!=\"\"})))",
+          "format": "table",
+          "instant": true,
+          "legendFormat": "{{collection}}",
+          "refId": "A"
+        }
+      ],
+      "transformations": [
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true
+            },
+            "indexByName": {},
+            "renameByName": {}
+          }
+        }
+      ]
+    },
+    {
+      "id": 15,
+      "title": "Largest SeaweedFS collections over time",
+      "description": "Top ten collections by stored replica bytes at each point in time.",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 9,
+        "w": 12,
+        "x": 12,
+        "y": 55
+      },
+      "datasource": "${DS_MIMIR}",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "expr": "topk(10, sum by (collection) (max by (collection, pod) (SeaweedFS_volumeServer_total_disk_size{namespace=\"seaweedfs\",type=\"normal\",collection!=\"\"})))",
+          "legendFormat": "{{collection}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 16,
+      "title": "ClickHouse disk used now",
+      "description": "Used bytes by ClickHouse pod and disk; replicas are separate physical copies.",
+      "type": "table",
+      "gridPos": {
+        "h": 9,
+        "w": 12,
+        "x": 0,
+        "y": 64
+      },
+      "datasource": "${DS_MIMIR}",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes"
+        },
+        "overrides": []
+      },
+      "options": {
+        "cellHeight": "sm",
+        "footer": {
+          "show": false
+        },
+        "showHeader": true
+      },
+      "targets": [
+        {
+          "expr": "sort_desc(max by (namespace, pod, disk) (ClickHouseAsyncMetrics_DiskUsed{namespace=\"clickhouse\"}))",
+          "format": "table",
+          "instant": true,
+          "legendFormat": "{{pod}} {{disk}}",
+          "refId": "A"
+        }
+      ],
+      "transformations": [
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true
+            },
+            "indexByName": {},
+            "renameByName": {}
+          }
+        }
+      ]
+    },
+    {
+      "id": 17,
+      "title": "ClickHouse disk used over time",
+      "description": "Disk usage history for each ClickHouse pod and disk.",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 9,
+        "w": 12,
+        "x": 12,
+        "y": 64
+      },
+      "datasource": "${DS_MIMIR}",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "expr": "max by (namespace, pod, disk) (ClickHouseAsyncMetrics_DiskUsed{namespace=\"clickhouse\"})",
+          "legendFormat": "{{pod}} {{disk}}",
+          "refId": "A"
+        }
+      ]
+    }
+  ],
+  "refresh": "5m",
+  "schemaVersion": 39,
+  "style": "dark",
+  "tags": [
+    "cluster",
+    "disk",
+    "storage",
+    "capacity"
+  ],
+  "templating": {
+    "list": []
+  },
+  "time": {
+    "from": "now-7d",
+    "to": "now"
+  },
+  "timepicker": {},
+  "timezone": "browser",
+  "title": "Cluster disk usage and growth",
+  "uid": "cluster-disk-usage",
+  "version": 1,
+  "weekStart": ""
+}

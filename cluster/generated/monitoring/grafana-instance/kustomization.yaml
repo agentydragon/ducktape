@@ -19,6 +19,10 @@ configMapGenerator:
     namespace: monitoring
     files:
       - cluster-storage-io.json
+  - name: cluster-disk-usage-dashboard
+    namespace: monitoring
+    files:
+      - cluster-disk-usage.json
   - name: home-network-overview-dashboard
     namespace: monitoring
     files:

@@ -79,6 +79,7 @@ _FILE_DASHBOARDS = {
     "interface-flap-frequency": _FileDashboard(datasources={"DS_LOKI": "Loki", "DS_PROMETHEUS": "Mimir"}),
     "rugged-power": _FileDashboard(datasources={"DS_PROMETHEUS": "Mimir"}),
     "cluster-storage-io": _FileDashboard(datasources={"DS_MIMIR": "Mimir", "DS_LOKI": "Loki"}),
+    "cluster-disk-usage": _FileDashboard(datasources={"DS_MIMIR": "Mimir"}),
     # Beside the AT&T gateway exporter's own "Home gateway" dashboard.
     "home-network-overview": _FileDashboard(datasources={}, folder="Home network"),
 }
