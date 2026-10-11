@@ -20,8 +20,8 @@ from typing import Annotated
 
 import typer
 
-from agentplane.runner.channel import ChannelTiming, RunnerChannelClient
 from agentplane.runner.config import ClaudeLaunch, CodexLaunch, DebugCheckpoint, IngressEndpoint, RunnerConfig
+from agentplane.runner.control import ControlTiming, RunnerControlClient
 from agentplane.runner.ingress import IngressPusher
 from agentplane.runner.service import serve
 
@@ -87,12 +87,12 @@ def main(
             "with, its value owned by the image rather than by this invocation; repeat per name.",
         ),
     ] = None,
-    channel_target: Annotated[
+    control_target: Annotated[
         str | None,
-        typer.Option(help="Sandbox Service runner-channel host:port to dial; omit to serve only inbound Attach."),
+        typer.Option(help="Sandbox Service runner-control host:port to dial; omit to serve only inbound Attach."),
     ] = None,
-    channel_bearer: Annotated[
-        str | None, typer.Option(help="Bearer placeholder the egress proxy substitutes on the runner channel.")
+    control_bearer: Annotated[
+        str | None, typer.Option(help="Bearer placeholder the egress proxy substitutes on the runner control stream.")
     ] = None,
     ingress_target: Annotated[
         str | None, typer.Option(help="Runner ingress host:port to push every Session's Events to; omit to push none.")
@@ -120,8 +120,8 @@ def main(
         if openai_base_url is None:
             raise typer.BadParameter("--openai-base-url is required with --codex-binary")
         codex = CodexLaunch(binary=codex_binary, base_url=openai_base_url, api_key=os.environ["OPENAI_API_KEY"])
-    if (channel_target is None) != (channel_bearer is None):
-        raise typer.BadParameter("--channel-target and --channel-bearer must be set together")
+    if (control_target is None) != (control_bearer is None):
+        raise typer.BadParameter("--control-target and --control-bearer must be set together")
     if (ingress_target is None) != (ingress_bearer is None):
         raise typer.BadParameter("--ingress-target and --ingress-bearer must be set together")
     if (test_debug_checkpoint_name is None) != (test_debug_checkpoint_command_id is None):
@@ -144,11 +144,11 @@ def main(
             else None
         ),
     )
-    channel = (channel_target, channel_bearer) if channel_target is not None and channel_bearer is not None else None
-    asyncio.run(async_main(config, listen, channel))
+    control = (control_target, control_bearer) if control_target is not None and control_bearer is not None else None
+    asyncio.run(async_main(config, listen, control))
 
 
-async def async_main(config: RunnerConfig, listen: str, channel: tuple[str, str] | None) -> None:
+async def async_main(config: RunnerConfig, listen: str, control: tuple[str, str] | None) -> None:
     server, runner, port = await serve(config, address=listen)
     host = listen.rsplit(":", 1)[0]
     # The line a supervisor or test reads to find the port.
@@ -157,21 +157,21 @@ async def async_main(config: RunnerConfig, listen: str, channel: tuple[str, str]
     loop = asyncio.get_running_loop()
     for signum in (signal.SIGINT, signal.SIGTERM):
         loop.add_signal_handler(signum, stopping.set)
-    # A broken channel or ingress push must not take the harnesses down with it, nor each other.
+    # A broken control stream or ingress push must not take the harnesses down with it, nor each other.
     dialing: list[asyncio.Task[None]] = []
-    if channel is not None:
-        target, bearer = channel
+    if control is not None:
+        target, bearer = control
         dialing.append(
             asyncio.create_task(
-                RunnerChannelClient(runner, target=target, bearer=bearer, timing=ChannelTiming()).run(),
-                name="runner channel",
+                RunnerControlClient(runner, target=target, bearer=bearer, timing=ControlTiming()).run(),
+                name="runner control stream",
             )
         )
     if config.ingress is not None:
         dialing.append(
             asyncio.create_task(
                 IngressPusher(
-                    runner, target=config.ingress.target, bearer=config.ingress.bearer, timing=ChannelTiming()
+                    runner, target=config.ingress.target, bearer=config.ingress.bearer, timing=ControlTiming()
                 ).run(),
                 name="ingress push",
             )

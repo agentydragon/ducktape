@@ -6,7 +6,7 @@ import pytest
 import pytest_bazel
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from agentplane.proto import command_pb2, event_log_pb2, runner_channel_pb2 as channel_pb2
+from agentplane.proto import command_pb2, event_log_pb2, runner_control_pb2 as control_pb2
 from agentplane.runner_gateway.commands.dispatch import CommandKey, DispatchStore, ReceiptMismatchError, Refused
 from agentplane.runner_gateway.commands.store import CommandSubmission, SubmissionState, SubmissionStore
 from agentplane.runner_gateway.testing.journal import admission
@@ -17,7 +17,7 @@ from agentplane.subjects import ServiceAccountRef
 CALLER = ServiceAccountRef(namespace="testing", name="caller")
 COMMAND = command_pb2.Command(command_id="test-command", submit_input=command_pb2.SubmitInput(text="hello"))
 RUNNER_SESSION = "test-runner-session"
-REFUSED = channel_pb2.CommandRefused(reason=channel_pb2.CommandRefused.REASON_HARNESS_STOPPED)
+REFUSED = control_pb2.CommandRefused(reason=control_pb2.CommandRefused.REASON_HARNESS_STOPPED)
 EPOCH = 1
 
 
@@ -54,9 +54,9 @@ async def open_attempt(dispatches: DispatchStore, sandbox_uid: UUID, session_id:
 
 
 def receipt(
-    *, admitted: event_log_pb2.EventEntry | None = None, refused: channel_pb2.CommandRefused | None = None
-) -> channel_pb2.CommandReceipt:
-    return channel_pb2.CommandReceipt(
+    *, admitted: event_log_pb2.EventEntry | None = None, refused: control_pb2.CommandRefused | None = None
+) -> control_pb2.CommandReceipt:
+    return control_pb2.CommandReceipt(
         session_id=RUNNER_SESSION, command_id=COMMAND.command_id, admitted=admitted, refused=refused
     )
 
@@ -141,7 +141,7 @@ async def test_receipt_must_match_a_command_sent_to_the_sandbox(
     command_id: str,
 ) -> None:
     await open_attempt(dispatches, sandbox_uid, session_id)
-    mismatched = channel_pb2.CommandReceipt(session_id=runner_session, command_id=command_id, refused=REFUSED)
+    mismatched = control_pb2.CommandReceipt(session_id=runner_session, command_id=command_id, refused=REFUSED)
     with pytest.raises(ReceiptMismatchError):
         await dispatches.record(uuid4() if other_sandbox else sandbox_uid, mismatched)
     assert await dispatches.read_outcome(key_of(session_id)) is None

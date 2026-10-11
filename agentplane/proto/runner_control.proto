@@ -1,15 +1,15 @@
-// The runner-initiated control channel to the Sandbox Service; contract in
-// agentplane/docs/runner_channel.md. An incompatible change rides a clean cutover: the operator
+// The runner-initiated control stream to the Sandbox Service; contract in
+// agentplane/docs/runner_control.md. An incompatible change rides a clean cutover: the operator
 // retires every Sandbox on the old protocol.
 syntax = "proto3";
 
-package agentplane.proto.runner_channel;
+package agentplane.proto.runner_control;
 
 import "agentplane/proto/command.proto";
 import "agentplane/proto/event_log.proto";
 import "agentplane/proto/runner.proto";
 
-service RunnerChannel {
+service RunnerControl {
   rpc Connect(stream RunnerFrame) returns (stream ServiceFrame);
 }
 

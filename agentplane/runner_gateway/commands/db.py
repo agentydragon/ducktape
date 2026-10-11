@@ -22,7 +22,7 @@ from sqlalchemy import (
 from sqlalchemy.dialects.postgresql import ARRAY
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
-from agentplane.proto import command_pb2, event_log_pb2, runner_channel_pb2 as channel_pb2
+from agentplane.proto import command_pb2, event_log_pb2, runner_control_pb2 as control_pb2
 from util.sqlalchemy_protobuf import ProtobufColumn
 
 # gazelle:include_dep @pypi//protobuf
@@ -120,8 +120,8 @@ class CommandSubmission(Base):
     state: Mapped[str] = mapped_column(String)
     admission: Mapped[event_log_pb2.EventEntry | None] = mapped_column(ProtobufColumn(event_log_pb2.EventEntry))
     rejection: Mapped[str | None] = mapped_column(String(512))
-    # Delivery over the runner channel (`agentplane/docs/runner_channel.md` § Dispatch attempts), absent
-    # until the first channel submit. A pending submission is sent only while its attempt is open,
+    # Delivery over the runner control stream (`agentplane/docs/runner_control.md` § Dispatch attempts), absent
+    # until the first control-stream submit. A pending submission is sent only while its attempt is open,
     # before `attempt_deadline`, so a reconnecting runner is never sent stale work. Each submit
     # reopens the same attempt. A submission whose receipt was lost and is never retried stays
     # `pending_admission`; nothing settles it in the background.
@@ -132,13 +132,13 @@ class CommandSubmission(Base):
     # The connection epoch the open attempt was sent on; it is sent at most once per epoch.
     attempt_sent_epoch: Mapped[int | None] = mapped_column(BigInteger)
     # The runner's refusal of the open attempt. The submission stays pending.
-    attempt_refusal: Mapped[channel_pb2.CommandRefused | None] = mapped_column(
-        ProtobufColumn(channel_pb2.CommandRefused)
+    attempt_refusal: Mapped[control_pb2.CommandRefused | None] = mapped_column(
+        ProtobufColumn(control_pb2.CommandRefused)
     )
 
 
 class RunnerConnection(Base):
-    """The channel operations a Sandbox's runner connections have agreed."""
+    """The control operations a Sandbox's runner connections have agreed."""
 
     __tablename__ = "runner_connection"
     __table_args__ = (CheckConstraint("connection_epoch > 0", name="connection_epoch_positive"),)
@@ -150,6 +150,6 @@ class RunnerConnection(Base):
     owner_replica: Mapped[str | None] = mapped_column(String)
     runner_boot_id: Mapped[str | None] = mapped_column(String)
     last_seen_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
-    # Every channel operation a connection of this Sandbox has agreed in its handshake. It only
-    # grows, so once a runner carries an operation over the channel it never falls back inbound.
+    # Every control operation a connection of this Sandbox has agreed in its handshake. It only
+    # grows, so once a runner carries an operation over the control stream it never falls back inbound.
     operations: Mapped[list[str]] = mapped_column(ARRAY(String))

@@ -316,7 +316,7 @@ does not grant history read, messaging, credentials or execution of another prin
 The [KubeVirt plan](kubevirt_environments.md) contains completed prototype evidence and the detailed
 provider design. Split implementation rather than making “VM support” one indivisible task. This is
 an unranked candidate lane, not authorization for local Bazel in current containers. The
-[runner channel](../docs/runner_channel.md) settles the dial-out contract VM control networking
+[runner control stream](../docs/runner_control.md) settles the dial-out contract VM control networking
 builds on; changing connection direction does not move command durability or remove the runner
 journal.
 
@@ -361,7 +361,7 @@ it.
 **Blocked on the rollout; the operator's step.** The operator chose a clean cutover (2026-10-10
 PDT) and deletes every Sandbox created before it through `DeleteSandbox`, so each runner seals its
 journals and retention holds keep it until the History Service has archived them. Exit: no live
-Sandbox's runner lacks the channel.
+Sandbox's runner lacks the control stream.
 
 Pre-cutover Sandboxes are still archived the old way: the History Service follows them through the
 Sandbox Service and holds them until the seal, which is why `FOLLOW_PATH_RETIRE` waits for this
@@ -388,7 +388,7 @@ the relay as its foundation, is rewritten for the channel.
 ### `VM_CONTROL_NETWORKING` — integrate the reviewed connection direction
 
 **Blocked on the VM provider.** Wire
-VM control reachability/authentication to the chosen path. An outbound channel may remove guest
+VM control reachability/authentication to the chosen path. An outbound control stream may remove guest
 control-port exposure and endpoint discovery; retain the independently needed outbound API/credential
 proxy path. State which guest ports, endpoint discovery and network policies the chosen path
 replaces. Image packaging and process-isolation work need not wait for this decision. Verify the
@@ -814,7 +814,7 @@ plain name if it carries a history-specific one.
 **Candidate; operator direction, 2026-10-10 and 2026-10-11 PDT.** Protobuf messages and gRPC
 services that cross components live in `agentplane/proto/<name>.proto` (google3's `proto/`
 convention), each with the package `agentplane.proto.<name>`: its path from the ducktape root, no
-version suffix. `runner.proto`, `runner_ingress.proto`, `runner_channel.proto` and the shared
+version suffix. `runner.proto`, `runner_ingress.proto`, `runner_control.proto` and the shared
 `command.proto`, `event.proto` and `event_log.proto` are there. Move the rest with their
 generated-code imports: `sandbox_service/protocol.proto` and `history_service/protocol.proto`. A
 gRPC service's full name includes its package, so each move is a clean cutover with no second name
@@ -903,7 +903,7 @@ Target and decisions: [History Service plan](history_service.md#target). The run
 out, but to two endpoints its Sandbox names: an **ingress** it pushes its journal's Events to, and
 a **control endpoint** (the Runner Gateway) whose stream it holds for commands, receipts and lifecycle
 requests. The History Service is the ingress when history is kept. The contract is
-[runner channel § Event ingress](../docs/runner_channel.md#event-ingress); it replaces following the
+[runner control stream § Event ingress](../docs/runner_control.md#event-ingress); it replaces following the
 runner through the Sandbox Service. Section 7's store, fold and database
 nodes and section 9 are unaffected.
 

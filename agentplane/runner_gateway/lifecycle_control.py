@@ -1,9 +1,9 @@
-"""Lifecycle requests over the runner channel, sent by the replica holding a Sandbox's connection.
+"""Lifecycle requests over the runner control stream, sent by the replica holding a Sandbox's connection.
 
 The holder writes a `ControlRequest` on `Connect`, and the runner answers each one once with a
 `ControlResult` on the same stream. A request is bounded by its caller's deadline; a connection that
 ends drops its unanswered requests, and a reconnect replays none of them. Contract:
-`agentplane/docs/runner_channel.md` § Lifecycle operations.
+`agentplane/docs/runner_control.md` § Lifecycle operations.
 """
 
 import asyncio
@@ -14,7 +14,7 @@ from uuid import UUID, uuid4
 
 import grpc
 
-from agentplane.proto import runner_channel_pb2 as channel_pb2
+from agentplane.proto import runner_control_pb2 as control_pb2
 from agentplane.runner.errors import RunnerError
 from agentplane.runner_gateway.connection_records import ConnectionLeases
 from agentplane.sandbox_service.destinations import DestinationUnavailableError
@@ -23,7 +23,7 @@ from agentplane.sandbox_service.destinations import DestinationUnavailableError
 
 logger = logging.getLogger(__name__)
 
-type Send = Callable[[channel_pb2.ServiceFrame], Awaitable[None]]
+type Send = Callable[[control_pb2.ServiceFrame], Awaitable[None]]
 
 
 class ConnectionNotHeldError(DestinationUnavailableError):
@@ -38,8 +38,8 @@ class ControlLostError(DestinationUnavailableError):
 class ControlRefusedError(RunnerError):
     """The runner answered the request with a refusal."""
 
-    def __init__(self, refusal: channel_pb2.ControlRefused) -> None:
-        super().__init__(f"{channel_pb2.ControlRefused.Reason.Name(refusal.reason)}: {refusal.detail}")
+    def __init__(self, refusal: control_pb2.ControlRefused) -> None:
+        super().__init__(f"{control_pb2.ControlRefused.Reason.Name(refusal.reason)}: {refusal.detail}")
         self.refusal = refusal
 
 
@@ -53,9 +53,9 @@ class ControlConnection:
     def __init__(self, *, epoch: int, send: Send) -> None:
         self.epoch = epoch
         self.send = send
-        self.pending: dict[str, asyncio.Future[channel_pb2.ControlResult]] = {}
+        self.pending: dict[str, asyncio.Future[control_pb2.ControlResult]] = {}
 
-    def answer(self, result: channel_pb2.ControlResult) -> None:
+    def answer(self, result: control_pb2.ControlResult) -> None:
         waiting = self.pending.get(result.request_id)
         if waiting is None or waiting.done():
             # Its caller's deadline passed first; the operation's outcome is the runner's to keep.
@@ -69,7 +69,7 @@ class ControlConnection:
                 waiting.set_exception(ControlLostError("the runner connection ended before it answered"))
 
 
-class ChannelControl:
+class LifecycleControl:
     """This replica's runner connections that carry lifecycle requests, by the UID of each one's Sandbox."""
 
     def __init__(self, leases: ConnectionLeases) -> None:
@@ -99,7 +99,7 @@ class ChannelControl:
             return None
         return connection
 
-    async def request(self, sandbox_uid: UUID, request: channel_pb2.ControlRequest) -> channel_pb2.ControlResult:
+    async def request(self, sandbox_uid: UUID, request: control_pb2.ControlRequest) -> control_pb2.ControlResult:
         """Send one request on the Sandbox's connection and return the runner's answer to it.
 
         Raises `ControlRefusedError` on a refusal. The caller bounds the wait.
@@ -107,13 +107,13 @@ class ChannelControl:
         connection = self.holder(sandbox_uid)
         if connection is None:
             raise ConnectionNotHeldError("this replica holds no current runner connection for the Sandbox")
-        sent = channel_pb2.ControlRequest(request_id=str(uuid4()))
+        sent = control_pb2.ControlRequest(request_id=str(uuid4()))
         sent.MergeFrom(request)
-        waiting: asyncio.Future[channel_pb2.ControlResult] = asyncio.get_running_loop().create_future()
+        waiting: asyncio.Future[control_pb2.ControlResult] = asyncio.get_running_loop().create_future()
         connection.pending[sent.request_id] = waiting
         try:
             try:
-                await connection.send(channel_pb2.ServiceFrame(control=sent))
+                await connection.send(control_pb2.ServiceFrame(control=sent))
             except (grpc.RpcError, asyncio.InvalidStateError) as error:
                 raise ControlLostError("the runner connection ended before the request was sent") from error
             result = await waiting

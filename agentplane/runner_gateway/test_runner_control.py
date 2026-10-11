@@ -1,4 +1,4 @@
-"""The channel listener against a fake API server and a migrated commands database."""
+"""The control listener against a fake API server and a migrated commands database."""
 
 import asyncio
 from collections.abc import AsyncIterator, Callable
@@ -12,9 +12,8 @@ import pytest
 import pytest_bazel
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from agentplane.proto import command_pb2, event_log_pb2, runner_channel_pb2, runner_channel_pb2_grpc
-from agentplane.runner_gateway.channel_control import ChannelControl
-from agentplane.runner_gateway.channel_delivery import ChannelDelivery, CommandRefusedError
+from agentplane.proto import command_pb2, event_log_pb2, runner_control_pb2, runner_control_pb2_grpc
+from agentplane.runner_gateway.command_delivery import CommandDelivery, CommandRefusedError
 from agentplane.runner_gateway.commands.connections import ConnectionStore
 from agentplane.runner_gateway.commands.dispatch import DispatchStore
 from agentplane.runner_gateway.commands.store import CommandSubmission, SubmissionStore
@@ -27,8 +26,9 @@ from agentplane.runner_gateway.connection_records import (
     ConnectionLeases,
     RecordOwner,
 )
-from agentplane.runner_gateway.runner_channel import ChannelTiming
-from agentplane.runner_gateway.testing.runner_channel import OTHER_REPLICA, REPLICA, RUNNER_TOKEN, serve_channel
+from agentplane.runner_gateway.lifecycle_control import LifecycleControl
+from agentplane.runner_gateway.runner_control import ControlTiming
+from agentplane.runner_gateway.testing.runner_control import OTHER_REPLICA, REPLICA, RUNNER_TOKEN, serve_channel
 from agentplane.sandbox_service.destinations import DestinationUnavailableError
 from agentplane.sandbox_service.testing.kubernetes import ACCOUNT, SANDBOX, SANDBOX_UID, Cluster
 from agentplane.subjects import ServiceAccountRef
@@ -38,17 +38,17 @@ from util.agent_sandbox import SANDBOX_KIND, SANDBOXES_PLURAL
 # gazelle:include_dep @pypi//protobuf
 COMMAND = command_pb2.Command(command_id="test-command", submit_input=command_pb2.SubmitInput(text="hello"))
 RUNNER_SESSION = "test-runner-session"
-HELLO = runner_channel_pb2.RunnerFrame(
-    hello=runner_channel_pb2.Hello(runner_boot_id="test-boot", capabilities=["commands", "test-future-capability"])
+HELLO = runner_control_pb2.RunnerFrame(
+    hello=runner_control_pb2.Hello(runner_boot_id="test-boot", capabilities=["commands", "test-future-capability"])
 )
 OWNER = RecordOwner(name=SANDBOX, uid=UUID(SANDBOX_UID))
 
-type Replica = Callable[[ConnectionHolder], AbstractAsyncContextManager[runner_channel_pb2_grpc.RunnerChannelAsyncStub]]
+type Replica = Callable[[ConnectionHolder], AbstractAsyncContextManager[runner_control_pb2_grpc.RunnerControlAsyncStub]]
 
 
 @pytest.fixture
-async def delivery(engine: AsyncEngine, leases: ConnectionLeases) -> AsyncIterator[ChannelDelivery]:
-    delivery = ChannelDelivery(
+async def delivery(engine: AsyncEngine, leases: ConnectionLeases) -> AsyncIterator[CommandDelivery]:
+    delivery = CommandDelivery(
         engine.url,
         dispatches=DispatchStore(engine),
         connections=ConnectionStore(engine),
@@ -61,20 +61,20 @@ async def delivery(engine: AsyncEngine, leases: ConnectionLeases) -> AsyncIterat
 
 
 @pytest.fixture
-def replica(cluster: Cluster, engine: AsyncEngine, delivery: ChannelDelivery) -> Replica:
+def replica(cluster: Cluster, engine: AsyncEngine, delivery: CommandDelivery) -> Replica:
     """Start a channel listener as one gateway replica; replicas share the cluster and database."""
     return lambda holder: serve_channel(
         cluster,
         holder,
         connections=ConnectionStore(engine),
         delivery=delivery,
-        control=ChannelControl(delivery.leases),
-        timing=ChannelTiming(heartbeat_s=0.05, liveness_s=1, touch_s=0.1, max_age_s=60),
+        control=LifecycleControl(delivery.leases),
+        timing=ControlTiming(heartbeat_s=0.05, liveness_s=1, touch_s=0.1, max_age_s=60),
     )
 
 
 @pytest.fixture
-async def channel(replica: Replica) -> AsyncIterator[runner_channel_pb2_grpc.RunnerChannelAsyncStub]:
+async def listener(replica: Replica) -> AsyncIterator[runner_control_pb2_grpc.RunnerControlAsyncStub]:
     async with replica(REPLICA) as stub:
         yield stub
 
@@ -91,8 +91,8 @@ def run_sandbox_as(cluster: Cluster, account: str) -> None:
 
 @asynccontextmanager
 async def connect(
-    stub: runner_channel_pb2_grpc.RunnerChannelAsyncStub, token: str = RUNNER_TOKEN
-) -> AsyncIterator[grpc.aio.StreamStreamCall[runner_channel_pb2.RunnerFrame, runner_channel_pb2.ServiceFrame]]:
+    stub: runner_control_pb2_grpc.RunnerControlAsyncStub, token: str = RUNNER_TOKEN
+) -> AsyncIterator[grpc.aio.StreamStreamCall[runner_control_pb2.RunnerFrame, runner_control_pb2.ServiceFrame]]:
     call = stub.Connect(metadata=(("authorization", f"Bearer {token}"),), timeout=10)
     try:
         yield call
@@ -101,15 +101,15 @@ async def connect(
 
 
 async def read_frame(
-    call: grpc.aio.StreamStreamCall[runner_channel_pb2.RunnerFrame, runner_channel_pb2.ServiceFrame],
-) -> runner_channel_pb2.ServiceFrame:
+    call: grpc.aio.StreamStreamCall[runner_control_pb2.RunnerFrame, runner_control_pb2.ServiceFrame],
+) -> runner_control_pb2.ServiceFrame:
     frame = await call.read()
-    assert isinstance(frame, runner_channel_pb2.ServiceFrame), "the service ended the stream"
+    assert isinstance(frame, runner_control_pb2.ServiceFrame), "the service ended the stream"
     return frame
 
 
 async def status_of(
-    call: grpc.aio.StreamStreamCall[runner_channel_pb2.RunnerFrame, runner_channel_pb2.ServiceFrame],
+    call: grpc.aio.StreamStreamCall[runner_control_pb2.RunnerFrame, runner_control_pb2.ServiceFrame],
 ) -> grpc.StatusCode:
     """Drain the service's frames until it ends the stream."""
     try:
@@ -121,18 +121,18 @@ async def status_of(
 
 
 async def test_newest_connection_supersedes_the_previous_one(
-    channel: runner_channel_pb2_grpc.RunnerChannelAsyncStub,
+    listener: runner_control_pb2_grpc.RunnerControlAsyncStub,
 ) -> None:
-    async with connect(channel) as first:
+    async with connect(listener) as first:
         await first.write(HELLO)
         welcome = await read_frame(first)
-        assert welcome.welcome == runner_channel_pb2.Welcome(connection_epoch=1, capabilities=["commands"])
+        assert welcome.welcome == runner_control_pb2.Welcome(connection_epoch=1, capabilities=["commands"])
         assert (await read_frame(first)).HasField("heartbeat")
-        async with connect(channel) as second:
+        async with connect(listener) as second:
             await second.write(HELLO)
             assert (await read_frame(second)).welcome.connection_epoch == 2
             assert await status_of(first) == grpc.StatusCode.ABORTED
-            await second.write(runner_channel_pb2.RunnerFrame(heartbeat=runner_channel_pb2.Heartbeat()))
+            await second.write(runner_control_pb2.RunnerFrame(heartbeat=runner_control_pb2.Heartbeat()))
             assert (await read_frame(second)).HasField("heartbeat")
 
 
@@ -141,9 +141,9 @@ def owners(obj: dict[str, Any]) -> list[tuple[str, str]]:
 
 
 async def test_accepting_records_the_connection_on_the_sandbox(
-    channel: runner_channel_pb2_grpc.RunnerChannelAsyncStub, cluster: Cluster
+    listener: runner_control_pb2_grpc.RunnerControlAsyncStub, cluster: Cluster
 ) -> None:
-    async with connect(channel) as call:
+    async with connect(listener) as call:
         await call.write(HELLO)
         assert (await read_frame(call)).welcome.connection_epoch == 1
     lease = cluster.fake.objects["leases"][OWNER.lease_name]
@@ -188,7 +188,7 @@ def owned_by_sandbox(name: str, **fields: Any) -> dict[str, Any]:
 
 
 async def test_an_older_epoch_never_overwrites_the_control_endpoints(
-    channel: runner_channel_pb2_grpc.RunnerChannelAsyncStub, cluster: Cluster
+    listener: runner_control_pb2_grpc.RunnerControlAsyncStub, cluster: Cluster
 ) -> None:
     # Written by a newer connection's owner that won the race to the EndpointSlice.
     newer: dict[str, Any] = {
@@ -204,7 +204,7 @@ async def test_an_older_epoch_never_overwrites_the_control_endpoints(
         "ports": [{"name": "grpc", "port": REPLICA.port}],
     }
     cluster.fake.put("endpointslices", newer)
-    async with connect(channel) as call:
+    async with connect(listener) as call:
         await call.write(HELLO)
         assert (await read_frame(call)).welcome.connection_epoch == 1
     endpoints = cluster.fake.objects["endpointslices"][OWNER.control_name]
@@ -248,35 +248,35 @@ async def test_liveness_is_read_from_the_watched_leases(leases: ConnectionLeases
     ],
 )
 async def test_only_the_sandbox_pod_connects(
-    channel: runner_channel_pb2_grpc.RunnerChannelAsyncStub,
+    listener: runner_control_pb2_grpc.RunnerControlAsyncStub,
     cluster: Cluster,
     token: str,
     account: str,
     code: grpc.StatusCode,
 ) -> None:
     run_sandbox_as(cluster, account)
-    async with connect(channel, token) as call:
+    async with connect(listener, token) as call:
         await call.write(HELLO)
         assert await status_of(call) == code
 
 
-async def test_first_frame_must_be_hello(channel: runner_channel_pb2_grpc.RunnerChannelAsyncStub) -> None:
-    async with connect(channel) as call:
-        await call.write(runner_channel_pb2.RunnerFrame(heartbeat=runner_channel_pb2.Heartbeat()))
+async def test_first_frame_must_be_hello(listener: runner_control_pb2_grpc.RunnerControlAsyncStub) -> None:
+    async with connect(listener) as call:
+        await call.write(runner_control_pb2.RunnerFrame(heartbeat=runner_control_pb2.Heartbeat()))
         assert await status_of(call) == grpc.StatusCode.INVALID_ARGUMENT
 
 
-async def test_silent_runner_is_dropped(channel: runner_channel_pb2_grpc.RunnerChannelAsyncStub) -> None:
-    async with connect(channel) as call:
+async def test_silent_runner_is_dropped(listener: runner_control_pb2_grpc.RunnerControlAsyncStub) -> None:
+    async with connect(listener) as call:
         await call.write(HELLO)
         assert (await read_frame(call)).HasField("welcome")
         assert await status_of(call) == grpc.StatusCode.UNAVAILABLE
 
 
 async def test_identity_change_ends_the_connection(
-    channel: runner_channel_pb2_grpc.RunnerChannelAsyncStub, cluster: Cluster
+    listener: runner_control_pb2_grpc.RunnerControlAsyncStub, cluster: Cluster
 ) -> None:
-    async with connect(channel) as call:
+    async with connect(listener) as call:
         await call.write(HELLO)
         assert (await read_frame(call)).HasField("welcome")
         run_sandbox_as(cluster, "test-other-account")
@@ -292,7 +292,7 @@ async def session_id(engine: AsyncEngine) -> UUID:
     return session_id
 
 
-def deliver(delivery: ChannelDelivery, cluster: Cluster, session_id: UUID) -> asyncio.Task[event_log_pb2.EventEntry]:
+def deliver(delivery: CommandDelivery, cluster: Cluster, session_id: UUID) -> asyncio.Task[event_log_pb2.EventEntry]:
     return asyncio.create_task(
         delivery.deliver(
             sandbox_uid=UUID(SANDBOX_UID),
@@ -305,23 +305,23 @@ def deliver(delivery: ChannelDelivery, cluster: Cluster, session_id: UUID) -> as
 
 
 async def next_delivery(
-    call: grpc.aio.StreamStreamCall[runner_channel_pb2.RunnerFrame, runner_channel_pb2.ServiceFrame],
-) -> runner_channel_pb2.DeliverCommand:
+    call: grpc.aio.StreamStreamCall[runner_control_pb2.RunnerFrame, runner_control_pb2.ServiceFrame],
+) -> runner_control_pb2.DeliverCommand:
     while (frame := await read_frame(call)).HasField("heartbeat"):
-        await call.write(runner_channel_pb2.RunnerFrame(heartbeat=runner_channel_pb2.Heartbeat()))
+        await call.write(runner_control_pb2.RunnerFrame(heartbeat=runner_control_pb2.Heartbeat()))
     return frame.deliver
 
 
 async def test_delivered_command_returns_the_runner_receipt(
-    channel: runner_channel_pb2_grpc.RunnerChannelAsyncStub,
-    delivery: ChannelDelivery,
+    listener: runner_control_pb2_grpc.RunnerControlAsyncStub,
+    delivery: CommandDelivery,
     cluster: Cluster,
     session_id: UUID,
 ) -> None:
     admitted = event_log_pb2.EventEntry(cursor=1)
     admitted.origin.source_id, admitted.origin.sequence = "test-runner-source", 1
     admitted.event.command_admitted.command.CopyFrom(COMMAND)
-    async with connect(channel) as call:
+    async with connect(listener) as call:
         await call.write(HELLO)
         assert (await read_frame(call)).HasField("welcome")
         await until_cached(
@@ -331,8 +331,8 @@ async def test_delivered_command_returns_the_runner_receipt(
         sent = await next_delivery(call)
         assert (sent.session_id, sent.command) == (RUNNER_SESSION, COMMAND)
         await call.write(
-            runner_channel_pb2.RunnerFrame(
-                receipt=runner_channel_pb2.CommandReceipt(
+            runner_control_pb2.RunnerFrame(
+                receipt=runner_control_pb2.CommandReceipt(
                     session_id=RUNNER_SESSION, command_id=sent.command.command_id, admitted=admitted
                 )
             )
@@ -341,13 +341,13 @@ async def test_delivered_command_returns_the_runner_receipt(
 
 
 async def test_refusal_reaches_the_caller(
-    channel: runner_channel_pb2_grpc.RunnerChannelAsyncStub,
-    delivery: ChannelDelivery,
+    listener: runner_control_pb2_grpc.RunnerControlAsyncStub,
+    delivery: CommandDelivery,
     cluster: Cluster,
     session_id: UUID,
 ) -> None:
-    refused = runner_channel_pb2.CommandRefused(reason=runner_channel_pb2.CommandRefused.REASON_HARNESS_STOPPED)
-    async with connect(channel) as call:
+    refused = runner_control_pb2.CommandRefused(reason=runner_control_pb2.CommandRefused.REASON_HARNESS_STOPPED)
+    async with connect(listener) as call:
         await call.write(HELLO)
         assert (await read_frame(call)).HasField("welcome")
         await until_cached(
@@ -356,8 +356,8 @@ async def test_refusal_reaches_the_caller(
         waiting = deliver(delivery, cluster, session_id)
         sent = await next_delivery(call)
         await call.write(
-            runner_channel_pb2.RunnerFrame(
-                receipt=runner_channel_pb2.CommandReceipt(
+            runner_control_pb2.RunnerFrame(
+                receipt=runner_control_pb2.CommandReceipt(
                     session_id=RUNNER_SESSION, command_id=sent.command.command_id, refused=refused
                 )
             )
@@ -367,23 +367,23 @@ async def test_refusal_reaches_the_caller(
         assert raised.value.refusal == refused
 
 
-async def test_unconnected_runner_is_unavailable(delivery: ChannelDelivery, cluster: Cluster, session_id: UUID) -> None:
+async def test_unconnected_runner_is_unavailable(delivery: CommandDelivery, cluster: Cluster, session_id: UUID) -> None:
     with pytest.raises(DestinationUnavailableError):
         await deliver(delivery, cluster, session_id)
 
 
 async def test_agreed_operations_stick_to_the_sandbox(
-    channel: runner_channel_pb2_grpc.RunnerChannelAsyncStub, cluster: Cluster, engine: AsyncEngine
+    listener: runner_control_pb2_grpc.RunnerControlAsyncStub, cluster: Cluster, engine: AsyncEngine
 ) -> None:
     sandbox_uid = UUID(SANDBOX_UID)
     connections = ConnectionStore(engine)
-    async with connect(channel) as call:
+    async with connect(listener) as call:
         await call.write(HELLO)
         assert (await read_frame(call)).HasField("welcome")
-    # A later runner that no longer offers commands gets none, but the Sandbox stays channel-routed.
-    async with connect(channel) as call:
+    # A later runner that no longer offers commands gets none, but the Sandbox stays control-routed.
+    async with connect(listener) as call:
         await call.write(
-            runner_channel_pb2.RunnerFrame(hello=runner_channel_pb2.Hello(runner_boot_id="test-later-boot"))
+            runner_control_pb2.RunnerFrame(hello=runner_control_pb2.Hello(runner_boot_id="test-later-boot"))
         )
         assert list((await read_frame(call)).welcome.capabilities) == []
     assert await connections.read_operations(sandbox_uid) == {"commands"}

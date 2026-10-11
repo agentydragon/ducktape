@@ -1,4 +1,4 @@
-"""The History Service's runner ingress (agentplane/docs/runner_channel.md § Event ingress): runners
+"""The History Service's runner ingress (agentplane/docs/runner_control.md § Event ingress): runners
 push their Session journals here through the egress proxy, which swaps the placeholder bearer for
 the Pod's own token for this audience. It takes untrusted input, so it runs apart from the read API.
 """

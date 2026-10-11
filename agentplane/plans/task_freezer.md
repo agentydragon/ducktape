@@ -185,7 +185,7 @@ Requires a fresh operator product/architecture decision. These alternatives are 
 
 ### `RUNNER_STATE_BOUNDARY_RETHINK` — should the runner own durable state?
 
-Choose whether command durability moves centrally and the runner becomes a thin adapter. Central-admission changes require this decision. Transport direction is settled separately by the [runner channel](../docs/runner_channel.md), which retains runner durability.
+Choose whether command durability moves centrally and the runner becomes a thin adapter. Central-admission changes require this decision. Transport direction is settled separately by the [runner control stream](../docs/runner_control.md), which retains runner durability.
 
 ### `RUNNER_JOURNAL_SETTLEMENT` — settle deltas in the runner journal too
 

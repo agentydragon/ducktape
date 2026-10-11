@@ -10,11 +10,11 @@ from uuid import UUID, uuid4
 import grpc
 
 from agentplane.grpc_options import grpc_channel_option_kvps
-from agentplane.proto import runner_channel_pb2 as channel_pb2, runner_pb2
+from agentplane.proto import runner_control_pb2 as control_pb2, runner_pb2
 from agentplane.runner.client import RunnerClient
-from agentplane.runner_gateway.channel_control import ChannelControl, ConnectionNotHeldError
 from agentplane.runner_gateway.commands.connections import ConnectionStore
-from agentplane.runner_gateway.runner_channel import ChannelOperation
+from agentplane.runner_gateway.lifecycle_control import ConnectionNotHeldError, LifecycleControl
+from agentplane.runner_gateway.runner_control import ControlOperation
 from agentplane.runner_gateway.session_registry import SessionRegistry
 from agentplane.sandbox_service.destinations import DestinationResolver
 from agentplane.sandbox_service.protocol_pb2 import Sandbox, SandboxDestination
@@ -33,20 +33,20 @@ class Sealing:
     destinations: DestinationResolver
     sessions: SessionRegistry
     connections: ConnectionStore
-    control: ChannelControl
+    control: LifecycleControl
     runner_grpc_channel_options: dict[str, int | str]
 
     async def seal(self, sandbox: Sandbox) -> runner_pb2.SealResponse:
         """The runner's seal, each Session named as holders name it: the public Session ID, or the
         runner's own ID for a Session opened with a caller-chosen one."""
         sandbox_uid = UUID(sandbox.uid)
-        if ChannelOperation.LIFECYCLE in await self.connections.read_operations(sandbox_uid):
+        if ControlOperation.LIFECYCLE in await self.connections.read_operations(sandbox_uid):
             # The caller resolves the control Service again and retries until it reaches the holder.
             if self.control.holder(sandbox_uid) is None:
                 raise ConnectionNotHeldError(f"Sandbox {sandbox.name}'s runner connection is not held here")
             async with asyncio.timeout(SEAL_S):
                 result = await self.control.request(
-                    sandbox_uid, channel_pb2.ControlRequest(seal=runner_pb2.SealRequest())
+                    sandbox_uid, control_pb2.ControlRequest(seal=runner_pb2.SealRequest())
                 )
             sealed = result.seal
         else:

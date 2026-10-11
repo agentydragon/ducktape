@@ -6,11 +6,11 @@ from uuid import UUID
 
 from google.protobuf.json_format import MessageToDict, MessageToJson, ParseDict
 
-from agentplane.proto import runner_channel_pb2 as channel_pb2, runner_pb2
+from agentplane.proto import runner_control_pb2 as control_pb2, runner_pb2
 from agentplane.runner.client import RunnerClient
 from agentplane.runner.errors import RunnerError
-from agentplane.runner_gateway.channel_control import ChannelControl
 from agentplane.runner_gateway.instructions import combine_instructions
+from agentplane.runner_gateway.lifecycle_control import LifecycleControl
 from agentplane.sandbox_service.protocol_pb2 import SandboxBinding, SessionDestination
 
 # gazelle:include_dep @pypi//protobuf
@@ -95,8 +95,8 @@ async def resume_session(client: RunnerClient, session_id: str) -> runner_pb2.At
         attachment.cancel()
 
 
-async def open_channel_session(
-    control: ChannelControl,
+async def open_control_session(
+    control: LifecycleControl,
     sandbox_uid: UUID,
     runner_session_id: str,
     spec: runner_pb2.SessionSpec,
@@ -104,18 +104,18 @@ async def open_channel_session(
     bootstrap: str,
     setup_script: str | None,
 ) -> runner_pb2.Attached:
-    """`open_session` over the runner channel, for a Sandbox whose connection agreed `lifecycle`."""
+    """`open_session` over the runner control stream, for a Sandbox whose connection agreed `lifecycle`."""
     if bootstrap:
-        initialize = channel_pb2.ControlRequest(initialize=channel_pb2.Initialize(script=bootstrap))
+        initialize = control_pb2.ControlRequest(initialize=control_pb2.Initialize(script=bootstrap))
         initialized = (await control.request(sandbox_uid, initialize)).initialize
         if initialized.HasField("interrupted"):
             raise RunnerError("the Sandbox bootstrap was interrupted and never runs again; use a new Sandbox")
         if initialized.result.exit_code != 0:
             raise RunnerError("Sandbox bootstrap failed; no session was opened")
-    opening = channel_pb2.OpenSession(session_id=runner_session_id, spec=spec)
+    opening = control_pb2.OpenSession(session_id=runner_session_id, spec=spec)
     if setup_script is not None:
         opening.setup_script = setup_script
-    attached = (await control.request(sandbox_uid, channel_pb2.ControlRequest(open=opening))).open
+    attached = (await control.request(sandbox_uid, control_pb2.ControlRequest(open=opening))).open
     # OpenSession only confirms an existing Session, so a retried create would leave a harness that
     # an earlier attempt could not start (refused FAILED) stopped. Start it, as inbound Open with a
     # spec does; a Session still in setup starts once its setup succeeds.
@@ -123,14 +123,14 @@ async def open_channel_session(
         runner_pb2.SETUP_STATE_NOT_REQUIRED,
         runner_pb2.SETUP_STATE_SUCCEEDED,
     ):
-        return await resume_channel_session(control, sandbox_uid, runner_session_id)
+        return await resume_control_session(control, sandbox_uid, runner_session_id)
     return attached
 
 
-async def resume_channel_session(
-    control: ChannelControl, sandbox_uid: UUID, runner_session_id: str
+async def resume_control_session(
+    control: LifecycleControl, sandbox_uid: UUID, runner_session_id: str
 ) -> runner_pb2.Attached:
     """Restart a stopped harness on its retained spec; the runner refuses an unknown Session or one
     whose setup failed."""
-    resuming = channel_pb2.ControlRequest(resume=channel_pb2.ResumeSession(session_id=runner_session_id))
+    resuming = control_pb2.ControlRequest(resume=control_pb2.ResumeSession(session_id=runner_session_id))
     return (await control.request(sandbox_uid, resuming)).resume

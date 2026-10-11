@@ -37,7 +37,7 @@ The cdk8s `Environment.history_writer` turns `ingester.enabled` on.
 ## Runner ingress
 
 `ingress.py` serves `RunnerIngress.Push`, the
-[runner ingress contract](../docs/runner_channel.md#event-ingress): runners push each Session's
+[runner ingress contract](../docs/runner_control.md#event-ingress): runners push each Session's
 journal here, one call per Session. It runs as its own binary and image (`ingress_main.py`,
 `:ingress_image`), apart from the read API, since it takes untrusted input. Its settings name the
 token audience and the namespaces whose ServiceAccounts may push. Each environment deploys it as

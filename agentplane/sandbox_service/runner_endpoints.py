@@ -1,4 +1,4 @@
-"""The endpoints a Sandbox's runner dials out to (agentplane/docs/runner_channel.md § Event ingress).
+"""The endpoints a Sandbox's runner dials out to (agentplane/docs/runner_control.md § Event ingress).
 
 Sandbox creation sets them from this service's configuration and nothing else does: one ingress for
 every Sandbox and the Runner Gateway for control, each with the egress policy that admits its host
@@ -16,7 +16,7 @@ from agentplane.sandbox_service.models import InventoryError
 
 # The SandboxTemplate container the runner runs in.
 RUNNER_CONTAINER = "runner"
-_CONTROL_FLAGS = ("--channel-target", "--channel-bearer")
+_CONTROL_FLAGS = ("--control-target", "--control-bearer")
 _INGRESS_FLAGS = ("--ingress-target", "--ingress-bearer")
 
 

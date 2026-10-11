@@ -1,9 +1,9 @@
-"""Dispatch attempts: bounded, epoch-fenced delivery of submissions over the runner channel.
+"""Dispatch attempts: bounded, epoch-fenced delivery of submissions over the runner control stream.
 
 Each submission has one attempt, recorded on its own row; a submit opens or reopens it. Deliveries
 and receipts name the command by its own ID, which the runner deduplicates on.
 
-Contract: `agentplane/docs/runner_channel.md` § Dispatch attempts. Notifications are wakeups only;
+Contract: `agentplane/docs/runner_control.md` § Dispatch attempts. Notifications are wakeups only;
 every decision re-reads committed state.
 """
 
@@ -14,7 +14,7 @@ from uuid import UUID
 from sqlalchemy import and_, case, func, select, update
 from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
 
-from agentplane.proto import command_pb2, event_log_pb2, runner_channel_pb2 as channel_pb2
+from agentplane.proto import command_pb2, event_log_pb2, runner_control_pb2 as control_pb2
 from agentplane.runner_gateway.commands import db
 from agentplane.runner_gateway.commands.store import SubmissionConflictError, SubmissionState, record_receipt
 
@@ -43,7 +43,7 @@ class Delivery:
 
 @dataclass(frozen=True)
 class Refused:
-    refusal: channel_pb2.CommandRefused
+    refusal: control_pb2.CommandRefused
 
 
 type Outcome = event_log_pb2.EventEntry | Refused | None
@@ -142,7 +142,7 @@ class DispatchStore:
             runner_session_id=row.attempt_runner_session_id, command=row.runner_command, deadline=row.attempt_deadline
         )
 
-    async def record(self, sandbox_uid: UUID, receipt: channel_pb2.CommandReceipt) -> None:
+    async def record(self, sandbox_uid: UUID, receipt: control_pb2.CommandReceipt) -> None:
         """Record a runner's receipt on its submission, then wake the waiter.
 
         A late receipt still counts, and positive admission evidence never regresses to a refusal. A
@@ -172,7 +172,7 @@ class DispatchStore:
                     await record_receipt(session, submission.session_id, entry)
                 case "refused":
                     if submission.state == SubmissionState.PENDING_ADMISSION:
-                        refusal = channel_pb2.CommandRefused()
+                        refusal = control_pb2.CommandRefused()
                         refusal.CopyFrom(receipt.refused)
                         submission.attempt_refusal = refusal
                 case _:

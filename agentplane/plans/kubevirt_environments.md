@@ -10,13 +10,13 @@ VM provider.
 
 ## Control transport
 
-The guest runner dials the Sandbox Service over the [runner channel](../docs/runner_channel.md)
+The guest runner dials the Sandbox Service over the [runner control stream](../docs/runner_control.md)
 through the same egress relay its LLM and Action traffic needs, so no guest runner service has to
 be exposed or routed. It does not remove that relay or its credential boundary. Diagrams below show
-the inbound-control baseline that the channel replaces. `VM_CONTROL_NETWORKING` states which
+the inbound-control baseline that the control stream replaces. `VM_CONTROL_NETWORKING` states which
 guest ports, endpoint discovery and network policies go away; new container Sandboxes move under
 `RUNNER_OUTBOUND_ROLLOUT`. Image/storage and process-boundary work can proceed independently. The
-channel neither removes the runner journal nor chooses central command admission.
+control stream neither removes the runner journal nor chooses central command admission.
 
 ## Proposed shape
 

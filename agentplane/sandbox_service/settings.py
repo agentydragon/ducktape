@@ -12,7 +12,7 @@ from pydantic_settings import BaseSettings, PydanticBaseSettingsSource, Settings
 # YamlConfigSettingsSource loads yaml lazily inside pydantic-settings; gazelle cannot see the dependency.
 # gazelle:include_dep @pypi//pyyaml
 # Aliased: this module defines its own `Settings`.
-from agentplane.runner_gateway.settings import RUNNER_CHANNEL_AUDIENCE, Settings as GatewaySettings
+from agentplane.runner_gateway.settings import RUNNER_CONTROL_AUDIENCE, Settings as GatewaySettings
 from agentplane.sandbox_service.kubernetes_grants import KubernetesGrant
 from agentplane.sandbox_service.runner_endpoints import RunnerEndpoint
 from agentplane.subjects import ServiceAccountRef
@@ -69,7 +69,7 @@ class _Provisioning(_FromConfigFile):
     kubernetes_binding_cleanup_namespaces: set[str] = Field(default_factory=set)
     kubernetes_cluster_binding_cleanup: bool = False
     # CLEANUP(added 2026-10-11): require `runner_control` and `runner_ingress` once both environments'
-    #   Sandbox Service config sets them and no SandboxTemplate passes --channel-target.
+    #   Sandbox Service config sets them and no SandboxTemplate passes --control-target.
     runner_control: RunnerEndpoint | None = Field(
         default=None,
         description="The Runner Gateway endpoint every new Sandbox's runner dials for its control stream. "
@@ -102,8 +102,8 @@ class CombinedSettings(_Provisioning):
 
     commands_database_url: str = Field(min_length=1)
     platform_instructions: str = Field(min_length=1)
-    runner_channel_audience: str = RUNNER_CHANNEL_AUDIENCE
-    runner_channel_port: int = Field(default=8082, ge=1, le=65535)
+    runner_control_audience: str = RUNNER_CONTROL_AUDIENCE
+    runner_control_port: int = Field(default=8082, ge=1, le=65535)
     runner_port: int = Field(default=7000, ge=1, le=65535)
     runner_admission_ack_timeout_s: float = Field(default=15, gt=0)
     follow_lease_s: float = Field(default=900, gt=0, le=900)
@@ -126,8 +126,8 @@ class CombinedSettings(_Provisioning):
             kubeconfig=self.kubeconfig,
             commands_database_url=self.commands_database_url,
             platform_instructions=self.platform_instructions,
-            runner_channel_audience=self.runner_channel_audience,
-            runner_channel_port=self.runner_channel_port,
+            runner_control_audience=self.runner_control_audience,
+            runner_control_port=self.runner_control_port,
             runner_port=self.runner_port,
             runner_admission_ack_timeout_s=self.runner_admission_ack_timeout_s,
             follow_lease_s=self.follow_lease_s,

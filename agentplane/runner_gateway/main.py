@@ -1,4 +1,4 @@
-"""Standalone Runner Gateway entry point: Sessions and commands, and the runner channel listener."""
+"""Standalone Runner Gateway entry point: Sessions and commands, and the runner control stream listener."""
 
 import asyncio
 import logging
@@ -13,15 +13,15 @@ from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 
 from agentplane.grpc_process import background, kubernetes_configuration, serve_health, started
-from agentplane.proto import runner_channel_pb2_grpc
-from agentplane.runner_gateway.channel_control import ChannelControl
-from agentplane.runner_gateway.channel_delivery import ChannelDelivery
+from agentplane.proto import runner_control_pb2_grpc
+from agentplane.runner_gateway.command_delivery import CommandDelivery
 from agentplane.runner_gateway.commands.connections import ConnectionStore
 from agentplane.runner_gateway.commands.dispatch import DispatchStore
 from agentplane.runner_gateway.commands.store import SubmissionStore
 from agentplane.runner_gateway.connection_records import ConnectionHolder, ConnectionLeases, ConnectionRecords
 from agentplane.runner_gateway.grpc_api import Resources, add_service
-from agentplane.runner_gateway.runner_channel import ChannelTiming, RunnerChannelService
+from agentplane.runner_gateway.lifecycle_control import LifecycleControl
+from agentplane.runner_gateway.runner_control import ControlTiming, RunnerControlService
 from agentplane.runner_gateway.session_changes import SessionChanges
 from agentplane.runner_gateway.session_registry import SessionRegistry
 from agentplane.runner_gateway.settings import Settings
@@ -32,8 +32,8 @@ from util.kubernetes import CustomObjectsClient
 
 # The asyncpg dialect is loaded by SQLAlchemy from the configured driver name.
 # gazelle:include_dep @pypi//asyncpg
-# The channel servicer stub names its messages; mypy reads stubs only from direct deps.
-# gazelle:include_dep //agentplane/proto:runner_channel_pb2
+# The control servicer stub names its messages; mypy reads stubs only from direct deps.
+# gazelle:include_dep //agentplane/proto:runner_control_pb2
 # gazelle:include_dep @pypi//protobuf
 
 
@@ -45,7 +45,7 @@ def database_engine(url: str) -> AsyncEngine:
 async def gateway(
     settings: Settings, api: k8s_client.ApiClient, server: grpc.aio.Server, commands_engine: AsyncEngine
 ) -> AsyncIterator[Resources]:
-    """Serve `RunnerGateway` on `server`, and runner channel connections on their own listener."""
+    """Serve `RunnerGateway` on `server`, and runner control stream connections on their own listener."""
     core = k8s_client.CoreV1Api(api)
     inventory = SandboxInventory(
         namespace=settings.sandbox_namespace,
@@ -57,9 +57,9 @@ async def gateway(
     connections = ConnectionStore(commands_engine)
     destinations = DestinationResolver(inventory, core, settings.runner_port)
     leases = ConnectionLeases()
-    timing = ChannelTiming()
-    control = ChannelControl(leases)
-    delivery = ChannelDelivery(
+    timing = ControlTiming()
+    control = LifecycleControl(leases)
+    delivery = CommandDelivery(
         commands_engine.url,
         dispatches=DispatchStore(commands_engine),
         connections=connections,
@@ -91,15 +91,15 @@ async def gateway(
         runner_grpc_channel_options=settings.runner_grpc_channel_options,
     )
     add_service(resources, server)
-    if len({settings.port, settings.health_port, settings.runner_channel_port}) != 3:
-        raise ValueError("gRPC, runner channel and health ports must differ")
-    # A separate listener, so the network fence can admit runners to the channel and nothing else.
-    channel_server = grpc.aio.server()
-    runner_channel_pb2_grpc.add_RunnerChannelServicer_to_server(
-        RunnerChannelService(
+    if len({settings.port, settings.health_port, settings.runner_control_port}) != 3:
+        raise ValueError("gRPC, runner control stream and health ports must differ")
+    # A separate listener, so the network fence can admit runners to the control listener and nothing else.
+    control_server = grpc.aio.server()
+    runner_control_pb2_grpc.add_RunnerControlServicer_to_server(
+        RunnerControlService(
             principals=WorkloadPrincipalResolver(
                 authentication=k8s_client.AuthenticationV1Api(api),
-                audience=settings.runner_channel_audience,
+                audience=settings.runner_control_audience,
                 allowed_service_account_namespaces={settings.sandbox_namespace},
             ),
             inventory=inventory,
@@ -114,13 +114,13 @@ async def gateway(
             control=control,
             timing=timing,
         ),
-        channel_server,
+        control_server,
     )
-    channel_server.add_insecure_port(f"{settings.host}:{settings.runner_channel_port}")
+    control_server.add_insecure_port(f"{settings.host}:{settings.runner_control_port}")
     async with AsyncExitStack() as stack:
         await stack.enter_async_context(session_changes.listener.listen())
         await stack.enter_async_context(delivery.listener.listen())
-        await stack.enter_async_context(started(channel_server))
+        await stack.enter_async_context(started(control_server))
         await stack.enter_async_context(
             background(
                 leases.watch(k8s_client.CoordinationV1Api(api), settings.sandbox_namespace, resync_seconds=300).run(),

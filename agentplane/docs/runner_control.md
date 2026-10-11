@@ -1,17 +1,17 @@
-# Runner channel
+# Runner control stream
 
 Status: **accepted design, command delivery live on staging.** The Sandbox Service's
-channel listener (`runner_gateway/runner_channel.py`), reachable through the egress proxy,
+control listener (`runner_gateway/runner_control.py`), reachable through the egress proxy,
 authenticates, fences and keeps connections alive, and delivers dispatch attempts
-(`runner_gateway/channel_delivery.py`) for Sandboxes routed to it. The runner dials it when started
-with `--channel-target` (`runner/channel.py`), which staging's Sandbox Service passes to every new
-Sandbox's runner (`runner_control`), so staging's commands travel over the channel. Testing's
+(`runner_gateway/command_delivery.py`) for Sandboxes routed to it. The runner dials it when started
+with `--control-target` (`runner/control.py`), which staging's Sandbox Service passes to every new
+Sandbox's runner (`runner_control`), so staging's commands travel over the control stream. Testing's
 runners are reached through the inbound `Attach` RPC, which Cilium admits only from the Sandbox
 Service, and every runner's Events still are. This is
 the contract the
 runner-initiated replacement implements. It covers command delivery, authentication, connection ownership and
 dispatch attempts, lifecycle requests (built: a runner that agrees `lifecycle` is listed, opened,
-resumed and sealed over the channel), and the push of Events to the runner's ingress.
+resumed and sealed over the control stream), and the push of Events to the runner's ingress.
 
 ## Shape
 
@@ -25,7 +25,7 @@ command. The runner is the client, so service-to-runner traffic is messages on s
 opened, never reverse RPCs. No operation creates a Session or starts a stopped harness.
 
 ```protobuf
-service RunnerChannel {
+service RunnerControl {
   rpc Connect(stream RunnerFrame) returns (stream ServiceFrame);
 }
 
@@ -86,8 +86,8 @@ message CommandRefused {
 message Heartbeat {}
 ```
 
-- **Versioning.** The proto is `agentplane/proto/runner_channel.proto`, package
-  `agentplane.proto.runner_channel`. An incompatible change, a rename included, rides a clean
+- **Versioning.** The proto is `agentplane/proto/runner_control.proto`, package
+  `agentplane.proto.runner_control`. An incompatible change, a rename included, rides a clean
   cutover: the operator retires every Sandbox on the old protocol, and no dual path is served.
   Additive frame kinds and RPCs are capabilities: a peer uses one only after both sides listed it
   in `Hello`/`Welcome`. A frame of a kind the receiver did not agree to fails the stream, and an
@@ -103,7 +103,7 @@ message Heartbeat {}
   already guarantees by deduplicating on `command_id`. The service never infers admission from a
   stream write, a heartbeat or HTTP/2 flow-control progress. Which refusal reasons are terminal for
   a submission is the [command admission](../sandbox_service/API.md#sessions-and-commands)
-  contract's decision, not the channel's; today none is, and a refusal leaves it pending.
+  contract's decision, not the control stream's; today none is, and a refusal leaves it pending.
 - **Status codes.** The service ends a stream with a gRPC status naming the cause:
   `UNAUTHENTICATED`, `PERMISSION_DENIED` (not a Sandbox Pod of this service), `ABORTED` (superseded by a
   newer connection), `INVALID_ARGUMENT` (protocol error) or `UNAVAILABLE` (replica draining or the
@@ -194,7 +194,7 @@ first writers one is refused. A call for the Session from any other ServiceAccou
 Sandbox without the ingress knowing Sandboxes. The Pod is not part of the binding, so a replacement
 Pod of the same Sandbox, opening the same journal from the state volume, keeps writing; the UID
 makes an account recreated under the same name a different writer. Within the Sandbox the trust
-boundary is the channel's: the binding keeps other Sandboxes out, not processes beside the runner.
+boundary is the control stream's: the binding keeps other Sandboxes out, not processes beside the runner.
 
 **Status codes.** The ingress ends a call with `UNAUTHENTICATED`, `PERMISSION_DENIED` (another
 writer's Session), `INVALID_ARGUMENT` (a Session ID that is not a UUID, a frame out of order, a
@@ -204,7 +204,7 @@ what it committed at that cursor) or `UNAVAILABLE`. The runner cancels a call it
 ingress then holds entries this journal never wrote.
 
 **Ingress unreachable or refusing.** The journal is the buffer. The runner keeps admitting commands
-and journaling, and each Session's call retries with the channel's backoff, 0.5 s to 30 s.
+and journaling, and each Session's call retries with the control stream's backoff, 0.5 s to 30 s.
 `PERMISSION_DENIED` and `FAILED_PRECONDITION` back off at the maximum and are logged as errors,
 since only an operator resolves them; a refused Session holds up no other. Unacknowledged lag is
 bounded only by the state volume, and a Sandbox cannot finish teardown while any is left.
@@ -214,11 +214,11 @@ only the component creating the Sandbox's Kubernetes objects sets, from its own 
 ingress for every Sandbox it creates (the History Service, or a historyless deployment's own
 sink), and the control target is always the Sandbox Service. A create request cannot choose
 either; an ingress per Sandbox is not built. The runner reaches the ingress through its egress sidecar with a placeholder bearer, like
-the channel ([Path through the egress proxy](#path-through-the-egress-proxy)). An egress policy
+the control listener ([Path through the egress proxy](#path-through-the-egress-proxy)). An egress policy
 the Sandbox Service binds at creation, not a launch-selectable one, admits the ingress host and
 substitutes the Pod's projected token for that ingress's own audience: `agentplane-runner-ingress`
 for the History Service, and an audience of its own for a historyless client. No other recipient
-can replay a token the ingress saw, and an ingress token opens no channel connection.
+can replay a token the ingress saw, and an ingress token opens no control connection.
 
 **Sealing.** `Seal` on the control stream seals every journal and returns each Session's seal cursor
 with `flushed`, which is true once the ingress has acknowledged that seal. The runner answers from
@@ -293,13 +293,13 @@ Sandbox, hence `-control`.
 
 Status: **accepted (operator, 2026-10-10 PDT); built for the `ListSessions`, `CreateSession` and
 `ResumeSession` RPCs and teardown sealing.** The Sandbox Service agrees `lifecycle` and sends those
-callers' requests over the channel (`runner_gateway/channel_control.py`); `LookupSession` still
+callers' requests over the control stream (`runner_gateway/lifecycle_control.py`); `LookupSession` still
 reads Sessions through the inbound API, and so does every Sandbox whose runner never agreed
 `lifecycle`. A runner refuses `OpenSession` for a Session it created but could not
 start with `FAILED`; asked again, it confirms the stopped Session, so `CreateSession` follows an
 `OpenSession` that confirms a stopped harness with `ResumeSession`. The App and the Notification
 Service reach the holder through the control Service (`control_target`); a client without it calls
-the Sandbox Service's own Service, where only the holder's replica serves a channel-routed Sandbox.
+the Sandbox Service's own Service, where only the holder's replica serves a control-routed Sandbox.
 
 A runner that lists `lifecycle` in `Hello` takes every remaining inbound call over `Connect` as a
 control request. Each request names an explicit verb; nothing is inferred from which fields are
@@ -345,7 +345,7 @@ stream sends control requests: callers reach it through the Sandbox's control Se
 ([Connection records](#connection-records-in-kubernetes)), and background work such as sealing runs on the replica holding the Lease. Requests are bounded by the
 calling RPC's deadline, like dispatch attempts, and a reconnect replays none of them.
 
-| Inbound caller (Sandbox Service)                     | Channel operation                                                |
+| Inbound caller (Sandbox Service)                     | Control operation                                                |
 | ---------------------------------------------------- | ---------------------------------------------------------------- |
 | `ListSessions` RPC                                   | `ListSessions` (built)                                           |
 | `CreateSession` (`Initialize`, then `Attach` + spec) | `Initialize`, then `OpenSession` (built) with the client's ID    |
@@ -396,20 +396,20 @@ Alternatives for the transport itself:
 
 ## Authentication and incarnation binding
 
-The runner dials the Sandbox Service's channel listener through the Pod's egress sidecar, like
+The runner dials the Sandbox Service's control listener through the Pod's egress sidecar, like
 every other destination it reaches; the Sandbox's network fence admits nothing else. It sends a
 placeholder in `authorization: Bearer` metadata on every RPC. The egress proxy authenticates the Pod
 hop and substitutes that Pod's own projected token for the dedicated audience
-`agentplane-runner-channel`, the same mechanism and per-destination audience that
+`agentplane-runner-control`, the same mechanism and per-destination audience that
 [notifications](../notification_service/README.md) uses. The token is projected only into the
 sidecar, so neither the runner nor the harness ever holds it.
 
 The audience is distinct from the Sandbox Service API's (`agentplane-sandbox-service`) and from
 the shared `agentplane-egress` audience that the LLM ingress and Action Service receive, so none of
-those recipients can replay a token they saw as a runner connection, and a channel token cannot
+those recipients can replay a token they saw as a runner connection, and a control token cannot
 call the Sandbox Service API.
 
-The rule that admits the channel host lives in its own egress policy, which the Sandbox Service
+The rule that admits the control host lives in its own egress policy, which the Sandbox Service
 binds to every Sandbox at creation. It is not one of the launch-selectable
 policies, so choosing a narrow egress set cannot cut a Sandbox off from its own control plane.
 
@@ -422,7 +422,7 @@ resolves the principal the way destination resolution does, in reverse:
    is in the service's inventory with the same UID.
 3. The Sandbox runs as the token's ServiceAccount.
 
-A VM environment's runner reaches the channel from its `virt-launcher` Pod's egress relay, and that
+A VM environment's runner reaches the control listener from its `virt-launcher` Pod's egress relay, and that
 Pod resolves to its environment through its own controller chain under the same rules.
 
 Names, IPs, claimed Session IDs and anything in `Hello` are not identity. The connection is bound
@@ -438,23 +438,23 @@ authenticates again.
 
 **Trust boundary.** The token proves the Pod, not the runner process. The harness and every
 process it launches share the runner's container and state volume, so a process inside the Sandbox
-can open a competing channel connection. That gains nothing it does not already have: it can
-already rewrite the runner's journal on the shared volume or kill the runner. The channel
+can open a competing control connection. That gains nothing it does not already have: it can
+already rewrite the runner's journal on the shared volume or kill the runner. The control stream
 therefore authenticates the Sandbox incarnation and claims no process isolation. Distinguishing
 the runner from agent processes needs a resource boundary inside the Sandbox, such as a VM guest
 that keeps the runner outside the agent's reach.
 
 ## Route selection
 
-The runner says which operations it carries over the channel in `Hello`, and `Welcome` agrees the
+The runner says which operations it carries over the control stream in `Hello`, and `Welcome` agrees the
 ones the service also supports. The Sandbox Service records every operation any connection of the
 Sandbox has agreed, and the set only grows: once an operation has been agreed, that Sandbox's
-operation is channel-routed for good, whether or not a connection exists right now. Routing is
+operation is control-routed for good, whether or not a connection exists right now. Routing is
 never inferred per request from whether a connection happens to be live.
 
-For a channel-routed operation with no current connection, the service reports the destination
+For a control-routed operation with no current connection, the service reports the destination
 unavailable. It never falls back to `Attach`, and the inbound route never takes over a command
-whose channel delivery was ambiguous. Operations no connection has agreed keep their inbound route,
+whose control-stream delivery was ambiguous. Operations no connection has agreed keep their inbound route,
 so an old runner that never dials out keeps working unchanged. Events are not a routed operation: a
 runner with an ingress pushes them, and an older runner's are read through `Attach`.
 
@@ -552,7 +552,7 @@ those either.
 ## Path through the egress proxy
 
 A gRPC client behind an HTTP proxy opens a `CONNECT` tunnel, and the egress proxy intercepts the
-tunnel to read and substitute metadata. It reads the plaintext HTTP/2 the channel listener and the ingress
+tunnel to read and substitute metadata. It reads the plaintext HTTP/2 the control listener and the ingress
 speak inside that tunnel, and decides a gRPC request from its headers, so the stream's messages pass
 through as they are written rather than after the stream closes. Long streams also cross proxy
 replica drains, which end them; the runner reconnects like after any other `UNAVAILABLE`.

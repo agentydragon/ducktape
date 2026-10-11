@@ -1,4 +1,4 @@
-"""The channel operations each Sandbox's runner connections have agreed.
+"""The control operations each Sandbox's runner connections have agreed.
 
 Who holds a connection, its epoch and its liveness live in the Sandbox's Lease
 (`agentplane.runner_gateway.connection_records`).

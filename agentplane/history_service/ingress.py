@@ -1,6 +1,6 @@
 """The runner ingress: a runner pushes each Session's journal here, one call per Session.
 
-Contract: agentplane/docs/runner_channel.md § Event ingress. Every acknowledgement follows a
+Contract: agentplane/docs/runner_control.md § Event ingress. Every acknowledgement follows a
 commit, so the runner's resume point is always durable here; `Store.append` accepts exact replays
 and serializes concurrent calls for one Session, so any replica serves any call.
 """

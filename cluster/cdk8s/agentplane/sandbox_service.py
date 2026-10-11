@@ -37,7 +37,7 @@ from constructs import Construct
 
 from agentplane.egress.resources import placeholder_of
 from agentplane.runner_gateway.instructions import combine_instructions, render_platform_instructions
-from agentplane.runner_gateway.settings import RUNNER_CHANNEL_AUDIENCE
+from agentplane.runner_gateway.settings import RUNNER_CONTROL_AUDIENCE
 from agentplane.sandbox_service.kubernetes_grants import ClusterRoleBindingGrant, RoleBindingGrant
 from agentplane.sandbox_service.runner_endpoints import RunnerEndpoint
 from agentplane.sandbox_service.settings import CONFIG_FILE_ENV, CombinedSettings
@@ -73,11 +73,11 @@ KUBERNETES_ADMIN_INSTRUCTIONS = (
 
 # Granted by this service with its `runner_control` endpoint, so no launch selection can cut a
 # Sandbox off from its own control plane.
-RUNNER_CHANNEL_POLICY = "runner-channel"
-RUNNER_CHANNEL_CREDENTIAL = "agentplane-runner-channel"
-# The bearer a runner sends on the channel; the egress proxy swaps it for the Pod's channel token.
-RUNNER_CHANNEL_BEARER = placeholder_of(RUNNER_CHANNEL_CREDENTIAL)
-_RUNNER_CHANNEL_CONNECT = "/agentplane.proto.runner_channel.RunnerChannel/Connect"
+RUNNER_CONTROL_POLICY = "runner-control"
+RUNNER_CONTROL_CREDENTIAL = "agentplane-runner-control"
+# The bearer a runner sends on the control stream; the egress proxy swaps it for the Pod's control token.
+RUNNER_CONTROL_BEARER = placeholder_of(RUNNER_CONTROL_CREDENTIAL)
+_RUNNER_CONTROL_CONNECT = "/agentplane.proto.runner_control.RunnerControl/Connect"
 
 
 def service(namespace: str) -> ServiceRef:
@@ -92,11 +92,11 @@ def control_target(namespace: str) -> str:
     return f"{{sandbox}}-control.{{namespace}}.svc:{service(namespace).pod_port}"
 
 
-def runner_channel(namespace: str) -> ServiceRef:
-    """The listener runners dial out to (agentplane/docs/runner_channel.md), through the egress proxy."""
+def runner_control(namespace: str) -> ServiceRef:
+    """The listener runners dial out to (agentplane/docs/runner_control.md), through the egress proxy."""
     return ServiceRef(
         name=NAME,
-        port=Port(name="runner-channel", number=8082),
+        port=Port(name="runner-control", number=8082),
         pods=Pods(namespace=namespace, labels=tuple(_LABELS.items())),
     )
 
@@ -108,7 +108,7 @@ class SandboxService(Construct):
         super().__init__(scope, id)
         self.env = env
         endpoint = service(env.namespace)
-        channel = runner_channel(env.namespace)
+        control = runner_control(env.namespace)
         account = ServiceAccount(
             self, "account", metadata=ApiObjectMetadata(name=NAME, namespace=env.namespace), automount_token=True
         )
@@ -148,18 +148,18 @@ class SandboxService(Construct):
                 "kubernetes_binding_cleanup_namespaces": sorted(env.kubernetes_binding_cleanup_namespaces),
                 "kubernetes_cluster_binding_cleanup": env.kubernetes_cluster_binding_cleanup,
                 "runner_grpc_channel_options": dict(env.runner_grpc_channel_options),
-                "runner_channel_audience": RUNNER_CHANNEL_AUDIENCE,
+                "runner_control_audience": RUNNER_CONTROL_AUDIENCE,
                 "port": endpoint.port.number,
-                "runner_channel_port": channel.pod_port,
+                "runner_control_port": control.pod_port,
                 "health_port": _HEALTH.number,
                 "runner_port": RUNNER_PORT,
                 **(
                     {
                         # Through the egress proxy, which swaps the placeholder bearer for the Pod's token.
                         "runner_control": RunnerEndpoint(
-                            target=f"{channel.fqdn}:{channel.port.number}",
-                            bearer=RUNNER_CHANNEL_BEARER,
-                            egress_policy=RUNNER_CHANNEL_POLICY,
+                            target=f"{control.fqdn}:{control.port.number}",
+                            bearer=RUNNER_CONTROL_BEARER,
+                            egress_policy=RUNNER_CONTROL_POLICY,
                         ).model_dump()
                     }
                     if env.runner_control
@@ -203,10 +203,10 @@ class SandboxService(Construct):
             name="sandbox-service",
             image=f"{_IMAGE}:unset",
             env_variables=commands_migration_env
-            # Where the Sandbox control Services this replica writes point (runner_channel.md).
+            # Where the Sandbox control Services this replica writes point (runner_control.md).
             | {env_name(CombinedSettings, "pod_ip"): EnvValue.from_field_ref(EnvFieldPaths.POD_IP)},
             image_pull_policy=ImagePullPolicy.IF_NOT_PRESENT,
-            ports=[endpoint.port.container_port(), channel.port.container_port(), _HEALTH.container_port()],
+            ports=[endpoint.port.container_port(), control.port.container_port(), _HEALTH.container_port()],
             readiness=http_probe("/healthz", port=_HEALTH.number, initial_delay_seconds=3, period_seconds=10),
             liveness=http_probe("/healthz", port=_HEALTH.number, initial_delay_seconds=20, period_seconds=30),
             resources=ContainerResources(
@@ -223,7 +223,7 @@ class SandboxService(Construct):
             "service",
             metadata=ApiObjectMetadata(name=NAME, namespace=env.namespace, labels=_LABELS),
             selector=deployment,
-            ports=[endpoint.port.service_port(), channel.port.service_port()],
+            ports=[endpoint.port.service_port(), control.port.service_port()],
         )
         NetworkPolicy(
             self,
@@ -234,7 +234,7 @@ class SandboxService(Construct):
                 caller.pods.admit(endpoint.pod_port),
                 notifications.service(env.namespace).pods.admit(endpoint.pod_port),
                 history_service.service(env.namespace).pods.admit(endpoint.pod_port),
-                egress.proxy(env.namespace).pods.admit(channel.pod_port),
+                egress.proxy(env.namespace).pods.admit(control.pod_port),
             ],
             egress=[
                 cilium.dns_egress(),
@@ -246,7 +246,7 @@ class SandboxService(Construct):
                 EgressRule.to_endpoints(cilium.endpoint_labels(env.namespace, "agentplane-runner"), RUNNER_PORT),
             ],
         )
-        self._add_runner_channel_egress(channel)
+        self._add_runner_control_egress(control)
         if env.replicas.pdb_min_available is not None:
             add_pod_disruption_budget(
                 self,
@@ -257,19 +257,19 @@ class SandboxService(Construct):
                 selector=_LABELS,
             )
 
-    def _add_runner_channel_egress(self, channel: ServiceRef) -> None:
-        """The egress path a runner dials the channel on: the proxy swaps the placeholder for the
-        Pod's own token for the channel's audience, which no other recipient accepts."""
+    def _add_runner_control_egress(self, control: ServiceRef) -> None:
+        """The egress path a runner dials the control listener on: the proxy swaps the placeholder for the
+        Pod's own token for the control stream's audience, which no other recipient accepts."""
         namespace = self.env.namespace
         EgressCredential(
             self,
-            "runner-channel-credential",
-            metadata=ApiObjectMetadata(name=RUNNER_CHANNEL_CREDENTIAL, namespace=namespace),
+            "runner-control-credential",
+            metadata=ApiObjectMetadata(name=RUNNER_CONTROL_CREDENTIAL, namespace=namespace),
             description=(
                 "The calling Sandbox Pod's short-lived, Pod-bound identity minted only for its runner's "
-                "channel to the Sandbox Service. It conveys no other authority."
+                "control stream to the Sandbox Service. It conveys no other authority."
             ),
-            source=Source.projected_workload_token(audience=RUNNER_CHANNEL_AUDIENCE),
+            source=Source.projected_workload_token(audience=RUNNER_CONTROL_AUDIENCE),
             targets=[
                 EgressCredentialSpecTargets(
                     header="Authorization", method=EgressCredentialSpecTargetsMethod.SCHEME_TOKEN, scheme="Bearer"
@@ -278,15 +278,15 @@ class SandboxService(Construct):
         )
         EgressPolicy(
             self,
-            "runner-channel-policy",
-            metadata=ApiObjectMetadata(name=RUNNER_CHANNEL_POLICY, namespace=namespace),
+            "runner-control-policy",
+            metadata=ApiObjectMetadata(name=RUNNER_CONTROL_POLICY, namespace=namespace),
             rules=[
                 EgressPolicySpecRules(
-                    hosts=[channel.fqdn],
+                    hosts=[control.fqdn],
                     cluster_internal=True,
                     methods=[EgressPolicySpecRulesMethods.POST],
-                    paths=[_RUNNER_CHANNEL_CONNECT],
-                    credential_ref=EgressPolicySpecRulesCredentialRef(name=RUNNER_CHANNEL_CREDENTIAL),
+                    paths=[_RUNNER_CONTROL_CONNECT],
+                    credential_ref=EgressPolicySpecRulesCredentialRef(name=RUNNER_CONTROL_CREDENTIAL),
                 )
             ],
         )
@@ -294,10 +294,10 @@ class SandboxService(Construct):
         # module: this one imports that one.
         NetworkPolicy(
             self,
-            "runner-channel-proxy-egress",
-            metadata=ApiObjectMetadata(name=f"{NAME}-runner-channel-proxy", namespace=namespace),
+            "runner-control-proxy-egress",
+            metadata=ApiObjectMetadata(name=f"{NAME}-runner-control-proxy", namespace=namespace),
             endpoint_selector=egress.proxy(namespace).pods.selector,
-            egress=[channel.egress()],
+            egress=[control.egress()],
         )
 
     def _add_rbac(self, service_account: ServiceAccount) -> None:

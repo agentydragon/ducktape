@@ -148,8 +148,8 @@ py_library(
     name = "main",
     srcs = ["main.py"],
     deps = [
-        ":channel",
         ":config",
+        ":control",
         ":ingress",
         ":service",
         "@pypi//typer",
@@ -813,16 +813,16 @@ py_test(
 )
 
 py_library(
-    name = "channel",
-    srcs = ["channel.py"],
+    name = "control",
+    srcs = ["control.py"],
     deps = [
         ":journal",
         ":service",
         ":session",
         "//agentplane:grpc_options",
         "//agentplane/proto:command_pb2",
-        "//agentplane/proto:runner_channel_pb2",
-        "//agentplane/proto:runner_channel_pb2_grpc",
+        "//agentplane/proto:runner_control_pb2",
+        "//agentplane/proto:runner_control_pb2_grpc",
         "//agentplane/proto:runner_pb2",
         "@pypi//grpcio",
         "@pypi//protobuf",
@@ -832,13 +832,13 @@ py_library(
 )
 
 py_test(
-    name = "test_channel",
-    srcs = ["test_channel.py"],
+    name = "test_control",
+    srcs = ["test_control.py"],
     deps = [
         ":adapter",
-        ":channel",
         ":config",
         ":conftest",
+        ":control",
         ":harness_process",
         ":model_config",
         ":service",
@@ -847,8 +847,8 @@ py_test(
         "//:conftest",
         "//agentplane/proto:command_pb2",
         "//agentplane/proto:event_pb2",
-        "//agentplane/proto:runner_channel_pb2",
-        "//agentplane/proto:runner_channel_pb2_grpc",
+        "//agentplane/proto:runner_control_pb2",
+        "//agentplane/proto:runner_control_pb2_grpc",
         "//agentplane/proto:runner_pb2",
         "@pypi//grpcio",
         "@pypi//httpx",
@@ -862,7 +862,7 @@ py_library(
     name = "ingress",
     srcs = ["ingress.py"],
     deps = [
-        ":channel",
+        ":control",
         ":service",
         ":session",
         ":store",
@@ -880,9 +880,9 @@ py_test(
     name = "test_ingress",
     srcs = ["test_ingress.py"],
     deps = [
-        ":channel",
         ":config",
         ":conftest",
+        ":control",
         ":ingress",
         ":service",
         ":store",

@@ -15,7 +15,7 @@ from agentplane.subjects import ServiceAccountRef
 # gazelle:include_dep @pypi//pyyaml
 
 CONFIG_FILE_ENV = "AGENTPLANE_RUNNER_GATEWAY_CONFIG_FILE"
-RUNNER_CHANNEL_AUDIENCE = "agentplane-runner-channel"
+RUNNER_CONTROL_AUDIENCE = "agentplane-runner-control"
 
 
 class Settings(BaseSettings):
@@ -34,11 +34,11 @@ class Settings(BaseSettings):
         min_length=1, description="The `sandbox_commands` database holding command admission."
     )
     platform_instructions: str = Field(min_length=1)
-    runner_channel_audience: str = Field(
-        default=RUNNER_CHANNEL_AUDIENCE,
-        description="Audience of the Pod tokens the egress proxy substitutes on runner channel connections.",
+    runner_control_audience: str = Field(
+        default=RUNNER_CONTROL_AUDIENCE,
+        description="Audience of the Pod tokens the egress proxy substitutes on runner control stream connections.",
     )
-    runner_channel_port: int = Field(default=8082, ge=1, le=65535)
+    runner_control_port: int = Field(default=8082, ge=1, le=65535)
     runner_port: int = Field(default=7000, ge=1, le=65535)
     runner_admission_ack_timeout_s: float = Field(
         default=15,
@@ -49,7 +49,7 @@ class Settings(BaseSettings):
     follow_lease_s: float = Field(default=900, gt=0, le=900)
     runner_grpc_channel_options: dict[str, int | str] = Field(
         default_factory=dict,
-        description="gRPC options for gateway-to-runner channels; receives retained journal events up to the configured limit.",
+        description="gRPC options for gateway-to-runner control streams; receives retained journal events up to the configured limit.",
     )
     pod_ip: str = Field(
         min_length=1,

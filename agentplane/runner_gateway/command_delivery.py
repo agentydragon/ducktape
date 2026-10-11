@@ -15,7 +15,7 @@ from uuid import UUID
 from sqlalchemy.engine import URL
 
 from agentplane.postgres.listener import PostgresListener
-from agentplane.proto import event_log_pb2, runner_channel_pb2 as channel_pb2
+from agentplane.proto import event_log_pb2, runner_control_pb2 as control_pb2
 from agentplane.runner_gateway.commands.connections import ConnectionStore
 from agentplane.runner_gateway.commands.dispatch import (
     DISPATCH_CHANNEL,
@@ -39,12 +39,12 @@ class CommandRefusedError(Exception):
     """The runner did not admit this delivery. The submission stays pending: a stopped harness
     may run again, and an exact retry reopens the attempt."""
 
-    def __init__(self, refusal: channel_pb2.CommandRefused) -> None:
-        super().__init__(channel_pb2.CommandRefused.Reason.Name(refusal.reason))
+    def __init__(self, refusal: control_pb2.CommandRefused) -> None:
+        super().__init__(control_pb2.CommandRefused.Reason.Name(refusal.reason))
         self.refusal = refusal
 
 
-class ChannelDelivery:
+class CommandDelivery:
     def __init__(
         self,
         database_url: URL,
@@ -65,7 +65,7 @@ class ChannelDelivery:
         self.listener = PostgresListener(
             database_url,
             channels=(DISPATCH_CHANNEL, OUTCOME_CHANNEL),
-            application_name="agentplane-runner-channel",
+            application_name="agentplane-runner-control",
             notified=self._notified,
             invalidated=self._wake_all,
         )
@@ -90,7 +90,7 @@ class ChannelDelivery:
         submission pending either way.
         """
         if self.leases.read_live_epoch(sandbox_uid, liveness_s=self.liveness_s) is None:
-            raise DestinationUnavailableError("runner channel not connected")
+            raise DestinationUnavailableError("runner control stream not connected")
         key = CommandKey(session_id, command_id)
         await self.dispatches.open(
             key, sandbox_uid=sandbox_uid, runner_session_id=runner_session_id, deadline_s=deadline_s
@@ -127,7 +127,7 @@ class ChannelDelivery:
             key = parse_outcome(str(payload))
         except ValueError:
             # Waiters recheck on their own; an unreadable wakeup only wakes them early.
-            logger.warning("Unreadable runner channel notification on %s; waking all waiters", channel)
+            logger.warning("Unreadable dispatch notification on %s; waking all waiters", channel)
             self._wake_all()
             return
         for changed in self._waiters.get(key, ()):

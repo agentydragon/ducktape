@@ -357,7 +357,7 @@ async def test_command_status_reads_retained_submissions_without_the_runner(
     assert peer.attachments.empty()
 
 
-async def test_channel_routed_command_never_falls_back_to_the_relay(
+async def test_control_routed_command_never_falls_back_to_the_relay(
     cluster: Cluster,
     resources: Resources,
     token_file: Path,

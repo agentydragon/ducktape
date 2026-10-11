@@ -735,17 +735,17 @@ async def test_plaintext_grpc_stream_metadata_placeholder_is_substituted(
 ) -> None:
     """An interactive plaintext (h2c) stream through the sidecar's tunnel streams, with metadata substituted.
 
-    The runner channel is a long-lived stream to an in-cluster plaintext gRPC listener
-    (agentplane/docs/runner_channel.md); this pins that the proxy reads h2c inside the tunnel and
+    The runner control stream is a long-lived stream to an in-cluster plaintext gRPC listener
+    (agentplane/docs/runner_control.md); this pins that the proxy reads h2c inside the tunnel and
     decides a non-JSON request from its headers.
     """
-    credential_name = "runner-channel-test"
-    credential_secret = "runner-channel-test-secret"
-    policy_name = "runner-channel-test"
+    credential_name = "runner-control-test"
+    credential_secret = "runner-control-test-secret"
+    policy_name = "runner-control-test"
     # The recording upstream's bidirectional method; the name is incidental here.
     path = "/google.devtools.build.v1.PublishBuildEvent/PublishBuildToolEventStream"
     placeholder = placeholder_of(credential_name)
-    fake.put(SECRETS_PLURAL, secret(credential_secret, {"token": "runner-channel-secret"}))
+    fake.put(SECRETS_PLURAL, secret(credential_secret, {"token": "runner-control-secret"}))
     fake.put(
         CREDENTIALS_PLURAL,
         credential(
@@ -794,7 +794,7 @@ async def test_plaintext_grpc_stream_metadata_placeholder_is_substituted(
             stream = channel.stream_stream(
                 path, request_serializer=lambda value: value, response_deserializer=lambda value: value
             )(metadata=(("authorization", f"Bearer {placeholder}"),), timeout=10)
-            # Each reply arrives while the request body is still open, as on the runner channel; a
+            # Each reply arrives while the request body is still open, as on the runner control stream; a
             # proxy that waits for the whole body before deciding stalls here.
             for message in (b"one", b"two"):
                 await stream.write(message)
@@ -802,7 +802,7 @@ async def test_plaintext_grpc_stream_metadata_placeholder_is_substituted(
             await stream.done_writing()
             assert await stream.read() is grpc.aio.EOF
 
-    assert dict(await requests.get())["authorization"] == "Bearer runner-channel-secret"
+    assert dict(await requests.get())["authorization"] == "Bearer runner-control-secret"
 
 
 async def test_allowed_request_without_placeholder_is_forwarded_as_is(proxy: ProxyUnderTest) -> None:

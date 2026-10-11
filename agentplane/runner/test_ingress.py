@@ -16,8 +16,8 @@ import pytest
 import pytest_bazel
 
 from agentplane.proto import event_log_pb2, event_pb2, runner_ingress_pb2, runner_ingress_pb2_grpc, runner_pb2
-from agentplane.runner.channel import ChannelTiming
 from agentplane.runner.config import IngressEndpoint, RunnerConfig
+from agentplane.runner.control import ControlTiming
 from agentplane.runner.ingress import IngressPusher
 from agentplane.runner.service import Runner
 from agentplane.runner.store import SessionRecord
@@ -27,7 +27,7 @@ from agentplane.runner.store import SessionRecord
 SPEC = runner_pb2.SessionSpec(harness=runner_pb2.HARNESS_CLAUDE, cwd="/test-workspace", model="test-model")
 A = "test-session-a"
 B = "test-session-b"
-TIMING = ChannelTiming(heartbeat_s=0.1, liveness_s=0.5, backoff_initial_s=0.01, backoff_max_s=0.05)
+TIMING = ControlTiming(heartbeat_s=0.1, liveness_s=0.5, backoff_initial_s=0.01, backoff_max_s=0.05)
 JOURNALED = 3
 
 
@@ -153,7 +153,7 @@ async def ingress() -> AsyncIterator[tuple[ScriptedIngress, str]]:
 
 
 @asynccontextmanager
-async def pushing(runner: Runner, target: str, timing: ChannelTiming = TIMING) -> AsyncIterator[IngressPusher]:
+async def pushing(runner: Runner, target: str, timing: ControlTiming = TIMING) -> AsyncIterator[IngressPusher]:
     pusher = IngressPusher(runner, target=target, bearer="test-placeholder", timing=timing)
     task = asyncio.create_task(pusher.run())
     try:

@@ -30,7 +30,7 @@ class CodexLaunch:
 
 @dataclass(frozen=True, slots=True)
 class IngressEndpoint:
-    """Where the runner pushes every Session's Events (agentplane/docs/runner_channel.md § Event ingress)."""
+    """Where the runner pushes every Session's Events (agentplane/docs/runner_control.md § Event ingress)."""
 
     target: str
     # A placeholder the egress proxy swaps for this Pod's ingress token; the runner never holds it.

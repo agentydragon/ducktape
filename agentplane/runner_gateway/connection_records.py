@@ -2,7 +2,7 @@
 
 The replica holding a Sandbox's runner connection owns its Lease (holder, epoch, liveness) and
 points the Sandbox's headless control Service at its own Pod. Every replica reads Leases from a
-watch cache, never from the API server per request. Contract: `agentplane/docs/runner_channel.md`
+watch cache, never from the API server per request. Contract: `agentplane/docs/runner_control.md`
 § Connection ownership and fencing.
 """
 

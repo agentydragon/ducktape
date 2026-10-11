@@ -192,9 +192,9 @@ class SandboxServiceClient:
                 if error.code != grpc.StatusCode.UNAVAILABLE:
                     raise
                 # CLEANUP(added 2026-10-11): Call through the control Service alone once no live
-                # Sandbox's runner lacks the channel. Until then a Sandbox whose runner never
+                # Sandbox's runner lacks the control stream. Until then a Sandbox whose runner never
                 # connected has no control Service. Any replica serves its inbound route and refuses a
-                # channel-routed Sandbox before acting unless it holds the connection, so this retry
+                # control-routed Sandbox before acting unless it holds the connection, so this retry
                 # never takes such a Sandbox's operation another way.
                 logger.debug("Sandbox %s: control Service unavailable, calling the gateway", destination.sandbox)
             finally:

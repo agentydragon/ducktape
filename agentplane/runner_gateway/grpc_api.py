@@ -19,14 +19,13 @@ from kubernetes_asyncio import client as k8s_client
 from sqlalchemy.exc import SQLAlchemyError
 
 from agentplane.grpc_options import grpc_channel_option_kvps
-from agentplane.proto import command_pb2, event_log_pb2, runner_channel_pb2 as channel_pb2, runner_pb2
+from agentplane.proto import command_pb2, event_log_pb2, runner_control_pb2 as control_pb2, runner_pb2
 from agentplane.runner.client import RunnerClient
 from agentplane.runner.errors import OpenTimeoutError, RunnerError, SessionSealedError, StreamClosedError
 
 # Aliased: `protocol_pb2` is the Sandbox Service's messages.
 from agentplane.runner_gateway import protocol_pb2 as gateway_pb2, protocol_pb2_grpc, session_lifecycle
-from agentplane.runner_gateway.channel_control import ChannelControl, ConnectionNotHeldError, ControlRefusedError
-from agentplane.runner_gateway.channel_delivery import ChannelDelivery, CommandRefusedError
+from agentplane.runner_gateway.command_delivery import CommandDelivery, CommandRefusedError
 from agentplane.runner_gateway.command_relay import admit_running_command
 from agentplane.runner_gateway.commands.store import (
     CommandSubmission,
@@ -37,7 +36,8 @@ from agentplane.runner_gateway.commands.store import (
     SubmissionStore,
     submit_command,
 )
-from agentplane.runner_gateway.runner_channel import ChannelOperation
+from agentplane.runner_gateway.lifecycle_control import ConnectionNotHeldError, ControlRefusedError, LifecycleControl
+from agentplane.runner_gateway.runner_control import ControlOperation
 from agentplane.runner_gateway.sealing import SEAL_S, Sealing
 from agentplane.runner_gateway.session_changes import SessionChanges
 from agentplane.runner_gateway.session_registry import SessionNotFoundError, SessionRegistry
@@ -66,8 +66,8 @@ class Resources:
     runner_admission_ack_timeout_s: float
     sessions: SessionRegistry
     submissions: SubmissionStore
-    delivery: ChannelDelivery
-    control: ChannelControl
+    delivery: CommandDelivery
+    control: LifecycleControl
     session_changes: SessionChanges
     # The Sandbox Service's account, which alone may seal a Sandbox for teardown; none where the
     # Sandbox Service seals in-process.
@@ -120,12 +120,12 @@ async def errors(context: grpc.aio.ServicerContext) -> AsyncIterator[None]:
         await context.abort(grpc.StatusCode.ALREADY_EXISTS, "command ID already belongs to a different submission")
     except CommandRefusedError as refused:
         code = {
-            channel_pb2.CommandRefused.REASON_COMMAND_CONFLICT: grpc.StatusCode.ALREADY_EXISTS,
-            channel_pb2.CommandRefused.REASON_INVALID_COMMAND: grpc.StatusCode.INVALID_ARGUMENT,
+            control_pb2.CommandRefused.REASON_COMMAND_CONFLICT: grpc.StatusCode.ALREADY_EXISTS,
+            control_pb2.CommandRefused.REASON_INVALID_COMMAND: grpc.StatusCode.INVALID_ARGUMENT,
         }.get(refused.refusal.reason, grpc.StatusCode.FAILED_PRECONDITION)
         await context.abort(code, f"runner refused the command: {refused}")
     except ControlRefusedError as refused:
-        if refused.refusal.reason == channel_pb2.ControlRefused.REASON_INVALID_REQUEST:
+        if refused.refusal.reason == control_pb2.ControlRefused.REASON_INVALID_REQUEST:
             await context.abort(grpc.StatusCode.INVALID_ARGUMENT, "runner rejected invalid request")
         await context.abort(grpc.StatusCode.FAILED_PRECONDITION, "runner rejected session or bootstrap state")
     except ValueError, ParseError:
@@ -218,11 +218,11 @@ class RunnerGateway(protocol_pb2_grpc.RunnerGatewayServicer):
             await client.close()
 
     async def lifecycle_routed(self, destination: SandboxDestination) -> bool:
-        """Whether the Sandbox's lifecycle requests travel over its runner channel, which they do for
+        """Whether the Sandbox's lifecycle requests travel over its runner control stream, which they do for
         good once a connection agreed `lifecycle`. Only the replica holding that connection serves
         them; any other refuses before acting, and the caller retries through the control Service."""
         sandbox_uid = UUID(destination.sandbox_uid)
-        if ChannelOperation.LIFECYCLE not in await self.resources.delivery.connections.read_operations(sandbox_uid):
+        if ControlOperation.LIFECYCLE not in await self.resources.delivery.connections.read_operations(sandbox_uid):
             return False
         if self.resources.control.holder(sandbox_uid) is None:
             raise ConnectionNotHeldError("another replica holds this Sandbox's runner connection")
@@ -232,7 +232,7 @@ class RunnerGateway(protocol_pb2_grpc.RunnerGatewayServicer):
         if await self.lifecycle_routed(destination):
             # Verifies the incarnation and its owner, as the inbound path's runner lookup does.
             await self.resources.destinations.resolve(destination, writes=False)
-            listing = channel_pb2.ControlRequest(list_sessions=runner_pb2.ListSessionsRequest())
+            listing = control_pb2.ControlRequest(list_sessions=runner_pb2.ListSessionsRequest())
             result = await self.resources.control.request(UUID(destination.sandbox_uid), listing)
             return list(result.list_sessions.sessions)
         async with self.runner(destination, writes=False) as (client, _):
@@ -281,7 +281,7 @@ class RunnerGateway(protocol_pb2_grpc.RunnerGatewayServicer):
                 raise ValueError("session ID must be a UUID")
             overrides = wire.launch_overrides(request)
             endpoint = await self.resources.destinations.resolve(request.sandbox, writes=True)
-            channel_routed = await self.lifecycle_routed(request.sandbox)
+            control_routed = await self.lifecycle_routed(request.sandbox)
             sandbox_uid = UUID(request.sandbox.sandbox_uid)
 
             def freeze(session_id: UUID) -> bytes:
@@ -326,8 +326,8 @@ class RunnerGateway(protocol_pb2_grpc.RunnerGatewayServicer):
             launch = protocol_pb2.FrozenLaunch.FromString(reservation.launch_spec)
             public_id = str(reservation.session_id)
             setup_script = launch.open.setup_script if launch.open.HasField("setup_script") else None
-            if channel_routed:
-                attachment = await session_lifecycle.open_channel_session(
+            if control_routed:
+                attachment = await session_lifecycle.open_control_session(
                     self.resources.control,
                     sandbox_uid,
                     launch.open.session_id,
@@ -423,7 +423,7 @@ class RunnerGateway(protocol_pb2_grpc.RunnerGatewayServicer):
             if await self.lifecycle_routed(destination.sandbox):
                 # Verifies the incarnation, its owner and that it is not being torn down.
                 await self.resources.destinations.resolve(destination.sandbox, writes=True)
-                result = await session_lifecycle.resume_channel_session(
+                result = await session_lifecycle.resume_control_session(
                     self.resources.control,
                     UUID(destination.sandbox.sandbox_uid),
                     await self.runner_session_id(destination),
@@ -448,14 +448,14 @@ class RunnerGateway(protocol_pb2_grpc.RunnerGatewayServicer):
             # is persisted for it.
             runner_session_id = await self.runner_session_id(destination)
             public_id = public_session_id(destination.session_id)
-            # Once a runner of this Sandbox has agreed commands over the channel, they never fall
+            # Once a runner of this Sandbox has agreed commands over the control stream, they never fall
             # back to the relay.
-            channel_routed = ChannelOperation.COMMANDS in (
+            control_routed = ControlOperation.COMMANDS in (
                 await self.resources.delivery.connections.read_operations(UUID(destination.sandbox.sandbox_uid))
             )
             if public_id is None:
-                if channel_routed:
-                    raise DestinationUnavailableError("a channel-routed Sandbox takes public Session IDs only")
+                if control_routed:
+                    raise DestinationUnavailableError("a control-routed Sandbox takes public Session IDs only")
                 # CLEANUP(added 2026-10-10): Remove the relay-only path once no Session opened with a
                 # caller-chosen runner ID remains on staging.
                 async with self.runner(destination.sandbox, writes=True) as (client, _):
@@ -468,7 +468,7 @@ class RunnerGateway(protocol_pb2_grpc.RunnerGatewayServicer):
                     )
             submissions = self.resources.submissions
 
-            if channel_routed:
+            if control_routed:
                 delivery = self.resources.delivery
                 # Verifies the incarnation and its owner, as the relay's runner lookup does.
                 await self.resources.destinations.resolve(destination.sandbox, writes=True)

@@ -15,10 +15,10 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 
 from agentplane.proto import runner_pb2
 from agentplane.runner.testing.runner_server import serve_runner
-from agentplane.runner_gateway.channel_control import ChannelControl
 from agentplane.runner_gateway.commands import db as commands_db
 from agentplane.runner_gateway.commands.connections import ConnectionStore
 from agentplane.runner_gateway.connection_records import ConnectionLeases
+from agentplane.runner_gateway.lifecycle_control import LifecycleControl
 from agentplane.runner_gateway.sealing import Sealing
 from agentplane.runner_gateway.session_registry import SessionRegistry
 from agentplane.runner_gateway.testing.sessions import register_session
@@ -114,7 +114,7 @@ async def teardown(destinations: DestinationResolver, engine: AsyncEngine) -> Te
         destinations,
         SessionRegistry(engine),
         connections=ConnectionStore(engine),
-        control=ChannelControl(ConnectionLeases()),
+        control=LifecycleControl(ConnectionLeases()),
         runner_grpc_channel_options={},
     )
     return Teardown(destinations.inventory, sealing.seal)

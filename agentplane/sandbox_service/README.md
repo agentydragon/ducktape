@@ -71,5 +71,5 @@ positions) lives in the service's own `sandbox_commands` database beside command
 History Service's ingester creates a Session's history row from the registry's feed before its first append.
 
 Service-to-runner calls over the inbound control port are unauthenticated plaintext, fenced only by
-that network policy; the [runner channel](../docs/runner_channel.md) replaces the route rather than
+that network policy; the [runner control stream](../docs/runner_control.md) replaces the route rather than
 securing it. App-to-service calls already require a Pod-bound workload TokenReview.

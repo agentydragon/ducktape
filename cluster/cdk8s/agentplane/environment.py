@@ -136,7 +136,7 @@ class Environment:
     settle_deltas: bool
     # Which fold the app reads Threads from; the app's Electric upstream follows it.
     thread_reads: ThreadReads
-    # Whether the Sandbox Service points every new Sandbox's runner at its runner channel
+    # Whether the Sandbox Service points every new Sandbox's runner at its runner control stream
     # (`runner_control`); unset, commands reach runners through the inbound Attach RPC.
     runner_control: bool
     db: DbProps

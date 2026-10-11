@@ -376,9 +376,9 @@ def _granted(case: Case) -> list[str]:
 async def test_create_points_the_runner_at_its_endpoints_and_grants_their_egress(case: Case) -> None:
     await case.service.create(CreateSandboxRequest(name="test", template=TEMPLATE), caller=ADMIN)
     assert _runner_args(case, "test") == [
-        "--channel-target",
+        "--control-target",
         CONTROL.target,
-        "--channel-bearer",
+        "--control-bearer",
         CONTROL.bearer,
         "--ingress-target",
         HISTORY.target,
@@ -392,7 +392,7 @@ async def test_create_points_the_runner_at_its_endpoints_and_grants_their_egress
 async def test_an_unset_ingress_starts_the_runner_without_one(case: Case) -> None:
     unconfigured = replace(case.service, endpoints=RunnerEndpoints(control=CONTROL, ingress=None))
     await unconfigured.create(CreateSandboxRequest(name="test", template=TEMPLATE), caller=ADMIN)
-    assert _runner_args(case, "test") == ["--channel-target", CONTROL.target, "--channel-bearer", CONTROL.bearer]
+    assert _runner_args(case, "test") == ["--control-target", CONTROL.target, "--control-bearer", CONTROL.bearer]
     await unconfigured.reconcile_once()
     assert _granted(case) == [CONTROL.egress_policy, "test-basic"]
 
@@ -424,7 +424,7 @@ async def test_endpoint_egress_cannot_be_granted_afterwards(api: SandboxServiceC
     assert case.custom.objects == before
 
 
-@pytest.mark.parametrize("flag", ["--channel-target", "--ingress-target"])
+@pytest.mark.parametrize("flag", ["--control-target", "--ingress-target"])
 async def test_a_template_that_names_an_endpoint_is_refused(api: SandboxServiceClient, case: Case, flag: str) -> None:
     template = deepcopy(case.custom.objects[("sandboxtemplates", TEMPLATE)])
     template["spec"]["podTemplate"]["spec"]["containers"][0]["args"] = [flag, "test-elsewhere.test:9000"]
