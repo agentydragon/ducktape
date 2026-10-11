@@ -3,7 +3,7 @@
 // agentplane/docs/runner_channel.md § Event ingress.
 syntax = "proto3";
 
-package agentplane.runner_ingress;
+package agentplane.proto.runner_ingress;
 
 import "agentplane/protocol/event_log.proto";
 import "agentplane/runner/protocol.proto";

@@ -13,7 +13,7 @@ service RunnerChannel {
   rpc Connect(stream RunnerFrame) returns (stream ServiceFrame);
   // CLEANUP(added 2026-10-11): remove `Follow`, its frames and the `events` capability once
   //   `agentplane/runner/channel.py` no longer serves follows; Events go to the runner's ingress
-  //   (`agentplane/runner_ingress/protocol.proto`), and the Sandbox Service never agrees `events`.
+  //   (`agentplane/proto/runner_ingress.proto`), and the Sandbox Service never agrees `events`.
   // Opened by the runner when asked by `OpenFollow`, on the connection that carried it, with the
   // connection epoch and follow ID in `x-agentplane-connection-epoch` and `x-agentplane-follow-id`
   // metadata.

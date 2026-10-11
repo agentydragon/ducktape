@@ -340,7 +340,7 @@ flowchart LR
     CLIENT_SESSION_IDS[Clients mint Session IDs] --> RUNNER_OUTBOUND_ROLLOUT
     SEAL_ON_INGRESS_ACK[Seal waits on the ingress acknowledgement] --> RUNNER_OUTBOUND_ROLLOUT
     RUNNER_OUTBOUND_LIFECYCLE --> RUNNER_OUTBOUND_ROLLOUT
-    PROTO_PACKAGE_NAMES[Proto packages named by their path] --> RUNNER_OUTBOUND_ROLLOUT
+    PROTO_DIRECTORY[Protos under agentplane/proto] --> RUNNER_OUTBOUND_ROLLOUT
     RUNNER_OUTBOUND_ROLLOUT --> LEGACY_SANDBOX_RETIRE[Blocked: operator deletes every pre-cutover Sandbox]
     LEGACY_SANDBOX_RETIRE --> RUNNER_INBOUND_RETIRE[Blocked: retire inbound runner access]
     VM_PROVIDER --> VM_CONTROL_NETWORKING
@@ -781,9 +781,7 @@ flowchart TD
     HISTORY_DATABASE_RENAME[Blocked: rename the sandbox_service database and role]
     SANDBOX_DATABASE_RENAME[Blocked: name the sandbox_commands database for the Sandbox Service]
     APP_ELECTRIC_RETIRE[Blocked: remove Electric's access to the app database]
-    PROTO_DIRECTORY[Unscheduled: cross-component protos under one proto directory]
-    PROTO_PACKAGE_NAMES[Blocked: proto packages named by their path]
-    PROTO_DIRECTORY --> PROTO_PACKAGE_NAMES
+    PROTO_DIRECTORY[Candidate: protos under agentplane/proto, packages named by path]
     SANDBOX_LOCAL_HISTORY_RETIRE[Delete Sandbox Service ingester and store]
     APP_PROJECTOR_RETIRE[Delete app projector]
     HISTORY_SERVICE_OWNERSHIP[History Service ownership]
@@ -844,24 +842,17 @@ plain name if it carries a history-specific one.
 
 ### `PROTO_DIRECTORY` — protocols in one place
 
-**Unscheduled; operator direction, 2026-10-10 PDT.** Adopt google3's `proto/` convention: protobuf
-messages and gRPC services that cross components live in a dedicated proto location rather than
-inside one implementing package. Candidates: `sandbox_service/protocol.proto`,
-`history_service/protocol.proto`, `runner/protocol.proto`, the `RunnerChannel` service
-([runner channel](../docs/runner_channel.md), being added by the dial-out lane), and
-the shared `protocol/` messages already outside any service. Decide the location and Bazel
-package layout, then move each file with its generated-code imports in one change. Wait until the
-runner channel and History Service proto churn lands so moves do not conflict with open lanes.
-
-### `PROTO_PACKAGE_NAMES` — proto packages named by their path
-
-**Blocked on the proto location; operator direction, 2026-10-11 PDT.** Every agentplane proto's
-package is its directory from the ducktape root, with no version suffix (a file under
-`agentplane/proto/runner_ingress/` is `agentplane.proto.runner_ingress`). A gRPC service's full
-name includes its package, so renaming a runner-facing package (`runner`, `runner_channel`,
-`runner_ingress`) breaks the wire with deployed runners: those renames land before
-`RUNNER_OUTBOUND_ROLLOUT` so they ride the clean cutover, and that pulls the `PROTO_DIRECTORY`
-location decision ahead of it. `runner_ingress` already follows its current path.
+**Candidate; operator direction, 2026-10-10 and 2026-10-11 PDT.** Protobuf messages and gRPC
+services that cross components live in `agentplane/proto/<name>.proto` (google3's `proto/`
+convention), each with the package `agentplane.proto.<name>`: its path from the ducktape root, no
+version suffix. `runner_ingress.proto` started the directory. Move the rest with their
+generated-code imports: `sandbox_service/protocol.proto`, `history_service/protocol.proto`,
+`runner/protocol.proto`, `runner_channel/protocol.proto` and the shared `protocol/` messages. A
+gRPC service's full name includes its package, so moving a runner-facing proto (`runner`,
+`runner_channel`) breaks the wire with deployed runners: those land before
+`RUNNER_OUTBOUND_ROLLOUT` and ride its clean cutover. Between services that roll independently
+(Sandbox Service, History Service and their clients), a renamed service is served under both
+names until every client calls the new one.
 
 ## 10. Legacy burn-down
 

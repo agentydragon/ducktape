@@ -119,7 +119,7 @@ the Sandbox Service like any other client. Fan-out to further readers is the ing
 a service's behind it, never a second destination on the runner.
 
 ```protobuf
-// agentplane/runner_ingress/protocol.proto
+// agentplane/proto/runner_ingress.proto
 service RunnerIngress {
   rpc Push(stream PushFrame) returns (stream Acknowledgement);
 }
@@ -139,7 +139,7 @@ message Acknowledgement {
 }
 ```
 
-The ingress has its own package, `agentplane.runner_ingress`: another server implements
+The ingress has its own package, `agentplane.proto.runner_ingress`: another server implements
 it, under its own token audience, and a historyless client needs only it.
 
 1. **One call per Session.** The runner opens a `Push` call for every Session in its state
