@@ -66,7 +66,7 @@ pub(crate) use lazy_boundary::*;
 pub(crate) use local_effect_targets::*;
 pub(crate) use purity_classification::*;
 pub(crate) use statement_facts::ConstructorFacts;
-pub(crate) use value_flow::{ChunkValueFlow, ValueOrigin};
+pub(crate) use value_flow::{CandidateObjectIndex, ChunkValueFlow, ValueOrigin};
 
 // Public API: importable at `facts::<item>` exactly as before the split.
 pub use analyze::{analyze_chunk, analyze_chunk_structural, analyze_chunk_with_policy};

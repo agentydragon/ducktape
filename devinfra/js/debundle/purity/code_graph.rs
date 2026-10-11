@@ -181,6 +181,33 @@ impl ChunkCodeGraph {
         declared_pure_members: &BTreeMap<String, BTreeSet<String>>,
         imported_purities: &BTreeMap<String, Arc<Purity>>,
         fluent_bindings: &BTreeSet<String>,
+        locate: Option<&mut dyn FnMut(Span) -> Option<SourceLocation>>,
+    ) -> Self {
+        let plain_data_bindings = collect_plain_data_bindings(body, shadowed, value_flow);
+        Self::build_full_with_prepared_plain_data(
+            body,
+            shadowed,
+            declared_pure,
+            declared_pure_new,
+            declared_pure_members,
+            imported_purities,
+            fluent_bindings,
+            &plain_data_bindings,
+            locate,
+        )
+    }
+
+    /// Reuse the chunk-wide escape scan when only imported purities change.
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn build_full_with_prepared_plain_data(
+        body: &[TopLevelItemView<'_>],
+        shadowed: &BTreeSet<&'static str>,
+        declared_pure: &BTreeSet<String>,
+        declared_pure_new: &BTreeSet<String>,
+        declared_pure_members: &BTreeMap<String, BTreeSet<String>>,
+        imported_purities: &BTreeMap<String, Arc<Purity>>,
+        fluent_bindings: &BTreeSet<String>,
+        plain_data_bindings: &[String],
         mut locate: Option<&mut dyn FnMut(Span) -> Option<SourceLocation>>,
     ) -> Self {
         let functions = collect_chunk_functions(body);
@@ -223,12 +250,14 @@ impl ChunkCodeGraph {
         // in the chunk. Function-bound `const` initializers are already
         // tracked as `Function`; this pass only adds non-function
         // plain-data shapes.
-        for name in collect_plain_data_bindings(body, shadowed, value_flow) {
+        for name in plain_data_bindings {
             // Functions take precedence: a chunk-top `const f = () => ...`
             // is registered as Function and must not be re-registered as
             // PlainData (calling it is the interesting question, not
             // reading its `.length` etc.).
-            bindings.entry(name).or_insert(ChunkBinding::PlainData);
+            bindings
+                .entry(name.clone())
+                .or_insert(ChunkBinding::PlainData);
         }
         let mut graph = ChunkCodeGraph {
             bindings,
