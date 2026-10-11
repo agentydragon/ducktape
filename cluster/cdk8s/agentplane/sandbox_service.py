@@ -76,7 +76,7 @@ RUNNER_CHANNEL_POLICY = "runner-channel"
 RUNNER_CHANNEL_CREDENTIAL = "agentplane-runner-channel"
 # The bearer a runner sends on the channel; the egress proxy swaps it for the Pod's channel token.
 RUNNER_CHANNEL_BEARER = placeholder_of(RUNNER_CHANNEL_CREDENTIAL)
-_RUNNER_CHANNEL_CONNECT = "/ducktape.agentplane.runner_channel.v1.RunnerChannel/Connect"
+_RUNNER_CHANNEL_CONNECT = "/agentplane.proto.runner_channel.RunnerChannel/Connect"
 
 
 def service(namespace: str) -> ServiceRef:

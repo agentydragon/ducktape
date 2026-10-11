@@ -22,8 +22,8 @@ from sqlalchemy import (
 from sqlalchemy.dialects.postgresql import ARRAY
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
+from agentplane.proto import runner_channel_pb2 as channel_pb2
 from agentplane.protocol import command_pb2, event_log_pb2
-from agentplane.runner_channel import protocol_pb2 as channel_pb2
 from util.sqlalchemy_protobuf import ProtobufColumn
 
 # gazelle:include_dep @pypi//protobuf

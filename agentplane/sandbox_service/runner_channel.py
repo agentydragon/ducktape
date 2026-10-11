@@ -18,7 +18,7 @@ import grpc
 from kubernetes_asyncio import client as k8s_client
 from sqlalchemy.exc import SQLAlchemyError
 
-from agentplane.runner_channel import protocol_pb2, protocol_pb2_grpc
+from agentplane.proto import runner_channel_pb2, runner_channel_pb2_grpc
 from agentplane.sandbox_service.channel_control import ChannelControl, ControlConnection
 from agentplane.sandbox_service.channel_delivery import ChannelDelivery
 from agentplane.sandbox_service.commands.connections import ConnectionStore
@@ -114,7 +114,7 @@ async def resolve_peer(
     return ChannelPeer(sandbox_name=sandbox.name, sandbox_uid=UUID(sandbox.uid), pod_uid=principal.pod_uid)
 
 
-class RunnerChannelService(protocol_pb2_grpc.RunnerChannelServicer):
+class RunnerChannelService(runner_channel_pb2_grpc.RunnerChannelServicer):
     def __init__(
         self,
         *,
@@ -151,7 +151,7 @@ class RunnerChannelService(protocol_pb2_grpc.RunnerChannelServicer):
     # inside the liveness bound.
     @override
     async def Connect(  # type: ignore[override]
-        self, request_iterator: AsyncIterator[protocol_pb2.RunnerFrame], context: grpc.aio.ServicerContext
+        self, request_iterator: AsyncIterator[runner_channel_pb2.RunnerFrame], context: grpc.aio.ServicerContext
     ) -> None:
         try:
             async with asyncio.timeout(self.timing.liveness_s):
@@ -160,7 +160,7 @@ class RunnerChannelService(protocol_pb2_grpc.RunnerChannelServicer):
                 async with asyncio.timeout(self.timing.liveness_s):
                     hello = await anext(request_iterator)
             except StopAsyncIteration, TimeoutError:
-                hello = protocol_pb2.RunnerFrame()
+                hello = runner_channel_pb2.RunnerFrame()
             if hello.WhichOneof("frame") != "hello" or not hello.hello.runner_boot_id:
                 raise _ChannelClosedError(grpc.StatusCode.INVALID_ARGUMENT, "the first frame must be Hello")
             capabilities = set(hello.hello.capabilities) & set(ChannelOperation)
@@ -170,8 +170,8 @@ class RunnerChannelService(protocol_pb2_grpc.RunnerChannelServicer):
             await self.connections.record_operations(peer.sandbox_uid, capabilities)
             async with asyncio.timeout(self.timing.liveness_s):
                 await context.write(
-                    protocol_pb2.ServiceFrame(
-                        welcome=protocol_pb2.Welcome(connection_epoch=epoch, capabilities=sorted(capabilities))
+                    runner_channel_pb2.ServiceFrame(
+                        welcome=runner_channel_pb2.Welcome(connection_epoch=epoch, capabilities=sorted(capabilities))
                     )
                 )
             with self.delivery.route(peer.sandbox_uid) as attempts:
@@ -195,7 +195,7 @@ class RunnerChannelService(protocol_pb2_grpc.RunnerChannelServicer):
         epoch: int,
         capabilities: set[str],
         attempts: asyncio.Queue[CommandKey],
-        frames: AsyncIterator[protocol_pb2.RunnerFrame],
+        frames: AsyncIterator[runner_channel_pb2.RunnerFrame],
         context: grpc.aio.ServicerContext,
     ) -> None:
         """Keep the connection until the runner leaves, goes quiet, ages out or is superseded."""
@@ -207,7 +207,7 @@ class RunnerChannelService(protocol_pb2_grpc.RunnerChannelServicer):
         commands = ChannelOperation.COMMANDS in capabilities
         lifecycle = ChannelOperation.LIFECYCLE in capabilities
 
-        async def send(frame: protocol_pb2.ServiceFrame) -> None:
+        async def send(frame: runner_channel_pb2.ServiceFrame) -> None:
             async with writing, asyncio.timeout(self.timing.liveness_s):
                 await context.write(frame)
 
@@ -247,8 +247,8 @@ class RunnerChannelService(protocol_pb2_grpc.RunnerChannelServicer):
                     continue
                 unreceipted[delivery.runner_session_id, key.command_id] = delivery.deadline
                 await send(
-                    protocol_pb2.ServiceFrame(
-                        deliver=protocol_pb2.DeliverCommand(
+                    runner_channel_pb2.ServiceFrame(
+                        deliver=runner_channel_pb2.DeliverCommand(
                             session_id=delivery.runner_session_id, command=delivery.command
                         )
                     )
@@ -274,7 +274,7 @@ class RunnerChannelService(protocol_pb2_grpc.RunnerChannelServicer):
                     if await resolve_peer(principal, inventory=self.inventory, core=self.core) != peer:
                         raise _ChannelClosedError(grpc.StatusCode.PERMISSION_DENIED, "the Sandbox's routing changed")
                     last_touch = now
-                await send(protocol_pb2.ServiceFrame(heartbeat=protocol_pb2.Heartbeat()))
+                await send(runner_channel_pb2.ServiceFrame(heartbeat=runner_channel_pb2.Heartbeat()))
 
         with self.control.connect(peer.sandbox_uid, epoch=epoch, send=send) if lifecycle else nullcontext() as control:
             tasks = [

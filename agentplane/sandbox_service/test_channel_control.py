@@ -14,9 +14,9 @@ import pytest_bazel
 from kubernetes_asyncio import client as k8s_client
 from sqlalchemy.ext.asyncio import AsyncEngine
 
+from agentplane.proto import runner_channel_pb2, runner_channel_pb2_grpc
 from agentplane.runner import protocol_pb2 as runner_pb2
 from agentplane.runner.errors import RunnerError
-from agentplane.runner_channel import protocol_pb2, protocol_pb2_grpc
 from agentplane.sandbox_service.channel_control import (
     ChannelControl,
     ConnectionNotHeldError,
@@ -54,22 +54,22 @@ RUNNER_TOKEN = "test-runner-token"
 CALLER_AUDIENCE = "test-sandbox-service"
 CALLER_TOKEN = "test-caller-token"
 CALLER = ServiceAccountRef(namespace=SANDBOX_NAMESPACE, name="test-caller")
-HELLO = protocol_pb2.RunnerFrame(
-    hello=protocol_pb2.Hello(runner_boot_id="test-boot", capabilities=["commands", "lifecycle"])
+HELLO = runner_channel_pb2.RunnerFrame(
+    hello=runner_channel_pb2.Hello(runner_boot_id="test-boot", capabilities=["commands", "lifecycle"])
 )
 HOLDER = ConnectionHolder(pod_name="test-replica", pod_ip="192.0.2.1", port=18080)
 OTHER = ConnectionHolder(pod_name="test-other-replica", pod_ip="192.0.2.2", port=18080)
 SPEC: dict[str, object] = {"harness": "HARNESS_CLAUDE", "cwd": "/test-workspace/{session_id}", "model": "test-model"}
-Reason = protocol_pb2.ControlRefused.Reason
+Reason = runner_channel_pb2.ControlRefused.Reason
 
-type Connect = grpc.aio.StreamStreamCall[protocol_pb2.RunnerFrame, protocol_pb2.ServiceFrame]
+type Connect = grpc.aio.StreamStreamCall[runner_channel_pb2.RunnerFrame, runner_channel_pb2.ServiceFrame]
 
 
 @dataclass
 class Replica:
     """One Sandbox Service replica: its channel listener, its public API and its lifecycle sender."""
 
-    channel: protocol_pb2_grpc.RunnerChannelAsyncStub
+    channel: runner_channel_pb2_grpc.RunnerChannelAsyncStub
     api: str
     control: ChannelControl
     teardown: Teardown
@@ -116,7 +116,7 @@ def replica(
             engine.url, dispatches=DispatchStore(engine), connections=connections, leases=leases, liveness_s=5
         )
         channel_server = grpc.aio.server()
-        protocol_pb2_grpc.add_RunnerChannelServicer_to_server(
+        runner_channel_pb2_grpc.add_RunnerChannelServicer_to_server(
             RunnerChannelService(
                 principals=WorkloadPrincipalResolver(
                     authentication=k8s_client.AuthenticationV1Api(cluster.api),
@@ -155,7 +155,7 @@ def replica(
         try:
             async with service(resources) as api, grpc.aio.insecure_channel(f"127.0.0.1:{port}") as channel:
                 yield Replica(
-                    channel=protocol_pb2_grpc.RunnerChannelStub(channel),
+                    channel=runner_channel_pb2_grpc.RunnerChannelStub(channel),
                     api=api,
                     control=control,
                     teardown=Teardown(
@@ -191,26 +191,26 @@ async def connected(replica: Replica) -> AsyncIterator[Connect]:
     try:
         await call.write(HELLO)
         frame = await call.read()
-        assert isinstance(frame, protocol_pb2.ServiceFrame)
+        assert isinstance(frame, runner_channel_pb2.ServiceFrame)
         assert list(frame.welcome.capabilities) == ["commands", "lifecycle"]
         yield call
     finally:
         call.cancel()
 
 
-async def next_request(call: Connect) -> protocol_pb2.ControlRequest:
+async def next_request(call: Connect) -> runner_channel_pb2.ControlRequest:
     """The next control request, answering heartbeats meanwhile."""
     async with asyncio.timeout(10):
         while (frame := await call.read()) is not grpc.aio.EOF:
-            assert isinstance(frame, protocol_pb2.ServiceFrame)
+            assert isinstance(frame, runner_channel_pb2.ServiceFrame)
             if frame.HasField("control"):
                 return frame.control
-            await call.write(protocol_pb2.RunnerFrame(heartbeat=protocol_pb2.Heartbeat()))
+            await call.write(runner_channel_pb2.RunnerFrame(heartbeat=runner_channel_pb2.Heartbeat()))
     raise AssertionError("the service ended the stream")
 
 
-async def answer(call: Connect, result: protocol_pb2.ControlResult) -> None:
-    await call.write(protocol_pb2.RunnerFrame(control_result=result))
+async def answer(call: Connect, result: runner_channel_pb2.ControlResult) -> None:
+    await call.write(runner_channel_pb2.RunnerFrame(control_result=result))
 
 
 def attached(session_id: str, harness_state: runner_pb2.HarnessState) -> runner_pb2.Attached:
@@ -263,9 +263,9 @@ async def test_a_create_whose_harness_failed_resumes_the_session_on_retry(
         session_id = opened.open.session_id
         await answer(
             call,
-            protocol_pb2.ControlResult(
+            runner_channel_pb2.ControlResult(
                 request_id=opened.request_id,
-                refused=protocol_pb2.ControlRefused(reason=Reason.REASON_FAILED, detail="test launch failure"),
+                refused=runner_channel_pb2.ControlRefused(reason=Reason.REASON_FAILED, detail="test launch failure"),
             ),
         )
         with pytest.raises(RunnerError):
@@ -277,7 +277,7 @@ async def test_a_create_whose_harness_failed_resumes_the_session_on_retry(
         assert (confirmed.open.session_id, confirmed.open.spec) == (session_id, opened.open.spec)
         await answer(
             call,
-            protocol_pb2.ControlResult(
+            runner_channel_pb2.ControlResult(
                 request_id=confirmed.request_id, open=attached(session_id, runner_pb2.HARNESS_STATE_STOPPED)
             ),
         )
@@ -285,7 +285,7 @@ async def test_a_create_whose_harness_failed_resumes_the_session_on_retry(
         assert resumed.resume.session_id == session_id
         await answer(
             call,
-            protocol_pb2.ControlResult(
+            runner_channel_pb2.ControlResult(
                 request_id=resumed.request_id, resume=attached(session_id, runner_pb2.HARNESS_STATE_RUNNING)
             ),
         )
@@ -303,7 +303,7 @@ async def test_a_created_running_session_is_not_resumed(
         opened = await next_request(call)
         await answer(
             call,
-            protocol_pb2.ControlResult(
+            runner_channel_pb2.ControlResult(
                 request_id=opened.request_id, open=attached(opened.open.session_id, runner_pb2.HARNESS_STATE_RUNNING)
             ),
         )
@@ -328,7 +328,7 @@ async def test_listing_and_resuming_go_over_the_channel(
         listing = asyncio.create_task(runner.list_sessions())
         listed = await next_request(call)
         assert listed.WhichOneof("verb") == "list_sessions"
-        result = protocol_pb2.ControlResult(request_id=listed.request_id)
+        result = runner_channel_pb2.ControlResult(request_id=listed.request_id)
         result.list_sessions.sessions.add(session_id="test-runner-session", last_cursor=7)
         await answer(call, result)
         assert [(row.session_id, row.last_cursor) for row in await listing] == [(str(public_id), 7)]
@@ -338,9 +338,11 @@ async def test_listing_and_resuming_go_over_the_channel(
         assert resume.resume.session_id == "test-runner-session"
         await answer(
             call,
-            protocol_pb2.ControlResult(
+            runner_channel_pb2.ControlResult(
                 request_id=resume.request_id,
-                refused=protocol_pb2.ControlRefused(reason=Reason.REASON_SETUP_FAILED, detail="test setup failed"),
+                refused=runner_channel_pb2.ControlRefused(
+                    reason=Reason.REASON_SETUP_FAILED, detail="test setup failed"
+                ),
             ),
         )
         with pytest.raises(RunnerError):
@@ -360,7 +362,7 @@ async def test_a_replica_without_the_connection_refuses_before_acting(
         async with connected(holder) as call, client(token_file, holder.api, control_target=other.api) as stale:
             listing = asyncio.create_task(stale.runner(destination).list_sessions())
             listed = await next_request(call)
-            await answer(call, protocol_pb2.ControlResult(request_id=listed.request_id, list_sessions={}))
+            await answer(call, runner_channel_pb2.ControlResult(request_id=listed.request_id, list_sessions={}))
             assert await listing == []
 
 
@@ -370,7 +372,7 @@ async def test_a_superseded_connection_sends_nothing(holder: Replica, other: Rep
             await leases.wait_for(lambda: leases.read_epoch(UUID(SANDBOX_UID)) == 2)
         with pytest.raises(ConnectionNotHeldError):
             await holder.control.request(
-                UUID(SANDBOX_UID), protocol_pb2.ControlRequest(list_sessions=runner_pb2.ListSessionsRequest())
+                UUID(SANDBOX_UID), runner_channel_pb2.ControlRequest(list_sessions=runner_pb2.ListSessionsRequest())
             )
 
 
@@ -387,7 +389,7 @@ async def test_a_lost_connection_drops_its_request_and_a_reconnect_replays_none(
         async with connected(holder) as call:
             for _ in range(3):
                 frame = await call.read()
-                assert isinstance(frame, protocol_pb2.ServiceFrame)
+                assert isinstance(frame, runner_channel_pb2.ServiceFrame)
                 assert frame.HasField("heartbeat")
 
 
@@ -395,11 +397,11 @@ async def test_an_answer_for_another_verb_fails_the_request(holder: Replica) -> 
     async with connected(holder) as call:
         listing = asyncio.create_task(
             holder.control.request(
-                UUID(SANDBOX_UID), protocol_pb2.ControlRequest(list_sessions=runner_pb2.ListSessionsRequest())
+                UUID(SANDBOX_UID), runner_channel_pb2.ControlRequest(list_sessions=runner_pb2.ListSessionsRequest())
             )
         )
         listed = await next_request(call)
-        await answer(call, protocol_pb2.ControlResult(request_id=listed.request_id, seal={}))
+        await answer(call, runner_channel_pb2.ControlResult(request_id=listed.request_id, seal={}))
         with pytest.raises(ControlProtocolError):
             await listing
 
@@ -416,7 +418,7 @@ async def test_teardown_seals_over_the_holders_connection(holder: Replica, other
         advancing = asyncio.create_task(holder.teardown.advance(sealing))
         sealed = await next_request(call)
         assert sealed.WhichOneof("verb") == "seal"
-        result = protocol_pb2.ControlResult(request_id=sealed.request_id)
+        result = runner_channel_pb2.ControlResult(request_id=sealed.request_id)
         result.seal.sessions.add(session_id="test-runner-session", cursor=3)
         await answer(call, result)
         await advancing
@@ -428,12 +430,12 @@ async def test_a_refusal_carries_its_reason(holder: Replica) -> None:
         resuming = asyncio.create_task(
             holder.control.request(
                 UUID(SANDBOX_UID),
-                protocol_pb2.ControlRequest(resume=protocol_pb2.ResumeSession(session_id="test-unknown")),
+                runner_channel_pb2.ControlRequest(resume=runner_channel_pb2.ResumeSession(session_id="test-unknown")),
             )
         )
         resume = await next_request(call)
-        refusal = protocol_pb2.ControlRefused(reason=Reason.REASON_SESSION_UNKNOWN, detail="test unknown")
-        await answer(call, protocol_pb2.ControlResult(request_id=resume.request_id, refused=refusal))
+        refusal = runner_channel_pb2.ControlRefused(reason=Reason.REASON_SESSION_UNKNOWN, detail="test unknown")
+        await answer(call, runner_channel_pb2.ControlResult(request_id=resume.request_id, refused=refusal))
         with pytest.raises(ControlRefusedError) as refused:
             await resuming
         assert refused.value.refusal == refusal

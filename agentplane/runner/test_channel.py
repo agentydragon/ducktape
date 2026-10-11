@@ -13,6 +13,7 @@ import httpx
 import pytest
 import pytest_bazel
 
+from agentplane.proto import runner_channel_pb2 as channel_pb2, runner_channel_pb2_grpc
 from agentplane.protocol import command_pb2, event_pb2
 from agentplane.runner import protocol_pb2
 from agentplane.runner.adapter import HarnessAdapter
@@ -23,7 +24,6 @@ from agentplane.runner.model_config import HttpModelConfigResolver
 from agentplane.runner.service import Runner
 from agentplane.runner.session import Session
 from agentplane.runner.store import SessionRecord
-from agentplane.runner_channel import protocol_pb2 as channel_pb2, protocol_pb2_grpc
 
 # gazelle:include_dep @pypi//protobuf
 
@@ -77,7 +77,7 @@ class RunningProcess:
 
 
 @dataclass
-class ScriptedService(protocol_pb2_grpc.RunnerChannelServicer):
+class ScriptedService(runner_channel_pb2_grpc.RunnerChannelServicer):
     """Each connection gets Welcome, then its scripted frames, or the scripted status instead, then
     what the test pushes to it."""
 
@@ -192,7 +192,7 @@ async def service(runner: Runner) -> AsyncIterator[ScriptedService]:
     """The scripted service; the runner dials it once the test has written its script."""
     service = ScriptedService()
     server = grpc.aio.server()
-    protocol_pb2_grpc.add_RunnerChannelServicer_to_server(service, server)
+    runner_channel_pb2_grpc.add_RunnerChannelServicer_to_server(service, server)
     port = server.add_insecure_port("127.0.0.1:0")
     await server.start()
     client = RunnerChannelClient(runner, target=f"127.0.0.1:{port}", bearer="test-placeholder", timing=TIMING)

@@ -14,8 +14,8 @@ from uuid import UUID, uuid4
 
 import grpc
 
+from agentplane.proto import runner_channel_pb2 as channel_pb2
 from agentplane.runner.errors import RunnerError
-from agentplane.runner_channel import protocol_pb2 as channel_pb2
 from agentplane.sandbox_service.connection_records import ConnectionLeases
 from agentplane.sandbox_service.destinations import DestinationUnavailableError
 

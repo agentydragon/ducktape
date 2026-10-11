@@ -1,8 +1,8 @@
 // The runner-initiated control channel to the Sandbox Service; contract in
-// agentplane/docs/runner_channel.md. An incompatible change is a new package.
+// agentplane/docs/runner_channel.md.
 syntax = "proto3";
 
-package ducktape.agentplane.runner_channel.v1;
+package agentplane.proto.runner_channel;
 
 import "agentplane/protocol/command.proto";
 import "agentplane/protocol/event_log.proto";

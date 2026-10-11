@@ -13,8 +13,8 @@ import pytest_bazel
 from kubernetes_asyncio import client as k8s_client
 from sqlalchemy.ext.asyncio import AsyncEngine
 
+from agentplane.proto import runner_channel_pb2, runner_channel_pb2_grpc
 from agentplane.protocol import command_pb2, event_log_pb2
-from agentplane.runner_channel import protocol_pb2, protocol_pb2_grpc
 from agentplane.sandbox_service.channel_control import ChannelControl
 from agentplane.sandbox_service.channel_delivery import ChannelDelivery, CommandRefusedError
 from agentplane.sandbox_service.commands.connections import ConnectionStore
@@ -47,14 +47,14 @@ AUDIENCE = "test-runner-channel"
 TOKEN = "test-runner-token"
 COMMAND = command_pb2.Command(command_id="test-command", submit_input=command_pb2.SubmitInput(text="hello"))
 RUNNER_SESSION = "test-runner-session"
-HELLO = protocol_pb2.RunnerFrame(
-    hello=protocol_pb2.Hello(runner_boot_id="test-boot", capabilities=["commands", "test-future-capability"])
+HELLO = runner_channel_pb2.RunnerFrame(
+    hello=runner_channel_pb2.Hello(runner_boot_id="test-boot", capabilities=["commands", "test-future-capability"])
 )
 REPLICA = ConnectionHolder(pod_name="test-replica", pod_ip="192.0.2.1", port=18080)
 OTHER_REPLICA = ConnectionHolder(pod_name="test-other-replica", pod_ip="192.0.2.2", port=18080)
 OWNER = RecordOwner(name=SANDBOX, uid=UUID(SANDBOX_UID))
 
-type Replica = Callable[[ConnectionHolder], AbstractAsyncContextManager[protocol_pb2_grpc.RunnerChannelAsyncStub]]
+type Replica = Callable[[ConnectionHolder], AbstractAsyncContextManager[runner_channel_pb2_grpc.RunnerChannelAsyncStub]]
 
 
 @pytest.fixture
@@ -96,9 +96,9 @@ def replica(cluster: Cluster, engine: AsyncEngine, delivery: ChannelDelivery) ->
     )
 
     @asynccontextmanager
-    async def start(holder: ConnectionHolder) -> AsyncIterator[protocol_pb2_grpc.RunnerChannelAsyncStub]:
+    async def start(holder: ConnectionHolder) -> AsyncIterator[runner_channel_pb2_grpc.RunnerChannelAsyncStub]:
         server = grpc.aio.server()
-        protocol_pb2_grpc.add_RunnerChannelServicer_to_server(
+        runner_channel_pb2_grpc.add_RunnerChannelServicer_to_server(
             RunnerChannelService(
                 principals=WorkloadPrincipalResolver(
                     authentication=k8s_client.AuthenticationV1Api(cluster.api),
@@ -119,7 +119,7 @@ def replica(cluster: Cluster, engine: AsyncEngine, delivery: ChannelDelivery) ->
         await server.start()
         try:
             async with grpc.aio.insecure_channel(f"127.0.0.1:{port}") as connection:
-                yield protocol_pb2_grpc.RunnerChannelStub(connection)
+                yield runner_channel_pb2_grpc.RunnerChannelStub(connection)
         finally:
             await server.stop(0)
 
@@ -127,7 +127,7 @@ def replica(cluster: Cluster, engine: AsyncEngine, delivery: ChannelDelivery) ->
 
 
 @pytest.fixture
-async def channel(replica: Replica) -> AsyncIterator[protocol_pb2_grpc.RunnerChannelAsyncStub]:
+async def channel(replica: Replica) -> AsyncIterator[runner_channel_pb2_grpc.RunnerChannelAsyncStub]:
     async with replica(REPLICA) as stub:
         yield stub
 
@@ -144,8 +144,8 @@ def run_sandbox_as(cluster: Cluster, account: str) -> None:
 
 @asynccontextmanager
 async def connect(
-    stub: protocol_pb2_grpc.RunnerChannelAsyncStub, token: str = TOKEN
-) -> AsyncIterator[grpc.aio.StreamStreamCall[protocol_pb2.RunnerFrame, protocol_pb2.ServiceFrame]]:
+    stub: runner_channel_pb2_grpc.RunnerChannelAsyncStub, token: str = TOKEN
+) -> AsyncIterator[grpc.aio.StreamStreamCall[runner_channel_pb2.RunnerFrame, runner_channel_pb2.ServiceFrame]]:
     call = stub.Connect(metadata=(("authorization", f"Bearer {token}"),), timeout=10)
     try:
         yield call
@@ -154,15 +154,15 @@ async def connect(
 
 
 async def read_frame(
-    call: grpc.aio.StreamStreamCall[protocol_pb2.RunnerFrame, protocol_pb2.ServiceFrame],
-) -> protocol_pb2.ServiceFrame:
+    call: grpc.aio.StreamStreamCall[runner_channel_pb2.RunnerFrame, runner_channel_pb2.ServiceFrame],
+) -> runner_channel_pb2.ServiceFrame:
     frame = await call.read()
-    assert isinstance(frame, protocol_pb2.ServiceFrame), "the service ended the stream"
+    assert isinstance(frame, runner_channel_pb2.ServiceFrame), "the service ended the stream"
     return frame
 
 
 async def status_of(
-    call: grpc.aio.StreamStreamCall[protocol_pb2.RunnerFrame, protocol_pb2.ServiceFrame],
+    call: grpc.aio.StreamStreamCall[runner_channel_pb2.RunnerFrame, runner_channel_pb2.ServiceFrame],
 ) -> grpc.StatusCode:
     """Drain the service's frames until it ends the stream."""
     try:
@@ -173,17 +173,19 @@ async def status_of(
     return await call.code()
 
 
-async def test_newest_connection_supersedes_the_previous_one(channel: protocol_pb2_grpc.RunnerChannelAsyncStub) -> None:
+async def test_newest_connection_supersedes_the_previous_one(
+    channel: runner_channel_pb2_grpc.RunnerChannelAsyncStub,
+) -> None:
     async with connect(channel) as first:
         await first.write(HELLO)
         welcome = await read_frame(first)
-        assert welcome.welcome == protocol_pb2.Welcome(connection_epoch=1, capabilities=["commands"])
+        assert welcome.welcome == runner_channel_pb2.Welcome(connection_epoch=1, capabilities=["commands"])
         assert (await read_frame(first)).HasField("heartbeat")
         async with connect(channel) as second:
             await second.write(HELLO)
             assert (await read_frame(second)).welcome.connection_epoch == 2
             assert await status_of(first) == grpc.StatusCode.ABORTED
-            await second.write(protocol_pb2.RunnerFrame(heartbeat=protocol_pb2.Heartbeat()))
+            await second.write(runner_channel_pb2.RunnerFrame(heartbeat=runner_channel_pb2.Heartbeat()))
             assert (await read_frame(second)).HasField("heartbeat")
 
 
@@ -192,7 +194,7 @@ def owners(obj: dict[str, Any]) -> list[tuple[str, str]]:
 
 
 async def test_accepting_records_the_connection_on_the_sandbox(
-    channel: protocol_pb2_grpc.RunnerChannelAsyncStub, cluster: Cluster
+    channel: runner_channel_pb2_grpc.RunnerChannelAsyncStub, cluster: Cluster
 ) -> None:
     async with connect(channel) as call:
         await call.write(HELLO)
@@ -239,7 +241,7 @@ def owned_by_sandbox(name: str, **fields: Any) -> dict[str, Any]:
 
 
 async def test_an_older_epoch_never_overwrites_the_control_endpoints(
-    channel: protocol_pb2_grpc.RunnerChannelAsyncStub, cluster: Cluster
+    channel: runner_channel_pb2_grpc.RunnerChannelAsyncStub, cluster: Cluster
 ) -> None:
     # Written by a newer connection's owner that won the race to the EndpointSlice.
     newer: dict[str, Any] = {
@@ -299,7 +301,11 @@ async def test_liveness_is_read_from_the_watched_leases(leases: ConnectionLeases
     ],
 )
 async def test_only_the_sandbox_pod_connects(
-    channel: protocol_pb2_grpc.RunnerChannelAsyncStub, cluster: Cluster, token: str, account: str, code: grpc.StatusCode
+    channel: runner_channel_pb2_grpc.RunnerChannelAsyncStub,
+    cluster: Cluster,
+    token: str,
+    account: str,
+    code: grpc.StatusCode,
 ) -> None:
     run_sandbox_as(cluster, account)
     async with connect(channel, token) as call:
@@ -307,13 +313,13 @@ async def test_only_the_sandbox_pod_connects(
         assert await status_of(call) == code
 
 
-async def test_first_frame_must_be_hello(channel: protocol_pb2_grpc.RunnerChannelAsyncStub) -> None:
+async def test_first_frame_must_be_hello(channel: runner_channel_pb2_grpc.RunnerChannelAsyncStub) -> None:
     async with connect(channel) as call:
-        await call.write(protocol_pb2.RunnerFrame(heartbeat=protocol_pb2.Heartbeat()))
+        await call.write(runner_channel_pb2.RunnerFrame(heartbeat=runner_channel_pb2.Heartbeat()))
         assert await status_of(call) == grpc.StatusCode.INVALID_ARGUMENT
 
 
-async def test_silent_runner_is_dropped(channel: protocol_pb2_grpc.RunnerChannelAsyncStub) -> None:
+async def test_silent_runner_is_dropped(channel: runner_channel_pb2_grpc.RunnerChannelAsyncStub) -> None:
     async with connect(channel) as call:
         await call.write(HELLO)
         assert (await read_frame(call)).HasField("welcome")
@@ -321,7 +327,7 @@ async def test_silent_runner_is_dropped(channel: protocol_pb2_grpc.RunnerChannel
 
 
 async def test_identity_change_ends_the_connection(
-    channel: protocol_pb2_grpc.RunnerChannelAsyncStub, cluster: Cluster
+    channel: runner_channel_pb2_grpc.RunnerChannelAsyncStub, cluster: Cluster
 ) -> None:
     async with connect(channel) as call:
         await call.write(HELLO)
@@ -352,15 +358,18 @@ def deliver(delivery: ChannelDelivery, cluster: Cluster, session_id: UUID) -> as
 
 
 async def next_delivery(
-    call: grpc.aio.StreamStreamCall[protocol_pb2.RunnerFrame, protocol_pb2.ServiceFrame],
-) -> protocol_pb2.DeliverCommand:
+    call: grpc.aio.StreamStreamCall[runner_channel_pb2.RunnerFrame, runner_channel_pb2.ServiceFrame],
+) -> runner_channel_pb2.DeliverCommand:
     while (frame := await read_frame(call)).HasField("heartbeat"):
-        await call.write(protocol_pb2.RunnerFrame(heartbeat=protocol_pb2.Heartbeat()))
+        await call.write(runner_channel_pb2.RunnerFrame(heartbeat=runner_channel_pb2.Heartbeat()))
     return frame.deliver
 
 
 async def test_delivered_command_returns_the_runner_receipt(
-    channel: protocol_pb2_grpc.RunnerChannelAsyncStub, delivery: ChannelDelivery, cluster: Cluster, session_id: UUID
+    channel: runner_channel_pb2_grpc.RunnerChannelAsyncStub,
+    delivery: ChannelDelivery,
+    cluster: Cluster,
+    session_id: UUID,
 ) -> None:
     admitted = event_log_pb2.EventEntry(cursor=1)
     admitted.origin.source_id, admitted.origin.sequence = "test-runner-source", 1
@@ -375,8 +384,8 @@ async def test_delivered_command_returns_the_runner_receipt(
         sent = await next_delivery(call)
         assert (sent.session_id, sent.command) == (RUNNER_SESSION, COMMAND)
         await call.write(
-            protocol_pb2.RunnerFrame(
-                receipt=protocol_pb2.CommandReceipt(
+            runner_channel_pb2.RunnerFrame(
+                receipt=runner_channel_pb2.CommandReceipt(
                     session_id=RUNNER_SESSION, command_id=sent.command.command_id, admitted=admitted
                 )
             )
@@ -385,9 +394,12 @@ async def test_delivered_command_returns_the_runner_receipt(
 
 
 async def test_refusal_reaches_the_caller(
-    channel: protocol_pb2_grpc.RunnerChannelAsyncStub, delivery: ChannelDelivery, cluster: Cluster, session_id: UUID
+    channel: runner_channel_pb2_grpc.RunnerChannelAsyncStub,
+    delivery: ChannelDelivery,
+    cluster: Cluster,
+    session_id: UUID,
 ) -> None:
-    refused = protocol_pb2.CommandRefused(reason=protocol_pb2.CommandRefused.REASON_HARNESS_STOPPED)
+    refused = runner_channel_pb2.CommandRefused(reason=runner_channel_pb2.CommandRefused.REASON_HARNESS_STOPPED)
     async with connect(channel) as call:
         await call.write(HELLO)
         assert (await read_frame(call)).HasField("welcome")
@@ -397,8 +409,8 @@ async def test_refusal_reaches_the_caller(
         waiting = deliver(delivery, cluster, session_id)
         sent = await next_delivery(call)
         await call.write(
-            protocol_pb2.RunnerFrame(
-                receipt=protocol_pb2.CommandReceipt(
+            runner_channel_pb2.RunnerFrame(
+                receipt=runner_channel_pb2.CommandReceipt(
                     session_id=RUNNER_SESSION, command_id=sent.command.command_id, refused=refused
                 )
             )
@@ -414,7 +426,7 @@ async def test_unconnected_runner_is_unavailable(delivery: ChannelDelivery, clus
 
 
 async def test_agreed_operations_stick_to_the_sandbox(
-    channel: protocol_pb2_grpc.RunnerChannelAsyncStub, cluster: Cluster, engine: AsyncEngine
+    channel: runner_channel_pb2_grpc.RunnerChannelAsyncStub, cluster: Cluster, engine: AsyncEngine
 ) -> None:
     sandbox_uid = UUID(SANDBOX_UID)
     connections = ConnectionStore(engine)
@@ -423,7 +435,9 @@ async def test_agreed_operations_stick_to_the_sandbox(
         assert (await read_frame(call)).HasField("welcome")
     # A later runner that no longer offers commands gets none, but the Sandbox stays channel-routed.
     async with connect(channel) as call:
-        await call.write(protocol_pb2.RunnerFrame(hello=protocol_pb2.Hello(runner_boot_id="test-later-boot")))
+        await call.write(
+            runner_channel_pb2.RunnerFrame(hello=runner_channel_pb2.Hello(runner_boot_id="test-later-boot"))
+        )
         assert list((await read_frame(call)).welcome.capabilities) == []
     assert await connections.read_operations(sandbox_uid) == {"commands"}
 

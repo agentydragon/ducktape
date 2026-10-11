@@ -15,6 +15,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from tenacity import AsyncRetrying, RetryCallState, retry_if_exception_type, wait_random_exponential
 
 from agentplane.grpc_options import grpc_channel_option_kvps
+from agentplane.proto import runner_channel_pb2 as channel_pb2, runner_channel_pb2_grpc
 from agentplane.protocol import command_pb2
 from agentplane.runner import protocol_pb2
 from agentplane.runner.journal import CommandConflictError, JournalSealedError
@@ -31,7 +32,6 @@ from agentplane.runner.service import (
     finish_command,
 )
 from agentplane.runner.session import Session
-from agentplane.runner_channel import protocol_pb2 as channel_pb2, protocol_pb2_grpc
 
 # gazelle:include_dep @pypi//protobuf
 
@@ -211,7 +211,7 @@ class RunnerChannelClient:
         welcomed_at: float | None = None
         lost = ChannelLostError(None, "the stream ended")
         try:
-            stub = protocol_pb2_grpc.RunnerChannelStub(channel)
+            stub = runner_channel_pb2_grpc.RunnerChannelStub(channel)
             call = stub.Connect(metadata=(("authorization", f"Bearer {self.bearer}"),))
             await call.write(
                 channel_pb2.RunnerFrame(hello=channel_pb2.Hello(runner_boot_id=self.boot_id, capabilities=CAPABILITIES))

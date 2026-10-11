@@ -15,8 +15,8 @@ from uuid import UUID
 from sqlalchemy.engine import URL
 
 from agentplane.postgres.listener import PostgresListener
+from agentplane.proto import runner_channel_pb2 as channel_pb2
 from agentplane.protocol import event_log_pb2
-from agentplane.runner_channel import protocol_pb2 as channel_pb2
 from agentplane.sandbox_service.commands.connections import ConnectionStore
 from agentplane.sandbox_service.commands.dispatch import (
     DISPATCH_CHANNEL,

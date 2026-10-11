@@ -3102,7 +3102,7 @@ spec:
       methods:
         - POST
       paths:
-        - /ducktape.agentplane.runner_channel.v1.RunnerChannel/Connect
+        - /agentplane.proto.runner_channel.RunnerChannel/Connect
       clusterInternal: true
       credentialRef:
         name: agentplane-runner-channel

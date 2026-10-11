@@ -13,7 +13,7 @@ from kubernetes_asyncio import client as k8s_client, config as k8s_config
 from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 
-from agentplane.runner_channel import protocol_pb2_grpc
+from agentplane.proto import runner_channel_pb2_grpc
 from agentplane.sandbox_service.action_policy import ActionPolicyBindings
 from agentplane.sandbox_service.channel_control import ChannelControl
 from agentplane.sandbox_service.channel_delivery import ChannelDelivery
@@ -41,7 +41,7 @@ from util.kubernetes import CustomObjectsClient
 # The asyncpg dialect is loaded by SQLAlchemy from the configured driver name.
 # gazelle:include_dep @pypi//asyncpg
 # The channel servicer stub names its messages; mypy reads stubs only from direct deps.
-# gazelle:include_dep //agentplane/runner_channel:protocol_pb2
+# gazelle:include_dep //agentplane/proto:runner_channel_pb2
 # gazelle:include_dep @pypi//protobuf
 
 
@@ -142,7 +142,7 @@ async def serve_with_engine(
             await server.start()
             # A separate listener, so the network fence can admit runners to the channel and nothing else.
             channel_server = grpc.aio.server()
-            protocol_pb2_grpc.add_RunnerChannelServicer_to_server(
+            runner_channel_pb2_grpc.add_RunnerChannelServicer_to_server(
                 RunnerChannelService(
                     principals=WorkloadPrincipalResolver(
                         authentication=k8s_client.AuthenticationV1Api(api),

@@ -86,8 +86,8 @@ message CommandRefused {
 message Heartbeat {}
 ```
 
-- **Versioning.** The package is `ducktape.agentplane.runner_channel.v1`; an incompatible change is
-  a new package. Additive frame kinds and RPCs are capabilities: a peer uses one only after both
+- **Versioning.** The proto is `agentplane/proto/runner_channel.proto`, package
+  `agentplane.proto.runner_channel`. Additive frame kinds and RPCs are capabilities: a peer uses one only after both
   sides listed it in `Hello`/`Welcome`. A frame of a kind the receiver did not agree to fails the
   stream, and an RPC the service does not implement returns `UNIMPLEMENTED`, so a skew shows up at
   first use rather than as silently dropped work. Rolling either side is safe because capabilities
