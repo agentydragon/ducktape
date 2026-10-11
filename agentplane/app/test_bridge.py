@@ -935,7 +935,7 @@ async def test_resume_after_tool_completion_preserves_the_result_and_does_not_re
 async def test_thread_resume_reports_missing_runner_recovery_state(
     app_url: str, event_logs: EventLogStore, history: History
 ) -> None:
-    thread_id = await event_logs.open(SANDBOX, "missing-runner-session")
+    thread_id = await event_logs.seed(SANDBOX, "missing-runner-session")
     await register_gateway_session(history.engine, thread_id, sandbox=SANDBOX)
     async with httpx.AsyncClient(base_url=app_url, timeout=60, headers=AGENT_AUTH) as http:
         response = await http.post(f"/threads/{thread_id}/resume")
@@ -987,7 +987,7 @@ async def test_thread_command_reports_id_conflict_after_runner_admitted_before_a
     runner_client_factory: RunnerClientFactory,
 ) -> None:
     """An app prefix lag must still preserve the runner's id-conflict verdict as a 409."""
-    thread = await event_logs.open(SANDBOX, SESSION)
+    thread = await event_logs.seed(SANDBOX, SESSION)
     original = command_pb2.Command(
         command_id="reused-before-copy", interrupt_turn=command_pb2.InterruptTurn(turn_id="first-target")
     )
@@ -1149,7 +1149,7 @@ async def test_command_returns_runner_receipt_before_app_archive_catches_up(
     history: History,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    thread = await event_logs.open(SANDBOX, SESSION)
+    thread = await event_logs.seed(SANDBOX, SESSION)
     await history.open(thread, sandbox=SANDBOX)
     await register_gateway_session(history.engine, thread, sandbox=SANDBOX)
     command = command_pb2.Command(

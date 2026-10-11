@@ -1,8 +1,8 @@
 """App Thread identities for fixture Sessions, opened in the scripted history database as well."""
 
+from typing import override
 from uuid import NAMESPACE_URL, UUID, uuid5
 
-from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
 
@@ -65,21 +65,35 @@ class SeededEventLogStore(EventLogStore):
         self.reader = history_reader
         super().__init__(engine, history_reader=history_reader, summaries=summaries)
 
-    async def open(self, sandbox: str, session_id: str) -> UUID:
+    @override
+    async def open(self, session_id: str) -> UUID:
+        """Open the Thread of a Session the app discovered, without the History Service's confirmation:
+        a fixture's runner may reach the History Service only through the app's own ingestion."""
+        public_id = UUID(session_id)
+        await self._insert(public_id)
+        return public_id
+
+    async def register(self, sandbox: str, session_id: str) -> UUID:
+        """Register a fixture's Session as running in `sandbox`, as a Sandbox Service would; a non-UUID
+        `session_id` is an alias."""
         public_id = fixture_session_id(sandbox, session_id)
-        async with self._sessions() as session:
-            if (
-                await session.scalar(select(EventLog.id).where(EventLog.sandbox == sandbox, EventLog.id == public_id))
-                is not None
-            ):
-                return public_id
         if self.history is not None:
             await self.history.open(public_id, sandbox=sandbox)
             if isinstance(self.gateway, Placements):
                 self.gateway.sandboxes[public_id] = sandbox
             else:
                 await register_gateway_session(self.gateway, public_id, sandbox=sandbox)
-        async with self._sessions.begin() as session:
-            await session.execute(insert(EventLog).values(id=public_id, sandbox=sandbox).on_conflict_do_nothing())
-            await notify(session, Channel.THREADS)
         return public_id
+
+    async def seed(self, sandbox: str, session_id: str) -> UUID:
+        """Register a fixture's Session and open its Thread."""
+        public_id = await self.register(sandbox, session_id)
+        await self._insert(public_id)
+        return public_id
+
+    async def _insert(self, public_id: UUID) -> None:
+        async with self._sessions.begin() as session:
+            if await session.scalar(
+                insert(EventLog).values(id=public_id).on_conflict_do_nothing().returning(EventLog.id)
+            ):
+                await notify(session, Channel.THREADS)

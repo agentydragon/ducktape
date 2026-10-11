@@ -75,7 +75,7 @@ async def unfolded(event_logs: EventLogStore, history: History) -> Unfolded:
             )
         )
         source.append(event_pb2.Event(text_delta=event_pb2.TextDelta(item_id=item_id, text=f"body {index}")))
-    thread = await event_logs.open(sandbox, SESSION)
+    thread = await event_logs.seed(sandbox, SESSION)
     await history.set_attached(thread, source.attached)
     return Unfolded(thread, source)
 

@@ -176,7 +176,7 @@ async def _followed_body(engine: AsyncEngine, token_file: Path) -> AsyncIterator
                 summaries=Summaries(engine, history_client),
             )
             source = ReplicationSource(placements)
-            thread = await event_logs.open(SANDBOX, SESSION)
+            thread = await event_logs.seed(SANDBOX, SESSION)
             await history.set_attached(thread, source.attached)
             started = (
                 event_pb2.Event(harness_started=event_pb2.HarnessStarted(pid=1)),

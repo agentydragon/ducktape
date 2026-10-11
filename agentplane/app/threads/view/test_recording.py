@@ -52,7 +52,7 @@ class _HarnessOutputRecorder:
 async def test_feed_failure_is_a_synced_operational_state_without_advancing_the_projection(
     event_logs: EventLogStore, history: History
 ) -> None:
-    thread = await event_logs.open("sb-1", "s-operational")
+    thread = await event_logs.seed("sb-1", "s-operational")
     attached = runner_pb2.Attached(session_id="s-operational", spec=SPEC)
     await history.set_attached(thread, attached)
     await history.record(thread, [event_entry(1, harness_started=event_pb2.HarnessStarted())])
@@ -110,7 +110,7 @@ async def test_codex_harness_nul_reaches_the_persisted_thread_payload(
     store: ThreadStore, event_logs: EventLogStore, history: History
 ) -> None:
     """An escaped NUL in Codex's stdout frame must survive adapter translation and thread folding."""
-    thread = await event_logs.open("sb-1", "s-codex-nul")
+    thread = await event_logs.seed("sb-1", "s-codex-nul")
     output = "before\x00after"
     recorder = _HarnessOutputRecorder()
     adapter = CodexAdapter(
@@ -157,7 +157,7 @@ async def test_codex_harness_nul_reaches_the_persisted_thread_payload(
 async def test_record_materializes_exact_payload_revisions_and_stalls_on_unknown_observations(
     store: ThreadStore, event_logs: EventLogStore, history: History
 ) -> None:
-    thread = await event_logs.open("sb-1", "s-1")
+    thread = await event_logs.seed("sb-1", "s-1")
     first = event_entry(1, text_delta=event_pb2.TextDelta(item_id="old", text="hello"))
     first.event.source_sequences.append(9007)
     await history.record(thread, [first, event_entry(2, text_delta=event_pb2.TextDelta(item_id="old", text=" world"))])
@@ -238,7 +238,7 @@ async def test_record_materializes_exact_payload_revisions_and_stalls_on_unknown
 async def test_a_completion_that_is_the_streamed_text_keeps_the_body_and_stores_nothing(
     store: ThreadStore, event_logs: EventLogStore, history: History
 ) -> None:
-    thread = await event_logs.open("sb-1", "s-1")
+    thread = await event_logs.seed("sb-1", "s-1")
     await history.record(
         thread,
         [
@@ -292,7 +292,7 @@ async def test_a_completion_that_is_the_streamed_text_keeps_the_body_and_stores_
 async def test_record_projects_confirmed_input_and_parallel_tool_revisions(
     store: ThreadStore, event_logs: EventLogStore, history: History
 ) -> None:
-    thread = await event_logs.open("sb-1", "s-1")
+    thread = await event_logs.seed("sb-1", "s-1")
     command = command_pb2.Command(command_id="input", submit_input=command_pb2.SubmitInput(text="question"))
     confirmed = event_entry(
         2,
@@ -370,7 +370,7 @@ async def test_record_projects_confirmed_input_and_parallel_tool_revisions(
 async def test_a_later_batch_touching_a_completed_item_keeps_its_completion(
     store: ThreadStore, event_logs: EventLogStore, history: History
 ) -> None:
-    thread = await event_logs.open("sb-1", "s-1")
+    thread = await event_logs.seed("sb-1", "s-1")
     await history.record(
         thread,
         [
@@ -404,7 +404,7 @@ async def test_every_row_is_numbered_densely_in_thread_order_and_never_renumbere
     store: ThreadStore, event_logs: EventLogStore, history: History
 ) -> None:
     """The index is a position in the thread, so it is dense, ordered and fixed once given."""
-    thread = await event_logs.open("sb-1", "s-1")
+    thread = await event_logs.seed("sb-1", "s-1")
     await history.record(
         thread,
         [

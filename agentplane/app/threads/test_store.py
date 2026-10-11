@@ -19,7 +19,7 @@ async def seed_thread(
     event_logs: EventLogStore, history: History, *, sandbox: str, session: str, cursor: int, **last: object
 ) -> UUID:
     """A running Thread folded through `cursor`, whose last entry carries `last`."""
-    thread = await event_logs.open(sandbox, session)
+    thread = await event_logs.seed(sandbox, session)
     entries = [event_entry(index, harness_started=event_pb2.HarnessStarted()) for index in range(1, cursor)]
     entries.append(event_entry(cursor, **(last or {"harness_started": event_pb2.HarnessStarted()})))
     await history.record(thread, entries)
@@ -91,7 +91,7 @@ async def test_harness_model_and_cwd_come_from_the_attached_runner_spec(
     store: ThreadStore, event_logs: EventLogStore, history: History
 ) -> None:
     attached = await seed_thread(event_logs, history, sandbox="one", session="test-attached-session", cursor=1)
-    unattached = await event_logs.open("one", "test-unattached-session")
+    unattached = await event_logs.seed("one", "test-unattached-session")
     views = {view.id: view for view in await store.list_threads()}
     assert (views[attached].harness, views[attached].model, views[attached].cwd) == (
         Harness(runner_pb2.Harness.Name(SPEC.harness)),
@@ -102,7 +102,7 @@ async def test_harness_model_and_cwd_come_from_the_attached_runner_spec(
 
 
 async def test_a_session_not_folded_yet_reads_as_nothing_folded(store: ThreadStore, event_logs: EventLogStore) -> None:
-    thread = await event_logs.open("sb-1", "test-unfolded-session")
+    thread = await event_logs.seed("sb-1", "test-unfolded-session")
     view = await store.get_thread(thread)
     assert view is not None
     assert (view.last_cursor, view.feed_status, view.model) == (0, None, None)
@@ -144,7 +144,7 @@ async def test_pages_follow_creation_order_under_each_filter(
 
 async def test_a_page_token_continues_only_its_own_listing(store: ThreadStore, event_logs: EventLogStore) -> None:
     for n in range(3):
-        await event_logs.open(f"test-sandbox-{n}", f"test-session-{n}")
+        await event_logs.seed(f"test-sandbox-{n}", f"test-session-{n}")
     first = await store.list_page(limit=1)
     assert first.next_page_token is not None
 

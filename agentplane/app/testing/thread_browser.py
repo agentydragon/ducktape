@@ -222,7 +222,7 @@ async def thread_browser(
     certificate: BrowserCertificate,
 ) -> AsyncIterator[ThreadBrowser]:
     source = thread_source
-    thread_id = await event_logs.open(SANDBOX, SESSION)
+    thread_id = await event_logs.seed(SANDBOX, SESSION)
     await store.rename(thread_id, "Browser thread")
     directory = get_required_path("_main/agentplane/app/frontend/dist/index.html").parent
     server = grpc.aio.server()

@@ -46,7 +46,7 @@ async def test_materialized_revisions_replicate_with_restricted_role(
                 )
             )
             source.append(event_pb2.Event(text_delta=event_pb2.TextDelta(item_id="first", text="Hello")))
-            thread = await event_logs.open(SANDBOX, SESSION)
+            thread = await event_logs.seed(SANDBOX, SESSION)
             await history.set_attached(thread, source.attached)
             await history.record(thread, source.entries)
             async with asyncio.timeout(45), httpx.AsyncClient(base_url=service.url, timeout=35) as client:

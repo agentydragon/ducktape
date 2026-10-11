@@ -235,7 +235,7 @@ async def test_sigterm_ends_open_streams_fails_readiness_and_closes_the_ingester
     raw, running = seed_runner(custom_objects, core_v1, SANDBOX)
     live_index.sandboxes[SANDBOX] = raw
     live_index.pods[SANDBOX] = running
-    await event_logs.open(SANDBOX, "shutdown-session")
+    await event_logs.seed(SANDBOX, "shutdown-session")
     app = create_app(
         inventory,
         bridge,

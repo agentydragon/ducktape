@@ -97,7 +97,7 @@ class RunnerBridge:
         except (ValueError, ParseError) as error:
             raise MalformedMessageError(f"invalid session overrides: {error}") from error
         public_id = created.session_id
-        thread_id = await self._event_logs.open(sandbox, public_id)
+        thread_id = await self._event_logs.open(public_id)
         if thread_id != UUID(public_id):
             raise RunnerError("service Session ID conflicts with the retained Thread identity")
         await self._event_logs.resume_pending(thread_id)
@@ -120,7 +120,7 @@ class RunnerBridge:
             return OpenStatus(status="failed", session_id=result.session_id)
         if not result.HasField("summary"):
             return OpenStatus(status="unconfirmed", session_id=result.session_id)
-        thread_id = await self._event_logs.open(sandbox, result.session_id)
+        thread_id = await self._event_logs.open(result.session_id)
         if thread_id != UUID(result.session_id):
             raise RunnerError("service Session ID conflicts with the retained Thread identity")
         await self._event_logs.resume_pending(thread_id)

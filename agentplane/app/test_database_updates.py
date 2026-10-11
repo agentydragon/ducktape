@@ -28,7 +28,7 @@ async def test_commits_wake_another_replica_and_leave_durable_replay(
         database_updates.changes[Channel.THREADS].subscribe(changed),
         database_updates.changes[Channel.OPERATOR_SESSIONS].subscribe(sessions_changed),
     ):
-        thread = await event_logs.open("sb-1", "s-1")
+        thread = await event_logs.seed("sb-1", "s-1")
         await asyncio.wait_for(changed.wait(), timeout=5)
         assert (await replica.store.list_threads())[0].id == thread
         changed.clear()
@@ -50,7 +50,7 @@ async def test_commits_wake_another_replica_and_leave_durable_replay(
 async def test_listener_reconnect_wakes_every_channel_for_writes_during_the_gap(
     store: ThreadStore, event_logs: EventLogStore, replica: Replica, database_updates: Wakeups, db_url: str
 ) -> None:
-    thread = await event_logs.open("sb-1", "s-1")
+    thread = await event_logs.seed("sb-1", "s-1")
     engine = create_async_engine(db_url)
     changed, sessions_changed = asyncio.Event(), asyncio.Event()
     try:

@@ -71,7 +71,7 @@ async def test_lazy_scoped_evidence_and_native_expansion(
     source.append(
         event_pb2.Event(item_started=event_pb2.ItemStarted(item_id="second", kind=event_pb2.ITEM_KIND_ASSISTANT_TEXT))
     )
-    thread = await event_logs.open(SANDBOX, SESSION)
+    thread = await event_logs.seed(SANDBOX, SESSION)
     await history.set_attached(thread, source.attached)
     await history.record(thread, source.entries)
     scope = await content.current_scope(thread)

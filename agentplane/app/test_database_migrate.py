@@ -44,6 +44,11 @@ def _restore_raw_history_schema(connection: Connection) -> None:
     )
 
 
+def _restore_sandbox(connection: Connection) -> None:
+    """The `event_log.sandbox` column that migrations before `0033_event_log_sandbox_drop` expect."""
+    connection.execute(text("ALTER TABLE event_log ADD COLUMN sandbox text NOT NULL"))
+
+
 def _restore_launch_copies(connection: Connection) -> None:
     """The `event_log` launch copies that migrations before `0029_event_log_copies_drop` expect."""
     connection.execute(
@@ -66,6 +71,7 @@ def test_raw_history_retirement_preserves_current_state(db_url: str) -> None:
     thread, token = uuid.uuid4(), uuid.uuid4()
     try:
         with engine.begin() as connection:
+            _restore_sandbox(connection)
             _restore_raw_history_schema(connection)
             connection.execute(text("ALTER TABLE event_log ADD COLUMN raw_ingestion_fenced_at_cursor bigint"))
             connection.execute(
@@ -154,7 +160,7 @@ def test_a_database_that_differs_from_the_models_fails_to_migrate(db_url: str) -
 
 
 def test_an_index_only_the_database_has_is_drift(db_url: str) -> None:
-    _execute(db_url, "CREATE INDEX index_only_in_test_database ON event_log (sandbox)")
+    _execute(db_url, "CREATE INDEX index_only_in_test_database ON event_log (created_at)")
     with pytest.raises(RuntimeError, match="index_only_in_test_database"):
         RUNNER.apply(db_url)
 
@@ -169,6 +175,7 @@ def test_drop_locator_preserves_identity(db_url: str) -> None:
     thread = uuid.uuid4()
     try:
         with engine.begin() as connection:
+            _restore_sandbox(connection)
             connection.execute(text("ALTER TABLE event_log ADD COLUMN session_id text"))
             connection.execute(text("ALTER TABLE event_log ADD UNIQUE (sandbox, session_id)"))
             _restore_app_projection(connection)

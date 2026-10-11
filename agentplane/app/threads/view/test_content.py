@@ -21,7 +21,7 @@ from agentplane.proto import command_pb2, event_pb2
 async def test_archived_command_admission_is_an_exact_retry_key(
     event_logs: EventLogStore, content: ContentStore, history: History
 ) -> None:
-    thread = await event_logs.open("sb-1", "s-1")
+    thread = await event_logs.seed("sb-1", "s-1")
     command = command_pb2.Command(
         command_id="submit-1", submit_input=command_pb2.SubmitInput(text="persist this exact input")
     )

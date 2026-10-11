@@ -46,7 +46,7 @@ async def test_command_lookup_and_touched_projection_preload_stay_indexed_with_l
     request: pytest.FixtureRequest,
 ) -> None:
     """A real old-item update only preloads its touched rows after large frame and entity histories."""
-    thread = await event_logs.open("sb-1", f"history-{history_size}")
+    thread = await event_logs.seed("sb-1", f"history-{history_size}")
     command = command_pb2.Command(command_id="admission", submit_input=command_pb2.SubmitInput(text="saved"))
     admitted = event_entry(1, command_admitted=event_pb2.CommandAdmitted(command=command))
     initial = [admitted, event_entry(2, text_delta=event_pb2.TextDelta(item_id="old-item", text="before history"))]

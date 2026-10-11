@@ -382,7 +382,7 @@ async def test_global_thread_stream_combines_replica_commits_and_sandbox_watch_c
             assert initial.threads == []
             assert initial.updates_connected
 
-            thread_id = await event_logs.open("runner-1", "test-global-thread")
+            thread_id = await event_logs.seed("runner-1", "test-global-thread")
             assert [thread.id for thread in (await _next_threads(stream)).threads] == [thread_id]
             await store.rename(thread_id, "Renamed in another app replica")
             assert (await _next_threads(stream)).threads[0].name == "Renamed in another app replica"
@@ -410,7 +410,7 @@ async def test_global_thread_stream_combines_replica_commits_and_sandbox_watch_c
 async def test_global_thread_stream_carries_its_window_and_the_open_thread(
     seeded: LiveIndex, event_logs: EventLogStore, replica: Replica, database_updates: Wakeups
 ) -> None:
-    oldest, _, newest = [await event_logs.open("runner-1", f"test-window-thread-{n}") for n in range(3)]
+    oldest, _, newest = [await event_logs.seed("runner-1", f"test-window-thread-{n}") for n in range(3)]
     drain = Drain()
     response = await live_threads(
         index=seeded, store=replica.store, updates=database_updates, shutdown=drain, limit=1, open_thread=oldest
@@ -444,7 +444,7 @@ async def test_global_thread_stream_reports_listener_loss_then_rereads_after_rec
                     )
                 )
             assert not (await _next_threads(stream)).updates_connected
-            thread_id = await event_logs.open("runner-1", "test-during-listener-gap")
+            thread_id = await event_logs.seed("runner-1", "test-during-listener-gap")
             # A History Service fold notice may send a snapshot before the listener reconnects.
             while not (recovered := await _next_threads(stream)).updates_connected:
                 pass

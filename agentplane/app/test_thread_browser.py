@@ -111,7 +111,7 @@ async def test_archived_thread_page_survives_deleted_sandbox_and_reload(
     certificate: BrowserCertificate,
     gateway_port: int,
 ) -> None:
-    thread_id = await event_logs.open(SANDBOX, SESSION)
+    thread_id = await event_logs.seed(SANDBOX, SESSION)
     await history.set_attached(thread_id, thread_source.attached)
     await history.record(thread_id, thread_source.entries)
     await store.rename(thread_id, "Test archived thread")
@@ -176,7 +176,7 @@ async def _seed_navigation_threads(
                     item_completed=event_pb2.ItemCompleted(item_id=item_id, text=f"Thread {number} message {index}")
                 )
             )
-        thread = await event_logs.open(SANDBOX, source.attached.session_id)
+        thread = await event_logs.seed(SANDBOX, source.attached.session_id)
         await history.set_attached(thread, source.attached)
         await history.record(thread, source.entries)
         await store.rename(thread, f"Test navigation thread {number}")
@@ -400,7 +400,7 @@ async def test_projection_epoch_replacement_retires_old_requests_and_preserves_d
     thread_browser: ThreadBrowser,
 ) -> None:
     page = thread_browser.page
-    thread = await thread_browser.event_logs.open(SANDBOX, SESSION)
+    thread = await thread_browser.event_logs.seed(SANDBOX, SESSION)
     await thread_browser.start_replay()
     await expect(page.get_by_text("Test retained prefix", exact=True)).to_be_visible()
     draft = message_composer(page)
@@ -549,7 +549,7 @@ async def test_projected_browser_streams_runner_events_and_loads_evidence_lazily
 
     page.on("request", observe)
     directory = get_required_path("_main/agentplane/app/frontend/dist/index.html").parent
-    thread = await event_logs.open(SANDBOX, SESSION)
+    thread = await event_logs.seed(SANDBOX, SESSION)
     await store.rename(thread, "Streamed thread")
     server = grpc.aio.server()
     add_replication_source(source, server)

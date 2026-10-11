@@ -6,7 +6,6 @@ from itertools import pairwise
 from uuid import UUID
 
 from google.protobuf.json_format import MessageToDict
-from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
 
@@ -46,7 +45,7 @@ class EventLogStore:
         self._history_reader = history_reader
         self._summaries = summaries
 
-    async def open(self, sandbox: str, session_id: str) -> UUID:
+    async def open(self, session_id: str) -> UUID:
         """Materialize a public service Session without consulting private runner locators."""
         try:
             thread_id = UUID(session_id)
@@ -54,27 +53,18 @@ class EventLogStore:
             raise SessionAdmissionError("a new Thread requires a canonical public Session ID") from error
         if str(thread_id) != session_id:
             raise SessionAdmissionError("a new Thread requires a canonical public Session ID")
-        existing_query = select(EventLog).where(EventLog.sandbox == sandbox, EventLog.id == thread_id)
-        async with self._sessions() as session:
-            existing = await session.scalar(existing_query)
-            if existing is not None:
-                return existing.id
+        if await self.exists(thread_id):
+            return thread_id
         # Confirm durable service registration before admitting a Thread.
         # Do not hold an app DB transaction over this RPC or copy its event payload.
         await self._history_reader.read_session_observations(session_id, limit=1)
         async with self._sessions.begin() as session:
-            created = await session.scalar(
-                insert(EventLog).values(id=thread_id, sandbox=sandbox).on_conflict_do_nothing().returning(EventLog.id)
-            )
-            if created is not None:
+            # Another replica may win this insert race; its row is the same mapping.
+            if await session.scalar(
+                insert(EventLog).values(id=thread_id).on_conflict_do_nothing().returning(EventLog.id)
+            ):
                 await notify(session, Channel.THREADS)
-                return created
-            existing = (await session.scalars(existing_query)).one_or_none()
-            if existing is None:
-                raise SessionAdmissionError("public Session ID belongs to another sandbox")
-            # Another replica may win this insert race. Preserve its mapping rather than
-            # reinitializing an existing Thread.
-            return existing.id
+        return thread_id
 
     async def resume_pending(self, thread_id: UUID) -> None:
         """A runner-confirmed restart supersedes a normal terminal feed, not a replay error."""

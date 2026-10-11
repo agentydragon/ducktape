@@ -628,7 +628,7 @@ def test_create_session_answers_the_service_id(
 
 
 async def test_open_lookup_reconciles_only_runner_confirmed_sessions(
-    client: TestClient, bridge: RunnerBridge, monkeypatch: pytest.MonkeyPatch
+    client: TestClient, bridge: RunnerBridge, event_logs: EventLogStore, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """No reservation/runner confirmation means no Thread; a confirmed one repairs lost app writes."""
     # Keep DB work on the async fixture's loop, not TestClient's portal thread.
@@ -636,6 +636,7 @@ async def test_open_lookup_reconciles_only_runner_confirmed_sessions(
         transport=httpx.ASGITransport(app=client.app), base_url="http://testserver", headers=AGENT_AUTH
     ) as http:
         public_id = str(uuid4())
+        await event_logs.register("live", public_id)
         summary = runner_pb2.SessionSummary(
             session_id=public_id,
             spec=runner_pb2.SessionSpec(harness=runner_pb2.HARNESS_CLAUDE, cwd="/w", model="m", instructions="secret"),
@@ -808,7 +809,7 @@ async def test_unanswered_service_command_is_a_504_and_cancels_its_rpc(
     """Bound command admission at the public service RPC, without runner internals."""
     live_index.sandboxes["live"], live_index.pods["live"] = seed_runner(custom_objects, core_v1, "live")
     session_id = str(uuid4())
-    thread_id = await event_logs.open("live", session_id)
+    thread_id = await event_logs.seed("live", session_id)
     async with unanswered_command_service(tmp_path / "wedged-token") as (service, cancelled):
         runners = SandboxSessions(live_index, service)
         ingester = Ingester(runners=runners, event_logs=event_logs)
@@ -1030,8 +1031,8 @@ async def test_a_thread_is_found_by_its_session_and_renamed_in_place(
 ) -> None:
     """Over ASGI on this loop, not TestClient's thread: the store's pooled asyncpg connections
     belong to the loop that opened them."""
-    thread_id = str(await event_logs.open("live", "s-1"))
-    await event_logs.open("live", "s-2")
+    thread_id = str(await event_logs.seed("live", "s-1"))
+    await event_logs.seed("live", "s-2")
     app = create_app(
         inventory,
         bridge,
@@ -1084,7 +1085,7 @@ async def test_a_thread_archives_and_unarchives_and_hides_from_the_default_listi
     notifications_http: httpx.AsyncClient,
     notifications_token_file: Path,
 ) -> None:
-    thread_id = str(await event_logs.open("live", "s-1"))
+    thread_id = str(await event_logs.seed("live", "s-1"))
     app = create_app(
         inventory,
         bridge,
@@ -1144,7 +1145,7 @@ async def test_a_running_thread_cannot_be_archived(
 ) -> None:
     custom_objects.objects[("sandboxes", "live")], core_v1.pods["live"] = seed_runner(custom_objects, core_v1, "live")
     spec = runner_pb2.SessionSpec(harness=runner_pb2.HARNESS_CLAUDE, cwd="/w", model="test-model")
-    thread_id = await event_logs.open("live", "s-1")
+    thread_id = await event_logs.seed("live", "s-1")
 
     consulted: list[str] = []
 

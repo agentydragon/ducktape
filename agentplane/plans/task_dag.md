@@ -21,10 +21,8 @@ contracts remain multi-replica unless a reviewed temporary restriction says othe
 ```mermaid
 flowchart TD
     APP_SESSION_SCHEMA_RENAME[Candidate: name app Session reference accurately]
-    APP_SESSION_SANDBOX_DROP[Candidate: the app asks the gateway where a Session runs]
     APP_ALEMBIC_SQUASH[Blocked: baseline final app schema]
     APP_SESSION_SCHEMA_RENAME --> APP_ALEMBIC_SQUASH
-    APP_SESSION_SANDBOX_DROP --> APP_ALEMBIC_SQUASH
 ```
 
 ### `APP_SESSION_SCHEMA_RENAME` — name the app Session reference accurately
@@ -33,15 +31,6 @@ flowchart TD
 references. Preserve public IDs and app projection/operator metadata; do not rename
 service archive tables or runner storage. Coordinate a safe schema rollout. Metadata
 consumer audits remain scoped cleanup, not permission to discard useful UI projections.
-
-### `APP_SESSION_SANDBOX_DROP` — the app asks the gateway where a Session runs
-
-**Candidate; operator, 2026-10-11 PDT: the app should not keep this in its own database.**
-`event_log.sandbox` (and the `event_log_sandbox_session_id_key` constraint) is the app's own copy of
-the Runner Gateway's Session ↔ Sandbox routing; the bridge, `api.py` and the Thread list's Sandbox
-grouping read it. The gateway answers where Sessions run (`BatchGetSessionSandboxes`,
-`FindSessions`); switch those readers to it, then drop the column. Stops for the operator before the drop. Independent of
-`APP_SESSION_SCHEMA_RENAME`; whichever lands second rebases.
 
 ### `APP_ALEMBIC_SQUASH` — consolidate the final app schema
 
