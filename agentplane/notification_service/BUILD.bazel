@@ -33,7 +33,6 @@ py_library(
     deps = [
         ":database_migrate",
         ":store",
-        "//agentplane/action_service:database_migrate",
         "//agentplane/action_service/testing:fixtures",
         "//agentplane/runner/testing:fixtures",
         "//util/testing:postgres",

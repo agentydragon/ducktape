@@ -41,7 +41,7 @@ from agentplane.testing.fake_apiserver import (
     secret,
 )
 from util.kubernetes import CustomObjectsClient
-from util.testing.postgres import create_database_sync, force_drop_database_sync
+from util.testing.postgres import PostgresDatabaseTemplate
 from util.testing.postgres_fixtures import postgres_container
 
 AUDIENCE = "agentplane-egress-test"
@@ -158,17 +158,23 @@ async def api_client(fake: FakeApiServer) -> AsyncIterator[ApiClient]:
         yield api
 
 
-@pytest.fixture
-def history_db_url(postgres_container: PostgresContainer) -> Iterator[str]:
+@pytest.fixture(scope="session")
+def history_database_template(postgres_container: PostgresContainer) -> Iterator[PostgresDatabaseTemplate]:
+    """One migrated decision-log database per test process, cloned for each case."""
     admin_url = (
         f"postgresql+psycopg://postgres:postgres@{postgres_container.get_container_host_ip()}"
         f":{postgres_container.get_exposed_port(5432)}/postgres"
     )
-    name = f"history_{uuid4().hex}"
-    url = create_database_sync(admin_url, name)
-    RUNNER.apply(url)
-    yield make_url(url).set(drivername="postgresql+asyncpg").render_as_string(hide_password=False)
-    force_drop_database_sync(admin_url, name)
+    with PostgresDatabaseTemplate(admin_url, f"egress_history_template_{uuid4().hex}") as template:
+        RUNNER.apply(template.url)
+        yield template
+
+
+@pytest.fixture
+def history_db_url(history_database_template: PostgresDatabaseTemplate) -> Iterator[str]:
+    """A fresh writable clone of the migrated decision-log schema for this case."""
+    with history_database_template.clone(f"history_{uuid4().hex}") as url:
+        yield make_url(url).set(drivername="postgresql+asyncpg").render_as_string(hide_password=False)
 
 
 @pytest.fixture
