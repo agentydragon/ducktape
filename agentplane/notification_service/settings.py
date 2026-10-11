@@ -67,7 +67,6 @@ class SandboxServiceSettings(BaseModel):
     )
     request_timeout_s: float = Field(default=5, gt=0, allow_inf_nan=False)
     lifecycle_timeout_s: float = Field(default=310, gt=0, allow_inf_nan=False)
-    follow_timeout_s: float = Field(default=960, gt=0, allow_inf_nan=False)
     command_admission_timeout_s: float = Field(
         default=20,
         gt=0,

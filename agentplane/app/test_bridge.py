@@ -1478,13 +1478,13 @@ async def test_open_and_resume_reply_before_archive_catches_up(
         command_pb2.Command(command_id="seed-before-archive", submit_input=command_pb2.SubmitInput(text="SEED")),
     )
     await model.reply(await model.request(), Text("SEED_REPLY"))
-    attachment = await local_runners.client(SANDBOX).attach(opened.session_id, after_cursor=seed.cursor)
-    try:
-        async with asyncio.timeout(20):
-            while (await attachment.next_entry()).event.WhichOneof("observation") != "turn_completed":
-                pass
-    finally:
-        attachment.cancel()
+    async for attempt in AsyncRetrying(
+        stop=stop_after_delay(20), wait=wait_fixed(0.1), retry=retry_if_exception_type(AssertionError)
+    ):
+        with attempt:
+            (summary,) = await local_runners.client(SANDBOX).list_sessions()
+            assert summary.last_cursor > seed.cursor
+            assert not summary.active_turn_id
     assert await event_logs.last_cursor(thread_id) == 0
 
     await bridge.command(

@@ -35,7 +35,6 @@ def connect(
         command_admission_timeout_s=command_admission_timeout_s,
         request_timeout_s=20,
         lifecycle_timeout_s=310,
-        follow_timeout_s=960,
     )
 
 

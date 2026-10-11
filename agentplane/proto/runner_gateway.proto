@@ -21,12 +21,6 @@ service RunnerGateway {
   rpc GetCommand(agentplane.proto.sandbox_service.GetCommandRequest) returns (agentplane.proto.sandbox_service.CommandStatus);
   // The Session's submitted commands in acceptance order, as retained: never contacts the runner.
   rpc ListCommands(agentplane.proto.sandbox_service.ListCommandsRequest) returns (agentplane.proto.sandbox_service.ListCommandsResponse);
-  // Replays the runner journal after the caller's cursor, then continues live on the same stream.
-  // The gateway keeps no copy of these entries.
-  rpc FollowSession(agentplane.proto.sandbox_service.FollowSessionRequest) returns (stream agentplane.proto.sandbox_service.FollowSessionResponse);
-  // Any allowed service caller. Every Session, including those of deleted Sandboxes, in the
-  // order of each one's latest change, then each later change as it commits.
-  rpc WatchSessions(agentplane.proto.sandbox_service.WatchSessionsRequest) returns (stream agentplane.proto.sandbox_service.WatchSessionsResponse);
   // Teardown's seal, called by the Sandbox Service alone: fence and seal every Session of the
   // incarnation, and return each one's final cursor keyed as holders name the Session (the public
   // Session ID, or the runner's own ID for a Session opened with a caller-chosen one). Idempotent.

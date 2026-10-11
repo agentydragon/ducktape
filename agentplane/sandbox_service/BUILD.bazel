@@ -676,26 +676,6 @@ py_test(
 )
 
 py_test(
-    name = "test_client",
-    srcs = ["test_client.py"],
-    deps = [
-        ":conftest",
-        "//:conftest",
-        "//agentplane:grpc_serving",
-        "//agentplane/proto:runner_gateway_pb2_grpc",
-        "//agentplane/proto:runner_pb2",
-        "//agentplane/proto:sandbox_service_pb2",
-        "//agentplane/sandbox_service/testing:grpc_service",
-        "//agentplane/sandbox_service/testing:kubernetes",
-        "//agentplane/testing:fake_apiserver",
-        "@pypi//grpcio",
-        "@pypi//protobuf",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_test(
     name = "test_destinations",
     srcs = ["test_destinations.py"],
     deps = [

@@ -154,8 +154,8 @@ registered but are not followed until their binding is established by a verified
   the stored default cwd. Concurrent or response-lost retries with the same UUID use the original
   settings; the same UUID with changed inputs, another caller or another Sandbox is rejected. A
   request without a UUID (a client predating them) is reserved by its key alone: the Service mints
-  the public ID and gives the runner `r-<public ID>`. `ResumeSession`, `FollowSession`, and
-  `SubmitCommand` accept the public ID and resolve it to the retained runner ID within the pinned
+  the public ID and gives the runner `r-<public ID>`. `ResumeSession` and `SubmitCommand`
+  accept the public ID and resolve it to the retained runner ID within the pinned
   Sandbox UID. Neither the UUID nor the key applies to runner-discovered native child sessions. The
   app opens every new Thread through it, with its Session ID as the key too.
 - `LookupSession`: read-only reconciliation by authenticated caller, current Sandbox name/UID
@@ -227,46 +227,13 @@ Resume also needs the native harness's retained conversation. The pinned Claude 
 resuming an empty conversation that never persisted a turn. The service surfaces that refusal; it does
 not fabricate native history or claim runner admission proves native persistence.
 
-## Event following
+## Events
 
-To inspect a session, read the initial `FollowSession` attachment snapshot and cancel the stream.
-There is no separate inspection or bootstrap RPC added for tests. Bootstrap runs through `CreateSession`;
-exact retries use the runner's stored bootstrap result.
-
-`FollowSession` is server-streaming. Its request selects an explicit session and a native `Follow`
-cursor, which may be any cursor of the current Sandbox incarnation's runner journal up to its end.
-Entries after it are replayed from the runner journal, then the same stream continues live; the
-Sandbox Service serves them from no copy of its own. A cursor beyond the journal's end fails with
-`FAILED_PRECONDITION` instead of an `Attached` snapshot. It emits:
-
-1. One native `Attached` snapshot. Entries through its `last_cursor` are replayed, later ones live.
-2. Original `EventEntry` messages, preserving serving-log cursor, source origin, and command
-   correlation. Replayed and live entries have the same shape and consecutive cursors.
-3. An `ended` observation only when the native runner attachment reaches successful EOF. This is a
-   transport observation, not a synthesized execution Event or deletion of retained history.
-4. Alternatively, a terminal `reconnect_required` observation followed by successful stream closure
-   when the follow lease expires, during replay as well as live. This is planned transport renewal,
-   not native closure.
-5. Alternatively, a terminal `sealed` observation carrying the incarnation's final cursor, after
-   every entry through it, once the runner has sealed the Session at teardown. A history copier
-   records it as the stored feed state's `sealed`.
-
-Reconnect from the last durably committed cursor; each reconnect rereads the projected token and
-checks identity and destination again. The [History Service](../history_service/README.md)'s
-ingester, the only production caller, commits its buffered batch on `reconnect_required` and
-reconnects at once; renewal does not end the feed.
-
-Bare service EOF without a terminal observation, `DEADLINE_EXCEEDED`, and backend `UNAVAILABLE`
-remain failures, never session termination. The ingester logs a warning and retries them from its
-committed cursor after its retry interval.
-
-Healthy idle follows last until renewal. Each downstream write, including the terminal observation,
-is separately bounded by `admission_timeout_s`, so a stalled consumer cannot pin an attachment for
-15 minutes. Every exit cancels the runner attachment and closes its channel. There is no unbounded
-fan-out queue.
-
-`CreateSession` reserves the Session's registry row; the Sandbox Service keeps no copy of its
-Events. Runner journals remain on the state volume, and the History Service ingests them.
+The service serves no Events. Runners push their journals to the
+[History Service](../history_service/README.md)'s ingress, which serves reads. To inspect a
+session's harness and setup state, read its `ListSessions` summary. There is no separate
+inspection or bootstrap RPC added for tests. Bootstrap runs through `CreateSession`; exact retries
+use the runner's stored bootstrap result.
 
 ## Session placement
 
@@ -276,25 +243,6 @@ public ID, Sandbox namespace and name, and incarnation UID (empty for imported S
 one). `BatchGetSessionSandboxes` takes at most 1000 IDs and leaves out any the gateway never
 registered; `FindSessions` returns every Session in a Sandbox with exactly the given name, or whose
 name contains the given text, ignoring case.
-
-## Session feed
-
-`WatchSessions` is server-streaming and open to every `caller_accounts` caller; it carries no
-transcript. It sends every recorded Session, including those of deleted Sandboxes and
-reservations whose runner Open never succeeded, in `position` order, then each later change as it
-commits on any replica. A `SessionChange` is the Session's current record: public ID, Sandbox name
-and current incarnation UID (empty for imported Sessions without one), and that Sandbox's owner
-ServiceAccount, which completes the `SessionDestination` for `FollowSession`. The owner is read from
-inventory as the change is sent and is unset once the incarnation is gone. A Session that changes again
-reappears at a larger position, so a lagging reader sees only its latest record. The feed carries no
-harness lifecycle; the Sandbox Service records none, and `FollowSession` reports it.
-
-Positions come from one PostgreSQL sequence allocated under a transaction-scoped lock, so they
-become visible in commit order: resuming with `after_position` set to the last processed position
-misses nothing. Gaps are normal. Commits wake streams on every replica through PostgreSQL
-`LISTEN`/`NOTIFY`; the table stays the authority, and streams re-read after the listener reconnects.
-The service does not start without its `LISTEN` connection. Renewal and write bounds are those of
-`FollowSession`: `reconnect_required` after `follow_lease_s`, each write within `admission_timeout_s`.
 
 ## Errors and uncertain outcomes
 
@@ -306,7 +254,7 @@ The service does not start without its `LISTEN` connection. Renewal and write bo
   by a retention hold.
 - `ALREADY_EXISTS`: a `SubmitCommand` command ID already belongs to a different submission.
 - `UNAVAILABLE`: destination/backend unavailable; no offline admission.
-- `DEADLINE_EXCEEDED`: operation or transport safety deadline expired (not planned follow renewal).
+- `DEADLINE_EXCEEDED`: operation or transport safety deadline expired.
 
 Neither a successful write nor a timeout proves admission/rejection. A mutation may commit before
 its response is lost. Settle a command by retrying it with the unchanged ID/payload; admission
@@ -329,11 +277,7 @@ it is liveness, not proof that Kubernetes or a particular destination is ready. 
 are bounded by `admission_timeout_s` (default 15); `SubmitCommand` instead uses
 `runner_admission_ack_timeout_s` (default 15) for runner journal admission. Configure the
 app client's `sandbox_service_command_admission_timeout_s` (default 20) above that server budget.
-Management uses `lifecycle_timeout_s` (default 300);
-follow leases by `follow_lease_s` (default and configured maximum 900 seconds / 15 minutes).
-The client whole-follow safety deadline defaults to 960 seconds / 16 minutes; initial attachment
-still uses the short request timeout. Renewal repeats TokenReview and destination admission; it
-is not in-stream reauthentication or a lease derived from the token's exact expiry.
+Management uses `lifecycle_timeout_s` (default 300).
 Service-to-runner calls are unauthenticated plaintext behind a network policy; the
 [runner control stream](../docs/runner_control.md) replaces that route rather than securing it.
 

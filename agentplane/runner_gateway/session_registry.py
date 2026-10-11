@@ -1,23 +1,17 @@
-"""The Sandbox Service's Session registry: public Session IDs, runner locators, Open reservations
-and the WatchSessions feed, in the service's own database."""
+"""The Runner Gateway's Session registry: public Session IDs, runner locators and Open reservations,
+in the service's own database."""
 
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import cast
 from uuid import UUID, uuid4
 
-from sqlalchemy import ColumnElement, func, select
+from sqlalchemy import ColumnElement, select
 from sqlalchemy.dialects.postgresql import insert
-from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
+from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
 
-from agentplane.proto import runner_gateway_pb2, sandbox_service_pb2
-from agentplane.runner_gateway.commands.db import CHANGE_POSITION, Session
-from agentplane.runner_gateway.session_changes import CHANNEL
-
-# gazelle:include_dep @pypi//protobuf
-
-# The service's own database; no other advisory lock uses this key.
-CHANGE_POSITION_LOCK = 0x5345_5350  # "SESP"
+from agentplane.proto import runner_gateway_pb2
+from agentplane.runner_gateway.commands.db import Session
 
 
 class SessionNotFoundError(LookupError):
@@ -32,20 +26,6 @@ class OpenConflictError(ValueError):
 class OpenReservation:
     session_id: UUID
     launch_spec: bytes
-
-
-async def next_change_position(session: AsyncSession) -> int:
-    """Allocate a WatchSessions position that becomes visible in commit order, and wake watchers.
-
-    The transaction lock is held to commit, so no position commits after a larger one: a reader
-    resuming after any position it has seen misses nothing. A rolled-back position is a gap.
-    """
-    await session.execute(select(func.pg_advisory_xact_lock(CHANGE_POSITION_LOCK)))
-    # PostgreSQL delivers NOTIFY only on commit, to every replica listening.
-    await session.execute(select(func.pg_notify(CHANNEL, "")))
-    position = await session.scalar(select(CHANGE_POSITION.next_value()))
-    assert position is not None
-    return position
 
 
 class SessionRegistry:
@@ -105,7 +85,6 @@ class SessionRegistry:
                         # CLEANUP(added 2026-10-11): Drop the `r-` locator with service-minted IDs
                         #   (grpc_api.py's CreateSession tombstone).
                         runner_session_id=str(session_id) if session_id else f"r-{candidate}",
-                        change_position=await next_change_position(session),
                     )
                     .on_conflict_do_nothing()
                 )
@@ -145,27 +124,6 @@ class SessionRegistry:
                     )
                 ),
             )
-
-    async def read_changes(self, *, after_position: int, limit: int) -> list[sandbox_service_pb2.SessionChange]:
-        """Every Session whose latest change is after the position, oldest change first."""
-        if after_position < 0 or not 1 <= limit <= 1000:
-            raise ValueError("invalid Session change page")
-        async with self._sessions() as session:
-            rows = await session.execute(
-                select(Session.id, Session.sandbox_name, Session.sandbox_uid, Session.change_position)
-                .where(Session.change_position > after_position)
-                .order_by(Session.change_position)
-                .limit(limit)
-            )
-            return [
-                sandbox_service_pb2.SessionChange(
-                    session_id=str(row.id),
-                    sandbox=row.sandbox_name,
-                    sandbox_uid=str(row.sandbox_uid) if row.sandbox_uid is not None else "",
-                    position=row.change_position,
-                )
-                for row in rows
-            ]
 
     async def sandboxes(self, session_ids: set[UUID]) -> list[runner_gateway_pb2.SessionSandbox]:
         """Where each registered Session among `session_ids` runs."""

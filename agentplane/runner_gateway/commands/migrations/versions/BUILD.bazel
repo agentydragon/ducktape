@@ -8,6 +8,7 @@ exports_files([
     "0005_pending_submission_index.py",
     "0006_connection_lease.py",
     "0007_redelivery.py",
+    "0008_drop_session_feed.py",
 ])
 
 py_library(
@@ -67,6 +68,15 @@ py_library(
 py_library(
     name = "0007_redelivery",
     srcs = ["0007_redelivery.py"],
+    deps = [
+        "@pypi//alembic",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
+    name = "0008_drop_session_feed",
+    srcs = ["0008_drop_session_feed.py"],
     deps = [
         "@pypi//alembic",
         "@pypi//sqlalchemy",

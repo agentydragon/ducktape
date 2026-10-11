@@ -116,7 +116,6 @@ async def async_main(settings: Settings) -> None:
             command_admission_timeout_s=settings.sandbox_service_command_admission_timeout_s,
             request_timeout_s=settings.sandbox_service_request_timeout_s,
             lifecycle_timeout_s=settings.sandbox_service_lifecycle_timeout_s,
-            follow_timeout_s=settings.sandbox_service_follow_timeout_s,
             control_target=settings.sandbox_service_control_target,
             channel_options=settings.sandbox_service_grpc_channel_options,
         ) as inventory,
