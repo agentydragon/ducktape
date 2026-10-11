@@ -194,6 +194,7 @@ py_library(
         "//agentplane/thread_fold:projection_lease",
         "//util/testing:postgres",
         "//util/testing:postgres_fixtures",
+        "//util/testing:sqlalchemy_engines",
         "@pypi//httpx",
         "@pypi//kubernetes_asyncio",
         "@pypi//psycopg",

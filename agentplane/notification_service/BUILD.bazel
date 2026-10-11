@@ -39,6 +39,7 @@ py_library(
         "//agentplane/testing:failure_journal",
         "//util/testing:postgres",
         "//util/testing:postgres_fixtures",
+        "//util/testing:sqlalchemy_engines",
         "@pypi//asyncpg",
         "@pypi//psycopg",
         "@pypi//pytest",

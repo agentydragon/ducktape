@@ -29,6 +29,7 @@ py_library(
         "//util:kubernetes",
         "//util/testing:postgres",
         "//util/testing:postgres_fixtures",
+        "//util/testing:sqlalchemy_engines",
         "@pypi//kubernetes_asyncio",
         "@pypi//pytest",
         "@pypi//sqlalchemy",

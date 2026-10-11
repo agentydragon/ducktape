@@ -15,6 +15,7 @@ from haku.recall_index.store import ensure_schema
 from third_party.containers import pgvector_pg18
 from util.testing.postgres import DatabaseClones, PostgresDatabaseTemplate
 from util.testing.postgres_fixtures import database_clones, database_names, postgres_admin_url, start_postgres_container
+from util.testing.sqlalchemy_engines import managed_async_engine
 
 # Fixtures build postgresql+asyncpg:// engines; SQLAlchemy loads the dialect's
 # driver at runtime, so gazelle cannot see the dependency.
@@ -36,11 +37,10 @@ def postgres_container() -> Generator[PostgresContainer]:
 async def recall_index_database_template(postgres_admin_url: str) -> AsyncGenerator[PostgresDatabaseTemplate]:
     """Create the pgvector schema once; each test gets a writable database clone."""
     with PostgresDatabaseTemplate(postgres_admin_url, "recall_index_template", extensions=("vector",)) as template:
-        engine = create_async_engine(make_url(template.url).set(drivername="postgresql+asyncpg"))
-        try:
+        async with managed_async_engine(
+            create_async_engine(make_url(template.url).set(drivername="postgresql+asyncpg"))
+        ) as engine:
             await ensure_schema(engine)
-        finally:
-            await engine.dispose()
         yield template
 
 
@@ -50,11 +50,8 @@ async def engine(
 ) -> AsyncGenerator[AsyncEngine]:
     """An engine on a fresh, writable clone of the initialized schema."""
     url = database_clones.clone(recall_index_database_template, drivername="postgresql+asyncpg")
-    opened = create_async_engine(make_url(url))
-    try:
+    async with managed_async_engine(create_async_engine(make_url(url))) as opened:
         yield opened
-    finally:
-        await opened.dispose()
 
 
 @pytest.fixture

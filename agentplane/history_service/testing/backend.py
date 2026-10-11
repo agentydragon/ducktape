@@ -29,6 +29,7 @@ from agentplane.history_service.thread_reads import ThreadReader
 from agentplane.sandbox_service.client import SandboxServiceClient
 from agentplane.subjects import ServiceAccountRef
 from agentplane.workload_auth.principal import POD_NAME_CLAIM, POD_UID_CLAIM, WorkloadPrincipalResolver
+from util.testing.sqlalchemy_engines import managed_async_engine
 
 # The asyncpg dialect is loaded by SQLAlchemy from the driver name.
 # gazelle:include_dep @pypi//asyncpg
@@ -58,60 +59,62 @@ class Authentication:
 async def history_service(
     database_url: str, token_file: Path, *, watch_lease_s: float = 300
 ) -> AsyncIterator[HistoryServiceClient]:
-    engine = create_async_engine(
-        make_url(database_url).set(drivername="postgresql+asyncpg"),
-        connect_args={"server_settings": {"default_transaction_read_only": "on"}},
-    )
-    history = Store(engine)
-    history_changes = HistoryChanges(make_url(database_url))
-    summary_changes = SummaryChanges(make_url(database_url))
-    server = grpc.aio.server()
-    add_service(
-        Resources(
-            principals=WorkloadPrincipalResolver(
-                authentication=cast(k8s_client.AuthenticationV1Api, Authentication()),
-                audience=AUDIENCE,
-                allowed_service_account_namespaces={READER.namespace},
+    async with managed_async_engine(
+        create_async_engine(
+            make_url(database_url).set(drivername="postgresql+asyncpg"),
+            connect_args={"server_settings": {"default_transaction_read_only": "on"}},
+        )
+    ) as engine:
+        history = Store(engine)
+        history_changes = HistoryChanges(make_url(database_url))
+        summary_changes = SummaryChanges(make_url(database_url))
+        server = grpc.aio.server()
+        add_service(
+            Resources(
+                principals=WorkloadPrincipalResolver(
+                    authentication=cast(k8s_client.AuthenticationV1Api, Authentication()),
+                    audience=AUDIENCE,
+                    allowed_service_account_namespaces={READER.namespace},
+                ),
+                history=history,
+                summaries=SummaryReader(engine),
+                threads=ThreadReader(engine),
+                evidence=EvidenceReader(engine, history),
+                reader_accounts=frozenset({READER}),
+                request_timeout_s=10,
+                history_changes=history_changes,
+                summary_changes=summary_changes,
+                watch_lease_s=watch_lease_s,
             ),
-            history=history,
-            summaries=SummaryReader(engine),
-            threads=ThreadReader(engine),
-            evidence=EvidenceReader(engine, history),
-            reader_accounts=frozenset({READER}),
-            request_timeout_s=10,
-            history_changes=history_changes,
-            summary_changes=summary_changes,
-            watch_lease_s=watch_lease_s,
-        ),
-        server,
-    )
-    port = server.add_insecure_port("127.0.0.1:0")
-    await asyncio.to_thread(token_file.write_text, TOKEN)
-    client = HistoryServiceClient(f"127.0.0.1:{port}", token_file=token_file, request_timeout_s=20)
-    await server.start()
-    try:
-        async with history_changes.listener.listen(), summary_changes.listener.listen():
-            yield client
-    finally:
-        await client.close()
-        await server.stop(0)
-        await engine.dispose()
+            server,
+        )
+        port = server.add_insecure_port("127.0.0.1:0")
+        await asyncio.to_thread(token_file.write_text, TOKEN)
+        client = HistoryServiceClient(f"127.0.0.1:{port}", token_file=token_file, request_timeout_s=20)
+        await server.start()
+        try:
+            async with history_changes.listener.listen(), summary_changes.listener.listen():
+                yield client
+        finally:
+            await client.close()
+            await server.stop(0)
 
 
 @asynccontextmanager
 async def ingest(database_url: str, sandboxes: SandboxServiceClient) -> AsyncIterator[None]:
     """Copy every Session `sandboxes` reports into the history database, as the deployed ingester does."""
-    engine = create_async_engine(make_url(database_url).set(drivername="postgresql+asyncpg"))
-    task = asyncio.create_task(
-        HistoryIngester(Store(engine), engine, sandboxes, concurrency=4, retry_interval_s=0.05).run()
-    )
-    try:
-        yield
-    finally:
-        task.cancel()
-        with suppress(asyncio.CancelledError):
-            await task
-        await engine.dispose()
+    async with managed_async_engine(
+        create_async_engine(make_url(database_url).set(drivername="postgresql+asyncpg"))
+    ) as engine:
+        task = asyncio.create_task(
+            HistoryIngester(Store(engine), engine, sandboxes, concurrency=4, retry_interval_s=0.05).run()
+        )
+        try:
+            yield
+        finally:
+            task.cancel()
+            with suppress(asyncio.CancelledError):
+                await task
 
 
 async def fold_history(database_url: str) -> None:
@@ -119,33 +122,36 @@ async def fold_history(database_url: str) -> None:
 
     The composed History + Commands test database template already contains the projection tables.
     """
-    engine = create_async_engine(make_url(database_url).set(drivername="postgresql+asyncpg"))
-    try:
+    async with managed_async_engine(
+        create_async_engine(make_url(database_url).set(drivername="postgresql+asyncpg"))
+    ) as engine:
         shadow = FoldShadow(engine=engine, history=Store(engine), concurrency=1)
         try:
             while (await shadow.cycle()).behind:
                 pass
         finally:
             await shadow.release()
-    finally:
-        await engine.dispose()
 
 
 async def announce_fold_commit(database_url: str) -> None:
     """Commit the notice a fold commit sends, without folding anything."""
-    engine = create_async_engine(make_url(database_url).set(drivername="postgresql+asyncpg"))
-    try:
-        async with engine.begin() as connection, AsyncSession(bind=connection) as session:
-            await notify_summaries(session)
-    finally:
-        await engine.dispose()
+    async with (
+        managed_async_engine(
+            create_async_engine(make_url(database_url).set(drivername="postgresql+asyncpg"))
+        ) as engine,
+        engine.begin() as connection,
+        AsyncSession(bind=connection) as session,
+    ):
+        await notify_summaries(session)
 
 
 async def announce_history_change(database_url: str) -> None:
     """Commit a raw-history invalidation for app watch tests."""
-    engine = create_async_engine(make_url(database_url).set(drivername="postgresql+asyncpg"))
-    try:
-        async with engine.begin() as connection, AsyncSession(bind=connection) as session:
-            await notify_history(session)
-    finally:
-        await engine.dispose()
+    async with (
+        managed_async_engine(
+            create_async_engine(make_url(database_url).set(drivername="postgresql+asyncpg"))
+        ) as engine,
+        engine.begin() as connection,
+        AsyncSession(bind=connection) as session,
+    ):
+        await notify_history(session)
