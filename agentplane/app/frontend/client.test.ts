@@ -2,7 +2,7 @@
 import { create } from "@bufbuild/protobuf";
 import { afterEach, expect, it, vi } from "vitest";
 
-import { CommandSchema } from "../../protocol/command_pb";
+import { CommandSchema } from "../../proto/command_pb";
 
 import { api, command, CommandSubmissionRefused, threadObservations, displayableError, httpError } from "./client";
 import { restoreRouteAfterLogin } from "./operator_login";

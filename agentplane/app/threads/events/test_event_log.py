@@ -19,7 +19,7 @@ from agentplane.app.threads.models import EventLog
 from agentplane.app.threads.summaries import AppSummaries
 from agentplane.history_service import protocol_pb2 as history_pb2
 from agentplane.history_service.client import HistoryServiceClient
-from agentplane.protocol import event_pb2
+from agentplane.proto import event_pb2
 from agentplane.thread_fold.models import ThreadCheckpoint, ThreadHistorySummary
 from agentplane.thread_fold.recording import EventReplicationError
 

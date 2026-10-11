@@ -13,8 +13,7 @@ import httpx
 import pytest
 import pytest_bazel
 
-from agentplane.proto import runner_channel_pb2 as channel_pb2, runner_channel_pb2_grpc
-from agentplane.protocol import command_pb2, event_pb2
+from agentplane.proto import command_pb2, event_pb2, runner_channel_pb2 as channel_pb2, runner_channel_pb2_grpc
 from agentplane.runner import protocol_pb2
 from agentplane.runner.adapter import HarnessAdapter
 from agentplane.runner.channel import ChannelTiming, RunnerChannelClient

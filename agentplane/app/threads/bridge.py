@@ -15,7 +15,7 @@ from agentplane.app.threads.ingestion import Ingester
 from agentplane.app.threads.sessions import SandboxSessions
 from agentplane.app.threads.summaries import FeedError
 from agentplane.app.threads.view.content import ContentStore
-from agentplane.protocol import command_pb2, event_log_pb2
+from agentplane.proto import command_pb2, event_log_pb2
 from agentplane.runner import protocol_pb2
 from agentplane.runner.errors import RunnerError
 from agentplane.runner.harness import Harness

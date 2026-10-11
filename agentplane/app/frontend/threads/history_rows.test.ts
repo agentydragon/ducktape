@@ -1,7 +1,7 @@
 import { create, toJson, type MessageInitShape } from "@bufbuild/protobuf";
 import { describe, expect, it } from "vitest";
 
-import { EventSchema, ItemKind, TurnStatus } from "../../../protocol/event_pb";
+import { EventSchema, ItemKind, TurnStatus } from "../../../proto/event_pb";
 import {
   historyRows,
   rowKey,

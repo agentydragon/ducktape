@@ -12,7 +12,7 @@ from agentplane.app.testing.retained_history import seed_retained_session
 from agentplane.app.threads.models import EventLog
 from agentplane.app.threads.store import ThreadStore
 from agentplane.app.threads.summaries import AppSummaries
-from agentplane.protocol import event_pb2
+from agentplane.proto import event_pb2
 from agentplane.runner import protocol_pb2
 from agentplane.runner.harness import Harness
 from agentplane.thread_fold.models import ThreadCheckpoint, ThreadHistorySummary

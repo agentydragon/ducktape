@@ -817,13 +817,13 @@ plain name if it carries a history-specific one.
 **Candidate; operator direction, 2026-10-10 and 2026-10-11 PDT.** Protobuf messages and gRPC
 services that cross components live in `agentplane/proto/<name>.proto` (google3's `proto/`
 convention), each with the package `agentplane.proto.<name>`: its path from the ducktape root, no
-version suffix. `runner_ingress.proto` and `runner_channel.proto` are there. Move the rest with
-their generated-code imports: `sandbox_service/protocol.proto`, `history_service/protocol.proto`,
-`runner/protocol.proto` and the shared `protocol/` messages. A gRPC service's full name includes
-its package, so moving a runner-facing proto (`runner`) breaks the wire with deployed runners: it
-lands before `RUNNER_OUTBOUND_ROLLOUT` and rides its clean cutover. Between services that roll
-independently (Sandbox Service, History Service and their clients), a renamed service is served
-under both names until every client calls the new one.
+version suffix. `runner_ingress.proto`, `runner_channel.proto` and the shared `command.proto`,
+`event.proto` and `event_log.proto` are there. Move the rest with their generated-code imports:
+`sandbox_service/protocol.proto`, `history_service/protocol.proto` and `runner/protocol.proto`. A
+gRPC service's full name includes its package, so moving a runner-facing proto (`runner`) breaks
+the wire with deployed runners: it lands before `RUNNER_OUTBOUND_ROLLOUT` and rides its clean
+cutover. Between our own services the rename is a clean cutover too, with no second name served:
+`agentplane/AGENTS.md` § Deployed state is disposable accepts old pods failing during the roll.
 
 ## 10. Legacy burn-down
 

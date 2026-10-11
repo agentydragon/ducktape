@@ -16,7 +16,7 @@ from agentplane.app.testing.history import ProjectedHistory as Ingestion, Seeded
 from agentplane.app.testing.projection_lease import LeaseFactory
 from agentplane.app.testing.thread_test_support import SPEC, Replica, event_entry
 from agentplane.app.threads.store import ThreadStore
-from agentplane.protocol import command_pb2, event_pb2
+from agentplane.proto import command_pb2, event_pb2
 from agentplane.runner import protocol_pb2
 from agentplane.runner.codex import CodexAdapter
 from agentplane.runner.config import CodexLaunch

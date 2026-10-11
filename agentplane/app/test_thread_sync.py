@@ -17,7 +17,7 @@ from agentplane.app.testing.history_service import HistoryService
 from agentplane.app.testing.replication_process import app_process
 from agentplane.app.testing.replication_source import SANDBOX, SESSION, ReplicationSource
 from agentplane.history_service.client import HistoryServiceClient
-from agentplane.protocol import command_pb2, event_pb2
+from agentplane.proto import command_pb2, event_pb2
 from agentplane.thread_fold.projection_lease import ProjectionLease
 
 # gazelle:include_dep @pypi//protobuf

@@ -1,5 +1,5 @@
 import { Box, Button, Group, Paper, Stack, Text } from "@mantine/core";
-import { type Command } from "../../../protocol/command_pb";
+import { type Command } from "../../../proto/command_pb";
 import { type JSX, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 
 import { command, CommandSubmissionRefused, displayableError, retainedCommand } from "../client";

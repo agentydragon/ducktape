@@ -17,7 +17,7 @@ from kubernetes_asyncio import client as k8s_client
 from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from agentplane.protocol import command_pb2, event_log_pb2, event_pb2
+from agentplane.proto import command_pb2, event_log_pb2, event_pb2
 from agentplane.runner import protocol_pb2 as runner_pb2
 from agentplane.runner.errors import RunnerError, StreamClosedError
 from agentplane.sandbox_service import protocol_pb2, wire

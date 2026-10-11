@@ -26,7 +26,7 @@ a field a harness adds sends every such call to the JSON view while the tests st
   adjacent within a mixed run, fold each consecutive reasoning group into a nested disclosure whose collapsed line
   joins their text and whose expanded body shows the original individual items in order.
 - **Consider squashing the "observation" naming layer**: not remembered as a deliberate design choice. `Event`
-  (`protocol/event.proto`)'s payload is a `oneof` field literally named `observation`; that name then propagated
+  (`agentplane/proto/event.proto`)'s payload is a `oneof` field literally named `observation`; that name then propagated
   outward into `runner/observation.py`'s `Observation` type, the archive/API layer
   (`app/threads/events/event_log.py`'s `observations()`/`observation_entry()`, `api.py`'s
   `/observations/{cursor}` and `/evidence/{observation_cursor}/frames` routes), and the debug UI

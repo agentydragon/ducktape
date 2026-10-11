@@ -5,8 +5,8 @@ syntax = "proto3";
 
 package agentplane.proto.runner_channel;
 
-import "agentplane/protocol/command.proto";
-import "agentplane/protocol/event_log.proto";
+import "agentplane/proto/command.proto";
+import "agentplane/proto/event_log.proto";
 import "agentplane/runner/protocol.proto";
 
 service RunnerChannel {
@@ -49,7 +49,7 @@ message Welcome {
 // The runner deduplicates on `command.command_id` within a session, so redelivery is safe.
 message DeliverCommand {
   string session_id = 1;
-  ducktape.agentplane.protocol.v1.Command command = 2;
+  agentplane.proto.command.Command command = 2;
 }
 
 message CommandReceipt {
@@ -57,7 +57,7 @@ message CommandReceipt {
   string command_id = 2;
   oneof outcome {
     // The runner journal's CommandAdmitted entry, fresh or already journaled.
-    ducktape.agentplane.protocol.v1.EventEntry admitted = 3;
+    agentplane.proto.event_log.EventEntry admitted = 3;
     CommandRefused refused = 4;
   }
 }

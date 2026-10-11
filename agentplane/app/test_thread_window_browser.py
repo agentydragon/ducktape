@@ -21,7 +21,7 @@ from agentplane.app.testing.thread_browser import (
     message_composer,
     wheel_and_capture_anchor_at_scrollend,
 )
-from agentplane.protocol import event_log_pb2, event_pb2
+from agentplane.proto import event_log_pb2, event_pb2
 from util.testing.undeclared_outputs import undeclared_outputs_dir
 
 # gazelle:include_dep @pypi//protobuf

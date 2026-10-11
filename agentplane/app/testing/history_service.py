@@ -16,7 +16,7 @@ from google.protobuf.empty_pb2 import Empty
 
 from agentplane.history_service import protocol_pb2 as history_pb2
 from agentplane.history_service.client import HistoryServiceClient
-from agentplane.protocol import event_log_pb2
+from agentplane.proto import event_log_pb2
 
 # gazelle:include_dep @pypi//protobuf
 

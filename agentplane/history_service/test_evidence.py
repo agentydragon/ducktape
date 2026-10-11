@@ -10,7 +10,7 @@ from agentplane.history_service import protocol_pb2
 from agentplane.history_service.evidence import EvidenceNotFoundError, EvidenceReader
 from agentplane.history_service.fold_shadow import FOLD_EPOCH, FoldShadow
 from agentplane.history_service.thread_reads import ThreadScopeResetError
-from agentplane.protocol import event_log_pb2, event_pb2
+from agentplane.proto import event_log_pb2, event_pb2
 from agentplane.sandbox_service.session_history.store import Store
 from agentplane.thread_fold.views import EntityKind
 

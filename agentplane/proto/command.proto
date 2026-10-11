@@ -1,6 +1,6 @@
 syntax = "proto3";
 
-package ducktape.agentplane.protocol.v1;
+package agentplane.proto.command;
 
 message SubmitInput {
   string text = 1;

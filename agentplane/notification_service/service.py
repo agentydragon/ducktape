@@ -31,7 +31,7 @@ from agentplane.notification_service.sources.github_client import (
     GitHubUnavailableError,
 )
 from agentplane.notification_service.store import ClaimLostError, ConflictError, QuotaError, Store
-from agentplane.protocol import command_pb2, event_log_pb2
+from agentplane.proto import command_pb2, event_log_pb2
 from agentplane.runner import protocol_pb2 as runner_pb2
 from agentplane.runner.errors import RunnerError
 from agentplane.sandbox_service.client import Runner, SandboxServiceClient

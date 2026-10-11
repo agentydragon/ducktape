@@ -25,7 +25,7 @@ from agentplane.app.threads.store import ThreadStore
 from agentplane.app.threads.summaries import AppSummaries, HistorySummaries
 from agentplane.app.threads.view.content import ContentStore, HistoryContentStore
 from agentplane.history_service.testing.backend import fold_history, history_service, ingest
-from agentplane.protocol import command_pb2
+from agentplane.proto import command_pb2
 from agentplane.runner import protocol_pb2
 from agentplane.runner.testing.fixtures import RunnerHandle
 from agentplane.runner.testing.scripted_model import ScriptedModel, Text

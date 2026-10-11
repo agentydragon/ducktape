@@ -1,5 +1,5 @@
 import { Alert, Badge, Box, Button, Group, Paper, Stack, Text, type MantineColor } from "@mantine/core";
-import { ItemKind, RecoveryDisposition } from "../../../protocol/event_pb";
+import { ItemKind, RecoveryDisposition } from "../../../proto/event_pb";
 import { type JSX, type ReactNode, useEffect, useLayoutEffect, useRef, useState } from "react";
 
 import { ClampedBlock, lineCount } from "../clamped_block";

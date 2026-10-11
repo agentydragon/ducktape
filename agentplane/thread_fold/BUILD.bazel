@@ -1,8 +1,5 @@
 load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
-# gazelle:resolve py agentplane.protocol.command_pb2 //agentplane/protocol:command_pb2
-# gazelle:resolve py agentplane.protocol.event_pb2 //agentplane/protocol:event_pb2
-# gazelle:resolve py agentplane.protocol.event_log_pb2 //agentplane/protocol:event_log_pb2
 # gazelle:resolve py agentplane.runner.protocol_pb2 //agentplane/runner:protocol_pb2
 
 package(default_visibility = ["//agentplane:__subpackages__"])
@@ -17,9 +14,9 @@ py_library(
     name = "fold",
     srcs = ["fold.py"],
     deps = [
-        "//agentplane/protocol:command_pb2",
-        "//agentplane/protocol:event_log_pb2",
-        "//agentplane/protocol:event_pb2",
+        "//agentplane/proto:command_pb2",
+        "//agentplane/proto:event_log_pb2",
+        "//agentplane/proto:event_pb2",
         "//agentplane/sandbox_service:settled_cursors",
         "@pypi//protobuf",  # keep: mypy follows generated protobuf interfaces
         "@pypi//types_protobuf",  # keep: mypy follows generated protobuf interfaces
@@ -33,7 +30,7 @@ py_library(
         ":models",
         ":recording",
         "//agentplane/history_service:protocol_pb2",
-        "//agentplane/protocol:event_log_pb2",
+        "//agentplane/proto:event_log_pb2",
         "//agentplane/runner:protocol_pb2",
         "@pypi//protobuf",
         "@pypi//sqlalchemy",
@@ -45,8 +42,8 @@ py_library(
     srcs = ["model_activity.py"],
     deps = [
         ":models",
-        "//agentplane/protocol:event_log_pb2",
-        "//agentplane/protocol:event_pb2",
+        "//agentplane/proto:event_log_pb2",
+        "//agentplane/proto:event_pb2",
         "@pypi//protobuf",
         "@pypi//sqlalchemy",
         "@pypi//types_protobuf",  # keep: mypy follows generated protobuf interfaces
@@ -100,7 +97,7 @@ py_library(
         ":rows",
         ":views",
         "//agentplane/history_service:protocol_pb2",
-        "//agentplane/protocol:event_log_pb2",
+        "//agentplane/proto:event_log_pb2",
         "//agentplane/sandbox_service:settled_cursors",
         "@pypi//protobuf",
         "@pypi//sqlalchemy",
@@ -134,9 +131,9 @@ py_test(
     deps = [
         ":fold",
         "//:conftest",
-        "//agentplane/protocol:command_pb2",
-        "//agentplane/protocol:event_log_pb2",
-        "//agentplane/protocol:event_pb2",
+        "//agentplane/proto:command_pb2",
+        "//agentplane/proto:event_log_pb2",
+        "//agentplane/proto:event_pb2",
         "@pypi//more_itertools",
         "@pypi//protobuf",
         "@pypi//pytest",

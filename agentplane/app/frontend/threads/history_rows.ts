@@ -7,7 +7,7 @@
  */
 import { fromJson, type JsonValue } from "@bufbuild/protobuf";
 
-import { EventSchema, ItemKind, TurnStatus, TurnStatusSchema } from "../../../protocol/event_pb";
+import { EventSchema, ItemKind, TurnStatus, TurnStatusSchema } from "../../../proto/event_pb";
 import type { ThreadEntity } from "./thread_sync";
 
 /** A row is identified by its first entity: its key and reading anchor stay put while later steps

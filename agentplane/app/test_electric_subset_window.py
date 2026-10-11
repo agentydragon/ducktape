@@ -24,7 +24,7 @@ from agentplane.app.testing.history import ProjectedHistory as Ingestion, Seeded
 from agentplane.app.testing.history_service import HistoryService
 from agentplane.app.testing.replication_source import SANDBOX, SESSION, ReplicationSource
 from agentplane.history_service.client import HistoryServiceClient
-from agentplane.protocol import event_pb2
+from agentplane.proto import event_pb2
 from agentplane.thread_fold.models import ThreadEntity
 from agentplane.thread_fold.projection_lease import ProjectionLease
 from agentplane.thread_fold.recording import THREAD_FOLD_EPOCH

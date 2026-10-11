@@ -15,7 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncConnection, AsyncSession, create_async_e
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 from sqlalchemy.pool import StaticPool
 
-from agentplane.protocol import command_pb2, event_log_pb2, event_pb2
+from agentplane.proto import command_pb2, event_log_pb2, event_pb2
 from agentplane.runner.observation import Observation, observation_event
 
 # gazelle:include_dep @pypi//aiosqlite

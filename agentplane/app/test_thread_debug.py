@@ -23,7 +23,7 @@ from agentplane.app.testing.replication_source import SANDBOX, SESSION, Replicat
 from agentplane.app.threads.bridge import RunnerBridge
 from agentplane.app.threads.store import ThreadStore
 from agentplane.app.threads.view.content import ContentStore
-from agentplane.protocol import command_pb2, event_pb2
+from agentplane.proto import command_pb2, event_pb2
 from agentplane.runner.harness import Harness
 from agentplane.sandbox_service.client import SandboxServiceClient
 

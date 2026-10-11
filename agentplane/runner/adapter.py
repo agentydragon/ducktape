@@ -10,7 +10,7 @@ import abc
 from collections.abc import Mapping
 from typing import Any
 
-from agentplane.protocol import event_pb2
+from agentplane.proto import event_pb2
 
 # gazelle:include_dep @pypi//protobuf
 

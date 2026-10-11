@@ -27,7 +27,7 @@ from agentplane.notification_service.models import (
 )
 from agentplane.notification_service.settings import QuotaSettings
 from agentplane.notification_service.store import ClaimLostError, ConflictError, NotFoundError, QuotaError, Store
-from agentplane.protocol import command_pb2, event_log_pb2, event_pb2
+from agentplane.proto import command_pb2, event_log_pb2, event_pb2
 from agentplane.subjects import ServiceAccountRef
 from agentplane.workload_auth.principal import WorkloadPrincipal
 

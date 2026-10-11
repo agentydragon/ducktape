@@ -12,7 +12,7 @@ from pydantic import BaseModel
 
 from agentplane.native.codex import wire
 from agentplane.native.transport import FrameMatcher, NativeReceipt
-from agentplane.protocol import event_pb2
+from agentplane.proto import event_pb2
 from agentplane.runner.codex import CodexAdapter
 from agentplane.runner.config import CodexLaunch
 from agentplane.runner.journal import Journal

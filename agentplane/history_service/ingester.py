@@ -22,7 +22,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from agentplane.history_service.protocol_pb2 import SessionFeedState
-from agentplane.protocol import event_log_pb2
+from agentplane.proto import event_log_pb2
 from agentplane.runner.errors import RunnerError, StreamClosedError
 from agentplane.sandbox_service.client import (
     Attachment,

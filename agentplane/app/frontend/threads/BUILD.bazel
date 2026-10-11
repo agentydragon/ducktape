@@ -97,7 +97,7 @@ ts_library(
         ":thread_sync",
         ":thread_view_timing",
         "//:node_modules/@bufbuild/protobuf",
-        "//agentplane/protocol:event_pb",
+        "//agentplane/proto:event_pb",
     ],
 )
 
@@ -111,7 +111,7 @@ agentplane_vitest_test(
         ":thread_view_timing",
         "//:node_modules/@bufbuild/protobuf",
         "//:node_modules/vitest",
-        "//agentplane/protocol:event_pb",
+        "//agentplane/proto:event_pb",
     ],
 )
 
@@ -121,8 +121,8 @@ ts_library(
     tsconfig = TSCONFIG,
     deps = [
         "//:node_modules/@bufbuild/protobuf",
-        "//agentplane/protocol:command_pb",
-        "//agentplane/protocol:event_log_pb",
+        "//agentplane/proto:command_pb",
+        "//agentplane/proto:event_log_pb",
     ],
 )
 
@@ -177,8 +177,8 @@ ts_library(
         "//agentplane/app/frontend:thread_status_indicator",
         "//agentplane/app/frontend:thread_tab",
         "//agentplane/app/frontend:topbar",
-        "//agentplane/protocol:command_pb",
-        "//agentplane/protocol:event_pb",
+        "//agentplane/proto:command_pb",
+        "//agentplane/proto:event_pb",
     ],
 )
 
@@ -212,9 +212,9 @@ agentplane_vitest_test(
         "//agentplane/app/frontend:stream_status",
         "//agentplane/app/frontend:test_model_catalog",
         "//agentplane/app/frontend:topbar",
-        "//agentplane/protocol:command_pb",
-        "//agentplane/protocol:event_log_pb",
-        "//agentplane/protocol:event_pb",
+        "//agentplane/proto:command_pb",
+        "//agentplane/proto:event_log_pb",
+        "//agentplane/proto:event_pb",
     ],
 )
 
@@ -295,7 +295,7 @@ ts_library(
         "//agentplane/app/frontend:json_view",
         "//agentplane/app/frontend:markdown",
         "//agentplane/app/frontend:raw_switch",
-        "//agentplane/protocol:event_pb",
+        "//agentplane/proto:event_pb",
     ],
 )
 
@@ -316,7 +316,7 @@ agentplane_vitest_test(
         "//:node_modules/react",
         "//:node_modules/react-dom",
         "//:node_modules/vitest",
-        "//agentplane/protocol:event_pb",
+        "//agentplane/proto:event_pb",
     ],
 )
 
@@ -348,7 +348,7 @@ ts_library(
         "//:node_modules/@types/react",
         "//:node_modules/react",
         "//agentplane/app/frontend:client",
-        "//agentplane/protocol:command_pb",
+        "//agentplane/proto:command_pb",
     ],
 )
 
@@ -412,7 +412,7 @@ ts_library(
     tsconfig = TSCONFIG,
     deps = [
         ":thread_sync",
-        "//agentplane/protocol:event_pb",
+        "//agentplane/proto:event_pb",
     ],
 )
 

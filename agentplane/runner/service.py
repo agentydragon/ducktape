@@ -14,7 +14,7 @@ from typing import Any
 
 import grpc
 
-from agentplane.protocol import event_log_pb2
+from agentplane.proto import event_log_pb2
 from agentplane.runner import protocol_pb2, protocol_pb2_grpc
 from agentplane.runner.adapter import HarnessAdapter
 from agentplane.runner.claude import ClaudeAdapter

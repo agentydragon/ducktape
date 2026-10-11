@@ -8,7 +8,7 @@ from pathlib import Path
 
 from pydantic import BaseModel
 
-from agentplane.protocol import event_pb2
+from agentplane.proto import event_pb2
 from agentplane.runner.recovery import ObservedItem
 
 # gazelle:include_dep @pypi//protobuf

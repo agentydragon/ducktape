@@ -17,7 +17,7 @@ from agentplane.app.threads.events.event_log import ThreadNotFoundError
 from agentplane.app.threads.models import EventLog, Thread
 from agentplane.app.threads.summaries import AppSummaries, FeedError, FoldSummary, HistorySummaries
 from agentplane.app.threads.thread_view import ThreadView
-from agentplane.protocol import event_pb2
+from agentplane.proto import event_pb2
 from agentplane.runner import protocol_pb2
 from agentplane.runner.harness import Harness
 

@@ -14,7 +14,7 @@ from pathlib import Path
 
 import pytest_bazel
 
-from agentplane.protocol import command_pb2, event_pb2
+from agentplane.proto import command_pb2, event_pb2
 from agentplane.runner.journal import Journal
 
 # gazelle:include_dep @pypi//protobuf

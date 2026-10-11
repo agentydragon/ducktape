@@ -5,9 +5,6 @@ package(
     default_visibility = ["//agentplane:__subpackages__"],
 )
 
-# gazelle:resolve py agentplane.protocol.command_pb2 //agentplane/protocol:command_pb2
-# gazelle:resolve py agentplane.protocol.event_log_pb2 //agentplane/protocol:event_log_pb2
-# gazelle:resolve py agentplane.protocol.event_pb2 //agentplane/protocol:event_pb2
 # gazelle:resolve py agentplane.runner.protocol_pb2 //agentplane/runner:protocol_pb2
 
 py_library(
@@ -16,8 +13,8 @@ py_library(
     srcs = ["agent.py"],
     deps = [
         "//agentplane/app:client",
-        "//agentplane/protocol:command_pb2",
-        "//agentplane/protocol:event_pb2",
+        "//agentplane/proto:command_pb2",
+        "//agentplane/proto:event_pb2",
         "//agentplane/runner:protocol_pb2",
         "@pypi//httpx",
         "@pypi//protobuf",
@@ -187,7 +184,7 @@ py_test(
         "//:conftest",
         "//agentplane/app:client",
         "//agentplane/app:sandbox_models",
-        "//agentplane/protocol:event_pb2",
+        "//agentplane/proto:event_pb2",
         "//agentplane/runner:harness",
         "//agentplane/runner:protocol_pb2",
         "//util/bazel:runfiles",
@@ -225,7 +222,7 @@ py_test(
         "//agentplane/app:sandbox_models",
         "//agentplane/native/claude:wire",
         "//agentplane/native/codex:wire",
-        "//agentplane/protocol:event_pb2",
+        "//agentplane/proto:event_pb2",
         "//agentplane/runner:harness",
         "//agentplane/runner:protocol_pb2",
         "//agentplane/thread_fold:fold",
@@ -349,8 +346,8 @@ py_test(
         ":conftest",
         "//:conftest",
         "//agentplane/app:client",
-        "//agentplane/protocol:event_log_pb2",
-        "//agentplane/protocol:event_pb2",
+        "//agentplane/proto:event_log_pb2",
+        "//agentplane/proto:event_pb2",
         "//agentplane/runner:protocol_pb2",
         "@pypi//httpx",
         "@pypi//protobuf",

@@ -27,7 +27,7 @@ from agentplane.app.threads.summaries import AppSummaries, FeedEnd
 from agentplane.app.threads.view.content import ContentStore
 from agentplane.history_service import protocol_pb2 as history_pb2
 from agentplane.history_service.client import HistoryServiceClient
-from agentplane.protocol import event_pb2
+from agentplane.proto import event_pb2
 from agentplane.runner import protocol_pb2 as runner_pb2
 from agentplane.sandbox_service import protocol_pb2
 from agentplane.thread_fold.models import ThreadCheckpoint, ThreadEntity, ThreadHistorySummary

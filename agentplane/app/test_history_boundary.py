@@ -11,7 +11,7 @@ import pytest_bazel
 from agentplane.app.testing.history_service import HistoryService
 from agentplane.app.testing.thread_test_support import event_entry
 from agentplane.history_service.client import HistoryServiceClient, HistoryServiceError
-from agentplane.protocol import event_pb2
+from agentplane.proto import event_pb2
 
 # gazelle:include_dep @pypi//protobuf
 

@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest_bazel
 
-from agentplane.protocol import event_log_pb2, event_pb2
+from agentplane.proto import event_log_pb2, event_pb2
 from agentplane.runner.journal import Journal
 from util.testing.undeclared_outputs import undeclared_outputs_dir
 

@@ -12,7 +12,7 @@ import httpx
 import pytest
 import pytest_bazel
 
-from agentplane.protocol import command_pb2, event_pb2
+from agentplane.proto import command_pb2, event_pb2
 from agentplane.runner.adapter import HarnessAdapter
 from agentplane.runner.config import CodexLaunch, RunnerConfig
 from agentplane.runner.harness_process import HarnessProcess

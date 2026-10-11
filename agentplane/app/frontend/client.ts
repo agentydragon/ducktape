@@ -11,8 +11,8 @@ import {
   type SessionSpec,
   type SessionSummary,
 } from "../../runner/protocol_pb";
-import { CommandSchema, type Command } from "../../protocol/command_pb";
-import { EventEntrySchema, type EventEntry } from "../../protocol/event_log_pb";
+import { CommandSchema, type Command } from "../../proto/command_pb";
+import { EventEntrySchema, type EventEntry } from "../../proto/event_log_pb";
 
 export const api: ReturnType<typeof createClient<paths>> = createClient<paths>({ baseUrl: "" });
 

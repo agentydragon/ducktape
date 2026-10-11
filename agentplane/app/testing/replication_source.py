@@ -10,7 +10,7 @@ import grpc
 
 from agentplane.app.testing.history_service import HistoryService
 from agentplane.history_service import protocol_pb2 as history_pb2
-from agentplane.protocol import command_pb2, event_log_pb2, event_pb2
+from agentplane.proto import command_pb2, event_log_pb2, event_pb2
 from agentplane.runner import protocol_pb2
 from agentplane.sandbox_service import protocol_pb2 as service_pb2
 

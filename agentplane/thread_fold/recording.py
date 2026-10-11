@@ -11,7 +11,7 @@ from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from agentplane.history_service import protocol_pb2 as history_pb2
-from agentplane.protocol import event_log_pb2
+from agentplane.proto import event_log_pb2
 from agentplane.sandbox_service.settled_cursors import settled_ranges
 from agentplane.thread_fold import fold
 from agentplane.thread_fold.models import (

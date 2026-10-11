@@ -1,8 +1,8 @@
 syntax = "proto3";
 
-package ducktape.agentplane.protocol.v1;
+package agentplane.proto.event_log;
 
-import "agentplane/protocol/event.proto";
+import "agentplane/proto/event.proto";
 
 message Follow {
   // Entries strictly after this source-local cursor are replayed before live entries. Zero starts
@@ -22,5 +22,5 @@ message EventEntry {
   // origin or Event.
   uint64 cursor = 1;
   EventOrigin origin = 2;
-  Event event = 3;
+  agentplane.proto.event.Event event = 3;
 }

@@ -48,7 +48,7 @@ from agentplane.app.testing.thread_browser import (
 from agentplane.app.threads.store import ThreadStore
 from agentplane.app.threads.summaries import AppSummaries
 from agentplane.app.threads.view.content import ContentStore
-from agentplane.protocol import command_pb2, event_log_pb2, event_pb2
+from agentplane.proto import command_pb2, event_log_pb2, event_pb2
 from agentplane.thread_fold.models import (
     ThreadCheckpoint,
     ThreadEntity,

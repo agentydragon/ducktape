@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from agentplane.protocol import command_pb2
+from agentplane.proto import command_pb2
 from agentplane.runner.client import Attachment
 
 # The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.

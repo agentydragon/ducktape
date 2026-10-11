@@ -9,7 +9,7 @@ from typing import Self
 
 import grpc
 
-from agentplane.protocol import command_pb2, event_log_pb2
+from agentplane.proto import command_pb2, event_log_pb2
 from agentplane.runner import protocol_pb2, protocol_pb2_grpc
 from agentplane.runner.errors import OpenTimeoutError, RunnerError, SessionSealedError, StreamClosedError
 

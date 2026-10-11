@@ -25,7 +25,7 @@ from pydantic import BaseModel
 from tenacity import AsyncRetrying, retry_if_exception, stop_after_delay, wait_fixed
 
 from agentplane.app.client import Client
-from agentplane.protocol import command_pb2, event_pb2
+from agentplane.proto import command_pb2, event_pb2
 from agentplane.runner import protocol_pb2
 
 # A turn on the cheap model with a few tool calls. A harness that stops making progress should fail

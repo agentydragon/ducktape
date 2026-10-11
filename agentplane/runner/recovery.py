@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 
-from agentplane.protocol import event_pb2
+from agentplane.proto import event_pb2
 
 # gazelle:include_dep @pypi//protobuf
 from agentplane.runner.journal import Journal

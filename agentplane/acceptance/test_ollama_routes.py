@@ -14,7 +14,7 @@ from agentplane.acceptance.agent import Agent
 from agentplane.acceptance.ollama_catalog import ollama_cases
 from agentplane.app.client import Client
 from agentplane.app.sandbox_models import SandboxView
-from agentplane.protocol import event_pb2
+from agentplane.proto import event_pb2
 from agentplane.runner import protocol_pb2
 from agentplane.runner.harness import Harness
 from util.bazel.runfiles import get_required_path

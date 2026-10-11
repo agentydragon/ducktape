@@ -3,8 +3,8 @@ syntax = "proto3";
 
 package ducktape.agentplane.history.v1;
 
-import "agentplane/protocol/event.proto";
-import "agentplane/protocol/event_log.proto";
+import "agentplane/proto/event.proto";
+import "agentplane/proto/event_log.proto";
 import "agentplane/runner/protocol.proto";
 import "agentplane/sandbox_service/protocol.proto";
 import "google/protobuf/empty.proto";
@@ -39,7 +39,7 @@ message ReadSessionEventsResponse {
   uint64 last_cursor = 1;
   // Runner entries in ascending cursor order. A cursor missing between them, or between
   // after_cursor and the first of them, is covered by a range of one of `settlements`.
-  repeated ducktape.agentplane.protocol.v1.EventEntry entries = 2;
+  repeated agentplane.proto.event_log.EventEntry entries = 2;
   // Absent for imported history without a retained runner attachment.
   SessionFeedState feed_state = 3;
   // Every settlement whose completion entry or settled range falls after after_cursor and at or
@@ -153,7 +153,7 @@ message SessionSummary {
   google.protobuf.Timestamp last_event_at = 8;
   // Inferred from model-originated events, not an observed provider request.
   google.protobuf.Timestamp last_model_activity_at = 9;
-  optional ducktape.agentplane.protocol.v1.TurnStatus last_turn_status = 10;
+  optional agentplane.proto.event.TurnStatus last_turn_status = 10;
   ducktape.agentplane.runner.v1.Attached attached = 11;
   FeedStatus feed_status = 12;
   // With FEED_STATUS_FAILED: why the runner's history was rejected.
@@ -268,7 +268,7 @@ message WatchSessionSummariesResponse {
 message NativeFrame {
   uint64 source_sequence = 1;
   // Absent when the retained entry at that sequence carries no native frame.
-  ducktape.agentplane.protocol.v1.EventEntry entry = 2;
+  agentplane.proto.event_log.EventEntry entry = 2;
 }
 
 message ReadNativeFramesResponse {

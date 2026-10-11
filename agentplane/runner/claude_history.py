@@ -9,7 +9,7 @@ from pathlib import Path
 from pydantic import BaseModel, Field
 
 from agentplane.native.claude.blocks import Block, TextBlock, ThinkingBlock, ToolResultBlock, ToolUseBlock, blocks_of
-from agentplane.protocol import event_pb2
+from agentplane.proto import event_pb2
 
 # gazelle:include_dep @pypi//protobuf
 from agentplane.runner.recovery import ObservedItem

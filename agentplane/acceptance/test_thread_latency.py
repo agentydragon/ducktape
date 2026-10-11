@@ -50,7 +50,7 @@ from agentplane.app.electric import SUBSET_ROW_LIMIT, SubsetRequest, ThreadScope
 from agentplane.app.sandbox_models import SandboxView
 from agentplane.native.claude import wire as claude_wire  # Both harnesses name their frame module `wire`.
 from agentplane.native.codex import wire as codex_wire
-from agentplane.protocol import event_pb2
+from agentplane.proto import event_pb2
 from agentplane.runner import protocol_pb2
 from agentplane.runner.harness import Harness
 from agentplane.thread_fold.fold import PayloadField

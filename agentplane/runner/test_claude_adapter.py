@@ -15,7 +15,7 @@ from pydantic import BaseModel
 from agentplane.native.claude import wire
 from agentplane.native.claude.blocks import ToolResultBlock
 from agentplane.native.transport import FrameMatcher, NativeReceipt
-from agentplane.protocol import event_pb2
+from agentplane.proto import event_pb2
 from agentplane.runner.claude import ClaudeAdapter
 from agentplane.runner.config import ClaudeLaunch
 from agentplane.runner.journal import Journal

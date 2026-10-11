@@ -32,7 +32,7 @@ from agentplane.notification_service.service import Service
 from agentplane.notification_service.settings import NoticeDebounceSettings
 from agentplane.notification_service.sources.actions import Actions
 from agentplane.notification_service.store import Store
-from agentplane.protocol import command_pb2, event_log_pb2
+from agentplane.proto import command_pb2, event_log_pb2
 from agentplane.runner import protocol_pb2
 from agentplane.runner.testing.fixtures import RunnerHandle
 from agentplane.runner.testing.scripted_model import ScriptedModel, Text

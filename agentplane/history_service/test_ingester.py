@@ -15,7 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 from agentplane.history_service import protocol_pb2 as history_pb2
 from agentplane.history_service.conftest import ScriptedSandboxService, subscriber
 from agentplane.history_service.ingester import HOLDER, HistoryIngester, claim, logger
-from agentplane.protocol import event_log_pb2, event_pb2
+from agentplane.proto import event_log_pb2, event_pb2
 from agentplane.sandbox_service import protocol_pb2
 from agentplane.sandbox_service.session_history.store import HistoryConflictError, HistoryNotFoundError, Store
 

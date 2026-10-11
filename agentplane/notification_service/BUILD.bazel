@@ -5,9 +5,6 @@ load("//props:oci.bzl", "py_image_entrypoint", "py_image_env")
 
 # gazelle:resolve py agentplane.runner.protocol_pb2 //agentplane/runner:protocol_pb2
 # gazelle:resolve py agentplane.sandbox_service.protocol_pb2 //agentplane/sandbox_service:protocol_pb2
-# gazelle:resolve py agentplane.protocol.command_pb2 //agentplane/protocol:command_pb2
-# gazelle:resolve py agentplane.protocol.event_pb2 //agentplane/protocol:event_pb2
-# gazelle:resolve py agentplane.protocol.event_log_pb2 //agentplane/protocol:event_log_pb2
 
 package(default_visibility = ["//agentplane/notification_service:__subpackages__"])
 
@@ -131,8 +128,8 @@ py_library(
         "//agentplane/notification_service/sources:actions",
         "//agentplane/notification_service/sources:github",
         "//agentplane/notification_service/sources:github_client",
-        "//agentplane/protocol:command_pb2",
-        "//agentplane/protocol:event_log_pb2",
+        "//agentplane/proto:command_pb2",
+        "//agentplane/proto:event_log_pb2",
         "//agentplane/runner:errors",
         "//agentplane/runner:protocol_pb2",
         "//agentplane/sandbox_service:client",
@@ -160,7 +157,7 @@ py_library(
         "//agentplane:subjects",
         "//agentplane/action_service:models",
         "//agentplane/notification_service/sources:github_models",
-        "//agentplane/protocol:event_log_pb2",
+        "//agentplane/proto:event_log_pb2",
         "//agentplane/workload_auth:principal",
         "@pypi//protobuf",
         "@pypi//pydantic",
@@ -201,8 +198,8 @@ py_test(
         "//agentplane/action_service/testing:fixtures",
         "//agentplane/history_service/testing:backend",
         "//agentplane/notification_service/sources:actions",
-        "//agentplane/protocol:command_pb2",
-        "//agentplane/protocol:event_log_pb2",
+        "//agentplane/proto:command_pb2",
+        "//agentplane/proto:event_log_pb2",
         "//agentplane/runner:protocol_pb2",
         "//agentplane/runner/testing:fixtures",
         "//agentplane/runner/testing:scripted_model",
@@ -257,8 +254,8 @@ py_test(
         "//agentplane/action_service:models",
         "//agentplane/history_service:client",
         "//agentplane/notification_service/sources:actions",
-        "//agentplane/protocol:event_log_pb2",
-        "//agentplane/protocol:event_pb2",
+        "//agentplane/proto:event_log_pb2",
+        "//agentplane/proto:event_pb2",
         "//agentplane/sandbox_service:client",
         "//agentplane/sandbox_service:models",
         "//agentplane/sandbox_service:protocol_pb2",
@@ -284,9 +281,9 @@ py_test(
         "//:conftest",
         "//agentplane:subjects",
         "//agentplane/action_service:models",
-        "//agentplane/protocol:command_pb2",
-        "//agentplane/protocol:event_log_pb2",
-        "//agentplane/protocol:event_pb2",
+        "//agentplane/proto:command_pb2",
+        "//agentplane/proto:event_log_pb2",
+        "//agentplane/proto:event_pb2",
         "//agentplane/workload_auth:principal",
         "@pypi//alembic",
         "@pypi//protobuf",

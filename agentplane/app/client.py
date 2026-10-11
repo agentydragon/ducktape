@@ -25,7 +25,7 @@ from agentplane.app.presets import SandboxPresetView
 from agentplane.app.sandbox_models import NewSandbox, SandboxView
 from agentplane.app.threads.bridge import NewSession
 from agentplane.app.threads.thread_view import ThreadView
-from agentplane.protocol import command_pb2, event_log_pb2
+from agentplane.proto import command_pb2, event_log_pb2
 from agentplane.runner import protocol_pb2
 from agentplane.sandbox_service.egress_views import BindingView, PolicyView
 

@@ -2,15 +2,15 @@
 //
 // A runner session owns one native conversation and a state-volume Event source. Attach selects
 // that source, returns a runner-specific snapshot, then follows it. Command, EventEntry, and Follow
-// are source-neutral messages from agentplane/protocol: the integration app uses the same messages
+// are source-neutral messages from agentplane/proto: the integration app uses the same messages
 // for its retained Thread archive.
 
 syntax = "proto3";
 
 package ducktape.agentplane.runner.v1;
 
-import "agentplane/protocol/command.proto";
-import "agentplane/protocol/event_log.proto";
+import "agentplane/proto/command.proto";
+import "agentplane/proto/event_log.proto";
 
 service Runner {
   rpc Attach(stream ClientMessage) returns (stream ServerMessage);
@@ -88,7 +88,7 @@ message Open {
   // session, and spec, when present, must equal the stored one.
   string session_id = 1;
   SessionSpec spec = 2;
-  ducktape.agentplane.protocol.v1.Follow follow = 3;
+  agentplane.proto.event_log.Follow follow = 3;
   // Only selected at creation. Reattaching never executes setup again.
   optional string setup_script = 4;
 }
@@ -99,7 +99,7 @@ message Detach {}
 message ClientMessage {
   oneof message {
     Open open = 1;
-    ducktape.agentplane.protocol.v1.Command command = 2;
+    agentplane.proto.command.Command command = 2;
     Detach detach = 3;
   }
 }
@@ -169,7 +169,7 @@ message Sealed {
 message ServerMessage {
   oneof message {
     Attached attached = 1;
-    ducktape.agentplane.protocol.v1.EventEntry event_entry = 2;
+    agentplane.proto.event_log.EventEntry event_entry = 2;
     // The stream ends after an error, such as a malformed command or a spec mismatch.
     string error = 3;
     // Ends the stream of a sealed session once it has replayed through the seal's cursor.

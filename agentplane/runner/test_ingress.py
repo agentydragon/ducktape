@@ -15,8 +15,7 @@ import grpc
 import pytest
 import pytest_bazel
 
-from agentplane.proto import runner_ingress_pb2, runner_ingress_pb2_grpc
-from agentplane.protocol import event_log_pb2, event_pb2
+from agentplane.proto import event_log_pb2, event_pb2, runner_ingress_pb2, runner_ingress_pb2_grpc
 from agentplane.runner import protocol_pb2
 from agentplane.runner.channel import ChannelTiming
 from agentplane.runner.config import RunnerConfig

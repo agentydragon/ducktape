@@ -20,8 +20,8 @@ import {
   useState,
 } from "react";
 
-import { CommandSchema } from "../../../protocol/command_pb";
-import { ItemKind } from "../../../protocol/event_pb";
+import { CommandSchema } from "../../../proto/command_pb";
+import { ItemKind } from "../../../proto/event_pb";
 import {
   displayableError,
   getThread,

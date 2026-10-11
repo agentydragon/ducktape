@@ -7,7 +7,7 @@ import grpc
 import pytest
 import pytest_bazel
 
-from agentplane.protocol import event_pb2
+from agentplane.proto import event_pb2
 from agentplane.runner import protocol_pb2
 from agentplane.runner.client import Attachment, RunnerClient
 from agentplane.runner.config import RunnerConfig

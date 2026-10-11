@@ -58,7 +58,7 @@ message Welcome {
 // The runner deduplicates on `command.command_id` within a session, so redelivery is safe.
 message DeliverCommand {
   string session_id = 1;
-  ducktape.agentplane.protocol.v1.Command command = 2;
+  agentplane.proto.command.Command command = 2;
 }
 
 message CommandReceipt {
@@ -66,7 +66,7 @@ message CommandReceipt {
   string command_id = 2;
   oneof outcome {
     // The runner journal's CommandAdmitted entry, with its cursor. Fresh or already journaled.
-    ducktape.agentplane.protocol.v1.EventEntry admitted = 3;
+    agentplane.proto.event_log.EventEntry admitted = 3;
     CommandRefused refused = 4;
   }
 }
@@ -133,7 +133,7 @@ service RunnerIngress {
 message PushFrame {
   oneof frame {
     ducktape.agentplane.runner.v1.Attached announce = 1;  // first frame, exactly once
-    ducktape.agentplane.protocol.v1.EventEntry entry = 2; // the journal's, verbatim, in cursor order
+    agentplane.proto.event_log.EventEntry entry = 2; // the journal's, verbatim, in cursor order
     ducktape.agentplane.runner.v1.Sealed sealed = 3;      // terminal
     Heartbeat heartbeat = 4;
   }

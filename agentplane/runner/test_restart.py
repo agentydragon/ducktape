@@ -17,7 +17,7 @@ import pytest_bazel
 
 from agentplane.harness_tests.claude.messages import AnthropicMessages
 from agentplane.harness_tests.codex.responses import OpenAIResponses
-from agentplane.protocol import event_pb2
+from agentplane.proto import event_pb2
 from agentplane.runner import protocol_pb2
 from agentplane.runner.errors import RunnerError
 from agentplane.runner.harness_process import HarnessProcess

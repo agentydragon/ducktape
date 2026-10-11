@@ -1,9 +1,9 @@
 syntax = "proto3";
 
-package ducktape.agentplane.protocol.v1;
+package agentplane.proto.event;
 
 import "google/protobuf/timestamp.proto";
-import "agentplane/protocol/command.proto";
+import "agentplane/proto/command.proto";
 
 enum TurnStatus {
   TURN_STATUS_UNSPECIFIED = 0;
@@ -69,7 +69,7 @@ message SetupInterrupted {}
 // The emitting source has fsynced this exact Command and owns trying to process it. It does not
 // promise native delivery, model selection, interruption, or a timing category.
 message CommandAdmitted {
-  Command command = 1;
+  agentplane.proto.command.Command command = 1;
 }
 
 // A terminal failed outcome after admission. An invalid request is rejected before admission and

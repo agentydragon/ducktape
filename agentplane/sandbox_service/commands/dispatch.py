@@ -14,8 +14,7 @@ from uuid import UUID
 from sqlalchemy import and_, case, func, select, update
 from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
 
-from agentplane.proto import runner_channel_pb2 as channel_pb2
-from agentplane.protocol import command_pb2, event_log_pb2
+from agentplane.proto import command_pb2, event_log_pb2, runner_channel_pb2 as channel_pb2
 from agentplane.sandbox_service.commands import db
 from agentplane.sandbox_service.commands.store import SubmissionConflictError, SubmissionState, record_receipt
 

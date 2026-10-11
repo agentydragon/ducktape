@@ -27,7 +27,7 @@ from uuid import uuid4
 
 from agentplane.native.claude import driver, facade, scenarios, wire
 from agentplane.native.claude.blocks import Block, TextBlock, ThinkingBlock, ToolResultBlock, ToolUseBlock, blocks_of
-from agentplane.protocol import event_pb2
+from agentplane.proto import event_pb2
 from agentplane.runner.adapter import HarnessAdapter
 from agentplane.runner.claude_history import answered_message_ids, read_history
 from agentplane.runner.config import ClaudeLaunch

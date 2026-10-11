@@ -7,7 +7,7 @@ import pytest_bazel
 from google.protobuf import json_format
 from more_itertools import partitions
 
-from agentplane.protocol import command_pb2, event_log_pb2, event_pb2
+from agentplane.proto import command_pb2, event_log_pb2, event_pb2
 from agentplane.thread_fold.fold import (
     AppendPayload,
     CommandOutcome,

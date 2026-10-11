@@ -17,7 +17,7 @@ import grpc
 from cdk8s import App, Chart
 from kubernetes_asyncio import client as k8s_client, config as k8s_config
 
-from agentplane.protocol import command_pb2, event_log_pb2, event_pb2
+from agentplane.proto import command_pb2, event_log_pb2, event_pb2
 from agentplane.runner import protocol_pb2
 from agentplane.runner.client import RunnerClient
 from cluster.cdk8s.agentplane.kubevirt_experiment.policy import MANAGED_LABEL, SERVICE_ACCOUNT_ANNOTATION

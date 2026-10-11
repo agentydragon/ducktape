@@ -13,7 +13,7 @@ from agentplane.app.testing.history import ProjectedHistory as Ingestion, Seeded
 from agentplane.app.testing.projection_lease import LeaseFactory
 from agentplane.app.testing.thread_test_support import Replica, event_entry
 from agentplane.app.threads.store import ThreadStore
-from agentplane.protocol import event_pb2
+from agentplane.proto import event_pb2
 
 # The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.
 # gazelle:include_dep @pypi//protobuf

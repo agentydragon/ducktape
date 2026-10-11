@@ -65,7 +65,7 @@ from agentplane.notification_service.models import (
 from agentplane.notification_service.settings import QuotaSettings
 from agentplane.notification_service.sources.github_models import GitHubBinding, GitHubEvent, GitHubSource, subject_key
 from agentplane.notification_service.updates import Wakeups, notify
-from agentplane.protocol import event_log_pb2
+from agentplane.proto import event_log_pb2
 from agentplane.subjects import ServiceAccountRef
 from agentplane.workload_auth.principal import WorkloadPrincipal
 

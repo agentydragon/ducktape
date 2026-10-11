@@ -23,7 +23,7 @@ import pytest
 import pytest_bazel
 from pydantic import BaseModel
 
-from agentplane.protocol import command_pb2, event_log_pb2, event_pb2
+from agentplane.proto import command_pb2, event_log_pb2, event_pb2
 from agentplane.runner.adapter import HarnessAdapter
 from agentplane.runner.config import RunnerConfig
 from agentplane.runner.journal import Journal

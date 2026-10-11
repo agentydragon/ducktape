@@ -8,7 +8,7 @@ from collections.abc import Callable
 import pytest
 import pytest_bazel
 
-from agentplane.protocol import event_log_pb2, event_pb2
+from agentplane.proto import event_log_pb2, event_pb2
 from agentplane.runner import protocol_pb2
 from agentplane.runner.client import Attachment, RunnerClient
 from agentplane.runner.testing import events

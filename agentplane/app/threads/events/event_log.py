@@ -15,7 +15,7 @@ from agentplane.app.threads.events.debug import ArchivedObservation, ArchivedObs
 from agentplane.app.threads.models import EventLog
 from agentplane.app.threads.summaries import AppSummaries, FeedSnapshot, HistorySummaries
 from agentplane.history_service.client import HistoryServiceClient
-from agentplane.protocol import event_log_pb2
+from agentplane.proto import event_log_pb2
 from agentplane.thread_fold.models import ThreadHistorySummary
 from agentplane.thread_fold.recording import EventReplicationError
 

@@ -12,7 +12,7 @@ from agentplane.app.testing.projection_lease import LeaseFactory
 from agentplane.app.testing.thread_test_support import event_entry
 from agentplane.app.threads.events.event_log import ThreadNotFoundError
 from agentplane.app.threads.view.content import CommandIdConflictError, ContentStore
-from agentplane.protocol import command_pb2, event_pb2
+from agentplane.proto import command_pb2, event_pb2
 
 # The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.
 # gazelle:include_dep @pypi//protobuf

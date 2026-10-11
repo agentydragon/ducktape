@@ -7,7 +7,7 @@ from typing import Any
 import pytest
 import pytest_bazel
 
-from agentplane.protocol import event_pb2
+from agentplane.proto import event_pb2
 from agentplane.runner import claude_history, codex_history
 from agentplane.runner.journal import Journal
 from agentplane.runner.recovery import ObservedItem, compare_item, observed_items

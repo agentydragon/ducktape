@@ -17,7 +17,7 @@ from enum import StrEnum
 
 from agentplane.history_service import protocol_pb2 as history_pb2
 from agentplane.native.delta_templates import ClaudeDelta, CodexDelta, DeltaTemplate, match_delta, parse_strict
-from agentplane.protocol import event_log_pb2, event_pb2
+from agentplane.proto import event_log_pb2, event_pb2
 
 # The generated protobuf stubs need the protobuf runtime as a direct mypy dependency.
 # gazelle:include_dep @pypi//protobuf

@@ -20,7 +20,7 @@ from typing import TYPE_CHECKING
 from uuid import uuid4
 
 from agentplane.native.codex import facade, scenarios, wire
-from agentplane.protocol import event_pb2
+from agentplane.proto import event_pb2
 from agentplane.runner.adapter import HarnessAdapter
 from agentplane.runner.codex_history import read_history
 from agentplane.runner.config import CodexLaunch

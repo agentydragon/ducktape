@@ -15,8 +15,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from tenacity import AsyncRetrying, RetryCallState, retry_if_exception_type, wait_random_exponential
 
 from agentplane.grpc_options import grpc_channel_option_kvps
-from agentplane.proto import runner_channel_pb2 as channel_pb2, runner_channel_pb2_grpc
-from agentplane.protocol import command_pb2
+from agentplane.proto import command_pb2, runner_channel_pb2 as channel_pb2, runner_channel_pb2_grpc
 from agentplane.runner import protocol_pb2
 from agentplane.runner.journal import CommandConflictError, JournalSealedError
 from agentplane.runner.service import (

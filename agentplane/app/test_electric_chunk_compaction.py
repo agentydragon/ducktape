@@ -49,7 +49,7 @@ from agentplane.app.testing.history_service import HistoryService
 from agentplane.app.testing.replication_source import SANDBOX, SESSION, ReplicationSource
 from agentplane.app.threads.view.content import ContentStore
 from agentplane.history_service.client import HistoryServiceClient
-from agentplane.protocol import event_pb2
+from agentplane.proto import event_pb2
 from agentplane.thread_fold.models import ThreadEntity, ThreadPayloadChunk
 from agentplane.thread_fold.views import ThreadPayloadReference
 

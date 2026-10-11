@@ -17,9 +17,9 @@ import { sampleConnection } from "../connections_fixture";
 import type { BindingView, Decision, McpLinkageView, PolicyView, SandboxView, ThreadView } from "../client";
 import type { ActionGroupView, ActionPolicyView, ActionRequestView } from "../actions/client";
 import type { SandboxesSnapshot, SandboxSnapshot, ThreadsSnapshot, WatchHealth } from "../live";
-import { EventSchema, ItemKind, RecoveryDisposition, TurnStatus } from "../../../protocol/event_pb";
-import { CommandSchema } from "../../../protocol/command_pb";
-import { EventEntrySchema } from "../../../protocol/event_log_pb";
+import { EventSchema, ItemKind, RecoveryDisposition, TurnStatus } from "../../../proto/event_pb";
+import { CommandSchema } from "../../../proto/command_pb";
+import { EventEntrySchema } from "../../../proto/event_log_pb";
 import {
   Harness,
   HarnessState,

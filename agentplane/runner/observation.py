@@ -2,7 +2,7 @@
 
 from google.protobuf.message import Message
 
-from agentplane.protocol import event_pb2
+from agentplane.proto import event_pb2
 
 Observation = (
     event_pb2.HarnessStarted

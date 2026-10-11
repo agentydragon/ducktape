@@ -1,6 +1,6 @@
 """Forward a command without starting a harness; the runner remains the admission authority."""
 
-from agentplane.protocol import command_pb2, event_log_pb2
+from agentplane.proto import command_pb2, event_log_pb2
 from agentplane.runner import protocol_pb2
 from agentplane.runner.client import RunnerClient
 from agentplane.runner.errors import RunnerError

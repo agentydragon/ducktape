@@ -26,7 +26,7 @@ from agentplane.app.threads.events.event_log import ThreadNotFoundError
 from agentplane.app.threads.models import EventLog
 from agentplane.history_service import protocol_pb2 as history_pb2
 from agentplane.history_service.client import HistoryServiceClient, HistoryServiceError
-from agentplane.protocol import command_pb2, event_log_pb2
+from agentplane.proto import command_pb2, event_log_pb2
 from agentplane.thread_fold.models import ThreadCheckpoint, ThreadEntity, ThreadEvidence, ThreadNativeLink
 from agentplane.thread_fold.views import EntityKind, ThreadCommandEntityView
 
