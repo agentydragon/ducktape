@@ -1049,8 +1049,7 @@ flowchart TD
     subgraph COHERENCE_REFACTORS[Coherence refactors]
         RUNNER_GATEWAY_AUDIENCE[Candidate: the Runner Gateway's own token audience]
         SERVICE_SETTINGS_BASE[Candidate: one config-file settings base]
-        SERVICE_PROCESS_MODULE[Blocked: one service process module]
-        GRPC_HEALTH_PROBES[Blocked: probes use gRPC health]
+        SERVICE_PROCESS_MODULE[Candidate: one service process module]
         REQUIRED_SERVICE_WIRING[Candidate: no footgun defaults on service wiring]
         SERVICE_DOCS_GATEWAY[Candidate: docs give the Runner Gateway its jobs]
         GATEWAY_NAME_SWEEP[Candidate: code says Runner Gateway for the gateway]
@@ -1113,16 +1112,10 @@ check, subclass it in every service, and drop the no-op `__init__(self, **values
 
 ### `SERVICE_PROCESS_MODULE` — one service process module
 
-**Blocked on #9973 and #9977**, after which `grpc_process.py` holds no gRPC code. Rename it for what
+**Candidate.** `grpc_process.py` holds no gRPC code since #9973 and #9977. Rename it for what
 it does, and have every main use its `kubernetes_configuration` (re-inlined in six mains),
 `background` (hand-rolled for the History Service fold task) and one `kubernetes_asyncio` log-level
 line; the History Service's two "ports must differ" checks go with it.
-
-### `GRPC_HEALTH_PROBES` — probes use gRPC health
-
-**Blocked on #9977**, which serves `grpc.health.v1` but keeps HTTP `/healthz` on 8081. Point the
-cdk8s probes at gRPC health and delete the `_HEALTH` ports and `health_port` settings, unless #9977
-schedules it itself.
 
 ### `REQUIRED_SERVICE_WIRING` — no footgun defaults on service wiring
 
