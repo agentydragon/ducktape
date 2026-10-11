@@ -30,7 +30,9 @@ def call_failed(request: pytest.FixtureRequest) -> bool:
     """Whether the test's call phase failed, as opposed to setup or teardown."""
     report = request.node.stash.get(CALL_REPORT, None)
     if report is None:
-        logging.getLogger(__name__).warning("no pytest call report for %s; failure journal unavailable", request.node.nodeid)
+        logging.getLogger(__name__).warning(
+            "no pytest call report for %s; failure journal unavailable", request.node.nodeid
+        )
         return False
     return report.failed
 
