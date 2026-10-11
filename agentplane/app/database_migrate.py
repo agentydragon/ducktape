@@ -10,13 +10,10 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 from agentplane.app import operator_sessions  # noqa: F401
 from agentplane.app.database import Base
 from agentplane.app.threads import models  # noqa: F401
-
-# The retired app projection's tables, unused but still in the schema until a migration drops them.
-from agentplane.thread_fold import models as fold_models  # the app's own `models` is imported above
-from util.db_migrations import MigrationRunner, merged_metadata
+from util.db_migrations import MigrationRunner
 
 RUNNER = MigrationRunner(
-    metadata=merged_metadata(Base.metadata, fold_models.Base.metadata),
+    metadata=Base.metadata,
     migrations_dir=Path(__file__).parent / "migrations",
     lock_key=0x5452_414A,  # "TRAJ"
     version_table="alembic_version_app",

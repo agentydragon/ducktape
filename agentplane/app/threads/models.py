@@ -1,7 +1,6 @@
 """The app's own Thread tables: the Thread → Session link and what an operator sets on a Thread.
 
-The app reads a Thread's fold from the History Service. This database still holds the app's
-retired projection in the fold's tables (`agentplane.thread_fold.models`), which nothing reads or writes.
+The app reads a Thread's fold from the History Service.
 
 The schema is owned by the Alembic migrations under `migrations/`, applied by `database_migrate.py`
 as a separate deploy step.
