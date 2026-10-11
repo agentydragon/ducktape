@@ -66,8 +66,7 @@ including launch defaults, bootstrap/setup, delivery evidence, and recovery afte
 
 Runner journals remain on their state volume as execution evidence, and the runner journal still
 authors execution Events. Retained history lives in the [History Service](../history_service/README.md)'s PostgreSQL.
-The Session registry (public Session IDs, runner locators, Open reservations and `WatchSessions`
-positions) lives in the service's own `sandbox_commands` database beside command admission.
+The Session registry (public Session IDs, runner locators and Open reservations) lives in the service's own `sandbox_commands` database beside command admission.
 
 Service-to-runner calls over the inbound control port are unauthenticated plaintext, fenced only by
 that network policy; the [runner control stream](../docs/runner_control.md) replaces the route rather than

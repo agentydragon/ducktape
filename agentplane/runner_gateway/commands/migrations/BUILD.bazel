@@ -11,6 +11,7 @@ filegroup(
         "//agentplane/runner_gateway/commands/migrations/versions:0005_pending_submission_index.py",
         "//agentplane/runner_gateway/commands/migrations/versions:0006_connection_lease.py",
         "//agentplane/runner_gateway/commands/migrations/versions:0007_redelivery.py",
+        "//agentplane/runner_gateway/commands/migrations/versions:0008_drop_session_feed.py",
     ],
     visibility = ["//agentplane/runner_gateway/commands:__pkg__"],
 )
