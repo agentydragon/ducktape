@@ -101,8 +101,12 @@ jobs:
         with:
           sops_age_key: ${{ secrets.SOPS_AGE_KEY }}
 
-      - name: Install citools
-        run: nix profile install .#citools
+      # The remote build only needs bb; use the same pin and checksum as Bazel CI.
+      - name: Install pinned BuildBuddy CLI
+        run: |
+          python3 devinfra/ci/install_bb.py --pins nix/artifact-pins.json \
+            --destination "$RUNNER_TEMP/buildbuddy-cli/bin/bb"
+          echo "$RUNNER_TEMP/buildbuddy-cli/bin" >> "$GITHUB_PATH"
 
       - name: Check generated command policies
         run: |
