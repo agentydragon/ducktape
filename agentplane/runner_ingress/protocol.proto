@@ -1,0 +1,39 @@
+// The runner's push of its Sessions' journals to the one ingress its Sandbox names, served by the
+// History Service or by a client that keeps no history; contract in
+// agentplane/docs/runner_channel.md § Event ingress. An incompatible change is a new package.
+syntax = "proto3";
+
+package ducktape.agentplane.runner_ingress.v1;
+
+import "agentplane/protocol/event_log.proto";
+import "agentplane/runner/protocol.proto";
+
+service RunnerIngress {
+  // One call per Session, opened by the runner. The first response answers `announce`.
+  rpc Push(stream PushFrame) returns (stream Acknowledgement);
+}
+
+message PushFrame {
+  oneof frame {
+    // First frame, exactly once: the Session's snapshot. Its `session_id` is the UUID the client
+    // minted when it created the Session.
+    ducktape.agentplane.runner.v1.Attached announce = 1;
+    // The runner journal's verbatim entries in cursor order, starting at most one past the first
+    // acknowledgement's cursor. An entry at or below a committed cursor is an exact replay.
+    ducktape.agentplane.protocol.v1.EventEntry entry = 2;
+    // Terminal: the journal is sealed at this cursor, and every entry through it precedes this.
+    ducktape.agentplane.runner.v1.Sealed sealed = 3;
+    // Sent on an idle call every 10 s.
+    Heartbeat heartbeat = 4;
+  }
+}
+
+// The ingress repeats its latest acknowledgement on an idle call every 10 s.
+message Acknowledgement {
+  // Every entry of the Session through this cursor is committed. Never decreases.
+  uint64 cursor = 1;
+  // The seal at `cursor` is committed; the ingress accepts nothing more from this journal.
+  bool sealed = 2;
+}
+
+message Heartbeat {}

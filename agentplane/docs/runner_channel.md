@@ -9,19 +9,19 @@ and its commands travel over the channel. Every other runner is reached through 
 RPC, which Cilium admits only from the Sandbox Service, and every runner's Events still do. This is
 the contract the
 runner-initiated replacement implements. It covers command delivery, authentication, connection ownership and
-dispatch attempts. A runner that agrees `lifecycle` is listed, opened, resumed and sealed over the
-channel too (§ Lifecycle operations). Event replay over the channel and the remaining lifecycle
-callers are added to it later and do not change what is fixed here.
+dispatch attempts, lifecycle requests (built: a runner that agrees `lifecycle` is listed, opened,
+resumed and sealed over the channel), and the push of Events to the runner's ingress.
 
 ## Shape
 
-Each runner process is a gRPC client of the Sandbox Service and holds one HTTP/2 connection to
-it. On that connection it keeps one long-lived bidirectional `Connect` stream, which carries
-command delivery for every Session in its state directory. Each later operation (event following,
-lifecycle controls) is its own RPC on the same connection, so HTTP/2's per-stream flow control
-keeps a large event catch-up from starving commands. The runner is the client, so service-to-runner
-traffic is messages on streams the runner opened, never reverse RPCs. No operation creates a
-Session or starts a stopped harness.
+The runner dials out to two endpoints its Sandbox names. It pushes its journals' Events to one
+**ingress** ([Event ingress](#event-ingress)), and holds a control stream to the Sandbox Service for
+commands, receipts and lifecycle requests. Each runner process is a gRPC client of the Sandbox
+Service and holds one HTTP/2 connection to it. On that connection it keeps one long-lived
+bidirectional `Connect` stream, which carries command delivery and lifecycle requests for every
+Session in its state directory. Events never travel on it, so no event catch-up can starve a
+command. The runner is the client, so service-to-runner traffic is messages on streams the runner
+opened, never reverse RPCs. No operation creates a Session or starts a stopped harness.
 
 ```protobuf
 service RunnerChannel {
@@ -46,7 +46,7 @@ message ServiceFrame {
 
 message Hello {
   string runner_boot_id = 1;          // random per runner process start
-  repeated string capabilities = 2;   // e.g. "commands"; later "events", "lifecycle"
+  repeated string capabilities = 2;   // "commands", "lifecycle"
 }
 
 message Welcome {
@@ -107,83 +107,118 @@ message Heartbeat {}
   connection's maximum age). The runner logs the status and reconnects, except that
   `PERMISSION_DENIED` backs off to its maximum interval.
 
-## Event following
+## Event ingress
 
-Status: **superseded (operator, 2026-10-11 PDT), not built on the Sandbox Service.** Runner traffic
-splits into ingress, where the runner pushes its Events to the Sandbox's ingress, and control, which
-carries commands and lifecycle requests only. Until the ingress lands, every runner's Events are read
-through `Attach`. The runner side below (`Follow`) is built and goes with that cutover.
+Status: **accepted design (operator, 2026-10-10 PDT), not built.** Until it is, every runner's
+Events are read through `Attach`.
 
-A runner that lists `events` in `Hello` serves its journal over the channel, and the Sandbox Service
-then reads that Sandbox's journals only that way: `FollowSession` for every subscriber, and its own
-admission reconciliation. The journal stays the buffer for every subscriber. Nothing is
-acknowledged to the runner and the runner deletes nothing on a read; a subscriber's progress is the
-cursor it committed, and it resumes from there.
+The runner pushes each Session's journal to one **ingress**, the endpoint its Sandbox names, and
+nothing else reads its journals. The History Service is the ingress when history is kept. A client
+that keeps no history implements the ingress itself and sends commands and lifecycle calls through
+the Sandbox Service like any other client. Fan-out to further readers is the ingress's concern, or
+a service's behind it, never a second destination on the runner.
 
 ```protobuf
-service RunnerChannel {
-  rpc Connect(stream RunnerFrame) returns (stream ServiceFrame);
-  // Opened by the runner when asked by `OpenFollow`; carries epoch and follow ID in metadata.
-  rpc Follow(stream FollowFrame) returns (google.protobuf.Empty);
+// agentplane/runner_ingress/protocol.proto
+service RunnerIngress {
+  rpc Push(stream PushFrame) returns (stream Acknowledgement);
 }
 
-message ServiceFrame {
+message PushFrame {
   oneof frame {
-    // ...
-    OpenFollow open_follow = 4;
-    CloseFollow close_follow = 5;
+    ducktape.agentplane.runner.v1.Attached announce = 1;  // first frame, exactly once
+    ducktape.agentplane.protocol.v1.EventEntry entry = 2; // the journal's, verbatim, in cursor order
+    ducktape.agentplane.runner.v1.Sealed sealed = 3;      // terminal
+    Heartbeat heartbeat = 4;
   }
 }
 
-message OpenFollow {
-  string follow_id = 1;               // chosen by the service, unique per connection epoch
-  string session_id = 2;              // the runner's Session ID
-  uint64 after_cursor = 3;
-}
-
-message CloseFollow {
-  string follow_id = 1;
-}
-
-message FollowFrame {
-  oneof frame {
-    ducktape.agentplane.runner.v1.Attached attached = 1;  // first frame: snapshot and last cursor
-    ducktape.agentplane.protocol.v1.EventEntry entry = 2; // cursors strictly increasing by one
-    uint64 sealed = 3;                // terminal: journal sealed at this cursor
-    FollowRefused refused = 4;        // terminal: unknown Session or cursor beyond the journal
-  }
+message Acknowledgement {
+  uint64 cursor = 1;                  // every entry through it is committed; never decreases
+  bool sealed = 2;                    // the seal at `cursor` is committed
 }
 ```
 
-1. **Opening.** The replica that owns the connection sends `OpenFollow`; the runner opens one
-   `Follow` RPC on the same HTTP/2 connection and streams the journal after `after_cursor`, then
-   live entries. Each follow is its own HTTP/2 stream, so gRPC's per-stream flow control bounds
-   what is in flight: a slow reader stalls its own follow, never `Connect` or another follow. The
-   runner reads the journal in pages as the stream drains and holds no unbounded queue. A
-   connection carries at most 64 follows; past that, `OpenFollow` is refused and the caller gets
-   `UNAVAILABLE`.
-2. **Ending.** `CloseFollow`, the subscriber going away, the follow's lease (`follow_lease_s`,
-   unchanged) or a superseded epoch ends the follow, and the subscriber resumes from its committed
-   cursor. Ending a follow is a transport event only: it never interrupts a turn or stops a harness,
-   and a runner never reads a cancelled `Follow` as a command.
-3. **Cross-replica.** Subscribers dial the Sandbox's own control Service
-   ([Connection records](#connection-records-in-kubernetes)), which resolves to the replica holding
-   the runner's connection. A replica asked to follow a Sandbox whose runner stream it does not
-   hold refuses with `UNAVAILABLE`, and the subscriber resolves again and retries from its cursor.
-   The runner is the fence: it opens `Follow` only on the connection that received its latest
-   `Welcome`.
-4. **Admission reconciliation.** Each replica's `AdmissionReconciler` takes the channel-routed
-   Sandboxes whose Lease it holds and follows their journals locally, from the reconciled cursor,
-   advancing it after committing each batch. Positive admission evidence still never regresses.
-5. **Errors.** Entries arrive with consecutive cursors; a gap, a regression below the requested
-   cursor or a frame after a terminal one fails the follow, and the subscriber's `Store.append`
-   refuses a conflicting replay. `sealed` and `refused` map to `FollowSessionResponse.sealed` and a
-   `DestinationUnavailable` status.
+The ingress has its own package, `ducktape.agentplane.runner_ingress.v1`: another server implements
+it, under its own token audience, and a historyless client needs only it.
 
-Rejected for cross-replica follows: a relay between replicas, which adds a hop and an internal
-API; a redirect carried in gRPC status details, which every client would have to implement; making
-the runner hold a connection to every replica; and passing entries through Postgres, which would
-make the Sandbox Service store history.
+1. **One call per Session.** The runner opens a `Push` call for every Session in its state
+   directory whose seal the ingress has not acknowledged: at startup, when `OpenSession` creates a
+   Session, and after a call is lost. Its calls share one HTTP/2 connection to the ingress, apart
+   from its `Connect` connection, and each is its own HTTP/2 stream, so one Session's catch-up
+   stalls neither another Session's live entries nor any command.
+2. **Announcement.** The first frame, `announce`, is the Session's `Attached` snapshot: its Session
+   ID, the UUID the client minted and passed in `OpenSession`, with spec, harness and setup state
+   and the journal's last cursor. Every call announces again; the first the ingress accepts adds
+   the Session to its index of Sessions. The ingress answers with an `Acknowledgement` of what it
+   has already committed for the Session, cursor zero for a new one.
+3. **Entries.** The runner then sends the journal's `EventEntry`s after that acknowledgement's
+   cursor, replayed and then live, reading the journal in pages as the stream drains. Once the
+   journal is sealed and every entry through the seal is sent, it sends `sealed` and nothing more.
+4. **Acknowledgement.** The ingress acknowledges a cursor only after committing every entry through
+   it, and sets `sealed` only after committing the seal. The runner records the latest
+   acknowledgement per Session on its state volume and resumes after it; it deletes no journal
+   entry on acknowledgement. Delivery is therefore at least once and idempotent by cursor: an entry
+   at or below the committed cursor that equals the committed one is accepted and ignored.
+5. **Backpressure.** The runner sends at most 1024 entries per Session beyond the latest
+   acknowledgement and waits for acknowledgements past that; gRPC's per-stream flow control bounds
+   the bytes in flight. The ingress commits and acknowledges in batches of its choosing.
+6. **Liveness.** On an idle call the runner sends `heartbeat` and the ingress repeats its latest
+   acknowledgement every 10 s; either side ends a call after 30 s without a frame.
+7. **Replicas.** Any ingress replica serves any Session's call, and its store serializes appends
+   per Session, so two calls for one Session, such as a restarted runner's racing its
+   predecessor's, are harmless.
+
+Rejected: one `Push` stream per runner multiplexing its Sessions. It saves streams but puts every
+Session behind one flow-control window, so a catch-up would delay every live Session and the
+runner would have to schedule fairly itself; and its writer binding and acknowledgement would be
+per frame instead of per call.
+
+**Writer binding.** The ingress authenticates every call's bearer for its own audience with a
+TokenReview, as the shared `WorkloadPrincipalAuthenticator` does
+([workload authentication](workload_authentication.md)), and resolves no Sandbox. The first accepted announcement binds the Session to its writer's ServiceAccount, by namespace, name
+and the UID TokenReview returns, in the transaction that records the Session, so of two concurrent
+first writers one is refused. A call for the Session from any other ServiceAccount fails with
+`PERMISSION_DENIED`. Every Sandbox runs as its own ServiceAccount, so this ties the Session to its
+Sandbox without the ingress knowing Sandboxes. The Pod is not part of the binding, so a replacement
+Pod of the same Sandbox, opening the same journal from the state volume, keeps writing; the UID
+makes an account recreated under the same name a different writer. Within the Sandbox the trust
+boundary is the channel's: the binding keeps other Sandboxes out, not processes beside the runner.
+
+**Status codes.** The ingress ends a call with `UNAUTHENTICATED`, `PERMISSION_DENIED` (another
+writer's Session), `INVALID_ARGUMENT` (a Session ID that is not a UUID, a frame out of order, a
+cursor gap, a frame after `sealed`), `FAILED_PRECONDITION` (an entry or source that differs from
+what it committed at that cursor) or `UNAVAILABLE`. The runner cancels a call itself, and treats it as
+`FAILED_PRECONDITION`, when the first acknowledgement is beyond its journal's last cursor, since the
+ingress then holds entries this journal never wrote.
+
+**Ingress unreachable or refusing.** The journal is the buffer. The runner keeps admitting commands
+and journaling, and each Session's call retries with the channel's backoff, 0.5 s to 30 s.
+`PERMISSION_DENIED` and `FAILED_PRECONDITION` back off at the maximum and are logged as errors,
+since only an operator resolves them; a refused Session holds up no other. Unacknowledged lag is
+bounded only by the state volume, and a Sandbox cannot finish teardown while any is left.
+
+**Endpoint and authentication.** The runner is started with its ingress and control targets, which
+only the component creating the Sandbox's Kubernetes objects sets: its request names the ingress,
+by default the History Service, and the control target is always the Sandbox Service. Pointing a
+Sandbox's ingress elsewhere sends its Events there, so it takes the authority to create the
+Sandbox. The runner reaches the ingress through its egress sidecar with a placeholder bearer, like
+the channel ([Path through the egress proxy](#path-through-the-egress-proxy)). An egress policy
+the Sandbox Service binds at creation, not a launch-selectable one, admits the ingress host and
+substitutes the Pod's projected token for that ingress's own audience: `agentplane-runner-ingress`
+for the History Service, and an audience of its own for a historyless client. No other recipient
+can replay a token the ingress saw, and an ingress token opens no channel connection.
+
+**Sealing.** `Seal` on the control stream seals every journal and returns each Session's seal cursor
+with `flushed`, which is true once the ingress has acknowledged that seal. The runner answers from
+its recorded acknowledgements, so the report survives a runner restart. Sealing again returns the
+same cursors and the current `flushed`, so teardown repeats `Seal` every 10 s until every Session
+is flushed, and only then may the Sandbox's volume go. A runner that cannot report leaves the
+Sandbox in sealing for the operator.
+
+`Follow`, `OpenFollow`, `CloseFollow` and the `events` capability are still in
+`runner_channel.v1` while the runner serves follows, and go with that code. The Sandbox Service
+never agrees `events` and its `Follow` returns `UNIMPLEMENTED`.
 
 ## Connection records in Kubernetes
 
@@ -299,20 +334,20 @@ message ControlResult {
 The contract's rule becomes: no operation creates a Session or starts a harness implicitly; only
 `OpenSession` and `ResumeSession` do. `Seal` travels on `Connect` behind every command already
 sent, so no command delivered before it lands after it. Only the replica holding the runner's
-stream sends control requests: callers reach it through the Sandbox's control Service, as for
-follows, and background work such as sealing runs on the replica holding the Lease. Requests are bounded by the
+stream sends control requests: callers reach it through the Sandbox's control Service
+([Connection records](#connection-records-in-kubernetes)), and background work such as sealing runs on the replica holding the Lease. Requests are bounded by the
 calling RPC's deadline, like dispatch attempts, and a reconnect replays none of them.
 
-| Inbound caller (Sandbox Service)                     | Channel operation                             |
-| ---------------------------------------------------- | --------------------------------------------- |
-| `ListSessions` RPC                                   | `ListSessions` (built)                        |
-| `journal_reader`                                     | `ListSessions`                                |
-| `CreateSession` (`Initialize`, then `Attach` + spec) | `Initialize`, then `OpenSession` (built)      |
-| `ResumeSession` (`Attach` + retained spec)           | `ResumeSession` (built)                       |
-| `LookupSession` (journal scan from cursor 0)         | `ListSessions`, then a follow from 0          |
-| `FollowSession`, `AdmissionReconciler`               | follows ([Event following](#event-following)) |
-| `Teardown` sealing (`Seal`)                          | `Seal` (built)                                |
-| `SubmitCommand` relay                                | `DeliverCommand` (built)                      |
+| Inbound caller (Sandbox Service)                     | Channel operation                                                |
+| ---------------------------------------------------- | ---------------------------------------------------------------- |
+| `ListSessions` RPC                                   | `ListSessions` (built)                                           |
+| `CreateSession` (`Initialize`, then `Attach` + spec) | `Initialize`, then `OpenSession` (built) with the client's ID    |
+| `ResumeSession` (`Attach` + retained spec)           | `ResumeSession` (built)                                          |
+| `LookupSession` (journal scan from cursor 0)         | none: a retried create confirms the client's Session ID          |
+| `FollowSession`                                      | none: Events go to the ingress ([Event ingress](#event-ingress)) |
+| `AdmissionReconciler`, `journal_reader`              | none: redelivery ([Dispatch attempts](#dispatch-attempts))       |
+| `Teardown` sealing (`Seal`)                          | `Seal` (built), repeated until every Session is flushed          |
+| `SubmitCommand` relay                                | `DeliverCommand` (built)                                         |
 
 The VM experiment's runtime acceptance drives the guest runner directly through a port-forward and
 moves with the selected VM control path.
@@ -350,8 +385,8 @@ Alternatives for the transport itself:
 4. **Codex's envelope wholesale, with a transport-level acknowledgement buffer.** Its unacked
    buffer exists because the relay is not durable. Here the runner journal and the service
    database already are, so command delivery relies on idempotent re-delivery instead of a second
-   ledger. Event following still needs cursors and acknowledgements, which the event-replay design
-   takes from this model.
+   ledger. Event ingress takes its cursors and acknowledgements from this model
+   ([Event ingress](#event-ingress)).
 
 ## Authentication and incarnation binding
 
@@ -414,8 +449,8 @@ never inferred per request from whether a connection happens to be live.
 For a channel-routed operation with no current connection, the service reports the destination
 unavailable. It never falls back to `Attach`, and the inbound route never takes over a command
 whose channel delivery was ambiguous. Operations no connection has agreed keep their inbound route,
-so a Sandbox can carry commands over the channel while its events are still read through `Attach`,
-and an old runner that never dials out keeps working unchanged.
+so an old runner that never dials out keeps working unchanged. Events are not a routed operation: a
+runner with an ingress pushes them, and an older runner's are read through `Attach`.
 
 ## Connection ownership and fencing
 
@@ -489,6 +524,12 @@ before the reopen ends the reopened wait too; the submission stays pending eithe
 latest refusal is kept. Reconnecting never scans pending submissions for delivery, so a stale
 interrupt or stop command is never fired at a reconnecting runner.
 
+**Ambiguous submissions settle by redelivery.** The Sandbox Service reads no journal. A submission
+whose receipt was lost is settled when its command is delivered again with the same `command_id`,
+within its attempt or a caller's retry: the runner answers a command it has already journaled with
+its original `CommandAdmitted` entry, even after its harness stopped or its journal was sealed. This
+needs no frame of its own. Without a retry, the submission stays `pending_admission`.
+
 Each `Connect` stream carries at most 64 undelivered-receipt attempts; past that, a claim fails and the
 attempt waits for its next re-notification.
 
@@ -504,7 +545,7 @@ those either.
 ## Path through the egress proxy
 
 A gRPC client behind an HTTP proxy opens a `CONNECT` tunnel, and the egress proxy intercepts the
-tunnel to read and substitute metadata. It reads the plaintext HTTP/2 the channel listener speaks
-inside that tunnel, and decides a gRPC request from its headers, so the stream's messages pass
+tunnel to read and substitute metadata. It reads the plaintext HTTP/2 the channel listener and the ingress
+speak inside that tunnel, and decides a gRPC request from its headers, so the stream's messages pass
 through as they are written rather than after the stream closes. Long streams also cross proxy
 replica drains, which end them; the runner reconnects like after any other `UNAVAILABLE`.

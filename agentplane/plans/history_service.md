@@ -81,10 +81,11 @@ Properties the target keeps:
 - **Live updates:** Electric replicates the history database behind the app's unchanged
   authorization proxy, at least for now. A History Service subscription API stays one of the
   [thread sync](thread_sync/README.md#a-second-implementation) candidates.
-- **Admission reconciliation:** the Sandbox Service reconciles spooled receipts from the stream it
-  terminates and acknowledges a prefix to the runner after its own commit, waiting on no subscriber.
-  Positive admission evidence still cannot regress. This replaces reconciling in the archive
-  transaction, which cannot hold once the archive leaves the Sandbox Service.
+- **Admission reconciliation:** the Sandbox Service settles an ambiguous submission by delivering
+  the same `command_id` again over the control stream, which returns the original receipt; it
+  reads no journal and waits on no subscriber
+  ([runner channel](../docs/runner_channel.md#dispatch-attempts)). Positive admission evidence still
+  cannot regress.
 - **Fold placement:** the projector and fold (`thread_fold/`, shared by the app and the History
   Service), the projection tables above with their per-Session leases, and
   `thread_history_summary` (every field derived from the log) move. Thread `name` and `archived`,

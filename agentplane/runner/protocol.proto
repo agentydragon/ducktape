@@ -23,7 +23,8 @@ service Runner {
   rpc ListSessions(ListSessionsRequest) returns (ListSessionsResponse);
   // Sandbox teardown. The runner durably refuses new and resumed sessions, stops every harness and
   // setup script, then seals every session's journal at its final cursor. Sealing again returns the
-  // same cursors. Sealed sessions can still be followed to their end.
+  // same cursors, with each session's current `flushed`. Sealed sessions can still be followed to
+  // their end.
   rpc Seal(SealRequest) returns (SealResponse);
 }
 
@@ -151,6 +152,9 @@ message SessionSeal {
   string session_id = 1;
   // The session's final cursor in this Sandbox incarnation.
   uint64 cursor = 2;
+  // The runner's ingress has acknowledged the seal at `cursor`. A runner that pushes no Events
+  // leaves it false.
+  bool flushed = 3;
 }
 
 message SealResponse {

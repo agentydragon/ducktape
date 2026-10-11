@@ -891,18 +891,17 @@ carrying the field) is read and the default can go. Code only.
 Target and decisions: [History Service plan](history_service.md#target). The runner keeps dialing
 out, but to two endpoints its Sandbox names: an **ingress** it pushes its journal's Events to, and
 a **control hub** (the Sandbox Service) whose stream it holds for commands, receipts and lifecycle
-requests. The History Service is the ingress when history is kept. This replaces following the
-runner through the Sandbox Service, so the Sandbox Service-side event following
-(`docs/runner_channel.md` § Event following) is not built. Section 7's store, fold and database
+requests. The History Service is the ingress when history is kept. The contract is
+[runner channel § Event ingress](../docs/runner_channel.md#event-ingress); it replaces following the
+runner through the Sandbox Service. Section 7's store, fold and database
 nodes and section 9 are unaffected.
 
 ```mermaid
 flowchart TD
-    RUNNER_INGRESS_CONTRACT[Candidate: ingress and control contract]
-    HISTORY_INGRESS[Blocked: History Service ingress]
-    RUNNER_INGRESS_PUSH[Blocked: runner pushes Events to its ingress]
-    SANDBOX_RUNNER_ENDPOINTS[Blocked: Sandboxes name their runner's endpoints]
-    CLIENT_SESSION_IDS[Blocked: clients mint Session IDs]
+    HISTORY_INGRESS[Candidate: History Service ingress]
+    RUNNER_INGRESS_PUSH[Candidate: runner pushes Events to its ingress]
+    SANDBOX_RUNNER_ENDPOINTS[Candidate: Sandboxes name their runner's endpoints]
+    CLIENT_SESSION_IDS[Candidate: clients mint Session IDs]
     APP_LIVE_FROM_HISTORY[Candidate: no live reads through the Sandbox Service]
     SEAL_ON_INGRESS_ACK[Blocked: seal waits on the ingress acknowledgement]
     RUNNER_OUTBOUND_ROLLOUT[Every template dials out]
@@ -914,10 +913,6 @@ flowchart TD
     SEAL_FINALIZER_SPIKE[Candidate: does upstream run a deleting Sandbox]
     SEAL_FINALIZER[Blocked: seal as a finalizer on every delete]
     COMMAND_RECORDS_RETIRE[Unscheduled: drop command submission records]
-    RUNNER_INGRESS_CONTRACT --> HISTORY_INGRESS
-    RUNNER_INGRESS_CONTRACT --> RUNNER_INGRESS_PUSH
-    RUNNER_INGRESS_CONTRACT --> SANDBOX_RUNNER_ENDPOINTS
-    RUNNER_INGRESS_CONTRACT --> CLIENT_SESSION_IDS
     HISTORY_INGRESS --> SEAL_ON_INGRESS_ACK
     RUNNER_INGRESS_PUSH --> SEAL_ON_INGRESS_ACK
     HISTORY_INGRESS --> RUNNER_OUTBOUND_ROLLOUT
@@ -936,48 +931,32 @@ flowchart TD
     HISTORY_INGRESS -. receipts readable from history .-> COMMAND_RECORDS_RETIRE
 ```
 
-### `RUNNER_INGRESS_CONTRACT` — ingress and control contract
-
-**Candidate; shape decided by the operator, 2026-10-10 PDT.** Rewrite
-[runner channel](../docs/runner_channel.md) § Event following as the ingress contract and add its
-proto. The runner pushes each Session's journal Events in cursor order to its one ingress
-(fan-out, if ever needed, is a separate service, not a list of sinks); the ingress acknowledges a
-cursor after committing it and the runner resumes after the last acknowledged cursor, so delivery
-is at least once and idempotent by cursor. Entries are the runner's verbatim `EventEntry`s. The
-ingress binds each Session to the workload identity of its first writer (from the Pod-bound token,
-its own egress audience) and refuses other writers. Control keeps `Connect`, without `events`;
-`Seal` reports when the ingress has acknowledged through each seal cursor. The hub reconciles an
-ambiguous submission over control (redelivering the same `command_id` returns its original
-receipt) instead of reading the journal (`AdmissionReconciler`, `journal_reader`). A historyless client
-implements the ingress itself and sends commands through the hub. Name the frames that announce a
-Session on ingress (`CLIENT_SESSION_IDS`).
-
 ### `HISTORY_INGRESS` — History Service ingress
 
-**Blocked on the contract.** The History Service serves the ingress as its own Deployment, apart
+**Candidate.** The History Service serves the ingress as its own Deployment, apart
 from its read API, since it takes untrusted input. Its store appends exactly as the follower
 ingester does now and acknowledges only after commit. Test duplicate and out-of-order pushes, a
 second writer identity refused, and resume after a History Service restart.
 
 ### `RUNNER_INGRESS_PUSH` — runner pushes Events to its ingress
 
-**Blocked on the contract.** The runner pushes from its journal by reshaping the replay of its
+**Candidate.** The runner pushes from its journal by reshaping the replay of its
 `Follow` side (#9853) into the push, and deletes `Follow` and the `events` capability, which the
-Sandbox Service never agrees (its `Follow` stub returns `UNIMPLEMENTED`). It keeps the last acknowledged cursor per Session on its volume, and never
-deletes a journal entry on acknowledgement. An unreachable ingress only lags; commands keep
+Sandbox Service never agrees (its `Follow` stub returns `UNIMPLEMENTED`). It keeps the last acknowledged cursor per Session on its volume, reports `flushed` in its `Seal`
+result from it, and never deletes a journal entry on acknowledgement. An unreachable ingress only lags; commands keep
 flowing.
 
 ### `SANDBOX_RUNNER_ENDPOINTS` — Sandboxes name their runner's endpoints
 
-**Blocked on the contract.** The component that creates a Sandbox's Kubernetes objects sets its
+**Candidate.** The component that creates a Sandbox's Kubernetes objects sets its
 runner's ingress and control endpoints, and only it can: the request names the ingress (default:
 the History Service), the control endpoint is always the hub. Egress grants admit both, each with
 its own token audience.
 
 ### `CLIENT_SESSION_IDS` — clients mint Session IDs
 
-**Blocked on the contract; operator, 2026-10-10 PDT.** The client puts a fresh UUID in the
-create-session control message; the runner journals it and announces the Session on ingress, and
+**Candidate; operator, 2026-10-10 PDT.** The client puts a fresh UUID in the
+create-session control message; the runner journals it and announces the Session on ingress (`announce`), and
 the History Service's index becomes the record of which Sessions exist. The hub keeps only what it
 needs to route: Session to Sandbox. `CreateSession` stops minting the runner Session ID it passes
 in `OpenSession` (#9858). A retried create carries the same ID, so the Open reservation and
