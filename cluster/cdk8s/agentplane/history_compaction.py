@@ -83,8 +83,5 @@ class HistoryCompaction(Construct):
             "network-policy",
             metadata=ApiObjectMetadata(name=NAME, namespace=env.namespace),
             endpoint_selector=_LABELS,
-            egress=[
-                cilium.dns_egress(),
-                database.egress(env.namespace),
-            ],
+            egress=[cilium.dns_egress(), database.egress(env.namespace)],
         )
