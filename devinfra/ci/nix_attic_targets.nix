@@ -6,7 +6,8 @@
 #   main   — every target: all cache-eligible ducktape package outputs (including
 #            the full shared Python lockfile closure any of them pulls in — see
 #            #3298/#7078) + all remaining NixOS toplevels + home activation
-#            packages + bootstrap packages + the Bazel contract test image.
+#            packages + bootstrap packages + command-policy checks + the Bazel
+#            contract test image.
 #            Parked Haku managed-agent,
 #            agent-box, and gecko NixOS systems are excluded from this CI cache.
 #            Flake-specific image outputs are not part of `ducktapePkgs`, the
@@ -114,6 +115,11 @@ in
       # Cache the final tarball too: caching the NixOS toplevel alone still
       # leaves each contract run repackaging and compressing the same image.
       image-bazel-test-docker = self.packages.${system}.bazel-test-docker;
+      # Cache successful check markers so CI can substitute them without
+      # downloading their build dependencies (including the Codex binary).
+      check-claude-code-permissions = self.checks.${system}.claude-code-permissions;
+      check-codex-execpolicy-evaluation = self.checks.${system}.codex-execpolicy-evaluation;
+      check-gemini-cli-integration = self.checks.${system}.gemini-cli-integration;
     };
 
   public = prefix "bootstrap" bootstrap;
