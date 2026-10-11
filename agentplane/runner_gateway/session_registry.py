@@ -10,8 +10,8 @@ from sqlalchemy import func, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
+from agentplane.runner_gateway.commands.db import CHANGE_POSITION, Session
 from agentplane.sandbox_service import protocol_pb2
-from agentplane.sandbox_service.commands.db import CHANGE_POSITION, Session
 from agentplane.sandbox_service.session_history.session_changes import CHANNEL
 
 # gazelle:include_dep @pypi//protobuf

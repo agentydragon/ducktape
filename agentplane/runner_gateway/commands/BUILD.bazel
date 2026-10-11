@@ -35,7 +35,7 @@ py_library(
 py_library(
     name = "database_migrate",
     srcs = ["database_migrate.py"],
-    data = ["//agentplane/sandbox_service/commands/migrations:files"],
+    data = ["//agentplane/runner_gateway/commands/migrations:files"],
     deps = [
         ":db",
         "//util:db_migrations",
@@ -71,7 +71,7 @@ py_test(
         "//agentplane:subjects",
         "//agentplane/proto:command_pb2",
         "//agentplane/proto:event_log_pb2",
-        "//agentplane/sandbox_service:conftest",
+        "//agentplane/runner_gateway:conftest",
         "@pypi//protobuf",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
@@ -150,7 +150,9 @@ py_test(
         "//agentplane/proto:command_pb2",
         "//agentplane/proto:event_log_pb2",
         "//agentplane/proto:runner_channel_pb2",
-        "//agentplane/sandbox_service:conftest",
+        "//agentplane/proto:command_pb2",
+        "//agentplane/proto:event_log_pb2",
+        "//agentplane/runner_gateway:conftest",
         "@pypi//protobuf",
         "@pypi//pytest",
         "@pypi//pytest_bazel",

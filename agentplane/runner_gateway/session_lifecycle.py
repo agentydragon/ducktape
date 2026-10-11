@@ -9,8 +9,8 @@ from google.protobuf.json_format import MessageToDict, MessageToJson, ParseDict
 from agentplane.proto import runner_channel_pb2 as channel_pb2, runner_pb2
 from agentplane.runner.client import RunnerClient
 from agentplane.runner.errors import RunnerError
-from agentplane.sandbox_service.channel_control import ChannelControl
-from agentplane.sandbox_service.instructions import combine_instructions
+from agentplane.runner_gateway.channel_control import ChannelControl
+from agentplane.runner_gateway.instructions import combine_instructions
 from agentplane.sandbox_service.protocol_pb2 import SandboxBinding, SessionDestination
 
 # gazelle:include_dep @pypi//protobuf

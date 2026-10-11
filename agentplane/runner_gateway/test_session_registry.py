@@ -8,17 +8,17 @@ import pytest_bazel
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from agentplane.sandbox_service.session_registry import (
+from agentplane.runner_gateway.session_registry import (
     OpenConflictError,
     OpenReservation,
     SessionNotFoundError,
     SessionRegistry,
 )
-from agentplane.sandbox_service.testing.sessions import register_session
+from agentplane.runner_gateway.testing.sessions import register_session
 
-# gazelle:include_dep //agentplane/sandbox_service/commands:conftest
+# gazelle:include_dep //agentplane/runner_gateway/commands:conftest
 
-pytest_plugins = ("agentplane.sandbox_service.commands.conftest",)
+pytest_plugins = ("agentplane.runner_gateway.commands.conftest",)
 
 
 @pytest.fixture

@@ -11,15 +11,16 @@ import pytest_bazel
 from kubernetes_asyncio import client as k8s_client
 from sqlalchemy.ext.asyncio import AsyncEngine
 
+from agentplane.runner_gateway.channel_control import ChannelControl
+from agentplane.runner_gateway.channel_delivery import ChannelDelivery
+from agentplane.runner_gateway.commands.connections import ConnectionStore
+from agentplane.runner_gateway.commands.dispatch import DispatchStore
+from agentplane.runner_gateway.commands.store import SubmissionStore
+from agentplane.runner_gateway.connection_records import ConnectionLeases
+from agentplane.runner_gateway.session_registry import SessionRegistry
 from agentplane.sandbox_service import protocol_pb2
 from agentplane.sandbox_service.action_policy import ActionPolicyBindings
-from agentplane.sandbox_service.channel_control import ChannelControl
-from agentplane.sandbox_service.channel_delivery import ChannelDelivery
 from agentplane.sandbox_service.client import SandboxServiceClient, ServiceError
-from agentplane.sandbox_service.commands.connections import ConnectionStore
-from agentplane.sandbox_service.commands.dispatch import DispatchStore
-from agentplane.sandbox_service.commands.store import SubmissionStore
-from agentplane.sandbox_service.connection_records import ConnectionLeases
 from agentplane.sandbox_service.destinations import DestinationResolver
 from agentplane.sandbox_service.egress import EgressInventory
 from agentplane.sandbox_service.grpc_api import Resources
@@ -30,7 +31,6 @@ from agentplane.sandbox_service.protocol_pb2 import Hold
 from agentplane.sandbox_service.provisioning import Provisioning
 from agentplane.sandbox_service.runner_endpoints import RunnerEndpoints
 from agentplane.sandbox_service.session_history.session_changes import SessionChanges
-from agentplane.sandbox_service.session_registry import SessionRegistry
 from agentplane.sandbox_service.testing.fake_inventory import NAMESPACE, FakeCoreV1Api, FakeCustomObjectsApi, sandbox
 from agentplane.sandbox_service.testing.fake_rbac import FakeRbac
 from agentplane.sandbox_service.testing.grpc_service import service_client
@@ -42,9 +42,9 @@ from util.agent_sandbox import SANDBOXES_PLURAL
 from util.kubernetes import CustomObjectsClient
 
 # gazelle:include_dep @pypi//protobuf
-# gazelle:include_dep //agentplane/sandbox_service/commands:conftest
+# gazelle:include_dep //agentplane/runner_gateway/commands:conftest
 
-pytest_plugins = ("agentplane.sandbox_service.commands.conftest",)
+pytest_plugins = ("agentplane.runner_gateway.commands.conftest",)
 
 TOKEN = "test-holder-token"
 AUDIENCE = "test-retention-holds"

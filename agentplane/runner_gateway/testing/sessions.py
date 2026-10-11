@@ -5,8 +5,8 @@ from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
 
-from agentplane.sandbox_service.commands.db import Session
-from agentplane.sandbox_service.session_registry import next_change_position
+from agentplane.runner_gateway.commands.db import Session
+from agentplane.runner_gateway.session_registry import next_change_position
 
 
 async def register_session(

@@ -16,37 +16,37 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 
 from agentplane.proto import runner_channel_pb2, runner_channel_pb2_grpc, runner_pb2
 from agentplane.runner.errors import RunnerError
-from agentplane.sandbox_service.channel_control import (
+from agentplane.runner_gateway.channel_control import (
     ChannelControl,
     ConnectionNotHeldError,
     ControlProtocolError,
     ControlRefusedError,
 )
-from agentplane.sandbox_service.channel_delivery import ChannelDelivery
+from agentplane.runner_gateway.channel_delivery import ChannelDelivery
+from agentplane.runner_gateway.commands.connections import ConnectionStore
+from agentplane.runner_gateway.commands.dispatch import DispatchStore
+from agentplane.runner_gateway.commands.store import SubmissionStore
+from agentplane.runner_gateway.connection_records import ConnectionHolder, ConnectionLeases, ConnectionRecords
+from agentplane.runner_gateway.runner_channel import ChannelTiming, RunnerChannelService
+from agentplane.runner_gateway.session_registry import SessionRegistry
+from agentplane.runner_gateway.testing.sessions import register_session
 from agentplane.sandbox_service.client import SandboxServiceClient, ServiceError
-from agentplane.sandbox_service.commands.connections import ConnectionStore
-from agentplane.sandbox_service.commands.dispatch import DispatchStore
-from agentplane.sandbox_service.commands.store import SubmissionStore
-from agentplane.sandbox_service.connection_records import ConnectionHolder, ConnectionLeases, ConnectionRecords
 from agentplane.sandbox_service.destinations import DestinationResolver
 from agentplane.sandbox_service.grpc_api import Resources
 from agentplane.sandbox_service.protocol_pb2 import SandboxDestination, TeardownPhase
-from agentplane.sandbox_service.runner_channel import ChannelTiming, RunnerChannelService
 from agentplane.sandbox_service.session_history.session_changes import SessionChanges
-from agentplane.sandbox_service.session_registry import SessionRegistry
 from agentplane.sandbox_service.teardown import Teardown
 from agentplane.sandbox_service.testing.grpc_service import service
 from agentplane.sandbox_service.testing.kubernetes import ACCOUNT, SANDBOX, SANDBOX_UID, Cluster
-from agentplane.sandbox_service.testing.sessions import register_session
 from agentplane.subjects import ServiceAccountRef
 from agentplane.testing.fake_apiserver import SANDBOX_NAMESPACE, TokenVerdict
 from agentplane.workload_auth.principal import WorkloadPrincipalResolver
 from util.agent_sandbox import SANDBOXES_PLURAL, OperatingMode
 
 # gazelle:include_dep @pypi//protobuf
-# gazelle:include_dep //agentplane/sandbox_service/commands:conftest
+# gazelle:include_dep //agentplane/runner_gateway/commands:conftest
 
-pytest_plugins = ("agentplane.sandbox_service.commands.conftest",)
+pytest_plugins = ("agentplane.runner_gateway.commands.conftest",)
 
 RUNNER_AUDIENCE = "test-runner-channel"
 RUNNER_TOKEN = "test-runner-token"

@@ -2,7 +2,7 @@
 
 from pathlib import Path
 
-from agentplane.sandbox_service.commands.db import Base
+from agentplane.runner_gateway.commands.db import Base
 from util.db_migrations import MigrationRunner
 
 RUNNER = MigrationRunner(

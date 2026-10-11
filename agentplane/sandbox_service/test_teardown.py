@@ -14,19 +14,19 @@ from kubernetes_asyncio import client as k8s_client
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from agentplane.proto import runner_pb2
-from agentplane.sandbox_service.channel_control import ChannelControl
-from agentplane.sandbox_service.commands import db as commands_db
-from agentplane.sandbox_service.commands.connections import ConnectionStore
-from agentplane.sandbox_service.connection_records import ConnectionLeases
+from agentplane.runner_gateway.channel_control import ChannelControl
+from agentplane.runner_gateway.commands import db as commands_db
+from agentplane.runner_gateway.commands.connections import ConnectionStore
+from agentplane.runner_gateway.connection_records import ConnectionLeases
+from agentplane.runner_gateway.session_registry import SessionRegistry
+from agentplane.runner_gateway.testing.sessions import register_session
 from agentplane.sandbox_service.destinations import DestinationResolver, DestinationUnavailableError
 from agentplane.sandbox_service.inventory import SandboxInventory
 from agentplane.sandbox_service.models import SandboxTearingDownError
 from agentplane.sandbox_service.protocol_pb2 import Hold, Sandbox, SandboxDestination, TeardownPhase
-from agentplane.sandbox_service.session_registry import SessionRegistry
 from agentplane.sandbox_service.teardown import SealNotFlushedError, Teardown
 from agentplane.sandbox_service.testing.backend import seed_runner
 from agentplane.sandbox_service.testing.fake_inventory import NAMESPACE, FakeCoreV1Api, FakeCustomObjectsApi
-from agentplane.sandbox_service.testing.sessions import register_session
 from util.agent_sandbox import SANDBOXES_PLURAL, OperatingMode
 
 # gazelle:include_dep //agentplane/sandbox_service/session_history:conftest
