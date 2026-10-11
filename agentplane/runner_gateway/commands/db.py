@@ -118,6 +118,8 @@ class CommandSubmission(Base):
     caller_name: Mapped[str] = mapped_column(String)
     accepted_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     state: Mapped[str] = mapped_column(String)
+    # TODO: consider trimming the stored admission entry; the runner journal and the History Service
+    # hold it too. Kept for now: commands are few next to model output.
     admission: Mapped[event_log_pb2.EventEntry | None] = mapped_column(ProtobufColumn(event_log_pb2.EventEntry))
     rejection: Mapped[str | None] = mapped_column(String(512))
     # Delivery over the runner control stream (`agentplane/docs/runner_control.md` § Dispatch attempts), absent

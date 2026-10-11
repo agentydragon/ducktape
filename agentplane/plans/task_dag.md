@@ -21,8 +21,10 @@ contracts remain multi-replica unless a reviewed temporary restriction says othe
 ```mermaid
 flowchart TD
     APP_SESSION_SCHEMA_RENAME[Candidate: name app Session reference accurately]
+    APP_SESSION_SANDBOX_DROP[Candidate: the app asks the gateway where a Session runs]
     APP_ALEMBIC_SQUASH[Blocked: baseline final app schema]
     APP_SESSION_SCHEMA_RENAME --> APP_ALEMBIC_SQUASH
+    APP_SESSION_SANDBOX_DROP --> APP_ALEMBIC_SQUASH
 ```
 
 ### `APP_SESSION_SCHEMA_RENAME` — name the app Session reference accurately
@@ -31,6 +33,15 @@ flowchart TD
 references. Preserve public IDs and app projection/operator metadata; do not rename
 service archive tables or runner storage. Coordinate a safe schema rollout. Metadata
 consumer audits remain scoped cleanup, not permission to discard useful UI projections.
+
+### `APP_SESSION_SANDBOX_DROP` — the app asks the gateway where a Session runs
+
+**Candidate; operator, 2026-10-11 PDT: the app should not keep this in its own database.**
+`event_log.sandbox` (and the `event_log_sandbox_session_id_key` constraint) is the app's own copy of
+the Runner Gateway's Session ↔ Sandbox routing; the bridge, `api.py` and the Thread list's Sandbox
+grouping read it. Give the gateway a batch read of each Session's Sandbox, switch those readers to
+it, then drop the column. Stops for the operator before the drop. Independent of
+`APP_SESSION_SCHEMA_RENAME`; whichever lands second rebases.
 
 ### `APP_ALEMBIC_SQUASH` — consolidate the final app schema
 
@@ -54,6 +65,16 @@ flowchart LR
 
 Details: [command admission](../sandbox_service/API.md#sessions-and-commands); later
 [notification presentation and input metadata](notification_presentation.md).
+
+### `NOTIFICATION_COMMAND_OUTCOME_DESIGN` — notice delivery without reading conversation history
+
+**Unscheduled; operator, 2026-10-11 PDT: not a priority, needs more thought.** The Notification
+Service scans a Session's raw history from the History Service for its own command's admission and
+`harness_user_message_confirmed`, and stores one `EventEntry` per notice (`Notice.runner_entry`):
+the one service besides the History Service fold that derives state from Session events. The Runner
+Gateway's command records can say the runner admitted a command, but not that the harness executed
+it or that the message reached the model's context; today that needs the history. Decide where that
+outcome is recorded before the Notification Service stops reading history.
 
 ### `SESSION_INPUT_METADATA` — later typed annotations on input commands
 
@@ -723,6 +744,9 @@ flowchart TD
     SANDBOX_DATABASE_RENAME[Candidate: name the sandbox_commands database for the Runner Gateway]
     APP_ELECTRIC_RETIRE[Blocked: remove Electric's access to the app database]
     PROTO_DIRECTORY[Candidate: protos under agentplane/proto, packages named by path]
+    ACTION_SANDBOX_DESIGN[Decision: Action Service Sandboxes through the Sandbox Service]
+    ACTION_SANDBOX_PROVISIONING[Blocked: the Action Service stops creating Sandboxes]
+    ACTION_SANDBOX_DESIGN --> ACTION_SANDBOX_PROVISIONING
     APP_PROJECTOR_RETIRE[Delete app projector]
     HISTORY_SERVICE_OWNERSHIP[History Service ownership]
     FOLLOW_PATH_RETIRE[Delete following, WatchSessions and holds] --> HISTORY_SANDBOX_LOCATOR_DROP
@@ -759,6 +783,22 @@ in place, as `HISTORY_DATABASE_RENAME` does, and point the Runner Gateway, its m
 container and `commands_database_url` at the new names. Its migrate image
 `agentplane-sandbox-commands-migrate`, env `AGENTPLANE_SANDBOX_SERVICE_COMMANDS_DATABASE_URL` and
 `database.py`'s comment on `sandbox_commands` follow.
+
+### `ACTION_SANDBOX_DESIGN` — Action Service Sandboxes through the Sandbox Service
+
+**Decision; operator, 2026-10-11 PDT (in favor, not confidently).** The Action Service's
+`sandbox__*` Actions (`action_service/sandbox/`) create, exec into and delete agent-sandbox
+`Sandbox` objects with their own inventory and labels, a second provisioner beside the Sandbox
+Service. Those boxes share some pieces with agent Sandboxes and not others: they may run as the
+static ServiceAccount the caller already came with, so need no per-Sandbox ServiceAccount, egress
+binding or runner. Design what the Sandbox Service's API offers them (a Sandbox kind, or options on
+`CreateSandbox`), how the caller's identity carries over, and who runs `exec`.
+
+### `ACTION_SANDBOX_PROVISIONING` — the Action Service stops creating Sandboxes
+
+**Blocked on the design.** The Action Service's Sandbox Actions call the Sandbox Service; their own
+inventory and the Action Service's RBAC on `Sandbox` objects go, as does `TODO(sandbox-lifetime)`
+once the Sandbox Service's lifetime handling covers them (`SANDBOX_IDLE_EXPIRY`).
 
 ### `APP_ELECTRIC_RETIRE` — Electric no longer reads the app database
 
@@ -896,7 +936,8 @@ flowchart TD
 retirement.** `CreateSessionRequest.session_id` becomes required. The Runner Gateway stops
 minting IDs and handing the runner an `r-` locator (the `CLEANUP` tombstones in `grpc_api.py`'s
 `CreateSession` and `session_registry.py`), and the app stops sending the ID again as
-`idempotency_key` for older Sandbox Services.
+`idempotency_key` for older Sandbox Services. The gateway's `session.runner_session_id` then always
+equals the Session ID; drop it and its place in `ux_session_runner_locator` (stops for the operator).
 
 ### `HISTORY_INGRESS_SAME_BINARY` — the History Service binary serves the ingress
 
@@ -914,12 +955,15 @@ serve the ingress.
 whether the runner started it, and the Runner Gateway keeps an Open reservation (spec frozen per
 key) for a retried create. The History Service's index records which Sessions a runner announced
 on ingress, so the browser reads that instead. `LookupSession`, its journal scan over the inbound
-API, the Open reservation and the Open key go.
+API, the Open reservation and the Open key go, with the gateway `session` columns `open_key`,
+`open_request`, `launch_spec`, `caller_namespace`, `caller_name` and `ux_session_open_key` (stops for
+the operator before the drop).
 
 ### `FOLLOW_PATH_RETIRE` — delete following, WatchSessions and holds
 
 **Blocked on legacy Sandbox retirement.** Delete `FollowSession`,
-`WatchSessions` and its change feed, the History Service follower ingester, and the hold API and
+`WatchSessions` and its change feed (the gateway's `session.change_position`, its index and the
+`session_change_position` sequence), the History Service follower ingester, and the hold API and
 `retention-holds` annotation. With the follower go `Store.record_session` and `SessionSummary`'s
 Sandbox fields; tests that copy history with the follower
 (`history_service.testing.backend.ingest`, used by the app and Notification Service acceptance
@@ -989,7 +1033,9 @@ ReadWriteOnce, so the Job starts only once every container of the old Pod is gon
 
 ### `COMMAND_RECORDS_RETIRE` — drop command submission records
 
-**Unscheduled; operator, 2026-10-10 PDT: keep them for now.** The runner journal already holds
+**Unscheduled; operator, 2026-10-10 PDT: keep them for now; 2026-10-11 PDT: keeping each
+`admission` entry is fine for now, since commands are few next to model output; consider trimming it
+later.** The runner journal already holds
 every admission, idempotent on `command_id`. Retiring the Runner Gateway's submission records would make it
 stateless, with `GetCommand`, `ListCommands` and the command status UI reading receipts from
 history instead.

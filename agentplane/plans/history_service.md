@@ -26,13 +26,13 @@ flowchart LR
     GW --> GWDB[(sandbox_commands database: Sessions, command admission)]
 ```
 
-| Component       | Owns                                                                                                                                    | Does not own                       |
-| --------------- | --------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------- |
-| Runner          | harness driving, journal, journal-ordered command admission, pushing its journal to one ingress                                         | durable history beyond its volume  |
-| Sandbox Service | provisioning, lifecycle, grants, egress, teardown, the runner endpoints each Sandbox is created with                                    | Sessions, commands, Events         |
-| Runner Gateway  | the runner control stream and its authentication, the Session registry, durable command submission, Session ↔ Sandbox routing           | Sandboxes, Events, stored history  |
-| History Service | ingress, raw event log, delta settlement, thread fold and projection, read API, scoped history reads, the index of which Sessions exist | Sandboxes, commands                |
-| App             | browser auth and API, app-only Thread metadata                                                                                          | folds, raw history, runner routing |
+| Component       | Owns                                                                                                                                    | Does not own                                                        |
+| --------------- | --------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------- |
+| Runner          | harness driving, journal, journal-ordered command admission, pushing its journal to one ingress                                         | durable history beyond its volume                                   |
+| Sandbox Service | provisioning for every caller, lifecycle, grants, egress, teardown, the runner endpoints each Sandbox is created with                   | Sessions, commands, Events                                          |
+| Runner Gateway  | the runner control stream and its authentication, the Session registry, durable command submission, Session ↔ Sandbox routing           | Sandboxes, Events, stored history                                   |
+| History Service | ingress, raw event log, delta settlement, thread fold and projection, read API, scoped history reads, the index of which Sessions exist | Sandboxes, commands                                                 |
+| App             | browser auth and API, app-only Thread metadata                                                                                          | folds, raw history, runner routing, which Sandbox a Session runs in |
 
 Properties the target keeps:
 
@@ -48,6 +48,33 @@ Properties the target keeps:
   Sandbox as an incarnation, and a teardown seal ends an incarnation, not the Session, so reviving a
   Session in a new Sandbox ([task DAG section 8](task_dag.md#8-sessions-that-outlive-their-sandbox))
   needs no change here.
+
+Invariants once the refactor is done (operator, 2026-10-11 PDT). Each one still broken is closed by
+a node in the [task DAG](task_dag.md):
+
+- **One provisioner.** Only the Sandbox Service creates, changes or deletes Sandboxes, whoever asks
+  for them, the Action Service's command Sandboxes included.
+- **One durable event log outside the runner:** the History Service's, written only through its
+  ingress. The Runner Gateway's command submission records keep each admission entry; they are
+  command receipts, not a second log.
+- **One Thread projection:** the History Service fold. No other service derives Thread state from
+  Session events, and Electric serves only that fold.
+- **No old history in the app:** no raw Events and no fold tables in the `app` database.
+- **One database per service**, named for it, with its own role. No service reads another's
+  database; Electric's logical replication of the history fold is the one exception.
+- **The Runner Gateway routes and does not provision.** It holds the control stream, Session ↔
+  Sandbox routing and command submissions, and creates no Kubernetes objects.
+- **The History Service knows Sessions and their writers, never Sandboxes.**
+- **One Session ID everywhere**, minted by the client: runner, gateway, History Service and app
+  use the same UUID.
+- **Runners only dial out.** No runner listens for connections.
+- **Derived data is rebuildable:** any fold table can be dropped and rebuilt from the raw log.
+- **The app is a facade.** It stores browser sessions, operator-set Thread metadata and the Thread
+  → Session link, and asks the gateway where a Session runs.
+- **Coordination lives in Kubernetes** (Leases, Services), except a fence that must commit in the
+  same transaction as the data it guards (the fold's `session_projection_lease`).
+- **No transitional leftovers:** no compatibility shims, met `CLEANUP` tombstones, unread tables or
+  columns, or cutover names.
 
 ## Facts the order rests on
 
