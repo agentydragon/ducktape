@@ -28,7 +28,7 @@ class WorkloadPrincipal:
     pod_name: str
     pod_uid: str
     # TokenReview's user UID: the ServiceAccount object's, so an account recreated under the same
-    # name is a different principal.
+    # name is a different principal. Staged for the History Service ingress's writer binding.
     service_account_uid: str
 
     @property
