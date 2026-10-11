@@ -63,7 +63,7 @@ Properties the target keeps:
   now read the History Service's projection through its own Electric source.
 - **Projections are derived.** A rebuild into a new epoch from the raw log is supported
   ([storage and durability](../docs/thread_view_sync.md#storage-and-durability)); only the raw log is
-  irreplaceable. The staging-preservation rule ([`AGENTS.md`](../AGENTS.md#preserve-staging-data-during-the-sandbox-service-extraction))
+  irreplaceable. The staging-preservation rule ([`AGENTS.md`](../AGENTS.md#preserve-staging-data-during-service-extractions))
   binds the raw log and identities, not a rebuildable projection.
 - **Settlement's target** is the 4.3 GB `session_event` and the 2.2 GB of per-delta evidence rows
   (2026-10-10 sample).
