@@ -911,7 +911,6 @@ flowchart TD
     SANDBOX_SERVICE_DEPLOYMENT_SPLIT[Candidate: controller and hub as separate Deployments]
     AGENTPLANE_SANDBOX_RESOURCE[Decision: our own Sandbox resource]
     POD_INCARNATION[Decision: a Pod is the incarnation]
-    SEAL_FINALIZER_SPIKE[Candidate: does upstream run a deleting Sandbox]
     SEAL_FINALIZER[Blocked: seal as a finalizer on every delete]
     COMMAND_RECORDS_RETIRE[Unscheduled: drop command submission records]
     RUNNER_INGRESS_CONTRACT --> HISTORY_INGRESS
@@ -929,9 +928,8 @@ flowchart TD
     RUNNER_OUTBOUND_ROLLOUT --> LEGACY_SANDBOX_RETIRE
     LEGACY_SANDBOX_RETIRE --> FOLLOW_PATH_RETIRE
     APP_LIVE_FROM_HISTORY --> FOLLOW_PATH_RETIRE
-    SEAL_FINALIZER_SPIKE --> SEAL_FINALIZER
     SEAL_ON_INGRESS_ACK --> SEAL_FINALIZER
-    AGENTPLANE_SANDBOX_RESOURCE -. if upstream will not run a deleting Sandbox .-> SEAL_FINALIZER
+    AGENTPLANE_SANDBOX_RESOURCE -. to seal a suspended Sandbox on delete .-> SEAL_FINALIZER
     POD_INCARNATION -. if chosen, rewrites .-> SESSION_STATE_VOLUME_DESIGN[State volume design]
     HISTORY_INGRESS -. receipts readable from history .-> COMMAND_RECORDS_RETIRE
 ```
@@ -1026,20 +1024,22 @@ incarnation is a Pod. Changing the runner image is stop, replace the Pod, start,
 since the volume stays. If chosen, section 8's state volume and incarnation nodes are rewritten
 around it: keeping the volume means keeping the Sandbox.
 
-### `SEAL_FINALIZER_SPIKE` — does upstream run a deleting Sandbox
-
-**Candidate.** On testing, delete a suspended upstream Sandbox carrying a test finalizer and set it
-running: does the controller start its Pod while `deletionTimestamp` is set? Report the answer in
-this node's removal PR.
-
 ### `SEAL_FINALIZER` — seal as a finalizer on every delete
 
-**Blocked on the spike and the ingress acknowledgement; operator, 2026-10-10 PDT.** Every Sandbox
-carries a seal finalizer, so any deletion (`kubectl`, namespace, `DeleteSandbox`) seals before its
-volume goes. It replaces the controller loop's seal from the replica holding the runner, the
-`teardown` annotation and the suspended-only delete guard. Deletion is
-one-way: a hold can delay it, never cancel it. If upstream will not run a deleting Sandbox, read
-the journal head off the volume with a Job, or wait for our own resource.
+**Blocked on the ingress acknowledgement; operator, 2026-10-10 PDT.** Every Sandbox carries a seal
+finalizer, so any deletion (`kubectl`, `DeleteSandbox`) seals before its volume goes. It replaces
+the controller loop's seal from the replica holding the runner, the `teardown` annotation and the
+suspended-only delete guard. Deletion is one-way: a hold can delay it, never cancel it.
+
+Upstream agent-sandbox v0.5.5 does nothing for a Sandbox whose `deletionTimestamp` is set
+(`SandboxReconciler.Reconcile` returns before reconciling its Pod, PVCs or Service): it neither
+starts nor stops the Pod. So a Sandbox running when deletion begins keeps its runner and seals over
+control as now; a suspended one never runs again, and sealing it means reading the journal head off
+the volume with a Job, or our own resource (`AGENTPLANE_SANDBOX_RESOURCE`). The Pod and PVCs carry
+controller owner references with `blockOwnerDeletion`, so only background propagation (the
+`kubectl` and `DeleteSandbox` default) keeps them until the finalizer clears: foreground
+propagation garbage-collects them while the finalizer still holds the Sandbox, and namespace
+deletion removes them directly. Those two paths lose the unsealed tail.
 
 ### `COMMAND_RECORDS_RETIRE` — drop command submission records
 
