@@ -26,7 +26,7 @@ from agentplane.runner_gateway.commands.dispatch import (
     parse_outcome,
 )
 from agentplane.runner_gateway.connection_records import ConnectionLeases
-from agentplane.sandbox_service.destinations import DestinationUnavailableError
+from agentplane.runner_gateway.destinations import DestinationUnavailableError
 
 # The generated message stubs import google.protobuf; mypy reads stubs only from direct deps.
 # gazelle:include_dep @pypi//protobuf

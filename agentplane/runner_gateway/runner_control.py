@@ -22,8 +22,8 @@ from agentplane.runner_gateway.commands.dispatch import CommandKey, ReceiptMisma
 from agentplane.runner_gateway.commands.store import SubmissionConflictError
 from agentplane.runner_gateway.connection_records import ConnectionRecords, ConnectionSupersededError, RecordOwner
 from agentplane.runner_gateway.lifecycle_control import ControlConnection, LifecycleControl
-from agentplane.sandbox_service.inventory import SandboxInventory
 from agentplane.sandbox_service.models import SandboxNotFoundError
+from agentplane.sandbox_service.reader import SandboxReader
 from agentplane.workload_auth.grpc_caller import resolve_caller
 from agentplane.workload_auth.principal import (
     WorkloadPrincipal,
@@ -73,13 +73,13 @@ class _StreamClosedError(Exception):
 
 
 async def resolve_peer(
-    principal: WorkloadPrincipal, *, inventory: SandboxInventory, core: k8s_client.CoreV1Api
+    principal: WorkloadPrincipal, *, sandboxes: SandboxReader, core: k8s_client.CoreV1Api
 ) -> ControlPeer:
     """Follow the token's Pod to the Sandbox controlling it, the reverse of destination resolution."""
-    if principal.namespace != inventory.namespace:
+    if principal.namespace != sandboxes.namespace:
         raise PeerRefusedError("workload is outside the Sandbox namespace")
     try:
-        pod = await core.read_namespaced_pod(principal.pod_name, inventory.namespace)
+        pod = await core.read_namespaced_pod(principal.pod_name, sandboxes.namespace)
     except k8s_client.ApiException as error:
         if error.status == 404:
             raise WorkloadPrincipalRejectedError("bearer Pod no longer exists") from error
@@ -96,7 +96,7 @@ async def resolve_peer(
         raise PeerRefusedError("Pod is not controlled by a Sandbox")
     owner = controllers[0]
     try:
-        sandbox = await inventory.get(owner.name)
+        sandbox = await sandboxes.get(owner.name)
     except SandboxNotFoundError as error:
         raise PeerRefusedError("Pod's Sandbox is not in this inventory") from error
     if sandbox.uid != owner.uid:
@@ -111,7 +111,7 @@ class RunnerControlService(runner_control_pb2_grpc.RunnerControlServicer):
         self,
         *,
         principals: WorkloadPrincipalResolver,
-        inventory: SandboxInventory,
+        sandboxes: SandboxReader,
         core: k8s_client.CoreV1Api,
         records: ConnectionRecords,
         delivery: CommandDelivery,
@@ -119,7 +119,7 @@ class RunnerControlService(runner_control_pb2_grpc.RunnerControlServicer):
         timing: ControlTiming,
     ) -> None:
         self.principals = principals
-        self.inventory = inventory
+        self.sandboxes = sandboxes
         self.core = core
         self.records = records
         self.delivery = delivery
@@ -128,7 +128,7 @@ class RunnerControlService(runner_control_pb2_grpc.RunnerControlServicer):
 
     async def authenticate(self, context: grpc.aio.ServicerContext) -> tuple[WorkloadPrincipal, ControlPeer]:
         principal = await resolve_caller(self.principals, context)
-        return principal, await resolve_peer(principal, inventory=self.inventory, core=self.core)
+        return principal, await resolve_peer(principal, sandboxes=self.sandboxes, core=self.core)
 
     # mypy-protobuf types the handler as returning an iterator; explicit writes keep every send
     # inside the liveness bound.
@@ -243,7 +243,7 @@ class RunnerControlService(runner_control_pb2_grpc.RunnerControlServicer):
                     except ConnectionSupersededError as error:
                         raise _StreamClosedError(grpc.StatusCode.ABORTED, "superseded by a newer connection") from error
                     # Revocation: the Pod or Sandbox behind this connection may have changed.
-                    if await resolve_peer(principal, inventory=self.inventory, core=self.core) != peer:
+                    if await resolve_peer(principal, sandboxes=self.sandboxes, core=self.core) != peer:
                         raise _StreamClosedError(grpc.StatusCode.PERMISSION_DENIED, "the Sandbox's routing changed")
                     last_touch = now
                 await send(runner_control_pb2.ServiceFrame(heartbeat=runner_control_pb2.Heartbeat()))

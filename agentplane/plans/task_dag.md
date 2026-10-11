@@ -923,7 +923,6 @@ flowchart TD
         SERVICE_PROCESS_MODULE[Candidate: one service process module]
         WATCH_FRESHNESS_DEDUPE[Candidate: one watch freshness]
         POSTGRES_WAKEUPS_SHARED[Candidate: one PostgreSQL wakeup class]
-        GATEWAY_SANDBOX_READS[Candidate: the gateway reads Sandboxes read-only]
         SANDBOX_DEAD_CODE[Candidate: delete KubernetesBindings.run]
         RUNNER_ERRORS_REHOME[Blocked: errors beside the client that raises them]
         SETTLE_DELTAS_ALWAYS_ON[Unscheduled: retire the settle_deltas flag]
@@ -968,13 +967,6 @@ clock-went-backwards guard) and egress `policy.py`/`admin.py` reimplement it. Bo
 **Candidate.** `SummaryChanges`, `HistoryChanges` and `notification_service.Wakeups` are one payload-free listen-and-wake class with different channel
 names, and `app/changes.Changes` is its waiter set. One `agentplane/postgres/` class plus a
 `notify(session, channel)`, used by every site.
-
-### `GATEWAY_SANDBOX_READS` — the gateway reads Sandboxes read-only
-
-**Candidate.** The gateway builds the Sandbox Service's mutating `SandboxInventory` but only reads
-it, and alone uses `sandbox_service/destinations.py`, against service_boundaries.md § callers. Split
-a read-only Sandbox reader, move `destinations.py` into `runner_gateway/`, write the incarnation
-check (four copies) once, and drop the second `RunnerEndpoint` class name.
 
 ### `SANDBOX_DEAD_CODE` — delete `KubernetesBindings.run`
 

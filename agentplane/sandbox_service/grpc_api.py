@@ -107,13 +107,7 @@ class SandboxService(sandbox_service_pb2_grpc.SandboxServiceServicer):
 
     async def checked_sandbox(self, request: sandbox_service_pb2.SandboxRequest) -> tuple[Provisioning, Sandbox]:
         provisioning = self.resources.provisioning
-        destination = request.destination
-        if not all((destination.sandbox, destination.sandbox_uid, destination.owner.namespace, destination.owner.name)):
-            raise ValueError("Sandbox name, UID, and owner are required")
-        view = await provisioning.inventory.get(destination.sandbox)
-        if view.uid != destination.sandbox_uid or view.service_account != destination.owner:
-            raise SandboxNotFoundError(destination.sandbox)
-        return provisioning, view
+        return provisioning, await provisioning.inventory.incarnation(request.destination)
 
     @override
     async def SuspendSandbox(

@@ -3,7 +3,7 @@
 import pytest_bazel
 from kubernetes_asyncio import client as k8s_client
 
-from agentplane.sandbox_service.destinations import DestinationResolver
+from agentplane.runner_gateway.destinations import DestinationResolver
 from agentplane.sandbox_service.testing.kubernetes import DESTINATION, SANDBOX, Cluster
 
 
