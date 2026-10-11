@@ -157,7 +157,7 @@ ENV = Environment(
     runner_grpc_channel_options=LARGE_EVENT_GRPC_CHANNEL_OPTIONS,
     fold_shadow=True,
     settle_deltas=True,
-    history_compaction=CompactionRun.DRY_RUN,
+    history_compaction=CompactionRun.APPLY,
     thread_reads=ThreadReads.HISTORY_SERVICE,
     db=DbProps(instances=1),
     llm_ingress=LlmIngressProps(litellm_key_secret_name=_LITELLM_KEY_SECRET, models=model_configs(TESTING_APP_MODELS)),

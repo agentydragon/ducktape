@@ -304,7 +304,7 @@ ENV = Environment(
     runner_grpc_channel_options=LARGE_EVENT_GRPC_CHANNEL_OPTIONS,
     fold_shadow=True,
     settle_deltas=True,
-    history_compaction=CompactionRun.DRY_RUN,
+    history_compaction=CompactionRun.APPLY,
     thread_reads=ThreadReads.HISTORY_SERVICE,
     notifications_github=GitHubAppProps(app_id=5188971, secret_name="agentplane-github-app"),
     kubernetes_binding_cleanup_namespaces=frozenset(agent_access_profiles.cleanup_namespaces()),
