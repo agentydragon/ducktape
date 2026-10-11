@@ -5,7 +5,7 @@ import pytest_bazel
 from agentplane.proto import runner_pb2
 from agentplane.runner_gateway.instructions import combine_instructions
 from agentplane.runner_gateway.session_lifecycle import launch_spec
-from agentplane.sandbox_service.runner_pb2 import (
+from agentplane.sandbox_service.protocol_pb2 import (
     SandboxBinding,
     SandboxDestination,
     ServiceAccount,
