@@ -2,20 +2,14 @@
 
 from __future__ import annotations
 
-import re
 from collections.abc import AsyncGenerator
 from datetime import date
-from typing import Any
 
 import pytest
 import pytest_asyncio
 import pytest_bazel
-from alembic import command as alembic_command
-from alembic.config import Config as AlembicConfig
 from pydantic import ValidationError
-from sqlalchemy import text
-from sqlalchemy.engine import make_url
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from finance.budget import sql_read_model
 from finance.budget.schema import (
@@ -41,37 +35,11 @@ from finance.budget.schema import (
     TransferDirection,
 )
 from finance.plaid.db.schema import AccountRow, LinkRow, TransactionRow, async_session_factory
-from util.bazel.runfiles import get_required_path
-from util.testing.postgres import force_drop_database
-
-_PLAID_MIGRATIONS_DIR = "_main/finance/plaid/db/migrations"
-
-
-def _run_alembic_migrations(conn: Any) -> None:
-    cfg = AlembicConfig()
-    cfg.set_main_option("script_location", str(get_required_path(_PLAID_MIGRATIONS_DIR)))
-    cfg.attributes["connection"] = conn
-    alembic_command.upgrade(cfg, "head")
 
 
 @pytest_asyncio.fixture
-async def db_url(postgres_admin_url: str, request: pytest.FixtureRequest) -> AsyncGenerator[str]:
-    db_name = re.sub(r"[^a-z0-9]", "_", request.node.name.lower())[:45].rstrip("_") or "budget_sql_test"
-    admin_engine = create_async_engine(postgres_admin_url, isolation_level="AUTOCOMMIT")
-    async with admin_engine.connect() as conn:
-        await conn.execute(text(f'CREATE DATABASE "{db_name}"'))
-    await admin_engine.dispose()
-    try:
-        yield make_url(postgres_admin_url).set(database=db_name).render_as_string(hide_password=False)
-    finally:
-        await force_drop_database(postgres_admin_url, db_name)
-
-
-@pytest_asyncio.fixture
-async def session_factory(db_url: str) -> AsyncGenerator[async_sessionmaker[AsyncSession]]:
-    engine, factory = async_session_factory(db_url)
-    async with engine.begin() as conn:
-        await conn.run_sync(_run_alembic_migrations)
+async def session_factory(plaid_database_url: str) -> AsyncGenerator[async_sessionmaker[AsyncSession]]:
+    engine, factory = async_session_factory(plaid_database_url)
     try:
         yield factory
     finally:
