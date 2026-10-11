@@ -149,14 +149,19 @@ def create_database_sync(
         admin_engine.dispose()
 
     db_url = _database_url(admin_url, db_name)
-    if extensions:
-        engine = create_engine(db_url, isolation_level="AUTOCOMMIT")
-        try:
-            with engine.connect() as conn:
-                for extension in extensions:
-                    conn.execute(text(f'CREATE EXTENSION IF NOT EXISTS "{extension}"'))
-        finally:
-            engine.dispose()
+    try:
+        if extensions:
+            engine = create_engine(db_url, isolation_level="AUTOCOMMIT")
+            try:
+                with engine.connect() as conn:
+                    for extension in extensions:
+                        conn.execute(text(f'CREATE EXTENSION IF NOT EXISTS "{extension}"'))
+            finally:
+                engine.dispose()
+    except BaseException:
+        # The caller has not received the database yet, so its cleanup is not registered.
+        force_drop_database_sync(admin_url, db_name)
+        raise
     return db_url
 
 
