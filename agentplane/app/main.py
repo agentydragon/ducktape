@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import logging
 import mimetypes
 import os
 import socket
@@ -15,7 +14,6 @@ import httpx
 import uvicorn
 from fastapi import Response
 from fastapi.staticfiles import StaticFiles
-from kubernetes_asyncio import client as k8s_client, config as k8s_config
 from kubernetes_asyncio.client import ApiClient, AuthenticationV1Api, CoreV1Api, CustomObjectsApi
 from sqlalchemy.ext.asyncio import AsyncEngine
 
@@ -46,6 +44,7 @@ from agentplane.history_service.client import HistoryServiceClient
 from agentplane.kubernetes_watch import STALE_AFTER_CYCLES
 from agentplane.sandbox_service.client import SandboxServiceClient
 from agentplane.sandbox_service.egress_views import EgressReader
+from agentplane.service_process import background, configure_logging, kubernetes_configuration
 from util.bazel.runfiles import get_required_path
 from util.kubernetes import CustomObjectsClient
 
@@ -95,19 +94,14 @@ class AppServer(uvicorn.Server):
 
 
 def main() -> None:
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
+    configure_logging()
     asyncio.run(async_main(Settings()))
 
 
 async def async_main(settings: Settings) -> None:
     oidc = OIDCSettings()
-    configuration = k8s_client.Configuration()
-    if settings.kubeconfig is None:
-        k8s_config.load_incluster_config(client_configuration=configuration)
-    else:
-        await k8s_config.load_kube_config(config_file=str(settings.kubeconfig), client_configuration=configuration)
     async with (
-        ApiClient(configuration=configuration) as api,
+        ApiClient(configuration=await kubernetes_configuration(settings.kubeconfig)) as api,
         httpx.AsyncClient(base_url=str(settings.action_federation.service_url), timeout=10) as actions_http,
         httpx.AsyncClient(base_url=str(settings.notifications_url), timeout=5) as notifications_http,
         httpx.AsyncClient(base_url=str(settings.egress_admin_url), timeout=settings.egress_admin_timeout) as admin_http,
@@ -194,11 +188,7 @@ async def async_main(settings: Settings) -> None:
 
         # The SPA, mounted last so the API routes above it win; index.html answers the rest.
         app.mount("/", SpaFiles(directory=get_required_path(FRONTEND_INDEX).parent, html=True), name="frontend")
-        watch_tasks = [
-            asyncio.create_task(watch.run(), name="live-watch"),
-            asyncio.create_task(history_watch.run(), name="history-watch"),
-        ]
-        try:
+        async with background(watch.run(), name="live-watch"), background(history_watch.run(), name="history-watch"):
             await serve_then_close(
                 AppServer(
                     uvicorn.Config(
@@ -214,10 +204,6 @@ async def async_main(settings: Settings) -> None:
                 database_updates=database_updates,
                 engine=engine,
             )
-        finally:
-            for task in watch_tasks:
-                task.cancel()
-            await asyncio.gather(*watch_tasks, return_exceptions=True)
 
 
 async def serve_then_close(

@@ -117,6 +117,7 @@ py_library(
         ":settings",
         ":upstream",
         "//agentplane:kubernetes_watch",
+        "//agentplane:service_process",
         "//agentplane/workload_auth:http",
         "//agentplane/workload_auth:principal",
         "//util:kubernetes",

@@ -7,11 +7,11 @@ import logging
 
 import httpx
 import uvicorn
-from kubernetes_asyncio import client as k8s_client, config as k8s_config
 from kubernetes_asyncio.client import ApiClient, AuthenticationV1Api
 
 from agentplane.llm_ingress.app import IngressResources, create_app
 from agentplane.llm_ingress.settings import Settings
+from agentplane.service_process import configure_logging, kubernetes_configuration
 from agentplane.workload_auth.http import WorkloadPrincipalAuthenticator
 from agentplane.workload_auth.principal import WorkloadPrincipalResolver
 
@@ -19,22 +19,14 @@ logger = logging.getLogger(__name__)
 
 
 def main() -> None:
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
-    # TokenReview responses echo the submitted bearer. The generated client logs full response
-    # bodies at DEBUG, so pin its wire logger above that level even if a future root config is noisy.
-    logging.getLogger("kubernetes_asyncio.client.rest").setLevel(logging.INFO)
+    configure_logging()
     asyncio.run(async_main(Settings()))
 
 
 async def async_main(settings: Settings) -> None:
-    configuration = k8s_client.Configuration()
-    if settings.kubeconfig is None:
-        k8s_config.load_incluster_config(client_configuration=configuration)
-    else:
-        await k8s_config.load_kube_config(config_file=str(settings.kubeconfig), client_configuration=configuration)
     timeout = httpx.Timeout(connect=5, read=None, write=60, pool=5)
     async with (
-        ApiClient(configuration=configuration) as api,
+        ApiClient(configuration=await kubernetes_configuration(settings.kubeconfig)) as api,
         httpx.AsyncClient(base_url=str(settings.litellm_url), timeout=timeout) as backend,
     ):
         resolver = WorkloadPrincipalResolver(

@@ -5,7 +5,7 @@ from contextlib import AsyncExitStack
 
 import httpx
 import uvicorn
-from kubernetes_asyncio import client as k8s_client, config as k8s_config
+from kubernetes_asyncio import client as k8s_client
 from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import create_async_engine
 
@@ -18,20 +18,20 @@ from agentplane.notification_service.sources.github.client import GitHubClient
 from agentplane.notification_service.sources.github.source import GitHub
 from agentplane.notification_service.store import Store
 from agentplane.sandbox_service.client import SandboxServiceClient
+from agentplane.service_process import configure_logging, kubernetes_configuration
 from agentplane.workload_auth.principal import WorkloadPrincipalResolver
 
 # gazelle:include_dep @pypi//asyncpg
 
 
 async def serve(settings: Settings) -> None:
-    k8s_config.load_incluster_config()
     # Staging OOM: 22 notification sessions, 21 idle across two replicas.
     engine = create_async_engine(
         make_url(settings.database_url).set(drivername="postgresql+asyncpg"), pool_size=4, max_overflow=2
     )
     try:
         async with (
-            k8s_client.ApiClient() as kube,
+            k8s_client.ApiClient(await kubernetes_configuration(None)) as kube,
             httpx.AsyncClient(
                 base_url=str(settings.actions.url), timeout=settings.actions.request_timeout_s, follow_redirects=False
             ) as http,
@@ -84,6 +84,7 @@ async def serve(settings: Settings) -> None:
 
 
 def main() -> None:
+    configure_logging()
     asyncio.run(serve(Settings()))
 
 

@@ -10,7 +10,6 @@ from typing import cast
 
 import httpx
 import uvicorn
-from kubernetes_asyncio import client as k8s_client, config as k8s_config
 from kubernetes_asyncio.client import ApiClient, AuthenticationV1Api, CoreV1Api, CustomObjectsApi
 
 from agentplane.action_service.api import create_app
@@ -32,6 +31,7 @@ from agentplane.action_service.service import ActionService
 from agentplane.action_service.settings import Settings
 from agentplane.action_service.updates import ActionUpdates
 from agentplane.kubernetes_watch import STALE_AFTER_CYCLES, Freshness
+from agentplane.service_process import background, configure_logging, kubernetes_configuration
 from agentplane.workload_auth.principal import WorkloadPrincipalResolver
 from mcp_infra.exec.kubernetes import KubernetesWebSocketExecRunner
 from util.kubernetes import CustomObjectsClient
@@ -52,7 +52,7 @@ class ActionServer(uvicorn.Server):
 
 
 def main() -> None:
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
+    configure_logging()
     asyncio.run(async_main(Settings()))
 
 
@@ -61,8 +61,7 @@ async def async_main(settings: Settings) -> None:
     async with AsyncExitStack() as stack:
         stack.push_async_callback(engine.dispose)
         await verify_schema(engine)
-        configuration = k8s_client.Configuration()
-        k8s_config.load_incluster_config(client_configuration=configuration)
+        configuration = await kubernetes_configuration(None)
         catalog = ActionCatalog(groups=settings.action_groups)
         visibility = RepositoryVisibilityService(
             httpx.AsyncClient(base_url=settings.github_visibility.api_base_url, timeout=REQUEST_TIMEOUT_SECONDS),
@@ -73,23 +72,19 @@ async def async_main(settings: Settings) -> None:
         policy_index = PolicyIndex(
             freshness=Freshness(stale_after_seconds=settings.policy_resync_seconds * STALE_AFTER_CYCLES)
         )
-        informer_task = asyncio.create_task(
-            PolicyInformer(
-                index=policy_index,
-                custom_objects=cast(CustomObjectsClient, CustomObjectsApi(api)),
-                core_v1=CoreV1Api(api),
-                policy_namespace=settings.policy_namespace,
-                caller_service_account_namespaces=settings.caller_service_account_namespaces,
-                resync_seconds=settings.policy_resync_seconds,
-            ).run(),
-            name="action-policy-informer",
+        await stack.enter_async_context(
+            background(
+                PolicyInformer(
+                    index=policy_index,
+                    custom_objects=cast(CustomObjectsClient, CustomObjectsApi(api)),
+                    core_v1=CoreV1Api(api),
+                    policy_namespace=settings.policy_namespace,
+                    caller_service_account_namespaces=settings.caller_service_account_namespaces,
+                    resync_seconds=settings.policy_resync_seconds,
+                ).run(),
+                name="action-policy-informer",
+            )
         )
-
-        async def stop_informer() -> None:
-            informer_task.cancel()
-            await asyncio.gather(informer_task, return_exceptions=True)
-
-        stack.push_async_callback(stop_informer)
         connections = ConnectionAuthority(make_sessionmaker(engine), policy_index)
         enrollments = EnrollmentAuthority(make_sessionmaker(engine), connections)
         mcp_linkage = McpLinkageAuthority(

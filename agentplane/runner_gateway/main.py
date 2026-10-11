@@ -1,7 +1,6 @@
 """Standalone Runner Gateway entry point: Sessions and commands, and the runner control stream listener."""
 
 import asyncio
-import logging
 import socket
 from collections.abc import AsyncIterator
 from contextlib import AsyncExitStack, asynccontextmanager
@@ -12,7 +11,6 @@ from kubernetes_asyncio import client as k8s_client
 from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 
-from agentplane.grpc_process import background, kubernetes_configuration, until_terminated
 from agentplane.grpc_serving import add_health, serving
 from agentplane.proto import runner_control_pb2_grpc
 from agentplane.runner_gateway.command_delivery import CommandDelivery
@@ -28,6 +26,7 @@ from agentplane.runner_gateway.session_registry import SessionRegistry
 from agentplane.runner_gateway.settings import Settings
 from agentplane.sandbox_service.destinations import DestinationResolver
 from agentplane.sandbox_service.inventory import SandboxInventory
+from agentplane.service_process import background, configure_logging, kubernetes_configuration, until_terminated
 from agentplane.workload_auth.principal import WorkloadPrincipalResolver
 from util.kubernetes import CustomObjectsClient
 
@@ -149,9 +148,7 @@ async def serve(settings: Settings) -> None:
 
 
 def main() -> None:
-    logging.basicConfig(level=logging.INFO)
-    # TokenReview responses echo their bearer. Do not log the generated client's wire bodies.
-    logging.getLogger("kubernetes_asyncio.client.rest").setLevel(logging.INFO)
+    configure_logging()
     asyncio.run(serve(Settings()))
 
 

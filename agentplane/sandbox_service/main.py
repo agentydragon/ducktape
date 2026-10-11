@@ -2,7 +2,6 @@
 owns inventory; the Runner Gateway serves their Sessions."""
 
 import asyncio
-import logging
 from collections.abc import AsyncIterator
 from contextlib import AsyncExitStack, asynccontextmanager
 from typing import cast
@@ -10,7 +9,6 @@ from typing import cast
 import grpc
 from kubernetes_asyncio import client as k8s_client
 
-from agentplane.grpc_process import background, kubernetes_configuration, until_terminated
 from agentplane.grpc_serving import add_health, serving
 from agentplane.sandbox_service.action_policy import ActionPolicyBindings
 from agentplane.sandbox_service.client import SandboxServiceClient
@@ -24,6 +22,7 @@ from agentplane.sandbox_service.provisioning import Provisioning
 from agentplane.sandbox_service.runner_endpoints import RunnerEndpoints
 from agentplane.sandbox_service.settings import Settings
 from agentplane.sandbox_service.teardown import GatewaySealing, Teardown
+from agentplane.service_process import background, configure_logging, kubernetes_configuration, until_terminated
 from agentplane.workload_auth.principal import WorkloadPrincipalResolver
 from util.kubernetes import CustomObjectsClient
 
@@ -113,9 +112,7 @@ async def serve(settings: Settings) -> None:
 
 
 def main() -> None:
-    logging.basicConfig(level=logging.INFO)
-    # TokenReview responses echo their bearer. Do not log the generated client's wire bodies.
-    logging.getLogger("kubernetes_asyncio.client.rest").setLevel(logging.INFO)
+    configure_logging()
     asyncio.run(serve(Settings()))
 
 

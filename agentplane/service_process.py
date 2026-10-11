@@ -1,17 +1,28 @@
-"""Process scaffolding for the agentplane gRPC service entry points: Kubernetes configuration,
+"""Process scaffolding for the agentplane service entry points: logging, Kubernetes configuration,
 background tasks and the wait for termination."""
 
 import asyncio
+import logging
 import signal
 from collections.abc import AsyncIterator, Coroutine
-from contextlib import asynccontextmanager, suppress
+from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
 
 from kubernetes_asyncio import client as k8s_client, config as k8s_config
 
+logger = logging.getLogger(__name__)
+
+
+def configure_logging() -> None:
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
+    # TokenReview responses echo the submitted bearer, and the generated client logs response bodies
+    # at DEBUG, so its wire logger stays above that level whatever the root level becomes.
+    logging.getLogger("kubernetes_asyncio.client.rest").setLevel(logging.INFO)
+
 
 async def kubernetes_configuration(kubeconfig: Path | None) -> k8s_client.Configuration:
+    """The in-cluster configuration, or `kubeconfig`'s when given."""
     configuration = k8s_client.Configuration()
     if kubeconfig is None:
         k8s_config.load_incluster_config(client_configuration=configuration)
@@ -22,13 +33,20 @@ async def kubernetes_configuration(kubeconfig: Path | None) -> k8s_client.Config
 
 @asynccontextmanager
 async def background(coroutine: Coroutine[Any, Any, None], *, name: str) -> AsyncIterator[None]:
+    """Runs `coroutine` for the duration of the block and cancels it on exit. A failure is logged when
+    it happens and leaves the block running."""
     task = asyncio.create_task(coroutine, name=name)
+    task.add_done_callback(_report_exit)
     try:
         yield
     finally:
         task.cancel()
-        with suppress(asyncio.CancelledError):
-            await task
+        await asyncio.wait([task])
+
+
+def _report_exit(task: asyncio.Task[None]) -> None:
+    if not task.cancelled() and (error := task.exception()) is not None:
+        logger.error("%s stopped", task.get_name(), exc_info=error)
 
 
 async def until_terminated() -> None:

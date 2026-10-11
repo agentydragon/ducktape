@@ -73,6 +73,7 @@ py_library(
         ":service",
         ":settings",
         ":store",
+        "//agentplane:service_process",
         "//agentplane/history_service:client",
         "//agentplane/notification_service/sources:actions",
         "//agentplane/notification_service/sources/github:client",

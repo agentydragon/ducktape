@@ -4,11 +4,9 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import signal
 from datetime import timedelta
 from typing import cast
 
-from kubernetes_asyncio import client as k8s_client, config as k8s_config
 from kubernetes_asyncio.client import ApiClient, AuthenticationV1Api, CoreV1Api, CustomObjectsApi
 
 from agentplane.egress.addon import EgressAddon
@@ -24,6 +22,7 @@ from agentplane.egress.rules_api import RulesProjection, create_rules_app
 from agentplane.egress.settings import Settings
 from agentplane.egress.upstream import PinnedDialEventLoop, UpstreamResolver
 from agentplane.kubernetes_watch import STALE_AFTER_CYCLES
+from agentplane.service_process import background, configure_logging, kubernetes_configuration, until_terminated
 from agentplane.workload_auth.http import WorkloadPrincipalAuthenticator
 from agentplane.workload_auth.principal import WorkloadPrincipalResolver
 from util.kubernetes import CustomObjectsClient
@@ -32,22 +31,13 @@ logger = logging.getLogger(__name__)
 
 
 def main() -> None:
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
+    configure_logging()
     asyncio.run(async_main(Settings()), loop_factory=PinnedDialEventLoop)
 
 
 async def async_main(settings: Settings) -> None:
-    configuration = k8s_client.Configuration()
-    if settings.kubeconfig is None:
-        k8s_config.load_incluster_config(client_configuration=configuration)
-    else:
-        await k8s_config.load_kube_config(config_file=str(settings.kubeconfig), client_configuration=configuration)
     write_interception_ca(settings.confdir, settings.ca_cert, settings.ca_key)
-    stop = asyncio.Event()
-    loop = asyncio.get_running_loop()
-    for sig in (signal.SIGTERM, signal.SIGINT):
-        loop.add_signal_handler(sig, stop.set)
-    async with ApiClient(configuration=configuration) as api:
+    async with ApiClient(configuration=await kubernetes_configuration(settings.kubeconfig)) as api:
         index = Index()
         decision_log = DecisionLog(
             DecisionStore(
@@ -97,9 +87,9 @@ async def async_main(settings: Settings) -> None:
         # One resolver for both doors: the tunnel and the rules API authenticate the same bearers,
         # so a verdict either reached is a verdict the other need not spend a TokenReview on.
         rules_app = create_rules_app(WorkloadPrincipalAuthenticator(workload_resolver), RulesProjection(index))
-        informer_task = asyncio.create_task(informer.run(), name="egress-informer")
         try:
             async with (
+                background(informer.run(), name="egress-informer"),
                 EgressProxyServer(
                     addon,
                     confdir=settings.confdir,
@@ -120,10 +110,8 @@ async def async_main(settings: Settings) -> None:
             ):
                 logger.info("admin listening on %s:%d", settings.admin_host, admin_port)
                 logger.info("agent API listening on %s:%d", settings.agent_api_host, settings.agent_api_port)
-                await stop.wait()
+                await until_terminated()
         finally:
-            informer_task.cancel()
-            await asyncio.gather(informer_task, return_exceptions=True)
             await decision_log.close(settings.decision_flush_seconds)
 
 

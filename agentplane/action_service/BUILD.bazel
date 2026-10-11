@@ -199,6 +199,7 @@ py_library(
         ":settings",
         ":updates",
         "//agentplane:kubernetes_watch",
+        "//agentplane:service_process",
         "//agentplane/action_service/github_policy:visibility",
         "//agentplane/action_service/sandbox:inventory",
         "//agentplane/workload_auth:principal",

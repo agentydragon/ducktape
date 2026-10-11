@@ -967,7 +967,6 @@ flowchart TD
     RUNNER_INBOUND_RETIRE[Retire inbound runner access]
     subgraph COHERENCE_REFACTORS[Coherence refactors]
         SERVICE_SETTINGS_BASE[Candidate: one config-file settings base]
-        SERVICE_PROCESS_MODULE[Candidate: one service process module]
         REQUIRED_SERVICE_WIRING[Candidate: no footgun defaults on service wiring]
         GATEWAY_NAME_SWEEP[Candidate: code says Runner Gateway for the gateway]
         WATCH_FRESHNESS_DEDUPE[Candidate: one watch freshness]
@@ -997,13 +996,6 @@ flowchart TD
 four refuse a missing config file, the rest silently start on defaults. Move
 `homeassistant/provisioner/yaml_settings.py:YamlFileSettings` to `util/`, keep its missing-file
 check, subclass it in every service, and drop the no-op `__init__(self, **values)` overrides.
-
-### `SERVICE_PROCESS_MODULE` — one service process module
-
-**Candidate.** `grpc_process.py` holds no gRPC code since #9973 and #9977. Rename it for what
-it does, and have every main use its `kubernetes_configuration` (re-inlined in six mains),
-`background` (hand-rolled for the History Service fold task) and one `kubernetes_asyncio` log-level
-line; the History Service's two "ports must differ" checks go with it.
 
 ### `REQUIRED_SERVICE_WIRING` — no footgun defaults on service wiring
 
