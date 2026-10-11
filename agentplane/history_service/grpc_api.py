@@ -16,7 +16,6 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from agentplane.history_service import protocol_pb2 as history_pb2, protocol_pb2_grpc
 from agentplane.history_service.evidence import EvidenceNotFoundError, EvidenceReader
-from agentplane.history_service.storage.history_changes import HistoryChanges
 from agentplane.history_service.storage.store import HistoryNotFoundError, Store
 from agentplane.history_service.summaries import SummaryReader
 from agentplane.history_service.summary_changes import SummaryChanges
@@ -41,7 +40,6 @@ class Resources:
     # A public Session UUID is not itself authority: only these accounts read transcripts.
     reader_accounts: frozenset[ServiceAccountRef]
     request_timeout_s: float
-    history_changes: HistoryChanges
     summary_changes: SummaryChanges
     # How long one WatchSessionSummaries stream lasts before it asks the caller to reconnect.
     watch_lease_s: float
@@ -155,30 +153,6 @@ class HistoryService(protocol_pb2_grpc.HistoryServiceServicer):
     ) -> history_pb2.ReadNativeFramesResponse:
         async with self.reader(context):
             return await self.resources.evidence.native_frames(request)
-
-    @override
-    async def WatchSessionHistory(  # type: ignore[override]
-        self, request: history_pb2.WatchSessionHistoryRequest, context: grpc.aio.ServicerContext
-    ) -> None:
-        async with self.reader(context):
-            pass
-        loop = asyncio.get_running_loop()
-        deadline = loop.time() + self.resources.watch_lease_s
-        with self.resources.history_changes.subscribe() as changed:
-            while True:
-                changed.clear()
-                async with asyncio.timeout(self.resources.request_timeout_s):
-                    await context.write(history_pb2.WatchSessionHistoryResponse(changed=Empty()))
-                lease = asyncio.timeout_at(deadline)
-                try:
-                    async with lease:
-                        await changed.wait()
-                except TimeoutError:
-                    if not lease.expired():
-                        raise
-                    break
-        async with asyncio.timeout(self.resources.request_timeout_s):
-            await context.write(history_pb2.WatchSessionHistoryResponse(reconnect_required=Empty()))
 
     @override
     async def WatchSessionSummaries(  # type: ignore[override]

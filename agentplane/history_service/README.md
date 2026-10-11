@@ -91,10 +91,6 @@ database, and every replica forwards that to its watchers as a payload-free `cha
 with one `changed` to cover whatever the caller missed, and ends with `reconnect_required` after
 `watch_lease_s`.
 
-`WatchSessionHistory` uses the same invalidation pattern for committed raw history and feed-state
-changes. The app uses it to wake its local projection coordinator; it does not connect to the history
-database. The fold subscribes to the same PostgreSQL notifications in-process.
-
 `ReadThreadEntities` serves a window of a Session's fold rows, by entity index or by key, each as
 the `ThreadEntityView` JSON browsers sync. A caller holding rows of a replaced epoch gets
 `FAILED_PRECONDITION`.
