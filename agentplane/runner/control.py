@@ -202,35 +202,35 @@ class RunnerControlClient:
 
     async def connect(self) -> None:
         loop = asyncio.get_running_loop()
-        channel = grpc.aio.insecure_channel(
-            self.target,
-            options=grpc_channel_option_kvps(self.channel_options, required={"grpc.use_local_subchannel_pool": 1}),
-        )
         welcomed_at: float | None = None
         lost = ControlStreamLostError(None, "the stream ended")
-        try:
-            stub = runner_control_pb2_grpc.RunnerControlStub(channel)
-            call = stub.Connect(metadata=(("authorization", f"Bearer {self.bearer}"),))
-            await call.write(
-                control_pb2.RunnerFrame(hello=control_pb2.Hello(runner_boot_id=self.boot_id, capabilities=CAPABILITIES))
-            )
-            async with asyncio.timeout(self.timing.liveness_s):
-                first = await call.read()
-            if not isinstance(first, control_pb2.ServiceFrame):
-                raise ControlStreamLostError(await call.code(), await call.details())
-            if first.WhichOneof("frame") != "welcome":
-                raise ControlStreamLostError(None, f"expected Welcome, got {first.WhichOneof('frame')}")
-            welcomed_at = loop.time()
-            logger.info("runner control stream connected at epoch %d", first.welcome.connection_epoch)
-            await self.serve(call, first.welcome)
-        except grpc.aio.AioRpcError as error:
-            lost = ControlStreamLostError(error.code(), error.details() or "")
-        except TimeoutError:
-            lost = ControlStreamLostError(None, "no frame from the Sandbox Service")
-        except ControlStreamLostError as error:
-            lost = error
-        finally:
-            await channel.close()
+        async with grpc.aio.insecure_channel(
+            self.target,
+            options=grpc_channel_option_kvps(self.channel_options, required={"grpc.use_local_subchannel_pool": 1}),
+        ) as channel:
+            try:
+                stub = runner_control_pb2_grpc.RunnerControlStub(channel)
+                call = stub.Connect(metadata=(("authorization", f"Bearer {self.bearer}"),))
+                await call.write(
+                    control_pb2.RunnerFrame(
+                        hello=control_pb2.Hello(runner_boot_id=self.boot_id, capabilities=CAPABILITIES)
+                    )
+                )
+                async with asyncio.timeout(self.timing.liveness_s):
+                    first = await call.read()
+                if not isinstance(first, control_pb2.ServiceFrame):
+                    raise ControlStreamLostError(await call.code(), await call.details())
+                if first.WhichOneof("frame") != "welcome":
+                    raise ControlStreamLostError(None, f"expected Welcome, got {first.WhichOneof('frame')}")
+                welcomed_at = loop.time()
+                logger.info("runner control stream connected at epoch %d", first.welcome.connection_epoch)
+                await self.serve(call, first.welcome)
+            except grpc.aio.AioRpcError as error:
+                lost = ControlStreamLostError(error.code(), error.details() or "")
+            except TimeoutError:
+                lost = ControlStreamLostError(None, "no frame from the Sandbox Service")
+            except ControlStreamLostError as error:
+                lost = error
         if welcomed_at is not None and loop.time() - welcomed_at >= self.timing.liveness_s:
             logger.warning("runner control stream ended: %s", lost)
             return
