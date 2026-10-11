@@ -2026,7 +2026,6 @@ data:
     kubernetes_binding_cleanup_namespaces: []
     kubernetes_cluster_binding_cleanup: false
     port: 8080
-    health_port: 8081
     gateway_target: agentplane-runner-gateway.agentplane-testing.svc.cluster.local:8080
     control_target: "{sandbox}-control.{namespace}.svc:8080"
     gateway_token_file: /var/run/secrets/agentplane-runner-gateway/token
@@ -2064,10 +2063,8 @@ spec:
           imagePullPolicy: IfNotPresent
           livenessProbe:
             failureThreshold: 3
-            httpGet:
-              path: /healthz
-              port: 8081
-              scheme: HTTP
+            grpc:
+              port: 8080
             initialDelaySeconds: 20
             periodSeconds: 30
           name: sandbox-service
@@ -2075,15 +2072,10 @@ spec:
             - containerPort: 8080
               name: grpc
               protocol: TCP
-            - containerPort: 8081
-              name: health
-              protocol: TCP
           readinessProbe:
             failureThreshold: 3
-            httpGet:
-              path: /healthz
-              port: 8081
-              scheme: HTTP
+            grpc:
+              port: 8080
             initialDelaySeconds: 3
             periodSeconds: 10
           resources:
@@ -2542,7 +2534,6 @@ data:
     runner_control_audience: agentplane-runner-control
     port: 8080
     runner_control_port: 8082
-    health_port: 8081
     runner_port: 7000
 immutable: false
 ---
@@ -2587,10 +2578,8 @@ spec:
           imagePullPolicy: IfNotPresent
           livenessProbe:
             failureThreshold: 3
-            httpGet:
-              path: /healthz
-              port: 8081
-              scheme: HTTP
+            grpc:
+              port: 8080
             initialDelaySeconds: 20
             periodSeconds: 30
           name: runner-gateway
@@ -2601,15 +2590,10 @@ spec:
             - containerPort: 8082
               name: runner-control
               protocol: TCP
-            - containerPort: 8081
-              name: health
-              protocol: TCP
           readinessProbe:
             failureThreshold: 3
-            httpGet:
-              path: /healthz
-              port: 8081
-              scheme: HTTP
+            grpc:
+              port: 8080
             initialDelaySeconds: 3
             periodSeconds: 10
           resources:
@@ -2878,7 +2862,6 @@ data:
         name: agentplane-notifications
     token_audience: agentplane-history-service
     port: 8080
-    health_port: 8081
     sandbox_service:
       target: agentplane-sandbox-service.agentplane-testing.svc.cluster.local:8080
       gateway_target: agentplane-runner-gateway.agentplane-testing.svc.cluster.local:8080
@@ -2927,10 +2910,8 @@ spec:
           imagePullPolicy: IfNotPresent
           livenessProbe:
             failureThreshold: 3
-            httpGet:
-              path: /healthz
-              port: 8081
-              scheme: HTTP
+            grpc:
+              port: 8080
             initialDelaySeconds: 20
             periodSeconds: 30
           name: history-service
@@ -2938,15 +2919,10 @@ spec:
             - containerPort: 8080
               name: grpc
               protocol: TCP
-            - containerPort: 8081
-              name: health
-              protocol: TCP
           readinessProbe:
             failureThreshold: 3
-            httpGet:
-              path: /healthz
-              port: 8081
-              scheme: HTTP
+            grpc:
+              port: 8080
             initialDelaySeconds: 3
             periodSeconds: 10
           resources:
@@ -3151,7 +3127,6 @@ data:
     writer_namespaces:
       - agentplane-testing
     port: 8080
-    health_port: 8081
     settle_deltas: true
 immutable: false
 ---
@@ -3192,10 +3167,8 @@ spec:
           imagePullPolicy: IfNotPresent
           livenessProbe:
             failureThreshold: 3
-            httpGet:
-              path: /healthz
-              port: 8081
-              scheme: HTTP
+            grpc:
+              port: 8080
             initialDelaySeconds: 20
             periodSeconds: 30
           name: history-ingress
@@ -3203,15 +3176,10 @@ spec:
             - containerPort: 8080
               name: grpc
               protocol: TCP
-            - containerPort: 8081
-              name: health
-              protocol: TCP
           readinessProbe:
             failureThreshold: 3
-            httpGet:
-              path: /healthz
-              port: 8081
-              scheme: HTTP
+            grpc:
+              port: 8080
             initialDelaySeconds: 3
             periodSeconds: 10
           resources:

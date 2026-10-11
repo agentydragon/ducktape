@@ -34,7 +34,7 @@ from cluster.cdk8s.agentplane import database, egress
 from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.agentplane.pod_disruption_budget import add_pod_disruption_budget
 from cluster.cdk8s.forgejo_registry.chart import forgejo_images_creds_secret_ref
-from cluster.cdk8s.probes import http_probe
+from cluster.cdk8s.probes import grpc_probe
 from cluster.cdk8s.providers.agentplane.egress_credential import EgressCredential, Source
 from cluster.cdk8s.providers.agentplane.egress_policy import EgressPolicy
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, Entity, NetworkPolicy
@@ -54,7 +54,6 @@ BEARER = placeholder_of(_CREDENTIAL)
 _PUSH = "/agentplane.proto.runner_ingress.RunnerIngress/Push"
 _LABELS = {"app.kubernetes.io/name": NAME}
 _IMAGE = "git.allegedly.works/ducktape-ci/agentplane-history-ingress"
-_HEALTH = Port(name="health", number=8081)
 
 
 def service(namespace: str) -> ServiceRef:
@@ -88,7 +87,6 @@ class HistoryIngress(Construct):
                 # Sandboxes run in the environment's own namespace.
                 "writer_namespaces": [env.namespace],
                 "port": endpoint.port.number,
-                "health_port": _HEALTH.number,
                 "settle_deltas": env.settle_deltas,
             },
             path="/etc/agentplane-history-ingress/config.yaml",
@@ -120,9 +118,9 @@ class HistoryIngress(Construct):
                 .env_value(self, "database")
             },
             image_pull_policy=ImagePullPolicy.IF_NOT_PRESENT,
-            ports=[endpoint.port.container_port(), _HEALTH.container_port()],
-            readiness=http_probe("/healthz", port=_HEALTH.number, initial_delay_seconds=3, period_seconds=10),
-            liveness=http_probe("/healthz", port=_HEALTH.number, initial_delay_seconds=20, period_seconds=30),
+            ports=[endpoint.port.container_port()],
+            readiness=grpc_probe(port=endpoint.port.number, initial_delay_seconds=3, period_seconds=10),
+            liveness=grpc_probe(port=endpoint.port.number, initial_delay_seconds=20, period_seconds=30),
             resources=ContainerResources(
                 cpu=CpuResources(request=Cpu.millis(20)),
                 memory=MemoryResources(request=Size.mebibytes(128), limit=Size.mebibytes(512)),

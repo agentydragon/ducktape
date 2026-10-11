@@ -25,7 +25,7 @@ from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.agentplane.migrate_container import migrate_init_container
 from cluster.cdk8s.agentplane.pod_disruption_budget import add_pod_disruption_budget
 from cluster.cdk8s.forgejo_registry.chart import forgejo_images_creds_secret_ref
-from cluster.cdk8s.probes import http_probe
+from cluster.cdk8s.probes import grpc_probe
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, Entity, NetworkPolicy
 from cluster.cdk8s.secret_ref import SecretRef
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
@@ -37,7 +37,6 @@ NAME = "agentplane-history-service"
 TOKEN_AUDIENCE = "agentplane-history-service"
 _LABELS = {"app.kubernetes.io/name": NAME}
 _IMAGE = "git.allegedly.works/ducktape-ci/agentplane-history-service"
-_HEALTH = Port(name="health", number=8081)
 _SANDBOX_SERVICE_TOKEN_DIR = "/var/run/secrets/agentplane-sandbox-service"
 
 
@@ -86,7 +85,6 @@ class HistoryService(Construct):
                 ],
                 "token_audience": TOKEN_AUDIENCE,
                 "port": endpoint.port.number,
-                "health_port": _HEALTH.number,
                 "sandbox_service": {
                     "target": f"{sandboxes.fqdn}:{sandboxes.pod_port}",
                     "gateway_target": f"{gateway.fqdn}:{gateway.pod_port}",
@@ -131,9 +129,9 @@ class HistoryService(Construct):
             image=f"{_IMAGE}:unset",
             env_variables={env_name(Settings, "database_url"): database_url},
             image_pull_policy=ImagePullPolicy.IF_NOT_PRESENT,
-            ports=[endpoint.port.container_port(), _HEALTH.container_port()],
-            readiness=http_probe("/healthz", port=_HEALTH.number, initial_delay_seconds=3, period_seconds=10),
-            liveness=http_probe("/healthz", port=_HEALTH.number, initial_delay_seconds=20, period_seconds=30),
+            ports=[endpoint.port.container_port()],
+            readiness=grpc_probe(port=endpoint.port.number, initial_delay_seconds=3, period_seconds=10),
+            liveness=grpc_probe(port=endpoint.port.number, initial_delay_seconds=20, period_seconds=30),
             resources=ContainerResources(
                 cpu=CpuResources(request=Cpu.millis(20)),
                 memory=MemoryResources(request=Size.mebibytes(128), limit=Size.mebibytes(512)),

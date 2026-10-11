@@ -28,7 +28,6 @@ class Settings(BaseSettings):
     lifecycle_timeout_s: float = Field(default=300, gt=0)
     host: str = "0.0.0.0"
     port: int = Field(default=8080, ge=1, le=65535)
-    health_port: int = Field(default=8081, ge=1, le=65535)
     kubeconfig: Path | None = None
     commands_database_url: str = Field(
         min_length=1, description="The `sandbox_commands` database holding command admission."

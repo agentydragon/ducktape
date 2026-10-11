@@ -47,7 +47,7 @@ from cluster.cdk8s.agentplane.migrate_container import migrate_init_container
 from cluster.cdk8s.agentplane.pod_disruption_budget import add_pod_disruption_budget
 from cluster.cdk8s.api_resource import custom_resource
 from cluster.cdk8s.forgejo_registry.chart import forgejo_images_creds_secret_ref
-from cluster.cdk8s.probes import http_probe
+from cluster.cdk8s.probes import grpc_probe
 from cluster.cdk8s.providers.agentplane.egress_credential import EgressCredential, Source
 from cluster.cdk8s.providers.agentplane.egress_policy import EgressPolicy
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, Entity, NetworkPolicy
@@ -60,7 +60,6 @@ from util.settings_contract import env_name
 NAME = "agentplane-runner-gateway"
 _LABELS = {"app.kubernetes.io/name": NAME}
 _IMAGE = "git.allegedly.works/ducktape-ci/agentplane-runner-gateway"
-_HEALTH = Port(name="health", number=8081)
 # The port every runner listens on (app.py's SandboxTemplate); this service dials it.
 RUNNER_PORT = 7000
 KUBERNETES_ADMIN_INSTRUCTIONS = (
@@ -159,7 +158,6 @@ class RunnerGateway(Construct):
                 "runner_control_audience": RUNNER_CONTROL_AUDIENCE,
                 "port": endpoint.port.number,
                 "runner_control_port": control.pod_port,
-                "health_port": _HEALTH.number,
                 "runner_port": RUNNER_PORT,
             },
             path="/etc/agentplane-runner-gateway/config.yaml",
@@ -202,9 +200,9 @@ class RunnerGateway(Construct):
                 env_name(Settings, "pod_ip"): EnvValue.from_field_ref(EnvFieldPaths.POD_IP),
             },
             image_pull_policy=ImagePullPolicy.IF_NOT_PRESENT,
-            ports=[endpoint.port.container_port(), control.port.container_port(), _HEALTH.container_port()],
-            readiness=http_probe("/healthz", port=_HEALTH.number, initial_delay_seconds=3, period_seconds=10),
-            liveness=http_probe("/healthz", port=_HEALTH.number, initial_delay_seconds=20, period_seconds=30),
+            ports=[endpoint.port.container_port(), control.port.container_port()],
+            readiness=grpc_probe(port=endpoint.port.number, initial_delay_seconds=3, period_seconds=10),
+            liveness=grpc_probe(port=endpoint.port.number, initial_delay_seconds=20, period_seconds=30),
             resources=ContainerResources(
                 cpu=CpuResources(request=Cpu.millis(50)),
                 memory=MemoryResources(request=Size.mebibytes(128), limit=Size.mebibytes(512)),

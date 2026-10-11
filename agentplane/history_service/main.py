@@ -9,7 +9,7 @@ from kubernetes_asyncio import client as k8s_client, config as k8s_config
 from sqlalchemy.engine import URL, make_url
 from sqlalchemy.ext.asyncio import create_async_engine
 
-from agentplane.grpc_process import serve_health
+from agentplane.grpc_process import until_terminated
 from agentplane.grpc_serving import add_health, serving
 from agentplane.history_service.evidence import EvidenceReader
 from agentplane.history_service.fold_shadow import FoldShadow
@@ -31,8 +31,6 @@ logger = logging.getLogger(__name__)
 
 
 async def serve(settings: Settings) -> None:
-    if settings.port == settings.health_port:
-        raise ValueError("gRPC and health ports must differ")
     configuration = k8s_client.Configuration()
     if settings.kubeconfig is None:
         k8s_config.load_incluster_config(client_configuration=configuration)
@@ -94,7 +92,7 @@ async def serve(settings: Settings) -> None:
                 # An ingester failure ends the process rather than leaving reads served with no writer.
                 async with serving(server, f"{settings.host}:{settings.port}", grace_s=5), asyncio.TaskGroup() as tasks:
                     ingesting = tasks.create_task(ingest(settings, url), name="history-ingester")
-                    await serve_health(settings.host, settings.health_port)
+                    await until_terminated()
                     ingesting.cancel()
             finally:
                 if shadow is not None:

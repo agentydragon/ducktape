@@ -1,14 +1,13 @@
 """Process scaffolding for the agentplane gRPC service entry points: Kubernetes configuration,
-background tasks and the health endpoint."""
+background tasks and the wait for termination."""
 
 import asyncio
+import signal
 from collections.abc import AsyncIterator, Coroutine
 from contextlib import asynccontextmanager, suppress
 from pathlib import Path
 from typing import Any
 
-import uvicorn
-from fastapi import FastAPI
 from kubernetes_asyncio import client as k8s_client, config as k8s_config
 
 
@@ -32,11 +31,14 @@ async def background(coroutine: Coroutine[Any, Any, None], *, name: str) -> Asyn
             await task
 
 
-async def serve_health(host: str, port: int) -> None:
-    health = FastAPI(openapi_url=None, docs_url=None, redoc_url=None)
-
-    @health.get("/healthz")
-    async def healthz() -> dict[str, str]:
-        return {"status": "ok"}
-
-    await uvicorn.Server(uvicorn.Config(health, host=host, port=port, access_log=False)).serve()
+async def until_terminated() -> None:
+    """Returns on the first SIGTERM or SIGINT, so the caller's context managers shut the process down."""
+    stopping = asyncio.Event()
+    loop = asyncio.get_running_loop()
+    for signum in (signal.SIGTERM, signal.SIGINT):
+        loop.add_signal_handler(signum, stopping.set)
+    try:
+        await stopping.wait()
+    finally:
+        for signum in (signal.SIGTERM, signal.SIGINT):
+            loop.remove_signal_handler(signum)

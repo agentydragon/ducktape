@@ -10,7 +10,7 @@ from typing import cast
 import grpc
 from kubernetes_asyncio import client as k8s_client
 
-from agentplane.grpc_process import background, kubernetes_configuration, serve_health
+from agentplane.grpc_process import background, kubernetes_configuration, until_terminated
 from agentplane.grpc_serving import add_health, serving
 from agentplane.sandbox_service.action_policy import ActionPolicyBindings
 from agentplane.sandbox_service.client import SandboxServiceClient
@@ -107,7 +107,7 @@ async def serve(settings: Settings) -> None:
         add_health(server)
         await stack.enter_async_context(sandboxes(settings, api, server, sealing=GatewaySealing(gateway)))
         await stack.enter_async_context(serving(server, f"{settings.host}:{settings.port}", grace_s=5))
-        await serve_health(settings.host, settings.health_port)
+        await until_terminated()
 
 
 def main() -> None:

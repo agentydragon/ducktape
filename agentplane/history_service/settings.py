@@ -69,7 +69,6 @@ class Settings(BaseSettings):
     request_timeout_s: float = Field(default=15, gt=0, le=60)
     host: str = "0.0.0.0"
     port: int = Field(default=8080, ge=1, le=65535)
-    health_port: int = Field(default=8081, ge=1, le=65535)
     kubeconfig: Path | None = None
     sandbox_service: SandboxServiceSettings
     ingester: IngesterSettings = Field(default_factory=IngesterSettings)

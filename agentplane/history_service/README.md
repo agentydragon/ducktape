@@ -94,4 +94,4 @@ the `ThreadEntityView` JSON browsers sync. A caller holding rows of a replaced e
 
 Bazel targets: `:main`, `:image`. Settings come from `AGENTPLANE_HISTORY_SERVICE_*` environment
 variables or the YAML file named by `AGENTPLANE_HISTORY_SERVICE_CONFIG_FILE` (`settings.py`). gRPC
-listens on `port`, and `/healthz` on `health_port` reports process liveness only.
+listens on `port`, where `grpc.health.v1.Health` reports process liveness only.

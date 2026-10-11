@@ -316,7 +316,7 @@ Required settings are `sandbox_namespace`, `caller_accounts` (nonempty), `gatewa
 `control_target` and `gateway_token_file`. TokenReview namespaces are derived from that allowlist.
 `token_audience` defaults to `agentplane-sandbox-service`. Kubernetes access is in-cluster unless `kubeconfig` is supplied.
 
-`port` defaults to 8080 for gRPC. `health_port` defaults to 8081 for unauthenticated HTTP `/healthz`;
+`port` defaults to 8080 for gRPC, which also serves the unauthenticated `grpc.health.v1.Health`;
 it is liveness, not proof that Kubernetes or a particular destination is ready. Admission requests
 are bounded by `admission_timeout_s` (default 15); `SubmitCommand` instead uses
 `runner_admission_ack_timeout_s` (default 15) for runner journal admission. Configure the

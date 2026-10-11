@@ -8,7 +8,7 @@ from kubernetes_asyncio import client as k8s_client, config as k8s_config
 from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import create_async_engine
 
-from agentplane.grpc_process import serve_health
+from agentplane.grpc_process import until_terminated
 from agentplane.grpc_serving import add_health, serving
 from agentplane.history_service.ingress import Resources, Timing, add_ingress
 from agentplane.history_service.ingress_settings import IngressSettings
@@ -20,8 +20,6 @@ from agentplane.workload_auth.principal import WorkloadPrincipalResolver
 
 
 async def serve(settings: IngressSettings) -> None:
-    if settings.port == settings.health_port:
-        raise ValueError("gRPC and health ports must differ")
     configuration = k8s_client.Configuration()
     if settings.kubeconfig is None:
         k8s_config.load_incluster_config(client_configuration=configuration)
@@ -47,7 +45,7 @@ async def serve(settings: IngressSettings) -> None:
                 server,
             )
             async with serving(server, f"{settings.host}:{settings.port}", grace_s=5):
-                await serve_health(settings.host, settings.health_port)
+                await until_terminated()
     finally:
         await engine.dispose()
 

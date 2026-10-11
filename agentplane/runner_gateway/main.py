@@ -12,7 +12,7 @@ from kubernetes_asyncio import client as k8s_client
 from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 
-from agentplane.grpc_process import background, kubernetes_configuration, serve_health
+from agentplane.grpc_process import background, kubernetes_configuration, until_terminated
 from agentplane.grpc_serving import add_health, serving
 from agentplane.proto import runner_control_pb2_grpc
 from agentplane.runner_gateway.command_delivery import CommandDelivery
@@ -92,8 +92,8 @@ async def gateway(
         runner_grpc_channel_options=settings.runner_grpc_channel_options,
     )
     add_service(resources, server)
-    if len({settings.port, settings.health_port, settings.runner_control_port}) != 3:
-        raise ValueError("gRPC, runner control stream and health ports must differ")
+    if settings.port == settings.runner_control_port:
+        raise ValueError("gRPC and runner control stream ports must differ")
     # A separate listener, so the network fence can admit runners to the control listener and nothing else.
     control_server = grpc.aio.server()
     runner_control_pb2_grpc.add_RunnerControlServicer_to_server(
@@ -143,7 +143,7 @@ async def serve(settings: Settings) -> None:
             add_health(server)
             await stack.enter_async_context(gateway(settings, api, server, commands_engine))
             await stack.enter_async_context(serving(server, f"{settings.host}:{settings.port}", grace_s=5))
-            await serve_health(settings.host, settings.health_port)
+            await until_terminated()
     finally:
         await commands_engine.dispose()
 
