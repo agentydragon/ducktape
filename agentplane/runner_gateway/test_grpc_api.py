@@ -6,6 +6,7 @@ from collections.abc import AsyncIterator
 from contextlib import suppress
 from dataclasses import dataclass, field, replace
 from pathlib import Path
+from typing import override
 from uuid import UUID, uuid4
 
 import grpc
@@ -19,7 +20,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 
 from agentplane.proto import command_pb2, event_log_pb2, event_pb2, runner_pb2
 from agentplane.runner.errors import RunnerError, StreamClosedError
-from agentplane.runner.testing.runner_server import serve_runner
+from agentplane.runner.testing.runner_server import UnimplementedRunner, serve_runner
 from agentplane.runner_gateway.commands.connections import ConnectionStore
 from agentplane.runner_gateway.commands.store import CommandSubmission, SubmissionState, SubmissionStore
 from agentplane.runner_gateway.grpc_api import LEGACY_SERVICE, Resources, add_legacy_service
@@ -59,7 +60,7 @@ class PeerAttachment:
     closed: asyncio.Event = field(default_factory=asyncio.Event)
 
 
-class Peer:
+class Peer(UnimplementedRunner):
     def __init__(self) -> None:
         self.attachments: asyncio.Queue[PeerAttachment] = asyncio.Queue()
         self.port = 0
@@ -72,7 +73,8 @@ class Peer:
         self.replay_paused_after: int | None = None
         self.replay_released = asyncio.Event()
 
-    async def list_sessions(
+    @override
+    async def ListSessions(
         self, request: runner_pb2.ListSessionsRequest, context: grpc.aio.ServicerContext
     ) -> runner_pb2.ListSessionsResponse:
         return runner_pb2.ListSessionsResponse(
@@ -88,7 +90,8 @@ class Peer:
             ]
         )
 
-    async def attach(
+    @override
+    async def Attach(
         self, requests: AsyncIterator[runner_pb2.ClientMessage], context: grpc.aio.ServicerContext
     ) -> AsyncIterator[runner_pb2.ServerMessage]:
         first = await anext(requests)
@@ -135,7 +138,7 @@ class Peer:
 @pytest.fixture
 async def peer() -> AsyncIterator[Peer]:
     peer = Peer()
-    async with serve_runner(attach=peer.attach, list_sessions=peer.list_sessions) as port:
+    async with serve_runner(peer) as port:
         peer.port = port
         yield peer
 

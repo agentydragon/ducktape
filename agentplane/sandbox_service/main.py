@@ -11,10 +11,9 @@ import grpc
 from kubernetes_asyncio import client as k8s_client
 
 from agentplane.grpc_process import background, kubernetes_configuration, serve_health, started
-from agentplane.proto import runner_pb2
 from agentplane.runner_gateway import main as gateway_main
 from agentplane.runner_gateway.grpc_api import add_legacy_service
-from agentplane.sandbox_service import protocol_pb2
+from agentplane.runner_gateway.sealing import Sealing
 from agentplane.sandbox_service.action_policy import ActionPolicyBindings
 from agentplane.sandbox_service.client import SandboxServiceClient
 from agentplane.sandbox_service.controller import SandboxController
@@ -26,7 +25,7 @@ from agentplane.sandbox_service.kubernetes_grants import ClusterRoleBindingGrant
 from agentplane.sandbox_service.provisioning import Provisioning
 from agentplane.sandbox_service.runner_endpoints import RunnerEndpoints
 from agentplane.sandbox_service.settings import CombinedSettings, Launch, Settings
-from agentplane.sandbox_service.teardown import Seal, Teardown
+from agentplane.sandbox_service.teardown import GatewaySealing, Teardown
 from agentplane.workload_auth.principal import WorkloadPrincipalResolver
 from util.kubernetes import CustomObjectsClient
 
@@ -37,9 +36,13 @@ from util.kubernetes import CustomObjectsClient
 
 @asynccontextmanager
 async def sandboxes(
-    settings: Settings | CombinedSettings, api: k8s_client.ApiClient, server: grpc.aio.Server, *, seal: Seal
+    settings: Settings | CombinedSettings,
+    api: k8s_client.ApiClient,
+    server: grpc.aio.Server,
+    *,
+    sealing: GatewaySealing | Sealing,
 ) -> AsyncIterator[None]:
-    """Serve `SandboxService` on `server` and reconcile Sandboxes, sealing each teardown with `seal`."""
+    """Serve `SandboxService` on `server` and reconcile Sandboxes, sealing each teardown with `sealing`."""
     custom = cast(CustomObjectsClient, k8s_client.CustomObjectsApi(api))
     inventory = SandboxInventory(
         namespace=settings.sandbox_namespace, core_v1=k8s_client.CoreV1Api(api), custom_objects=custom
@@ -85,7 +88,7 @@ async def sandboxes(
         server,
     )
     async with background(
-        SandboxController(provisioning, Teardown(inventory, seal)).run(), name="sandbox-provisioning"
+        SandboxController(provisioning, Teardown(inventory, sealing)).run(), name="sandbox-provisioning"
     ):
         yield
 
@@ -103,19 +106,13 @@ async def serve(settings: Settings) -> None:
         follow_timeout_s=settings.lifecycle_timeout_s,
     )
 
-    async def seal(sandbox: protocol_pb2.Sandbox) -> runner_pb2.SealResponse:
-        destination = protocol_pb2.SandboxDestination(
-            owner=sandbox.service_account, sandbox=sandbox.name, sandbox_uid=sandbox.uid
-        )
-        return await gateway.runner(destination).seal()
-
     async with (
         k8s_client.ApiClient(await kubernetes_configuration(settings.kubeconfig)) as api,
         AsyncExitStack() as stack,
     ):
         stack.push_async_callback(gateway.close)
         server = grpc.aio.server()
-        await stack.enter_async_context(sandboxes(settings, api, server, seal=seal))
+        await stack.enter_async_context(sandboxes(settings, api, server, sealing=GatewaySealing(gateway)))
         server.add_insecure_port(f"{settings.host}:{settings.port}")
         await stack.enter_async_context(started(server))
         await serve_health(settings.host, settings.health_port)
@@ -135,7 +132,7 @@ async def serve_combined(settings: CombinedSettings) -> None:
             gateway = await stack.enter_async_context(
                 gateway_main.gateway(gateway_settings, api, server, commands_engine)
             )
-            await stack.enter_async_context(sandboxes(settings, api, server, seal=gateway.sealing.seal))
+            await stack.enter_async_context(sandboxes(settings, api, server, sealing=gateway.sealing))
             add_legacy_service(gateway, server)
             server.add_insecure_port(f"{settings.host}:{settings.port}")
             await stack.enter_async_context(started(server))

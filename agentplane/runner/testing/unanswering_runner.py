@@ -3,23 +3,25 @@
 import asyncio
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from typing import override
 
 import grpc
 
 from agentplane.proto import runner_pb2
-from agentplane.runner.testing.runner_server import serve_runner
+from agentplane.runner.testing.runner_server import UnimplementedRunner, serve_runner
 
 # gazelle:include_dep @pypi//protobuf
 # gazelle:include_dep @pypi//grpcio
 
 
-class UnansweringRunner:
+class UnansweringRunner(UnimplementedRunner):
     def __init__(self) -> None:
         self.cancelled: asyncio.Queue[str] = asyncio.Queue()
 
-    async def attach(
+    @override
+    async def Attach(
         self, requests: AsyncIterator[runner_pb2.ClientMessage], context: grpc.aio.ServicerContext
-    ) -> None:
+    ) -> AsyncIterator[runner_pb2.ServerMessage]:
         del context
         first = await anext(requests)
         try:
@@ -28,8 +30,10 @@ class UnansweringRunner:
             # Only the client ending the call gets here: the session whose Open went unanswered.
             self.cancelled.put_nowait(first.open.session_id)
             raise
+        yield runner_pb2.ServerMessage()  # Never reached; makes this the streaming handler gRPC calls.
 
-    async def list_sessions(
+    @override
+    async def ListSessions(
         self, request: runner_pb2.ListSessionsRequest, context: grpc.aio.ServicerContext
     ) -> runner_pb2.ListSessionsResponse:
         """None, so an app ingester that discovers sessions here opens no feeds of its own."""
@@ -38,5 +42,5 @@ class UnansweringRunner:
 
     @asynccontextmanager
     async def serve(self) -> AsyncIterator[int]:
-        async with serve_runner(attach=self.attach, list_sessions=self.list_sessions) as port:
+        async with serve_runner(self) as port:
             yield port

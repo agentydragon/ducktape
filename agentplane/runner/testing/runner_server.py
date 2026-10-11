@@ -1,49 +1,50 @@
-"""Serve a scripted runner's handlers as the Runner service on a loopback ephemeral port."""
+"""Serve a fake Runner servicer on a loopback ephemeral port."""
 
-from collections.abc import AsyncIterator, Awaitable, Callable
+from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from typing import Any
+from typing import override
 
 import grpc
 
-from agentplane.proto import runner_pb2
+from agentplane.proto import runner_pb2, runner_pb2_grpc
 
 # gazelle:include_dep @pypi//protobuf
-# gazelle:include_dep @pypi//grpcio
 
-type Attach = Callable[
-    [AsyncIterator[runner_pb2.ClientMessage], grpc.aio.ServicerContext],
-    AsyncIterator[runner_pb2.ServerMessage] | Awaitable[None],
-]
-type ListSessions = Callable[
-    [runner_pb2.ListSessionsRequest, grpc.aio.ServicerContext], Awaitable[runner_pb2.ListSessionsResponse]
-]
-type Seal = Callable[[runner_pb2.SealRequest, grpc.aio.ServicerContext], Awaitable[runner_pb2.SealResponse]]
+
+class UnimplementedRunner(runner_pb2_grpc.RunnerServicer):
+    """Answers every RPC UNIMPLEMENTED, as a runner that predates it would. The generated stub marks
+    each RPC abstract, so a fake subclasses this and overrides only the RPCs its test drives."""
+
+    @override
+    async def Attach(
+        self, requests: AsyncIterator[runner_pb2.ClientMessage], context: grpc.aio.ServicerContext
+    ) -> AsyncIterator[runner_pb2.ServerMessage]:
+        await context.abort(grpc.StatusCode.UNIMPLEMENTED, "the fake runner does not serve Attach")
+        yield  # Unreachable; makes this the streaming handler gRPC calls.
+
+    @override
+    async def Initialize(
+        self, request: runner_pb2.InitializeRequest, context: grpc.aio.ServicerContext
+    ) -> AsyncIterator[runner_pb2.InitializationEvent]:
+        await context.abort(grpc.StatusCode.UNIMPLEMENTED, "the fake runner does not serve Initialize")
+        yield  # Unreachable; makes this the streaming handler gRPC calls.
+
+    @override
+    async def ListSessions(
+        self, request: runner_pb2.ListSessionsRequest, context: grpc.aio.ServicerContext
+    ) -> runner_pb2.ListSessionsResponse:
+        await context.abort(grpc.StatusCode.UNIMPLEMENTED, "the fake runner does not serve ListSessions")
+
+    @override
+    async def Seal(self, request: runner_pb2.SealRequest, context: grpc.aio.ServicerContext) -> runner_pb2.SealResponse:
+        await context.abort(grpc.StatusCode.UNIMPLEMENTED, "the fake runner does not serve Seal")
 
 
 @asynccontextmanager
-async def serve_runner(*, attach: Attach, list_sessions: ListSessions, seal: Seal | None = None) -> AsyncIterator[int]:
-    """Yields the port. Without `seal` the runner predates the Seal RPC: gRPC answers UNIMPLEMENTED."""
-    handlers: dict[str, grpc.RpcMethodHandler[Any, Any]] = {
-        "Attach": grpc.stream_stream_rpc_method_handler(
-            attach,
-            request_deserializer=runner_pb2.ClientMessage.FromString,
-            response_serializer=runner_pb2.ServerMessage.SerializeToString,
-        ),
-        "ListSessions": grpc.unary_unary_rpc_method_handler(
-            list_sessions,
-            request_deserializer=runner_pb2.ListSessionsRequest.FromString,
-            response_serializer=runner_pb2.ListSessionsResponse.SerializeToString,
-        ),
-    }
-    if seal is not None:
-        handlers["Seal"] = grpc.unary_unary_rpc_method_handler(
-            seal,
-            request_deserializer=runner_pb2.SealRequest.FromString,
-            response_serializer=runner_pb2.SealResponse.SerializeToString,
-        )
+async def serve_runner(servicer: runner_pb2_grpc.RunnerServicer) -> AsyncIterator[int]:
+    """Yields the port."""
     server = grpc.aio.server()
-    server.add_generic_rpc_handlers([grpc.method_handlers_generic_handler("agentplane.proto.runner.Runner", handlers)])
+    runner_pb2_grpc.add_RunnerServicer_to_server(servicer, server)
     port = server.add_insecure_port("127.0.0.1:0")
     await server.start()
     try:

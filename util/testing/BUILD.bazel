@@ -65,6 +65,7 @@ py_library(
     visibility = ["//visibility:public"],
     deps = [
         "@pypi//asyncpg",
+        "@pypi//psycopg",
         "@pypi//psycopg2_binary",
         "@pypi//sqlalchemy",
     ],
