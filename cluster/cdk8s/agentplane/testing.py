@@ -162,7 +162,6 @@ ENV = Environment(
         sandbox_service_grpc_channel_options=LARGE_EVENT_GRPC_CHANNEL_OPTIONS,
         history_service_grpc_channel_options=LARGE_EVENT_GRPC_CHANNEL_OPTIONS,
     ),
-    runner_grpc_channel_options=LARGE_EVENT_GRPC_CHANNEL_OPTIONS,
     fold_shadow=True,
     settle_deltas=True,
     history_compaction=CompactionRun.DRY_RUN,

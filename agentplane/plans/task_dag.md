@@ -362,27 +362,15 @@ flowchart LR
     SANDBOX_VM_ISOLATION --> LOCAL_BAZEL[Blocked: bounded local Bazel client in VM]
 ```
 
-### `RUNNER_INBOUND_RETIRE` — remove inbound runner access
+### `RUNNER_INBOUND_RETIRE` — remove the runner's inbound server
 
-**Blocked on `KUBEVIRT_GUEST_CONTROL`.** Remove
-`Attach` command submission, the pull ingester, the runner control port and its network policy.
-With no inbound route left, the `runner_connection` table goes (a drop migration the operator
-merges) together with the routing check on its operations in `SubmitCommand`. Capability
-negotiation goes on both sides: `ControlOperation`, the runner's `CAPABILITIES`,
-`Hello`/`Welcome.capabilities`, `ConnectionStore.record_operations`/`read_operations` and every
-`control_routed` or inbound branch in the gateway. The legacy
-caller-chosen runner Session ID path goes too, as does the client's fallback to the service when a
-Sandbox has no control Service (the `CLEANUP` tombstone in `sandbox_service/client.py`), as do the
-runner SPEC's and Sandbox Service README's notes on the unauthenticated inbound listener.
-
-Also inbound-only, so deleted here: teardown's inbound seal branch and `_stop_legacy` for runner
-images without `Seal`; `SubmitCommandRequest.follow` with the client's `command(after_cursor=...)`
-and the app's `last_cursor` lookup for it, read only by the relay; the `runner_grpc_channel_options`
-setting and `Environment` field; `protocol.v1.Follow` once nothing sends `Open.follow`;
-`register_attached_sessions` in `sandbox_service/testing`, which registers Sessions tests open
-over `Attach`; and the runner's own gRPC server, its `--listen` flag and the
-`Runner` service RPCs the channel duplicates. The Sandbox Service README, which still describes
-the relay as its foundation, is rewritten for the channel.
+**Blocked on `KUBEVIRT_GUEST_CONTROL`.** Hosted runners take every call over the control stream and
+admit no connections; the KubeVirt experiment's guest is the last caller of the runner's own gRPC
+server. Delete that server, its `--listen` flag, the `Runner` service RPCs the channel duplicates
+and `protocol.v1.Follow` with `Open.follow`, and its client `runner/client.py`, test-only now, with
+the app's `OpenTimeoutError` handler. The `runner_connection` table's drop migration is its
+own PR for the operator to merge; the model's `CLEANUP` tombstone in
+`runner_gateway/commands/db.py` goes with it.
 
 ### `VM_CONTROL_NETWORKING` — integrate the reviewed connection direction
 

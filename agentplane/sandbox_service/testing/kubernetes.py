@@ -12,7 +12,6 @@ from kubernetes_asyncio import client as k8s_client
 
 from agentplane.proto.sandbox_service_pb2 import SandboxBinding, SandboxDestination, ServiceAccount
 from agentplane.runner.service import Runner
-from agentplane.runner.testing.fixtures import RunnerHandle
 from agentplane.runner_gateway.grpc_api import Resources
 from agentplane.runner_gateway.testing.control_listener import control_plane, dialing, wait_connected
 from agentplane.runner_gateway.testing.grpc_service import service_client
@@ -123,7 +122,7 @@ async def kubernetes() -> AsyncIterator[Cluster]:
 @asynccontextmanager
 async def authenticated_service(
     cluster: Cluster,
-    runner: RunnerHandle,
+    runner: Runner,
     token_file: Path,
     *,
     database_url: str,
@@ -145,12 +144,12 @@ async def authenticated_service(
         resources = build_resources(
             engine,
             principals=cluster.build_principal_resolver(audience),
-            destinations=DestinationResolver(cluster.inventory, k8s_client.CoreV1Api(cluster.api), runner.port),
+            destinations=DestinationResolver(cluster.inventory, k8s_client.CoreV1Api(cluster.api)),
             caller_accounts=frozenset({manager}),
             platform_instructions=platform_instructions,
         )
         async with (
-            runner_connected(cluster, resources, runner.runner),
+            runner_connected(cluster, resources, runner),
             service_client(resources, token_file, cluster.provisioning) as client,
         ):
             yield client

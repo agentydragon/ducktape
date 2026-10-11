@@ -1,5 +1,6 @@
 """The stdout reader commits the lines it has read, with what the adapter derives from them, at once,
-and a harness that dies under a command's input fails that command.
+and a harness that dies under a command's input fails that command. A Session's first launch outcome
+is read back from its journal.
 
 A scripted harness writes whatever the test asks for in a single write, so the lines arrive
 together; the adapter derives one Event from each frame and answers a frame that asks.
@@ -23,11 +24,12 @@ import pytest
 import pytest_bazel
 from pydantic import BaseModel
 
-from agentplane.proto import command_pb2, event_log_pb2, event_pb2
+from agentplane.proto import command_pb2, event_log_pb2, event_pb2, runner_pb2
 from agentplane.runner.adapter import HarnessAdapter
 from agentplane.runner.config import RunnerConfig
 from agentplane.runner.harness import Harness
 from agentplane.runner.journal import Journal
+from agentplane.runner.observation import Observation
 from agentplane.runner.session import Session
 from agentplane.runner.store import SessionRecord, SessionStore, StateOwner
 
@@ -263,6 +265,64 @@ async def test_a_harness_that_dies_under_an_input_fails_its_command(session: Ses
     (terminal,) = await session.journal.since(stored.terminal_cursor - 1, limit=1)
     assert terminal.event.command_failed.command_id == "input-1"
     assert not session.harness_running
+
+
+@pytest.mark.parametrize(
+    ("setup_script", "observations", "outcome"),
+    [
+        ("", [], runner_pb2.LAUNCH_OUTCOME_PENDING),
+        ("exit 1", [event_pb2.SetupFinished(exit_code=1)], runner_pb2.LAUNCH_OUTCOME_FAILED),
+        ("", [event_pb2.HarnessLaunchFailed(reason="test launch failure")], runner_pb2.LAUNCH_OUTCOME_FAILED),
+        # A harness that started once stays a successful launch after it exits.
+        (
+            "true",
+            [
+                event_pb2.SetupFinished(exit_code=0),
+                event_pb2.HarnessStarted(pid=8),
+                event_pb2.HarnessExited(exit_code=1),
+            ],
+            runner_pb2.LAUNCH_OUTCOME_STARTED,
+        ),
+        # Only the first outcome counts.
+        ("", [event_pb2.HarnessExited(exit_code=1), event_pb2.HarnessStarted(pid=8)], runner_pb2.LAUNCH_OUTCOME_FAILED),
+    ],
+)
+async def test_a_sessions_launch_outcome_survives_a_restart(
+    tmp_path: Path, setup_script: str, observations: list[Observation], outcome: runner_pb2.LaunchOutcome
+) -> None:
+    state_dir = tmp_path / "state"
+    store = SessionStore(state_dir / "sessions")
+    owner = StateOwner(state_dir)
+    record = SessionRecord.from_spec(
+        runner_pb2.SessionSpec(harness=runner_pb2.HARNESS_CODEX, cwd=str(tmp_path), model="test-model"),
+        setup_script=setup_script,
+    )
+    store.write("test-session", record)
+
+    def load(journal: Journal) -> Session:
+        return Session(
+            "test-session",
+            record=record,
+            journal=journal,
+            store=store,
+            config=RunnerConfig(state_dir=state_dir),
+            make_adapter=DerivingAdapter,
+            state_owner_descriptor=owner.descriptor,
+        )
+
+    journal_path = store.directory("test-session") / "journal.sqlite"
+    try:
+        async with Journal.open(journal_path, str(record.event_source_id)) as journal:
+            live = load(journal)
+            for observation in observations:
+                await live.emit(observation, sources=[])
+            assert live.launch_outcome == outcome
+        async with Journal.open(journal_path, str(record.event_source_id)) as journal:
+            restarted = load(journal)
+            await restarted.load_prefix_state()
+            assert restarted.launch_outcome == outcome
+    finally:
+        owner.close()
 
 
 if __name__ == "__main__":

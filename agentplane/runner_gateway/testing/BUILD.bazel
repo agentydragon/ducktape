@@ -49,7 +49,6 @@ py_library(
         "//agentplane/runner_gateway:grpc_api",
         "//agentplane/runner_gateway:lifecycle_control",
         "//agentplane/runner_gateway:session_registry",
-        "//agentplane/runner_gateway/commands:connections",
         "//agentplane/runner_gateway/commands:dispatch",
         "//agentplane/runner_gateway/commands:store",
         "//agentplane/sandbox_service:destinations",

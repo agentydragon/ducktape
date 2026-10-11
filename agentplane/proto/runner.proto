@@ -119,6 +119,15 @@ enum SetupState {
   SETUP_STATE_INTERRUPTED = 5;
 }
 
+// The Session's first lifecycle outcome: whether its harness ever started, or its launch failed first.
+enum LaunchOutcome {
+  LAUNCH_OUTCOME_UNSPECIFIED = 0;
+  LAUNCH_OUTCOME_PENDING = 1;  // no outcome journaled yet
+  LAUNCH_OUTCOME_STARTED = 2;
+  // Setup failed or was interrupted, the harness failed to launch, or it exited before it started.
+  LAUNCH_OUTCOME_FAILED = 3;
+}
+
 message Attached {
   string session_id = 1;
   SessionSpec spec = 2;
@@ -128,6 +137,7 @@ message Attached {
   // Empty when no turn is active.
   string active_turn_id = 5;
   SetupState setup_state = 6;
+  LaunchOutcome launch_outcome = 7;
 }
 
 message ListSessionsRequest {}
@@ -140,6 +150,7 @@ message SessionSummary {
   // Empty when no turn is active.
   string active_turn_id = 5;
   SetupState setup_state = 6;
+  LaunchOutcome launch_outcome = 7;
 }
 
 message ListSessionsResponse {
