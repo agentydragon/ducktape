@@ -41,6 +41,7 @@ from agentplane.history_service.client import HistoryServiceClient
 from agentplane.history_service.testing.backend import history_service
 from agentplane.history_service.testing.fixtures import service_database_template
 from agentplane.history_service.testing.history import History
+from agentplane.kubernetes_watch import Freshness
 from agentplane.runner.testing.failure_journal import pytest_runtest_makereport
 
 # The per-test database is created over psycopg, which SQLAlchemy loads from the URL scheme.
@@ -356,7 +357,7 @@ def reviewer(authentication: FakeAuthenticationV1Api) -> TokenReviewer:
 @pytest.fixture
 def live_index(core_v1: FakeCoreV1Api) -> LiveIndex:
     """An index nothing is watching: the fixtures that need one drive it themselves."""
-    return LiveIndex(stale_after_seconds=90, core_v1=cast(CoreV1Api, core_v1))
+    return LiveIndex(freshness=Freshness(stale_after_seconds=90), core_v1=cast(CoreV1Api, core_v1))
 
 
 @pytest.fixture

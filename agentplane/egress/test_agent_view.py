@@ -29,6 +29,7 @@ from agentplane.egress.resources import (
     Target,
     TargetMethod,
 )
+from agentplane.kubernetes_watch import Freshness
 from agentplane.subjects import ServiceAccountRef
 
 NOW = datetime(2026, 9, 4, 12, 0, tzinfo=UTC)
@@ -68,6 +69,7 @@ def _index(*, expires_at: datetime | None = None, policies: list[str] | None = N
         ),
     )
     return Index(
+        freshness=Freshness(stale_after_seconds=180),
         policies={"github": policy},
         bindings={"b": bound},
         credentials={CREDENTIAL.metadata.name: CREDENTIAL},

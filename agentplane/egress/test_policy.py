@@ -49,6 +49,7 @@ from agentplane.egress.resources import (
     TargetMethod,
     WholeValueTarget,
 )
+from agentplane.kubernetes_watch import Freshness
 from agentplane.subjects import ServiceAccountRef
 
 NOW = datetime(2026, 9, 3, 12, 0, tzinfo=UTC)
@@ -145,6 +146,7 @@ def index(
 ) -> Index:
     resolved = [GITHUB_CREDENTIAL, APP_CREDENTIAL] if credentials is None else credentials
     return Index(
+        freshness=Freshness(stale_after_seconds=180),
         policies={p.metadata.name: p for p in policies},
         bindings={b.metadata.name: b for b in bindings},
         credentials={c.metadata.name: c for c in resolved},

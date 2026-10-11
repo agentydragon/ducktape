@@ -100,13 +100,11 @@ class EgressAddon:
         verifier: WorkloadIdentityVerifier,
         decision_log: DecisionLog,
         resolver: UpstreamResolver,
-        stale_after_seconds: float,
         projected: ProjectedTokenVerifier,
         clock: Callable[[], datetime] = lambda: datetime.now(UTC),
     ) -> None:
         self._producer_id = uuid4()
         self._index = index
-        self._stale_after_seconds = stale_after_seconds
         self._verifier = verifier
         self._projected = projected
         self._decision_log = decision_log
@@ -251,7 +249,7 @@ class EgressAddon:
         try:
             caller, authenticated_workload = await self._authenticate(flow, presented_projected)
             subject = caller
-            if not self._index.available(self._clock(), stale_after_seconds=self._stale_after_seconds):
+            if not self._index.available(self._clock()):
                 raise IdentityRejectedError(DenyReason.UNAVAILABLE, "enforcement index unavailable")
             decision = evaluate(
                 self._index, caller, egress, self._clock(), authenticated_workload=authenticated_workload
@@ -261,7 +259,7 @@ class EgressAddon:
                 pin = await self._resolver.pin(egress.host, egress.port, internal=decision.cluster_internal)
                 # Authentication and DNS await I/O. Re-read policy and readiness after the last await,
                 # so revocation, expiry or staleness during admission cannot authorize a later dial.
-                if not self._index.available(self._clock(), stale_after_seconds=self._stale_after_seconds):
+                if not self._index.available(self._clock()):
                     decision = Denied(DenyReason.UNAVAILABLE)
                 else:
                     decision = evaluate(

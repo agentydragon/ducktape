@@ -20,6 +20,7 @@ from agentplane.egress.decision_log import DecisionLog
 from agentplane.egress.decision_store import DecisionStore, make_engine
 from agentplane.egress.policy import Index
 from agentplane.egress.resources import EgressBinding, EgressPolicy
+from agentplane.kubernetes_watch import STALE_AFTER_CYCLES, Freshness
 from agentplane.testing.fake_apiserver import binding, policy
 
 RESYNC_SECONDS = 300
@@ -39,7 +40,10 @@ class Clock:
 
 @pytest.fixture
 def index() -> Index:
-    return Index(synced=True, refreshed=dict.fromkeys(KINDS, STARTED))
+    return Index(
+        freshness=Freshness(stale_after_seconds=RESYNC_SECONDS * STALE_AFTER_CYCLES, at=dict.fromkeys(KINDS, STARTED)),
+        synced=True,
+    )
 
 
 @pytest.fixture
@@ -52,7 +56,7 @@ async def session(index: Index, clock: Clock) -> AsyncIterator[httpx.AsyncClient
     log = DecisionLog(
         DecisionStore(make_engine("postgresql://test:test@127.0.0.1:1/test"), retention=timedelta(days=7))
     )
-    app = create_admin_app(log, index, resync_seconds=RESYNC_SECONDS, clock=clock)
+    app = create_admin_app(log, index, clock=clock)
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://egress-admin.test") as client:
         yield client
     await log.close()
@@ -79,11 +83,11 @@ async def test_a_kind_that_stops_completing_cycles_turns_the_proxy_unhealthy(
     assert body["refreshedSecondsAgo"] == dict.fromkeys(KINDS, 1200.0)
 
     # One kind catching up is not enough while the others stay behind.
-    index.refreshed["secrets"] = clock.now
+    index.freshness.at["secrets"] = clock.now
     assert (await _get(session))[0] == 503
 
     for kind in KINDS:
-        index.refreshed[kind] = clock.now
+        index.freshness.at[kind] = clock.now
     assert (await _get(session))[0] == 200
 
 
@@ -100,9 +104,9 @@ async def test_an_index_that_has_not_listed_everything_is_not_ready(session: htt
 async def test_missing_freshness_and_drain_refuse_readiness_but_not_liveness(
     session: httpx.AsyncClient, index: Index
 ) -> None:
-    index.refreshed.pop("egresscredentials")
+    index.freshness.at.pop("egresscredentials")
     assert (await _get(session))[0] == 503
-    index.refreshed["egresscredentials"] = STARTED
+    index.freshness.at["egresscredentials"] = STARTED
     index.draining = True
     assert (await _get(session))[0] == 503
     assert (await session.get("/livez")).status_code == 200

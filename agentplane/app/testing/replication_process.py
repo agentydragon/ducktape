@@ -48,6 +48,7 @@ from agentplane.app.threads.summaries import Summaries
 from agentplane.app.threads.view.content import ContentStore
 from agentplane.egress.decisions_client import DecisionsClient
 from agentplane.history_service.client import HistoryServiceClient
+from agentplane.kubernetes_watch import Freshness
 from agentplane.runner.harness import Harness
 from agentplane.sandbox_service.client import SandboxServiceClient
 from agentplane.sandbox_service.egress_views import EgressReader
@@ -198,7 +199,8 @@ async def _serve(
     database_updates = DatabaseUpdates(engine.url)
     custom, core = cast(Any, FakeCustomObjectsApi()), cast(Any, FakeCoreV1Api())
     index = LiveIndex(
-        stale_after_seconds=90, core_v1=core, refreshed={"sandboxes": datetime.now(UTC), "pods": datetime.now(UTC)}
+        freshness=Freshness(stale_after_seconds=90, at={"sandboxes": datetime.now(UTC), "pods": datetime.now(UTC)}),
+        core_v1=core,
     )
     if sandbox_present:
         raw, running = seed_runner(custom, core, SANDBOX)

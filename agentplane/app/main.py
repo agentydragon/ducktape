@@ -41,7 +41,7 @@ from agentplane.app.threads.summaries import Summaries
 from agentplane.app.threads.view.content import ContentStore
 from agentplane.egress.decisions_client import DecisionsClient
 from agentplane.history_service.client import HistoryServiceClient
-from agentplane.kubernetes_watch import STALE_AFTER_CYCLES
+from agentplane.kubernetes_watch import STALE_AFTER_CYCLES, Freshness
 from agentplane.sandbox_service.client import SandboxServiceClient
 from agentplane.sandbox_service.egress_views import EgressReader
 from agentplane.service_process import background, configure_logging, kubernetes_configuration
@@ -134,7 +134,9 @@ async def async_main(settings: Settings) -> None:
         # binding to the authenticated Sandbox, and where the owner reference cascades.
         action_policy = ActionPolicyInventory(namespace=settings.sandbox_namespace, custom_objects=custom_objects)
         core_v1 = CoreV1Api(api)
-        live = LiveIndex(stale_after_seconds=float(settings.resync_seconds * STALE_AFTER_CYCLES), core_v1=core_v1)
+        live = LiveIndex(
+            freshness=Freshness(stale_after_seconds=settings.resync_seconds * STALE_AFTER_CYCLES), core_v1=core_v1
+        )
         watch = watch_for(
             live,
             custom_objects=custom_objects,

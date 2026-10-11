@@ -19,6 +19,7 @@ from agentplane.egress.decision_log import DecisionLog
 from agentplane.egress.decision_store import Base, DecisionRecordRow, DecisionStore, make_engine
 from agentplane.egress.decisions import DecisionRecord, Outcome, Phase
 from agentplane.egress.policy import WATCHED_KINDS, Index
+from agentplane.kubernetes_watch import Freshness
 from agentplane.subjects import ServiceAccountRef
 
 SUBJECT = ServiceAccountRef(namespace="test-namespace", name="test-workload")
@@ -70,7 +71,7 @@ async def test_shared_history_survives_replacement_and_repeated_migration(histor
     try:
         async with replacement.store.engine.begin() as connection:
             await connection.run_sync(check_migration)
-        app = create_admin_app(replacement, Index(), resync_seconds=300)
+        app = create_admin_app(replacement, Index(freshness=Freshness(stale_after_seconds=900)))
         async with admin_client(app) as client:
             response = await client.get("/decisions", params=SUBJECT.model_dump())
         assert response.status_code == 200
@@ -145,7 +146,11 @@ async def test_overflow_outage_nonblocking_and_explicit_read_failure(monkeypatch
     log.record(record())
     assert log.diagnostics.accepted == 2
     app = create_admin_app(
-        log, Index(synced=True, refreshed=dict.fromkeys(WATCHED_KINDS, datetime.now(UTC))), resync_seconds=300
+        log,
+        Index(
+            freshness=Freshness(stale_after_seconds=900, at=dict.fromkeys(WATCHED_KINDS, datetime.now(UTC))),
+            synced=True,
+        ),
     )
     async with admin_client(app) as client:
         refused = await client.get("/decisions")

@@ -39,6 +39,7 @@ from agentplane.egress.resources import (
     Rule,
     Secret,
 )
+from agentplane.kubernetes_watch import Freshness
 from agentplane.subjects import ServiceAccountRef
 
 CONNECT = "CONNECT"
@@ -66,26 +67,26 @@ class Index:
     """Everything the decision reads, keyed by name. Mutated only by the informer; `changed` pulses
     on every mutation so readers can wait for a state rather than a duration."""
 
+    # When each watched kind last completed a full list-and-watch cycle, keyed by plural. A cycle
+    # ends when the API server closes the watch at `resync_seconds`, so under health every entry
+    # advances that often. One that stops is the failure this exists to expose: a wedged list, a
+    # watch that never returns, or one the server keeps refusing leaves the index frozen while
+    # every answer it gives stays plausible and `synced` stays true.
+    freshness: Freshness
     policies: dict[str, EgressPolicy] = field(default_factory=dict)
     bindings: dict[str, EgressBinding] = field(default_factory=dict)
     credentials: dict[str, EgressCredential] = field(default_factory=dict)
     secrets: dict[str, Secret] = field(default_factory=dict, repr=False)
     synced: bool = field(default=False)
     draining: bool = False
-    # When each watched kind last completed a full list-and-watch cycle, keyed by plural. A cycle
-    # ends when the API server closes the watch at `resync_seconds`, so under health every entry
-    # advances that often. One that stops is the failure this exists to expose: a wedged list, a
-    # watch that never returns, or one the server keeps refusing leaves the index frozen while
-    # every answer it gives stays plausible and `synced` stays true.
-    refreshed: dict[str, datetime] = field(default_factory=dict)
     changed: asyncio.Condition = field(default_factory=asyncio.Condition, repr=False)
 
-    def available(self, now: datetime, *, stale_after_seconds: float) -> bool:
+    def available(self, now: datetime) -> bool:
         return (
             not self.draining
             and self.synced
-            and self.refreshed.keys() >= WATCHED_KINDS
-            and all(0 <= (now - self.refreshed[kind]).total_seconds() <= stale_after_seconds for kind in WATCHED_KINDS)
+            and self.freshness.at.keys() >= WATCHED_KINDS
+            and self.freshness.fresh(now)
         )
 
     async def notify(self) -> None:

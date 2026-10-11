@@ -49,6 +49,7 @@ from agentplane.app.sandbox_models import SandboxView, sandbox_view as http_sand
 from agentplane.app.shutdown import Shutdown
 from agentplane.app.threads.store import MAX_PAGE, ThreadStore
 from agentplane.app.threads.thread_view import ThreadView
+from agentplane.kubernetes_watch import Freshness
 from agentplane.sandbox_service.action_policy_views import ACTION_POLICY_API
 from agentplane.sandbox_service.egress_views import (
     BINDINGS_PLURAL,
@@ -125,7 +126,7 @@ class LiveIndex:
     only together, so joining them early would mean redoing it on every Pod event anyway.
     """
 
-    stale_after_seconds: float
+    freshness: Freshness
     core_v1: CoreV1Api
     sandboxes: dict[str, object] = field(default_factory=dict)
     pods: dict[str, k8s_client.V1Pod] = field(default_factory=dict, repr=False)
@@ -138,7 +139,6 @@ class LiveIndex:
     action_policy_sets: set[str] = field(default_factory=set)
     action_policy_bindings: set[str] = field(default_factory=set)
     action_policy_changes: int = 0
-    refreshed: dict[str, datetime] = field(default_factory=dict)
     changes: Changes = field(default_factory=Changes)
 
     def sandbox_views(self) -> list[SandboxView]:
@@ -171,11 +171,10 @@ class LiveIndex:
         self.action_policy_changes += 1
 
     def health(self, now: datetime) -> WatchHealth:
-        ages = {kind: (now - at).total_seconds() for kind, at in self.refreshed.items()}
         return WatchHealth(
-            fresh=bool(ages) and all(age <= self.stale_after_seconds for age in ages.values()),
-            stale_after_seconds=self.stale_after_seconds,
-            refreshed_seconds_ago={kind: round(age, 1) for kind, age in sorted(ages.items())},
+            fresh=self.freshness.fresh(now),
+            stale_after_seconds=self.freshness.stale_after_seconds,
+            refreshed_seconds_ago={kind: round(age, 1) for kind, age in self.freshness.ages(now).items()},
         )
 
 
@@ -210,7 +209,7 @@ def watch_for(
         index.changes.notify()
 
     async def completed(kind: WatchedKind, at: datetime) -> None:
-        index.refreshed[kind.name] = at
+        index.freshness.record(kind.name, at)
         index.changes.notify()
 
     return ListWatch(

@@ -15,7 +15,6 @@ from agentplane.egress.decision_log import DB_ERRORS, DecisionLog
 from agentplane.egress.decisions import DecisionRecord
 from agentplane.egress.policy import Index, resolve_binding
 from agentplane.egress.resources import ActiveReason
-from agentplane.kubernetes_watch import STALE_AFTER_CYCLES
 from agentplane.subjects import ServiceAccountRef
 
 logger = logging.getLogger(__name__)
@@ -54,14 +53,9 @@ class Liveness(BaseModel):
 
 
 def create_admin_app(
-    decision_log: DecisionLog,
-    index: Index,
-    *,
-    resync_seconds: int,
-    clock: Callable[[], datetime] = lambda: datetime.now(UTC),
+    decision_log: DecisionLog, index: Index, *, clock: Callable[[], datetime] = lambda: datetime.now(UTC)
 ) -> FastAPI:
     app = FastAPI(title="agentplane-egress-admin")
-    stale_after = float(resync_seconds * STALE_AFTER_CYCLES)
 
     @app.get("/decisions")
     async def decisions(namespace: str | None = None, name: str | None = None) -> list[DecisionRecord]:
@@ -85,16 +79,14 @@ def create_admin_app(
         status code is the verdict on them.
         """
         now = clock()
-        if not index.available(now, stale_after_seconds=stale_after):
+        if not index.available(now):
             response.status_code = status.HTTP_503_SERVICE_UNAVAILABLE
         return Health(
             synced=index.synced,
             draining=index.draining,
             decision_history=decision_log.health(),
-            stale_after_seconds=stale_after,
-            refreshed_seconds_ago={
-                plural: round((now - at).total_seconds(), 1) for plural, at in sorted(index.refreshed.items())
-            },
+            stale_after_seconds=index.freshness.stale_after_seconds,
+            refreshed_seconds_ago={plural: round(age, 1) for plural, age in index.freshness.ages(now).items()},
         )
 
     @app.get("/bindings")
@@ -102,7 +94,7 @@ def create_admin_app(
         now = clock()
         return Bindings(
             observed_at=now,
-            available=index.available(now, stale_after_seconds=stale_after),
+            available=index.available(now),
             bindings=[
                 BindingObservation(
                     name=resolution.binding.metadata.name,

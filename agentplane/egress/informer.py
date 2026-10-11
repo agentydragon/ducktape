@@ -93,5 +93,5 @@ class Informer:
         await self._index.notify()
 
     async def _completed(self, kind: WatchedKind, at: datetime) -> None:
-        self._index.refreshed[kind.name] = at
+        self._index.freshness.record(kind.name, at)
         await self._index.notify()
