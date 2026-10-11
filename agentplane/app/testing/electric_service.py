@@ -33,8 +33,15 @@ class BrowserPostgres:
     admin_url: str
     template: PostgresDatabaseTemplate
 
-    def drop_replication_slots(self, database: str) -> None:
-        """Drop slots owned by a browser clone after its Electric process has stopped."""
+    @contextmanager
+    def replication_slot_cleanup(self, database: str) -> Iterator[None]:
+        """Drop slots owned by a browser clone after the enclosed Electric process stops."""
+        try:
+            yield
+        finally:
+            self._drop_replication_slots(database)
+
+    def _drop_replication_slots(self, database: str) -> None:
         engine = create_engine(self.admin_url, isolation_level="AUTOCOMMIT")
         try:
             deadline = monotonic() + 30
@@ -103,13 +110,14 @@ async def browser_electric_service(postgres: BrowserPostgres, name_hint: str) ->
     test_digest = hashlib.sha256(name_hint.encode()).hexdigest()
     output_name = f"conversation-electric-{test_digest[:12]}"
     database_name = database_name_for_test(name_hint)
-    with postgres.template.clone(database_name, before_drop=postgres.drop_replication_slots) as database_url:
+    with postgres.template.clone(database_name) as database_url:
         database = make_url(database_url).database
         assert database is not None
         app_url = make_url(database_url).set(drivername="postgresql+asyncpg").render_as_string(hide_password=False)
         electric_url = f"postgresql://electric:electric@postgres:5432/{database}?sslmode=disable"
-        async with _electric_process(postgres.network, app_url, electric_url, test_name=output_name) as service:
-            yield service
+        with postgres.replication_slot_cleanup(database):
+            async with _electric_process(postgres.network, app_url, electric_url, test_name=output_name) as service:
+                yield service
 
 
 class ElectricService:
