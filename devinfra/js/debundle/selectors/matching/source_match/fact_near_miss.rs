@@ -730,13 +730,63 @@ fn first_var_decl_divergence(
             mode,
         )?
     } else {
-        format!(
-            "variable declarators differ: selector has {} declarator(s), candidate has {}",
-            ndecls.len(),
-            cdecls.len(),
-        )
+        first_aligned_var_declarator_divergence(
+            needle_var,
+            needle_index,
+            ndecls,
+            candidate_var,
+            candidate_index,
+            cdecls,
+            mode,
+        )?
+        .unwrap_or_else(|| {
+            format!(
+                "variable declarators differ: selector has {} declarator(s), candidate has {}",
+                ndecls.len(),
+                cdecls.len(),
+            )
+        })
     };
     Ok(MismatchReason { score: 55, reason })
+}
+
+/// Without declarator run holes, the matcher aligns declarators by position.
+/// Use its node comparison to identify the first pair that fails on its own.
+/// A whole-declaration failure caused only by bindings shared across pairs
+/// remains the generic reason; comparing each pair with fresh bindings cannot
+/// honestly attribute that failure to one declarator.
+fn first_aligned_var_declarator_divergence(
+    needle_var: &VarDecl,
+    needle_index: &Index,
+    ndecls: &[NodeId],
+    candidate_var: &VarDecl,
+    candidate_index: &Index,
+    cdecls: &[NodeId],
+    mode: Mode,
+) -> Result<Option<String>> {
+    if ndecls.len() != cdecls.len() {
+        return Ok(None);
+    }
+    let free = free_identifiers([needle_index]);
+    for (index, (&needle, &candidate)) in ndecls.iter().zip(cdecls).enumerate() {
+        if !selector_match::nodes_match(
+            needle_index,
+            needle,
+            candidate_index,
+            candidate,
+            mode,
+            &free,
+        )
+        .map_err(unsupported_error("fact near-miss"))?
+        {
+            return Ok(Some(format!(
+                "variable declarator #{index} differs: selector {}, candidate {}",
+                render_var_declarator_label(&needle_var.decls[index]),
+                render_var_declarator_label(&candidate_var.decls[index]),
+            )));
+        }
+    }
+    Ok(None)
 }
 
 /// For a declarator-hole needle: which pin failed to place, or (if all pins
@@ -1105,6 +1155,22 @@ mod tests {
             alpha: true,
             expected_score: 55,
             expected_reason: "variable declarators differ: selector has 1 declarator(s), candidate has 2",
+        },
+        Case {
+            variant: "second declarator value",
+            needle_src: "const first = 1, second = 4;",
+            candidate_src: "const a = 1, b = 2;",
+            alpha: true,
+            expected_score: 55,
+            expected_reason: "variable declarator #1 differs: selector `second = 4`, candidate `b = 2`",
+        },
+        Case {
+            variant: "cross-declarator binding",
+            needle_src: "const first = 1, second = first;",
+            candidate_src: "const a = 1, b = c;",
+            alpha: true,
+            expected_score: 55,
+            expected_reason: "variable declarators differ: selector has 2 declarator(s), candidate has 2",
         },
         Case {
             variant: "member body",

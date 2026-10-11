@@ -161,6 +161,25 @@ fn no_match_is_not_unique() {
 }
 
 #[test]
+fn no_match_identifies_the_first_differing_declarator() {
+    let dir = tempfile::tempdir().unwrap();
+    let source = dir.path().join("app.js");
+    write_text_file(&source, "const a = 1, b = 2;\n");
+
+    let report = run_match_selector(
+        &source,
+        "const first = 1, second = 4;",
+        &["--target-binding", "second", "--no-slack"],
+    );
+    assert_eq!(outcome(&report)["kind"], "no_match", "{report:#}");
+    assert_eq!(
+        outcome(&report)["nearest_unclaimed"][0]["reason"],
+        "variable declarator #1 differs: selector `second = 4`, candidate `b = 2`",
+        "{report:#}"
+    );
+}
+
+#[test]
 fn defaulted_destructure_local_can_be_renamed() {
     let dir = tempfile::tempdir().unwrap();
     let source = dir.path().join("app.js");
