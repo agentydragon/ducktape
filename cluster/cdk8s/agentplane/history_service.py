@@ -120,7 +120,7 @@ class HistoryService(Construct):
             # A migration failure blocks startup; the command has no retry loop.
             init_containers=[
                 migrate_init_container(
-                    "git.allegedly.works/ducktape-ci/agentplane-sandbox-service-history-migrate:unset",
+                    "git.allegedly.works/ducktape-ci/agentplane-history-migrate:unset",
                     name="migrate",
                     env_variables={"AGENTPLANE_SANDBOX_SERVICE_DATABASE_URL": database_url},
                 )

@@ -211,11 +211,6 @@ spec:
       name: agentplane-sandbox-service
       namespace: flux-system
     - apiVersion: image.toolkit.fluxcd.io/v1
-      filter: req.package.name == 'agentplane-sandbox-service-history-migrate'
-      kind: ImageRepository
-      name: agentplane-sandbox-service-history-migrate
-      namespace: flux-system
-    - apiVersion: image.toolkit.fluxcd.io/v1
       filter: req.package.name == 'aiquota-api'
       kind: ImageRepository
       name: aiquota-api

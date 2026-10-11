@@ -57,9 +57,6 @@ IMAGES = (
     "agentplane-sandbox-build",
     "agentplane-sandbox-commands-migrate",
     "agentplane-sandbox-service",
-    # CLEANUP(added 2026-10-11): delete once the History Service's init container pulls
-    #   agentplane-history-migrate (HISTORY_MIGRATE_IMAGE_RENAME).
-    "agentplane-sandbox-service-history-migrate",
     "aiquota-api",
     "airlock",
     "att-gateway-exporter",

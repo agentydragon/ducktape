@@ -2981,7 +2981,7 @@ spec:
                 secretKeyRef:
                   key: uri
                   name: postgres-sandbox-service
-          image: git.allegedly.works/ducktape-ci/agentplane-sandbox-service-history-migrate:unset
+          image: git.allegedly.works/ducktape-ci/agentplane-history-migrate:unset
           imagePullPolicy: Always
           name: migrate
           resources:

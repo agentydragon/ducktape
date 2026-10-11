@@ -738,7 +738,6 @@ are irreplaceable, and a node that deletes a column or row stops for the operato
 ```mermaid
 flowchart TD
     HISTORY_SANDBOX_LOCATOR_DROP[Blocked: drop the Sandbox locator from the history database]
-    HISTORY_MIGRATE_IMAGE_RENAME[Blocked: name the history migration image for the History Service]
     HISTORY_DATABASE_RENAME[Blocked: rename the sandbox_service database and role]
     SANDBOX_DATABASE_RENAME[Blocked: name the sandbox_commands database for the Sandbox Service]
     APP_ELECTRIC_RETIRE[Blocked: remove Electric's access to the app database]
@@ -760,15 +759,6 @@ is also the runner's, and its row names the writer that pushed it. The Sandbox l
 rows the followers wrote, and `source_id` is never set. Rewrite feed snapshots stored under a
 runner session ID under the public ID, then drop those columns with `ux_history_runner_locator`.
 Stops for the operator.
-
-### `HISTORY_MIGRATE_IMAGE_RENAME` — the migration image says whose it is
-
-**Blocked on the first `agentplane-history-migrate` publish.** The migration image built from
-`history_service/storage` now publishes under both `agentplane-history-migrate` and the old
-`agentplane-sandbox-service-history-migrate`, and Flux watches both. Once the new name has a tag in
-the registry, point the History Service's init container (`cluster/cdk8s/agentplane/history_service.py`)
-and both image-pin Components at it, then delete the old `image_targets.json` entry and its
-`IMAGES` entry in `cluster/cdk8s/forgejo_registry/image_automation.py`.
 
 ### `HISTORY_DATABASE_RENAME` — name the database for its owner
 
