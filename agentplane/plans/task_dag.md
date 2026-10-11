@@ -785,7 +785,6 @@ tombstones with a verifiable condition in code (`keepingOffset` in
 
 ```mermaid
 flowchart TD
-    APP_THREAD_VIEW_CLEANUP[Candidate: drop AGENTPLANE_THREAD_READS]
     RUNNER_SESSION_RECORD_SHIMS[Candidate: drop runner session record compatibility]
     ACTION_EXECUTION_AUDIT_TRIM[Decision: execution reconciliation columns]
     REFACTOR_COHERENCE_AUDIT[Blocked: whole-refactor coherence audit]
@@ -803,12 +802,6 @@ older images: `context_budget_resolved` (False only for records from before budg
 2026-10-10 PDT) re-resolves the budget at Open, and `instructions` and `event_source_id` have
 defaults that fill records predating them. No live Sandbox predates them. Delete the flag and its
 Open branch, make both fields required, and have `from_spec` set `event_source_id` explicitly.
-
-### `APP_THREAD_VIEW_CLEANUP` — drop `AGENTPLANE_THREAD_READS`
-
-**Candidate; Thread fold move lane.** Once staging and testing serve an app image without
-`Settings.thread_reads`, drop the manifests' `AGENTPLANE_THREAD_READS` (its CLEANUP tombstone in
-`cluster/cdk8s/agentplane/app.py`).
 
 ### `ACTION_EXECUTION_AUDIT_TRIM` — execution reconciliation columns
 

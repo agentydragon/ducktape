@@ -163,9 +163,6 @@ class App(Construct):
                 "@$(AGENTPLANE_DB_HOST):$(AGENTPLANE_DB_PORT)/$(AGENTPLANE_DB_NAME)"
             ),
             env_name(Settings, "electric_url"): EnvValue.from_value(electric.service(namespace, electric.HISTORY).url),
-            # CLEANUP(added 2026-10-10): drop once staging and testing pin an app image without
-            #   `Settings.thread_reads`; the previous image defaults to its own projector without it.
-            "AGENTPLANE_THREAD_READS": EnvValue.from_value("history_service"),
             env_name(OIDCSettings, "issuer"): EnvValue.from_value(self.env.app.oidc_issuer),
             env_name(OIDCSettings, "public_base_url"): EnvValue.from_value(f"https://{self.env.app.hostname}"),
             env_name(OIDCSettings, "client_id"): self.oidc.key("client-id").env_value(self, "oidc-client-id-ref"),
