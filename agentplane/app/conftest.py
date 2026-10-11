@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import secrets
-from collections.abc import AsyncIterator, Generator, Iterator
+from collections.abc import AsyncIterator, Iterator
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any, cast
@@ -69,6 +69,7 @@ from agentplane.sandbox_service.testing.fake_inventory import (
 )
 from agentplane.sandbox_service.testing.fake_rbac import FakeRbac
 from agentplane.sandbox_service.testing.fixtures import service_database_template
+from agentplane.testing.failure_journal import pytest_runtest_makereport
 from agentplane.thread_fold.projection_lease import ProjectionLease
 from util.testing.postgres import DatabaseClones, PostgresDatabaseTemplate, migrated_database_template
 from util.testing.postgres_fixtures import database_clones, database_names, postgres_admin_url, postgres_container
@@ -78,20 +79,6 @@ from util.testing.postgres_fixtures import database_clones, database_names, post
 async def close_fake_clients() -> AsyncIterator[None]:
     yield
     await close_fake_api_clients()
-
-
-@pytest.hookimpl(wrapper=True)
-def pytest_runtest_makereport(
-    item: pytest.Item, call: pytest.CallInfo[object]
-) -> Generator[None, pytest.TestReport, pytest.TestReport]:
-    """Expose the call report to a fixture's teardown without changing test outcomes."""
-    report = yield
-    if call.when == "call":
-        item.stash[_CALL_REPORT] = report
-    return report
-
-
-_CALL_REPORT = pytest.StashKey[pytest.TestReport]()
 
 
 @pytest.fixture(scope="session")

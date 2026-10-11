@@ -26,3 +26,14 @@ py_library(
         "@pypi//more_itertools",
     ],
 )
+
+py_library(
+    name = "failure_journal",
+    srcs = ["failure_journal.py"],
+    deps = [
+        "//agentplane/runner/testing:fixtures",
+        "//util/testing:undeclared_outputs",
+        "@pypi//protobuf",
+        "@pypi//pytest",
+    ],
+)
