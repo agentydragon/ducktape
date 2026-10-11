@@ -1,7 +1,6 @@
 """Real Electric and logical PostgreSQL with the deployment's restricted database role."""
 
 import asyncio
-import hashlib
 import os
 from collections.abc import AsyncIterator, Iterator
 from contextlib import asynccontextmanager, contextmanager
@@ -81,15 +80,13 @@ def browser_postgres_server() -> Iterator[BrowserPostgres]:
 @asynccontextmanager
 async def browser_electric_service(postgres: BrowserPostgres, database_name: str) -> AsyncIterator[ElectricService]:
     """Run a fresh Electric process against a fresh clone of the shard's migrated database."""
-    test_digest = hashlib.sha256(database_name.encode()).hexdigest()
-    output_name = f"conversation-electric-{test_digest[:12]}"
     with postgres.template.clone(database_name) as database_url:
-        database = make_url(database_url).database
-        assert database is not None
         app_url = make_url(database_url).set(drivername="postgresql+asyncpg").render_as_string(hide_password=False)
-        electric_url = f"postgresql://electric:electric@postgres:5432/{database}?sslmode=disable"
-        with postgres.replication_slot_cleanup(database):
-            async with _electric_process(postgres.network, app_url, electric_url, test_name=output_name) as service:
+        electric_url = f"postgresql://electric:electric@postgres:5432/{database_name}?sslmode=disable"
+        with postgres.replication_slot_cleanup(database_name):
+            async with _electric_process(
+                postgres.network, app_url, electric_url, test_name=f"conversation-electric-{database_name}"
+            ) as service:
                 yield service
 
 
