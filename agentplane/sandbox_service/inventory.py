@@ -46,6 +46,7 @@ from agentplane.sandbox_service.models import (
 )
 from agentplane.sandbox_service.protocol_pb2 import CreateSandboxRequest, Hold, Sandbox, SandboxBinding, TeardownPhase
 from agentplane.sandbox_service.retention_holds import RetentionHolds, read_holds
+from agentplane.sandbox_service.runner_endpoints import SandboxEndpoints
 from agentplane.sandbox_service.session_config import LaunchGrants
 from agentplane.subjects import ServiceAccountRef
 from util.agent_sandbox import EXTENSIONS_API, SANDBOX_API, SANDBOXES_PLURAL, TEMPLATES_PLURAL, OperatingMode
@@ -150,6 +151,7 @@ class SandboxInventory:
         annotations: dict[str, str] | None = None,
         finalizers: list[str] | None = None,
         caller: ServiceAccountRef,
+        endpoints: SandboxEndpoints,
     ) -> Sandbox:
         # This immutable receipt distinguishes a retry from another caller's same-name Create.
         # Resolve an existing CR before looking up the template: templates may change or disappear.
@@ -177,7 +179,7 @@ class SandboxInventory:
                 **({"finalizers": finalizers} if finalizers else {}),
             },
             "spec": {
-                "podTemplate": _running_as(template.spec.pod_template, name),
+                "podTemplate": endpoints.point(_running_as(template.spec.pod_template, name)),
                 "volumeClaimTemplates": template.spec.volume_claim_templates,
                 "shutdownPolicy": "Retain",
                 "operatingMode": "Suspended",

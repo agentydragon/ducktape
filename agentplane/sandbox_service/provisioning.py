@@ -10,6 +10,7 @@ import re
 from dataclasses import dataclass
 
 from google.protobuf.json_format import MessageToDict
+from more_itertools import unique_everseen
 
 from agentplane.runner import protocol_pb2 as runner_pb2
 from agentplane.sandbox_service.action_policy import ActionPolicyBindings
@@ -24,6 +25,7 @@ from agentplane.sandbox_service.kubernetes_views import (
     SANDBOX_BINDING_ANNOTATION,
 )
 from agentplane.sandbox_service.protocol_pb2 import CreateSandboxRequest, Sandbox, SandboxBinding
+from agentplane.sandbox_service.runner_endpoints import RunnerEndpoints
 from agentplane.sandbox_service.session_config import LaunchGrants
 from agentplane.subjects import ServiceAccountRef
 
@@ -35,6 +37,7 @@ class Provisioning:
     action_policy: ActionPolicyBindings
     grants: dict[str, KubernetesGrant]
     bindings: KubernetesBindings
+    endpoints: RunnerEndpoints
 
     async def create(self, spec: CreateSandboxRequest, *, caller: ServiceAccountRef) -> Sandbox:
         if not re.fullmatch(r"[a-z0-9]([-a-z0-9]*[a-z0-9])?", spec.name) or len(spec.name) > 57 or not spec.template:
@@ -46,11 +49,15 @@ class Provisioning:
             runner_pb2.HARNESS_CODEX,
         ):
             raise ValueError("unsupported harness")
+        self.endpoints.require_unreserved(spec.egress_policies)
         existing = await self.inventory.retry(spec, caller=caller)
         if existing is not None:
             return existing
         grants = resolve_grants(list(spec.kubernetes_grants), self.grants)
-        policies = self.egress.launch_policies(list(spec.egress_policies))
+        endpoints = self.endpoints.resolve(spec.runner_ingress)
+        policies = list(
+            unique_everseen([*endpoints.egress_policies(), *self.egress.launch_policies(list(spec.egress_policies))])
+        )
         await self.egress.require_policies(policies)
         await self.action_policy.require_policy_sets(list(spec.action_policy_sets))
         binding = (
@@ -75,6 +82,7 @@ class Provisioning:
         return await self.inventory.create(
             spec,
             caller=caller,
+            endpoints=endpoints,
             annotations=annotations or None,
             finalizers=[KUBERNETES_BINDINGS_FINALIZER]
             if any(

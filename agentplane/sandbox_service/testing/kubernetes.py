@@ -26,6 +26,7 @@ from agentplane.sandbox_service.kubernetes_bindings import KubernetesBindings
 from agentplane.sandbox_service.kubernetes_views import MANAGED_LABEL, SANDBOX_BINDING_ANNOTATION
 from agentplane.sandbox_service.protocol_pb2 import SandboxBinding
 from agentplane.sandbox_service.provisioning import Provisioning
+from agentplane.sandbox_service.runner_endpoints import RunnerEndpoints
 from agentplane.sandbox_service.session_history.session_changes import SessionChanges
 from agentplane.sandbox_service.session_registry import SessionRegistry
 from agentplane.sandbox_service.testing.grpc_service import service_client
@@ -102,6 +103,7 @@ async def kubernetes() -> AsyncIterator[Cluster]:
                     ActionPolicyBindings(namespace=SANDBOX_NAMESPACE, custom_objects=custom),
                     {},
                     KubernetesBindings(inventory, k8s_client.RbacAuthorizationV1Api(api)),
+                    RunnerEndpoints(control=None, ingresses={}),
                 ),
             )
 

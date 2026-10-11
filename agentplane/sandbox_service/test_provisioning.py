@@ -2,6 +2,7 @@
 
 import json
 from collections.abc import AsyncIterator
+from copy import deepcopy
 from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any, cast
@@ -11,6 +12,7 @@ import grpc
 import pytest
 import pytest_bazel
 from kubernetes_asyncio import client as k8s_client
+from more_itertools import one
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from agentplane.runner import protocol_pb2 as runner_pb2
@@ -33,6 +35,7 @@ from agentplane.sandbox_service.kubernetes_grants import RoleBindingGrant, RoleR
 from agentplane.sandbox_service.kubernetes_views import SANDBOX_BINDING_ANNOTATION
 from agentplane.sandbox_service.protocol_pb2 import CreateSandboxRequest, SandboxDestination
 from agentplane.sandbox_service.provisioning import Provisioning
+from agentplane.sandbox_service.runner_endpoints import HISTORY_INGRESS, RunnerEndpoint, RunnerEndpoints
 from agentplane.sandbox_service.session_history.session_changes import SessionChanges
 from agentplane.sandbox_service.session_registry import SessionRegistry
 from agentplane.sandbox_service.testing.fake_inventory import (
@@ -61,6 +64,9 @@ pytest_plugins = ("agentplane.sandbox_service.commands.conftest",)
 TOKEN = "test-provisioner-token"
 ADMIN = ServiceAccountRef(namespace=SANDBOX_NAMESPACE, name="test-provisioner")
 AUDIENCE = "test-provisioning"
+CONTROL = RunnerEndpoint(target="test-hub.test:8082", bearer="test-control-bearer", egress_policy="test-control")
+HISTORY = RunnerEndpoint(target="test-history.test:8083", bearer="test-history-bearer", egress_policy="test-history")
+CLIENT = RunnerEndpoint(target="test-client.test:8084", bearer="test-client-bearer", egress_policy="test-client")
 
 
 class FaultyObjects(FakeCustomObjectsApi):
@@ -90,6 +96,10 @@ def case() -> Case:
     )
     custom.objects[("egresspolicies", "test-basic")] = egress_policy("test-basic", [{"hosts": ["example.test"]}])
     custom.objects[("actionpolicysets", "test-actions")] = action_policy_set("test-actions")
+    for endpoint in (CONTROL, HISTORY, CLIENT):
+        custom.objects[("egresspolicies", endpoint.egress_policy)] = egress_policy(
+            endpoint.egress_policy, [{"hosts": [endpoint.target.partition(":")[0]]}]
+        )
     return Case(
         Provisioning(
             inventory,
@@ -103,6 +113,7 @@ def case() -> Case:
                 )
             },
             KubernetesBindings(inventory, cast(k8s_client.RbacAuthorizationV1Api, rbac)),
+            RunnerEndpoints(control=CONTROL, ingresses={HISTORY_INGRESS: HISTORY, "test-client": CLIENT}),
         ),
         custom,
         core,
@@ -396,6 +407,87 @@ async def test_reconcile_after_final_resume_reply_is_lost(case: Case, monkeypatc
     current = await case.service.inventory.get(view.name)
     assert current.operating_mode == "Running"
     assert not current.initializing
+
+
+def _runner_args(case: Case, name: str) -> list[str]:
+    containers = case.custom.objects[("sandboxes", name)]["spec"]["podTemplate"]["spec"]["containers"]
+    args: list[str] = one(container for container in containers if container["name"] == "runner")["args"]
+    return args
+
+
+def _granted(case: Case) -> list[str]:
+    binding = one(value for (kind, _), value in case.custom.objects.items() if kind == "egressbindings")
+    policies: list[str] = binding["spec"]["policies"]
+    return policies
+
+
+@pytest.mark.parametrize(
+    ("ingress", "endpoint"), [("", HISTORY), ("test-client", CLIENT)], ids=["default-history", "named-client"]
+)
+async def test_create_points_the_runner_at_its_endpoints_and_grants_their_egress(
+    case: Case, ingress: str, endpoint: RunnerEndpoint
+) -> None:
+    await case.service.create(
+        CreateSandboxRequest(name="test", template=TEMPLATE, runner_ingress=ingress), caller=ADMIN
+    )
+    assert _runner_args(case, "test") == [
+        "--channel-target",
+        CONTROL.target,
+        "--channel-bearer",
+        CONTROL.bearer,
+        "--ingress-target",
+        endpoint.target,
+        "--ingress-bearer",
+        endpoint.bearer,
+    ]
+    await case.service.reconcile_once()
+    assert _granted(case) == [CONTROL.egress_policy, endpoint.egress_policy, "test-basic"]
+
+
+async def test_without_a_history_ingress_a_default_create_names_no_ingress(case: Case) -> None:
+    unconfigured = replace(case.service, endpoints=RunnerEndpoints(control=CONTROL, ingresses={"test-client": CLIENT}))
+    await unconfigured.create(CreateSandboxRequest(name="test", template=TEMPLATE), caller=ADMIN)
+    assert _runner_args(case, "test") == ["--channel-target", CONTROL.target, "--channel-bearer", CONTROL.bearer]
+    await unconfigured.reconcile_once()
+    assert _granted(case) == [CONTROL.egress_policy, "test-basic"]
+
+
+@pytest.mark.parametrize(
+    "spec",
+    [
+        CreateSandboxRequest(name="test", template=TEMPLATE, runner_ingress="test-unknown"),
+        CreateSandboxRequest(name="test", template=TEMPLATE, egress_policies=[HISTORY.egress_policy]),
+        CreateSandboxRequest(name="test", template=TEMPLATE, egress_policies=[CONTROL.egress_policy]),
+    ],
+    ids=["unknown-ingress", "picks-ingress-policy", "picks-control-policy"],
+)
+async def test_a_request_cannot_choose_an_endpoint_or_its_egress(
+    api: SandboxServiceClient, case: Case, spec: CreateSandboxRequest
+) -> None:
+    before = dict(case.custom.objects)
+    with pytest.raises(ServiceError) as rejected:
+        await api.create(spec)
+    assert rejected.value.code == grpc.StatusCode.INVALID_ARGUMENT
+    assert case.custom.objects == before
+
+
+async def test_endpoint_egress_cannot_be_granted_afterwards(api: SandboxServiceClient, case: Case) -> None:
+    view = await api.create(CreateSandboxRequest(name="test", template=TEMPLATE, runner_ingress="test-client"))
+    before = dict(case.custom.objects)
+    with pytest.raises(ServiceError) as rejected:
+        await api.grant_egress(view, [HISTORY.egress_policy])
+    assert rejected.value.code == grpc.StatusCode.INVALID_ARGUMENT
+    assert case.custom.objects == before
+
+
+@pytest.mark.parametrize("flag", ["--channel-target", "--ingress-target"])
+async def test_a_template_that_names_an_endpoint_is_refused(api: SandboxServiceClient, case: Case, flag: str) -> None:
+    template = deepcopy(case.custom.objects[("sandboxtemplates", TEMPLATE)])
+    template["spec"]["podTemplate"]["spec"]["containers"][0]["args"] = [flag, "test-elsewhere.test:9000"]
+    case.custom.objects[("sandboxtemplates", TEMPLATE)] = template
+    with pytest.raises(RunnerError):  # How the client reports FAILED_PRECONDITION.
+        await api.create(CreateSandboxRequest(name="test", template=TEMPLATE))
+    assert ("sandboxes", "test") not in case.custom.objects
 
 
 if __name__ == "__main__":

@@ -334,7 +334,6 @@ flowchart LR
     VM_LIFECYCLE[Blocked: integrated lifecycle]
     RUNNER_OUTBOUND_LIFECYCLE --> VM_CONTROL_NETWORKING
     HISTORY_INGRESS[History Service ingress] --> RUNNER_OUTBOUND_ROLLOUT
-    SANDBOX_RUNNER_ENDPOINTS[Sandboxes name their runner's endpoints] --> RUNNER_OUTBOUND_ROLLOUT
     CLIENT_SESSION_IDS[Clients mint Session IDs] --> RUNNER_OUTBOUND_ROLLOUT
     SEAL_ON_INGRESS_ACK[Seal waits on the ingress acknowledgement] --> RUNNER_OUTBOUND_ROLLOUT
     RUNNER_OUTBOUND_LIFECYCLE --> RUNNER_OUTBOUND_ROLLOUT
@@ -364,8 +363,11 @@ manifests once their images carry it. `LookupSession`'s journal scan waits on ho
 ### `RUNNER_OUTBOUND_ROLLOUT` — every template dials out
 
 **Blocked on lifecycle requests and the [ingress and control split](#11-runner-ingress-and-control-split).**
-Every Sandbox template starts its runner pushing Events to its ingress (`--ingress-target`) and
-holding its control stream, and the canary template goes. Pre-cutover Sandboxes are not upgraded: a clean cutover
+Every Sandbox template starts its runner pushing Events to its ingress and holding its control
+stream, and the canary template goes. The Sandbox Service sets both endpoints at creation once its
+config carries `runner_control` and a `history` entry in `runner_ingresses`, and no template may then
+pass `--channel-target` itself, so that config and the canary's removal land together, after the
+images that read them are published. Pre-cutover Sandboxes are not upgraded: a clean cutover
 (operator, 2026-10-10 PDT), with the operator stopping their one running Sandbox for it.
 
 ### `LEGACY_SANDBOX_RETIRE` — delete pre-cutover Sandboxes
@@ -901,7 +903,6 @@ nodes and section 9 are unaffected.
 ```mermaid
 flowchart TD
     HISTORY_INGRESS[Candidate: History Service ingress]
-    SANDBOX_RUNNER_ENDPOINTS[Candidate: Sandboxes name their runner's endpoints]
     CLIENT_SESSION_IDS[Candidate: clients mint Session IDs]
     APP_LIVE_FROM_HISTORY[Candidate: no live reads through the Sandbox Service]
     SEAL_ON_INGRESS_ACK[Blocked: seal waits on the ingress acknowledgement]
@@ -915,7 +916,6 @@ flowchart TD
     COMMAND_RECORDS_RETIRE[Unscheduled: drop command submission records]
     HISTORY_INGRESS --> SEAL_ON_INGRESS_ACK
     HISTORY_INGRESS --> RUNNER_OUTBOUND_ROLLOUT
-    SANDBOX_RUNNER_ENDPOINTS --> RUNNER_OUTBOUND_ROLLOUT
     CLIENT_SESSION_IDS --> RUNNER_OUTBOUND_ROLLOUT
     CLIENT_SESSION_IDS --> RUNNER_INBOUND_RETIRE[Retire inbound runner access]
     SEAL_ON_INGRESS_ACK --> RUNNER_OUTBOUND_ROLLOUT
@@ -935,12 +935,6 @@ from its read API, since it takes untrusted input. Its store appends exactly as 
 ingester does now and acknowledges only after commit. Test duplicate and out-of-order pushes, a
 second writer identity refused, and resume after a History Service restart.
 
-### `SANDBOX_RUNNER_ENDPOINTS` — Sandboxes name their runner's endpoints
-
-**Candidate.** The component that creates a Sandbox's Kubernetes objects sets its
-runner's ingress and control endpoints, and only it can: the request names the ingress (default:
-the History Service), the control endpoint is always the hub. Egress grants admit both, each with
-its own token audience.
 
 ### `CLIENT_SESSION_IDS` — clients mint Session IDs
 

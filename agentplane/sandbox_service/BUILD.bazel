@@ -54,6 +54,7 @@ py_library(
         ":kubernetes_views",
         ":models",
         ":retention_holds",
+        ":runner_endpoints",
         ":session_config",
         "//agentplane:subjects",
         "//agentplane/action_service/policies:resources",
@@ -77,6 +78,20 @@ py_library(
     deps = [
         "//agentplane/sandbox_service:protocol_pb2",
         "@pypi//protobuf",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "runner_endpoints",
+    srcs = ["runner_endpoints.py"],
+    visibility = [
+        "//agentplane:__subpackages__",
+        "//cluster/cdk8s/agentplane:__pkg__",
+    ],
+    deps = [
+        ":models",
+        "@pypi//more_itertools",
         "@pypi//pydantic",
     ],
 )
@@ -184,6 +199,7 @@ py_library(
         ":kubernetes_grants",
         ":provisioning",
         ":runner_channel",
+        ":runner_endpoints",
         ":session_registry",
         ":settings",
         ":teardown",
@@ -326,10 +342,12 @@ py_library(
         ":kubernetes_bindings",
         ":kubernetes_grants",
         ":kubernetes_views",
+        ":runner_endpoints",
         ":session_config",
         "//agentplane:subjects",
         "//agentplane/runner:protocol_pb2",
         "//agentplane/sandbox_service:protocol_pb2",
+        "@pypi//more_itertools",
         "@pypi//protobuf",
     ],
 )
@@ -363,6 +381,7 @@ py_test(
         ":kubernetes_bindings",
         ":kubernetes_grants",
         ":kubernetes_views",
+        ":runner_endpoints",
         "//:conftest",
         "//agentplane:subjects",
         "//agentplane/sandbox_service:protocol_pb2",
@@ -395,6 +414,7 @@ py_test(
         ":kubernetes_grants",
         ":kubernetes_views",
         ":provisioning",
+        ":runner_endpoints",
         ":session_registry",
         "//:conftest",
         "//agentplane:subjects",
@@ -415,6 +435,7 @@ py_test(
         "//util:kubernetes",
         "@pypi//grpcio",
         "@pypi//kubernetes_asyncio",
+        "@pypi//more_itertools",
         "@pypi//protobuf",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
@@ -727,6 +748,7 @@ py_test(
         ":inventory",
         ":kubernetes_views",
         ":models",
+        ":runner_endpoints",
         "//:conftest",
         "//agentplane:subjects",
         "//agentplane/action_service/policies:resources",
@@ -759,6 +781,7 @@ py_library(
     ],
     deps = [
         ":kubernetes_grants",
+        ":runner_endpoints",
         "//agentplane:subjects",
         "@pypi//pydantic",
         "@pypi//pydantic_settings",
@@ -817,6 +840,7 @@ py_test(
         ":kubernetes_bindings",
         ":models",
         ":provisioning",
+        ":runner_endpoints",
         ":session_registry",
         "//:conftest",
         "//agentplane:subjects",

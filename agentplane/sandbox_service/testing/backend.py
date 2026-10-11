@@ -28,6 +28,7 @@ from agentplane.sandbox_service.inventory import SandboxInventory
 from agentplane.sandbox_service.kubernetes_bindings import KubernetesBindings
 from agentplane.sandbox_service.kubernetes_grants import KubernetesGrant
 from agentplane.sandbox_service.provisioning import Provisioning
+from agentplane.sandbox_service.runner_endpoints import RunnerEndpoints
 from agentplane.sandbox_service.session_history.session_changes import SessionChanges
 from agentplane.sandbox_service.session_registry import SessionRegistry
 from agentplane.sandbox_service.testing.fake_inventory import (
@@ -119,6 +120,7 @@ def backend(
                 ActionPolicyBindings(namespace=NAMESPACE, custom_objects=custom),
                 grants if grants is not None else {},
                 bindings,
+                RunnerEndpoints(control=None, ingresses={}),
             ),
             sessions=SessionRegistry(engine),
             submissions=SubmissionStore(engine),

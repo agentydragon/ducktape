@@ -354,6 +354,7 @@ class SandboxService(protocol_pb2_grpc.SandboxServiceServicer):
             )
             if not request.egress_policies:
                 raise ValueError("at least one egress policy is required")
+            provisioning.endpoints.require_unreserved(request.egress_policies)
             binding = await provisioning.egress.grant(view, list(request.egress_policies))
             return protocol_pb2.GrantEgressResponse(binding_name=binding.name)
 

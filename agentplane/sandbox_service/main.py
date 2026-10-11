@@ -31,6 +31,7 @@ from agentplane.sandbox_service.kubernetes_bindings import KubernetesBindings
 from agentplane.sandbox_service.kubernetes_grants import ClusterRoleBindingGrant, RoleBindingGrant
 from agentplane.sandbox_service.provisioning import Provisioning
 from agentplane.sandbox_service.runner_channel import ChannelTiming, RunnerChannelService
+from agentplane.sandbox_service.runner_endpoints import RunnerEndpoints
 from agentplane.sandbox_service.session_history.ingestion import HistoryIngester
 from agentplane.sandbox_service.session_history.session_changes import SessionChanges
 from agentplane.sandbox_service.session_history.store import Store
@@ -107,6 +108,7 @@ async def serve_with_engines(
                 cleanup_cluster_bindings=settings.kubernetes_cluster_binding_cleanup
                 or any(isinstance(grant, ClusterRoleBindingGrant) for grant in settings.kubernetes_grants.values()),
             ),
+            RunnerEndpoints(control=settings.runner_control, ingresses=settings.runner_ingresses),
         )
         history_store = Store(engine)
         sessions = SessionRegistry(commands_engine)

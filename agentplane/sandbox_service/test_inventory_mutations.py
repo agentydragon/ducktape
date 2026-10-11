@@ -22,6 +22,7 @@ from agentplane.sandbox_service.models import (
     SandboxTearingDownError,
 )
 from agentplane.sandbox_service.protocol_pb2 import CreateSandboxRequest, TeardownPhase
+from agentplane.sandbox_service.runner_endpoints import SandboxEndpoints
 from agentplane.sandbox_service.testing.fake_inventory import (
     NAMESPACE,
     POD_TEMPLATE,
@@ -37,6 +38,7 @@ from util.agent_sandbox import OperatingMode
 
 CALLER = ServiceAccountRef(namespace=NAMESPACE, name="test-caller")
 OTHER = ServiceAccountRef(namespace=NAMESPACE, name="other-caller")
+NO_ENDPOINTS = SandboxEndpoints(control=None, ingress=None)
 
 _READY = {"conditions": [{"type": "Ready", "status": "True", "reason": "PodReady"}], "nodeName": "test-node"}
 
@@ -115,7 +117,7 @@ async def test_create_stamps_a_labelled_sandbox_from_the_template(
     inventory: SandboxInventory, custom_objects: FakeCustomObjectsApi
 ) -> None:
     view = await inventory.create(
-        CreateSandboxRequest(name="my-task", template="agentplane-test-runner"), caller=CALLER
+        CreateSandboxRequest(name="my-task", template="agentplane-test-runner"), caller=CALLER, endpoints=NO_ENDPOINTS
     )
 
     assert view.name == "my-task"
@@ -142,7 +144,7 @@ async def test_create_gives_the_sandbox_a_service_account_of_its_own_that_it_run
     caller label is what the Action Service admits it on; without it the sandbox authenticates and
     reaches no route."""
     view = await inventory.create(
-        CreateSandboxRequest(name="my-task", template="agentplane-test-runner"), caller=CALLER
+        CreateSandboxRequest(name="my-task", template="agentplane-test-runner"), caller=CALLER, endpoints=NO_ENDPOINTS
     )
 
     assert core_v1.service_accounts == {}  # The CR precedes its account.
@@ -169,7 +171,11 @@ async def test_create_leaves_no_service_account_behind_when_the_sandbox_is_refus
     custom_objects.create_fails = True
 
     with pytest.raises(k8s_client.ApiException):
-        await inventory.create(CreateSandboxRequest(name="my-task", template="agentplane-test-runner"), caller=CALLER)
+        await inventory.create(
+            CreateSandboxRequest(name="my-task", template="agentplane-test-runner"),
+            caller=CALLER,
+            endpoints=NO_ENDPOINTS,
+        )
 
     assert core_v1.service_accounts == {}
 
@@ -177,7 +183,10 @@ async def test_create_leaves_no_service_account_behind_when_the_sandbox_is_refus
 async def test_create_retries_the_same_name(inventory: SandboxInventory) -> None:
     spec = CreateSandboxRequest(name="twice", template="agentplane-test-runner")
 
-    first, second = await inventory.create(spec, caller=CALLER), await inventory.create(spec, caller=CALLER)
+    first, second = (
+        await inventory.create(spec, caller=CALLER, endpoints=NO_ENDPOINTS),
+        await inventory.create(spec, caller=CALLER, endpoints=NO_ENDPOINTS),
+    )
 
     assert first.name == second.name == "twice"
     assert first.uid == second.uid
@@ -236,14 +245,16 @@ async def test_teardown_runs_a_suspended_sandbox_fenced_until_sealed(
 
 async def test_create_intent_conflicts_and_caller_cannot_adopt_name(inventory: SandboxInventory) -> None:
     spec = CreateSandboxRequest(name="same", template="agentplane-test-runner")
-    first = await inventory.create(spec, caller=CALLER)
+    first = await inventory.create(spec, caller=CALLER, endpoints=NO_ENDPOINTS)
     retry = await inventory.retry(spec, caller=CALLER)
     assert retry is not None
     assert retry.uid == first.uid
     with pytest.raises(SandboxConflictError):
-        await inventory.create(spec, caller=OTHER)
+        await inventory.create(spec, caller=OTHER, endpoints=NO_ENDPOINTS)
     with pytest.raises(SandboxConflictError):
-        await inventory.create(CreateSandboxRequest(name="same", template="other"), caller=CALLER)
+        await inventory.create(
+            CreateSandboxRequest(name="same", template="other"), caller=CALLER, endpoints=NO_ENDPOINTS
+        )
 
 
 async def test_retry_recovers_lost_cr_reply(
@@ -259,7 +270,7 @@ async def test_retry_recovers_lost_cr_reply(
 
     monkeypatch.setattr(custom_objects, "create_namespaced_custom_object", committed_then_lost)
     spec = CreateSandboxRequest(name="recover", template="agentplane-test-runner")
-    view = await inventory.create(spec, caller=CALLER)
+    view = await inventory.create(spec, caller=CALLER, endpoints=NO_ENDPOINTS)
     retry = await inventory.retry(spec, caller=CALLER)
     assert retry is not None
     assert retry.uid == view.uid
@@ -267,7 +278,9 @@ async def test_retry_recovers_lost_cr_reply(
 
 
 async def test_service_account_conflicts_with_stale_uid(inventory: SandboxInventory, core_v1: FakeCoreV1Api) -> None:
-    view = await inventory.create(CreateSandboxRequest(name="same", template="agentplane-test-runner"), caller=CALLER)
+    view = await inventory.create(
+        CreateSandboxRequest(name="same", template="agentplane-test-runner"), caller=CALLER, endpoints=NO_ENDPOINTS
+    )
     await inventory.ensure_service_account(view)
     await inventory.ensure_service_account(view)
     core_v1.service_accounts["same"].metadata.owner_references[0].uid = str(uuid4())
@@ -293,7 +306,10 @@ async def test_concurrent_creates_share_one_cr_or_conflict_on_intent(
 
     monkeypatch.setattr(custom_objects, "create_namespaced_custom_object", collide)
     spec = CreateSandboxRequest(name="concurrent", template="agentplane-test-runner")
-    first, second = await asyncio.gather(inventory.create(spec, caller=CALLER), inventory.create(spec, caller=CALLER))
+    first, second = await asyncio.gather(
+        inventory.create(spec, caller=CALLER, endpoints=NO_ENDPOINTS),
+        inventory.create(spec, caller=CALLER, endpoints=NO_ENDPOINTS),
+    )
     assert first.uid == second.uid
     assert len([key for key in custom_objects.objects if key[0] == "sandboxes"]) == 1
 
@@ -302,14 +318,14 @@ async def test_deleted_name_is_reusable_but_not_the_old_uid(
     inventory: SandboxInventory, core_v1: FakeCoreV1Api
 ) -> None:
     spec = CreateSandboxRequest(name="reused", template="agentplane-test-runner")
-    previous = await inventory.create(spec, caller=CALLER)
+    previous = await inventory.create(spec, caller=CALLER, endpoints=NO_ENDPOINTS)
     await inventory.ensure_service_account(previous)
     await inventory.complete_initialization(previous)
     await inventory.suspend(previous.name, uid=previous.uid)
     await seal_and_delete(inventory, previous.name)
     # The real API server garbage-collects the ServiceAccount by the old CR UID.
     await core_v1.delete_namespaced_service_account(previous.name, NAMESPACE)
-    next_view = await inventory.create(spec, caller=CALLER)
+    next_view = await inventory.create(spec, caller=CALLER, endpoints=NO_ENDPOINTS)
     assert next_view.uid != previous.uid
     await inventory.ensure_service_account(next_view)
     with pytest.raises(SandboxConflictError):

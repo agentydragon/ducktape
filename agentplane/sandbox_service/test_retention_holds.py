@@ -28,6 +28,7 @@ from agentplane.sandbox_service.kubernetes_bindings import KubernetesBindings
 from agentplane.sandbox_service.models import SandboxNotFoundError
 from agentplane.sandbox_service.protocol_pb2 import Hold
 from agentplane.sandbox_service.provisioning import Provisioning
+from agentplane.sandbox_service.runner_endpoints import RunnerEndpoints
 from agentplane.sandbox_service.session_history.session_changes import SessionChanges
 from agentplane.sandbox_service.session_registry import SessionRegistry
 from agentplane.sandbox_service.testing.fake_inventory import NAMESPACE, FakeCoreV1Api, FakeCustomObjectsApi, sandbox
@@ -129,6 +130,7 @@ async def api(
             ActionPolicyBindings(namespace=NAMESPACE, custom_objects=custom),
             {},
             KubernetesBindings(inventory, cast(k8s_client.RbacAuthorizationV1Api, FakeRbac())),
+            RunnerEndpoints(control=None, ingresses={}),
         ),
         sessions=SessionRegistry(engine),
         submissions=SubmissionStore(engine),
