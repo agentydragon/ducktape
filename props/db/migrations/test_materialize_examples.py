@@ -9,25 +9,19 @@ import pytest_bazel
 from sqlalchemy import Engine, create_engine, text
 
 from props.db.config import DatabaseConfig
-from util.testing.postgres import force_drop_database_sync
+from util.testing.postgres import DatabaseNames, create_temporary_database
 
 
 @pytest.fixture
-def blank_engine(postgres_base_config: DatabaseConfig) -> Generator[Engine]:
+def blank_engine(postgres_base_config: DatabaseConfig, database_names: DatabaseNames) -> Generator[Engine]:
     """Engine for a fresh database with no migrations applied."""
-    db_name = "props_test_matview_migration"
     admin_url = postgres_base_config.with_database("postgres").url
-    force_drop_database_sync(admin_url, db_name)
-    pg_engine = create_engine(admin_url, isolation_level="AUTOCOMMIT")
-    with pg_engine.connect() as conn:
-        conn.execute(text(f'CREATE DATABASE "{db_name}"'))
-    pg_engine.dispose()
-
-    engine = create_engine(postgres_base_config.with_database(db_name).url)
-    yield engine
-    engine.dispose()
-
-    force_drop_database_sync(admin_url, db_name)
+    with create_temporary_database(admin_url, database_names()) as url:
+        engine = create_engine(url)
+        try:
+            yield engine
+        finally:
+            engine.dispose()
 
 
 def test_pg18_unqualified_table_in_function_fails_in_matview(blank_engine: Engine) -> None:

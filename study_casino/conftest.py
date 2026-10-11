@@ -8,13 +8,7 @@ import pytest
 from sqlalchemy import create_engine
 
 from study_casino.store import _run_alembic_migrations
-from util.testing.postgres import (
-    DatabaseClones,
-    DatabaseNames,
-    PostgresDatabaseTemplate,
-    create_database_sync,
-    force_drop_database_sync,
-)
+from util.testing.postgres import DatabaseClones, DatabaseNames, PostgresDatabaseTemplate, create_temporary_database
 from util.testing.postgres_fixtures import (
     database_clones,
     database_names,
@@ -45,9 +39,5 @@ def db_url(casino_database_template: PostgresDatabaseTemplate, database_clones: 
 @pytest.fixture
 def empty_db_url(postgres_admin_url: str, database_names: DatabaseNames) -> Generator[str]:
     """An empty database for the migration test that deliberately starts at revision 0004."""
-    db_name = database_names()
-    url = create_database_sync(postgres_admin_url, db_name)
-    try:
+    with create_temporary_database(postgres_admin_url, database_names()) as url:
         yield url
-    finally:
-        force_drop_database_sync(postgres_admin_url, db_name)
