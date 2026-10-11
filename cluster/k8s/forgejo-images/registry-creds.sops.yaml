@@ -7,8 +7,8 @@ metadata:
         description: Shared credential for the ducktape-ci Forgejo registry tenant. username/password read by tf/gitops/forgejo-images. Each consuming namespace (including flux-system, for ImageRepository authentication) reads this Secret directly via its own ExternalSecret against the scoped kubernetes-forgejo-images-secret-store ClusterSecretStore (cluster/generated/external-secrets/config/), rather than a cluster-wide reflector-based fan-out.
 type: kubernetes.io/dockerconfigjson
 stringData:
-    .dockerconfigjson: ENC[AES256_GCM,data:YMUIE9+iCqTzvTTHxie1D8WTgH85ibJCHpnrwHNUZE41O/Agf+cpSu1N8I0wbmBmJwZH+dkl6214pcNr1j10EF8gV/p/DrU1MdhYWBRdWsAYEVRTKGtlZ1q/q3JGwZRvPH2OXnIV2t2Ku6CHpvcCwYxkeMz0XCGkOJgGHVTchz69RxdkpjzzII+VdVs/UpodwqYWBMVUbxlzBnAHseGQSrQeFIciw/ZsDVDML91+YjRGDdVpaQf5fgBU1YHU5q1O7OqpObQ50RDi8G0HXbuWpH5Q,iv:mbopXU4JKmA1Baebmcfw2FiJYTWO/7DrojV3bSvBwo4=,tag:aBWXFhIJ8ZQ1c3jUerlTnw==,type:str]
-    password: ENC[AES256_GCM,data:rXQSlSrUoJ1JbxW2PRLnngdGuV+qM9UsDvrRH4argXPfvfTZWGiN82322KUvLA==,iv:cnivwtkvCTZrbq/QMrLkiD3dg2tp7Bli1L65EEPABrk=,tag:C2eICnp7p7z6gm4QQB9/nw==,type:str]
+    .dockerconfigjson: ENC[AES256_GCM,data:L4uvshbCyb+jnun3QLboULfJVIaZzrk+X1UtJXPKMrg0jAXbdAPEYbQ/12c25WjqDbxTls61qeVKwPvgRX+nRW1Ik4P6KFPWUlf4JJrckf5V61DVI6tDEZU3QB4huoREyaucALlkXCMzKaLjdz0p9jxTTReVU9YJvOAAr984wrCE3bN+CJTmd+RI3DeIJqLHGhq98sl9toOMGN9+QPUI/bPfOuqtS343eRAuyIkmzFU1zFJ3Vxviu/FwyODxKG83hWoDFhkR7O+Rjv+Ba/tdBoybTcD3hV9gHPfkGoTOqTTMOGZ/sHc3doPYOR4O4QMy0nZLbfjv2cpWzPIhTA==,iv:moD0AA66x4uVm1y0cLdwGCA7Odq4Y0Wj56m5k6c0vQ0=,tag:rWcA8h/8YTvPQAi0CXa/EA==,type:str]
+    password: ENC[AES256_GCM,data:ruGL03qwBCZOmGmVcTH9+6qX3EwwP2x6Kg1+IUM+YYnTFsanQh3teLeNtXVnvcB2AWPQwCr+MkMbjYFP56G/TA==,iv:hEO9VLXWks8TCQ+l7eTbfZHDMF2t4XVBLtenNZsa4RI=,tag:fyVqHBBlCcQCSPGF5Ydulg==,type:str]
     username: ENC[AES256_GCM,data:NUCkAOi8NEaOcdQ=,iv:NZLDUWPZs+x4zTFJwu8YSnOQGSkkKSSDNOYl+bjrEUs=,tag:f44hNl23MTO04ysttrw+Fw==,type:str]
 sops:
     age:
@@ -31,7 +31,7 @@ sops:
             -----END AGE ENCRYPTED FILE-----
           recipient: age1nywlwepsyfxvyhqwkjquzz02nmus65gf6qewfjju4alym8f7se5qnua8na
     encrypted_regex: ^(data|stringData)$
-    lastmodified: "2026-09-07T05:30:53Z"
-    mac: ENC[AES256_GCM,data:zEdIR4GSfjyb9MOAeqWi3U7bGP4xKfbmucihuWR/HUNt3AxkTf1wgVF1qqbCkfwcUjhWyhXdZ/i+fD07S8QnYEddavuqGBXAPg0AOITzjr55hGg8ict7JYPJpThUXCakWGGqMe97WUrieNPqpHqjF+mg1Thll1m/k4GcbBsrUR4=,iv:Bcx4YzzAohdG36/W317d86ojtanVFbK8NiIar7ulHRY=,tag:dPj+cehqRY3w797dPa9EWw==,type:str]
+    lastmodified: "2026-10-11T22:08:01Z"
+    mac: ENC[AES256_GCM,data:QlbgXd1Shvet+GMr1OEvHvEvD0ixGX4oMHlqEc6js6xDpA//OpDB5nJHJXQuOvAdcrO0BnHDzHwIM8ell/CgoQ/e1FHerSfGMtVxWNxTZStoYgaxs/X+Poj0TDa6SR6jGhQJzWJIxpvOX/5uvq0Vv74YuJYADOhKDK0OfNeccqk=,iv:2+NoPVULu+i0q6vp/eQl3eefDM5eRG7cs/BZXvnWTqE=,tag:3ZeSHIsgSuK1/gzwO7y/7g==,type:str]
     mac_only_encrypted: true
     version: 3.13.3
