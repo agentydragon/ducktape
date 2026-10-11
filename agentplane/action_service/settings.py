@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+from collections.abc import Set
 from pathlib import Path
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -62,7 +63,7 @@ class Settings(BaseSettings):
         description="Kubernetes namespace whose ActionPolicySets and ActionPolicyBindings this service watches; "
         "it writes Ready conditions only on those objects."
     )
-    caller_service_account_namespaces: frozenset[str] = Field(
+    caller_service_account_namespaces: Set[str] = Field(
         description="Kubernetes namespaces whose labeled ServiceAccounts may authenticate Action Service callers "
         "and whose ServiceAccounts this service watches; it does not grant Action approval."
     )
