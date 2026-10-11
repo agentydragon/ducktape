@@ -110,10 +110,6 @@ class CommandSubmission(Base):
         UniqueConstraint(
             "attempt_sandbox_uid", "attempt_runner_session_id", "command_id", name="submission_attempt_destination"
         ),
-        # CLEANUP(added 2026-10-11): Unread. Remove it with the migration that drops it and the
-        #   `admission_reconciliation` table, once no Sandbox Service replica runs an image that reads
-        #   them. Until then it stays declared: the migrate step refuses an index the models lack.
-        Index("ix_command_submission_pending", "session_id", postgresql_where=text("state = 'pending_admission'")),
     )
 
     session_id: Mapped[UUID] = mapped_column(primary_key=True)

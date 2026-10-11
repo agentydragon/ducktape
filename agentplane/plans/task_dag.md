@@ -52,19 +52,10 @@ flowchart LR
     SESSION_INPUT_METADATA --> NOTIFICATION_NOTICE_METADATA
     SESSION_INPUT_METADATA_READ --> NOTIFICATION_PRESENTATION
     NOTIFICATION_NOTICE_METADATA --> NOTIFICATION_PRESENTATION
-    ADMISSION_RECONCILIATION_DROP[Blocked: drop the admission reconciliation table]
 ```
 
 Details: [Command admission](command_admission.md); later
 [notification presentation and input metadata](notification_presentation.md).
-
-### `ADMISSION_RECONCILIATION_DROP` — drop the admission reconciliation table
-
-**Blocked: drops the table once every Sandbox Service replica runs an image that settles ambiguous
-submissions by redelivery; the operator merges it.** That image neither reads nor writes the
-`admission_reconciliation` table or the `ix_command_submission_pending` index. A migration drops
-both, and the index leaves the `CommandSubmission` model with it (the CLEANUP tombstone in
-`sandbox_service/commands/db.py`). An operational hold on the rollout only; nothing else waits on it.
 
 ### `SESSION_INPUT_METADATA` — later typed annotations on input commands
 
