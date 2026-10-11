@@ -18,7 +18,6 @@ from google.protobuf.message_factory import GetMessageClass
 from kubernetes_asyncio import client as k8s_client
 from sqlalchemy.exc import SQLAlchemyError
 
-from agentplane.grpc_options import grpc_channel_option_kvps
 from agentplane.proto import (
     command_pb2,
     event_log_pb2,
@@ -197,10 +196,7 @@ class RunnerGateway(runner_gateway_pb2_grpc.RunnerGatewayServicer):
         self.resources = resources
 
     def _runner_client(self, target: str) -> RunnerClient:
-        channel = grpc.aio.insecure_channel(
-            target, options=grpc_channel_option_kvps(self.resources.runner_grpc_channel_options)
-        )
-        return RunnerClient(channel)
+        return RunnerClient(target, channel_options=self.resources.runner_grpc_channel_options)
 
     @asynccontextmanager
     async def request(
