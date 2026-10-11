@@ -41,6 +41,9 @@ struct BindingPatchesFile {
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct ModuleClaims {
     pub bindings: BTreeSet<String>,
+    /// Members retained for joint selector resolution. Binding pins also serve
+    /// as anchors for relational selectors in other modules.
+    pub member_selectors: Vec<(String, MemberSelectorSpec)>,
     pub anonymous_selectors: BTreeSet<AnonymousStatementSelector>,
     /// Canonical grouped source-match entries. Expanded by
     /// `source_match::source_match_claim_member_selectors` by consumers
@@ -51,12 +54,14 @@ pub struct ModuleClaims {
 impl ModuleClaims {
     pub fn is_empty(&self) -> bool {
         self.bindings.is_empty()
+            && self.member_selectors.is_empty()
             && self.anonymous_selectors.is_empty()
             && self.source_matches.is_empty()
     }
 
     pub fn extend(&mut self, other: ModuleClaims) {
         self.bindings.extend(other.bindings);
+        self.member_selectors.extend(other.member_selectors);
         self.anonymous_selectors.extend(other.anonymous_selectors);
         self.source_matches.extend(other.source_matches);
     }
@@ -131,21 +136,19 @@ fn read_binding_patches_file(path: &Path) -> Result<BindingPatchesFile> {
 pub fn module_claims(module: ModuleFile) -> Result<ModuleClaims> {
     let mut claims = ModuleClaims::default();
     for member in module.members {
-        match member.selector.selected()? {
-            MemberSelectorSpec::Binding(binding) => {
-                claims.bindings.insert(binding.name);
-            }
-            MemberSelectorSpec::CrossRef(_)
-            | MemberSelectorSpec::ReadsMember(_)
-            | MemberSelectorSpec::MemberOfModule(_)
-            | MemberSelectorSpec::PassedToCall(_)
-            | MemberSelectorSpec::MakesDecorateCall(_)
-            | MemberSelectorSpec::IntrinsicAlias(_) => {
-                // Relational claims resolve through the owner-graph resolution /
-                // @Name global-solve pass (the unique declaring owner matching the
-                // relation), not as a static binding or source-match claim here.
-            }
+        let selector = member.selector.selected()?;
+        let name = match (&member.name, &selector) {
+            (Some(name), _) => name.clone(),
+            (None, MemberSelectorSpec::Binding(binding)) => binding.name.clone(),
+            (None, _) => anyhow::bail!(
+                "member using {} requires name",
+                selector.selector_kind_label()
+            ),
+        };
+        if let MemberSelectorSpec::Binding(binding) = &selector {
+            claims.bindings.insert(binding.name.clone());
         }
+        claims.member_selectors.push((name, selector));
     }
     claims.source_matches = module.source_matches;
     for statement in module.anonymous_statements {

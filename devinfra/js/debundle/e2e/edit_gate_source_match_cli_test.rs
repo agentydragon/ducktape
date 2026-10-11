@@ -44,6 +44,27 @@ fn missing_sources_are_a_hard_error_without_writes() {
 }
 
 #[test]
+fn relational_member_still_counts_when_editing_an_anchor_module() {
+    let fixture = GraphFixture::new(
+        "class Anchor { value() { return 1; } }\nconst helper = Anchor;\nconsole.log(new helper().value());\nexport { Anchor, helper };\n",
+        &[
+            (
+                "anchor.yaml",
+                "members: [{name: AnchorClass, selector: {binding: {name: Anchor}}}]\n",
+            ),
+            (
+                "helper.yaml",
+                "members: [{name: Helper, selector: {cross_ref: {aliases: AnchorClass}}}]\n",
+            ),
+        ],
+    );
+    fixture.assert_rejected_unchanged(
+        &["modules", "delete", "anchor.yaml", "--force"],
+        &["selector anchor `@AnchorClass` does not name a lowered member"],
+    );
+}
+
+#[test]
 fn malformed_manual_claim_edits_are_refused_before_unassigning() {
     // Generate genuine graph facts first, then model an author's bad YAML edit.
     for (source, yaml, diagnostic) in [

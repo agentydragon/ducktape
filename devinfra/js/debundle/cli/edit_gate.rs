@@ -359,6 +359,7 @@ pub fn gate_post_edit_partition(
         .iter()
         .map(|module| SourceClaimSet {
             module_path: &module.path,
+            member_selectors: &module.claims.member_selectors,
             source_matches: &module.claims.source_matches,
             anonymous_selectors: &module.claims.anonymous_selectors,
         })

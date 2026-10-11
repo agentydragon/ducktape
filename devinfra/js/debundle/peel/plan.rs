@@ -1003,6 +1003,7 @@ fn patch_plan_rows(
             .iter()
             .map(|patch_set| SourceClaimSet {
                 module_path: &patch_set.file,
+                member_selectors: &patch_set.member_selectors,
                 source_matches: &patch_set.source_matches,
                 anonymous_selectors: &patch_set.anonymous_selectors,
             })
@@ -1115,6 +1116,7 @@ struct PatchSet {
     path: String,
     file: PathBuf,
     bindings: BTreeSet<String>,
+    member_selectors: Vec<(String, spec::MemberSelectorSpec)>,
     anonymous_selectors: BTreeSet<spec::AnonymousStatementSelector>,
     source_matches: Vec<spec::SourceMatchClaim>,
 }
@@ -1131,6 +1133,7 @@ fn load_patch_sets(modules_root: &Path) -> Result<Vec<PatchSet>> {
             path: "binding_patches".to_string(),
             file: binding_patches_path,
             bindings: patch_bindings,
+            member_selectors: Vec::new(),
             anonymous_selectors: BTreeSet::new(),
             source_matches: Vec::new(),
         });
@@ -1144,6 +1147,7 @@ fn load_patch_sets(modules_root: &Path) -> Result<Vec<PatchSet>> {
             path: module_path_from_file(&file, modules_root),
             file,
             bindings: claims.bindings,
+            member_selectors: claims.member_selectors,
             anonymous_selectors: claims.anonymous_selectors,
             source_matches: claims.source_matches,
         });
@@ -1415,6 +1419,7 @@ fn resolve_module_path_owner_ids(
             .zip(&all_claims)
             .map(|(file, claims)| SourceClaimSet {
                 module_path: file,
+                member_selectors: &claims.member_selectors,
                 source_matches: &claims.source_matches,
                 anonymous_selectors: &claims.anonymous_selectors,
             })

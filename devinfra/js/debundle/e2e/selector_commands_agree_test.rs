@@ -6,9 +6,7 @@
 //! for it — `no_match`, `ambiguous` with the same candidates, `too_broad`,
 //! resolved by elimination — or all resolve it. `match-selector` resolves its
 //! probe alone, so a selector unique only by elimination is ambiguous there;
-//! the graph-backed commands resolve only `source_matches[]` and anonymous
-//! statements, so one unique only by a relational member's claim is ambiguous
-//! to them.
+//! graph-backed commands resolve relational members jointly with source matches.
 //!
 //! Routing is checked once per outcome; other matching rules use a real
 //! pipeline run and Node output instead of repeating the command cross-product:
@@ -751,12 +749,10 @@ function second() {
 console.log(first(), second());
 "#;
 
-/// `run` and `spec validate --source-file` resolve `Either` by elimination
-/// against the relational `Other`. The graph-backed commands resolve only
-/// `source_matches[]` and anonymous statements, so to them `Either` is
-/// ambiguous.
+/// `run`, source-file validation, and the graph-backed commands resolve
+/// `Either` by elimination against the relational `Other`.
 #[test]
-fn relational_claims_eliminate_only_in_spec_wide_commands() {
+fn relational_claims_eliminate_in_graph_backed_commands() {
     let fixture = run_dry_run_fixture(FixtureOpts::new(
         RELATIONAL_ELIMINATION_CHUNK,
         vec![
@@ -822,18 +818,18 @@ fn relational_claims_eliminate_only_in_spec_wide_commands() {
         "spec validate --source-file"
     );
 
-    for args in [
-        &["describe", "elimination/either"][..],
-        &["bindings", "unassign", "marker"][..],
-    ] {
-        let out = tree.command(args);
-        let stderr = String::from_utf8_lossy(&out.stderr);
-        assert!(!out.status.success(), "{args:?}: {stderr}");
-        assert!(
-            stderr.contains("source_matches[] is ambiguous"),
-            "{args:?}: {stderr}"
-        );
-    }
+    let describe = tree.command(&["describe", "elimination/either", "--format", "json"]);
+    assert!(describe.status.success(), "{describe:?}");
+    let describe: Value = serde_json::from_slice(&describe.stdout).unwrap();
+    assert_eq!(describe["owner_ids"], json!(["owner:1"]), "describe");
+
+    let unassign = tree.command(&["bindings", "unassign", "marker"]);
+    let stderr = String::from_utf8_lossy(&unassign.stderr);
+    assert!(unassign.status.success(), "edit gate: {stderr}");
+    assert!(
+        stderr.contains("resolved by elimination"),
+        "edit gate: {stderr}"
+    );
     tree.assert_runs("shared o\n");
 }
 

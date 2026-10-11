@@ -1,11 +1,7 @@
 //! Source-backed selector claim resolution for graph-backed CLI paths.
 //!
-//! Spec files claim declarations by `source_matches[]` templates and anonymous
-//! top-level statements by `anonymous_statements[]` selectors. The CLI edit
-//! gate and `peel` need those claims as owner-graph facts: the binding names a
-//! module's `source_matches[]` claim and the anonymous owners it co-moves. They
-//! get them from [`selector_resolve`], the resolve `debundle run` uses, over
-//! each chunk source the owner graph's `source_location` data names.
+//! Resolve source-backed and relational module claims against the same chunk
+//! sources and selector solver as `debundle run`.
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::env;
@@ -18,23 +14,25 @@ use anyhow::{Context, Result, bail};
 use selector_outcome::{Candidate, Outcome, SelectorOutcome, Severity};
 use selector_resolve::{AnonymousStatement, EntityIndex, Member, MemberSelector, SpecModule};
 use source_match::ParsedSourceMatchSelector;
-use spec::{AnonymousStatementSelector, SourceMatchClaim};
+use spec::{AnonymousStatementSelector, MemberSelectorSpec, SourceMatchClaim};
 use swc_common::{EqIgnoreSpan, SyntaxContext};
 use swc_ecma_ast::{Ident, ModuleItem, Number, Str};
 use swc_ecma_visit::{Visit, VisitWith};
 
-/// One module's source-backed claims.
+/// One module's claims that need the joint selector solve. Name pins are
+/// included as anchors, although their ownership is accounted for statically.
 #[derive(Debug, Clone, Copy)]
 pub struct SourceClaimSet<'a> {
     pub module_path: &'a Path,
+    pub member_selectors: &'a [(String, MemberSelectorSpec)],
     pub source_matches: &'a [SourceMatchClaim],
     pub anonymous_selectors: &'a BTreeSet<AnonymousStatementSelector>,
 }
 
-/// What one module's source-backed claims resolve to.
+/// What one module's resolved claims contribute to the owner partition.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct ResolvedSourceClaims {
-    /// Chunk-top binding names its `source_matches[]` claim.
+    /// Chunk-top binding names claimed by source or relational selectors.
     pub bindings: BTreeSet<String>,
     pub anonymous_owners: BTreeSet<OwnerId>,
 }
@@ -116,9 +114,13 @@ fn resolve_claim_sets(
         .iter()
         .any(|claims| !claims.anonymous_selectors.is_empty());
     if !has_anonymous
-        && claim_sets
-            .iter()
-            .all(|claims| claims.source_matches.is_empty())
+        && claim_sets.iter().all(|claims| {
+            claims.source_matches.is_empty()
+                && claims
+                    .member_selectors
+                    .iter()
+                    .all(|(_, selector)| matches!(selector, MemberSelectorSpec::Binding(_)))
+        })
     {
         return Ok(resolved);
     }
@@ -142,8 +144,8 @@ fn resolve_claim_sets(
             "spec contains anonymous_statements, but owner_graph.json has no source_location \
              data; cannot resolve anonymous selectors"
         } else {
-            "spec contains source_matches[] binding claims, but owner_graph.json has no \
-             source_location data; cannot resolve source_match selectors"
+            "spec contains source-backed or relational binding claims, but owner_graph.json has \
+             no source_location data; cannot resolve selectors"
         };
         with_source_modules(
             graph,
@@ -186,6 +188,15 @@ fn resolve_claim_sets(
                     (matches!(entity, EntityIndex::Member(_)), *module, *entity)
                 });
                 for ((module_index, entity), outcomes) in entities {
+                    // Name pins are already accounted for as static claims.
+                    // Keep them in the joint solve as relational anchors.
+                    if matches!(entity, EntityIndex::Member(index)
+                        if index < claim_sets[module_index].member_selectors.len()
+                            && matches!(claim_sets[module_index].member_selectors[index].1,
+                                MemberSelectorSpec::Binding(_)))
+                    {
+                        continue;
+                    }
                     let Ok(set) = &mut resolved[module_index] else {
                         continue;
                     };
@@ -254,7 +265,14 @@ fn claim_entity(
 /// One claim set as the entities it claims.
 fn spec_module(claims: &SourceClaimSet<'_>) -> Result<SpecModule> {
     let request_id = claims.module_path.to_string_lossy().to_string();
-    let mut members = Vec::new();
+    let mut members = claims
+        .member_selectors
+        .iter()
+        .map(|(name, selector)| Member {
+            export_name: name.clone(),
+            selector: MemberSelector::from_spec(selector.clone()),
+        })
+        .collect::<Vec<_>>();
     for claim in claims.source_matches {
         for expanded in source_match::source_match_claim_member_selectors(&request_id, claim)? {
             members.push(Member {
@@ -300,21 +318,30 @@ fn one_place<'o, 's>(
     entity: EntityIndex,
     outcomes: &'o [SourceOutcome<'s>],
 ) -> Result<(usize, &'o SourceOutcome<'s>)> {
-    let (what, selector) = match entity {
-        EntityIndex::Member(index) => (
-            "source_matches[]",
-            module.members[index]
-                .selector
-                .source_match()
-                .expect("claim members are source_match members"),
-        ),
+    let (what, match_source) = match entity {
+        EntityIndex::Member(index) => {
+            let selector = &module.members[index].selector;
+            match selector.source_match() {
+                Some(selector) => (
+                    "source_matches[]".to_string(),
+                    selector.match_source.clone(),
+                ),
+                None => (
+                    format!("member selector {:?}", selector.kind()),
+                    format!("{selector:?}"),
+                ),
+            }
+        }
         EntityIndex::AnonymousStatement(index) => (
-            "anonymous statement selector",
-            module.anonymous_statements[index].selector.selector(),
+            "anonymous statement selector".to_string(),
+            module.anonymous_statements[index]
+                .selector
+                .selector()
+                .match_source
+                .clone(),
         ),
     };
     let module_path = claims.module_path.display();
-    let match_source = &selector.match_source;
     let mut places = Vec::<(Candidate, &'o SourceOutcome<'s>)>::new();
     let mut truncated = false;
     for source in outcomes {
@@ -351,7 +378,7 @@ fn one_place<'o, 's>(
     match (places.as_slice(), entity) {
         ([(place, source)], _) if !truncated => Ok((place.owner, source)),
         ([], EntityIndex::Member(_)) => bail!(
-            "module {module_path} source_matches[] did not match any top-level declaration in the \
+            "module {module_path} {what} did not match any top-level declaration in the \
              chunk sources:\n{match_source}"
         ),
         ([], EntityIndex::AnonymousStatement(_)) => bail!(
@@ -359,7 +386,7 @@ fn one_place<'o, 's>(
              statement:\n{match_source}"
         ),
         (multiple, EntityIndex::Member(_)) => bail!(
-            "module {module_path} source_matches[] is ambiguous — matched {at_least}{} \
+            "module {module_path} {what} is ambiguous — matched {at_least}{} \
              declarations ({}); refine the selector:\n{match_source}",
             multiple.len(),
             multiple
