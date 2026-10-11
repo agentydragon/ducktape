@@ -40,7 +40,7 @@ from constructs import Construct
 
 from agentplane.egress import sidecar
 from agentplane.egress.resources import placeholder_of
-from agentplane.sandbox_service.settings import RUNNER_CHANNEL_AUDIENCE
+from agentplane.runner_gateway.settings import RUNNER_CHANNEL_AUDIENCE
 from agentplane.workload_auth.audience import WORKLOAD_TOKEN_AUDIENCE
 from cluster.cdk8s import node_scheduling
 from cluster.cdk8s.agentplane import egress, notifications

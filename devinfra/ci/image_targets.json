@@ -286,6 +286,11 @@
       "test": "//agentplane/sandbox_service/session_history/...",
       "registry": "forgejo"
     },
+    "agentplane-runner-gateway": {
+      "target": "//agentplane/runner_gateway:image",
+      "test": "//agentplane/runner_gateway/...",
+      "registry": "forgejo"
+    },
     "agentplane-sandbox-service": {
       "target": "//agentplane/sandbox_service:image",
       "test": "//agentplane/sandbox_service/...",

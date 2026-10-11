@@ -276,6 +276,7 @@ async def _serve(
         await asyncio.to_thread(token_file.write_text, "test-app-history-peer")
         inventory = SandboxServiceClient(
             f"127.0.0.1:{runner_port}",
+            gateway_target=f"127.0.0.1:{runner_port}",
             namespace=NAMESPACE,
             token_file=token_file,
             command_admission_timeout_s=10,

@@ -62,3 +62,14 @@ py_library(
     name = "bearer",
     srcs = ["bearer.py"],
 )
+
+py_library(
+    name = "grpc_caller",
+    srcs = ["grpc_caller.py"],
+    deps = [
+        ":bearer",
+        ":principal",
+        "//agentplane:subjects",
+        "@pypi//grpcio",
+    ],
+)
