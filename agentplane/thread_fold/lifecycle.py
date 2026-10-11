@@ -21,7 +21,7 @@ async def project_lifecycle(
     *,
     through_cursor: int,
 ) -> bool:
-    previous = (summary.attached, summary.end, summary.resumed_after_cursor)
+    previous = (summary.attached, summary.end)
     attached = None if summary.attached is None else ParseDict(summary.attached, runner_pb2.Attached())
     end = summary.end
     if page.HasField("feed_state"):
@@ -46,11 +46,6 @@ async def project_lifecycle(
         project_attached(attached, entry)
         # Any suffix invalidates EOF at the old prefix, including failed setup/restart.
         end = None
-    if summary.resumed_after_cursor is not None:
-        if attached.last_cursor <= summary.resumed_after_cursor:
-            end = None
-        else:
-            summary.resumed_after_cursor = None
     summary.attached = MessageToDict(attached)
     summary.end = end
     operational_changed = await set_operational(
@@ -59,7 +54,7 @@ async def project_lifecycle(
         status="active" if end is None else "failed" if end else "ended",
         error=end.get("message") if end else None,
     )
-    return previous != (summary.attached, summary.end, summary.resumed_after_cursor) or operational_changed
+    return previous != (summary.attached, summary.end) or operational_changed
 
 
 def project_attached(attached: runner_pb2.Attached, entry: event_log_pb2.EventEntry) -> None:
