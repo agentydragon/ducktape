@@ -24,7 +24,6 @@ py_library(
         "//props:config",
         "//props/db:config",
         "//props/db:database",
-        "//props/db:setup",
         "//props/db/sync",
         "//props/db/sync:model_metadata",
         "//util/bazel:runfiles",
