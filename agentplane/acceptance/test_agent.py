@@ -33,7 +33,7 @@ async def test_agent_open_retries_unavailable_without_creating_another_session()
     first, retry = client.create_session.call_args_list
     assert first == retry
     assert first.args[0] == "test-sandbox"
-    assert first.args[1].startswith("acceptance-")
+    assert isinstance(first.args[1], UUID)
     assert first.kwargs["overrides"]["model"] == "test-model"
     client.thread.assert_awaited_once_with(UUID("00000000-0000-4000-8000-000000000001"))
 
