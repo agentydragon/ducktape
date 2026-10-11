@@ -189,6 +189,7 @@ py_library(
         ":runner_endpoints",
         ":settings",
         ":teardown",
+        "//agentplane/runner:protocol_pb2",
         "//agentplane/runner_gateway:grpc_api",
         "//agentplane/runner_gateway:main",
         "//agentplane/sandbox_service:protocol_pb2",
@@ -771,6 +772,7 @@ py_library(
     srcs = ["teardown.py"],
     deps = [
         ":inventory",
+        "//agentplane/runner:protocol_pb2",
         "//agentplane/sandbox_service:protocol_pb2",
         "@pypi//protobuf",
     ],
