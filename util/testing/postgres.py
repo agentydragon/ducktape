@@ -64,6 +64,7 @@ from util.db_migrations import MigrationRunner
 # the postgresql:// default -> psycopg2, async callers postgresql+asyncpg://);
 # SQLAlchemy loads it at runtime, so gazelle cannot see either dependency.
 # gazelle:include_dep @pypi//asyncpg
+# gazelle:include_dep @pypi//psycopg
 # gazelle:include_dep @pypi//psycopg2_binary
 
 _TERMINATE_SQL = text(
