@@ -309,7 +309,6 @@ py_library(
         ":runner_channel",
         ":session_registry",
         ":settings",
-        "//agentplane:subjects",
         "//agentplane/proto:runner_channel_pb2",
         "//agentplane/proto:runner_channel_pb2_grpc",
         "//agentplane/runner_gateway/commands:connections",
