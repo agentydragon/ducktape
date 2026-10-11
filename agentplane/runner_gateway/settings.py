@@ -18,9 +18,8 @@ CONFIG_FILE_ENV = "AGENTPLANE_RUNNER_GATEWAY_CONFIG_FILE"
 RUNNER_CHANNEL_AUDIENCE = "agentplane-runner-channel"
 
 
-class Gateway(BaseSettings):
-    """What the gateway serves from, without the Sandbox Service's sealer account: also the gateway
-    half of the Sandbox Service's combined mode."""
+class Settings(BaseSettings):
+    model_config = SettingsConfigDict(env_prefix="AGENTPLANE_RUNNER_GATEWAY_", cli_parse_args=True, cli_kebab_case=True)
 
     sandbox_namespace: str = Field(min_length=1)
     caller_accounts: frozenset[ServiceAccountRef] = Field(min_length=1)
@@ -56,13 +55,8 @@ class Gateway(BaseSettings):
         min_length=1,
         description="This replica's Pod IP, where a Sandbox's control Service points while it holds the runner connection.",
     )
-
-
-class Settings(Gateway):
-    model_config = SettingsConfigDict(env_prefix="AGENTPLANE_RUNNER_GATEWAY_", cli_parse_args=True, cli_kebab_case=True)
-
     sealer_accounts: frozenset[ServiceAccountRef] = Field(
-        min_length=1, description="The Sandbox Service's account, which alone may seal a Sandbox for teardown."
+        description="The Sandbox Service's account, which alone may seal a Sandbox for teardown."
     )
 
     def __init__(self, **values: Any) -> None:

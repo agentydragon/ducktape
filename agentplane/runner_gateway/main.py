@@ -25,11 +25,10 @@ from agentplane.runner_gateway.connection_records import ConnectionHolder, Conne
 from agentplane.runner_gateway.grpc_api import Resources, add_service
 from agentplane.runner_gateway.runner_channel import ChannelTiming, RunnerChannelService
 from agentplane.runner_gateway.session_registry import SessionRegistry
-from agentplane.runner_gateway.settings import Gateway, Settings
+from agentplane.runner_gateway.settings import Settings
 from agentplane.sandbox_service.destinations import DestinationResolver
 from agentplane.sandbox_service.inventory import SandboxInventory
 from agentplane.sandbox_service.session_history.session_changes import SessionChanges
-from agentplane.subjects import ServiceAccountRef
 from agentplane.workload_auth.principal import WorkloadPrincipalResolver
 from util.kubernetes import CustomObjectsClient
 
@@ -85,12 +84,7 @@ async def serve_health(host: str, port: int) -> None:
 
 @asynccontextmanager
 async def gateway(
-    settings: Gateway,
-    api: k8s_client.ApiClient,
-    server: grpc.aio.Server,
-    commands_engine: AsyncEngine,
-    *,
-    sealer_accounts: frozenset[ServiceAccountRef],
+    settings: Settings, api: k8s_client.ApiClient, server: grpc.aio.Server, commands_engine: AsyncEngine
 ) -> AsyncIterator[Resources]:
     """Serve `RunnerGateway` on `server`, and runner channel connections on their own listener."""
     core = k8s_client.CoreV1Api(api)
@@ -118,7 +112,9 @@ async def gateway(
         principals=WorkloadPrincipalResolver(
             authentication=k8s_client.AuthenticationV1Api(api),
             audience=settings.token_audience,
-            allowed_service_account_namespaces={a.namespace for a in (*settings.caller_accounts, *sealer_accounts)},
+            allowed_service_account_namespaces={
+                a.namespace for a in (*settings.caller_accounts, *settings.sealer_accounts)
+            },
         ),
         sessions=sessions,
         submissions=submissions,
@@ -130,7 +126,7 @@ async def gateway(
         runner_admission_ack_timeout_s=settings.runner_admission_ack_timeout_s,
         follow_lease_s=settings.follow_lease_s,
         caller_accounts=settings.caller_accounts,
-        sealer_accounts=sealer_accounts,
+        sealer_accounts=settings.sealer_accounts,
         platform_instructions=settings.platform_instructions,
         lifecycle_timeout_s=settings.lifecycle_timeout_s,
         runner_grpc_channel_options=settings.runner_grpc_channel_options,
@@ -183,9 +179,7 @@ async def serve(settings: Settings) -> None:
             AsyncExitStack() as stack,
         ):
             server = grpc.aio.server()
-            await stack.enter_async_context(
-                gateway(settings, api, server, commands_engine, sealer_accounts=settings.sealer_accounts)
-            )
+            await stack.enter_async_context(gateway(settings, api, server, commands_engine))
             server.add_insecure_port(f"{settings.host}:{settings.port}")
             await stack.enter_async_context(started(server))
             await serve_health(settings.host, settings.health_port)

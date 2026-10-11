@@ -165,7 +165,8 @@ async def serve(settings: Settings) -> None:
 async def serve_combined(settings: CombinedSettings) -> None:
     """The Sandbox Service and Runner Gateway in one process, sealing in-process. See
     `Launch.gateway_target`."""
-    commands_engine = gateway_main.database_engine(settings.commands_database_url)
+    gateway_settings = settings.gateway_settings()
+    commands_engine = gateway_main.database_engine(gateway_settings.commands_database_url)
     try:
         async with (
             k8s_client.ApiClient(await kubernetes_configuration(settings.kubeconfig)) as api,
@@ -173,7 +174,7 @@ async def serve_combined(settings: CombinedSettings) -> None:
         ):
             server = grpc.aio.server()
             gateway = await stack.enter_async_context(
-                gateway_main.gateway(settings, api, server, commands_engine, sealer_accounts=frozenset())
+                gateway_main.gateway(gateway_settings, api, server, commands_engine)
             )
             await stack.enter_async_context(sandboxes(settings, api, server, seal=gateway.sealing.seal))
             add_legacy_service(gateway, server)

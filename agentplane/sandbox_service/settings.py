@@ -11,7 +11,8 @@ from pydantic_settings import BaseSettings, PydanticBaseSettingsSource, Settings
 
 # YamlConfigSettingsSource loads yaml lazily inside pydantic-settings; gazelle cannot see the dependency.
 # gazelle:include_dep @pypi//pyyaml
-from agentplane.runner_gateway.settings import Gateway
+# Aliased: this module defines its own `Settings`.
+from agentplane.runner_gateway.settings import RUNNER_CHANNEL_AUDIENCE, Settings as GatewaySettings
 from agentplane.sandbox_service.kubernetes_grants import KubernetesGrant
 from agentplane.sandbox_service.runner_endpoints import RunnerEndpoint
 from agentplane.subjects import ServiceAccountRef
@@ -47,7 +48,7 @@ class Launch(_FromConfigFile):
     gateway_target: str | None = None
 
 
-class _ServiceSettings(_FromConfigFile):
+class _Provisioning(_FromConfigFile):
     model_config = SettingsConfigDict(env_prefix=_ENV_PREFIX, cli_parse_args=True, cli_kebab_case=True)
 
     sandbox_namespace: str = Field(min_length=1)
@@ -63,8 +64,6 @@ class _ServiceSettings(_FromConfigFile):
     def __init__(self, **values: Any) -> None:
         super().__init__(**values)
 
-
-class _Provisioning(_ServiceSettings):
     default_egress_policies: list[str] = Field(default_factory=list)
     kubernetes_grants: dict[str, KubernetesGrant] = Field(default_factory=dict)
     kubernetes_binding_cleanup_namespaces: set[str] = Field(default_factory=set)
@@ -95,13 +94,48 @@ class Settings(_Provisioning):
     )
 
 
-class CombinedSettings(_Provisioning, Gateway):
-    """The one Deployment that also runs the Runner Gateway (`Launch.gateway_target` unset)."""
+class CombinedSettings(_Provisioning):
+    """The one Deployment that also runs the Runner Gateway (`Launch.gateway_target` unset). It reads
+    the gateway's keys under the Sandbox Service's own prefix and config file."""
 
     model_config = SettingsConfigDict(env_prefix=_ENV_PREFIX, cli_parse_args=True, cli_kebab_case=True)
 
+    commands_database_url: str = Field(min_length=1)
+    platform_instructions: str = Field(min_length=1)
+    runner_channel_audience: str = RUNNER_CHANNEL_AUDIENCE
+    runner_channel_port: int = Field(default=8082, ge=1, le=65535)
+    runner_port: int = Field(default=7000, ge=1, le=65535)
+    runner_admission_ack_timeout_s: float = Field(default=15, gt=0)
+    follow_lease_s: float = Field(default=900, gt=0, le=900)
+    runner_grpc_channel_options: dict[str, int | str] = Field(default_factory=dict)
+    pod_ip: str = Field(min_length=1)
     # CLEANUP(added 2026-10-10): Nothing reads `database_url` or `ingest_history`; the History Service
     #   writes Session history. Delete both with the manifest keys that set them once the release that
     #   stopped reading them serves on staging and testing, so no older Pod is left requiring them.
     database_url: str | None = None
     ingest_history: Literal[False] = False
+
+    def gateway_settings(self) -> GatewaySettings:
+        """The in-process gateway's settings. It seals in-process, so no account may seal over the API."""
+        return GatewaySettings(
+            _cli_parse_args=False,
+            sealer_accounts=frozenset(),
+            sandbox_namespace=self.sandbox_namespace,
+            caller_accounts=self.caller_accounts,
+            token_audience=self.token_audience,
+            admission_timeout_s=self.admission_timeout_s,
+            lifecycle_timeout_s=self.lifecycle_timeout_s,
+            host=self.host,
+            port=self.port,
+            health_port=self.health_port,
+            kubeconfig=self.kubeconfig,
+            commands_database_url=self.commands_database_url,
+            platform_instructions=self.platform_instructions,
+            runner_channel_audience=self.runner_channel_audience,
+            runner_channel_port=self.runner_channel_port,
+            runner_port=self.runner_port,
+            runner_admission_ack_timeout_s=self.runner_admission_ack_timeout_s,
+            follow_lease_s=self.follow_lease_s,
+            runner_grpc_channel_options=self.runner_grpc_channel_options,
+            pod_ip=self.pod_ip,
+        )
