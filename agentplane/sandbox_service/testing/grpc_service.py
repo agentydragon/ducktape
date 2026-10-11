@@ -6,7 +6,7 @@ from pathlib import Path
 
 import grpc
 
-from agentplane.grpc_process import serving
+from agentplane.grpc_serving import serving
 from agentplane.sandbox_service import grpc_api
 from agentplane.sandbox_service.client import SandboxServiceClient
 

@@ -12,7 +12,8 @@ from kubernetes_asyncio import client as k8s_client
 from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 
-from agentplane.grpc_process import background, kubernetes_configuration, serve_health, serving
+from agentplane.grpc_process import background, kubernetes_configuration, serve_health
+from agentplane.grpc_serving import serving
 from agentplane.proto import runner_control_pb2_grpc
 from agentplane.runner_gateway.command_delivery import CommandDelivery
 from agentplane.runner_gateway.commands.connections import ConnectionStore

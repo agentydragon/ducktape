@@ -8,7 +8,8 @@ from kubernetes_asyncio import client as k8s_client, config as k8s_config
 from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import create_async_engine
 
-from agentplane.grpc_process import serve_health, serving
+from agentplane.grpc_process import serve_health
+from agentplane.grpc_serving import serving
 from agentplane.history_service.ingress import Resources, Timing, add_ingress
 from agentplane.history_service.ingress_settings import IngressSettings
 from agentplane.history_service.storage.store import Store

@@ -18,7 +18,7 @@ from kubernetes_asyncio import client as k8s_client
 from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from agentplane.grpc_process import serving
+from agentplane.grpc_serving import serving
 from agentplane.proto import command_pb2, event_log_pb2, event_pb2, runner_pb2, runner_pb2_grpc, sandbox_service_pb2
 from agentplane.proto.sandbox_service_pb2 import ResolvedGrant, SandboxDestination
 from agentplane.runner.errors import RunnerError, StreamClosedError

@@ -6,7 +6,7 @@ from contextlib import asynccontextmanager
 import grpc
 from kubernetes_asyncio import client as k8s_client
 
-from agentplane.grpc_process import serving
+from agentplane.grpc_serving import serving
 from agentplane.proto import runner_control_pb2_grpc
 from agentplane.runner_gateway.command_delivery import CommandDelivery
 from agentplane.runner_gateway.commands.connections import ConnectionStore

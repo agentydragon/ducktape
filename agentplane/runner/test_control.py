@@ -13,7 +13,7 @@ import httpx
 import pytest
 import pytest_bazel
 
-from agentplane.grpc_process import serving
+from agentplane.grpc_serving import serving
 from agentplane.proto import (
     command_pb2,
     event_pb2,

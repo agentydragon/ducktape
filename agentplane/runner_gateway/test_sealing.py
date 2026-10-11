@@ -12,7 +12,7 @@ import pytest_bazel
 from kubernetes_asyncio import client as k8s_client
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from agentplane.grpc_process import serving
+from agentplane.grpc_serving import serving
 from agentplane.proto import runner_pb2, runner_pb2_grpc
 from agentplane.runner_gateway.commands.connections import ConnectionStore
 from agentplane.runner_gateway.connection_records import ConnectionLeases

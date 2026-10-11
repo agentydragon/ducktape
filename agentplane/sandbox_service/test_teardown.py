@@ -12,7 +12,7 @@ import pytest
 import pytest_bazel
 from kubernetes_asyncio import client as k8s_client
 
-from agentplane.grpc_process import serving
+from agentplane.grpc_serving import serving
 from agentplane.proto import runner_gateway_pb2_grpc, runner_pb2
 from agentplane.proto.sandbox_service_pb2 import Hold, Sandbox, SandboxDestination, SandboxRequest, TeardownPhase
 from agentplane.sandbox_service.client import ServiceError

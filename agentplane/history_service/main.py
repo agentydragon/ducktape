@@ -9,7 +9,8 @@ from kubernetes_asyncio import client as k8s_client, config as k8s_config
 from sqlalchemy.engine import URL, make_url
 from sqlalchemy.ext.asyncio import create_async_engine
 
-from agentplane.grpc_process import serve_health, serving
+from agentplane.grpc_process import serve_health
+from agentplane.grpc_serving import serving
 from agentplane.history_service.evidence import EvidenceReader
 from agentplane.history_service.fold_shadow import FoldShadow
 from agentplane.history_service.grpc_api import Resources, add_service

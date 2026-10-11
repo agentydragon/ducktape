@@ -12,7 +12,7 @@ import pytest_bazel
 from kubernetes_asyncio import client as k8s_client
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from agentplane.grpc_process import serving
+from agentplane.grpc_serving import serving
 from agentplane.history_service.ingress import Resources, Timing, add_ingress
 from agentplane.history_service.storage.store import Store
 from agentplane.proto import event_log_pb2, event_pb2, runner_ingress_pb2, runner_ingress_pb2_grpc, runner_pb2

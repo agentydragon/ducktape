@@ -31,7 +31,7 @@ from agentplane.app.testing.replication_source import (
 )
 from agentplane.app.threads.store import ThreadStore
 from agentplane.app.threads.view.content import ContentStore
-from agentplane.grpc_process import serving
+from agentplane.grpc_serving import serving
 from agentplane.proto import event_log_pb2, event_pb2
 from util.bazel.runfiles import get_required_path
 from util.testing.frontend_visual import CONTAINER_BASE_BROWSER_ARGS, chromium_executable

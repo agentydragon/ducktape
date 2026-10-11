@@ -15,7 +15,7 @@ import grpc
 import pytest
 import pytest_bazel
 
-from agentplane.grpc_process import serving
+from agentplane.grpc_serving import serving
 from agentplane.proto import event_log_pb2, event_pb2, runner_ingress_pb2, runner_ingress_pb2_grpc, runner_pb2
 from agentplane.runner.config import IngressEndpoint, RunnerConfig
 from agentplane.runner.control import ControlTiming

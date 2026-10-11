@@ -9,7 +9,7 @@ import grpc
 import pytest
 import pytest_bazel
 
-from agentplane.grpc_process import serving
+from agentplane.grpc_serving import serving
 from agentplane.proto import event_log_pb2, runner_pb2, runner_pb2_grpc
 from agentplane.runner.client import Attachment
 from agentplane.runner.errors import OpenTimeoutError

@@ -24,7 +24,7 @@ from agentplane.app.testing.replication_process import CommitBoundary, app_proce
 from agentplane.app.testing.replication_source import SANDBOX, SESSION, ReplicationSource, add_replication_source
 from agentplane.app.threads.store import ThreadStore
 from agentplane.app.threads.view.content import ContentStore
-from agentplane.grpc_process import serving
+from agentplane.grpc_serving import serving
 from agentplane.proto import command_pb2, event_log_pb2, event_pb2, runner_pb2
 from agentplane.thread_fold.models import SessionProjectionLease
 

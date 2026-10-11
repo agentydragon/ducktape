@@ -57,8 +57,13 @@ py_library(
     srcs = ["grpc_process.py"],
     deps = [
         "@pypi//fastapi",
-        "@pypi//grpcio",
         "@pypi//kubernetes_asyncio",
         "@pypi//uvicorn",
     ],
+)
+
+py_library(
+    name = "grpc_serving",
+    srcs = ["grpc_serving.py"],
+    deps = ["@pypi//grpcio"],
 )

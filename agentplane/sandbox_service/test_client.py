@@ -8,7 +8,7 @@ import grpc
 import pytest
 import pytest_bazel
 
-from agentplane.grpc_process import serving
+from agentplane.grpc_serving import serving
 from agentplane.proto import runner_gateway_pb2_grpc, runner_pb2, sandbox_service_pb2
 from agentplane.sandbox_service.testing.grpc_service import connect
 from agentplane.sandbox_service.testing.kubernetes import DESTINATION

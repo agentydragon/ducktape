@@ -15,7 +15,7 @@ from uuid import UUID
 import grpc
 from google.protobuf.empty_pb2 import Empty
 
-from agentplane.grpc_process import serving
+from agentplane.grpc_serving import serving
 from agentplane.history_service import protocol_pb2 as history_pb2, protocol_pb2_grpc
 from agentplane.history_service.client import HistoryServiceClient
 from agentplane.proto import event_log_pb2

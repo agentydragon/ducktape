@@ -40,7 +40,7 @@ from agentplane.app.threads.bridge import RunnerBridge
 from agentplane.app.threads.sessions import SandboxSessions
 from agentplane.app.threads.store import ThreadStore
 from agentplane.app.threads.view.content import ContentStore
-from agentplane.grpc_process import serving
+from agentplane.grpc_serving import serving
 from agentplane.proto import event_log_pb2, runner_gateway_pb2_grpc, runner_pb2, sandbox_service_pb2
 from agentplane.runner.harness import Harness
 from agentplane.sandbox_service.client import SandboxServiceClient

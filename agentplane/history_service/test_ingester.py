@@ -13,7 +13,7 @@ import pytest
 import pytest_bazel
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 
-from agentplane.grpc_process import serving
+from agentplane.grpc_serving import serving
 from agentplane.history_service import protocol_pb2 as history_pb2
 from agentplane.history_service.conftest import ScriptedSandboxes, subscriber
 from agentplane.history_service.ingester import HOLDER, HistoryIngester, claim, logger

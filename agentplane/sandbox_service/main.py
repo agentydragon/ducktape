@@ -10,7 +10,8 @@ from typing import cast
 import grpc
 from kubernetes_asyncio import client as k8s_client
 
-from agentplane.grpc_process import background, kubernetes_configuration, serve_health, serving
+from agentplane.grpc_process import background, kubernetes_configuration, serve_health
+from agentplane.grpc_serving import serving
 from agentplane.sandbox_service.action_policy import ActionPolicyBindings
 from agentplane.sandbox_service.client import SandboxServiceClient
 from agentplane.sandbox_service.controller import SandboxController

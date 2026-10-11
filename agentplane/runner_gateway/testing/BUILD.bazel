@@ -19,7 +19,7 @@ py_library(
     name = "grpc_service",
     srcs = ["grpc_service.py"],
     deps = [
-        "//agentplane:grpc_process",
+        "//agentplane:grpc_serving",
         "//agentplane/runner_gateway:grpc_api",
         "//agentplane/sandbox_service:client",
         "//agentplane/sandbox_service:grpc_api",
@@ -64,7 +64,7 @@ py_library(
     name = "runner_control",
     srcs = ["runner_control.py"],
     deps = [
-        "//agentplane:grpc_process",
+        "//agentplane:grpc_serving",
         "//agentplane/proto:runner_control_pb2",
         "//agentplane/proto:runner_control_pb2_grpc",
         "//agentplane/runner_gateway:command_delivery",
