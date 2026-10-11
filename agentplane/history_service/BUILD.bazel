@@ -99,10 +99,22 @@ py_library(
     srcs = ["compaction_main.py"],
     deps = [
         ":compaction",
+        ":compaction_settings",
         "@pypi//asyncpg",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
+    name = "compaction_settings",
+    srcs = ["compaction_settings.py"],
+    visibility = [
+        "//agentplane/history_service:__subpackages__",
+        "//cluster/cdk8s/agentplane:__pkg__",
+    ],
+    deps = [
         "@pypi//pydantic",
         "@pypi//pydantic_settings",
-        "@pypi//sqlalchemy",
     ],
 )
 
