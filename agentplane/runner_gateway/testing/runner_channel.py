@@ -16,6 +16,8 @@ from agentplane.sandbox_service.testing.grpc_service import serving
 from agentplane.sandbox_service.testing.kubernetes import ACCOUNT, SANDBOX, Cluster
 from agentplane.testing.fake_apiserver import SANDBOX_NAMESPACE, TokenVerdict
 
+# The channel servicer stub names its messages; mypy reads stubs only from direct deps.
+# gazelle:include_dep //agentplane/proto:runner_channel_pb2
 # gazelle:include_dep @pypi//protobuf
 
 RUNNER_AUDIENCE = "test-runner-channel"

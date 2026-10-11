@@ -2,6 +2,7 @@
 
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
+from typing import Any
 
 import grpc
 
@@ -23,7 +24,7 @@ type Seal = Callable[[runner_pb2.SealRequest, grpc.aio.ServicerContext], Awaitab
 @asynccontextmanager
 async def serve_runner(*, attach: Attach, list_sessions: ListSessions, seal: Seal | None = None) -> AsyncIterator[int]:
     """Yields the port. Without `seal` the runner predates the Seal RPC: gRPC answers UNIMPLEMENTED."""
-    handlers = {
+    handlers: dict[str, grpc.RpcMethodHandler[Any, Any]] = {
         "Attach": grpc.stream_stream_rpc_method_handler(
             attach,
             request_deserializer=runner_pb2.ClientMessage.FromString,

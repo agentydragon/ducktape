@@ -63,6 +63,7 @@ py_library(
     name = "runner_channel",
     srcs = ["runner_channel.py"],
     deps = [
+        "//agentplane/proto:runner_channel_pb2",
         "//agentplane/proto:runner_channel_pb2_grpc",
         "//agentplane/runner_gateway:channel_control",
         "//agentplane/runner_gateway:channel_delivery",
