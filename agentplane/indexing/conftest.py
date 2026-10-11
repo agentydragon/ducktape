@@ -6,7 +6,9 @@ from pathlib import Path
 
 import pygit2
 import pytest
+import pytest_asyncio
 from pygit2.enums import FileMode
+from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 from testcontainers.postgres import PostgresContainer
 
@@ -14,13 +16,16 @@ from agentplane.indexing.store import Store
 from haku.recall_index.chunking import DEFAULT_CHUNK_BUDGET
 from haku.recall_index.fake_embedder import FakeEmbedder
 from third_party.containers import pgvector_pg18
-from util.testing.postgres_fixtures import start_postgres_container
+from util.testing.postgres import DatabaseClones, PostgresDatabaseTemplate
+from util.testing.postgres_fixtures import database_clones, database_names, postgres_admin_url, start_postgres_container
 
 # gazelle:include_dep @pypi//asyncpg
+# The template admin URL uses the psycopg dialect, which SQLAlchemy loads at runtime.
+# gazelle:include_dep @pypi//psycopg
 
 
 @pytest.fixture(scope="session")
-def pgvector_container() -> Generator[PostgresContainer]:
+def postgres_container() -> Generator[PostgresContainer]:
     container = start_postgres_container(pgvector_pg18.IMAGE)
     try:
         yield container
@@ -28,14 +33,54 @@ def pgvector_container() -> Generator[PostgresContainer]:
         container.stop()
 
 
+@pytest.fixture(scope="session")
+def empty_index_database_template(postgres_admin_url: str) -> Generator[PostgresDatabaseTemplate]:
+    """Install pgvector once; custom initialization tests clone this empty database."""
+    with PostgresDatabaseTemplate(
+        postgres_admin_url, "agentplane_index_empty_template", extensions=("vector",)
+    ) as template:
+        yield template
+
+
+@pytest_asyncio.fixture(scope="session", loop_scope="session")
+async def initialized_index_database_template(
+    postgres_admin_url: str, empty_index_database_template: PostgresDatabaseTemplate
+) -> AsyncGenerator[PostgresDatabaseTemplate]:
+    """Initialize the default index schema and state once for the ordinary test cases."""
+    with PostgresDatabaseTemplate(
+        postgres_admin_url,
+        "agentplane_index_initialized_template",
+        template=empty_index_database_template.template_name,
+    ) as template:
+        opened = create_async_engine(make_url(template.url).set(drivername="postgresql+asyncpg"))
+        try:
+            await Store(opened, budget=DEFAULT_CHUNK_BUDGET, model_key=FakeEmbedder().model_key).initialize()
+        finally:
+            await opened.dispose()
+        yield template
+
+
 @pytest.fixture
-async def engine(pgvector_container: PostgresContainer) -> AsyncGenerator[AsyncEngine]:
-    host = pgvector_container.get_container_host_ip()
-    port = int(pgvector_container.get_exposed_port(5432))
-    opened = create_async_engine(f"postgresql+asyncpg://postgres:postgres@{host}:{port}/postgres")
+async def engine(
+    initialized_index_database_template: PostgresDatabaseTemplate, database_clones: DatabaseClones
+) -> AsyncGenerator[AsyncEngine]:
+    """A fresh writable clone of the default initialized index schema and state."""
+    db_url = database_clones.clone(initialized_index_database_template, drivername="postgresql+asyncpg")
+    opened = create_async_engine(db_url)
     try:
-        async with opened.begin() as connection:
-            await connection.exec_driver_sql("DROP SCHEMA IF EXISTS agentplane_index CASCADE")
+        yield opened
+    finally:
+        await opened.dispose()
+
+
+@pytest.fixture
+async def empty_engine(
+    empty_index_database_template: PostgresDatabaseTemplate, database_clones: DatabaseClones
+) -> AsyncGenerator[AsyncEngine]:
+    """A fresh pgvector database for tests that choose a non-default index configuration."""
+    db_url = database_clones.clone(empty_index_database_template, drivername="postgresql+asyncpg")
+    opened = create_async_engine(db_url)
+    try:
         yield opened
     finally:
         await opened.dispose()
@@ -47,10 +92,8 @@ def embedder() -> FakeEmbedder:
 
 
 @pytest.fixture
-async def store(engine: AsyncEngine, embedder: FakeEmbedder) -> Store:
-    result = Store(engine, budget=DEFAULT_CHUNK_BUDGET, model_key=embedder.model_key)
-    await result.initialize()
-    return result
+def store(engine: AsyncEngine, embedder: FakeEmbedder) -> Store:
+    return Store(engine, budget=DEFAULT_CHUNK_BUDGET, model_key=embedder.model_key)
 
 
 @dataclass
