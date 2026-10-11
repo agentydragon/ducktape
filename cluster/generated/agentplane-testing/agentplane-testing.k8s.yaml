@@ -2984,22 +2984,6 @@ spec:
     matchLabels:
       app.kubernetes.io/name: agentplane-egress
 ---
-apiVersion: v1
-kind: PersistentVolumeClaim
-metadata:
-  annotations:
-    description: pg_dump of session_event and its settlement tables taken before the compaction apply; kept for rollback, deleted with the apply run.
-  name: agentplane-history-compact-dump
-  namespace: agentplane-testing
-spec:
-  accessModes:
-    - ReadWriteOnce
-  resources:
-    requests:
-      storage: 10Gi
-  storageClassName: seaweedfs-ovh
-  volumeMode: Filesystem
----
 apiVersion: batch/v1
 kind: Job
 metadata:
@@ -3048,37 +3032,6 @@ spec:
       hostNetwork: false
       imagePullSecrets:
         - name: forgejo-images-creds
-      initContainers:
-        - command:
-            - sh
-            - -c
-            - test -e /dump/history.dump || { pg_dump -Fc -t session_event -t session_event_settlement -t session_event_settled_range -f /dump/history.dump.partial "$DATABASE_URL" && mv /dump/history.dump.partial /dump/history.dump; }
-          env:
-            - name: DATABASE_URL
-              valueFrom:
-                secretKeyRef:
-                  key: uri
-                  name: postgres-sandbox-service
-          image: ghcr.io/cloudnative-pg/postgresql:18.1-system-trixie
-          imagePullPolicy: IfNotPresent
-          name: dump
-          resources:
-            limits:
-              memory: 512Mi
-            requests:
-              cpu: 100m
-              memory: 128Mi
-          securityContext:
-            allowPrivilegeEscalation: false
-            capabilities:
-              drop:
-                - ALL
-            privileged: false
-            readOnlyRootFilesystem: false
-            runAsNonRoot: true
-          volumeMounts:
-            - mountPath: /dump
-              name: pvc-agentplane-history-compact-dump
       nodeSelector:
         topology.kubernetes.io/zone: hil-ovh
       restartPolicy: Never
@@ -3093,11 +3046,6 @@ spec:
       setHostnameAsFQDN: false
       shareProcessNamespace: false
       terminationGracePeriodSeconds: 30
-      volumes:
-        - name: pvc-agentplane-history-compact-dump
-          persistentVolumeClaim:
-            claimName: agentplane-history-compact-dump
-            readOnly: false
 ---
 apiVersion: cilium.io/v2
 kind: CiliumNetworkPolicy

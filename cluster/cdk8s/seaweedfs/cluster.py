@@ -98,6 +98,7 @@ GROUP = "seaweed.seaweedfs.com"
 # admits exactly these.
 TENANTS = frozenset(
     {
+        "agentplane-staging",  # agentplane/db_backups.py
         "authentik",  # authentik/db_backups.py
         "flux-system",  # seaweedfs/pr_visuals_bucket.py
         "forgejo",  # forgejo/app.py

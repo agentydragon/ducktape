@@ -97,7 +97,7 @@ class Db(Construct):
             # fails requests and can stop background loops such as the History Service fold.
             postgresql=ClusterSpecPostgresql(parameters={"max_slot_wal_keep_size": "512MB", "max_connections": "300"}),
             initdb=cnpg.same_owner_initdb("app"),
-            wal_archive=False,
+            wal_archive=env.db.wal_archive,
             managed=ClusterSpecManaged(
                 roles=[
                     ClusterSpecManagedRoles(

@@ -11,6 +11,11 @@ spec:
       name: agentplane-staging
       originRevision: "@repo"
     - copy:
+        - from: "@repo/cluster/generated/agentplane-staging/db-backups/**"
+          to: "@artifact/cluster/generated/agentplane-staging/db-backups/"
+      name: agentplane-staging-db-backups
+      originRevision: "@repo"
+    - copy:
         - from: "@repo/cluster/k8s/monitoring/**"
           to: "@artifact/cluster/k8s/monitoring/"
       name: monitoring-stack

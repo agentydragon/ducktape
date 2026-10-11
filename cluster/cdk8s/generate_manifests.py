@@ -70,7 +70,13 @@ from cluster.cdk8s.activitywatch import (
     app as activitywatch_app,
     flux_kustomizations as activitywatch_flux_kustomizations,
 )
-from cluster.cdk8s.agentplane import binding_delegation, generation as agentplane_generation, staging, testing
+from cluster.cdk8s.agentplane import (
+    binding_delegation,
+    db_backups as agentplane_staging_db_backups,
+    generation as agentplane_generation,
+    staging,
+    testing,
+)
 from cluster.cdk8s.agentplane_index import workers as agentplane_index_workers
 from cluster.cdk8s.agents import flux_kustomizations as agents_flux_kustomizations, namespaces as agents_namespaces
 from cluster.cdk8s.artifact_generators import (
@@ -912,6 +918,15 @@ def generate_manifests(root: Path) -> None:
         cnpg_kustomization,
         seaweedfs_operator_kustomization,
     )
+    agentplane_staging_db_backups_artifact = artifact(
+        "agentplane-staging-db-backups", agentplane_staging_db_backups.OUTPUT_DIR
+    )
+    agentplane_staging_db_backups.agentplane_staging_db_backups(
+        flux_chart,
+        write_directory(root, agentplane_staging_db_backups_artifact, agentplane_staging_db_backups.chart),
+        cnpg_kustomization,
+        seaweedfs_operator_kustomization,
+    )
     monitoring_loki_artifact = artifact("monitoring-loki", loki.OUTPUT_DIR)
     loki_kustomization = loki.loki(
         flux_chart,
@@ -1685,6 +1700,7 @@ def generate_manifests(root: Path) -> None:
         root,
         ducktape=[
             agentplane_staging_artifact,
+            agentplane_staging_db_backups_artifact,
             monitoring_stack_artifact,
             ntfy_artifact,
             agentplane_testing_artifact,

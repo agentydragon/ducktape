@@ -65,6 +65,7 @@ flowchart TB
     app -->|HTTP admin port: egress decisions| proxy
     app -->|Thread shapes for the browser| electric
     electric -->|logical replication| hist_db
+    hist_db -.->|staging: WAL archive, on-demand base backups| outside
 
     ss -->|Sandbox CRs, grants| k8s
     ss -->|SealSandbox| gw

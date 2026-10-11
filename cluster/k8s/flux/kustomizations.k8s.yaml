@@ -1913,6 +1913,30 @@ spec:
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
+  annotations:
+    description: Creates the agentplane staging CNPG backup store and its SeaweedFS storage.
+  name: agentplane-staging-db-backups
+  namespace: ducktape-flux
+spec:
+  dependsOn:
+    - name: cnpg
+      namespace: ducktape-flux
+    - name: seaweedfs-operator
+      namespace: ducktape-flux
+  interval: 10m
+  path: ./cluster/generated/agentplane-staging/db-backups
+  prune: true
+  retryInterval: 1m
+  sourceRef:
+    kind: ExternalArtifact
+    name: agentplane-staging-db-backups
+    namespace: ducktape-flux
+  timeout: 15m
+  wait: true
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
   name: loki
   namespace: ducktape-flux
 spec:

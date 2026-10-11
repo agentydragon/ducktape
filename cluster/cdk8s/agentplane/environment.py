@@ -44,6 +44,9 @@ class ReplicaProfile:
 @dataclass(frozen=True)
 class DbProps:
     instances: int
+    # Archive WAL and take base backups into the environment's SeaweedFS bucket
+    # (agentplane/db_backups.py) through the barman-cloud plugin.
+    wal_archive: bool
 
 
 @dataclass(frozen=True)

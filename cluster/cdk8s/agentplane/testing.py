@@ -157,7 +157,7 @@ ENV = Environment(
     fold_shadow=True,
     settle_deltas=True,
     history_compaction=CompactionRun.APPLY,
-    db=DbProps(instances=1),
+    db=DbProps(instances=1, wal_archive=False),
     llm_ingress=LlmIngressProps(litellm_key_secret_name=_LITELLM_KEY_SECRET, models=model_configs(TESTING_APP_MODELS)),
     egress=EgressProps(
         ca_secret_name="agentplane-testing-egress-ca", credentials_namespace=TESTING_CREDENTIALS_NAMESPACE

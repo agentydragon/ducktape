@@ -306,6 +306,11 @@ spec:
         replication: true
   monitoring:
     enablePodMonitor: true
+  plugins:
+    - isWALArchiver: true
+      name: barman-cloud.cloudnative-pg.io
+      parameters:
+        barmanObjectName: postgres
   postgresql:
     parameters:
       max_connections: "300"

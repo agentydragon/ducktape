@@ -246,6 +246,7 @@ spec:
           - key: kubernetes.io/metadata.name
             operator: In
             values:
+              - agentplane-staging
               - authentik
               - flux-system
               - forgejo
@@ -264,6 +265,7 @@ spec:
           - key: kubernetes.io/metadata.name
             operator: In
             values:
+              - agentplane-staging
               - authentik
               - flux-system
               - forgejo
@@ -282,6 +284,7 @@ spec:
           - key: kubernetes.io/metadata.name
             operator: In
             values:
+              - agentplane-staging
               - authentik
               - flux-system
               - forgejo

@@ -306,7 +306,7 @@ ENV = Environment(
     notifications_github=GitHubAppProps(app_id=5188971, secret_name="agentplane-github-app"),
     kubernetes_binding_cleanup_namespaces=frozenset(agent_access_profiles.cleanup_namespaces()),
     kubernetes_cluster_binding_cleanup=True,
-    db=DbProps(instances=2),
+    db=DbProps(instances=2, wal_archive=True),
     llm_ingress=LlmIngressProps(
         litellm_key_secret_name=_LITELLM_KEY_SECRET, models=model_configs(STAGING_APP_MODELS), log_llm_requests=True
     ),

@@ -1,0 +1,74 @@
+apiVersion: seaweed.seaweedfs.com/v1
+kind: Bucket
+metadata:
+  annotations:
+    description: Private CNPG physical backups and WAL archive for agentplane staging.
+  name: agentplane-staging-db-backups
+  namespace: agentplane-staging
+spec:
+  access:
+    - actions:
+        - Read
+        - Write
+        - List
+        - Tagging
+      user: agentplane-staging-db-backups
+  clusterRef:
+    name: seaweedfs
+    namespace: seaweedfs
+  name: agentplane-staging-db-backups
+  reclaimPolicy: Retain
+---
+apiVersion: seaweed.seaweedfs.com/v1
+kind: S3Identity
+metadata:
+  annotations:
+    description: Private CNPG physical backups and WAL archive for agentplane staging.
+  name: agentplane-staging-db-backups
+  namespace: agentplane-staging
+spec:
+  reclaimPolicy: Retain
+  seaweedRef:
+    name: seaweedfs
+    namespace: seaweedfs
+---
+apiVersion: seaweed.seaweedfs.com/v1
+kind: S3Credentials
+metadata:
+  name: agentplane-staging-db-backups
+  namespace: agentplane-staging
+spec:
+  identityRef:
+    name: agentplane-staging-db-backups
+  reclaimPolicy: Retain
+  seaweedRef:
+    name: seaweedfs
+    namespace: seaweedfs
+  secretRef:
+    accessKeyField: AWS_ACCESS_KEY_ID
+    name: agentplane-staging-db-backups-s3-credentials
+    secretKeyField: AWS_SECRET_ACCESS_KEY
+---
+apiVersion: barmancloud.cnpg.io/v1
+kind: ObjectStore
+metadata:
+  annotations:
+    description: SeaweedFS S3 destination for agentplane staging CNPG base backups and WAL.
+  name: postgres
+  namespace: agentplane-staging
+spec:
+  configuration:
+    data:
+      compression: gzip
+    destinationPath: s3://agentplane-staging-db-backups/
+    endpointURL: http://seaweedfs-s3.seaweedfs.svc:8333
+    s3Credentials:
+      accessKeyId:
+        key: AWS_ACCESS_KEY_ID
+        name: agentplane-staging-db-backups-s3-credentials
+      secretAccessKey:
+        key: AWS_SECRET_ACCESS_KEY
+        name: agentplane-staging-db-backups-s3-credentials
+    wal:
+      compression: gzip
+  retentionPolicy: 30d

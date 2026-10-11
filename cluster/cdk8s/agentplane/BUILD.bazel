@@ -5,6 +5,20 @@ load("//devinfra/python:defs.bzl", "py_library", "py_test")
 package(default_visibility = ["//cluster/cdk8s:__pkg__"])
 
 py_library(
+    name = "db_backups",
+    srcs = ["db_backups.py"],
+    deps = [
+        ":database",
+        ":staging",
+        "//cluster/cdk8s:flux",
+        "//cluster/cdk8s:manifest_roots",
+        "//cluster/cdk8s/providers/cnpg:objectstore",
+        "//cluster/cdk8s/seaweedfs:s3",
+        "@pypi//cdk8s",
+    ],
+)
+
+py_library(
     name = "electric",
     srcs = ["electric.py"],
     deps = [
@@ -140,7 +154,6 @@ py_library(
         ":environment",
         "//agentplane/history_service:compaction_settings",
         "//cluster/cdk8s:cilium",
-        "//cluster/cdk8s:cnpg",
         "//cluster/cdk8s:node_scheduling",
         "//cluster/cdk8s:pod_policy",
         "//cluster/cdk8s:secret_ref",
