@@ -43,6 +43,11 @@ grouping read it. Give the gateway a batch read of each Session's Sandbox, switc
 it, then drop the column. Stops for the operator before the drop. Independent of
 `APP_SESSION_SCHEMA_RENAME`; whichever lands second rebases.
 
+Operator, 2026-10-11: commands go to the gateway by Session ID alone. `SubmitCommand`, `GetCommand`
+and `ListCommands` already do; `ResumeSession` still names the Sandbox, because only the replica
+holding its runner connection serves it and the client reaches that replica through the Sandbox's
+control Service. Resume by Session ID needs the gateway to forward to the holder itself.
+
 ### `APP_ALEMBIC_SQUASH` — consolidate the final app schema
 
 **Blocked on final schema naming/cleanup.** Baseline only the settled schema,

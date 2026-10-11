@@ -273,9 +273,8 @@ async def test_public_session_command_survives_a_lost_reply(
     await register(engine, session_id)
     command = command_pb2.Command(command_id="durable", submit_input=command_pb2.SubmitInput(text="hi"))
     async with asyncio.timeout(10), service_client(resources, token_file, cluster.provisioning) as remote:
-        runner = remote.runner(DESTINATION)
         with pytest.raises(TimeoutError):
-            await runner.command(str(session_id), command)
+            await remote.command(str(session_id), command)
         lost = await peer.delivery()
         assert (lost.session_id, lost.command) == (str(session_id), command)
         # Without the runner's receipt the submission stays pending.
@@ -283,18 +282,18 @@ async def test_public_session_command_survives_a_lost_reply(
         await wait_attempt_lapsed(engine, session_id, "durable")
 
         # Once the attempt has lapsed, the caller's retry delivers it again, and the runner's receipt settles it.
-        retrying = asyncio.create_task(runner.command(str(session_id), command))
+        retrying = asyncio.create_task(remote.command(str(session_id), command))
         assert await peer.delivery() == lost
         await peer.admit(lost, 1)
         receipt = await retrying
         assert receipt == admission(command, 1)
         assert (await submissions.read(session_id, "durable")).state == SubmissionState.ADMITTED
 
-        assert await runner.command(str(session_id), command) == receipt
+        assert await remote.command(str(session_id), command) == receipt
         assert peer.deliveries.empty()  # an admitted retry needs no runner
         changed = command_pb2.Command(command_id="durable", submit_input=command_pb2.SubmitInput(text="changed"))
         with pytest.raises(ServiceError) as conflict:
-            await runner.command(str(session_id), changed)
+            await remote.command(str(session_id), changed)
         assert conflict.value.code == grpc.StatusCode.ALREADY_EXISTS
 
 
@@ -317,20 +316,17 @@ async def test_command_status_reads_retained_submissions_without_the_runner(
     receipt = admission(commands["admitted"], 1)
     await submissions.record_admission(session_id, receipt)
     await submissions.record_rejection(session_id, "rejected", "test refusal")
-    destination = sandbox_service_pb2.SessionDestination(sandbox=DESTINATION, session_id=str(session_id))
     async with service_client(
         replace(resources, sessions=sessions, submissions=submissions), token_file, cluster.provisioning
     ) as remote:
 
-        async def get(
-            command_id: str, at: sandbox_service_pb2.SessionDestination = destination
-        ) -> sandbox_service_pb2.CommandStatus:
+        async def get(command_id: str, at: str = str(session_id)) -> sandbox_service_pb2.CommandStatus:
             return await remote.unary(
-                remote.gateway.GetCommand, sandbox_service_pb2.GetCommandRequest(destination=at, command_id=command_id)
+                remote.gateway.GetCommand, sandbox_service_pb2.GetCommandRequest(session_id=at, command_id=command_id)
             )
 
         async def page(request: sandbox_service_pb2.ListCommandsRequest) -> sandbox_service_pb2.ListCommandsResponse:
-            request.destination.CopyFrom(destination)
+            request.session_id = str(session_id)
             return await remote.unary(remote.gateway.ListCommands, request)
 
         admitted = await get("admitted")
@@ -358,14 +354,10 @@ async def test_command_status_reads_retained_submissions_without_the_runner(
         )
         assert list(only_pending.commands) == [pending]
 
-        other_incarnation = sandbox_service_pb2.SessionDestination()
-        other_incarnation.CopyFrom(destination)
-        other_incarnation.sandbox.sandbox_uid = str(uuid4())
-        legacy = sandbox_service_pb2.SessionDestination(sandbox=DESTINATION, session_id="legacy-runner-session")
         for command_id, at, code in (
-            ("unknown", destination, grpc.StatusCode.NOT_FOUND),
-            ("pending", other_incarnation, grpc.StatusCode.NOT_FOUND),
-            ("pending", legacy, grpc.StatusCode.INVALID_ARGUMENT),
+            ("unknown", str(session_id), grpc.StatusCode.NOT_FOUND),
+            ("pending", str(uuid4()), grpc.StatusCode.NOT_FOUND),
+            ("pending", "legacy-runner-session", grpc.StatusCode.INVALID_ARGUMENT),
         ):
             with pytest.raises(ServiceError) as refused:
                 await get(command_id, at)
@@ -482,7 +474,7 @@ async def test_command_uses_runner_ack_budget_not_unary_request_budget(
         remote.request_timeout_s = 0.1  # The client also must not use its short generic RPC deadline.
         session_id = uuid4()
         await register(engine, session_id)
-        submitted = asyncio.create_task(remote.runner(DESTINATION).command(str(session_id), command))
+        submitted = asyncio.create_task(remote.command(str(session_id), command))
         delivered = await peer.delivery()
         await asyncio.sleep(0.2)
         await peer.admit(delivered, 1)
@@ -567,7 +559,7 @@ async def test_unlisted_callers_rejected_before_lookup(
             (remote.stub.RevokeEgress, sandbox_service_pb2.RevokeEgressRequest()),
             (remote.gateway.ListSessions, sandbox_service_pb2.SandboxRequest(destination=DESTINATION)),
             (remote.gateway.ResumeSession, sandbox_service_pb2.SessionRequest(destination=destination)),
-            (remote.gateway.SubmitCommand, sandbox_service_pb2.SubmitCommandRequest(destination=destination)),
+            (remote.gateway.SubmitCommand, sandbox_service_pb2.SubmitCommandRequest(session_id=str(uuid4()))),
         ):
             with pytest.raises(ServiceError) as rejected:
                 await remote.unary(call, request)
@@ -636,7 +628,7 @@ async def test_invalid_command_is_not_submitted(
     remote: SandboxServiceClient, cluster: Cluster, command: command_pb2.Command
 ) -> None:
     with pytest.raises(ServiceError) as rejected:
-        await remote.runner(DESTINATION).command(str(uuid4()), command)
+        await remote.command(str(uuid4()), command)
     assert rejected.value.code == grpc.StatusCode.INVALID_ARGUMENT
     assert cluster.fake.pod_reads == 0
 

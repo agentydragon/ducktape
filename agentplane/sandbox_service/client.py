@@ -186,6 +186,24 @@ class SandboxServiceClient:
     async def revoke_egress(self, name: str) -> None:
         await self.unary(self.stub.RevokeEgress, sandbox_service_pb2.RevokeEgressRequest(binding_name=name))
 
+    async def command(self, session_id: str, command: command_pb2.Command) -> event_log_pb2.EventEntry:
+        """Submit to a public Session; the Runner Gateway routes it to the Sandbox the Session runs in."""
+        if self.command_admission_timeout_s is None:
+            raise ValueError("SubmitCommand requires an explicit client deadline")
+        receipt = await self.unary(
+            self.gateway.SubmitCommand,
+            sandbox_service_pb2.SubmitCommandRequest(session_id=session_id, command=command),
+            timeout_s=self.command_admission_timeout_s,
+        )
+        if not receipt.event.HasField("command_admitted") or receipt.event.command_admitted.command != command:
+            raise ConnectionError("Sandbox Service did not return the exact command admission")
+        return receipt
+
+    async def get_command(self, session_id: str, command_id: str) -> sandbox_service_pb2.CommandStatus:
+        return await self.unary(
+            self.gateway.GetCommand, sandbox_service_pb2.GetCommandRequest(session_id=session_id, command_id=command_id)
+        )
+
     def runner(self, destination: SandboxDestination) -> Runner:
         return Runner(self, destination)
 
@@ -256,28 +274,4 @@ class Runner:
                 destination=sandbox_service_pb2.SessionDestination(sandbox=self.destination, session_id=session_id)
             ),
             timeout_s=self.service.lifecycle_timeout_s,
-        )
-
-    async def command(self, session_id: str, command: command_pb2.Command) -> event_log_pb2.EventEntry:
-        if self.service.command_admission_timeout_s is None:
-            raise ValueError("SubmitCommand requires an explicit client deadline")
-        receipt = await self.service.unary(
-            self.service.gateway.SubmitCommand,
-            sandbox_service_pb2.SubmitCommandRequest(
-                destination=sandbox_service_pb2.SessionDestination(sandbox=self.destination, session_id=session_id),
-                command=command,
-            ),
-            timeout_s=self.service.command_admission_timeout_s,
-        )
-        if not receipt.event.HasField("command_admitted") or receipt.event.command_admitted.command != command:
-            raise ConnectionError("Sandbox Service did not return the exact command admission")
-        return receipt
-
-    async def get_command(self, session_id: str, command_id: str) -> sandbox_service_pb2.CommandStatus:
-        return await self.service.unary(
-            self.service.gateway.GetCommand,
-            sandbox_service_pb2.GetCommandRequest(
-                destination=sandbox_service_pb2.SessionDestination(sandbox=self.destination, session_id=session_id),
-                command_id=command_id,
-            ),
         )

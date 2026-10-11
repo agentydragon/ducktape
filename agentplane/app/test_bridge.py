@@ -955,7 +955,7 @@ async def test_thread_command_reports_id_conflict_after_runner_admitted_before_a
         command_id="reused-before-copy", interrupt_turn=command_pb2.InterruptTurn(turn_id="first-target")
     )
     # Admitted through the Sandbox Service, not the app.
-    await local_runners.client(SANDBOX).command(str(thread), original)
+    await local_runners.service.command(str(thread), original)
 
     async with httpx.AsyncClient(base_url=app_url, timeout=60, headers=AGENT_AUTH) as http:
         conflict = await http.post(
@@ -1069,16 +1069,15 @@ async def test_command_returns_runner_receipt_before_app_archive_catches_up(
     async def no_archive_yet() -> None:
         return None
 
-    class Runner:
-        async def command(self, session_id: str, candidate: command_pb2.Command) -> event_log_pb2.EventEntry:
-            nonlocal called
-            called += 1
-            assert session_id == SESSION
-            assert candidate == command
-            return receipt
+    async def submit(session_id: str, candidate: command_pb2.Command) -> event_log_pb2.EventEntry:
+        nonlocal called
+        called += 1
+        assert session_id == SESSION
+        assert candidate == command
+        return receipt
 
     monkeypatch.setattr(bridge._ingester, "start", no_archive_yet)
-    monkeypatch.setattr(bridge._runners, "client", lambda _sandbox: Runner())
+    monkeypatch.setattr(bridge._runners.service, "command", submit)
     assert await bridge.command(thread, command) == receipt
     assert await content.admitted_command(thread, command) is None
     assert await event_logs.events(thread, limit=10) == []

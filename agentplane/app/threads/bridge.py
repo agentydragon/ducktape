@@ -184,7 +184,7 @@ class RunnerBridge:
         # the prefix preceding it. The response does not wait for that copy.
         await self._ingester.start()
         try:
-            return await self._runners.client(runner_session.sandbox).command(runner_session.session_id, command)
+            return await self._runners.service.command(runner_session.session_id, command)
         except TimeoutError as error:
             raise RunnerAdmissionTimeoutError(command.command_id) from error
 
@@ -193,7 +193,7 @@ class RunnerBridge:
         runner_session = await self._event_logs.service_session(thread_id)
         if runner_session is None:
             raise ThreadNotFoundError(thread_id)
-        status = await self._runners.client(runner_session.sandbox).get_command(runner_session.session_id, command_id)
+        status = await self._runners.service.get_command(runner_session.session_id, command_id)
         return CommandStatus(
             state=_COMMAND_STATES[status.state],
             admission=MessageToDict(status.admission) if status.HasField("admission") else None,

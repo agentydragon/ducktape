@@ -118,8 +118,8 @@ registered but are not followed until their binding is established by a verified
   A `{session_id}` placeholder in a selected `cwd` override is expanded to that UUID, just like
   the stored default cwd. Concurrent or response-lost retries with the same UUID use the original
   settings; the same UUID with changed inputs, another caller or another Sandbox is rejected; a
-  request without one is invalid. `ResumeSession` and `SubmitCommand`
-  accept the public ID of a Session registered within the pinned Sandbox UID. Neither the UUID nor the key applies to runner-discovered native child sessions. The
+  request without one is invalid. `ResumeSession` accepts the public ID of a Session registered
+  within the pinned Sandbox UID. Neither the UUID nor the key applies to runner-discovered native child sessions. The
   app opens every new Thread through it, with its Session ID as the key too.
 - `LookupSession`: read-only reconciliation by authenticated caller, current Sandbox name/UID
   and opaque Open key. Returns no public ID for an absent reservation, or the public ID
@@ -135,9 +135,10 @@ registered but are not followed until their binding is established by a verified
   a claim that all setup or a model turn has completed.
 - `ResumeSession`: uses exactly the runner-retained spec, without applying today's defaults/instructions
   or rerunning setup. Missing sessions and failed/interrupted setup are refused.
-- `SubmitCommand`: forwards an unchanged common-protocol `Command` only to a running harness and returns
-  the original `EventEntry` containing its exact matching `CommandAdmitted`. For a public Session ID the
-  submission is recorded in the `sandbox_commands` database before the runner is contacted, keyed by
+- `SubmitCommand`: names the public Session ID alone; the gateway routes it to the Sandbox
+  incarnation the Session was opened in, and refuses one that is gone or being torn down. It forwards
+  an unchanged common-protocol `Command` only to a running harness and returns the original
+  `EventEntry` containing its exact matching `CommandAdmitted`. The submission is recorded in the `sandbox_commands` database before the runner is contacted, keyed by
   Session and command ID with the caller's identity. An exact retry by the same caller returns the
   retained receipt without contacting the runner once the admission is known; a different command or
   caller under the same ID is `ALREADY_EXISTS`. A submission whose reply was lost is settled only by
@@ -158,8 +159,8 @@ registered but are not followed until their binding is established by a verified
   reconnects, learns the outcome; a pending command is settled only by an exact retry or a late
   receipt for a delivery already sent, and `PENDING_ADMISSION` does not say whether the runner
   journaled it. Admission is the runner journaling the command, not the harness acting on
-  it. The Session must belong to the named Sandbox incarnation, whose owner is checked while it
-  exists; the submissions outlive it. `ListCommands` pages in acceptance order and filters by state.
+  it. They name the public Session ID alone, and answer after its Sandbox is gone: the
+  submissions outlive it. `ListCommands` pages in acceptance order and filters by state.
 
 Session listing and command RPCs never provision, resume, or wake a Sandbox or harness.
 
