@@ -62,8 +62,6 @@ class ThreadHistorySummary(Base):
     last_turn_status: Mapped[int | None] = mapped_column(BigInteger)
     attached: Mapped[dict[str, object] | None] = mapped_column(JSONB(none_as_null=True))
     end: Mapped[dict[str, str] | None] = mapped_column(JSONB(none_as_null=True))
-    # A confirmed resume invalidates EOF at this cursor until newer evidence arrives.
-    resumed_after_cursor: Mapped[int | None] = mapped_column(BigInteger)
     # Inferred from model-originated events, not an observed provider request or cache receipt.
     last_model_activity_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 

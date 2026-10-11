@@ -15,6 +15,7 @@ filegroup(
         "//agentplane/history_service/storage/migrations/versions:0009_history_rows_from_feed.py",
         "//agentplane/history_service/storage/migrations/versions:0010_drop_registry_columns.py",
         "//agentplane/history_service/storage/migrations/versions:0011_session_writer.py",
+        "//agentplane/history_service/storage/migrations/versions:0012_drop_resumed_after_cursor.py",
     ],
     visibility = ["//agentplane/history_service/storage:__pkg__"],
 )
