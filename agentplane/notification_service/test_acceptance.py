@@ -241,8 +241,9 @@ async def test_listen_deliver_read_ack_and_recover_lost_response_without_app(
                             after_cursor=0,
                         )
                         initial = await model.request()
-                    # Real native journal longer than a worker replay batch. First delivery must
-                    # not spend claims scanning it, even when the admission response is lost.
+                    # Seed the real native journal past one worker replay batch. Each interrupt
+                    # normally adds an admission and a no-op, so stop as soon as the boundary is
+                    # crossed instead of submitting another full batch of unrelated commands.
                     history_cursor = 0
                     for index in range(130):
                         command = command_pb2.Command(
@@ -250,20 +251,46 @@ async def test_listen_deliver_read_ack_and_recover_lost_response_without_app(
                             interrupt_turn=command_pb2.InterruptTurn(turn_id="nonexistent-turn"),
                         )
                         logger.info(
-                            "notification journal seed %d/130: submitting command_id=%s operation=%s after_cursor=%d",
+                            "notification journal seed %d: submitting command_id=%s operation=%s after_cursor=%d",
                             index + 1,
                             command.command_id,
                             command.WhichOneof("operation"),
                             history_cursor,
                         )
-                        receipt = await native.command(session_id, command, after_cursor=history_cursor)
+                        try:
+                            receipt = await native.command(session_id, command, after_cursor=history_cursor)
+                        except Exception as error:
+                            logger.warning(
+                                "notification journal seed failed at command_id=%s after_cursor=%d: %s",
+                                command.command_id,
+                                history_cursor,
+                                type(error).__name__,
+                            )
+                            try:
+                                async with asyncio.timeout(3):
+                                    status = await native.get_command(session_id, command.command_id)
+                                logger.warning(
+                                    "notification journal seed retained command_id=%s state=%d admission_cursor=%d",
+                                    command.command_id,
+                                    status.state,
+                                    status.admission.cursor,
+                                )
+                            except Exception as lookup_error:
+                                logger.warning(
+                                    "notification journal seed status unavailable for command_id=%s: %s",
+                                    command.command_id,
+                                    type(lookup_error).__name__,
+                                )
+                            raise
                         history_cursor = receipt.cursor
                         logger.info(
-                            "notification journal seed %d/130: admitted command_id=%s cursor=%d",
+                            "notification journal seed %d: admitted command_id=%s cursor=%d",
                             index + 1,
                             command.command_id,
                             history_cursor,
                         )
+                        if history_cursor > 128:
+                            break
                     assert history_cursor > 128
                     original = Runner.command
                     lost = False
