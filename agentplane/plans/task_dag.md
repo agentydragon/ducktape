@@ -1034,7 +1034,6 @@ flowchart TD
         HISTORY_GRPC_CONFORM[Candidate: the History Service follows grpc_services.md]
         THREAD_FOLD_SINGLE_OWNER[Blocked: the fold has one owner]
         SETTLE_DELTAS_ALWAYS_ON[Delta settlement always on]
-        INDEX_PRIMITIVES_CONSOLIDATE[Candidate: one Git index]
         INDEX_DOCS[Candidate: indexing README points at the deployment]
         APP_SERVICE_NAMES[Blocked: app names the right services]
         APP_TEST_CLIENT_MOVE[Candidate: app test client out of production]
@@ -1200,14 +1199,6 @@ under `history_service/`.
 silently stops settling. Settlement becomes unconditional: delete the setting,
 `Environment.settle_deltas` and the `Store` flag (the ingester's copy goes with
 `FOLLOW_PATH_RETIRE`). `SESSION_EVENT_COMPACTION` does not wait for this.
-
-### `INDEX_PRIMITIVES_CONSOLIDATE` — one Git index
-
-**Candidate.** `haku/recall_index`'s `sync`, `store`, `git_tree`,
-`embedding_sync`, `config` and `schema` are deployed nowhere and duplicate `agentplane/indexing`;
-its live half serves only that package. Delete the dead modules and their tests and move the live
-primitives into `agentplane/indexing`; `vector_type` stays where the haku migration imports it.
-A separate migration drops the haku console's `recall_index` schema and `vector` extension.
 
 ### `INDEX_DOCS` — indexing README points at the deployment
 
