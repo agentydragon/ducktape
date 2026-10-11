@@ -18,9 +18,9 @@ from kubernetes_asyncio import client as k8s_client
 from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from agentplane.proto import command_pb2, event_log_pb2, event_pb2, runner_pb2
+from agentplane.grpc_process import serving
+from agentplane.proto import command_pb2, event_log_pb2, event_pb2, runner_pb2, runner_pb2_grpc
 from agentplane.runner.errors import RunnerError, StreamClosedError
-from agentplane.runner.testing.runner_server import UnimplementedRunner, serve_runner
 from agentplane.runner_gateway.commands.connections import ConnectionStore
 from agentplane.runner_gateway.commands.store import CommandSubmission, SubmissionState, SubmissionStore
 from agentplane.runner_gateway.grpc_api import Resources
@@ -60,7 +60,7 @@ class PeerAttachment:
     closed: asyncio.Event = field(default_factory=asyncio.Event)
 
 
-class Peer(UnimplementedRunner):
+class Peer(runner_pb2_grpc.RunnerServicer):
     def __init__(self) -> None:
         self.attachments: asyncio.Queue[PeerAttachment] = asyncio.Queue()
         self.port = 0
@@ -138,7 +138,9 @@ class Peer(UnimplementedRunner):
 @pytest.fixture
 async def peer() -> AsyncIterator[Peer]:
     peer = Peer()
-    async with serve_runner(peer) as port:
+    server = grpc.aio.server()
+    runner_pb2_grpc.add_RunnerServicer_to_server(peer, server)
+    async with serving(server, "127.0.0.1:0", grace_s=0) as port:
         peer.port = port
         yield peer
 

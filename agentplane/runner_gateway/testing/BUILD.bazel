@@ -19,6 +19,7 @@ py_library(
     name = "grpc_service",
     srcs = ["grpc_service.py"],
     deps = [
+        "//agentplane:grpc_process",
         "//agentplane/runner_gateway:grpc_api",
         "//agentplane/sandbox_service:client",
         "//agentplane/sandbox_service:grpc_api",
@@ -63,6 +64,7 @@ py_library(
     name = "runner_control",
     srcs = ["runner_control.py"],
     deps = [
+        "//agentplane:grpc_process",
         "//agentplane/proto:runner_control_pb2",
         "//agentplane/proto:runner_control_pb2_grpc",
         "//agentplane/runner_gateway:command_delivery",
@@ -70,24 +72,10 @@ py_library(
         "//agentplane/runner_gateway:lifecycle_control",
         "//agentplane/runner_gateway:runner_control",
         "//agentplane/runner_gateway/commands:connections",
-        "//agentplane/sandbox_service/testing:grpc_service",
         "//agentplane/sandbox_service/testing:kubernetes",
         "//agentplane/testing:fake_apiserver",
         "@pypi//grpcio",
         "@pypi//kubernetes_asyncio",
-        "@pypi//protobuf",
-    ],
-)
-
-py_library(
-    name = "unimplemented_gateway",
-    srcs = ["unimplemented_gateway.py"],
-    deps = [
-        "//agentplane/proto:event_log_pb2",
-        "//agentplane/proto:runner_gateway_pb2_grpc",
-        "//agentplane/proto:runner_pb2",
-        "//agentplane/sandbox_service:protocol_pb2",
-        "@pypi//grpcio",
         "@pypi//protobuf",
     ],
 )

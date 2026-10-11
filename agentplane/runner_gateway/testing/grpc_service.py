@@ -7,11 +7,12 @@ from pathlib import Path
 
 import grpc
 
+from agentplane.grpc_process import serving
 from agentplane.runner_gateway import grpc_api as gateway_api
 from agentplane.sandbox_service import grpc_api as sandbox_api
 from agentplane.sandbox_service.client import SandboxServiceClient
 from agentplane.sandbox_service.provisioning import Provisioning
-from agentplane.sandbox_service.testing.grpc_service import connect, serving
+from agentplane.sandbox_service.testing.grpc_service import connect
 
 # gazelle:include_dep @pypi//grpcio
 
@@ -32,8 +33,8 @@ async def service(resources: gateway_api.Resources, provisioning: Provisioning |
             ),
             server,
         )
-    async with serving(server) as target:
-        yield target
+    async with serving(server, "127.0.0.1:0", grace_s=0) as port:
+        yield f"127.0.0.1:{port}"
 
 
 @asynccontextmanager

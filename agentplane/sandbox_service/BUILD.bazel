@@ -9,7 +9,6 @@ load("//props:oci.bzl", "py_image_entrypoint", "py_image_env")
 package(default_visibility = ["//agentplane/sandbox_service:__subpackages__"])
 
 # gazelle:resolve py agentplane.sandbox_service.protocol_pb2 //agentplane/sandbox_service:protocol_pb2
-# gazelle:resolve py agentplane.sandbox_service.protocol_pb2_grpc //agentplane/sandbox_service:protocol_pb2_grpc
 
 py_library(
     name = "conftest",
@@ -675,9 +674,9 @@ py_test(
         ":models",
         ":teardown",
         "//:conftest",
+        "//agentplane:grpc_process",
         "//agentplane/proto:runner_gateway_pb2_grpc",
         "//agentplane/proto:runner_pb2",
-        "//agentplane/runner_gateway/testing:unimplemented_gateway",
         "//agentplane/sandbox_service:protocol_pb2",
         "//agentplane/sandbox_service/testing:backend",
         "//agentplane/sandbox_service/testing:fake_inventory",
@@ -719,9 +718,9 @@ py_test(
     deps = [
         ":conftest",
         "//:conftest",
+        "//agentplane:grpc_process",
         "//agentplane/proto:runner_gateway_pb2_grpc",
         "//agentplane/proto:runner_pb2",
-        "//agentplane/runner_gateway/testing:unimplemented_gateway",
         "//agentplane/sandbox_service:protocol_pb2",
         "//agentplane/sandbox_service/testing:grpc_service",
         "//agentplane/sandbox_service/testing:kubernetes",
