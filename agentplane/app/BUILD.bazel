@@ -960,7 +960,7 @@ py_test(
         "//agentplane/app/frontend:bundle",
     ],
     requires_docker = True,
-    shard_count = 8,
+    shard_count = 16,
     deps = [
         ":conftest",
         ":database",
