@@ -123,7 +123,7 @@ py_test(
     deps = [
         ":conftest",
         "//:conftest",
-        "//agentplane/sandbox_service/session_history:conftest",
+        "//agentplane/history_service/storage:conftest",
         "//agentplane/thread_fold:models",
         "//agentplane/thread_fold:projection_lease",
         "@pypi//pytest",

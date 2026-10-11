@@ -13,9 +13,9 @@ from agentplane.thread_fold import projection_lease
 from agentplane.thread_fold.models import SessionProjectionLease
 from agentplane.thread_fold.projection_lease import ProjectionLease, ProjectionLeaseLostError
 
-# gazelle:include_dep //agentplane/sandbox_service/session_history:conftest
+# gazelle:include_dep //agentplane/history_service/storage:conftest
 
-pytest_plugins = ("agentplane.sandbox_service.session_history.conftest",)
+pytest_plugins = ("agentplane.history_service.storage.conftest",)
 
 
 async def acquire(engine: AsyncEngine, session_id: UUID) -> ProjectionLease | None:
