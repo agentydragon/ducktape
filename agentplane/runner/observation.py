@@ -1,6 +1,6 @@
 """Harness-neutral observations carried by public Events."""
 
-from google.protobuf.message import Message
+from typing import assert_never
 
 from agentplane.proto import event_pb2
 
@@ -33,37 +33,60 @@ Observation = (
     | event_pb2.DebugCheckpoint
 )
 
-_FIELDS: dict[type[Message], str] = {
-    event_pb2.HarnessStarted: "harness_started",
-    event_pb2.HarnessExited: "harness_exited",
-    event_pb2.HarnessLost: "harness_lost",
-    event_pb2.HarnessStderr: "harness_stderr",
-    event_pb2.HarnessLaunchFailed: "harness_launch_failed",
-    event_pb2.SetupStarted: "setup_started",
-    event_pb2.SetupOutput: "setup_output",
-    event_pb2.SetupFinished: "setup_finished",
-    event_pb2.SetupInterrupted: "setup_interrupted",
-    event_pb2.CommandAdmitted: "command_admitted",
-    event_pb2.CommandFailed: "command_failed",
-    event_pb2.CommandNoop: "command_noop",
-    event_pb2.HarnessUserMessageConfirmed: "harness_user_message_confirmed",
-    event_pb2.ModelChanged: "model_changed",
-    event_pb2.ReasoningEffortChanged: "reasoning_effort_changed",
-    event_pb2.TurnStarted: "turn_started",
-    event_pb2.TurnCompleted: "turn_completed",
-    event_pb2.ItemStarted: "item_started",
-    event_pb2.TextDelta: "text_delta",
-    event_pb2.ToolArgumentsDelta: "tool_arguments_delta",
-    event_pb2.ToolArguments: "tool_arguments",
-    event_pb2.ToolOutputDelta: "tool_output_delta",
-    event_pb2.ItemCompleted: "item_completed",
-    event_pb2.Native: "native",
-    event_pb2.ConversationReconciled: "conversation_reconciled",
-    event_pb2.DebugCheckpoint: "debug_checkpoint",
-}
-
 
 def observation_event(observation: Observation) -> event_pb2.Event:
-    event = event_pb2.Event()
-    getattr(event, _FIELDS[type(observation)]).CopyFrom(observation)
-    return event
+    match observation:
+        case event_pb2.HarnessStarted():
+            return event_pb2.Event(harness_started=observation)
+        case event_pb2.HarnessExited():
+            return event_pb2.Event(harness_exited=observation)
+        case event_pb2.HarnessLost():
+            return event_pb2.Event(harness_lost=observation)
+        case event_pb2.HarnessStderr():
+            return event_pb2.Event(harness_stderr=observation)
+        case event_pb2.HarnessLaunchFailed():
+            return event_pb2.Event(harness_launch_failed=observation)
+        case event_pb2.SetupStarted():
+            return event_pb2.Event(setup_started=observation)
+        case event_pb2.SetupOutput():
+            return event_pb2.Event(setup_output=observation)
+        case event_pb2.SetupFinished():
+            return event_pb2.Event(setup_finished=observation)
+        case event_pb2.SetupInterrupted():
+            return event_pb2.Event(setup_interrupted=observation)
+        case event_pb2.CommandAdmitted():
+            return event_pb2.Event(command_admitted=observation)
+        case event_pb2.CommandFailed():
+            return event_pb2.Event(command_failed=observation)
+        case event_pb2.CommandNoop():
+            return event_pb2.Event(command_noop=observation)
+        case event_pb2.HarnessUserMessageConfirmed():
+            return event_pb2.Event(harness_user_message_confirmed=observation)
+        case event_pb2.ModelChanged():
+            return event_pb2.Event(model_changed=observation)
+        case event_pb2.ReasoningEffortChanged():
+            return event_pb2.Event(reasoning_effort_changed=observation)
+        case event_pb2.TurnStarted():
+            return event_pb2.Event(turn_started=observation)
+        case event_pb2.TurnCompleted():
+            return event_pb2.Event(turn_completed=observation)
+        case event_pb2.ItemStarted():
+            return event_pb2.Event(item_started=observation)
+        case event_pb2.TextDelta():
+            return event_pb2.Event(text_delta=observation)
+        case event_pb2.ToolArgumentsDelta():
+            return event_pb2.Event(tool_arguments_delta=observation)
+        case event_pb2.ToolArguments():
+            return event_pb2.Event(tool_arguments=observation)
+        case event_pb2.ToolOutputDelta():
+            return event_pb2.Event(tool_output_delta=observation)
+        case event_pb2.ItemCompleted():
+            return event_pb2.Event(item_completed=observation)
+        case event_pb2.Native():
+            return event_pb2.Event(native=observation)
+        case event_pb2.ConversationReconciled():
+            return event_pb2.Event(conversation_reconciled=observation)
+        case event_pb2.DebugCheckpoint():
+            return event_pb2.Event(debug_checkpoint=observation)
+        case _:
+            assert_never(observation)

@@ -13,7 +13,3 @@ def entry(cursor: int, event: event_pb2.Event) -> event_log_pb2.EventEntry:
 
 def admission(command: command_pb2.Command, cursor: int = 1) -> event_log_pb2.EventEntry:
     return entry(cursor, event_pb2.Event(command_admitted=event_pb2.CommandAdmitted(command=command)))
-
-
-def journal_entry(cursor: int) -> event_log_pb2.EventEntry:
-    return entry(cursor, event_pb2.Event(native=event_pb2.Native(line=f"line {cursor}")))
