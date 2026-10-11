@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
+from enum import StrEnum
 
 from cdk8s import Duration
 from cdk8s_plus_34 import DeploymentStrategy
@@ -16,6 +17,13 @@ from cilium_crds.io.cilium import CiliumNetworkPolicySpecEgress
 from agentplane.action_service.settings import ActionServiceDeploymentSettings
 from agentplane.app.settings import AppSettingsConfig, ThreadReads
 from agentplane.llm_ingress.models import ModelConfig
+
+
+class CompactionRun(StrEnum):
+    """A run of the stored-history compaction Job (history_compaction.py)."""
+
+    DRY_RUN = "dry-run"
+    APPLY = "apply"
 
 
 @dataclass(frozen=True)
@@ -126,6 +134,8 @@ class Environment:
     # Whether the History Service's writers remove an item's streamed delta entries once its
     # completion provably holds them (agentplane/history_service/README.md#delta-settlement).
     settle_deltas: bool
+    # Which run of the stored-history compaction Job the environment holds, or None for none.
+    history_compaction: CompactionRun | None
     # Which fold the app reads Threads from; the app's Electric upstream follows it.
     thread_reads: ThreadReads
     db: DbProps

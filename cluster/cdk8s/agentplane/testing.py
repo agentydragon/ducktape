@@ -52,6 +52,7 @@ from cluster.cdk8s.agentplane.egress_testing_credentials import add_testing_egre
 from cluster.cdk8s.agentplane.environment import (
     ActionsProps,
     AppProps,
+    CompactionRun,
     DbProps,
     EgressProps,
     Environment,
@@ -163,6 +164,7 @@ ENV = Environment(
     runner_grpc_channel_options=LARGE_EVENT_GRPC_CHANNEL_OPTIONS,
     fold_shadow=True,
     settle_deltas=True,
+    history_compaction=CompactionRun.DRY_RUN,
     thread_reads=ThreadReads.HISTORY_SERVICE,
     db=DbProps(instances=1),
     llm_ingress=LlmIngressProps(litellm_key_secret_name=_LITELLM_KEY_SECRET, models=model_configs(TESTING_APP_MODELS)),

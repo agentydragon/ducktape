@@ -17,6 +17,7 @@ from cluster.cdk8s.agentplane import (
     database,
     egress,
     electric,
+    history_compaction,
     history_ingress,
     history_service,
     llm_ingress,
@@ -96,6 +97,8 @@ def environment_chart(app: App, env: Environment) -> Chart:
         gateway=runner_gateway.service(env.namespace),
     )
     history_ingress.HistoryIngress(chart, "history-ingress", env)
+    if env.history_compaction is not None:
+        history_compaction.HistoryCompaction(chart, "history-compaction", env, env.history_compaction)
     app_component.App(chart, "app", env)
     actions.Actions(chart, "actions", env)
     notifications.Notifications(
