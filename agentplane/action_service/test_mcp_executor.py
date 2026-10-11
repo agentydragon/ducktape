@@ -343,7 +343,7 @@ async def test_ambiguous_transport_loss_becomes_execution_unknown_without_retry(
         await service.close()
 
 
-class ControlledLease:
+class ControlledLease(ExecutionLease):
     renewal_interval = timedelta(milliseconds=10)
 
     def __init__(self, started: asyncio.Event, failure: str) -> None:
