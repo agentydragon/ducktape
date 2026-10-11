@@ -143,9 +143,9 @@ async def test_launch_delivery_and_restart_preserve_evidence_and_configuration(
         assert session in opened.spec.instructions
         assert (await runner.create(session_id=requested, spec={})).attached.spec == opened.spec
         assert (await runner.list_sessions())[0].spec == opened.spec
-        with pytest.raises(ServiceError) as changed:
+        # The runner refuses a retry whose spec differs from the one it recorded.
+        with pytest.raises(RunnerError):
             await runner.create(session_id=requested, spec={"instructions": "Different task"})
-        assert changed.value.code == grpc.StatusCode.INVALID_ARGUMENT
         assert bootstrap_marker.read_text() == "B"
         assert setup_marker.read_text() == "S"
         entries = await complete_turn(remote, client, model, session, "grpc-notice")

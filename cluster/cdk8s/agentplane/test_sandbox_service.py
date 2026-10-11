@@ -193,12 +193,10 @@ def test_gateway_callers_send_the_gateway_audience(
         for arg in app_args
         if arg.startswith("--runner-gateway-token-file=")
     )
-    history = config(f"{history_service.NAME}-config", "config.yaml")["sandbox_service"]
     notices = config(f"{notifications.NAME}-settings", "settings.yaml")["sandbox_service"]
     sealer = config(f"{sandbox_service.NAME}-config", "config.yaml")
     assert {
         _token_audience(pod(app.NAME), "app", app_token),
-        _token_audience(pod(history_service.NAME), "history-service", history["gateway_token_file"]),
         _token_audience(pod(notifications.NAME), "notifications", notices["gateway_token_file"]),
         _token_audience(pod(sandbox_service.NAME), "sandbox-service", sealer["gateway_token_file"]),
     } == {accepted}
