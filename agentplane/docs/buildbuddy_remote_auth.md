@@ -27,9 +27,7 @@ No specific invocation URL was supplied for this confirmation.
 The intended container workflow is BuildBuddy-hosted builds. Do not run a local Bazel client
 in an agent container, even when actions execute remotely; local Bazel is deferred until agents
 have VM-backed environments. Installed `bb`, `bbr`, or Bazelisk binaries are not permission to
-exercise that path. The remaining enablement task is
-[`LOCAL_BAZEL`](../plans/task_dag.md#local_bazel--bounded-local-client-in-a-vm),
-which explicitly depends on `SANDBOX_VM_ISOLATION`. This is an operator execution policy,
+exercise that path. This is an operator execution policy,
 not a claim of technical enforcement.
 
 Per-run credentials or a run-scoped gateway remain optional future hardening of the direct-key

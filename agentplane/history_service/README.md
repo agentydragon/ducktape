@@ -2,13 +2,13 @@
 
 Serves retained Session history: the raw runner Event log and its observation metadata, keyed by
 public Session ID. It authenticates callers by projected ServiceAccount token (TokenReview) and
-serves only the configured reader accounts, today the integration app's. A Session UUID by itself
+serves only the configured reader accounts, today the integration app's and the Notification
+Service's. A Session UUID by itself
 grants nothing. Consumers use `client.py`; `testing/backend.py` serves the real boundary over a test
 database.
 
 This service's `migrate` init container runs the history tables' migrations
-(`storage/`); its runner ingress and its fold are their only writers. Target and sequence:
-[History Service plan](../plans/history_service.md).
+(`storage/`); its runner ingress and its fold are their only writers.
 
 ## Runner ingress
 

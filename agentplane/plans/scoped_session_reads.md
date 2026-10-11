@@ -1,7 +1,7 @@
 # Scoped ServiceAccount reads of Session history — proposed contract
 
 Status: **proposed policy design**, not an implemented permission or a grant to existing
-callers. Tracked as `THREAD_READ_POLICY_DESIGN` in [the task DAG](../plans/task_dag.md)
+callers. Tracked as `THREAD_READ_POLICY_DESIGN` in [the task DAG](task_dag.md)
 (as expanded in [PR #9411](https://github.com/agentydragon/ducktape/pull/9411)).
 Review the choices below before implementing the policy. The durable raw Session Event
 history and its Thread fold live in the [History Service](../history_service/README.md),

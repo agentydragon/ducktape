@@ -28,8 +28,7 @@ storage or losing the observed conversation's ability to continue. It does
 **not** prove exact native-history/reasoning preservation, journal prefix and
 cursor equivalence, pending-command behavior during a pause, Claude parity,
 or recovery from an incompatible image. Those remain distinct acceptance
-checks in [`RUNNER_IMAGE_UPGRADE_PROOF`](../plans/task_freezer.md#runner_image_upgrade_proof--same-storage-image-replacement-evidence)
-before an automatic `RUNNER_IMAGE_ROLLOUT` is enabled. They do not block
+checks before automatic runner image rollout is enabled. They do not block
 operator-supervised manual Codex upgrades.
 
 The operator performed the mutation with `kubectl patch --type=json`; the

@@ -47,8 +47,7 @@ capability; the gap below is now purely a runner-adapter integration gap, not a 
 
 **Recommendation.** Wire the runner adapter to the now-pinned native shape: declare the runner's own
 servers at `initialize`, add bidirectional `mcp_message` correlation reusing the Action Service
-contracts rather than a second tool-request lifecycle (per
-[driver_tools_and_background.md](../plans/driver_tools_and_background.md)), and preserve per-server
+contracts rather than a second tool-request lifecycle, and preserve per-server
 timeouts plus normalized error replies. Keep MCP task support disabled until an active `tools/call`
 path is observed using it.
 

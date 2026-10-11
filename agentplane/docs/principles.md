@@ -24,8 +24,8 @@ piece.
 
 The integration app exists to serve people: one frontend over Actions, sandboxes, threads and the
 rest. Its ideal form is a thin facade in front of N small services that serves that frontend and
-owns no backend state. State it holds today, such as the thread archive, is a candidate to move
-into a dedicated service, not a pattern to extend.
+owns no backend state. State it holds today is a candidate to move into a dedicated service, not a
+pattern to extend.
 
 **Question for a proposal:** can someone who wants only this capability deploy it without the
 rest? A new hard dependency between services needs a reason stronger than convenience. Does new

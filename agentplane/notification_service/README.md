@@ -39,9 +39,10 @@ unknown keys fail startup. Environment variables override YAML using `__` for ne
 [settings.py](settings.py) defines the configuration fields and their descriptions.
 Configuration changes require a service restart.
 
-`actions` contains `url` and `token_file`; `sandbox_service` contains the Sandbox Service `target`, the
-Runner Gateway `gateway_target` and `control_target`, and the `token_file` both services accept.
-Token paths refer to rotating projected ServiceAccount tokens, not static secrets. Actions rereads its
+`actions` contains `url` and `token_file`; `sandbox_service` contains the Sandbox Service `target` and
+`token_file` and the Runner Gateway `gateway_target`, `control_target` and `gateway_token_file`;
+`history_service` contains its `target` and `token_file`. Each service checks its own token audience,
+so each token file holds a token projected for that service. Token paths refer to rotating projected ServiceAccount tokens, not static secrets. Actions rereads its
 token file for each request. Set `AGENTPLANE_NOTIFICATIONS_DATABASE_URL` through a Secret-backed
 environment variable rather than putting the DSN in the ConfigMap.
 

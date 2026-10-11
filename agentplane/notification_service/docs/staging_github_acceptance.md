@@ -12,7 +12,7 @@ Verified on `agentydragon/ducktape`, without integration-app API calls:
 - Reads preserved acknowledgement; the agent explicitly acknowledged through cursor 24 and cancelled test subscriptions.
 
 Not proved: webhook-redelivery deduplication, restart recovery, revoked access, broader repository/event/fork coverage or negative ingress probes.
-See [remaining work](../../plans/notifications.md). Debounce [#8988](https://github.com/agentydragon/ducktape/pull/8988) is not part of this deployed proof.
+Debounce [#8988](https://github.com/agentydragon/ducktape/pull/8988) is not part of this deployed proof.
 
 ## Shared GitHub state rollout — 2026-10-09
 
@@ -71,8 +71,7 @@ Live verification on `agentydragon/ducktape`:
 These observations close live delivery acceptance for the exercised workflow-job and ordinary
 issue lifecycle/comment paths. They do not establish every action filter, issue/PR exclusion
 case, fork/revocation behavior, redelivery deduplication, or shared refresh reuse across restarts;
-CI coverage is separate from live proof. Remaining work stays in the
-[notification plan](../../plans/notifications.md#remaining-live-verification).
+CI coverage is separate from live proof.
 
 ## Waived live acceptance exercises
 

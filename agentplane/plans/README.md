@@ -27,6 +27,8 @@ execution sequence. This is a priority decision, not a technical dependency.
 - [Claude RemoteIO transport](claude_remote_io.md) — evaluate an optional `--sdk-url` bridge through Agentplane egress, including compaction-summary value and recovery gates
 - [Agent access to external systems](external_access.md) — deferred delegated-versus-brokered access choices
 - [Profiles](profiles.md) — broader capability profiles remain deferred
+- [Scoped Session reads](scoped_session_reads.md) — proposed ServiceAccount read policy for
+  retained Session history
 - [KubeVirt execution environments](kubevirt_environments.md) — selectable VM environments, guest runner,
   launcher proxy, resource isolation, persistent state and implementation gates
 - [User stories](user_stories.md) — north-star product context, not an implementation queue
