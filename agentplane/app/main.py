@@ -119,6 +119,7 @@ async def async_main(settings: Settings) -> None:
             gateway_target=settings.runner_gateway_target,
             namespace=settings.sandbox_namespace,
             token_file=settings.sandbox_service_token_file,
+            gateway_token_file=settings.runner_gateway_token_file,
             command_admission_timeout_s=settings.sandbox_service_command_admission_timeout_s,
             request_timeout_s=settings.sandbox_service_request_timeout_s,
             lifecycle_timeout_s=settings.sandbox_service_lifecycle_timeout_s,

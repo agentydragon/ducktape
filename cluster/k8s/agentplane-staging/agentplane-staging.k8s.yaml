@@ -2711,7 +2711,7 @@ spec:
           projected:
             sources:
               - serviceAccountToken:
-                  audience: agentplane-sandbox-service
+                  audience: agentplane-runner-gateway
                   expirationSeconds: 3600
                   path: token
 ---
@@ -2915,7 +2915,7 @@ data:
     sealer_accounts:
       - namespace: agentplane-staging
         name: agentplane-sandbox-service
-    token_audience: agentplane-sandbox-service
+    token_audience: agentplane-runner-gateway
     platform_instructions: |-
       You are running in a Kubernetes sandbox managed by Agentplane. Agentplane governs outbound network
       access and sensitive operations. Instead of real service tokens you receive credential placeholders:
@@ -3475,7 +3475,8 @@ data:
     sandbox_service:
       target: agentplane-sandbox-service.agentplane-staging.svc.cluster.local:8080
       gateway_target: agentplane-runner-gateway.agentplane-staging.svc.cluster.local:8080
-      token_file: /var/run/secrets/agentplane-sandbox-service/token
+      token_file: /var/run/secrets/history-service/sandboxes
+      gateway_token_file: /var/run/secrets/history-service/gateway
       grpc_channel_options:
         grpc.max_receive_message_length: 33554432
     ingester:
@@ -3565,8 +3566,8 @@ spec:
             - mountPath: /etc/agentplane-history-service
               name: configmap-agentplane-history-service-config
               readOnly: true
-            - mountPath: /var/run/secrets/agentplane-sandbox-service
-              name: sandbox-service-token
+            - mountPath: /var/run/secrets/history-service
+              name: service-tokens
               readOnly: true
       dnsPolicy: ClusterFirst
       hostNetwork: false
@@ -3615,13 +3616,17 @@ spec:
         - configMap:
             name: agentplane-history-service-config
           name: configmap-agentplane-history-service-config
-        - name: sandbox-service-token
+        - name: service-tokens
           projected:
             sources:
               - serviceAccountToken:
                   audience: agentplane-sandbox-service
                   expirationSeconds: 3600
-                  path: token
+                  path: sandboxes
+              - serviceAccountToken:
+                  audience: agentplane-runner-gateway
+                  expirationSeconds: 3600
+                  path: gateway
 ---
 apiVersion: v1
 kind: Service
@@ -5166,6 +5171,7 @@ spec:
             - --sandbox-namespace=agentplane-staging
             - --sandbox-service-target=agentplane-sandbox-service.agentplane-staging.svc.cluster.local:8080
             - --runner-gateway-target=agentplane-runner-gateway.agentplane-staging.svc.cluster.local:8080
+            - --runner-gateway-token-file=/var/run/secrets/agentplane-runner-gateway/token
             - --sandbox-service-control-target={sandbox}-control.{namespace}.svc:8080
             - --history-service-target=agentplane-history-service.agentplane-staging.svc.cluster.local:8080
             - --notifications-url=http://agentplane-notifications.agentplane-staging.svc.cluster.local:8080
@@ -5270,6 +5276,9 @@ spec:
               readOnly: true
             - mountPath: /var/run/secrets/agentplane-sandbox-service
               name: sandbox-service-token
+              readOnly: true
+            - mountPath: /var/run/secrets/agentplane-runner-gateway
+              name: runner-gateway-token
               readOnly: true
             - mountPath: /var/run/secrets/agentplane-history-service
               name: history-service-token
@@ -5376,6 +5385,13 @@ spec:
             sources:
               - serviceAccountToken:
                   audience: agentplane-sandbox-service
+                  expirationSeconds: 3600
+                  path: token
+        - name: runner-gateway-token
+          projected:
+            sources:
+              - serviceAccountToken:
+                  audience: agentplane-runner-gateway
                   expirationSeconds: 3600
                   path: token
         - name: history-service-token
@@ -6844,6 +6860,10 @@ spec:
                   expirationSeconds: 3600
                   path: sandboxes
               - serviceAccountToken:
+                  audience: agentplane-runner-gateway
+                  expirationSeconds: 3600
+                  path: gateway
+              - serviceAccountToken:
                   audience: agentplane-history-service
                   expirationSeconds: 3600
                   path: history
@@ -6871,6 +6891,7 @@ data:
       grpc_channel_options:
         grpc.max_receive_message_length: 33554432
       token_file: /var/run/secrets/notifications/sandboxes
+      gateway_token_file: /var/run/secrets/notifications/gateway
     history_service:
       target: agentplane-history-service.agentplane-staging.svc.cluster.local:8080
       grpc_channel_options:

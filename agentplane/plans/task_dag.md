@@ -1035,7 +1035,6 @@ flowchart TD
     RUNNER_INBOUND_RETIRE[Retire inbound runner access]
     APP_PROJECTOR_RETIRE[Delete app projector]
     subgraph COHERENCE_REFACTORS[Coherence refactors]
-        RUNNER_GATEWAY_AUDIENCE[Candidate: the Runner Gateway's own token audience]
         SERVICE_SETTINGS_BASE[Candidate: one config-file settings base]
         SERVICE_PROCESS_MODULE[Candidate: one service process module]
         REQUIRED_SERVICE_WIRING[Candidate: no footgun defaults on service wiring]
@@ -1070,14 +1069,6 @@ flowchart TD
     APP_PROJECTOR_RETIRE --> APP_SERVICE_NAMES
     COHERENCE_REFACTORS --> REFACTOR_COHERENCE_AUDIT[Whole-refactor coherence audit]
 ```
-
-### `RUNNER_GATEWAY_AUDIENCE` — the Runner Gateway's own token audience
-
-**Candidate.** The gateway accepts the Sandbox Service's audience (`runner_gateway/settings.py:26`,
-`cluster/cdk8s/agentplane/chart.py:73`), and the combined client sends one token to both, so a token
-for one service is accepted by the other. Give the gateway `agentplane-runner-gateway` with its own
-token mount on each caller, drop both settings' literal audience defaults, and use
-`WORKLOAD_TOKEN_AUDIENCE` for the literal in `notifications.py`. Pairs with `GATEWAY_CLIENT_SPLIT`.
 
 ### `SERVICE_SETTINGS_BASE` — one config-file settings base
 

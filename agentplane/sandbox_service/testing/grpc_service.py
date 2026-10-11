@@ -31,6 +31,7 @@ def connect(
         control_target=control_target,
         namespace=namespace,
         token_file=token_file,
+        gateway_token_file=token_file,
         command_admission_timeout_s=command_admission_timeout_s,
         request_timeout_s=20,
         lifecycle_timeout_s=310,

@@ -41,6 +41,7 @@ async def serve(settings: Settings) -> None:
                 gateway_target=settings.sandbox_service.gateway_target,
                 namespace=settings.namespace,
                 token_file=settings.sandbox_service.token_file,
+                gateway_token_file=settings.sandbox_service.gateway_token_file,
                 request_timeout_s=settings.sandbox_service.request_timeout_s,
                 lifecycle_timeout_s=settings.sandbox_service.lifecycle_timeout_s,
                 follow_timeout_s=settings.sandbox_service.follow_timeout_s,

@@ -89,6 +89,9 @@ class Settings(AppSettingsConfig):
     notifications_url: HttpEndpointUrl
     notifications_token_file: Path
     sandbox_service_token_file: Path = Path("/var/run/secrets/agentplane-sandbox-service/token")
+    runner_gateway_token_file: Path = Field(
+        description="The rotating projected ServiceAccount token for the Runner Gateway audience."
+    )
     history_service_token_file: Path = Path("/var/run/secrets/agentplane-history-service/token")
     history_service_request_timeout_s: float = Field(default=20, gt=0, allow_inf_nan=False)
     sandbox_service_request_timeout_s: float = Field(default=20, gt=0, allow_inf_nan=False)

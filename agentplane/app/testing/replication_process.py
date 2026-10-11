@@ -285,6 +285,7 @@ async def _serve(
             gateway_target=f"127.0.0.1:{runner_port}",
             namespace=NAMESPACE,
             token_file=token_file,
+            gateway_token_file=token_file,
             command_admission_timeout_s=10,
             request_timeout_s=10,
             lifecycle_timeout_s=10,

@@ -911,6 +911,7 @@ py_library(
         ":migrate_container",
         ":pod_disruption_budget",
         "//agentplane/notification_service:settings",
+        "//agentplane/workload_auth:audience",
         "//cluster/cdk8s:cilium",
         "//cluster/cdk8s:node_scheduling",
         "//cluster/cdk8s:pod_policy",

@@ -311,9 +311,9 @@ kebab-case CLI flags, and `//agentplane/runner_gateway:server` uses `AGENTPLANE_
 (`AGENTPLANE_RUNNER_GATEWAY_CONFIG_FILE` for its YAML file). The Sandbox Service reaches the gateway
 at `gateway_target`, and a Sandbox's holder replica through `control_target`, with the token in
 `gateway_token_file`; the gateway accepts that account for `SealSandbox` through `sealer_accounts`.
-Required settings are `sandbox_namespace`, `caller_accounts` (nonempty), `gateway_target`,
-`control_target` and `gateway_token_file`. TokenReview namespaces are derived from that allowlist.
-`token_audience` defaults to `agentplane-sandbox-service`. Kubernetes access is in-cluster unless `kubeconfig` is supplied.
+Required settings are `sandbox_namespace`, `caller_accounts` (nonempty), `token_audience`,
+`gateway_target`, `control_target` and `gateway_token_file`. TokenReview namespaces are derived from
+that allowlist. Kubernetes access is in-cluster unless `kubeconfig` is supplied.
 
 `port` defaults to 8080 for gRPC, which also serves the unauthenticated `grpc.health.v1.Health`;
 it is liveness, not proof that Kubernetes or a particular destination is ready. Admission requests
@@ -337,8 +337,9 @@ Deployment must grant the service the appropriate Kubernetes/TokenReview/provisi
 project an audience-correct token for app-to-service calls, and enforce sole normal production access
 to runner control/event RPCs. Do not leave a direct-runner app fallback or two provisioning reconcilers.
 
-Deployment source uses the dedicated `agentplane-sandbox-service` token audience; the app mounts a
-rotating projected token and the client rereads it on every RPC. `AGENTPLANE_SANDBOX_SERVICE_CONFIG_FILE`
+Each service has its own token audience, `agentplane-sandbox-service` and `agentplane-runner-gateway`,
+so a token for one is refused by the other. Every caller mounts a rotating projected token per service
+it calls, and the client rereads it on every RPC. `AGENTPLANE_SANDBOX_SERVICE_CONFIG_FILE`
 can select an independent YAML settings file. It does not load app configuration or require app startup.
 
 ## Representation

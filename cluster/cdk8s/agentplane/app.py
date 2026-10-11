@@ -308,6 +308,7 @@ class App(Construct):
                 sandbox_namespace=namespace,
                 sandbox_service_target=f"{sandbox_service.service(namespace).fqdn}:{sandbox_service.service(namespace).pod_port}",
                 runner_gateway_target=runner_gateway.target(namespace),
+                runner_gateway_token_file="/var/run/secrets/agentplane-runner-gateway/token",
                 sandbox_service_control_target=runner_gateway.control_target(namespace),
                 history_service_target=f"{history_service.service(namespace).fqdn}:{history_service.service(namespace).pod_port}",
                 notifications_url=f"http://{notifications.service(namespace).fqdn}:{notifications.service(namespace).port.number}",
@@ -352,6 +353,32 @@ class App(Construct):
                     name="sandbox-service-token",
                     mount_path="/var/run/secrets/agentplane-sandbox-service",
                     read_only=True,
+                ),
+            )
+        )
+
+        ApiObject.of(deployment).add_json_patch(
+            JsonPatch.add(
+                "/spec/template/spec/volumes/-",
+                k8s.Volume(
+                    name="runner-gateway-token",
+                    projected=k8s.ProjectedVolumeSource(
+                        sources=[
+                            k8s.VolumeProjection(
+                                service_account_token=k8s.ServiceAccountTokenProjection(
+                                    audience=runner_gateway.TOKEN_AUDIENCE, expiration_seconds=3600, path="token"
+                                )
+                            )
+                        ]
+                    ),
+                ),
+            )
+        )
+        ApiObject.of(deployment).add_json_patch(
+            JsonPatch.add(
+                "/spec/template/spec/containers/0/volumeMounts/-",
+                k8s.VolumeMount(
+                    name="runner-gateway-token", mount_path="/var/run/secrets/agentplane-runner-gateway", read_only=True
                 ),
             )
         )

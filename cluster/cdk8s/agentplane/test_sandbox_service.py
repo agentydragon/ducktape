@@ -113,6 +113,7 @@ def test_app_uses_independent_service(namespace: str, agentplane_manifests: dict
     assert backend_config["gateway_token_file"] == f"{gateway_mount['mountPath']}/token"
     gateway = runner_gateway.service(namespace)
     assert backend_config["gateway_target"] == f"{gateway.fqdn}:{gateway.pod_port}"
+    assert gateway_config["token_audience"] != backend_config["token_audience"]
     runner_policy = resource("CiliumNetworkPolicy", "agentplane-runner")["spec"]
     assert runner_policy["ingress"] == [
         {
@@ -144,6 +145,7 @@ def test_notifications_have_no_app_or_direct_runner_dependency(
     assert {source["serviceAccountToken"]["audience"] for source in tokens["projected"]["sources"]} == {
         "agentplane-egress",
         sandbox_service.TOKEN_AUDIENCE,
+        runner_gateway.TOKEN_AUDIENCE,
         history_service.TOKEN_AUDIENCE,
     }
     for container in pod["containers"] + pod["initContainers"]:
@@ -165,6 +167,56 @@ def test_notifications_have_no_app_or_direct_runner_dependency(
         for rule in policy["egress"]
         for target in rule.get("toEndpoints", [])
     )
+
+
+def _token_audience(pod: dict[str, Any], container: str, token_file: str) -> str:
+    """The audience of the projected token a container finds at `token_file`."""
+    mount = one(
+        mount
+        for item in pod["containers"]
+        if item["name"] == container
+        for mount in item["volumeMounts"]
+        if token_file.startswith(f"{mount['mountPath']}/")
+    )
+    volume = one(volume for volume in pod["volumes"] if volume["name"] == mount["name"])
+    return one(
+        source["serviceAccountToken"]["audience"]
+        for source in volume["projected"]["sources"]
+        if source["serviceAccountToken"]["path"] == token_file.removeprefix(f"{mount['mountPath']}/")
+    )
+
+
+@pytest.mark.parametrize("namespace", NAMESPACES)
+def test_gateway_callers_send_the_gateway_audience(
+    namespace: str, agentplane_manifests: dict[str, list[dict[str, Any]]]
+) -> None:
+    documents = agentplane_manifests[namespace]
+
+    def resource(kind: str, name: str) -> dict[str, Any]:
+        return one(doc for doc in documents if doc["kind"] == kind and doc["metadata"]["name"] == name)
+
+    def pod(name: str) -> dict[str, Any]:
+        return resource("Deployment", name)["spec"]["template"]["spec"]
+
+    def config(name: str, key: str) -> dict[str, Any]:
+        return yaml.safe_load(resource("ConfigMap", name)["data"][key])
+
+    accepted = config(f"{runner_gateway.NAME}-config", "config.yaml")["token_audience"]
+    app_args = one(item for item in pod(app.NAME)["containers"] if item["name"] == "app")["args"]
+    app_token = one(
+        arg.removeprefix("--runner-gateway-token-file=")
+        for arg in app_args
+        if arg.startswith("--runner-gateway-token-file=")
+    )
+    history = config(f"{history_service.NAME}-config", "config.yaml")["sandbox_service"]
+    notices = config(f"{notifications.NAME}-settings", "settings.yaml")["sandbox_service"]
+    sealer = config(f"{sandbox_service.NAME}-config", "config.yaml")
+    assert {
+        _token_audience(pod(app.NAME), "app", app_token),
+        _token_audience(pod(history_service.NAME), "history-service", history["gateway_token_file"]),
+        _token_audience(pod(notifications.NAME), "notifications", notices["gateway_token_file"]),
+        _token_audience(pod(sandbox_service.NAME), "sandbox-service", sealer["gateway_token_file"]),
+    } == {accepted}
 
 
 if __name__ == "__main__":

@@ -84,6 +84,9 @@ class SandboxServiceSettings(BaseModel):
     token_file: Path = Field(
         description="Path to the rotating projected ServiceAccount token used to authenticate to Sandbox Service."
     )
+    gateway_token_file: Path = Field(
+        description="Path to the rotating projected ServiceAccount token used to authenticate to the Runner Gateway."
+    )
 
 
 class HistoryServiceSettings(BaseModel):

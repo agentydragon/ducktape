@@ -28,6 +28,9 @@ class SandboxServiceSettings(BaseModel):
     token_file: Path = Field(
         description="Rotating projected ServiceAccount token for the Sandbox Service audience, reread on every call."
     )
+    gateway_token_file: Path = Field(
+        description="Rotating projected ServiceAccount token for the Runner Gateway audience, reread on every call."
+    )
     request_timeout_s: float = Field(default=15, gt=0, allow_inf_nan=False)
     follow_timeout_s: float = Field(
         default=960,

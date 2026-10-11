@@ -50,6 +50,7 @@ def _openapi_document(api_client: k8s_client.ApiClient) -> dict[str, Any]:
         gateway_target="schema.invalid:8080",
         namespace="schema",
         token_file=Path("/schema-unused-token"),
+        gateway_token_file=Path("/schema-unused-token"),
         command_admission_timeout_s=None,
         # Schema export never makes an RPC; these are inert placeholder arguments, not runtime defaults.
         request_timeout_s=1,

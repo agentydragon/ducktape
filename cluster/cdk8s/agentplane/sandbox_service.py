@@ -136,7 +136,7 @@ class SandboxService(Construct):
                         sources=[
                             k8s.VolumeProjection(
                                 service_account_token=k8s.ServiceAccountTokenProjection(
-                                    audience=TOKEN_AUDIENCE, expiration_seconds=3600, path="token"
+                                    audience=runner_gateway.TOKEN_AUDIENCE, expiration_seconds=3600, path="token"
                                 )
                             )
                         ]

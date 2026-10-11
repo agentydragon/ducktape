@@ -56,7 +56,7 @@ NAME = "agentplane-history-service"
 TOKEN_AUDIENCE = "agentplane-history-service"
 _LABELS = {"app.kubernetes.io/name": NAME}
 _IMAGE = "git.allegedly.works/ducktape-ci/agentplane-history-service"
-_SANDBOX_SERVICE_TOKEN_DIR = "/var/run/secrets/agentplane-sandbox-service"
+_SERVICE_TOKEN_DIR = "/var/run/secrets/history-service"
 # The policy a Sandbox's runner reaches the ingress under, and the credential it substitutes.
 EGRESS_POLICY = "runner-ingress"
 _CREDENTIAL = "agentplane-runner-ingress"
@@ -98,6 +98,7 @@ class HistoryService(Construct):
         sandboxes: ServiceRef,
         sandboxes_audience: str,
         gateway: ServiceRef,
+        gateway_audience: str,
     ) -> None:
         super().__init__(scope, id)
         endpoint = service(env.namespace)
@@ -129,7 +130,8 @@ class HistoryService(Construct):
                 "sandbox_service": {
                     "target": f"{sandboxes.fqdn}:{sandboxes.pod_port}",
                     "gateway_target": f"{gateway.fqdn}:{gateway.pod_port}",
-                    "token_file": f"{_SANDBOX_SERVICE_TOKEN_DIR}/token",
+                    "token_file": f"{_SERVICE_TOKEN_DIR}/sandboxes",
+                    "gateway_token_file": f"{_SERVICE_TOKEN_DIR}/gateway",
                     "grpc_channel_options": env.app_config.sandbox_service_grpc_channel_options,
                 },
                 "ingester": {"settle_deltas": env.settle_deltas},
@@ -187,19 +189,20 @@ class HistoryService(Construct):
             security_context=ContainerSecurityContextProps(read_only_root_filesystem=False),
         )
         config.mount_into(container, env=CONFIG_FILE_ENV)
-        # A rotating, audience-scoped workload token for the ingester's Sandbox Service and Runner Gateway calls.
+        # Rotating, audience-scoped workload tokens for the ingester's Sandbox Service and Runner Gateway calls.
         ApiObject.of(deployment).add_json_patch(
             JsonPatch.add(
                 "/spec/template/spec/volumes/-",
                 k8s.Volume(
-                    name="sandbox-service-token",
+                    name="service-tokens",
                     projected=k8s.ProjectedVolumeSource(
                         sources=[
                             k8s.VolumeProjection(
                                 service_account_token=k8s.ServiceAccountTokenProjection(
-                                    audience=sandboxes_audience, expiration_seconds=3600, path="token"
+                                    audience=audience, expiration_seconds=3600, path=path
                                 )
                             )
+                            for path, audience in [("sandboxes", sandboxes_audience), ("gateway", gateway_audience)]
                         ]
                     ),
                 ),
@@ -208,7 +211,7 @@ class HistoryService(Construct):
         ApiObject.of(deployment).add_json_patch(
             JsonPatch.add(
                 "/spec/template/spec/containers/0/volumeMounts/-",
-                k8s.VolumeMount(name="sandbox-service-token", mount_path=_SANDBOX_SERVICE_TOKEN_DIR, read_only=True),
+                k8s.VolumeMount(name="service-tokens", mount_path=_SERVICE_TOKEN_DIR, read_only=True),
             )
         )
         pod_policy.place(deployment, node_scheduling.HIL_OVH)

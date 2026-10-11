@@ -770,6 +770,7 @@ async def unanswered_command_service(
             gateway_target=f"127.0.0.1:{port}",
             namespace="test",
             token_file=token_file,
+            gateway_token_file=token_file,
             command_admission_timeout_s=1,
             request_timeout_s=5,
             lifecycle_timeout_s=5,

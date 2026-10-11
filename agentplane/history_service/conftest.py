@@ -213,6 +213,7 @@ async def subscriber(target: str, token_file: Path) -> AsyncIterator[SandboxServ
         gateway_target=target,
         namespace=None,
         token_file=token_file,
+        gateway_token_file=token_file,
         command_admission_timeout_s=None,
         request_timeout_s=5,
         lifecycle_timeout_s=5,

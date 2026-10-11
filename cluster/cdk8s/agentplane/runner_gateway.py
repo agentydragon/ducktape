@@ -58,6 +58,7 @@ from cluster.cdk8s.token_reviewer_rbac import token_reviewer_cluster_rbac
 from util.settings_contract import env_name
 
 NAME = "agentplane-runner-gateway"
+TOKEN_AUDIENCE = "agentplane-runner-gateway"
 _LABELS = {"app.kubernetes.io/name": NAME}
 _IMAGE = "git.allegedly.works/ducktape-ci/agentplane-runner-gateway"
 # The port every runner listens on (app.py's SandboxTemplate); this service dials it.
@@ -118,7 +119,6 @@ class RunnerGateway(Construct):
         id: str,
         env: Environment,
         *,
-        token_audience: str,
         callers: dict[ServiceAccountRef, ServiceRef],
         sealer: ServiceAccountRef,
         sealer_pods: Pods,
@@ -145,7 +145,7 @@ class RunnerGateway(Construct):
                     for caller in sorted(callers, key=lambda caller: (caller.namespace, caller.name))
                 ],
                 "sealer_accounts": [sealer.model_dump()],
-                "token_audience": token_audience,
+                "token_audience": TOKEN_AUDIENCE,
                 "platform_instructions": combine_instructions(
                     render_platform_instructions(
                         egress_api_url=f"http://{egress.agent_api(env.namespace).fqdn}",

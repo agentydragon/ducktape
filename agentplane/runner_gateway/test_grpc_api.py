@@ -495,7 +495,7 @@ async def test_open_without_a_client_session_id_mints_one_and_survives_a_lost_re
     )
     request.override_mask.paths.extend(["harness", "cwd", "model"])
     async with service_client(resources, token_file, cluster.provisioning) as remote:
-        call = remote.gateway.CreateSession(request, metadata=await remote.metadata(), timeout=10)
+        call = remote.gateway.CreateSession(request, metadata=await remote.gateway_metadata(), timeout=10)
         async with asyncio.timeout(5):
             first = await peer.attachments.get()
         call.cancel()  # reply unknown to caller, reservation and runner attachment already committed
@@ -503,7 +503,7 @@ async def test_open_without_a_client_session_id_mints_one_and_survives_a_lost_re
             await call
         await first.closed.wait()
         peer.answer_open = True
-        recovered = await remote.gateway.CreateSession(request, metadata=await remote.metadata(), timeout=5)
+        recovered = await remote.gateway.CreateSession(request, metadata=await remote.gateway_metadata(), timeout=5)
         second = await peer.attachments.get()
         assert first.opened == second.opened
         assert recovered.attached.session_id == recovered.session_id
@@ -518,7 +518,7 @@ async def test_open_refuses_a_session_id_that_is_not_a_uuid(
     request.session_id = "r-not-a-uuid"
     async with service_client(resources, token_file) as remote:
         with pytest.raises(grpc.aio.AioRpcError) as refused:
-            await remote.gateway.CreateSession(request, metadata=await remote.metadata(), timeout=5)
+            await remote.gateway.CreateSession(request, metadata=await remote.gateway_metadata(), timeout=5)
     assert refused.value.code() == grpc.StatusCode.INVALID_ARGUMENT
     assert peer.attachments.empty()
 
@@ -573,7 +573,7 @@ async def test_idle_follow_renews_with_ok_status_not_native_end(
                 sandbox_service_pb2.FollowSessionRequest(
                     destination=sandbox_service_pb2.SessionDestination(sandbox=DESTINATION, session_id="session")
                 ),
-                metadata=await remote.metadata(),
+                metadata=await remote.gateway_metadata(),
                 timeout=5,
             )
             try:
@@ -1077,7 +1077,7 @@ async def test_watch_sessions_resumes_after_disconnect_and_wakes_on_other_writer
     configured = replace(resources, session_changes=session_changes, follow_lease_s=2)
     async with service_client(configured, token_file, cluster.provisioning) as remote:
         first_call = remote.gateway.WatchSessions(
-            sandbox_service_pb2.WatchSessionsRequest(), metadata=await remote.metadata(), timeout=10
+            sandbox_service_pb2.WatchSessionsRequest(), metadata=await remote.gateway_metadata(), timeout=10
         )
         legacy = (await first_call.read()).change
         assert (legacy.session_id, legacy.sandbox, legacy.sandbox_uid) == (str(legacy_id), "deleted-sandbox", "")
@@ -1086,7 +1086,7 @@ async def test_watch_sessions_resumes_after_disconnect_and_wakes_on_other_writer
 
         resumed = remote.gateway.WatchSessions(
             sandbox_service_pb2.WatchSessionsRequest(after_position=legacy.position),
-            metadata=await remote.metadata(),
+            metadata=await remote.gateway_metadata(),
             timeout=10,
         )
         current = (await resumed.read()).change
@@ -1132,7 +1132,7 @@ async def test_watch_sessions_requires_allowed_caller(
     )
     async with service_client(configured, token_file, cluster.provisioning) as remote:
         call = remote.gateway.WatchSessions(
-            sandbox_service_pb2.WatchSessionsRequest(), metadata=await remote.metadata()
+            sandbox_service_pb2.WatchSessionsRequest(), metadata=await remote.gateway_metadata()
         )
         with pytest.raises(grpc.aio.AioRpcError) as denied:
             await call.read()

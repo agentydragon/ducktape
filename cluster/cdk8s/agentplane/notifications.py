@@ -18,6 +18,7 @@ from cdk8s_plus_34 import (
 from constructs import Construct
 
 from agentplane.notification_service.settings import CONFIG_FILE_ENV, TOKEN_AUDIENCE, Settings
+from agentplane.workload_auth.audience import WORKLOAD_TOKEN_AUDIENCE
 from cluster.cdk8s import cilium, node_scheduling, pod_policy
 from cluster.cdk8s.agentplane import database
 from cluster.cdk8s.agentplane.environment import Environment
@@ -53,7 +54,9 @@ class Notifications(Construct):
         *,
         actions: ServiceRef,
         sandboxes: ServiceRef,
+        sandboxes_audience: str,
         gateway: ServiceRef,
+        gateway_audience: str,
         gateway_control_target: str,
         history: ServiceRef,
         history_audience: str,
@@ -117,6 +120,7 @@ class Notifications(Construct):
                     "control_target": gateway_control_target,
                     "grpc_channel_options": env.app_config.sandbox_service_grpc_channel_options,
                     "token_file": "/var/run/secrets/notifications/sandboxes",
+                    "gateway_token_file": "/var/run/secrets/notifications/gateway",
                 },
                 "history_service": {
                     "target": f"{history.fqdn}:{history.pod_port}",
@@ -161,8 +165,9 @@ class Notifications(Construct):
                                 )
                             )
                             for path, audience in [
-                                ("actions", "agentplane-egress"),
-                                ("sandboxes", "agentplane-sandbox-service"),
+                                ("actions", WORKLOAD_TOKEN_AUDIENCE),
+                                ("sandboxes", sandboxes_audience),
+                                ("gateway", gateway_audience),
                                 ("history", history_audience),
                             ]
                         ]

@@ -26,7 +26,7 @@ class Settings(BaseSettings):
 
     sandbox_namespace: str = Field(min_length=1)
     caller_accounts: frozenset[ServiceAccountRef] = Field(min_length=1)
-    token_audience: str = "agentplane-sandbox-service"
+    token_audience: str = Field(min_length=1, description="Audience of the callers' projected tokens.")
     admission_timeout_s: float = Field(default=15, gt=0, le=60)
     lifecycle_timeout_s: float = Field(default=300, gt=0)
     host: str = "0.0.0.0"
@@ -47,8 +47,8 @@ class Settings(BaseSettings):
         "as a template of `{sandbox}` and `{namespace}`.",
     )
     gateway_token_file: Path = Field(
-        description="This Pod's projected token for the gateway, of audience `token_audience`; the gateway accepts "
-        "it from the Sandbox Service alone for `SealSandbox`."
+        description="This Pod's projected token for the gateway's audience; the gateway accepts it from the "
+        "Sandbox Service alone for `SealSandbox`."
     )
 
     def __init__(self, **values: Any) -> None:

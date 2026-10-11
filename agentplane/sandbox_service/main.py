@@ -86,12 +86,14 @@ async def sandboxes(
 
 
 async def serve(settings: Settings) -> None:
+    # Teardown calls only the gateway; this client's Sandbox Service target and token are never used.
     gateway = SandboxServiceClient(
         f"127.0.0.1:{settings.port}",
         gateway_target=settings.gateway_target,
         control_target=settings.control_target,
         namespace=settings.sandbox_namespace,
         token_file=settings.gateway_token_file,
+        gateway_token_file=settings.gateway_token_file,
         command_admission_timeout_s=None,
         request_timeout_s=settings.admission_timeout_s,
         lifecycle_timeout_s=settings.lifecycle_timeout_s,

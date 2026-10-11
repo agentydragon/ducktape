@@ -404,7 +404,8 @@ hop and substitutes that Pod's own projected token for the dedicated audience
 [notifications](../notification_service/README.md) uses. The token is projected only into the
 sidecar, so neither the runner nor the harness ever holds it.
 
-The audience is distinct from the Sandbox Service and Runner Gateway APIs' (`agentplane-sandbox-service`) and from
+The audience is distinct from the Sandbox Service's and Runner Gateway's (`agentplane-sandbox-service`,
+`agentplane-runner-gateway`) and from
 the shared `agentplane-egress` audience that the LLM ingress and Action Service receive, so none of
 those recipients can replay a token they saw as a runner connection, and a control token cannot
 call the Sandbox Service or Runner Gateway API.

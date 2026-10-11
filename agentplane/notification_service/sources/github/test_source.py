@@ -1180,6 +1180,7 @@ sandbox_service:
   target: sandboxes:8080
   gateway_target: gateway:8080
   token_file: /tokens/sandboxes
+  gateway_token_file: /tokens/gateway
 history_service:
   target: history:8080
   token_file: /tokens/history

@@ -49,6 +49,7 @@ sandbox_service:
   target: sandboxes:8080
   gateway_target: gateway:8080
   token_file: /tokens/sandboxes
+  gateway_token_file: /tokens/gateway
 history_service:
   target: history:8080
   token_file: /tokens/history
@@ -129,6 +130,7 @@ sandbox_service:
   target: sandboxes:8080
   gateway_target: gateway:8080
   token_file: /tokens/sandboxes
+  gateway_token_file: /tokens/gateway
 history_service:
   target: history:8080
   token_file: /tokens/history
@@ -179,6 +181,7 @@ def test_invalid_command_admission_timeout(timeout: float) -> None:
             target="sandboxes:8080",
             gateway_target="gateway:8080",
             token_file=Path("/tokens/sandboxes"),
+            gateway_token_file=Path("/tokens/gateway"),
             command_admission_timeout_s=timeout,
         )
 
@@ -192,6 +195,7 @@ def test_invalid_sandbox_service_deadline(name: str, timeout: float) -> None:
                 "target": "sandboxes:8080",
                 "gateway_target": "gateway:8080",
                 "token_file": "/tokens/sandboxes",
+                "gateway_token_file": "/tokens/gateway",
                 name: timeout,
             }
         )
@@ -209,6 +213,7 @@ def test_invalid_stale_confirmation_timeout(timeout: float) -> None:
                     "target": "sandboxes:8080",
                     "gateway_target": "gateway:8080",
                     "token_file": "/tokens/sandboxes",
+                    "gateway_token_file": "/tokens/gateway",
                 },
                 "history_service": {"target": "history:8080", "token_file": "/tokens/history"},
                 "stale_inbox_confirmation_s": timeout,

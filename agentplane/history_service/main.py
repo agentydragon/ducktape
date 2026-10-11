@@ -138,6 +138,7 @@ async def ingest(settings: Settings, url: URL) -> None:
         gateway_target=target.gateway_target,
         namespace=None,  # the ingester follows the destinations the Session feed names
         token_file=target.token_file,
+        gateway_token_file=target.gateway_token_file,
         command_admission_timeout_s=None,
         request_timeout_s=target.request_timeout_s,
         lifecycle_timeout_s=target.request_timeout_s,

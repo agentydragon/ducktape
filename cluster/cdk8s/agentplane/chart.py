@@ -73,7 +73,6 @@ def environment_chart(app: App, env: Environment) -> Chart:
         chart,
         "runner-gateway",
         env,
-        token_audience=sandbox_service.TOKEN_AUDIENCE,
         callers={
             ServiceAccountRef(namespace=env.namespace, name=app_component.NAME): app_component.service(env.namespace),
             ServiceAccountRef(namespace=env.namespace, name=notifications.NAME): notifications.service(env.namespace),
@@ -94,6 +93,7 @@ def environment_chart(app: App, env: Environment) -> Chart:
         sandboxes=sandbox_service.service(env.namespace),
         sandboxes_audience=sandbox_service.TOKEN_AUDIENCE,
         gateway=runner_gateway.service(env.namespace),
+        gateway_audience=runner_gateway.TOKEN_AUDIENCE,
     )
     if env.history_compaction is not None:
         history_compaction.HistoryCompaction(chart, "history-compaction", env, env.history_compaction)
@@ -105,7 +105,9 @@ def environment_chart(app: App, env: Environment) -> Chart:
         env,
         actions=actions.service(env.namespace),
         sandboxes=sandbox_service.service(env.namespace),
+        sandboxes_audience=sandbox_service.TOKEN_AUDIENCE,
         gateway=runner_gateway.service(env.namespace),
+        gateway_audience=runner_gateway.TOKEN_AUDIENCE,
         gateway_control_target=runner_gateway.control_target(env.namespace),
         history=history_service.service(env.namespace),
         history_audience=history_service.TOKEN_AUDIENCE,
