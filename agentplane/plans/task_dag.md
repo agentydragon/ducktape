@@ -1033,7 +1033,7 @@ flowchart TD
         HISTORY_FEED_STATE_TRIM[Candidate: feed state without the Sandbox proto]
         HISTORY_GRPC_CONFORM[Candidate: the History Service follows grpc_services.md]
         THREAD_FOLD_SINGLE_OWNER[Blocked: the fold has one owner]
-        SETTLE_DELTAS_ALWAYS_ON[Decision: delta settlement always on]
+        SETTLE_DELTAS_ALWAYS_ON[Delta settlement always on]
         INDEX_PRIMITIVES_CONSOLIDATE[Candidate: one Git index, table drop is a decision]
         INDEX_DOCS[Candidate: indexing README points at the deployment]
         APP_SERVICE_NAMES[Blocked: app names the right services]
@@ -1196,11 +1196,11 @@ under `history_service/`. **Decision for the operator:** drop the writerless
 
 ### `SETTLE_DELTAS_ALWAYS_ON` — delta settlement always on
 
-**Decision.** Both environments set `settle_deltas`, yet `IngressSettings.settle_deltas` and
-`Store(settle_deltas=False)` default off, so a new writer silently stops settling. Recommendation:
-make settlement unconditional and delete the setting, `Environment.settle_deltas` and the `Store`
-flag (the ingester's copy goes with `FOLLOW_PATH_RETIRE`). The alternative is a required setting.
-`SESSION_EVENT_COMPACTION` does not wait for this.
+**In progress (delta settlement rollout).** Both environments set `settle_deltas`, yet
+`IngressSettings.settle_deltas` and `Store(settle_deltas=False)` default off, so a new writer
+silently stops settling. Settlement becomes unconditional: delete the setting,
+`Environment.settle_deltas` and the `Store` flag (the ingester's copy goes with
+`FOLLOW_PATH_RETIRE`). `SESSION_EVENT_COMPACTION` does not wait for this.
 
 ### `INDEX_PRIMITIVES_CONSOLIDATE` — one Git index
 
