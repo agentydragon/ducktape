@@ -896,10 +896,12 @@ columns; one name per concept across code, settings, manifests, protos and docs 
 Runner Gateway, History Service, ingress, control; Session for the raw stream, Thread for its
 projection; no "hub", "follow" or "shadow" left); READMEs, `SPEC.md` files and `docs/` describing
 the code as it is, without cutover narration; no compatibility branch, optional-with-fallback
-setting or `CLEANUP` tombstone whose condition is met. Known now: the cutover guards in
-`cluster/cdk8s/agentplane/test_sandbox_service.py` (a "removed stays removed" assertion, and a test
-defined after `__main__`), and the test-only `PostgresListener.wait_until_disconnected`. Findings
-are fixed in PRs of their own; this node leaves with the last of them.
+setting or `CLEANUP` tombstone whose condition is met; the system diagram in `agentplane/README.md`
+showing exactly the deployed services and the traffic between them in `cluster/cdk8s/agentplane`.
+Known now: the cutover guards in `cluster/cdk8s/agentplane/test_sandbox_service.py` (a "removed
+stays removed" assertion, and a test defined after `__main__`), and the test-only
+`PostgresListener.wait_until_disconnected`. Findings are fixed in PRs of their own; this node leaves
+with the last of them.
 
 ## 11. Runner ingress and control split
 
