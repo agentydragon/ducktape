@@ -427,6 +427,10 @@
         gemini-cli-integration = import ./nix/home/tests/gemini-cli-integration.nix {
           inherit pkgs;
         };
+      }
+      // import ./nix/flake/artifact-checks.nix {
+        inherit pkgs;
+        packages = self.packages.${system};
       };
       packages.${system} =
         (import ./nix/flake/packages.nix {

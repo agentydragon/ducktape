@@ -134,13 +134,13 @@ jobs:
                select($doc.releases[.value.release].nixPackage) |
                .value.target] | join(" ")
           ' "$spec")
-          nix_pkgs=$(jq -r '
+          nix_checks=$(jq -r '
             [.releases | to_entries[] |
                select(.value.nixPackage) |
-               ".#packages.x86_64-linux.\(.key)"] | join(" ")
+               ".#checks.x86_64-linux.artifact-\(.key)"] | join(" ")
           ' "$spec")
           echo "bazel_targets=$bazel_targets" >> "$GITHUB_OUTPUT"
-          echo "nix_pkgs=$nix_pkgs" >> "$GITHUB_OUTPUT"
+          echo "nix_checks=$nix_checks" >> "$GITHUB_OUTPUT"
 
       # Every one of these artifacts must come back, because "Assemble artifact
       # overrides" below exits 1 on a missing file — this gate fails closed. It
@@ -196,9 +196,24 @@ jobs:
             echo 'EOF'
           } >> "$GITHUB_OUTPUT"
 
-      # Drives each mkWheel's `importsCheck` (nix/packages/default.nix) against
-      # the PR-source artifact. --impure is required for the getEnv override read.
+      # Each marker depends on the complete source-built package and its checks.
+      # Cache hits need only the marker; misses build the package as before.
+      # --impure is required for the getEnv artifact override read.
       - name: Nix build + imports check
         env:
           DUCKTAPE_ARTIFACT_OVERRIDES: ${{ steps.overrides.outputs.overrides }}
-        run: nix build --impure --no-link --print-out-paths ${{ steps.inputs.outputs.nix_pkgs }}
+        run: |
+          nix build --impure --no-link --print-out-paths \
+            ${{ steps.inputs.outputs.nix_checks }} > "$RUNNER_TEMP/artifact-check-paths"
+          cat "$RUNNER_TEMP/artifact-check-paths"
+
+      # Publish the source-override results: ordinary pinned-artifact builds can
+      # have different store paths even when they contain the same wheel bytes.
+      - name: Cache source artifact checks in Attic
+        if: github.event_name == 'push' && (github.ref_name == 'devel' || github.ref_name == 'main')
+        run: |
+          nix profile install nixpkgs#attic-client
+          attic login ducktape https://cache.allegedly.works "$ATTIC_TOKEN"
+          mapfile -t checks < "$RUNNER_TEMP/artifact-check-paths"
+          test "${#checks[@]}" -gt 0
+          attic push ducktape:main "${checks[@]}"
