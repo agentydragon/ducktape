@@ -3711,6 +3711,10 @@ spec:
       namespace: agentplane-testing
     - apiVersion: apps/v1
       kind: Deployment
+      name: agentplane-history-ingress
+      namespace: agentplane-testing
+    - apiVersion: apps/v1
+      kind: Deployment
       name: agentplane-app
       namespace: agentplane-testing
     - apiVersion: apps/v1
@@ -3902,6 +3906,10 @@ spec:
     - apiVersion: apps/v1
       kind: Deployment
       name: agentplane-history-service
+      namespace: agentplane-staging
+    - apiVersion: apps/v1
+      kind: Deployment
+      name: agentplane-history-ingress
       namespace: agentplane-staging
     - apiVersion: apps/v1
       kind: Deployment

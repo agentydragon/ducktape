@@ -340,7 +340,6 @@ flowchart LR
     VM_EGRESS[Candidate: production admission and egress integration]
     VM_PROCESS_ISOLATION[Blocked: harness/process resource boundary]
     VM_LIFECYCLE[Blocked: integrated lifecycle]
-    HISTORY_INGRESS[History Service ingress] --> RUNNER_OUTBOUND_ROLLOUT
     CLIENT_SESSION_IDS[Clients mint Session IDs] --> RUNNER_OUTBOUND_ROLLOUT
     SEAL_ON_INGRESS_ACK[Seal waits on the ingress acknowledgement] --> RUNNER_OUTBOUND_ROLLOUT
     PROTO_DIRECTORY[Protos under agentplane/proto] --> RUNNER_OUTBOUND_ROLLOUT
@@ -888,9 +887,8 @@ nodes and section 9 are unaffected.
 
 ```mermaid
 flowchart TD
-    HISTORY_INGRESS[Blocked: deploy the History Service ingress]
     CLIENT_SESSION_IDS[Candidate: clients mint Session IDs]
-    SEAL_ON_INGRESS_ACK[Blocked: seal waits on the ingress acknowledgement]
+    SEAL_ON_INGRESS_ACK[Candidate: seal waits on the ingress acknowledgement]
     RUNNER_OUTBOUND_ROLLOUT[Every template dials out]
     LEGACY_SANDBOX_RETIRE[Retire pre-cutover Sandboxes]
     FOLLOW_PATH_RETIRE[Blocked: delete following, WatchSessions and holds]
@@ -899,8 +897,6 @@ flowchart TD
     POD_INCARNATION[Decision: a Pod is the incarnation]
     SEAL_FINALIZER[Blocked: seal as a finalizer on every delete]
     COMMAND_RECORDS_RETIRE[Unscheduled: drop command submission records]
-    HISTORY_INGRESS --> SEAL_ON_INGRESS_ACK
-    HISTORY_INGRESS --> RUNNER_OUTBOUND_ROLLOUT
     CLIENT_SESSION_IDS --> RUNNER_OUTBOUND_ROLLOUT
     CLIENT_SESSION_IDS --> RUNNER_INBOUND_RETIRE[Retire inbound runner access]
     SEAL_ON_INGRESS_ACK --> RUNNER_OUTBOUND_ROLLOUT
@@ -909,16 +905,7 @@ flowchart TD
     SEAL_ON_INGRESS_ACK --> SEAL_FINALIZER
     AGENTPLANE_SANDBOX_RESOURCE -. to seal a suspended Sandbox on delete .-> SEAL_FINALIZER
     POD_INCARNATION -. if chosen, rewrites .-> SESSION_STATE_VOLUME_DESIGN[State volume design]
-    HISTORY_INGRESS -. receipts readable from history .-> COMMAND_RECORDS_RETIRE
 ```
-
-### `HISTORY_INGRESS` — History Service ingress
-
-**Blocked until `agentplane-history-ingress` publishes.** The ingress server, its writer binding
-and its image are built (`history_service/ingress.py`). Deploy it per environment as its own
-Deployment, ServiceAccount and Service, apart from the read API, connecting to the history
-database as a writer with `token_audience: agentplane-runner-ingress` and the Sandbox namespace
-as `writer_namespaces`, and add the image to Flux image automation.
 
 ### `CLIENT_SESSION_IDS` — clients mint Session IDs
 
@@ -931,7 +918,7 @@ in `OpenSession` (#9858). A retried create carries the same ID, so the Open rese
 
 ### `SEAL_ON_INGRESS_ACK` — seal waits on the ingress acknowledgement
 
-**Blocked on the ingress.** Teardown waits until the runner reports every Session's seal `flushed`,
+**Candidate.** Teardown waits until the runner reports every Session's seal `flushed`,
 which the runner already reports from its recorded acknowledgements, instead of on History Service
 holds. A runner
 that cannot report keeps the Sandbox in sealing for the operator, as today.

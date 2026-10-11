@@ -17,6 +17,7 @@ from cluster.cdk8s.agentplane import (
     database,
     egress,
     electric,
+    history_ingress,
     history_service,
     llm_ingress,
     notifications,
@@ -76,6 +77,7 @@ def environment_chart(app: App, env: Environment) -> Chart:
         sandboxes=sandbox_service.service(env.namespace),
         sandboxes_audience=sandbox_service.TOKEN_AUDIENCE,
     )
+    history_ingress.HistoryIngress(chart, "history-ingress", env)
     app_component.App(chart, "app", env)
     actions.Actions(chart, "actions", env)
     notifications.Notifications(
