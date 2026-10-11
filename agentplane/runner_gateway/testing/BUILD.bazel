@@ -72,7 +72,6 @@ py_library(
         "//agentplane/runner_gateway:lifecycle_control",
         "//agentplane/runner_gateway:runner_control",
         "//agentplane/runner_gateway/commands:connections",
-        "//agentplane/sandbox_service/testing:grpc_service",
         "//agentplane/sandbox_service/testing:kubernetes",
         "//agentplane/testing:fake_apiserver",
         "@pypi//grpcio",
