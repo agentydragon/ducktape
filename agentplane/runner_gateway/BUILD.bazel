@@ -369,6 +369,7 @@ py_test(
         "//agentplane/proto:runner_control_pb2",
         "//agentplane/proto:runner_pb2",
         "//agentplane/proto:sandbox_service_pb2",
+        "//agentplane/runner_gateway/commands:db",
         "//agentplane/runner_gateway/commands:dispatch",
         "//agentplane/runner_gateway/commands:store",
         "//agentplane/runner_gateway/testing:control_listener",
@@ -392,6 +393,7 @@ py_test(
         "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
+        "@pypi//tenacity",
     ],
 )
 
