@@ -4,18 +4,14 @@ from __future__ import annotations
 
 import asyncio
 import json
-import re
 from collections.abc import AsyncGenerator
 from datetime import UTC, date, datetime, timedelta
 from typing import Any, cast
 from zoneinfo import ZoneInfo
 
 import asyncpg
-import pytest
 import pytest_asyncio
-from sqlalchemy.engine import make_url
 
-from finance.plaid.db.link_store import PlaidLinkStorage
 from finance.plaid.spend.allowance import (
     AllOf,
     AllowancePolicy,
@@ -32,19 +28,6 @@ from finance.plaid.spend.allowance import (
 from finance.plaid.spend.app import _event_stream
 from finance.plaid.spend.models import AlertState, CardConfig, SpendConfiguration
 from finance.plaid.spend.service import SpendService
-from util.testing.postgres import create_database_async, force_drop_database
-
-
-@pytest_asyncio.fixture
-async def postgres_url(postgres_admin_url: str, request: pytest.FixtureRequest) -> AsyncGenerator[str]:
-    db_name = re.sub(r"[^a-z0-9]", "_", request.node.name.lower())[:45].rstrip("_") or "spend_test"
-    db_url = await create_database_async(postgres_admin_url, db_name)
-    storage = await PlaidLinkStorage.initialize(db_url)
-    try:
-        yield make_url(db_url).set(drivername="postgresql").render_as_string(hide_password=False)
-    finally:
-        await storage.close()
-        await force_drop_database(postgres_admin_url, db_name)
 
 
 @pytest_asyncio.fixture
