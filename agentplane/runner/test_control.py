@@ -13,6 +13,7 @@ import httpx
 import pytest
 import pytest_bazel
 
+from agentplane.grpc_process import serving
 from agentplane.proto import (
     command_pb2,
     event_pb2,
@@ -197,18 +198,16 @@ async def service(runner: Runner) -> AsyncIterator[ScriptedService]:
     service = ScriptedService()
     server = grpc.aio.server()
     runner_control_pb2_grpc.add_RunnerControlServicer_to_server(service, server)
-    port = server.add_insecure_port("127.0.0.1:0")
-    await server.start()
-    client = RunnerControlClient(runner, target=f"127.0.0.1:{port}", bearer="test-placeholder", timing=TIMING)
-    tasks: list[asyncio.Task[None]] = []
-    service.dial = lambda: tasks.append(asyncio.create_task(client.run()))
-    try:
-        yield service
-    finally:
-        for task in tasks:
-            task.cancel()
-        await asyncio.gather(*tasks, return_exceptions=True)
-        await server.stop(0)
+    async with serving(server, "127.0.0.1:0", grace_s=0) as port:
+        client = RunnerControlClient(runner, target=f"127.0.0.1:{port}", bearer="test-placeholder", timing=TIMING)
+        tasks: list[asyncio.Task[None]] = []
+        service.dial = lambda: tasks.append(asyncio.create_task(client.run()))
+        try:
+            yield service
+        finally:
+            for task in tasks:
+                task.cancel()
+            await asyncio.gather(*tasks, return_exceptions=True)
 
 
 def deliver(session_id: str, command: command_pb2.Command) -> control_pb2.ServiceFrame:

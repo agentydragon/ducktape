@@ -9,6 +9,7 @@ from collections.abc import AsyncIterator
 from datetime import timedelta
 from uuid import UUID
 
+import grpc
 import httpx
 import pytest
 import pytest_bazel
@@ -20,9 +21,10 @@ from sqlalchemy.ext.asyncio import create_async_engine
 from agentplane.app.database_updates import Channel, DatabaseUpdates
 from agentplane.app.testing.history import SeededEventLogStore as EventLogStore
 from agentplane.app.testing.replication_process import CommitBoundary, app_process
-from agentplane.app.testing.replication_source import SANDBOX, SESSION, ReplicationSource
+from agentplane.app.testing.replication_source import SANDBOX, SESSION, ReplicationSource, add_replication_source
 from agentplane.app.threads.store import ThreadStore
 from agentplane.app.threads.view.content import ContentStore
+from agentplane.grpc_process import serving
 from agentplane.proto import command_pb2, event_log_pb2, event_pb2, runner_pb2
 from agentplane.thread_fold.models import SessionProjectionLease
 
@@ -66,7 +68,9 @@ async def test_killed_ingester_recovers_exact_prefix_and_browser_handoff(
     source.append(event_pb2.Event(harness_started=event_pb2.HarnessStarted(pid=123)))
     thread_id = await event_logs.open(SANDBOX, SESSION)
     events = f"/threads/{thread_id}/events/stream"
-    async with asyncio.timeout(45), source.serve() as runner_port:
+    server = grpc.aio.server()
+    add_replication_source(source, server)
+    async with asyncio.timeout(45), serving(server, "127.0.0.1:0", grace_s=0) as runner_port:
         async with (
             app_process(db_url, runner_port, boundary=boundary, cursor=4) as first,
             httpx.AsyncClient(base_url=first.url, timeout=None) as browser,

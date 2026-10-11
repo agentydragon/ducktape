@@ -28,10 +28,17 @@ follows it; code that differs converges on it.
   `grpc.method_handlers_generic_handler`, no hand-written `*_rpc_method_handler` tables, and no
   `type X = Callable[...]` aliases spelling out handler signatures: the generated base class already
   carries them.
-- **Test fakes follow the same rule.** A fake subclasses the servicer and overrides only the RPCs its
-  test drives; the inherited ones answer `UNIMPLEMENTED`, which is also how a fake plays a peer that
-  predates an RPC. A generic handler is right only where no generated code exists for the service,
-  such as a proxy test relaying opaque bytes.
+- RPC methods carry `@override`. Besides checking the signature against the generated base, it
+  exempts the RPC-cased method names from ruff's `N802`; no `noqa` is needed.
+- **Test fakes follow the same rule.** A fake subclasses the generated servicer directly and
+  overrides only the RPCs its test drives; the inherited ones answer `UNIMPLEMENTED`, which is also
+  how a fake plays a peer that predates an RPC. Deviation from stock mypy-protobuf: the stubs are
+  generated with `generate_concrete_servicer_stubs` (`devinfra/python/grpc.bzl`), so mypy sees
+  the servicer as the concrete class it is at runtime instead of an ABC with every RPC abstract.
+- A fake plays exactly one service. A test peer standing in for two services is two servicers over
+  shared state, registered on one server.
+- A generic handler is right only where no generated code exists for the service, such as a proxy
+  test relaying opaque bytes.
 - A servicer takes its collaborators as concrete objects (a frozen `Resources` dataclass once there
   are several). Inject the client or component that owns an operation, not a bare `Callable` for it.
 
@@ -87,9 +94,10 @@ Everything that holds a connection is closed by a context manager, never by a ha
 - A client class is an async context manager that closes its channel:
   `async with HistoryServiceClient(...) as history:`. A process that owns several enters them on one
   `AsyncExitStack`; a test fixture yields from inside the `async with`.
-- `grpc.aio.Server` has no context-manager form, so one shared async context manager registers
-  nothing itself but owns the rest: bind, `start`, and `stop` with the given grace on exit. Mains
-  and test fixtures use it rather than repeating the sequence.
+- `grpc.aio.Server` has no context-manager form, so one shared async context manager,
+  `agentplane.grpc_process.serving`, registers nothing itself but owns the rest: bind, `start`,
+  and `stop` with the given grace on exit. Mains and test fixtures use it rather than repeating the
+  sequence.
 - Stubs hold no resources of their own and need no lifetime management.
 
 ## Server lifecycle
@@ -103,3 +111,6 @@ Everything that holds a connection is closed by a context manager, never by a ha
   bound port. A test builds a `grpc.aio.server()`, registers the real servicer or a fake subclass,
   and enters it; per-service serving helpers add only what is specific to that service (its
   `Resources`, a client already pointed at the port), never their own copy of bind, start and stop.
+- A fake has no `serve` method: the test registers it with the generated `add_*` like any servicer.
+  A fake standing in for two services that a client dials at one target gets one module-level
+  `add_<fake>(fake, server)` that registers both, in the generated function's shape.

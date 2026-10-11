@@ -20,6 +20,7 @@ from util.testing.postgres_fixtures import (
     migrated_database_fixtures,
     postgres_admin_url,
     postgres_container,
+    postgres_image,
 )
 
 # Both native harnesses, not an app-managed session or app database.

@@ -1,17 +1,19 @@
 """Shared Postgres testcontainer helper + session fixture.
 
-``postgres_container`` is the shared session fixture — packages pull it into their
-conftest with a bare ``from util.testing.postgres_fixtures import postgres_container``
-(no alias — pytest registers the fixture by the dict key, so an alias would register
-under the wrong name; and no ``# noqa`` needed in conftests, where F401 is ignored).
+``postgres_container`` and ``postgres_image`` are the shared session fixtures — packages
+pull both into their conftest with a bare import (no alias — pytest registers the fixture
+by the dict key, so an alias would register under the wrong name; and no ``# noqa`` needed
+in conftests, where F401 is ignored). Override ``postgres_image`` in a suite that needs a
+non-default image.
 ``start_postgres_container`` is the underlying preload+start helper for packages that
-wrap it (e.g. props, which adds a tracing span).
+need to wrap the shared container lifecycle.
 
 Both images are marked ``immutable`` upstream tags, so ``load_oci_image`` skips the
 push on a warm worker by itself — this module no longer checks.
 
 The shared ``postgres_admin_url`` uses the sync psycopg driver. Tests that need asyncpg
-should change the driver explicitly on their per-test database URL.
+should change the driver explicitly on their per-test database URL. Suites that need a
+different PostgreSQL image can override ``postgres_image`` in their conftest.
 """
 
 import contextlib
@@ -21,6 +23,7 @@ from collections.abc import Generator, Iterator
 
 import pytest
 from _pytest.fixtures import FixtureFunctionDefinition
+from opentelemetry import trace
 from sqlalchemy.engine import URL
 from testcontainers.postgres import PostgresContainer
 
@@ -40,6 +43,7 @@ from util.testing.undeclared_outputs import undeclared_outputs_dir
 # gazelle:include_dep @pypi//psycopg
 
 logger = logging.getLogger(__name__)
+tracer = trace.get_tracer(__name__)
 
 
 @contextlib.contextmanager
@@ -92,8 +96,15 @@ def start_postgres_container(image: OciImage = postgres_18.IMAGE) -> PostgresCon
 
 
 @pytest.fixture(scope="session")
-def postgres_container() -> Generator[PostgresContainer]:
-    container = start_postgres_container()
+def postgres_image() -> OciImage:
+    """Default PostgreSQL image; suites can override this fixture for extensions or settings."""
+    return postgres_18.IMAGE
+
+
+@pytest.fixture(scope="session")
+def postgres_container(postgres_image: OciImage) -> Generator[PostgresContainer]:
+    with tracer.start_as_current_span("postgres_container fixture"):
+        container = start_postgres_container(postgres_image)
     try:
         yield container
     finally:

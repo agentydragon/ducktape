@@ -107,8 +107,8 @@ py_library(
     name = "unanswering_runner",
     srcs = ["unanswering_runner.py"],
     deps = [
-        ":runner_server",
         "//agentplane/proto:runner_pb2",
+        "//agentplane/proto:runner_pb2_grpc",
         "@pypi//grpcio",
         "@pypi//protobuf",
     ],
@@ -117,15 +117,4 @@ py_library(
 py_library(
     name = "codex_rollout",
     srcs = ["codex_rollout.py"],
-)
-
-py_library(
-    name = "runner_server",
-    srcs = ["runner_server.py"],
-    deps = [
-        "//agentplane/proto:runner_pb2",
-        "//agentplane/proto:runner_pb2_grpc",
-        "@pypi//grpcio",
-        "@pypi//protobuf",
-    ],
 )

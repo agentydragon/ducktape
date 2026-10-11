@@ -8,7 +8,7 @@ from collections.abc import AsyncIterator, Iterator
 from contextlib import asynccontextmanager
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Any, cast
+from typing import Any, cast, override
 from uuid import UUID, uuid4
 
 import grpc
@@ -40,7 +40,8 @@ from agentplane.app.threads.bridge import RunnerBridge
 from agentplane.app.threads.sessions import SandboxSessions
 from agentplane.app.threads.store import ThreadStore
 from agentplane.app.threads.view.content import ContentStore
-from agentplane.proto import event_log_pb2, runner_pb2
+from agentplane.grpc_process import serving
+from agentplane.proto import event_log_pb2, runner_gateway_pb2_grpc, runner_pb2
 from agentplane.runner.harness import Harness
 from agentplane.sandbox_service import protocol_pb2 as service_pb2
 from agentplane.sandbox_service.client import SandboxServiceClient
@@ -747,48 +748,36 @@ def test_a_runner_that_does_not_answer_is_a_503(
 async def unanswered_command_service(
     token_file: Path,
 ) -> AsyncIterator[tuple[SandboxServiceClient, asyncio.Queue[str]]]:
+    class UnansweredGateway(runner_gateway_pb2_grpc.RunnerGatewayServicer):
+        @override
+        async def SubmitCommand(
+            self, request: service_pb2.SubmitCommandRequest, context: grpc.aio.ServicerContext
+        ) -> event_log_pb2.EventEntry:
+            try:
+                await asyncio.Event().wait()
+            finally:
+                cancelled.put_nowait(request.destination.session_id)
+            raise AssertionError("the command is never answered")
+
     cancelled: asyncio.Queue[str] = asyncio.Queue()
-
-    async def submit(request: service_pb2.SubmitCommandRequest, context: grpc.aio.ServicerContext) -> None:
-        del context
-        try:
-            await asyncio.Event().wait()
-        finally:
-            cancelled.put_nowait(request.destination.session_id)
-
     server = grpc.aio.server()
-    server.add_generic_rpc_handlers(
-        [
-            grpc.method_handlers_generic_handler(
-                "agentplane.proto.runner_gateway.RunnerGateway",
-                {
-                    "SubmitCommand": grpc.unary_unary_rpc_method_handler(
-                        submit,
-                        request_deserializer=service_pb2.SubmitCommandRequest.FromString,
-                        response_serializer=event_log_pb2.EventEntry.SerializeToString,
-                    )
-                },
-            )
-        ]
-    )
-    port = server.add_insecure_port("127.0.0.1:0")
+    runner_gateway_pb2_grpc.add_RunnerGatewayServicer_to_server(UnansweredGateway(), server)
     await asyncio.to_thread(token_file.write_text, "test-app-command-peer")
-    service = SandboxServiceClient(
-        f"127.0.0.1:{port}",
-        gateway_target=f"127.0.0.1:{port}",
-        namespace="test",
-        token_file=token_file,
-        command_admission_timeout_s=1,
-        request_timeout_s=5,
-        lifecycle_timeout_s=5,
-        follow_timeout_s=5,
-    )
-    await server.start()
-    try:
-        yield service, cancelled
-    finally:
-        await service.close()
-        await server.stop(0)
+    async with serving(server, "127.0.0.1:0", grace_s=0) as port:
+        service = SandboxServiceClient(
+            f"127.0.0.1:{port}",
+            gateway_target=f"127.0.0.1:{port}",
+            namespace="test",
+            token_file=token_file,
+            command_admission_timeout_s=1,
+            request_timeout_s=5,
+            lifecycle_timeout_s=5,
+            follow_timeout_s=5,
+        )
+        try:
+            yield service, cancelled
+        finally:
+            await service.close()
 
 
 async def test_unanswered_service_command_is_a_504_and_cancels_its_rpc(

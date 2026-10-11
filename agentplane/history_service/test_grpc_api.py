@@ -9,6 +9,7 @@ import pytest_bazel
 from kubernetes_asyncio import client as k8s_client
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession
 
+from agentplane.grpc_process import serving
 from agentplane.history_service import protocol_pb2 as history_pb2, protocol_pb2_grpc
 from agentplane.history_service.evidence import EvidenceReader
 from agentplane.history_service.grpc_api import Resources, add_service
@@ -81,13 +82,11 @@ async def stub(engine: AsyncEngine, history: Store) -> AsyncIterator[protocol_pb
                 ),
                 server,
             )
-            port = server.add_insecure_port("127.0.0.1:0")
-            await server.start()
-            try:
-                async with grpc.aio.insecure_channel(f"127.0.0.1:{port}") as channel:
-                    yield protocol_pb2_grpc.HistoryServiceStub(channel)
-            finally:
-                await server.stop(0)
+            async with (
+                serving(server, "127.0.0.1:0", grace_s=0) as port,
+                grpc.aio.insecure_channel(f"127.0.0.1:{port}") as channel,
+            ):
+                yield protocol_pb2_grpc.HistoryServiceStub(channel)
 
 
 def bearer(token: str) -> tuple[tuple[str, str], ...]:

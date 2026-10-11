@@ -9,16 +9,15 @@ from dataclasses import dataclass
 from pathlib import Path
 from time import monotonic, sleep
 
-import asyncpg
 import httpx
 from sqlalchemy import create_engine, text
 from sqlalchemy.engine import make_url
-from sqlalchemy.exc import OperationalError
 from testcontainers.core.network import Network
 
 # SQLAlchemy loads the driver selected by the URL scheme at runtime.
 # gazelle:include_dep @pypi//psycopg
 from agentplane.app.database_migrate import RUNNER
+from agentplane.testing.electric_role import ensure_electric_role
 from third_party.containers import electric_1_8_1, postgres_18, ryuk
 from util.oci import load_oci_image
 from util.testing.container_logs import LoggedContainer
@@ -67,37 +66,13 @@ class BrowserPostgres:
 @contextmanager
 def browser_postgres_server() -> Iterator[BrowserPostgres]:
     """Start one logical-WAL PostgreSQL server and migrate its clone template once per shard."""
-    for image in (ryuk.IMAGE, postgres_18.IMAGE):
-        load_oci_image(image)
+    _load_postgres_images()
     with Network() as network:
-        postgres = (
-            LoggedContainer(postgres_18.IMAGE.tag, test_name="conversation-postgres")
-            .with_network(network)
-            .with_network_aliases("postgres")
-            .with_exposed_ports(5432)
-            .with_env("POSTGRES_USER", "postgres")
-            .with_env("POSTGRES_PASSWORD", "postgres")
-            .with_command("postgres -c wal_level=logical -c max_wal_senders=10 -c max_replication_slots=10")
-        )
+        postgres = _logical_postgres_container(network, test_name="conversation-postgres")
         with postgres:
             address = f"{postgres.get_container_host_ip()}:{postgres.get_exposed_port(5432)}"
             admin_url = f"postgresql+psycopg://postgres:postgres@{address}/postgres"
-            engine = create_engine(admin_url, isolation_level="AUTOCOMMIT", connect_args={"connect_timeout": 2})
-            try:
-                deadline = monotonic() + 60
-                while True:
-                    try:
-                        with engine.connect() as connection:
-                            connection.execute(text("SELECT 1"))
-                        break
-                    except OperationalError:
-                        if monotonic() >= deadline:
-                            raise
-                        sleep(0.1)
-                with engine.connect() as connection:
-                    connection.execute(text("CREATE ROLE electric LOGIN REPLICATION PASSWORD 'electric'"))
-            finally:
-                engine.dispose()
+            ensure_electric_role(admin_url, ready_timeout_s=60)
 
             with migrated_database_template(admin_url, "agentplane_browser_template", RUNNER) as template:
                 yield BrowserPostgres(network, admin_url, template)
@@ -160,15 +135,6 @@ class ElectricService:
         }
 
 
-async def _connect(dsn: str) -> asyncpg.Connection:
-    async with asyncio.timeout(60):
-        while True:
-            try:
-                return await asyncpg.connect(dsn)
-            except OSError, asyncpg.CannotConnectNowError:
-                await asyncio.sleep(0.1)
-
-
 async def _ready(url: str, *, timeout_s: float = 60) -> None:
     async with asyncio.timeout(timeout_s), httpx.AsyncClient(base_url=url, timeout=2) as client:
         while True:
@@ -215,41 +181,50 @@ async def _electric_process(
         yield service
 
 
+def _load_postgres_images() -> None:
+    for image in (ryuk.IMAGE, postgres_18.IMAGE):
+        load_oci_image(image)
+
+
+def _logical_postgres_container(
+    network: Network, *, test_name: str, postgres_settings: tuple[str, ...] = ()
+) -> LoggedContainer:
+    command = " ".join(
+        (
+            "postgres",
+            "-c wal_level=logical",
+            "-c max_wal_senders=10",
+            "-c max_replication_slots=10",
+            *(f"-c {setting}" for setting in postgres_settings),
+        )
+    )
+    return (
+        LoggedContainer(postgres_18.IMAGE.tag, test_name=test_name)
+        .with_network(network)
+        .with_network_aliases("postgres")
+        .with_exposed_ports(5432)
+        .with_env("POSTGRES_USER", "postgres")
+        .with_env("POSTGRES_PASSWORD", "postgres")
+        .with_command(command)
+    )
+
+
 @asynccontextmanager
 async def electric_service(
     *, postgres_settings: tuple[str, ...] = (), electric_storage_dir: Path | None = None
 ) -> AsyncIterator[ElectricService]:
-    for image in (ryuk.IMAGE, postgres_18.IMAGE):
-        await asyncio.to_thread(load_oci_image, image)
+    await asyncio.to_thread(_load_postgres_images)
     with Network() as network:
-        postgres_command = " ".join(
-            (
-                "postgres",
-                "-c wal_level=logical",
-                "-c max_wal_senders=10",
-                "-c max_replication_slots=10",
-                *(f"-c {setting}" for setting in postgres_settings),
-            )
-        )
-        postgres = (
-            LoggedContainer(postgres_18.IMAGE.tag, test_name="conversation-postgres")
-            .with_network(network)
-            .with_network_aliases("postgres")
-            .with_exposed_ports(5432)
-            .with_env("POSTGRES_USER", "postgres")
-            .with_env("POSTGRES_PASSWORD", "postgres")
-            .with_command(postgres_command)
+        postgres = _logical_postgres_container(
+            network, test_name="conversation-postgres", postgres_settings=postgres_settings
         )
         with postgres:
             address = f"{postgres.get_container_host_ip()}:{postgres.get_exposed_port(5432)}"
-            connection = await _connect(f"postgresql://postgres:postgres@{address}/postgres")
-            try:
-                # The CNPG managed role exists before the application's migration Job runs.
-                # Grants, replica identity and publication must come from the real migration.
-                await connection.execute("CREATE ROLE electric LOGIN REPLICATION PASSWORD 'electric'")
-            finally:
-                await connection.close()
-            database_url = f"postgresql+asyncpg://postgres:postgres@{address}/postgres"
+            admin_url = f"postgresql+psycopg://postgres:postgres@{address}/postgres"
+            await asyncio.to_thread(ensure_electric_role, admin_url, ready_timeout_s=60)
+            database_url = (
+                make_url(admin_url).set(drivername="postgresql+asyncpg").render_as_string(hide_password=False)
+            )
             await asyncio.to_thread(RUNNER.apply, database_url)
             async with _electric_process(
                 network,

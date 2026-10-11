@@ -15,7 +15,13 @@ from util.testing.postgres import (
     create_database_sync,
     force_drop_database_sync,
 )
-from util.testing.postgres_fixtures import database_clones, database_names, postgres_admin_url, postgres_container
+from util.testing.postgres_fixtures import (
+    database_clones,
+    database_names,
+    postgres_admin_url,
+    postgres_container,
+    postgres_image,
+)
 
 
 @pytest.fixture(scope="session")
