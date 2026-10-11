@@ -8,6 +8,7 @@ Postgres so unrelated tests do not load Docker or migration dependencies.
 ```python
 from util.testing.postgres_fixtures import (
     database_clones, database_names, migrated_database_fixtures, postgres_admin_url, postgres_container,
+    postgres_image,
 )
 
 
@@ -19,6 +20,8 @@ directly when a test needs a name but manages database retention or teardown its
 owns an `ExitStack` for the test and drops every clone after dependent fixtures finish; specify each
 clone's SQLAlchemy driver explicitly. The shared `postgres_admin_url` uses psycopg, and callers can
 use `make_url` to preserve its credentials and query parameters while changing drivers.
+`postgres_container` uses the session-scoped `postgres_image` fixture, which defaults to PostgreSQL 18;
+override it in a suite that needs another image, such as pgvector.
 
 `migrated_database_fixtures` returns both fixtures: one session migration template and one fresh
 clone URL per test. Bind both at module scope. `template_name` and `url_name` select explicit pytest

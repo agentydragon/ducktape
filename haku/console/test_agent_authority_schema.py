@@ -34,21 +34,7 @@ from haku.console.identity.agent import (
 )
 from haku.console.identity.operator_identity import OperatorStatus
 from haku.console.tool_calls import ToolCallStatus
-from third_party.containers import pgvector_pg18
 from util.testing.postgres import DatabaseNames, create_database_sync, force_drop_database_sync
-from util.testing.postgres_fixtures import start_postgres_container
-
-
-@pytest.fixture(scope="session")
-def postgres_container() -> Any:
-    """Postgres **with pgvector**: the baseline creates `vector` columns, and this file migrates
-    a fresh database to head. The deployed database gets the extension from CNPG's `Database` CR."""
-    container = start_postgres_container(pgvector_pg18.IMAGE)
-    try:
-        yield container
-    finally:
-        container.stop()
-
 
 _UTC = datetime.UTC
 
