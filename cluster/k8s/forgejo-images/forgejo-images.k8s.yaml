@@ -186,6 +186,11 @@ spec:
       name: agentplane-oauth-fixture
       namespace: flux-system
     - apiVersion: image.toolkit.fluxcd.io/v1
+      filter: req.package.name == 'agentplane-runner-gateway'
+      kind: ImageRepository
+      name: agentplane-runner-gateway
+      namespace: flux-system
+    - apiVersion: image.toolkit.fluxcd.io/v1
       filter: req.package.name == 'agentplane-sandbox'
       kind: ImageRepository
       name: agentplane-sandbox

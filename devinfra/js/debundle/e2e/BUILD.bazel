@@ -123,6 +123,8 @@ debundle_e2e_test(
 
 debundle_e2e_test(name = "object_literal_return_shorthand_drops_import_test")
 
+debundle_e2e_test(name = "return_object_residual_alias_import_test")
+
 debundle_e2e_test(name = "duplicate_export_test")
 
 debundle_e2e_test(name = "catchall_duplicate_export_repro_test")

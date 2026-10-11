@@ -5,14 +5,13 @@ from typing import override
 
 import grpc
 
-from agentplane.proto import event_log_pb2, runner_pb2
-from agentplane.runner_gateway import protocol_pb2_grpc
+from agentplane.proto import event_log_pb2, runner_gateway_pb2_grpc, runner_pb2
 from agentplane.sandbox_service import protocol_pb2
 
 # gazelle:include_dep @pypi//protobuf
 
 
-class UnimplementedRunnerGateway(protocol_pb2_grpc.RunnerGatewayServicer):
+class UnimplementedRunnerGateway(runner_gateway_pb2_grpc.RunnerGatewayServicer):
     """The generated stub marks each RPC abstract, so a fake subclasses this and overrides only the
     RPCs its test drives."""
 

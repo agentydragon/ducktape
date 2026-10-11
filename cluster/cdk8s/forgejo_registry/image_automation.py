@@ -52,6 +52,7 @@ IMAGES = (
     "agentplane-notification-service",
     "agentplane-notification-service-migrate",
     "agentplane-oauth-fixture",
+    "agentplane-runner-gateway",
     "agentplane-sandbox",
     "agentplane-sandbox-build",
     "agentplane-sandbox-commands-migrate",

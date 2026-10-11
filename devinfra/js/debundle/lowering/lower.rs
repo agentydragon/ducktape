@@ -317,7 +317,12 @@ pub(super) fn lower_chunk(inputs: LowerChunkInputs<'_>) -> Result<LoweredChunk> 
         }
         entry_imports.push((
             ModuleId(LogicalModuleIndex(module_index)),
-            import_decl_for_plan(entry_file, &plan.target_file, &resolved),
+            import_decl_for_plan(
+                entry_file,
+                &plan.target_file,
+                &resolved,
+                chunk_top_level_mark,
+            ),
         ));
     }
     // Order entry imports through the shared `EsmImportOrder`
@@ -339,7 +344,7 @@ pub(super) fn lower_chunk(inputs: LowerChunkInputs<'_>) -> Result<LoweredChunk> 
     // is shadowed there — only a scope-aware walk can decide that). The
     // probe replaces the pre-seal trial application; the body is mutated
     // only by the post-seal executor below.
-    let entry_candidate_renames = entry_ledger.pending_renames_by_name(&RenameScope::Chunk);
+    let entry_candidate_renames = entry_ledger.pending_renames(&RenameScope::Chunk);
     let mut entry_captured = BTreeSet::new();
     if !entry_candidate_renames.is_empty() {
         let mut probe = RenameCaptureProbe::new(&entry_candidate_renames);
@@ -391,7 +396,7 @@ pub(super) fn lower_chunk(inputs: LowerChunkInputs<'_>) -> Result<LoweredChunk> 
         pre_existing_public_export_names.iter().cloned(),
     );
     auto_grown_residual_exports(
-        naturalized_modules.iter().map(|module| &module.facts),
+        naturalized_modules.iter(),
         &ExportGrowthFacts {
             declaration_by_name,
             binding_assignment,
@@ -433,11 +438,14 @@ pub(super) fn lower_chunk(inputs: LowerChunkInputs<'_>) -> Result<LoweredChunk> 
         ]),
         reserved: BTreeSet::new(),
     })?;
-    let entry_binding_renames = sealed_entry_renames.scope_renames_by_name(&RenameScope::Chunk);
+    let entry_binding_renames_by_id = sealed_entry_renames
+        .scope_renames(&RenameScope::Chunk)
+        .unwrap_or_default();
     debug_assert_eq!(
-        entry_binding_renames, entry_candidate_renames,
+        entry_binding_renames_by_id, entry_candidate_renames,
         "sealed entry renames diverged from the pending map the capture probe walked",
     );
+    let entry_binding_renames = sealed_entry_renames.scope_renames_by_name(&RenameScope::Chunk);
     // Execute once: the single rename pass over the entry body, applying
     // the sealed Chunk-scope map. Re-exports `export { local }` (without
     // `from`) collapse `local` and the public exported name into a single
@@ -445,11 +453,11 @@ pub(super) fn lower_chunk(inputs: LowerChunkInputs<'_>) -> Result<LoweredChunk> 
     // rewrite them to `export { fresh as local }` before the generic
     // renamer visits the rest. The probe above already fed seal the walk's
     // capture verdict, so a capture here means probe and executor diverged.
-    if !entry_binding_renames.is_empty() {
+    if !entry_binding_renames_by_id.is_empty() {
         for item in entry_body.iter_mut() {
-            preserve_export_specifier_names(item, &entry_binding_renames);
+            preserve_export_specifier_names(item, &entry_binding_renames_by_id);
         }
-        let mut renamer = IdentifierRenamer::new(&entry_binding_renames);
+        let mut renamer = IdentifierRenamer::new(&entry_binding_renames_by_id);
         for item in entry_body.iter_mut() {
             item.visit_mut_with(&mut renamer);
         }
@@ -468,9 +476,12 @@ pub(super) fn lower_chunk(inputs: LowerChunkInputs<'_>) -> Result<LoweredChunk> 
         entry_body.extend(entry_imports);
         entry_body.extend(tail);
     }
-    for export in
-        entry_exports_for_moved_bindings(declarations, binding_assignment, &entry_binding_renames)
-    {
+    for export in entry_exports_for_moved_bindings(
+        declarations,
+        binding_assignment,
+        &entry_binding_renames,
+        chunk_top_level_mark,
+    ) {
         entry_body.push(export);
     }
     // The sealed EntryPublicExports map is keyed by the residual
@@ -491,7 +502,7 @@ pub(super) fn lower_chunk(inputs: LowerChunkInputs<'_>) -> Result<LoweredChunk> 
         })
         .collect();
     if !auto_grow.is_empty() {
-        entry_body.push(export_named_for_bindings(&auto_grow));
+        entry_body.push(export_named_for_bindings(&auto_grow, chunk_top_level_mark));
     }
     // A readable name assigned to a chunk-exported binding is additive:
     // retain the source chunk's original public export (needed by chunks
@@ -556,7 +567,10 @@ pub(super) fn lower_chunk(inputs: LowerChunkInputs<'_>) -> Result<LoweredChunk> 
         }
         cross_chunk_import_aliases.sort();
         cross_chunk_import_aliases.dedup();
-        entry_body.push(export_named_for_bindings(&readable_exports));
+        entry_body.push(export_named_for_bindings(
+            &readable_exports,
+            chunk_top_level_mark,
+        ));
     }
     trim_dead_named_specifiers(&mut entry_body, factorization.analysis.bindings());
     let entry_exports_by_original_local = collect_entry_exports_by_original_local(

@@ -11,9 +11,6 @@ import grpc
 from kubernetes_asyncio import client as k8s_client
 
 from agentplane.grpc_process import background, kubernetes_configuration, serve_health, started
-from agentplane.runner_gateway import main as gateway_main
-from agentplane.runner_gateway.grpc_api import add_legacy_service
-from agentplane.runner_gateway.sealing import Sealing
 from agentplane.sandbox_service.action_policy import ActionPolicyBindings
 from agentplane.sandbox_service.client import SandboxServiceClient
 from agentplane.sandbox_service.controller import SandboxController
@@ -24,23 +21,17 @@ from agentplane.sandbox_service.kubernetes_bindings import KubernetesBindings
 from agentplane.sandbox_service.kubernetes_grants import ClusterRoleBindingGrant, RoleBindingGrant
 from agentplane.sandbox_service.provisioning import Provisioning
 from agentplane.sandbox_service.runner_endpoints import RunnerEndpoints
-from agentplane.sandbox_service.settings import CombinedSettings, Launch, Settings
+from agentplane.sandbox_service.settings import Settings
 from agentplane.sandbox_service.teardown import GatewaySealing, Teardown
 from agentplane.workload_auth.principal import WorkloadPrincipalResolver
 from util.kubernetes import CustomObjectsClient
 
-# The asyncpg dialect is loaded by SQLAlchemy from the configured driver name.
-# gazelle:include_dep @pypi//asyncpg
 # gazelle:include_dep @pypi//protobuf
 
 
 @asynccontextmanager
 async def sandboxes(
-    settings: Settings | CombinedSettings,
-    api: k8s_client.ApiClient,
-    server: grpc.aio.Server,
-    *,
-    sealing: GatewaySealing | Sealing,
+    settings: Settings, api: k8s_client.ApiClient, server: grpc.aio.Server, *, sealing: GatewaySealing
 ) -> AsyncIterator[None]:
     """Serve `SandboxService` on `server` and reconcile Sandboxes, sealing each teardown with `sealing`."""
     custom = cast(CustomObjectsClient, k8s_client.CustomObjectsApi(api))
@@ -118,34 +109,11 @@ async def serve(settings: Settings) -> None:
         await serve_health(settings.host, settings.health_port)
 
 
-async def serve_combined(settings: CombinedSettings) -> None:
-    """The Sandbox Service and Runner Gateway in one process, sealing in-process. See
-    `Launch.gateway_target`."""
-    gateway_settings = settings.gateway_settings()
-    commands_engine = gateway_main.database_engine(gateway_settings.commands_database_url)
-    try:
-        async with (
-            k8s_client.ApiClient(await kubernetes_configuration(settings.kubeconfig)) as api,
-            AsyncExitStack() as stack,
-        ):
-            server = grpc.aio.server()
-            gateway = await stack.enter_async_context(
-                gateway_main.gateway(gateway_settings, api, server, commands_engine)
-            )
-            await stack.enter_async_context(sandboxes(settings, api, server, sealing=gateway.sealing))
-            add_legacy_service(gateway, server)
-            server.add_insecure_port(f"{settings.host}:{settings.port}")
-            await stack.enter_async_context(started(server))
-            await serve_health(settings.host, settings.health_port)
-    finally:
-        await commands_engine.dispose()
-
-
 def main() -> None:
     logging.basicConfig(level=logging.INFO)
     # TokenReview responses echo their bearer. Do not log the generated client's wire bodies.
     logging.getLogger("kubernetes_asyncio.client.rest").setLevel(logging.INFO)
-    asyncio.run(serve_combined(CombinedSettings()) if Launch().gateway_target is None else serve(Settings()))
+    asyncio.run(serve(Settings()))
 
 
 if __name__ == "__main__":
