@@ -10,8 +10,9 @@ The forwarded byte body, status, error body, and streamed chunks are not transla
 identity is attached only through LiteLLM's documented `x-litellm-spend-logs-metadata` JSON header
 (the deployed `tana-litellm-proxy` image, `tana/litellm_proxy/BUILD.bazel`, layered on the
 `litellm_upstream` pin in `MODULE.bazel`). That version consumes the header
-(`_get_spend_logs_metadata_from_request_headers`) in its common request setup used by both native `/v1/messages` and `/v1/responses`, including their streaming paths. The
-authoritative metadata object is:
+(`_get_spend_logs_metadata_from_request_headers`) in its common request setup used by both native
+`/v1/messages` and `/v1/responses`, including their streaming paths. The authoritative metadata
+object is:
 
 ```json
 {
