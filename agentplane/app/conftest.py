@@ -71,7 +71,13 @@ from agentplane.sandbox_service.testing.fake_rbac import FakeRbac
 from agentplane.sandbox_service.testing.fixtures import service_database_template
 from agentplane.thread_fold.projection_lease import ProjectionLease
 from util.testing.postgres import DatabaseClones, PostgresDatabaseTemplate, migrated_database_template
-from util.testing.postgres_fixtures import database_clones, database_names, postgres_admin_url, postgres_container
+from util.testing.postgres_fixtures import (
+    database_clones,
+    database_names,
+    postgres_admin_url,
+    postgres_container,
+    postgres_image,
+)
 from util.testing.sqlalchemy_engines import managed_async_engine
 
 

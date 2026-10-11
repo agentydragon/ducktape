@@ -7,7 +7,7 @@ from sqlalchemy.engine import make_url
 from agent_core.testing.fixtures import *  # noqa: F403
 from agent_core.testing.mcp.fixtures import *  # noqa: F403
 from mcp_infra.testing.fixtures import *  # noqa: F403
-from util.testing.postgres_fixtures import postgres_admin_url, postgres_container
+from util.testing.postgres_fixtures import postgres_admin_url, postgres_container, postgres_image
 
 
 def pytest_configure(config: pytest.Config) -> None:

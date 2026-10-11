@@ -27,6 +27,7 @@ from util.testing.postgres_fixtures import (
     migrated_database_fixtures,
     postgres_admin_url,
     postgres_container,
+    postgres_image,
 )
 from util.testing.sqlalchemy_engines import managed_async_engine
 
