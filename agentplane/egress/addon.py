@@ -197,11 +197,6 @@ class EgressAddon:
         self._authenticated.pop(client_id, None)
         return parse_bearer(header)
 
-    async def _caller_of(self, flow: http.HTTPFlow) -> ServiceAccountRef:
-        """The subject this connection's token proves, or IdentityRejectedError saying why not."""
-        caller, _ = await self._authenticate(flow, _take_projected_tokens(flow.request))
-        return caller
-
     async def _authenticate(
         self, flow: http.HTTPFlow, presented_projected: Mapping[str, str] | None
     ) -> tuple[ServiceAccountRef, AuthenticatedWorkloadContext]:

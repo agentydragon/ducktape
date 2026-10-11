@@ -54,7 +54,7 @@ from agentplane.egress.conftest import (
 )
 from agentplane.egress.decision_log import DecisionLog
 from agentplane.egress.decisions import Phase
-from agentplane.egress.identity import IdentityRejectedError, ProjectedTokenVerifier, WorkloadIdentityVerifier
+from agentplane.egress.identity import ProjectedTokenVerifier, WorkloadIdentityVerifier
 from agentplane.egress.policy import DenyReason, Index
 from agentplane.egress.proxy import EgressProxyServer, write_interception_ca
 from agentplane.egress.resources import TargetMethod, placeholder_of
@@ -370,13 +370,23 @@ def denial(response: Response, reason: DenyReason) -> bool:
     return response.status == 403 and response.headers[DENIED_HEADER] == f"denied; reason={reason}"
 
 
-def authentication_flow(client: connection.Client, proxy_authorization: str | None) -> http.HTTPFlow:
+async def gated_flow(
+    proxy: ProxyUnderTest, client: connection.Client, proxy_authorization: str | None
+) -> http.HTTPFlow:
+    """A plain-HTTP request on `client`'s connection to a path A's policy admits, through the request hook."""
     flow = http.HTTPFlow(client, connection.Server(address=(UPSTREAM_HOST, 80)))
     headers = http.Headers()
     if proxy_authorization is not None:
         headers["Proxy-Authorization"] = proxy_authorization
-    flow.request = http.Request.make("GET", f"http://{UPSTREAM_HOST}/workload/context", headers=headers)
+    flow.request = http.Request.make("GET", f"http://{UPSTREAM_HOST}/public/context", headers=headers)
+    await proxy.addon.request(flow)
+    # Nothing dials here: end an admitted flow as a failed dial would, or the fixture's drain waits on it.
+    proxy.addon.error(flow)
     return flow
+
+
+def refused_for(flow: http.HTTPFlow, reason: DenyReason) -> bool:
+    return flow.response is not None and flow.response.headers[DENIED_HEADER] == f"denied; reason={reason}"
 
 
 @pytest.mark.parametrize(
@@ -387,32 +397,24 @@ async def test_rejected_replacement_clears_authenticated_connection_context(
     proxy: ProxyUnderTest, replacement: str, reason: DenyReason
 ) -> None:
     client = connection.Client(peername=(POD_A_IP, 12345), sockname=("127.0.0.1", 8080))
-    admitted = authentication_flow(client, f"Bearer {TOKEN_A}")
-    admitted_caller = await proxy.addon._caller_of(admitted)
-    assert admitted_caller == SUBJECT_A
+    admitted = await gated_flow(proxy, client, f"Bearer {TOKEN_A}")
+    assert admitted.response is None
     assert "proxy-authorization" not in admitted.request.headers
 
-    rejected = authentication_flow(client, replacement)
-    with pytest.raises(IdentityRejectedError) as refusal:
-        await proxy.addon._caller_of(rejected)
-    assert refusal.value.reason is reason
+    rejected = await gated_flow(proxy, client, replacement)
+    assert refused_for(rejected, reason)
     assert "proxy-authorization" not in rejected.request.headers
 
-    with pytest.raises(IdentityRejectedError) as after:
-        await proxy.addon._caller_of(authentication_flow(client, None))
-    assert after.value.reason is DenyReason.TOKEN_MISSING
+    assert refused_for(await gated_flow(proxy, client, None), DenyReason.TOKEN_MISSING)
 
 
 async def test_connection_end_clears_authenticated_context(proxy: ProxyUnderTest) -> None:
     client = connection.Client(peername=(POD_A_IP, 12345), sockname=("127.0.0.1", 8080))
-    caller = await proxy.addon._caller_of(authentication_flow(client, f"Bearer {TOKEN_A}"))
-    assert caller == SUBJECT_A
+    assert (await gated_flow(proxy, client, f"Bearer {TOKEN_A}")).response is None
 
     proxy.addon.client_disconnected(client)
 
-    with pytest.raises(IdentityRejectedError) as after:
-        await proxy.addon._caller_of(authentication_flow(client, None))
-    assert after.value.reason is DenyReason.TOKEN_MISSING
+    assert refused_for(await gated_flow(proxy, client, None), DenyReason.TOKEN_MISSING)
 
 
 async def install_workload_credential(fake: FakeApiServer, proxy: ProxyUnderTest, *, bind_b: bool = False) -> None:
