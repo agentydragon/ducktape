@@ -69,8 +69,8 @@ function clock(value: string): string {
 }
 
 /** A thread row's badge: how many inbox entries the agent has not yet acknowledged, whether still
- * waiting for a notice or delivered by one; red while delivery is failing; nothing once the inboxes
- * are empty. */
+ * waiting for a notice or delivered by one; soft red while delivery is failing; nothing once the
+ * inboxes are empty. */
 export function ThreadNoticeBadge({
   inboxes,
   live,
@@ -107,7 +107,8 @@ export function ThreadNoticeBadge({
         className="agentplane-sidebar-row-notices"
         data-state={error === null ? "pending" : "error"}
         variant="filled"
-        color={error === null ? "blue" : "red"}
+        // Muted: the count is the agent's backlog, not a call on the operator's attention.
+        color={error === null ? "gray.5" : "red.4"}
         aria-label={lines.join(". ")}
         style={live ? undefined : { opacity: 0.5 }}
       >
