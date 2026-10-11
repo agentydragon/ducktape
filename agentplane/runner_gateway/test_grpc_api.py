@@ -15,11 +15,14 @@ import pytest_bazel
 from google.protobuf.empty_pb2 import Empty
 from google.protobuf.json_format import MessageToDict, ParseDict
 from kubernetes_asyncio import client as k8s_client
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncEngine
+from tenacity import AsyncRetrying, retry_if_exception_type, stop_after_delay, wait_fixed
 
 from agentplane.proto import command_pb2, runner_control_pb2, runner_pb2, sandbox_service_pb2
 from agentplane.proto.sandbox_service_pb2 import ResolvedGrant, SandboxDestination
 from agentplane.runner_gateway.command_delivery import CommandDelivery
+from agentplane.runner_gateway.commands import db
 from agentplane.runner_gateway.commands.dispatch import DispatchStore
 from agentplane.runner_gateway.commands.store import CommandSubmission, SubmissionState, SubmissionStore
 from agentplane.runner_gateway.connection_records import ConnectionLeases
@@ -130,6 +133,22 @@ def attached(session_id: str, harness_state: runner_pb2.HarnessState) -> runner_
     return runner_pb2.Attached(
         session_id=session_id, harness_state=harness_state, setup_state=runner_pb2.SETUP_STATE_NOT_REQUIRED
     )
+
+
+async def wait_attempt_lapsed(engine: AsyncEngine, session_id: UUID, command_id: str) -> None:
+    """Until the submission's dispatch attempt is past its deadline. A retry inside the open attempt
+    only extends it; the gateway's request timeout can end the caller's call before that deadline."""
+    submission = db.CommandSubmission
+    async for attempt in AsyncRetrying(
+        stop=stop_after_delay(5), wait=wait_fixed(0.05), retry=retry_if_exception_type(AssertionError), reraise=True
+    ):
+        with attempt:
+            async with engine.connect() as connection:
+                assert await connection.scalar(
+                    select(submission.attempt_deadline <= func.now()).where(
+                        submission.session_id == session_id, submission.command_id == command_id
+                    )
+                )
 
 
 async def register(engine: AsyncEngine, session_id: UUID, runner_session_id: str) -> None:
@@ -267,8 +286,9 @@ async def test_public_session_command_survives_a_lost_reply(
         assert (lost.session_id, lost.command) == (physical, command)
         # Without the runner's receipt the submission stays pending.
         assert (await submissions.read(session_id, "durable")).state == SubmissionState.PENDING_ADMISSION
+        await wait_attempt_lapsed(engine, session_id, "durable")
 
-        # The caller's retry delivers it again, and the runner's receipt settles it.
+        # Once the attempt has lapsed, the caller's retry delivers it again, and the runner's receipt settles it.
         retrying = asyncio.create_task(runner.command(str(session_id), command))
         assert await peer.delivery() == lost
         await peer.admit(lost, 1)
