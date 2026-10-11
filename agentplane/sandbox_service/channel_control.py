@@ -109,7 +109,7 @@ class ChannelControl:
             raise ConnectionNotHeldError("this replica holds no current runner connection for the Sandbox")
         sent = channel_pb2.ControlRequest(request_id=str(uuid4()))
         sent.MergeFrom(request)
-        waiting = asyncio.get_running_loop().create_future()
+        waiting: asyncio.Future[channel_pb2.ControlResult] = asyncio.get_running_loop().create_future()
         connection.pending[sent.request_id] = waiting
         try:
             try:
