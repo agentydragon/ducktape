@@ -1952,6 +1952,7 @@ async def test_unconfirmed_command_retries_with_same_identity_then_reconciles(th
     await thread_browser.start_replay()
     await expect(page.get_by_text("Test retained prefix", exact=True)).to_be_visible()
     requests: asyncio.Queue[command_pb2.Command] = asyncio.Queue()
+    status_result = source.gateway.hold_next_command_status()
 
     async def lose_receipt(route: Route) -> None:
         assert route.request.post_data is not None
@@ -1959,29 +1960,46 @@ async def test_unconfirmed_command_retries_with_same_identity_then_reconciles(th
         await route.fulfill(status=504, content_type="application/json", body='{"detail":"outcome uncertain"}')
 
     await page.route("**/threads/*/commands", lose_receipt, times=1)
-    composer = message_composer(page)
-    await composer.fill("Test uncertain admission")
-    await composer.press("Enter")
-    async with asyncio.timeout(15):
-        original = await requests.get()
-    bubble = page.locator(f'[data-command-id="{original.command_id}"]')
-    await expect(bubble.locator('[data-stage="unconfirmed"]')).to_be_visible()
-    await expect(bubble.locator('[data-stage="failed"]')).to_have_count(0)
-    async with page.expect_request("**/threads/*/commands") as retried:
-        await bubble.get_by_role("button", name="Retry", exact=True).click()
-    retry = await retried.value
-    assert retry.post_data is not None
-    assert json_format.Parse(retry.post_data, command_pb2.Command()) == original
-    async with asyncio.timeout(15):
-        assert await source.gateway.commands.get() == original
-    await expect_pending_message_bubble(page, original.submit_input.text)
-    (thread,) = await thread_browser.store.list_threads(sandbox=SANDBOX)
-    archived = await expect_archived_events(thread_browser.event_logs, thread.id, source.entries)
-    assert any(
-        entry.event.HasField("command_admitted") and entry.event.command_admitted.command == original
-        for entry in archived
-    )
-    await expect(bubble.locator('[data-stage="unconfirmed"]')).to_have_count(0)
+    try:
+        composer = message_composer(page)
+        await composer.fill("Test uncertain admission")
+        await composer.press("Enter")
+        async with asyncio.timeout(15):
+            original = await requests.get()
+            status_request = await source.gateway.command_status_requests.get()
+        assert status_request.command_id == original.command_id
+        assert source.gateway.commands.empty(), "the scripted 504 must not reach the runner"
+
+        bubble = page.locator(f'[data-command-id="{original.command_id}"]')
+        await expect(bubble.locator('[data-stage="local"]')).to_be_visible()
+        await expect(bubble.get_by_role("button", name="Retry", exact=True)).to_have_count(0)
+        assert not status_result.done(), "the command stays local while status lookup is pending"
+
+        # The command never reached the Runner Gateway, so its explicit status lookup resolves as absent.
+        status_result.set_result(grpc.StatusCode.NOT_FOUND)
+        await expect(bubble.locator('[data-stage="unconfirmed"]')).to_be_visible()
+        await expect(bubble.locator('[data-stage="failed"]')).to_have_count(0)
+        await expect(bubble.get_by_role("button", name="Retry", exact=True)).to_be_visible()
+
+        async with page.expect_request("**/threads/*/commands") as retried:
+            await bubble.get_by_role("button", name="Retry", exact=True).click()
+        retry = await retried.value
+        assert retry.post_data is not None
+        assert json_format.Parse(retry.post_data, command_pb2.Command()) == original
+        async with asyncio.timeout(15):
+            assert await source.gateway.commands.get() == original
+        await expect_pending_message_bubble(page, original.submit_input.text)
+        (thread,) = await thread_browser.store.list_threads(sandbox=SANDBOX)
+        archived = await expect_archived_events(thread_browser.event_logs, thread.id, source.entries)
+        assert any(
+            entry.event.HasField("command_admitted") and entry.event.command_admitted.command == original
+            for entry in archived
+        )
+        await expect(bubble.locator('[data-stage="unconfirmed"]')).to_have_count(0)
+    finally:
+        if not status_result.done():
+            status_result.set_result(grpc.StatusCode.UNAVAILABLE)
+        await page.unroute_all(behavior="wait")
 
 
 async def click_evidence(scope: Locator) -> None:
@@ -2008,6 +2026,7 @@ async def test_unobserved_committed_admission_reconciles_once_after_reload(threa
     await expect(page.get_by_text("Test retained prefix", exact=True)).to_be_visible()
     replies: asyncio.Queue[APIResponse] = asyncio.Queue()
     drop_reply = asyncio.Event()
+    status_result = source.gateway.hold_next_command_status()
 
     async def lose_committed_reply(route: Route) -> None:
         replies.put_nowait(await route.fetch())
@@ -2034,6 +2053,16 @@ async def test_unobserved_committed_admission_reconciles_once_after_reload(threa
             drop_reply.set()
         pending = page.get_by_role("region", name="Input messages")
         await expect(pending.locator("[data-command-id]")).to_have_attribute("data-command-id", command.command_id)
+        async with asyncio.timeout(15):
+            status_request = await source.gateway.command_status_requests.get()
+        assert status_request.command_id == command.command_id
+        await expect(pending.locator('[data-stage="local"]')).to_be_visible()
+        await expect(page.get_by_role("button", name="Retry", exact=True)).to_have_count(0)
+        assert not status_result.done(), "the command stays local while status lookup is pending"
+
+        # The committed runner receipt is not visible through this transient status lookup.
+        # Keep that outcome explicit so reload must recover the same command from the archive.
+        status_result.set_result(grpc.StatusCode.UNAVAILABLE)
         await expect(pending.locator('[data-stage="unconfirmed"]')).to_be_visible()
         await expect(page.locator('.agentplane-user-bubble[data-message-phase="local"]')).to_have_count(1)
 
@@ -2075,6 +2104,8 @@ async def test_unobserved_committed_admission_reconciles_once_after_reload(threa
         archived = await expect_archived_events(thread_browser.event_logs, thread.id, source.entries)
         assert [entry for entry in archived if entry.event.HasField("command_admitted")] == [admission]
     finally:
+        if not status_result.done():
+            status_result.set_result(grpc.StatusCode.UNAVAILABLE)
         drop_reply.set()
         await page.unroute_all(behavior="wait")
 
