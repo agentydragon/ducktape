@@ -36,8 +36,9 @@ PostgreSQL refuses to clone a template while it has open connections. Let migrat
 pools close before the first clone, and keep the template connection-free afterwards. Schema-level
 objects and extensions are copied with the database. Cluster roles are shared by every database;
 database-level settings and privileges should be applied explicitly to each clone when a test needs
-them. Use `before_drop` for resources outside the database that must be removed first, such as an
-inactive logical replication slot.
+them. For resources outside the database that must be removed first, such as an inactive logical
+replication slot, compose a cleanup context inside the clone context. Put a service context inside
+that when the service must stop before slot cleanup; context exit then proceeds service, slot, clone.
 
 When a caller needs custom cleanup or may retain a database for debugging, use
 `create_database_sync(admin_url, name, template=template.template_name)` directly and pair it with
