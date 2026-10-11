@@ -8,7 +8,6 @@ from datetime import datetime
 from uuid import UUID
 
 from sqlalchemy import BigInteger, CheckConstraint, DateTime, Index, LargeBinary, String, UniqueConstraint, func, text
-from sqlalchemy.dialects.postgresql import ARRAY
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 from agentplane.proto import command_pb2, event_log_pb2, runner_control_pb2 as control_pb2
@@ -119,22 +118,3 @@ class CommandSubmission(Base):
     attempt_refusal: Mapped[control_pb2.CommandRefused | None] = mapped_column(
         ProtobufColumn(control_pb2.CommandRefused)
     )
-
-
-# CLEANUP(added 2026-10-11): Nothing reads or writes this table since commands and lifecycle always go
-#   over the control stream. Delete the model with the drop migration once the operator merges it
-#   (branch claude/agentplane-runner-dial-out-7te2w3-drop-runner-connection).
-class RunnerConnection(Base):
-    """The control operations a Sandbox's runner connections agreed, before every connection carried
-    every operation."""
-
-    __tablename__ = "runner_connection"
-    __table_args__ = (CheckConstraint("connection_epoch > 0", name="connection_epoch_positive"),)
-
-    sandbox_uid: Mapped[UUID] = mapped_column(primary_key=True)
-    pod_uid: Mapped[str | None] = mapped_column(String)
-    connection_epoch: Mapped[int | None] = mapped_column(BigInteger)
-    owner_replica: Mapped[str | None] = mapped_column(String)
-    runner_boot_id: Mapped[str | None] = mapped_column(String)
-    last_seen_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
-    operations: Mapped[list[str]] = mapped_column(ARRAY(String))
