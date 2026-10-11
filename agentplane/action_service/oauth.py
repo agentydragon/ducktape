@@ -34,7 +34,6 @@ from mcp.server.auth.routes import cors_middleware
 from mcp.server.auth.settings import RevocationOptions
 from mcp.shared.auth import OAuthClientInformationFull, OAuthToken
 from pydantic import ValidationError
-from sqlalchemy.engine import make_url
 from sqlalchemy.exc import SQLAlchemyError
 from starlette.requests import Request
 from starlette.responses import Response
@@ -51,6 +50,7 @@ from agentplane.action_service.enrollments import EnrollmentAuthority, Enrollmen
 from agentplane.action_service.oauth_settings import OAuthSettings
 from mcp_infra.authentik_auth.fastmcp_proxy import DownstreamClientIdentityOIDCProxy, RetryableJWTVerifier
 from mcp_infra.persistence import PostgresPersistence, build_shared_client_storage
+from util.db_url import render_postgresql_url
 from util.oidc_principal import (
     AuthentikOidcPrincipalResolver,
     InvalidOidcPrincipalError,
@@ -456,9 +456,7 @@ async def running_oauth(
 ) -> AsyncIterator[ActionsOAuthProxy]:
     """Shared credential-bearing KV is encrypted; lifecycle stays in the Action Service."""
     persistence = PostgresPersistence(
-        kind="postgres",
-        url=make_url(database_url).set(drivername="postgresql").render_as_string(hide_password=False),
-        table_name="agentplane_oauth_kv",
+        kind="postgres", url=render_postgresql_url(database_url, "postgresql"), table_name="agentplane_oauth_kv"
     )
     async with build_shared_client_storage(persistence) as storage:
         encrypted = FernetEncryptionWrapper(

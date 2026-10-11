@@ -256,8 +256,27 @@ py_library(
     srcs = ["db_migrations.py"],
     visibility = ["//visibility:public"],
     deps = [
+        ":db_url",
         "@pypi//alembic",
         "@pypi//psycopg",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
+    name = "db_url",
+    srcs = ["db_url.py"],
+    visibility = ["//visibility:public"],
+    deps = ["@pypi//sqlalchemy"],
+)
+
+py_test(
+    name = "test_db_url",
+    srcs = ["test_db_url.py"],
+    deps = [
+        ":db_url",
+        "//:conftest",
+        "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
     ],
 )

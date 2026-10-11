@@ -11,8 +11,9 @@ from alembic.autogenerate import compare_metadata
 from alembic.config import Config as AlembicConfig
 from alembic.migration import MigrationContext
 from sqlalchemy import MetaData, create_engine, text
-from sqlalchemy.engine import make_url
 from sqlalchemy.schema import SchemaItem
+
+from util.db_url import render_postgresql_url
 
 # SQLAlchemy loads psycopg from the URL scheme; Gazelle cannot infer the runtime dependency.
 # gazelle:include_dep @pypi//psycopg
@@ -51,7 +52,7 @@ class MigrationRunner:
     version_table: str | None = None
 
     def sync_url(self, database_url: str) -> str:
-        return make_url(database_url).set(drivername="postgresql+psycopg").render_as_string(hide_password=False)
+        return render_postgresql_url(database_url, "postgresql+psycopg")
 
     def run_for_connection(self, connection: Any, revision: str = "head") -> None:
         connection.execute(text("SELECT pg_advisory_xact_lock(:key)"), {"key": self.lock_key})

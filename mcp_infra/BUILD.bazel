@@ -191,8 +191,8 @@ py_library(
         "//agent_core/testing:fixtures",
         "//agent_core/testing/mcp:fixtures",
         "//mcp_infra/testing:fixtures",
+        "//util:db_url",
         "//util/testing:postgres_fixtures",
         "@pypi//pytest",
-        "@pypi//sqlalchemy",
     ],
 )

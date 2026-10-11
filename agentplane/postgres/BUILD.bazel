@@ -6,6 +6,7 @@ py_library(
     name = "listener",
     srcs = ["listener.py"],
     deps = [
+        "//util:db_url",
         "@pypi//asyncpg",
         "@pypi//sqlalchemy",
         "@pypi//tenacity",

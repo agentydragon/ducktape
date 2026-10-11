@@ -15,7 +15,6 @@ from uuid import UUID, uuid4
 import pytest
 import pytest_bazel
 from sqlalchemy import create_engine, event, func, select
-from sqlalchemy.engine import make_url
 from sqlalchemy.exc import IntegrityError, TimeoutError as SQLAlchemyTimeoutError
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import Session
@@ -65,6 +64,7 @@ from haku.console.identity.operator_identity import (
 from haku.console.identity.operator_identity_store import PostgresOperatorIdentityStore
 from haku.console.mcp.approval import PostgresToolCallLedger
 from haku.console.tool_call_actor import AgentActor
+from util.db_url import render_postgresql_url
 from util.oidc_principal import VerifiedOidcPrincipal
 from util.testing.sqlalchemy_engines import managed_async_engine
 
@@ -169,7 +169,7 @@ class Harness:
 @pytest.fixture
 def db_url(migrated_db_url: str) -> str:
     """Use the shared migrated clone with a sync driver for ORM helpers in this test."""
-    return make_url(migrated_db_url).set(drivername="postgresql+psycopg").render_as_string(hide_password=False)
+    return render_postgresql_url(migrated_db_url, "postgresql+psycopg")
 
 
 HarnessFactory = Callable[..., Awaitable[Harness]]

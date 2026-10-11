@@ -201,6 +201,7 @@ py_library(
     visibility = ["//devinfra/claude/session_export/migrations:__pkg__"],
     deps = [
         ":models",
+        "//util:db_url",
         "@pypi//asyncpg",
         "@pypi//sqlalchemy",
     ],

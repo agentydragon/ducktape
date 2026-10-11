@@ -10,9 +10,9 @@ from alembic.config import Config as AlembicConfig
 from pydantic import SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from sqlalchemy import create_engine, select, text
-from sqlalchemy.engine import make_url
 
 from haku.console.database_schema import metadata
+from util.db_url import render_postgresql_url
 
 # SQLAlchemy loads the psycopg dialect at runtime via the `postgresql+psycopg://`
 # URL scheme; nothing imports it directly, so Gazelle cannot see the dependency.
@@ -61,7 +61,7 @@ def verify_schema_for_connection(conn: Any) -> None:
 
 def sync_database_url(database_url: str) -> str:
     """Render an application database URL for synchronous Alembic/psycopg access."""
-    return make_url(database_url).set(drivername="postgresql+psycopg").render_as_string(hide_password=False)
+    return render_postgresql_url(database_url, "postgresql+psycopg")
 
 
 def apply_migrations(database_url: str) -> None:

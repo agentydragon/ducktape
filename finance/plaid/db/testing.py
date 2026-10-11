@@ -6,9 +6,9 @@ from collections.abc import AsyncIterator
 
 import pytest
 import pytest_asyncio
-from sqlalchemy.engine import make_url
 
 from finance.plaid.db.link_store import PlaidLinkStorage
+from util.db_url import render_postgresql_url
 from util.testing.postgres import DatabaseClones, PostgresDatabaseTemplate
 
 # SQLAlchemy loads asyncpg from the URL scheme; Gazelle cannot infer the dependency.
@@ -21,7 +21,7 @@ from util.testing.postgres import DatabaseClones, PostgresDatabaseTemplate
 async def plaid_database_template(postgres_admin_url: str) -> AsyncIterator[PostgresDatabaseTemplate]:
     """Migrate the Plaid schema once per test process; callers clone it per test."""
     with PostgresDatabaseTemplate(postgres_admin_url, "plaid_test_template") as template:
-        async_url = make_url(template.url).set(drivername="postgresql+asyncpg").render_as_string(hide_password=False)
+        async_url = render_postgresql_url(template.url, "postgresql+asyncpg")
         storage = await PlaidLinkStorage.initialize(async_url)
         await storage.close()
         yield template

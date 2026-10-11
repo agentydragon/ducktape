@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 import pytest
-from sqlalchemy.engine import make_url
 
 from finance.plaid.db.testing import db_url, plaid_database_template
+from util.db_url import render_postgresql_url
 from util.testing.postgres_fixtures import (
     database_clones,
     database_names,
@@ -18,4 +18,4 @@ from util.testing.postgres_fixtures import (
 @pytest.fixture
 def postgres_url(db_url: str) -> str:
     """Return the cloned Plaid database URL in the form asyncpg accepts directly."""
-    return make_url(db_url).set(drivername="postgresql").render_as_string(hide_password=False)
+    return render_postgresql_url(db_url, "postgresql")

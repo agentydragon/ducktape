@@ -862,6 +862,7 @@ py_library(
         ":oauth_settings",
         "//mcp_infra:persistence",
         "//mcp_infra/authentik_auth:fastmcp_proxy",
+        "//util:db_url",
         "//util:oidc_principal",
         "@pypi//cryptography",
         "@pypi//fastapi",

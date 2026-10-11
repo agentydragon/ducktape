@@ -175,8 +175,8 @@ py_library(
     visibility = ["//finance/plaid/spend:__subpackages__"],
     deps = [
         "//finance/plaid/db:testing",
+        "//util:db_url",
         "//util/testing:postgres_fixtures",
         "@pypi//pytest",
-        "@pypi//sqlalchemy",
     ],
 )

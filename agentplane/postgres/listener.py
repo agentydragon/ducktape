@@ -10,6 +10,8 @@ import asyncpg
 from sqlalchemy.engine import URL
 from tenacity import AsyncRetrying, RetryCallState, retry_if_exception_type, wait_exponential
 
+from util.db_url import render_postgresql_url
+
 logger = logging.getLogger(__name__)
 CONNECTION_ERRORS = (OSError, TimeoutError, asyncpg.PostgresConnectionError, asyncpg.CannotConnectNowError)
 
@@ -28,7 +30,7 @@ class PostgresListener:
     ) -> None:
         if not channels:
             raise ValueError("PostgreSQL listener needs at least one channel")
-        self._dsn = url.set(drivername="postgresql").render_as_string(hide_password=False)
+        self._dsn = render_postgresql_url(url, "postgresql")
         self._channels = channels
         self._application_name = application_name
         self._notified = notified

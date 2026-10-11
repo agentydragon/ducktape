@@ -22,6 +22,7 @@ from agentplane.app.testing.replication_source import SANDBOX, SESSION, Replicat
 from agentplane.history_service.client import HistoryServiceClient
 from agentplane.proto import event_pb2
 from agentplane.thread_fold.projection_lease import ProjectionLease
+from util.db_url import render_postgresql_url
 from util.testing.undeclared_outputs import undeclared_outputs_dir
 
 # gazelle:include_dep @pypi//protobuf
@@ -158,7 +159,7 @@ async def _project_initial_item(
 
 
 async def _connect(service: ElectricService) -> asyncpg.Connection:
-    return await asyncpg.connect(service.database_url.replace("postgresql+asyncpg", "postgresql"))
+    return await asyncpg.connect(render_postgresql_url(service.database_url, "postgresql"))
 
 
 async def _health_state(service: ElectricService) -> dict[str, object]:

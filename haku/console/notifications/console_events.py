@@ -24,10 +24,10 @@ from uuid import UUID
 import asyncpg
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel, ValidationError
-from sqlalchemy.engine import make_url
 
 from haku.console.identity import operator_auth
 from haku.console.identity.operator_identity_store import PostgresOperatorIdentityStore
+from util.db_url import render_postgresql_url
 
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["console-events"])
@@ -62,10 +62,6 @@ def _terminator(terminated: asyncio.Event) -> Callable[[object], None]:
     return lambda _connection: terminated.set()
 
 
-def _libpq_dsn(database_url: str) -> str:
-    return make_url(database_url).set(drivername="postgresql").render_as_string(hide_password=False)
-
-
 class ConsoleEventHub:
     """Cross-replica Postgres LISTEN/NOTIFY fan-out to connected console tabs."""
 
@@ -80,7 +76,7 @@ class ConsoleEventHub:
     def __init__(self, database_url: str, *, operator_identity_store: PostgresOperatorIdentityStore) -> None:
         self._connections: dict[WebSocket, UUID] = {}
         self._tool_call_waiters: dict[tuple[UUID, str], set[asyncio.Event]] = {}
-        self._dsn = _libpq_dsn(database_url)
+        self._dsn = render_postgresql_url(database_url, "postgresql")
         self._operator_identity_store = operator_identity_store
         self._listen_task: asyncio.Task[None] | None = None
         self._listening = asyncio.Event()
