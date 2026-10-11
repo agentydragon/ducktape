@@ -1160,8 +1160,7 @@ under `history_service/`.
 **In progress (delta settlement rollout).** Both environments set `settle_deltas`, yet
 `IngressSettings.settle_deltas` and `Store(settle_deltas=False)` default off, so a new writer
 silently stops settling. Settlement becomes unconditional: delete the setting,
-`Environment.settle_deltas` and the `Store` flag (the ingester's copy goes with
-`FOLLOW_PATH_RETIRE`). `SESSION_EVENT_COMPACTION` does not wait for this.
+`Environment.settle_deltas` and the `Store` flag. `SESSION_EVENT_COMPACTION` does not wait for this.
 
 ### `APP_SERVICE_NAMES` — the app names the right services
 
