@@ -129,27 +129,6 @@ def chunk_windows(text: str, *, budget: ChunkBudget, preferred_ends: Collection[
         start = max(start + 1, end - budget.overlap_codepoints)
 
 
-def split_utf8(
-    text: str, max_bytes: int, *, byte_start: int = 0, size: int | None = None, overlap_codepoints: int = 0
-) -> Iterator[Span]:
-    """Hard-split ``text`` at Unicode code-point boundaries with optional trailing overlap.
-
-    ``size`` avoids a redundant encoding in the common one-span case. Returned offsets remain
-    relative to the caller's source bytes.
-    """
-    if overlap_codepoints < 0:
-        raise ValueError(f"negative chunk overlap: {overlap_codepoints}")
-    if overlap_codepoints and overlap_codepoints * 4 >= max_bytes:
-        raise ValueError(f"chunk overlap leaves no room for progress: {overlap_codepoints}")
-    encoded_size = len(text.encode()) if size is None else size
-    if encoded_size <= max_bytes:
-        yield Span(byte_start=byte_start, byte_end=byte_start + encoded_size, text=text)
-        return
-    budget = ChunkBudget(target_bytes=max_bytes, max_bytes=max_bytes, overlap_codepoints=overlap_codepoints)
-    for span in chunk_windows(text, budget=budget):
-        yield Span(byte_start=byte_start + span.byte_start, byte_end=byte_start + span.byte_end, text=span.text)
-
-
 def chunk_text(blob: str, budget: ChunkBudget = DEFAULT_CHUNK_BUDGET) -> list[Span]:
     """Chunk a decoded blob into overlapping embeddable spans.
 

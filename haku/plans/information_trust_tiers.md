@@ -122,19 +122,16 @@ through the transport. Three things it needs:
   therefore fine".
 - **Semantic search was where this bit first, and the Console integration is retired.** Its
   reader, authorization, MCP tool, and indexer role are removed. The Recall schema and indexed data
-  remain during the rollout, and the shared implementation remains in use by Agentplane. Re-enabling
-  Console search requires reviewing the profile and tier boundaries together.
-  <../recall_index/README.md> § Read scoping still names the
-  condition for revisiting: "the moment a second operator or a room Haku should not see exists,
-  ranked retrieval is where that leaks first". A drilldown makes reading another conversation
-  deliberate — you have to name the session; ranked retrieval surfaces it by accident, at the top
-  of the results, in answer to an innocent question.
+  remain during the rollout. Re-enabling Console search requires reviewing the profile and tier
+  boundaries together. The condition for revisiting stands: the moment a second operator or a room
+  Haku should not see exists, ranked retrieval is where that leaks first. A drilldown makes reading
+  another conversation deliberate — you have to name the session; ranked retrieval surfaces it by
+  accident, at the top of the results, in answer to an innocent question.
 
 Still open: define tiers for agent kinds and Matrix rooms, derive conversation
 trust labels, and add tier-specific chat indexes if profile labels are no longer
 sufficient. Track implementation in <../console/TODO.md> § Scope conversation reads
-to the reader's trust tier; the current Recall read contract remains in
-<../recall_index/README.md> § Read scoping.
+to the reader's trust tier.
 
 ## Running more than one agent at once
 

@@ -126,6 +126,16 @@ and snapshots supplying any served file, are roots; their manifests retain all r
 blobs. PostgreSQL autovacuum reclaims deleted row space for reuse. No routine `VACUUM FULL`
 is used. This cache is local to the database; separate deployments do not share vectors.
 
+The chunking regime is one `chunker_key` column serialized from `ChunkBudget` (`chunking.py`),
+not a column per parameter, so a regime filter cannot be under-specified: a new budget field
+lands in the key, and a query matches a whole regime or nothing. If the ~50-byte key ever
+matters in the primary keys, move it to a regime table with an integer id.
+
+Search is exact KNN over the served join, with no ANN index and so no ANN-plus-filter
+correctness problem. An HNSW index would first need a dimension typmod on
+`embeddings.vector`, which is declared without one so the schema does not fix the model's
+dimension; adding either needs no re-embedding.
+
 ## Verification
 
 ```sh

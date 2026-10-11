@@ -8,7 +8,7 @@ from typing import Annotated, Any
 from pydantic import BaseModel, BeforeValidator, ConfigDict, Field, SecretStr, model_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
-from haku.recall_index.chunking import DEFAULT_CHUNK_BUDGET, ChunkBudget
+from agentplane.indexing.chunking import DEFAULT_CHUNK_BUDGET, ChunkBudget
 
 
 class SnapshotLimits(BaseModel):

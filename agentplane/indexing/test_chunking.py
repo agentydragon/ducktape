@@ -9,14 +9,7 @@ from dataclasses import asdict
 import pytest
 import pytest_bazel
 
-from haku.recall_index.chunking import (
-    CHUNKER_VERSION,
-    DEFAULT_CHUNK_BUDGET,
-    ChunkBudget,
-    chunk_text,
-    git_chunker_key,
-    split_utf8,
-)
+from agentplane.indexing.chunking import CHUNKER_VERSION, DEFAULT_CHUNK_BUDGET, ChunkBudget, chunk_text, git_chunker_key
 
 
 def test_offsets_slice_the_embedded_text_back_out() -> None:
@@ -96,7 +89,7 @@ def test_the_key_carries_every_field_of_the_budget() -> None:
 
 def test_the_key_is_canonical() -> None:
     """The exact string is a live consumer contract: `chunker_key` is persisted per chunk row
-    (schema.py) and compared against freshly computed keys to decide index currency (sync.py) —
+    and in the index state (store.py), and compared against freshly computed keys on startup —
     a formatting drift (key order, whitespace) would orphan every persisted chunk."""
     assert git_chunker_key(ChunkBudget(target_bytes=1, max_bytes=2)) == (
         '{"max_bytes":2,"overlap_codepoints":0,"target_bytes":1,"version":2}'
@@ -114,11 +107,6 @@ def test_the_key_is_canonical() -> None:
 def test_a_budget_that_cannot_be_satisfied_is_refused(kwargs: dict[str, int], match: str) -> None:
     with pytest.raises(ValueError, match=match):
         ChunkBudget(**kwargs)
-
-
-def test_split_utf8_uses_code_point_overlap() -> None:
-    spans = list(split_utf8("😀" * 100, 40, overlap_codepoints=3))
-    assert all(left.text[-3:] == right.text[:3] for left, right in itertools.pairwise(spans))
 
 
 if __name__ == "__main__":

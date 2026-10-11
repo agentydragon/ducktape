@@ -115,7 +115,7 @@ py_library(
     data = ["//haku/console/migrations:files"],
     deps = [
         ":database_schema",
-        "//haku/recall_index:vector_type",
+        "//agentplane/indexing:vector_type",
         "//util:db_url",
         "@pypi//alembic",
         "@pypi//psycopg",

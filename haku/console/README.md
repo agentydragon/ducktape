@@ -61,9 +61,9 @@ finish while the ledger drains. The Console no longer reflects or refreshes serv
 MCP requests, or makes browser-session reads through `/mcp`. The routine uses its separate audited
 `POST /api/capabilities/launch-routine` capability; its unused MCP wrapper was removed.
 
-The Console Recall reader, access policy, and `haku_index` tool were removed. The shared
-`haku/recall_index` package remains in use by Agentplane. This release retains the Console's Recall
-tables, indexed data, and `vector` extension: older replicas validate that schema during rollout.
+The Console Recall reader, access policy, and `haku_index` tool were removed. This release retains
+the Console's Recall tables, indexed data, and `vector` extension: older replicas validate that
+schema during rollout.
 
 The `sandbox` in-process MCP server is absent from the deployed catalog, along with its
 access-profile grant, `agent_sandbox` configuration, and auto-approval policy. The Haku-specific

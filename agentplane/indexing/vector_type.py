@@ -1,8 +1,7 @@
 """Minimal SQLAlchemy binding for pgvector's `halfvec` type.
 
-All this index needs is DDL for the column and a bind format for inserts — the one query using the
-distance operator is raw SQL anyway (`store.search_git`) — so the upstream `pgvector`
-package is not worth the dependency.
+All this index needs is DDL for the column and a bind format for stored vectors and the query
+vector of the distance operator, so the upstream `pgvector` package is not worth the dependency.
 
 **`halfvec`, not `vector`: half the bytes, and the only one of the two that this corpus could
 ever index.** The embedding model returns 2560 dimensions, where a `vector` costs 4 bytes per
@@ -22,16 +21,15 @@ from sqlalchemy.types import UserDefinedType
 
 
 class HalfVector(UserDefinedType[Sequence[float]]):
-    """pgvector's `halfvec`, with no dimension typmod — see `schema.ContentEmbedding.embedding`."""
+    """pgvector's `halfvec`, with no dimension typmod."""
 
     cache_ok = True
 
     def get_col_spec(self, **_kwargs: Any) -> str:
         return "halfvec"
 
-    # Writes only: no query selects an embedding back into Python. The one that touches the
-    # vectors at all keeps them inside a CTE and returns a score, so a `result_processor` here
-    # would be a code path nothing exercises.
+    # Binds only: no query selects an embedding back into Python (search returns a score), so a
+    # `result_processor` here would be a code path nothing exercises.
     def bind_processor(self, dialect: Dialect) -> Any:
         def process(value: Sequence[float] | None) -> str | None:
             return None if value is None else f"[{','.join(map(str, value))}]"

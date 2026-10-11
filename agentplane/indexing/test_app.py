@@ -13,12 +13,11 @@ import pytest_bazel
 from pydantic import SecretStr
 
 from agentplane.indexing.app import create_app
-from agentplane.indexing.conftest import Upstream
+from agentplane.indexing.conftest import FakeEmbedder, Upstream
 from agentplane.indexing.maintenance import Maintenance
 from agentplane.indexing.settings import SnapshotLimits
 from agentplane.indexing.source import GitSource
 from agentplane.indexing.store import Store
-from haku.recall_index.fake_embedder import FakeEmbedder
 
 
 @dataclass

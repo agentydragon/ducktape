@@ -1,6 +1,7 @@
-"""Isolated PostgreSQL/pgvector databases and throwaway upstream repositories for index service tests."""
+"""Isolated PostgreSQL/pgvector databases, throwaway upstream repositories and fake embedders for index service tests."""
 
-from collections.abc import AsyncGenerator, Collection, Generator, Mapping
+import math
+from collections.abc import AsyncGenerator, Collection, Generator, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -10,14 +11,44 @@ import pytest_asyncio
 from pygit2.enums import FileMode
 from sqlalchemy.ext.asyncio import AsyncEngine
 
+from agentplane.indexing.chunking import DEFAULT_CHUNK_BUDGET
 from agentplane.indexing.store import Store
-from haku.recall_index.chunking import DEFAULT_CHUNK_BUDGET
-from haku.recall_index.fake_embedder import FakeEmbedder
 from third_party.containers import pgvector_pg18
 from util.oci import OciImage
 from util.testing.postgres import DatabaseClones, PostgresDatabaseTemplate
 from util.testing.postgres_fixtures import database_clones, database_names, postgres_admin_url, postgres_container
 from util.testing.sqlalchemy_engines import postgres_async_engine
+
+# A vector space with one axis per marker word, so "which document is about beta" has an
+# answer a test can assert. The floor keeps every vector non-zero: cosine distance against a
+# zero vector is undefined, and a chunk mentioning none of the markers is normal.
+MARKERS = ("alpha", "beta", "gamma", "delta", "epsilon", "zeta", "eta", "theta")
+
+
+class FakeEmbedder:
+    """Deterministic marker-word embedder: no embedding service, no network."""
+
+    def __init__(self, model_key: str = "fake-v1") -> None:
+        self.model_key = model_key
+
+    def _vector(self, text: str) -> list[float]:
+        counts = [text.lower().count(marker) + 0.01 for marker in MARKERS]
+        norm = math.sqrt(sum(count * count for count in counts))
+        return [count / norm for count in counts]
+
+    async def embed_documents(self, texts: Sequence[str]) -> list[list[float]]:
+        return [self._vector(text) for text in texts]
+
+    async def embed_query(self, text: str) -> list[float]:
+        return self._vector(text)
+
+
+class ExplodingEmbedder(FakeEmbedder):
+    """Fails on any embedding call, to cut an update off mid-flight."""
+
+    async def embed_documents(self, texts: Sequence[str]) -> list[list[float]]:
+        raise RuntimeError("embedder unavailable")
+
 
 # gazelle:include_dep @pypi//asyncpg
 # The template admin URL uses the psycopg dialect, which SQLAlchemy loads at runtime.

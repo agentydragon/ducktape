@@ -277,9 +277,9 @@ oci.pull(
     tag = "18",
 )
 
-# Test infrastructure: PostgreSQL with pgvector, for //haku/recall_index tests. The stock
-# postgres image ships no `vector` extension, and the index's core invariant (the tip join is
-# the only thing that makes content searchable) is only testable against the real operator.
+# Test infrastructure: PostgreSQL with pgvector, for //agentplane/indexing and //haku/console
+# tests. The stock postgres image ships no `vector` extension, and the index's search is only
+# testable against the real operator.
 oci.pull(
     name = "pgvector_pg18",
     digest = "sha256:1d50c689b0a6511b9ea0a15615281c81a59fd04a08eb35057ec8646fb3a2118a",

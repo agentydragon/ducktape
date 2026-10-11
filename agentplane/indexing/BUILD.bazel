@@ -44,9 +44,9 @@ py_library(
     name = "app",
     srcs = ["app.py"],
     deps = [
+        ":embedder",
         ":maintenance",
         ":store",
-        "//haku/recall_index:embedder",
         "@pypi//fastapi",
         "@pypi//pydantic",
     ],
@@ -58,10 +58,10 @@ py_library(
     deps = [
         ":app",
         ":maintenance",
+        ":openai_embedder",
         ":settings",
         ":source",
         ":store",
-        "//haku/recall_index:openai_embedder",
         "@pypi//asyncpg",
         "@pypi//openai",
         "@pypi//pathspec",
@@ -75,9 +75,9 @@ py_library(
     name = "maintenance",
     srcs = ["maintenance.py"],
     deps = [
+        ":embedder",
         ":source",
         ":store",
-        "//haku/recall_index:embedder",
     ],
 )
 
@@ -95,10 +95,10 @@ py_library(
     name = "store",
     srcs = ["store.py"],
     deps = [
-        "//haku/recall_index:chunking",
-        "//haku/recall_index:content",
-        "//haku/recall_index:embedder",
-        "//haku/recall_index:vector_type",
+        ":chunking",
+        ":content",
+        ":embedder",
+        ":vector_type",
         "@pypi//sqlalchemy",
     ],
 )
@@ -123,9 +123,8 @@ py_library(
     testonly = True,
     srcs = ["conftest.py"],
     deps = [
+        ":chunking",
         ":store",
-        "//haku/recall_index:chunking",
-        "//haku/recall_index:fake_embedder",
         "//third_party/containers:pgvector_pg18",
         "//util:oci",
         "//util/testing:postgres",
@@ -153,7 +152,6 @@ py_test(
         ":source",
         ":store",
         "//:conftest",
-        "//haku/recall_index:fake_embedder",
         "@pypi//httpx",
         "@pypi//pathspec",
         "@pypi//pydantic",
@@ -168,12 +166,11 @@ py_test(
     srcs = ["test_store.py"],
     requires_docker = True,
     deps = [
+        ":chunking",
         ":conftest",
+        ":content",
         ":store",
         "//:conftest",
-        "//haku/recall_index:chunking",
-        "//haku/recall_index:content",
-        "//haku/recall_index:fake_embedder",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
@@ -188,8 +185,51 @@ py_library(
         "//cluster/cdk8s/agentplane_index:__pkg__",
     ],
     deps = [
-        "//haku/recall_index:chunking",
+        ":chunking",
         "@pypi//pydantic",
         "@pypi//pydantic_settings",
     ],
+)
+
+py_library(
+    name = "chunking",
+    srcs = ["chunking.py"],
+)
+
+py_library(
+    name = "content",
+    srcs = ["content.py"],
+)
+
+py_library(
+    name = "embedder",
+    srcs = ["embedder.py"],
+)
+
+py_library(
+    name = "openai_embedder",
+    srcs = ["openai_embedder.py"],
+    deps = ["@pypi//openai"],
+)
+
+py_test(
+    name = "test_chunking",
+    srcs = ["test_chunking.py"],
+    deps = [
+        ":chunking",
+        ":conftest",
+        "//:conftest",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
+    name = "vector_type",
+    srcs = ["vector_type.py"],
+    visibility = [
+        "//agentplane:__subpackages__",
+        "//haku/console:__pkg__",
+    ],
+    deps = ["@pypi//sqlalchemy"],
 )

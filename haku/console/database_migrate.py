@@ -18,7 +18,7 @@ from util.db_url import render_postgresql_url
 # URL scheme; nothing imports it directly, so Gazelle cannot see the dependency.
 # gazelle:include_dep @pypi//psycopg
 # Alembic dynamically imports the baseline's PostgreSQL half-vector column type.
-# gazelle:include_dep //haku/recall_index:vector_type
+# gazelle:include_dep //agentplane/indexing:vector_type
 
 _MIGRATIONS_DIR = Path(__file__).parent / "migrations"
 

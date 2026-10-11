@@ -9,7 +9,7 @@ import sqlalchemy as sa
 from alembic import op
 from sqlalchemy.dialects import postgresql
 
-from haku.recall_index.vector_type import HalfVector
+from agentplane.indexing.vector_type import HalfVector
 
 revision: str = "0135"
 down_revision: str | None = None

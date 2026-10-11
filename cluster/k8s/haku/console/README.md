@@ -86,8 +86,7 @@ vocabulary policy remains in <../../../../haku/console/README.md> § Vocabularie
 The Console reader, in-process Recall tool, indexer grant provisioner, and indexer credentials were
 removed. Its Recall schema, data, and vector extension remain in Postgres through this rollout:
 the outgoing API version still maps and validates the schema at startup. A follow-up migration can
-drop them only after this retiring image has converged. The shared `haku/recall_index` library
-remains used by Agentplane.
+drop them only after this retiring image has converged.
 
 ## `haku-console-github-mcp-client-credentials` belongs to agentplane-staging
 

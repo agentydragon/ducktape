@@ -6,13 +6,13 @@ from datetime import timedelta
 
 import pytest
 import pytest_bazel
-from sqlalchemy import func, select
+from sqlalchemy import Text, cast, func, select
 from sqlalchemy.ext.asyncio import AsyncEngine
 
+from agentplane.indexing.chunking import DEFAULT_CHUNK_BUDGET, ChunkBudget
+from agentplane.indexing.conftest import ExplodingEmbedder, FakeEmbedder
+from agentplane.indexing.content import content_sha
 from agentplane.indexing.store import Blob, Content, Embedding, Snapshot, Store
-from haku.recall_index.chunking import DEFAULT_CHUNK_BUDGET, ChunkBudget
-from haku.recall_index.content import content_sha
-from haku.recall_index.fake_embedder import ExplodingEmbedder, FakeEmbedder
 
 REPOSITORY = "https://example.test/repo.git"
 
@@ -180,6 +180,19 @@ async def test_backend_dimension_change_preserves_served_version(store: Store, e
     hits, status = await store.search(await embedder.embed_query("alpha"))
     assert hits[0].revision == "A"
     assert status.updating
+
+
+class SubnormalEmbedder(FakeEmbedder):
+    async def embed_documents(self, texts: Sequence[str]) -> list[list[float]]:
+        return [[1e-9, 0.5, -1e-12] for _ in texts]
+
+
+async def test_a_component_too_small_for_half_precision_rounds_to_zero(store: Store) -> None:
+    """A normalized embedding may contain values below the smallest fp16 subnormal."""
+    await ingest(store, "A", {"a": b"alpha"})
+    await drain(store, SubnormalEmbedder())
+    async with store.sessions() as session:
+        assert await session.scalar(select(cast(Embedding.vector, Text))) == "[0,0.5,-0]"
 
 
 async def test_new_layout_revives_cached_content(empty_engine: AsyncEngine, embedder: FakeEmbedder) -> None:

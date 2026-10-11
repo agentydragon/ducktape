@@ -14,10 +14,10 @@ from sqlalchemy.ext.asyncio import create_async_engine
 
 from agentplane.indexing.app import create_app
 from agentplane.indexing.maintenance import Maintenance
+from agentplane.indexing.openai_embedder import OpenAIEmbedder
 from agentplane.indexing.settings import Settings
 from agentplane.indexing.source import GitSource
 from agentplane.indexing.store import Store
-from haku.recall_index.openai_embedder import OpenAIEmbedder
 
 # SQLAlchemy imports the configured driver dynamically.
 # gazelle:include_dep @pypi//asyncpg

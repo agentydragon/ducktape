@@ -52,7 +52,7 @@ The browser login flow is fixed in #3516/#3519 except for:
 The Console Recall reader, access policy, indexer worker, and its dedicated DB role provisioning
 were removed. Keep the existing schema, indexed data, and pgvector extension until older replicas
 that validate the Recall ORM have left. Then add a forward migration to drop the Console-owned
-Recall schema and extension. The shared `haku/recall_index` library remains in use by Agentplane.
+Recall schema and extension.
 
 ## Small cleanups
 
