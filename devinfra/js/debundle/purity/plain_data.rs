@@ -35,6 +35,7 @@ use super::*;
 pub(crate) fn collect_plain_data_bindings(
     body: &[TopLevelItemView<'_>],
     shadowed: &BTreeSet<&'static str>,
+    value_flow: &crate::facts::ChunkValueFlow,
 ) -> Vec<String> {
     // Aggregate every chunk-top init expression per binding name.
     // The same name can have multiple inits for `var`-bound bindings
@@ -47,17 +48,49 @@ pub(crate) fn collect_plain_data_bindings(
         }
     }
     let candidates: BTreeSet<String> = inits_by_name
-        .into_iter()
+        .iter()
         .filter(|(name, inits)| {
             inits
                 .iter()
                 .all(|(init, kind)| is_plain_data_init(init, name, *kind))
         })
-        .map(|(name, _)| name)
+        .map(|(name, _)| name.clone())
         .collect();
     if candidates.is_empty() {
         return Vec::new();
     }
+    let top_level_names: BTreeSet<String> = body
+        .iter()
+        .flat_map(|item| crate::facts::collect_declared_names(item.as_module_item()))
+        .map(|id| id.0.to_string())
+        .collect();
+    let mut object_to_names = BTreeMap::new();
+    let mut return_exempt = BTreeSet::new();
+    for name in &candidates {
+        let inits = &inits_by_name[name];
+        let objects: BTreeSet<_> = inits
+            .iter()
+            .filter_map(|(init, _)| match init.unwrap_parens() {
+                Expr::Object(object) => Some(crate::facts::ValueOrigin::Object(object.span.lo.0)),
+                Expr::Array(array) => Some(crate::facts::ValueOrigin::Object(array.span.lo.0)),
+                _ => None,
+            })
+            .collect();
+        if objects.len() != inits.len() {
+            continue;
+        }
+        for object in objects {
+            let aliases: BTreeSet<String> = value_flow
+                .aliases_of_objects(&BTreeSet::from([object]))
+                .intersection(&top_level_names)
+                .cloned()
+                .collect();
+            return_exempt.extend(aliases.iter().cloned());
+            object_to_names.insert(object, aliases);
+        }
+    }
+    let mut scan_candidates = candidates.clone();
+    scan_candidates.extend(return_exempt.iter().cloned());
     // Scan the entire chunk body (including function/class bodies) for
     // anything that could install an accessor or change the prototype
     // of any candidate, or let the candidate's object reference ESCAPE
@@ -68,14 +101,10 @@ pub(crate) fn collect_plain_data_bindings(
     //   (`Object.{defineProperty,defineProperties,setPrototypeOf,assign}`,
     //   `Reflect.{defineProperty,set,setPrototypeOf,deleteProperty}`)
     //   with `X` as the first argument;
-    // * any *escaping* bare reference to `X` — as a call/new argument,
-    //   array element, object property value, alias RHS (`const Y = X`,
-    //   `obj.k = X`), or any other position not on the scanner's short
-    //   list of provably non-capturing reads (member receiver, spread
-    //   source, `typeof`/`!`/`void` operand, return value / concise
-    //   arrow body). Once the reference is aliased, a write through the
-    //   alias (`Object.defineProperty(Y, …)`) would defeat the
-    //   name-based write scan, so escape itself disqualifies.
+    // * references that escape into unknown code. Tracked direct-literal
+    //   identities may pass through local aliases and returns; the scanner
+    //   checks those aliases for later mutation. Other shapes remain
+    //   conservative escapes.
     //
     // Plain data-property writes (`X.foo = bar`) don't install
     // accessors and don't change the prototype chain, but the
@@ -83,10 +112,14 @@ pub(crate) fn collect_plain_data_bindings(
     // a few PlainData candidates that would still be sound, and the
     // benefit is one short rule that's easy to audit.
     let mut scanner = PlainDataWriteScanner {
-        candidates: &candidates,
+        candidates: &scan_candidates,
         shadowed,
         disqualified: BTreeSet::new(),
         shadowing_scopes: Vec::new(),
+        parameter_scopes: Vec::new(),
+        value_flow: Some(value_flow),
+        object_to_names,
+        return_exempt,
     };
     for item in body {
         let module_item = item.as_module_item();
@@ -121,9 +154,15 @@ pub(crate) fn collect_plain_data_bindings(
         }
     }
     let disqualified = scanner.disqualified;
+    let object_to_names = scanner.object_to_names;
     candidates
         .into_iter()
-        .filter(|n| !disqualified.contains(n))
+        .filter(|n| {
+            !disqualified.contains(n)
+                && !object_to_names
+                    .values()
+                    .any(|aliases| aliases.contains(n) && !aliases.is_disjoint(&disqualified))
+        })
         .collect()
 }
 
@@ -165,6 +204,10 @@ pub(crate) fn collect_plain_array_bindings(
         shadowed,
         disqualified: BTreeSet::new(),
         shadowing_scopes: Vec::new(),
+        parameter_scopes: Vec::new(),
+        value_flow: None,
+        object_to_names: BTreeMap::new(),
+        return_exempt: BTreeSet::new(),
     };
     let mut method_scanner = PlainArrayMethodScanner {
         candidates: &candidates,
@@ -461,13 +504,11 @@ pub(crate) fn is_plain_data_prop(prop: &PropOrSpread) -> bool {
 ///   same set `PURE_OBJECT_CALLS_ON_PLAIN_DATA` admits);
 /// * the vetted `X || (X = {})` argument of a recognized TS-enum
 ///   IIFE init (`is_ts_enum_iife_call_for_binding`);
-/// * `return X` / concise arrow body `() => X` — accepted by scope
-///   decision: consumers of chunk-internal return values (like
-///   importers of an exported PlainData binding) are assumed not to
-///   install accessors on it; see docs/purity_soundness.md §
-///   "ChunkBinding::PlainData" for the residual-assumption note.
-///   Export specifiers (`export { X }`) are non-escaping under the
-///   same assumption.
+/// * a direct return of a literal identity tracked by the shared
+///   chunk value-flow pass; callers and aliases are scanned separately;
+/// * Export specifiers (`export { X }`) do not introduce a new alias
+///   inside this chunk. Cross-chunk consumers are covered by the
+///   documented residual assumption in docs/purity_soundness.md.
 ///
 /// **Function/arrow parameter scope tracking.** When entering a
 /// function or arrow body whose parameters include names that
@@ -498,6 +539,10 @@ pub(crate) struct PlainDataWriteScanner<'a> {
     /// parameters at that level. A name is "shadowed at this point
     /// in the traversal" iff it appears in any active stack entry.
     shadowing_scopes: Vec<BTreeSet<String>>,
+    parameter_scopes: Vec<BTreeSet<String>>,
+    value_flow: Option<&'a crate::facts::ChunkValueFlow>,
+    object_to_names: BTreeMap<crate::facts::ValueOrigin, BTreeSet<String>>,
+    return_exempt: BTreeSet<String>,
 }
 
 impl PlainDataWriteScanner<'_> {
@@ -507,9 +552,16 @@ impl PlainDataWriteScanner<'_> {
             .any(|scope| scope.contains(name))
     }
 
-    fn with_scope<F: FnOnce(&mut Self)>(&mut self, scope: BTreeSet<String>, f: F) {
+    fn with_scope<F: FnOnce(&mut Self)>(
+        &mut self,
+        scope: BTreeSet<String>,
+        params: BTreeSet<String>,
+        f: F,
+    ) {
         self.shadowing_scopes.push(scope);
+        self.parameter_scopes.push(params);
         f(self);
+        self.parameter_scopes.pop();
         self.shadowing_scopes.pop();
     }
 
@@ -596,6 +648,40 @@ impl PlainDataWriteScanner<'_> {
         }
     }
 
+    fn disqualify_value_escape(&mut self, expr: &Expr) {
+        let Some(flow) = self.value_flow else {
+            return;
+        };
+        struct ReferencedIds(BTreeSet<Id>);
+        impl Visit for ReferencedIds {
+            fn visit_ident(&mut self, ident: &Ident) {
+                self.0.insert(ident.to_id());
+            }
+        }
+        let mut referenced = ReferencedIds(BTreeSet::new());
+        expr.visit_with(&mut referenced);
+        let mut values = if referenced.0.is_empty() {
+            flow.values_of_expr(expr)
+        } else {
+            BTreeSet::new()
+        };
+        for id in referenced.0 {
+            if self
+                .parameter_scopes
+                .iter()
+                .any(|scope| scope.contains(id.0.as_ref()))
+            {
+                continue;
+            }
+            values.extend(flow.values_of_binding(&id));
+        }
+        for (object, aliases) in &self.object_to_names {
+            if flow.may_reach_object(&values, &BTreeSet::from([*object])) {
+                self.disqualified.extend(aliases.iter().cloned());
+            }
+        }
+    }
+
     fn disqualify_var_pattern(&mut self, pat: &Pat) {
         let mut names = BTreeSet::new();
         self.collect_shadowed_by_pat(pat, &mut names);
@@ -634,6 +720,22 @@ impl PlainDataWriteScanner<'_> {
 }
 
 impl Visit for PlainDataWriteScanner<'_> {
+    fn visit_var_declarator(&mut self, node: &VarDeclarator) {
+        // A known local alias keeps the identity visible to this scan. Its
+        // later uses are visited under the expanded candidate name set.
+        if self.value_flow.is_some()
+            && let Pat::Ident(binding) = &node.name
+            && self.return_exempt.contains(binding.id.sym.as_ref())
+            && let Some(init) = node.init.as_deref()
+            && let Expr::Ident(source) = init.unwrap_parens()
+            && self.return_exempt.contains(source.sym.as_ref())
+        {
+            node.name.visit_with(self);
+            return;
+        }
+        node.visit_children_with(self);
+    }
+
     fn visit_var_decl(&mut self, node: &VarDecl) {
         if node.kind == VarDeclKind::Var {
             for decl in &node.decls {
@@ -682,6 +784,7 @@ impl Visit for PlainDataWriteScanner<'_> {
             // is "X must never be written through" so the chunk-
             // wide invariant reads simply.
             AssignTarget::Simple(SimpleAssignTarget::Member(member)) => {
+                self.disqualify_value_escape(&member.obj);
                 if let Expr::Ident(recv) = member.obj.as_ref() {
                     self.disqualify_if_candidate(recv.sym.as_ref());
                 }
@@ -725,6 +828,12 @@ impl Visit for PlainDataWriteScanner<'_> {
                 }
             }
         }
+        if matches!(
+            &node.left,
+            AssignTarget::Simple(SimpleAssignTarget::Member(_))
+        ) {
+            self.disqualify_value_escape(&node.right);
+        }
         // For `=` the RHS still needs to descend (e.g. an inner
         // nested write to a candidate inside the RHS expression).
         // For compound `+=` etc., even on an admitted plain-RHS
@@ -745,12 +854,18 @@ impl Visit for PlainDataWriteScanner<'_> {
             self.disqualify_if_candidate(ident.sym.as_ref());
         }
         self.disqualify_member_receiver(&node.arg);
+        if let Expr::Member(member) = node.arg.unwrap_parens() {
+            self.disqualify_value_escape(&member.obj);
+        }
         node.visit_children_with(self);
     }
 
     fn visit_unary_expr(&mut self, node: &UnaryExpr) {
         if node.op == UnaryOp::Delete {
             self.disqualify_member_receiver(&node.arg);
+            if let Expr::Member(member) = node.arg.unwrap_parens() {
+                self.disqualify_value_escape(&member.obj);
+            }
         }
         // `typeof X` / `!X` / `void X` are transient inspections of
         // the value — the reference isn't captured. Skip the bare
@@ -793,6 +908,16 @@ impl Visit for PlainDataWriteScanner<'_> {
     // so candidate enums named `j`/`a`/… were lost to coincidence.
     fn visit_import_named_specifier(&mut self, _node: &ImportNamedSpecifier) {}
 
+    fn visit_return_stmt(&mut self, node: &ReturnStmt) {
+        if let Some(arg) = node.arg.as_deref()
+            && let Expr::Ident(ident) = arg.unwrap_parens()
+            && self.return_exempt.contains(ident.sym.as_ref())
+        {
+            return;
+        }
+        node.visit_children_with(self);
+    }
+
     // Member-access receivers are reads, not captures. Skip an
     // Ident receiver (candidate or not); everything else (nested
     // receivers, computed keys) is traversed normally.
@@ -814,17 +939,6 @@ impl Visit for PlainDataWriteScanner<'_> {
 
     fn visit_expr_or_spread(&mut self, node: &ExprOrSpread) {
         if node.spread.is_some() && matches!(node.expr.unwrap_parens(), Expr::Ident(_)) {
-            return;
-        }
-        node.visit_children_with(self);
-    }
-
-    // `return X` is non-escaping by scope decision (see the struct
-    // doc-comment's residual-assumption note).
-    fn visit_return_stmt(&mut self, node: &ReturnStmt) {
-        if let Some(arg) = node.arg.as_deref()
-            && matches!(arg.unwrap_parens(), Expr::Ident(_))
-        {
             return;
         }
         node.visit_children_with(self);
@@ -882,21 +996,27 @@ impl Visit for PlainDataWriteScanner<'_> {
             node.callee.visit_with(self);
             return;
         }
+        for arg in &node.args {
+            self.disqualify_value_escape(&arg.expr);
+        }
         node.visit_children_with(self);
     }
 
     fn visit_arrow_expr(&mut self, node: &ArrowExpr) {
         let scope = self.shadowed_by_params(node.params.iter());
-        self.with_scope(scope, |s| {
+        let params = node
+            .params
+            .iter()
+            .flat_map(binding_targets::binding_names)
+            .map(|id| id.0.to_string())
+            .collect();
+        self.with_scope(scope, params, |s| {
             for param in &node.params {
                 param.visit_with(s);
             }
-            // A concise body that is a bare candidate Ident is the
-            // `() => X` return position — non-escaping by the same
-            // scope decision as `return X`.
             match node.body.as_ref() {
-                ArrowFunctionBody::Expr(expr) if matches!(expr.unwrap_parens(), Expr::Ident(_)) => {
-                }
+                ArrowFunctionBody::Expr(expr)
+                    if matches!(expr.unwrap_parens(), Expr::Ident(ident) if s.return_exempt.contains(ident.sym.as_ref())) => {}
                 body => body.visit_with(s),
             }
         });
@@ -904,7 +1024,13 @@ impl Visit for PlainDataWriteScanner<'_> {
 
     fn visit_function(&mut self, node: &Function) {
         let scope = self.shadowed_by_params(node.params.iter().map(|p| &p.pat));
-        self.with_scope(scope, |s| node.visit_children_with(s));
+        let params = node
+            .params
+            .iter()
+            .flat_map(|p| binding_targets::binding_names(&p.pat))
+            .map(|id| id.0.to_string())
+            .collect();
+        self.with_scope(scope, params, |s| node.visit_children_with(s));
     }
 }
 

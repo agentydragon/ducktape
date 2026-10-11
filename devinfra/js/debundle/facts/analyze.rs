@@ -92,6 +92,15 @@ where
                 !shadowed.contains("Promise"),
             );
             item.visit_with(&mut collector);
+            let constructor = class_of_item(item).map(|class| {
+                collect_constructor_facts(
+                    class,
+                    &collector,
+                    global_object_names.clone(),
+                    async_direct_function_bindings.clone(),
+                    !shadowed.contains("Promise"),
+                )
+            });
             let source_location = source_path.and_then(|source_path| {
                 line_range_for_span(item.span()).map(|(start_line, end_line, start_column)| {
                     SourceLocation {
@@ -116,10 +125,16 @@ where
                     .intersection(&declared)
                     .cloned()
                     .collect(),
+                local_bindings: collector
+                    .binding_idents
+                    .difference(&declared)
+                    .cloned()
+                    .collect(),
                 declared,
                 reads: collector.reads,
                 rebinds: collector.rebinds,
                 calls: collector.calls,
+                constructor,
                 at_init_unresolved_sources: collector.at_init_unresolved_sources,
                 at_init_unresolved_inline_fn: collector.at_init_unresolved_inline_fn,
                 first_order_unresolved_sources: collector.first_order_unresolved_sources,
@@ -133,8 +148,10 @@ where
         })
         .collect();
     apply_global_escape_taint(&body, &global_object_names, &mut per_statement);
+    let value_flow = ChunkValueFlow::analyze(&body);
     StructuralChunkAnalysis {
         body,
+        value_flow,
         shadowed,
         per_statement,
         top_level_await,
@@ -159,6 +176,7 @@ where
 {
     let StructuralChunkAnalysis {
         body,
+        value_flow,
         shadowed,
         per_statement,
         top_level_await,
@@ -174,8 +192,9 @@ where
                 start_column: Some(start_column),
             })
         };
-        ChunkCodeGraph::build_full_with_locations(
+        ChunkCodeGraph::build_full_with_locations_and_flow(
             &body,
+            &value_flow,
             &shadowed,
             &hints.declared_pure,
             &hints.declared_pure_new,
@@ -200,7 +219,7 @@ where
             }
         }
     }
-    let facts = body
+    let mut facts: Vec<StatementFacts> = body
         .iter()
         .zip(per_statement)
         .map(|(item_view, structural_facts)| {
@@ -235,6 +254,7 @@ where
             fact
         })
         .collect();
+    value_flow.augment_calls(&body, &mut facts);
     ChunkFactAnalysis {
         facts,
         top_level_await,
@@ -288,11 +308,13 @@ fn assemble_statement_facts(
         source_location,
         kind,
         declared,
+        local_bindings,
         var_declared,
         var_initializers,
         reads,
         rebinds,
         calls,
+        constructor,
         at_init_unresolved_sources,
         at_init_unresolved_inline_fn,
         first_order_unresolved_sources,
@@ -379,12 +401,14 @@ fn assemble_statement_facts(
         ordinal,
         source_location,
         declared,
+        local_bindings,
         var_declared,
         var_initializers,
         reads,
         rebinds,
         local_effects,
         calls,
+        constructor,
         at_init_unresolved_sources,
         at_init_unresolved_inline_fn,
         first_order_unresolved_sources,

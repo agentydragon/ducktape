@@ -800,19 +800,17 @@ fn partition_with(owner_graph: &OwnerGraph, assignments: &[(usize, usize)]) -> P
 /// owners to three modules (module 0 is residual; the targets include
 /// a fresh module) must agree across the overlay, the committed path
 /// and the pure reference. The first two sources carry
-/// fallback-promoted edges (`callee_owner == from`); the third a
-/// promoted edge whose callee is neither endpoint.
+/// The first and third sources have resolved promoted edges; the
+/// second retains a fallback-promoted edge (`callee_owner == from`).
 #[test]
 fn move_overlay_matches_committed_and_pure_on_promoted_edge_graphs() {
     let sources = [
-        // `r = g()` is unresolvable (`g` aliases `read_a`), so `r -> a` is a
-        // fallback-promoted edge from residual, and `m` reads `r`. Moving the
-        // target `a` into a module that reads residual must not make the
-        // overlay add a residual -> module constraining edge: the gate
-        // accepts that move.
+        // `r = g()` resolves through the local alias to `read_a`, so its
+        // promoted edge carries that function owner. The overlay must still
+        // agree with the committed and reference gates after every move.
         (
             "const a = 1; function read_a() { return a; } const g = read_a; const r = g(); const m = r + 1;",
-            true,
+            false,
         ),
         // `r = api.read()` is a member call, so `r -> a` is a fallback-promoted
         // edge from residual, and `api` reads `a` lazily. Moving the caller

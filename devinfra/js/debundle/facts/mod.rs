@@ -53,6 +53,7 @@ mod local_effect_targets;
 mod local_effects;
 mod purity_classification;
 mod statement_facts;
+mod value_flow;
 
 // Crate-internal re-exports: each submodule reaches its siblings'
 // crate-internal items through `use super::*;`, which sees these globs.
@@ -63,6 +64,8 @@ pub(crate) use item_views::*;
 pub(crate) use lazy_boundary::*;
 pub(crate) use local_effect_targets::*;
 pub(crate) use purity_classification::*;
+pub(crate) use value_flow::{ChunkValueFlow, ValueOrigin};
+pub(crate) use statement_facts::ConstructorFacts;
 
 // Public API: importable at `facts::<item>` exactly as before the split.
 pub use analyze::{analyze_chunk, analyze_chunk_structural, analyze_chunk_with_policy};

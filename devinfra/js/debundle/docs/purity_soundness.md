@@ -189,20 +189,18 @@ setPrototypeOf,assign}` /
   non-capturing read positions (member receiver, spread source,
   `typeof`/`!`/`void` operand, `Object.{keys,values,entries,freeze,
 fromEntries}` single argument with `Object` unshadowed, the vetted
-  TS-enum-IIFE argument, `return X` / `() => X`, `export { X }`) as
+  TS-enum-IIFE argument, `export { X }`) as
   an escape and disqualifies the candidate.
 
-  **Residual assumption for `return X` / `export { X }`:** consumers
-  of a returned or exported PlainData reference (chunk-internal
-  callers of the returning function; importers of the exported
-  binding in other modules of the same debundle) are assumed not to
-  install accessors on it. For exports this is the same single-bundle
-  closed-world view the rest of the analysis takes; for returns it
-  admits the ubiquitous accessor pattern `const get = () => CONFIG;`
-  without a whole-program escape analysis. A consumer calling
-  `Object.defineProperty` on the received reference would break the
-  read-purity claim — the same way a chunk-external mutation already
-  could (the scan only ever sees one chunk).
+  **Residual assumption for `export { X }`:** consumers in other
+  chunks are assumed not to install accessors on an exported PlainData
+  reference. Within the analyzed chunk, the value-flow pass follows
+  direct literal identities through local assignments, function
+  parameters, returns, and static object properties. A direct
+  `return X` or concise `() => X` is admitted only when the literal
+  identity is tracked; the scan checks aliases and disqualifies `X`
+  when one is passed to an unknown consumer or used at a mutation
+  site. Other return shapes remain escapes.
 
 - **Re-bind soundness for `let`.** Reads on `X` after a re-bind see
   the new plain-literal value; reads before still saw the old

@@ -26,6 +26,7 @@ use super::*;
 ///   the call graph, not via per-statement syntactic checks.
 #[derive(Default)]
 pub(crate) struct StatementFactsCollector {
+    pub(crate) binding_idents: BTreeSet<Id>,
     pub(crate) var_declared: BTreeSet<Id>,
     pub(crate) var_initializers: BTreeSet<Id>,
     pub(crate) reads: PositionBucketed<BTreeSet<Id>>,
@@ -237,6 +238,113 @@ impl StatementFactsCollector {
                 self.global_reads.insert(key);
             }
         }
+    }
+}
+
+/// Only these lazy class positions execute when a class is constructed.
+/// `visit_class_member` supplies the same depth/await rules as the ordinary
+/// collector, while skipping methods until the constructor may invoke one.
+pub(crate) fn collect_constructor_facts(
+    class: &Class,
+    full: &StatementFactsCollector,
+    global_object_names: BTreeSet<&'static str>,
+    async_direct_function_bindings: BTreeSet<Id>,
+    promise_global_unshadowed: bool,
+) -> ConstructorFacts {
+    let mut collector = StatementFactsCollector::new(
+        global_object_names,
+        async_direct_function_bindings,
+        promise_global_unshadowed,
+    );
+    let mut method_may_run = false;
+    for member in &class.body {
+        let constructed = match member {
+            ClassMember::Constructor(ctor) => {
+                let mut finder = ConstructorMethodUse::default();
+                ctor.visit_with(&mut finder);
+                method_may_run |= finder.found;
+                true
+            }
+            ClassMember::ClassProp(prop) => !prop.is_static,
+            ClassMember::PrivateProp(prop) => !prop.is_static,
+            ClassMember::AutoAccessor(accessor) => !accessor.is_static,
+            _ => false,
+        };
+        if constructed {
+            member.visit_with(&mut collector);
+        }
+    }
+    let mut result = ConstructorFacts {
+        reads: collector.reads.first_order_lazy,
+        rebinds: collector.rebinds.first_order_lazy,
+        calls: collector.calls.first_order_lazy,
+        unresolved_sources: collector.first_order_unresolved_sources,
+        unresolved_inline_fn: collector.first_order_unresolved_inline_fn,
+    };
+    if let Some(super_class) = class.super_class.as_deref() {
+        match super_class.unwrap_parens() {
+            Expr::Ident(base) => {
+                result.calls.insert(base.to_id());
+            }
+            _ => {
+                let mut sources = UnresolvedCallSourceCollector::default();
+                super_class.visit_with(&mut sources);
+                result.unresolved_sources.extend(sources.idents);
+                result.unresolved_inline_fn |= sources.inline_fn;
+            }
+        }
+    }
+    if method_may_run {
+        result
+            .reads
+            .extend(full.reads.first_order_lazy.iter().cloned());
+        result
+            .rebinds
+            .extend(full.rebinds.first_order_lazy.iter().cloned());
+        result
+            .calls
+            .extend(full.calls.first_order_lazy.iter().cloned());
+        result
+            .unresolved_sources
+            .extend(full.first_order_unresolved_sources.iter().cloned());
+        result.unresolved_inline_fn |= full.first_order_unresolved_inline_fn;
+    }
+    result
+}
+
+#[derive(Default)]
+struct ConstructorMethodUse {
+    found: bool,
+}
+
+impl Visit for ConstructorMethodUse {
+    fn visit_call_expr(&mut self, node: &CallExpr) {
+        if let Callee::Expr(callee) = &node.callee
+            && let Expr::Member(member) = callee.unwrap_parens()
+            && matches!(member.obj.unwrap_parens(), Expr::This(_))
+        {
+            self.found = true;
+        }
+        node.visit_children_with(self);
+    }
+
+    fn visit_var_declarator(&mut self, node: &VarDeclarator) {
+        if let Some(init) = node.init.as_deref()
+            && let Expr::Member(member) = init.unwrap_parens()
+            && matches!(member.obj.unwrap_parens(), Expr::This(_))
+        {
+            self.found = true;
+        }
+        node.visit_children_with(self);
+    }
+
+    fn visit_assign_expr(&mut self, node: &AssignExpr) {
+        if let Expr::Member(member) = node.right.unwrap_parens()
+            && matches!(member.obj.unwrap_parens(), Expr::This(_))
+        {
+            self.found = true;
+        }
+        node.visit_children_with(self);
     }
 }
 
@@ -525,7 +633,9 @@ impl Visit for StatementFactsCollector {
         self.record_read(&node.to_id());
     }
 
-    fn visit_binding_ident(&mut self, _node: &BindingIdent) {}
+    fn visit_binding_ident(&mut self, node: &BindingIdent) {
+        self.binding_idents.insert(node.id.to_id());
+    }
     fn visit_import_decl(&mut self, _node: &ImportDecl) {}
 
     // Export specifiers (`export { X }`, `export * from ...`) don't
@@ -719,6 +829,12 @@ impl Visit for StatementFactsCollector {
             for arg in args {
                 arg.visit_with(self);
             }
+        }
+        // `new Foo(...)` synchronously runs a chunk-local class constructor
+        // (and its instance-field initializers). Treat its bare callee as an
+        // invocation for at-init body promotion, just like `Foo(...)`.
+        if let Expr::Ident(ident) = node.callee.unwrap_parens() {
+            self.record_call(&ident.to_id());
         }
         if self.lazy_depth == 0
             && let Expr::Ident(ident) = node.callee.unwrap_parens()

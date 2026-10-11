@@ -727,16 +727,17 @@ pair, keeping the per-statement cost bounded by the
 transitive closure size rather than (closure × call-sites).
 
 **Resolvable callees.** A callee is precisely resolvable iff its
-binding is declared _directly as a function value_ (`function f`,
-single-declarator `const f = () => ...`, exported forms) and is
-never rebound anywhere in the chunk. Only resolvable callees feed
-the precise first-order closure above.
+binding is declared _directly as a callable value_ (`function f`,
+single-declarator `const f = () => ...`, `class F`, exported forms)
+and is never rebound anywhere in the chunk. The chunk value-flow
+pass also finds targets through local assignments, parameters,
+returns and static object properties. Resolvable callees feed the
+first-order closure above.
 
-**Unresolved-callee fallback.** Every other at-init call shape —
-member calls (`api.read()`), aliases (`const g = readB; g()`),
-IIFEs, optional-chain calls, tagged templates, conditional or
-rebound function bindings, and calls into resolvable functions
-whose own first-order bodies contain such calls — takes a
+**Unresolved-callee fallback.** Calls that cannot be fully resolved —
+dynamic member calls, IIFEs, optional-chain calls, tagged templates,
+conditional or externally supplied function values, and calls into
+resolvable functions whose own first-order bodies contain such calls — take a
 conservative fallback (`UnresolvedCallFallback` in `graph/build.rs`). The
 fallback's premise: whatever function value the call invokes must
 have reached the call site through a binding the call expression
@@ -765,24 +766,12 @@ separate purity hint applies. The hint suppresses the conservative
 "the callback may have run now" edge for inline functions, object
 literals containing functions, and first-order argument callbacks.
 
-**Residual limitations.** The fallback (and promotion generally)
-does not model function values that reach a call site through:
-
-- global/object property stashes (`globalThis.f = readB;` …
-  `globalThis.f()`),
-- rebound bindings (`let g; g = readB; g();` — the rebind forces
-  co-location of the rebinder with `g`'s declarer, but the flowed
-  value's closure is not followed),
-- parameters of chunk-declared functions
-  (`function h(cb) { cb(); } h(readB);`),
-- `new` expressions (constructor bodies are not promoted), or
-- other chunks (imports are outside single-chunk analysis).
-
-These are documented preconditions on the input bundle, not
-checked invariants — a bundle using one of these shapes to fire a
-TDZ-able cross-module read at init can be accepted and break at
-runtime. There is no separate validator safety net behind the
-promotion pass.
+**Residual limitations.** Dynamic global/property stashes and values
+arriving from other chunks are outside the identity-based local flow
+model. The unresolved-call fallback applies when their possible
+targets cannot be proved. Direct `eval` inside a lazy function remains
+unsupported: moving the function changes its lexical scope, and the
+current chunk-admission check sees only eager eval.
 
 ## Lemma 2: entry-side import ordering
 

@@ -52,6 +52,10 @@ pub struct StatementFacts {
     pub ordinal: StatementOrdinal,
     pub source_location: Option<SourceLocation>,
     pub declared: BTreeSet<Id>,
+    /// Bindings introduced inside this statement's lexical scopes (parameters,
+    /// local declarations). Used to distinguish callback calls through local
+    /// values from unresolved globals during at-init promotion.
+    pub local_bindings: BTreeSet<Id>,
     /// Module-scoped bindings declared with `var`, including inside control flow.
     pub var_declared: BTreeSet<Id>,
     /// Actual initializer writes; a bare `var x;` does not reset x.
@@ -67,10 +71,10 @@ pub struct StatementFacts {
     /// calls. Each binding is the class/prototype owner that must
     /// co-locate with the mutating statement.
     pub local_effects: BTreeSet<Id>,
-    /// Bare-identifier callees of `CallExpr` nodes, bucketed by
-    /// syntactic position. Indirect calls (`const g = f; g()`),
-    /// method calls (`obj.method()`), and computed callees are
-    /// skipped — the callee must be a direct `Ident`. The owner-graph
+    /// Statically identified call and constructor targets, bucketed by
+    /// syntactic position. The collector records bare identifiers; the
+    /// chunk value-flow pass adds identities reached through aliases,
+    /// parameters, returns and static object properties. The owner-graph
     /// build uses `eager` to drive at-init call promotion (a call
     /// from statement S to chunk-declared function `f` transitively
     /// reads everything `f`'s body lazily reads — see docs/design.md
@@ -80,6 +84,10 @@ pub struct StatementFacts {
     /// `first_order_lazy` keeps calls nested inside a closure of the
     /// body from appearing as direct callees of the outer function.
     pub calls: PositionBucketed<BTreeSet<Id>>,
+    /// The subset of a class statement's lazy effects that `new` executes:
+    /// constructor body, instance fields and superclass constructor. Method
+    /// bodies remain lazy until invoked by that constructor or another call.
+    pub(crate) constructor: Option<ConstructorFacts>,
     /// Bindings referenced in the callee or arguments of at-init
     /// calls promotion can't follow (member calls `api.read()`,
     /// optional-chain calls, tagged templates). A function value
@@ -250,6 +258,7 @@ pub struct StructuralStatementFacts {
     pub source_location: Option<SourceLocation>,
     pub kind: StatementKind,
     pub declared: BTreeSet<Id>,
+    pub local_bindings: BTreeSet<Id>,
     /// Module-scoped bindings declared with `var`, including inside control flow.
     pub var_declared: BTreeSet<Id>,
     /// Actual initializer writes; a bare `var x;` does not reset x.
@@ -257,6 +266,7 @@ pub struct StructuralStatementFacts {
     pub reads: PositionBucketed<BTreeSet<Id>>,
     pub rebinds: PositionBucketed<BTreeSet<Id>>,
     pub calls: PositionBucketed<BTreeSet<Id>>,
+    pub(crate) constructor: Option<ConstructorFacts>,
     pub at_init_unresolved_sources: BTreeSet<Id>,
     pub at_init_unresolved_inline_fn: bool,
     pub first_order_unresolved_sources: BTreeSet<Id>,
@@ -266,6 +276,15 @@ pub struct StructuralStatementFacts {
     pub global_reads: BTreeSet<String>,
     pub cell_writes_summarizable: bool,
     pub dataflow_summarizable: bool,
+}
+
+#[derive(Debug, Clone, Default)]
+pub(crate) struct ConstructorFacts {
+    pub reads: BTreeSet<Id>,
+    pub rebinds: BTreeSet<Id>,
+    pub calls: BTreeSet<Id>,
+    pub unresolved_sources: BTreeSet<Id>,
+    pub unresolved_inline_fn: bool,
 }
 
 /// The policy-independent half of [`analyze_chunk`]'s output: the
@@ -278,6 +297,7 @@ pub struct StructuralStatementFacts {
 /// without re-running the multi-declarator split.
 pub struct StructuralChunkAnalysis<'a> {
     pub body: Vec<TopLevelItemView<'a>>,
+    pub(crate) value_flow: super::ChunkValueFlow,
     pub shadowed: BTreeSet<&'static str>,
     pub per_statement: Vec<StructuralStatementFacts>,
     pub top_level_await: Option<StatementOrdinal>,

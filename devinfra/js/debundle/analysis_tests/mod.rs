@@ -63,16 +63,46 @@ fn body_call_recorded() {
     assert_eq!(facts[0].calls.lazy, BTreeSet::from([test_id("g")]),);
 }
 
-/// Indirect calls (`const g = f; g()`) are skipped — the callee
-/// isn't a direct Ident on the CallExpr. Conservative: the
-/// proposer may miss promotion through this case.
+/// A local alias preserves the function identity for promotion.
 #[test]
-fn indirect_call_not_recorded() {
+fn indirect_call_records_known_target() {
     let module = parse("function f() {} const g = f; g();");
     let facts = analyze_facts(&module);
-    // Last statement: `g()` records `g`, not `f`. (The aliasing
-    // is unmodeled; callee resolution only sees `g`.)
-    assert_eq!(facts[2].calls.eager, BTreeSet::from([test_id("g")]),);
+    assert_eq!(facts[2].calls.eager, BTreeSet::from([test_id("f")]));
+}
+
+#[test]
+fn constructor_summary_excludes_uninvoked_methods() {
+    let module = parse(
+        "const a = 1; const b = 2; class Foo { constructor() { this.value = a; } unused() { return b; } } const result = new Foo().value;",
+    );
+    let facts = analyze_facts(&module);
+    assert!(facts[2].reads.lazy.contains(&test_id("b")));
+    let graph = build_owner_graph(&facts).expect("owner graph");
+    assert!(graph.iter_edges().any(|edge| {
+        edge.from == OwnerId(3)
+            && edge.to == OwnerId(0)
+            && matches!(edge.reason.role(), EdgeRole::PromotedAtInit { .. })
+    }));
+    assert!(!graph.iter_edges().any(|edge| {
+        edge.from == OwnerId(3)
+            && edge.to == OwnerId(1)
+            && matches!(edge.reason.role(), EdgeRole::PromotedAtInit { .. })
+    }));
+}
+
+#[test]
+fn constructor_summary_includes_methods_it_may_call() {
+    let module = parse(
+        "const b = 2; class Foo { constructor() { this.used(); } used() { return b; } } const result = new Foo();",
+    );
+    let facts = analyze_facts(&module);
+    let graph = build_owner_graph(&facts).expect("owner graph");
+    assert!(graph.iter_edges().any(|edge| {
+        edge.from == OwnerId(2)
+            && edge.to == OwnerId(0)
+            && matches!(edge.reason.role(), EdgeRole::PromotedAtInit { .. })
+    }));
 }
 
 /// Class static field initializers fire at-init (class evaluation

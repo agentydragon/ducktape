@@ -438,6 +438,40 @@ fn emit_s_chain(
 /// function with N transitive lazy reads would emit N edges from the
 /// caller, and multiple at-init calls in the same statement would
 /// multiply that further.
+fn first_order_reads(stmt: &StatementFacts) -> &BTreeSet<Id> {
+    stmt.constructor
+        .as_ref()
+        .map_or(&stmt.reads.first_order_lazy, |ctor| &ctor.reads)
+}
+
+fn first_order_rebinds(stmt: &StatementFacts) -> &BTreeSet<Id> {
+    stmt.constructor
+        .as_ref()
+        .map_or(&stmt.rebinds.first_order_lazy, |ctor| &ctor.rebinds)
+}
+
+fn first_order_calls(stmt: &StatementFacts) -> &BTreeSet<Id> {
+    stmt.constructor
+        .as_ref()
+        .map_or(&stmt.calls.first_order_lazy, |ctor| &ctor.calls)
+}
+
+fn first_order_unresolved_sources(stmt: &StatementFacts) -> &BTreeSet<Id> {
+    stmt.constructor
+        .as_ref()
+        .map_or(&stmt.first_order_unresolved_sources, |ctor| {
+            &ctor.unresolved_sources
+        })
+}
+
+fn first_order_unresolved_inline_fn(stmt: &StatementFacts) -> bool {
+    stmt.constructor
+        .as_ref()
+        .map_or(stmt.first_order_unresolved_inline_fn, |ctor| {
+            ctor.unresolved_inline_fn
+        })
+}
+
 fn promote_at_init_calls(
     facts: &[StatementFacts],
     binding_owner: &HashMap<Id, OwnerId>,
@@ -466,8 +500,10 @@ fn promote_at_init_calls(
     let resolvable_callee = |id: &Id| -> Option<OwnerId> {
         let owner = binding_owner.get(id)?;
         let stmt = stmt_by_owner.get(owner)?;
-        (stmt.declares_direct_function && !rebound.contains(id) && !shared_vars.contains(id))
-            .then_some(*owner)
+        ((stmt.declares_direct_function || stmt.constructor.is_some())
+            && !rebound.contains(id)
+            && !shared_vars.contains(id))
+        .then_some(*owner)
     };
 
     // 1. Build the call graph: owner → owner edges for each
@@ -506,11 +542,11 @@ fn promote_at_init_calls(
     let owner_first_order_roots = |stmt: &StatementFacts| -> BTreeSet<OwnerId> {
         let owner = OwnerId(stmt.ordinal.0);
         let mut roots = fallback_roots_of(
-            &stmt.first_order_unresolved_sources,
-            stmt.first_order_unresolved_inline_fn,
+            first_order_unresolved_sources(stmt),
+            first_order_unresolved_inline_fn(stmt),
             owner,
         );
-        for callee_id in &stmt.calls.first_order_lazy {
+        for callee_id in first_order_calls(stmt) {
             if resolvable_callee(callee_id).is_none()
                 && let Some(&callee_owner) = binding_owner.get(callee_id)
             {
@@ -522,21 +558,21 @@ fn promote_at_init_calls(
     let mut call_graph: DiGraphMap<OwnerId, ()> = DiGraphMap::new();
     for stmt in facts {
         let owner = OwnerId(stmt.ordinal.0);
-        if !stmt.calls.first_order_lazy.is_empty()
-            || !stmt.reads.first_order_lazy.is_empty()
-            || !stmt.rebinds.first_order_lazy.is_empty()
-            || !stmt.first_order_unresolved_sources.is_empty()
-            || stmt.first_order_unresolved_inline_fn
+        if !first_order_calls(stmt).is_empty()
+            || !first_order_reads(stmt).is_empty()
+            || !first_order_rebinds(stmt).is_empty()
+            || !first_order_unresolved_sources(stmt).is_empty()
+            || first_order_unresolved_inline_fn(stmt)
         {
             call_graph.add_node(owner);
         }
     }
     for stmt in facts {
-        if stmt.calls.first_order_lazy.is_empty() {
+        if first_order_calls(stmt).is_empty() {
             continue;
         }
         let caller = OwnerId(stmt.ordinal.0);
-        for callee_id in &stmt.calls.first_order_lazy {
+        for callee_id in first_order_calls(stmt) {
             let Some(callee_owner) = resolvable_callee(callee_id) else {
                 continue;
             };
@@ -581,6 +617,11 @@ fn promote_at_init_calls(
     let mut scc_reads: Vec<BTreeSet<Id>> = vec![BTreeSet::new(); sccs.len()];
     let mut scc_rebinds: Vec<BTreeSet<Id>> = vec![BTreeSet::new(); sccs.len()];
     let mut scc_fallback_roots: Vec<BTreeSet<OwnerId>> = vec![BTreeSet::new(); sccs.len()];
+    // A first-order call through a parameter/local cannot be mapped to a
+    // chunk-top owner here. The value may have come from an argument at the
+    // eventual at-init call site, so carry that obligation through the call
+    // graph instead of silently dropping the Id in fallback_roots_of.
+    let mut scc_needs_caller_values = vec![false; sccs.len()];
 
     // 4. Closure over the call graph. Iterate SCCs in
     //    reverse-topological order (leaves first). For each SCC,
@@ -590,17 +631,22 @@ fn promote_at_init_calls(
         let mut reads: BTreeSet<Id> = BTreeSet::new();
         let mut rebinds: BTreeSet<Id> = BTreeSet::new();
         let mut roots: BTreeSet<OwnerId> = BTreeSet::new();
+        let mut needs_caller_values = false;
         for owner in scc {
             let Some(stmt) = stmt_by_owner.get(owner) else {
                 continue;
             };
             roots.extend(owner_first_order_roots(stmt));
-            for id in &stmt.reads.first_order_lazy {
+            needs_caller_values |= first_order_unresolved_sources(stmt)
+                .iter()
+                .chain(first_order_calls(stmt).iter())
+                .any(|id| stmt.local_bindings.contains(id) && !binding_owner.contains_key(id));
+            for id in first_order_reads(stmt) {
                 if binding_owner.contains_key(id) && !target_is_hoisted(id) {
                     reads.insert(id.clone());
                 }
             }
-            for id in &stmt.rebinds.first_order_lazy {
+            for id in first_order_rebinds(stmt) {
                 if binding_owner.contains_key(id) {
                     rebinds.insert(id.clone());
                 }
@@ -617,11 +663,13 @@ fn promote_at_init_calls(
                 reads.extend(scc_reads[target_scc].iter().cloned());
                 rebinds.extend(scc_rebinds[target_scc].iter().cloned());
                 roots.extend(scc_fallback_roots[target_scc].iter().copied());
+                needs_caller_values |= scc_needs_caller_values[target_scc];
             }
         }
         scc_reads[scc_idx] = reads;
         scc_rebinds[scc_idx] = rebinds;
         scc_fallback_roots[scc_idx] = roots;
+        scc_needs_caller_values[scc_idx] = needs_caller_values;
     }
 
     // 5. Emit promoted edges with per-statement, per-kind dedup.
@@ -703,6 +751,15 @@ fn promote_at_init_calls(
                 continue;
             };
             fallback_roots.extend(scc_fallback_roots[scc_idx].iter().copied());
+            if scc_needs_caller_values[scc_idx] {
+                // Include the caller itself (inline callback bodies and
+                // local aliases) and every chunk binding it reads (argument
+                // values). UnresolvedCallFallback then closes over their
+                // lazy bodies. This is deliberately conservative until a
+                // parameter's specific value can be proven.
+                fallback_roots.insert(caller);
+                fallback_roots.extend(fallback_roots_of(&stmt.reads.eager, false, caller));
+            }
             for target_binding in &scc_reads[scc_idx] {
                 let Some(target_owner) = binding_owner.get(target_binding) else {
                     continue;
@@ -794,11 +851,10 @@ fn promote_at_init_calls(
 /// collected target.
 ///
 /// Documented residual preconditions (see docs/design.md "At-init
-/// call promotion" → Limitations): function values that reach the
-/// call site through global/object property stashes, through rebound
-/// bindings (`let g; g = readB; g()`), through parameters of
-/// chunk-declared functions (`function h(cb) { cb(); }`), via `new`,
-/// or from other chunks are not modelled.
+/// call promotion" → Limitations): values from other chunks and dynamic
+/// global/property stashes may not resolve to a single callable. Local
+/// assignments, parameters, returns and static object properties are
+/// followed by the shared chunk value-flow pass before this fallback.
 ///
 /// Fallback-only edges carry `EdgeRole::PromotedAtInit` with
 /// `callee_owner = caller`, so neither projection view ever drops

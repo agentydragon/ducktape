@@ -1232,11 +1232,10 @@ fn fn_purity_destructuring_declarator_makes_function_not_pure() {
 // --- PlainData escape analysis ------------------------------------------
 
 #[test]
-fn plain_data_alias_escape_disqualifies() {
-    // SOUNDNESS: the write scan is name-based; an alias defeats it
-    // (`Object.defineProperty(Y, …)` would install an accessor the
-    // scan can't see). Escape itself disqualifies.
-    assert!(!is_plain_data("const X = { a: 1 }; const Y = X;", "X"));
+fn plain_data_known_alias_is_checked_for_mutation() {
+    // A local alias preserves the tracked object's identity; a later
+    // write through that alias disqualifies the original binding.
+    assert!(is_plain_data("const X = { a: 1 }; const Y = X;", "X"));
     assert!(!is_plain_data(
         r#"const X = { a: 1 }; const Y = X; Object.defineProperty(Y, "a", { get: () => io() });"#,
         "X"

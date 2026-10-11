@@ -38,7 +38,10 @@ rust_library(
 debundle_e2e_test(name = "chunk_admission_test")
 debundle_e2e_test(name = "soundness_at_init_value_flow_test")
 debundle_e2e_test(name = "soundness_dynamic_scope_test")
-debundle_e2e_test(name = "soundness_plain_data_escape_test")
+debundle_e2e_test(
+    name = "soundness_plain_data_escape_test",
+    deps = ["@crates//:serde_json"],
+)
 
 debundle_e2e_test(
     name = "impure_call_reason_growth_test",
