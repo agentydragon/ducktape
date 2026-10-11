@@ -6,8 +6,8 @@ serves only the configured reader accounts, today the integration app's. A Sessi
 grants nothing. Consumers use `client.py`; `testing/backend.py` serves the real boundary over a test
 database.
 
-The Sandbox Service's `migrate` init container runs the history tables' migrations
-(`sandbox_service/session_history`); this service is their only writer. Target and sequence:
+This service's `migrate` init container runs the history tables' migrations
+(`sandbox_service/session_history`), and this service is their only writer. Target and sequence:
 [History Service plan](../plans/history_service.md).
 
 ## Ingester
