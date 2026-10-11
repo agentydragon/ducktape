@@ -38,6 +38,7 @@ py_library(
     deps = [
         ":model_test_data",
         ":replication_source",
+        "//agentplane:kubernetes_watch",
         "//agentplane/app:action_policy",
         "//agentplane/app:api",
         "//agentplane/app:database",

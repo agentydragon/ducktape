@@ -73,6 +73,7 @@ from agentplane.egress.testing.tls import (
     write_ca,
 )
 from agentplane.egress.upstream import Address, Network, Pin, UpstreamResolver
+from agentplane.kubernetes_watch import Freshness
 from agentplane.testing.fake_apiserver import (
     BINDINGS_PLURAL,
     CREDENTIALS_NAMESPACE,
@@ -295,7 +296,7 @@ async def proxy(
     write_interception_ca(tmp_path / "confdir", *write_ca(interception_ca, tmp_path, "interception"))
     upstream_ca = make_ca("agentplane-egress-test-upstream")
     upstream_ca_cert, _ = write_ca(upstream_ca, tmp_path, "upstream")
-    index = Index()
+    index = Index(freshness=Freshness(stale_after_seconds=180))
     workload_resolver = WorkloadPrincipalResolver(
         authentication=AuthenticationV1Api(api_client),
         audience=AUDIENCE,
@@ -322,7 +323,6 @@ async def proxy(
             recording_upstream(*issue_leaf(upstream_ca, UPSTREAM_HOST, tmp_path)) as upstream,
             EgressProxyServer(
                 addon := EgressAddon(
-                    stale_after_seconds=180,
                     index=index,
                     verifier=verifier,
                     decision_log=decision_log,
@@ -334,7 +334,7 @@ async def proxy(
                 # proxy verifies its upstream against a bundle it was handed, not mitmproxy's own.
                 upstream_ca_file=upstream_ca_cert,
             ) as server,
-            serve(create_admin_app(decision_log, index, resync_seconds=60), "127.0.0.1", 0) as admin_port,
+            serve(create_admin_app(decision_log, index), "127.0.0.1", 0) as admin_port,
         ):
             yield ProxyUnderTest(
                 server=server,
@@ -708,7 +708,7 @@ async def test_buildbuddy_http_and_grpc_metadata_placeholder_is_substituted(
             streamed = [message async for message in stream]
             trailers = dict(await stream.trailing_metadata() or ())
             # The HTTP/2 channel is already open. Later streams still require a fresh Index.
-            proxy.index.refreshed[CREDENTIALS_PLURAL] -= timedelta(seconds=181)
+            proxy.index.freshness.at[CREDENTIALS_PLURAL] -= timedelta(seconds=181)
             with pytest.raises(grpc.aio.AioRpcError):
                 await channel.unary_unary(
                     "/build.bazel.remote.execution.v2.Capabilities/GetCapabilities",
@@ -1060,7 +1060,7 @@ async def test_existing_tls_connection_rechecks_every_admission(
         assert await get("/public/before") == 200
         match state:
             case "stale":
-                proxy.index.refreshed[CREDENTIALS_PLURAL] -= timedelta(seconds=181)
+                proxy.index.freshness.at[CREDENTIALS_PLURAL] -= timedelta(seconds=181)
             case "revoked":
                 proxy.index.bindings.clear()
             case "draining":

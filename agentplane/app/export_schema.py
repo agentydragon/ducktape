@@ -35,6 +35,7 @@ from agentplane.app.threads.store import ThreadStore
 from agentplane.app.threads.summaries import AppSummaries
 from agentplane.app.threads.view.content import ContentStore
 from agentplane.history_service.client import HistoryServiceClient
+from agentplane.kubernetes_watch import Freshness
 from agentplane.runner.harness import Harness
 from agentplane.sandbox_service.client import SandboxServiceClient
 from agentplane.sandbox_service.egress_views import EgressReader
@@ -64,7 +65,7 @@ def _openapi_document(api_client: k8s_client.ApiClient) -> dict[str, Any]:
         EventLogStore(engine, summaries=AppSummaries(engine), history_reader=history),
         ContentStore(engine, history_reader=history),
     )
-    live = LiveIndex(stale_after_seconds=900, core_v1=CoreV1Api(api_client))
+    live = LiveIndex(freshness=Freshness(stale_after_seconds=900), core_v1=CoreV1Api(api_client))
     runners = SandboxSessions(live, inventory)
     document: dict[str, Any] = create_app(
         inventory,

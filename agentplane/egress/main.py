@@ -23,7 +23,7 @@ from agentplane.egress.proxy import EgressProxyServer, write_interception_ca
 from agentplane.egress.rules_api import RulesProjection, create_rules_app
 from agentplane.egress.settings import Settings
 from agentplane.egress.upstream import PinnedDialEventLoop, UpstreamResolver
-from agentplane.kubernetes_watch import STALE_AFTER_CYCLES
+from agentplane.kubernetes_watch import STALE_AFTER_CYCLES, Freshness
 from agentplane.workload_auth.http import WorkloadPrincipalAuthenticator
 from agentplane.workload_auth.principal import WorkloadPrincipalResolver
 from util.kubernetes import CustomObjectsClient
@@ -48,7 +48,7 @@ async def async_main(settings: Settings) -> None:
     for sig in (signal.SIGTERM, signal.SIGINT):
         loop.add_signal_handler(sig, stop.set)
     async with ApiClient(configuration=configuration) as api:
-        index = Index()
+        index = Index(freshness=Freshness(stale_after_seconds=settings.resync_seconds * STALE_AFTER_CYCLES))
         decision_log = DecisionLog(
             DecisionStore(
                 make_engine(settings.database_url),
@@ -91,7 +91,6 @@ async def async_main(settings: Settings) -> None:
             verifier=WorkloadIdentityVerifier(workload_resolver),
             decision_log=decision_log,
             resolver=resolver,
-            stale_after_seconds=settings.resync_seconds * STALE_AFTER_CYCLES,
             projected=projected,
         )
         # One resolver for both doors: the tunnel and the rules API authenticate the same bearers,
@@ -112,11 +111,7 @@ async def async_main(settings: Settings) -> None:
                 # are bound. It is the readiness probe, and readiness gates every Service this Pod
                 # backs -- entered first it reports the Pod ready while mitmproxy, much the slower
                 # of the two to bind, still refuses connections on the tunnel port.
-                serve(
-                    create_admin_app(decision_log, index, resync_seconds=settings.resync_seconds),
-                    settings.admin_host,
-                    settings.admin_port,
-                ) as admin_port,
+                serve(create_admin_app(decision_log, index), settings.admin_host, settings.admin_port) as admin_port,
             ):
                 logger.info("admin listening on %s:%d", settings.admin_host, admin_port)
                 logger.info("agent API listening on %s:%d", settings.agent_api_host, settings.agent_api_port)

@@ -13,6 +13,7 @@ from kubernetes_asyncio.client import ApiClient, AuthenticationV1Api
 from agentplane.egress.conftest import AUDIENCE, RULES_HOST, SANDBOX_A, SANDBOX_B, TOKEN_A
 from agentplane.egress.policy import Index
 from agentplane.egress.rules_api import PATH, RulesProjection, create_rules_app
+from agentplane.kubernetes_watch import Freshness
 from agentplane.testing.fake_apiserver import SANDBOX_NAMESPACE, FakeApiServer
 from agentplane.workload_auth.http import WorkloadPrincipalAuthenticator
 from agentplane.workload_auth.principal import WorkloadPrincipalResolver
@@ -36,7 +37,7 @@ def client(api_client: ApiClient, index: Index) -> httpx.AsyncClient:
 async def test_api_independently_tokenreviews_authorization_and_returns_redacted_rules(
     fake: FakeApiServer, api_client: ApiClient
 ) -> None:
-    index = Index()
+    index = Index(freshness=Freshness(stale_after_seconds=180))
     before = (fake.token_reviews, fake.pod_reads)
 
     async with client(api_client, index) as api:
@@ -51,7 +52,7 @@ async def test_api_independently_tokenreviews_authorization_and_returns_redacted
 async def test_direct_api_without_or_with_forged_authorization_fails_closed(
     fake: FakeApiServer, api_client: ApiClient
 ) -> None:
-    index = Index()
+    index = Index(freshness=Freshness(stale_after_seconds=180))
 
     async with client(api_client, index) as api:
         missing = await api.get(PATH)
@@ -64,7 +65,7 @@ async def test_direct_api_without_or_with_forged_authorization_fails_closed(
 
 
 async def test_headers_body_and_proxy_auth_cannot_select_another_subject(api_client: ApiClient) -> None:
-    index = Index()
+    index = Index(freshness=Freshness(stale_after_seconds=180))
 
     async with client(api_client, index) as api:
         response = await api.request(
@@ -86,7 +87,7 @@ async def test_headers_body_and_proxy_auth_cannot_select_another_subject(api_cli
 
 @pytest.mark.parametrize("path", ["/", "/decisions", "/healthz"])
 async def test_api_exposes_no_other_route(api_client: ApiClient, path: str) -> None:
-    async with client(api_client, Index()) as api:
+    async with client(api_client, Index(freshness=Freshness(stale_after_seconds=180))) as api:
         response = await api.get(path, headers={"Authorization": f"Bearer {TOKEN_A}"})
 
     assert response.status_code == 404

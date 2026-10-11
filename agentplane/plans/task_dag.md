@@ -1040,7 +1040,6 @@ flowchart TD
         SERVICE_PROCESS_MODULE[Candidate: one service process module]
         REQUIRED_SERVICE_WIRING[Candidate: no footgun defaults on service wiring]
         GATEWAY_NAME_SWEEP[Candidate: code says Runner Gateway for the gateway]
-        WATCH_FRESHNESS_DEDUPE[Candidate: one watch freshness]
         POSTGRES_WAKEUPS_SHARED[Candidate: one PostgreSQL wakeup class]
         GATEWAY_SANDBOX_READS[Candidate: the gateway reads Sandboxes read-only]
         SANDBOX_DEAD_CODE[Candidate: delete KubernetesBindings.run]
@@ -1115,10 +1114,6 @@ say "Sandbox Service" for the gateway; History Service docstrings say it writes 
 history store. Also the stale `sealer_accounts` comment, the `serve_channel` test helper, and the
 `CLEANUP` in `sandbox_service/teardown.py` that cites this plan.
 
-### `WATCH_FRESHNESS_DEDUPE` — one watch freshness
-
-**Candidate.** Only the Action Service uses `kubernetes_watch.Freshness`; `app/live.py` (without the
-clock-went-backwards guard) and egress `policy.py`/`admin.py` reimplement it. Both use `Freshness`.
 
 ### `POSTGRES_WAKEUPS_SHARED` — one PostgreSQL wakeup class
 

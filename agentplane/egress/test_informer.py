@@ -11,6 +11,7 @@ from kubernetes_asyncio.client import ApiClient
 
 from agentplane.egress.conftest import GITHUB_POLICY, SANDBOX_A, SECRET_NAME, informer
 from agentplane.egress.policy import Index
+from agentplane.kubernetes_watch import Freshness
 from agentplane.testing.fake_apiserver import (
     BINDINGS_PLURAL,
     CREDENTIALS_PLURAL,
@@ -26,7 +27,7 @@ BINDING = f"{SANDBOX_A}-{GITHUB_POLICY}"
 
 @pytest.fixture
 async def index(api_client: ApiClient) -> AsyncIterator[Index]:
-    index = Index()
+    index = Index(freshness=Freshness(stale_after_seconds=180))
     task = asyncio.create_task(informer(index, api_client).run())
     try:
         await index.wait_for(lambda: index.synced)
@@ -68,15 +69,15 @@ async def test_a_completed_cycle_is_what_advances_freshness(fake: FakeApiServer,
     /healthz reads these to tell a wedged informer from a quiet one; a timestamp set anywhere but
     the end of a cycle would keep advancing through exactly the failure it has to catch.
     """
-    assert set(index.refreshed) == {POLICIES_PLURAL, BINDINGS_PLURAL, CREDENTIALS_PLURAL, SECRETS_PLURAL}
-    seeded = index.refreshed[POLICIES_PLURAL]
+    assert set(index.freshness.at) == {POLICIES_PLURAL, BINDINGS_PLURAL, CREDENTIALS_PLURAL, SECRETS_PLURAL}
+    seeded = index.freshness.at[POLICIES_PLURAL]
 
     async def end_watches_until_the_policies_cycle_completes() -> None:
         # `close_watches` ends only the watches open at that instant, and the informer is synced as
         # soon as every kind has listed — before their watches register. A policies watch that
         # registers just after the close then runs its full `resync_seconds`, which is the whole
         # budget of this test. So re-arm rather than close once; the sleep only paces the retries.
-        while index.refreshed[POLICIES_PLURAL] <= seeded:
+        while index.freshness.at[POLICIES_PLURAL] <= seeded:
             fake.close_watches()
             await asyncio.sleep(0.01)
 

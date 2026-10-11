@@ -277,11 +277,11 @@ def test_nothing_watched_yet_reads_as_stale(live_index: LiveIndex) -> None:
 
 
 def test_one_kind_that_stopped_cycling_makes_the_whole_frame_stale(live_index: LiveIndex) -> None:
-    live_index.refreshed[SANDBOXES_PLURAL] = NOW - timedelta(seconds=5)
-    live_index.refreshed[PODS_PLURAL] = NOW - timedelta(seconds=5)
+    live_index.freshness.at[SANDBOXES_PLURAL] = NOW - timedelta(seconds=5)
+    live_index.freshness.at[PODS_PLURAL] = NOW - timedelta(seconds=5)
     assert live_index.health(NOW).fresh is True
 
-    live_index.refreshed[PODS_PLURAL] = NOW - timedelta(seconds=live_index.stale_after_seconds + 1)
+    live_index.freshness.at[PODS_PLURAL] = NOW - timedelta(seconds=live_index.freshness.stale_after_seconds + 1)
     health = live_index.health(NOW)
 
     assert health.fresh is False
@@ -291,7 +291,7 @@ def test_one_kind_that_stopped_cycling_makes_the_whole_frame_stale(live_index: L
 async def test_a_frame_goes_out_per_change_with_health_through_the_quiet(seeded: LiveIndex) -> None:
     """What a tab reads: the state on connect, the state again when it changes, and in between the
     freshness that tells a quiet stream from a wedged one."""
-    seeded.refreshed[SANDBOXES_PLURAL] = NOW
+    seeded.freshness.at[SANDBOXES_PLURAL] = NOW
     stream = frames(lambda: _snapshot(seeded), lambda: seeded.health(NOW), seeded.changes, interval_s=0.01).__aiter__()
 
     assert _read(await anext(stream)) == ("snapshot", ["runner-1", "shelved"])

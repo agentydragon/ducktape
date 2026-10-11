@@ -39,6 +39,7 @@ from agentplane.app.threads.store import ThreadStore
 from agentplane.app.threads.summaries import AppSummaries
 from agentplane.app.threads.view.content import ContentStore
 from agentplane.history_service.client import HistoryServiceClient
+from agentplane.kubernetes_watch import Freshness
 
 # The per-test database is created over psycopg, which SQLAlchemy loads from the URL scheme.
 # gazelle:include_dep @pypi//psycopg
@@ -312,7 +313,7 @@ def reviewer(authentication: FakeAuthenticationV1Api) -> TokenReviewer:
 @pytest.fixture
 def live_index(core_v1: FakeCoreV1Api) -> LiveIndex:
     """An index nothing is watching: the fixtures that need one drive it themselves."""
-    return LiveIndex(stale_after_seconds=90, core_v1=cast(CoreV1Api, core_v1))
+    return LiveIndex(freshness=Freshness(stale_after_seconds=90), core_v1=cast(CoreV1Api, core_v1))
 
 
 @pytest.fixture
