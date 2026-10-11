@@ -301,6 +301,30 @@ export { value, factory, mounted };
 }
 
 #[test]
+fn property_write_can_install_a_setter_before_object_assign() {
+    expect_cycle_rejection(
+        FixtureOpts::new(
+            r#"const value = 1;
+function factory() {
+  function wrapper() {}
+  wrapper.__proto__ = { set item(next) { globalThis.seen = value + next; } };
+  return Object.assign(wrapper, { item: 0 });
+}
+const mounted = factory();
+console.log(globalThis.seen);
+export { value, factory, mounted };
+"#,
+            vec![logical_module(
+                "mount",
+                &[Member::new("factory"), Member::new("mounted")],
+            )],
+        )
+        .with_unassigned_mode(unassigned_mode_inline()),
+        &["mount", "anon_residual_sentinel"],
+    );
+}
+
+#[test]
 fn spread_argument_can_run_an_iterator_body() {
     expect_cycle_rejection(
         FixtureOpts::new(
