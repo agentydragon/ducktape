@@ -83,6 +83,7 @@ async def failed_native_journal(
     request: pytest.FixtureRequest,
     runner: RunnerHandle,
     event_logs: EventLogStore,
+    history_client: HistoryServiceClient,
     local_runners: SandboxSessions,
     caplog: pytest.LogCaptureFixture,
 ) -> AsyncIterator[None]:
@@ -114,7 +115,7 @@ async def failed_native_journal(
                     if snapshot is None
                     else {"attached": MessageToDict(snapshot.attached), "end": repr(snapshot.end)}
                 )
-                page = await event_logs.reader.read_session_events(session_id, after_cursor=0, limit=1)
+                page = await history_client.read_session_events(session_id, after_cursor=0, limit=1)
                 observed["history_cursor"] = page.last_cursor
                 observed["history_feed"] = MessageToDict(page.feed_state) if page.HasField("feed_state") else None
         except Exception as error:
