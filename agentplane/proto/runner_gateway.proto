@@ -22,8 +22,9 @@ service RunnerGateway {
   // The Session's submitted commands in acceptance order, as retained: never contacts the runner.
   rpc ListCommands(agentplane.proto.sandbox_service.ListCommandsRequest) returns (agentplane.proto.sandbox_service.ListCommandsResponse);
   // Teardown's seal, called by the Sandbox Service alone: fence and seal every Session of the
-  // incarnation, and return each one's final cursor keyed as holders name the Session (the public
-  // Session ID, or the runner's own ID for a Session opened with a caller-chosen one). Idempotent.
+  // incarnation, and return each one's final cursor and whether its ingress has acknowledged it,
+  // keyed by public Session ID (or the runner's own ID for a Session opened with a caller-chosen
+  // one). Idempotent.
   rpc SealSandbox(agentplane.proto.sandbox_service.SandboxRequest) returns (agentplane.proto.runner.SealResponse);
   // Any allowed service caller. Which Sandbox each named Session runs in; a Session the gateway
   // never registered is left out. Carries no transcript.

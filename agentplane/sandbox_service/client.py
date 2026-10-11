@@ -291,24 +291,8 @@ class Runner:
             sandbox_service_pb2.LookupSessionRequest(sandbox=self.destination, idempotency_key=idempotency_key),
         )
 
-    async def place_hold(self, session_id: str, *, holder: str) -> sandbox_service_pb2.Hold:
-        destination = sandbox_service_pb2.SessionDestination(sandbox=self.destination, session_id=session_id)
-        return await self.service.unary(
-            self.service.stub.PlaceHold, sandbox_service_pb2.HoldRequest(destination=destination, holder=holder)
-        )
-
-    async def confirm_hold(self, session_id: str, *, holder: str, through_cursor: int) -> sandbox_service_pb2.Hold:
-        destination = sandbox_service_pb2.SessionDestination(sandbox=self.destination, session_id=session_id)
-        return await self.service.unary(
-            self.service.stub.ConfirmHold,
-            sandbox_service_pb2.ConfirmHoldRequest(
-                destination=destination, holder=holder, through_cursor=through_cursor
-            ),
-        )
-
     async def seal(self) -> runner_pb2.SealResponse:
-        """Teardown's seal, which only the Sandbox Service may ask for, each Session named as retention
-        holders name it."""
+        """Teardown's seal, which only the Sandbox Service may ask for."""
         return await self.service.held_unary(
             self.destination,
             lambda stub: stub.SealSandbox,

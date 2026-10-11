@@ -29,15 +29,13 @@ from agentplane.runner_gateway.testing.resources import build_resources
 from agentplane.sandbox_service.client import Runner, SandboxServiceClient, ServiceError
 from agentplane.sandbox_service.destinations import DestinationResolver
 from agentplane.sandbox_service.testing.grpc_service import CALLER_TOKEN
-from agentplane.sandbox_service.testing.kubernetes import DESTINATION, OWNER, SANDBOX_UID, Cluster
+from agentplane.sandbox_service.testing.kubernetes import DESTINATION, OWNER, SANDBOX_UID, Cluster, runner_connected
 from agentplane.testing.fake_apiserver import TokenVerdict
 
 # gazelle:include_dep @pypi//protobuf
 # gazelle:include_dep @pypi//grpcio
 
 AUDIENCE = "test-native-grpc"
-# Names no Session: a caller-chosen runner ID the service relays as given.
-SESSION = "grpc-session"
 
 
 @pytest.fixture
@@ -55,6 +53,12 @@ def resources(cluster: Cluster, runner: RunnerHandle, engine: AsyncEngine) -> Re
         caller_accounts=frozenset({OWNER}),
         platform_instructions="Test backend-owned guidance.",
     )
+
+
+@pytest.fixture(autouse=True)
+async def connected(cluster: Cluster, resources: Resources, runner: RunnerHandle) -> AsyncIterator[None]:
+    async with runner_connected(cluster, resources, runner.runner):
+        yield
 
 
 @pytest.fixture
@@ -200,14 +204,17 @@ async def test_launch_delivery_and_restart_preserve_evidence_and_configuration(
 
 async def test_observe_command_and_resume_do_not_create_unknown_session(remote: SandboxServiceClient) -> None:
     runner = remote.runner(DESTINATION)
-    with pytest.raises(RunnerError):
+    unknown = str(uuid4())
+    with pytest.raises(ServiceError) as commanded:
         await runner.command(
-            SESSION,
+            unknown,
             command_pb2.Command(command_id="unknown-notice", submit_input=command_pb2.SubmitInput(text="no creation")),
             after_cursor=0,
         )
-    with pytest.raises(RunnerError):
-        await runner.resume(SESSION)
+    assert commanded.value.code == grpc.StatusCode.NOT_FOUND
+    with pytest.raises(ServiceError) as resumed:
+        await runner.resume(unknown)
+    assert resumed.value.code == grpc.StatusCode.NOT_FOUND
     assert not await runner.list_sessions()
 
 

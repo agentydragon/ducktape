@@ -707,12 +707,6 @@ async def test_unlisted_callers_rejected_before_lookup(
             (remote.gateway.ListSessions, sandbox_service_pb2.SandboxRequest(destination=DESTINATION)),
             (remote.gateway.ResumeSession, sandbox_service_pb2.SessionRequest(destination=destination)),
             (remote.gateway.SubmitCommand, sandbox_service_pb2.SubmitCommandRequest(destination=destination)),
-            (remote.stub.PlaceHold, sandbox_service_pb2.HoldRequest(destination=destination, holder="test-holder")),
-            (
-                remote.stub.ConfirmHold,
-                sandbox_service_pb2.ConfirmHoldRequest(destination=destination, holder="test-holder"),
-            ),
-            (remote.stub.ReleaseHold, sandbox_service_pb2.HoldRequest(destination=destination, holder="test-holder")),
         ):
             with pytest.raises(ServiceError) as rejected:
                 await remote.unary(call, request)

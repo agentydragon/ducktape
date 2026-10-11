@@ -1,4 +1,4 @@
-"""The Sandbox Service: Sandbox lifecycle, grants, retention holds and teardown. It seals a Sandbox through the
+"""The Sandbox Service: Sandbox lifecycle, grants and teardown. It seals a Sandbox through the
 Runner Gateway before deleting it."""
 
 from typing import cast

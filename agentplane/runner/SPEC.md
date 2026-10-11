@@ -123,8 +123,7 @@ Thread-page projection. Their cross-layer contract is [Thread, runner, and harne
   or resumed. It then stops every setup script and harness, and seals each session's journal at its
   final cursor, returning those cursors. Sealing again returns the same cursors. Each cursor comes
   with `flushed`: whether the ingress has acknowledged that seal, as the runner recorded it, so it
-  holds across a restart and is false for a runner that pushes nothing. `pushes` says whether the
-  runner has an ingress at all, so a caller can tell a seal not yet flushed from one never to be.
+  holds across a restart and is false for a runner that pushes nothing.
 - A sealed journal takes no further Events, so its commands are refused.
 - `Open` without a spec still follows a sealed session: it replays every entry through the seal's
   cursor, then ends the stream with `Sealed`. A stream already following the session when it is

@@ -115,7 +115,7 @@ async def test_listen_deliver_read_ack_and_recover_lost_response_without_app(
                 ) as action_http,
                 authenticated_service(
                     cluster,
-                    runner.port,
+                    runner,
                     token_file,
                     database_url=sandbox_service_db_url,
                     manager=delegate,

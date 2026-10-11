@@ -208,13 +208,6 @@ class Store:
                 row.feed_state = serialized
                 await notify(session, Channel.HISTORY)
 
-    async def read(
-        self, session_id: UUID, *, after_cursor: int = 0, limit: int = 128
-    ) -> tuple[int, list[event_log_pb2.EventEntry]]:
-        """Internal replay only; never expose this as an unscoped workload read API."""
-        page = await self.read_page(session_id, after_cursor=after_cursor, limit=limit)
-        return page.last_cursor, list(page.entries)
-
     async def read_page(
         self, session_id: UUID, *, after_cursor: int = 0, limit: int = 128
     ) -> history_pb2.ReadSessionEventsResponse:
