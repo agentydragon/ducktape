@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 import hashlib
 import logging
 
@@ -291,16 +290,6 @@ class KubernetesBindings:
         except SandboxNotFoundError:
             return True
         return str(current.uid) != uid
-
-    async def run(self, *, interval_seconds: float = 30) -> None:
-        while True:
-            try:
-                await self.reconcile_once()
-            except asyncio.CancelledError:
-                raise
-            except Exception:
-                logger.exception("Kubernetes grants reconciliation failed")
-            await asyncio.sleep(interval_seconds)
 
 
 # gazelle:include_dep @pypi//protobuf

@@ -1059,7 +1059,6 @@ flowchart TD
         WATCH_FRESHNESS_DEDUPE[Candidate: one watch freshness]
         POSTGRES_WAKEUPS_SHARED[Candidate: one PostgreSQL wakeup class]
         GATEWAY_SANDBOX_READS[Candidate: the gateway reads Sandboxes read-only]
-        SANDBOX_DEAD_CODE[Candidate: delete KubernetesBindings.run]
         RUNNER_ERRORS_REHOME[Blocked: errors beside the client that raises them]
         HISTORY_LIST_SUMMARIES_RETIRE[Candidate: delete ListSessionSummaries]
         HISTORY_FEED_STATE_TRIM[Candidate: feed state without the Sandbox proto]
@@ -1184,11 +1183,6 @@ names, and `app/changes.Changes` is its waiter set. One `agentplane/postgres/` c
 it, and alone uses `sandbox_service/destinations.py`, against service_boundaries.md § callers. Split
 a read-only Sandbox reader, move `destinations.py` into `runner_gateway/`, write the incarnation
 check (four copies) once, and drop the second `RunnerEndpoint` class name.
-
-### `SANDBOX_DEAD_CODE` — delete `KubernetesBindings.run`
-
-**Candidate.** Nothing calls it (`sandbox_service/kubernetes_bindings.py:295`); grant bindings
-reconcile through `Provisioning.reconcile_once`.
 
 ### `RUNNER_ERRORS_REHOME` — errors beside the client that raises them
 
