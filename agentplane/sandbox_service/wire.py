@@ -36,10 +36,7 @@ def create_proto(
     spec = ParseDict(overrides, runner_pb2.SessionSpec())
     paths = [field.name for field in fields if field.name in overrides or field.json_name in overrides]
     request = sandbox_service_pb2.CreateSessionRequest(
-        sandbox=sandbox,
-        session_id=str(session_id),
-        spec=spec,
-        setup_script=setup_script,
+        sandbox=sandbox, session_id=str(session_id), spec=spec, setup_script=setup_script
     )
     request.override_mask.paths.extend(paths)
     return request

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from enum import StrEnum
-from typing import Annotated, Literal
+from typing import Annotated
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Request, status
@@ -209,5 +209,3 @@ async def list_sessions(bridge: Bridge, name: str) -> list[dict[str, object]]:
 async def create_session(bridge: Bridge, name: str, body: NewSession) -> dict[str, object]:
     _parse(runner_pb2.SessionSpec(), body.spec)  # Validate without losing explicit empty overrides.
     return MessageToDict(await bridge.create_session(name, body.session_id, body.spec, body.setup_script))
-
-
