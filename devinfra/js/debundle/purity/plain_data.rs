@@ -35,7 +35,7 @@ use super::*;
 pub(crate) fn collect_plain_data_bindings(
     body: &[TopLevelItemView<'_>],
     shadowed: &BTreeSet<&'static str>,
-    value_flow: Option<&crate::facts::ChunkValueFlow>,
+    value_flow: &crate::facts::ChunkValueFlow,
 ) -> Vec<String> {
     // Aggregate every chunk-top init expression per binding name.
     // The same name can have multiple inits for `var`-bound bindings
@@ -59,63 +59,6 @@ pub(crate) fn collect_plain_data_bindings(
     if candidates.is_empty() {
         return Vec::new();
     }
-    // An object that is never read cannot acquire an alias in this chunk.
-    // This cheap proof avoids building the identity graph for the many
-    // unrelated Bun modules inspected by program-level purity. A reference
-    // requires the full scan: a write through an alias need not mention the
-    // original candidate again.
-    struct CandidateReferences<'a> {
-        candidates: &'a BTreeSet<String>,
-        found: bool,
-    }
-    impl Visit for CandidateReferences<'_> {
-        fn visit_var_declarator(&mut self, node: &VarDeclarator) {
-            // Skip only the candidate's own declaration. Assignment targets
-            // are also BindingIdent in SWC and must count as references.
-            if let Pat::Ident(binding) = &node.name
-                && self.candidates.contains(binding.id.sym.as_ref())
-            {
-                if let Some(init) = node.init.as_deref() {
-                    init.visit_with(self);
-                }
-            } else {
-                node.visit_children_with(self);
-            }
-        }
-
-        fn visit_ident(&mut self, ident: &Ident) {
-            if self.candidates.contains(ident.sym.as_ref()) {
-                self.found = true;
-            }
-        }
-
-        fn visit_module_item(&mut self, item: &ModuleItem) {
-            if !self.found {
-                item.visit_children_with(self);
-            }
-        }
-    }
-    let mut references = CandidateReferences {
-        candidates: &candidates,
-        found: false,
-    };
-    for item in body {
-        item.as_module_item().visit_with(&mut references);
-        if references.found {
-            break;
-        }
-    }
-    if !references.found {
-        return candidates.into_iter().collect();
-    }
-    let computed_flow;
-    let value_flow = match value_flow {
-        Some(flow) => flow,
-        None => {
-            computed_flow = crate::facts::ChunkValueFlow::analyze(body);
-            &computed_flow
-        }
-    };
     let top_level_names: BTreeSet<String> = body
         .iter()
         .flat_map(|item| crate::facts::collect_declared_names(item.as_module_item()))
@@ -178,7 +121,38 @@ pub(crate) fn collect_plain_data_bindings(
         object_to_names,
         return_exempt,
     };
-    scan_plain_data_body(body, &mut scanner);
+    for item in body {
+        let module_item = item.as_module_item();
+        match module_item {
+            // Direct chunk-top var initializers were all checked above.
+            // Walk each expression so references to OTHER candidates
+            // still participate in the escape scan, but leave these
+            // known rebinds out of the nested-var disqualification path.
+            ModuleItem::Stmt(Stmt::Decl(Decl::Var(var))) if var.kind == VarDeclKind::Var => {
+                for decl in &var.decls {
+                    decl.name.visit_with(&mut scanner);
+                    if let Some(init) = decl.init.as_deref() {
+                        init.visit_with(&mut scanner);
+                    }
+                }
+            }
+            ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(export)) => {
+                if let Decl::Var(var) = &export.decl
+                    && var.kind == VarDeclKind::Var
+                {
+                    for decl in &var.decls {
+                        decl.name.visit_with(&mut scanner);
+                        if let Some(init) = decl.init.as_deref() {
+                            init.visit_with(&mut scanner);
+                        }
+                    }
+                } else {
+                    module_item.visit_with(&mut scanner);
+                }
+            }
+            _ => module_item.visit_with(&mut scanner),
+        }
+    }
     let disqualified = scanner.disqualified;
     let object_to_names = scanner.object_to_names;
     candidates
@@ -190,41 +164,6 @@ pub(crate) fn collect_plain_data_bindings(
                     .any(|aliases| aliases.contains(n) && !aliases.is_disjoint(&disqualified))
         })
         .collect()
-}
-
-fn scan_plain_data_body(body: &[TopLevelItemView<'_>], scanner: &mut PlainDataWriteScanner<'_>) {
-    for item in body {
-        let module_item = item.as_module_item();
-        match module_item {
-            // Direct chunk-top var initializers were all checked above.
-            // Walk each expression so references to OTHER candidates
-            // still participate in the escape scan, but leave these
-            // known rebinds out of the nested-var disqualification path.
-            ModuleItem::Stmt(Stmt::Decl(Decl::Var(var))) if var.kind == VarDeclKind::Var => {
-                for decl in &var.decls {
-                    decl.name.visit_with(scanner);
-                    if let Some(init) = decl.init.as_deref() {
-                        init.visit_with(scanner);
-                    }
-                }
-            }
-            ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(export)) => {
-                if let Decl::Var(var) = &export.decl
-                    && var.kind == VarDeclKind::Var
-                {
-                    for decl in &var.decls {
-                        decl.name.visit_with(scanner);
-                        if let Some(init) = decl.init.as_deref() {
-                            init.visit_with(scanner);
-                        }
-                    }
-                } else {
-                    module_item.visit_with(scanner);
-                }
-            }
-            _ => module_item.visit_with(scanner),
-        }
-    }
 }
 
 const SAFE_PLAIN_ARRAY_METHODS: &[&str] = &["filter", "flatMap", "forEach", "map", "slice"];
