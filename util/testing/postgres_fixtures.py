@@ -6,7 +6,7 @@ by the dict key, so an alias would register under the wrong name; and no ``# noq
 in conftests, where F401 is ignored). Override ``postgres_image`` in a suite that needs a
 non-default image.
 ``start_postgres_container`` is the underlying preload+start helper for packages that
-wrap it (e.g. props, which adds a tracing span).
+need to wrap the shared container lifecycle.
 
 Both images are marked ``immutable`` upstream tags, so ``load_oci_image`` skips the
 push on a warm worker by itself — this module no longer checks.
@@ -23,6 +23,7 @@ from collections.abc import Generator, Iterator
 
 import pytest
 from _pytest.fixtures import FixtureFunctionDefinition
+from opentelemetry import trace
 from sqlalchemy.engine import URL
 from testcontainers.postgres import PostgresContainer
 
@@ -42,6 +43,7 @@ from util.testing.undeclared_outputs import undeclared_outputs_dir
 # gazelle:include_dep @pypi//psycopg
 
 logger = logging.getLogger(__name__)
+tracer = trace.get_tracer(__name__)
 
 
 @contextlib.contextmanager
@@ -101,7 +103,8 @@ def postgres_image() -> OciImage:
 
 @pytest.fixture(scope="session")
 def postgres_container(postgres_image: OciImage) -> Generator[PostgresContainer]:
-    container = start_postgres_container(postgres_image)
+    with tracer.start_as_current_span("postgres_container fixture"):
+        container = start_postgres_container(postgres_image)
     try:
         yield container
     finally:

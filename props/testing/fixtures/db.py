@@ -10,7 +10,6 @@ from pathlib import Path
 
 import pytest
 import pytest_asyncio
-from opentelemetry import trace
 from sqlalchemy import Engine
 from sqlalchemy.orm import Session
 from testcontainers.postgres import PostgresContainer
@@ -22,16 +21,12 @@ from props.db.database import Database
 from props.db.sync.model_metadata import sync_model_metadata_with_session
 from props.db.sync.sync import SpecimenBundle, refresh_examples_matview, sync_specimen
 from util.bazel.runfiles import get_required_path
-from util.oci import OciImage
 from util.testing.postgres import (
     DatabaseNames,
     PostgresDatabaseTemplate,
     create_database_sync,
     force_drop_database_sync,
 )
-from util.testing.postgres_fixtures import start_postgres_container
-
-tracer = trace.get_tracer(__name__)
 
 # Path to test specimens (git-tracked fixtures)
 TEST_FIXTURES_PATH = Path(__file__).parent / "testdata" / "specimens"
@@ -64,22 +59,6 @@ def pytest_addoption(parser: pytest.Parser) -> None:
         default=False,
         help="Preserve test database on failure for debugging (does not drop test database after test)",
     )
-
-
-@pytest.fixture(scope="session")
-def postgres_container(postgres_image: OciImage) -> Generator[PostgresContainer]:
-    """Session-scoped PostgreSQL container.
-
-    Starts a fresh PostgreSQL 18 container for the entire test session.
-    All tests share this container but get isolated databases.
-    """
-    with tracer.start_as_current_span("postgres_container fixture"):
-        container = start_postgres_container(postgres_image)
-
-    try:
-        yield container
-    finally:
-        container.stop()
 
 
 @pytest.fixture(scope="session")

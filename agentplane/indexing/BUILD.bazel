@@ -130,6 +130,7 @@ py_library(
         "//util:oci",
         "//util/testing:postgres",
         "//util/testing:postgres_fixtures",
+        "//util/testing:sqlalchemy_engines",
         "@pypi//asyncpg",
         "@pypi//psycopg",
         "@pypi//pygit2",

@@ -78,6 +78,7 @@ from util.testing.postgres_fixtures import (
     postgres_container,
     postgres_image,
 )
+from util.testing.sqlalchemy_engines import managed_async_engine
 
 
 @pytest.fixture(autouse=True)
@@ -136,11 +137,8 @@ def register_attached_sessions() -> bool:
 
 @pytest.fixture
 async def engine(db_url: str) -> AsyncIterator[AsyncEngine]:
-    engine = connect(db_url)
-    try:
+    async with managed_async_engine(connect(db_url)) as engine:
         yield engine
-    finally:
-        await engine.dispose()
 
 
 @pytest.fixture
@@ -187,16 +185,13 @@ async def database_updates(engine: AsyncEngine) -> AsyncIterator[DatabaseUpdates
 async def replica(
     db_url: str, history_peer: HistoryService, history_client: HistoryServiceClient
 ) -> AsyncIterator[Replica]:
-    engine = connect(db_url)
-    try:
+    async with managed_async_engine(connect(db_url)) as engine:
         yield Replica(
             ThreadStore(engine, AppSummaries(engine)),
             EventLogStore(engine, peer=history_peer, history_reader=history_client),
             Ingestion(engine, peer=history_peer, history_reader=history_client),
             OperatorSessionStore(engine),
         )
-    finally:
-        await engine.dispose()
 
 
 @pytest.fixture

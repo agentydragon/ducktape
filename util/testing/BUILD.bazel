@@ -101,6 +101,7 @@ py_library(
         "//third_party/containers:ryuk",
         "//util:db_migrations",
         "//util:oci",
+        "@pypi//opentelemetry_api",
         "@pypi//psycopg",
         "@pypi//pytest",
         "@pypi//sqlalchemy",
@@ -337,4 +338,10 @@ py_library(
         "@pypi//docker",
         "@pypi//pillow",
     ],
+)
+
+py_library(
+    name = "sqlalchemy_engines",
+    srcs = ["sqlalchemy_engines.py"],
+    deps = ["@pypi//sqlalchemy"],
 )

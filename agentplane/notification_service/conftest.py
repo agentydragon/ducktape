@@ -9,7 +9,6 @@ import pytest
 from google.protobuf.json_format import MessageToDict
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 
-# Both native harnesses, not an app-managed session or app database.
 from agentplane.action_service.testing.fixtures import action_database_template, echo_catalog, echo_executor
 from agentplane.notification_service.database_migrate import RUNNER
 from agentplane.notification_service.store import Store
@@ -24,6 +23,9 @@ from util.testing.postgres_fixtures import (
     postgres_container,
     postgres_image,
 )
+
+# Both native harnesses, not an app-managed session or app database.
+from util.testing.sqlalchemy_engines import managed_async_engine
 from util.testing.undeclared_outputs import undeclared_outputs_dir
 
 # gazelle:include_dep @pypi//asyncpg
@@ -72,11 +74,8 @@ def sandbox_service_db_url(service_database_template: PostgresDatabaseTemplate, 
 
 @pytest.fixture
 async def engine(db_url: str) -> AsyncIterator[AsyncEngine]:
-    engine = create_async_engine(db_url)
-    try:
+    async with managed_async_engine(create_async_engine(db_url)) as engine:
         yield engine
-    finally:
-        await engine.dispose()
 
 
 @pytest.fixture
@@ -88,8 +87,7 @@ async def store(engine: AsyncEngine) -> Store:
 async def action_engine(
     action_database_template: PostgresDatabaseTemplate, database_clones: DatabaseClones
 ) -> AsyncIterator[AsyncEngine]:
-    engine = create_async_engine(database_clones.clone(action_database_template, drivername="postgresql+asyncpg"))
-    try:
+    async with managed_async_engine(
+        create_async_engine(database_clones.clone(action_database_template, drivername="postgresql+asyncpg"))
+    ) as engine:
         yield engine
-    finally:
-        await engine.dispose()

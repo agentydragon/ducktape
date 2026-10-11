@@ -15,6 +15,7 @@ from util.testing.postgres_fixtures import (
     postgres_container,
     postgres_image,
 )
+from util.testing.sqlalchemy_engines import managed_async_engine
 
 # gazelle:include_dep @pypi//asyncpg
 # gazelle:include_dep @pypi//psycopg
@@ -46,8 +47,5 @@ def db_url(history_database_template: PostgresDatabaseTemplate, database_clones:
 
 @pytest.fixture
 async def engine(db_url: str) -> AsyncIterator[AsyncEngine]:
-    engine = create_async_engine(db_url)
-    try:
+    async with managed_async_engine(create_async_engine(db_url)) as engine:
         yield engine
-    finally:
-        await engine.dispose()

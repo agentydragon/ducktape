@@ -270,6 +270,7 @@ py_library(
         "@pypi//psycopg",
         "@pypi//httpx",
         ":settings",
+        "//util/testing:sqlalchemy_engines",
     ],
 )
 

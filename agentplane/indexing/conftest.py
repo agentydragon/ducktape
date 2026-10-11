@@ -18,6 +18,7 @@ from third_party.containers import pgvector_pg18
 from util.oci import OciImage
 from util.testing.postgres import DatabaseClones, PostgresDatabaseTemplate
 from util.testing.postgres_fixtures import database_clones, database_names, postgres_admin_url, postgres_container
+from util.testing.sqlalchemy_engines import managed_async_engine
 
 # gazelle:include_dep @pypi//asyncpg
 # The template admin URL uses the psycopg dialect, which SQLAlchemy loads at runtime.
@@ -48,11 +49,10 @@ async def initialized_index_database_template(
         "agentplane_index_initialized_template",
         template=empty_index_database_template.template_name,
     ) as template:
-        opened = create_async_engine(make_url(template.url).set(drivername="postgresql+asyncpg"))
-        try:
+        async with managed_async_engine(
+            create_async_engine(make_url(template.url).set(drivername="postgresql+asyncpg"))
+        ) as opened:
             await Store(opened, budget=DEFAULT_CHUNK_BUDGET, model_key=FakeEmbedder().model_key).initialize()
-        finally:
-            await opened.dispose()
         yield template
 
 
@@ -62,11 +62,8 @@ async def engine(
 ) -> AsyncGenerator[AsyncEngine]:
     """A fresh writable clone of the default initialized index schema and state."""
     db_url = database_clones.clone(initialized_index_database_template, drivername="postgresql+asyncpg")
-    opened = create_async_engine(db_url)
-    try:
+    async with managed_async_engine(create_async_engine(db_url)) as opened:
         yield opened
-    finally:
-        await opened.dispose()
 
 
 @pytest.fixture
@@ -75,11 +72,8 @@ async def empty_engine(
 ) -> AsyncGenerator[AsyncEngine]:
     """A fresh pgvector database for tests that choose a non-default index configuration."""
     db_url = database_clones.clone(empty_index_database_template, drivername="postgresql+asyncpg")
-    opened = create_async_engine(db_url)
-    try:
+    async with managed_async_engine(create_async_engine(db_url)) as opened:
         yield opened
-    finally:
-        await opened.dispose()
 
 
 @pytest.fixture
