@@ -28,6 +28,7 @@ from props.testing.fixtures.db import (
     engine,
     postgres_base_config,
     postgres_container,
+    postgres_template,
     pytest_addoption,
     session_monkeypatch,
     synced_db,

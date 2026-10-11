@@ -4,7 +4,6 @@ Uses Testcontainers for hermetic PostgreSQL instances. Each test session gets
 a fresh PostgreSQL container, and each test gets its own isolated database.
 """
 
-import hashlib
 import os
 from collections.abc import AsyncGenerator, Generator
 from pathlib import Path
@@ -20,11 +19,15 @@ from openai_utils.model_metadata import MODEL_METADATA
 from props.config import CustomModelConfig, PropsConfig, UpstreamConfig
 from props.db.config import DatabaseConfig
 from props.db.database import Database
-from props.db.setup import ensure_database_exists
 from props.db.sync.model_metadata import sync_model_metadata_with_session
 from props.db.sync.sync import SpecimenBundle, refresh_examples_matview, sync_specimen
 from util.bazel.runfiles import get_required_path
-from util.testing.postgres import force_drop_database_sync
+from util.testing.postgres import (
+    PostgresDatabaseTemplate,
+    create_database_sync,
+    database_name_for_test,
+    force_drop_database_sync,
+)
 from util.testing.postgres_fixtures import start_postgres_container
 
 tracer = trace.get_tracer(__name__)
@@ -91,47 +94,40 @@ def postgres_base_config(postgres_container: PostgresContainer) -> DatabaseConfi
     return DatabaseConfig(host=host, port=port, database="postgres", user="postgres", password="postgres")
 
 
-def _setup_test_database(postgres_base_config: DatabaseConfig, db_name: str) -> Database:
-    """Drop (if exists), create, and migrate a test database."""
+@pytest.fixture(scope="session")
+def postgres_template(postgres_base_config: DatabaseConfig) -> Generator[PostgresDatabaseTemplate]:
+    """Migrate once; ordinary test databases copy this untouched schema."""
+    with PostgresDatabaseTemplate(postgres_base_config.url, "props_test_template") as template:
+        database = Database(postgres_base_config.with_database("props_test_template"))
+        try:
+            database.recreate()
+        finally:
+            database.dispose()
+        yield template
+
+
+def _setup_test_database(
+    postgres_base_config: DatabaseConfig, db_name: str, postgres_template: PostgresDatabaseTemplate
+) -> Database:
+    """Create a writable clone, retaining the caller's explicit teardown policy."""
     admin_url = postgres_base_config.with_database("postgres").url
     force_drop_database_sync(admin_url, db_name)
-    ensure_database_exists(postgres_base_config, db_name)
-    database = Database(postgres_base_config.with_database(db_name))
-    database.recreate()
-    return database
-
-
-def _sanitize_test_id(test_id: str, max_length: int = 63) -> str:
-    """Sanitize pytest node ID for use in PostgreSQL database name."""
-    # Keep only alphanumeric and underscore; replace other chars with underscore
-    sanitized = "".join(c if c.isalnum() or c == "_" else "_" for c in test_id)
-    # Collapse consecutive underscores
-    while "__" in sanitized:
-        sanitized = sanitized.replace("__", "_")
-    # Trim leading/trailing underscores
-    sanitized = sanitized.strip("_")
-    # Ensure it fits PostgreSQL's 63-character limit (including 'props_test_' prefix)
-    prefix = "props_test_"
-    available_length = max_length - len(prefix)
-    if len(sanitized) > available_length:
-        hash_suffix = hashlib.sha256(test_id.encode()).hexdigest()[:8]
-        prefix_length = available_length - len(hash_suffix) - 1
-        sanitized = f"{sanitized[:prefix_length]}_{hash_suffix}"
-    return sanitized
+    create_database_sync(admin_url, db_name, template=postgres_template.template_name)
+    return Database(postgres_base_config.with_database(db_name))
 
 
 @pytest.fixture
-def db(request: pytest.FixtureRequest, postgres_base_config: DatabaseConfig) -> Generator[Database]:
+def db(
+    request: pytest.FixtureRequest, postgres_base_config: DatabaseConfig, postgres_template: PostgresDatabaseTemplate
+) -> Generator[Database]:
     """Create isolated Database for each test.
 
-    Creates a unique database per test, initializes schema, and drops it after.
+    Clones the migrated schema into a unique database per test and drops it after.
     Safe for parallel pytest-xdist execution - each test gets its own database.
     """
-    test_node_id = request.node.nodeid
-    sanitized_id = _sanitize_test_id(test_node_id)
-    db_name = f"props_test_{sanitized_id}"
+    db_name = database_name_for_test(f"props_test_{request.node.nodeid}")
 
-    database = _setup_test_database(postgres_base_config, db_name)
+    database = _setup_test_database(postgres_base_config, db_name, postgres_template)
 
     try:
         yield database
@@ -180,7 +176,9 @@ def session_monkeypatch() -> Generator[pytest.MonkeyPatch]:
 
 @pytest_asyncio.fixture(scope="session", loop_scope="session")
 async def _session_synced_db(
-    postgres_base_config: DatabaseConfig, session_monkeypatch: pytest.MonkeyPatch
+    postgres_base_config: DatabaseConfig,
+    session_monkeypatch: pytest.MonkeyPatch,
+    postgres_template: PostgresDatabaseTemplate,
 ) -> AsyncGenerator[Database]:
     """Internal: Session-scoped synced database.
 
@@ -189,7 +187,7 @@ async def _session_synced_db(
     """
     db_name = "props_test_session_shared"
 
-    database = _setup_test_database(postgres_base_config, db_name)
+    database = _setup_test_database(postgres_base_config, db_name, postgres_template)
     _sync_test_fixtures(database, session_monkeypatch)
 
     try:
