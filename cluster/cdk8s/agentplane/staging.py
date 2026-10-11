@@ -30,7 +30,6 @@ from agentplane.app.action_federation_settings import ExchangeFederationSettings
 from cluster.cdk8s import agent_access_profiles, cilium, external_creds, ha_mcp, node_scheduling
 from cluster.cdk8s.agentplane import actions, command_sandbox, notifications, staging_config
 from cluster.cdk8s.agentplane.actions_staging_policies import add_staging_action_policies
-from cluster.cdk8s.agentplane.app import RunnerTemplate
 from cluster.cdk8s.agentplane.chart import environment_chart
 from cluster.cdk8s.agentplane.egress_credentials import (
     EXTERNAL_CREDS_STORE,
@@ -54,6 +53,7 @@ from cluster.cdk8s.agentplane.environment import (
 from cluster.cdk8s.agentplane.grpc_channel_config import LARGE_EVENT_GRPC_CHANNEL_OPTIONS
 from cluster.cdk8s.agentplane.llm_ingress import model_configs
 from cluster.cdk8s.agentplane.namespaces import STAGING_NAMESPACE
+from cluster.cdk8s.agentplane.runner_sandbox import RunnerTemplate
 from cluster.cdk8s.external_secrets.minted_secret import mint_bearer_secret
 from cluster.cdk8s.external_secrets.single_secret_store import single_secret_store
 from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on_many
