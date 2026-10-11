@@ -54,6 +54,7 @@ pub struct Fixture {
     /// The debundler's stderr from the successful run, for asserting
     /// on warnings/notices (e.g. admission-override notices).
     pub stderr: String,
+    source_path: PathBuf,
     // Held to keep the tempdir alive for the duration of assertions.
     _root: TempDir,
 }
@@ -143,6 +144,7 @@ pub fn run_fixture(opts: FixtureOpts<'_>) -> Fixture {
         out_root: app_root,
         report_root: setup.report_root,
         stderr: result.stderr,
+        source_path: setup.snapshot_root.join(format!("{}.js", opts.chunk_id)),
         _root: setup.root,
     }
 }
@@ -377,6 +379,12 @@ pub fn run_spec_validate(spec_path: &Path, extra_args: &[&str]) -> CommandResult
 
 pub fn assert_entry_output(fixture: &Fixture, expected_stdout: &str) {
     assert_node_output(&fixture.entry_path, expected_stdout, "");
+}
+
+/// Compare the original chunk and its emitted entry under the same Node runtime.
+pub fn assert_preserved_entry_output(fixture: &Fixture, expected_stdout: &str) {
+    assert_node_output(&fixture.source_path, expected_stdout, "");
+    assert_entry_output(fixture, expected_stdout);
 }
 
 /// Run `node --check` against every emitted JavaScript file in a fixture.
