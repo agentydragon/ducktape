@@ -125,6 +125,9 @@ def backend(
             destinations=DestinationResolver(inventory, core_api),
             caller_accounts=frozenset({MANAGER}),
             platform_instructions=platform_instructions,
+            # A real runner answers here, so admission needs room for delivery's two-second recheck:
+            # under one second, a single missed dispatch wakeup or control-stream reconnect fails it.
+            runner_admission_ack_timeout_s=15,
         )
         with (
             portal.wrap_async_context_manager(service(resources, provisioning)) as target,
