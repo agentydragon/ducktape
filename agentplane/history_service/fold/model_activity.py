@@ -11,8 +11,8 @@ from uuid import UUID
 from sqlalchemy import update
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from agentplane.history_service.fold.models import ThreadHistorySummary
 from agentplane.proto import event_log_pb2, event_pb2
-from agentplane.thread_fold.models import ThreadHistorySummary
 
 # gazelle:include_dep @pypi//protobuf
 

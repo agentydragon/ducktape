@@ -237,10 +237,7 @@ async def _serve(
             httpx.AsyncClient(base_url="http://test-unused-notifications.invalid") as notifications_http,
         ):
             history_watch = HistoryWatch(
-                watch_client,
-                lambda: watch_client.watch_session_summaries(timeout_s=60),
-                database_updates.changes[Channel.THREADS].notify,
-                retry_interval_s=0.05,
+                watch_client, database_updates.changes[Channel.THREADS].notify, retry_interval_s=0.05
             )
             egress = EgressAccess(EgressReader(namespace=NAMESPACE, custom_objects=custom), inventory)
             action_policy = ActionPolicyInventory(namespace=NAMESPACE, custom_objects=custom)

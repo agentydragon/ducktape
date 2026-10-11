@@ -9,8 +9,9 @@ from uuid import UUID
 
 from google.protobuf.json_format import MessageToDict
 
-from agentplane.thread_fold import fold
-from agentplane.thread_fold.views import (
+from agentplane.history_service.fold import fold
+from agentplane.history_service.fold.views import (
+    CommandOutcome,
     EntityKind,
     ThreadCommandEntityView,
     ThreadCommandState,
@@ -234,7 +235,7 @@ def _command_entity(
         entity_id=value.command_id,
         cursor=value.admission_cursor,
         revision_cursor=value.outcome_cursor or value.admission_cursor,
-        pending=value.outcome is fold.CommandOutcome.PENDING,
+        pending=value.outcome is CommandOutcome.PENDING,
         turn_id=None,
         state=ThreadCommandState(
             operation=value.operation,

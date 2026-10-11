@@ -9,9 +9,9 @@ import pytest_bazel
 from sqlalchemy import func, select, text, update
 from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker, create_async_engine
 
-from agentplane.thread_fold import projection_lease
-from agentplane.thread_fold.models import SessionProjectionLease
-from agentplane.thread_fold.projection_lease import ProjectionLease, ProjectionLeaseLostError
+from agentplane.history_service.fold import projection_lease
+from agentplane.history_service.fold.models import SessionProjectionLease
+from agentplane.history_service.fold.projection_lease import ProjectionLease, ProjectionLeaseLostError
 
 # gazelle:include_dep //agentplane/history_service/storage:conftest
 

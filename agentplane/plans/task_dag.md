@@ -801,7 +801,7 @@ tombstones with a verifiable condition in code (`keepingOffset` in
 
 ```mermaid
 flowchart TD
-    APP_THREAD_VIEW_CLEANUP[Candidate: app Thread view shims]
+    APP_THREAD_VIEW_CLEANUP[Candidate: drop AGENTPLANE_THREAD_READS]
     RUNNER_SESSION_RECORD_SHIMS[Blocked: drop runner session record compatibility]
     LEGACY_SANDBOX_RETIRE[Retire pre-dial-out Sandboxes]
     LEGACY_SANDBOX_RETIRE --> RUNNER_SESSION_RECORD_SHIMS
@@ -824,12 +824,11 @@ budget resolution, 2026-10-10 PDT) re-resolves the budget at Open, and `instruct
 then still resume on these records. Once none remains, delete the flag and its Open branch, make
 both fields required, and have `from_spec` set `event_source_id` explicitly.
 
-### `APP_THREAD_VIEW_CLEANUP` — app Thread view shims
+### `APP_THREAD_VIEW_CLEANUP` — drop `AGENTPLANE_THREAD_READS`
 
-**Candidate; Thread fold move lane.** The frontend reads `requested_value` with a `.default(null)`
-for Command rows written before the field existed; a fold rebuilt in a new epoch has none.
-Once staging and testing serve an app image without `Settings.thread_reads`, drop the manifests'
-`AGENTPLANE_THREAD_READS` (its CLEANUP tombstone in `cluster/cdk8s/agentplane/app.py`).
+**Candidate; Thread fold move lane.** Once staging and testing serve an app image without
+`Settings.thread_reads`, drop the manifests' `AGENTPLANE_THREAD_READS` (its CLEANUP tombstone in
+`cluster/cdk8s/agentplane/app.py`).
 
 ### `HISTORY_FOLD_ALWAYS_ON` — the History Service always folds
 
@@ -1018,7 +1017,6 @@ flowchart TD
         GATEWAY_SANDBOX_READS[Candidate: the gateway reads Sandboxes read-only]
         SANDBOX_DEAD_CODE[Candidate: delete KubernetesBindings.run]
         RUNNER_ERRORS_REHOME[Blocked: errors beside the client that raises them]
-        THREAD_FOLD_SINGLE_OWNER[Candidate: the fold has one owner]
         SETTLE_DELTAS_ALWAYS_ON[Unscheduled: retire the settle_deltas flag]
         APP_SERVICE_NAMES[Candidate: app names the right services]
         APP_TEST_CLIENT_MOVE[Candidate: app test client out of production]
@@ -1098,15 +1096,6 @@ reconcile through `Provisioning.reconcile_once`.
 refused" vocabulary: the gateway, the Sandbox Service client and the app's Thread-identity conflicts
 raise it. Move it beside the gateway client, per grpc_services.md, and give the app's `bridge.py`
 its own error type.
-
-### `THREAD_FOLD_SINGLE_OWNER` — the fold has one owner
-
-**Candidate; Thread fold move lane.** With only the History Service running the fold,
-`HistoryProjector` takes its `Store` instead of two single-implementation callables and drops its
-`grpc.RpcError` catch, the app's `HistoryWatch` calls the client directly, app-era wording goes,
-`EventLogStore.open` raises an app error instead of `EventReplicationError`, and `thread_fold` moves
-under `history_service/`: the view types the browser syncs become a public History Service module,
-and the fold engine, projector and tables private to it.
 
 ### `SETTLE_DELTAS_ALWAYS_ON` — delta settlement always on
 

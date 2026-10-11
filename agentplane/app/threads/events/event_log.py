@@ -18,11 +18,14 @@ from agentplane.app.threads.summaries import FeedSnapshot, Summaries
 from agentplane.history_service.client import HistoryServiceClient
 from agentplane.proto import event_log_pb2
 from agentplane.sandbox_service.settled_cursors import next_stored, settled_ranges
-from agentplane.thread_fold.recording import EventReplicationError
 
 # The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.
 # gazelle:include_dep @pypi//protobuf
 # gazelle:include_dep //agentplane/history_service:protocol_pb2
+
+
+class SessionAdmissionError(ValueError):
+    """A discovered Session cannot become a Thread."""
 
 
 class ThreadNotFoundError(Exception):
@@ -49,9 +52,9 @@ class EventLogStore:
         try:
             thread_id = UUID(session_id)
         except ValueError as error:
-            raise EventReplicationError("a new Thread requires a canonical public Session ID") from error
+            raise SessionAdmissionError("a new Thread requires a canonical public Session ID") from error
         if str(thread_id) != session_id:
-            raise EventReplicationError("a new Thread requires a canonical public Session ID")
+            raise SessionAdmissionError("a new Thread requires a canonical public Session ID")
         existing_query = select(EventLog).where(EventLog.sandbox == sandbox, EventLog.id == thread_id)
         async with self._sessions() as session:
             existing = await session.scalar(existing_query)
@@ -69,7 +72,7 @@ class EventLogStore:
                 return created
             existing = (await session.scalars(existing_query)).one_or_none()
             if existing is None:
-                raise EventReplicationError("public Session ID belongs to another sandbox")
+                raise SessionAdmissionError("public Session ID belongs to another sandbox")
             # Another replica may win this insert race. Preserve its mapping rather than
             # reinitializing an existing Thread.
             return existing.id

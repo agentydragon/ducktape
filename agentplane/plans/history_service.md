@@ -97,9 +97,9 @@ a node in the [task DAG](task_dag.md):
 
 ## Decided (operator, 2026-10-10 PDT)
 
-- **Fold placement:** the projector and fold (`thread_fold/`, shared by the app and the History
-  Service), the projection tables above with their per-Session leases, and
-  `thread_history_summary` (every field derived from the log) move. Thread `name` and `archived`,
+- **Fold placement:** the projector and fold (now `history_service/fold/`), the projection tables
+  above with their per-Session leases, and `thread_history_summary` (every field derived from the
+  log) move. Thread `name` and `archived`,
   which the operator authors, stay in the app, as does `event_log` reduced to the Thread → Session
   link.
 - **Reads:** for now only the app's ServiceAccount reads history, for every Session; agent reads

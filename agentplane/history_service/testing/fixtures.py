@@ -10,9 +10,9 @@ from collections.abc import AsyncIterator
 import pytest
 from sqlalchemy.ext.asyncio import AsyncEngine
 
+from agentplane.history_service.fold.models import Base as FoldBase
 from agentplane.history_service.storage.db import Base
 from agentplane.runner_gateway.commands import db as commands_db
-from agentplane.thread_fold.models import Base as FoldBase
 from util.testing.postgres import PostgresDatabaseTemplate
 from util.testing.sqlalchemy_engines import postgres_async_engine
 

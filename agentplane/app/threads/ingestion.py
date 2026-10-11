@@ -10,10 +10,9 @@ import logging
 import grpc
 from sqlalchemy.exc import SQLAlchemyError
 
-from agentplane.app.threads.events.event_log import EventLogStore
+from agentplane.app.threads.events.event_log import EventLogStore, SessionAdmissionError
 from agentplane.app.threads.sessions import SandboxNotReachableError, SandboxSessions
 from agentplane.sandbox_service.models import SandboxNotFoundError
-from agentplane.thread_fold.recording import EventReplicationError
 
 # gazelle:include_dep @pypi//grpcio
 
@@ -62,7 +61,7 @@ class Ingester:
                 for summary in summaries:
                     try:
                         await self._event_logs.open(sandbox, summary.session_id)
-                    except EventReplicationError:
+                    except SessionAdmissionError:
                         logger.warning(
                             "session %s/%s requires explicit history reconciliation", sandbox, summary.session_id
                         )

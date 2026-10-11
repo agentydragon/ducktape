@@ -19,31 +19,22 @@ from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
 
-from agentplane.history_service import protocol_pb2 as history_pb2
+from agentplane.history_service.fold import projection_lease
+from agentplane.history_service.fold.models import ThreadHistorySummary
+from agentplane.history_service.fold.projection_lease import ProjectionLease, ProjectionLeaseLostError
+from agentplane.history_service.fold.projector import HistoryProjector, ProjectionProgress
+from agentplane.history_service.fold.recording import EventReplicationError
 from agentplane.history_service.storage.db import SessionHistory
 from agentplane.history_service.storage.history_changes import HistoryChanges
 from agentplane.history_service.storage.store import Store
-from agentplane.history_service.summary_changes import notify_summaries
-from agentplane.thread_fold import projection_lease
-from agentplane.thread_fold.models import ThreadHistorySummary
-from agentplane.thread_fold.projection_lease import ProjectionLease, ProjectionLeaseLostError
-from agentplane.thread_fold.projector import HistoryProjector, PageReader, ProjectionProgress
-from agentplane.thread_fold.recording import EventReplicationError
 
 # gazelle:include_dep @pypi//protobuf
 
 logger = logging.getLogger(__name__)
 
-# Distinct from the app's, so a reader holding rows of one projection sees a scope reset on the other.
+# Every fold row carries it, so a reader holding rows of another epoch sees a scope reset.
 FOLD_EPOCH = "history-v1"
 LEASE_DURATION = timedelta(seconds=30)
-
-
-def history_pages(history: Store) -> PageReader:
-    async def read(session_id: UUID, after_cursor: int, limit: int) -> history_pb2.ReadSessionEventsResponse:
-        return await history.read_page(session_id, after_cursor=after_cursor, limit=limit)
-
-    return read
 
 
 @dataclass(frozen=True)
@@ -57,9 +48,7 @@ class FoldShadow:
     def __init__(self, *, engine: AsyncEngine, history: Store, concurrency: int, page_size: int) -> None:
         """`engine` writes the fold tables; `history` reads the raw log, which this never writes."""
         self._sessions = async_sessionmaker(engine, expire_on_commit=False)
-        self._projector = HistoryProjector(
-            engine, history_pages(history), projection_epoch=FOLD_EPOCH, page_size=page_size, notify=notify_summaries
-        )
+        self._projector = HistoryProjector(engine, history, projection_epoch=FOLD_EPOCH, page_size=page_size)
         self._slots = asyncio.Semaphore(concurrency)
         self._leases: dict[UUID, ProjectionLease] = {}
 
@@ -101,11 +90,11 @@ class FoldShadow:
         async with asyncio.TaskGroup() as tasks:
             advancing = [tasks.create_task(self._advance(session_id)) for session_id in session_ids]
         progress = [task.result() for task in advancing]
-        behind = [p for p in progress if p is not None and p.through_cursor < p.service_cursor]
+        behind = [p for p in progress if p is not None and p.through_cursor < p.committed_cursor]
         return FoldBacklog(
             sessions=len(session_ids),
             behind=len(behind),
-            events_behind=sum(p.service_cursor - p.through_cursor for p in behind),
+            events_behind=sum(p.committed_cursor - p.through_cursor for p in behind),
         )
 
     async def _discover(self) -> set[UUID]:
@@ -141,7 +130,10 @@ class FoldShadow:
                 logger.warning("fold shadow stalled for %s", session_id, exc_info=True)
                 return None
             logger.debug(
-                "fold shadow %s: through=%s committed=%s", session_id, progress.through_cursor, progress.service_cursor
+                "fold shadow %s: through=%s committed=%s",
+                session_id,
+                progress.through_cursor,
+                progress.committed_cursor,
             )
             return progress
 

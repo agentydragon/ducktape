@@ -12,9 +12,7 @@ async def test_fold_commits_and_renewals_wake_thread_readers(service_history_db_
     changes = Changes()
     woken = asyncio.Event()
     async with history_service(service_history_db_url, tmp_path / "history-token", watch_lease_s=3) as history:
-        watch = asyncio.create_task(
-            HistoryWatch(history, history.watch_session_summaries, changes.notify, retry_interval_s=0.05).run()
-        )
+        watch = asyncio.create_task(HistoryWatch(history, changes.notify, retry_interval_s=0.05).run())
         try:
             with changes.subscribe(woken):
                 await asyncio.wait_for(woken.wait(), 10)  # the stream's opening notice

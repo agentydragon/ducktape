@@ -7,10 +7,10 @@ from sqlalchemy import select, tuple_
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 from agentplane.history_service import protocol_pb2
+from agentplane.history_service.fold.models import ThreadCheckpoint, ThreadEntity
+from agentplane.history_service.fold.views import ThreadEntityView
 from agentplane.history_service.storage.db import SessionHistory
 from agentplane.history_service.storage.store import HistoryNotFoundError
-from agentplane.thread_fold.models import ThreadCheckpoint, ThreadEntity
-from agentplane.thread_fold.views import ThreadEntityView
 
 # gazelle:include_dep @pypi//protobuf
 

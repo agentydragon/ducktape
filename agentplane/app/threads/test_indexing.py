@@ -4,33 +4,27 @@ from __future__ import annotations
 
 import gc
 import tracemalloc
-from collections.abc import Sequence
-from datetime import UTC
 from itertools import batched
 from typing import Any
 from uuid import UUID
 
 import pytest
 import pytest_bazel
-from sqlalchemy import event, func, insert, select
-from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
+from sqlalchemy import event, func, select
 
 from agentplane.app.testing.history import SeededEventLogStore as EventLogStore
 from agentplane.app.testing.thread_test_support import event_entry
 from agentplane.app.threads.store import ThreadStore
 from agentplane.app.threads.view.content import ContentStore
-from agentplane.history_service.testing.history import History
-from agentplane.proto import command_pb2, event_log_pb2, event_pb2
-from agentplane.thread_fold import fold
-from agentplane.thread_fold.models import (
+from agentplane.history_service.fold.models import (
     ThreadCheckpoint,
     ThreadEntity,
     ThreadEvidence,
-    ThreadHistorySummary,
     ThreadPayloadChunk,
     ThreadPayloadManifest,
 )
-from agentplane.thread_fold.rows import ordered_entity_rows
+from agentplane.history_service.testing.history import History
+from agentplane.proto import command_pb2, event_log_pb2, event_pb2
 from util.testing.undeclared_outputs import undeclared_outputs_dir
 
 # The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.
@@ -63,7 +57,10 @@ async def test_command_lookup_and_touched_projection_preload_stay_indexed_with_l
     async with history.paused():
         for batch in batched(filler, 1_000, strict=False):
             await history.store.append(thread, batch)
-        await _seed_indexed_history(thread, history_size, materialized_item_count, [*initial, *filler], history.engine)
+        await history.seed_folded(
+            thread, [*initial, *filler], prior_items={f"history-{index}" for index in range(materialized_item_count)}
+        )
+    await _assert_seeded(thread, materialized_item_count, history)
 
     scope = await content.current_scope(thread)
     assert scope is not None
@@ -120,103 +117,12 @@ async def test_command_lookup_and_touched_projection_preload_stay_indexed_with_l
     (undeclared_outputs_dir() / f"{request.node.name}-projection-profile.txt").write_text("\n".join(profile))
 
 
-async def _seed_indexed_history(
-    thread: UUID,
-    history_size: int,
-    materialized_item_count: int,
-    archive: Sequence[event_log_pb2.EventEntry],
-    engine: AsyncEngine,
-) -> None:
-    """Keep the archive full while seeding the unrelated, fully projected item pairs."""
-    sessions = async_sessionmaker(engine, expire_on_commit=False)
-    async with sessions.begin() as session:
+async def _assert_seeded(thread: UUID, materialized_item_count: int, history: History) -> None:
+    """The bulk seed materialized every filler item, its payload and its evidence."""
+    async with history.sessions() as session:
         checkpoint = await session.get(ThreadCheckpoint, thread)
         assert checkpoint is not None
-        assert checkpoint.through_cursor == 2
         epoch = checkpoint.projection_epoch
-        source_id = checkpoint.source_id
-        result = fold.advance(
-            fold.ViewState(fold.Position(source_id, epoch, through_cursor=2)),
-            fold.EventBatch(source_id, 2, tuple(archive[2:]), ()),
-            fold.PriorEntities(
-                items={f"history-{index}": None for index in range(materialized_item_count)}, commands={}, bodies={}
-            ),
-        )
-        assert result.state.position.through_cursor == history_size + 2
-        next_index = await session.scalar(
-            select(func.max(ThreadEntity.entity_index)).where(
-                ThreadEntity.thread_id == thread, ThreadEntity.projection_epoch == epoch
-            )
-        )
-        next_index = 0 if next_index is None else next_index + 1
-        assert all(isinstance(write, fold.AppendPayload) and write.base is None for write in result.payload_writes)
-        extents = {write.reference: int(bool(write.text)) for write in result.payload_writes}
-        projected = ordered_entity_rows(thread, result, extents)
-        items = [row for row in projected if row["entity_kind"] == "item"]
-        view_state_row = next(row for row in projected if row["entity_kind"] == "view_state")
-        assert len(items) == materialized_item_count
-        assert len(projected) == materialized_item_count + 1
-        for index, row in enumerate(items):
-            row["entity_index"] = next_index + index
-        await session.execute(insert(ThreadEntity), items)
-        view_state = await session.get(ThreadEntity, (thread, epoch, "view_state", "current"))
-        assert view_state is not None
-        view_state.cursor = result.state.position.through_cursor
-        view_state.revision_cursor = result.state.position.through_cursor
-        assert isinstance(view_state_row["state"], dict)
-        view_state.state = view_state_row["state"]
-        checkpoint.through_cursor = result.state.position.through_cursor
-
-        manifests = []
-        chunks = []
-        for write in result.payload_writes:
-            assert isinstance(write, fold.AppendPayload)
-            assert write.base is None
-            reference = write.reference
-            chunk_count = int(bool(write.text))
-            manifests.append(
-                {
-                    "thread_id": thread,
-                    "projection_epoch": reference.projection_epoch,
-                    "owner_cursor": reference.owner_cursor,
-                    "owner_id": reference.owner_id,
-                    "field": reference.field,
-                    "generation": reference.generation,
-                    "revision_cursor": reference.revision_cursor,
-                    "chunk_count": chunk_count,
-                    "content_bytes": len(write.text.encode()),
-                }
-            )
-            if chunk_count:
-                chunks.append(
-                    {
-                        "thread_id": thread,
-                        "projection_epoch": reference.projection_epoch,
-                        "owner_cursor": reference.owner_cursor,
-                        "owner_id": reference.owner_id,
-                        "field": reference.field,
-                        "generation": reference.generation,
-                        "chunk_index": 0,
-                        "text": write.text,
-                    }
-                )
-        await session.execute(insert(ThreadPayloadManifest), manifests)
-        if chunks:
-            await session.execute(insert(ThreadPayloadChunk), chunks)
-        evidence = [
-            {
-                "thread_id": thread,
-                "projection_epoch": value.projection_epoch,
-                "entity_cursor": value.entity_cursor,
-                "observation_cursor": value.observation_cursor,
-            }
-            for value in result.evidence_upserts
-        ]
-        await session.execute(insert(ThreadEvidence), evidence)
-        summary = await session.get(ThreadHistorySummary, thread)
-        assert summary is not None
-        summary.first_event_at = archive[0].event.at.ToDatetime(tzinfo=UTC)
-        summary.last_event_at = archive[-1].event.at.ToDatetime(tzinfo=UTC)
         entity_count = await session.scalar(
             select(func.count())
             .select_from(ThreadEntity)

@@ -10,8 +10,9 @@ from uuid import UUID
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from agentplane.thread_fold import fold
-from agentplane.thread_fold.models import ThreadPayloadChunk, ThreadPayloadManifest
+from agentplane.history_service.fold import fold
+from agentplane.history_service.fold.models import ThreadPayloadChunk, ThreadPayloadManifest
+from agentplane.history_service.fold.views import PayloadField
 
 
 @dataclass
@@ -25,7 +26,7 @@ class _PayloadPlan:
 
 async def write_payloads(session: AsyncSession, thread_id: UUID, writes: Sequence[fold.PayloadWrite]) -> None:
     plans_by_reference: dict[fold.PayloadRef, _PayloadPlan] = {}
-    final_plans: dict[tuple[int, str, fold.PayloadField], _PayloadPlan] = {}
+    final_plans: dict[tuple[int, str, PayloadField], _PayloadPlan] = {}
     for write in writes:
         if isinstance(write, fold.ReplacePayload):
             plan = _PayloadPlan(write.reference, 0, 0, [write.text], True)

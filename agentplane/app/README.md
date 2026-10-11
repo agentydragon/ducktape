@@ -75,11 +75,8 @@ bbr test //agentplane/app/...
   `changes.py` wake-up, and waking every channel after a reconnect.
 - `identity.py`: whether a request proved itself, by whichever credential it carried; `oidc.py` and
   `auth_routes.py` are the browser's half of that (see below).
-- `threads/view/`: the conversation view projected from a thread's events. `fold.py` (the
-  typed deterministic event fold with independent item revisions), `views.py` (the rows' client
-  contract), `rows.py` (fold records to and from entity rows), `payloads.py` (insert-only bodies),
-  `recording.py` (the fold write path) and `content.py` (`ContentStore`: reads of what the fold
-  assembled).
+- `threads/view/content.py`: `ContentStore`, reads of what the History Service's fold assembled
+  (`../history_service/fold/`).
 - `electric.py`: authenticated, scope-checked metadata, selected-command, and payload shape proxy.
   The private Electric service reads PostgreSQL logical replication; app replicas do not retain
   per-listener thread copies. The scope read is a long poll held until the thread's first fold.
@@ -139,7 +136,7 @@ their badges even while collapsed, and interrupted items do not become streaming
 a later turn starts.
 
 The retained-event SSE API reads archived events through the History Service on whichever replica
-receives its request. The History Service's fold-commit notices (`SummaryWatch`) and the app's
+receives its request. The History Service's fold-commit notices (`HistoryWatch`) and the app's
 transactional `NOTIFY` wake Thread and inventory readers; both are hints, and the History Service's
 cursor remains authoritative.
 

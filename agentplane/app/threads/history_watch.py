@@ -2,20 +2,17 @@
 
 import asyncio
 import logging
-from collections.abc import AsyncIterator, Callable
+from collections.abc import Callable
 
 from agentplane.history_service.client import HistoryServiceClient
 
 logger = logging.getLogger(__name__)
-
-WatchStream = Callable[[], AsyncIterator[None]]
 
 
 class HistoryWatch:
     def __init__(
         self,
         history: HistoryServiceClient,
-        watch: WatchStream,
         changed: Callable[[], None],
         *,
         retry_interval_s: float,
@@ -25,7 +22,6 @@ class HistoryWatch:
         if retry_interval_s <= 0 or fresh_channel_after < 1:
             raise ValueError("retry interval and fresh-channel threshold must be positive")
         self._history = history
-        self._watch = watch
         self._changed = changed
         self._retry_interval_s = retry_interval_s
         self._fresh_channel_after = fresh_channel_after
@@ -35,7 +31,7 @@ class HistoryWatch:
         while True:
             try:
                 # Each stream opens with a notice, covering changes committed while it was down.
-                async for _ in self._watch():
+                async for _ in self._history.watch_session_summaries():
                     failures = 0
                     self._changed()
                 failures = 0

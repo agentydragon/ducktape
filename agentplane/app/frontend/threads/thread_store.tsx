@@ -83,8 +83,7 @@ const stateSchema = z.union([
     outcome: z.enum(["pending", "effected", "failed", "noop"]),
     outcome_cursor: z.string().nullable(),
     outcome_reason: z.string().nullable(),
-    // Command rows written before requested_value was introduced are still present in the shape.
-    requested_value: z.string().nullable().default(null),
+    requested_value: z.string().nullable(),
   }),
 ]);
 const entitySchema = z.object({

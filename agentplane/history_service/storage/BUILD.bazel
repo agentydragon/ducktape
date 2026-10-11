@@ -38,7 +38,7 @@ py_library(
     data = ["//agentplane/history_service/storage/migrations:files"],
     deps = [
         ":db",
-        "//agentplane/thread_fold:models",
+        "//agentplane/history_service/fold:models",
         "//util:db_migrations",
     ],
 )

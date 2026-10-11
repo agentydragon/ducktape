@@ -176,7 +176,7 @@ message ReadThreadEntitiesResponse {
 
 message ThreadEntity {
   uint64 entity_index = 1;
-  // A `ThreadEntityView` JSON document (`agentplane.thread_fold.views`), the row browsers sync.
+  // A `ThreadEntityView` JSON document (`agentplane.history_service.fold.views`), the row browsers sync.
   string view_json = 2;
 }
 

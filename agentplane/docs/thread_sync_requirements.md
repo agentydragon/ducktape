@@ -125,7 +125,7 @@ worth more.
   2026-09-28.
 
 **D4 is mostly given by the storage.** A body is insert-only chunks: each ingestion batch that
-appends to it writes one chunk row holding only that batch's text (`thread_fold/payloads.py`).
+appends to it writes one chunk row holding only that batch's text (`history_service/fold/payloads.py`).
 A design that syncs chunk rows transfers the delta, at batch rather than token granularity. What
 fails D4 is re-sending a body whole on each change. Two costs ride on each append regardless: the
 entity row whose reference moved, and a replacement, which starts a new generation and so is a new
