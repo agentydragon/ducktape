@@ -748,7 +748,7 @@ are irreplaceable, and a node that deletes a column or row stops for the operato
 ```mermaid
 flowchart TD
     HISTORY_SANDBOX_LOCATOR_DROP[Blocked: drop the Sandbox locator from the history database]
-    HISTORY_MIGRATE_IMAGE_RENAME[Candidate: name the history migration image for the History Service]
+    HISTORY_MIGRATE_IMAGE_RENAME[Blocked: name the history migration image for the History Service]
     HISTORY_WRITER_SWITCH_RETIRE[Blocked: delete the history_writer switch]
     HISTORY_DATABASE_RENAME[Blocked: rename the sandbox_service database and role]
     SANDBOX_DATABASE_RENAME[Blocked: name the sandbox_commands database for the Sandbox Service]
@@ -774,12 +774,12 @@ Stops for the operator.
 
 ### `HISTORY_MIGRATE_IMAGE_RENAME` — the migration image says whose it is
 
-**Candidate.** `agentplane-sandbox-service-history-migrate` builds from
-`history_service/storage` and runs only as the History Service's init container. Publish it as
-`agentplane-history-migrate` beside the old name, point the History Service's manifests and Flux
-image automation at the new name once it has published, then delete the old `image_targets.json`
-entry and its `ImageRepository`/`ImagePolicy`. A manifest must not name the new image before it
-publishes.
+**Blocked on the first `agentplane-history-migrate` publish.** The migration image built from
+`history_service/storage` now publishes under both `agentplane-history-migrate` and the old
+`agentplane-sandbox-service-history-migrate`, and Flux watches both. Once the new name has a tag in
+the registry, point the History Service's init container (`cluster/cdk8s/agentplane/history_service.py`)
+and both image-pin Components at it, then delete the old `image_targets.json` entry and its
+`IMAGES` entry in `cluster/cdk8s/forgejo_registry/image_automation.py`.
 
 ### `HISTORY_WRITER_SWITCH_RETIRE` — one ingester, no switch
 

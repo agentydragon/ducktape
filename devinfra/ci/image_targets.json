@@ -271,6 +271,11 @@
       "test": "//agentplane/history_service/...",
       "registry": "forgejo"
     },
+    "agentplane-history-migrate": {
+      "target": "//agentplane/history_service/storage:migration_image",
+      "test": "//agentplane/history_service/storage/...",
+      "registry": "forgejo"
+    },
     "agentplane-history-service": {
       "target": "//agentplane/history_service:image",
       "test": "//agentplane/history_service/...",

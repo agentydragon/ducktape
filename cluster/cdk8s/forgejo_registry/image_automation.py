@@ -45,6 +45,7 @@ IMAGES = (
     "agentplane-egress-migrate",
     "agentplane-egress-sidecar",
     "agentplane-history-ingress",
+    "agentplane-history-migrate",
     "agentplane-history-service",
     "agentplane-index",
     "agentplane-llm-ingress",
@@ -55,6 +56,8 @@ IMAGES = (
     "agentplane-sandbox-build",
     "agentplane-sandbox-commands-migrate",
     "agentplane-sandbox-service",
+    # CLEANUP(added 2026-10-11): delete once the History Service's init container pulls
+    #   agentplane-history-migrate (HISTORY_MIGRATE_IMAGE_RENAME).
     "agentplane-sandbox-service-history-migrate",
     "aiquota-api",
     "airlock",
