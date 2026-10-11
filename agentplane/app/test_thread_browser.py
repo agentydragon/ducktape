@@ -15,6 +15,7 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
 from uuid import UUID
 
+import grpc
 import pytest
 import pytest_bazel
 from google.protobuf import json_format
@@ -35,7 +36,7 @@ from agentplane.app.testing.electric_service import ElectricService, electric_se
 from agentplane.app.testing.history import ProjectedHistory as Ingestion, SeededEventLogStore as EventLogStore
 from agentplane.app.testing.http2_proxy import BrowserCertificate, http2_proxy
 from agentplane.app.testing.replication_process import app_process
-from agentplane.app.testing.replication_source import SANDBOX, SESSION, ReplicationSource
+from agentplane.app.testing.replication_source import SANDBOX, SESSION, ReplicationSource, add_replication_source
 from agentplane.app.testing.thread_browser import (
     ThreadBrowser,
     append_items,
@@ -48,6 +49,7 @@ from agentplane.app.testing.thread_browser import (
 from agentplane.app.threads.store import ThreadStore
 from agentplane.app.threads.summaries import AppSummaries
 from agentplane.app.threads.view.content import ContentStore
+from agentplane.grpc_process import serving
 from agentplane.proto import command_pb2, event_log_pb2, event_pb2
 from agentplane.thread_fold.models import (
     ThreadCheckpoint,
@@ -525,8 +527,10 @@ async def test_projected_browser_streams_runner_events_and_loads_evidence_lazily
         try:
             thread = await event_logs.open(SANDBOX, SESSION)
             await ThreadStore(engine, AppSummaries(engine)).rename(thread, "Streamed thread")
+            server = grpc.aio.server()
+            add_replication_source(source, server)
             async with (
-                source.serve() as runner_port,
+                serving(server, "127.0.0.1:0", grace_s=0) as runner_port,
                 app_process(
                     service.database_url, runner_port, frontend_directory=directory, electric_url=service.url
                 ) as app,

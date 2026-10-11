@@ -40,6 +40,7 @@ from agentplane.app.threads.bridge import RunnerBridge
 from agentplane.app.threads.sessions import SandboxSessions
 from agentplane.app.threads.store import ThreadStore
 from agentplane.app.threads.view.content import ContentStore
+from agentplane.grpc_process import serving
 from agentplane.proto import event_log_pb2, runner_pb2
 from agentplane.runner.harness import Harness
 from agentplane.runner_gateway import protocol_pb2_grpc as gateway_pb2_grpc
@@ -762,24 +763,22 @@ async def unanswered_command_service(
     cancelled: asyncio.Queue[str] = asyncio.Queue()
     server = grpc.aio.server()
     gateway_pb2_grpc.add_RunnerGatewayServicer_to_server(UnansweredGateway(), server)
-    port = server.add_insecure_port("127.0.0.1:0")
     await asyncio.to_thread(token_file.write_text, "test-app-command-peer")
-    service = SandboxServiceClient(
-        f"127.0.0.1:{port}",
-        gateway_target=f"127.0.0.1:{port}",
-        namespace="test",
-        token_file=token_file,
-        command_admission_timeout_s=1,
-        request_timeout_s=5,
-        lifecycle_timeout_s=5,
-        follow_timeout_s=5,
-    )
-    await server.start()
-    try:
-        yield service, cancelled
-    finally:
-        await service.close()
-        await server.stop(0)
+    async with serving(server, "127.0.0.1:0", grace_s=0) as port:
+        service = SandboxServiceClient(
+            f"127.0.0.1:{port}",
+            gateway_target=f"127.0.0.1:{port}",
+            namespace="test",
+            token_file=token_file,
+            command_admission_timeout_s=1,
+            request_timeout_s=5,
+            lifecycle_timeout_s=5,
+            follow_timeout_s=5,
+        )
+        try:
+            yield service, cancelled
+        finally:
+            await service.close()
 
 
 async def test_unanswered_service_command_is_a_504_and_cancels_its_rpc(

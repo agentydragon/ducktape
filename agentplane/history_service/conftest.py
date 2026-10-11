@@ -89,18 +89,6 @@ class ScriptedSandboxes:
         assert journal is not None
         return journal
 
-    @asynccontextmanager
-    async def serve(self) -> AsyncIterator[str]:
-        server = grpc.aio.server()
-        gateway_pb2_grpc.add_RunnerGatewayServicer_to_server(self.gateway, server)
-        protocol_pb2_grpc.add_SandboxServiceServicer_to_server(self.holds, server)
-        port = server.add_insecure_port("127.0.0.1:0")
-        await server.start()
-        try:
-            yield f"127.0.0.1:{port}"
-        finally:
-            await server.stop(0)
-
 
 class ScriptedGateway(gateway_pb2_grpc.RunnerGatewayServicer):
     """Scripts only the subscriber's feed and follows; anything else answers UNIMPLEMENTED."""

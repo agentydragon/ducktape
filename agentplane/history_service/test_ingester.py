@@ -8,16 +8,19 @@ from pathlib import Path
 from typing import override
 from uuid import UUID, uuid4
 
+import grpc
 import pytest
 import pytest_bazel
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 
+from agentplane.grpc_process import serving
 from agentplane.history_service import protocol_pb2 as history_pb2
 from agentplane.history_service.conftest import ScriptedSandboxes, subscriber
 from agentplane.history_service.ingester import HOLDER, HistoryIngester, claim, logger
 from agentplane.history_service.storage.store import HistoryConflictError, HistoryNotFoundError, Store
 from agentplane.proto import event_log_pb2, event_pb2
-from agentplane.sandbox_service import protocol_pb2
+from agentplane.runner_gateway import protocol_pb2_grpc as gateway_pb2_grpc
+from agentplane.sandbox_service import protocol_pb2, protocol_pb2_grpc
 
 # gazelle:include_dep @pypi//protobuf
 # gazelle:include_dep //agentplane/history_service/storage:conftest
@@ -110,8 +113,11 @@ def committed(store: Store, commits: Commits) -> Callable[[UUID, int], Awaitable
 
 @pytest.fixture
 async def target(sandboxes: ScriptedSandboxes) -> AsyncIterator[str]:
-    async with sandboxes.serve() as address:
-        yield address
+    server = grpc.aio.server()
+    gateway_pb2_grpc.add_RunnerGatewayServicer_to_server(sandboxes.gateway, server)
+    protocol_pb2_grpc.add_SandboxServiceServicer_to_server(sandboxes.holds, server)
+    async with serving(server, "127.0.0.1:0", grace_s=0) as port:
+        yield f"127.0.0.1:{port}"
 
 
 @pytest.fixture

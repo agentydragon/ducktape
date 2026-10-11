@@ -10,6 +10,7 @@ py_library(
     testonly = True,
     srcs = ["backend.py"],
     deps = [
+        "//agentplane:grpc_process",
         "//agentplane:subjects",
         "//agentplane/history_service:client",
         "//agentplane/history_service:evidence",

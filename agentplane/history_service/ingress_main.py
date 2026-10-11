@@ -4,12 +4,11 @@ import asyncio
 import logging
 
 import grpc
-import uvicorn
-from fastapi import FastAPI
 from kubernetes_asyncio import client as k8s_client, config as k8s_config
 from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import create_async_engine
 
+from agentplane.grpc_process import serve_health, serving
 from agentplane.history_service.ingress import Resources, Timing, add_ingress
 from agentplane.history_service.ingress_settings import IngressSettings
 from agentplane.history_service.storage.store import Store
@@ -45,20 +44,8 @@ async def serve(settings: IngressSettings) -> None:
                 ),
                 server,
             )
-            server.add_insecure_port(f"{settings.host}:{settings.port}")
-            await server.start()
-            health = FastAPI(openapi_url=None, docs_url=None, redoc_url=None)
-
-            @health.get("/healthz")
-            async def healthz() -> dict[str, str]:
-                return {"status": "ok"}
-
-            try:
-                await uvicorn.Server(
-                    uvicorn.Config(health, host=settings.host, port=settings.health_port, access_log=False)
-                ).serve()
-            finally:
-                await server.stop(grace=5)
+            async with serving(server, f"{settings.host}:{settings.port}", grace_s=5):
+                await serve_health(settings.host, settings.health_port)
     finally:
         await engine.dispose()
 

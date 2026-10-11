@@ -92,9 +92,10 @@ Everything that holds a connection is closed by a context manager, never by a ha
 - A client class is an async context manager that closes its channel:
   `async with HistoryServiceClient(...) as history:`. A process that owns several enters them on one
   `AsyncExitStack`; a test fixture yields from inside the `async with`.
-- `grpc.aio.Server` has no context-manager form, so one shared async context manager registers
-  nothing itself but owns the rest: bind, `start`, and `stop` with the given grace on exit. Mains
-  and test fixtures use it rather than repeating the sequence.
+- `grpc.aio.Server` has no context-manager form, so one shared async context manager,
+  `agentplane.grpc_process.serving`, registers nothing itself but owns the rest: bind, `start`,
+  and `stop` with the given grace on exit. Mains and test fixtures use it rather than repeating the
+  sequence.
 - Stubs hold no resources of their own and need no lifetime management.
 
 ## Server lifecycle
@@ -108,3 +109,6 @@ Everything that holds a connection is closed by a context manager, never by a ha
   bound port. A test builds a `grpc.aio.server()`, registers the real servicer or a fake subclass,
   and enters it; per-service serving helpers add only what is specific to that service (its
   `Resources`, a client already pointed at the port), never their own copy of bind, start and stop.
+- A fake has no `serve` method: the test registers it with the generated `add_*` like any servicer.
+  A fake standing in for two services that a client dials at one target gets one module-level
+  `add_<fake>(fake, server)` that registers both, in the generated function's shape.

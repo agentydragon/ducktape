@@ -2,13 +2,11 @@
 
 import asyncio
 from collections.abc import AsyncIterator
-from contextlib import asynccontextmanager
 from typing import override
 
 import grpc
 
 from agentplane.proto import runner_pb2, runner_pb2_grpc
-from agentplane.runner.testing.runner_server import serve_runner
 
 # gazelle:include_dep @pypi//protobuf
 # gazelle:include_dep @pypi//grpcio
@@ -39,8 +37,3 @@ class UnansweringRunner(runner_pb2_grpc.RunnerServicer):
         """None, so an app ingester that discovers sessions here opens no feeds of its own."""
         del request, context
         return runner_pb2.ListSessionsResponse()
-
-    @asynccontextmanager
-    async def serve(self) -> AsyncIterator[int]:
-        async with serve_runner(self) as port:
-            yield port

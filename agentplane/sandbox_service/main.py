@@ -10,7 +10,7 @@ from typing import cast
 import grpc
 from kubernetes_asyncio import client as k8s_client
 
-from agentplane.grpc_process import background, kubernetes_configuration, serve_health, started
+from agentplane.grpc_process import background, kubernetes_configuration, serve_health, serving
 from agentplane.runner_gateway import main as gateway_main
 from agentplane.runner_gateway.grpc_api import add_legacy_service
 from agentplane.runner_gateway.sealing import Sealing
@@ -113,8 +113,7 @@ async def serve(settings: Settings) -> None:
         stack.push_async_callback(gateway.close)
         server = grpc.aio.server()
         await stack.enter_async_context(sandboxes(settings, api, server, sealing=GatewaySealing(gateway)))
-        server.add_insecure_port(f"{settings.host}:{settings.port}")
-        await stack.enter_async_context(started(server))
+        await stack.enter_async_context(serving(server, f"{settings.host}:{settings.port}", grace_s=5))
         await serve_health(settings.host, settings.health_port)
 
 
@@ -134,8 +133,7 @@ async def serve_combined(settings: CombinedSettings) -> None:
             )
             await stack.enter_async_context(sandboxes(settings, api, server, sealing=gateway.sealing))
             add_legacy_service(gateway, server)
-            server.add_insecure_port(f"{settings.host}:{settings.port}")
-            await stack.enter_async_context(started(server))
+            await stack.enter_async_context(serving(server, f"{settings.host}:{settings.port}", grace_s=5))
             await serve_health(settings.host, settings.health_port)
     finally:
         await commands_engine.dispose()

@@ -16,6 +16,7 @@ from kubernetes_asyncio import client as k8s_client
 from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 
+from agentplane.grpc_process import serving
 from agentplane.history_service.client import HistoryServiceClient
 from agentplane.history_service.evidence import EvidenceReader
 from agentplane.history_service.fold_shadow import FoldShadow
@@ -86,16 +87,16 @@ async def history_service(
         ),
         server,
     )
-    port = server.add_insecure_port("127.0.0.1:0")
     await asyncio.to_thread(token_file.write_text, TOKEN)
-    client = HistoryServiceClient(f"127.0.0.1:{port}", token_file=token_file, request_timeout_s=20)
-    await server.start()
     try:
-        async with history_changes.listener.listen(), summary_changes.listener.listen():
-            yield client
+        async with serving(server, "127.0.0.1:0", grace_s=0) as port:
+            client = HistoryServiceClient(f"127.0.0.1:{port}", token_file=token_file, request_timeout_s=20)
+            try:
+                async with history_changes.listener.listen(), summary_changes.listener.listen():
+                    yield client
+            finally:
+                await client.close()
     finally:
-        await client.close()
-        await server.stop(0)
         await engine.dispose()
 
 

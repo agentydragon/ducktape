@@ -5,12 +5,11 @@ import contextlib
 import logging
 
 import grpc
-import uvicorn
-from fastapi import FastAPI
 from kubernetes_asyncio import client as k8s_client, config as k8s_config
 from sqlalchemy.engine import URL, make_url
 from sqlalchemy.ext.asyncio import create_async_engine
 
+from agentplane.grpc_process import serve_health, serving
 from agentplane.history_service.evidence import EvidenceReader
 from agentplane.history_service.fold_shadow import FoldShadow
 from agentplane.history_service.grpc_api import Resources, add_service
@@ -86,29 +85,18 @@ async def serve(settings: Settings) -> None:
             )
             server = grpc.aio.server()
             add_service(resources, server)
-            server.add_insecure_port(f"{settings.host}:{settings.port}")
-            await server.start()
-            health = FastAPI(openapi_url=None, docs_url=None, redoc_url=None)
-
-            @health.get("/healthz")
-            async def healthz() -> dict[str, str]:
-                return {"status": "ok"}
-
             try:
                 # An ingester failure ends the process rather than leaving reads served with no writer.
-                async with asyncio.TaskGroup() as tasks:
+                async with serving(server, f"{settings.host}:{settings.port}", grace_s=5), asyncio.TaskGroup() as tasks:
                     ingesting = (
                         tasks.create_task(ingest(settings, url), name="history-ingester")
                         if settings.ingester.enabled
                         else None
                     )
-                    await uvicorn.Server(
-                        uvicorn.Config(health, host=settings.host, port=settings.health_port, access_log=False)
-                    ).serve()
+                    await serve_health(settings.host, settings.health_port)
                     if ingesting is not None:
                         ingesting.cancel()
             finally:
-                await server.stop(grace=5)
                 if shadow is not None:
                     shadow.cancel()
                     with contextlib.suppress(asyncio.CancelledError):

@@ -1,8 +1,6 @@
 """Scripted Sandbox Service and History Service peer for app process and browser recovery tests."""
 
 import asyncio
-from collections.abc import AsyncIterator
-from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from typing import override
 from uuid import NAMESPACE_URL, uuid5
@@ -70,17 +68,11 @@ class ReplicationSource(HistoryService):
         self.set_feed(self.session_id, history_pb2.SessionFeedState(attached=self.attached))
         return await super().ReadSessionEvents(request, context)
 
-    @asynccontextmanager
-    async def serve(self) -> AsyncIterator[int]:
-        server = grpc.aio.server()
-        history_pb2_grpc.add_HistoryServiceServicer_to_server(self, server)
-        gateway_pb2_grpc.add_RunnerGatewayServicer_to_server(self.gateway, server)
-        port = server.add_insecure_port("127.0.0.1:0")
-        await server.start()
-        try:
-            yield port
-        finally:
-            await server.stop(0)
+
+def add_replication_source(source: ReplicationSource, server: grpc.aio.Server) -> None:
+    """Registers the source and its gateway, the two services the app dials at one target."""
+    history_pb2_grpc.add_HistoryServiceServicer_to_server(source, server)
+    gateway_pb2_grpc.add_RunnerGatewayServicer_to_server(source.gateway, server)
 
 
 class Gateway(gateway_pb2_grpc.RunnerGatewayServicer):

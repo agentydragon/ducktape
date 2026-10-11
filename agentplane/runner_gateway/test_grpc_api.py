@@ -18,9 +18,9 @@ from kubernetes_asyncio import client as k8s_client
 from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import AsyncEngine
 
+from agentplane.grpc_process import serving
 from agentplane.proto import command_pb2, event_log_pb2, event_pb2, runner_pb2, runner_pb2_grpc
 from agentplane.runner.errors import RunnerError, StreamClosedError
-from agentplane.runner.testing.runner_server import serve_runner
 from agentplane.runner_gateway.commands.connections import ConnectionStore
 from agentplane.runner_gateway.commands.store import CommandSubmission, SubmissionState, SubmissionStore
 from agentplane.runner_gateway.grpc_api import LEGACY_SERVICE, Resources, add_legacy_service
@@ -138,7 +138,9 @@ class Peer(runner_pb2_grpc.RunnerServicer):
 @pytest.fixture
 async def peer() -> AsyncIterator[Peer]:
     peer = Peer()
-    async with serve_runner(peer) as port:
+    server = grpc.aio.server()
+    runner_pb2_grpc.add_RunnerServicer_to_server(peer, server)
+    async with serving(server, "127.0.0.1:0", grace_s=0) as port:
         peer.port = port
         yield peer
 
@@ -871,23 +873,21 @@ async def test_legacy_service_name_still_reaches_the_gateway(
     bearer = (await asyncio.to_thread(token_file.read_text)).strip()
     server = grpc.aio.server()
     add_legacy_service(replace(resources, sessions=sessions, submissions=submissions), server)
-    port = server.add_insecure_port("127.0.0.1:0")
-    await server.start()
-    try:
-        async with grpc.aio.insecure_channel(f"127.0.0.1:{port}") as channel:
-            status = await channel.unary_unary(
-                f"/{LEGACY_SERVICE}/GetCommand",
-                request_serializer=protocol_pb2.GetCommandRequest.SerializeToString,
-                response_deserializer=protocol_pb2.CommandStatus.FromString,
-            )(
-                protocol_pb2.GetCommandRequest(
-                    destination=protocol_pb2.SessionDestination(sandbox=DESTINATION, session_id=str(session_id)),
-                    command_id="test-command",
-                ),
-                metadata=(("authorization", f"Bearer {bearer}"),),
-            )
-    finally:
-        await server.stop(0)
+    async with (
+        serving(server, "127.0.0.1:0", grace_s=0) as port,
+        grpc.aio.insecure_channel(f"127.0.0.1:{port}") as channel,
+    ):
+        status = await channel.unary_unary(
+            f"/{LEGACY_SERVICE}/GetCommand",
+            request_serializer=protocol_pb2.GetCommandRequest.SerializeToString,
+            response_deserializer=protocol_pb2.CommandStatus.FromString,
+        )(
+            protocol_pb2.GetCommandRequest(
+                destination=protocol_pb2.SessionDestination(sandbox=DESTINATION, session_id=str(session_id)),
+                command_id="test-command",
+            ),
+            metadata=(("authorization", f"Bearer {bearer}"),),
+        )
     assert (status.command, status.state) == (command, protocol_pb2.COMMAND_STATE_PENDING_ADMISSION)
 
 

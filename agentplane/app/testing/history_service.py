@@ -15,6 +15,7 @@ from uuid import UUID
 import grpc
 from google.protobuf.empty_pb2 import Empty
 
+from agentplane.grpc_process import serving
 from agentplane.history_service import protocol_pb2 as history_pb2, protocol_pb2_grpc
 from agentplane.history_service.client import HistoryServiceClient
 from agentplane.proto import event_log_pb2
@@ -128,12 +129,10 @@ class HistoryService(protocol_pb2_grpc.HistoryServiceServicer):
     async def connect(self, token_file: Path) -> AsyncIterator[HistoryServiceClient]:
         server = grpc.aio.server()
         protocol_pb2_grpc.add_HistoryServiceServicer_to_server(self, server)
-        port = server.add_insecure_port("127.0.0.1:0")
         await asyncio.to_thread(token_file.write_text, "test-app-history-peer")
-        client = HistoryServiceClient(f"127.0.0.1:{port}", token_file=token_file, request_timeout_s=10)
-        await server.start()
-        try:
-            yield client
-        finally:
-            await client.close()
-            await server.stop(0)
+        async with serving(server, "127.0.0.1:0", grace_s=0) as port:
+            client = HistoryServiceClient(f"127.0.0.1:{port}", token_file=token_file, request_timeout_s=10)
+            try:
+                yield client
+            finally:
+                await client.close()
