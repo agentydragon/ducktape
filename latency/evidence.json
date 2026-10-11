@@ -10866,6 +10866,44 @@
       ],
       "screenshots_inspected": true,
       "html_anchors_and_json_valid": true
+    },
+    "runner_vm": {
+      "observed_at_utc": "2026-10-11T02:40:52.725066Z",
+      "pr": 9886,
+      "state": "open",
+      "head": "8637aa58d3d15674512bb669ab10b1cab172bf30",
+      "changes": [
+        "Keep automatic builds with Nix/image and workflow input triggers",
+        "Use pinned runner wheel by default; fresh wheel only by explicit manual input",
+        "Upload final image to Attic on devel"
+      ],
+      "baseline_runs": [
+        {
+          "run_id": 38103793548,
+          "job_id": 114364940496,
+          "event": "pull_request",
+          "image_build_seconds": 248
+        },
+        {
+          "run_id": 38104323725,
+          "job_id": 114366480335,
+          "event": "push",
+          "image_build_seconds": 247
+        }
+      ],
+      "identical_rebuilt_derivations": [
+        "/nix/store/9di98i1dp1cak2rfjdmgm4nsnia3y1yq-agentplane-runner-latest.drv",
+        "/nix/store/6abybqy8b1b1zra9v4h67fwbinkl89a0-nixos-disk-image.drv",
+        "/nix/store/ddb94f3izb4l8z64r1chgfj89hh16rxj-agentplane-runner-vm.tar.gz.drv"
+      ],
+      "validation": "Local pre-commit passed; PR CI in progress",
+      "limitations": [
+        "Step timestamps, not CPU profiling",
+        "Shared artifact-pins edits still trigger workflow",
+        "Attic upload, later substitution and net CI savings unverified"
+      ],
+      "next_measurement": "Verify devel upload and subsequent substitution of identical image derivation",
+      "measured_saving": null
     }
   }
 }

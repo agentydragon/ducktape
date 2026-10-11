@@ -4,12 +4,13 @@
   "window_end_utc": "2026-10-10T21:39:59Z",
   "published_at_utc": "2026-10-10T22:13:09.455258+00:00",
   "attribution": "not collected",
-  "followup_updated_at_utc": "2026-10-11T02:27:05.201595Z",
+  "followup_updated_at_utc": "2026-10-11T02:40:52.725066Z",
   "mypy_followup_source_commit": "f3dac4506c7ae9d419832032a251247eec5b736d",
   "implementation_followup_prs": [
     9873,
     9875,
     9879,
-    9880
+    9880,
+    9886
   ]
 }
