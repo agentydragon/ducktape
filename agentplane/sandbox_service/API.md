@@ -231,25 +231,21 @@ Sandbox Service serves them from no copy of its own. A cursor beyond the journal
    records it as the stored feed state's `sealed`.
 
 Reconnect from the last durably committed cursor; each reconnect rereads the projected token and
-checks identity and destination again. The app flushes its buffered batch before planned renewal,
-then reconnects immediately, including replay of the archived boundary entry for identity checking.
-It does not end the feed. Planned renewals are debug-level observations, not warnings.
+checks identity and destination again. The [History Service](../history_service/README.md)'s
+ingester, the only production caller, commits its buffered batch on `reconnect_required` and
+reconnects at once; renewal does not end the feed.
 
 Bare service EOF without a terminal observation, `DEADLINE_EXCEEDED`, and backend `UNAVAILABLE`
-remain failures, never session termination. The app retries these from the same durable checkpoint
-(including when a renewal marker is lost), with warnings for unsuccessful reconnects lasting 30s
-and for authorization denial (rate-limited). Invalid history remains a durable feed failure.
+remain failures, never session termination. The ingester logs a warning and retries them from its
+committed cursor after its retry interval.
 
 Healthy idle follows last until renewal. Each downstream write, including the terminal observation,
 is separately bounded by `admission_timeout_s`, so a stalled consumer cannot pin an attachment for
 15 minutes. Every exit cancels the runner attachment and closes its channel. There is no unbounded
 fan-out queue.
 
-The service now has independent Session Event history storage for durable identity.
-`CreateSession` reserves a row but does **not** ingest runner Events yet. Runner logs remain on the
-state volume; the app currently retains its own Session Event copy and checkpoints. Backfilling
-existing Session Event history and moving Event ingestion/read authority into Sandbox Service are
-subsequent cutover work, not part of this Open RPC.
+`CreateSession` reserves the Session's registry row; the Sandbox Service keeps no copy of its
+Events. Runner journals remain on the state volume, and the History Service ingests them.
 
 ## Session feed
 
@@ -303,9 +299,9 @@ Management uses `lifecycle_timeout_s` (default 300);
 follow leases by `follow_lease_s` (default and configured maximum 900 seconds / 15 minutes).
 The client whole-follow safety deadline defaults to 960 seconds / 16 minutes; initial attachment
 still uses the short request timeout. Renewal repeats TokenReview and destination admission; it
-is not in-stream reauthentication or a lease derived from the token's exact expiry. The app's
-30-second database ingestion-ownership lease is independently renewed without closing follows.
-Runner RPC authentication/TLS remains a separate TODO.
+is not in-stream reauthentication or a lease derived from the token's exact expiry.
+Service-to-runner calls are unauthenticated plaintext behind a network policy; the
+[runner channel](../docs/runner_channel.md) replaces that route rather than securing it.
 
 `runner_channel_port` (default 8082) is a separate gRPC listener serving only the
 [runner channel](../docs/runner_channel.md), so a Sandbox's network fence can admit it alone. It

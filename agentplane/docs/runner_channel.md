@@ -110,10 +110,11 @@ message Heartbeat {}
 
 ## Event ingress
 
-Status: **accepted design (operator, 2026-10-10 PDT); the runner side is built, the ingress is
-not.** The runner pushes when started with `--ingress-target` (`runner/ingress.py`), which no
-template sets yet, and reports `flushed` from what it recorded. No server implements the ingress
-yet, so every runner's Events are still read through `Attach`.
+Status: **accepted design (operator, 2026-10-10 PDT); built, not yet deployed.** The runner pushes
+when started with `--ingress-target` (`runner/ingress.py`), which the Sandbox Service passes to new
+runners from its `runner_ingress` setting, and reports `flushed` from what it recorded. The History
+Service serves the ingress (`history_service/ingress.py`), but no environment deploys it or sets
+`runner_ingress`, so every runner's Events are still read through `Attach`.
 
 The runner pushes each Session's journal to one **ingress**, the endpoint its Sandbox names, and
 nothing else reads its journals. The History Service is the ingress when history is kept. A client

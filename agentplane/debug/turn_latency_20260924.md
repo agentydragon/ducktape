@@ -164,9 +164,9 @@ Not measured directly: fsync latency on that disk. Agents cannot exec into sandb
 ~90 ms is inferred from the spacing above.
 
 A streamed answer produces Events faster than 10 a second, so without batching the lag grew with
-the length of the turn, not just by a fixed amount at the end. The 2026-09-15 staging thread in
-<thread_load_20260915.md> held 3,091 Events over eight turns: about five minutes of journal time at
-that rate. Staging's `/state` is on the same storage class.
+the length of the turn, not just by a fixed amount at the end. A 2026-09-15 staging thread held
+3,091 Events over eight turns: about five minutes of journal time at that rate. Staging's `/state`
+is on the same storage class.
 
 ## Getting the runner's cost to tens of milliseconds
 

@@ -6,16 +6,16 @@ serves only the configured reader accounts, today the integration app's. A Sessi
 grants nothing. Consumers use `client.py`; `testing/backend.py` serves the real boundary over a test
 database.
 
-Today the Sandbox Service still writes the history tables and runs their migrations. This service
-reads them, in read-only transactions, through `sandbox_service/session_history`. Target and sequence:
+The Sandbox Service's `migrate` init container runs the history tables' migrations
+(`sandbox_service/session_history`); this service is their only writer. Target and sequence:
 [History Service plan](../plans/history_service.md).
 
 ## Ingester
 
-`ingester.py` copies runner journals into the same tables as an ordinary Sandbox Service client:
-`WatchSessions` names each Session and its owner, and `FollowSession` follows it from the cursor
-committed here, one `Store.append` transaction per batch. It records feed state as the Sandbox
-Service ingester does, and a `sealed` frame as the incarnation's end. After an outage it resumes
+`ingester.py` copies runner journals into the history tables as an ordinary Sandbox Service
+client: `WatchSessions` names each Session and its owner, and `FollowSession` follows it from the
+cursor committed here, one `Store.append` transaction per batch. It records the follow's feed
+state, and a `sealed` frame as the incarnation's end. After an outage it resumes
 from the committed cursor; the runner journal is the buffer.
 
 Before reading a Session it places a [retention hold](../sandbox_service/API.md#retention-holds)
@@ -32,8 +32,7 @@ Service's planned renewal, so waiting Sessions rotate in. The feed position is k
 restarted replica rereads the feed and each Session resumes from its cursor. After four consecutive
 feed failures the ingester dials a fresh Sandbox Service channel.
 
-The cdk8s `Environment.history_writer` turns `ingester.enabled` on; the Sandbox Service no longer
-writes history either way.
+The cdk8s `Environment.history_writer` turns `ingester.enabled` on.
 
 ## Runner ingress
 

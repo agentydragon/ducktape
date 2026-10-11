@@ -3,9 +3,9 @@
 Status: **proposed policy design**, not an implemented permission or a grant to existing
 callers. Tracked as `THREAD_READ_POLICY_DESIGN` in [the task DAG](../plans/task_dag.md)
 (as expanded in [PR #9411](https://github.com/agentydragon/ducktape/pull/9411)).
-Review the choices below before implementing the policy. Do not make Sandbox Service
-fetch app-owned history to serve an agent: the durable raw Session Event history must
-first move out of the app into Sandbox Service (or an independent history authority).
+Review the choices below before implementing the policy. The durable raw Session Event
+history and its Thread fold live in the [History Service](../history_service/README.md),
+which today serves only its configured reader accounts.
 
 ## What is protected
 
@@ -14,8 +14,8 @@ observations and evidence, and a Thread view/fold plus operator UI metadata. `re
 permits all available representations of that **same** Session history, including
 raw/native evidence; it does not grant runner control, access to the underlying
 Sandbox workspace, command admission, sending into another Thread, or creating a
-Thread. Day one requires only retained raw reads and follows. Keep UI folds in the
-app for now; do not add a Sandbox Service → app dependency to offer folded reads.
+Thread. Day one requires only retained raw reads and follows; folded reads, when added,
+come from the same History Service.
 
 Retained history must be readable when the original Pod, Sandbox CR and PVC are gone.
 The history authority, not live Kubernetes inventory, owns the durable Session ID,
@@ -47,11 +47,11 @@ map to their unchanged `(sandbox, runner session_id)` storage locator while it e
   for ingestion/projecting folds are service-to-service privileges, not an all-history
   grant reusable by a hosted agent.
 
-Authorization lives with the history's Session record and read API. Sandbox Service
-must not broaden its existing service-caller allowlist wholesale: today that allowlist
-also guards lifecycle and command RPCs. Add narrowly scoped history-read methods
-and separate their authorization from Open/Resume/SubmitCommand and operator policy
-mutations. A `read` grant does not imply eventual `send` or `create` authority.
+Authorization lives with the history's Session record and read API, in the History
+Service. Do not broaden its reader allowlist wholesale: a listed reader reads every
+Session. Add narrowly scoped read authorization, separate from the Sandbox Service's
+Open/Resume/SubmitCommand and operator policy mutations. A `read` grant does not
+imply eventual `send` or `create` authority.
 
 ## Sandbox trust boundary
 

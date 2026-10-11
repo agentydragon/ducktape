@@ -1,10 +1,10 @@
 # Agentplane integration app
 
 The human-facing frontend over Agentplane's services: a FastAPI service that reaches sandboxes and
-runner sessions through the Sandbox Service, reads their archived session history from the
-History Service, projects those events into PostgreSQL thread entity rows, and synchronizes
-selected rows and content to the browser through authenticated Electric endpoints. It also presents
-Actions, operator decisions and Connection consent.
+runner sessions through the Sandbox Service, reads their archived Session history and Threads (each
+Session's conversation projection) from the History Service, and synchronizes selected rows and
+content to the browser through authenticated Electric endpoints. It also presents Actions, operator
+decisions and Connection consent.
 The staging instance lives in `cluster/k8s/agentplane-staging/`.
 
 ## Dependency boundary
@@ -15,9 +15,9 @@ attachments, and app-only provisioning or prompt/bootstrap state, including in v
 [service dependency rule](../docs/service_boundaries.md).
 
 Backend responsibilities needed by another service move to an independent owner, not a temporary
-app endpoint. The [Sandbox Service](../sandbox_service/README.md) owns sandbox lifecycle,
-runner-session control and following, and writes the session-event archive, which the
-[History Service](../history_service/README.md) serves; the app is a client of both.
+app endpoint. The [Sandbox Service](../sandbox_service/README.md) owns sandbox lifecycle and
+runner-session control and following; the [History Service](../history_service/README.md) owns
+the Session Event archive and its Thread fold; the app is a client of both.
 Notifications depends on that backend and Actions, not this app. The app's thread projections are
 its own state, and like any state the app holds they are candidates to move into a dedicated
 service ([principles](../docs/principles.md#composable-services-not-a-platform-you-sign-up-for-whole)).
@@ -206,8 +206,6 @@ creates the materialized tables, grants and publication, which `0006_thread_fold
 to the `thread_*` family; the managed `electric` database role must already exist. Changing projection epochs requires an explicit reset/rebuild rather than
 mixing incompatible state. No instance reset is performed by this implementation work.
 
-Rollout prerequisite: existing sandbox runners must support independent attachments before the new
-app bridge is deployed; old runner processes are not upgraded merely by publishing the new image.
 Staging runs two app replicas on separate nodes with `RollingUpdate` (`maxUnavailable: 0`,
 `maxSurge: 1`) and a PodDisruptionBudget of one available; testing stays at one replica.
 

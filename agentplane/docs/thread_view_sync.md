@@ -42,9 +42,10 @@ owes the browser, with IDs; the list below is the whole view's.
 - Raw capture is independently optional in the target storage model. Retained evidence is
   accessible at the item or turn that produced it, as well as in original chronology.
 
-The [September 15 inspection](../debug/thread_load_20260915.md) measured 3,091 Events and
-approximately 1.79 MB of SSE for eight turns with 6,278 bytes of completed text/reasoning.
-It is a historical host HTTP measurement, not a current browser benchmark. It motivated replacing browser archive replay with the materialized view described here.
+A short conversation is not a small replay: an eight-turn staging Thread (2026-09-15) held 3,091
+Events, about 1.79 MB as SSE, for 6,278 bytes of completed text and reasoning, most of it native
+frames and streamed deltas. Browsers therefore read the materialized view described here, not the
+archive.
 
 ## Conversation structure and projection
 

@@ -1,8 +1,7 @@
 # Agentplane service dependency rule
 
-Status: **accepted architecture constraint, including v1.** Sandbox Service, the app's client of it,
-and the Session Event archive handoff are implemented and deployed; retiring the app's legacy raw
-tables is remaining cleanup.
+Status: **accepted architecture constraint, including v1.** The Sandbox Service, the History
+Service, and the app's clients of both are implemented and deployed.
 
 ## The integration app is a client
 
@@ -12,6 +11,8 @@ services must not depend on it.** The dependency direction is app to services, n
 ```mermaid
 flowchart LR
     App[Integration app] --> Sandbox[Sandbox Service]
+    App --> History[History Service]
+    History --> Sandbox
     App --> Notifications[Notification service]
     App --> Actions[Action Service]
     Notifications --> Sandbox
@@ -39,16 +40,17 @@ presentation state and projections, but those must not become hidden sources of 
 
 ## Ownership
 
-- **Sandbox Service:** sandbox provisioning/lifecycle, verified destination bindings, authorized
-  runner-session access, command relay/event following, and the Session Event archive with its live
-  ingestion.
+- **Sandbox Service:** sandbox provisioning/lifecycle, verified destination bindings, the Session
+  registry, authorized runner-session access, and command relay/event following.
+- **History Service:** the Session Event archive, its ingestion from runner journals, the Thread
+  fold of each Session, and the read API over both.
 - **Runner:** native harness scheduling/execution, durable command journal, canonical execution Events
   and causal receipts.
 - **Notification service:** providers, subscriptions, persisted payloads, inbox HWM, notice policy, and
   notice delivery bookkeeping.
 - **Action Service:** Action authorization/Decisions, execution lifecycle, and canonical Action history.
 - **Integration app:** user-facing composition, interaction, presentation, and app-only projections/state;
-  a client of the above that reads session history from Sandbox Service.
+  a client of the above that reads Session history and Threads from the History Service.
 
 The backend is named **Sandbox Service**: it manages sandboxes and access to their runner
 sessions. It is not another Action executor or a service called "runtime" with unspecified ownership.
