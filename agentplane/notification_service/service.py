@@ -7,9 +7,11 @@ from datetime import UTC, datetime, timedelta
 
 import grpc
 import httpx
+from more_itertools import first
 from pydantic import ValidationError
 from sqlalchemy.exc import SQLAlchemyError
 
+from agentplane.history_service.client import HistoryServiceClient
 from agentplane.notification_service.db import Inbox, Notice
 from agentplane.notification_service.github_state import RefreshDeferredError
 from agentplane.notification_service.models import (
@@ -29,10 +31,10 @@ from agentplane.notification_service.sources.github_client import (
     GitHubUnavailableError,
 )
 from agentplane.notification_service.store import ClaimLostError, ConflictError, QuotaError, Store
-from agentplane.protocol import command_pb2
+from agentplane.protocol import command_pb2, event_log_pb2
 from agentplane.runner import protocol_pb2 as runner_pb2
-from agentplane.runner.errors import RunnerError, StreamClosedError
-from agentplane.sandbox_service.client import ReconnectRequiredError, Runner, SandboxServiceClient
+from agentplane.runner.errors import RunnerError
+from agentplane.sandbox_service.client import Runner, SandboxServiceClient
 from agentplane.sandbox_service.models import SandboxNotFoundError
 from agentplane.sandbox_service.protocol_pb2 import SandboxDestination, ServiceAccount
 from agentplane.subjects import ServiceAccountRef
@@ -85,11 +87,12 @@ class Service:
         sandboxes: SandboxServiceClient,
         github: GitHub | None = None,
         *,
+        history: HistoryServiceClient,
         notice_debounce: NoticeDebounceSettings,
         stale_confirmation_s: float,
         operator_reader_account: str | None = None,
     ) -> None:
-        self.store, self.actions, self.sandboxes = store, actions, sandboxes
+        self.store, self.actions, self.sandboxes, self.history = store, actions, sandboxes, history
         self.github = github
         self.operator_reader_account = operator_reader_account
         self.notice_debounce = notice_debounce
@@ -123,67 +126,72 @@ class Service:
         context = await self.github.context(body.source)
         return await self.store.subscribe(principal, body, context.binding)
 
+    async def read_history(self, session_id: str, *, after_cursor: int, limit: int) -> list[event_log_pb2.EventEntry]:
+        """Entries after `after_cursor` as the History Service has committed them."""
+        page = await self.history.read_session_events(session_id, after_cursor=after_cursor, limit=limit)
+        # Settlement drops streamed deltas only; a missing cursor nothing settled could be a receipt.
+        settled = [(span.first, span.last) for settlement in page.settlements for span in settlement.ranges]
+        previous = after_cursor
+        for entry in page.entries:
+            if not all(
+                any(low <= cursor <= high for low, high in settled) for cursor in range(previous + 1, entry.cursor)
+            ):
+                raise ConflictError("runner history has a gap")
+            previous = entry.cursor
+        return list(page.entries)
+
     async def deliver(self, claim: Inbox, runner: Runner, notice: Notice) -> None:
         # TODO: Observe command-scoped admission/delivery outcomes through Sandbox Service,
         # resumable by command ID, rather than checkpointing the shared conversation journal.
-        attachment = await runner.attach(claim.session_id, after_cursor=max(0, notice.runner_cursor - 1))
-        try:
-            if attachment.attached.last_cursor < notice.runner_cursor:
-                raise ConflictError("runner cursor regressed")
-            # Verify the durable boundary before advancing, including after a worker restart.
-            copied = notice.runner_cursor
-            try:
-                if copied:
-                    await self.store.receipt(claim, notice, await attachment.next_entry())
-                if not notice.attempted and attachment.attached.last_cursor > copied:
-                    # No command can precede the durable attempt marker. Skip unrelated history,
-                    # but retain the exact tail entry to verify continuity on an uncertain retry.
-                    baseline = attachment.attached.last_cursor
-                    attachment.cancel()
-                    attachment = await runner.attach(claim.session_id, after_cursor=baseline - 1)
-                    if attachment.attached.last_cursor < baseline:
-                        raise ConflictError("runner cursor regressed")
-                    entry = await attachment.next_entry()
-                    if entry.cursor != baseline:
-                        raise ConflictError("runner history has a gap")
-                    await self.store.checkpoint_before_attempt(claim, notice, entry)
-                    copied = baseline
-                # Catch up only since the checkpoint, with bounded work per claim. Never skip
-                # history after an attempt: it may contain a lost admission or confirmation.
-                for _ in range(128):
-                    if copied >= attachment.attached.last_cursor:
-                        break
-                    entry = await attachment.next_entry()
-                    await self.store.receipt(claim, notice, entry)
-                    copied = entry.cursor
-            except StreamClosedError as failure:
-                raise ConflictError("runner history ended before its promised cursor") from failure
-            if copied < attachment.attached.last_cursor:
+        # The runner's journal end now; its entries are read from the History Service, which may lag.
+        live = first(
+            (session for session in await runner.list_sessions() if session.session_id == claim.session_id), None
+        )
+        if live is None:
+            raise DestinationRejectedError
+        if live.last_cursor < notice.runner_cursor:
+            raise ConflictError("runner cursor regressed")
+        copied = notice.runner_cursor
+        # Verify the durable boundary before advancing, including after a worker restart.
+        if copied:
+            boundary = await self.read_history(claim.session_id, after_cursor=copied - 1, limit=1)
+            if not boundary:
                 return
-            # Re-read durable receipt state. A lost response is uncertain: reconcile
-            # the runner journal first, then retry only the same command ID/payload.
-            # Runner admission is idempotent; never prepare a second notice here.
-            current = await self.store.notice(claim, prepare=False)
-            if current is None or current.command_id != notice.command_id or current.confirmed or current.error:
+            await self.store.receipt(claim, notice, boundary[0], after_cursor=copied - 1)
+            copied = boundary[0].cursor
+        if not notice.attempted and live.last_cursor > copied:
+            # No command can precede the durable attempt marker. Skip unrelated history,
+            # but retain the exact tail entry to verify continuity on an uncertain retry.
+            tail = await self.read_history(claim.session_id, after_cursor=live.last_cursor - 1, limit=1)
+            if not tail:
                 return
-            if attachment.attached.harness_state != runner_pb2.HARNESS_STATE_RUNNING:
-                return
-            if not current.admitted and (current.attempted or await self.store.attempt(claim, current)):
-                await runner.command(
-                    claim.session_id,
-                    command_pb2.Command(
-                        command_id=str(current.command_id), submit_input=command_pb2.SubmitInput(text=current.text)
-                    ),
-                    after_cursor=copied,
-                )
-            # Read through this attachment so the checkpoint remains contiguous, rather than jumping
-            # directly to the command RPC's admission cursor and skipping a coalesced confirmation.
-            with suppress(TimeoutError, StreamClosedError, ReconnectRequiredError):
-                async with asyncio.timeout(2):
-                    for _ in range(128):
-                        await self.store.receipt(claim, current, await attachment.next_entry())
-        finally:
-            attachment.cancel()
+            await self.store.checkpoint_before_attempt(claim, notice, tail[0])
+            copied = tail[0].cursor
+        # Catch up only since the checkpoint, with bounded work per claim. Never skip
+        # history after an attempt: it may contain a lost admission or confirmation.
+        for entry in await self.read_history(claim.session_id, after_cursor=copied, limit=128):
+            await self.store.receipt(claim, notice, entry, after_cursor=copied)
+            copied = entry.cursor
+        # Until the History Service has everything the runner had, a retry could precede an admission.
+        if copied < live.last_cursor:
+            return
+        # Re-read durable receipt state. A lost response is uncertain: reconcile
+        # the runner journal first, then retry only the same command ID/payload.
+        # Runner admission is idempotent; never prepare a second notice here.
+        current = await self.store.notice(claim, prepare=False)
+        if current is None or current.command_id != notice.command_id or current.confirmed or current.error:
+            return
+        if live.harness_state != runner_pb2.HARNESS_STATE_RUNNING:
+            return
+        if not current.admitted and (current.attempted or await self.store.attempt(claim, current)):
+            # Its admission and confirmation are copied by a later claim, once the History Service has them.
+            await runner.command(
+                claim.session_id,
+                command_pb2.Command(
+                    command_id=str(current.command_id), submit_input=command_pb2.SubmitInput(text=current.text)
+                ),
+                after_cursor=copied,
+            )
 
     async def get_notice_due_at(self, claim: Inbox) -> datetime | None:
         pending = await self.store.get_pending_entry_times(claim)
@@ -287,7 +295,6 @@ class Service:
             TimeoutError,
             grpc.aio.AioRpcError,
             RunnerError,
-            StreamClosedError,
             DestinationRejectedError,
             QuotaError,
         ) as failure:

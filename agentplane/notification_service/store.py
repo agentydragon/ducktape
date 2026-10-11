@@ -1124,7 +1124,10 @@ class Store:
             await notify(session)
             return True
 
-    async def receipt(self, claim: Inbox, notice: Notice, entry: event_log_pb2.EventEntry) -> None:
+    async def receipt(
+        self, claim: Inbox, notice: Notice, entry: event_log_pb2.EventEntry, *, after_cursor: int
+    ) -> None:
+        """Copy `entry`, which follows `after_cursor` with only settled cursors between them."""
         async with self.sessions.begin() as session:
             await self.fenced(session, claim)
             row = await session.get(Notice, claim.id)
@@ -1135,7 +1138,7 @@ class Store:
                 if row.runner_entry != wire:
                     raise ConflictError("runner history changed at the committed boundary")
                 return
-            if entry.cursor != row.runner_cursor + 1:
+            if not after_cursor <= row.runner_cursor < entry.cursor:
                 raise ConflictError("runner history has a gap")
             command_id = str(row.command_id)
             event = entry.event

@@ -103,7 +103,10 @@ source subscription and delivery errors are exposed separately. Polling rechecks
 Before submitting a notice, persist its command ID, exact input, and coverage boundary. Before the
 first delivery attempt, checkpoint the current runner journal tail instead of replaying unrelated
 session history. Persist the exact boundary entry, then the attempt marker, before sending the command.
-A crash before that marker allows a newer initial checkpoint; after it, never skip entries. Replays
+A crash before that marker allows a newer initial checkpoint; after it, never skip entries. Runner
+entries are read from the Session's history in the History Service; a cursor missing there must be
+covered by a settled range of streamed deltas. A command is sent only once that history reaches the
+runner's journal end, so a lagging copy delays delivery rather than hiding an admission. Replays
 verify the last committed runner entry before advancing. A lost command response reuses the same ID;
 `CommandAdmitted` is not delivery. `HarnessUserMessageConfirmed.origin_command_ids` supplies causal
 confirmation, including coalesced inputs. Failed/no-op/unconfirmed commands are not confirmed receipts.
@@ -155,9 +158,10 @@ ordinary argument redaction. Notifications checks that owner against the authent
 before accepting a subscription and on every source poll. Agent tokens are never retained or forwarded.
 
 The worker uses rotating, audience-specific projected service tokens. It is allowlisted at Sandbox
-Service; that service still validates sandbox UID and account binding and owns all runner access.
+Service, which still validates sandbox UID and account binding and owns all runner access, and is a
+History Service reader.
 Notification Kubernetes RBAC is TokenReview only. Cilium allows egress proxy → notifications, notifications
-→ Actions/Sandbox Service/PostgreSQL/API server/GitHub API, and no notifications → runner path.
+→ Actions/Sandbox Service/History Service/PostgreSQL/API server/GitHub API, and no notifications → runner path.
 
 ## GitHub webhook ingestion and matching
 

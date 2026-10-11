@@ -1,8 +1,9 @@
 # Notification Service
 
-Standalone Actions and GitHub App subscriptions and durable session inboxes. The service reads Actions history and
-calls Sandbox Service for destination validation and runner commands/receipts. It does not depend on
-the integration app or connect directly to runners.
+Standalone Actions and GitHub App subscriptions and durable session inboxes. The service reads Actions history,
+calls Sandbox Service for destination validation and runner commands, and reads command receipts from the
+Session's runner entries in the History Service. It does not depend on the integration app or connect
+directly to runners.
 
 Agents subscribe with an explicit destination/session and an idempotence key, then retrieve stored
 payloads when notified. Reads are non-destructive; acknowledgement explicitly advances the handled
@@ -23,7 +24,7 @@ an inbox to a replacement Sandbox.
 ## Running and deployment
 
 Bazel targets: `:server`, `:migrate`, `:image`, `:migration_image`. The service needs its own PostgreSQL
-database, Actions and Sandbox Service endpoints, and projected service-account tokens.
+database, Actions, Sandbox Service and History Service endpoints, and projected service-account tokens.
 
 Run the image-coupled migration before starting workers. Use published server/migration image tags
 and preserve existing staging data. `/healthz` reports process liveness; `/readyz` checks workers and

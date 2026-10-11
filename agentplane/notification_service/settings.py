@@ -84,6 +84,21 @@ class SandboxServiceSettings(BaseModel):
     )
 
 
+class HistoryServiceSettings(BaseModel):
+    model_config = ConfigDict(extra="forbid", hide_input_in_errors=True)
+    target: str = Field(
+        description="History Service gRPC host:port; delivery reads the Session's runner entries there."
+    )
+    request_timeout_s: float = Field(default=20, gt=0, allow_inf_nan=False)
+    grpc_channel_options: dict[str, int | str] = Field(
+        default_factory=dict,
+        description="gRPC channel options for the Notification Service's connection to the History Service.",
+    )
+    token_file: Path = Field(
+        description="Path to the rotating projected ServiceAccount token used to authenticate to the History Service."
+    )
+
+
 class NoticeDebounceSettings(BaseModel):
     model_config = ConfigDict(extra="forbid")
     quiet_seconds: float = Field(
@@ -127,6 +142,7 @@ class Settings(BaseSettings):
     namespace: str = Field(description="Allowed caller ServiceAccount namespace and destination sandbox namespace.")
     actions: ActionsSettings
     sandbox_service: SandboxServiceSettings
+    history_service: HistoryServiceSettings
     token_audience: str = Field(
         default=TOKEN_AUDIENCE, description="Audience required when TokenReview authenticates callers of this API."
     )

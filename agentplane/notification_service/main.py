@@ -9,6 +9,7 @@ from kubernetes_asyncio import client as k8s_client, config as k8s_config
 from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import create_async_engine
 
+from agentplane.history_service.client import HistoryServiceClient
 from agentplane.notification_service.api import create_app
 from agentplane.notification_service.service import Service
 from agentplane.notification_service.settings import Settings
@@ -39,6 +40,12 @@ async def serve(settings: Settings) -> None:
         control_target=settings.sandbox_service.control_target,
         channel_options=settings.sandbox_service.grpc_channel_options,
     )
+    history = HistoryServiceClient(
+        settings.history_service.target,
+        token_file=settings.history_service.token_file,
+        request_timeout_s=settings.history_service.request_timeout_s,
+        channel_options=settings.history_service.grpc_channel_options,
+    )
     try:
         async with (
             k8s_client.ApiClient() as kube,
@@ -60,6 +67,7 @@ async def serve(settings: Settings) -> None:
                     Actions(http, settings.actions.token_file),
                     sandboxes,
                     github,
+                    history=history,
                     notice_debounce=settings.notice_debounce,
                     stale_confirmation_s=settings.stale_inbox_confirmation_s,
                     operator_reader_account=settings.operator_reader_account,
@@ -69,6 +77,7 @@ async def serve(settings: Settings) -> None:
             await uvicorn.Server(uvicorn.Config(app, host=settings.host, port=settings.port)).serve()
     finally:
         await sandboxes.close()
+        await history.close()
         await engine.dispose()
 
 

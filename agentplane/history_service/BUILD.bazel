@@ -71,6 +71,7 @@ py_library(
     visibility = [
         "//agentplane/app:__subpackages__",
         "//agentplane/history_service:__subpackages__",
+        "//agentplane/notification_service:__pkg__",
         "//agentplane/thread_fold:__subpackages__",
     ],
     deps = [

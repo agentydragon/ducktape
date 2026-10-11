@@ -434,9 +434,9 @@ async def test_receipts_not_ack_and_no_reminders_after_confirmation(store: Store
     if baseline:
         # Unattempted notices, including ones partially replayed by the old worker, can skip
         # unrelated history. Recovery checks the exact persisted boundary before continuing.
-        await store.receipt(claim, notice, event_log_pb2.EventEntry(cursor=1))
+        await store.receipt(claim, notice, event_log_pb2.EventEntry(cursor=1), after_cursor=0)
         await store.checkpoint_before_attempt(claim, notice, boundary)
-        await store.receipt(claim, notice, boundary)
+        await store.receipt(claim, notice, boundary, after_cursor=baseline - 1)
         with pytest.raises(ConflictError):
             await store.checkpoint_before_attempt(claim, notice, boundary)
         persisted = await store.notice(claim, prepare=False)
@@ -447,7 +447,7 @@ async def test_receipts_not_ack_and_no_reminders_after_confirmation(store: Store
     with pytest.raises(ConflictError):
         await store.checkpoint_before_attempt(claim, notice, event_log_pb2.EventEntry(cursor=baseline + 100))
     with pytest.raises(ConflictError):
-        await store.receipt(claim, notice, event_log_pb2.EventEntry(cursor=baseline + 2))
+        await store.receipt(claim, notice, event_log_pb2.EventEntry(cursor=baseline + 2), after_cursor=baseline + 1)
     admission = event_log_pb2.EventEntry(
         cursor=baseline + 1,
         event=event_pb2.Event(
@@ -458,7 +458,7 @@ async def test_receipts_not_ack_and_no_reminders_after_confirmation(store: Store
             )
         ),
     )
-    await store.receipt(claim, notice, admission)
+    await store.receipt(claim, notice, admission, after_cursor=baseline)
     page = await store.read(PRINCIPAL.account, subscription.inbox_id, 0, 128)
     assert page.notice is not None
     assert page.notice.admitted
@@ -471,8 +471,8 @@ async def test_receipts_not_ack_and_no_reminders_after_confirmation(store: Store
             )
         ),
     )
-    await store.receipt(claim, notice, confirmation)
-    await store.receipt(claim, notice, confirmation)
+    await store.receipt(claim, notice, confirmation, after_cursor=baseline + 1)
+    await store.receipt(claim, notice, confirmation, after_cursor=baseline + 1)
     page = await store.read(PRINCIPAL.account, subscription.inbox_id, 0, 128)
     assert page.notice is not None
     assert page.notice.confirmed
@@ -482,7 +482,9 @@ async def test_receipts_not_ack_and_no_reminders_after_confirmation(store: Store
         cursor=baseline + 2, event=event_pb2.Event(harness_exited=event_pb2.HarnessExited())
     )
     with pytest.raises(ConflictError):
-        await store.receipt(claim, notice, changed)
+        await store.receipt(claim, notice, changed, after_cursor=baseline + 1)
+    # The caller vouches that the cursors in between are settled deltas.
+    await store.receipt(claim, notice, event_log_pb2.EventEntry(cursor=baseline + 5), after_cursor=baseline + 2)
 
 
 async def test_retention_gap_is_visible_and_replay_keeps_tombstone(store: Store) -> None:

@@ -25,6 +25,7 @@ from sqlalchemy.engine import Connection
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession
 
+from agentplane.history_service.client import HistoryServiceClient
 from agentplane.notification_service.api import authenticated_caller, create_app
 from agentplane.notification_service.database_migrate import RUNNER
 from agentplane.notification_service.db import (
@@ -298,6 +299,7 @@ async def test_signed_http_durable_acceptance_and_disabled_provider(
         create_autospec(Actions),
         create_autospec(SandboxServiceClient),
         github,
+        history=create_autospec(HistoryServiceClient),
         notice_debounce=NoticeDebounceSettings(),
         stale_confirmation_s=30,
     )
@@ -585,6 +587,7 @@ async def test_rate_limit_retry_survives_ingress_and_restart(
         create_autospec(Actions),
         create_autospec(SandboxServiceClient),
         github,
+        history=create_autospec(HistoryServiceClient),
         notice_debounce=NoticeDebounceSettings(quiet_seconds=3600, max_wait_seconds=3600),
         stale_confirmation_s=30,
     )
@@ -637,6 +640,7 @@ async def test_rate_limit_retry_survives_ingress_and_restart(
             service.actions,
             service.sandboxes,
             GitHub(GitHubClient(github.client.http, github.settings)),
+            history=service.history,
             notice_debounce=service.notice_debounce,
             stale_confirmation_s=30,
         )
@@ -1175,6 +1179,9 @@ actions:
 sandbox_service:
   target: sandboxes:8080
   token_file: /tokens/sandboxes
+history_service:
+  target: history:8080
+  token_file: /tokens/history
 github: null
 """)
     monkeypatch.setenv(CONFIG_FILE_ENV, str(config))

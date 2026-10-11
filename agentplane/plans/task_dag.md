@@ -904,7 +904,6 @@ nodes and section 9 are unaffected.
 flowchart TD
     HISTORY_INGRESS[Candidate: History Service ingress]
     CLIENT_SESSION_IDS[Candidate: clients mint Session IDs]
-    APP_LIVE_FROM_HISTORY[Candidate: no live reads through the Sandbox Service]
     SEAL_ON_INGRESS_ACK[Blocked: seal waits on the ingress acknowledgement]
     RUNNER_OUTBOUND_ROLLOUT[Every template dials out]
     LEGACY_SANDBOX_RETIRE[Retire pre-cutover Sandboxes]
@@ -921,7 +920,6 @@ flowchart TD
     SEAL_ON_INGRESS_ACK --> RUNNER_OUTBOUND_ROLLOUT
     RUNNER_OUTBOUND_ROLLOUT --> LEGACY_SANDBOX_RETIRE
     LEGACY_SANDBOX_RETIRE --> FOLLOW_PATH_RETIRE
-    APP_LIVE_FROM_HISTORY --> FOLLOW_PATH_RETIRE
     SEAL_ON_INGRESS_ACK --> SEAL_FINALIZER
     AGENTPLANE_SANDBOX_RESOURCE -. to seal a suspended Sandbox on delete .-> SEAL_FINALIZER
     POD_INCARNATION -. if chosen, rewrites .-> SESSION_STATE_VOLUME_DESIGN[State volume design]
@@ -944,12 +942,6 @@ needs to route: Session to Sandbox. `CreateSession` stops minting the runner Ses
 in `OpenSession` (#9858). A retried create carries the same ID, so the Open reservation and
 `LookupSession`, which reconciles it by scanning the journal over the inbound API, are deleted.
 
-### `APP_LIVE_FROM_HISTORY` — no live reads through the Sandbox Service
-
-**Candidate.** The app's live Thread updates come from the History Service (Electric already
-replicates its projection). Remove any remaining app or Notification Service use of
-`FollowSession`, and confirm nothing else follows a runner through the Sandbox Service.
-
 ### `SEAL_ON_INGRESS_ACK` — seal waits on the ingress acknowledgement
 
 **Blocked on the ingress.** Teardown waits until the runner reports every Session's seal `flushed`,
@@ -959,7 +951,7 @@ that cannot report keeps the Sandbox in sealing for the operator, as today.
 
 ### `FOLLOW_PATH_RETIRE` — delete following, WatchSessions and holds
 
-**Blocked on legacy Sandbox retirement and live reads from history.** Delete `FollowSession`,
+**Blocked on legacy Sandbox retirement.** Delete `FollowSession`,
 `WatchSessions` and its change feed, the History Service follower ingester, and the hold API and
 `retention-holds` annotation. Stops for the operator before dropping
 stored registry columns.

@@ -1,4 +1,4 @@
-"""Real Actions → notification inbox → Sandbox Service → both native harnesses, no app."""
+"""Real Actions → notification inbox → Sandbox and History Services → both native harnesses, no app."""
 
 import asyncio
 import json
@@ -13,6 +13,7 @@ import pytest_bazel
 from google.protobuf.json_format import MessageToDict
 from kubernetes_asyncio import client as k8s_client
 from sqlalchemy import update
+from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from agentplane.action_service.api import create_app as actions_app
@@ -24,6 +25,7 @@ from agentplane.action_service.service import ActionService
 from agentplane.action_service.testing.callers import admitted_callers
 from agentplane.action_service.testing.fixtures import RecordingExecutor
 from agentplane.action_service.updates import ActionUpdates
+from agentplane.history_service.testing.backend import history_service
 from agentplane.notification_service.api import create_app
 from agentplane.notification_service.db import Inbox
 from agentplane.notification_service.service import Service
@@ -37,6 +39,7 @@ from agentplane.runner.testing.scripted_model import ScriptedModel, Text
 from agentplane.sandbox_service.client import Runner
 from agentplane.sandbox_service.instructions import render_platform_instructions
 from agentplane.sandbox_service.protocol_pb2 import SandboxDestination, ServiceAccount
+from agentplane.sandbox_service.session_history.history_changes import HistoryChanges
 from agentplane.sandbox_service.testing.kubernetes import (
     ACCOUNT,
     SANDBOX,
@@ -105,6 +108,7 @@ async def test_listen_deliver_read_ack_and_recover_lost_response_without_app(
                 max_wait_seconds=30,
                 reader_accounts=frozenset({delegate}),
             )
+            history_changes = HistoryChanges(make_url(sandbox_service_db_url))
             token_file = tmp_path / "delegate-token"
             token_file.write_text("delegate-token")
             async with (
@@ -126,12 +130,15 @@ async def test_listen_deliver_read_ack_and_recover_lost_response_without_app(
                         notifications_service_url="http://notifications.test",
                     ),
                 ) as remote,
+                history_service(sandbox_service_db_url, tmp_path / "history-token") as history,
+                history_changes.listener.listen(),
             ):
                 source = Actions(action_http, token_file)
                 service = Service(
                     store,
                     source,
                     remote,
+                    history=history,
                     notice_debounce=NoticeDebounceSettings(quiet_seconds=0),
                     stale_confirmation_s=30,
                 )
@@ -150,6 +157,20 @@ async def test_listen_deliver_read_ack_and_recover_lost_response_without_app(
                     session_id = (
                         await native.create(idempotency_key="notifications", spec=MessageToDict(spec))
                     ).session_id
+
+                    async def history_caught_up() -> None:
+                        # Delivery reads entries from the History Service, which copies them behind the runner.
+                        (live,) = [
+                            session for session in await native.list_sessions() if session.session_id == session_id
+                        ]
+                        with history_changes.subscribe() as changed:
+                            changed.clear()
+                            while (
+                                await history.read_session_events(session_id, limit=1)
+                            ).last_cursor < live.last_cursor:
+                                await changed.wait()
+                                changed.clear()
+
                     submitted = await action_http.post(
                         "/v1/action-requests",
                         headers={"Authorization": "Bearer owner-token"},
@@ -249,12 +270,13 @@ async def test_listen_deliver_read_ack_and_recover_lost_response_without_app(
                     assert history_cursor > 128
                     original = Runner.command
                     lost = False
+                    submitted = False
                     attempted_id: str | None = None
 
                     async def lose_response(
                         self: Runner, session_id: str, command: command_pb2.Command, *, after_cursor: int
                     ) -> event_log_pb2.EventEntry:
-                        nonlocal lost, attempted_id
+                        nonlocal lost, submitted, attempted_id
                         if command.HasField("submit_input"):
                             assert after_cursor >= history_cursor
                             if attempted_id is None:
@@ -264,6 +286,7 @@ async def test_listen_deliver_read_ack_and_recover_lost_response_without_app(
                             if failed_before_rpc and not lost:
                                 lost = True
                                 raise ValueError("simulated local failure before SubmitCommand")
+                        submitted = submitted or command.HasField("submit_input")
                         receipt = await original(self, session_id, command, after_cursor=after_cursor)
                         if not lost and command.HasField("submit_input"):
                             lost = True
@@ -271,6 +294,7 @@ async def test_listen_deliver_read_ack_and_recover_lost_response_without_app(
                         return receipt
 
                     monkeypatch.setattr(Runner, "command", lose_response)
+                    await history_caught_up()
                     if failed_before_rpc:
                         with pytest.raises(ValueError, match="before SubmitCommand"):
                             await service.step()
@@ -279,14 +303,17 @@ async def test_listen_deliver_read_ack_and_recover_lost_response_without_app(
                     assert lost
                     if initial is not None:
                         await model.reply(initial, Text("Initial work complete"))
-                    if failed_before_rpc:
-                        # The durable attempt marker exists, but the runner has not been called.
+                    # The durable attempt marker exists, but the runner has not been called. A step
+                    # sends only once the History Service has every entry the runner had, and the
+                    # busy turn may still be finishing.
+                    while not submitted:
                         async with store.sessions.begin() as session:
                             await session.execute(
                                 update(Inbox)
                                 .where(Inbox.id == UUID(subscription["inbox_id"]))
                                 .values(next_attempt=datetime.now(UTC))
                             )
+                        await history_caught_up()
                         await service.step()
                     notice_request = await model.request()
                     notices = [
@@ -308,12 +335,14 @@ async def test_listen_deliver_read_ack_and_recover_lost_response_without_app(
                         Store(engine),
                         source,
                         remote,
+                        history=history,
                         notice_debounce=service.notice_debounce,
                         stale_confirmation_s=service.stale_confirmation_s,
                     )
                     inbox_id = UUID(hint["inbox_id"])
                     page = None
-                    for _ in range(10):
+                    while page is None or not page["notice"]["confirmed"]:
+                        await history_caught_up()
                         async with store.sessions.begin() as session:
                             await session.execute(
                                 update(Inbox).where(Inbox.id == inbox_id).values(next_attempt=datetime.now(UTC))
@@ -325,10 +354,7 @@ async def test_listen_deliver_read_ack_and_recover_lost_response_without_app(
                         )
                         response.raise_for_status()
                         page = response.json()
-                        if page["notice"]["confirmed"]:
-                            break
                     assert page is not None
-                    assert page["notice"]["confirmed"]
                     assert page["notice"]["command_id"] == attempted_id
                     assert page["inbox"]["acknowledged"] == 0
                     assert [entry["payload"]["state"] for entry in page["entries"]] == ["decision_pending", "denied"]

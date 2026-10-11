@@ -179,6 +179,11 @@ py_test(
 py_library(
     name = "history_changes",
     srcs = ["history_changes.py"],
+    visibility = [
+        "//agentplane/history_service:__subpackages__",
+        "//agentplane/notification_service:__pkg__",
+        "//agentplane/sandbox_service:__subpackages__",
+    ],
     deps = [
         "//agentplane/postgres:listener",
         "@pypi//sqlalchemy",

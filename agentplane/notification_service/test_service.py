@@ -11,6 +11,7 @@ from sqlalchemy import update
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from agentplane.action_service.models import ActionEventView, ActionState
+from agentplane.history_service.client import HistoryServiceClient
 from agentplane.notification_service.db import Entry, Inbox, Subscription
 from agentplane.notification_service.models import ActionsSource, DestinationRef, Subscribe, SubscriptionView
 from agentplane.notification_service.service import Service
@@ -40,6 +41,7 @@ async def service(store: Store) -> Service:
         store,
         create_autospec(Actions),
         create_autospec(SandboxServiceClient),
+        history=create_autospec(HistoryServiceClient),
         notice_debounce=NoticeDebounceSettings(),
         stale_confirmation_s=30,
     )
@@ -87,6 +89,7 @@ async def test_notice_debounce_deadline_is_durable_and_reads_are_immediate(
         Store(engine),
         service.actions,
         service.sandboxes,
+        history=service.history,
         notice_debounce=service.notice_debounce,
         stale_confirmation_s=service.stale_confirmation_s,
     )
@@ -145,6 +148,7 @@ async def test_notice_max_wait_and_inflight_notice_are_not_extended(service: Ser
                 )
             ),
         ),
+        after_cursor=0,
     )
     # The next burst has its own window; the already covered old entry cannot force it due.
     assert await service.prepare_notice(claim) is None
@@ -219,6 +223,7 @@ async def test_stale_inbox_retires_after_persisted_recheck(
         Store(engine),
         service.actions,
         service.sandboxes,
+        history=service.history,
         notice_debounce=service.notice_debounce,
         stale_confirmation_s=service.stale_confirmation_s,
     )

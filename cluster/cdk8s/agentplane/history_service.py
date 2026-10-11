@@ -20,7 +20,7 @@ from constructs import Construct
 from agentplane.history_service.settings import CONFIG_FILE_ENV, Settings
 from agentplane.subjects import ServiceAccountRef
 from cluster.cdk8s import cilium, node_scheduling, pod_policy
-from cluster.cdk8s.agentplane import database
+from cluster.cdk8s.agentplane import database, notifications
 from cluster.cdk8s.agentplane.environment import Environment, HistoryWriter
 from cluster.cdk8s.agentplane.pod_disruption_budget import add_pod_disruption_budget
 from cluster.cdk8s.forgejo_registry.chart import forgejo_images_creds_secret_ref
@@ -77,7 +77,11 @@ class HistoryService(Construct):
             metadata=ApiObjectMetadata(name=f"{NAME}-config", namespace=env.namespace),
             model=Settings,
             content={
-                "reader_accounts": [reader.model_dump()],
+                # The app reads Threads; the Notification Service reads command receipts.
+                "reader_accounts": [
+                    reader.model_dump(),
+                    ServiceAccountRef(namespace=env.namespace, name=notifications.NAME).model_dump(),
+                ],
                 "token_audience": TOKEN_AUDIENCE,
                 "port": endpoint.port.number,
                 "health_port": _HEALTH.number,
@@ -165,7 +169,10 @@ class HistoryService(Construct):
             "network-policy",
             metadata=ApiObjectMetadata(name=NAME, namespace=env.namespace),
             endpoint_selector=endpoint.pods.selector,
-            ingress=[caller.pods.admit(endpoint.pod_port)],
+            ingress=[
+                caller.pods.admit(endpoint.pod_port),
+                notifications.service(env.namespace).pods.admit(endpoint.pod_port),
+            ],
             egress=[
                 cilium.dns_egress(),
                 EgressRule.to_entities(Entity.KUBE_APISERVER),

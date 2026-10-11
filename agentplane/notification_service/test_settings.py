@@ -48,6 +48,9 @@ notice_debounce:
 sandbox_service:
   target: sandboxes:8080
   token_file: /tokens/sandboxes
+history_service:
+  target: history:8080
+  token_file: /tokens/history
 """)
     monkeypatch.setenv(CONFIG_FILE_ENV, str(config))
     monkeypatch.setenv("AGENTPLANE_NOTIFICATIONS_DATABASE_URL", "postgresql://unused")
@@ -124,6 +127,9 @@ actions:
 sandbox_service:
   target: sandboxes:8080
   token_file: /tokens/sandboxes
+history_service:
+  target: history:8080
+  token_file: /tokens/history
 github:
   app_id: 42
   api_url: http://github.test/api/v3
@@ -190,6 +196,7 @@ def test_invalid_stale_confirmation_timeout(timeout: float) -> None:
                 "namespace": "test",
                 "actions": {"url": "http://actions", "token_file": "/tokens/actions"},
                 "sandbox_service": {"target": "sandboxes:8080", "token_file": "/tokens/sandboxes"},
+                "history_service": {"target": "history:8080", "token_file": "/tokens/history"},
                 "stale_inbox_confirmation_s": timeout,
             }
         )

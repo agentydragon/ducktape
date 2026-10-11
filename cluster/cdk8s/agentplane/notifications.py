@@ -1,4 +1,5 @@
-"""Notification-owned persistence and workload API; only Sandbox Service reaches runners."""
+"""Notification-owned persistence and workload API; only Sandbox Service reaches runners, and
+receipts are read from the History Service."""
 
 from cdk8s import ApiObject, ApiObjectMetadata, Duration, JsonPatch, Size
 from cdk8s_plus_34 import (
@@ -45,7 +46,15 @@ def service(namespace: str) -> ServiceRef:
 
 class Notifications(Construct):
     def __init__(
-        self, scope: Construct, id: str, env: Environment, *, actions: ServiceRef, sandboxes: ServiceRef
+        self,
+        scope: Construct,
+        id: str,
+        env: Environment,
+        *,
+        actions: ServiceRef,
+        sandboxes: ServiceRef,
+        history: ServiceRef,
+        history_audience: str,
     ) -> None:
         super().__init__(scope, id)
         endpoint = service(env.namespace)
@@ -105,6 +114,11 @@ class Notifications(Construct):
                     "grpc_channel_options": env.app_config.sandbox_service_grpc_channel_options,
                     "token_file": "/var/run/secrets/notifications/sandboxes",
                 },
+                "history_service": {
+                    "target": f"{history.fqdn}:{history.pod_port}",
+                    "grpc_channel_options": env.app_config.history_service_grpc_channel_options,
+                    "token_file": "/var/run/secrets/notifications/history",
+                },
                 "github": {"app_id": github.app_id} if github is not None else None,
             },
             supplied=supplied,
@@ -145,6 +159,7 @@ class Notifications(Construct):
                             for path, audience in [
                                 ("actions", "agentplane-egress"),
                                 ("sandboxes", "agentplane-sandbox-service"),
+                                ("history", history_audience),
                             ]
                         ]
                     ),
@@ -181,6 +196,7 @@ class Notifications(Construct):
                 EgressRule.to_entities(Entity.KUBE_APISERVER),
                 actions.egress(),
                 sandboxes.egress(),
+                history.egress(),
                 EgressRule.to_endpoints(
                     {"k8s:io.kubernetes.pod.namespace": env.namespace, "k8s:cnpg.io/cluster": "postgres"},
                     database.POSTGRES_PORT,

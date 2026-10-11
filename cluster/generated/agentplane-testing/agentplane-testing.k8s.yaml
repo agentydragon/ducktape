@@ -2619,6 +2619,8 @@ data:
     reader_accounts:
       - namespace: agentplane-testing
         name: agentplane-app
+      - namespace: agentplane-testing
+        name: agentplane-notifications
     token_audience: agentplane-history-service
     port: 8080
     health_port: 8081
@@ -2803,6 +2805,14 @@ spec:
     - fromEndpoints:
         - matchLabels:
             app.kubernetes.io/name: agentplane-app
+            k8s:io.kubernetes.pod.namespace: agentplane-testing
+      toPorts:
+        - ports:
+            - port: "8080"
+              protocol: TCP
+    - fromEndpoints:
+        - matchLabels:
+            app.kubernetes.io/name: agentplane-notifications
             k8s:io.kubernetes.pod.namespace: agentplane-testing
       toPorts:
         - ports:
@@ -4416,6 +4426,10 @@ spec:
                   audience: agentplane-sandbox-service
                   expirationSeconds: 3600
                   path: sandboxes
+              - serviceAccountToken:
+                  audience: agentplane-history-service
+                  expirationSeconds: 3600
+                  path: history
 ---
 apiVersion: v1
 kind: ConfigMap
@@ -4438,6 +4452,11 @@ data:
       grpc_channel_options:
         grpc.max_receive_message_length: 33554432
       token_file: /var/run/secrets/notifications/sandboxes
+    history_service:
+      target: agentplane-history-service.agentplane-testing.svc.cluster.local:8080
+      grpc_channel_options:
+        grpc.max_receive_message_length: 33554432
+      token_file: /var/run/secrets/notifications/history
 immutable: false
 ---
 apiVersion: v1
@@ -4499,6 +4518,14 @@ spec:
     - toEndpoints:
         - matchLabels:
             app.kubernetes.io/name: agentplane-sandbox-service
+            k8s:io.kubernetes.pod.namespace: agentplane-testing
+      toPorts:
+        - ports:
+            - port: "8080"
+              protocol: TCP
+    - toEndpoints:
+        - matchLabels:
+            app.kubernetes.io/name: agentplane-history-service
             k8s:io.kubernetes.pod.namespace: agentplane-testing
       toPorts:
         - ports:
