@@ -30,7 +30,7 @@ from study_casino.config import Settings
 from util.bazel.runfiles import get_required_path
 from util.testing.asgi import serve_app_sync
 from util.testing.frontend_visual import deterministic_browser_context
-from util.testing.postgres_fixtures import start_postgres_container
+from util.testing.postgres import DatabaseNames, PostgresDatabaseTemplate
 from util.testing.undeclared_outputs import undeclared_outputs_dir
 from util.testing.visual_capture import VisualPage
 
@@ -72,14 +72,10 @@ async def view(
 
 
 @pytest.fixture(scope="module")
-def casino_server() -> Iterator[str]:
-    """uvicorn-backed casino server with a fresh Postgres testcontainer."""
-    container = start_postgres_container()
-    try:
-        host = container.get_container_host_ip()
-        port = int(container.get_exposed_port(5432))
-        db_url = f"postgresql+psycopg://postgres:postgres@{host}:{port}/postgres"
-
+def casino_server(request: pytest.FixtureRequest, casino_database_template: PostgresDatabaseTemplate) -> Iterator[str]:
+    """uvicorn-backed casino server with a writable database for the visual suite."""
+    db_name = DatabaseNames(request.node.nodeid)()
+    with casino_database_template.clone(db_name) as db_url:
         frontend_dist = get_required_path("_main/study_casino/frontend/dist/index.html").parent
 
         # The rendered views want a non-empty UI for prizes/stats. Seed a few
@@ -89,8 +85,6 @@ def casino_server() -> Iterator[str]:
         with serve_app_sync(create_app(settings)) as origin:
             _seed_fixture_state(origin)
             yield origin
-    finally:
-        container.stop()
 
 
 def _seed_fixture_state(origin: str) -> None:
