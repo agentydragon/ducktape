@@ -96,4 +96,7 @@ Everything that holds a connection is closed by a context manager, never by a ha
   `stop(grace=5)` on shutdown. A second listener exists only where a network fence admits different callers to it (the
   runner-facing port).
 - Liveness and readiness are HTTP `/healthz` on a separate `health_port`.
-- Tests serve on `127.0.0.1:0` and `stop(0)`.
+- Tests serve on `127.0.0.1:0` with no grace, through the same context manager, which yields the
+  bound port. A test builds a `grpc.aio.server()`, registers the real servicer or a fake subclass,
+  and enters it; per-service serving helpers add only what is specific to that service (its
+  `Resources`, a client already pointed at the port), never their own copy of bind, start and stop.
