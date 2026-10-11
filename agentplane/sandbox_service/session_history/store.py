@@ -33,6 +33,27 @@ class HistoryNotFoundError(LookupError):
     pass
 
 
+class WriterMismatchError(PermissionError):
+    """The Session is bound to another writer."""
+
+
+@dataclass(frozen=True)
+class Writer:
+    """The ServiceAccount a Session's ingress pushes come from; the UID tells apart an account
+    recreated under the same name."""
+
+    namespace: str
+    name: str
+    uid: str
+
+
+@dataclass(frozen=True)
+class Checkpoint:
+    cursor: int
+    # The seal at `cursor` is committed; nothing more is accepted.
+    sealed: bool
+
+
 # An item whose start lies further back than this is kept whole rather than read in one transaction.
 _SETTLEMENT_SPAN_LIMIT = 20_000
 
@@ -81,10 +102,13 @@ class Store:
                 .on_conflict_do_nothing()
                 .returning(SessionHistory.id)
             )
-            row = await session.get(SessionHistory, session_id)
+            row = await session.get(SessionHistory, session_id, with_for_update=True)
             if row is None:
                 raise HistoryConflictError(f"runner locator already belongs to another session, not {session_id}")
-            if (row.sandbox_namespace, row.sandbox_name, row.sandbox_uid) != (
+            if row.sandbox_namespace is None:
+                # Pushed through the ingress first; the follower names its Sandbox.
+                row.sandbox_namespace, row.sandbox_name, row.sandbox_uid = sandbox_namespace, sandbox_name, sandbox_uid
+            elif (row.sandbox_namespace, row.sandbox_name, row.sandbox_uid) != (
                 sandbox_namespace,
                 sandbox_name,
                 sandbox_uid,
@@ -92,6 +116,42 @@ class Store:
                 raise HistoryConflictError(f"session {session_id} has a different locator")
             if created is not None:
                 await notify_history(session)
+
+    async def bind_writer(self, session_id: UUID, writer: Writer) -> Checkpoint:
+        """Bind the Session to `writer` if it has no writer yet, creating its row; refuse any other.
+
+        Of two concurrent first writers, the row lock lets one bind and refuses the other.
+        """
+        async with self._sessions.begin() as session:
+            created = await session.scalar(
+                insert(SessionHistory)
+                .values(
+                    id=session_id,
+                    writer_namespace=writer.namespace,
+                    writer_name=writer.name,
+                    writer_uid=writer.uid,
+                    source_id=None,
+                    last_cursor=0,
+                )
+                .on_conflict_do_nothing()
+                .returning(SessionHistory.id)
+            )
+            row = await session.get(SessionHistory, session_id, with_for_update=True, populate_existing=True)
+            assert row is not None
+            if row.writer_uid is None:
+                row.writer_namespace, row.writer_name, row.writer_uid = writer.namespace, writer.name, writer.uid
+            elif (row.writer_namespace, row.writer_name, row.writer_uid) != (writer.namespace, writer.name, writer.uid):
+                raise WriterMismatchError(session_id)
+            if created is not None:
+                await notify_history(session)
+            return _checkpoint(row)
+
+    async def checkpoint(self, session_id: UUID) -> Checkpoint:
+        async with self._sessions() as session:
+            row = await session.get(SessionHistory, session_id)
+            if row is None:
+                raise HistoryNotFoundError(session_id)
+            return _checkpoint(row)
 
     async def append(self, session_id: UUID, entries: Sequence[event_log_pb2.EventEntry]) -> int:
         """Replay exact duplicates or extend the prefix; serialize concurrent writers by Session ID.
@@ -286,6 +346,11 @@ class Store:
                 .order_by(SessionEventSettledRange.first_cursor)
             )
             return ObservationPage(history.last_cursor, observations, [(first, last) for first, last in ranges])
+
+
+def _checkpoint(row: SessionHistory) -> Checkpoint:
+    sealed = row.feed_state is not None and history_pb2.SessionFeedState.FromString(row.feed_state).HasField("sealed")
+    return Checkpoint(cursor=row.last_cursor, sealed=sealed)
 
 
 async def _settled_range(session: AsyncSession, session_id: UUID, cursor: int) -> SessionEventSettledRange | None:

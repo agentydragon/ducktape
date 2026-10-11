@@ -35,6 +35,20 @@ feed failures the ingester dials a fresh Sandbox Service channel.
 The cdk8s `Environment.history_writer` turns `ingester.enabled` on; the Sandbox Service no longer
 writes history either way.
 
+## Runner ingress
+
+`ingress.py` serves `RunnerIngress.Push`, the
+[runner ingress contract](../docs/runner_channel.md#event-ingress): runners push each Session's
+journal here, one call per Session. It runs as its own binary and image (`ingress_main.py`,
+`:ingress_image`), apart from the read API, since it takes untrusted input. Its settings name the
+token audience and the namespaces whose ServiceAccounts may push.
+
+The first accepted announcement binds the Session to the pushing ServiceAccount (namespace, name,
+UID) in `session_history`; other accounts get `PERMISSION_DENIED`. Entries commit through the same
+`Store.append` as the follower, and each acknowledgement follows its commit. A Session the follower
+created takes its writer on its first push, and one pushed first takes its Sandbox locator from the
+follower, so both paths can write one Session during the cutover.
+
 ## Delta settlement
 
 With `ingester.settle_deltas` set, each `Store.append` batch that completes an item drops that

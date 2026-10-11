@@ -890,7 +890,7 @@ nodes and section 9 are unaffected.
 
 ```mermaid
 flowchart TD
-    HISTORY_INGRESS[Candidate: History Service ingress]
+    HISTORY_INGRESS[Blocked: deploy the History Service ingress]
     CLIENT_SESSION_IDS[Candidate: clients mint Session IDs]
     SEAL_ON_INGRESS_ACK[Blocked: seal waits on the ingress acknowledgement]
     RUNNER_OUTBOUND_ROLLOUT[Every template dials out]
@@ -916,10 +916,11 @@ flowchart TD
 
 ### `HISTORY_INGRESS` — History Service ingress
 
-**Candidate.** The History Service serves the ingress as its own Deployment, apart
-from its read API, since it takes untrusted input. Its store appends exactly as the follower
-ingester does now and acknowledges only after commit. Test duplicate and out-of-order pushes, a
-second writer identity refused, and resume after a History Service restart.
+**Blocked until `agentplane-history-ingress` publishes.** The ingress server, its writer binding
+and its image are built (`history_service/ingress.py`). Deploy it per environment as its own
+Deployment, ServiceAccount and Service, apart from the read API, connecting to the history
+database as a writer with `token_audience: agentplane-runner-ingress` and the Sandbox namespace
+as `writer_namespaces`, and add the image to Flux image automation.
 
 ### `CLIENT_SESSION_IDS` — clients mint Session IDs
 

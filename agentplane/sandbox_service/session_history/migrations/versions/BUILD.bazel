@@ -11,6 +11,7 @@ exports_files([
     "0008_delta_settlement.py",
     "0009_history_rows_from_feed.py",
     "0010_drop_registry_columns.py",
+    "0011_session_writer.py",
 ])
 
 py_library(
@@ -85,6 +86,15 @@ py_library(
 py_library(
     name = "0010_drop_registry_columns",
     srcs = ["0010_drop_registry_columns.py"],
+    deps = [
+        "@pypi//alembic",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
+    name = "0011_session_writer",
+    srcs = ["0011_session_writer.py"],
     deps = [
         "@pypi//alembic",
         "@pypi//sqlalchemy",

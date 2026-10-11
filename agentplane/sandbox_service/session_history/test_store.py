@@ -17,6 +17,8 @@ from agentplane.sandbox_service.session_history.store import (
     HistoryNotFoundError,
     ObservationPage,
     Store,
+    Writer,
+    WriterMismatchError,
 )
 from agentplane.sandbox_service.testing.delta_spans import claude_text
 
@@ -115,6 +117,29 @@ async def test_recorded_session_keeps_its_id_and_fences_duplicate_locator(engine
     await opened(store, uuid4())
     with pytest.raises(HistoryConflictError, match="belongs to another"):
         await opened(store, uuid4())
+
+
+async def test_a_follower_and_the_ingress_each_bind_their_half_of_one_session(engine: AsyncEngine) -> None:
+    """During the cutover a Session may reach history both ways; neither refuses the other's row."""
+    store = Store(engine)
+    writer = Writer(namespace="testing", name="worker", uid="test-worker-account-uid")
+    pushed_first, followed_first, uid = uuid4(), uuid4(), uuid4()
+    await store.bind_writer(pushed_first, writer)
+    await store.record_session(
+        pushed_first, sandbox_namespace="testing", sandbox_name="worker", sandbox_uid=uid, runner_session_id=None
+    )
+    await store.record_session(
+        followed_first, sandbox_namespace="testing", sandbox_name="worker", sandbox_uid=uid, runner_session_id=None
+    )
+    await store.bind_writer(followed_first, writer)
+    for session_id in (pushed_first, followed_first):
+        await store.bind_writer(session_id, writer)
+        with pytest.raises(WriterMismatchError):
+            await store.bind_writer(session_id, Writer(namespace="testing", name="worker", uid="test-recreated-uid"))
+        with pytest.raises(HistoryConflictError):
+            await store.record_session(
+                session_id, sandbox_namespace="testing", sandbox_name="other", sandbox_uid=uid, runner_session_id=None
+            )
 
 
 async def test_history_notifies_after_commit_and_not_after_rollback(engine: AsyncEngine) -> None:

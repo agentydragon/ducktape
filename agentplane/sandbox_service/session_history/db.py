@@ -30,14 +30,26 @@ class SessionHistory(Base):
             postgresql_nulls_not_distinct=True,
             postgresql_where=text("runner_session_id IS NOT NULL"),
         ),
+        CheckConstraint(
+            "num_nulls(writer_namespace, writer_name, writer_uid) IN (0, 3)", name="history_writer_complete"
+        ),
+        CheckConstraint("num_nulls(sandbox_namespace, sandbox_name) IN (0, 2)", name="history_sandbox_complete"),
+        CheckConstraint("sandbox_namespace IS NOT NULL OR writer_uid IS NOT NULL", name="history_origin"),
     )
 
     id: Mapped[UUID] = mapped_column(primary_key=True)
-    sandbox_namespace: Mapped[str] = mapped_column(String)
-    sandbox_name: Mapped[str] = mapped_column(String)
+    # The Sandbox a follower copied the Session from; absent for a Session only pushed through the
+    # ingress, which knows writers, not Sandboxes.
+    sandbox_namespace: Mapped[str | None] = mapped_column(String)
+    sandbox_name: Mapped[str | None] = mapped_column(String)
     # Nullable for imported records whose original Sandbox UID was not retained in app history.
     sandbox_uid: Mapped[UUID | None]
     runner_session_id: Mapped[str | None] = mapped_column(String)
+    # The ServiceAccount whose first accepted ingress push bound the Session; absent until then.
+    # Pushes from any other account are refused.
+    writer_namespace: Mapped[str | None] = mapped_column(String)
+    writer_name: Mapped[str | None] = mapped_column(String)
+    writer_uid: Mapped[str | None] = mapped_column(String)
     source_id: Mapped[str | None] = mapped_column(String)
     last_cursor: Mapped[int] = mapped_column(BigInteger)
     # Complete SessionFeedState protobuf, absent until a runner prefix is observed.

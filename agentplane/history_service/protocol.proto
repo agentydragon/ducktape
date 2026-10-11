@@ -140,8 +140,10 @@ enum FeedStatus {
 
 message SessionSummary {
   string session_id = 1;
-  string sandbox_namespace = 2;
-  string sandbox_name = 3;
+  // Both or neither: the Sandbox a follower copied the Session from. A Session only pushed through
+  // the ingress names no Sandbox.
+  optional string sandbox_namespace = 2;
+  optional string sandbox_name = 3;
   // Committed raw history; the fold lags by `committed_cursor - folded_through`.
   uint64 committed_cursor = 4;
   // Absent until the fold has materialized an entry. A stalled fold reports its error in the
