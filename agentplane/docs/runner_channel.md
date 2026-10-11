@@ -87,9 +87,10 @@ message Heartbeat {}
 ```
 
 - **Versioning.** The proto is `agentplane/proto/runner_channel.proto`, package
-  `agentplane.proto.runner_channel`. Additive frame kinds and RPCs are capabilities: a peer uses one only after both
-  sides listed it in `Hello`/`Welcome`. A frame of a kind the receiver did not agree to fails the
-  stream, and an RPC the service does not implement returns `UNIMPLEMENTED`, so a skew shows up at
+  `agentplane.proto.runner_channel`. An incompatible change, a rename included, rides a clean
+  cutover: the operator retires every Sandbox on the old protocol, and no dual path is served.
+  Additive frame kinds and RPCs are capabilities: a peer uses one only after both sides listed it
+  in `Hello`/`Welcome`. A frame of a kind the receiver did not agree to fails the stream, and an RPC the service does not implement returns `UNIMPLEMENTED`, so a skew shows up at
   first use rather than as silently dropped work. Rolling either side is safe because capabilities
   are negotiated per connection.
 - **Later streams bind to the epoch.** Every RPC other than `Connect` carries the connection epoch

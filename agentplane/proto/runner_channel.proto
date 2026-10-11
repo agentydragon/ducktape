@@ -1,5 +1,6 @@
 // The runner-initiated control channel to the Sandbox Service; contract in
-// agentplane/docs/runner_channel.md.
+// agentplane/docs/runner_channel.md. An incompatible change rides a clean cutover: the operator
+// retires every Sandbox on the old protocol.
 syntax = "proto3";
 
 package agentplane.proto.runner_channel;
