@@ -158,6 +158,20 @@ fn plain_assign_source_property(property: &PropOrSpread) -> bool {
     }
 }
 
+fn static_property_name(name: &PropName) -> Option<String> {
+    match name {
+        PropName::Ident(ident) => Some(ident.sym.to_string()),
+        PropName::Str(string) => Some(string.value.to_string_lossy().into_owned()),
+        PropName::Num(number) => Some(number.value.to_string()),
+        PropName::BigInt(number) => Some(number.value.to_string()),
+        PropName::Computed(computed) => match computed.expr.unwrap_parens() {
+            Expr::Lit(Lit::Str(string)) => Some(string.value.to_string_lossy().into_owned()),
+            Expr::Lit(Lit::Num(number)) => Some(number.value.to_string()),
+            _ => None,
+        },
+    }
+}
+
 #[derive(Debug, Clone)]
 struct Callable {
     owner: StatementOrdinal,
@@ -204,7 +218,9 @@ struct ExecutionIndex {
     may_skip_await_depth: u32,
     literal_depth: u32,
     callables: BTreeMap<u32, Callable>,
+    setter_owners: BTreeMap<Option<String>, BTreeSet<StatementOrdinal>>,
     top_calls: Vec<Vec<Call>>,
+    top_property_writes: Vec<Vec<(Option<Id>, Option<String>)>>,
     top_assignments: Vec<Vec<(Id, ValueExpr)>>,
     opaque_top: BTreeSet<StatementOrdinal>,
 }
@@ -218,7 +234,9 @@ impl Default for ExecutionIndex {
             may_skip_await_depth: 0,
             literal_depth: 0,
             callables: BTreeMap::new(),
+            setter_owners: BTreeMap::new(),
             top_calls: Vec::new(),
+            top_property_writes: Vec::new(),
             top_assignments: Vec::new(),
             opaque_top: BTreeSet::new(),
         }
@@ -229,6 +247,7 @@ impl ExecutionIndex {
     fn collect(body: &[TopLevelItemView<'_>]) -> Self {
         let mut index = Self {
             top_calls: vec![Vec::new(); body.len()],
+            top_property_writes: vec![Vec::new(); body.len()],
             top_assignments: vec![Vec::new(); body.len()],
             ..Self::default()
         };
@@ -282,13 +301,16 @@ impl ExecutionIndex {
     }
 
     fn mark_dynamic_property_effect(&mut self) {
-        if !self.past_await
-            && let Some(key) = self.current
-        {
+        if self.past_await {
+            return;
+        }
+        if let Some(key) = self.current {
             self.callables
                 .get_mut(&key)
                 .unwrap()
                 .dynamic_property_effect = true;
+        } else {
+            self.top_property_writes[self.owner.0].push((None, None));
         }
     }
 
@@ -296,18 +318,22 @@ impl ExecutionIndex {
         if self.past_await {
             return;
         }
-        if let (Some(key), Expr::Ident(object), Some(property)) = (
-            self.current,
-            member.obj.unwrap_parens(),
-            static_prop(&member.prop),
-        ) {
-            self.callables
+        let receiver = match member.obj.unwrap_parens() {
+            Expr::Ident(object) => Some(object.to_id()),
+            _ => None,
+        };
+        let property = static_prop(&member.prop);
+        match (self.current, receiver, property) {
+            (Some(key), Some(receiver), Some(property)) => self
+                .callables
                 .get_mut(&key)
                 .unwrap()
                 .member_writes
-                .push((object.to_id(), property));
-        } else {
-            self.mark_dynamic_property_effect();
+                .push((receiver, property)),
+            (None, receiver, property) => {
+                self.top_property_writes[self.owner.0].push((receiver, property))
+            }
+            _ => self.mark_dynamic_property_effect(),
         }
     }
 
@@ -321,6 +347,24 @@ impl ExecutionIndex {
 }
 
 impl Visit for ExecutionIndex {
+    fn visit_setter_prop(&mut self, setter: &SetterProp) {
+        self.setter_owners
+            .entry(static_property_name(&setter.key))
+            .or_default()
+            .insert(self.owner);
+        setter.visit_children_with(self);
+    }
+
+    fn visit_class_method(&mut self, method: &ClassMethod) {
+        if method.kind == MethodKind::Setter {
+            self.setter_owners
+                .entry(static_property_name(&method.key))
+                .or_default()
+                .insert(self.owner);
+        }
+        method.visit_children_with(self);
+    }
+
     fn visit_object_lit(&mut self, object: &ObjectLit) {
         self.literal_depth += 1;
         object.visit_children_with(self);
@@ -654,6 +698,97 @@ struct Executor<'a> {
 }
 
 impl Executor<'_> {
+    fn promote_lazy_owner(&self, owner: StatementOrdinal, outcome: &mut Outcome) {
+        let fact = &self.facts[owner.0];
+        outcome.effects.reads.extend(
+            fact.reads
+                .lazy
+                .iter()
+                .filter(|id| self.top_bindings.contains(*id))
+                .cloned()
+                .map(|id| (id, owner)),
+        );
+        outcome.effects.rebinds.extend(
+            fact.rebinds
+                .lazy
+                .iter()
+                .filter(|id| self.top_bindings.contains(*id))
+                .cloned()
+                .map(|id| (id, owner)),
+        );
+    }
+
+    fn promote_property_writes(
+        &self,
+        writes: &[(Option<Id>, Option<String>)],
+        owner: StatementOrdinal,
+        outcome: &mut Outcome,
+    ) {
+        if writes.is_empty() {
+            return;
+        }
+        if self.index.setter_owners.is_empty() && !outcome.unknown_call && !self.prior_unknown_call
+        {
+            return;
+        }
+        let mut possible_owners = outcome.executed_owners.clone();
+        possible_owners.insert(owner);
+        possible_owners.extend(self.prior_effect_owners.iter().copied());
+        for (receiver, _) in writes {
+            if let Some(receiver) = receiver
+                && let Some(binding_owner) = self.binding_owner.get(receiver)
+            {
+                possible_owners.insert(*binding_owner);
+            }
+        }
+        let unknown_receiver = writes.iter().any(|(receiver, _)| receiver.is_none());
+        if outcome.unknown_call || self.prior_unknown_call || unknown_receiver {
+            possible_owners.extend(self.facts.iter().map(|fact| fact.ordinal));
+        }
+        let mut accessor_owners = BTreeSet::new();
+        if outcome.unknown_call || self.prior_unknown_call {
+            accessor_owners.extend(possible_owners);
+        } else {
+            for (_, property) in writes {
+                if let Some(property) = property {
+                    accessor_owners.extend(
+                        self.index
+                            .setter_owners
+                            .get(&Some(property.clone()))
+                            .into_iter()
+                            .flatten()
+                            .copied(),
+                    );
+                    accessor_owners.extend(
+                        self.index
+                            .setter_owners
+                            .get(&None)
+                            .into_iter()
+                            .flatten()
+                            .copied(),
+                    );
+                } else {
+                    accessor_owners.extend(
+                        self.index
+                            .setter_owners
+                            .values()
+                            .flat_map(|owners| owners.iter().copied()),
+                    );
+                }
+            }
+            accessor_owners = accessor_owners
+                .intersection(&possible_owners)
+                .copied()
+                .collect();
+        }
+        if !accessor_owners.is_empty() {
+            for accessor_owner in accessor_owners {
+                self.promote_lazy_owner(accessor_owner, outcome);
+            }
+            outcome.complete = false;
+        }
+    }
+
     fn safe_object_assign_target(&self, call: &Call, id: &Id) -> bool {
         if call.is_new
             || !call.plain_object_sources
@@ -844,6 +979,16 @@ impl Executor<'_> {
         for expr in &callable.returns {
             outcome.returns.extend(self.evaluate(expr, &env, &env));
         }
+        let mut writes: Vec<_> = callable
+            .member_writes
+            .iter()
+            .filter(|(receiver, _)| !self.stable_fresh_function_target(key, callable, receiver))
+            .map(|(receiver, property)| (Some(receiver.clone()), Some(property.clone())))
+            .collect();
+        if callable.dynamic_property_effect {
+            writes.push((None, None));
+        }
+        self.promote_property_writes(&writes, callable.owner, &mut outcome);
         self.active.remove(&signature);
         self.cache.insert(signature, outcome.clone());
         outcome
@@ -908,15 +1053,7 @@ impl Executor<'_> {
                         possible_accessors.extend(self.facts.iter().map(|fact| fact.ordinal));
                     }
                     for owner in possible_accessors {
-                        outcome.effects.reads.extend(
-                            self.facts[owner.0]
-                                .reads
-                                .lazy
-                                .iter()
-                                .filter(|id| self.top_bindings.contains(*id))
-                                .cloned()
-                                .map(|id| (id, owner)),
-                        );
+                        self.promote_lazy_owner(owner, outcome);
                     }
                     outcome.complete = false;
                     outcome.unknown_call = true;
@@ -1023,6 +1160,11 @@ pub(crate) fn annotate_synchronous_calls(
         for call in calls {
             executor.execute_call(call, &top_env, &top_captures, &mut outcome);
         }
+        executor.promote_property_writes(
+            &index.top_property_writes[fact.ordinal.0],
+            fact.ordinal,
+            &mut outcome,
+        );
         outcome.complete &= !index.opaque_top.contains(&fact.ordinal);
         outcome.effects.complete = outcome.complete;
         let mut prior_effect_owners = outcome.executed_owners.clone();

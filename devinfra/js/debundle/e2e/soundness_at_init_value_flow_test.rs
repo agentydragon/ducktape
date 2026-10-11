@@ -429,6 +429,56 @@ export { value, wrapper, mounted };
 }
 
 #[test]
+fn direct_property_write_can_call_a_local_setter() {
+    expect_cycle_rejection(
+        FixtureOpts::new(
+            r#"const value = 1;
+function factory() {
+  function wrapper() {}
+  wrapper.__proto__ = { set item(next) { globalThis.seen = value + next; } };
+  wrapper.item = 0;
+  return wrapper;
+}
+const mounted = factory();
+console.log(globalThis.seen);
+export { value, factory, mounted };
+"#,
+            vec![logical_module(
+                "mount",
+                &[Member::new("factory"), Member::new("mounted")],
+            )],
+        )
+        .with_unassigned_mode(unassigned_mode_inline()),
+        &["mount", "anon_residual_sentinel"],
+    );
+}
+
+#[test]
+fn top_level_property_write_can_call_a_setter_from_an_earlier_statement() {
+    expect_cycle_rejection(
+        FixtureOpts::new(
+            r#"const value = 1;
+function wrapper() {}
+wrapper.__proto__ = { set item(next) { globalThis.seen = value + next; } };
+wrapper.item = 0;
+console.log(globalThis.seen);
+export { value, wrapper };
+"#,
+            vec![logical_module_with_anon(
+                "mount",
+                &[Member::new("wrapper")],
+                &[
+                    "wrapper.__proto__ = { set item(next) { globalThis.seen = value + next; } };",
+                    "wrapper.item = 0;",
+                ],
+            )],
+        )
+        .with_unassigned_mode(unassigned_mode_inline()),
+        &["mount", "anon_residual_sentinel"],
+    );
+}
+
+#[test]
 fn spread_argument_can_run_an_iterator_body() {
     expect_cycle_rejection(
         FixtureOpts::new(

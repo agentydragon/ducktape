@@ -726,6 +726,16 @@ accessor. An earlier unknown call expands that last set to the whole chunk.
 This broader promotion is confined to the unproved intrinsic call; creating a
 returned closure alone does not trigger it.
 
+Property writes and updates have a separate accessor-effect summary. The
+index records setter definitions by static property name and source owner.
+For a potentially matching write, the executor promotes the setter owner's
+lazy reads and rebinds when that owner may have participated in constructing
+the receiver or run earlier at top level. Unknown receivers broaden the owner
+set; an earlier unknown call broadens the effects to every chunk owner because
+it may have installed an accessor or Proxy trap. A static data-property write
+to a proved fresh local function retains the same A11 fast path. This keeps
+unrelated returned closures deferred when no setter can be reached.
+
 For statements without a complete call-site result, `promote_at_init_calls`
 uses its SCC closure: it builds the call graph among chunk-declared, resolvable
 callees from first-order lazy calls, takes its SCCs, and closes each SCC's
