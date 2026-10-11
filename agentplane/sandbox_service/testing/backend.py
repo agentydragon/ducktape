@@ -4,15 +4,17 @@ The server has its own event loop so synchronous HTTP TestClients cannot starve 
 Only the endpoint and public client escape this fixture, never provisioning implementations.
 """
 
-from collections.abc import Callable, Iterator, Sequence
-from contextlib import contextmanager, nullcontext
+from collections.abc import AsyncIterator, Callable, Iterator, Sequence
+from contextlib import asynccontextmanager, contextmanager, nullcontext
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, cast
+from uuid import UUID
 
 from anyio.from_thread import start_blocking_portal
 from kubernetes_asyncio import client as k8s_client
 
+from agentplane.runner_gateway.testing.control_listener import control_plane, wait_connected
 from agentplane.runner_gateway.testing.grpc_service import service
 from agentplane.runner_gateway.testing.resources import build_resources
 from agentplane.sandbox_service.action_policy import ActionPolicyBindings
@@ -35,6 +37,7 @@ from agentplane.sandbox_service.testing.fake_rbac import FakeRbac
 from agentplane.sandbox_service.testing.grpc_service import connect
 from agentplane.sandbox_service.testing.history import register_attached_sessions
 from agentplane.subjects import ServiceAccountRef
+from agentplane.testing.fake_apiserver import fake_apiserver
 from agentplane.workload_auth.principal import POD_NAME_CLAIM, POD_UID_CLAIM, WorkloadPrincipalResolver
 from util.agent_sandbox import SANDBOX_API
 from util.kubernetes import CustomObjectsClient
@@ -42,20 +45,33 @@ from util.testing.sqlalchemy_engines import postgres_async_engine
 
 TOKEN = "test-consumer-sandbox-service-token"
 AUDIENCE = "test-consumer-sandbox-service"
+RUNNER_AUDIENCE = "test-consumer-runner-control"
 MANAGER = ServiceAccountRef(namespace=NAMESPACE, name="test-integration-app")
+_RUNNER_TOKEN_PREFIX = "test-runner-token-"
+
+
+def runner_bearer(sandbox_name: str) -> str:
+    """The control-stream token of the runner in `seed_runner`'s Pod for `sandbox_name`."""
+    return f"{_RUNNER_TOKEN_PREFIX}{sandbox_name}"
 
 
 class Authentication:
     async def create_token_review(self, body: k8s_client.V1TokenReview) -> k8s_client.V1TokenReview:
+        token = body.spec.token
+        if token.startswith(_RUNNER_TOKEN_PREFIX):
+            name = token.removeprefix(_RUNNER_TOKEN_PREFIX)
+            account, pod_name, pod_uid, audience = name, name, f"test-pod-{name}", RUNNER_AUDIENCE
+        else:
+            account, pod_name, pod_uid, audience = MANAGER.name, "test-app-pod", "test-app-pod-uid", AUDIENCE
         return k8s_client.V1TokenReview(
             spec=body.spec,
             status=k8s_client.V1TokenReviewStatus(
-                authenticated=body.spec.token == TOKEN,
-                audiences=[AUDIENCE],
+                authenticated=token == TOKEN or token.startswith(_RUNNER_TOKEN_PREFIX),
+                audiences=[audience],
                 user=k8s_client.V1UserInfo(
-                    username=f"system:serviceaccount:{MANAGER.namespace}:{MANAGER.name}",
-                    uid="test-app-account-uid",
-                    extra={POD_NAME_CLAIM: ["test-app-pod"], POD_UID_CLAIM: ["test-app-pod-uid"]},
+                    username=f"system:serviceaccount:{NAMESPACE}:{account}",
+                    uid=f"{account}-uid",
+                    extra={POD_NAME_CLAIM: [pod_name], POD_UID_CLAIM: [pod_uid]},
                 ),
             ),
         )
@@ -66,6 +82,9 @@ class Endpoint:
     target: str
     token_file: Path
     reconcile: Callable[[], None]
+    # The gateway's runner control listener, which runners dial with `runner_bearer`.
+    control_target: str
+    wait_connected: Callable[[UUID], None]
 
     def client(self) -> SandboxServiceClient:
         return connect(self.target, self.token_file, namespace=NAMESPACE, command_admission_timeout_s=20)
@@ -105,11 +124,7 @@ def backend(
         )
         resources = build_resources(
             engine,
-            principals=WorkloadPrincipalResolver(
-                authentication=cast(k8s_client.AuthenticationV1Api, Authentication()),
-                audience=AUDIENCE,
-                allowed_service_account_namespaces={NAMESPACE},
-            ),
+            principals=principals(AUDIENCE),
             destinations=DestinationResolver(inventory, core_api, runner_port),
             caller_accounts=frozenset({MANAGER}),
             platform_instructions=platform_instructions,
@@ -121,8 +136,36 @@ def backend(
                 else nullcontext()
             ),
             portal.wrap_async_context_manager(service(resources, provisioning)) as target,
+            portal.wrap_async_context_manager(connection_records_api()) as api,
+            portal.wrap_async_context_manager(
+                control_plane(resources, principals=principals(RUNNER_AUDIENCE), api=api)
+            ) as control_target,
         ):
-            yield Endpoint(target, token_file, lambda: portal.call(provisioning.reconcile_once))
+            yield Endpoint(
+                target,
+                token_file,
+                lambda: portal.call(provisioning.reconcile_once),
+                control_target,
+                lambda sandbox_uid: portal.call(wait_connected, resources, sandbox_uid),
+            )
+
+
+def principals(audience: str) -> WorkloadPrincipalResolver:
+    return WorkloadPrincipalResolver(
+        authentication=cast(k8s_client.AuthenticationV1Api, Authentication()),
+        audience=audience,
+        allowed_service_account_namespaces={NAMESPACE},
+    )
+
+
+@asynccontextmanager
+async def connection_records_api() -> AsyncIterator[k8s_client.ApiClient]:
+    """An API server holding only runner connection records; the inventory stays on its fakes."""
+    async with (
+        fake_apiserver(dict.fromkeys(("leases", "services", "endpointslices"), NAMESPACE)) as fake,
+        k8s_client.ApiClient(k8s_client.Configuration(host=f"http://127.0.0.1:{fake.port}")) as api,
+    ):
+        yield api
 
 
 def seed_runner(
