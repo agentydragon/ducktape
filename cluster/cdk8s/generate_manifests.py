@@ -126,6 +126,7 @@ from cluster.cdk8s.forgejo import (
     app as forgejo_app,
     budget_namespace as forgejo_budget_namespace,
     cache as forgejo_cache,
+    cleanup_rule as forgejo_cleanup_rule,
     db as forgejo_db,
     flux_kustomizations as forgejo_flux_kustomizations,
     gitops_modules as forgejo_gitops_modules,
@@ -1104,7 +1105,7 @@ def generate_manifests(root: Path) -> None:
     )
     forgejo_images_artifact = artifact("forgejo-images", forgejo_images.OUTPUT_DIR)
     forgejo_images_module = terraform.gitops_module(forgejo_images.NAME)
-    forgejo_images.forgejo_images(
+    forgejo_images_kustomization = forgejo_images.forgejo_images(
         flux_chart,
         # The SOPS sibling (the tenant's canonical registry credential) turns on Flux decryption.
         write_directory(
@@ -1516,6 +1517,20 @@ def generate_manifests(root: Path) -> None:
         ),
         external_secrets_operator_kustomization,
     )
+    forgejo_cleanup_rule_artifact = artifact(
+        "forgejo-cleanup-rule", forgejo_cleanup_rule.OUTPUT_DIR, forgejo_cleanup_rule.PINS_DIR
+    )
+    forgejo_cleanup_rule.cleanup_rule(
+        flux_chart,
+        write_directory(
+            root,
+            forgejo_cleanup_rule_artifact,
+            forgejo_cleanup_rule.chart,
+            components=[posixpath.relpath(forgejo_cleanup_rule.PINS_DIR, forgejo_cleanup_rule.OUTPUT_DIR)],
+            config_map_generator=[forgejo_cleanup_rule.CONFIG_MAP],
+        ),
+        forgejo_images_kustomization,
+    )
     haku_egress_proxy_artifact = artifact("haku-egress-proxy", haku_egress_proxy.OUTPUT_DIR)
     haku_egress_proxy_kustomization = agents_flux_kustomizations.haku_egress_proxy(
         flux_chart,
@@ -1757,6 +1772,7 @@ def generate_manifests(root: Path) -> None:
             nvidia_runtimeclass_artifact,
             claude_sandbox_secrets_artifact,
             forgejo_token_rotation_artifact,
+            forgejo_cleanup_rule_artifact,
             ha_mcp_artifact,
             haku_managed_agent_artifact,
             kubectl_passthrough_mcp_artifact,

@@ -3513,6 +3513,26 @@ spec:
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
+  name: forgejo-cleanup-rule
+  namespace: ducktape-flux
+spec:
+  dependsOn:
+    - name: forgejo-images
+      namespace: ducktape-flux
+  interval: 10m
+  path: ./cluster/generated/forgejo-cleanup-rule
+  prune: true
+  retryInterval: 1m
+  sourceRef:
+    kind: ExternalArtifact
+    name: forgejo-cleanup-rule
+    namespace: ducktape-flux
+  timeout: 5m
+  wait: true
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
   name: haku-egress-proxy
   namespace: ducktape-flux
 spec:

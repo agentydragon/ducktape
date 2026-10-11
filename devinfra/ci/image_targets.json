@@ -155,6 +155,11 @@
       "test": "//cluster/rotators/forgejo_token_rotation/...",
       "registry": "forgejo"
     },
+    "forgejo-cleanup-rule": {
+      "target": "//skills/forgejo/scripts:cleanup_rule_image",
+      "test": "//skills/forgejo/scripts:test_cleanup_rule",
+      "registry": "forgejo"
+    },
     "attic-jwt-rotation": {
       "target": "//cluster/rotators/attic_jwt_rotation:image",
       "registry": "forgejo"

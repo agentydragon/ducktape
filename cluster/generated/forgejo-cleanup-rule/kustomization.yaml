@@ -1,0 +1,11 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - forgejo-cleanup-rule.k8s.yaml
+components:
+  - ../../k8s/forgejo-cleanup-rule-image-pins
+configMapGenerator:
+  - name: forgejo-cleanup-rule-config
+    namespace: forgejo-images
+    literals:
+      - 'rule.json={"enabled": false, "keep_count": 10, "keep_pattern": "", "match_full_name": false, "remove_days": 30, "remove_pattern": "^devel-[0-9]{14}-[0-9a-f]{7}$", "type": "container"}'

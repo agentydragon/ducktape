@@ -149,3 +149,17 @@ py_library(
         "@pypi//cdk8s_plus_34",
     ],
 )
+
+py_library(
+    name = "cleanup_rule",
+    srcs = ["cleanup_rule.py"],
+    visibility = ["//cluster/cdk8s:__pkg__"],
+    deps = [
+        "//cluster/cdk8s:flux",
+        "//cluster/cdk8s:manifest_roots",
+        "//cluster/cdk8s/forgejo_registry:chart",
+        "//skills/forgejo/scripts:cleanup_rule",
+        "@pypi//cdk8s",
+        "@pypi//cdk8s_plus_34",
+    ],
+)

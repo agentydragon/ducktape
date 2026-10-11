@@ -1,0 +1,63 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: forgejo-cleanup-rule
+  namespace: forgejo-images
+spec:
+  concurrencyPolicy: Forbid
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      activeDeadlineSeconds: 300
+      backoffLimit: 1
+      template:
+        spec:
+          automountServiceAccountToken: false
+          containers:
+            - args:
+                - --config
+                - /config/rule.json
+              env:
+                - name: FORGEJO_USER
+                  valueFrom:
+                    secretKeyRef:
+                      key: username
+                      name: forgejo-images-creds
+                - name: FORGEJO_PASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      key: password
+                      name: forgejo-images-creds
+              image: git.allegedly.works/ducktape-ci/forgejo-cleanup-rule:unset
+              name: reconcile
+              resources:
+                limits:
+                  memory: 128Mi
+                requests:
+                  cpu: 25m
+                  memory: 64Mi
+              securityContext:
+                allowPrivilegeEscalation: false
+                capabilities:
+                  drop:
+                    - ALL
+                readOnlyRootFilesystem: true
+              volumeMounts:
+                - mountPath: /config
+                  name: rule
+                  readOnly: true
+          imagePullSecrets:
+            - name: forgejo-images-creds
+          restartPolicy: Never
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 65534
+            seccompProfile:
+              type: RuntimeDefault
+          volumes:
+            - configMap:
+                name: forgejo-cleanup-rule-config
+              name: rule
+      ttlSecondsAfterFinished: 604800
+  schedule: 20 8 * * *
+  successfulJobsHistoryLimit: 3

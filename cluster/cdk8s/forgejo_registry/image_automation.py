@@ -70,6 +70,7 @@ IMAGES = (
     "cli-proxy-api",
     "cpap-gateway",
     "cpap-sync",
+    "forgejo-cleanup-rule",
     "forgejo-token-rotation",
     "github-api-proxy",
     "github-graphql-rate-exporter",

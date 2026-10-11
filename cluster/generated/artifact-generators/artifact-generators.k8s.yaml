@@ -314,6 +314,13 @@ spec:
       name: forgejo-token-rotation
       originRevision: "@repo"
     - copy:
+        - from: "@repo/cluster/generated/forgejo-cleanup-rule/**"
+          to: "@artifact/cluster/generated/forgejo-cleanup-rule/"
+        - from: "@repo/cluster/k8s/forgejo-cleanup-rule-image-pins/**"
+          to: "@artifact/cluster/k8s/forgejo-cleanup-rule-image-pins/"
+      name: forgejo-cleanup-rule
+      originRevision: "@repo"
+    - copy:
         - from: "@repo/cluster/generated/agents/ha-mcp/app/**"
           to: "@artifact/cluster/generated/agents/ha-mcp/app/"
         - from: "@repo/cluster/k8s/agents/ha-mcp/app-image-pins/**"

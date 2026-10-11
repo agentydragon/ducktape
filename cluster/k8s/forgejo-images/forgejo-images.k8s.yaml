@@ -266,6 +266,11 @@ spec:
       name: cpap-sync
       namespace: flux-system
     - apiVersion: image.toolkit.fluxcd.io/v1
+      filter: req.package.name == 'forgejo-cleanup-rule'
+      kind: ImageRepository
+      name: forgejo-cleanup-rule
+      namespace: flux-system
+    - apiVersion: image.toolkit.fluxcd.io/v1
       filter: req.package.name == 'forgejo-token-rotation'
       kind: ImageRepository
       name: forgejo-token-rotation

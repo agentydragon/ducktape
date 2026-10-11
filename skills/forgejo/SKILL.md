@@ -5,6 +5,26 @@ description: Inspect Forgejo repositories through the REST API and web endpoints
 
 # Forgejo
 
+## Native package cleanup rule
+
+`//skills/forgejo/scripts:cleanup_rule_bin` reconciles Forgejo's own container-package
+cleanup rule for the `ducktape-ci` account. The scheduled job's JSON policy is rendered
+into a ConfigMap from `cluster/cdk8s/forgejo/cleanup_rule.py`. Forgejo v15 exposes these
+rules through owner settings forms, but not its REST API, so the CLI signs into the web
+session, creates or updates the one container rule, and reads the saved form back. It
+does not list or delete individual package versions.
+
+`bb run //skills/forgejo/scripts:cleanup_rule_bin -- --inspect` signs in and lists
+existing rule IDs, types, and enabled states without writing. Supply
+`FORGEJO_USER`/`FORGEJO_PASSWORD` through the environment; do not put a password on the
+command line.
+
+The first policy is **disabled**. It describes keeping ten recent versions per package
+and removing dated `devel-*` versions older than 30 days. Do not enable it until pinned
+older image tags and consumers outside this repository have a protection plan: Forgejo's
+native keep-count rule does not inspect deployed workloads. A later reviewed change must
+explicitly relax the CLI's disabled-only policy guard as well as the ConfigMap setting.
+
 Use live Forgejo evidence before inferring from manifests. For private repos, get a real
 repo credential first and keep it in shell variables; never print tokens or passwords.
 

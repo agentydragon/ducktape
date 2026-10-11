@@ -1,0 +1,5 @@
+apiVersion: kustomize.config.k8s.io/v1alpha1
+kind: Component
+images:
+  - name: git.allegedly.works/ducktape-ci/forgejo-cleanup-rule
+    newTag: unset # {"$imagepolicy": "flux-system:forgejo-cleanup-rule:tag"}

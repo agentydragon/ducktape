@@ -1,4 +1,7 @@
+load("@aspect_rules_py//py:defs.bzl", "py_image_layer", aspect_py_binary = "py_binary")
+load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load")
 load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
+load("//props:oci.bzl", "py_image_entrypoint", "py_image_env")
 
 exports_files(
     ["forgejo.py"],
@@ -28,6 +31,57 @@ py_test(
     deps = [
         ":forgejo_lib",
         "//:conftest",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
+    name = "cleanup_rule",
+    srcs = ["cleanup_rule.py"],
+    visibility = ["//cluster/cdk8s/forgejo:__pkg__"],
+    deps = [
+        ":forgejo_lib",
+        "@pypi//httpx",
+    ],
+)
+
+aspect_py_binary(
+    name = "cleanup_rule_bin",
+    main = "cleanup_rule.py",
+    deps = [":cleanup_rule"],
+)
+
+py_image_layer(
+    name = "cleanup_rule_layer",
+    binary = ":cleanup_rule_bin",
+    group = "65534",
+    owner = "65534",
+)
+
+oci_image(
+    name = "cleanup_rule_image",
+    base = "@debian_trixie_slim_linux_amd64",
+    entrypoint = py_image_entrypoint("cleanup_rule_bin"),
+    env = py_image_env(binary_name = "cleanup_rule_bin"),
+    labels = {"org.opencontainers.image.source": "https://github.com/agentydragon/ducktape"},
+    tars = [":cleanup_rule_layer"],
+    user = "65534:65534",
+)
+
+oci_load(
+    name = "cleanup_rule_load",
+    image = ":cleanup_rule_image",
+    repo_tags = ["forgejo-cleanup-rule:latest"],
+)
+
+py_test(
+    name = "test_cleanup_rule",
+    srcs = ["test_cleanup_rule.py"],
+    deps = [
+        ":cleanup_rule",
+        "//:conftest",
+        "@pypi//httpx",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
