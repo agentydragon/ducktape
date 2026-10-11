@@ -68,7 +68,6 @@ Properties the target keeps:
 
 ## Decided (operator, 2026-10-10 PDT)
 
-- **No rename:** `session_event` keeps its name.
 - **Fold placement:** the projector and fold (`thread_fold/`, shared by the app and the History
   Service), the projection tables above with their per-Session leases, and
   `thread_history_summary` (every field derived from the log) move. Thread `name` and `archived`,

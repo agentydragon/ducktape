@@ -58,7 +58,8 @@ the same transaction, when every frame matches an exact versioned template
 concatenation. Anything else in the span keeps every entry. The dropped cursors are recorded as a
 `SettledDeltas` with its ranges, and read pages report the settlements that cover or complete in
 them; the fold and the app's raw-history readers treat a settled cursor as absent. The runner
-journal keeps every entry. Off by default; on in testing and staging.
+journal keeps every entry. Off by default; on in testing and staging. Why and what it drops:
+[delta settlement ADR](../docs/adr_delta_settlement.md).
 
 ## Thread fold
 
