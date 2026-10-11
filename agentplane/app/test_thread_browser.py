@@ -2178,6 +2178,7 @@ async def test_electric_reconnects_unconfirmed_command_without_reloading(thread_
     page.on("request", record_submission)
     replies: asyncio.Queue[APIResponse] = asyncio.Queue()
     drop_reply = asyncio.Event()
+    status_result = source.gateway.hold_next_command_status()
 
     async def lose_committed_reply(route: Route) -> None:
         replies.put_nowait(await route.fetch())
@@ -2199,7 +2200,15 @@ async def test_electric_reconnects_unconfirmed_command_without_reloading(thread_
         assert admission.event.command_admitted.command == command
         async with page.expect_event("requestfailed", predicate=lambda request: request.url == response.url):
             drop_reply.set()
+        async with asyncio.timeout(15):
+            status_request = await source.gateway.command_status_requests.get()
+        assert status_request.command_id == command.command_id
         pending = page.get_by_role("region", name="Input messages")
+        await expect(pending.locator('[data-stage="local"]')).to_be_visible()
+
+        # The lost reply leaves the browser asking what the gateway retained; an unavailable answer
+        # leaves the admission unconfirmed.
+        status_result.set_result(grpc.StatusCode.UNAVAILABLE)
         await expect(pending.locator('[data-stage="unconfirmed"]')).to_be_visible()
 
         # Interrupt real shape delivery. The published Electric client must retry its own
@@ -2244,6 +2253,8 @@ async def test_electric_reconnects_unconfirmed_command_without_reloading(thread_
         (thread,) = await thread_browser.store.list_threads(sandbox=SANDBOX)
         await expect_archived_events(thread_browser.event_logs, thread.id, source.entries)
     finally:
+        if not status_result.done():
+            status_result.set_result(grpc.StatusCode.UNAVAILABLE)
         drop_reply.set()
         await page.unroute_all(behavior="wait")
         await document.dispose()
