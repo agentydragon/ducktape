@@ -47,6 +47,7 @@ notice_debounce:
   max_wait_seconds: 15
 sandbox_service:
   target: sandboxes:8080
+  gateway_target: gateway:8080
   token_file: /tokens/sandboxes
 history_service:
   target: history:8080
@@ -126,6 +127,7 @@ actions:
   token_file: /tokens/actions
 sandbox_service:
   target: sandboxes:8080
+  gateway_target: gateway:8080
   token_file: /tokens/sandboxes
 history_service:
   target: history:8080
@@ -195,7 +197,11 @@ def test_invalid_stale_confirmation_timeout(timeout: float) -> None:
                 "database_url": "postgresql://unused",
                 "namespace": "test",
                 "actions": {"url": "http://actions", "token_file": "/tokens/actions"},
-                "sandbox_service": {"target": "sandboxes:8080", "token_file": "/tokens/sandboxes"},
+                "sandbox_service": {
+                    "target": "sandboxes:8080",
+                    "gateway_target": "gateway:8080",
+                    "token_file": "/tokens/sandboxes",
+                },
                 "history_service": {"target": "history:8080", "token_file": "/tokens/history"},
                 "stale_inbox_confirmation_s": timeout,
             }

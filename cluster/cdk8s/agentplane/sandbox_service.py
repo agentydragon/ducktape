@@ -1,18 +1,9 @@
-"""Sandbox lifecycle gateway; history and command admission schemas migrate before Pod startup."""
+"""The Sandbox Service: Sandbox lifecycle, grants, retention holds and teardown. It seals a Sandbox through the
+Runner Gateway before deleting it."""
 
-from pathlib import Path
 from typing import cast
 
-from agentplane_egresscredential_crds.works.allegedly.agentplane import (
-    EgressCredentialSpecTargets,
-    EgressCredentialSpecTargetsMethod,
-)
-from agentplane_egresspolicy_crds.works.allegedly.agentplane import (
-    EgressPolicySpecRules,
-    EgressPolicySpecRulesCredentialRef,
-    EgressPolicySpecRulesMethods,
-)
-from cdk8s import ApiObjectMetadata, Duration, Size
+from cdk8s import ApiObject, ApiObjectMetadata, Duration, JsonPatch, Size
 from cdk8s_plus_34 import (
     ApiResource,
     ContainerResources,
@@ -20,8 +11,6 @@ from cdk8s_plus_34 import (
     Cpu,
     CpuResources,
     Deployment,
-    EnvFieldPaths,
-    EnvValue,
     IApiResource,
     ImagePullPolicy,
     MemoryResources,
@@ -35,69 +24,32 @@ from cdk8s_plus_34 import (
 )
 from constructs import Construct
 
-from agentplane.egress.resources import placeholder_of
-from agentplane.runner_gateway.instructions import combine_instructions, render_platform_instructions
-from agentplane.runner_gateway.settings import RUNNER_CONTROL_AUDIENCE
 from agentplane.sandbox_service.kubernetes_grants import ClusterRoleBindingGrant, RoleBindingGrant
-from agentplane.sandbox_service.runner_endpoints import RunnerEndpoint
-from agentplane.sandbox_service.settings import CONFIG_FILE_ENV, CombinedSettings
+from agentplane.sandbox_service.settings import CONFIG_FILE_ENV, Settings
 from agentplane.subjects import ServiceAccountRef
 from cluster.cdk8s import cilium, node_scheduling, pod_policy
-from cluster.cdk8s.agentplane import actions, database, egress, history_service, notifications
+from cluster.cdk8s.agentplane import egress, history_service, notifications, runner_gateway
 from cluster.cdk8s.agentplane.environment import Environment
-from cluster.cdk8s.agentplane.migrate_container import migrate_init_container
 from cluster.cdk8s.agentplane.pod_disruption_budget import add_pod_disruption_budget
 from cluster.cdk8s.api_resource import custom_resource, named_resource
 from cluster.cdk8s.forgejo_registry.chart import forgejo_images_creds_secret_ref
 from cluster.cdk8s.probes import http_probe
-from cluster.cdk8s.providers.agentplane.egress_credential import EgressCredential, Source
-from cluster.cdk8s.providers.agentplane.egress_policy import EgressPolicy
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, Entity, NetworkPolicy
-from cluster.cdk8s.secret_ref import SecretRef
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 from cluster.cdk8s.settings_file import SettingsFile
 from cluster.cdk8s.token_reviewer_rbac import token_reviewer_cluster_rbac
-from util.settings_contract import env_name
 
 NAME = "agentplane-sandbox-service"
 TOKEN_AUDIENCE = "agentplane-sandbox-service"
 _LABELS = {"app.kubernetes.io/name": NAME}
 _IMAGE = "git.allegedly.works/ducktape-ci/agentplane-sandbox-service"
 _HEALTH = Port(name="health", number=8081)
-# The port every runner listens on (app.py's SandboxTemplate); this service dials it.
-RUNNER_PORT = 7000
-KUBERNETES_ADMIN_INSTRUCTIONS = (
-    Path(__file__).with_name("kubernetes_admin_instructions.md").read_text(encoding="utf-8").strip()
-)
-
-
-# Granted by this service with its `runner_control` endpoint, so no launch selection can cut a
-# Sandbox off from its own control plane.
-RUNNER_CONTROL_POLICY = "runner-control"
-RUNNER_CONTROL_CREDENTIAL = "agentplane-runner-control"
-# The bearer a runner sends on the control stream; the egress proxy swaps it for the Pod's control token.
-RUNNER_CONTROL_BEARER = placeholder_of(RUNNER_CONTROL_CREDENTIAL)
-_RUNNER_CONTROL_CONNECT = "/agentplane.proto.runner_control.RunnerControl/Connect"
+_GATEWAY_TOKEN_DIR = "/var/run/secrets/agentplane-runner-gateway"
 
 
 def service(namespace: str) -> ServiceRef:
     return ServiceRef(
         name=NAME, port=Port(name="grpc", number=8080), pods=Pods(namespace=namespace, labels=tuple(_LABELS.items()))
-    )
-
-
-def control_target(namespace: str) -> str:
-    """Each Sandbox's control Service, `<sandbox>-control`, which names the replica holding its runner
-    connection, as the `{sandbox}`/`{namespace}` template the clients' `control_target` takes."""
-    return f"{{sandbox}}-control.{{namespace}}.svc:{service(namespace).pod_port}"
-
-
-def runner_control(namespace: str) -> ServiceRef:
-    """The listener runners dial out to (agentplane/docs/runner_control.md), through the egress proxy."""
-    return ServiceRef(
-        name=NAME,
-        port=Port(name="runner-control", number=8082),
-        pods=Pods(namespace=namespace, labels=tuple(_LABELS.items())),
     )
 
 
@@ -108,23 +60,21 @@ class SandboxService(Construct):
         super().__init__(scope, id)
         self.env = env
         endpoint = service(env.namespace)
-        control = runner_control(env.namespace)
         account = ServiceAccount(
             self, "account", metadata=ApiObjectMetadata(name=NAME, namespace=env.namespace), automount_token=True
         )
         self._add_rbac(account)
-        actions_service = actions.service(env.namespace)
         caller_accounts = {
             manager,
             ServiceAccountRef(namespace=env.namespace, name=notifications.NAME),
-            # Subscribes to Sessions (WatchSessions, FollowSession) for its ingester.
+            # Places retention holds for its ingester.
             ServiceAccountRef(namespace=env.namespace, name=history_service.NAME),
         }
         config = SettingsFile(
             self,
             "config",
             metadata=ApiObjectMetadata(name=f"{NAME}-config", namespace=env.namespace),
-            model=CombinedSettings,
+            model=Settings,
             content={
                 "sandbox_namespace": env.namespace,
                 "caller_accounts": [
@@ -132,14 +82,6 @@ class SandboxService(Construct):
                     for account in sorted(caller_accounts, key=lambda account: (account.namespace, account.name))
                 ],
                 "token_audience": TOKEN_AUDIENCE,
-                "platform_instructions": combine_instructions(
-                    render_platform_instructions(
-                        egress_api_url=f"http://{egress.agent_api(env.namespace).fqdn}",
-                        actions_service_url=f"http://{actions_service.fqdn}:{actions_service.port.number}",
-                        notifications_service_url=f"http://{notifications.service(env.namespace).fqdn}:8080",
-                    ),
-                    KUBERNETES_ADMIN_INSTRUCTIONS,
-                ),
                 "default_egress_policies": list(egress.DEFAULT_POLICIES),
                 "kubernetes_grants": {
                     name: grant.model_dump(mode="json", exclude_none=True)
@@ -147,37 +89,19 @@ class SandboxService(Construct):
                 },
                 "kubernetes_binding_cleanup_namespaces": sorted(env.kubernetes_binding_cleanup_namespaces),
                 "kubernetes_cluster_binding_cleanup": env.kubernetes_cluster_binding_cleanup,
-                "runner_grpc_channel_options": dict(env.runner_grpc_channel_options),
-                "runner_control_audience": RUNNER_CONTROL_AUDIENCE,
                 "port": endpoint.port.number,
-                "runner_control_port": control.pod_port,
                 "health_port": _HEALTH.number,
-                "runner_port": RUNNER_PORT,
+                "gateway_target": runner_gateway.target(env.namespace),
+                "control_target": runner_gateway.control_target(env.namespace),
+                "gateway_token_file": f"{_GATEWAY_TOKEN_DIR}/token",
                 **(
-                    {
-                        # Through the egress proxy, which swaps the placeholder bearer for the Pod's token.
-                        "runner_control": RunnerEndpoint(
-                            target=f"{control.fqdn}:{control.port.number}",
-                            bearer=RUNNER_CONTROL_BEARER,
-                            egress_policy=RUNNER_CONTROL_POLICY,
-                        ).model_dump()
-                    }
+                    {"runner_control": runner_gateway.runner_control_endpoint(env.namespace).model_dump()}
                     if env.runner_control
                     else {}
                 ),
             },
             path="/etc/agentplane-sandbox-service/config.yaml",
-            supplied=[("commands_database_url",), ("pod_ip",)],
         )
-        # Like the other database-backed services, a migration failure blocks Pod
-        # startup, including existing lifecycle RPCs. The command has no retry loop.
-        commands_migration_env = {
-            "AGENTPLANE_SANDBOX_SERVICE_COMMANDS_DATABASE_URL": SecretRef(
-                namespace=env.namespace, name="postgres-sandbox-commands"
-            )
-            .key("uri")
-            .env_value(self, "commands-database")
-        }
         deployment = Deployment(
             self,
             "deployment",
@@ -191,22 +115,12 @@ class SandboxService(Construct):
             automount_service_account_token=True,
             docker_registry_auth=forgejo_images_creds_secret_ref(self, "images-creds"),
             security_context=PodSecurityContextProps(ensure_non_root=True, user=1000, group=1000, fs_group=1000),
-            init_containers=[
-                migrate_init_container(
-                    "git.allegedly.works/ducktape-ci/agentplane-sandbox-commands-migrate:unset",
-                    name="migrate-commands",
-                    env_variables=commands_migration_env,
-                )
-            ],
         )
         container = deployment.add_container(
             name="sandbox-service",
             image=f"{_IMAGE}:unset",
-            env_variables=commands_migration_env
-            # Where the Sandbox control Services this replica writes point (runner_control.md).
-            | {env_name(CombinedSettings, "pod_ip"): EnvValue.from_field_ref(EnvFieldPaths.POD_IP)},
             image_pull_policy=ImagePullPolicy.IF_NOT_PRESENT,
-            ports=[endpoint.port.container_port(), control.port.container_port(), _HEALTH.container_port()],
+            ports=[endpoint.port.container_port(), _HEALTH.container_port()],
             readiness=http_probe("/healthz", port=_HEALTH.number, initial_delay_seconds=3, period_seconds=10),
             liveness=http_probe("/healthz", port=_HEALTH.number, initial_delay_seconds=20, period_seconds=30),
             resources=ContainerResources(
@@ -216,6 +130,30 @@ class SandboxService(Construct):
             security_context=ContainerSecurityContextProps(read_only_root_filesystem=False),
         )
         config.mount_into(container, env=CONFIG_FILE_ENV)
+        # A rotating workload token the Runner Gateway accepts from this account alone for SealSandbox.
+        ApiObject.of(deployment).add_json_patch(
+            JsonPatch.add(
+                "/spec/template/spec/volumes/-",
+                k8s.Volume(
+                    name="runner-gateway-token",
+                    projected=k8s.ProjectedVolumeSource(
+                        sources=[
+                            k8s.VolumeProjection(
+                                service_account_token=k8s.ServiceAccountTokenProjection(
+                                    audience=TOKEN_AUDIENCE, expiration_seconds=3600, path="token"
+                                )
+                            )
+                        ]
+                    ),
+                ),
+            )
+        )
+        ApiObject.of(deployment).add_json_patch(
+            JsonPatch.add(
+                "/spec/template/spec/containers/0/volumeMounts/-",
+                k8s.VolumeMount(name="runner-gateway-token", mount_path=_GATEWAY_TOKEN_DIR, read_only=True),
+            )
+        )
         pod_policy.place(deployment, node_scheduling.HIL_OVH)
         pod_policy.harden(deployment)
         Service(
@@ -223,7 +161,7 @@ class SandboxService(Construct):
             "service",
             metadata=ApiObjectMetadata(name=NAME, namespace=env.namespace, labels=_LABELS),
             selector=deployment,
-            ports=[endpoint.port.service_port(), control.port.service_port()],
+            ports=[endpoint.port.service_port()],
         )
         NetworkPolicy(
             self,
@@ -234,19 +172,13 @@ class SandboxService(Construct):
                 caller.pods.admit(endpoint.pod_port),
                 notifications.service(env.namespace).pods.admit(endpoint.pod_port),
                 history_service.service(env.namespace).pods.admit(endpoint.pod_port),
-                egress.proxy(env.namespace).pods.admit(control.pod_port),
             ],
             egress=[
                 cilium.dns_egress(),
                 EgressRule.to_entities(Entity.KUBE_APISERVER),
-                EgressRule.to_endpoints(
-                    {"k8s:io.kubernetes.pod.namespace": env.namespace, "k8s:cnpg.io/cluster": "postgres"},
-                    database.POSTGRES_PORT,
-                ),
-                EgressRule.to_endpoints(cilium.endpoint_labels(env.namespace, "agentplane-runner"), RUNNER_PORT),
+                runner_gateway.service(env.namespace).egress(),
             ],
         )
-        self._add_runner_control_egress(control)
         if env.replicas.pdb_min_available is not None:
             add_pod_disruption_budget(
                 self,
@@ -256,49 +188,6 @@ class SandboxService(Construct):
                 min_available=env.replicas.pdb_min_available,
                 selector=_LABELS,
             )
-
-    def _add_runner_control_egress(self, control: ServiceRef) -> None:
-        """The egress path a runner dials the control listener on: the proxy swaps the placeholder for the
-        Pod's own token for the control stream's audience, which no other recipient accepts."""
-        namespace = self.env.namespace
-        EgressCredential(
-            self,
-            "runner-control-credential",
-            metadata=ApiObjectMetadata(name=RUNNER_CONTROL_CREDENTIAL, namespace=namespace),
-            description=(
-                "The calling Sandbox Pod's short-lived, Pod-bound identity minted only for its runner's "
-                "control stream to the Sandbox Service. It conveys no other authority."
-            ),
-            source=Source.projected_workload_token(audience=RUNNER_CONTROL_AUDIENCE),
-            targets=[
-                EgressCredentialSpecTargets(
-                    header="Authorization", method=EgressCredentialSpecTargetsMethod.SCHEME_TOKEN, scheme="Bearer"
-                )
-            ],
-        )
-        EgressPolicy(
-            self,
-            "runner-control-policy",
-            metadata=ApiObjectMetadata(name=RUNNER_CONTROL_POLICY, namespace=namespace),
-            rules=[
-                EgressPolicySpecRules(
-                    hosts=[control.fqdn],
-                    cluster_internal=True,
-                    methods=[EgressPolicySpecRulesMethods.POST],
-                    paths=[_RUNNER_CONTROL_CONNECT],
-                    credential_ref=EgressPolicySpecRulesCredentialRef(name=RUNNER_CONTROL_CREDENTIAL),
-                )
-            ],
-        )
-        # Additive to the proxy's own policy, which egress.py owns and which cannot name this
-        # module: this one imports that one.
-        NetworkPolicy(
-            self,
-            "runner-control-proxy-egress",
-            metadata=ApiObjectMetadata(name=f"{NAME}-runner-control-proxy", namespace=namespace),
-            endpoint_selector=egress.proxy(namespace).pods.selector,
-            egress=[control.egress()],
-        )
 
     def _add_rbac(self, service_account: ServiceAccount) -> None:
         namespace = self.env.namespace
@@ -410,16 +299,6 @@ class SandboxService(Construct):
                     verbs=["create", "get", "list", "watch", "patch", "delete"],
                 ),
                 RolePolicyRule(resources=[cast(IApiResource, ApiResource.PODS)], verbs=["get", "list", "watch"]),
-                # Runner connection records, each owned by its Sandbox: the Lease every replica
-                # watches, and the control Service and EndpointSlice its holder points at itself.
-                RolePolicyRule(
-                    resources=[custom_resource("coordination.k8s.io", "leases")],
-                    verbs=["get", "list", "watch", "create", "update"],
-                ),
-                RolePolicyRule(
-                    resources=[custom_resource("", "services"), custom_resource("discovery.k8s.io", "endpointslices")],
-                    verbs=["get", "create", "update"],
-                ),
                 # Read the UID-owned ServiceAccount metadata when replaying Create; never read its tokens.
                 RolePolicyRule(
                     resources=[custom_resource("", "serviceaccounts")], verbs=["create", "get", "patch", "delete"]

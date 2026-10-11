@@ -265,7 +265,6 @@ py_library(
         "//agentplane/proto:command_pb2",
         "//agentplane/proto:event_log_pb2",
         "//agentplane/proto:runner_control_pb2",
-        "//agentplane/proto:runner_gateway_pb2",
         "//agentplane/proto:runner_gateway_pb2_grpc",
         "//agentplane/proto:runner_pb2",
         "//agentplane/runner:client",
@@ -476,6 +475,32 @@ py_library(
     srcs = ["session_changes.py"],
     deps = [
         "//agentplane/postgres:listener",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_test(
+    name = "test_sealing",
+    srcs = ["test_sealing.py"],
+    deps = [
+        ":conftest",
+        ":connection_records",
+        ":lifecycle_control",
+        ":sealing",
+        ":session_registry",
+        "//:conftest",
+        "//agentplane/proto:runner_pb2",
+        "//agentplane/runner/testing:runner_server",
+        "//agentplane/runner_gateway/commands:connections",
+        "//agentplane/runner_gateway/testing:sessions",
+        "//agentplane/sandbox_service:destinations",
+        "//agentplane/sandbox_service/testing:kubernetes",
+        "//agentplane/testing:fake_apiserver",
+        "@pypi//grpcio",
+        "@pypi//kubernetes_asyncio",
+        "@pypi//protobuf",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
     ],
 )

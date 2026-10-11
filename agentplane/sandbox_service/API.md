@@ -305,17 +305,15 @@ its response is lost. Settle a command by retrying it with the unchanged ID/payl
 is neither harness consumption nor command completion nor inbox acknowledgement. A recorded submission
 is not a queue: nothing delivers it later, and the runner journal stays the receipt authority.
 
-## Server configuration and cutover
+## Server configuration
 
 `//agentplane/sandbox_service:server` uses `AGENTPLANE_SANDBOX_SERVICE_*` environment variables or
 kebab-case CLI flags, and `//agentplane/runner_gateway:server` uses `AGENTPLANE_RUNNER_GATEWAY_*`
 (`AGENTPLANE_RUNNER_GATEWAY_CONFIG_FILE` for its YAML file). The Sandbox Service reaches the gateway
 at `gateway_target`, and a Sandbox's holder replica through `control_target`, with the token in
 `gateway_token_file`; the gateway accepts that account for `SealSandbox` through `sealer_accounts`.
-Without `gateway_target`, one Sandbox Service process runs both services and seals in-process; it
-also answers the gateway's RPCs under the `ducktape.agentplane.sandbox.v1.SandboxService` name for
-clients from before the split. Required settings are `sandbox_namespace` and
-`caller_accounts` (nonempty). TokenReview namespaces are derived from that allowlist.
+Required settings are `sandbox_namespace`, `caller_accounts` (nonempty), `gateway_target`,
+`control_target` and `gateway_token_file`. TokenReview namespaces are derived from that allowlist.
 `token_audience` defaults to `agentplane-sandbox-service`. Kubernetes access is in-cluster unless `kubeconfig` is supplied.
 
 `port` defaults to 8080 for gRPC. `health_port` defaults to 8081 for unauthenticated HTTP `/healthz`;

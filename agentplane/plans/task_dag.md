@@ -832,7 +832,6 @@ flowchart TD
     REFACTOR_COHERENCE_AUDIT[Blocked: whole-refactor coherence audit]
     FOLLOW_PATH_RETIRE[Delete following, WatchSessions and holds] --> REFACTOR_COHERENCE_AUDIT
     RUNNER_INBOUND_RETIRE[Retire inbound runner access] --> REFACTOR_COHERENCE_AUDIT
-    SANDBOX_SERVICE_DEPLOYMENT_SPLIT[Sandbox Service and Runner Gateway split] --> REFACTOR_COHERENCE_AUDIT
     HISTORY_SERVICE_OWNERSHIP[History Service ownership] --> REFACTOR_COHERENCE_AUDIT
     RUNNER_SESSION_RECORD_SHIMS --> REFACTOR_COHERENCE_AUDIT
 ```
@@ -902,8 +901,7 @@ flowchart TD
     RUNNER_OUTBOUND_ROLLOUT[Every template dials out]
     LEGACY_SANDBOX_RETIRE[Retire pre-cutover Sandboxes]
     FOLLOW_PATH_RETIRE[Blocked: delete following, WatchSessions and holds]
-    SANDBOX_SERVICE_DEPLOYMENT_SPLIT[Candidate: Sandbox Service and Runner Gateway as separate services]
-    SANDBOX_SERVICE_DEPLOYMENT_SPLIT --> GATEWAY_CLIENT_SPLIT[Unscheduled: Session messages and client move to the gateway]
+    GATEWAY_CLIENT_SPLIT[Unscheduled: Session messages and client move to the gateway]
     AGENTPLANE_SANDBOX_RESOURCE[Decision: our own Sandbox resource]
     POD_INCARNATION[Decision: a Pod is the incarnation]
     SEAL_FINALIZER[Unscheduled: seal as a finalizer on every delete]
@@ -953,21 +951,6 @@ and token volume in cdk8s, and its caller account on the Sandbox Service; `follo
 With the holds goes teardown's path for a runner that pushes nothing: `SealResponse.pushes`,
 `TEARDOWN_PHASE_SEALED`, `SandboxInventory.record_seal` and `delete_if_released`. Every teardown
 then waits for every seal to be `flushed`.
-
-### `SANDBOX_SERVICE_DEPLOYMENT_SPLIT` — Sandbox Service and Runner Gateway as separate services
-
-**Candidate; operator, 2026-10-10 and 2026-10-11 PDT.** Two services with their own packages,
-servers, images and ServiceAccounts: the Sandbox Service (`SandboxService`), a single active
-reconciler holding the RBAC, ServiceAccount and egress grant permissions; and the replicated
-Runner Gateway (`RunnerGateway`, `agentplane/runner_gateway`), facing runners with only Lease and
-EndpointSlice writes, so a gateway bug cannot reach the Sandbox Service's credentials. Teardown
-seals through the gateway's `SealSandbox`. The code split lands first, with the Sandbox Service
-still serving both from one Deployment while `gateway_target` is unset; the manifest PR, after the
-`agentplane-runner-gateway` image publishes, deploys the gateway, points clients' `gateway_target`
-at it and deletes that combined mode (`CombinedSettings`, `serve_combined`, the gateway's legacy
-service name). The same PR, or its follow-up once that image serves, makes each client's gateway
-target setting required and deletes its fallback to the Sandbox Service target (app, History
-Service, notification service), so no caller equivocates between the two.
 
 ### `GATEWAY_CLIENT_SPLIT` — Session messages and client move to the gateway
 

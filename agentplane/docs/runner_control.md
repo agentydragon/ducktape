@@ -1,6 +1,6 @@
 # Runner control stream
 
-Status: **accepted design, command delivery live on staging.** The Sandbox Service's
+Status: **accepted design, command delivery live on staging.** The Runner Gateway's
 control listener (`runner_gateway/runner_control.py`), reachable through the egress proxy,
 authenticates, fences and keeps connections alive, and delivers dispatch attempts
 (`runner_gateway/command_delivery.py`) for Sandboxes routed to it. The runner dials it when started
@@ -16,9 +16,9 @@ resumed and sealed over the control stream), and the push of Events to the runne
 ## Shape
 
 The runner dials out to two endpoints its Sandbox names. It pushes its journals' Events to one
-**ingress** ([Event ingress](#event-ingress)), and holds a control stream to the Sandbox Service for
-commands, receipts and lifecycle requests. Each runner process is a gRPC client of the Sandbox
-Service and holds one HTTP/2 connection to it. On that connection it keeps one long-lived
+**ingress** ([Event ingress](#event-ingress)), and holds a control stream to the Runner Gateway for
+commands, receipts and lifecycle requests. Each runner process is a gRPC client of the Runner
+Gateway and holds one HTTP/2 connection to it. On that connection it keeps one long-lived
 bidirectional `Connect` stream, which carries command delivery and lifecycle requests for every
 Session in its state directory. Events never travel on it, so no event catch-up can starve a
 command. The runner is the client, so service-to-runner traffic is messages on streams the runner
@@ -121,7 +121,7 @@ sets `runner_ingress`, so every runner's Events are still read through `Attach`.
 The runner pushes each Session's journal to one **ingress**, the endpoint its Sandbox names, and
 nothing else reads its journals. The History Service is the ingress when history is kept. A client
 that keeps no history implements the ingress itself and sends commands and lifecycle calls through
-the Sandbox Service like any other client. Fan-out to further readers is the ingress's concern, or
+the Runner Gateway like any other client. Fan-out to further readers is the ingress's concern, or
 a service's behind it, never a second destination on the runner.
 
 Rejected: following runners through the Sandbox Service, which made it fan out a journal it does
@@ -212,7 +212,7 @@ bounded only by the state volume, and a Sandbox cannot finish teardown while any
 **Endpoint and authentication.** The runner is started with its ingress and control targets, which
 only the component creating the Sandbox's Kubernetes objects sets, from its own configuration: one
 ingress for every Sandbox it creates (the History Service, or a historyless deployment's own
-sink), and the control target is always the Sandbox Service. A create request cannot choose
+sink), and the control target is always the Runner Gateway. A create request cannot choose
 either; an ingress per Sandbox is not built. The runner reaches the ingress through its egress sidecar with a placeholder bearer, like
 the control listener ([Path through the egress proxy](#path-through-the-egress-proxy)). An egress policy
 the Sandbox Service binds at creation, not a launch-selectable one, admits the ingress host and
@@ -229,7 +229,7 @@ Sandbox in sealing for the operator.
 
 ## Connection records in Kubernetes
 
-Status: **built in the Sandbox Service.** These records hold connection ownership and liveness
+Status: **built in the Runner Gateway.** These records hold connection ownership and liveness
 (§ Connection ownership and fencing); agreed operations, command submissions and dispatch attempts
 stay in Postgres.
 
@@ -286,20 +286,20 @@ Sandbox, hence `-control`.
   few seconds; it refuses, and the client retries. Nothing reads the endpoint as proof of
   ownership.
 - **Costs.** One Lease renewal per connected Sandbox every 15 s and one EndpointSlice write per
-  reconnect. The Sandbox Service gains RBAC to write Leases, Services and EndpointSlices in the
-  Sandbox namespace. Network policy is unchanged: the endpoints are Sandbox Service Pods.
+  reconnect. The Runner Gateway has RBAC to write Leases, Services and EndpointSlices in the
+  Sandbox namespace. Network policy is unchanged: the endpoints are Runner Gateway Pods.
 
 ## Lifecycle operations
 
 Status: **accepted (operator, 2026-10-10 PDT); built for the `ListSessions`, `CreateSession` and
-`ResumeSession` RPCs and teardown sealing.** The Sandbox Service agrees `lifecycle` and sends those
+`ResumeSession` RPCs and teardown sealing.** The Runner Gateway agrees `lifecycle` and sends those
 callers' requests over the control stream (`runner_gateway/lifecycle_control.py`); `LookupSession` still
 reads Sessions through the inbound API, and so does every Sandbox whose runner never agreed
 `lifecycle`. A runner refuses `OpenSession` for a Session it created but could not
 start with `FAILED`; asked again, it confirms the stopped Session, so `CreateSession` follows an
 `OpenSession` that confirms a stopped harness with `ResumeSession`. The App and the Notification
 Service reach the holder through the control Service (`control_target`); a client without it calls
-the Sandbox Service's own Service, where only the holder's replica serves a control-routed Sandbox.
+the Runner Gateway's own Service, where only the holder's replica serves a control-routed Sandbox.
 
 A runner that lists `lifecycle` in `Hello` takes every remaining inbound call over `Connect` as a
 control request. Each request names an explicit verb; nothing is inferred from which fields are
@@ -345,7 +345,7 @@ stream sends control requests: callers reach it through the Sandbox's control Se
 ([Connection records](#connection-records-in-kubernetes)), and background work such as sealing runs on the replica holding the Lease. Requests are bounded by the
 calling RPC's deadline, like dispatch attempts, and a reconnect replays none of them.
 
-| Inbound caller (Sandbox Service)                     | Control operation                                                |
+| Inbound caller (Runner Gateway)                      | Control operation                                                |
 | ---------------------------------------------------- | ---------------------------------------------------------------- |
 | `ListSessions` RPC                                   | `ListSessions` (built)                                           |
 | `CreateSession` (`Initialize`, then `Attach` + spec) | `Initialize`, then `OpenSession` (built) with the client's ID    |
@@ -396,7 +396,7 @@ Alternatives for the transport itself:
 
 ## Authentication and incarnation binding
 
-The runner dials the Sandbox Service's control listener through the Pod's egress sidecar, like
+The runner dials the Runner Gateway's control listener through the Pod's egress sidecar, like
 every other destination it reaches; the Sandbox's network fence admits nothing else. It sends a
 placeholder in `authorization: Bearer` metadata on every RPC. The egress proxy authenticates the Pod
 hop and substitutes that Pod's own projected token for the dedicated audience
@@ -404,16 +404,16 @@ hop and substitutes that Pod's own projected token for the dedicated audience
 [notifications](../notification_service/README.md) uses. The token is projected only into the
 sidecar, so neither the runner nor the harness ever holds it.
 
-The audience is distinct from the Sandbox Service API's (`agentplane-sandbox-service`) and from
+The audience is distinct from the Sandbox Service and Runner Gateway APIs' (`agentplane-sandbox-service`) and from
 the shared `agentplane-egress` audience that the LLM ingress and Action Service receive, so none of
 those recipients can replay a token they saw as a runner connection, and a control token cannot
-call the Sandbox Service API.
+call the Sandbox Service or Runner Gateway API.
 
 The rule that admits the control host lives in its own egress policy, which the Sandbox Service
 binds to every Sandbox at creation. It is not one of the launch-selectable
 policies, so choosing a narrow egress set cannot cut a Sandbox off from its own control plane.
 
-When a `Connect` stream opens, the Sandbox Service authenticates the bearer with the shared
+When a `Connect` stream opens, the Runner Gateway authenticates the bearer with the shared
 `WorkloadPrincipalAuthenticator` ([workload authentication](workload_authentication.md)) and then
 resolves the principal the way destination resolution does, in reverse:
 
@@ -447,7 +447,7 @@ that keeps the runner outside the agent's reach.
 ## Route selection
 
 The runner says which operations it carries over the control stream in `Hello`, and `Welcome` agrees the
-ones the service also supports. The Sandbox Service records every operation any connection of the
+ones the service also supports. The Runner Gateway records every operation any connection of the
 Sandbox has agreed, and the set only grows: once an operation has been agreed, that Sandbox's
 operation is control-routed for good, whether or not a connection exists right now. Routing is
 never inferred per request from whether a connection happens to be live.
@@ -468,7 +468,7 @@ owned by the `Sandbox`, so deleting it removes them:
   last frame received (written at most every 15 s), `leaseDurationSeconds` 30, and annotations
   `agentplane.ducktape.dev/pod-uid` and `agentplane.ducktape.dev/runner-boot-id` the Pod the
   connection authenticated as and the boot ID from `Hello`;
-- a headless, selector-less Service `<sandbox>-control` on the Sandbox Service's gRPC port, and its
+- a headless, selector-less Service `<sandbox>-control` on the Runner Gateway's gRPC port, and its
   EndpointSlice `<sandbox>-control`, naming the holder's Pod IP and annotated
   `agentplane.ducktape.dev/connection-epoch`.
 
@@ -530,7 +530,7 @@ before the reopen ends the reopened wait too; the submission stays pending eithe
 latest refusal is kept. Reconnecting never scans pending submissions for delivery, so a stale
 interrupt or stop command is never fired at a reconnecting runner.
 
-**Ambiguous submissions settle by redelivery** (built). The Sandbox Service reads no journal to
+**Ambiguous submissions settle by redelivery** (built). The Runner Gateway reads no journal to
 settle a submission. One whose receipt was lost is settled when its command is delivered again with
 the same `command_id`, within its attempt or a caller's retry: the runner answers a command it has
 already journaled with its original `CommandAdmitted` entry, even after its harness stopped or its

@@ -15,7 +15,6 @@ import logging
 from dataclasses import dataclass
 
 from agentplane.proto import runner_pb2
-from agentplane.runner_gateway.sealing import Sealing
 from agentplane.sandbox_service.client import SandboxServiceClient
 from agentplane.sandbox_service.inventory import SandboxInventory
 from agentplane.sandbox_service.protocol_pb2 import Sandbox, SandboxDestination, TeardownPhase
@@ -46,9 +45,7 @@ class SealNotFlushedError(Exception):
 @dataclass(frozen=True)
 class Teardown:
     inventory: SandboxInventory
-    # CLEANUP(added 2026-10-11): narrow to `GatewaySealing` once combined mode, which seals in-process,
-    #   is deleted (SANDBOX_SERVICE_DEPLOYMENT_SPLIT's manifest PR).
-    sealing: GatewaySealing | Sealing
+    sealing: GatewaySealing
 
     async def advance(self, sandbox: Sandbox) -> None:
         match sandbox.teardown:

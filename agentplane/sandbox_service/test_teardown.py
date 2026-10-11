@@ -1,126 +1,85 @@
-"""DeleteSandbox's teardown against a scripted runner: the Sandbox is sealed before anything deletes
-it, a runner without Seal has its harnesses stopped instead, and holds gate the deletion unless the
-runner pushes to an ingress, which gates it on every seal being flushed instead."""
+"""DeleteSandbox's teardown against a scripted Runner Gateway: the Sandbox is sealed before anything
+deletes it, and holds gate the deletion unless the runner pushes to an ingress, which gates it on every
+seal being flushed instead."""
 
 from collections.abc import AsyncIterator
-from dataclasses import dataclass, field
-from typing import Any, cast, override
-from uuid import UUID, uuid4
+from dataclasses import dataclass
+from pathlib import Path
+from typing import cast, override
 
 import grpc
 import pytest
 import pytest_bazel
 from kubernetes_asyncio import client as k8s_client
-from sqlalchemy.ext.asyncio import AsyncEngine
 
-from agentplane.proto import runner_pb2
-from agentplane.runner.testing.runner_server import UnimplementedRunner, serve_runner
-from agentplane.runner_gateway.commands import db as commands_db
-from agentplane.runner_gateway.commands.connections import ConnectionStore
-from agentplane.runner_gateway.connection_records import ConnectionLeases
-from agentplane.runner_gateway.lifecycle_control import LifecycleControl
-from agentplane.runner_gateway.sealing import Sealing
-from agentplane.runner_gateway.session_registry import SessionRegistry
-from agentplane.runner_gateway.testing.sessions import register_session
-from agentplane.sandbox_service.destinations import DestinationResolver, DestinationUnavailableError
+from agentplane.proto import runner_gateway_pb2_grpc, runner_pb2
+from agentplane.runner_gateway.testing.unimplemented_gateway import UnimplementedRunnerGateway
+from agentplane.sandbox_service.client import ServiceError
+from agentplane.sandbox_service.destinations import DestinationResolver
 from agentplane.sandbox_service.inventory import SandboxInventory
 from agentplane.sandbox_service.models import SandboxTearingDownError
-from agentplane.sandbox_service.protocol_pb2 import Hold, Sandbox, SandboxDestination, TeardownPhase
-from agentplane.sandbox_service.teardown import SealNotFlushedError, Teardown
+from agentplane.sandbox_service.protocol_pb2 import Hold, Sandbox, SandboxDestination, SandboxRequest, TeardownPhase
+from agentplane.sandbox_service.teardown import GatewaySealing, SealNotFlushedError, Teardown
 from agentplane.sandbox_service.testing.backend import seed_runner
-from agentplane.sandbox_service.testing.fake_inventory import NAMESPACE, FakeCoreV1Api, FakeCustomObjectsApi
+from agentplane.sandbox_service.testing.fake_inventory import FakeCoreV1Api, FakeCustomObjectsApi
+from agentplane.sandbox_service.testing.grpc_service import connect, serving
 from util.agent_sandbox import SANDBOXES_PLURAL, OperatingMode
 
-# gazelle:include_dep //agentplane/history_service/storage:conftest
 # gazelle:include_dep @pypi//protobuf
 
-pytest_plugins = ("agentplane.history_service.storage.conftest",)
-
 NAME = "test-torn-down"
-LEGACY = "test-legacy-session"
 
 
 @dataclass
-class ScriptedRunner(UnimplementedRunner):
-    """Seal, ListSessions and an Attach that answers StopRunnerSession by ending the stream."""
+class ScriptedGateway(UnimplementedRunnerGateway):
+    """SealSandbox answers `seal`, already named as holders name each Session; while `seal` is None
+    it answers UNAVAILABLE, as for a runner nothing can reach."""
 
-    harness_states: dict[str, runner_pb2.HarnessState] = field(default_factory=dict)
-    last_cursors: dict[str, int] = field(default_factory=dict)
-    # None answers Seal as a runner image without it does.
-    seals: dict[str, int] | None = None
-    pushes: bool = False
-    flushed: set[str] = field(default_factory=set)
-    stopped: list[tuple[str, int]] = field(default_factory=list)
-    port: int = 0
+    seal: runner_pb2.SealResponse | None = None
 
     @override
-    async def Seal(self, request: runner_pb2.SealRequest, context: grpc.aio.ServicerContext) -> runner_pb2.SealResponse:
-        if self.seals is None:
-            await context.abort(grpc.StatusCode.UNIMPLEMENTED, "test runner predates Seal")
-        return runner_pb2.SealResponse(
-            sessions=[
-                runner_pb2.SessionSeal(session_id=key, cursor=cursor, flushed=key in self.flushed)
-                for key, cursor in self.seals.items()
-            ],
-            pushes=self.pushes,
-        )
+    async def SealSandbox(self, request: SandboxRequest, context: grpc.aio.ServicerContext) -> runner_pb2.SealResponse:
+        if self.seal is None:
+            await context.abort(grpc.StatusCode.UNAVAILABLE, "test runner unreachable")
+        return self.seal
 
-    @override
-    async def ListSessions(
-        self, request: runner_pb2.ListSessionsRequest, context: grpc.aio.ServicerContext
-    ) -> runner_pb2.ListSessionsResponse:
-        return runner_pb2.ListSessionsResponse(
-            sessions=[
-                runner_pb2.SessionSummary(session_id=key, harness_state=state, last_cursor=self.last_cursors[key])
-                for key, state in self.harness_states.items()
-            ]
-        )
 
-    @override
-    async def Attach(
-        self, requests: AsyncIterator[runner_pb2.ClientMessage], context: grpc.aio.ServicerContext
-    ) -> AsyncIterator[runner_pb2.ServerMessage]:
-        opened = (await anext(requests)).open
-        yield runner_pb2.ServerMessage(
-            attached=runner_pb2.Attached(session_id=opened.session_id, last_cursor=self.last_cursors[opened.session_id])
-        )
-        async for message in requests:
-            if message.command.HasField("stop_runner_session"):
-                self.stopped.append((opened.session_id, opened.follow.after_cursor))
-                self.harness_states[opened.session_id] = runner_pb2.HARNESS_STATE_STOPPED
-                return
+def sealed(
+    cursors: dict[str, int], *, pushes: bool = False, flushed: frozenset[str] = frozenset()
+) -> runner_pb2.SealResponse:
+    return runner_pb2.SealResponse(
+        sessions=[
+            runner_pb2.SessionSeal(session_id=key, cursor=cursor, flushed=key in flushed)
+            for key, cursor in cursors.items()
+        ],
+        pushes=pushes,
+    )
 
 
 @pytest.fixture
-async def runner() -> AsyncIterator[ScriptedRunner]:
-    runner = ScriptedRunner()
-    async with serve_runner(runner) as port:
-        runner.port = port
-        yield runner
+def gateway() -> ScriptedGateway:
+    return ScriptedGateway()
+
+
+@pytest.fixture
+async def teardown(inventory: SandboxInventory, gateway: ScriptedGateway, token_file: Path) -> AsyncIterator[Teardown]:
+    server = grpc.aio.server()
+    runner_gateway_pb2_grpc.add_RunnerGatewayServicer_to_server(gateway, server)
+    async with serving(server) as target:
+        client = connect(target, token_file, namespace=inventory.namespace, command_admission_timeout_s=None)
+        try:
+            yield Teardown(inventory, GatewaySealing(client))
+        finally:
+            await client.close()
 
 
 @pytest.fixture
 def destinations(
-    inventory: SandboxInventory, custom_objects: FakeCustomObjectsApi, core_v1: FakeCoreV1Api, runner: ScriptedRunner
+    inventory: SandboxInventory, custom_objects: FakeCustomObjectsApi, core_v1: FakeCoreV1Api
 ) -> DestinationResolver:
     raw, _ = seed_runner(custom_objects, core_v1, NAME)
     raw["spec"]["operatingMode"] = OperatingMode.SUSPENDED
-    return DestinationResolver(inventory, cast(k8s_client.CoreV1Api, core_v1), runner.port)
-
-
-@pytest.fixture
-async def teardown(destinations: DestinationResolver, engine: AsyncEngine) -> Teardown:
-    # The registry tables share the history test database; production keeps them apart.
-    async with engine.begin() as connection:
-        await connection.run_sync(commands_db.Base.metadata.create_all)
-    sealing = Sealing(
-        destinations,
-        SessionRegistry(engine),
-        connections=ConnectionStore(engine),
-        control=LifecycleControl(ConnectionLeases()),
-        runner_grpc_channel_options={},
-    )
-    return Teardown(destinations.inventory, sealing)
+    return DestinationResolver(inventory, cast(k8s_client.CoreV1Api, core_v1), 7000)
 
 
 @pytest.fixture
@@ -139,21 +98,11 @@ async def test_sealed_sessions_hold_the_deletion_until_confirmed(
     inventory: SandboxInventory,
     destinations: DestinationResolver,
     teardown: Teardown,
-    runner: ScriptedRunner,
+    gateway: ScriptedGateway,
     custom_objects: FakeCustomObjectsApi,
-    engine: AsyncEngine,
 ) -> None:
-    public = uuid4()
-    await register_session(
-        engine,
-        public,
-        sandbox_namespace=NAMESPACE,
-        sandbox_name=NAME,
-        sandbox_uid=UUID(sandbox.uid),
-        runner_session_id=f"r-{public}",
-    )
-    runner.seals = {f"r-{public}": 4, LEGACY: 2}
-    await inventory.place_hold(NAME, uid=sandbox.uid, session_id=str(public), holder="test")
+    gateway.seal = sealed({"test-public": 4, "test-legacy": 2})
+    await inventory.place_hold(NAME, uid=sandbox.uid, session_id="test-public", holder="test")
     assert (sandbox.teardown, sandbox.operating_mode) == (TeardownPhase.TEARDOWN_PHASE_SEALING, OperatingMode.RUNNING)
     # Running to seal, not for new work: Sessions can be followed but not created or commanded.
     with pytest.raises(SandboxTearingDownError):
@@ -161,21 +110,20 @@ async def test_sealed_sessions_hold_the_deletion_until_confirmed(
     await destinations.resolve(destination(sandbox), writes=False)
 
     await teardown.advance(sandbox)
-    sealed = await inventory.get(NAME)
+    view = await inventory.get(NAME)
     # Still running: the holders follow their Sessions to the seal through the runner.
-    assert (sealed.teardown, sealed.operating_mode) == (TeardownPhase.TEARDOWN_PHASE_SEALED, OperatingMode.RUNNING)
+    assert (view.teardown, view.operating_mode) == (TeardownPhase.TEARDOWN_PHASE_SEALED, OperatingMode.RUNNING)
     await destinations.resolve(destination(sandbox), writes=False)
-    # Holders name a Session by its public ID, or a legacy one by the runner's own.
-    assert await inventory.place_hold(NAME, uid=sandbox.uid, session_id=LEGACY, holder="test") == Hold(
-        session_id=LEGACY, holder="test", seal_cursor=2
+    assert await inventory.place_hold(NAME, uid=sandbox.uid, session_id="test-legacy", holder="test") == Hold(
+        session_id="test-legacy", holder="test", seal_cursor=2
     )
-    await inventory.confirm_hold(NAME, uid=sandbox.uid, session_id=LEGACY, holder="test", through_cursor=2)
-    await inventory.confirm_hold(NAME, uid=sandbox.uid, session_id=str(public), holder="test", through_cursor=3)
-    await teardown.advance(sealed)
+    await inventory.confirm_hold(NAME, uid=sandbox.uid, session_id="test-legacy", holder="test", through_cursor=2)
+    await inventory.confirm_hold(NAME, uid=sandbox.uid, session_id="test-public", holder="test", through_cursor=3)
+    await teardown.advance(view)
     assert (SANDBOXES_PLURAL, NAME) in custom_objects.objects
 
-    await inventory.confirm_hold(NAME, uid=sandbox.uid, session_id=str(public), holder="test", through_cursor=4)
-    await teardown.advance(sealed)
+    await inventory.confirm_hold(NAME, uid=sandbox.uid, session_id="test-public", holder="test", through_cursor=4)
+    await teardown.advance(view)
     assert (SANDBOXES_PLURAL, NAME) not in custom_objects.objects
 
 
@@ -183,11 +131,11 @@ async def test_a_suspended_sealed_sandbox_runs_again_until_its_holds_confirm(
     sandbox: Sandbox,
     inventory: SandboxInventory,
     teardown: Teardown,
-    runner: ScriptedRunner,
+    gateway: ScriptedGateway,
     custom_objects: FakeCustomObjectsApi,
 ) -> None:
     # A holder confirms by following its Session to the seal, which needs a running runner.
-    runner.seals = {"test-held": 4}
+    gateway.seal = sealed({"test-held": 4})
     await inventory.place_hold(NAME, uid=sandbox.uid, session_id="test-held", holder="test")
     await teardown.advance(sandbox)
     custom_objects.objects[(SANDBOXES_PLURAL, NAME)]["spec"]["operatingMode"] = OperatingMode.SUSPENDED
@@ -203,43 +151,28 @@ async def test_a_pushing_runner_is_deleted_once_every_seal_is_flushed(
     sandbox: Sandbox,
     inventory: SandboxInventory,
     teardown: Teardown,
-    runner: ScriptedRunner,
+    gateway: ScriptedGateway,
     custom_objects: FakeCustomObjectsApi,
 ) -> None:
-    runner.pushes = True
-    runner.seals = {"test-flushed": 4, "test-unflushed": 2}
-    runner.flushed = {"test-flushed"}
+    cursors = {"test-flushed": 4, "test-unflushed": 2}
+    gateway.seal = sealed(cursors, pushes=True, flushed=frozenset({"test-flushed"}))
     with pytest.raises(SealNotFlushedError):
         await teardown.advance(sandbox)
     assert (await inventory.get(NAME)).teardown == TeardownPhase.TEARDOWN_PHASE_SEALING
 
     # History holds every Session through its seal, so an unconfirmed hold keeps nothing.
     await inventory.place_hold(NAME, uid=sandbox.uid, session_id="test-unflushed", holder="test")
-    runner.flushed.add("test-unflushed")
+    gateway.seal = sealed(cursors, pushes=True, flushed=frozenset(cursors))
     await teardown.advance(await inventory.get(NAME))
     assert (SANDBOXES_PLURAL, NAME) not in custom_objects.objects
 
 
-async def test_a_runner_without_seal_has_its_harnesses_stopped(
-    sandbox: Sandbox, inventory: SandboxInventory, teardown: Teardown, runner: ScriptedRunner
-) -> None:
-    runner.harness_states = {LEGACY: runner_pb2.HARNESS_STATE_RUNNING, "test-stopped": runner_pb2.HARNESS_STATE_STOPPED}
-    runner.last_cursors = {LEGACY: 3, "test-stopped": 7}
-    await teardown.advance(sandbox)
-    # Followed from the journal head, so nothing is replayed before the stop.
-    assert runner.stopped == [(LEGACY, 3)]
-    for session_id, cursor in runner.last_cursors.items():
-        hold = await inventory.place_hold(NAME, uid=sandbox.uid, session_id=session_id, holder="test")
-        assert hold.seal_cursor == cursor
-
-
 async def test_an_unreachable_runner_leaves_the_sandbox_unsealed(
-    sandbox: Sandbox, inventory: SandboxInventory, teardown: Teardown, core_v1: FakeCoreV1Api
+    sandbox: Sandbox, inventory: SandboxInventory, teardown: Teardown
 ) -> None:
-    pod: Any = core_v1.pods[NAME]
-    pod.status.conditions = []
-    with pytest.raises(DestinationUnavailableError):
+    with pytest.raises(ServiceError) as refused:
         await teardown.advance(sandbox)
+    assert refused.value.code == grpc.StatusCode.UNAVAILABLE
     assert (await inventory.get(NAME)).teardown == TeardownPhase.TEARDOWN_PHASE_SEALING
 
 

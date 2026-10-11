@@ -21,12 +21,8 @@ class SandboxServiceSettings(BaseModel):
     target: str = Field(
         min_length=1, description="Sandbox Service gRPC host:port, where the ingester places retention holds."
     )
-    # CLEANUP(added 2026-10-11): Make this required and drop main's fallback to `target` once the
-    #   manifests set it (SANDBOX_SERVICE_DEPLOYMENT_SPLIT's manifest PR).
-    gateway_target: str | None = Field(
-        default=None,
-        description="Runner Gateway gRPC host:port the ingester follows Sessions from. Unset calls it at `target`, "
-        "whose one Deployment still serves it.",
+    gateway_target: str = Field(
+        min_length=1, description="Runner Gateway gRPC host:port the ingester follows Sessions from."
     )
     token_file: Path = Field(
         description="Rotating projected ServiceAccount token for the Sandbox Service audience, reread on every call."

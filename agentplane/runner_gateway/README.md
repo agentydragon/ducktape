@@ -15,6 +15,3 @@ provision or delete Sandboxes.
 - `commands/`: the `sandbox_commands` database that holds them.
 - `sealing.py`: sealing a Sandbox's runner for teardown, on the Sandbox Service's request.
 - `grpc_api.py`, `settings.py`, `main.py`: the server.
-
-Until the manifests run its Deployment, the Sandbox Service's one Deployment serves this API too
-(`Launch.gateway_target` unset).

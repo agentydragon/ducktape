@@ -58,6 +58,7 @@ class HistoryService(Construct):
         caller: ServiceRef,
         sandboxes: ServiceRef,
         sandboxes_audience: str,
+        gateway: ServiceRef,
     ) -> None:
         super().__init__(scope, id)
         endpoint = service(env.namespace)
@@ -88,6 +89,7 @@ class HistoryService(Construct):
                 "health_port": _HEALTH.number,
                 "sandbox_service": {
                     "target": f"{sandboxes.fqdn}:{sandboxes.pod_port}",
+                    "gateway_target": f"{gateway.fqdn}:{gateway.pod_port}",
                     "token_file": f"{_SANDBOX_SERVICE_TOKEN_DIR}/token",
                     "grpc_channel_options": env.app_config.sandbox_service_grpc_channel_options,
                 },
@@ -142,7 +144,7 @@ class HistoryService(Construct):
             security_context=ContainerSecurityContextProps(read_only_root_filesystem=False),
         )
         config.mount_into(container, env=CONFIG_FILE_ENV)
-        # A rotating, audience-scoped workload token for the ingester's Sandbox Service calls.
+        # A rotating, audience-scoped workload token for the ingester's Sandbox Service and Runner Gateway calls.
         ApiObject.of(deployment).add_json_patch(
             JsonPatch.add(
                 "/spec/template/spec/volumes/-",
@@ -188,6 +190,7 @@ class HistoryService(Construct):
                 cilium.dns_egress(),
                 EgressRule.to_entities(Entity.KUBE_APISERVER),
                 sandboxes.egress(),
+                gateway.egress(),
                 EgressRule.to_endpoints(
                     {"k8s:io.kubernetes.pod.namespace": env.namespace, "k8s:cnpg.io/cluster": "postgres"},
                     database.POSTGRES_PORT,
