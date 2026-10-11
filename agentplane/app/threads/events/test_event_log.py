@@ -116,7 +116,7 @@ async def test_service_read_walks_over_settled_ranges(engine: AsyncEngine) -> No
             return history_pb2.ReadSessionObservationsResponse(last_cursor=7)
 
     reader = cast(HistoryServiceClient, Reader())
-    remote = EventLogStore(engine, summaries=AppSummaries(engine), history_reader=reader)
+    remote = EventLogStore(engine, summaries=Summaries(engine, reader), history_reader=reader)
     assert [entry.cursor for entry in await remote.events(thread_id, limit=10)] == [1, 2, 6, 7]
     assert await remote.observation_entry(thread_id, 4) is None
     observed = await remote.observation_entry(thread_id, 6)
@@ -198,7 +198,8 @@ async def test_service_observation_pages_treat_settled_ranges_as_covered(
         observations=[history_pb2.SessionObservation(cursor=cursor, kind="native") for cursor in cursors],
         settled=SETTLED.ranges,
     )
-    remote = EventLogStore(engine, summaries=AppSummaries(engine), history_reader=cast(HistoryServiceClient, reader))
+    client = cast(HistoryServiceClient, reader)
+    remote = EventLogStore(engine, summaries=Summaries(engine, client), history_reader=client)
     page = await remote.observations(
         UUID("00000000-0000-0000-0000-000000000001"), before_cursor=before, after_cursor=after, limit=2
     )
