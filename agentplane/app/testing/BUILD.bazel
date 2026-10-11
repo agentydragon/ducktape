@@ -101,8 +101,11 @@ py_library(
         "//third_party/containers:ryuk",
         "//util:oci",
         "//util/testing:container_logs",
+        "//util/testing:postgres",
         "@pypi//asyncpg",
         "@pypi//httpx",
+        "@pypi//psycopg",
+        "@pypi//sqlalchemy",
         "@pypi//testcontainers",
     ],
 )

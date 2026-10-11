@@ -1,19 +1,123 @@
 """Real Electric and logical PostgreSQL with the deployment's restricted database role."""
 
 import asyncio
+import hashlib
 import os
-from collections.abc import AsyncIterator
-from contextlib import asynccontextmanager
+from collections.abc import AsyncIterator, Iterator
+from contextlib import asynccontextmanager, contextmanager
+from dataclasses import dataclass
 from pathlib import Path
+from time import monotonic, sleep
 
 import asyncpg
 import httpx
+from sqlalchemy import create_engine, text
+from sqlalchemy.engine import make_url
+from sqlalchemy.exc import OperationalError
 from testcontainers.core.network import Network
 
+# SQLAlchemy loads the driver selected by the URL scheme at runtime.
+# gazelle:include_dep @pypi//psycopg
 from agentplane.app.database_migrate import RUNNER
 from third_party.containers import electric_1_8_1, postgres_18, ryuk
 from util.oci import load_oci_image
 from util.testing.container_logs import LoggedContainer
+from util.testing.postgres import PostgresDatabaseTemplate, database_name_for_test
+
+
+@dataclass(frozen=True)
+class BrowserPostgres:
+    """Shard-local PostgreSQL server and migrated template for isolated browser cases."""
+
+    network: Network
+    admin_url: str
+    template: PostgresDatabaseTemplate
+
+    @contextmanager
+    def replication_slot_cleanup(self, database: str) -> Iterator[None]:
+        """Drop slots owned by a browser clone after the enclosed Electric process stops."""
+        try:
+            yield
+        finally:
+            self._drop_replication_slots(database)
+
+    def _drop_replication_slots(self, database: str) -> None:
+        engine = create_engine(self.admin_url, isolation_level="AUTOCOMMIT")
+        try:
+            deadline = monotonic() + 30
+            with engine.connect() as connection:
+                while True:
+                    slots = connection.execute(
+                        text("SELECT slot_name, active FROM pg_replication_slots WHERE database = :database"),
+                        {"database": database},
+                    ).all()
+                    if not any(active for _, active in slots):
+                        for slot_name, _ in slots:
+                            connection.execute(
+                                text("SELECT pg_drop_replication_slot(:slot_name)"), {"slot_name": slot_name}
+                            )
+                        return
+                    if monotonic() >= deadline:
+                        raise TimeoutError(f"Electric replication slots stayed active for {database!r}: {slots!r}")
+                    sleep(0.1)
+        finally:
+            engine.dispose()
+
+
+@contextmanager
+def browser_postgres_server() -> Iterator[BrowserPostgres]:
+    """Start one logical-WAL PostgreSQL server and migrate its clone template once per shard."""
+    for image in (ryuk.IMAGE, postgres_18.IMAGE):
+        load_oci_image(image)
+    with Network() as network:
+        postgres = (
+            LoggedContainer(postgres_18.IMAGE.tag, test_name="conversation-postgres")
+            .with_network(network)
+            .with_network_aliases("postgres")
+            .with_exposed_ports(5432)
+            .with_env("POSTGRES_USER", "postgres")
+            .with_env("POSTGRES_PASSWORD", "postgres")
+            .with_command("postgres -c wal_level=logical -c max_wal_senders=10 -c max_replication_slots=10")
+        )
+        with postgres:
+            address = f"{postgres.get_container_host_ip()}:{postgres.get_exposed_port(5432)}"
+            admin_url = f"postgresql+psycopg://postgres:postgres@{address}/postgres"
+            engine = create_engine(admin_url, isolation_level="AUTOCOMMIT", connect_args={"connect_timeout": 2})
+            try:
+                deadline = monotonic() + 60
+                while True:
+                    try:
+                        with engine.connect() as connection:
+                            connection.execute(text("SELECT 1"))
+                        break
+                    except OperationalError:
+                        if monotonic() >= deadline:
+                            raise
+                        sleep(0.1)
+                with engine.connect() as connection:
+                    connection.execute(text("CREATE ROLE electric LOGIN REPLICATION PASSWORD 'electric'"))
+            finally:
+                engine.dispose()
+
+            with PostgresDatabaseTemplate(admin_url, "agentplane_browser_template") as template:
+                RUNNER.apply(template.url)
+                yield BrowserPostgres(network, admin_url, template)
+
+
+@asynccontextmanager
+async def browser_electric_service(postgres: BrowserPostgres, name_hint: str) -> AsyncIterator[ElectricService]:
+    """Run a fresh Electric process against a fresh clone of the shard's migrated database."""
+    test_digest = hashlib.sha256(name_hint.encode()).hexdigest()
+    output_name = f"conversation-electric-{test_digest[:12]}"
+    database_name = database_name_for_test(name_hint)
+    with postgres.template.clone(database_name) as database_url:
+        database = make_url(database_url).database
+        assert database is not None
+        app_url = make_url(database_url).set(drivername="postgresql+asyncpg").render_as_string(hide_password=False)
+        electric_url = f"postgresql://electric:electric@postgres:5432/{database}?sslmode=disable"
+        with postgres.replication_slot_cleanup(database):
+            async with _electric_process(postgres.network, app_url, electric_url, test_name=output_name) as service:
+                yield service
 
 
 class ElectricService:
@@ -80,10 +184,44 @@ async def _ready(url: str, *, timeout_s: float = 60) -> None:
 
 
 @asynccontextmanager
+async def _electric_process(
+    network: Network,
+    database_url: str,
+    electric_database_url: str,
+    *,
+    test_name: str,
+    electric_storage_dir: Path | None = None,
+) -> AsyncIterator[ElectricService]:
+    await asyncio.to_thread(load_oci_image, electric_1_8_1.IMAGE)
+    electric = (
+        LoggedContainer(electric_1_8_1.IMAGE.tag, test_name=test_name)
+        .with_network(network)
+        .with_exposed_ports(3000)
+        .with_env("DATABASE_URL", electric_database_url)
+        .with_env("ELECTRIC_INSECURE", "true")
+        .with_env("ELECTRIC_STORAGE", "fast_file")
+        .with_env("ELECTRIC_STORAGE_DIR", "/var/lib/electric")
+        .with_env("ELECTRIC_PERSISTENT_STATE", "file")
+        .with_env("ELECTRIC_MANUAL_TABLE_PUBLISHING", "true")
+        .with_env("ELECTRIC_REPLICATION_STREAM_ID", "agentplane_conversation")
+    )
+    if electric_storage_dir is not None:
+        await asyncio.to_thread(electric_storage_dir.mkdir, parents=True, exist_ok=True)
+        # The upstream image runs as UID 1000; Kubernetes supplies this through the
+        # deployment's fsGroup, while a Docker bind mount preserves the test process UID.
+        await asyncio.to_thread(os.chmod, electric_storage_dir, 0o777)
+        electric.with_volume_mapping(str(electric_storage_dir), "/var/lib/electric", mode="rw")
+    with electric:
+        service = ElectricService(database_url, electric)
+        await service.wait_ready()
+        yield service
+
+
+@asynccontextmanager
 async def electric_service(
     *, postgres_settings: tuple[str, ...] = (), electric_storage_dir: Path | None = None
 ) -> AsyncIterator[ElectricService]:
-    for image in (ryuk.IMAGE, postgres_18.IMAGE, electric_1_8_1.IMAGE):
+    for image in (ryuk.IMAGE, postgres_18.IMAGE):
         await asyncio.to_thread(load_oci_image, image)
     with Network() as network:
         postgres_command = " ".join(
@@ -115,25 +253,11 @@ async def electric_service(
                 await connection.close()
             database_url = f"postgresql+asyncpg://postgres:postgres@{address}/postgres"
             await asyncio.to_thread(RUNNER.apply, database_url)
-            electric = (
-                LoggedContainer(electric_1_8_1.IMAGE.tag, test_name="conversation-electric")
-                .with_network(network)
-                .with_exposed_ports(3000)
-                .with_env("DATABASE_URL", "postgresql://electric:electric@postgres:5432/postgres?sslmode=disable")
-                .with_env("ELECTRIC_INSECURE", "true")
-                .with_env("ELECTRIC_STORAGE", "fast_file")
-                .with_env("ELECTRIC_STORAGE_DIR", "/var/lib/electric")
-                .with_env("ELECTRIC_PERSISTENT_STATE", "file")
-                .with_env("ELECTRIC_MANUAL_TABLE_PUBLISHING", "true")
-                .with_env("ELECTRIC_REPLICATION_STREAM_ID", "agentplane_conversation")
-            )
-            if electric_storage_dir is not None:
-                await asyncio.to_thread(electric_storage_dir.mkdir, parents=True, exist_ok=True)
-                # The upstream image runs as UID 1000; Kubernetes supplies this through the
-                # deployment's fsGroup, while a Docker bind mount preserves the test process UID.
-                await asyncio.to_thread(os.chmod, electric_storage_dir, 0o777)
-                electric.with_volume_mapping(str(electric_storage_dir), "/var/lib/electric", mode="rw")
-            with electric:
-                service = ElectricService(database_url, electric)
-                await service.wait_ready()
+            async with _electric_process(
+                network,
+                database_url,
+                "postgresql://electric:electric@postgres:5432/postgres?sslmode=disable",
+                test_name="conversation-electric",
+                electric_storage_dir=electric_storage_dir,
+            ) as service:
                 yield service
