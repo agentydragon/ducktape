@@ -80,10 +80,10 @@ follows it; code that differs converges on it.
 Everything that holds a connection is closed by a context manager, never by a hand-written
 `try`/`finally: await x.close()`:
 
-- A channel used for one call or one stream session is `async with grpc.aio.insecure_channel(...) as
-  channel:`.
-- A client class is an async context manager that closes its channel (`async with
-  HistoryServiceClient(...) as history:`). A process that owns several enters them on one
+- A channel used for one call or one stream session is opened with
+  `async with grpc.aio.insecure_channel(...) as channel:`.
+- A client class is an async context manager that closes its channel:
+  `async with HistoryServiceClient(...) as history:`. A process that owns several enters them on one
   `AsyncExitStack`; a test fixture yields from inside the `async with`.
 - `grpc.aio.Server` has no context-manager form, so one shared async context manager registers
   nothing itself but owns the rest: bind, `start`, and `stop` with the given grace on exit. Mains
