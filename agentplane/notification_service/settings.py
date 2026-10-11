@@ -59,7 +59,8 @@ class GitHubSettings(BaseModel):
 class SandboxServiceSettings(BaseModel):
     model_config = ConfigDict(extra="forbid", hide_input_in_errors=True)
     target: str = Field(description="Sandbox Service gRPC host:port, for Sandbox lookups.")
-    # CLEANUP(added 2026-10-11): Make this required once the manifests set it (SANDBOX_SERVICE_DEPLOYMENT_SPLIT's manifest PR).
+    # CLEANUP(added 2026-10-11): Make this required and drop main's fallback to `target` once the
+    #   manifests set it (SANDBOX_SERVICE_DEPLOYMENT_SPLIT's manifest PR).
     gateway_target: str | None = Field(
         default=None,
         description="Runner Gateway gRPC host:port for session access and runner commands. Unset calls it at "
