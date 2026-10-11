@@ -32,6 +32,7 @@ exports_files(
         "0028_event_log_copies_nullable.py",
         "0029_event_log_copies_drop.py",
         "0030_thread_resume.py",
+        "0031_app_electric_retire.py",
     ],
     visibility = ["//agentplane/app/migrations:__pkg__"],
 )
@@ -261,5 +262,11 @@ py_library(
 py_library(
     name = "0030_thread_resume",
     srcs = ["0030_thread_resume.py"],
+    deps = ["@pypi//alembic"],
+)
+
+py_library(
+    name = "0031_app_electric_retire",
+    srcs = ["0031_app_electric_retire.py"],
     deps = ["@pypi//alembic"],
 )
