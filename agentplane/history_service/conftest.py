@@ -1,4 +1,4 @@
-"""A scripted Sandbox Service serving WatchSessions, FollowSession and retention holds over
+"""Scripted Sandboxes serving WatchSessions, FollowSession and retention holds over
 in-memory journals.
 
 It owns no Store: it plays the runner journals and the Session feed the ingester under test
@@ -46,28 +46,21 @@ class Follow:
     holders: frozenset[str]
 
 
-class ScriptedSandboxService(protocol_pb2_grpc.SandboxServiceServicer, gateway_pb2_grpc.RunnerGatewayServicer):
-    """Scripts only the subscriber's calls; anything else answers UNIMPLEMENTED."""
+class ScriptedSandboxes:
+    """Sandboxes' journals and holds, served the way the ingester sees them: the Runner Gateway
+    feeds and follows Sessions, the Sandbox Service keeps retention holds."""
 
     def __init__(self, *, lease_s: float) -> None:
         self.lease_s = lease_s
         self.journals: dict[str, Journal] = {}
-        self.follows: asyncio.Queue[Follow] = asyncio.Queue()
-        self.following: Counter[str] = Counter()
-        # While set to an unset Event, follows pause after their Attached snapshot.
-        self.replay_gate: asyncio.Event | None = None
-        # The next this many WatchSessions calls fail UNAVAILABLE.
-        self.watch_failures = 0
-        # The client address of every WatchSessions call; a new address means a new connection.
-        self.watch_peers: asyncio.Queue[str] = asyncio.Queue()
-        # Every hold confirmation, in arrival order.
-        self.confirmations: asyncio.Queue[protocol_pb2.Hold] = asyncio.Queue()
+        self.changed = asyncio.Event()
         self._position = 0
-        self._changed = asyncio.Event()
+        self.gateway = ScriptedGateway(self)
+        self.holds = ScriptedHolds(self)
 
     def _notify(self) -> None:
-        self._changed.set()
-        self._changed = asyncio.Event()
+        self.changed.set()
+        self.changed = asyncio.Event()
 
     def add(self, session_id: str, *, sandbox: str, sandbox_uid: str, owner: protocol_pb2.ServiceAccount) -> None:
         self._position += 1
@@ -85,29 +78,6 @@ class ScriptedSandboxService(protocol_pb2_grpc.SandboxServiceServicer, gateway_p
         self.journals[session_id].sealed = True
         self._notify()
 
-    @override
-    async def WatchSessions(
-        self, request: protocol_pb2.WatchSessionsRequest, context: grpc.aio.ServicerContext
-    ) -> AsyncIterator[protocol_pb2.WatchSessionsResponse]:
-        self.watch_peers.put_nowait(context.peer())
-        if self.watch_failures:
-            self.watch_failures -= 1
-            await context.abort(grpc.StatusCode.UNAVAILABLE, "scripted feed outage")
-        deadline = asyncio.get_running_loop().time() + self.lease_s
-        position = request.after_position
-        while True:
-            changed = self._changed
-            for journal in sorted(self.journals.values(), key=lambda journal: journal.change.position):
-                if journal.change.position > position:
-                    yield protocol_pb2.WatchSessionsResponse(change=journal.change)
-                    position = journal.change.position
-            try:
-                async with asyncio.timeout_at(deadline):
-                    await changed.wait()
-            except TimeoutError:
-                break
-        yield protocol_pb2.WatchSessionsResponse(reconnect_required=Empty())
-
     async def journal(self, destination: protocol_pb2.SessionDestination, context: grpc.aio.ServicerContext) -> Journal:
         journal = self.journals.get(destination.session_id)
         if journal is None or (
@@ -119,29 +89,55 @@ class ScriptedSandboxService(protocol_pb2_grpc.SandboxServiceServicer, gateway_p
         assert journal is not None
         return journal
 
-    @override
-    async def PlaceHold(
-        self, request: protocol_pb2.HoldRequest, context: grpc.aio.ServicerContext
-    ) -> protocol_pb2.Hold:
-        journal = await self.journal(request.destination, context)
-        return journal.holds.setdefault(
-            request.holder, protocol_pb2.Hold(session_id=request.destination.session_id, holder=request.holder)
-        )
+    @asynccontextmanager
+    async def serve(self) -> AsyncIterator[str]:
+        server = grpc.aio.server()
+        gateway_pb2_grpc.add_RunnerGatewayServicer_to_server(self.gateway, server)
+        protocol_pb2_grpc.add_SandboxServiceServicer_to_server(self.holds, server)
+        port = server.add_insecure_port("127.0.0.1:0")
+        await server.start()
+        try:
+            yield f"127.0.0.1:{port}"
+        finally:
+            await server.stop(0)
+
+
+class ScriptedGateway(gateway_pb2_grpc.RunnerGatewayServicer):
+    """Scripts only the subscriber's feed and follows; anything else answers UNIMPLEMENTED."""
+
+    def __init__(self, sandboxes: ScriptedSandboxes) -> None:
+        self.sandboxes = sandboxes
+        self.follows: asyncio.Queue[Follow] = asyncio.Queue()
+        self.following: Counter[str] = Counter()
+        # While set to an unset Event, follows pause after their Attached snapshot.
+        self.replay_gate: asyncio.Event | None = None
+        # The next this many WatchSessions calls fail UNAVAILABLE.
+        self.watch_failures = 0
+        # The client address of every WatchSessions call; a new address means a new connection.
+        self.watch_peers: asyncio.Queue[str] = asyncio.Queue()
 
     @override
-    async def ConfirmHold(
-        self, request: protocol_pb2.ConfirmHoldRequest, context: grpc.aio.ServicerContext
-    ) -> protocol_pb2.Hold:
-        journal = await self.journal(request.destination, context)
-        hold = journal.holds.get(request.holder)
-        if hold is None:
-            await context.abort(grpc.StatusCode.NOT_FOUND, "no such hold")
-        assert hold is not None
-        hold.confirmed_through = max(hold.confirmed_through, request.through_cursor)
-        snapshot = protocol_pb2.Hold()
-        snapshot.CopyFrom(hold)  # the stored hold keeps changing
-        self.confirmations.put_nowait(snapshot)
-        return hold
+    async def WatchSessions(
+        self, request: protocol_pb2.WatchSessionsRequest, context: grpc.aio.ServicerContext
+    ) -> AsyncIterator[protocol_pb2.WatchSessionsResponse]:
+        self.watch_peers.put_nowait(context.peer())
+        if self.watch_failures:
+            self.watch_failures -= 1
+            await context.abort(grpc.StatusCode.UNAVAILABLE, "scripted feed outage")
+        deadline = asyncio.get_running_loop().time() + self.sandboxes.lease_s
+        position = request.after_position
+        while True:
+            changed = self.sandboxes.changed
+            for journal in sorted(self.sandboxes.journals.values(), key=lambda journal: journal.change.position):
+                if journal.change.position > position:
+                    yield protocol_pb2.WatchSessionsResponse(change=journal.change)
+                    position = journal.change.position
+            try:
+                async with asyncio.timeout_at(deadline):
+                    await changed.wait()
+            except TimeoutError:
+                break
+        yield protocol_pb2.WatchSessionsResponse(reconnect_required=Empty())
 
     @override
     async def FollowSession(
@@ -150,7 +146,7 @@ class ScriptedSandboxService(protocol_pb2_grpc.SandboxServiceServicer, gateway_p
         [bearer] = [value for key, value in context.invocation_metadata() or () if key == "authorization"]
         assert isinstance(bearer, str)
         destination = request.destination
-        journal = await self.journal(destination, context)
+        journal = await self.sandboxes.journal(destination, context)
         self.follows.put_nowait(Follow(bearer, request, frozenset(journal.holds)))
         cursor = request.follow.after_cursor
         if cursor > len(journal.entries):
@@ -162,9 +158,9 @@ class ScriptedSandboxService(protocol_pb2_grpc.SandboxServiceServicer, gateway_p
             )
             if self.replay_gate is not None:
                 await self.replay_gate.wait()
-            deadline = asyncio.get_running_loop().time() + self.lease_s
+            deadline = asyncio.get_running_loop().time() + self.sandboxes.lease_s
             while True:
-                changed = self._changed
+                changed = self.sandboxes.changed
                 while cursor < len(journal.entries):
                     yield protocol_pb2.FollowSessionResponse(entry=journal.entries[cursor])
                     cursor += 1
@@ -180,17 +176,38 @@ class ScriptedSandboxService(protocol_pb2_grpc.SandboxServiceServicer, gateway_p
         finally:
             self.following[destination.session_id] -= 1
 
-    @asynccontextmanager
-    async def serve(self) -> AsyncIterator[str]:
-        server = grpc.aio.server()
-        protocol_pb2_grpc.add_SandboxServiceServicer_to_server(self, server)
-        gateway_pb2_grpc.add_RunnerGatewayServicer_to_server(self, server)
-        port = server.add_insecure_port("127.0.0.1:0")
-        await server.start()
-        try:
-            yield f"127.0.0.1:{port}"
-        finally:
-            await server.stop(0)
+
+class ScriptedHolds(protocol_pb2_grpc.SandboxServiceServicer):
+    """Scripts only retention holds; anything else answers UNIMPLEMENTED."""
+
+    def __init__(self, sandboxes: ScriptedSandboxes) -> None:
+        self.sandboxes = sandboxes
+        # Every hold confirmation, in arrival order.
+        self.confirmations: asyncio.Queue[protocol_pb2.Hold] = asyncio.Queue()
+
+    @override
+    async def PlaceHold(
+        self, request: protocol_pb2.HoldRequest, context: grpc.aio.ServicerContext
+    ) -> protocol_pb2.Hold:
+        journal = await self.sandboxes.journal(request.destination, context)
+        return journal.holds.setdefault(
+            request.holder, protocol_pb2.Hold(session_id=request.destination.session_id, holder=request.holder)
+        )
+
+    @override
+    async def ConfirmHold(
+        self, request: protocol_pb2.ConfirmHoldRequest, context: grpc.aio.ServicerContext
+    ) -> protocol_pb2.Hold:
+        journal = await self.sandboxes.journal(request.destination, context)
+        hold = journal.holds.get(request.holder)
+        if hold is None:
+            await context.abort(grpc.StatusCode.NOT_FOUND, "no such hold")
+        assert hold is not None
+        hold.confirmed_through = max(hold.confirmed_through, request.through_cursor)
+        snapshot = protocol_pb2.Hold()
+        snapshot.CopyFrom(hold)  # the stored hold keeps changing
+        self.confirmations.put_nowait(snapshot)
+        return hold
 
 
 @asynccontextmanager
@@ -212,5 +229,5 @@ async def subscriber(target: str, token_file: Path) -> AsyncIterator[SandboxServ
 
 
 @pytest.fixture
-def sandbox_service() -> ScriptedSandboxService:
-    return ScriptedSandboxService(lease_s=0.5)
+def sandboxes() -> ScriptedSandboxes:
+    return ScriptedSandboxes(lease_s=0.5)

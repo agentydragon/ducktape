@@ -13,7 +13,7 @@ import pytest_bazel
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 
 from agentplane.history_service import protocol_pb2 as history_pb2
-from agentplane.history_service.conftest import ScriptedSandboxService, subscriber
+from agentplane.history_service.conftest import ScriptedSandboxes, subscriber
 from agentplane.history_service.ingester import HOLDER, HistoryIngester, claim, logger
 from agentplane.history_service.storage.store import HistoryConflictError, HistoryNotFoundError, Store
 from agentplane.proto import event_log_pb2, event_pb2
@@ -38,10 +38,10 @@ def entry(cursor: int, text: str = "journal") -> event_log_pb2.EventEntry:
     )
 
 
-def session(sandbox_service: ScriptedSandboxService) -> UUID:
+def session(sandboxes: ScriptedSandboxes) -> UUID:
     """A Session the Sandbox Service created, as its feed record; the ingester creates its row."""
     session_id = uuid4()
-    sandbox_service.add(str(session_id), sandbox=SANDBOX, sandbox_uid=SANDBOX_UID, owner=OWNER)
+    sandboxes.add(str(session_id), sandbox=SANDBOX, sandbox_uid=SANDBOX_UID, owner=OWNER)
     return session_id
 
 
@@ -109,8 +109,8 @@ def committed(store: Store, commits: Commits) -> Callable[[UUID, int], Awaitable
 
 
 @pytest.fixture
-async def target(sandbox_service: ScriptedSandboxService) -> AsyncIterator[str]:
-    async with sandbox_service.serve() as address:
+async def target(sandboxes: ScriptedSandboxes) -> AsyncIterator[str]:
+    async with sandboxes.serve() as address:
         yield address
 
 
@@ -157,16 +157,16 @@ Replica = Callable[[str], asyncio.Task[None]]
 
 
 async def test_discovered_session_is_copied_through_its_owners_destination(
-    store: Store, sandbox_service: ScriptedSandboxService, replica: Replica, committed: Committed
+    store: Store, sandboxes: ScriptedSandboxes, replica: Replica, committed: Committed
 ) -> None:
     async with running(replica("test-replica")):
         # Created after the ingester started: only WatchSessions can name it.
-        session_id = session(sandbox_service)
-        sandbox_service.append(str(session_id), entry(1), entry(2))
+        session_id = session(sandboxes)
+        sandboxes.append(str(session_id), entry(1), entry(2))
         await committed(session_id, 2)
-        sandbox_service.append(str(session_id), entry(3))  # live, after the replayed prefix
+        sandboxes.append(str(session_id), entry(3))  # live, after the replayed prefix
         await committed(session_id, 3)
-    first = await sandbox_service.follows.get()
+    first = await sandboxes.gateway.follows.get()
     assert first.request.destination.sandbox == protocol_pb2.SandboxDestination(
         owner=OWNER, sandbox=SANDBOX, sandbox_uid=SANDBOX_UID
     )
@@ -177,47 +177,47 @@ async def test_discovered_session_is_copied_through_its_owners_destination(
 
 
 async def test_repeated_feed_failures_dial_a_fresh_connection(
-    store: Store, sandbox_service: ScriptedSandboxService, replica: Replica, committed: Committed
+    store: Store, sandboxes: ScriptedSandboxes, replica: Replica, committed: Committed
 ) -> None:
-    sandbox_service.watch_failures = 2
-    session_id = session(sandbox_service)
-    sandbox_service.append(str(session_id), entry(1))
+    sandboxes.gateway.watch_failures = 2
+    session_id = session(sandboxes)
+    sandboxes.append(str(session_id), entry(1))
     async with running(replica("test-replica")):
         await committed(session_id, 1)
-    first, second, third = [await sandbox_service.watch_peers.get() for _ in range(3)]
+    first, second, third = [await sandboxes.gateway.watch_peers.get() for _ in range(3)]
     assert first == second  # one failure reconnects on the same channel
     assert third != second
 
 
 async def test_restart_resumes_from_committed_cursor(
-    store: Store, sandbox_service: ScriptedSandboxService, replica: Replica, committed: Committed
+    store: Store, sandboxes: ScriptedSandboxes, replica: Replica, committed: Committed
 ) -> None:
-    session_id = session(sandbox_service)
-    sandbox_service.append(str(session_id), entry(1), entry(2))
+    session_id = session(sandboxes)
+    sandboxes.append(str(session_id), entry(1), entry(2))
     async with running(replica("test-replica-before")):
         await committed(session_id, 2)
     # The runner journal buffers what the History Service missed while down.
-    sandbox_service.append(str(session_id), entry(3), entry(4))
-    while not sandbox_service.follows.empty():
-        sandbox_service.follows.get_nowait()
+    sandboxes.append(str(session_id), entry(3), entry(4))
+    while not sandboxes.gateway.follows.empty():
+        sandboxes.gateway.follows.get_nowait()
     async with running(replica("test-replica-after")):
         await committed(session_id, 4)
-    resumed = await sandbox_service.follows.get()
+    resumed = await sandboxes.gateway.follows.get()
     assert (resumed.bearer, resumed.request.follow.after_cursor) == ("Bearer test-replica-after", 2)
     assert list((await store.read_page(session_id)).entries) == [entry(cursor) for cursor in range(1, 5)]
 
 
 async def test_replay_of_entries_another_writer_committed_is_accepted(
-    store: Store, sandbox_service: ScriptedSandboxService, replica: Replica, committed: Committed
+    store: Store, sandboxes: ScriptedSandboxes, replica: Replica, committed: Committed
 ) -> None:
-    session_id = session(sandbox_service)
-    sandbox_service.append(str(session_id), entry(1), entry(2), entry(3))
-    sandbox_service.replay_gate = asyncio.Event()
+    session_id = session(sandboxes)
+    sandboxes.append(str(session_id), entry(1), entry(2), entry(3))
+    sandboxes.gateway.replay_gate = asyncio.Event()
     async with running(replica("test-replica")):
-        await sandbox_service.follows.get()
+        await sandboxes.gateway.follows.get()
         # E.g. the Sandbox Service ingester, during a handover, commits under the follow.
         await store.append(session_id, [entry(1), entry(2)])
-        sandbox_service.replay_gate.set()
+        sandboxes.gateway.replay_gate.set()
         await committed(session_id, 3)
     assert list((await store.read_page(session_id)).entries) == [entry(1), entry(2), entry(3)]
 
@@ -234,18 +234,18 @@ class ConflictLogged(logging.Handler):
 
 
 async def test_conflicting_replay_is_rejected_loudly(
-    store: Store, sandbox_service: ScriptedSandboxService, replica: Replica
+    store: Store, sandboxes: ScriptedSandboxes, replica: Replica
 ) -> None:
-    session_id = session(sandbox_service)
-    sandbox_service.append(str(session_id), entry(1), entry(2))
-    sandbox_service.replay_gate = asyncio.Event()
+    session_id = session(sandboxes)
+    sandboxes.append(str(session_id), entry(1), entry(2))
+    sandboxes.gateway.replay_gate = asyncio.Event()
     conflict = ConflictLogged()
     logger.addHandler(conflict)
     try:
         async with running(replica("test-replica")):
-            await sandbox_service.follows.get()
+            await sandboxes.gateway.follows.get()
             await store.append(session_id, [entry(1), entry(2, "diverged")])
-            sandbox_service.replay_gate.set()
+            sandboxes.gateway.replay_gate.set()
             async with asyncio.timeout(10):
                 await conflict.seen.wait()
     finally:
@@ -271,23 +271,23 @@ async def test_claim_admits_one_holder_and_passes_on_release(db_url: str) -> Non
 
 
 async def test_one_replica_follows_a_session_until_it_stops(
-    store: Store, sandbox_service: ScriptedSandboxService, replica: Replica, committed: Committed
+    store: Store, sandboxes: ScriptedSandboxes, replica: Replica, committed: Committed
 ) -> None:
-    sandbox_service.lease_s = 30  # no planned renewal: a follow holds its claim throughout
-    session_id = session(sandbox_service)
-    sandbox_service.append(str(session_id), entry(1))
+    sandboxes.lease_s = 30  # no planned renewal: a follow holds its claim throughout
+    session_id = session(sandboxes)
+    sandboxes.append(str(session_id), entry(1))
     replicas = {name: replica(name) for name in ("test-replica-a", "test-replica-b")}
     try:
         await committed(session_id, 1)
-        holder = (await sandbox_service.follows.get()).bearer.removeprefix("Bearer ")
-        sandbox_service.append(str(session_id), entry(2))
+        holder = (await sandboxes.gateway.follows.get()).bearer.removeprefix("Bearer ")
+        sandboxes.append(str(session_id), entry(2))
         await committed(session_id, 2)
-        assert sandbox_service.follows.empty()  # both watch the Session; the other is refused the claim
+        assert sandboxes.gateway.follows.empty()  # both watch the Session; the other is refused the claim
         await stop(replicas.pop(holder))
-        sandbox_service.append(str(session_id), entry(3))
+        sandboxes.append(str(session_id), entry(3))
         await committed(session_id, 3)
         [successor] = replicas
-        handover = await sandbox_service.follows.get()
+        handover = await sandboxes.gateway.follows.get()
         assert (handover.bearer, handover.request.follow.after_cursor) == (f"Bearer {successor}", 2)
     finally:
         for task in replicas.values():
@@ -296,11 +296,11 @@ async def test_one_replica_follows_a_session_until_it_stops(
 
 
 async def test_seal_is_recorded_as_the_incarnations_end(
-    store: Store, sandbox_service: ScriptedSandboxService, replica: Replica, commits: Commits
+    store: Store, sandboxes: ScriptedSandboxes, replica: Replica, commits: Commits
 ) -> None:
-    session_id = session(sandbox_service)
-    sandbox_service.append(str(session_id), entry(1), entry(2))
-    sandbox_service.seal(str(session_id))
+    session_id = session(sandboxes)
+    sandboxes.append(str(session_id), entry(1), entry(2))
+    sandboxes.seal(str(session_id))
 
     async def sealed() -> bool:
         try:
@@ -316,20 +316,20 @@ async def test_seal_is_recorded_as_the_incarnations_end(
 
 
 async def test_teardown_waits_for_a_behind_ingester_until_it_confirms_the_seal(
-    store: Store, sandbox_service: ScriptedSandboxService, replica: Replica
+    store: Store, sandboxes: ScriptedSandboxes, replica: Replica
 ) -> None:
-    session_id = session(sandbox_service)
-    sandbox_service.append(str(session_id), entry(1), entry(2), entry(3))
-    sandbox_service.seal(str(session_id))
-    sandbox_service.replay_gate = asyncio.Event()
-    journal = sandbox_service.journals[str(session_id)]
+    session_id = session(sandboxes)
+    sandboxes.append(str(session_id), entry(1), entry(2), entry(3))
+    sandboxes.seal(str(session_id))
+    sandboxes.gateway.replay_gate = asyncio.Event()
+    journal = sandboxes.journals[str(session_id)]
     async with running(replica("test-replica")):
-        follow = await sandbox_service.follows.get()
+        follow = await sandboxes.gateway.follows.get()
         assert follow.holders == {HOLDER}  # held before the first read
         assert not journal.deletable()
-        sandbox_service.replay_gate.set()
+        sandboxes.gateway.replay_gate.set()
         async with asyncio.timeout(10):
-            confirmed = await sandbox_service.confirmations.get()
+            confirmed = await sandboxes.holds.confirmations.get()
         assert confirmed.confirmed_through == 3
         assert journal.deletable()
         # Confirmed only once the copy is durable.
