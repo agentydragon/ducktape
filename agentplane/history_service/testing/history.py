@@ -6,8 +6,8 @@ each write folds before it returns.
 """
 
 import asyncio
-from collections.abc import AsyncIterator, Sequence
-from contextlib import asynccontextmanager
+from collections.abc import AsyncIterator, Iterator, Sequence
+from contextlib import asynccontextmanager, contextmanager
 from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker, create_async_engine
@@ -20,6 +20,7 @@ from agentplane.history_service.storage.store import Store
 from agentplane.history_service.summary_changes import notify_summaries
 from agentplane.proto import event_log_pb2, runner_pb2
 from agentplane.thread_fold.recording import set_operational
+from util.testing.postgres import PostgresDatabaseTemplate, migrated_database_template
 
 # gazelle:include_dep @pypi//asyncpg
 # gazelle:include_dep @pypi//protobuf
@@ -31,6 +32,13 @@ FOLD_INTERVAL_S = 0.05
 def migrate(database_url: str) -> None:
     """Migrate a disposable history database as the Sandbox Service's migration job does."""
     RUNNER.apply(database_url)
+
+
+@contextmanager
+def migrated_template(admin_url: str, template_name: str) -> Iterator[PostgresDatabaseTemplate]:
+    """A history database template migrated once, for tests that clone many history databases."""
+    with migrated_database_template(admin_url, template_name, RUNNER) as template:
+        yield template
 
 
 class History:

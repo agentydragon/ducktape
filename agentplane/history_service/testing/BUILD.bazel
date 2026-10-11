@@ -45,6 +45,7 @@ py_library(
         "//agentplane/proto:event_log_pb2",
         "//agentplane/proto:runner_pb2",
         "//agentplane/thread_fold:recording",
+        "//util/testing:postgres",
         "@pypi//asyncpg",
         "@pypi//protobuf",
         "@pypi//sqlalchemy",
