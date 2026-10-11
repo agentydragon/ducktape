@@ -20,8 +20,10 @@ from google.protobuf.empty_pb2 import Empty
 
 from agentplane.proto import event_log_pb2, runner_pb2
 from agentplane.runner_gateway import protocol_pb2_grpc as gateway_pb2_grpc
+from agentplane.runner_gateway.testing.unimplemented_gateway import UnimplementedRunnerGateway
 from agentplane.sandbox_service import protocol_pb2, protocol_pb2_grpc
 from agentplane.sandbox_service.client import SandboxServiceClient
+from agentplane.sandbox_service.testing.unimplemented_sandbox_service import UnimplementedSandboxService
 
 # gazelle:include_dep @pypi//protobuf
 
@@ -102,7 +104,7 @@ class ScriptedSandboxes:
             await server.stop(0)
 
 
-class ScriptedGateway(gateway_pb2_grpc.RunnerGatewayServicer):
+class ScriptedGateway(UnimplementedRunnerGateway):
     """Scripts only the subscriber's feed and follows; anything else answers UNIMPLEMENTED."""
 
     def __init__(self, sandboxes: ScriptedSandboxes) -> None:
@@ -177,7 +179,7 @@ class ScriptedGateway(gateway_pb2_grpc.RunnerGatewayServicer):
             self.following[destination.session_id] -= 1
 
 
-class ScriptedHolds(protocol_pb2_grpc.SandboxServiceServicer):
+class ScriptedHolds(UnimplementedSandboxService):
     """Scripts only retention holds; anything else answers UNIMPLEMENTED."""
 
     def __init__(self, sandboxes: ScriptedSandboxes) -> None:

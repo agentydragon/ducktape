@@ -13,6 +13,7 @@ from agentplane.app.testing.history_service import HistoryService
 from agentplane.history_service import protocol_pb2 as history_pb2, protocol_pb2_grpc as history_pb2_grpc
 from agentplane.proto import command_pb2, event_log_pb2, event_pb2, runner_pb2
 from agentplane.runner_gateway import protocol_pb2_grpc as gateway_pb2_grpc
+from agentplane.runner_gateway.testing.unimplemented_gateway import UnimplementedRunnerGateway
 from agentplane.sandbox_service import protocol_pb2 as service_pb2
 
 # gazelle:include_dep @pypi//protobuf
@@ -83,7 +84,7 @@ class ReplicationSource(HistoryService):
             await server.stop(0)
 
 
-class Gateway(gateway_pb2_grpc.RunnerGatewayServicer):
+class Gateway(UnimplementedRunnerGateway):
     """The Runner Gateway in front of the source's runner: an admitted command lands in its history."""
 
     def __init__(self, source: ReplicationSource) -> None:

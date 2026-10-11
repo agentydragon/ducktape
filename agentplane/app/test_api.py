@@ -43,6 +43,7 @@ from agentplane.app.threads.view.content import ContentStore
 from agentplane.proto import event_log_pb2, runner_pb2
 from agentplane.runner.harness import Harness
 from agentplane.runner_gateway import protocol_pb2_grpc as gateway_pb2_grpc
+from agentplane.runner_gateway.testing.unimplemented_gateway import UnimplementedRunnerGateway
 from agentplane.sandbox_service import protocol_pb2 as service_pb2
 from agentplane.sandbox_service.client import SandboxServiceClient
 from agentplane.sandbox_service.kubernetes_grants import KubernetesGrant, RoleBindingGrant, RoleRef
@@ -748,7 +749,7 @@ def test_a_runner_that_does_not_answer_is_a_503(
 async def unanswered_command_service(
     token_file: Path,
 ) -> AsyncIterator[tuple[SandboxServiceClient, asyncio.Queue[str]]]:
-    class UnansweredGateway(gateway_pb2_grpc.RunnerGatewayServicer):
+    class UnansweredGateway(UnimplementedRunnerGateway):
         @override
         async def SubmitCommand(
             self, request: service_pb2.SubmitCommandRequest, context: grpc.aio.ServicerContext

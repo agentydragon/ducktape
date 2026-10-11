@@ -17,6 +17,7 @@ from google.protobuf.empty_pb2 import Empty
 
 from agentplane.history_service import protocol_pb2 as history_pb2, protocol_pb2_grpc
 from agentplane.history_service.client import HistoryServiceClient
+from agentplane.history_service.testing.unimplemented_history_service import UnimplementedHistoryService
 from agentplane.proto import event_log_pb2
 
 # gazelle:include_dep @pypi//protobuf
@@ -28,7 +29,7 @@ class History:
     feed: history_pb2.SessionFeedState | None = None
 
 
-class HistoryService(protocol_pb2_grpc.HistoryServiceServicer):
+class HistoryService(UnimplementedHistoryService):
     """A programmable peer, not an alternate implementation of durable ingestion. RPCs it does not
     script answer UNIMPLEMENTED rather than silently reaching a real backend."""
 

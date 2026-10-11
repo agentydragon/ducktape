@@ -297,6 +297,7 @@ py_test(
         "//agentplane/proto:runner_pb2",
         "//agentplane/runner:harness",
         "//agentplane/runner_gateway:protocol_pb2_grpc",
+        "//agentplane/runner_gateway/testing:unimplemented_gateway",
         "//agentplane/sandbox_service:client",
         "//agentplane/sandbox_service:kubernetes_grants",
         "//agentplane/sandbox_service:protocol_pb2",
