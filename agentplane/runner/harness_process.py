@@ -9,10 +9,9 @@ from collections.abc import AsyncIterator, Callable, Mapping, Sequence
 from contextlib import suppress
 from pathlib import Path
 
+from agentplane.native.transport import MAX_FRAME_LINE_BYTES
 from agentplane.runner.cgroups import AgentCgroups
 
-# Tool results ride inside single frames, so a line can run to megabytes.
-_LINE_LIMIT = 64 * 1024 * 1024
 # The most stdout one read takes. The lines it completes are one journal batch, so this bounds how
 # long that batch holds the journal from the session's other writers and readers.
 _READ_BYTES = 64 * 1024
@@ -80,7 +79,7 @@ class HarnessProcess:
                 # stops everything it started. The supervisor places the native harness in a child
                 # group and relays that stop before it exits.
                 start_new_session=True,
-                limit=_LINE_LIMIT,
+                limit=MAX_FRAME_LINE_BYTES,
             )
         except BaseException:
             if self._cgroup_path is not None:
@@ -156,8 +155,8 @@ class HarnessProcess:
             if b"\n" in chunk:
                 *lines, buffered = buffered.split(b"\n")
                 yield [line.rstrip(b"\r").decode() for line in lines]
-            if len(buffered) > _LINE_LIMIT:
-                raise ValueError(f"a harness stdout line exceeds {_LINE_LIMIT} bytes")
+            if len(buffered) > MAX_FRAME_LINE_BYTES:
+                raise ValueError(f"a harness stdout line exceeds {MAX_FRAME_LINE_BYTES} bytes")
         if buffered:
             yield [buffered.rstrip(b"\r").decode()]
 

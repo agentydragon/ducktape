@@ -3,7 +3,7 @@
 The transport does not interpret a harness's conversation.  Its owner records every raw
 frame before making it available to a request matcher.  ``Session`` is that owner in the
 runner; ``AsyncNativeProcess`` provides the same non-destructive contract to native
-behavior tests.
+behavior tests and the live-capture probe.
 """
 
 from __future__ import annotations
@@ -16,6 +16,10 @@ from pydantic import BaseModel
 
 Frame = dict[str, Any]
 FrameMatcher = Callable[[Frame], bool]
+
+# The longest native stdout line any reader of a harness accepts. Tool results ride inside single
+# frames, so a line can run to megabytes.
+MAX_FRAME_LINE_BYTES = 64 * 1024 * 1024
 
 
 @dataclass(frozen=True)
