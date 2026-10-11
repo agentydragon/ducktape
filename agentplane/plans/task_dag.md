@@ -794,8 +794,8 @@ flowchart TD
 Service's and the History Service's) follow by `runner_session_id`. Under the ingress, Sessions
 arrive under their client-minted public ID, which is also the runner's. Then the column only names
 feed snapshots stored before ingesters wrote them under the public ID: rewrite those snapshots
-under the public ID, then drop the column with `ux_history_runner_locator`. `feed_state` stays:
-the ingress writes it and the fold and app bridge read it. Stops for the operator.
+under the public ID, then drop the column with `ux_history_runner_locator`, together with the
+follower-only ingestion state (`source_id`, `feed_state`). Stops for the operator.
 
 ### `HISTORY_STORE_MOVE` — the history store belongs to the History Service
 
