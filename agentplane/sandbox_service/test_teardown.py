@@ -15,7 +15,6 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 
 from agentplane.proto import runner_pb2
 from agentplane.sandbox_service.channel_control import ChannelControl
-from agentplane.sandbox_service.commands import db as commands_db
 from agentplane.sandbox_service.commands.connections import ConnectionStore
 from agentplane.sandbox_service.connection_records import ConnectionLeases
 from agentplane.sandbox_service.destinations import DestinationResolver, DestinationUnavailableError
@@ -29,10 +28,7 @@ from agentplane.sandbox_service.testing.fake_inventory import NAMESPACE, FakeCor
 from agentplane.sandbox_service.testing.sessions import register_session
 from util.agent_sandbox import SANDBOXES_PLURAL, OperatingMode
 
-# gazelle:include_dep //agentplane/history_service/storage:conftest
 # gazelle:include_dep @pypi//protobuf
-
-pytest_plugins = ("agentplane.history_service.storage.conftest",)
 
 NAME = "test-torn-down"
 LEGACY = "test-legacy-session"
@@ -133,9 +129,6 @@ def destinations(
 
 @pytest.fixture
 async def teardown(destinations: DestinationResolver, engine: AsyncEngine) -> Teardown:
-    # The registry tables share the history test database; production keeps them apart.
-    async with engine.begin() as connection:
-        await connection.run_sync(commands_db.Base.metadata.create_all)
     return Teardown(
         destinations,
         SessionRegistry(engine),

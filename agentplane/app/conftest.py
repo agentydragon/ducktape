@@ -70,13 +70,9 @@ from agentplane.sandbox_service.testing.fake_inventory import (
     close_fake_api_clients,
 )
 from agentplane.sandbox_service.testing.fake_rbac import FakeRbac
+from agentplane.sandbox_service.testing.history import initialize_service_database, service_database
 from agentplane.thread_fold.projection_lease import ProjectionLease
-from util.testing.postgres import (
-    PostgresDatabaseTemplate,
-    create_database_sync,
-    database_name_for_test,
-    force_drop_database_sync,
-)
+from util.testing.postgres import PostgresDatabaseTemplate, database_name_for_test
 from util.testing.postgres_fixtures import postgres_container
 
 
@@ -135,17 +131,22 @@ def db_url(app_database_template: PostgresDatabaseTemplate, request: pytest.Fixt
         yield make_url(url).set(drivername="postgresql+asyncpg").render_as_string(hide_password=False)
 
 
+@pytest.fixture(scope="session")
+async def service_database_template(postgres_admin_url: str) -> AsyncIterator[PostgresDatabaseTemplate]:
+    """Create the History + Commands schema once for the service database clones."""
+    with PostgresDatabaseTemplate(postgres_admin_url, "agentplane_service_test_template") as template:
+        async with service_database(template.url) as engine:
+            await initialize_service_database(engine)
+        yield template
+
+
 @pytest.fixture
-def service_history_db_url(db_url: str) -> Iterator[str]:
-    """A separate disposable database; its schema belongs to the service fixture."""
-    app_url = make_url(db_url)
-    admin = app_url.set(database="postgres", drivername="postgresql+psycopg").render_as_string(hide_password=False)
-    name = database_name_for_test(f"{app_url.database}_service")
-    created = create_database_sync(admin, name)
-    try:
-        yield make_url(created).set(drivername="postgresql+asyncpg").render_as_string(hide_password=False)
-    finally:
-        force_drop_database_sync(admin, name)
+def service_history_db_url(
+    service_database_template: PostgresDatabaseTemplate, request: pytest.FixtureRequest
+) -> Iterator[str]:
+    """A fresh clone of the combined History + Commands test schema."""
+    with service_database_template.clone(database_name_for_test(f"{request.node.nodeid}_service")) as url:
+        yield make_url(url).set(drivername="postgresql+asyncpg").render_as_string(hide_password=False)
 
 
 @pytest.fixture

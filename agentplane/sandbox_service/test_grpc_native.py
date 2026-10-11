@@ -23,7 +23,6 @@ from agentplane.sandbox_service import protocol_pb2
 from agentplane.sandbox_service.channel_control import ChannelControl
 from agentplane.sandbox_service.channel_delivery import ChannelDelivery
 from agentplane.sandbox_service.client import Runner, SandboxServiceClient, ServiceError
-from agentplane.sandbox_service.commands import db as commands_db
 from agentplane.sandbox_service.commands.connections import ConnectionStore
 from agentplane.sandbox_service.commands.dispatch import DispatchStore
 from agentplane.sandbox_service.commands.store import SubmissionStore
@@ -41,10 +40,6 @@ from agentplane.workload_auth.principal import WorkloadPrincipalResolver
 
 # gazelle:include_dep @pypi//protobuf
 # gazelle:include_dep @pypi//grpcio
-# gazelle:include_dep //agentplane/history_service/storage:conftest
-
-pytest_plugins = ("agentplane.history_service.storage.conftest",)
-
 TOKEN = "test-native-grpc-token"
 AUDIENCE = "test-native-grpc"
 OWNER = ServiceAccountRef(namespace=SANDBOX_NAMESPACE, name=ACCOUNT)
@@ -58,15 +53,7 @@ SESSION = "grpc-session"
 
 
 @pytest.fixture
-async def commands_engine(engine: AsyncEngine) -> AsyncEngine:
-    # The registry and admission tables share the history test database; production keeps them apart.
-    async with engine.begin() as connection:
-        await connection.run_sync(commands_db.Base.metadata.create_all)
-    return engine
-
-
-@pytest.fixture
-def resources(cluster: Cluster, runner: RunnerHandle, commands_engine: AsyncEngine) -> Resources:
+def resources(cluster: Cluster, runner: RunnerHandle, engine: AsyncEngine) -> Resources:
     cluster.fake.tokens[TOKEN] = TokenVerdict(
         username=f"system:serviceaccount:{OWNER.namespace}:{OWNER.name}",
         pod_name="test-native-caller",
@@ -84,17 +71,17 @@ def resources(cluster: Cluster, runner: RunnerHandle, commands_engine: AsyncEngi
         destinations=DestinationResolver(cluster.inventory, k8s_client.CoreV1Api(cluster.api), runner.port),
         caller_accounts=frozenset({OWNER}),
         platform_instructions="Test backend-owned guidance.",
-        sessions=SessionRegistry(commands_engine),
-        submissions=SubmissionStore(commands_engine),
+        sessions=SessionRegistry(engine),
+        submissions=SubmissionStore(engine),
         delivery=ChannelDelivery(
-            commands_engine.url,
-            dispatches=DispatchStore(commands_engine),
-            connections=ConnectionStore(commands_engine),
+            engine.url,
+            dispatches=DispatchStore(engine),
+            connections=ConnectionStore(engine),
             leases=ConnectionLeases(),
             liveness_s=1,
         ),
         control=ChannelControl(ConnectionLeases()),
-        session_changes=SessionChanges(commands_engine.url),
+        session_changes=SessionChanges(engine.url),
     )
 
 
