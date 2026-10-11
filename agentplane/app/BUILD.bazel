@@ -1382,9 +1382,9 @@ py_library(
         ":presets",
         "//agentplane/sandbox_service:kubernetes_grants",
         "//util:urls",
+        "//util:yaml_file_settings",
         "@pypi//pydantic",
         "@pypi//pydantic_settings",
-        "@pypi//pyyaml",
     ],
 )
 

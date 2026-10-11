@@ -20,7 +20,7 @@ from cdk8s_plus_34 import (
 from constructs import Construct
 
 from agentplane.llm_ingress.models import ModelConfig
-from agentplane.llm_ingress.settings import CONFIG_FILE_ENV, Settings
+from agentplane.llm_ingress.settings import Settings
 from agentplane.workload_auth.audience import WORKLOAD_TOKEN_AUDIENCE
 from cluster.cdk8s import cilium, node_scheduling, pod_policy
 from cluster.cdk8s.agentplane.environment import Environment
@@ -152,7 +152,7 @@ class LlmIngress(Construct):
             security_context=ContainerSecurityContextProps(read_only_root_filesystem=False),
         )
 
-        settings.mount_into(deployment.containers[0], env=CONFIG_FILE_ENV)
+        settings.mount_into(deployment.containers[0], env=Settings.config_file_env)
 
         pod_policy.place(deployment, node_scheduling.HIL_OVH, tolerate_control_plane=True)
         pod_policy.harden(deployment)

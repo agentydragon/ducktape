@@ -5,7 +5,7 @@ from cdk8s import ApiObjectMetadata, Duration, Size
 from cdk8s_plus_34 import ContainerResources, Cpu, CpuResources, MemoryResources
 from constructs import Construct
 
-from agentplane.notification_service.settings import CONFIG_FILE_ENV, TOKEN_AUDIENCE, Settings
+from agentplane.notification_service.settings import TOKEN_AUDIENCE, Settings
 from agentplane.workload_auth.audience import WORKLOAD_TOKEN_AUDIENCE
 from cluster.cdk8s import cilium
 from cluster.cdk8s.agentplane import database
@@ -124,7 +124,7 @@ class Notifications(Construct):
                 workload.container.env.add_variable(
                     env_name(Settings, "github", field), secret.key(key).env_value(self, f"github-{key}")
                 )
-        settings.mount_into(workload.container, env=CONFIG_FILE_ENV)
+        settings.mount_into(workload.container, env=Settings.config_file_env)
         workload.project_tokens(
             "service-tokens",
             "/var/run/secrets/notifications",

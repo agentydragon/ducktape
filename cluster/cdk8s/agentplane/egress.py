@@ -45,7 +45,7 @@ from trust_manager_crds.io.cert_manager.trust import (
 
 from agentplane.crd_group import GROUP
 from agentplane.egress.database_migrate import MigrationSettings
-from agentplane.egress.settings import CONFIG_FILE_ENV, Settings
+from agentplane.egress.settings import Settings
 from agentplane.history_service.settings import RUNNER_INGRESS_AUDIENCE
 from agentplane.runner_gateway.settings import RUNNER_CONTROL_AUDIENCE
 from agentplane.workload_auth.audience import WORKLOAD_TOKEN_AUDIENCE
@@ -784,7 +784,7 @@ class Egress(Construct):
         workload.container.mount("/etc/agentplane-egress/ca", ca_volume, read_only=True)
         workload.container.mount(_UPSTREAM_CA_DIR, upstream_ca_volume, read_only=True)
         workload.container.mount("/var/lib/agentplane-egress", confdir_volume)
-        settings.mount_into(workload.container, env=CONFIG_FILE_ENV)
+        settings.mount_into(workload.container, env=Settings.config_file_env)
         return workload
 
     def _add_network_policy(self, runners: Pods) -> None:

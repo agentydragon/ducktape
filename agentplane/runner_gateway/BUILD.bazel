@@ -341,9 +341,9 @@ py_library(
     ],
     deps = [
         "//agentplane:subjects",
+        "//util:yaml_file_settings",
         "@pypi//pydantic",
         "@pypi//pydantic_settings",
-        "@pypi//pyyaml",
     ],
 )
 

@@ -26,7 +26,7 @@ from cilium_crds.io.cilium import CiliumNetworkPolicySpecEgress
 from constructs import Construct
 
 from agentplane.app.oidc import OIDCSettings
-from agentplane.app.settings import CONFIG_FILE_ENV, Settings
+from agentplane.app.settings import Settings
 from agentplane.crd_group import GROUP
 from cluster.cdk8s import cilium
 from cluster.cdk8s.agentplane import (
@@ -227,7 +227,7 @@ class App(Construct):
                 "configmap.reloader.stakater.com/reload": config.config_map.name,
             },
         )
-        config.mount_into(workload.container, env=CONFIG_FILE_ENV)
+        config.mount_into(workload.container, env=Settings.config_file_env)
         for volume, audience, mount_path in [
             ("sandbox-service-token", sandbox_service.TOKEN_AUDIENCE, "/var/run/secrets/agentplane-sandbox-service"),
             ("runner-gateway-token", runner_gateway.TOKEN_AUDIENCE, "/var/run/secrets/agentplane-runner-gateway"),

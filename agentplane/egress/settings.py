@@ -2,25 +2,20 @@
 
 from __future__ import annotations
 
-import os
 from ipaddress import IPv4Network, IPv6Network
 from pathlib import Path
-from typing import Any
+from typing import ClassVar
 
 from pydantic import Field
-from pydantic_settings import BaseSettings, PydanticBaseSettingsSource, SettingsConfigDict, YamlConfigSettingsSource
+from pydantic_settings import SettingsConfigDict
 
-# YamlConfigSettingsSource loads yaml lazily inside pydantic-settings; gazelle cannot see the dependency.
-# gazelle:include_dep @pypi//pyyaml
-
-
-# Names the YAML settings file a deployment mounts; not a field, so not a flag.
-CONFIG_FILE_ENV = "AGENTPLANE_EGRESS_CONFIG_FILE"
+from util.yaml_file_settings import YamlFileSettings
 
 
-class Settings(BaseSettings):
+class Settings(YamlFileSettings):
     """Each field is a `--flag` and an `AGENTPLANE_EGRESS_*` environment variable."""
 
+    config_file_env: ClassVar[str] = "AGENTPLANE_EGRESS_CONFIG_FILE"
     model_config = SettingsConfigDict(env_prefix="AGENTPLANE_EGRESS_", cli_parse_args=True, cli_kebab_case=True)
 
     rules_namespace: str = Field(
@@ -70,27 +65,3 @@ class Settings(BaseSettings):
         default_factory=list,
         description="Networks an admitted host may resolve into although they are not globally reachable.",
     )
-
-    @classmethod
-    def settings_customise_sources(
-        cls,
-        settings_cls: type[BaseSettings],
-        init_settings: PydanticBaseSettingsSource,
-        env_settings: PydanticBaseSettingsSource,
-        dotenv_settings: PydanticBaseSettingsSource,
-        file_secret_settings: PydanticBaseSettingsSource,
-    ) -> tuple[PydanticBaseSettingsSource, ...]:
-        sources: list[PydanticBaseSettingsSource] = [init_settings, env_settings, dotenv_settings]
-        if config_file := os.environ.get(CONFIG_FILE_ENV):
-            # pydantic-settings silently ignores absent YAML files. An explicit deployment binding
-            # must never turn into a healthy service running on defaults.
-            if not Path(config_file).is_file():
-                raise ValueError("configured egress proxy settings file is not a regular file")
-            sources.append(YamlConfigSettingsSource(settings_cls, yaml_file=config_file))
-        sources.append(file_secret_settings)
-        return tuple(sources)
-
-    def __init__(self, **values: Any) -> None:
-        # BaseSettings fills required fields from its sources; spell that out because the mypy plugin
-        # derives a required-argument signature from the fields.
-        super().__init__(**values)

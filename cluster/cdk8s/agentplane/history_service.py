@@ -12,7 +12,7 @@ from cdk8s_plus_34 import ContainerResources, Cpu, CpuResources, MemoryResources
 from constructs import Construct
 
 from agentplane.egress.resources import placeholder_of
-from agentplane.history_service.settings import CONFIG_FILE_ENV, RUNNER_INGRESS_AUDIENCE, Settings
+from agentplane.history_service.settings import RUNNER_INGRESS_AUDIENCE, Settings
 from agentplane.sandbox_service.runner_endpoints import RunnerEndpoint
 from agentplane.subjects import ServiceAccountRef
 from cluster.cdk8s import cilium
@@ -143,7 +143,7 @@ class HistoryService(Construct):
                 env_variables={"AGENTPLANE_SANDBOX_SERVICE_DATABASE_URL": database_url},
             ),
         )
-        config.mount_into(workload.container, env=CONFIG_FILE_ENV)
+        config.mount_into(workload.container, env=Settings.config_file_env)
         # For the ingester's Sandbox Service and Runner Gateway calls.
         workload.project_tokens(
             "service-tokens", _SERVICE_TOKEN_DIR, {"sandboxes": sandboxes_audience, "gateway": gateway_audience}

@@ -966,7 +966,6 @@ flowchart TD
     GATEWAY_CLIENT_SPLIT[Session messages and client move to the gateway]
     RUNNER_INBOUND_RETIRE[Retire inbound runner access]
     subgraph COHERENCE_REFACTORS[Coherence refactors]
-        SERVICE_SETTINGS_BASE[Candidate: one config-file settings base]
         REQUIRED_SERVICE_WIRING[Candidate: no footgun defaults on service wiring]
         GATEWAY_NAME_SWEEP[Candidate: code says Runner Gateway for the gateway]
         WATCH_FRESHNESS_DEDUPE[Candidate: one watch freshness]
@@ -989,13 +988,6 @@ flowchart TD
     RUNNER_INBOUND_RETIRE --> RUNNER_CORE_SPLIT
     COHERENCE_REFACTORS --> REFACTOR_COHERENCE_AUDIT[Whole-refactor coherence audit]
 ```
-
-### `SERVICE_SETTINGS_BASE` — one config-file settings base
-
-**Candidate.** `settings_customise_sources` is pasted into nine `Settings` classes and has drifted:
-four refuse a missing config file, the rest silently start on defaults. Move
-`homeassistant/provisioner/yaml_settings.py:YamlFileSettings` to `util/`, keep its missing-file
-check, subclass it in every service, and drop the no-op `__init__(self, **values)` overrides.
 
 ### `REQUIRED_SERVICE_WIRING` — no footgun defaults on service wiring
 

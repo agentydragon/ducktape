@@ -8,7 +8,6 @@ import pytest_bazel
 from pydantic import ValidationError
 
 from agentplane.notification_service.settings import (
-    CONFIG_FILE_ENV,
     GitHubSettings,
     NoticeDebounceSettings,
     QuotaSettings,
@@ -54,7 +53,7 @@ history_service:
   target: history:8080
   token_file: /tokens/history
 """)
-    monkeypatch.setenv(CONFIG_FILE_ENV, str(config))
+    monkeypatch.setenv(Settings.config_file_env, str(config))
     monkeypatch.setenv("AGENTPLANE_NOTIFICATIONS_DATABASE_URL", "postgresql://unused")
     settings = Settings(_cli_parse_args=False)
     assert settings.quotas == QuotaSettings(
@@ -91,9 +90,6 @@ history_service:
     with config.open("a") as file:
         file.write("unknown_setting: true\n")
     with pytest.raises(ValidationError, match="Extra inputs"):
-        Settings(_cli_parse_args=False)
-    config.unlink()
-    with pytest.raises(ValueError, match="regular file"):
         Settings(_cli_parse_args=False)
 
 
@@ -140,7 +136,7 @@ github:
   request_timeout_s: 12
   api_version: '2026-01-01'
 """)
-    monkeypatch.setenv(CONFIG_FILE_ENV, str(config))
+    monkeypatch.setenv(Settings.config_file_env, str(config))
     monkeypatch.setenv("AGENTPLANE_NOTIFICATIONS_GITHUB__PRIVATE_KEY", "fixture")
     monkeypatch.setenv("AGENTPLANE_NOTIFICATIONS_GITHUB__WEBHOOK_SECRET", "fixture-signing-secret")
     settings = Settings(database_url="postgresql://unused", _cli_parse_args=False)

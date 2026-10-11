@@ -26,7 +26,7 @@ from cdk8s_plus_34 import (
 )
 from constructs import Construct
 
-from agentplane.action_service.settings import CONFIG_FILE_ENV, Settings
+from agentplane.action_service.settings import Settings
 from agentplane.crd_group import GROUP
 from agentplane.subjects import ServiceAccountRef
 from agentplane.workload_auth.audience import WORKLOAD_TOKEN_AUDIENCE
@@ -283,7 +283,7 @@ class Actions(Construct):
             items={key: PathMapping(path=key) for key in self.env.actions.oauth_secret_items},
         )
         container.mount("/etc/agentplane-mcp", oauth_volume, read_only=True)
-        settings.mount_into(container, env=CONFIG_FILE_ENV)
+        settings.mount_into(container, env=Settings.config_file_env)
         if self.env.actions.github_mcp_client_secret_name is not None:
             github_secret = Secret.from_secret_name(
                 self, "github-mcp-client-secret", self.env.actions.github_mcp_client_secret_name

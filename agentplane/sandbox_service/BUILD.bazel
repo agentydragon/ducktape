@@ -561,9 +561,9 @@ py_library(
         ":kubernetes_grants",
         ":runner_endpoints",
         "//agentplane:subjects",
+        "//util:yaml_file_settings",
         "@pypi//pydantic",
         "@pypi//pydantic_settings",
-        "@pypi//pyyaml",
     ],
 )
 

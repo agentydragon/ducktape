@@ -47,7 +47,7 @@ from agentplane.notification_service.models import (
     SubscriptionUpdate,
 )
 from agentplane.notification_service.service import Service
-from agentplane.notification_service.settings import CONFIG_FILE_ENV, GitHubSettings, NoticeDebounceSettings, Settings
+from agentplane.notification_service.settings import GitHubSettings, NoticeDebounceSettings, Settings
 from agentplane.notification_service.sources.actions import Actions
 from agentplane.notification_service.sources.github.client import (
     GitHubAccessError,
@@ -1186,7 +1186,7 @@ history_service:
   token_file: /tokens/history
 github: null
 """)
-    monkeypatch.setenv(CONFIG_FILE_ENV, str(config))
+    monkeypatch.setenv(Settings.config_file_env, str(config))
     settings = Settings(database_url="postgresql://unused", _cli_parse_args=False)
     assert str(settings.actions.url) == "http://actions/"
     assert settings.actions.token_file == Path("/tokens/actions")
@@ -1225,9 +1225,6 @@ github: null
     with pytest.raises(ValidationError) as failure:
         Settings(database_url="postgresql://unused", _cli_parse_args=False)
     assert "test-signing-ke" not in str(failure.value)
-    config.unlink()
-    with pytest.raises(ValueError, match="regular file"):
-        Settings(database_url="postgresql://unused", _cli_parse_args=False)
 
 
 async def test_subscriptions_share_normalized_github_entities(store: Store, provider: tuple[GitHub, Upstream]) -> None:

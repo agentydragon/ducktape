@@ -53,9 +53,9 @@ py_library(
     deps = [
         ":models",
         "//util:urls",
+        "//util:yaml_file_settings",
         "@pypi//pydantic",
         "@pypi//pydantic_settings",
-        "@pypi//pyyaml",
     ],
 )
 

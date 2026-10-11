@@ -54,16 +54,3 @@ py_test(
         "@pypi//respx",
     ],
 )
-
-py_library(
-    name = "yaml_settings",
-    srcs = ["yaml_settings.py"],
-    visibility = [
-        "//cluster/cdk8s/home_assistant:__pkg__",
-        "//homeassistant/provisioner:__subpackages__",
-    ],
-    deps = [
-        "@pypi//pydantic_settings",
-        "@pypi//pyyaml",
-    ],
-)

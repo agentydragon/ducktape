@@ -2,23 +2,20 @@
 
 from __future__ import annotations
 
-import os
 from pathlib import Path
-from typing import Any
+from typing import ClassVar
 
 from pydantic import Field
-from pydantic_settings import BaseSettings, PydanticBaseSettingsSource, SettingsConfigDict, YamlConfigSettingsSource
+from pydantic_settings import SettingsConfigDict
 
 from agentplane.subjects import ServiceAccountRef
+from util.yaml_file_settings import YamlFileSettings
 
-# YamlConfigSettingsSource loads yaml lazily inside pydantic-settings; gazelle cannot see the dependency.
-# gazelle:include_dep @pypi//pyyaml
-
-CONFIG_FILE_ENV = "AGENTPLANE_RUNNER_GATEWAY_CONFIG_FILE"
 RUNNER_CONTROL_AUDIENCE = "agentplane-runner-control"
 
 
-class Settings(BaseSettings):
+class Settings(YamlFileSettings):
+    config_file_env: ClassVar[str] = "AGENTPLANE_RUNNER_GATEWAY_CONFIG_FILE"
     model_config = SettingsConfigDict(env_prefix="AGENTPLANE_RUNNER_GATEWAY_", cli_parse_args=True, cli_kebab_case=True)
 
     sandbox_namespace: str = Field(min_length=1)
@@ -57,21 +54,3 @@ class Settings(BaseSettings):
     sealer_accounts: frozenset[ServiceAccountRef] = Field(
         description="The Sandbox Service's account, which alone may seal a Sandbox for teardown."
     )
-
-    def __init__(self, **values: Any) -> None:
-        super().__init__(**values)
-
-    @classmethod
-    def settings_customise_sources(
-        cls,
-        settings_cls: type[BaseSettings],
-        init_settings: PydanticBaseSettingsSource,
-        env_settings: PydanticBaseSettingsSource,
-        dotenv_settings: PydanticBaseSettingsSource,
-        file_secret_settings: PydanticBaseSettingsSource,
-    ) -> tuple[PydanticBaseSettingsSource, ...]:
-        sources = [init_settings, env_settings, dotenv_settings]
-        if config_file := os.environ.get(CONFIG_FILE_ENV):
-            sources.append(YamlConfigSettingsSource(settings_cls, yaml_file=config_file))
-        sources.append(file_secret_settings)
-        return tuple(sources)

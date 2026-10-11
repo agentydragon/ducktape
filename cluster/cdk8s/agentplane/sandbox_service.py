@@ -21,7 +21,7 @@ from constructs import Construct
 
 from agentplane.crd_group import GROUP
 from agentplane.sandbox_service.kubernetes_grants import ClusterRoleBindingGrant, RoleBindingGrant
-from agentplane.sandbox_service.settings import CONFIG_FILE_ENV, Settings
+from agentplane.sandbox_service.settings import Settings
 from agentplane.subjects import ServiceAccountRef
 from cluster.cdk8s import cilium
 from cluster.cdk8s.agentplane import egress, history_service, runner_gateway
@@ -96,7 +96,7 @@ class SandboxService(Construct):
             termination_grace=Duration.seconds(60),
         )
         self._add_rbac(workload.account)
-        config.mount_into(workload.container, env=CONFIG_FILE_ENV)
+        config.mount_into(workload.container, env=Settings.config_file_env)
         # The Runner Gateway accepts this token from this account alone for SealSandbox.
         workload.project_tokens("runner-gateway-token", _GATEWAY_TOKEN_DIR, {"token": runner_gateway.TOKEN_AUDIENCE})
         NetworkPolicy(

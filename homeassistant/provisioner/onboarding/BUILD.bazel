@@ -50,7 +50,7 @@ py_library(
     visibility = ["//cluster/cdk8s/home_assistant:__pkg__"],
     deps = [
         "//homeassistant/provisioner:endpoint",
-        "//homeassistant/provisioner:yaml_settings",
+        "//util:yaml_file_settings",
         "@pypi//pydantic",
         "@pypi//pydantic_settings",
     ],
