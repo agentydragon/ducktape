@@ -136,6 +136,7 @@ py_test(
     deps = [
         ":fold",
         ":views",
+        "//agentplane/history_service:conftest",
         "//:conftest",
         "//agentplane/proto:command_pb2",
         "//agentplane/proto:event_log_pb2",
