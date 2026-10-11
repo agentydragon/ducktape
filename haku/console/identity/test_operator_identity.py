@@ -7,10 +7,9 @@ import asyncio
 import pytest
 import pytest_bazel
 from sqlalchemy import func, select
-from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from haku.console.config import OperatorIdentityConfig
-from haku.console.conftest import console_sessions
 from haku.console.database_schema import IdentityAnchor, OidcIdentity, Operator
 from haku.console.identity.operator_identity import (
     InactiveOperatorError,
@@ -26,15 +25,17 @@ _BROWSER_ISSUER = "https://auth.test/application/o/haku-console/"
 _MCP_ISSUER = "https://auth.test/application/o/haku-console-mcp/"
 
 
-def _store(database_url: str) -> PostgresOperatorIdentityStore:
+def _store(sessions: async_sessionmaker[AsyncSession]) -> PostgresOperatorIdentityStore:
     return PostgresOperatorIdentityStore(
-        console_sessions(database_url),
+        sessions,
         OperatorIdentityTrust(trust_domain=_TRUST_DOMAIN, trusted_issuers=frozenset({_BROWSER_ISSUER, _MCP_ISSUER})),
     )
 
 
-async def test_exact_trusted_issuers_converge_and_equal_untrusted_subject_is_rejected(migrated_db_url: str) -> None:
-    store = _store(migrated_db_url)
+async def test_exact_trusted_issuers_converge_and_equal_untrusted_subject_is_rejected(
+    migrated_sessions: async_sessionmaker[AsyncSession],
+) -> None:
+    store = _store(migrated_sessions)
     browser = await store.resolve_verified_identity(
         VerifiedExternalIdentity(issuer=_BROWSER_ISSUER, subject="authentik-user-42")
     )
@@ -52,9 +53,11 @@ async def test_exact_trusted_issuers_converge_and_equal_untrusted_subject_is_rej
         )
 
 
-async def test_concurrent_first_contact_creates_one_operator_and_anchor(migrated_db_url: str) -> None:
+async def test_concurrent_first_contact_creates_one_operator_and_anchor(
+    migrated_sessions: async_sessionmaker[AsyncSession],
+) -> None:
     async def resolve(issuer: str) -> tuple[object, object]:
-        identity = await _store(migrated_db_url).resolve_verified_identity(
+        identity = await _store(migrated_sessions).resolve_verified_identity(
             VerifiedExternalIdentity(issuer=issuer, subject="concurrent-user")
         )
         return identity.operator_id, identity.identity_id
@@ -64,29 +67,23 @@ async def test_concurrent_first_contact_creates_one_operator_and_anchor(migrated
 
     assert len({operator_id for operator_id, _ in results}) == 1
     assert len({identity_id for _, identity_id in results}) == 2
-    engine = create_async_engine(migrated_db_url)
-    try:
-        async with AsyncSession(engine) as session:
-            assert (await session.execute(select(func.count()).select_from(Operator))).scalar_one() == 1
-            assert (await session.execute(select(func.count()).select_from(IdentityAnchor))).scalar_one() == 1
-            assert (await session.execute(select(func.count()).select_from(OidcIdentity))).scalar_one() == 2
-    finally:
-        await engine.dispose()
+    async with migrated_sessions() as session:
+        assert (await session.execute(select(func.count()).select_from(Operator))).scalar_one() == 1
+        assert (await session.execute(select(func.count()).select_from(IdentityAnchor))).scalar_one() == 1
+        assert (await session.execute(select(func.count()).select_from(OidcIdentity))).scalar_one() == 2
 
 
-async def test_disabled_operator_invalidates_session_static_and_resolution_paths(migrated_db_url: str) -> None:
-    store = _store(migrated_db_url)
+async def test_disabled_operator_invalidates_session_static_and_resolution_paths(
+    migrated_sessions: async_sessionmaker[AsyncSession],
+) -> None:
+    store = _store(migrated_sessions)
     identity = await store.resolve_verified_identity(
         VerifiedExternalIdentity(issuer=_BROWSER_ISSUER, subject="disabled-user")
     )
-    engine = create_async_engine(migrated_db_url)
-    try:
-        async with AsyncSession(engine) as session, session.begin():
-            operator = await session.get(Operator, identity.operator_id)
-            assert operator is not None
-            operator.status = OperatorStatus.DISABLED
-    finally:
-        await engine.dispose()
+    async with migrated_sessions.begin() as session:
+        operator = await session.get(Operator, identity.operator_id)
+        assert operator is not None
+        operator.status = OperatorStatus.DISABLED
 
     assert (
         await store.resolve_active_session(operator_id=identity.operator_id, identity_id=identity.identity_id) is None
@@ -96,11 +93,13 @@ async def test_disabled_operator_invalidates_session_static_and_resolution_paths
         await store.resolve_configured_external_user_key("disabled-user")
 
 
-async def test_list_active_ids_is_scoped_to_current_trust_domain(migrated_db_url: str) -> None:
-    current_store = _store(migrated_db_url)
+async def test_list_active_ids_is_scoped_to_current_trust_domain(
+    migrated_sessions: async_sessionmaker[AsyncSession],
+) -> None:
+    current_store = _store(migrated_sessions)
     current = await current_store.resolve_configured_external_user_key("current-user")
     other_store = PostgresOperatorIdentityStore(
-        console_sessions(migrated_db_url),
+        migrated_sessions,
         OperatorIdentityTrust(trust_domain="auth.test/other/v1", trusted_issuers=frozenset({_BROWSER_ISSUER})),
     )
     await other_store.resolve_configured_external_user_key("other-user")
@@ -108,13 +107,14 @@ async def test_list_active_ids_is_scoped_to_current_trust_domain(migrated_db_url
     assert await current_store.list_active_ids() == [current]
 
 
-async def test_existing_authority_fails_closed_when_current_trust_changes(migrated_db_url: str) -> None:
-    identity = await _store(migrated_db_url).resolve_verified_identity(
+async def test_existing_authority_fails_closed_when_current_trust_changes(
+    migrated_sessions: async_sessionmaker[AsyncSession],
+) -> None:
+    identity = await _store(migrated_sessions).resolve_verified_identity(
         VerifiedExternalIdentity(issuer=_BROWSER_ISSUER, subject="trust-rotation-user")
     )
     changed_issuer_store = PostgresOperatorIdentityStore(
-        console_sessions(migrated_db_url),
-        OperatorIdentityTrust(trust_domain=_TRUST_DOMAIN, trusted_issuers=frozenset({_MCP_ISSUER})),
+        migrated_sessions, OperatorIdentityTrust(trust_domain=_TRUST_DOMAIN, trusted_issuers=frozenset({_MCP_ISSUER}))
     )
     assert (
         await changed_issuer_store.resolve_active_session(
@@ -127,7 +127,7 @@ async def test_existing_authority_fails_closed_when_current_trust_changes(migrat
     assert await changed_issuer_store.is_active(identity.operator_id)
 
     changed_domain_store = PostgresOperatorIdentityStore(
-        console_sessions(migrated_db_url),
+        migrated_sessions,
         OperatorIdentityTrust(
             trust_domain="auth.test/authentik-user-id/v2", trusted_issuers=frozenset({_BROWSER_ISSUER, _MCP_ISSUER})
         ),
