@@ -44,9 +44,15 @@ async def follow(
                     yield _frame("event", MessageToDict(entry), event_id=entry.cursor)
                     cursor = entry.cursor
             snapshot = await event_logs.feed_state(thread_id)
-            # A terminal app snapshot may precede shadow catch-up. Wait for
-            # coverage without busy-polling or ending before the final suffix.
-            if snapshot is not None and snapshot.end is not None and await event_logs.last_cursor(thread_id) <= cursor:
+            # A terminal snapshot may precede shadow catch-up, or be an older end that entries
+            # already streamed have superseded and the fold has yet to clear. It ends the stream
+            # only once it is at the streamed cursor; otherwise wait without busy-polling.
+            if (
+                snapshot is not None
+                and snapshot.end is not None
+                and snapshot.attached.last_cursor >= cursor
+                and await event_logs.last_cursor(thread_id) <= cursor
+            ):
                 match snapshot.end:
                     case FeedEnd():
                         yield _frame("end", {})

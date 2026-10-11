@@ -36,5 +36,25 @@ async def test_terminal_stream_waits_without_spinning_for_service_suffix() -> No
                     await anext(frames)
 
 
+async def test_stream_does_not_end_on_a_terminal_snapshot_behind_streamed_entries() -> None:
+    """A runner attached before its harness started can record an end that later entries supersede.
+    The archive can stream those entries before the fold clears that end."""
+    logs = AsyncMock(spec=EventLogStore)
+    logs.service_session.return_value = ServiceSessionReference("sb", "s-1")
+    stale = FeedSnapshot(runner_pb2.Attached(last_cursor=1), FeedEnd())
+    current = FeedSnapshot(runner_pb2.Attached(last_cursor=2), FeedEnd())
+    logs.feed_state.side_effect = [stale, stale, current, current]
+    logs.last_cursor.side_effect = [1, 2]
+    logs.events.side_effect = [[event_log_pb2.EventEntry(cursor=1), event_log_pb2.EventEntry(cursor=2)], [], []]
+    with patch("agentplane.app.threads.events.stream.KEEPALIVE_S", 0.01):
+        async with aclosing(follow(cast(EventLogStore, logs), Changes(), uuid4(), after_cursor=0)) as frames:
+            async with asyncio.timeout(1):
+                assert b"event: attached" in await anext(frames)
+                assert b"id: 1" in await anext(frames)
+                assert b"id: 2" in await anext(frames)
+                assert await anext(frames) == b": keepalive\n\n"
+                assert b"event: end" in await anext(frames)
+
+
 if __name__ == "__main__":
     pytest_bazel.main()
