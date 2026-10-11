@@ -151,15 +151,10 @@ async def wait_attempt_lapsed(engine: AsyncEngine, session_id: UUID, command_id:
                 )
 
 
-async def register(engine: AsyncEngine, session_id: UUID, runner_session_id: str) -> None:
+async def register(engine: AsyncEngine, session_id: UUID) -> None:
     """Register a Session on the fake cluster's Sandbox."""
     await register_session(
-        engine,
-        session_id,
-        sandbox_namespace=SANDBOX_NAMESPACE,
-        sandbox_name=SANDBOX,
-        sandbox_uid=UUID(SANDBOX_UID),
-        runner_session_id=runner_session_id,
+        engine, session_id, sandbox_namespace=SANDBOX_NAMESPACE, sandbox_name=SANDBOX, sandbox_uid=UUID(SANDBOX_UID)
     )
 
 
@@ -275,15 +270,14 @@ async def test_public_session_command_survives_a_lost_reply(
     submissions: SubmissionStore,
 ) -> None:
     session_id = uuid4()
-    physical = f"r-{session_id}"
-    await register(engine, session_id, physical)
+    await register(engine, session_id)
     command = command_pb2.Command(command_id="durable", submit_input=command_pb2.SubmitInput(text="hi"))
     async with asyncio.timeout(10), service_client(resources, token_file, cluster.provisioning) as remote:
         runner = remote.runner(DESTINATION)
         with pytest.raises(TimeoutError):
             await runner.command(str(session_id), command)
         lost = await peer.delivery()
-        assert (lost.session_id, lost.command) == (physical, command)
+        assert (lost.session_id, lost.command) == (str(session_id), command)
         # Without the runner's receipt the submission stays pending.
         assert (await submissions.read(session_id, "durable")).state == SubmissionState.PENDING_ADMISSION
         await wait_attempt_lapsed(engine, session_id, "durable")
@@ -313,7 +307,7 @@ async def test_command_status_reads_retained_submissions_without_the_runner(
     submissions: SubmissionStore,
 ) -> None:
     session_id = uuid4()
-    await register(engine, session_id, f"r-{session_id}")
+    await register(engine, session_id)
     commands = {
         name: command_pb2.Command(command_id=name, submit_input=command_pb2.SubmitInput(text=name))
         for name in ("admitted", "pending", "rejected")
@@ -487,7 +481,7 @@ async def test_command_uses_runner_ack_budget_not_unary_request_budget(
     ) as remote:
         remote.request_timeout_s = 0.1  # The client also must not use its short generic RPC deadline.
         session_id = uuid4()
-        await register(engine, session_id, f"r-{session_id}")
+        await register(engine, session_id)
         submitted = asyncio.create_task(remote.runner(DESTINATION).command(str(session_id), command))
         delivered = await peer.delivery()
         await asyncio.sleep(0.2)
@@ -595,7 +589,7 @@ async def test_open_and_resume_refuse_unready_grants_without_app(
     pending_launch: bool,
 ) -> None:
     session_id = uuid4()
-    await register(engine, session_id, f"r-{session_id}")
+    await register(engine, session_id)
     annotations = cluster.fake.objects[SANDBOXES_PLURAL][SANDBOX]["metadata"].setdefault("annotations", {})
     if pending_launch:
         annotations[PROVISIONING_ANNOTATION] = "{}"

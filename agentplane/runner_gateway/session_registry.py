@@ -77,7 +77,6 @@ class SessionRegistry:
                         open_key=open_key or None,
                         open_request=open_request,
                         launch_spec=launch_spec(session_id),
-                        runner_session_id=str(session_id),
                     )
                     .on_conflict_do_nothing()
                 )
@@ -118,32 +117,33 @@ class SessionRegistry:
                 ),
             )
 
-    async def runner_id(self, session_id: UUID, *, sandbox_namespace: str, sandbox_name: str, sandbox_uid: UUID) -> str:
-        """Resolve a public Session ID only in its original Sandbox incarnation."""
+    async def require(self, session_id: UUID, *, sandbox_namespace: str, sandbox_name: str, sandbox_uid: UUID) -> None:
+        """Raise `SessionNotFoundError` unless the Session was registered in this Sandbox incarnation."""
+        if not await self.registered(
+            session_id, sandbox_namespace=sandbox_namespace, sandbox_name=sandbox_name, sandbox_uid=sandbox_uid
+        ):
+            raise SessionNotFoundError(session_id)
+
+    async def public_id(
+        self, runner_session_id: str, *, sandbox_namespace: str, sandbox_name: str, sandbox_uid: UUID
+    ) -> UUID | None:
+        """The public Session a runner Session ID names, if registered in this Sandbox incarnation."""
+        try:
+            session_id = UUID(runner_session_id)
+        except ValueError:
+            return None
+        registered = await self.registered(
+            session_id, sandbox_namespace=sandbox_namespace, sandbox_name=sandbox_name, sandbox_uid=sandbox_uid
+        )
+        return session_id if registered else None
+
+    async def registered(
+        self, session_id: UUID, *, sandbox_namespace: str, sandbox_name: str, sandbox_uid: UUID
+    ) -> bool:
         async with self._sessions() as session:
             row = await session.get(Session, session_id)
-            if (
-                row is None
-                or (row.sandbox_namespace, row.sandbox_name, row.sandbox_uid)
-                != (sandbox_namespace, sandbox_name, sandbox_uid)
-                or row.runner_session_id is None
-            ):
-                raise SessionNotFoundError(session_id)
-            return row.runner_session_id
-
-    async def session_id(
-        self, *, sandbox_namespace: str, sandbox_name: str, sandbox_uid: UUID, runner_session_id: str
-    ) -> UUID | None:
-        """Map an inventoried runner ID to a public Session ID, if managed."""
-        async with self._sessions() as session:
-            return cast(
-                UUID | None,
-                await session.scalar(
-                    select(Session.id).where(
-                        Session.sandbox_namespace == sandbox_namespace,
-                        Session.sandbox_name == sandbox_name,
-                        Session.sandbox_uid == sandbox_uid,
-                        Session.runner_session_id == runner_session_id,
-                    )
-                ),
+            return row is not None and (row.sandbox_namespace, row.sandbox_name, row.sandbox_uid) == (
+                sandbox_namespace,
+                sandbox_name,
+                sandbox_uid,
             )

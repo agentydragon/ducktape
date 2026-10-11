@@ -5,7 +5,6 @@ from uuid import UUID, uuid4
 
 import pytest
 import pytest_bazel
-from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from agentplane.runner_gateway.session_registry import (
@@ -14,7 +13,6 @@ from agentplane.runner_gateway.session_registry import (
     SessionNotFoundError,
     SessionRegistry,
 )
-from agentplane.runner_gateway.testing.sessions import register_session
 
 
 async def test_client_session_id_is_stable_across_retries_and_replicas(
@@ -49,18 +47,23 @@ async def test_client_session_id_is_stable_across_retries_and_replicas(
     first, second = await asyncio.gather(reserve(sessions), reserve(replica))
     assert first == second == OpenReservation(session_id, f"frozen {session_id}".encode())
     assert await reserve(replica, launch="changed default should be ignored") == first
-    # The client's ID is the runner's Session ID too.
-    assert await sessions.runner_id(
-        session_id, sandbox_namespace="testing", sandbox_name="worker", sandbox_uid=uid
-    ) == str(session_id)
+    # The client's ID is the runner's Session ID too, registered in this incarnation only.
     assert (
-        await replica.session_id(
-            sandbox_namespace="testing", sandbox_name="worker", sandbox_uid=uid, runner_session_id=str(session_id)
-        )
+        await replica.public_id(str(session_id), sandbox_namespace="testing", sandbox_name="worker", sandbox_uid=uid)
         == session_id
     )
+    assert (
+        await replica.public_id(
+            str(session_id), sandbox_namespace="testing", sandbox_name="worker", sandbox_uid=uuid4()
+        )
+        is None
+    )
+    assert (
+        await replica.public_id("not-a-uuid", sandbox_namespace="testing", sandbox_name="worker", sandbox_uid=uid)
+        is None
+    )
     with pytest.raises(SessionNotFoundError):
-        await sessions.runner_id(session_id, sandbox_namespace="testing", sandbox_name="worker", sandbox_uid=uuid4())
+        await sessions.require(session_id, sandbox_namespace="testing", sandbox_name="worker", sandbox_uid=uuid4())
     with pytest.raises(OpenConflictError, match="different inputs"):
         await reserve(sessions, payload=b"different caller request")
     with pytest.raises(OpenConflictError, match="could not be reserved"):
@@ -83,35 +86,6 @@ async def test_client_session_id_is_stable_across_retries_and_replicas(
     )
     with pytest.raises(OpenConflictError, match="could not be reserved"):
         await reserve(sessions, requested=uuid4(), key="open-1")
-
-
-async def test_a_runner_locator_belongs_to_one_session(engine: AsyncEngine) -> None:
-    uid = uuid4()
-    await register_session(
-        engine, uuid4(), sandbox_namespace="testing", sandbox_name="worker", sandbox_uid=uid, runner_session_id="s-1"
-    )
-    with pytest.raises(IntegrityError):
-        await register_session(
-            engine,
-            uuid4(),
-            sandbox_namespace="testing",
-            sandbox_name="worker",
-            sandbox_uid=uid,
-            runner_session_id="s-1",
-        )
-    # A nullable legacy UID must not permit another ID for the same legacy locator.
-    await register_session(
-        engine, uuid4(), sandbox_namespace="testing", sandbox_name="gone", sandbox_uid=None, runner_session_id="legacy"
-    )
-    with pytest.raises(IntegrityError):
-        await register_session(
-            engine,
-            uuid4(),
-            sandbox_namespace="testing",
-            sandbox_name="gone",
-            sandbox_uid=None,
-            runner_session_id="legacy",
-        )
 
 
 if __name__ == "__main__":

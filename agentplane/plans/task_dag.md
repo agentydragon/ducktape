@@ -878,9 +878,9 @@ flowchart TD
 
 ### `SESSION_ID_MINT_RETIRE` — clients always name the Session ID
 
-**Candidate; operator's go-ahead for the drop.** `CreateSession` requires the client's Session ID, and
-the runner's Session ID equals it. The gateway's `session.runner_session_id` is now always the Session
-ID; drop it and its place in `ux_session_runner_locator` (stops for the operator). The app's
+**Candidate; operator's go-ahead for the drop.** The runner's Session ID is the Session ID, and
+nothing reads or writes the gateway's `session.runner_session_id`; drop it and
+`ux_session_runner_locator` (the `CLEANUP` in `commands/db.py`; stops for the operator). The app's
 `idempotency_key` on create goes with `LOOKUP_SESSION_RETIRE`, which retires its only reader.
 
 ### `HISTORY_INGRESS_SAME_BINARY` — the History Service binary serves the ingress

@@ -23,7 +23,7 @@ class Sealing:
     control: LifecycleControl
 
     async def seal(self, sandbox: Sandbox) -> runner_pb2.SealResponse:
-        """The runner's seal, each Session named by its public Session ID."""
+        """The runner's seal; every Session it seals must be registered in this Sandbox incarnation."""
         sandbox_uid = UUID(sandbox.uid)
         # The caller resolves the control Service again and retries until it reaches the holder.
         if self.control.holder(sandbox_uid) is None:
@@ -32,13 +32,14 @@ class Sealing:
             result = await self.control.request(sandbox_uid, control_pb2.ControlRequest(seal=runner_pb2.SealRequest()))
         sealed = result.seal
         for session in sealed.sessions:
-            public_id = await self.sessions.session_id(
-                sandbox_namespace=sandbox.namespace,
-                sandbox_name=sandbox.name,
-                sandbox_uid=sandbox_uid,
-                runner_session_id=session.session_id,
-            )
-            if public_id is None:
+            if (
+                await self.sessions.public_id(
+                    session.session_id,
+                    sandbox_namespace=sandbox.namespace,
+                    sandbox_name=sandbox.name,
+                    sandbox_uid=sandbox_uid,
+                )
+                is None
+            ):
                 raise ValueError(f"runner Session {session.session_id} has no registered Session")
-            session.session_id = str(public_id)
         return sealed

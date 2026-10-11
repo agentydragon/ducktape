@@ -21,7 +21,8 @@ class Base(DeclarativeBase):
 
 
 class Session(Base):
-    """A public Session: its runner locator in one Sandbox incarnation and its Open reservation."""
+    """A public Session in one Sandbox incarnation, which is also the runner's Session ID, and its Open
+    reservation."""
 
     __tablename__ = "session"
     __table_args__ = (
@@ -55,6 +56,9 @@ class Session(Base):
     sandbox_name: Mapped[str] = mapped_column(String)
     # Absent for imported Sessions whose original Sandbox UID was not retained in app history.
     sandbox_uid: Mapped[UUID | None]
+    # CLEANUP(added 2026-10-11): Drop with `ux_session_runner_locator` once the operator merges the
+    #   SESSION_ID_MINT_RETIRE drop PR; nothing reads or writes it, since the runner's Session ID is the
+    #   Session ID.
     runner_session_id: Mapped[str | None] = mapped_column(String)
     # The caller provides an opaque key, never a runner session ID. Absent for imported Sessions.
     caller_namespace: Mapped[str | None] = mapped_column(String)

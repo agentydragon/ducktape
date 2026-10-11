@@ -197,11 +197,11 @@ class RunnerGateway(runner_gateway_pb2_grpc.RunnerGatewayServicer):
         async with self.request(context):
             sessions = []
             for summary in await self.list_runner_sessions(request.destination):
-                public_id = await self.resources.sessions.session_id(
+                public_id = await self.resources.sessions.public_id(
+                    summary.session_id,
                     sandbox_namespace=self.resources.destinations.inventory.namespace,
                     sandbox_name=request.destination.sandbox,
                     sandbox_uid=UUID(request.destination.sandbox_uid),
-                    runner_session_id=summary.session_id,
                 )
                 if public_id is None:
                     logger.warning("runner Session %s has no registered Session; not listed", summary.session_id)
@@ -211,13 +211,15 @@ class RunnerGateway(runner_gateway_pb2_grpc.RunnerGatewayServicer):
             return runner_pb2.ListSessionsResponse(sessions=sessions)
 
     async def runner_session_id(self, destination: sandbox_service_pb2.SessionDestination) -> str:
-        """Keep physical runner identifiers behind this service."""
-        return await self.resources.sessions.runner_id(
-            parse_session_id(destination.session_id),
+        """The runner's ID for a Session registered in the destination's Sandbox incarnation."""
+        session_id = parse_session_id(destination.session_id)
+        await self.resources.sessions.require(
+            session_id,
             sandbox_namespace=self.resources.destinations.inventory.namespace,
             sandbox_name=destination.sandbox.sandbox,
             sandbox_uid=UUID(destination.sandbox.sandbox_uid),
         )
+        return str(session_id)
 
     @override
     async def CreateSession(
@@ -308,16 +310,10 @@ class RunnerGateway(runner_gateway_pb2_grpc.RunnerGatewayServicer):
             if public_id is None:
                 return sandbox_service_pb2.LookupSessionResponse()
             result = sandbox_service_pb2.LookupSessionResponse(session_id=str(public_id))
-            runner_session_id = await self.resources.sessions.runner_id(
-                public_id,
-                sandbox_namespace=self.resources.destinations.inventory.namespace,
-                sandbox_name=request.sandbox.sandbox,
-                sandbox_uid=UUID(request.sandbox.sandbox_uid),
-            )
             # DB reservation precedes runner Open, and a retained spec is not proof of a successful
             # Open: only the Session's first launch outcome is. A stopped Session may have run before.
             for summary in await self.list_runner_sessions(request.sandbox):
-                if summary.session_id != runner_session_id:
+                if summary.session_id != str(public_id):
                     continue
                 if summary.launch_outcome == runner_pb2.LAUNCH_OUTCOME_STARTED:
                     result.summary.CopyFrom(summary)

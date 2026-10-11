@@ -122,12 +122,10 @@ separate copied-state tests gate that claim. For existing histories, keep the
 app UUID as the canonical public ID and import its association to the existing
 `(sandbox, runner session_id)` into the durable history authority. That runner ID remains the physical storage/runtime locator: its
 native files, directories, and workspace paths need no rekey. The client mints its
-Session's UUID, which is the runner locator too; Sessions created before clients minted them kept
-the locator `r-<uuid>`, which never left the Runner Gateway. A future multi-Session Thread would
+Session's UUID, which is the runner locator too. A future multi-Session Thread would
 need a new explicit model rather than overloading this one-to-one identity.
 
-Both identities resolve through the same registry row, so Resume, Follow and command take the
-public ID whichever locator it names, and replay reads the History Service by that ID. A legacy row
+Resume and command take the public ID, and replay reads the History Service by that ID. A legacy row
 whose Sandbox UID was never recorded stays readable but cannot be resumed or polled. Each Session
 keeps one Event counter, the runner's cursor, contiguous from 1 in the history archive.
 
