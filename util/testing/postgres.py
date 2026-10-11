@@ -31,7 +31,7 @@ a source template, or extensions, compose `migrated_database_template` inside an
 For application-specific initialization that is not a `MigrationRunner`, use
 `PostgresDatabaseTemplate` directly and perform that initialization once on `template.url`. It also
 supports `template=` when one test schema must extend another. Keep tests that verify starting from an
-empty database or applying a specific old migration state on direct create/drop fixtures instead of
+empty database or applying a specific old migration state on `create_temporary_database` instead of
 cloning a migrated template.
 
 PostgreSQL refuses to clone a template while it has open connections. Let migration engines and
@@ -213,6 +213,18 @@ def force_drop_database_sync(admin_url: str, db_name: str) -> None:
         engine.dispose()
 
 
+@contextmanager
+def create_temporary_database(
+    admin_url: str, db_name: str, *, extensions: Sequence[str] = (), template: str | None = None
+) -> Iterator[str]:
+    """Create a database for a context and force-drop it when the context exits."""
+    url = create_database_sync(admin_url, db_name, extensions=extensions, template=template)
+    try:
+        yield url
+    finally:
+        force_drop_database_sync(admin_url, db_name)
+
+
 class PostgresDatabaseTemplate:
     """A migrated database that tests can clone into isolated writable databases.
 
@@ -246,11 +258,8 @@ class PostgresDatabaseTemplate:
     @contextmanager
     def clone(self, db_name: str) -> Iterator[str]:
         """Yield an isolated writable copy, then drop it."""
-        url = create_database_sync(self.admin_url, db_name, template=self.template_name)
-        try:
+        with create_temporary_database(self.admin_url, db_name, template=self.template_name) as url:
             yield url
-        finally:
-            force_drop_database_sync(self.admin_url, db_name)
 
 
 @contextmanager

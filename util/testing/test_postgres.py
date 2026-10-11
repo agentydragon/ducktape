@@ -7,7 +7,7 @@ from sqlalchemy.engine import make_url
 from sqlalchemy.exc import DBAPIError
 from testcontainers.postgres import PostgresContainer
 
-from util.testing.postgres import DatabaseClones, DatabaseNames, PostgresDatabaseTemplate
+from util.testing.postgres import DatabaseClones, DatabaseNames, PostgresDatabaseTemplate, create_temporary_database
 
 # SQLAlchemy loads this driver from the explicit URL scheme below.
 # gazelle:include_dep @pypi//psycopg
@@ -51,6 +51,24 @@ def _database_exists(admin_url: str, db_name: str) -> bool:
             )
     finally:
         engine.dispose()
+
+
+def test_temporary_database_drops_after_body_failure(admin_url: str) -> None:
+    name = "template_helper_temporary_database"
+
+    def fail_inside_database() -> None:
+        with create_temporary_database(admin_url, name) as url:
+            engine = create_engine(url)
+            try:
+                with engine.connect() as connection:
+                    assert connection.execute(text("SELECT current_database()")).scalar_one() == name
+            finally:
+                engine.dispose()
+            raise RuntimeError("failure from the test body")
+
+    with pytest.raises(RuntimeError, match="failure from the test body"):
+        fail_inside_database()
+    assert not _database_exists(admin_url, name)
 
 
 def test_template_clones_keep_schema_extensions_and_isolate_writes(admin_url: str) -> None:
