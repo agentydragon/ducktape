@@ -10875,7 +10875,7 @@
     "runner_vm": {
       "observed_at_utc": "2026-10-11T02:40:52.725066Z",
       "pr": 9886,
-      "state": "open",
+      "state": "merged",
       "head": "8637aa58d3d15674512bb669ab10b1cab172bf30",
       "changes": [
         "Keep automatic builds with Nix/image and workflow input triggers",
@@ -10901,7 +10901,7 @@
         "/nix/store/6abybqy8b1b1zra9v4h67fwbinkl89a0-nixos-disk-image.drv",
         "/nix/store/ddb94f3izb4l8z64r1chgfj89hh16rxj-agentplane-runner-vm.tar.gz.drv"
       ],
-      "validation": "Local pre-commit passed; PR CI in progress",
+      "validation": "Merged; upload and substitution not verified in this report",
       "limitations": [
         "Step timestamps, not CPU profiling",
         "Shared artifact-pins edits still trigger workflow",
@@ -10953,6 +10953,39 @@
         "No PR artifact overrides, builds or clean-runner download timing",
         "CI pre-build-plan intervals do not isolate evaluation from fetching/planning"
       ]
+    },
+    "source_wheel_markers": {
+      "observed_at_utc": "2026-10-11T03:57:54.505504+00:00",
+      "pr": 9901,
+      "state": "merged",
+      "merge_commit": "c125c962179051ccae5b9ceaac47ffe38fea19a4",
+      "dependency_source": "Existing artifact registry and actual Nix package derivations; no extra dependency list",
+      "local_validation": {
+        "bbr_marker_nar_bytes": 112,
+        "references": [],
+        "failing_package_blocks_marker": true
+      },
+      "pr_run": 38109285979,
+      "pr_job": 114381286586,
+      "pr_source_markers_built": 10,
+      "first_push_run": 38109425337,
+      "first_push_result": "Cancelled during Nix build; upload skipped",
+      "publisher_run": 38109756568,
+      "publisher_job": 114382687621,
+      "published_markers": 10,
+      "publication_completed_utc": "2026-10-11T03:55:01Z",
+      "publisher_check_step_seconds": 33,
+      "publisher_attic_step_seconds": 9,
+      "overlapping_pr_run": 38109793421,
+      "overlapping_pr_job": 114382802994,
+      "overlapping_pr_check_started_utc": "2026-10-11T03:54:42Z",
+      "overlapping_pr_result": "Rebuilt identical markers; build began before mainline upload completed",
+      "pending": [
+        "Subsequent clean-runner substitution",
+        "CI invalidation for changed wheel and consumers",
+        "Net latency saving"
+      ],
+      "next_independent_investigation": "Separate cold flake-source fetch/unpack from evaluation and compare a narrow source cache restore against fresh fetching"
     }
   }
 }
