@@ -971,7 +971,7 @@ and token volume in cdk8s, and its caller account on the Sandbox Service; `follo
 `sandbox_service_follow_timeout_s` and the Notification Service's `follow_timeout_s`;
 `protocol.v1.Follow` once nothing sends `Open.follow`; `Store.read`; `SessionFeedState.ended` with
 its merge in `record_feed_state`, `FEED_STATUS_ENDED` and the app's `resume_pending` mask; and
-`register_attached_sessions` in `sandbox_service/testing`.
+`register_attached_sessions` in `runner_gateway/testing`.
 
 With the holds goes teardown's path for a runner that pushes nothing: `SealResponse.pushes`,
 `TEARDOWN_PHASE_SEALED`, `SandboxInventory.record_seal` and `delete_if_released`. Every teardown
@@ -1076,7 +1076,6 @@ flowchart TD
         GRPC_CHANNEL_OPTIONS_CONSTANT[Candidate: one gRPC channel options constant]
         CDK8S_RUNNER_TEMPLATE_MOVE[Candidate: runner Pod objects out of the app]
         CDK8S_CALLER_WIRING[Candidate: one callers shape]
-        TEST_SUPPORT_REHOME[Candidate: test support beside its service]
         TESTING_FAILURE_JOURNAL[Candidate: one failed-journal fixture]
     end
     GATEWAY_CLIENT_SPLIT --> RUNNER_ERRORS_REHOME
@@ -1285,12 +1284,6 @@ beside `sandbox_pod.py` with one `runner_pods(namespace)`.
 **Candidate.** `RunnerGateway` takes a `callers` map, `SandboxService` and `HistoryService` take
 single callers and hard-code notifications, and `Notifications` admits the app and egress by literal
 labels. One `callers` shape everywhere, assembled in `chart.py`.
-
-### `TEST_SUPPORT_REHOME` — test support beside its service
-
-**Candidate.** `sandbox_service/testing/history.py`, `fixtures.py` and `delta_spans.py` build
-History Service schemas and serve its tests, and `sandbox_service/test_inventory.py` tests the
-gateway's `launch_spec`. Move them to `history_service/testing` and `runner_gateway/`.
 
 ### `TESTING_FAILURE_JOURNAL` — one failed-journal fixture
 

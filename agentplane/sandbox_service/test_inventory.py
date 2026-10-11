@@ -6,8 +6,6 @@ from copy import deepcopy
 import pytest
 import pytest_bazel
 
-from agentplane.proto.sandbox_service_pb2 import SandboxDestination, SessionDestination
-from agentplane.runner_gateway.session_lifecycle import launch_spec
 from agentplane.sandbox_service.binding_storage import write_binding
 from agentplane.sandbox_service.kubernetes_views import SANDBOX_BINDING_ANNOTATION
 from agentplane.sandbox_service.models import SandboxNotFoundError
@@ -50,17 +48,6 @@ async def test_stored_binding_is_read_without_mutation(cluster: Cluster, raw: st
     assert binding is not None
     assert view.binding == binding
     assert json.loads(write_binding(binding)) == json.loads(raw)
-    if binding.HasField("session_defaults"):
-        spec = launch_spec(
-            SessionDestination(
-                sandbox=SandboxDestination(owner=view.service_account, sandbox=view.name, sandbox_uid=view.uid),
-                session_id="retained-session",
-            ),
-            {},
-            binding=binding,
-            platform_instructions="",
-        )
-        assert spec.cwd == "/state/retained-session"
     assert cluster.fake.objects == before
 
 

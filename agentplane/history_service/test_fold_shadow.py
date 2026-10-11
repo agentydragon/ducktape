@@ -13,8 +13,8 @@ from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 from agentplane.history_service.fold_shadow import FOLD_EPOCH, FoldBacklog, FoldShadow
 from agentplane.history_service.storage.history_changes import HistoryChanges
 from agentplane.history_service.storage.store import Store
+from agentplane.history_service.testing.delta_spans import claude_text
 from agentplane.proto import event_log_pb2, event_pb2
-from agentplane.sandbox_service.testing.delta_spans import claude_text
 from agentplane.thread_fold.models import (
     ThreadCheckpoint,
     ThreadEntity,

@@ -72,10 +72,10 @@ py_library(
         ":fake_inventory",
         ":fake_rbac",
         ":grpc_service",
-        ":history",
         "//agentplane:subjects",
         "//agentplane/runner_gateway/testing:grpc_service",
         "//agentplane/runner_gateway/testing:resources",
+        "//agentplane/runner_gateway/testing:sessions",
         "//agentplane/sandbox_service:action_policy",
         "//agentplane/sandbox_service:client",
         "//agentplane/sandbox_service:destinations",
@@ -94,48 +94,7 @@ py_library(
 )
 
 py_library(
-    name = "history",
-    srcs = ["history.py"],
-    visibility = ["//agentplane:__subpackages__"],
-    deps = [
-        "//agentplane/history_service/storage:db",
-        "//agentplane/proto:sandbox_service_pb2",
-        "//agentplane/runner:client",
-        "//agentplane/runner_gateway:grpc_api",
-        "//agentplane/runner_gateway/commands:db",
-        "//agentplane/runner_gateway/testing:sessions",
-        "//agentplane/sandbox_service:destinations",
-        "//agentplane/sandbox_service:models",
-        "//agentplane/thread_fold:models",
-        "@pypi//grpcio",
-        "@pypi//protobuf",
-        "@pypi//sqlalchemy",
-    ],
-)
-
-py_library(
     name = "teardown",
     srcs = ["teardown.py"],
     deps = ["//agentplane/sandbox_service:inventory"],
-)
-
-py_library(
-    name = "delta_spans",
-    srcs = ["delta_spans.py"],
-    deps = [
-        "//agentplane/proto:event_log_pb2",
-        "//agentplane/proto:event_pb2",
-        "@pypi//protobuf",
-    ],
-)
-
-py_library(
-    name = "fixtures",
-    srcs = ["fixtures.py"],
-    deps = [
-        ":history",
-        "//util/testing:postgres",
-        "//util/testing:sqlalchemy_engines",
-        "@pypi//pytest",
-    ],
 )

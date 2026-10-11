@@ -8,10 +8,10 @@ import pytest
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 
 from agentplane.action_service.testing.fixtures import action_database_template, echo_catalog, echo_executor
+from agentplane.history_service.testing.fixtures import service_database_template
 from agentplane.notification_service.database_migrate import RUNNER
 from agentplane.notification_service.store import Store
 from agentplane.runner.testing.fixtures import RunnerHandle, config, endpoint, harness, model, runner, spec, workspace
-from agentplane.sandbox_service.testing.fixtures import service_database_template
 from agentplane.testing.failure_journal import call_failed, capture_native_journal, pytest_runtest_makereport
 from util.testing.postgres import DatabaseClones, PostgresDatabaseTemplate
 from util.testing.postgres_fixtures import (

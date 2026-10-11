@@ -503,3 +503,17 @@ py_test(
         "@pypi//sqlalchemy",
     ],
 )
+
+py_test(
+    name = "test_session_lifecycle",
+    srcs = ["test_session_lifecycle.py"],
+    deps = [
+        ":conftest",
+        ":session_lifecycle",
+        "//:conftest",
+        "//agentplane/proto:runner_pb2",
+        "//agentplane/proto:sandbox_service_pb2",
+        "@pypi//protobuf",
+        "@pypi//pytest_bazel",
+    ],
+)

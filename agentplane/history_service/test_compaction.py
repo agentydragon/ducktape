@@ -10,8 +10,8 @@ from agentplane.history_service.compaction import Compaction, compact
 from agentplane.history_service.fold_shadow import FoldShadow
 from agentplane.history_service.storage.db import SessionEvent, SessionHistory
 from agentplane.history_service.storage.store import Store
+from agentplane.history_service.testing.delta_spans import claude_text
 from agentplane.proto import event_log_pb2
-from agentplane.sandbox_service.testing.delta_spans import claude_text
 from agentplane.thread_fold.models import ThreadEvidence, ThreadNativeLink
 
 # gazelle:include_dep //agentplane/history_service/storage:conftest

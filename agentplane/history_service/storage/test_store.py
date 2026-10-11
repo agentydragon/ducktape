@@ -17,8 +17,8 @@ from agentplane.history_service.storage.store import (
     Writer,
     WriterMismatchError,
 )
+from agentplane.history_service.testing.delta_spans import claude_text
 from agentplane.proto import event_log_pb2, event_pb2, runner_pb2
-from agentplane.sandbox_service.testing.delta_spans import claude_text
 
 # gazelle:include_dep @pypi//protobuf
 
