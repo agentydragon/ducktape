@@ -31,7 +31,7 @@ from tenacity import AsyncRetrying, retry_if_exception_type, stop_after_delay, w
 from agentplane.app.action_policy import ActionPolicyInventory
 from agentplane.app.api import create_app
 from agentplane.app.changes import Changes
-from agentplane.app.conftest import _CALL_REPORT, AGENT_AUTH
+from agentplane.app.conftest import AGENT_AUTH
 from agentplane.app.database import connect
 from agentplane.app.database_updates import Channel, DatabaseUpdates
 from agentplane.app.decisions import DecisionsClient
@@ -64,6 +64,7 @@ from agentplane.runner.testing.scripted_model import ScriptedModel, ShellCall, T
 from agentplane.sandbox_service.client import SandboxServiceClient
 from agentplane.sandbox_service.testing.backend import Endpoint, seed_runner
 from agentplane.sandbox_service.testing.fake_inventory import FakeCoreV1Api, FakeCustomObjectsApi
+from agentplane.testing.failure_journal import call_failed, capture_native_journal
 from agentplane.thread_fold.models import ThreadCheckpoint, ThreadEntity, ThreadPayloadChunk
 from util.net import bind_free_port
 from util.testing.asgi import serve_app_in_loop
@@ -84,8 +85,7 @@ async def failed_native_journal(
     """Preserve native history and journal evidence when an app-level bridge case fails."""
     caplog.set_level(logging.INFO, logger="httpx")
     yield
-    report = request.node.stash.get(_CALL_REPORT, None)
-    if report is None or not report.failed:
+    if not call_failed(request):
         return
     for session_id, session in runner.runner.sessions.items():
         target = undeclared_outputs_dir() / request.node.name / session_id
@@ -93,13 +93,7 @@ async def failed_native_journal(
             source = session.directory / dialect / history
             if source.exists():
                 shutil.copytree(source, target / dialect / history, dirs_exist_ok=True)
-    sessions: dict[str, list[dict[str, Any]]] = {}
-    for session_id, session in runner.runner.sessions.items():
-        entries = await session.journal.since(0, limit=512)
-        sessions[session_id] = [MessageToDict(entry, preserving_proto_field_name=True) for entry in entries]
-    (undeclared_outputs_dir() / f"{request.node.name}-native-journal.json").write_text(
-        json.dumps(sessions, indent=2, sort_keys=True)
-    )
+    await capture_native_journal(request, runner)
 
 
 async def _create(http: httpx.AsyncClient, spec: runner_pb2.SessionSpec, session_id: UUID) -> str:
