@@ -1070,7 +1070,6 @@ flowchart TD
         APP_TEST_CLIENT_MOVE[Candidate: app test client out of production]
         KUBEVIRT_GUEST_CONTROL[Candidate: KubeVirt guest dials out]
         RUNNER_CORE_SPLIT[Blocked: runner core out of the inbound servicer]
-        RUNNER_HARNESS_ENUM[Candidate: Harness enum beside its owner]
         NATIVE_PROCESS_DEDUP[Candidate: one native process wrapper]
         EGRESS_DECISIONS_CLIENT[Candidate: egress decisions client beside the server]
         EGRESS_RULES_API_TIDY[Candidate: egress rules API tidy]
@@ -1263,11 +1262,6 @@ experiment instead also orphans the VM-only `RunnerConfig` fields and `cgroups.p
 `runner/service.py`; move them to their own module. The control and ingress clients share one
 lost-stream error and backoff, `IngressPusher` stops borrowing `ControlTiming`, and the unpassed
 `channel_options` parameters go.
-
-### `RUNNER_HARNESS_ENUM` — `Harness` enum beside its owner
-
-**Candidate.** `runner/harness.py`'s `Harness` is imported by the app, acceptance and cdk8s, while
-the runner keeps `SessionRecord.harness: str`. Type the record with it, or move it to its owner.
 
 ### `NATIVE_PROCESS_DEDUP` — one native process wrapper
 

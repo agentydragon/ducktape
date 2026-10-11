@@ -19,6 +19,7 @@ from agentplane.app.threads.store import ThreadStore
 from agentplane.proto import command_pb2, event_pb2, runner_pb2
 from agentplane.runner.codex import CodexAdapter
 from agentplane.runner.config import CodexLaunch
+from agentplane.runner.harness import Harness
 from agentplane.runner.observation import Observation
 from agentplane.runner.session import Session
 from agentplane.runner.store import SessionRecord
@@ -41,7 +42,7 @@ class _HarnessOutputRecorder:
     """The Codex adapter's session seam, recording observations before database ingestion."""
 
     def __init__(self) -> None:
-        self.record = SessionRecord(harness="HARNESS_CODEX", cwd="/workspace", model="gpt-5.4", reasoning_effort="low")
+        self.record = SessionRecord(harness=Harness.CODEX, cwd="/workspace", model="gpt-5.4", reasoning_effort="low")
         self.active_turn_id = ""
         self.observations: list[tuple[Observation, list[int]]] = []
 

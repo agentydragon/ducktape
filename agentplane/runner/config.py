@@ -5,10 +5,11 @@ from __future__ import annotations
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import assert_never
 
 from agentplane.llm_ingress.models import ModelConfig
-from agentplane.proto import runner_pb2
 from agentplane.runner.cgroups import AgentCgroups
+from agentplane.runner.harness import Harness
 from agentplane.runner.model_config import HttpModelConfigResolver, ModelConfigLookupError
 
 
@@ -75,16 +76,17 @@ class RunnerConfig:
     # replacement runner sees that persisted event and proceeds normally.
     test_debug_checkpoint: DebugCheckpoint | None = None
 
-    async def resolve_model_config(self, *, harness: int, model: str) -> ModelConfig | None:
+    async def resolve_model_config(self, *, harness: Harness, model: str) -> ModelConfig | None:
         """Resolve a route using the selected harness's proxy endpoint and workload credential."""
-        if harness == runner_pb2.HARNESS_CLAUDE:
-            if self.claude is None:
-                raise ModelConfigLookupError("Claude is not configured on this runner")
-            base_url, token = self.claude.base_url, self.claude.auth_token
-        elif harness == runner_pb2.HARNESS_CODEX:
-            if self.codex is None:
-                raise ModelConfigLookupError("Codex is not configured on this runner")
-            base_url, token = self.codex.base_url, self.codex.api_key
-        else:
-            raise ModelConfigLookupError("unsupported harness for model-config lookup")
+        match harness:
+            case Harness.CLAUDE:
+                if self.claude is None:
+                    raise ModelConfigLookupError("Claude is not configured on this runner")
+                base_url, token = self.claude.base_url, self.claude.auth_token
+            case Harness.CODEX:
+                if self.codex is None:
+                    raise ModelConfigLookupError("Codex is not configured on this runner")
+                base_url, token = self.codex.base_url, self.codex.api_key
+            case _:
+                assert_never(harness)
         return await self.model_config_resolver.resolve(base_url=base_url, token=token, model=model)

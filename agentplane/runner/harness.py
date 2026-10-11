@@ -1,4 +1,4 @@
-"""Persisted harness names shared by configuration and the app archive."""
+"""Persisted harness names: the runner's session records, configuration and the app archive."""
 
 from enum import StrEnum
 

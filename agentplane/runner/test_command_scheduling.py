@@ -15,6 +15,7 @@ import pytest_bazel
 from agentplane.proto import command_pb2, event_pb2
 from agentplane.runner.adapter import HarnessAdapter
 from agentplane.runner.config import CodexLaunch, RunnerConfig
+from agentplane.runner.harness import Harness
 from agentplane.runner.harness_process import HarnessProcess
 from agentplane.runner.journal import Journal
 from agentplane.runner.model_config import HttpModelConfigResolver
@@ -89,7 +90,7 @@ async def session_with_blocked_adapter(
     owner = StateOwner(state_dir)
     windows = model_configs or {}
     record = SessionRecord(
-        harness="HARNESS_CODEX",
+        harness=Harness.CODEX,
         cwd=str(tmp_path / "workspace"),
         model=initial_model,
         total_context_budget_tokens=windows.get(initial_model),

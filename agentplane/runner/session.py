@@ -372,9 +372,7 @@ class Session:
                 await self._noop(command_id, "the requested model is already active", sources=[])
                 return
             try:
-                model_config = await self.config.resolve_model_config(
-                    harness=runner_pb2.Harness.Value(self.record.harness), model=model
-                )
+                model_config = await self.config.resolve_model_config(harness=self.record.harness, model=model)
             except ModelConfigLookupError as error:
                 await self._fail(command_id, str(error), sources=[])
                 return

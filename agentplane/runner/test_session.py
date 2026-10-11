@@ -26,6 +26,7 @@ from pydantic import BaseModel
 from agentplane.proto import command_pb2, event_log_pb2, event_pb2
 from agentplane.runner.adapter import HarnessAdapter
 from agentplane.runner.config import RunnerConfig
+from agentplane.runner.harness import Harness
 from agentplane.runner.journal import Journal
 from agentplane.runner.session import Session
 from agentplane.runner.store import SessionRecord, SessionStore, StateOwner
@@ -130,7 +131,7 @@ async def session(tmp_path: Path, make_adapter: Callable[[Session], HarnessAdapt
     store = SessionStore(state_dir / "sessions")
     owner = StateOwner(state_dir)
     record = SessionRecord(
-        harness="HARNESS_CODEX", cwd=str(tmp_path / "workspace"), model="test-model", reasoning_effort="low"
+        harness=Harness.CODEX, cwd=str(tmp_path / "workspace"), model="test-model", reasoning_effort="low"
     )
     store.write("test-session", record)
     try:

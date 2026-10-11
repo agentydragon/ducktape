@@ -10,7 +10,7 @@ import os
 from collections.abc import AsyncGenerator, AsyncIterator, Awaitable, Callable
 from contextlib import AsyncExitStack, aclosing, asynccontextmanager, suppress
 from pathlib import Path, PurePosixPath
-from typing import Any, override
+from typing import Any, assert_never, override
 
 import grpc
 
@@ -20,6 +20,7 @@ from agentplane.runner.adapter import HarnessAdapter
 from agentplane.runner.claude import ClaudeAdapter
 from agentplane.runner.codex import CodexAdapter
 from agentplane.runner.config import RunnerConfig
+from agentplane.runner.harness import Harness
 from agentplane.runner.harness_process import HarnessProcess
 from agentplane.runner.initialization import InitializationLog
 from agentplane.runner.journal import Journal, RecoveryState
@@ -65,16 +66,17 @@ class InitializationConflictError(Exception):
 
 
 def make_adapter(session: Session) -> HarnessAdapter:
-    harness = runner_pb2.Harness.Value(session.record.harness)
-    if harness == runner_pb2.HARNESS_CLAUDE:
-        if session.config.claude is None:
-            raise RuntimeError("this runner is not configured for Claude sessions")
-        return ClaudeAdapter(session, session.config.claude)
-    if harness == runner_pb2.HARNESS_CODEX:
-        if session.config.codex is None:
-            raise RuntimeError("this runner is not configured for Codex sessions")
-        return CodexAdapter(session, session.config.codex)
-    raise ValueError(f"unsupported {harness=}")
+    match session.record.harness:
+        case Harness.CLAUDE:
+            if session.config.claude is None:
+                raise RuntimeError("this runner is not configured for Claude sessions")
+            return ClaudeAdapter(session, session.config.claude)
+        case Harness.CODEX:
+            if session.config.codex is None:
+                raise RuntimeError("this runner is not configured for Codex sessions")
+            return CodexAdapter(session, session.config.codex)
+        case _:
+            assert_never(session.record.harness)
 
 
 class Runner:
@@ -305,7 +307,9 @@ class Runner:
         if len(script.encode()) > _MAX_BOOTSTRAP_BYTES:
             raise InvalidRequestError(f"setup_script exceeds {_MAX_BOOTSTRAP_BYTES} UTF-8 bytes")
         try:
-            model_config = await self.config.resolve_model_config(harness=spec.harness, model=spec.model)
+            model_config = await self.config.resolve_model_config(
+                harness=Harness(runner_pb2.Harness.Name(spec.harness)), model=spec.model
+            )
         except ModelConfigLookupError as error:
             raise OpenError(str(error)) from error
         record = SessionRecord.from_spec(
@@ -325,7 +329,7 @@ class Runner:
         if not session.record.context_budget_resolved:
             try:
                 model_config = await self.config.resolve_model_config(
-                    harness=runner_pb2.Harness.Value(session.record.harness), model=session.record.model
+                    harness=session.record.harness, model=session.record.model
                 )
             except ModelConfigLookupError as error:
                 raise OpenError(str(error)) from error

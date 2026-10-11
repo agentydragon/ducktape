@@ -15,6 +15,7 @@ from agentplane.native.transport import FrameMatcher, NativeReceipt
 from agentplane.proto import event_pb2
 from agentplane.runner.codex import CodexAdapter
 from agentplane.runner.config import CodexLaunch
+from agentplane.runner.harness import Harness
 from agentplane.runner.journal import Journal
 from agentplane.runner.observation import Observation
 from agentplane.runner.session import Session
@@ -29,7 +30,7 @@ class RecordedSession:
     """The runner seam CodexAdapter uses, recording what it is asked to record, in order."""
 
     def __init__(self) -> None:
-        self.record = SessionRecord(harness="HARNESS_CODEX", cwd="/workspace", model="gpt-5.4", reasoning_effort="low")
+        self.record = SessionRecord(harness=Harness.CODEX, cwd="/workspace", model="gpt-5.4", reasoning_effort="low")
         self.active_turn_id = ""
         self.native: list[BaseModel] = []
         self.requested = asyncio.Event()

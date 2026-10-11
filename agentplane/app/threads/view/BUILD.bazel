@@ -38,6 +38,7 @@ py_test(
         "//agentplane/proto:runner_pb2",
         "//agentplane/runner:codex",
         "//agentplane/runner:config",
+        "//agentplane/runner:harness",
         "//agentplane/runner:observation",
         "//agentplane/runner:session",
         "//agentplane/runner:store",

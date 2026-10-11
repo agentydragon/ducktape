@@ -13,6 +13,7 @@ from uuid import UUID, uuid4
 from pydantic import BaseModel, Field
 
 from agentplane.proto import runner_pb2
+from agentplane.runner.harness import Harness
 
 # The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.
 # gazelle:include_dep @pypi//protobuf
@@ -81,7 +82,7 @@ def make_directory(path: Path) -> None:
 
 
 class SessionRecord(BaseModel):
-    harness: str = Field(description="Harness enum name, e.g. HARNESS_CLAUDE")
+    harness: Harness
     cwd: str
     model: str
     # Resolved from the LLM ingress when this route was selected; None means the harness default.
@@ -104,7 +105,7 @@ class SessionRecord(BaseModel):
         cls, spec: runner_pb2.SessionSpec, *, setup_script: str = "", total_context_budget_tokens: int | None = None
     ) -> SessionRecord:
         return cls(
-            harness=runner_pb2.Harness.Name(spec.harness),
+            harness=Harness(runner_pb2.Harness.Name(spec.harness)),
             cwd=spec.cwd,
             model=spec.model,
             total_context_budget_tokens=total_context_budget_tokens,

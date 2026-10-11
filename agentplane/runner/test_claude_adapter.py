@@ -18,6 +18,7 @@ from agentplane.native.transport import FrameMatcher, NativeReceipt
 from agentplane.proto import event_pb2
 from agentplane.runner.claude import ClaudeAdapter
 from agentplane.runner.config import ClaudeLaunch
+from agentplane.runner.harness import Harness
 from agentplane.runner.journal import Journal
 from agentplane.runner.session import Session
 from agentplane.runner.store import SessionRecord
@@ -40,7 +41,7 @@ class RecordedSession:
 
     def __init__(self) -> None:
         self.record = SessionRecord(
-            harness="HARNESS_CLAUDE",
+            harness=Harness.CLAUDE,
             cwd="/workspace",
             model="agentplane-test/claude-haiku-4-5-20251001",
             reasoning_effort="low",

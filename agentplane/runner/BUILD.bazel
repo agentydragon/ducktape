@@ -81,11 +81,9 @@ py_library(
     srcs = ["config.py"],
     deps = [
         ":cgroups",
+        ":harness",
         ":model_config",
         "//agentplane/llm_ingress:models",
-        "//agentplane/proto:runner_pb2",
-        "@pypi//protobuf",  # keep: mypy follows generated protobuf interfaces
-        "@pypi//types_protobuf",  # keep: mypy follows generated protobuf interfaces
     ],
 )
 
@@ -165,6 +163,7 @@ py_library(
         ":claude",
         ":codex",
         ":config",
+        ":harness",
         ":harness_process",
         ":initialization",
         ":journal",
@@ -206,6 +205,7 @@ py_library(
     name = "store",
     srcs = ["store.py"],
     deps = [
+        ":harness",
         "//agentplane/proto:runner_pb2",
         "@pypi//protobuf",
         "@pypi//pydantic",
@@ -240,6 +240,7 @@ py_test(
         ":claude",
         ":config",
         ":conftest",
+        ":harness",
         ":journal",
         ":session",
         ":store",
@@ -263,6 +264,7 @@ py_test(
         ":codex",
         ":config",
         ":conftest",
+        ":harness",
         ":journal",
         ":observation",
         ":session",
@@ -554,6 +556,7 @@ py_test(
         ":adapter",
         ":config",
         ":conftest",
+        ":harness",
         ":harness_process",
         ":journal",
         ":model_config",
@@ -668,6 +671,7 @@ py_test(
         ":adapter",
         ":config",
         ":conftest",
+        ":harness",
         ":journal",
         ":session",
         ":store",
