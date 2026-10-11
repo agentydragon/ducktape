@@ -83,6 +83,7 @@ py_library(
     testonly = True,
     srcs = ["history.py"],
     deps = [
+        ":sessions",
         "//agentplane/history_service:channels",
         "//agentplane/history_service:fold_runner",
         "//agentplane/history_service:protocol_pb2",
@@ -101,6 +102,16 @@ py_library(
         "@pypi//asyncpg",
         "@pypi//more_itertools",
         "@pypi//protobuf",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
+    name = "sessions",
+    srcs = ["sessions.py"],
+    deps = [
+        "//agentplane/history_service/storage:db",
+        "//agentplane/history_service/storage:store",
         "@pypi//sqlalchemy",
     ],
 )
