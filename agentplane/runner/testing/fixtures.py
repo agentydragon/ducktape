@@ -7,6 +7,7 @@ Only the model fixture knows the harness dialect.
 
 from __future__ import annotations
 
+import logging
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from pathlib import Path
@@ -23,6 +24,7 @@ from agentplane.runner.service import Runner, serve
 from agentplane.runner.testing import launches
 from agentplane.runner.testing.claude_model import ClaudeModel
 from agentplane.runner.testing.codex_model import CodexModel
+from agentplane.runner.testing.failure_journal import preserve_native_evidence
 from agentplane.runner.testing.scripted_model import ScriptedModel
 
 # The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.
@@ -99,9 +101,14 @@ def runner_client_factory() -> RunnerClientFactory:
 
 
 @pytest.fixture
-async def runner(config: RunnerConfig) -> AsyncIterator[RunnerHandle]:
+async def runner(
+    request: pytest.FixtureRequest, config: RunnerConfig, caplog: pytest.LogCaptureFixture
+) -> AsyncIterator[RunnerHandle]:
+    """A served runner whose native evidence a failed test keeps in its undeclared outputs."""
+    caplog.set_level(logging.INFO, logger="httpx")
     async with serve(config, address="127.0.0.1:0", grace_s=0) as (started, port):
         yield RunnerHandle(runner=started, port=port)
+        await preserve_native_evidence(request, started)
 
 
 @pytest.fixture

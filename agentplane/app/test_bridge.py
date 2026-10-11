@@ -9,7 +9,6 @@ import json
 import logging
 import os
 import shlex
-import shutil
 import signal
 from collections.abc import AsyncIterator, Callable
 from contextlib import aclosing
@@ -59,7 +58,7 @@ from agentplane.proto import command_pb2, event_log_pb2, event_pb2, runner_pb2, 
 from agentplane.runner import service
 from agentplane.runner.harness import Harness
 from agentplane.runner.session import Session
-from agentplane.runner.testing.failure_journal import call_failed, capture_native_journal
+from agentplane.runner.testing.failure_journal import call_failed
 from agentplane.runner.testing.fixtures import RunnerClientFactory, RunnerHandle
 from agentplane.runner.testing.scripted_model import ScriptedModel, ShellCall, Text
 from agentplane.sandbox_service.client import SandboxServiceClient
@@ -79,16 +78,17 @@ SESSIONS = f"/sandboxes/{SANDBOX}/sessions"
 
 
 @pytest.fixture
-async def failed_native_journal(
+async def failed_bridge_state(
     request: pytest.FixtureRequest,
     runner: RunnerHandle,
     event_logs: EventLogStore,
     history_client: HistoryServiceClient,
     local_runners: SandboxSessions,
-    caplog: pytest.LogCaptureFixture,
 ) -> AsyncIterator[None]:
-    """Preserve each service's cursor and admission state when an app-level bridge case fails."""
-    caplog.set_level(logging.INFO, logger="httpx")
+    """Preserve each service's cursor and admission state when an app-level bridge case fails.
+
+    The `runner` fixture keeps the native history files and journal.
+    """
     yield
     if not call_failed(request):
         return
@@ -96,15 +96,6 @@ async def failed_native_journal(
     for session_id, session in runner.runner.sessions.items():
         observed: dict[str, Any] = {"runner_cursor": session.journal.last_cursor}
         state[session_id] = observed
-        try:
-            target = undeclared_outputs_dir() / request.node.name / session_id
-            for dialect, history in (("claude", "projects"), ("codex", "sessions")):
-                source = session.directory / dialect / history
-                if source.exists():
-                    shutil.copytree(source, target / dialect / history, dirs_exist_ok=True)
-        except Exception as error:
-            observed["native_history_error"] = repr(error)
-            logging.getLogger(__name__).warning("bridge failure native history capture failed", exc_info=True)
         try:
             async with asyncio.timeout(5):
                 thread_id = UUID(session_id)
@@ -138,11 +129,6 @@ async def failed_native_journal(
         except Exception as error:
             observed["gateway_error"] = repr(error)
             logging.getLogger(__name__).warning("bridge failure gateway state capture failed", exc_info=True)
-    try:
-        await capture_native_journal(request, runner)
-    except Exception as error:
-        state["native_journal_error"] = repr(error)
-        logging.getLogger(__name__).warning("bridge failure journal capture failed", exc_info=True)
     (undeclared_outputs_dir() / f"{request.node.name}-bridge-state.json").write_text(
         json.dumps(state, indent=2, sort_keys=True)
     )
@@ -311,7 +297,7 @@ async def app_url(
 
 
 async def test_the_bridge_streams_a_turn_to_every_tab_and_resumes_from_the_last_event_id(
-    app_url: str, model: ScriptedModel, spec: runner_pb2.SessionSpec, failed_native_journal: None
+    app_url: str, model: ScriptedModel, spec: runner_pb2.SessionSpec, failed_bridge_state: None
 ) -> None:
     async with httpx.AsyncClient(base_url=app_url, timeout=60, headers=AGENT_AUTH) as http:
         session_id = uuid4()
@@ -571,7 +557,7 @@ def _has_turn_status(entries: list[dict[str, Any]], status: str) -> bool:
 
 
 async def test_http_error_is_archived_as_failed_turn_and_follow_up_succeeds(
-    app_url: str, model: ScriptedModel, spec: runner_pb2.SessionSpec, failed_native_journal: None
+    app_url: str, model: ScriptedModel, spec: runner_pb2.SessionSpec, failed_bridge_state: None
 ) -> None:
     """A failed model turn stays admitted and replayable; a later input is a separate turn."""
     async with httpx.AsyncClient(base_url=app_url, timeout=60, headers=AGENT_AUTH) as http:
@@ -648,7 +634,7 @@ async def test_stream_recovery_reports_the_content_the_model_receives(
     runner: RunnerHandle,
     store: ThreadStore,
     spec: runner_pb2.SessionSpec,
-    failed_native_journal: None,
+    failed_bridge_state: None,
     stop_mode: str,
 ) -> None:
     seed_prompt, seed_answer = "Remember the seed prompt", "SEED_ANSWER_FOR_STREAM_RECOVERY"
@@ -773,7 +759,7 @@ async def test_tool_recovery_reports_context_without_repeating_side_effects(
     store: ThreadStore,
     spec: runner_pb2.SessionSpec,
     workspace: Path,
-    failed_native_journal: None,
+    failed_bridge_state: None,
     stop_mode: str,
 ) -> None:
     seed_prompt, seed_answer = "Remember the tool test seed", "SEED_ANSWER_FOR_TOOL_RECOVERY"
@@ -869,7 +855,7 @@ async def test_resume_after_tool_completion_preserves_the_result_and_does_not_re
     store: ThreadStore,
     spec: runner_pb2.SessionSpec,
     workspace: Path,
-    failed_native_journal: None,
+    failed_bridge_state: None,
     stop_mode: str,
 ) -> None:
     seed_prompt, seed_answer = "Remember the completed tool seed", "SEED_ANSWER_FOR_COMPLETED_TOOL"
@@ -1011,7 +997,7 @@ async def test_thread_command_reports_id_conflict_after_runner_admitted_before_a
     runner: RunnerHandle,
     event_logs: EventLogStore,
     spec: runner_pb2.SessionSpec,
-    failed_native_journal: None,
+    failed_bridge_state: None,
     runner_client_factory: RunnerClientFactory,
 ) -> None:
     """An app prefix lag must still preserve the runner's id-conflict verdict as a 409."""
@@ -1044,7 +1030,7 @@ async def test_thread_command_reports_id_conflict_after_runner_admitted_before_a
 
 
 async def test_command_status_reads_what_the_sandbox_service_retained(
-    app_url: str, spec: runner_pb2.SessionSpec, failed_native_journal: None
+    app_url: str, spec: runner_pb2.SessionSpec, failed_bridge_state: None
 ) -> None:
     async with httpx.AsyncClient(base_url=app_url, timeout=60, headers=AGENT_AUTH) as http:
         thread_id = await _create(http, spec, uuid4())
@@ -1063,7 +1049,7 @@ async def test_stop_command_returns_after_admission_before_native_shutdown_effec
     runner: RunnerHandle,
     spec: runner_pb2.SessionSpec,
     monkeypatch: pytest.MonkeyPatch,
-    failed_native_journal: None,
+    failed_bridge_state: None,
 ) -> None:
     async with httpx.AsyncClient(base_url=app_url, timeout=60, headers=AGENT_AUTH) as http:
         thread_id = await _create(http, spec, uuid4())
@@ -1152,7 +1138,7 @@ async def test_command_relay_waits_for_runner_admission_before_closing(
 
 
 async def test_command_admission_timeout_is_not_an_internal_server_error(
-    app_url: str, spec: runner_pb2.SessionSpec, monkeypatch: pytest.MonkeyPatch, failed_native_journal: None
+    app_url: str, spec: runner_pb2.SessionSpec, monkeypatch: pytest.MonkeyPatch, failed_bridge_state: None
 ) -> None:
     async with httpx.AsyncClient(base_url=app_url, timeout=60, headers=AGENT_AUTH) as http:
         thread_id = await _create(http, spec, uuid4())

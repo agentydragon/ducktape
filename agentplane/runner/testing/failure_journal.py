@@ -1,7 +1,8 @@
 """Native runner evidence preserved for a test whose call phase failed.
 
-A conftest using `call_failed` or `failed_native_journal` also imports `pytest_runtest_makereport`,
-which exposes the call report to the fixture's teardown.
+The shared `runner` fixture calls `preserve_native_evidence` before shutting its runner down, so
+every conftest registering that fixture also imports `pytest_runtest_makereport`, which exposes the
+call report to fixture teardown.
 """
 
 from __future__ import annotations
@@ -10,12 +11,12 @@ import asyncio
 import json
 import logging
 import shutil
-from collections.abc import AsyncIterator, Generator
+from collections.abc import Generator
 
 import pytest
 from google.protobuf.json_format import MessageToDict
 
-from agentplane.runner.testing.fixtures import RunnerHandle
+from agentplane.runner.service import Runner
 from util.testing.undeclared_outputs import undeclared_outputs_dir
 
 logger = logging.getLogger(__name__)
@@ -38,15 +39,29 @@ def call_failed(request: pytest.FixtureRequest) -> bool:
     """Whether the test's call phase failed, as opposed to setup or teardown."""
     report = request.node.stash.get(CALL_REPORT, None)
     if report is None:
-        logger.warning("no pytest call report for %s; failure journal unavailable", request.node.nodeid)
+        logger.warning("no pytest call report for %s; failure evidence unavailable", request.node.nodeid)
         return False
     return bool(report.failed)
 
 
-async def capture_native_journal(request: pytest.FixtureRequest, runner: RunnerHandle) -> None:
+def copy_native_history(request: pytest.FixtureRequest, runner: Runner) -> None:
+    """Copy each session's harness-owned history (`claude/projects`, `codex/sessions`) to this test's
+    undeclared outputs."""
+    for session_id, session in runner.sessions.items():
+        for dialect, history in (("claude", "projects"), ("codex", "sessions")):
+            source = session.directory / dialect / history
+            if source.exists():
+                shutil.copytree(
+                    source,
+                    undeclared_outputs_dir() / request.node.name / session_id / dialect / history,
+                    dirs_exist_ok=True,
+                )
+
+
+async def capture_native_journal(request: pytest.FixtureRequest, runner: Runner) -> None:
     """Write the runner's bounded native journal snapshot to this test's undeclared outputs."""
     sessions: dict[str, list[dict[str, object]]] = {}
-    for session_id, session in runner.runner.sessions.items():
+    for session_id, session in runner.sessions.items():
         # Bounded: a wedged journal writer holds the lock this read waits on.
         async with asyncio.timeout(3):
             entries = await session.journal.since(0, limit=512)
@@ -56,22 +71,18 @@ async def capture_native_journal(request: pytest.FixtureRequest, runner: RunnerH
     )
 
 
-@pytest.fixture
-async def failed_native_journal(
-    request: pytest.FixtureRequest, runner: RunnerHandle, caplog: pytest.LogCaptureFixture
-) -> AsyncIterator[None]:
-    """On a failed call phase, write each session's native history files and journal snapshot."""
-    caplog.set_level(logging.INFO, logger="httpx")
-    yield
+async def preserve_native_evidence(request: pytest.FixtureRequest, runner: Runner) -> None:
+    """On a failed call phase, keep each session's native history files and journal snapshot.
+
+    Each capture degrades on its own, so a broken history copy still leaves the journal.
+    """
     if not call_failed(request):
         return
-    for session_id, session in runner.runner.sessions.items():
-        for dialect, history in (("claude", "projects"), ("codex", "sessions")):
-            source = session.directory / dialect / history
-            if source.exists():
-                shutil.copytree(
-                    source,
-                    undeclared_outputs_dir() / request.node.name / session_id / dialect / history,
-                    dirs_exist_ok=True,
-                )
-    await capture_native_journal(request, runner)
+    try:
+        copy_native_history(request, runner)
+    except Exception:
+        logger.warning("native history capture failed for %s", request.node.nodeid, exc_info=True)
+    try:
+        await capture_native_journal(request, runner)
+    except Exception:
+        logger.warning("native journal capture failed for %s", request.node.nodeid, exc_info=True)

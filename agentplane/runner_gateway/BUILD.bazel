@@ -196,6 +196,7 @@ py_library(
     deps = [
         ":connection_records",
         ":session_registry",
+        "//agentplane/runner/testing:failure_journal",
         "//agentplane/runner/testing:fixtures",
         "//agentplane/runner_gateway/commands:conftest",
         "//agentplane/runner_gateway/commands:store",

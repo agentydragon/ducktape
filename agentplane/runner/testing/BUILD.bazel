@@ -61,7 +61,7 @@ py_library(
     name = "failure_journal",
     srcs = ["failure_journal.py"],
     deps = [
-        ":fixtures",
+        "//agentplane/runner:service",
         "//util/testing:undeclared_outputs",
         "@pypi//protobuf",
         "@pypi//pytest",
@@ -74,6 +74,7 @@ py_library(
     deps = [
         ":claude_model",
         ":codex_model",
+        ":failure_journal",
         ":launches",
         ":scripted_model",
         "//agentplane/harness_tests/claude:messages",

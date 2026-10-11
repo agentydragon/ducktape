@@ -9,7 +9,7 @@ from agentplane.action_service.testing.fixtures import action_database_template,
 from agentplane.history_service.testing.fixtures import service_database_template
 from agentplane.notification_service.database_migrate import RUNNER
 from agentplane.notification_service.store import Store
-from agentplane.runner.testing.failure_journal import failed_native_journal, pytest_runtest_makereport
+from agentplane.runner.testing.failure_journal import pytest_runtest_makereport
 from agentplane.runner.testing.fixtures import config, endpoint, harness, model, runner, spec, workspace
 from util.testing.postgres import DatabaseClones, PostgresDatabaseTemplate
 from util.testing.postgres_fixtures import (

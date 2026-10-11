@@ -9,6 +9,7 @@ import pytest
 from kubernetes_asyncio import client as k8s_client
 from sqlalchemy.ext.asyncio import AsyncEngine
 
+from agentplane.runner.testing.failure_journal import pytest_runtest_makereport
 from agentplane.runner.testing.fixtures import client, config, endpoint, harness, model, runner, spec, workspace
 from agentplane.runner_gateway.commands.conftest import database_template, db_url, engine
 from agentplane.runner_gateway.commands.store import SubmissionStore

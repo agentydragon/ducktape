@@ -69,7 +69,6 @@ async def test_listen_deliver_read_ack_and_recover_lost_response_without_app(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     caplog: pytest.LogCaptureFixture,
-    failed_native_journal: None,
     sandbox_service_db_url: str,
     busy: bool,
     failed_before_rpc: bool,

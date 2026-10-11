@@ -96,7 +96,10 @@ py_library(
     name = "conftest",
     testonly = True,
     srcs = ["conftest.py"],
-    deps = ["//agentplane/runner/testing:fixtures"],
+    deps = [
+        "//agentplane/runner/testing:failure_journal",
+        "//agentplane/runner/testing:fixtures",
+    ],
 )
 
 py_library(
