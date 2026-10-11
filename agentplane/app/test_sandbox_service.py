@@ -1,7 +1,9 @@
 """The production app directory/bridge/archive against authenticated Sandbox Service and History Service gRPC."""
 
+import json
 import logging
 from collections.abc import AsyncIterator
+from difflib import unified_diff
 from pathlib import Path
 from uuid import UUID, uuid4
 
@@ -22,7 +24,8 @@ from agentplane.app.threads.bridge import MalformedMessageError, RunnerBridge
 from agentplane.app.threads.events.debug import ThreadScopeChangedError
 from agentplane.app.threads.sessions import SandboxSessions
 from agentplane.app.threads.store import ThreadStore
-from agentplane.app.threads.summaries import AppSummaries, HistorySummaries
+from agentplane.app.threads.summaries import AppSummaries, FeedEnd, HistorySummaries
+from agentplane.app.threads.thread_view import ThreadView
 from agentplane.app.threads.view.content import ContentStore, HistoryContentStore
 from agentplane.history_service.testing.backend import fold_history, history_service, ingest
 from agentplane.proto import command_pb2, runner_pb2
@@ -33,10 +36,28 @@ from agentplane.sandbox_service.testing.kubernetes import SANDBOX, Cluster, auth
 from agentplane.testing.fake_apiserver import SANDBOX_NAMESPACE
 from agentplane.thread_fold.views import EntityKind
 from util.agent_sandbox import SANDBOXES_PLURAL
+from util.testing.undeclared_outputs import undeclared_outputs_dir
 
 # gazelle:include_dep @pypi//protobuf
 # gazelle:include_dep @pypi//asyncpg
 # gazelle:include_dep @pypi//grpcio
+
+
+def _thread_view_differences(history: list[ThreadView], app: list[ThreadView], output_dir: Path) -> str:
+    """Capture both projections and show their JSON diff when parity fails."""
+    history_json = json.dumps([view.model_dump(mode="json") for view in history], indent=2, sort_keys=True) + "\n"
+    app_json = json.dumps([view.model_dump(mode="json") for view in app], indent=2, sort_keys=True) + "\n"
+    output_dir.mkdir(parents=True, exist_ok=True)
+    (output_dir / "history.json").write_text(history_json)
+    (output_dir / "app.json").write_text(app_json)
+    return "".join(
+        unified_diff(
+            history_json.splitlines(keepends=True),
+            app_json.splitlines(keepends=True),
+            fromfile="history.json",
+            tofile="app.json",
+        )
+    )
 
 
 @pytest.fixture
@@ -140,6 +161,7 @@ async def test_history_service_reads_match_the_app_projection(
 ) -> None:
     """Both folds over one retained history: every Thread read must agree but the epoch it names."""
     engine = event_logs.engine
+    app = AppSummaries(engine)
     async with (
         authenticated_service(
             cluster, runner.port, tmp_path / "service-token", database_url=service_history_db_url
@@ -172,14 +194,21 @@ async def test_history_service_reads_match_the_app_projection(
                     assert any(entry.event.HasField("harness_exited") for entry in archived)
                     await fold_history(service_history_db_url)
                     assert await event_logs.last_cursor(thread) == archived[-1].cursor
-                    assert (await folded.get(thread)).folded_through == archived[-1].cursor
+                    history_summary = await folded.get(thread)
+                    assert history_summary.folded_through == archived[-1].cursor
+                    assert history_summary.feed is not None
+                    assert isinstance(history_summary.feed.end, FeedEnd), f"{history_summary.feed=}"
+                    assert await app.folded_through(thread) == archived[-1].cursor
         finally:
             await ingester.close()
 
-        app = AppSummaries(engine)
         folded_logs = EventLogStore(engine, peer=event_logs.peer, history_reader=history, summaries=folded)
         folded_content = HistoryContentStore(engine, history_reader=history)
-        assert await ThreadStore(engine, folded).list_threads() == await ThreadStore(engine, app).list_threads()
+        history_threads = await ThreadStore(engine, folded).list_threads()
+        app_threads = await ThreadStore(engine, app).list_threads()
+        assert history_threads == app_threads, _thread_view_differences(
+            history_threads, app_threads, undeclared_outputs_dir() / tmp_path.name
+        )
         assert await folded_logs.feed_state(thread) == await event_logs.feed_state(thread)
         app_scope = await content.current_scope(thread)
         folded_scope = await folded_content.current_scope(thread)
