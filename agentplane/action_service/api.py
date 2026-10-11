@@ -582,15 +582,6 @@ def create_app(
         if push_subscriptions is None or not await push_subscriptions.delete(operator=principal, endpoint=endpoint):
             raise HTTPException(status.HTTP_404_NOT_FOUND, "no such push subscription")
 
-    @app.get("/v1/operator/action-requests/{request_id}/events", response_model=list[ActionEventView])
-    async def operator_events(
-        request_id: UUID,
-        principal: Annotated[OperatorPrincipal, Depends(_operator)],
-        action_service: Annotated[ActionService, Depends(_service)],
-        after_sequence: Annotated[int, Query(ge=0)] = 0,
-    ) -> list[ActionEventView]:
-        return await action_service.events(request_id, principal, after_sequence=after_sequence)
-
     @app.post("/v1/operator/action-requests/{request_id}/decision", response_model=ActionRequestView)
     async def decide(
         request_id: UUID,

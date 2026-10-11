@@ -20,7 +20,6 @@ from agentplane.grpc_serving import serving
 from agentplane.history_service.channels import Channel, create_wakeups
 from agentplane.history_service.client import HistoryServiceClient
 from agentplane.history_service.evidence import EvidenceReader
-from agentplane.history_service.fold_runner import FoldRunner
 from agentplane.history_service.grpc_api import Resources, add_service
 from agentplane.history_service.ingress import Resources as IngressResources, Timing, add_ingress
 from agentplane.history_service.storage.store import Store
@@ -156,20 +155,6 @@ async def ingest(database_url: str, runner: Runner) -> AsyncIterator[None]:
                 task.cancel()
                 with suppress(asyncio.CancelledError):
                     await task
-
-
-async def fold_history(database_url: str) -> None:
-    """Fold every retained Session in the history database until the History Service fold has caught up.
-
-    The composed History + Commands test database template already contains the projection tables.
-    """
-    async with _history_engine(database_url) as engine:
-        folder = FoldRunner(engine=engine, history=Store(engine), concurrency=1, page_size=1000)
-        try:
-            while (await folder.cycle()).behind:
-                pass
-        finally:
-            await folder.release()
 
 
 async def announce_fold_commit(database_url: str) -> None:

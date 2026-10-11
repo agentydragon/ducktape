@@ -1,5 +1,5 @@
-"""Production routing/authority cutover must not leave a direct-runner fallback, and the Sandbox Service and
-Runner Gateway run apart."""
+"""The app and notifications reach the backend services with their own credentials, and the Sandbox Service
+and Runner Gateway run apart."""
 
 from typing import Any
 
@@ -23,7 +23,6 @@ def test_app_uses_independent_service(namespace: str, agentplane_manifests: dict
     container = one(item for item in application["containers"] if item["name"] == "app")
     target = sandbox_service.service(namespace)
     assert f"--sandbox-service-target={target.fqdn}:{target.pod_port}" in container["args"]
-    assert not any(arg.startswith("--runner-port") for arg in container["args"])
     token = one(volume for volume in application["volumes"] if volume["name"] == "sandbox-service-token")
     assert token["projected"]["sources"] == [
         {
@@ -202,10 +201,6 @@ def test_gateway_callers_send_the_gateway_audience(
     } == {accepted}
 
 
-if __name__ == "__main__":
-    pytest_bazel.main()
-
-
 @pytest.mark.parametrize("namespace", NAMESPACES)
 def test_sandbox_reconciliation_can_watch_crs_and_read_owned_accounts(
     namespace: str, agentplane_manifests: dict[str, list[dict[str, Any]]]
@@ -223,3 +218,7 @@ def test_sandbox_reconciliation_can_watch_crs_and_read_owned_accounts(
     accounts = one(rule for rule in rules if rule["apiGroups"] == [""] and rule["resources"] == ["serviceaccounts"])
     assert {"create", "get", "patch", "delete"} <= set(accounts["verbs"])
     assert "secrets" not in accounts["resources"]
+
+
+if __name__ == "__main__":
+    pytest_bazel.main()

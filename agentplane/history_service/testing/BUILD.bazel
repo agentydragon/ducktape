@@ -15,7 +15,6 @@ py_library(
         "//agentplane/history_service:channels",
         "//agentplane/history_service:client",
         "//agentplane/history_service:evidence",
-        "//agentplane/history_service:fold_runner",
         "//agentplane/history_service:grpc_api",
         "//agentplane/history_service:ingress",
         "//agentplane/history_service:summaries",

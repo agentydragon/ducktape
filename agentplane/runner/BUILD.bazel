@@ -608,10 +608,7 @@ py_library(
 py_library(
     name = "observation",
     srcs = ["observation.py"],
-    deps = [
-        "//agentplane/proto:event_pb2",
-        "@pypi//protobuf",
-    ],
+    deps = ["//agentplane/proto:event_pb2"],
 )
 
 py_test(
@@ -761,16 +758,6 @@ py_test(
 py_library(
     name = "errors",
     srcs = ["errors.py"],
-)
-
-# An explicit test-only dependency grants archive fault tests access to the native peer.
-# Production app targets cannot depend on this, even though they share the test's Bazel package.
-py_library(
-    name = "client_for_testing",
-    testonly = True,
-    srcs = [],
-    visibility = ["//agentplane/app:__pkg__"],
-    deps = [":client"],
 )
 
 py_library(

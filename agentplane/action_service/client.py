@@ -19,13 +19,7 @@ from agentplane.action_service.enrollments import (
     EnrollmentPreviewInput,
 )
 from agentplane.action_service.mcp_linkage import McpLinkageStart, McpLinkageStartView, McpLinkageView
-from agentplane.action_service.models import (
-    ActionEventView,
-    ActionHistoryPage,
-    ActionRequestView,
-    ActionState,
-    DecisionInput,
-)
+from agentplane.action_service.models import ActionHistoryPage, ActionRequestView, ActionState, DecisionInput
 from agentplane.action_service.policy_view import SubjectActionPolicyView
 from agentplane.subjects import ServiceAccountRef
 
@@ -200,12 +194,6 @@ class OperatorActionServiceClient:
     async def get(self, request_id: UUID) -> ActionRequestView:
         response = await self._request("GET", f"/v1/operator/action-requests/{request_id}")
         return ActionRequestView.model_validate(response.json())
-
-    async def events(self, request_id: UUID, *, after_sequence: int = 0) -> list[ActionEventView]:
-        response = await self._request(
-            "GET", f"/v1/operator/action-requests/{request_id}/events", params={"after_sequence": after_sequence}
-        )
-        return [ActionEventView.model_validate(event) for event in response.json()]
 
     async def decide(self, request_id: UUID, body: DecisionInput) -> ActionRequestView:
         response = await self._request(
