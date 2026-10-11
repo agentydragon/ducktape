@@ -10,7 +10,6 @@ import asyncpg
 import pytest
 import pytest_bazel
 from sqlalchemy.engine import make_url
-from testcontainers.postgres import PostgresContainer
 
 from agentplane.postgres.listener import PostgresListener
 
@@ -21,11 +20,8 @@ async def changed() -> asyncio.Event:
 
 
 @pytest.fixture
-async def listener(postgres_container: PostgresContainer, changed: asyncio.Event) -> PostgresListener:
-    url = make_url(
-        f"postgresql://postgres:postgres@{postgres_container.get_container_host_ip()}:"
-        f"{postgres_container.get_exposed_port(5432)}/postgres"
-    )
+async def listener(postgres_admin_url: str, changed: asyncio.Event) -> PostgresListener:
+    url = make_url(postgres_admin_url)
     return PostgresListener(
         url,
         channels=("listener_test_first", "listener_test_second"),

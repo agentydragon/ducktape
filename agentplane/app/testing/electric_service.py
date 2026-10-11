@@ -22,7 +22,7 @@ from agentplane.app.database_migrate import RUNNER
 from third_party.containers import electric_1_8_1, postgres_18, ryuk
 from util.oci import load_oci_image
 from util.testing.container_logs import LoggedContainer
-from util.testing.postgres import PostgresDatabaseTemplate, database_name_for_test
+from util.testing.postgres import PostgresDatabaseTemplate, migrated_database_template
 
 
 @dataclass(frozen=True)
@@ -99,17 +99,15 @@ def browser_postgres_server() -> Iterator[BrowserPostgres]:
             finally:
                 engine.dispose()
 
-            with PostgresDatabaseTemplate(admin_url, "agentplane_browser_template") as template:
-                RUNNER.apply(template.url)
+            with migrated_database_template(admin_url, "agentplane_browser_template", RUNNER) as template:
                 yield BrowserPostgres(network, admin_url, template)
 
 
 @asynccontextmanager
-async def browser_electric_service(postgres: BrowserPostgres, name_hint: str) -> AsyncIterator[ElectricService]:
+async def browser_electric_service(postgres: BrowserPostgres, database_name: str) -> AsyncIterator[ElectricService]:
     """Run a fresh Electric process against a fresh clone of the shard's migrated database."""
-    test_digest = hashlib.sha256(name_hint.encode()).hexdigest()
+    test_digest = hashlib.sha256(database_name.encode()).hexdigest()
     output_name = f"conversation-electric-{test_digest[:12]}"
-    database_name = database_name_for_test(name_hint)
     with postgres.template.clone(database_name) as database_url:
         database = make_url(database_url).database
         assert database is not None

@@ -49,6 +49,7 @@ py_library(
         "//props/testing/fixtures:runs",
         "//props/testing/fixtures:scopes",
         "//util/testing:otel_tracing",
+        "//util/testing:postgres_fixtures",
         "@pypi//opentelemetry_api",
         "@pypi//pytest",
     ],

@@ -163,6 +163,7 @@ py_library(
         "//agentplane/proto:event_pb2",
         "//util/bazel:runfiles",
         "//util/testing:frontend_visual",
+        "//util/testing:postgres_fixtures",
         "//util/testing:undeclared_outputs",
         "//util/testing:viewports",
         "@pypi//playwright",

@@ -32,6 +32,7 @@ from agentplane.app.threads.view.content import ContentStore
 from agentplane.proto import event_log_pb2, event_pb2
 from util.bazel.runfiles import get_required_path
 from util.testing.frontend_visual import CONTAINER_BASE_BROWSER_ARGS, chromium_executable
+from util.testing.postgres_fixtures import DatabaseNames
 from util.testing.undeclared_outputs import undeclared_outputs_dir
 from util.testing.viewports import DESKTOP, Viewport
 
@@ -126,9 +127,9 @@ def thread_browser_postgres() -> Iterator[BrowserPostgres]:
 
 @pytest.fixture
 async def electric(
-    request: pytest.FixtureRequest, thread_browser_postgres: BrowserPostgres
+    database_names: DatabaseNames, thread_browser_postgres: BrowserPostgres
 ) -> AsyncIterator[ElectricService]:
-    async with browser_electric_service(thread_browser_postgres, request.node.nodeid) as service:
+    async with browser_electric_service(thread_browser_postgres, database_names()) as service:
         yield service
 
 

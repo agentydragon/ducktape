@@ -13,9 +13,7 @@ import httpx
 import pytest
 from kubernetes_asyncio.client import CoreV1Api
 from sqlalchemy import create_engine, text
-from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import AsyncEngine
-from testcontainers.postgres import PostgresContainer
 
 from agentplane.app.action_policy import ActionPolicyInventory
 from agentplane.app.database import connect
@@ -70,10 +68,10 @@ from agentplane.sandbox_service.testing.fake_inventory import (
     close_fake_api_clients,
 )
 from agentplane.sandbox_service.testing.fake_rbac import FakeRbac
-from agentplane.sandbox_service.testing.history import initialize_service_database, service_database
+from agentplane.sandbox_service.testing.fixtures import service_database_template
 from agentplane.thread_fold.projection_lease import ProjectionLease
-from util.testing.postgres import PostgresDatabaseTemplate, database_name_for_test
-from util.testing.postgres_fixtures import postgres_container
+from util.testing.postgres import DatabaseClones, PostgresDatabaseTemplate, migrated_database_template
+from util.testing.postgres_fixtures import database_clones, database_names, postgres_admin_url, postgres_container
 
 
 @pytest.fixture(autouse=True)
@@ -97,15 +95,6 @@ _CALL_REPORT = pytest.StashKey[pytest.TestReport]()
 
 
 @pytest.fixture(scope="session")
-def postgres_admin_url(postgres_container: PostgresContainer) -> str:
-    """The sync admin URL for this test target's shared PostgreSQL container."""
-    return (
-        f"postgresql+psycopg://postgres:postgres@{postgres_container.get_container_host_ip()}"
-        f":{postgres_container.get_exposed_port(5432)}/postgres"
-    )
-
-
-@pytest.fixture(scope="session")
 def app_database_template(postgres_admin_url: str) -> Iterator[PostgresDatabaseTemplate]:
     """The app schema migrated once; each default `db_url` is a fresh clone of this template."""
     admin_engine = create_engine(postgres_admin_url, isolation_level="AUTOCOMMIT")
@@ -120,33 +109,18 @@ def app_database_template(postgres_admin_url: str) -> Iterator[PostgresDatabaseT
     finally:
         admin_engine.dispose()
 
-    with PostgresDatabaseTemplate(postgres_admin_url, "agentplane_app_test_template") as template:
-        RUNNER.apply(template.url)
+    with migrated_database_template(postgres_admin_url, "agentplane_app_test_template", RUNNER) as template:
         yield template
 
 
 @pytest.fixture
-def db_url(app_database_template: PostgresDatabaseTemplate, request: pytest.FixtureRequest) -> Iterator[str]:
-    with app_database_template.clone(database_name_for_test(request.node.nodeid)) as url:
-        yield make_url(url).set(drivername="postgresql+asyncpg").render_as_string(hide_password=False)
-
-
-@pytest.fixture(scope="session")
-async def service_database_template(postgres_admin_url: str) -> AsyncIterator[PostgresDatabaseTemplate]:
-    """Create the History + Commands schema once for the service database clones."""
-    with PostgresDatabaseTemplate(postgres_admin_url, "agentplane_service_test_template") as template:
-        async with service_database(template.url) as engine:
-            await initialize_service_database(engine)
-        yield template
+def db_url(app_database_template: PostgresDatabaseTemplate, database_clones: DatabaseClones) -> str:
+    return database_clones.clone(app_database_template, drivername="postgresql+asyncpg")
 
 
 @pytest.fixture
-def service_history_db_url(
-    service_database_template: PostgresDatabaseTemplate, request: pytest.FixtureRequest
-) -> Iterator[str]:
-    """A fresh clone of the combined History + Commands test schema."""
-    with service_database_template.clone(database_name_for_test(f"{request.node.nodeid}_service")) as url:
-        yield make_url(url).set(drivername="postgresql+asyncpg").render_as_string(hide_password=False)
+def service_history_db_url(service_database_template: PostgresDatabaseTemplate, database_clones: DatabaseClones) -> str:
+    return database_clones.clone(service_database_template, drivername="postgresql+asyncpg")
 
 
 @pytest.fixture

@@ -6,7 +6,7 @@ import pytest
 from sqlalchemy.engine import make_url
 
 from finance.plaid.db.testing import plaid_database_template, plaid_database_url
-from util.testing.postgres_fixtures import postgres_container
+from util.testing.postgres_fixtures import database_clones, database_names, postgres_admin_url, postgres_container
 
 
 @pytest.fixture

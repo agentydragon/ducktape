@@ -50,7 +50,6 @@ py_library(
         "@pypi//pytest",
         "@pypi//sqlalchemy",
         "@pypi//starlette",
-        "@pypi//testcontainers",
     ],
 )
 
