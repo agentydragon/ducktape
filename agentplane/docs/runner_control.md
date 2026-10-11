@@ -6,8 +6,7 @@ authenticates, fences and keeps connections alive, and delivers dispatch attempt
 (`runner_gateway/command_delivery.py`) for Sandboxes routed to it. The runner dials it when started
 with `--control-target` (`runner/control.py`), which the Sandbox Service passes to every new
 Sandbox's runner (`runner_control`). A Sandbox created before that is still reached through the
-inbound `Attach` RPC, which Cilium admits only from the Runner Gateway, and the History Service
-still follows every runner's Events over it. This is the contract the
+inbound `Attach` RPC, which Cilium admits only from the Runner Gateway. This is the contract the
 runner-initiated replacement implements. It covers command delivery, authentication, connection ownership and
 dispatch attempts, lifecycle requests (built: a runner that agrees `lifecycle` is listed, opened,
 resumed and sealed over the control stream), and the push of Events to the runner's ingress.
@@ -114,9 +113,8 @@ message Heartbeat {}
 Status: **accepted design (operator, 2026-10-10 PDT); deployed.** The runner pushes
 when started with `--ingress-target` (`runner/ingress.py`), which the Sandbox Service passes to new
 runners from its `runner_ingress` setting, and reports `flushed` from what it recorded. The History
-Service serves the ingress (`history_service/ingress.py`) on a listener of its own. It also still follows
-every Session over `Attach`, the only path for a Sandbox created before runners pushed; the two
-write the same log, which accepts exact replays.
+Service serves the ingress (`history_service/ingress.py`) on a listener of its own, and follows no
+runner.
 
 The runner pushes each Session's journal to one **ingress**, the endpoint its Sandbox names, and
 nothing else reads its journals. The History Service is the ingress when history is kept. A client
@@ -345,15 +343,14 @@ stream sends control requests: callers reach it through the Sandbox's control Se
 ([Connection records](#connection-records-in-kubernetes)), and background work such as sealing runs on the replica holding the Lease. Requests are bounded by the
 calling RPC's deadline, like dispatch attempts, and a reconnect replays none of them.
 
-| Inbound caller (Runner Gateway)                      | Control operation                                                |
-| ---------------------------------------------------- | ---------------------------------------------------------------- |
-| `ListSessions` RPC                                   | `ListSessions` (built)                                           |
-| `CreateSession` (`Initialize`, then `Attach` + spec) | `Initialize`, then `OpenSession` (built) with the client's ID    |
-| `ResumeSession` (`Attach` + retained spec)           | `ResumeSession` (built)                                          |
-| `LookupSession` (journal scan from cursor 0)         | none: a retried create confirms the client's Session ID          |
-| `FollowSession`                                      | none: Events go to the ingress ([Event ingress](#event-ingress)) |
-| `Teardown` sealing (`Seal`)                          | `Seal` (built), repeated until every Session is flushed          |
-| `SubmitCommand` relay                                | `DeliverCommand` (built)                                         |
+| Inbound caller (Runner Gateway)                      | Control operation                                             |
+| ---------------------------------------------------- | ------------------------------------------------------------- |
+| `ListSessions` RPC                                   | `ListSessions` (built)                                        |
+| `CreateSession` (`Initialize`, then `Attach` + spec) | `Initialize`, then `OpenSession` (built) with the client's ID |
+| `ResumeSession` (`Attach` + retained spec)           | `ResumeSession` (built)                                       |
+| `LookupSession` (journal scan from cursor 0)         | none: a retried create confirms the client's Session ID       |
+| `Teardown` sealing (`Seal`)                          | `Seal` (built), repeated until every Session is flushed       |
+| `SubmitCommand` relay                                | `DeliverCommand` (built)                                      |
 
 The VM experiment's runtime acceptance drives the guest runner directly through a port-forward and
 moves with the selected VM control path.
