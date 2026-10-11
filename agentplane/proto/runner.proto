@@ -152,16 +152,14 @@ message SessionSeal {
   string session_id = 1;
   // The session's final cursor in this Sandbox incarnation.
   uint64 cursor = 2;
-  // The runner's ingress has acknowledged the seal at `cursor`. A runner that pushes no Events
-  // leaves it false.
+  // The runner's ingress has acknowledged the seal at `cursor`.
   bool flushed = 3;
 }
 
 message SealResponse {
   repeated SessionSeal sessions = 1;
-  // The runner pushes its Events to an ingress, so each `flushed` turns true once that ingress
-  // acknowledges the seal. False, no `flushed` ever does.
-  bool pushes = 2;
+  reserved 2;
+  reserved "pushes";
 }
 
 // The session's journal is final: every entry through `cursor` precedes this message.

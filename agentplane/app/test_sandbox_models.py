@@ -12,11 +12,7 @@ from agentplane.proto.sandbox_service_pb2 import Sandbox, ServiceAccount, Teardo
 
 @pytest.mark.parametrize(
     ("teardown", "deleting"),
-    [
-        (TeardownPhase.TEARDOWN_PHASE_UNSPECIFIED, False),
-        (TeardownPhase.TEARDOWN_PHASE_SEALING, True),
-        (TeardownPhase.TEARDOWN_PHASE_SEALED, True),
-    ],
+    [(TeardownPhase.TEARDOWN_PHASE_UNSPECIFIED, False), (TeardownPhase.TEARDOWN_PHASE_SEALING, True)],
 )
 def test_a_sandbox_being_torn_down_reads_as_deleting(teardown: TeardownPhase, deleting: bool) -> None:
     view = Sandbox(

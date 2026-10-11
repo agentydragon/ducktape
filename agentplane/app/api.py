@@ -295,8 +295,8 @@ async def resume_sandbox(inventory: Inventory, name: str) -> Response:
 
 @router.delete("/{name}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_sandbox(inventory: Inventory, name: str) -> Response:
-    """Start deleting the sandbox and everything on its volume, once its Sessions are sealed and
-    every retention hold is satisfied; 409 while it is still running."""
+    """Start deleting the sandbox and everything on its volume, once its runner's ingress has
+    acknowledged every Session's seal; 409 while it is still running."""
     await inventory.delete(name)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
