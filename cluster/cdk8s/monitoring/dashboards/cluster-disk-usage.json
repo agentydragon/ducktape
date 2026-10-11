@@ -62,9 +62,7 @@
       },
       "options": {
         "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
+          "calcs": ["lastNotNull"],
           "fields": "",
           "values": false
         },
@@ -99,9 +97,7 @@
       },
       "options": {
         "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
+          "calcs": ["lastNotNull"],
           "fields": "",
           "values": false
         },
@@ -708,12 +704,7 @@
   "refresh": "5m",
   "schemaVersion": 39,
   "style": "dark",
-  "tags": [
-    "cluster",
-    "disk",
-    "storage",
-    "capacity"
-  ],
+  "tags": ["cluster", "disk", "storage", "capacity"],
   "templating": {
     "list": []
   },
