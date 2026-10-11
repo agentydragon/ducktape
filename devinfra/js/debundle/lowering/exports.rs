@@ -411,23 +411,24 @@ pub(super) fn auto_grown_residual_exports<'a>(
         entry_declared_names,
     } = facts;
     let mut needed = BTreeSet::<String>::new();
-    // `body_facts_by_module` is precomputed once upstream (see
-    // `lower_chunk`); both this auto-grow pass and the per-plan
-    // reference resolver read the same post-naturalization `ModuleBodyFacts`.
+    // Both export growth and per-plan import resolution read the same
+    // source/emitted binding uses produced at the naturalization boundary.
     for module in modules {
         let facts = &module.facts;
-        for id in &facts.referenced_idents {
-            if facts.provided_locals.contains(id) {
+        for reference in facts.binding_uses() {
+            if facts.provides(reference.emitted_id()) {
                 continue;
             }
-            let original_id = module.renames.original_id(id);
-            if binding_assignment.contains_key(&original_id) {
+            let Some(original_id) = reference.source_id() else {
+                continue;
+            };
+            if binding_assignment.contains_key(original_id) {
                 continue;
             }
-            if !declaration_by_name.contains_key(&original_id) {
+            if !declaration_by_name.contains_key(original_id) {
                 continue;
             }
-            if pre_existing_entry_exports.contains(&original_id) {
+            if pre_existing_entry_exports.contains(original_id) {
                 continue;
             }
             needed.insert(original_id.0.to_string());

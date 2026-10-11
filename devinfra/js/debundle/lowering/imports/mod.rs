@@ -19,7 +19,7 @@ pub(super) use imports_runtime::{
     source_chunk_imports_for_moved_body,
 };
 pub(super) use plan_references::{
-    ArtifactSourceImportResolutionCache, EntryExport, ModuleReferenceNeeds, SourceReferenceLookup,
+    ArtifactSourceImportResolutionCache, EntryExport, ModuleReferenceNeeds,
     collect_imported_reexports_by_module, plan_module_reference_needs,
 };
 pub(super) use runtime_imports::{

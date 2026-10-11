@@ -12,9 +12,9 @@
 //!
 //! - **Free sources** (return-object aliases of names the deriving
 //!   function does not bind — typically source-chunk import aliases)
-//!   rewrite references of top-level bindings. Their inverse projection
-//!   lets export growth and import planning resolve the original binding
-//!   while emitting the readable local name, and they keep the
+//!   rewrite references of top-level bindings. Naturalized reference facts
+//!   pair the source binding `Id` with the emitted `Id`, so export growth
+//!   and import planning can use the right identity, and they keep the
 //!   module-global target-uniqueness rule
 //!   (`rename_ledger::merge_module_renames`, applied at seal) — two of
 //!   them onto one target would collide in module scope. A target already
@@ -57,48 +57,33 @@ use crate::rename_ledger::{
 };
 use crate::visitors::{RenameAndShorthandNaturalizer, ShorthandNaturalizer};
 use analysis::{ModuleId, top_level_id};
-use anyhow::Result;
+use anyhow::{Result, ensure};
 use js_ast::is_binding_identifier;
 use js_ast::str_value;
 use std::collections::{BTreeMap, BTreeSet};
 use swc_ecma_ast::*;
 use swc_ecma_visit::{Visit, VisitMut, VisitMutWith, VisitWith};
 
-/// The rename maps `naturalize_module_body` applied, split by what may
-/// consume them. The split is final design, not a transition state:
-/// free-source heuristic aliases rewrite references function-locally
-/// without renaming any top-level declaration, so the two consumer
-/// families need different maps (see the ledger module doc's
-/// "Boundaries that validate at application").
-pub(super) struct NaturalizedRenames {
-    /// Plan-driven + surviving free heuristics, readable → original.
-    /// The body uses readable names, while source binding and import
-    /// tables are keyed by the original Ids.
-    pub(super) original_by_renamed: BTreeMap<String, String>,
+/// The immediate result of naturalization. `source_by_emitted` is consumed
+/// when post-rename reference facts are built; it is never handed to a
+/// planner as a separate map that the planner could forget to consult.
+struct NaturalizationResult {
+    source_by_emitted: BTreeMap<Id, Id>,
     /// Plan-driven (explicit) renames only — the renames that actually
     /// rename a top-level declaration module-wide. The ONLY map export
     /// locals and binding-comment keys may be remapped through: heuristic
     /// entries never rename a top-level declaration, so mapping a
     /// top-level name through the full rename map can remap an
     /// export/comment whose declaration kept its name.
-    pub(super) explicit: BTreeMap<String, String>,
-}
-
-impl NaturalizedRenames {
-    pub(super) fn original_id(&self, emitted: &Id) -> Id {
-        self.original_by_renamed
-            .get(emitted.0.as_ref())
-            .map(|original| (original.as_str().into(), emitted.1))
-            .unwrap_or_else(|| emitted.clone())
-    }
+    explicit: BTreeMap<String, String>,
 }
 
 /// One naturalization result: facts are collected from this exact post-rename
 /// body, and move with its rename maps into emission (not parallel vectors).
 pub(super) struct NaturalizedModuleBody {
     pub(super) body: Vec<ModuleItem>,
-    pub(super) renames: NaturalizedRenames,
-    pub(super) facts: crate::body_facts::ModuleBodyFacts,
+    pub(super) explicit_renames: BTreeMap<String, String>,
+    pub(super) facts: crate::body_facts::NaturalizedBodyFacts,
 }
 
 impl NaturalizedModuleBody {
@@ -109,12 +94,16 @@ impl NaturalizedModuleBody {
         plan_driven: BTreeMap<String, String>,
         chunk_top_level_mark: swc_common::Mark,
     ) -> Result<Self> {
-        let original_references = crate::body_facts::collect_module_body_facts(&body)
+        let source_facts = crate::body_facts::collect_module_body_facts(&body);
+        let original_references = source_facts
             .referenced_idents
-            .into_iter()
+            .iter()
             .map(|id| id.0.to_string())
             .collect();
-        let renames = naturalize_module_body(
+        let NaturalizationResult {
+            source_by_emitted,
+            explicit,
+        } = naturalize_module_body(
             &mut body,
             plan,
             module,
@@ -122,10 +111,24 @@ impl NaturalizedModuleBody {
             chunk_top_level_mark,
             &original_references,
         )?;
-        let facts = crate::body_facts::collect_module_body_facts(&body);
+        // If a pre-existing reference already used the emitted Id, two
+        // source identities would collapse onto one post-rename Id. Refuse
+        // that shape rather than silently assigning both to one source.
+        for (emitted, source) in &source_by_emitted {
+            ensure!(
+                !source_facts.referenced_idents.contains(emitted) || emitted == source,
+                "naturalization merges distinct source references onto emitted binding {}",
+                emitted.0,
+            );
+        }
+        let facts = crate::body_facts::NaturalizedBodyFacts::from_raw(
+            crate::body_facts::collect_module_body_facts(&body),
+            &source_by_emitted,
+            swc_common::SyntaxContext::empty().apply_mark(chunk_top_level_mark),
+        );
         Ok(Self {
             body,
-            renames,
+            explicit_renames: explicit,
             facts,
         })
     }
@@ -177,7 +180,7 @@ fn naturalize_module_body(
     plan_driven: BTreeMap<String, String>,
     chunk_top_level_mark: swc_common::Mark,
     original_references: &BTreeSet<String>,
-) -> Result<NaturalizedRenames> {
+) -> Result<NaturalizationResult> {
     // Occupancy facts for seal-time target validation, computed against
     // the pre-rename body (intents are keyed by original names).
     let root_names = collect_occupied_local_names(body);
@@ -344,12 +347,19 @@ fn naturalize_module_body(
         item.visit_mut_with(&mut applier);
     }
 
-    Ok(NaturalizedRenames {
-        original_by_renamed: sealed
-            .module_renames_by_name(module)
-            .into_iter()
-            .map(|(original, renamed)| (renamed, original))
-            .collect(),
+    let mut source_by_emitted = BTreeMap::new();
+    for (source, target) in sealed
+        .scope_renames(&RenameScope::Module(module))
+        .unwrap_or_default()
+    {
+        let emitted = (target, source.1);
+        ensure!(
+            source_by_emitted.insert(emitted, source).is_none(),
+            "naturalization produced two source bindings with one emitted Id",
+        );
+    }
+    Ok(NaturalizationResult {
+        source_by_emitted,
         explicit,
     })
 }

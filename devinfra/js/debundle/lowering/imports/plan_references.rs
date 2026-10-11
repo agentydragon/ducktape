@@ -1,11 +1,9 @@
 //! Plan what each lowered module needs to import from sibling modules,
 //! the source chunk, or the residual entry. `plan_module_reference_needs`
-//! walks the post-naturalize body facts and resolves each referenced Id
-//! to its provider through the naturalizer's original-name projection.
+//! walks binding uses that retain both the source and emitted Id.
 
-use crate::body_facts::ModuleBodyFacts;
+use crate::body_facts::NaturalizedBodyFacts;
 use crate::imports::{RuntimeImportFacts, RuntimeImportInfo};
-use crate::naturalize::NaturalizedRenames;
 use analysis::{BindingKind, LogicalModuleIndex, ModuleId};
 use anyhow::{Context, Result};
 use artifact::{ArtifactIndexes, ArtifactSourceImportResolver, ChunkBundle};
@@ -153,37 +151,30 @@ pub(crate) fn collect_imported_reexports_by_module(
     by_module
 }
 
-/// Maps emitted identifiers back to source bindings and retains source
-/// import facts for references that originated outside the chunk.
-pub(crate) struct SourceReferenceLookup<'a, 'b> {
-    pub(crate) runtime_imports: &'a RuntimeImportFacts,
-    pub(crate) renames: &'b NaturalizedRenames,
-}
-
 pub(crate) fn plan_module_reference_needs<'a>(
     module_index: usize,
-    body_facts: &ModuleBodyFacts,
+    body_facts: &NaturalizedBodyFacts,
     factorization: &ChunkFactorization,
     declaration_by_name: &HashMap<Id, Vec<usize>>,
     binding_assignment: &HashMap<Id, usize>,
     entry_exports_by_original_local: &HashMap<Id, EntryExport>,
-    lookup: SourceReferenceLookup<'a, '_>,
+    runtime_imports: &'a RuntimeImportFacts,
 ) -> ModuleReferenceNeeds<'a> {
     let mut needs = ModuleReferenceNeeds::default();
-    for body_id in &body_facts.referenced_idents {
-        // Naturalization mutates the identifier's sym, preserving its ctxt.
-        // Source facts and owner assignments still use the pre-rename Id;
-        // import locals in the emitted module use body_id.
-        let original_id = lookup.renames.original_id(body_id);
+    for reference in body_facts.binding_uses() {
+        let Some(original_id) = reference.source_id() else {
+            continue;
+        };
+        let body_id = reference.emitted_id();
         let name_str = body_id.0.as_ref();
         if let Some(ModuleId(LogicalModuleIndex(provider_index))) =
-            factorization.analysis.owner_of(&original_id)
+            factorization.analysis.owner_of(original_id)
         {
             if provider_index != module_index
                 && let Some(provider) = factorization
                     .analysis
                     .logical_module(LogicalModuleIndex(provider_index))
-                && let Some(exported_name) = provider.rename_map.get(&original_id)
+                && let Some(exported_name) = provider.rename_map.get(original_id)
             {
                 needs
                     .cross_module_imports_by_provider
@@ -194,11 +185,11 @@ pub(crate) fn plan_module_reference_needs<'a>(
             continue;
         }
 
-        if !body_facts.provided_locals.contains(body_id)
-            && !binding_assignment.contains_key(&original_id)
-            && declaration_by_name.contains_key(&original_id)
+        if !body_facts.provides(body_id)
+            && !binding_assignment.contains_key(original_id)
+            && declaration_by_name.contains_key(original_id)
         {
-            if let Some(entry_export) = entry_exports_by_original_local.get(&original_id) {
+            if let Some(entry_export) = entry_exports_by_original_local.get(original_id) {
                 needs
                     .residual_entry_imports
                     .insert(name_str.to_string(), entry_export.clone());
@@ -208,10 +199,10 @@ pub(crate) fn plan_module_reference_needs<'a>(
             continue;
         }
 
-        if body_facts.imported_locals.contains(body_id) {
+        if body_facts.imports(body_id) {
             continue;
         }
-        let info = lookup.runtime_imports.imports.get(&original_id);
+        let info = runtime_imports.imports.get(original_id);
         if let Some(info) = info {
             needs.runtime_reimports.insert(body_id.clone(), info);
         }

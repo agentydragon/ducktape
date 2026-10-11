@@ -1,10 +1,11 @@
-//! Per-module post-naturalize body facts: which Ids are imported,
-//! provided, or referenced inside the module body. Built by walking the
-//! mutated AST with `RefCollector` (a `Visit` impl that respects
-//! function-level shadowing) plus pulling locals out of import specifiers.
+//! Per-module body facts. The raw collector walks an AST with `RefCollector`
+//! (which respects function-level shadowing) and finds imported, provided,
+//! and referenced Ids. At the naturalization boundary, each reference is
+//! paired with its source binding Id before any import/export planner sees it.
 
 use crate::chunk_ast::{binding_names, top_level_declaration_ids};
-use std::collections::{BTreeSet, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashSet};
+use swc_common::SyntaxContext;
 use swc_ecma_ast::*;
 use swc_ecma_visit::{Visit, VisitWith};
 
@@ -22,6 +23,76 @@ pub(super) struct ModuleBodyFacts {
     /// appears here under the post-rename `(sym, ctxt)` (the rename
     /// mutates `sym` in place; `ctxt` is preserved).
     pub(super) referenced_idents: HashSet<Id>,
+}
+
+/// One reference after naturalization. `source_id` is present only when the
+/// reference has the source chunk's top-level binding context. Function-local
+/// and unresolved references cannot be queried in source binding tables.
+/// A free alias may leave some uses of a source under the old spelling while
+/// changing others, so this relation belongs to references, not to a single
+/// name per source binding.
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub(super) struct BindingUse {
+    source_id: Option<Id>,
+    emitted_id: Id,
+}
+
+impl BindingUse {
+    pub(super) fn source_id(&self) -> Option<&Id> {
+        self.source_id.as_ref()
+    }
+
+    pub(super) fn emitted_id(&self) -> &Id {
+        &self.emitted_id
+    }
+}
+
+/// The only reference facts accepted by export growth and import planning.
+/// Top-level source references carry both source and emitted identities;
+/// local or unresolved references have no source-table identity.
+pub(super) struct NaturalizedBodyFacts {
+    imported_locals: HashSet<Id>,
+    provided_locals: HashSet<Id>,
+    binding_uses: HashSet<BindingUse>,
+}
+
+impl NaturalizedBodyFacts {
+    pub(super) fn from_raw(
+        facts: ModuleBodyFacts,
+        source_by_emitted: &BTreeMap<Id, Id>,
+        source_top_level_ctxt: SyntaxContext,
+    ) -> Self {
+        let binding_uses = facts
+            .referenced_idents
+            .into_iter()
+            .map(|emitted_id| BindingUse {
+                source_id: (emitted_id.1 == source_top_level_ctxt).then(|| {
+                    source_by_emitted
+                        .get(&emitted_id)
+                        .cloned()
+                        .unwrap_or_else(|| emitted_id.clone())
+                }),
+                emitted_id,
+            })
+            .collect();
+        Self {
+            imported_locals: facts.imported_locals,
+            provided_locals: facts.provided_locals,
+            binding_uses,
+        }
+    }
+
+    pub(super) fn binding_uses(&self) -> impl Iterator<Item = &BindingUse> {
+        self.binding_uses.iter()
+    }
+
+    pub(super) fn provides(&self, emitted_id: &Id) -> bool {
+        self.provided_locals.contains(emitted_id)
+    }
+
+    pub(super) fn imports(&self, emitted_id: &Id) -> bool {
+        self.imported_locals.contains(emitted_id)
+    }
 }
 
 #[derive(Default)]

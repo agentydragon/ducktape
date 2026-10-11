@@ -10,9 +10,8 @@ pub(crate) struct RuntimeImportFacts {
     /// Maps a source-chunk import binding's `Id` (the local name at the
     /// import site) to the `RuntimeImportInfo` describing where it came
     /// from. Keyed by the **pre-rename** `Id` because the map is built
-    /// before any naturalizer pass runs; `plan_module_reference_needs`
-    /// bridges the rename via `NaturalizedRenames::original_id` when
-    /// the body has been renamed.
+    /// before any naturalizer pass runs; naturalized reference facts retain
+    /// this source Id alongside each emitted reference Id.
     pub(crate) imports: HashMap<Id, RuntimeImportInfo>,
 }
 

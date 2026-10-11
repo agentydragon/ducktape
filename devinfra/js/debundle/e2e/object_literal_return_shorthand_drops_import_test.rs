@@ -9,15 +9,12 @@
 //! renames every `value` identifier to `key` (so `{ key: value }` becomes
 //! `{ key: key }`) and collapses it to the shorthand `{ key }`. The source
 //! chunk's `runtime_imports` map is keyed by the original local name
-//! `value`, so `plan_module_reference_needs` takes the heuristic-rename map
-//! produced by `naturalize_module_body` and, on a miss for a post-rename
-//! name, reverse-resolves to the pre-rename original and looks *that* up in
-//! `runtime_imports`. The carried `RuntimeImportInfo` still has
+//! `value`, so the naturalized reference facts carry both source `value`
+//! and emitted `propKeyA` identities. `plan_module_reference_needs` uses
+//! the source ID to look up `runtime_imports`. The carried `RuntimeImportInfo` still has
 //! `imported = "value"`, so emit produces
 //! `import { value as key } from "../provider.js"`; a dropped import would
 //! leave `key` free (`ReferenceError: key is not defined` at module load).
-//! See the "Rename pipeline" entry in <devinfra/js/debundle/TODO.md> for the
-//! architectural follow-up that would let this defensive bridge retire.
 //!
 //! ## Repro shape
 //!

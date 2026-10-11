@@ -77,3 +77,21 @@ export { factory };
 
     assert_entry_output(&fixture, "true\n");
 }
+
+#[test]
+fn one_source_binding_keeps_original_and_readable_uses() {
+    let fixture = run_fixture(FixtureOpts::new(
+        r#"var a = "foo";
+function factory() { return { label: a }; }
+function direct() { return a; }
+console.log(factory().label + ":" + direct());
+export { factory, direct };
+"#,
+        vec![logical_module(
+            "consumer",
+            &[Member::new("factory"), Member::new("direct")],
+        )],
+    ));
+
+    assert_entry_output(&fixture, "foo:foo\n");
+}

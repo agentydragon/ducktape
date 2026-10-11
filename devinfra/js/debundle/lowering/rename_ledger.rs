@@ -6,9 +6,8 @@
 //! validates the intents and freezes them into the read-only
 //! [`SealedRenames`], and one post-seal executor pass per scope unit is
 //! the only mutation of that unit's AST. No pass invents a rename after
-//! seal; consumers that bridge pre- and post-rename names consult the
-//! sealed maps. The naturalized body currently retains an inverse
-//! projection for source-binding lookups.
+//! seal; consumers that bridge pre- and post-rename names retain source
+//! and emitted IDs for source-chunk top-level bindings in naturalized facts.
 //! There is no pre-seal trial application: capture facts reach seal from
 //! read-only walks of the **un-renamed** body. A later planner must still
 //! use the source binding identity when it reads source-keyed tables.
@@ -149,10 +148,9 @@
 //!   checked; a pre-naturalization reference check rejects targets already
 //!   used by another source reference, and the deriving subtree's bound-name
 //!   rule — applied at seal to their `Function`-scope copies — guards local
-//!   capture. This is also why `NaturalizedRenames` keeps its inverse /
-//!   `explicit`
-//!   split: export locals and binding-comment keys may remap only
-//!   through renames that actually rename a top-level declaration.
+//!   capture. Naturalized reference facts retain source/emitted binding
+//!   IDs, while export locals and binding-comment keys use only explicit
+//!   renames that actually rename a top-level declaration.
 //!
 //! ## Derive clone
 //!
@@ -177,7 +175,7 @@
 //! parameter or root declaration `Id`. The `*_by_name` projections remain
 //! for public-name and metadata consumers whose contracts use strings;
 //! they are not used to execute AST renames. Source-versus-emitted binding
-//! provenance after naturalization is a separate phase boundary.
+//! provenance is carried by `NaturalizedBodyFacts::binding_uses`.
 //!
 //! ## Contributor inventory
 //!
@@ -1022,8 +1020,8 @@ impl SealedRenames {
     }
 
     /// One module's renames projected to bare names, sorted — plan-driven
-    /// and surviving free-source heuristics merged. The naturalizer inverts
-    /// this map into `NaturalizedRenames::original_by_renamed`.
+    /// and surviving free-source heuristics merged. Used for name-only
+    /// plan construction; AST application and provenance use typed maps.
     pub fn module_renames_by_name(&self, module: ModuleId) -> BTreeMap<String, String> {
         self.scope_renames_by_name(&RenameScope::Module(module))
     }

@@ -182,11 +182,6 @@ precondition is implemented; do not whitelist constructors that can throw.
 the collect → seal → execute-once `RenameLedger` pipeline. Ideas it unlocked,
 still open:
 
-- **Source/emitted binding provenance.** The AST rename executor is now
-  `Id`-keyed, but the naturalized body still reconstructs source bindings
-  through an inverse name projection. Carry source and emitted `Id`s
-  together in the post-naturalization reference facts so import/export
-  planners cannot query source tables with an emitted identity.
 - **Aggressive auto-naturalization.** Now safe to build: every rename
   flows through one seal, so a new auto-naming heuristic contributor
   (readable names for still-minified bindings, driven by the

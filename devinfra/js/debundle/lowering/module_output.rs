@@ -12,7 +12,7 @@ use super::scope_names::collect_local_binding_names;
 use crate::exports::{export_named_for_bindings, omit_existing_local_exports};
 use crate::imports::{
     ArtifactSourceImportResolutionCache, EntryExport, ImportLocalRenameSink, ModuleReferenceNeeds,
-    PlannedVendorReimports, RuntimeImportFacts, SourceReferenceLookup, VendorReimportOracle,
+    PlannedVendorReimports, RuntimeImportFacts, VendorReimportOracle,
     cross_module_imports_for_plan, final_module_exports, group_specifiers_into_import_decls,
     imported_binding_named_specifier, phantom_side_effect_imports, plan_module_reference_needs,
     plan_vendor_reimports, residual_entry_imports_for_moved_body,
@@ -102,7 +102,7 @@ pub(super) fn emit_module(inputs: ModuleEmissionInputs<'_>) -> Result<LoweredMod
     } = inputs;
     let NaturalizedModuleBody {
         mut body,
-        renames: local_renames,
+        explicit_renames,
         facts: body_facts,
     } = naturalized;
     let ModuleReferenceNeeds {
@@ -118,10 +118,7 @@ pub(super) fn emit_module(inputs: ModuleEmissionInputs<'_>) -> Result<LoweredMod
         declaration_by_name,
         binding_assignment,
         entry_exports_by_original_local,
-        SourceReferenceLookup {
-            runtime_imports: runtime_import_facts,
-            renames: &local_renames,
-        },
+        runtime_import_facts,
     );
     // Import-local mints for this plan's body flow through a per-plan
     // ledger (scope: this plan's `Module`, origin: `ImportInduced`);
@@ -410,7 +407,7 @@ pub(super) fn emit_module(inputs: ModuleEmissionInputs<'_>) -> Result<LoweredMod
         // specifier refers to, so mapping through the merged map can
         // emit `export { x as y }` for an `x` that was never declared
         // (a load-time SyntaxError).
-        let mut exports = final_module_exports(exports, &local_renames.explicit);
+        let mut exports = final_module_exports(exports, &explicit_renames);
         exports.extend(
             import_member_exports
                 .iter()
@@ -435,7 +432,7 @@ pub(super) fn emit_module(inputs: ModuleEmissionInputs<'_>) -> Result<LoweredMod
         source_path,
     };
     let (file, record, lowering) =
-        build_module_output(plan, body, &local_renames.explicit, &output_context);
+        build_module_output(plan, body, &explicit_renames, &output_context);
     Ok(LoweredModuleOutput {
         file,
         record,
