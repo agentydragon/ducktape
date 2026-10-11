@@ -112,13 +112,6 @@ class HistoryService(protocol_pb2_grpc.HistoryServiceServicer):
             )
 
     @override
-    async def ListSessionSummaries(
-        self, request: history_pb2.ListSessionSummariesRequest, context: grpc.aio.ServicerContext
-    ) -> history_pb2.ListSessionSummariesResponse:
-        async with self.reader(context):
-            return await self.resources.summaries.list_page(request)
-
-    @override
     async def GetSessionSummary(
         self, request: history_pb2.GetSessionSummaryRequest, context: grpc.aio.ServicerContext
     ) -> history_pb2.SessionSummary:

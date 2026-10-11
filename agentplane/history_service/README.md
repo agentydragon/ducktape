@@ -78,11 +78,9 @@ caught-up fold. `fold_interval_s` remains the retry interval after failures and 
 holds a Session lease. Each cycle logs how many of its leased Sessions and events it is behind. A page that carries an item's completion carries its settlement, so the fold skips the settled
 cursors and drops evidence it recorded for them before they settled.
 
-Session summaries (`ListSessionSummaries`, `GetSessionSummary`) read that fold. They list newest
-first by the time of a Session's first event, with not-yet-folded Sessions ahead, and report the
-committed cursor beside the folded one. A page token continues only the filter it was issued for.
-`BatchGetSessionSummaries` reads up to 200 named Sessions' summaries at once, leaving out any it has
-no history for.
+Session summaries (`GetSessionSummary`, and `BatchGetSessionSummaries` for up to 200 named Sessions
+at once, leaving out any it has no history for) read that fold and report the committed cursor beside
+the folded one.
 
 `WatchSessionSummaries` tells a reader when to re-read: each fold commit NOTIFYs the history
 database, and every replica forwards that to its watchers as a payload-free `changed`. A stream opens

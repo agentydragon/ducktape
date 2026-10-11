@@ -121,16 +121,6 @@ class HistoryServiceClient:
         except grpc.aio.AioRpcError as error:
             _raise(error)
 
-    async def list_session_summaries(
-        self, request: history_pb2.ListSessionSummariesRequest
-    ) -> history_pb2.ListSessionSummariesResponse:
-        try:
-            return await self.stub.ListSessionSummaries(
-                request, metadata=await self.metadata(), timeout=self.request_timeout_s
-            )
-        except grpc.aio.AioRpcError as error:
-            _raise(error)
-
     async def batch_get_session_summaries(self, session_ids: Collection[str]) -> list[history_pb2.SessionSummary]:
         try:
             response = await self.stub.BatchGetSessionSummaries(

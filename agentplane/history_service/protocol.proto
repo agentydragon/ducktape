@@ -13,7 +13,6 @@ service HistoryService {
   rpc ReadSessionEvents(ReadSessionEventsRequest) returns (ReadSessionEventsResponse);
   rpc ReadSessionObservations(ReadSessionObservationsRequest) returns (ReadSessionObservationsResponse);
   // Newest first by `first_event_at`, Sessions with nothing folded yet ahead of the rest.
-  rpc ListSessionSummaries(ListSessionSummariesRequest) returns (ListSessionSummariesResponse);
   rpc GetSessionSummary(GetSessionSummaryRequest) returns (SessionSummary);
   // The named Sessions' summaries, in no particular order; a Session with no history is left out.
   rpc BatchGetSessionSummaries(BatchGetSessionSummariesRequest) returns (BatchGetSessionSummariesResponse);
@@ -98,23 +97,6 @@ message ReadSessionObservationsResponse {
   repeated CursorRange settled = 3;
 }
 
-message ListSessionSummariesRequest {
-  // Both or neither: the Sessions of one Sandbox name, across its incarnations.
-  optional string sandbox_namespace = 1;
-  optional string sandbox_name = 2;
-  // At most 200.
-  uint32 limit = 3;
-  // Opaque; valid only with the filter it was issued for.
-  bytes page_token = 4;
-}
-
-message ListSessionSummariesResponse {
-  repeated SessionSummary summaries = 1;
-  // Empty on the last page. Paging never skips a Session; one whose history begins while
-  // paging moves from the not-yet-folded head to the newest, so it can be served twice.
-  bytes next_page_token = 2;
-}
-
 message GetSessionSummaryRequest {
   string session_id = 1;
 }
@@ -157,15 +139,6 @@ message SessionSummary {
   FeedStatus feed_status = 12;
   // With FEED_STATUS_FAILED: why the runner's history was rejected.
   optional string feed_error = 13;
-}
-
-// Internal to the History Service: the serialized form of a page token.
-message SessionSummaryPageToken {
-  optional string sandbox_namespace = 1;
-  optional string sandbox_name = 2;
-  // The last Session served; absent `first_event_at` means it had nothing folded yet.
-  google.protobuf.Timestamp first_event_at = 3;
-  string session_id = 4;
 }
 
 message ReadThreadEntitiesRequest {

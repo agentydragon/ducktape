@@ -150,29 +150,6 @@ async def test_read_refusals(
     assert refused.value.code() == code
 
 
-@pytest.mark.parametrize(
-    ("metadata", "listing", "code"),
-    [
-        (bearer(OTHER_TOKEN), history_pb2.ListSessionSummariesRequest(limit=10), grpc.StatusCode.PERMISSION_DENIED),
-        (bearer(READER_TOKEN), history_pb2.ListSessionSummariesRequest(limit=0), grpc.StatusCode.INVALID_ARGUMENT),
-        (
-            bearer(READER_TOKEN),
-            history_pb2.ListSessionSummariesRequest(limit=10, page_token=b"\xff"),
-            grpc.StatusCode.INVALID_ARGUMENT,
-        ),
-    ],
-)
-async def test_summary_list_refusals(
-    stub: protocol_pb2_grpc.HistoryServiceAsyncStub,
-    metadata: tuple[tuple[str, str], ...],
-    listing: history_pb2.ListSessionSummariesRequest,
-    code: grpc.StatusCode,
-) -> None:
-    with pytest.raises(grpc.aio.AioRpcError) as refused:
-        await stub.ListSessionSummaries(listing, metadata=metadata)
-    assert refused.value.code() == code
-
-
 async def test_thread_read_refusals(stub: protocol_pb2_grpc.HistoryServiceAsyncStub) -> None:
     with pytest.raises(grpc.aio.AioRpcError) as no_window:
         await stub.ReadThreadEntities(

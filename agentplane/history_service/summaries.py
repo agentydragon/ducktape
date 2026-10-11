@@ -1,13 +1,11 @@
-"""Session summaries from the History Service fold, paged newest first under stable tokens."""
+"""Session summaries from the History Service fold."""
 
 from collections.abc import Set
-from datetime import UTC
 from typing import cast
 from uuid import UUID
 
 from google.protobuf.json_format import ParseDict
-from google.protobuf.message import DecodeError
-from sqlalchemy import ColumnElement, Select, and_, or_, select
+from sqlalchemy import Select, select
 from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
 
 from agentplane.history_service import protocol_pb2
@@ -16,52 +14,15 @@ from agentplane.history_service.storage.store import HistoryNotFoundError
 from agentplane.proto import event_pb2
 from agentplane.thread_fold.models import ThreadCheckpoint, ThreadHistorySummary
 
-MAX_PAGE = 200
+MAX_BATCH = 200
 
 
 class SummaryReader:
     def __init__(self, engine: AsyncEngine) -> None:
         self._sessions = async_sessionmaker(engine)
 
-    async def list_page(
-        self, request: protocol_pb2.ListSessionSummariesRequest
-    ) -> protocol_pb2.ListSessionSummariesResponse:
-        if not 1 <= request.limit <= MAX_PAGE:
-            raise ValueError("invalid summary page size")
-        if request.HasField("sandbox_namespace") != request.HasField("sandbox_name"):
-            raise ValueError("a Sandbox filter names both its namespace and name")
-        query = _summaries()
-        if request.HasField("sandbox_name"):
-            query = query.where(
-                SessionHistory.sandbox_namespace == request.sandbox_namespace,
-                SessionHistory.sandbox_name == request.sandbox_name,
-            )
-        if request.page_token:
-            query = query.where(_after(_token(request)))
-        async with self._sessions() as session:
-            rows = list(
-                await session.execute(
-                    query.order_by(
-                        ThreadHistorySummary.first_event_at.desc().nulls_first(), SessionHistory.id.desc()
-                    ).limit(request.limit + 1)
-                )
-            )
-        response = protocol_pb2.ListSessionSummariesResponse(
-            summaries=[_summary(*row) for row in rows[: request.limit]]
-        )
-        if len(rows) > request.limit:
-            last = response.summaries[-1]
-            token = protocol_pb2.SessionSummaryPageToken(session_id=last.session_id)
-            if request.HasField("sandbox_name"):
-                token.sandbox_namespace = request.sandbox_namespace
-                token.sandbox_name = request.sandbox_name
-            if last.HasField("first_event_at"):
-                token.first_event_at.CopyFrom(last.first_event_at)
-            response.next_page_token = token.SerializeToString()
-        return response
-
     async def get_many(self, session_ids: Set[UUID]) -> list[protocol_pb2.SessionSummary]:
-        if len(session_ids) > MAX_PAGE:
+        if len(session_ids) > MAX_BATCH:
             raise ValueError("too many Sessions in one summary read")
         async with self._sessions() as session:
             rows = await session.execute(_summaries().where(SessionHistory.id.in_(session_ids)))
@@ -81,35 +42,6 @@ def _summaries() -> Select[tuple[SessionHistory, ThreadHistorySummary, ThreadChe
         select(SessionHistory, ThreadHistorySummary, ThreadCheckpoint)
         .outerjoin(ThreadHistorySummary, ThreadHistorySummary.thread_id == SessionHistory.id)
         .outerjoin(ThreadCheckpoint, ThreadCheckpoint.thread_id == SessionHistory.id)
-    )
-
-
-def _token(request: protocol_pb2.ListSessionSummariesRequest) -> protocol_pb2.SessionSummaryPageToken:
-    try:
-        token = protocol_pb2.SessionSummaryPageToken.FromString(request.page_token)
-    except DecodeError as error:
-        raise ValueError("malformed summary page token") from error
-    # A token continues only the listing it was issued for, never a wider one.
-    if (token.HasField("sandbox_namespace"), token.sandbox_namespace, token.sandbox_name) != (
-        request.HasField("sandbox_namespace"),
-        request.sandbox_namespace,
-        request.sandbox_name,
-    ):
-        raise ValueError("summary page token was issued for another filter")
-    return token
-
-
-def _after(token: protocol_pb2.SessionSummaryPageToken) -> ColumnElement[bool]:
-    session_id = UUID(token.session_id)
-    if not token.HasField("first_event_at"):
-        return or_(
-            ThreadHistorySummary.first_event_at.is_not(None),
-            and_(ThreadHistorySummary.first_event_at.is_(None), SessionHistory.id < session_id),
-        )
-    at = token.first_event_at.ToDatetime(tzinfo=UTC)
-    return or_(
-        ThreadHistorySummary.first_event_at < at,
-        and_(ThreadHistorySummary.first_event_at == at, SessionHistory.id < session_id),
     )
 
 
