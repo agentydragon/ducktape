@@ -23,7 +23,7 @@ from agentplane.history_service.fold.models import (
     ThreadPayloadManifest,
 )
 from agentplane.history_service.fold.views import EntityKind, ThreadOperationalState
-from agentplane.history_service.fold_shadow import FOLD_EPOCH
+from agentplane.history_service.fold_runner import FOLD_EPOCH
 from agentplane.history_service.testing.history import History
 from agentplane.proto import command_pb2, event_pb2, runner_pb2
 from agentplane.runner.codex import CodexAdapter

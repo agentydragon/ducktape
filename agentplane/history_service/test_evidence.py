@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 from agentplane.history_service import protocol_pb2
 from agentplane.history_service.evidence import EvidenceNotFoundError, EvidenceReader
 from agentplane.history_service.fold.views import EntityKind
-from agentplane.history_service.fold_shadow import FOLD_EPOCH, FoldShadow
+from agentplane.history_service.fold_runner import FOLD_EPOCH, FoldRunner
 from agentplane.history_service.storage.store import Store
 from agentplane.history_service.testing.delta_spans import claude_text
 from agentplane.history_service.thread_reads import ThreadScopeResetError
@@ -52,7 +52,7 @@ async def fold(engine: AsyncEngine, history: Store, entries: list[event_log_pb2.
         runner_session_id="test-runner-session",
     )
     await history.append(session_id, entries)
-    await FoldShadow(engine=engine, history=history, concurrency=1, page_size=1000).cycle()
+    await FoldRunner(engine=engine, history=history, concurrency=1, page_size=1000).cycle()
     return session_id
 
 
@@ -113,7 +113,7 @@ async def test_a_frame_settled_before_the_fold_forgets_its_link_is_unavailable(
         runner_session_id="test-runner-session",
     )
     await settling.append(session_id, span[:6])
-    await FoldShadow(engine=engine, history=settling, concurrency=1, page_size=1000).cycle()
+    await FoldRunner(engine=engine, history=settling, concurrency=1, page_size=1000).cycle()
     await settling.append(session_id, span[6:])
 
     frames = await reader.native_frames(

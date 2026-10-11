@@ -44,7 +44,7 @@ async def follow(
                     yield _frame("event", MessageToDict(entry), event_id=entry.cursor)
                     cursor = entry.cursor
             snapshot = await event_logs.feed_state(thread_id)
-            # A terminal snapshot may precede shadow catch-up, or be an older end that entries
+            # A terminal snapshot may precede fold catch-up, or be an older end that entries
             # already streamed have superseded and the fold has yet to clear. It ends the stream
             # only once it is at the streamed cursor; otherwise wait without busy-polling.
             if (

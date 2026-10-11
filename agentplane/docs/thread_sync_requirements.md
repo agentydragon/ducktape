@@ -34,7 +34,7 @@ app.
 | P9  | Pending and optimistic commands reconcile after a lost reply.                                                                                                                              | Product behaviour                                  |
 
 **P7 is cheap.** The epoch exists for forward compatibility, not for a runtime event: nothing at
-runtime mints one. `FOLD_EPOCH` (`history_service/fold_shadow.py`) is stamped when a
+runtime mints one. `FOLD_EPOCH` (`history_service/fold_runner.py`) is stamped when a
 thread's fold is first created, and a later batch under a different constant raises rather than
 refolding. Only a deploy that changes the fold's output shape changes it, and under C3 the answer is
 to reset the data rather than swap it under a reader. So P7 requires only the refusal — a `410`

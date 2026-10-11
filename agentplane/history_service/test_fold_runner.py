@@ -1,15 +1,20 @@
-"""The shadow fold over a migrated history database, read from its own raw log."""
+"""The History Service fold over a migrated history database, read from its own raw log."""
 
 import asyncio
+import typing
 from datetime import UTC, datetime, timedelta
 from uuid import UUID, uuid4
 
+import grpc
 import pytest
 import pytest_bazel
 from google.protobuf.timestamp_pb2 import Timestamp
+from grpc_health.v1 import health_pb2, health_pb2_grpc
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
+from agentplane.grpc_serving import add_health, serving
+from agentplane.history_service import protocol_pb2
 from agentplane.history_service.fold.models import (
     ThreadCheckpoint,
     ThreadEntity,
@@ -19,7 +24,7 @@ from agentplane.history_service.fold.models import (
     ThreadPayloadChunk,
 )
 from agentplane.history_service.fold.views import EntityKind
-from agentplane.history_service.fold_shadow import FOLD_EPOCH, FoldBacklog, FoldShadow
+from agentplane.history_service.fold_runner import FOLD_EPOCH, HEALTH_SERVICE, FoldBacklog, FoldRunner
 from agentplane.history_service.storage.history_changes import HistoryChanges
 from agentplane.history_service.storage.store import Store
 from agentplane.history_service.testing.delta_spans import claude_text
@@ -85,10 +90,10 @@ async def test_folds_retained_sessions_a_page_per_cycle_until_caught_up(engine: 
     entries = [entry(1, harness_started=event_pb2.HarnessStarted(pid=7)), *turn(2)]
     folded = await retained_session(history, entries)
     empty = await retained_session(history, [])
-    shadow = FoldShadow(engine=engine, history=history, concurrency=2, page_size=PAGE_SIZE)
+    folder = FoldRunner(engine=engine, history=history, concurrency=2, page_size=PAGE_SIZE)
 
-    assert await shadow.cycle() == FoldBacklog(sessions=2, behind=1, events_behind=len(entries) - PAGE_SIZE)
-    assert await shadow.cycle() == FoldBacklog(sessions=2, behind=0, events_behind=0)
+    assert await folder.cycle() == FoldBacklog(sessions=2, behind=1, events_behind=len(entries) - PAGE_SIZE)
+    assert await folder.cycle() == FoldBacklog(sessions=2, behind=0, events_behind=0)
 
     async with async_sessionmaker(engine)() as session:
         checkpoint = await session.get(ThreadCheckpoint, folded)
@@ -107,7 +112,7 @@ async def test_folds_retained_sessions_a_page_per_cycle_until_caught_up(engine: 
 async def test_run_folds_without_waiting_out_the_interval_while_behind(engine: AsyncEngine, history: Store) -> None:
     entries = turn(1)
     session_id = await retained_session(history, entries)
-    shadow = FoldShadow(engine=engine, history=history, concurrency=1, page_size=PAGE_SIZE)
+    folder = FoldRunner(engine=engine, history=history, concurrency=1, page_size=PAGE_SIZE)
     changes = HistoryChanges(engine.url)
     sessions = async_sessionmaker(engine)
 
@@ -123,7 +128,7 @@ async def test_run_folds_without_waiting_out_the_interval_while_behind(engine: A
 
     async with changes.listener.listen(), asyncio.TaskGroup() as tasks:
         # More than a page behind: an interval wait between pages would outlast the timeout.
-        running = tasks.create_task(shadow.run(interval_s=3600, changes=changes))
+        running = tasks.create_task(folder.run(interval_s=3600, changes=changes, health=add_health(grpc.aio.server())))
         async with asyncio.timeout(30):
             await caught_up(len(entries))
             await history.append(session_id, [entry(len(entries) + 1, harness_started=event_pb2.HarnessStarted())])
@@ -133,8 +138,8 @@ async def test_run_folds_without_waiting_out_the_interval_while_behind(engine: A
 
 async def test_replicas_split_sessions_by_lease(engine: AsyncEngine, history: Store) -> None:
     session_id = await retained_session(history, turn(1))
-    first = FoldShadow(engine=engine, history=history, concurrency=1, page_size=PAGE_SIZE)
-    second = FoldShadow(engine=engine, history=history, concurrency=1, page_size=PAGE_SIZE)
+    first = FoldRunner(engine=engine, history=history, concurrency=1, page_size=PAGE_SIZE)
+    second = FoldRunner(engine=engine, history=history, concurrency=1, page_size=PAGE_SIZE)
 
     assert (await first.cycle()).behind == 1
     # The first replica's lease is live, so the second leaves the Session alone.
@@ -201,9 +206,9 @@ async def test_settled_history_folds_to_the_rows_of_the_full_log(engine: AsyncEn
     span = claude_text(["Hel", "lo"]).entries
     full = await retained_session(history, span)
     settled = await retained_session(Store(engine, settle_deltas=True), span)
-    shadow = FoldShadow(engine=engine, history=history, concurrency=2, page_size=PAGE_SIZE)
+    folder = FoldRunner(engine=engine, history=history, concurrency=2, page_size=PAGE_SIZE)
 
-    assert await shadow.cycle() == FoldBacklog(sessions=2, behind=0, events_behind=0)
+    assert await folder.cycle() == FoldBacklog(sessions=2, behind=0, events_behind=0)
 
     async with async_sessionmaker(engine)() as session:
         assert await folded_rows(session, settled) == await folded_rows(session, full)
@@ -219,15 +224,15 @@ async def test_settlement_after_a_live_fold_drops_the_chunks_evidence(engine: As
     settling = Store(engine, settle_deltas=True)
     span = claude_text(["Hel", "lo"]).entries
     session_id = await retained_session(settling, span[:6])
-    shadow = FoldShadow(engine=engine, history=settling, concurrency=1, page_size=PAGE_SIZE)
+    folder = FoldRunner(engine=engine, history=settling, concurrency=1, page_size=PAGE_SIZE)
 
-    await shadow.cycle()
+    await folder.cycle()
     async with async_sessionmaker(engine)() as session:
         evidence, native = await observed_cursors(session, session_id)
         assert ({4, 6} <= evidence, {3, 5} <= native) == (True, True)
 
     await settling.append(session_id, span[6:])
-    await shadow.cycle()
+    await folder.cycle()
     async with async_sessionmaker(engine)() as session:
         evidence, native = await observed_cursors(session, session_id)
         assert not (evidence | native) & set(range(3, 7))
@@ -235,6 +240,33 @@ async def test_settlement_after_a_live_fold_drops_the_chunks_evidence(engine: As
         reply = await session.get(ThreadEntity, (session_id, FOLD_EPOCH, EntityKind.ITEM, "msg_test#0"))
         assert reply is not None
         assert not reply.pending
+
+
+class BrokenFoldStore(Store):
+    @typing.override
+    async def read_page(
+        self, session_id: UUID, *, after_cursor: int = 0, limit: int = 128
+    ) -> protocol_pb2.ReadSessionEventsResponse:
+        raise TypeError("test: a fold bug")
+
+
+async def test_an_unretried_error_stops_the_fold_and_reports_it(engine: AsyncEngine) -> None:
+    await retained_session(Store(engine), turn(1))
+    folder = FoldRunner(engine=engine, history=BrokenFoldStore(engine), concurrency=1, page_size=PAGE_SIZE)
+    server = grpc.aio.server()
+    health = add_health(server)
+    async with (
+        serving(server, "127.0.0.1:0", grace_s=0) as port,
+        grpc.aio.insecure_channel(f"127.0.0.1:{port}") as channel,
+    ):
+        async with asyncio.timeout(30):
+            await folder.run(interval_s=3600, changes=HistoryChanges(engine.url), health=health)
+        checked = await health_pb2_grpc.HealthStub(channel).Check(health_pb2.HealthCheckRequest(service=HEALTH_SERVICE))
+        whole = await health_pb2_grpc.HealthStub(channel).Check(health_pb2.HealthCheckRequest())
+    assert (checked.status, whole.status) == (
+        health_pb2.HealthCheckResponse.NOT_SERVING,
+        health_pb2.HealthCheckResponse.SERVING,
+    )
 
 
 if __name__ == "__main__":

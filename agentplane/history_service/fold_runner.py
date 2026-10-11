@@ -1,9 +1,9 @@
-"""The thread fold over the history database, built from its raw log beside the app's projection.
+"""Runs the Thread fold over the history database, built from its raw log.
 
 Every retained Session is folded from cursor 0 in its own epoch, so starting it is the rebuild: each
-cycle advances every Session by at most one page, at most `concurrency` at a time, under the same
-per-Session leases the app projector uses, so replicas share the work and live Sessions keep up.
-A Session's progress is its `thread_checkpoint` row.
+cycle advances every Session by at most one page, at most `concurrency` at a time, under per-Session
+leases, so replicas share the work and live Sessions keep up. A Session's progress is its
+`thread_checkpoint` row.
 """
 
 import asyncio
@@ -14,6 +14,7 @@ from datetime import timedelta
 from uuid import UUID
 
 from asyncpg import PostgresError
+from grpc_health.v1 import health, health_pb2
 from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.exc import SQLAlchemyError
@@ -23,7 +24,6 @@ from agentplane.history_service.fold import projection_lease
 from agentplane.history_service.fold.models import ThreadHistorySummary
 from agentplane.history_service.fold.projection_lease import ProjectionLease, ProjectionLeaseLostError
 from agentplane.history_service.fold.projector import HistoryProjector, ProjectionProgress
-from agentplane.history_service.fold.recording import EventReplicationError
 from agentplane.history_service.storage.db import SessionHistory
 from agentplane.history_service.storage.history_changes import HistoryChanges
 from agentplane.history_service.storage.store import Store
@@ -35,6 +35,9 @@ logger = logging.getLogger(__name__)
 # Every fold row carries it, so a reader holding rows of another epoch sees a scope reset.
 FOLD_EPOCH = "history-v1"
 LEASE_DURATION = timedelta(seconds=30)
+# The `grpc.health.v1` service whose status says whether this replica's fold is running. Probes
+# check the whole server (`""`), so a stopped fold leaves raw reads served.
+HEALTH_SERVICE = "agentplane.history_service.Fold"
 
 
 @dataclass(frozen=True)
@@ -44,7 +47,7 @@ class FoldBacklog:
     events_behind: int
 
 
-class FoldShadow:
+class FoldRunner:
     def __init__(self, *, engine: AsyncEngine, history: Store, concurrency: int, page_size: int) -> None:
         """`engine` writes the fold tables; `history` reads the raw log, which this never writes."""
         self._sessions = async_sessionmaker(engine, expire_on_commit=False)
@@ -52,7 +55,18 @@ class FoldShadow:
         self._slots = asyncio.Semaphore(concurrency)
         self._leases: dict[UUID, ProjectionLease] = {}
 
-    async def run(self, *, interval_s: float, changes: HistoryChanges) -> None:
+    async def run(self, *, interval_s: float, changes: HistoryChanges, health: health.aio.HealthServicer) -> None:
+        """Folds until cancelled, reporting `HEALTH_SERVICE` SERVING while it does. An error it does
+        not retry stops the fold, not the process, so raw reads stay served: it is logged and
+        `HEALTH_SERVICE` turns NOT_SERVING."""
+        await health.set(HEALTH_SERVICE, health_pb2.HealthCheckResponse.SERVING)
+        try:
+            await self._fold(interval_s=interval_s, changes=changes)
+        except Exception:
+            logger.exception("Thread fold stopped")
+            await health.set(HEALTH_SERVICE, health_pb2.HealthCheckResponse.NOT_SERVING)
+
+    async def _fold(self, *, interval_s: float, changes: HistoryChanges) -> None:
         """Catch up immediately while behind; wait for commits or `interval_s` to retry."""
         try:
             with changes.subscribe() as changed:
@@ -61,14 +75,14 @@ class FoldShadow:
                     try:
                         backlog = await self.cycle()
                         logger.info(
-                            "fold shadow: %d of %d Sessions behind, %d events behind",
+                            "Thread fold: %d of %d Sessions behind, %d events behind",
                             backlog.behind,
                             backlog.sessions,
                             backlog.events_behind,
                         )
                     # asyncpg raises connect-time server errors (e.g. no free connection slots) unwrapped.
                     except SQLAlchemyError, PostgresError, OSError:
-                        logger.warning("fold shadow cycle failed; will retry", exc_info=True)
+                        logger.warning("Thread fold cycle failed; will retry", exc_info=True)
                     else:
                         if backlog.behind:
                             continue
@@ -116,21 +130,14 @@ class FoldShadow:
                 if lease is None:
                     return None  # another replica folds this Session
                 progress = await self._projector.project_batch(session_id, lease=lease)
-            except (
-                EventReplicationError,
-                ProjectionLeaseLostError,
-                SQLAlchemyError,
-                PostgresError,
-                LookupError,
-                ConnectionError,
-                ValueError,
-                OSError,
-            ):
-                # One Session's failed fold must not stop the others; its checkpoint is retained.
-                logger.warning("fold shadow stalled for %s", session_id, exc_info=True)
+            # ValueError: history this fold cannot apply, such as an observation from a newer runner.
+            except ValueError, ProjectionLeaseLostError, SQLAlchemyError, PostgresError, OSError:
+                # One Session's unfoldable history or a lost lease or connection must not stop the
+                # others; its checkpoint is retained and the next cycle retries it.
+                logger.warning("Thread fold stalled for %s; will retry", session_id, exc_info=True)
                 return None
             logger.debug(
-                "fold shadow %s: through=%s committed=%s",
+                "Thread fold %s: through=%s committed=%s",
                 session_id,
                 progress.through_cursor,
                 progress.committed_cursor,

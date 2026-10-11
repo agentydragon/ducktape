@@ -8,7 +8,7 @@ import pytest_bazel
 from google.protobuf.timestamp_pb2 import Timestamp
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from agentplane.history_service.fold_shadow import FOLD_EPOCH, FoldShadow
+from agentplane.history_service.fold_runner import FOLD_EPOCH, FoldRunner
 from agentplane.history_service.storage.store import Store
 from agentplane.history_service.summaries import SummaryReader
 from agentplane.proto import event_log_pb2, event_pb2
@@ -59,7 +59,7 @@ async def test_a_summary_reports_the_fold_beside_committed_history(
     engine: AsyncEngine, history: Store, summaries: SummaryReader
 ) -> None:
     folded = await session_in(history, "test-sandbox", started(20))
-    await FoldShadow(engine=engine, history=history, concurrency=2, page_size=1000).cycle()
+    await FoldRunner(engine=engine, history=history, concurrency=2, page_size=1000).cycle()
     # Committed after the fold ran, so it lags.
     lagging = await session_in(history, "test-sandbox", started(30))
 

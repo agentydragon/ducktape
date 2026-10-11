@@ -98,8 +98,6 @@ class Settings(BaseSettings):
     sandbox_service: SandboxServiceSettings
     ingester: IngesterSettings = Field(default_factory=IngesterSettings)
     ingress: IngressSettings
-    # Folds every retained Session from its raw log; off until the operator starts the rebuild.
-    fold_shadow: bool = False
     fold_concurrency: int = Field(default=4, ge=1, le=64)
     # A backfill advances each Session one page per cycle; the history store serves at most 1000.
     fold_page_size: int = Field(default=1000, ge=1, le=1000)

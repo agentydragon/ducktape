@@ -13,7 +13,7 @@ from agentplane.grpc_process import until_terminated
 from agentplane.grpc_serving import add_health, serving
 from agentplane.history_service import ingress
 from agentplane.history_service.evidence import EvidenceReader
-from agentplane.history_service.fold_shadow import FoldShadow
+from agentplane.history_service.fold_runner import FoldRunner
 from agentplane.history_service.grpc_api import Resources, add_service
 from agentplane.history_service.ingester import HistoryIngester
 from agentplane.history_service.settings import Settings
@@ -27,8 +27,6 @@ from agentplane.workload_auth.principal import WorkloadPrincipalResolver
 
 # The asyncpg dialect is loaded by SQLAlchemy from the configured driver name.
 # gazelle:include_dep @pypi//asyncpg
-
-logger = logging.getLogger(__name__)
 
 
 async def serve(settings: Settings) -> None:
@@ -55,22 +53,17 @@ async def serve(settings: Settings) -> None:
             summary_changes.listener.listen(),
         ):
             history = Store(engine)
-            # A failed fold stops folding, not the raw reads this process serves.
-            shadow = (
-                asyncio.create_task(
-                    FoldShadow(
-                        engine=fold_engine,
-                        history=history,
-                        concurrency=settings.fold_concurrency,
-                        page_size=settings.fold_page_size,
-                    ).run(interval_s=settings.fold_interval_s, changes=history_changes),
-                    name="fold-shadow",
-                )
-                if settings.fold_shadow
-                else None
+            server = grpc.aio.server()
+            health = add_health(server)
+            folding = asyncio.create_task(
+                FoldRunner(
+                    engine=fold_engine,
+                    history=history,
+                    concurrency=settings.fold_concurrency,
+                    page_size=settings.fold_page_size,
+                ).run(interval_s=settings.fold_interval_s, changes=history_changes, health=health),
+                name="thread-fold",
             )
-            if shadow is not None:
-                shadow.add_done_callback(_report_shadow_exit)
             resources = Resources(
                 principals=WorkloadPrincipalResolver(
                     authentication=k8s_client.AuthenticationV1Api(api),
@@ -86,8 +79,6 @@ async def serve(settings: Settings) -> None:
                 summary_changes=summary_changes,
                 watch_lease_s=settings.watch_lease_s,
             )
-            server = grpc.aio.server()
-            add_health(server)
             add_service(resources, server)
             if settings.port == settings.ingress.port:
                 raise ValueError("gRPC and runner ingress ports must differ")
@@ -116,10 +107,9 @@ async def serve(settings: Settings) -> None:
                     await until_terminated()
                     ingesting.cancel()
             finally:
-                if shadow is not None:
-                    shadow.cancel()
-                    with contextlib.suppress(asyncio.CancelledError):
-                        await shadow
+                folding.cancel()
+                with contextlib.suppress(asyncio.CancelledError):
+                    await folding
     finally:
         await ingress_engine.dispose()
         await fold_engine.dispose()
@@ -155,11 +145,6 @@ async def ingest(settings: Settings, url: URL) -> None:
             ).run()
     finally:
         await engine.dispose()
-
-
-def _report_shadow_exit(task: asyncio.Task[None]) -> None:
-    if not task.cancelled() and (error := task.exception()) is not None:
-        logger.error("fold shadow stopped", exc_info=error)
 
 
 def main() -> None:

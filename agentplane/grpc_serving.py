@@ -22,7 +22,10 @@ async def serving(server: grpc.aio.Server, address: str, *, grace_s: float) -> A
         await server.stop(grace=grace_s)
 
 
-def add_health(server: grpc.aio.Server) -> None:
+def add_health(server: grpc.aio.Server) -> health.aio.HealthServicer:
     """Serves `grpc.health.v1.Health` on `server`, answering SERVING for the whole server (service
-    `""`) for as long as it accepts RPCs. Kubernetes gRPC probes call it."""
-    health_pb2_grpc.add_HealthServicer_to_server(health.aio.HealthServicer(), server)
+    `""`) for as long as it accepts RPCs. Kubernetes gRPC probes call it. The returned servicer
+    reports the status of named services a process sets on it."""
+    servicer = health.aio.HealthServicer()
+    health_pb2_grpc.add_HealthServicer_to_server(servicer, server)
+    return servicer

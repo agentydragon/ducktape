@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
 
 from agentplane.history_service.compaction import Compaction, compact
 from agentplane.history_service.fold.models import ThreadEvidence, ThreadNativeLink
-from agentplane.history_service.fold_shadow import FoldShadow
+from agentplane.history_service.fold_runner import FoldRunner
 from agentplane.history_service.storage.db import SessionEvent, SessionHistory
 from agentplane.history_service.storage.store import Store
 from agentplane.history_service.testing.delta_spans import claude_text
@@ -60,7 +60,7 @@ async def fold_cursors(engine: AsyncEngine, session_id: UUID) -> set[int]:
 async def test_compaction_settles_folded_history_as_live_ingestion_would(engine: AsyncEngine) -> None:
     store = Store(engine)
     folded = await stored_before_settlement(engine, SPAN)
-    await FoldShadow(engine=engine, history=store, concurrency=1, page_size=len(SPAN)).cycle()
+    await FoldRunner(engine=engine, history=store, concurrency=1, page_size=len(SPAN)).cycle()
     # Not folded yet, so its deltas may still be read once; a later run settles it.
     unfolded = await stored_before_settlement(engine, SPAN)
     assert {3, 4, 5, 6} <= await fold_cursors(engine, folded)

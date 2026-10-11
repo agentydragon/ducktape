@@ -70,16 +70,23 @@ default and writes only with `--apply`; settled items are skipped, so it resumes
 
 ## Thread fold
 
-With `fold_shadow` set, it folds every retained Session into the thread projection
+Every replica folds every retained Session into the thread projection
 (`agentplane.history_service.fold`; `thread_*` tables, since a Thread is the projection of a
-Session: [layering](../docs/thread_layering.md#authorities-and-representations)), in epoch `history-v1`, from cursor 0: a page per Session per
-cycle under the per-Session projection leases, so replicas share the work. The fold writes only those
-tables. Cycles run back to back while any Session is behind, and committed history changes wake a
-caught-up fold. `fold_interval_s` remains the retry interval after failures and while another replica
-holds a Session lease. Each cycle logs how many of its leased Sessions and events it is behind. A page that carries an item's completion carries its settlement, so the fold skips the settled
-cursors and drops evidence it recorded for them before they settled. This fold is the only one:
-the app reads every Thread from it, and Electric replicates its tables to browsers, so with
-`fold_shadow` off Thread reads stop advancing.
+Session: [layering](../docs/thread_layering.md#authorities-and-representations)), in epoch
+`history-v1`, from cursor 0: a page per Session per cycle under the per-Session projection leases,
+so replicas share the work. The fold writes only those tables. Cycles run back to back while any
+Session is behind, and committed history changes wake a caught-up fold. `fold_interval_s` remains
+the retry interval after failures and while another replica holds a Session lease. Each cycle logs
+how many of its leased Sessions and events it is behind. A page that carries an item's completion
+carries its settlement, so the fold skips the settled cursors and drops evidence it recorded for
+them before they settled. This fold is the only one: the app reads every Thread from it, and
+Electric replicates its tables to browsers.
+
+A Session whose history this fold cannot apply, or whose page hits a lost lease or a database
+error, is logged and retried the next cycle while the others advance. Any other error stops the
+replica's fold but not its raw reads: it is logged, and the `grpc.health.v1` service
+`agentplane.history_service.Fold` turns from SERVING to NOT_SERVING. Probes check only the whole
+server; a `Health/Check` for that service on a replica's gRPC port shows it.
 
 Session summaries (`GetSessionSummary`, and `BatchGetSessionSummaries` for up to 200 named Sessions
 at once, leaving out any it has no history for) read that fold and report the committed cursor beside

@@ -3302,7 +3302,6 @@ data:
         - agentplane-staging
       port: 8081
       settle_deltas: true
-    fold_shadow: true
 immutable: false
 ---
 apiVersion: apps/v1

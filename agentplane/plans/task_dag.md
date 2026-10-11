@@ -805,7 +805,6 @@ flowchart TD
     RUNNER_SESSION_RECORD_SHIMS[Blocked: drop runner session record compatibility]
     LEGACY_SANDBOX_RETIRE[Retire pre-dial-out Sandboxes]
     LEGACY_SANDBOX_RETIRE --> RUNNER_SESSION_RECORD_SHIMS
-    HISTORY_FOLD_ALWAYS_ON[Candidate: the History Service always folds]
     ACTION_EXECUTION_AUDIT_TRIM[Decision: execution reconciliation columns]
     REFACTOR_COHERENCE_AUDIT[Blocked: whole-refactor coherence audit]
     FOLLOW_PATH_RETIRE[Delete following, WatchSessions and holds] --> REFACTOR_COHERENCE_AUDIT
@@ -829,17 +828,6 @@ both fields required, and have `from_spec` set `event_source_id` explicitly.
 **Candidate; Thread fold move lane.** Once staging and testing serve an app image without
 `Settings.thread_reads`, drop the manifests' `AGENTPLANE_THREAD_READS` (its CLEANUP tombstone in
 `cluster/cdk8s/agentplane/app.py`).
-
-### `HISTORY_FOLD_ALWAYS_ON` — the History Service always folds
-
-**Candidate; Legacy burn-down lane.** Both environments set `fold_shadow` and read Threads from the
-History Service fold, yet the setting defaults to off. Delete `Settings.fold_shadow` and
-`Environment.fold_shadow`, and rename `fold_shadow.py`/`FoldShadow` and their "shadow" comments for
-what the fold is. A fold that stops on an unexpected error is only logged, by design, so raw reads
-keep serving ([Thread view sync](../docs/thread_view_sync.md)); give that state a signal an operator
-sees (a metric or a status the read API reports) without ending the process. Narrow
-`FoldShadow._advance`'s per-Session catch of `LookupError`, `ValueError`, `ConnectionError` and
-`OSError` to what that signal covers, and drop `FOLD_EPOCH`'s comment contrasting it with the app's.
 
 ### `ACTION_EXECUTION_AUDIT_TRIM` — execution reconciliation columns
 

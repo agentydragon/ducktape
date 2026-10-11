@@ -1159,7 +1159,7 @@ py_test(
         "//agentplane/app/testing:electric_service",
         "//agentplane/app/testing:history",
         "//agentplane/app/testing:replication_source",
-        "//agentplane/history_service:fold_shadow",
+        "//agentplane/history_service:fold_runner",
         "//agentplane/history_service/fold:models",
         "//agentplane/history_service/testing:history",
         "//agentplane/proto:event_pb2",

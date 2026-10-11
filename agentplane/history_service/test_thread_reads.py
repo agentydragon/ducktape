@@ -1,4 +1,4 @@
-"""Entity windows over a migrated history database, folded by the shadow."""
+"""Entity windows over a migrated history database, folded by the History Service fold."""
 
 from uuid import UUID, uuid4
 
@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 
 from agentplane.history_service import protocol_pb2
 from agentplane.history_service.fold.views import EntityKind, ThreadEntityView, ThreadItemEntityView
-from agentplane.history_service.fold_shadow import FOLD_EPOCH, FoldShadow
+from agentplane.history_service.fold_runner import FOLD_EPOCH, FoldRunner
 from agentplane.history_service.storage.store import HistoryNotFoundError, Store
 from agentplane.history_service.thread_reads import ThreadReader, ThreadScopeResetError
 from agentplane.proto import event_log_pb2, event_pb2
@@ -64,8 +64,8 @@ async def folded(engine: AsyncEngine, history: Store) -> UUID:
             ),
         ],
     )
-    shadow = FoldShadow(engine=engine, history=history, concurrency=1, page_size=PAGE_SIZE)
-    while (await shadow.cycle()).behind:
+    folder = FoldRunner(engine=engine, history=history, concurrency=1, page_size=PAGE_SIZE)
+    while (await folder.cycle()).behind:
         pass
     return session_id
 

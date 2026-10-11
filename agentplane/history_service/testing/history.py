@@ -28,7 +28,7 @@ from agentplane.history_service.fold.models import (
 from agentplane.history_service.fold.recording import set_operational
 from agentplane.history_service.fold.rows import ordered_entity_rows
 from agentplane.history_service.fold.views import EntityKind
-from agentplane.history_service.fold_shadow import FoldShadow
+from agentplane.history_service.fold_runner import FoldRunner
 from agentplane.history_service.storage.database_migrate import RUNNER
 from agentplane.history_service.storage.db import SessionHistory
 from agentplane.history_service.storage.store import Store
@@ -62,7 +62,7 @@ class History:
         self.engine: AsyncEngine = create_async_engine(database_url)
         self.sessions = async_sessionmaker(self.engine, expire_on_commit=False)
         self.store = Store(self.engine)
-        self._fold = FoldShadow(engine=self.engine, history=self.store, concurrency=4, page_size=1000)
+        self._fold = FoldRunner(engine=self.engine, history=self.store, concurrency=4, page_size=1000)
         self._folding = asyncio.Lock()
         self._attachments: dict[UUID, runner_pb2.Attached] = {}
 

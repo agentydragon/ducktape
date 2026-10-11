@@ -14,7 +14,7 @@ py_library(
         "//agentplane:subjects",
         "//agentplane/history_service:client",
         "//agentplane/history_service:evidence",
-        "//agentplane/history_service:fold_shadow",
+        "//agentplane/history_service:fold_runner",
         "//agentplane/history_service:grpc_api",
         "//agentplane/history_service:ingester",
         "//agentplane/history_service:summaries",
@@ -60,7 +60,7 @@ py_library(
     testonly = True,
     srcs = ["history.py"],
     deps = [
-        "//agentplane/history_service:fold_shadow",
+        "//agentplane/history_service:fold_runner",
         "//agentplane/history_service:protocol_pb2",
         "//agentplane/history_service:summary_changes",
         "//agentplane/history_service/fold",

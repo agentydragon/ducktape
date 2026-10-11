@@ -19,7 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, create_async_engin
 from agentplane.grpc_serving import serving
 from agentplane.history_service.client import HistoryServiceClient
 from agentplane.history_service.evidence import EvidenceReader
-from agentplane.history_service.fold_shadow import FoldShadow
+from agentplane.history_service.fold_runner import FoldRunner
 from agentplane.history_service.grpc_api import Resources, add_service
 from agentplane.history_service.ingester import HistoryIngester
 from agentplane.history_service.storage.store import Store
@@ -123,12 +123,12 @@ async def fold_history(database_url: str) -> None:
     The composed History + Commands test database template already contains the projection tables.
     """
     async with _history_engine(database_url) as engine:
-        shadow = FoldShadow(engine=engine, history=Store(engine), concurrency=1, page_size=1000)
+        folder = FoldRunner(engine=engine, history=Store(engine), concurrency=1, page_size=1000)
         try:
-            while (await shadow.cycle()).behind:
+            while (await folder.cycle()).behind:
                 pass
         finally:
-            await shadow.release()
+            await folder.release()
 
 
 async def announce_fold_commit(database_url: str) -> None:

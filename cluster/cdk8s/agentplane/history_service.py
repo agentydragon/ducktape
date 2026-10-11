@@ -142,7 +142,6 @@ class HistoryService(Construct):
                     "port": ingress.port.number,
                     "settle_deltas": env.settle_deltas,
                 },
-                "fold_shadow": env.fold_shadow,
             },
             path="/etc/agentplane-history-service/config.yaml",
             supplied=[("database_url",)],

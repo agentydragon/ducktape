@@ -31,7 +31,7 @@ py_test(
         "//agentplane/app/testing:history",
         "//agentplane/app/testing:thread_test_support",
         "//agentplane/app/threads:store",
-        "//agentplane/history_service:fold_shadow",
+        "//agentplane/history_service:fold_runner",
         "//agentplane/history_service/fold:models",
         "//agentplane/history_service/fold:views",
         "//agentplane/history_service/testing:history",
