@@ -101,7 +101,7 @@ class ReplicationSource(HistoryService):
             [
                 self.handler(),
                 grpc.method_handlers_generic_handler(
-                    "ducktape.agentplane.runner_gateway.v1.RunnerGateway",
+                    "agentplane.proto.runner_gateway.RunnerGateway",
                     {
                         "SubmitCommand": grpc.unary_unary_rpc_method_handler(
                             self.submit_command,

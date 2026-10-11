@@ -9,7 +9,6 @@ from uuid import UUID, uuid4
 
 import grpc
 
-from agentplane.grpc_options import grpc_channel_option_kvps
 from agentplane.proto import runner_control_pb2 as control_pb2, runner_pb2
 from agentplane.runner.client import RunnerClient
 from agentplane.runner_gateway.commands.connections import ConnectionStore
@@ -54,11 +53,7 @@ class Sealing:
                 owner=sandbox.service_account, sandbox=sandbox.name, sandbox_uid=sandbox.uid
             )
             endpoint = await self.destinations.resolve(destination, writes=False)
-            client = RunnerClient(
-                grpc.aio.insecure_channel(
-                    endpoint.target, options=grpc_channel_option_kvps(self.runner_grpc_channel_options)
-                )
-            )
+            client = RunnerClient(endpoint.target, channel_options=self.runner_grpc_channel_options)
             try:
                 async with asyncio.timeout(SEAL_S):
                     sealed = await self._seal_sessions(client)

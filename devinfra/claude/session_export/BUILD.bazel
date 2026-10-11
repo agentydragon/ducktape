@@ -110,6 +110,7 @@ py_library(
         ":oauth",
         ":store",
         "//util/testing:postgres_fixtures",
+        "//util/testing:sqlalchemy_engines",
         "@pypi//httpx",
         "@pypi//pydantic",
         "@pypi//pytest",

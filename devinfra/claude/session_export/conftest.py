@@ -28,6 +28,7 @@ from util.testing.postgres_fixtures import (
     postgres_admin_url,
     postgres_container,
 )
+from util.testing.sqlalchemy_engines import managed_async_engine
 
 TEST_ORG_UUID = "test-org-uuid"
 TEST_COOKIE = SessionCookie(session_key=SecretStr("test-session-key"), org_uuid=TEST_ORG_UUID)
@@ -300,9 +301,8 @@ database_template, database_url = migrated_database_fixtures(
 
 @pytest.fixture
 async def engine(database_url: str) -> AsyncIterator[AsyncEngine]:
-    engine = make_engine(database_url)
-    yield engine
-    await engine.dispose()
+    async with managed_async_engine(make_engine(database_url)) as engine:
+        yield engine
 
 
 @pytest.fixture

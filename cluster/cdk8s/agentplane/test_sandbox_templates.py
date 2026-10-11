@@ -18,7 +18,7 @@ from more_itertools import one
 from agentplane.action_service.sandbox.binding import DESCRIPTION_ANNOTATION, SandboxExecutorBinding
 from agentplane.egress.resources import placeholder_of
 from agentplane.sandbox_service.runner_endpoints import RunnerEndpoint
-from cluster.cdk8s.agentplane import notifications, sandbox_service
+from cluster.cdk8s.agentplane import notifications, runner_gateway, sandbox_service
 from cluster.cdk8s.agentplane.conftest import NAMESPACES
 
 
@@ -187,7 +187,7 @@ def test_runner_control_names_the_listener_its_egress_policy_admits(
             continue
         endpoint = RunnerEndpoint.model_validate(config["runner_control"])
         host, port = endpoint.target.rsplit(":", 1)
-        service_ports = _by_name(docs, "Service", sandbox_service.NAME)["spec"]["ports"]
+        service_ports = _by_name(docs, "Service", runner_gateway.NAME)["spec"]["ports"]
         assert int(port) == one(entry for entry in service_ports if entry["name"] == "runner-control")["port"]
         # The proxy matches the host on the exact string the policy names, and swaps the bearer only
         # where it is the placeholder of the credential that rule substitutes.

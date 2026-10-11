@@ -14,17 +14,19 @@ from uuid import UUID
 import grpc
 from google.protobuf.empty_pb2 import Empty
 from google.protobuf.json_format import ParseError
-from google.protobuf.message_factory import GetMessageClass
 from kubernetes_asyncio import client as k8s_client
 from sqlalchemy.exc import SQLAlchemyError
 
-from agentplane.grpc_options import grpc_channel_option_kvps
-from agentplane.proto import command_pb2, event_log_pb2, runner_control_pb2 as control_pb2, runner_pb2
+from agentplane.proto import (
+    command_pb2,
+    event_log_pb2,
+    runner_control_pb2 as control_pb2,
+    runner_gateway_pb2_grpc,
+    runner_pb2,
+)
 from agentplane.runner.client import RunnerClient
 from agentplane.runner.errors import OpenTimeoutError, RunnerError, SessionSealedError, StreamClosedError
-
-# Aliased: `protocol_pb2` is the Sandbox Service's messages.
-from agentplane.runner_gateway import protocol_pb2 as gateway_pb2, protocol_pb2_grpc, session_lifecycle
+from agentplane.runner_gateway import session_lifecycle
 from agentplane.runner_gateway.command_delivery import CommandDelivery, CommandRefusedError
 from agentplane.runner_gateway.command_relay import admit_running_command
 from agentplane.runner_gateway.commands.store import (
@@ -187,15 +189,12 @@ def read_page_token(token: str) -> tuple[datetime, str]:
             raise ValueError("invalid page token")
 
 
-class RunnerGateway(protocol_pb2_grpc.RunnerGatewayServicer):
+class RunnerGateway(runner_gateway_pb2_grpc.RunnerGatewayServicer):
     def __init__(self, resources: Resources) -> None:
         self.resources = resources
 
     def _runner_client(self, target: str) -> RunnerClient:
-        channel = grpc.aio.insecure_channel(
-            target, options=grpc_channel_option_kvps(self.resources.runner_grpc_channel_options)
-        )
-        return RunnerClient(channel)
+        return RunnerClient(target, channel_options=self.resources.runner_grpc_channel_options)
 
     @asynccontextmanager
     async def request(
@@ -656,27 +655,4 @@ class RunnerGateway(protocol_pb2_grpc.RunnerGatewayServicer):
 
 
 def add_service(resources: Resources, server: grpc.aio.Server) -> None:
-    protocol_pb2_grpc.add_RunnerGatewayServicer_to_server(RunnerGateway(resources), server)
-
-
-# CLEANUP(added 2026-10-11): Delete once the manifests run the Runner Gateway Deployment and point
-#   every client at it (SANDBOX_SERVICE_DEPLOYMENT_SPLIT's manifest PR).
-LEGACY_SERVICE = "ducktape.agentplane.sandbox.v1.SandboxService"
-
-
-def add_legacy_service(resources: Resources, server: grpc.aio.Server) -> None:
-    """Also answer the gateway's RPCs under the Sandbox Service's name, where clients still running
-    an image from before the split call them on the Sandbox Service's one Deployment."""
-    gateway = RunnerGateway(resources)
-    handlers = {}
-    for method in gateway_pb2.DESCRIPTOR.services_by_name["RunnerGateway"].methods:
-        handler = (
-            grpc.unary_stream_rpc_method_handler if method.server_streaming else grpc.unary_unary_rpc_method_handler
-        )
-        handlers[method.name] = handler(
-            # The servicer method of the descriptor's name, as the generated registration binds it.
-            getattr(gateway, method.name),
-            request_deserializer=GetMessageClass(method.input_type).FromString,
-            response_serializer=GetMessageClass(method.output_type).SerializeToString,
-        )
-    server.add_generic_rpc_handlers((grpc.method_handlers_generic_handler(LEGACY_SERVICE, handlers),))
+    runner_gateway_pb2_grpc.add_RunnerGatewayServicer_to_server(RunnerGateway(resources), server)

@@ -3,7 +3,8 @@ use crate::rename_ledger::{RenameLedger, RenameScope};
 use artifact::relative_module_path;
 use js_ast::import_decl_module_item;
 use std::collections::BTreeMap;
-use swc_common::DUMMY_SP;
+use swc_atoms::Atom;
+use swc_common::{DUMMY_SP, Mark, SyntaxContext};
 use swc_ecma_ast::*;
 
 /// Map plan-side `original -> exported` to `actual_local -> exported`.
@@ -67,10 +68,7 @@ pub(crate) fn disambiguate_residual_entry_import_locals(
 
 /// Pre-fill `exported` on `export { local }` re-export specifiers whose
 /// `local` is about to be renamed, so the public export name survives.
-pub(crate) fn preserve_export_specifier_names(
-    item: &mut ModuleItem,
-    renames: &BTreeMap<String, String>,
-) {
+pub(crate) fn preserve_export_specifier_names(item: &mut ModuleItem, renames: &BTreeMap<Id, Atom>) {
     let ModuleItem::ModuleDecl(ModuleDecl::ExportNamed(named)) = item else {
         return;
     };
@@ -84,7 +82,7 @@ pub(crate) fn preserve_export_specifier_names(
         let ModuleExportName::Ident(orig) = &spec.orig else {
             continue;
         };
-        if !renames.contains_key(&orig.sym.to_string()) {
+        if !renames.contains_key(&orig.to_id()) {
             continue;
         }
         spec.exported = Some(spec.orig.clone());
@@ -108,14 +106,16 @@ pub(crate) fn import_decl_for_plan(
     entry_file: &str,
     target_file: &str,
     bindings: &BTreeMap<String, String>,
+    top_level_mark: Mark,
 ) -> ModuleItem {
     let source = relative_source(entry_file, target_file);
+    let local_ctxt = SyntaxContext::empty().apply_mark(top_level_mark);
     let specifiers: Vec<ImportSpecifier> = bindings
         .iter()
         .map(|(local, exported)| {
             ImportSpecifier::Named(ImportNamedSpecifier {
                 span: DUMMY_SP,
-                local: Ident::new_no_ctxt(local.clone().into(), DUMMY_SP),
+                local: Ident::new(local.clone().into(), DUMMY_SP, local_ctxt),
                 imported: if local == exported {
                     None
                 } else {

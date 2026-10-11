@@ -32,8 +32,6 @@ Service's planned renewal, so waiting Sessions rotate in. The feed position is k
 restarted replica rereads the feed and each Session resumes from its cursor. After four consecutive
 feed failures the ingester dials a fresh Sandbox Service channel.
 
-The cdk8s `Environment.history_writer` turns `ingester.enabled` on.
-
 ## Runner ingress
 
 `ingress.py` serves `RunnerIngress.Push`, the

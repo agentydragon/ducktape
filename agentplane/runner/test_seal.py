@@ -3,7 +3,6 @@
 from collections.abc import AsyncIterator
 from pathlib import Path
 
-import grpc
 import pytest
 import pytest_bazel
 
@@ -45,7 +44,7 @@ async def last_cursors(config: RunnerConfig) -> dict[str, int]:
 async def client(config: RunnerConfig, last_cursors: dict[str, int]) -> AsyncIterator[RunnerClient]:
     del last_cursors
     server, runner, port = await serve(config)
-    client = RunnerClient(grpc.aio.insecure_channel(f"127.0.0.1:{port}"), capture_history=True)
+    client = RunnerClient(f"127.0.0.1:{port}", channel_options=None, capture_history=True)
     try:
         yield client
     finally:
@@ -77,7 +76,7 @@ async def test_seal_ends_every_session_and_refuses_resume(
 async def test_a_restarted_runner_keeps_the_seal(config: RunnerConfig, last_cursors: dict[str, int]) -> None:
     for _ in range(2):
         server, runner, port = await serve(config)
-        client = RunnerClient(grpc.aio.insecure_channel(f"127.0.0.1:{port}"), capture_history=True)
+        client = RunnerClient(f"127.0.0.1:{port}", channel_options=None, capture_history=True)
         try:
             assert {seal.session_id: seal.cursor for seal in (await client.seal()).sessions} == last_cursors
             async with await client.attach("test-session-b") as attachment:

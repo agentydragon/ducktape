@@ -23,6 +23,7 @@ py_library(
         "//agentplane/history_service/storage:store",
         "//agentplane/sandbox_service:client",
         "//agentplane/workload_auth:principal",
+        "//util/testing:sqlalchemy_engines",
         "@pypi//asyncpg",
         "@pypi//grpcio",
         "@pypi//kubernetes_asyncio",

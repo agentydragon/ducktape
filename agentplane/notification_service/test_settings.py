@@ -47,6 +47,7 @@ notice_debounce:
   max_wait_seconds: 15
 sandbox_service:
   target: sandboxes:8080
+  gateway_target: gateway:8080
   token_file: /tokens/sandboxes
 history_service:
   target: history:8080
@@ -126,6 +127,7 @@ actions:
   token_file: /tokens/actions
 sandbox_service:
   target: sandboxes:8080
+  gateway_target: gateway:8080
   token_file: /tokens/sandboxes
 history_service:
   target: history:8080
@@ -174,7 +176,10 @@ def test_invalid_notice_debounce(values: dict[str, float]) -> None:
 def test_invalid_command_admission_timeout(timeout: float) -> None:
     with pytest.raises(ValidationError):
         SandboxServiceSettings(
-            target="sandboxes:8080", token_file=Path("/tokens/sandboxes"), command_admission_timeout_s=timeout
+            target="sandboxes:8080",
+            gateway_target="gateway:8080",
+            token_file=Path("/tokens/sandboxes"),
+            command_admission_timeout_s=timeout,
         )
 
 
@@ -183,7 +188,12 @@ def test_invalid_command_admission_timeout(timeout: float) -> None:
 def test_invalid_sandbox_service_deadline(name: str, timeout: float) -> None:
     with pytest.raises(ValidationError):
         SandboxServiceSettings.model_validate(
-            {"target": "sandboxes:8080", "token_file": "/tokens/sandboxes", name: timeout}
+            {
+                "target": "sandboxes:8080",
+                "gateway_target": "gateway:8080",
+                "token_file": "/tokens/sandboxes",
+                name: timeout,
+            }
         )
 
 
@@ -195,7 +205,11 @@ def test_invalid_stale_confirmation_timeout(timeout: float) -> None:
                 "database_url": "postgresql://unused",
                 "namespace": "test",
                 "actions": {"url": "http://actions", "token_file": "/tokens/actions"},
-                "sandbox_service": {"target": "sandboxes:8080", "token_file": "/tokens/sandboxes"},
+                "sandbox_service": {
+                    "target": "sandboxes:8080",
+                    "gateway_target": "gateway:8080",
+                    "token_file": "/tokens/sandboxes",
+                },
                 "history_service": {"target": "history:8080", "token_file": "/tokens/history"},
                 "stale_inbox_confirmation_s": timeout,
             }

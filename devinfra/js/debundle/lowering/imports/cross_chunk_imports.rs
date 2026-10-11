@@ -196,7 +196,7 @@ pub fn naturalize_cross_chunk_imports(
                 },
             });
         }
-        let pending_renames = ledger.pending_renames_by_name(&RenameScope::Chunk);
+        let pending_renames = ledger.pending_renames(&RenameScope::Chunk);
         let mut capture_probe = RenameCaptureProbe::new(&pending_renames);
         for item in &parsed.module.body {
             item.visit_with(&mut capture_probe);
@@ -217,12 +217,15 @@ pub fn naturalize_cross_chunk_imports(
             Ok(sealed) => sealed,
             Err(_) => continue,
         };
-        let renames = sealed.scope_renames_by_name(&RenameScope::Chunk);
+        let renames = sealed
+            .scope_renames(&RenameScope::Chunk)
+            .unwrap_or_default();
         let approved: BTreeMap<(usize, usize), String> = candidates
             .iter()
             .filter(|candidate| {
                 candidate.already_readable
-                    || renames.get(&candidate.local) == Some(&candidate.readable)
+                    || renames.get(&top_level_id(&candidate.local, parsed.top_level_mark))
+                        == Some(&candidate.readable.as_str().into())
             })
             .map(|candidate| {
                 (

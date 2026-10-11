@@ -22,6 +22,7 @@ from agentplane.sandbox_service.testing.kubernetes import Cluster, kubernetes
 from util.kubernetes import CustomObjectsClient
 from util.testing.postgres import DatabaseClones, PostgresDatabaseTemplate
 from util.testing.postgres_fixtures import database_clones, database_names, postgres_admin_url, postgres_container
+from util.testing.sqlalchemy_engines import managed_async_engine
 
 
 @pytest.fixture(autouse=True)
@@ -74,8 +75,5 @@ def db_url(service_database_template: PostgresDatabaseTemplate, database_clones:
 
 @pytest.fixture
 async def engine(db_url: str) -> AsyncIterator[AsyncEngine]:
-    engine = create_async_engine(db_url)
-    try:
+    async with managed_async_engine(create_async_engine(db_url)) as engine:
         yield engine
-    finally:
-        await engine.dispose()

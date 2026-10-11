@@ -338,3 +338,11 @@ py_library(
         "@pypi//pillow",
     ],
 )
+
+py_library(
+    name = "sqlalchemy_engines",
+    testonly = True,
+    srcs = ["sqlalchemy_engines.py"],
+    visibility = ["//visibility:public"],
+    deps = ["@pypi//sqlalchemy"],
+)

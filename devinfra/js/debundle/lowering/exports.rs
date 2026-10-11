@@ -2,8 +2,8 @@
 //! duplicates, auto-grow residual exports for cross-module references,
 //! and convert binding maps into `export { ... }` ModuleItems.
 
-use crate::body_facts::ModuleBodyFacts;
 use crate::chunk_ast::{TopLevelDecl, binding_names};
+use crate::naturalize::NaturalizedModuleBody;
 use crate::plans::MemberRequest;
 use crate::rename_ledger::{RenameIntent, RenameLedger, RenameOrigin, RenameScope};
 use analysis::{BindingKind, top_level_id};
@@ -266,13 +266,20 @@ fn reject_duplicate_field(
     Ok(())
 }
 
-pub(super) fn export_named_for_bindings(bindings: &BTreeMap<String, String>) -> ModuleItem {
+pub(super) fn export_named_for_bindings(
+    bindings: &BTreeMap<String, String>,
+    top_level_mark: swc_common::Mark,
+) -> ModuleItem {
     named_export_module_item(
         bindings
             .iter()
             .map(|(local, exported)| {
                 named_export_specifier(
-                    ModuleExportName::Ident(Ident::new_no_ctxt(local.clone().into(), DUMMY_SP)),
+                    ModuleExportName::Ident(Ident::new(
+                        local.clone().into(),
+                        DUMMY_SP,
+                        swc_common::SyntaxContext::empty().apply_mark(top_level_mark),
+                    )),
                     (local != exported).then(|| {
                         ModuleExportName::Ident(Ident::new_no_ctxt(
                             exported.clone().into(),
@@ -326,6 +333,7 @@ pub(super) fn entry_exports_for_moved_bindings(
     declarations: &[TopLevelDecl],
     binding_assignment: &HashMap<Id, usize>,
     entry_renames: &BTreeMap<String, String>,
+    top_level_mark: swc_common::Mark,
 ) -> Vec<ModuleItem> {
     let mut exports = BTreeMap::<String, String>::new();
     for decl in declarations.iter().filter(|decl| decl.exported) {
@@ -342,7 +350,7 @@ pub(super) fn entry_exports_for_moved_bindings(
     if exports.is_empty() {
         Vec::new()
     } else {
-        vec![export_named_for_bindings(&exports)]
+        vec![export_named_for_bindings(&exports, top_level_mark)]
     }
 }
 
@@ -391,7 +399,7 @@ pub(super) struct ExportGrowthFacts<'a> {
 }
 
 pub(super) fn auto_grown_residual_exports<'a>(
-    body_facts_by_module: impl IntoIterator<Item = &'a ModuleBodyFacts>,
+    modules: impl IntoIterator<Item = &'a NaturalizedModuleBody>,
     facts: &ExportGrowthFacts<'_>,
     chunk_top_level_mark: swc_common::Mark,
     ledger: &mut RenameLedger,
@@ -405,23 +413,24 @@ pub(super) fn auto_grown_residual_exports<'a>(
     let mut needed = BTreeSet::<String>::new();
     // `body_facts_by_module` is precomputed once upstream (see
     // `lower_chunk`); both this auto-grow pass and the per-plan
-    // reference resolver read the same `ModuleBodyFacts`, so the
-    // body walk is paid exactly once per moved module.
-    for facts in body_facts_by_module {
+    // reference resolver read the same post-naturalization `ModuleBodyFacts`.
+    for module in modules {
+        let facts = &module.facts;
         for id in &facts.referenced_idents {
             if facts.provided_locals.contains(id) {
                 continue;
             }
-            if binding_assignment.contains_key(id) {
+            let original_id = module.renames.original_id(id);
+            if binding_assignment.contains_key(&original_id) {
                 continue;
             }
-            if !declaration_by_name.contains_key(id) {
+            if !declaration_by_name.contains_key(&original_id) {
                 continue;
             }
-            if pre_existing_entry_exports.contains(id) {
+            if pre_existing_entry_exports.contains(&original_id) {
                 continue;
             }
-            needed.insert(id.0.as_ref().to_string());
+            needed.insert(original_id.0.to_string());
         }
     }
     // The ledger's `EntryPublicExports` taken-name set holds every

@@ -12,7 +12,7 @@ use super::scope_names::collect_local_binding_names;
 use crate::exports::{export_named_for_bindings, omit_existing_local_exports};
 use crate::imports::{
     ArtifactSourceImportResolutionCache, EntryExport, ImportLocalRenameSink, ModuleReferenceNeeds,
-    PlannedVendorReimports, RuntimeImportFacts, RuntimeImportLookup, VendorReimportOracle,
+    PlannedVendorReimports, RuntimeImportFacts, SourceReferenceLookup, VendorReimportOracle,
     cross_module_imports_for_plan, final_module_exports, group_specifiers_into_import_decls,
     imported_binding_named_specifier, phantom_side_effect_imports, plan_module_reference_needs,
     plan_vendor_reimports, residual_entry_imports_for_moved_body,
@@ -118,13 +118,9 @@ pub(super) fn emit_module(inputs: ModuleEmissionInputs<'_>) -> Result<LoweredMod
         declaration_by_name,
         binding_assignment,
         entry_exports_by_original_local,
-        RuntimeImportLookup {
-            imports: runtime_import_facts,
-            original_by_renamed: local_renames
-                .merged
-                .iter()
-                .map(|(pre, post)| (post.clone(), pre.clone()))
-                .collect(),
+        SourceReferenceLookup {
+            runtime_imports: runtime_import_facts,
+            renames: &local_renames,
         },
     );
     // Import-local mints for this plan's body flow through a per-plan
@@ -193,7 +189,8 @@ pub(super) fn emit_module(inputs: ModuleEmissionInputs<'_>) -> Result<LoweredMod
             )]),
             reserved: BTreeSet::new(),
         })?
-        .module_renames_by_name(module);
+        .scope_renames(&RenameScope::Module(module))
+        .unwrap_or_default();
     if !module_import_renames.is_empty() {
         let mut renamer = IdentifierRenamer::new(&module_import_renames);
         for item in body.iter_mut() {
@@ -297,7 +294,16 @@ pub(super) fn emit_module(inputs: ModuleEmissionInputs<'_>) -> Result<LoweredMod
     // producing two disagreeing local aliases for the same
     // upstream binding.
     if !cross_module_chunk_renames.is_empty() {
-        let mut renamer = IdentifierRenamer::new(cross_module_chunk_renames);
+        let cross_module_chunk_renames_by_id = cross_module_chunk_renames
+            .iter()
+            .map(|(source, target)| {
+                (
+                    top_level_id(source, chunk_top_level_mark),
+                    target.as_str().into(),
+                )
+            })
+            .collect();
+        let mut renamer = IdentifierRenamer::new(&cross_module_chunk_renames_by_id);
         for item in body.iter_mut() {
             item.visit_mut_with(&mut renamer);
         }
@@ -385,8 +391,11 @@ pub(super) fn emit_module(inputs: ModuleEmissionInputs<'_>) -> Result<LoweredMod
         let mut pairs: Vec<(String, ImportSpecifier)> = Vec::with_capacity(reexports.len());
         for reexport in reexports {
             let src = relative_source(&dest_abs, &reexport.imported_from);
-            let specifier =
-                imported_binding_named_specifier(&reexport.local, &reexport.imported_name);
+            let specifier = imported_binding_named_specifier(
+                &reexport.local,
+                &reexport.imported_name,
+                chunk_top_level_mark,
+            );
             pairs.push((src, specifier));
             import_member_exports.insert(reexport.local.clone(), reexport.public_name.clone());
         }
@@ -409,10 +418,13 @@ pub(super) fn emit_module(inputs: ModuleEmissionInputs<'_>) -> Result<LoweredMod
         );
         omit_existing_local_exports(&body, &mut exports);
         if !exports.is_empty() {
-            body.push(export_named_for_bindings(&exports));
+            body.push(export_named_for_bindings(&exports, chunk_top_level_mark));
         }
     } else if !import_member_exports.is_empty() {
-        body.push(export_named_for_bindings(&import_member_exports));
+        body.push(export_named_for_bindings(
+            &import_member_exports,
+            chunk_top_level_mark,
+        ));
     }
     let output_context = ModuleOutputContext {
         factorization,

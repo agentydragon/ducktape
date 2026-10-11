@@ -272,6 +272,7 @@ py_library(
         "@pypi//httpx",
         ":settings",
         "//third_party/containers:pgvector_pg18",
+        "//util/testing:sqlalchemy_engines",
     ],
 )
 
