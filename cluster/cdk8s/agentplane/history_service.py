@@ -1,5 +1,5 @@
-"""Serves retained Session history from the `sandbox_service` database, whose schema the
-Sandbox Service's migrate init container still owns, and can ingest it from the Sandbox Service."""
+"""Serves retained Session history from the `sandbox_service` database, migrates its schema, and can
+ingest it from the Sandbox Service."""
 
 from cdk8s import ApiObject, ApiObjectMetadata, Duration, JsonPatch, Size
 from cdk8s_plus_34 import (
@@ -22,6 +22,7 @@ from agentplane.subjects import ServiceAccountRef
 from cluster.cdk8s import cilium, node_scheduling, pod_policy
 from cluster.cdk8s.agentplane import database, notifications
 from cluster.cdk8s.agentplane.environment import Environment, HistoryWriter
+from cluster.cdk8s.agentplane.migrate_container import migrate_init_container
 from cluster.cdk8s.agentplane.pod_disruption_budget import add_pod_disruption_budget
 from cluster.cdk8s.forgejo_registry.chart import forgejo_images_creds_secret_ref
 from cluster.cdk8s.probes import http_probe
@@ -96,6 +97,11 @@ class HistoryService(Construct):
             path="/etc/agentplane-history-service/config.yaml",
             supplied=[("database_url",)],
         )
+        # The History Service takes over the whole `sandbox_service` database, so it connects
+        # as that database's owner; until it writes, its sessions are read-only (main.py).
+        database_url = (
+            SecretRef(namespace=env.namespace, name="postgres-sandbox-service").key("uri").env_value(self, "database")
+        )
         deployment = Deployment(
             self,
             "deployment",
@@ -109,17 +115,19 @@ class HistoryService(Construct):
             automount_service_account_token=True,
             docker_registry_auth=forgejo_images_creds_secret_ref(self, "images-creds"),
             security_context=PodSecurityContextProps(ensure_non_root=True, user=1000, group=1000, fs_group=1000),
+            # A migration failure blocks startup; the command has no retry loop.
+            init_containers=[
+                migrate_init_container(
+                    "git.allegedly.works/ducktape-ci/agentplane-sandbox-service-history-migrate:unset",
+                    name="migrate",
+                    env_variables={"AGENTPLANE_SANDBOX_SERVICE_DATABASE_URL": database_url},
+                )
+            ],
         )
         container = deployment.add_container(
             name="history-service",
             image=f"{_IMAGE}:unset",
-            # The History Service takes over the whole `sandbox_service` database, so it connects
-            # as that database's owner; until it writes, its sessions are read-only (main.py).
-            env_variables={
-                env_name(Settings, "database_url"): SecretRef(namespace=env.namespace, name="postgres-sandbox-service")
-                .key("uri")
-                .env_value(self, "database")
-            },
+            env_variables={env_name(Settings, "database_url"): database_url},
             image_pull_policy=ImagePullPolicy.IF_NOT_PRESENT,
             ports=[endpoint.port.container_port(), _HEALTH.container_port()],
             readiness=http_probe("/healthz", port=_HEALTH.number, initial_delay_seconds=3, period_seconds=10),

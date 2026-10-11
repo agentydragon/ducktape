@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any
 
 from pydantic import Field
 from pydantic_settings import BaseSettings, PydanticBaseSettingsSource, SettingsConfigDict, YamlConfigSettingsSource
@@ -25,17 +25,12 @@ class Settings(BaseSettings):
     )
 
     sandbox_namespace: str = Field(min_length=1)
-    # CLEANUP(added 2026-10-10): Nothing reads `database_url` or `ingest_history`; the History Service
-    #   writes Session history. Delete both with the manifest keys that set them once the release that
-    #   stopped reading them serves on staging and testing, so no older Pod is left requiring them.
-    database_url: str | None = None
     commands_database_url: str = Field(
         min_length=1, description="The `sandbox_commands` database holding command admission."
     )
     caller_accounts: frozenset[ServiceAccountRef] = Field(min_length=1)
     platform_instructions: str = Field(min_length=1)
     lifecycle_timeout_s: float = Field(default=300, gt=0)
-    ingest_history: Literal[False] = False
     default_egress_policies: list[str] = Field(default_factory=list)
     kubernetes_grants: dict[str, KubernetesGrant] = Field(default_factory=dict)
     kubernetes_binding_cleanup_namespaces: set[str] = Field(default_factory=set)

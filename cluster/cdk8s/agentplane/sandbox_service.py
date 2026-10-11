@@ -43,7 +43,7 @@ from agentplane.sandbox_service.settings import CONFIG_FILE_ENV, RUNNER_CHANNEL_
 from agentplane.subjects import ServiceAccountRef
 from cluster.cdk8s import cilium, node_scheduling, pod_policy
 from cluster.cdk8s.agentplane import actions, database, egress, history_service, notifications
-from cluster.cdk8s.agentplane.environment import Environment, HistoryWriter
+from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.agentplane.migrate_container import migrate_init_container
 from cluster.cdk8s.agentplane.pod_disruption_budget import add_pod_disruption_budget
 from cluster.cdk8s.api_resource import custom_resource, named_resource
@@ -152,7 +152,6 @@ class SandboxService(Construct):
                 "runner_channel_port": channel.pod_port,
                 "health_port": _HEALTH.number,
                 "runner_port": RUNNER_PORT,
-                "ingest_history": env.history_writer is HistoryWriter.SANDBOX_SERVICE,
                 **(
                     {
                         # Through the egress proxy, which swaps the placeholder bearer for the Pod's token.
@@ -167,17 +166,10 @@ class SandboxService(Construct):
                 ),
             },
             path="/etc/agentplane-sandbox-service/config.yaml",
-            supplied=[("database_url",), ("commands_database_url",), ("pod_ip",)],
+            supplied=[("commands_database_url",), ("pod_ip",)],
         )
         # Like the other database-backed services, a migration failure blocks Pod
         # startup, including existing lifecycle RPCs. The command has no retry loop.
-        migration_env = {
-            "AGENTPLANE_SANDBOX_SERVICE_DATABASE_URL": SecretRef(
-                namespace=env.namespace, name="postgres-sandbox-service"
-            )
-            .key("uri")
-            .env_value(self, "database")
-        }
         commands_migration_env = {
             "AGENTPLANE_SANDBOX_SERVICE_COMMANDS_DATABASE_URL": SecretRef(
                 namespace=env.namespace, name="postgres-sandbox-commands"
@@ -200,22 +192,16 @@ class SandboxService(Construct):
             security_context=PodSecurityContextProps(ensure_non_root=True, user=1000, group=1000, fs_group=1000),
             init_containers=[
                 migrate_init_container(
-                    "git.allegedly.works/ducktape-ci/agentplane-sandbox-service-history-migrate:unset",
-                    name="migrate",
-                    env_variables=migration_env,
-                ),
-                migrate_init_container(
                     "git.allegedly.works/ducktape-ci/agentplane-sandbox-commands-migrate:unset",
                     name="migrate-commands",
                     env_variables=commands_migration_env,
-                ),
+                )
             ],
         )
         container = deployment.add_container(
             name="sandbox-service",
             image=f"{_IMAGE}:unset",
-            env_variables=migration_env
-            | commands_migration_env
+            env_variables=commands_migration_env
             # Where the Sandbox control Services this replica writes point (runner_channel.md).
             | {env_name(Settings, "pod_ip"): EnvValue.from_field_ref(EnvFieldPaths.POD_IP)},
             image_pull_policy=ImagePullPolicy.IF_NOT_PRESENT,

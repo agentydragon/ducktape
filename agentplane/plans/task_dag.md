@@ -576,7 +576,6 @@ node switches which service reads or writes it. Only the fold double-runs.
 
 ```mermaid
 flowchart TD
-    SANDBOX_LOCAL_HISTORY_RETIRE[Blocked: drop the Sandbox Service's history database access]
     APP_PROJECTOR_RETIRE[Candidate: delete app projector code]
     APP_PROJECTION_RETIRE[Blocked: drop app projection tables]
     HISTORY_SERVICE_OWNERSHIP[Capstone: History Service owns log and fold]
@@ -588,7 +587,6 @@ flowchart TD
     THREAD_READ_POLICY[Scoped archive reads]
     APP_PROJECTOR_RETIRE --> APP_PROJECTION_RETIRE
     APP_PROJECTION_RETIRE --> HISTORY_SERVICE_OWNERSHIP
-    SANDBOX_LOCAL_HISTORY_RETIRE --> HISTORY_SERVICE_OWNERSHIP
     SESSION_EVENT_RETENTION_ENABLE --> SESSION_EVENT_COMPACTION_PLAN
     SESSION_EVENT_COMPACTION_PLAN --> SESSION_EVENT_COMPACTION
     SESSION_EVENT_COMPACTION --> HISTORY_REPACK
@@ -596,14 +594,6 @@ flowchart TD
     APP_PROJECTION_RETIRE -. smaller baseline, not required .-> APP_ALEMBIC_SQUASH
     HISTORY_SERVICE_OWNERSHIP -. enforce at the final owner .-> THREAD_READ_POLICY
 ```
-
-### `SANDBOX_LOCAL_HISTORY_RETIRE` — revoke the Sandbox Service's history access
-
-**Blocked until the release that deleted the Sandbox Service's ingester serves on staging and
-testing.** That release reads neither `database_url` nor `ingest_history`. Drop both manifest keys
-with their settings fields (the CLEANUP tombstone in `sandbox_service/settings.py`), drop the
-Sandbox Service's history database credentials, and move the history `migrate` init container to
-the History Service Deployment, so the Sandbox Service can no longer reach history tables.
 
 ### `APP_PROJECTOR_RETIRE` — delete the app projector
 
@@ -761,17 +751,14 @@ are irreplaceable, and a node that deletes a column or row stops for the operato
 ```mermaid
 flowchart TD
     HISTORY_RUNNER_SESSION_ID_DROP[Blocked: drop the runner session ID from the history database]
-    HISTORY_STORE_MOVE[Blocked: history store and migrations move to the History Service]
-    HISTORY_WRITER_SWITCH_RETIRE[Blocked: delete the history_writer switch]
+    HISTORY_STORE_MOVE[Candidate: history store and migrations move to the History Service]
+    HISTORY_WRITER_SWITCH_RETIRE[Candidate: delete the history_writer switch]
     HISTORY_DATABASE_RENAME[Blocked: rename the sandbox_service database and role]
     SANDBOX_DATABASE_RENAME[Blocked: name the sandbox_commands database for the Sandbox Service]
     APP_ELECTRIC_RETIRE[Blocked: remove Electric's access to the app database]
     PROTO_DIRECTORY[Candidate: protos under agentplane/proto, packages named by path]
-    SANDBOX_LOCAL_HISTORY_RETIRE[Drop Sandbox Service history database access]
     APP_PROJECTOR_RETIRE[Delete app projector]
     HISTORY_SERVICE_OWNERSHIP[History Service ownership]
-    SANDBOX_LOCAL_HISTORY_RETIRE --> HISTORY_STORE_MOVE
-    SANDBOX_LOCAL_HISTORY_RETIRE --> HISTORY_WRITER_SWITCH_RETIRE
     HISTORY_STORE_MOVE --> HISTORY_SERVICE_OWNERSHIP
     HISTORY_STORE_MOVE --> HISTORY_DATABASE_RENAME
     FOLLOW_PATH_RETIRE[Delete following, WatchSessions and holds] --> HISTORY_RUNNER_SESSION_ID_DROP
@@ -791,18 +778,17 @@ follower-only ingestion state (`source_id`, `feed_state`). Stops for the operato
 
 ### `HISTORY_STORE_MOVE` — the history store belongs to the History Service
 
-**Blocked on Sandbox Service local-history retirement; unaffected by the split.** Move the remaining store, models and
-Alembic migrations from `sandbox_service/session_history` into `history_service`, rename the
-`agentplane-sandbox-service-history-migrate` image, and run the migration init container in the
-History Service Deployment. The Sandbox Service then has no credential for the history database.
+**Candidate; unaffected by the split.** Move the remaining store, models and
+Alembic migrations from `sandbox_service/session_history` into `history_service`, and rename the
+`agentplane-sandbox-service-history-migrate` image, whose init container already runs in the
+History Service Deployment.
 `session_history/session_changes.py`, which listens on `sandbox_commands`, moves next to the
 Session registry rather than with the store, unless `FOLLOW_PATH_RETIRE` has deleted the
 `WatchSessions` feed first.
 
 ### `HISTORY_WRITER_SWITCH_RETIRE` — one ingester, no switch
 
-**Blocked on Sandbox Service local-history retirement.** Delete `Environment.history_writer`, the
-History Service's `ingester.enabled` and the Sandbox Service's `ingest_history`.
+**Candidate.** Delete `Environment.history_writer` and the History Service's `ingester.enabled`.
 
 ### `HISTORY_DATABASE_RENAME` — name the database for its owner
 
