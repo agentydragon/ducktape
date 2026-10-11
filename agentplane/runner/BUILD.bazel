@@ -37,6 +37,7 @@ py_grpc_service_library(
     py_proto = ":protocol_pb2",
     visibility = [
         "//agentplane/runner:__subpackages__",
+        "//agentplane/runner_gateway:__subpackages__",
         "//agentplane/sandbox_service:__subpackages__",
     ],
 )
@@ -91,6 +92,7 @@ py_library(
     srcs = ["client.py"],
     visibility = [
         "//agentplane/runner:__subpackages__",
+        "//agentplane/runner_gateway:__subpackages__",
         "//agentplane/sandbox_service:__subpackages__",
         "//cluster/cdk8s/agentplane/kubevirt_experiment:__pkg__",
     ],
