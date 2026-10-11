@@ -256,6 +256,7 @@ py_test(
         "//util:net",
         "//util/testing:asgi",
         "//util/testing:mock_oidc",
+        "//util/testing:postgres",
         "@pypi//fastapi",
         "@pypi//fastmcp_slim",
         "@pypi//httpx",
@@ -1046,6 +1047,7 @@ py_test(
         "//agentplane/history_service:client",
         "//agentplane/proto:event_pb2",
         "//agentplane/thread_fold:projection_lease",
+        "//util/testing:postgres",
         "@pypi//fastapi",
         "@pypi//httpx",
         "@pypi//protobuf",
@@ -1053,7 +1055,6 @@ py_test(
         "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
         "@pypi//starlette",
-        "@pypi//testcontainers",
     ],
 )
 

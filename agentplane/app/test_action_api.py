@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
-from collections.abc import AsyncIterator, Callable
+from collections.abc import AsyncIterator, Callable, Iterator
 from contextlib import AsyncExitStack, asynccontextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
@@ -22,6 +22,7 @@ from fastapi import FastAPI
 from fastmcp import FastMCP
 from pydantic import AnyHttpUrl
 from sqlalchemy import select
+from sqlalchemy.engine import make_url
 from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
 from starlette.routing import Route
@@ -89,6 +90,7 @@ from agentplane.workload_auth.principal import (
 from util.net import bind_free_port, pick_free_port
 from util.testing.asgi import serve_app, serve_app_in_loop
 from util.testing.mock_oidc import build_mock_oidc_app, generate_rsa_keypair, sign_jwt
+from util.testing.postgres import PostgresDatabaseTemplate, database_name_for_test
 
 CALLER = CallerPrincipal(account=ServiceAccountRef(namespace="agentplane-test", name="test-sandbox"))
 SUBJECT_A = "test-operator-subject"
@@ -131,6 +133,23 @@ def direct_federation() -> bool:
     return False
 
 
+@pytest.fixture(scope="module")
+def action_api_template(
+    postgres_admin_url: str, app_database_template: PostgresDatabaseTemplate
+) -> Iterator[PostgresDatabaseTemplate]:
+    with PostgresDatabaseTemplate(
+        postgres_admin_url, "agentplane_action_api_template", template=app_database_template.template_name
+    ) as template:
+        ACTIONS_RUNNER.apply(template.url)
+        yield template
+
+
+@pytest.fixture
+def db_url(action_api_template: PostgresDatabaseTemplate, request: pytest.FixtureRequest) -> Iterator[str]:
+    with action_api_template.clone(database_name_for_test(request.node.nodeid)) as url:
+        yield make_url(url).set(drivername="postgresql+asyncpg").render_as_string(hide_password=False)
+
+
 @pytest.fixture
 async def review(
     db_url: str,
@@ -154,7 +173,6 @@ async def review(
     notifications_http: httpx.AsyncClient,
     notifications_token_file: Path,
 ) -> AsyncIterator[Review]:
-    ACTIONS_RUNNER.apply(db_url)
     server = FastMCP("test-review")
     calls: list[str] = []
 
