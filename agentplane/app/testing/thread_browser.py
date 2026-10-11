@@ -176,7 +176,6 @@ async def gateway_client(gateway_port: int, tmp_path: Path) -> AsyncIterator[San
         command_admission_timeout_s=10,
         request_timeout_s=10,
         lifecycle_timeout_s=10,
-        follow_timeout_s=10,
     ) as client:
         yield client
 
