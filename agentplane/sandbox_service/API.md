@@ -45,13 +45,13 @@ The same service-caller allowlist gates every RPC. Provisioning is always enable
   the app. The RPC returns when the CR is persisted; ServiceAccount, grants, and Pod readiness
   are asynchronous.
   After deletion, a new CR under the same name cannot prove whether an earlier Create succeeded.
-  `runner_ingress` names one of the configured `runner_ingresses`, empty meaning `history`. The
-  service starts the template's `runner` container with that ingress and the hub (`runner_control`)
-  as `--ingress-target`/`--ingress-bearer` and `--channel-target`/`--channel-bearer`, and grants each
-  endpoint's `egress_policy` with the launch policies
-  ([Event ingress](../docs/runner_channel.md#event-ingress)). A template whose runner already passes
-  one of those flags is refused. No request may pick an endpoint's egress policy, at creation or
-  through `GrantEgress`. An unset `runner_control`, or no `history` ingress, leaves that endpoint off.
+  The service starts the template's `runner` container with the configured `runner_ingress` and
+  hub (`runner_control`) as `--ingress-target`/`--ingress-bearer` and
+  `--channel-target`/`--channel-bearer`, and grants each endpoint's `egress_policy` with the launch
+  policies ([Event ingress](../docs/runner_channel.md#event-ingress)); the request chooses neither.
+  A template whose runner already passes one of those flags is refused. No request may pick an
+  endpoint's egress policy, at creation or through `GrantEgress`. An unset setting leaves that
+  endpoint off.
 - `GrantEgress`: UID-pinned Sandbox destination and egress policy names; returns the created binding name.
   `RevokeEgress`: binding name; retains the refusal to delete Git-owned bindings. Both require the
   same service-caller authorization as other operations.

@@ -365,7 +365,7 @@ manifests once their images carry it. `LookupSession`'s journal scan waits on ho
 **Blocked on lifecycle requests and the [ingress and control split](#11-runner-ingress-and-control-split).**
 Every Sandbox template starts its runner pushing Events to its ingress and holding its control
 stream, and the canary template goes. The Sandbox Service sets both endpoints at creation once its
-config carries `runner_control` and a `history` entry in `runner_ingresses`, and no template may then
+config carries `runner_control` and `runner_ingress`, and no template may then
 pass `--channel-target` itself, so that config and the canary's removal land together, after the
 images that read them are published. Pre-cutover Sandboxes are not upgraded: a clean cutover
 (operator, 2026-10-10 PDT), with the operator stopping their one running Sandbox for it.

@@ -120,7 +120,7 @@ def backend(
                 ActionPolicyBindings(namespace=NAMESPACE, custom_objects=custom),
                 grants if grants is not None else {},
                 bindings,
-                RunnerEndpoints(control=None, ingresses={}),
+                RunnerEndpoints(control=None, ingress=None),
             ),
             sessions=SessionRegistry(engine),
             submissions=SubmissionStore(engine),

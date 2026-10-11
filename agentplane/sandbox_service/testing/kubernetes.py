@@ -103,7 +103,7 @@ async def kubernetes() -> AsyncIterator[Cluster]:
                     ActionPolicyBindings(namespace=SANDBOX_NAMESPACE, custom_objects=custom),
                     {},
                     KubernetesBindings(inventory, k8s_client.RbacAuthorizationV1Api(api)),
-                    RunnerEndpoints(control=None, ingresses={}),
+                    RunnerEndpoints(control=None, ingress=None),
                 ),
             )
 

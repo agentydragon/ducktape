@@ -280,9 +280,6 @@ message CreateSandboxRequest {
   repeated string kubernetes_grants = 5;
   SessionDefaults session_defaults = 6;
   string bootstrap = 7;
-  // A name from the service's configured runner ingresses, where the runner pushes its Events;
-  // empty names the History Service's. Its egress policy comes with it, never from egress_policies.
-  string runner_ingress = 8;
 }
 
 // Kubernetes names/status vocabulary is preserved, not recast as runner state.

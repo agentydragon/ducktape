@@ -45,17 +45,16 @@ class Settings(BaseSettings):
         description="Audience of the Pod tokens the egress proxy substitutes on runner channel connections.",
     )
     runner_channel_port: int = Field(default=8082, ge=1, le=65535)
-    # CLEANUP(added 2026-10-11): require `runner_control` and a `history` ingress once both
-    #   environments' Sandbox Service config sets them and no SandboxTemplate passes --channel-target.
+    # CLEANUP(added 2026-10-11): require `runner_control` and `runner_ingress` once both environments'
+    #   Sandbox Service config sets them and no SandboxTemplate passes --channel-target.
     runner_control: RunnerEndpoint | None = Field(
         default=None,
         description="The hub endpoint every new Sandbox's runner dials for its control stream. "
         "Unset, runners dial whatever their template names.",
     )
-    runner_ingresses: dict[str, RunnerEndpoint] = Field(
-        default_factory=dict,
-        description="The ingresses a create request may name; `history`, the History Service's, is the default. "
-        "With none named `history`, a request naming none starts its runner without an ingress.",
+    runner_ingress: RunnerEndpoint | None = Field(
+        default=None,
+        description="The ingress every new Sandbox's runner pushes its Events to. Unset, runners start without one.",
     )
     runner_port: int = Field(default=7000, ge=1, le=65535)
     admission_timeout_s: float = Field(default=15, gt=0, le=60)

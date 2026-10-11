@@ -54,9 +54,10 @@ class Provisioning:
         if existing is not None:
             return existing
         grants = resolve_grants(list(spec.kubernetes_grants), self.grants)
-        endpoints = self.endpoints.resolve(spec.runner_ingress)
         policies = list(
-            unique_everseen([*endpoints.egress_policies(), *self.egress.launch_policies(list(spec.egress_policies))])
+            unique_everseen(
+                [*self.endpoints.egress_policies(), *self.egress.launch_policies(list(spec.egress_policies))]
+            )
         )
         await self.egress.require_policies(policies)
         await self.action_policy.require_policy_sets(list(spec.action_policy_sets))
@@ -82,7 +83,7 @@ class Provisioning:
         return await self.inventory.create(
             spec,
             caller=caller,
-            endpoints=endpoints,
+            endpoints=self.endpoints,
             annotations=annotations or None,
             finalizers=[KUBERNETES_BINDINGS_FINALIZER]
             if any(

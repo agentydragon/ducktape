@@ -22,7 +22,7 @@ from agentplane.sandbox_service.models import (
     SandboxTearingDownError,
 )
 from agentplane.sandbox_service.protocol_pb2 import CreateSandboxRequest, TeardownPhase
-from agentplane.sandbox_service.runner_endpoints import SandboxEndpoints
+from agentplane.sandbox_service.runner_endpoints import RunnerEndpoints
 from agentplane.sandbox_service.testing.fake_inventory import (
     NAMESPACE,
     POD_TEMPLATE,
@@ -38,7 +38,7 @@ from util.agent_sandbox import OperatingMode
 
 CALLER = ServiceAccountRef(namespace=NAMESPACE, name="test-caller")
 OTHER = ServiceAccountRef(namespace=NAMESPACE, name="other-caller")
-NO_ENDPOINTS = SandboxEndpoints(control=None, ingress=None)
+NO_ENDPOINTS = RunnerEndpoints(control=None, ingress=None)
 
 _READY = {"conditions": [{"type": "Ready", "status": "True", "reason": "PodReady"}], "nodeName": "test-node"}
 

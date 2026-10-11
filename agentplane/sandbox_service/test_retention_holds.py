@@ -130,7 +130,7 @@ async def api(
             ActionPolicyBindings(namespace=NAMESPACE, custom_objects=custom),
             {},
             KubernetesBindings(inventory, cast(k8s_client.RbacAuthorizationV1Api, FakeRbac())),
-            RunnerEndpoints(control=None, ingresses={}),
+            RunnerEndpoints(control=None, ingress=None),
         ),
         sessions=SessionRegistry(engine),
         submissions=SubmissionStore(engine),
