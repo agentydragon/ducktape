@@ -16,8 +16,8 @@ from agentplane.sandbox_service.testing.fake_inventory import (
     FakeCustomObjectsApi,
     close_fake_api_clients,
 )
-from agentplane.sandbox_service.testing.grpc_service import CALLER_TOKEN
 from agentplane.sandbox_service.testing.fixtures import service_database_template
+from agentplane.sandbox_service.testing.grpc_service import CALLER_TOKEN
 from agentplane.sandbox_service.testing.kubernetes import Cluster, kubernetes
 from util.kubernetes import CustomObjectsClient
 from util.testing.postgres import DatabaseClones, PostgresDatabaseTemplate
