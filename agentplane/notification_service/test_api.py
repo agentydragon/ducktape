@@ -4,6 +4,7 @@ import asyncio
 import json
 from datetime import UTC, datetime
 from types import SimpleNamespace
+from typing import Any, cast
 from unittest.mock import create_autospec
 from uuid import uuid4
 
@@ -184,19 +185,28 @@ async def test_operator_status_is_read_only_and_uid_pinned(store: Store) -> None
     await store.record(
         claim, source, [ActionEventView(sequence=1, state=ActionState.DECISION_PENDING, at=datetime.now(UTC))]
     )
-    url = "/operator/v1/sandboxes/test/sandbox/notifications"
+    url = "/operator/v1/sandboxes/test/sandbox/notifications/stream"
     async with httpx.AsyncClient(
         transport=httpx.ASGITransport(app=app), base_url="http://notifications.test"
     ) as client:
         assert (await client.get(url, params={"uid": "sandbox-uid"})).status_code == 403
-        assert (await client.get(url + "/stream", params={"uid": "sandbox-uid"})).status_code == 403
         app.dependency_overrides[authenticated_caller] = lambda: WorkloadPrincipal(
             "test", "app", "system:serviceaccount:test:app", "app-pod", "pod-uid", "account-uid"
         )
-        assert (await client.get(url, params={"uid": "another-uid"})).json()["inboxes"] == []
-        response = await client.get(url, params={"uid": "sandbox-uid"})
-        assert response.status_code == 200
-        inbox = response.json()["inboxes"][0]
+        assert (await client.get("/v1/inboxes")).json() == []  # App identity gets no agent inbox authority.
+
+    async def first_snapshot(uid: str) -> dict[str, Any]:
+        frames = sandbox_status_frames(service, "test", "sandbox", uid)
+        try:
+            frame = await asyncio.wait_for(anext(frames), 5)
+        finally:
+            await frames.aclose()
+        return cast(dict[str, Any], json.loads(frame.decode().removeprefix("event: snapshot\ndata: ")))
+
+    async with store.wakeups.listener.listen():
+        assert (await first_snapshot("another-uid"))["inboxes"] == []
+        status = await first_snapshot("sandbox-uid")
+        inbox = status["inboxes"][0]
         assert inbox["unannounced_count"] == 1
         assert inbox["pending_acknowledgement_count"] == 1
         assert inbox["pending_entries_more"] is False
@@ -204,15 +214,13 @@ async def test_operator_status_is_read_only_and_uid_pinned(store: Store) -> None
         assert [(entry["cursor"], entry["summary"]) for entry in inbox["pending_entries"]] == [
             (1, f"Action {subscription.source.request_id} · event 1 · decision_pending")
         ]
-        assert "payload" not in str(inbox)
-        await store.acknowledge(PRINCIPAL.account, subscription.inbox_id, 1)
-        acknowledged = (await client.get(url, params={"uid": "sandbox-uid"})).json()["inboxes"][0]
-        assert acknowledged["pending_entries"] == []
-        assert acknowledged["pending_acknowledgement_count"] == 0
         assert inbox["subscriptions"][0]["id"] == str(subscription.id)
         assert inbox["notice_wait_reason"] == "debouncing"
-        assert "payload" not in str(response.json())
-        assert (await client.get("/v1/inboxes")).json() == []  # App identity gets no agent inbox authority.
+        assert "payload" not in str(status)
+        await store.acknowledge(PRINCIPAL.account, subscription.inbox_id, 1)
+        acknowledged = (await first_snapshot("sandbox-uid"))["inboxes"][0]
+        assert acknowledged["pending_entries"] == []
+        assert acknowledged["pending_acknowledgement_count"] == 0
 
 
 async def test_status_stream_replays_snapshot_and_follows_committed_changes(store: Store) -> None:

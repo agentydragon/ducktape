@@ -98,14 +98,6 @@ async def _sandbox_status(service: Service, namespace: str, name: str, uid: str)
     )
 
 
-@router.get("/operator/v1/sandboxes/{namespace}/{name}/notifications")
-async def sandbox_notifications(
-    namespace: str, name: str, uid: str, caller: Caller, service: Notifications
-) -> SandboxNotificationStatus:
-    _authorize_sandbox_status(namespace, caller, service)
-    return await _sandbox_status(service, namespace, name, uid)
-
-
 async def _status_frames[S: SandboxNotificationStatus | SessionNoticeStates](
     service: Service,
     read: Callable[[], Awaitable[S]],
@@ -185,6 +177,7 @@ def session_notice_frames(service: Service, namespace: str, session_ids: set[str
     )
 
 
+# No caller yet: staged for the Thread list's pending-notice indicator.
 @router.get("/operator/v1/notices/stream")
 async def session_notices_stream(
     caller: Caller,
