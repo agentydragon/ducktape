@@ -116,7 +116,6 @@ py_library(
         "@pypi//pytest",
         "@pypi//sqlalchemy",
         "@pypi//tenacity",
-        "@pypi//testcontainers",
     ],
 )
 

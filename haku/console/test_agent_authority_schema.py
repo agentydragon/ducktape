@@ -7,7 +7,6 @@ schema objects, deferred constraints, triggers, and invalid rows rather than dom
 from __future__ import annotations
 
 import datetime
-import re
 from dataclasses import dataclass
 from typing import Any
 from uuid import UUID, uuid4
@@ -36,7 +35,7 @@ from haku.console.identity.agent import (
 from haku.console.identity.operator_identity import OperatorStatus
 from haku.console.tool_calls import ToolCallStatus
 from third_party.containers import pgvector_pg18
-from util.testing.postgres import create_database_sync, force_drop_database_sync
+from util.testing.postgres import DatabaseNames, create_database_sync, force_drop_database_sync
 from util.testing.postgres_fixtures import start_postgres_container
 
 
@@ -80,18 +79,9 @@ class StaticAgent:
     binding_id: UUID
 
 
-@pytest.fixture(scope="session")
-def postgres_admin_url(postgres_container: Any) -> str:
-    host = postgres_container.get_container_host_ip()
-    port = int(postgres_container.get_exposed_port(5432))
-    return f"postgresql+psycopg://postgres:postgres@{host}:{port}/postgres"
-
-
 @pytest.fixture
-def db_url(postgres_admin_url: str, request: pytest.FixtureRequest) -> Any:
-    suffix = uuid4().hex[:8]
-    base = re.sub(r"[^a-z0-9_]", "_", request.node.name.lower())[:35].rstrip("_")
-    db_name = f"{base or 'agent_schema'}_{suffix}"
+def db_url(postgres_admin_url: str, database_names: DatabaseNames) -> Any:
+    db_name = database_names()
     db_url = create_database_sync(postgres_admin_url, db_name, extensions=("vector",))
 
     yield db_url

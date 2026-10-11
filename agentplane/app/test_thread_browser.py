@@ -60,6 +60,7 @@ from agentplane.thread_fold.models import (
 )
 from agentplane.thread_fold.views import ThreadFeedErrorState, ThreadOperationalState, ThreadViewState
 from util.bazel.runfiles import get_required_path
+from util.testing.postgres import DatabaseNames
 from util.testing.undeclared_outputs import undeclared_outputs_dir
 from util.testing.viewports import DESKTOP, MOBILE, SMALL_MOBILE, Viewport
 from util.testing.visual_review import upsert_review_asset
@@ -466,7 +467,7 @@ async def test_projected_browser_streams_runner_events_and_loads_evidence_lazily
     page: Page,
     certificate: BrowserCertificate,
     tmp_path: Path,
-    request: pytest.FixtureRequest,
+    database_names: DatabaseNames,
     thread_browser_postgres: BrowserPostgres,
 ) -> None:
     source = ReplicationSource()
@@ -521,7 +522,7 @@ async def test_projected_browser_streams_runner_events_and_loads_evidence_lazily
     page.on("request", observe)
     directory = get_required_path("_main/agentplane/app/frontend/dist/index.html").parent
     async with (
-        browser_electric_service(thread_browser_postgres, request.node.nodeid) as service,
+        browser_electric_service(thread_browser_postgres, database_names()) as service,
         source.connect(tmp_path / "history-token") as history_client,
     ):
         engine = connect(service.database_url)

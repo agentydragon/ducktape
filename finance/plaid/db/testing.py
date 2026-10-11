@@ -2,16 +2,14 @@
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator, Iterator
-from uuid import uuid4
+from collections.abc import AsyncIterator
 
 import pytest
 import pytest_asyncio
 from sqlalchemy.engine import make_url
-from testcontainers.postgres import PostgresContainer
 
 from finance.plaid.db.link_store import PlaidLinkStorage
-from util.testing.postgres import PostgresDatabaseTemplate, database_name_for_test
+from util.testing.postgres import DatabaseClones, PostgresDatabaseTemplate
 
 # SQLAlchemy loads asyncpg from the URL scheme; Gazelle cannot infer the dependency.
 # gazelle:include_dep @pypi//asyncpg
@@ -20,12 +18,9 @@ from util.testing.postgres import PostgresDatabaseTemplate, database_name_for_te
 
 
 @pytest_asyncio.fixture(scope="session", loop_scope="session")
-async def plaid_database_template(postgres_container: PostgresContainer) -> AsyncIterator[PostgresDatabaseTemplate]:
+async def plaid_database_template(postgres_admin_url: str) -> AsyncIterator[PostgresDatabaseTemplate]:
     """Migrate the Plaid schema once per test process; callers clone it per test."""
-    host = postgres_container.get_container_host_ip()
-    port = postgres_container.get_exposed_port(5432)
-    admin_url = f"postgresql+psycopg://postgres:postgres@{host}:{port}/postgres"
-    with PostgresDatabaseTemplate(admin_url, f"plaid_test_template_{uuid4().hex}") as template:
+    with PostgresDatabaseTemplate(postgres_admin_url, "plaid_test_template") as template:
         async_url = make_url(template.url).set(drivername="postgresql+asyncpg").render_as_string(hide_password=False)
         storage = await PlaidLinkStorage.initialize(async_url)
         await storage.close()
@@ -33,10 +28,6 @@ async def plaid_database_template(postgres_container: PostgresContainer) -> Asyn
 
 
 @pytest.fixture
-def plaid_database_url(
-    plaid_database_template: PostgresDatabaseTemplate, request: pytest.FixtureRequest
-) -> Iterator[str]:
+def db_url(plaid_database_template: PostgresDatabaseTemplate, database_clones: DatabaseClones) -> str:
     """A fresh writable clone of the migrated Plaid schema for this test."""
-    db_name = database_name_for_test(request.node.nodeid)
-    with plaid_database_template.clone(db_name) as url:
-        yield make_url(url).set(drivername="postgresql+asyncpg").render_as_string(hide_password=False)
+    return database_clones.clone(plaid_database_template, drivername="postgresql+asyncpg")

@@ -35,7 +35,7 @@ py_library(
         ":store",
         "//agentplane/action_service/testing:fixtures",
         "//agentplane/runner/testing:fixtures",
-        "//agentplane/sandbox_service/testing:history",
+        "//agentplane/sandbox_service/testing:fixtures",
         "//util/testing:postgres",
         "//util/testing:postgres_fixtures",
         "//util/testing:undeclared_outputs",
@@ -44,7 +44,6 @@ py_library(
         "@pypi//psycopg",
         "@pypi//pytest",
         "@pypi//sqlalchemy",
-        "@pypi//testcontainers",
     ],
 )
 

@@ -38,8 +38,8 @@ from finance.plaid.db.schema import AccountRow, LinkRow, TransactionRow, async_s
 
 
 @pytest_asyncio.fixture
-async def session_factory(plaid_database_url: str) -> AsyncGenerator[async_sessionmaker[AsyncSession]]:
-    engine, factory = async_session_factory(plaid_database_url)
+async def session_factory(db_url: str) -> AsyncGenerator[async_sessionmaker[AsyncSession]]:
+    engine, factory = async_session_factory(db_url)
     try:
         yield factory
     finally:

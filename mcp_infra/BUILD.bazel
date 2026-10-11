@@ -193,6 +193,6 @@ py_library(
         "//mcp_infra/testing:fixtures",
         "//util/testing:postgres_fixtures",
         "@pypi//pytest",
-        "@pypi//testcontainers",
+        "@pypi//sqlalchemy",
     ],
 )

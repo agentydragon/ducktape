@@ -3,34 +3,42 @@
 ## PostgreSQL schema templates
 
 For suites that need a migrated schema but isolated writable state per test, create and migrate one
-template for the session, then clone it into a fresh database for each case:
+template for the session, then clone it into a fresh database for each case. Import the shared
+fixtures directly into the owning package conftest; keep this wiring local to the suites that need
+Postgres so unrelated tests do not load Docker or migration dependencies.
 
 ```python
-from util.testing.postgres import PostgresDatabaseTemplate, database_name_for_test
+from util.testing.postgres import DatabaseClones, PostgresDatabaseTemplate, migrated_database_template
+from util.testing.postgres_fixtures import database_clones, database_names, postgres_admin_url, postgres_container
 
 
 @pytest.fixture(scope="session")
 def migrated_template(postgres_admin_url: str) -> Iterator[PostgresDatabaseTemplate]:
-    with PostgresDatabaseTemplate(
+    with migrated_database_template(
         postgres_admin_url,
         "service_test_template",
-        extensions=("vector",),  # optional; installed before the caller applies migrations
+        SERVICE_RUNNER,
     ) as template:
-        SERVICE_RUNNER.apply(template.url)
         yield template
 
 
 @pytest.fixture
-def db_url(migrated_template: PostgresDatabaseTemplate, request: pytest.FixtureRequest) -> Iterator[str]:
-    name = database_name_for_test(request.node.nodeid)
-    with migrated_template.clone(name) as url:
-        yield url
+def db_url(migrated_template: PostgresDatabaseTemplate, database_clones: DatabaseClones) -> str:
+    return database_clones.clone(migrated_template, drivername="postgresql+asyncpg")
 ```
 
-The service or test package owns its migration runner and applies it to `template.url`; the shared
-helper only creates, clones, and drops databases. Its URL retains the sync driver's scheme and query
-parameters from `postgres_admin_url`; convert it explicitly with SQLAlchemy `make_url` when a test
-needs an async driver.
+`database_names` allocates safe, deterministic, unique names from the current pytest node id. Use it
+directly when a test needs a name but manages database retention or teardown itself. `database_clones`
+owns an `ExitStack` for the test and drops every clone after dependent fixtures finish; specify each
+clone's SQLAlchemy driver explicitly. The shared `postgres_admin_url` uses psycopg, and callers can
+use `make_url` to preserve its credentials and query parameters while changing drivers.
+
+`migrated_database_template` creates a template and applies its `MigrationRunner` once.
+For application-specific initialization that is not a `MigrationRunner`, use
+`PostgresDatabaseTemplate` directly and perform that initialization once on `template.url`. It also
+supports `template=` when one test schema must extend another. Keep tests that verify starting from an
+empty database or applying a specific old migration state on direct create/drop fixtures instead of
+cloning a migrated template.
 
 PostgreSQL refuses to clone a template while it has open connections. Let migration engines and
 pools close before the first clone, and keep the template connection-free afterwards. Schema-level
