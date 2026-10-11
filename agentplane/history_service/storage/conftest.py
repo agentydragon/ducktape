@@ -3,10 +3,10 @@
 from collections.abc import AsyncIterator, Iterator
 
 import pytest
-from sqlalchemy import create_engine, text
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 
 from agentplane.history_service.storage.database_migrate import RUNNER
+from agentplane.testing.electric_role import ensure_electric_role
 from util.testing.postgres import DatabaseClones, PostgresDatabaseTemplate, migrated_database_template
 from util.testing.postgres_fixtures import (
     database_clones,
@@ -25,17 +25,7 @@ from util.testing.sqlalchemy_engines import managed_async_engine
 def history_database_template(postgres_admin_url: str) -> Iterator[PostgresDatabaseTemplate]:
     """One migrated History Service database per test process, cloned for each case."""
     # The cluster-wide Electric login must exist before migration grants are copied to clones.
-    admin_engine = create_engine(postgres_admin_url, isolation_level="AUTOCOMMIT")
-    try:
-        with admin_engine.connect() as connection:
-            connection.execute(
-                text(
-                    "DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'electric') "
-                    "THEN CREATE ROLE electric LOGIN REPLICATION PASSWORD 'electric'; END IF; END $$"
-                )
-            )
-    finally:
-        admin_engine.dispose()
+    ensure_electric_role(postgres_admin_url)
     with migrated_database_template(postgres_admin_url, "history_template", RUNNER) as template:
         yield template
 

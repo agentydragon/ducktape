@@ -5,8 +5,10 @@ package(
     default_visibility = [
         "//agentplane/action_service:__pkg__",
         "//agentplane/app:__pkg__",
+        "//agentplane/app/testing:__pkg__",
         "//agentplane/egress:__pkg__",
         "//agentplane/history_service:__pkg__",
+        "//agentplane/history_service/storage:__pkg__",
         "//agentplane/llm_ingress:__pkg__",
         "//agentplane/notification_service:__pkg__",
         "//agentplane/runner_gateway:__subpackages__",
@@ -24,5 +26,14 @@ py_library(
         "//util:agent_sandbox",
         "@pypi//aiohttp",
         "@pypi//more_itertools",
+    ],
+)
+
+py_library(
+    name = "electric_role",
+    srcs = ["electric_role.py"],
+    deps = [
+        "@pypi//psycopg",
+        "@pypi//sqlalchemy",
     ],
 )
