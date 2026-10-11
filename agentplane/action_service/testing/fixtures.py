@@ -7,10 +7,10 @@ without importing this package's conftest.
 from __future__ import annotations
 
 import asyncio
-import re
 from collections.abc import AsyncIterator, Callable, Iterator
 from contextlib import asynccontextmanager
 from datetime import timedelta
+from uuid import uuid4
 
 import httpx
 import pytest
@@ -34,25 +34,30 @@ from agentplane.action_service.mcp_executor import McpActionGroupExecutor
 from agentplane.action_service.models import ExecutionLease, ExecutionRequest, ExecutionResult, ExecutionState, Executor
 from agentplane.action_service.testing.lifecycle import wait_available
 from mcp_infra.testing.remote_server import as_remote_server
-from util.testing.postgres import create_database_sync, force_drop_database_sync
+from util.testing.postgres import PostgresDatabaseTemplate
 
 # SQLAlchemy loads these dialects from URLs; Gazelle cannot infer them.
 # gazelle:include_dep @pypi//asyncpg
 # gazelle:include_dep @pypi//psycopg
 
 
-@pytest.fixture
-def db_url(postgres_container: PostgresContainer, request: pytest.FixtureRequest) -> Iterator[str]:
+@pytest.fixture(scope="session")
+def action_database_template(postgres_container: PostgresContainer) -> Iterator[PostgresDatabaseTemplate]:
+    """One migrated Action Service database per test process, cloned for each case."""
     admin_url = (
         f"postgresql+psycopg://postgres:postgres@{postgres_container.get_container_host_ip()}"
         f":{postgres_container.get_exposed_port(5432)}/postgres"
     )
-    db_name = re.sub(r"[^a-z0-9_]", "_", request.node.name.lower())[:45].rstrip("_")
-    url = create_database_sync(admin_url, db_name)
-    async_url = make_url(url).set(drivername="postgresql+asyncpg").render_as_string(hide_password=False)
-    RUNNER.apply(async_url)
-    yield async_url
-    force_drop_database_sync(admin_url, db_name)
+    with PostgresDatabaseTemplate(admin_url, f"actions_template_{uuid4().hex}") as template:
+        RUNNER.apply(template.url)
+        yield template
+
+
+@pytest.fixture
+def db_url(action_database_template: PostgresDatabaseTemplate) -> Iterator[str]:
+    """A fresh writable clone of the migrated Action Service schema for this case."""
+    with action_database_template.clone(f"actions_{uuid4().hex}") as url:
+        yield make_url(url).set(drivername="postgresql+asyncpg").render_as_string(hide_password=False)
 
 
 @pytest.fixture

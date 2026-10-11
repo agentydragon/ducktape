@@ -10,17 +10,18 @@ from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 from testcontainers.postgres import PostgresContainer
 
 from agentplane.history_service.storage.database_migrate import RUNNER
-from util.testing.postgres import create_database_sync, force_drop_database_sync
+from util.testing.postgres import PostgresDatabaseTemplate
 from util.testing.postgres_fixtures import postgres_container
 
 # gazelle:include_dep @pypi//asyncpg
 # gazelle:include_dep @pypi//psycopg
 
 
-@pytest.fixture
-def db_url(postgres_container: PostgresContainer) -> Iterator[str]:
+@pytest.fixture(scope="session")
+def history_database_template(postgres_container: PostgresContainer) -> Iterator[PostgresDatabaseTemplate]:
+    """One migrated History Service database per test process, cloned for each case."""
     admin = f"postgresql+psycopg://postgres:postgres@{postgres_container.get_container_host_ip()}:{postgres_container.get_exposed_port(5432)}/postgres"
-    # The cluster's Electric replication login, which the migrations grant reads to.
+    # The cluster-wide Electric login must exist before migration grants are copied to clones.
     admin_engine = create_engine(admin, isolation_level="AUTOCOMMIT")
     try:
         with admin_engine.connect() as connection:
@@ -32,15 +33,16 @@ def db_url(postgres_container: PostgresContainer) -> Iterator[str]:
             )
     finally:
         admin_engine.dispose()
-    name = f"history_{uuid4().hex}"
-    url = (
-        make_url(create_database_sync(admin, name))
-        .set(drivername="postgresql+asyncpg")
-        .render_as_string(hide_password=False)
-    )
-    RUNNER.apply(url)
-    yield url
-    force_drop_database_sync(admin, name)
+    with PostgresDatabaseTemplate(admin, f"history_template_{uuid4().hex}") as template:
+        RUNNER.apply(template.url)
+        yield template
+
+
+@pytest.fixture
+def db_url(history_database_template: PostgresDatabaseTemplate) -> Iterator[str]:
+    """A fresh writable clone, including the migration's Electric read grants."""
+    with history_database_template.clone(f"history_{uuid4().hex}") as url:
+        yield make_url(url).set(drivername="postgresql+asyncpg").render_as_string(hide_password=False)
 
 
 @pytest.fixture
