@@ -5,12 +5,10 @@ from __future__ import annotations
 import asyncio
 import datetime
 import errno
-import re
 import threading
 from collections.abc import Awaitable, Callable, Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
-from typing import Any
 from urllib.parse import parse_qs, urlsplit
 from uuid import UUID, uuid4
 
@@ -23,7 +21,6 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 from sqlalchemy.orm import Session
 
 from haku.console.conftest import console_sessions
-from haku.console.database_migrate import apply_migrations
 from haku.console.database_schema import (
     Agent,
     AgentNameReservation,
@@ -70,7 +67,6 @@ from haku.console.identity.operator_identity_store import PostgresOperatorIdenti
 from haku.console.mcp.approval import PostgresToolCallLedger
 from haku.console.tool_call_actor import AgentActor
 from util.oidc_principal import VerifiedOidcPrincipal
-from util.testing.postgres import create_database_sync, force_drop_database_sync
 
 _BROWSER_ISSUER = "https://auth.test/browser/"
 _MCP_ISSUER = "https://auth.test/mcp/"
@@ -171,16 +167,9 @@ class Harness:
 
 
 @pytest.fixture
-def db_url(postgres_admin_url: str, request: pytest.FixtureRequest) -> Any:
-    suffix = uuid4().hex[:8]
-    base = re.sub(r"[^a-z0-9_]", "_", request.node.name.lower())[:35].rstrip("_")
-    db_name = f"{base or 'agent_authority'}_{suffix}"
-    db_url = create_database_sync(postgres_admin_url, db_name, extensions=("vector",))
-    apply_migrations(db_url)
-
-    yield db_url
-
-    force_drop_database_sync(postgres_admin_url, db_name)
+def db_url(migrated_db_url: str) -> str:
+    """Use the shared migrated clone with a sync driver for ORM helpers in this test."""
+    return make_url(migrated_db_url).set(drivername="postgresql+psycopg").render_as_string(hide_password=False)
 
 
 HarnessFactory = Callable[..., Awaitable[Harness]]

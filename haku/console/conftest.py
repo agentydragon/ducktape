@@ -3,8 +3,8 @@ over the console app wired to it.
 
 Postgres is required by the console (approval ledger + operator OAuth store), so every test that
 builds the app runs against a fresh per-test database. `db_url` is a pristine empty database (used by
-the migration tests, which drive alembic themselves); `migrated_db_url` is the same database upgraded
-to head (used by everything else, including `make_client`).
+the migration tests, which drive alembic themselves); `migrated_db_url` is a fresh clone of a
+session-scoped database upgraded to head (used by everything else, including `make_client`).
 
 This file is expensive to *import*, not just to use: `create_app` drags in the whole composition
 root, which pytest pays at collection for every test under `haku/console/` whose target depends on
@@ -53,7 +53,7 @@ from haku.console.settings import Settings
 from haku.console.tool_call_actor import OperatorActor
 from haku.console.tool_calls import ToolCallStatus
 from third_party.containers import pgvector_pg18
-from util.testing.postgres import create_database_sync, force_drop_database_sync
+from util.testing.postgres import PostgresDatabaseTemplate, create_database_sync, force_drop_database_sync
 from util.testing.postgres_fixtures import start_postgres_container
 
 # TestClient drives the app over httpx, imported inside starlette; gazelle cannot see it.
@@ -314,12 +314,21 @@ def db_url(postgres_admin_url: str, request: pytest.FixtureRequest) -> Generator
     force_drop_database_sync(postgres_admin_url, db_name)
 
 
+@pytest.fixture(scope="session")
+def migrated_database_template(postgres_admin_url: str) -> Iterator[PostgresDatabaseTemplate]:
+    """Install vector and migrate once, then provide isolated clones to runtime tests."""
+    with PostgresDatabaseTemplate(
+        postgres_admin_url, f"haku_console_template_{uuid4().hex}", extensions=("vector",)
+    ) as template:
+        apply_migrations(template.url)
+        yield template
+
+
 @pytest.fixture
-def migrated_db_url(db_url: str) -> str:
-    """The per-test database upgraded to head — what the app expects at runtime (migrations run as an
-    explicit startup step, not inside a store constructor)."""
-    apply_migrations(db_url)
-    return db_url
+def migrated_db_url(migrated_database_template: PostgresDatabaseTemplate) -> Iterator[str]:
+    """A fresh writable clone at head; the app still runs its normal startup schema check."""
+    with migrated_database_template.clone(f"haku_console_{uuid4().hex}") as url:
+        yield make_url(url).set(drivername="postgresql+asyncpg").render_as_string(hide_password=False)
 
 
 @pytest.fixture
