@@ -1114,7 +1114,6 @@ say "Sandbox Service" for the gateway; History Service docstrings say it writes 
 history store. Also the stale `sealer_accounts` comment, the `serve_channel` test helper, and the
 `CLEANUP` in `sandbox_service/teardown.py` that cites this plan.
 
-
 ### `POSTGRES_WAKEUPS_SHARED` — one PostgreSQL wakeup class
 
 **Candidate.** `SummaryChanges`, `HistoryChanges`, `runner_gateway.SessionChanges` and
