@@ -35,8 +35,6 @@ from agentplane.runner.session import Session
 
 logger = logging.getLogger(__name__)
 
-CAPABILITIES = ("commands", "lifecycle")
-
 
 @dataclass(frozen=True)
 class ControlTiming:
@@ -211,11 +209,7 @@ class RunnerControlClient:
             try:
                 stub = runner_control_pb2_grpc.RunnerControlStub(channel)
                 call = stub.Connect(metadata=(("authorization", f"Bearer {self.bearer}"),))
-                await call.write(
-                    control_pb2.RunnerFrame(
-                        hello=control_pb2.Hello(runner_boot_id=self.boot_id, capabilities=CAPABILITIES)
-                    )
-                )
+                await call.write(control_pb2.RunnerFrame(hello=control_pb2.Hello(runner_boot_id=self.boot_id)))
                 async with asyncio.timeout(self.timing.liveness_s):
                     first = await call.read()
                 if not isinstance(first, control_pb2.ServiceFrame):
@@ -224,7 +218,7 @@ class RunnerControlClient:
                     raise ControlStreamLostError(None, f"expected Welcome, got {first.WhichOneof('frame')}")
                 welcomed_at = loop.time()
                 logger.info("runner control stream connected at epoch %d", first.welcome.connection_epoch)
-                await self.serve(call, first.welcome)
+                await self.serve(call)
             except grpc.aio.AioRpcError as error:
                 lost = ControlStreamLostError(error.code(), error.details() or "")
             except TimeoutError:
@@ -236,18 +230,12 @@ class RunnerControlClient:
             return
         raise lost
 
-    async def serve(
-        self,
-        call: grpc.aio.StreamStreamCall[control_pb2.RunnerFrame, control_pb2.ServiceFrame],
-        welcome: control_pb2.Welcome,
-    ) -> None:
+    async def serve(self, call: grpc.aio.StreamStreamCall[control_pb2.RunnerFrame, control_pb2.ServiceFrame]) -> None:
         """Answer deliveries and control requests and keep the stream alive until it ends; always
         raises. The connection's unanswered requests go unanswered: the service asks again."""
         loop = asyncio.get_running_loop()
         last_frame = loop.time()
         writing = asyncio.Lock()
-        commands = "commands" in welcome.capabilities
-        lifecycle = "lifecycle" in welcome.capabilities
         # Frames on `Connect` are ordered, and so is Seal against the work around it: a Seal waits
         # for the admissions of every command delivered before it, and each delivery or control
         # request after it waits for the Seal. Everything else runs concurrently.
@@ -301,9 +289,9 @@ class RunnerControlClient:
                 match frame.WhichOneof("frame"):
                     case "heartbeat":
                         pass
-                    case "deliver" if commands:
+                    case "deliver":
                         admit(tasks, frame.deliver)
-                    case "control" if lifecycle:
+                    case "control":
                         handle_control(tasks, frame.control)
                     case kind:
                         raise ControlStreamLostError(grpc.StatusCode.INVALID_ARGUMENT, f"unexpected {kind} frame")

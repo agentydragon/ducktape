@@ -168,6 +168,12 @@ class IngressRule:
         )
 
 
+def isolate_ingress() -> list[CiliumNetworkPolicySpecIngress]:
+    """An ingress section admitting no peer: its one empty rule puts the endpoint in default-deny,
+    where omitting the section would leave ingress unenforced."""
+    return [CiliumNetworkPolicySpecIngress()]
+
+
 def deny_all_egress() -> list[CiliumNetworkPolicySpecEgressDeny]:
     return [CiliumNetworkPolicySpecEgressDeny(to_entities=[CiliumNetworkPolicySpecEgressDenyToEntities.ALL])]
 

@@ -88,7 +88,7 @@ async def test_production_bridge_archives_native_evidence_across_bounded_service
 ) -> None:
     async with (
         authenticated_service(
-            cluster, runner, tmp_path / "service-token", database_url=service_history_db_url
+            cluster, runner.runner, tmp_path / "service-token", database_url=service_history_db_url
         ) as remote,
         ingest(service_history_db_url, runner.runner),
         history_service(service_history_db_url, tmp_path / "history-service-token") as history,
@@ -164,7 +164,7 @@ async def test_history_service_reads_match_the_app_projection(
     app = AppSummaries(engine)
     async with (
         authenticated_service(
-            cluster, runner, tmp_path / "service-token", database_url=service_history_db_url
+            cluster, runner.runner, tmp_path / "service-token", database_url=service_history_db_url
         ) as remote,
         ingest(service_history_db_url, runner.runner),
         history_service(service_history_db_url, tmp_path / "history-service-token") as history,
@@ -251,7 +251,7 @@ async def test_stopped_service_never_falls_back_to_reachable_runner(
     cluster: Cluster, live_index: LiveIndex, tmp_path: Path, runner: RunnerHandle, service_history_db_url: str
 ) -> None:
     async with authenticated_service(
-        cluster, runner, tmp_path / "service-token", database_url=service_history_db_url
+        cluster, runner.runner, tmp_path / "service-token", database_url=service_history_db_url
     ) as remote:
         directory = SandboxSessions(live_index, remote)
         assert await directory.client(SANDBOX).list_sessions() == []

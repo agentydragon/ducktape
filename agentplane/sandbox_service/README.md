@@ -5,25 +5,17 @@ It does not own notification payloads or inboxes, Action Decisions or execution,
 scheduling, browser sessions, or UI-only Thread projections. The
 [service dependency rule](../docs/service_boundaries.md) applies to this package.
 
-## Implemented foundation
+## Reaching runners
 
-`command_relay.admit_running_command` extracts the existing app's running-session
-command relay. The standalone service uses it; the app calls the service while retaining its existing
-archive wait and error mapping. The helper:
+Runners dial the [Runner Gateway](../runner_gateway/README.md) over the
+[runner control stream](../docs/runner_control.md); nothing connects to a runner Pod. A command is
+admitted once the runner's journal records the exact `CommandAdmitted` and returns its original
+`EventEntry`. Admission is not native user-message confirmation, model completion, or inbox
+acknowledgement. An uncertain result is settled by the caller retrying the same command ID and
+payload; there is no exactly-once guarantee beyond that.
 
-- Opens an explicit runner session without a spec, so it cannot create or resume it.
-- Sends the caller's unchanged common-protocol `Command` and requests detach.
-- Waits for the runner's exact `CommandAdmitted` and returns its original `EventEntry`.
-- Cancels the attachment on every exit, without taking ownership of the client.
-
-Admission is not native user-message confirmation, model completion, or inbox
-acknowledgement. An uncertain result is settled by the caller retrying the same command
-ID/payload with a runner-log replay cursor before its possible admission. This helper
-adds no retry, command queue, Event authority, or exactly-once guarantee.
-
-Protocol-edge tests use a controllable gRPC peer. Native tests exercise both harnesses
-with scripted model endpoints, without the integration app or its database. They cover
-admission before model completion, receipt replay, and refusing to create/resume a session.
+Protocol-edge tests script the runner's end of the control stream. Native tests exercise both
+harnesses with scripted model endpoints, without the integration app or its database.
 
 ## Inventory and concrete launch configuration
 
@@ -43,11 +35,10 @@ The [authenticated gRPC API](API.md) has a standalone server entry point and Pyt
 service serves Sandbox lifecycle and provisioning (`SandboxService`); the
 [Runner Gateway](../runner_gateway/README.md) serves Sessions and commands (`RunnerGateway`). It resolves
 SA-authorized, UID-pinned destinations inside the configured Kubernetes inventory, then
-inspects, commands, or follows existing runner sessions. Separately authorized explicit
-management routes list sessions, bootstrap, open, and resume using runner-retained specs.
-The backend owns launch instructions and concrete defaults; no UI preset lookup is needed.
-Read/command/follow never start sessions. Separate explicit Sandbox lifecycle operations can resume
-a Sandbox. Read/follow availability is limited to the surviving runner log.
+lists and commands existing runner sessions. Separately authorized explicit management routes
+bootstrap, open, and resume using runner-retained specs. The backend owns launch instructions and
+concrete defaults; no UI preset lookup is needed. Commands never start sessions. Separate explicit
+Sandbox lifecycle operations can resume a Sandbox.
 
 ## Production app cutover and rollout
 
@@ -58,8 +49,8 @@ App tests use the service-owned gRPC fixtures; there is no alternate direct-runn
 App/service integration acceptance uses native harnesses and the existing app database archive.
 
 The deployment source adds a separately built service image, Deployment/Service/ServiceAccount,
-TokenReview and lifecycle/grant RBAC, and network isolation. The app has read-only resource RBAC;
-only Sandbox Service can reach the runner control port. Cross-namespace delegation keeps its
+TokenReview and lifecycle/grant RBAC, and network isolation. The app has read-only resource RBAC,
+and runner Pods admit no connections. Cross-namespace delegation keeps its
 existing Role/RoleBinding identities and changes the grantee. Runner template/volume identities
 and archive schema are unchanged. Service-native acceptance tests exercise authenticated gRPC,
 including launch defaults, bootstrap/setup, delivery evidence, and recovery after service restart.
@@ -68,6 +59,5 @@ Runner journals remain on their state volume as execution evidence, and the runn
 authors execution Events. Retained history lives in the [History Service](../history_service/README.md)'s PostgreSQL.
 The Session registry (public Session IDs, runner locators and Open reservations) lives in the service's own `sandbox_commands` database beside command admission.
 
-Service-to-runner calls over the inbound control port are unauthenticated plaintext, fenced only by
-that network policy; the [runner control stream](../docs/runner_control.md) replaces the route rather than
-securing it. App-to-service calls already require a Pod-bound workload TokenReview.
+Runners authenticate to the gateway with a Pod-bound token the egress proxy substitutes on their
+control stream. App-to-service calls require a Pod-bound workload TokenReview.

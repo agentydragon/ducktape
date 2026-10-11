@@ -76,7 +76,7 @@ def destinations(
 ) -> DestinationResolver:
     raw, _ = seed_runner(custom_objects, core_v1, NAME)
     raw["spec"]["operatingMode"] = OperatingMode.SUSPENDED
-    return DestinationResolver(inventory, cast(k8s_client.CoreV1Api, core_v1), 7000)
+    return DestinationResolver(inventory, cast(k8s_client.CoreV1Api, core_v1))
 
 
 @pytest.fixture
