@@ -999,7 +999,6 @@ flowchart TD
         NOTIFICATION_GITHUB_PACKAGE[Candidate: one GitHub source package]
         CDK8S_SERVICE_CONSTRUCT[Candidate: one cdk8s service construct]
         CDK8S_RUNNER_ENDPOINT_HELPER[Candidate: one runner-facing endpoint helper]
-        GRPC_CHANNEL_OPTIONS_CONSTANT[Candidate: one gRPC channel options constant]
         CDK8S_RUNNER_TEMPLATE_MOVE[Candidate: runner Pod objects out of the app]
         CDK8S_CALLER_WIRING[Candidate: one callers shape]
         TEST_SUPPORT_REHOME[Candidate: test support beside its service]
@@ -1185,12 +1184,6 @@ egress rule is spelled eight times. One construct, and `database.py` exports `eg
 
 **Candidate.** `HistoryIngress` and `RunnerGateway._add_runner_control_egress` each build the same
 EgressCredential, EgressPolicy and proxy NetworkPolicy; build them once.
-
-### `GRPC_CHANNEL_OPTIONS_CONSTANT` — one gRPC channel options constant
-
-**Candidate.** Both environments set every channel-options field to
-`LARGE_EVENT_GRPC_CHANNEL_OPTIONS`, and `notifications.py` and `history_service.py` read the app's
-copies. Use the constant (or the clients' default) instead of `Environment` and app-config plumbing.
 
 ### `CDK8S_RUNNER_TEMPLATE_MOVE` — runner Pod objects out of the app
 

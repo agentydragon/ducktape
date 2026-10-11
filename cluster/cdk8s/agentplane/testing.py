@@ -60,7 +60,6 @@ from cluster.cdk8s.agentplane.environment import (
     LlmIngressProps,
     ReplicaProfile,
 )
-from cluster.cdk8s.agentplane.grpc_channel_config import LARGE_EVENT_GRPC_CHANNEL_OPTIONS
 from cluster.cdk8s.agentplane.llm_ingress import model_configs
 from cluster.cdk8s.agentplane.namespaces import TESTING_NAMESPACE
 from cluster.cdk8s.api_resource import custom_resource, named_resource
@@ -159,8 +158,6 @@ ENV = Environment(
         models=TESTING_APP_MODELS,
         thread_preset_codex_model=GPT6_LUNA_RESPONSES,
         action_federation=_ACTION_FEDERATION,
-        sandbox_service_grpc_channel_options=LARGE_EVENT_GRPC_CHANNEL_OPTIONS,
-        history_service_grpc_channel_options=LARGE_EVENT_GRPC_CHANNEL_OPTIONS,
     ),
     fold_shadow=True,
     settle_deltas=True,
