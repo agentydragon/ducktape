@@ -1,4 +1,4 @@
-"""Entity windows and payload chunks over a migrated history database, folded by the shadow."""
+"""Entity windows over a migrated history database, folded by the shadow."""
 
 from uuid import UUID, uuid4
 
@@ -20,7 +20,7 @@ from agentplane.thread_fold.views import EntityKind, ThreadEntityView, ThreadIte
 pytest_plugins = ("agentplane.sandbox_service.session_history.conftest",)
 
 VIEW: TypeAdapter[ThreadEntityView] = TypeAdapter(ThreadEntityView)
-# More deltas than a fold page, so the reply's text spans chunks written by separate batches.
+# More deltas than a fold page, so the window reflects several fold batches.
 DELTAS = PAGE_SIZE + 2
 
 
@@ -69,7 +69,7 @@ async def folded(engine: AsyncEngine, history: Store) -> UUID:
     return session_id
 
 
-async def test_a_range_window_and_its_payload_read_back_the_streamed_reply(reader: ThreadReader, folded: UUID) -> None:
+async def test_a_range_window_reads_back_the_folded_stream(reader: ThreadReader, folded: UUID) -> None:
     window = await reader.entities(
         protocol_pb2.ReadThreadEntitiesRequest(
             session_id=str(folded),
@@ -82,25 +82,7 @@ async def test_a_range_window_and_its_payload_read_back_the_streamed_reply(reade
     assert [entity.entity_index for entity in window.entities] == list(range(len(window.entities)))
     views = [VIEW.validate_json(entity.view_json) for entity in window.entities]
     reply = next(view for view in views if isinstance(view, ThreadItemEntityView))
-    assert reply.text_ref is not None
-    ref = protocol_pb2.PayloadRef(
-        projection_epoch=reply.text_ref.projection_epoch,
-        owner_cursor=int(reply.text_ref.owner_cursor),
-        owner_id=reply.text_ref.owner_id,
-        field=reply.text_ref.field,
-        generation=int(reply.text_ref.generation),
-        revision_cursor=int(reply.text_ref.revision_cursor),
-    )
-    chunks: list[str] = []
-    while True:
-        page = await reader.payload(
-            protocol_pb2.ReadPayloadRequest(session_id=str(folded), ref=ref, start_chunk=len(chunks), limit=1)
-        )
-        chunks.extend(page.chunks)
-        if len(chunks) >= page.chunk_count:
-            break
-    assert page.chunk_count == int(reply.text_ref.chunk_count) > 1
-    assert "".join(chunks) == "".join(str(index % 10) for index in range(DELTAS))
+    assert reply.entity_id == "test-reply"
 
 
 async def test_keys_return_the_rows_that_exist(reader: ThreadReader, folded: UUID) -> None:

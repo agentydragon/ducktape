@@ -1,4 +1,4 @@
-"""Entity windows and payload bodies from the History Service fold, scoped by projection epoch."""
+"""Entity windows from the History Service fold, scoped by projection epoch."""
 
 from uuid import UUID
 
@@ -9,23 +9,18 @@ from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 from agentplane.history_service import protocol_pb2
 from agentplane.sandbox_service.session_history.db import SessionHistory
 from agentplane.sandbox_service.session_history.store import HistoryNotFoundError
-from agentplane.thread_fold.models import ThreadCheckpoint, ThreadEntity, ThreadPayloadChunk, ThreadPayloadManifest
+from agentplane.thread_fold.models import ThreadCheckpoint, ThreadEntity
 from agentplane.thread_fold.views import ThreadEntityView
 
 # gazelle:include_dep @pypi//protobuf
 
 MAX_ENTITIES = 200
-MAX_CHUNKS = 64
 
 _VIEW: TypeAdapter[ThreadEntityView] = TypeAdapter(ThreadEntityView)
 
 
 class ThreadScopeResetError(Exception):
     """The caller's projection epoch is no longer the Session's current scope."""
-
-
-class PayloadNotFoundError(LookupError):
-    pass
 
 
 class ThreadReader:
@@ -66,47 +61,6 @@ class ThreadReader:
                 entities=[
                     protocol_pb2.ThreadEntity(entity_index=row.entity_index, view_json=_view_json(row)) for row in rows
                 ],
-            )
-
-    async def payload(self, request: protocol_pb2.ReadPayloadRequest) -> protocol_pb2.ReadPayloadResponse:
-        if not 1 <= request.limit <= MAX_CHUNKS:
-            raise ValueError("invalid payload chunk window")
-        session_id = UUID(request.session_id)
-        ref = request.ref
-        async with self._sessions() as session:
-            if await _checkpoint(session, session_id, ref.projection_epoch) is None:
-                raise PayloadNotFoundError(session_id)
-            manifest = await session.get(
-                ThreadPayloadManifest,
-                (
-                    session_id,
-                    ref.projection_epoch,
-                    ref.owner_cursor,
-                    ref.owner_id,
-                    ref.field,
-                    ref.generation,
-                    ref.revision_cursor,
-                ),
-            )
-            if manifest is None:
-                raise PayloadNotFoundError(session_id)
-            # Chunks are shared by every revision of a generation; a revision spans its first chunk_count.
-            chunks = await session.scalars(
-                select(ThreadPayloadChunk.text)
-                .where(
-                    ThreadPayloadChunk.thread_id == session_id,
-                    ThreadPayloadChunk.projection_epoch == ref.projection_epoch,
-                    ThreadPayloadChunk.owner_cursor == ref.owner_cursor,
-                    ThreadPayloadChunk.owner_id == ref.owner_id,
-                    ThreadPayloadChunk.field == ref.field,
-                    ThreadPayloadChunk.generation == ref.generation,
-                    ThreadPayloadChunk.chunk_index >= request.start_chunk,
-                    ThreadPayloadChunk.chunk_index < min(manifest.chunk_count, request.start_chunk + request.limit),
-                )
-                .order_by(ThreadPayloadChunk.chunk_index)
-            )
-            return protocol_pb2.ReadPayloadResponse(
-                chunk_count=manifest.chunk_count, content_bytes=manifest.content_bytes, chunks=list(chunks)
             )
 
 

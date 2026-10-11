@@ -18,7 +18,7 @@ from agentplane.history_service import protocol_pb2 as history_pb2, protocol_pb2
 from agentplane.history_service.evidence import EvidenceNotFoundError, EvidenceReader
 from agentplane.history_service.summaries import SummaryReader
 from agentplane.history_service.summary_changes import SummaryChanges
-from agentplane.history_service.thread_reads import PayloadNotFoundError, ThreadReader, ThreadScopeResetError
+from agentplane.history_service.thread_reads import ThreadReader, ThreadScopeResetError
 from agentplane.sandbox_service.session_history.history_changes import HistoryChanges
 from agentplane.sandbox_service.session_history.store import HistoryNotFoundError, Store
 from agentplane.subjects import ServiceAccountRef
@@ -75,8 +75,6 @@ class HistoryService(protocol_pb2_grpc.HistoryServiceServicer):
             await context.abort(grpc.StatusCode.UNAUTHENTICATED, "invalid workload bearer")
         except HistoryNotFoundError:
             await context.abort(grpc.StatusCode.NOT_FOUND, "session history not found")
-        except PayloadNotFoundError:
-            await context.abort(grpc.StatusCode.NOT_FOUND, "payload revision not found")
         except EvidenceNotFoundError:
             await context.abort(grpc.StatusCode.NOT_FOUND, "entity evidence not found")
         except ThreadScopeResetError:
@@ -150,13 +148,6 @@ class HistoryService(protocol_pb2_grpc.HistoryServiceServicer):
     ) -> history_pb2.ReadThreadEntitiesResponse:
         async with self.reader(context):
             return await self.resources.threads.entities(request)
-
-    @override
-    async def ReadPayload(
-        self, request: history_pb2.ReadPayloadRequest, context: grpc.aio.ServicerContext
-    ) -> history_pb2.ReadPayloadResponse:
-        async with self.reader(context):
-            return await self.resources.threads.payload(request)
 
     @override
     async def ReadEntityEvidence(

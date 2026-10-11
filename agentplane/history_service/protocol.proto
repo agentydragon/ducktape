@@ -20,7 +20,6 @@ service HistoryService {
   rpc BatchGetSessionSummaries(BatchGetSessionSummariesRequest) returns (BatchGetSessionSummariesResponse);
   // Fails with FAILED_PRECONDITION when the caller's projection epoch is no longer current.
   rpc ReadThreadEntities(ReadThreadEntitiesRequest) returns (ReadThreadEntitiesResponse);
-  rpc ReadPayload(ReadPayloadRequest) returns (ReadPayloadResponse);
   // The observations an entity was folded from, and the native harness frames behind each.
   rpc ReadEntityEvidence(ReadEntityEvidenceRequest) returns (ReadEntityEvidenceResponse);
   rpc ReadNativeFrames(ReadNativeFramesRequest) returns (ReadNativeFramesResponse);
@@ -209,31 +208,6 @@ message ThreadEntity {
   uint64 entity_index = 1;
   // A `ThreadEntityView` JSON document (`agentplane.thread_fold.views`), the row browsers sync.
   string view_json = 2;
-}
-
-// One immutable payload revision, as an entity's `*_ref` names it.
-message PayloadRef {
-  string projection_epoch = 1;
-  uint64 owner_cursor = 2;
-  string owner_id = 3;
-  string field = 4;
-  uint64 generation = 5;
-  uint64 revision_cursor = 6;
-}
-
-message ReadPayloadRequest {
-  string session_id = 1;
-  PayloadRef ref = 2;
-  uint64 start_chunk = 3;
-  // At most 64 chunks.
-  uint32 limit = 4;
-}
-
-message ReadPayloadResponse {
-  uint64 chunk_count = 1;
-  uint64 content_bytes = 2;
-  // The revision's chunks from `start_chunk`, which concatenate to its text.
-  repeated string chunks = 3;
 }
 
 message ReadEntityEvidenceRequest {

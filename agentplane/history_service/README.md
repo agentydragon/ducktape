@@ -86,8 +86,8 @@ changes. The app uses it to wake its local projection coordinator; it does not c
 database. The fold subscribes to the same PostgreSQL notifications in-process.
 
 `ReadThreadEntities` serves a window of a Session's fold rows, by entity index or by key, each as
-the `ThreadEntityView` JSON browsers sync, and `ReadPayload` the chunks of a payload revision an
-entity references. A caller holding rows of a replaced epoch gets `FAILED_PRECONDITION`.
+the `ThreadEntityView` JSON browsers sync. A caller holding rows of a replaced epoch gets
+`FAILED_PRECONDITION`.
 `ReadEntityEvidence` pages the observation cursors an entity was folded from, and
 `ReadNativeFrames` the native harness frames linked to one of them, read from the raw log.
 

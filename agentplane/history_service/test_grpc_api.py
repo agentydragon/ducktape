@@ -180,12 +180,6 @@ async def test_thread_read_refusals(stub: protocol_pb2_grpc.HistoryServiceAsyncS
             history_pb2.ReadThreadEntitiesRequest(session_id=str(uuid4())), metadata=bearer(READER_TOKEN)
         )
     assert no_window.value.code() == grpc.StatusCode.INVALID_ARGUMENT
-    with pytest.raises(grpc.aio.AioRpcError) as unknown:
-        await stub.ReadPayload(
-            history_pb2.ReadPayloadRequest(session_id=str(uuid4()), ref=history_pb2.PayloadRef(), limit=1),
-            metadata=bearer(READER_TOKEN),
-        )
-    assert unknown.value.code() == grpc.StatusCode.NOT_FOUND
 
 
 async def test_summary_watch_announces_each_fold_commit_until_planned_renewal(
