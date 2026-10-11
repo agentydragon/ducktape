@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 from agentplane.history_service import protocol_pb2
 from agentplane.history_service.fold_shadow import FOLD_EPOCH, FoldShadow
 from agentplane.history_service.storage.store import HistoryNotFoundError, Store
+from agentplane.history_service.testing.sessions import WRITER
 from agentplane.history_service.thread_reads import ThreadReader, ThreadScopeResetError
 from agentplane.proto import event_log_pb2, event_pb2
 from agentplane.thread_fold.views import EntityKind, ThreadEntityView, ThreadItemEntityView
@@ -46,13 +47,7 @@ def reader(engine: AsyncEngine) -> ThreadReader:
 @pytest.fixture
 async def folded(engine: AsyncEngine, history: Store) -> UUID:
     session_id = uuid4()
-    await history.record_session(
-        session_id,
-        sandbox_namespace="test-namespace",
-        sandbox_name="test-sandbox",
-        sandbox_uid=None,
-        runner_session_id="test-runner-session",
-    )
+    await history.bind_writer(session_id, WRITER)
     await history.append(
         session_id,
         [
