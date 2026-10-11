@@ -1007,9 +1007,8 @@ its own error type.
 ### `SETTLE_DELTAS_ALWAYS_ON` — delta settlement always on
 
 **Unscheduled; operator, 2026-10-11 PDT: keep the flag for debugging for now, may retire it later.**
-Settlement is on by default; `ingester.settle_deltas` and `ingress.settle_deltas` turn it
-off. Retiring the flag makes settlement unconditional: delete the setting, `Environment.settle_deltas`
-and the `Store` flag (the ingester's copy goes with `FOLLOW_PATH_RETIRE`).
+Settlement is on by default; `ingress.settle_deltas` turns it off. Retiring the flag makes
+settlement unconditional: delete the setting, `Environment.settle_deltas` and the `Store` flag.
 
 ### `APP_SERVICE_NAMES` — the app names the right services
 
