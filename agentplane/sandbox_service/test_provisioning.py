@@ -13,23 +13,14 @@ import pytest
 import pytest_bazel
 from kubernetes_asyncio import client as k8s_client
 from more_itertools import one
-from sqlalchemy.ext.asyncio import AsyncEngine
 
 from agentplane.proto import runner_pb2
 from agentplane.runner.errors import RunnerError
-from agentplane.runner_gateway.channel_control import ChannelControl
-from agentplane.runner_gateway.channel_delivery import ChannelDelivery
-from agentplane.runner_gateway.commands.connections import ConnectionStore
-from agentplane.runner_gateway.commands.dispatch import DispatchStore
-from agentplane.runner_gateway.commands.store import SubmissionStore
-from agentplane.runner_gateway.connection_records import ConnectionLeases
-from agentplane.runner_gateway.grpc_api import Resources
-from agentplane.runner_gateway.session_registry import SessionRegistry
 from agentplane.sandbox_service import protocol_pb2
 from agentplane.sandbox_service.action_policy import ActionPolicyBindings
 from agentplane.sandbox_service.client import SandboxServiceClient, ServiceError
-from agentplane.sandbox_service.destinations import DestinationResolver
 from agentplane.sandbox_service.egress import EgressInventory
+from agentplane.sandbox_service.grpc_api import Resources
 from agentplane.sandbox_service.inventory import SandboxInventory
 from agentplane.sandbox_service.kubernetes_bindings import KubernetesBindings
 from agentplane.sandbox_service.kubernetes_grants import RoleBindingGrant, RoleRef
@@ -37,7 +28,6 @@ from agentplane.sandbox_service.kubernetes_views import SANDBOX_BINDING_ANNOTATI
 from agentplane.sandbox_service.protocol_pb2 import CreateSandboxRequest, SandboxDestination
 from agentplane.sandbox_service.provisioning import Provisioning
 from agentplane.sandbox_service.runner_endpoints import RunnerEndpoint, RunnerEndpoints
-from agentplane.sandbox_service.session_history.session_changes import SessionChanges
 from agentplane.sandbox_service.testing.fake_inventory import (
     NAMESPACE,
     TEMPLATE,
@@ -48,20 +38,15 @@ from agentplane.sandbox_service.testing.fake_inventory import (
     pod,
 )
 from agentplane.sandbox_service.testing.fake_rbac import FakeRbac
-from agentplane.sandbox_service.testing.grpc_service import service
+from agentplane.sandbox_service.testing.grpc_service import CALLER_TOKEN, service_client
 from agentplane.sandbox_service.testing.kubernetes import Cluster
 from agentplane.subjects import ServiceAccountRef
 from agentplane.testing.fake_apiserver import SANDBOX_NAMESPACE, TokenVerdict
-from agentplane.workload_auth.principal import WorkloadPrincipalResolver
 from util.kubernetes import CustomObjectsClient
 
 # The generated protobuf stubs also need their library types in this target's mypy environment.
 # gazelle:include_dep @pypi//protobuf
-# gazelle:include_dep //agentplane/runner_gateway/commands:conftest
 
-pytest_plugins = ("agentplane.runner_gateway.commands.conftest",)
-
-TOKEN = "test-provisioner-token"
 ADMIN = ServiceAccountRef(namespace=SANDBOX_NAMESPACE, name="test-provisioner")
 AUDIENCE = "test-provisioning"
 CONTROL = RunnerEndpoint(target="test-gateway.test:8082", bearer="test-control-bearer", egress_policy="test-control")
@@ -121,52 +106,20 @@ def case() -> Case:
 
 
 @pytest.fixture
-async def api(case: Case, cluster: Cluster, engine: AsyncEngine, tmp_path: Path) -> AsyncIterator[SandboxServiceClient]:
-    cluster.fake.tokens[TOKEN] = TokenVerdict(
+async def api(case: Case, cluster: Cluster, token_file: Path) -> AsyncIterator[SandboxServiceClient]:
+    cluster.fake.tokens[CALLER_TOKEN] = TokenVerdict(
         username=f"system:serviceaccount:{ADMIN.namespace}:{ADMIN.name}",
         pod_name="test-provisioner-pod",
         pod_uid="test-provisioner-pod-uid",
         audiences=(AUDIENCE,),
     )
     resources = Resources(
-        runner_admission_ack_timeout_s=1,
-        principals=WorkloadPrincipalResolver(
-            authentication=k8s_client.AuthenticationV1Api(cluster.api),
-            audience=AUDIENCE,
-            allowed_service_account_namespaces={SANDBOX_NAMESPACE},
-        ),
-        destinations=DestinationResolver(case.service.inventory, cast(k8s_client.CoreV1Api, case.core), 7000),
+        principals=cluster.build_principal_resolver(AUDIENCE),
+        provisioning=case.service,
         caller_accounts=frozenset({ADMIN}),
-        platform_instructions="",
-        sessions=SessionRegistry(engine),
-        submissions=SubmissionStore(engine),
-        delivery=ChannelDelivery(
-            engine.url,
-            dispatches=DispatchStore(engine),
-            connections=ConnectionStore(engine),
-            leases=ConnectionLeases(),
-            liveness_s=1,
-        ),
-        control=ChannelControl(ConnectionLeases()),
-        session_changes=SessionChanges(engine.url),
     )
-    token_file = tmp_path / "token"
-    token_file.write_text(TOKEN)
-    async with service(resources, case.service) as target:
-        client = SandboxServiceClient(
-            target,
-            gateway_target=target,
-            namespace=NAMESPACE,
-            token_file=token_file,
-            command_admission_timeout_s=20,
-            request_timeout_s=20,
-            lifecycle_timeout_s=310,
-            follow_timeout_s=960,
-        )
-        try:
-            yield client
-        finally:
-            await client.close()
+    async with service_client(resources, token_file) as client:
+        yield client
 
 
 async def test_headless_create_list_and_uid_pinned_lifecycle(api: SandboxServiceClient, case: Case) -> None:
@@ -301,7 +254,7 @@ async def test_foreign_binding_is_not_overwritten_and_provisioning_stays_pending
 
 
 async def test_authorization_precedes_creation(api: SandboxServiceClient, cluster: Cluster, case: Case) -> None:
-    cluster.fake.tokens[TOKEN] = TokenVerdict(
+    cluster.fake.tokens[CALLER_TOKEN] = TokenVerdict(
         username=f"system:serviceaccount:{ADMIN.namespace}:test-untrusted",
         pod_name="test-untrusted-pod",
         pod_uid="test-untrusted-pod-uid",

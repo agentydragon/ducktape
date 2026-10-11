@@ -1,0 +1,53 @@
+"""Start the Runner Gateway on a loopback ephemeral port and, given a `Provisioning`, the Sandbox
+Service beside it."""
+
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
+from pathlib import Path
+
+import grpc
+
+from agentplane.runner_gateway import grpc_api as gateway_api
+from agentplane.sandbox_service import grpc_api as sandbox_api
+from agentplane.sandbox_service.client import SandboxServiceClient
+from agentplane.sandbox_service.provisioning import Provisioning
+from agentplane.sandbox_service.testing.grpc_service import connect, serving
+
+# gazelle:include_dep @pypi//grpcio
+
+
+@asynccontextmanager
+async def service(resources: gateway_api.Resources, provisioning: Provisioning | None = None) -> AsyncIterator[str]:
+    server = grpc.aio.server()
+    gateway_api.add_service(resources, server)
+    if provisioning is not None:
+        # The Sandbox Service, for the same callers and deadlines as the gateway.
+        sandbox_api.add_service(
+            sandbox_api.Resources(
+                principals=resources.principals,
+                provisioning=provisioning,
+                caller_accounts=resources.caller_accounts,
+                admission_timeout_s=resources.admission_timeout_s,
+                lifecycle_timeout_s=resources.lifecycle_timeout_s,
+            ),
+            server,
+        )
+    async with serving(server) as target:
+        yield target
+
+
+@asynccontextmanager
+async def service_client(
+    resources: gateway_api.Resources, token_file: Path, provisioning: Provisioning | None = None
+) -> AsyncIterator[SandboxServiceClient]:
+    async with service(resources, provisioning) as target:
+        client = connect(
+            target,
+            token_file,
+            namespace=resources.destinations.inventory.namespace,
+            command_admission_timeout_s=resources.runner_admission_ack_timeout_s + 10,
+        )
+        try:
+            yield client
+        finally:
+            await client.close()

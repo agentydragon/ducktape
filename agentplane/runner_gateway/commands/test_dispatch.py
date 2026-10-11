@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 from agentplane.proto import command_pb2, event_log_pb2, runner_channel_pb2 as channel_pb2
 from agentplane.runner_gateway.commands.dispatch import CommandKey, DispatchStore, ReceiptMismatchError, Refused
 from agentplane.runner_gateway.commands.store import CommandSubmission, SubmissionState, SubmissionStore
+from agentplane.runner_gateway.testing.journal import admission
 from agentplane.subjects import ServiceAccountRef
 
 # gazelle:include_dep @pypi//protobuf
@@ -18,14 +19,6 @@ COMMAND = command_pb2.Command(command_id="test-command", submit_input=command_pb
 RUNNER_SESSION = "test-runner-session"
 REFUSED = channel_pb2.CommandRefused(reason=channel_pb2.CommandRefused.REASON_HARNESS_STOPPED)
 EPOCH = 1
-
-
-def admission(command: command_pb2.Command) -> event_log_pb2.EventEntry:
-    result = event_log_pb2.EventEntry(cursor=1)
-    result.origin.source_id = "test-runner-source"
-    result.origin.sequence = 1
-    result.event.command_admitted.command.CopyFrom(command)
-    return result
 
 
 @pytest.fixture

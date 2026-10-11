@@ -19,81 +19,39 @@ from agentplane.runner.errors import RunnerError, StreamClosedError
 from agentplane.runner.testing import events
 from agentplane.runner.testing.fixtures import RunnerHandle
 from agentplane.runner.testing.scripted_model import ScriptedModel, Text
-from agentplane.runner_gateway.channel_control import ChannelControl
-from agentplane.runner_gateway.channel_delivery import ChannelDelivery
-from agentplane.runner_gateway.commands import db as commands_db
-from agentplane.runner_gateway.commands.connections import ConnectionStore
-from agentplane.runner_gateway.commands.dispatch import DispatchStore
-from agentplane.runner_gateway.commands.store import SubmissionStore
-from agentplane.runner_gateway.connection_records import ConnectionLeases
 from agentplane.runner_gateway.grpc_api import Resources
-from agentplane.runner_gateway.session_registry import SessionRegistry
+from agentplane.runner_gateway.testing.grpc_service import service_client
+from agentplane.runner_gateway.testing.resources import build_resources
 from agentplane.sandbox_service.client import Runner, SandboxServiceClient, ServiceError
 from agentplane.sandbox_service.destinations import DestinationResolver
 from agentplane.sandbox_service.protocol_pb2 import SandboxBinding, SessionDefaults
-from agentplane.sandbox_service.session_history.session_changes import SessionChanges
-from agentplane.sandbox_service.testing.grpc_service import service_client
+from agentplane.sandbox_service.testing.grpc_service import CALLER_TOKEN
 from agentplane.sandbox_service.testing.kubernetes import DESTINATION, OWNER, SANDBOX_UID, Cluster
-from agentplane.testing.fake_apiserver import SANDBOX_NAMESPACE, TokenVerdict
-from agentplane.workload_auth.principal import WorkloadPrincipalResolver
+from agentplane.testing.fake_apiserver import TokenVerdict
 
 # gazelle:include_dep @pypi//protobuf
 # gazelle:include_dep @pypi//grpcio
-# gazelle:include_dep //agentplane/sandbox_service/session_history:conftest
 
-pytest_plugins = ("agentplane.sandbox_service.session_history.conftest",)
-
-TOKEN = "test-native-grpc-token"
 AUDIENCE = "test-native-grpc"
 # Names no Session: a caller-chosen runner ID the service relays as given.
 SESSION = "grpc-session"
 
 
 @pytest.fixture
-async def commands_engine(engine: AsyncEngine) -> AsyncEngine:
-    # The registry and admission tables share the history test database; production keeps them apart.
-    async with engine.begin() as connection:
-        await connection.run_sync(commands_db.Base.metadata.create_all)
-    return engine
-
-
-@pytest.fixture
-def resources(cluster: Cluster, runner: RunnerHandle, commands_engine: AsyncEngine) -> Resources:
-    cluster.fake.tokens[TOKEN] = TokenVerdict(
+def resources(cluster: Cluster, runner: RunnerHandle, engine: AsyncEngine) -> Resources:
+    cluster.fake.tokens[CALLER_TOKEN] = TokenVerdict(
         username=f"system:serviceaccount:{OWNER.namespace}:{OWNER.name}",
         pod_name="test-native-caller",
         pod_uid="test-native-caller-uid",
         audiences=(AUDIENCE,),
     )
-    return Resources(
-        runner_admission_ack_timeout_s=1,
-        principals=WorkloadPrincipalResolver(
-            authentication=k8s_client.AuthenticationV1Api(cluster.api),
-            audience=AUDIENCE,
-            allowed_service_account_namespaces={SANDBOX_NAMESPACE},
-        ),
+    return build_resources(
+        engine,
+        principals=cluster.build_principal_resolver(AUDIENCE),
         destinations=DestinationResolver(cluster.inventory, k8s_client.CoreV1Api(cluster.api), runner.port),
         caller_accounts=frozenset({OWNER}),
         platform_instructions="Test backend-owned guidance.",
-        sessions=SessionRegistry(commands_engine),
-        submissions=SubmissionStore(commands_engine),
-        delivery=ChannelDelivery(
-            commands_engine.url,
-            dispatches=DispatchStore(commands_engine),
-            connections=ConnectionStore(commands_engine),
-            leases=ConnectionLeases(),
-            liveness_s=1,
-        ),
-        control=ChannelControl(ConnectionLeases()),
-        session_changes=SessionChanges(commands_engine.url),
     )
-
-
-@pytest.fixture
-def token_file(tmp_path: Path) -> Path:
-    path = tmp_path / "service-token"
-    path.write_text(TOKEN)
-    return path
 
 
 @pytest.fixture

@@ -1,6 +1,7 @@
-"""Fake Kubernetes fixtures, with no integration app or app database."""
+"""Fake Kubernetes fixtures and a caller bearer file, with no integration app or app database."""
 
 from collections.abc import AsyncIterator
+from pathlib import Path
 from typing import cast
 
 import pytest
@@ -14,6 +15,7 @@ from agentplane.sandbox_service.testing.fake_inventory import (
     FakeCustomObjectsApi,
     close_fake_api_clients,
 )
+from agentplane.sandbox_service.testing.grpc_service import CALLER_TOKEN
 from agentplane.sandbox_service.testing.kubernetes import Cluster, kubernetes
 from util.kubernetes import CustomObjectsClient
 
@@ -52,3 +54,10 @@ def inventory(custom_objects: FakeCustomObjectsApi, core_v1: FakeCoreV1Api) -> S
         custom_objects=cast(CustomObjectsClient, custom_objects),
         core_v1=cast(k8s_client.CoreV1Api, core_v1),
     )
+
+
+@pytest.fixture
+def token_file(tmp_path: Path) -> Path:
+    path = tmp_path / "caller-token"
+    path.write_text(CALLER_TOKEN)
+    return path
