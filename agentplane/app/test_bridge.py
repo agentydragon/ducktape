@@ -201,12 +201,11 @@ def sandbox_runner_port(runner: RunnerHandle) -> int:
 
 @pytest.fixture
 async def history_client(
-    inventory: SandboxServiceClient, service_history_db_url: str, history_token_file: Path
+    runner: RunnerHandle, service_history_db_url: str, history_token_file: Path
 ) -> AsyncIterator[HistoryServiceClient]:
-    # The app registers no Session here: the History Service ingester copies every runner Session
-    # the Sandbox Service fixture reports, as deployed.
+    # The History Service reads what the local runner pushes to its ingress, as deployed.
     async with (
-        ingest(service_history_db_url, inventory),
+        ingest(service_history_db_url, runner.runner),
         history_service(service_history_db_url, history_token_file) as client,
     ):
         yield client

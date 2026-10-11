@@ -136,7 +136,6 @@ py_test(
     requires_docker = True,
     deps = [
         ":compaction",
-        ":conftest",
         ":fold_runner",
         "//:conftest",
         "//agentplane/history_service/fold:models",
@@ -171,7 +170,6 @@ py_test(
     srcs = ["test_evidence.py"],
     requires_docker = True,
     deps = [
-        ":conftest",
         ":evidence",
         ":fold_runner",
         ":thread_reads",
@@ -196,7 +194,6 @@ py_test(
     srcs = ["test_projection_lease.py"],
     requires_docker = True,
     deps = [
-        ":conftest",
         "//:conftest",
         "//agentplane/history_service/fold:models",
         "//agentplane/history_service/fold:projection_lease",
@@ -236,7 +233,6 @@ py_test(
     requires_docker = True,
     deps = [
         ":channels",
-        ":conftest",
         ":fold_runner",
         "//:conftest",
         "//agentplane:changes",
@@ -278,7 +274,6 @@ py_test(
     srcs = ["test_summaries.py"],
     requires_docker = True,
     deps = [
-        ":conftest",
         ":fold_runner",
         ":summaries",
         "//:conftest",
@@ -314,7 +309,6 @@ py_test(
     srcs = ["test_thread_reads.py"],
     requires_docker = True,
     deps = [
-        ":conftest",
         ":fold_runner",
         ":thread_reads",
         "//:conftest",
@@ -326,65 +320,6 @@ py_test(
         "//agentplane/proto:event_pb2",
         "@pypi//protobuf",
         "@pypi//pydantic",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-        "@pypi//sqlalchemy",
-    ],
-)
-
-py_library(
-    name = "ingester",
-    srcs = ["ingester.py"],
-    deps = [
-        "//agentplane/history_service:protocol_pb2",
-        "//agentplane/history_service/storage:store",
-        "//agentplane/proto:event_log_pb2",
-        "//agentplane/proto:runner_pb2",
-        "//agentplane/proto:sandbox_service_pb2",
-        "//agentplane/runner:errors",
-        "//agentplane/sandbox_service:client",
-        "@pypi//grpcio",
-        "@pypi//protobuf",
-        "@pypi//sqlalchemy",
-    ],
-)
-
-py_library(
-    name = "conftest",
-    testonly = True,
-    srcs = ["conftest.py"],
-    deps = [
-        "//agentplane/proto:event_log_pb2",
-        "//agentplane/proto:runner_gateway_pb2_grpc",
-        "//agentplane/proto:runner_pb2",
-        "//agentplane/proto:sandbox_service_pb2",
-        "//agentplane/proto:sandbox_service_pb2_grpc",
-        "//agentplane/sandbox_service:client",
-        "@pypi//grpcio",
-        "@pypi//protobuf",
-        "@pypi//pytest",
-    ],
-)
-
-py_test(
-    name = "test_ingester",
-    size = "medium",
-    srcs = ["test_ingester.py"],
-    deps = [
-        ":conftest",
-        ":ingester",
-        "//:conftest",
-        "//agentplane:grpc_serving",
-        "//agentplane/history_service:protocol_pb2",
-        "//agentplane/history_service/storage:conftest",
-        "//agentplane/history_service/storage:store",
-        "//agentplane/proto:event_log_pb2",
-        "//agentplane/proto:event_pb2",
-        "//agentplane/proto:runner_gateway_pb2_grpc",
-        "//agentplane/proto:sandbox_service_pb2",
-        "//agentplane/proto:sandbox_service_pb2_grpc",
-        "@pypi//grpcio",
-        "@pypi//protobuf",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
@@ -431,7 +366,6 @@ py_test(
     srcs = ["test_ingress.py"],
     requires_docker = True,
     deps = [
-        ":conftest",
         ":ingress",
         "//:conftest",
         "//agentplane:grpc_serving",
@@ -461,15 +395,12 @@ py_library(
         ":evidence",
         ":fold_runner",
         ":grpc_api",
-        ":ingester",
         ":ingress",
         ":settings",
         ":summaries",
         ":thread_reads",
         "//agentplane:grpc_serving",
-        "//agentplane:service_process",
         "//agentplane/history_service/storage:store",
-        "//agentplane/sandbox_service:client",
         "//agentplane/workload_auth:principal",
         "@pypi//asyncpg",
         "@pypi//grpcio",
@@ -484,7 +415,6 @@ py_test(
     srcs = ["test_grpc_api.py"],
     deps = [
         ":channels",
-        ":conftest",
         ":evidence",
         ":grpc_api",
         ":summaries",

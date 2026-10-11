@@ -67,7 +67,7 @@ async def test_production_bridge_archives_native_evidence_across_bounded_service
         authenticated_service(
             cluster, runner.port, tmp_path / "service-token", database_url=service_history_db_url
         ) as remote,
-        ingest(service_history_db_url, remote),
+        ingest(service_history_db_url, runner.runner),
     ):
         directory = SandboxSessions(live_index, remote)
         ingester = Ingester(runners=directory, event_logs=event_logs)

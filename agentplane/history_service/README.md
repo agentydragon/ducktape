@@ -7,30 +7,8 @@ grants nothing. Consumers use `client.py`; `testing/backend.py` serves the real 
 database.
 
 This service's `migrate` init container runs the history tables' migrations
-(`storage/`), and this service is their only writer. Target and sequence:
+(`storage/`); its runner ingress and its fold are their only writers. Target and sequence:
 [History Service plan](../plans/history_service.md).
-
-## Ingester
-
-`ingester.py` copies runner journals into the history tables as an ordinary Sandbox Service
-client: `WatchSessions` names each Session and its owner, and `FollowSession` follows it from the
-cursor committed here, one `Store.append` transaction per batch. It records the follow's feed
-state, and a `sealed` frame as the incarnation's end. After an outage it resumes
-from the committed cursor; the runner journal is the buffer.
-
-Before reading a Session it places a [retention hold](../sandbox_service/API.md#retention-holds)
-named `history`, and confirms it once the seal's prefix is committed, so teardown deletes no Sandbox
-whose journal it has not copied. It confirms only at the seal, the one confirmation that changes the
-deletion gate. A Session left without a seal in a sealed Sandbox cannot be held; it is copied
-without one, with a warning.
-
-One replica writes a Session at a time: a follow holds a PostgreSQL session advisory lock keyed by
-Session ID on its own connection, which the server releases if the replica dies. Correctness does
-not rest on it: `Store.append` accepts exact replays and refuses gaps and conflicting entries.
-At most `ingester.concurrency` Sessions are followed per replica; a follow ends at the Sandbox
-Service's planned renewal, so waiting Sessions rotate in. The feed position is kept in memory, so a
-restarted replica rereads the feed and each Session resumes from its cursor. After four consecutive
-feed failures the ingester dials a fresh Sandbox Service channel.
 
 ## Runner ingress
 
@@ -44,10 +22,9 @@ A Sandbox reaches it only through the egress proxy under the `runner-ingress` po
 `agentplane-runner-ingress` audience.
 
 The first accepted announcement binds the Session to the pushing ServiceAccount (namespace, name,
-UID) in `session_history`; other accounts get `PERMISSION_DENIED`. Entries commit through the same
-`Store.append` as the follower, and each acknowledgement follows its commit. A Session the follower
-created takes its writer on its first push, and one pushed first takes its Sandbox locator from the
-follower, so both paths can write one Session during the cutover.
+UID) in `session_history`; other accounts get `PERMISSION_DENIED`. Entries commit through
+`Store.append`, which accepts exact replays and refuses gaps and conflicting entries, and each
+acknowledgement follows its commit.
 
 ## Delta settlement
 
@@ -58,8 +35,8 @@ the same transaction, when every frame matches an exact versioned template
 concatenation. Anything else in the span keeps every entry. The dropped cursors are recorded as a
 `SettledDeltas` with its ranges, and read pages report the settlements that cover or complete in
 them; the fold and the app's raw-history readers treat a settled cursor as absent. The runner
-journal keeps every entry. On by default; setting `ingester.settle_deltas` or
-`ingress.settle_deltas` to false keeps every stored entry, for debugging. Why and what it drops:
+journal keeps every entry. On by default; setting `ingress.settle_deltas` to false keeps every
+stored entry, for debugging. Why and what it drops:
 [delta settlement ADR](../docs/adr_delta_settlement.md).
 
 `agentplane-history-compact` (`compaction_main.py`) is a one-off Job that settles history stored

@@ -14,51 +14,6 @@ from util.yaml_file_settings import YamlFileSettings
 RUNNER_INGRESS_AUDIENCE = "agentplane-runner-ingress"
 
 
-class SandboxServiceSettings(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-    target: str = Field(
-        min_length=1, description="Sandbox Service gRPC host:port, where the ingester places retention holds."
-    )
-    gateway_target: str = Field(
-        min_length=1, description="Runner Gateway gRPC host:port the ingester follows Sessions from."
-    )
-    token_file: Path = Field(
-        description="Rotating projected ServiceAccount token for the Sandbox Service audience, reread on every call."
-    )
-    gateway_token_file: Path = Field(
-        description="Rotating projected ServiceAccount token for the Runner Gateway audience, reread on every call."
-    )
-    request_timeout_s: float = Field(default=15, gt=0, allow_inf_nan=False)
-    follow_timeout_s: float = Field(
-        default=960,
-        gt=0,
-        allow_inf_nan=False,
-        description="Whole-stream safety deadline; keep above the Sandbox Service's follow_lease_s.",
-    )
-    grpc_channel_options: dict[str, int | str] = Field(
-        default_factory=dict,
-        description="gRPC options for this connection; receives replayed journal entries up to the configured limit.",
-    )
-
-
-class IngesterSettings(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-    concurrency: int = Field(
-        default=16, ge=1, le=64, description="Sessions followed at once per replica; the rest wait for a free slot."
-    )
-    retry_interval_s: float = Field(
-        default=15,
-        gt=0,
-        allow_inf_nan=False,
-        description="Delay before following again a Session that ended, failed or is claimed by another replica.",
-    )
-    settle_deltas: bool = Field(
-        default=True,
-        description="Remove an item's streamed delta entries from stored history once its retained "
-        "completion provably holds their concatenation. Turn off to keep every entry for debugging.",
-    )
-
-
 class IngressSettings(BaseModel):
     model_config = ConfigDict(extra="forbid")
     token_audience: str = Field(
@@ -93,8 +48,6 @@ class Settings(YamlFileSettings):
     host: str = "0.0.0.0"
     port: int = Field(default=8080, ge=1, le=65535)
     kubeconfig: Path | None = None
-    sandbox_service: SandboxServiceSettings
-    ingester: IngesterSettings = Field(default_factory=IngesterSettings)
     ingress: IngressSettings
     fold_concurrency: int = Field(default=4, ge=1, le=64)
     # A backfill advances each Session one page per cycle; the history store serves at most 1000.

@@ -1713,8 +1713,6 @@ data:
       - namespace: agentplane-staging
         name: agentplane-app
       - namespace: agentplane-staging
-        name: agentplane-history-service
-      - namespace: agentplane-staging
         name: agentplane-notifications
     token_audience: agentplane-sandbox-service
     default_egress_policies:
@@ -2613,14 +2611,6 @@ spec:
         - ports:
             - port: "8080"
               protocol: TCP
-    - fromEndpoints:
-        - matchLabels:
-            app.kubernetes.io/name: agentplane-history-service
-            k8s:io.kubernetes.pod.namespace: agentplane-staging
-      toPorts:
-        - ports:
-            - port: "8080"
-              protocol: TCP
 ---
 apiVersion: v1
 kind: ConfigMap
@@ -2633,8 +2623,6 @@ data:
     caller_accounts:
       - namespace: agentplane-staging
         name: agentplane-app
-      - namespace: agentplane-staging
-        name: agentplane-history-service
       - namespace: agentplane-staging
         name: agentplane-notifications
     sealer_accounts:
@@ -3173,14 +3161,6 @@ spec:
               protocol: TCP
     - fromEndpoints:
         - matchLabels:
-            app.kubernetes.io/name: agentplane-history-service
-            k8s:io.kubernetes.pod.namespace: agentplane-staging
-      toPorts:
-        - ports:
-            - port: "8080"
-              protocol: TCP
-    - fromEndpoints:
-        - matchLabels:
             app.kubernetes.io/name: agentplane-sandbox-service
             k8s:io.kubernetes.pod.namespace: agentplane-staging
       toPorts:
@@ -3287,15 +3267,6 @@ data:
         name: agentplane-notifications
     token_audience: agentplane-history-service
     port: 8080
-    sandbox_service:
-      target: agentplane-sandbox-service.agentplane-staging.svc.cluster.local:8080
-      gateway_target: agentplane-runner-gateway.agentplane-staging.svc.cluster.local:8080
-      token_file: /var/run/secrets/history-service/sandboxes
-      gateway_token_file: /var/run/secrets/history-service/gateway
-      grpc_channel_options:
-        grpc.max_receive_message_length: 33554432
-    ingester:
-      settle_deltas: true
     ingress:
       token_audience: agentplane-runner-ingress
       writer_namespaces:
@@ -3387,9 +3358,6 @@ spec:
             - mountPath: /etc/agentplane-history-service
               name: configmap-agentplane-history-service-config
               readOnly: true
-            - mountPath: /var/run/secrets/history-service
-              name: service-tokens
-              readOnly: true
       dnsPolicy: ClusterFirst
       hostNetwork: false
       imagePullSecrets:
@@ -3437,17 +3405,6 @@ spec:
         - configMap:
             name: agentplane-history-service-config
           name: configmap-agentplane-history-service-config
-        - name: service-tokens
-          projected:
-            sources:
-              - serviceAccountToken:
-                  audience: agentplane-sandbox-service
-                  expirationSeconds: 3600
-                  path: sandboxes
-              - serviceAccountToken:
-                  audience: agentplane-runner-gateway
-                  expirationSeconds: 3600
-                  path: gateway
 ---
 apiVersion: v1
 kind: Service
@@ -3501,22 +3458,6 @@ spec:
               protocol: TCP
     - toEntities:
         - kube-apiserver
-    - toEndpoints:
-        - matchLabels:
-            app.kubernetes.io/name: agentplane-sandbox-service
-            k8s:io.kubernetes.pod.namespace: agentplane-staging
-      toPorts:
-        - ports:
-            - port: "8080"
-              protocol: TCP
-    - toEndpoints:
-        - matchLabels:
-            app.kubernetes.io/name: agentplane-runner-gateway
-            k8s:io.kubernetes.pod.namespace: agentplane-staging
-      toPorts:
-        - ports:
-            - port: "8080"
-              protocol: TCP
     - toEndpoints:
         - matchLabels:
             k8s:cnpg.io/cluster: postgres
