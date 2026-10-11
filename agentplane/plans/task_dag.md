@@ -940,8 +940,13 @@ that cannot report keeps the Sandbox in sealing for the operator, as today.
 
 **Blocked on legacy Sandbox retirement.** Delete `FollowSession`,
 `WatchSessions` and its change feed, the History Service follower ingester, and the hold API and
-`retention-holds` annotation. Stops for the operator before dropping
-stored registry columns.
+`retention-holds` annotation. With the follower go its traces in the history store:
+`Store.record_session`, and the Sandbox locator columns (`sandbox_namespace`, `sandbox_name`,
+`sandbox_uid`, `runner_session_id`, `source_id`, `ux_history_runner_locator`), so every Session row
+names only its writer and `SessionSummary` drops its Sandbox fields. Tests that copy history with
+the follower (`history_service.testing.backend.ingest`, used by the app and Notification Service
+acceptance tests) push through the ingress instead. Stops for the operator before dropping
+stored registry or history columns.
 
 ### `SANDBOX_SERVICE_DEPLOYMENT_SPLIT` — controller and hub as separate Deployments
 
