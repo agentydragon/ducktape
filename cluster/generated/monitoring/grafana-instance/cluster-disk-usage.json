@@ -32,7 +32,7 @@
       },
       "options": {
         "mode": "markdown",
-        "content": "This dashboard shows **current size and growth over time** from existing collectors. The node filesystem totals cover scraped ext4/XFS filesystems and count each node/device once; they include operating-system and application files. They are not a complete inventory of every PVC.\n\n**Accounting layers overlap.** CNPG database sizes, ClickHouse disk use, SeaweedFS bucket sizes, SeaweedFS collection bytes, volume-server disk use, and node filesystem use must not be added together. CNPG database sizes deduplicate replica reporters. SeaweedFS bucket logical bytes describe object data; bucket physical bytes and collection bytes include replicated storage. Collection bytes sum volume-server copies. The volume-server capacity metrics describe the underlying disks. No hostPath PVC or table-size scan is used. Missing samples and newly created databases or buckets do not imply zero use."
+        "content": "This dashboard shows **current size and growth over time** from existing collectors. The node filesystem totals cover scraped ext4/XFS filesystems and count each node/device once; they include operating-system and application files. They are not a complete inventory of every PVC.\n\n**The composition is approximate.** It uses SeaweedFS collection disk bytes, ClickHouse disk bytes, and CNPG database bytes summed across replicas. The remainder is node filesystem use after subtracting these estimates, so it also contains measurement differences. CNPG excludes WAL and other PostgreSQL files. Detailed SeaweedFS bucket logical bytes omit replicas, while physical bucket bytes and collection bytes mostly measure the same replicated data for S3 buckets; collections also cover non-S3 storage. Do not add the detailed charts together. No hostPath PVC or table-size scan is used. Missing samples and newly created databases or buckets do not imply zero use."
       }
     },
     {
@@ -106,6 +106,65 @@
       }
     },
     {
+      "id": 18,
+      "title": "Approximate used storage composition",
+      "description": "One physical-use estimate per component. SeaweedFS sums volume-server collection files, including replicas; ClickHouse sums server disks; CNPG sums database files on each instance, including replicas but excluding WAL and other PostgreSQL files. Other is node filesystem used minus those three estimates, so it includes remaining applications, host files, and differences between collectors. This is a rough attribution, not exact PVC accounting.",
+      "type": "piechart",
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 10
+      },
+      "datasource": "${DS_MIMIR}",
+      "targets": [
+        {
+          "expr": "sum(max by (collection, pod) (SeaweedFS_volumeServer_total_disk_size{namespace=\"seaweedfs\",type=\"normal\"}))",
+          "instant": true,
+          "legendFormat": "SeaweedFS",
+          "refId": "A"
+        },
+        {
+          "expr": "sum(max by (pod, disk) (ClickHouseAsyncMetrics_DiskUsed{namespace=\"clickhouse\"}))",
+          "instant": true,
+          "legendFormat": "ClickHouse",
+          "refId": "B"
+        },
+        {
+          "expr": "sum(max by (namespace, pod, datname) (cnpg_pg_database_size_bytes{datname!~\"template0|template1\"}))",
+          "instant": true,
+          "legendFormat": "CNPG database files",
+          "refId": "C"
+        },
+        {
+          "expr": "(sum(max by (node, device) (max by (node, device, mountpoint) ((node_filesystem_size_bytes{fstype=~\"ext4|xfs\",device!=\"\"} - node_filesystem_avail_bytes{fstype=~\"ext4|xfs\",device!=\"\"}) * on (namespace, pod) group_left (node) max by (namespace, pod, node) (kube_pod_info{namespace=\"monitoring\",pod=~\"prometheus-node-exporter-.+\"}))))) - (sum(max by (collection, pod) (SeaweedFS_volumeServer_total_disk_size{namespace=\"seaweedfs\",type=\"normal\"}))) - (sum(max by (pod, disk) (ClickHouseAsyncMetrics_DiskUsed{namespace=\"clickhouse\"}))) - (sum(max by (namespace, pod, datname) (cnpg_pg_database_size_bytes{datname!~\"template0|template1\"})))",
+          "instant": true,
+          "legendFormat": "Other / unattributed (approx.)",
+          "refId": "D"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes"
+        },
+        "overrides": []
+      },
+      "options": {
+        "displayLabels": ["name", "percent"],
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "values": ["value", "percent"]
+        },
+        "pieType": "pie",
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        }
+      }
+    },
+    {
       "id": 4,
       "title": "Node filesystem used now",
       "description": "Used bytes per filesystem mount; repeated mounts are visible here but counted once per device in the totals.",
@@ -114,7 +173,7 @@
         "h": 9,
         "w": 12,
         "x": 0,
-        "y": 10
+        "y": 18
       },
       "datasource": "${DS_MIMIR}",
       "fieldConfig": {
@@ -161,7 +220,7 @@
         "h": 9,
         "w": 12,
         "x": 12,
-        "y": 10
+        "y": 18
       },
       "datasource": "${DS_MIMIR}",
       "fieldConfig": {
@@ -199,7 +258,7 @@
         "h": 9,
         "w": 12,
         "x": 0,
-        "y": 19
+        "y": 27
       },
       "datasource": "${DS_MIMIR}",
       "fieldConfig": {
@@ -246,7 +305,7 @@
         "h": 9,
         "w": 12,
         "x": 12,
-        "y": 19
+        "y": 27
       },
       "datasource": "${DS_MIMIR}",
       "fieldConfig": {
@@ -284,7 +343,7 @@
         "h": 9,
         "w": 12,
         "x": 0,
-        "y": 28
+        "y": 36
       },
       "datasource": "${DS_MIMIR}",
       "fieldConfig": {
@@ -331,7 +390,7 @@
         "h": 9,
         "w": 12,
         "x": 12,
-        "y": 28
+        "y": 36
       },
       "datasource": "${DS_MIMIR}",
       "fieldConfig": {
@@ -369,7 +428,7 @@
         "h": 9,
         "w": 12,
         "x": 0,
-        "y": 37
+        "y": 45
       },
       "datasource": "${DS_MIMIR}",
       "fieldConfig": {
@@ -416,7 +475,7 @@
         "h": 9,
         "w": 12,
         "x": 12,
-        "y": 37
+        "y": 45
       },
       "datasource": "${DS_MIMIR}",
       "fieldConfig": {
@@ -454,7 +513,7 @@
         "h": 9,
         "w": 12,
         "x": 0,
-        "y": 46
+        "y": 54
       },
       "datasource": "${DS_MIMIR}",
       "fieldConfig": {
@@ -501,7 +560,7 @@
         "h": 9,
         "w": 12,
         "x": 12,
-        "y": 46
+        "y": 54
       },
       "datasource": "${DS_MIMIR}",
       "fieldConfig": {
@@ -539,7 +598,7 @@
         "h": 9,
         "w": 12,
         "x": 0,
-        "y": 55
+        "y": 63
       },
       "datasource": "${DS_MIMIR}",
       "fieldConfig": {
@@ -586,7 +645,7 @@
         "h": 9,
         "w": 12,
         "x": 12,
-        "y": 55
+        "y": 63
       },
       "datasource": "${DS_MIMIR}",
       "fieldConfig": {
@@ -624,7 +683,7 @@
         "h": 9,
         "w": 12,
         "x": 0,
-        "y": 64
+        "y": 72
       },
       "datasource": "${DS_MIMIR}",
       "fieldConfig": {
@@ -671,7 +730,7 @@
         "h": 9,
         "w": 12,
         "x": 12,
-        "y": 64
+        "y": 72
       },
       "datasource": "${DS_MIMIR}",
       "fieldConfig": {
