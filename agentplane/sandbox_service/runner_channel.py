@@ -1,4 +1,5 @@
-"""The runner-initiated channel listener: authentication, ownership, liveness and command delivery.
+"""The runner-initiated channel listener: authentication, ownership, liveness, command delivery and
+lifecycle requests.
 
 Contract: `agentplane/docs/runner_channel.md`.
 """
@@ -6,6 +7,7 @@ Contract: `agentplane/docs/runner_channel.md`.
 import asyncio
 import logging
 from collections.abc import AsyncIterator
+from contextlib import nullcontext
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from enum import StrEnum
@@ -18,6 +20,7 @@ from kubernetes_asyncio import client as k8s_client
 from sqlalchemy.exc import SQLAlchemyError
 
 from agentplane.runner_channel import protocol_pb2, protocol_pb2_grpc
+from agentplane.sandbox_service.channel_control import ChannelControl, ControlConnection
 from agentplane.sandbox_service.channel_delivery import ChannelDelivery
 from agentplane.sandbox_service.commands.connections import ConnectionStore
 from agentplane.sandbox_service.commands.dispatch import CommandKey, ReceiptMismatchError
@@ -43,6 +46,7 @@ MAX_UNRECEIPTED = 64
 
 class ChannelOperation(StrEnum):
     COMMANDS = "commands"
+    LIFECYCLE = "lifecycle"
 
 
 @dataclass(frozen=True)
@@ -121,6 +125,7 @@ class RunnerChannelService(protocol_pb2_grpc.RunnerChannelServicer):
         connections: ConnectionStore,
         records: ConnectionRecords,
         delivery: ChannelDelivery,
+        control: ChannelControl,
         timing: ChannelTiming,
     ) -> None:
         self.principals = principals
@@ -129,6 +134,7 @@ class RunnerChannelService(protocol_pb2_grpc.RunnerChannelServicer):
         self.connections = connections
         self.records = records
         self.delivery = delivery
+        self.control = control
         self.timing = timing
 
     async def authenticate(self, context: grpc.aio.ServicerContext) -> tuple[WorkloadPrincipal, ChannelPeer]:
@@ -207,12 +213,13 @@ class RunnerChannelService(protocol_pb2_grpc.RunnerChannelServicer):
         writing = asyncio.Lock()
         unreceipted: dict[tuple[str, str], datetime] = {}  # (runner session, command ID) -> deadline
         commands = ChannelOperation.COMMANDS in capabilities
+        lifecycle = ChannelOperation.LIFECYCLE in capabilities
 
         async def send(frame: protocol_pb2.ServiceFrame) -> None:
             async with writing, asyncio.timeout(self.timing.liveness_s):
                 await context.write(frame)
 
-        async def read() -> None:
+        async def read(control: ControlConnection | None) -> None:
             nonlocal last_frame, last_frame_at
             async for frame in frames:
                 last_frame, last_frame_at = loop.time(), datetime.now(UTC)
@@ -225,6 +232,8 @@ class RunnerChannelService(protocol_pb2_grpc.RunnerChannelServicer):
                         except (ReceiptMismatchError, SubmissionConflictError) as error:
                             raise _ChannelClosedError(grpc.StatusCode.INVALID_ARGUMENT, str(error)) from error
                         unreceipted.pop((frame.receipt.session_id, frame.receipt.command_id), None)
+                    case "control_result" if control is not None:
+                        control.answer(frame.control_result)
                     case kind:
                         raise _ChannelClosedError(grpc.StatusCode.INVALID_ARGUMENT, f"unexpected {kind} frame")
 
@@ -275,13 +284,18 @@ class RunnerChannelService(protocol_pb2_grpc.RunnerChannelServicer):
                     last_touch = now
                 await send(protocol_pb2.ServiceFrame(heartbeat=protocol_pb2.Heartbeat()))
 
-        tasks = [asyncio.create_task(task()) for task in (read, deliver, keep_alive)]
-        try:
-            done, _ = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
-        finally:
-            for task in tasks:
-                task.cancel()
-            await asyncio.gather(*tasks, return_exceptions=True)
+        with self.control.connect(peer.sandbox_uid, epoch=epoch, send=send) if lifecycle else nullcontext() as control:
+            tasks = [
+                asyncio.create_task(read(control)),
+                asyncio.create_task(deliver()),
+                asyncio.create_task(keep_alive()),
+            ]
+            try:
+                done, _ = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
+            finally:
+                for task in tasks:
+                    task.cancel()
+                await asyncio.gather(*tasks, return_exceptions=True)
         # Only the reader returns, when the runner closed its side cleanly.
         for task in done:
             task.result()

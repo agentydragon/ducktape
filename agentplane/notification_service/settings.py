@@ -59,6 +59,12 @@ class GitHubSettings(BaseModel):
 class SandboxServiceSettings(BaseModel):
     model_config = ConfigDict(extra="forbid", hide_input_in_errors=True)
     target: str = Field(description="Sandbox Service gRPC host:port for session access and runner commands.")
+    control_target: str | None = Field(
+        default=None,
+        description="Each Sandbox's control Service, a template of `{sandbox}` and `{namespace}` such as "
+        "`{sandbox}-control.{namespace}.svc:8080`. Lifecycle calls go there, to the replica holding the "
+        "runner connection. Unset sends them to the Sandbox Service target.",
+    )
     request_timeout_s: float = Field(default=5, gt=0, allow_inf_nan=False)
     lifecycle_timeout_s: float = Field(default=310, gt=0, allow_inf_nan=False)
     follow_timeout_s: float = Field(default=960, gt=0, allow_inf_nan=False)

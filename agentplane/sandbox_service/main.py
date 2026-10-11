@@ -16,6 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 from agentplane.runner_channel import protocol_pb2_grpc
 from agentplane.sandbox_service.action_policy import ActionPolicyBindings
 from agentplane.sandbox_service.admission_reconciliation import AdmissionReconciler
+from agentplane.sandbox_service.channel_control import ChannelControl
 from agentplane.sandbox_service.channel_delivery import ChannelDelivery
 from agentplane.sandbox_service.commands.connections import ConnectionStore
 from agentplane.sandbox_service.commands.dispatch import DispatchStore
@@ -113,6 +114,7 @@ async def serve_with_engines(
         connections = ConnectionStore(commands_engine)
         leases = ConnectionLeases()
         timing = ChannelTiming()
+        control = ChannelControl(leases)
         delivery = ChannelDelivery(
             commands_engine.url,
             dispatches=DispatchStore(commands_engine),
@@ -125,6 +127,7 @@ async def serve_with_engines(
             sessions=sessions,
             submissions=submissions,
             delivery=delivery,
+            control=control,
             session_changes=session_changes,
             destinations=DestinationResolver(inventory, core, settings.runner_port),
             admission_timeout_s=settings.admission_timeout_s,
@@ -163,6 +166,7 @@ async def serve_with_engines(
                         ),
                     ),
                     delivery=delivery,
+                    control=control,
                     timing=timing,
                 ),
                 channel_server,
@@ -176,7 +180,11 @@ async def serve_with_engines(
                 return {"status": "ok"}
 
             teardown = Teardown(
-                resources.destinations, sessions, runner_grpc_channel_options=settings.runner_grpc_channel_options
+                resources.destinations,
+                sessions,
+                connections=connections,
+                control=control,
+                runner_grpc_channel_options=settings.runner_grpc_channel_options,
             )
             lease_watch = asyncio.create_task(
                 leases.watch(k8s_client.CoordinationV1Api(api), settings.sandbox_namespace, resync_seconds=300).run(),

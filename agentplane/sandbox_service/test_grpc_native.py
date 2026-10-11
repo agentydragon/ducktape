@@ -20,6 +20,7 @@ from agentplane.runner.testing import events
 from agentplane.runner.testing.fixtures import RunnerHandle
 from agentplane.runner.testing.scripted_model import ScriptedModel, Text
 from agentplane.sandbox_service import protocol_pb2
+from agentplane.sandbox_service.channel_control import ChannelControl
 from agentplane.sandbox_service.channel_delivery import ChannelDelivery
 from agentplane.sandbox_service.client import Runner, SandboxServiceClient, ServiceError
 from agentplane.sandbox_service.commands import db as commands_db
@@ -93,6 +94,7 @@ def resources(cluster: Cluster, runner: RunnerHandle, commands_engine: AsyncEngi
             leases=ConnectionLeases(),
             liveness_s=1,
         ),
+        control=ChannelControl(ConnectionLeases()),
         session_changes=SessionChanges(commands_engine.url),
     )
 

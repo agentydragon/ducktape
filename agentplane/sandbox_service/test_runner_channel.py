@@ -15,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 
 from agentplane.protocol import command_pb2, event_log_pb2
 from agentplane.runner_channel import protocol_pb2, protocol_pb2_grpc
+from agentplane.sandbox_service.channel_control import ChannelControl
 from agentplane.sandbox_service.channel_delivery import ChannelDelivery, CommandRefusedError
 from agentplane.sandbox_service.commands.connections import ConnectionStore
 from agentplane.sandbox_service.commands.dispatch import DispatchStore
@@ -109,6 +110,7 @@ def replica(cluster: Cluster, engine: AsyncEngine, delivery: ChannelDelivery) ->
                 connections=ConnectionStore(engine),
                 records=ConnectionRecords(cluster.api, namespace=SANDBOX_NAMESPACE, holder=holder),
                 delivery=delivery,
+                control=ChannelControl(delivery.leases),
                 timing=ChannelTiming(heartbeat_s=0.05, liveness_s=1, touch_s=0.1, max_age_s=60),
             ),
             server,

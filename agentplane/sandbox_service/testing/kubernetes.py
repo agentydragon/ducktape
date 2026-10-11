@@ -11,6 +11,7 @@ from kubernetes_asyncio import client as k8s_client
 
 from agentplane.sandbox_service.action_policy import ActionPolicyBindings
 from agentplane.sandbox_service.binding_storage import write_binding
+from agentplane.sandbox_service.channel_control import ChannelControl
 from agentplane.sandbox_service.channel_delivery import ChannelDelivery
 from agentplane.sandbox_service.client import SandboxServiceClient
 from agentplane.sandbox_service.commands.connections import ConnectionStore
@@ -148,6 +149,7 @@ async def authenticated_service(
                 leases=ConnectionLeases(),
                 liveness_s=1,
             ),
+            control=ChannelControl(ConnectionLeases()),
             session_changes=SessionChanges(engine.url),
         )
         async with (

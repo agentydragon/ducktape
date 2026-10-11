@@ -13,7 +13,10 @@ from kubernetes_asyncio import client as k8s_client
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from agentplane.runner import protocol_pb2 as runner_pb2
+from agentplane.sandbox_service.channel_control import ChannelControl
 from agentplane.sandbox_service.commands import db as commands_db
+from agentplane.sandbox_service.commands.connections import ConnectionStore
+from agentplane.sandbox_service.connection_records import ConnectionLeases
 from agentplane.sandbox_service.destinations import DestinationResolver, DestinationUnavailableError
 from agentplane.sandbox_service.inventory import SandboxInventory
 from agentplane.sandbox_service.models import SandboxTearingDownError
@@ -126,7 +129,13 @@ async def teardown(destinations: DestinationResolver, engine: AsyncEngine) -> Te
     # The registry tables share the history test database; production keeps them apart.
     async with engine.begin() as connection:
         await connection.run_sync(commands_db.Base.metadata.create_all)
-    return Teardown(destinations, SessionRegistry(engine), runner_grpc_channel_options={})
+    return Teardown(
+        destinations,
+        SessionRegistry(engine),
+        connections=ConnectionStore(engine),
+        control=ChannelControl(ConnectionLeases()),
+        runner_grpc_channel_options={},
+    )
 
 
 @pytest.fixture

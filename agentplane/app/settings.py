@@ -76,6 +76,12 @@ class Settings(AppSettingsConfig):
         "so a sandbox shares a namespace with neither the app, its database, nor the rules that govern it."
     )
     sandbox_service_target: str = Field(min_length=1)
+    sandbox_service_control_target: str | None = Field(
+        default=None,
+        description="Each Sandbox's control Service, a template of `{sandbox}` and `{namespace}` such as "
+        "`{sandbox}-control.{namespace}.svc:8080`. Lifecycle calls go there, to the replica holding the "
+        "runner connection. Unset sends them to the Sandbox Service target.",
+    )
     history_service_target: str = Field(min_length=1)
     notifications_url: HttpEndpointUrl
     notifications_token_file: Path

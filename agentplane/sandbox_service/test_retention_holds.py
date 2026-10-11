@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 
 from agentplane.sandbox_service import protocol_pb2
 from agentplane.sandbox_service.action_policy import ActionPolicyBindings
+from agentplane.sandbox_service.channel_control import ChannelControl
 from agentplane.sandbox_service.channel_delivery import ChannelDelivery
 from agentplane.sandbox_service.client import SandboxServiceClient, ServiceError
 from agentplane.sandbox_service.commands.connections import ConnectionStore
@@ -138,6 +139,7 @@ async def api(
             leases=ConnectionLeases(),
             liveness_s=1,
         ),
+        control=ChannelControl(ConnectionLeases()),
         session_changes=SessionChanges(engine.url),
     )
     token_file = tmp_path / "token"

@@ -361,10 +361,11 @@ transport cancellation as harness cancellation.
 
 ### `RUNNER_OUTBOUND_LIFECYCLE` — lifecycle requests over the channel
 
-**Candidate.** Implement the explicit `ListSessions`, `Initialize`,
-`OpenSession`, `ResumeSession` and `Seal` control requests on both peers and move every remaining inbound caller onto them
-([runner channel](../docs/runner_channel.md)). Only
-`OpenSession` and `ResumeSession` start a harness.
+**Candidate; both peers answer and send the requests.** The `ListSessions`, `CreateSession` and
+`ResumeSession` RPCs and teardown sealing use them ([runner channel](../docs/runner_channel.md)).
+Left: `LookupSession`'s and `journal_reader`'s listings, which run on any replica and still read
+the inbound API, and setting the App's and Notification Service's `control_target` in their
+manifests once their images carry it. `LookupSession`'s journal scan waits on how Events travel.
 
 ### `RUNNER_OUTBOUND_ROLLOUT` — every template dials out
 

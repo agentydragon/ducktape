@@ -23,6 +23,7 @@ from agentplane.runner.client import RunnerClient
 from agentplane.runner.errors import RunnerError, StreamClosedError
 from agentplane.sandbox_service import protocol_pb2, wire
 from agentplane.sandbox_service.admission_reconciliation import AdmissionReconciler
+from agentplane.sandbox_service.channel_control import ChannelControl
 from agentplane.sandbox_service.channel_delivery import ChannelDelivery
 from agentplane.sandbox_service.client import ReconnectRequiredError, SandboxServiceClient, SealedError, ServiceError
 from agentplane.sandbox_service.commands import db as commands_db
@@ -211,6 +212,7 @@ def resources(
             leases=ConnectionLeases(),
             liveness_s=1,
         ),
+        control=ChannelControl(ConnectionLeases()),
         session_changes=SessionChanges(engine.url),
     )
 

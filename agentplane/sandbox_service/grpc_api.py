@@ -24,6 +24,7 @@ from agentplane.runner.errors import OpenTimeoutError, RunnerError, SessionSeale
 from agentplane.runner_channel import protocol_pb2 as channel_pb2
 from agentplane.sandbox_service import protocol_pb2, protocol_pb2_grpc, session_lifecycle, wire
 from agentplane.sandbox_service.action_policy_views import UnknownPolicySetError
+from agentplane.sandbox_service.channel_control import ChannelControl, ConnectionNotHeldError, ControlRefusedError
 from agentplane.sandbox_service.channel_delivery import ChannelDelivery, CommandRefusedError
 from agentplane.sandbox_service.command_relay import admit_running_command
 from agentplane.sandbox_service.commands.store import (
@@ -71,6 +72,7 @@ class Resources:
     sessions: SessionRegistry
     submissions: SubmissionStore
     delivery: ChannelDelivery
+    control: ChannelControl
     session_changes: SessionChanges
     admission_timeout_s: float = 15
     follow_lease_s: float = 900
@@ -128,6 +130,10 @@ async def errors(context: grpc.aio.ServicerContext) -> AsyncIterator[None]:
             channel_pb2.CommandRefused.REASON_INVALID_COMMAND: grpc.StatusCode.INVALID_ARGUMENT,
         }.get(refused.refusal.reason, grpc.StatusCode.FAILED_PRECONDITION)
         await context.abort(code, f"runner refused the command: {refused}")
+    except ControlRefusedError as refused:
+        if refused.refusal.reason == channel_pb2.ControlRefused.REASON_INVALID_REQUEST:
+            await context.abort(grpc.StatusCode.INVALID_ARGUMENT, "runner rejected invalid request")
+        await context.abort(grpc.StatusCode.FAILED_PRECONDITION, "runner rejected session or bootstrap state")
     except ValueError, ParseError, UnknownPolicyError, UnknownPolicySetError:
         await context.abort(grpc.StatusCode.INVALID_ARGUMENT, "invalid service request or grant selection")
     except TimeoutError, OpenTimeoutError:
@@ -360,12 +366,33 @@ class SandboxService(protocol_pb2_grpc.SandboxServiceServicer):
             await provisioning.egress.revoke(request.binding_name)
             return Empty()
 
+    async def lifecycle_routed(self, destination: SandboxDestination) -> bool:
+        """Whether the Sandbox's lifecycle requests travel over its runner channel, which they do for
+        good once a connection agreed `lifecycle`. Only the replica holding that connection serves
+        them; any other refuses before acting, and the caller retries through the control Service."""
+        sandbox_uid = UUID(destination.sandbox_uid)
+        if ChannelOperation.LIFECYCLE not in await self.resources.delivery.connections.read_operations(sandbox_uid):
+            return False
+        if self.resources.control.holder(sandbox_uid) is None:
+            raise ConnectionNotHeldError("another replica holds this Sandbox's runner connection")
+        return True
+
+    async def list_runner_sessions(self, destination: SandboxDestination) -> list[runner_pb2.SessionSummary]:
+        if await self.lifecycle_routed(destination):
+            # Verifies the incarnation and its owner, as the inbound path's runner lookup does.
+            await self.resources.destinations.resolve(destination, writes=False)
+            listing = channel_pb2.ControlRequest(list_sessions=runner_pb2.ListSessionsRequest())
+            result = await self.resources.control.request(UUID(destination.sandbox_uid), listing)
+            return list(result.list_sessions.sessions)
+        async with self.runner(destination, writes=False) as (client, _):
+            return await client.list_sessions()
+
     @override
     async def ListSessions(
         self, request: protocol_pb2.SandboxRequest, context: grpc.aio.ServicerContext
     ) -> runner_pb2.ListSessionsResponse:
-        async with self.request(context), self.runner(request.destination, writes=False) as (client, _):
-            sessions = await client.list_sessions()
+        async with self.request(context):
+            sessions = await self.list_runner_sessions(request.destination)
             for summary in sessions:
                 public_id = await self.resources.sessions.session_id(
                     sandbox_namespace=self.resources.destinations.inventory.namespace,
@@ -397,59 +424,75 @@ class SandboxService(protocol_pb2_grpc.SandboxServiceServicer):
             if len(request.idempotency_key) > 128 or len(request.setup_script) > 65_536:
                 raise ValueError("Open key or setup script is too long")
             overrides = wire.launch_overrides(request)
-            async with self.runner(request.sandbox, writes=True) as (client, endpoint):
-                sandbox_uid = UUID(request.sandbox.sandbox_uid)
+            endpoint = await self.resources.destinations.resolve(request.sandbox, writes=True)
+            channel_routed = await self.lifecycle_routed(request.sandbox)
+            sandbox_uid = UUID(request.sandbox.sandbox_uid)
 
-                def freeze(session_id: UUID) -> bytes:
-                    destination = protocol_pb2.SessionDestination(sandbox=request.sandbox, session_id=str(session_id))
-                    # CreateSession callers cannot know the public ID before Open. Resolve
-                    # workspace templates only after reservation, and freeze the result.
-                    effective_overrides = dict(overrides)
-                    if isinstance(cwd := effective_overrides.get("cwd"), str):
-                        effective_overrides["cwd"] = cwd.replace("{session_id}", str(session_id))
-                    spec = session_lifecycle.launch_spec(
-                        destination,
-                        effective_overrides,
-                        binding=endpoint.binding,
-                        platform_instructions=self.resources.platform_instructions,
-                        sandbox_namespace=self.resources.destinations.inventory.namespace,
-                    )
-                    setup_script = (
-                        request.setup_script
-                        if request.HasField("setup_script")
-                        else endpoint.binding.session_defaults.setup_script
-                        if endpoint.binding is not None and endpoint.binding.session_defaults.HasField("setup_script")
-                        else None
-                    )
-                    launch = protocol_pb2.FrozenLaunch(
-                        open=runner_pb2.Open(session_id=f"r-{session_id}", spec=spec),
-                        bootstrap=endpoint.binding.bootstrap if endpoint.binding is not None else "",
-                    )
-                    if setup_script is not None:
-                        launch.open.setup_script = setup_script
-                    return launch.SerializeToString(deterministic=True)
-
-                reservation = await self.resources.sessions.reserve(
-                    caller_namespace=caller.namespace,
-                    caller_name=caller.name,
+            def freeze(session_id: UUID) -> bytes:
+                destination = protocol_pb2.SessionDestination(sandbox=request.sandbox, session_id=str(session_id))
+                # CreateSession callers cannot know the public ID before Open. Resolve
+                # workspace templates only after reservation, and freeze the result.
+                effective_overrides = dict(overrides)
+                if isinstance(cwd := effective_overrides.get("cwd"), str):
+                    effective_overrides["cwd"] = cwd.replace("{session_id}", str(session_id))
+                spec = session_lifecycle.launch_spec(
+                    destination,
+                    effective_overrides,
+                    binding=endpoint.binding,
+                    platform_instructions=self.resources.platform_instructions,
                     sandbox_namespace=self.resources.destinations.inventory.namespace,
-                    sandbox_name=request.sandbox.sandbox,
-                    sandbox_uid=sandbox_uid,
-                    open_key=request.idempotency_key,
-                    open_request=request.SerializeToString(deterministic=True),
-                    launch_spec=freeze,
                 )
-                launch = protocol_pb2.FrozenLaunch.FromString(reservation.launch_spec)
-                public_id = str(reservation.session_id)
-                attachment = await session_lifecycle.open_session(
-                    client,
+                setup_script = (
+                    request.setup_script
+                    if request.HasField("setup_script")
+                    else endpoint.binding.session_defaults.setup_script
+                    if endpoint.binding is not None and endpoint.binding.session_defaults.HasField("setup_script")
+                    else None
+                )
+                launch = protocol_pb2.FrozenLaunch(
+                    open=runner_pb2.Open(session_id=f"r-{session_id}", spec=spec),
+                    bootstrap=endpoint.binding.bootstrap if endpoint.binding is not None else "",
+                )
+                if setup_script is not None:
+                    launch.open.setup_script = setup_script
+                return launch.SerializeToString(deterministic=True)
+
+            reservation = await self.resources.sessions.reserve(
+                caller_namespace=caller.namespace,
+                caller_name=caller.name,
+                sandbox_namespace=self.resources.destinations.inventory.namespace,
+                sandbox_name=request.sandbox.sandbox,
+                sandbox_uid=sandbox_uid,
+                open_key=request.idempotency_key,
+                open_request=request.SerializeToString(deterministic=True),
+                launch_spec=freeze,
+            )
+            launch = protocol_pb2.FrozenLaunch.FromString(reservation.launch_spec)
+            public_id = str(reservation.session_id)
+            setup_script = launch.open.setup_script if launch.open.HasField("setup_script") else None
+            if channel_routed:
+                attachment = await session_lifecycle.open_channel_session(
+                    self.resources.control,
+                    sandbox_uid,
                     launch.open.session_id,
                     launch.open.spec,
                     bootstrap=launch.bootstrap,
-                    setup_script=launch.open.setup_script if launch.open.HasField("setup_script") else None,
+                    setup_script=setup_script,
                 )
-                attachment.session_id = public_id
-                return protocol_pb2.CreateSessionResponse(session_id=public_id, attached=attachment)
+            else:
+                client = self._runner_client(endpoint.target)
+                try:
+                    attachment = await session_lifecycle.open_session(
+                        client,
+                        launch.open.session_id,
+                        launch.open.spec,
+                        bootstrap=launch.bootstrap,
+                        setup_script=setup_script,
+                    )
+                finally:
+                    await client.close()
+            attachment.session_id = public_id
+            return protocol_pb2.CreateSessionResponse(session_id=public_id, attached=attachment)
 
     @override
     async def LookupSession(
@@ -515,10 +558,19 @@ class SandboxService(protocol_pb2_grpc.SandboxServiceServicer):
             destination = request.destination
             if not destination.session_id:
                 raise ValueError("session ID is required")
-            async with self.runner(destination.sandbox, writes=True) as (client, _):
-                result = await session_lifecycle.resume_session(client, await self.runner_session_id(destination))
-                result.session_id = destination.session_id
-                return result
+            if await self.lifecycle_routed(destination.sandbox):
+                # Verifies the incarnation, its owner and that it is not being torn down.
+                await self.resources.destinations.resolve(destination.sandbox, writes=True)
+                result = await session_lifecycle.resume_channel_session(
+                    self.resources.control,
+                    UUID(destination.sandbox.sandbox_uid),
+                    await self.runner_session_id(destination),
+                )
+            else:
+                async with self.runner(destination.sandbox, writes=True) as (client, _):
+                    result = await session_lifecycle.resume_session(client, await self.runner_session_id(destination))
+            result.session_id = destination.session_id
+            return result
 
     @override
     async def SubmitCommand(

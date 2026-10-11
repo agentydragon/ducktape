@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from collections.abc import AsyncIterator, Awaitable, Callable, Mapping
 from pathlib import Path
 from typing import Never
@@ -21,6 +22,8 @@ from agentplane.sandbox_service.protocol_pb2 import CreateSandboxRequest, Sandbo
 
 # gazelle:include_dep @pypi//protobuf
 # gazelle:include_dep @pypi//grpcio
+
+logger = logging.getLogger(__name__)
 
 
 class ServiceError(ConnectionError):
@@ -100,6 +103,7 @@ class SandboxServiceClient:
         request_timeout_s: float,
         lifecycle_timeout_s: float,
         follow_timeout_s: float,
+        control_target: str | None = None,
         channel_options: Mapping[str, int | str] | None = None,
     ) -> None:
         if min(request_timeout_s, lifecycle_timeout_s, follow_timeout_s) <= 0 or (
@@ -113,22 +117,29 @@ class SandboxServiceClient:
         self.command_admission_timeout_s = command_admission_timeout_s
         self.lifecycle_timeout_s = lifecycle_timeout_s
         self.follow_timeout_s = follow_timeout_s
+        # A Sandbox's control Service, which names the replica holding its runner connection, as a
+        # template of `{sandbox}` and `{namespace}`: `{sandbox}-control.{namespace}.svc:8080`. None
+        # sends every call to `target`.
+        self.control_target = control_target
         self._channel_options = channel_options
         self._channel: grpc.aio.Channel | None = None
         self._stub: protocol_pb2_grpc.SandboxServiceAsyncStub | None = None
 
+    def dial(self, target: str) -> grpc.aio.Channel:
+        # No retry service config: uncertain mutations need domain-specific reconciliation.
+        # A local subchannel pool makes a channel after `close()` dial anew; from the process-wide
+        # pool it would inherit the closed channel's connection.
+        return grpc.aio.insecure_channel(
+            target,
+            options=grpc_channel_option_kvps(
+                self._channel_options, required={"grpc.enable_retries": 0, "grpc.use_local_subchannel_pool": 1}
+            ),
+        )
+
     @property
     def stub(self) -> protocol_pb2_grpc.SandboxServiceAsyncStub:
         if self._stub is None:
-            # No retry service config: uncertain mutations need domain-specific reconciliation.
-            # A local subchannel pool makes a channel after `close()` dial anew; from the process-wide
-            # pool it would inherit the closed channel's connection.
-            self._channel = grpc.aio.insecure_channel(
-                self.target,
-                options=grpc_channel_option_kvps(
-                    self._channel_options, required={"grpc.enable_retries": 0, "grpc.use_local_subchannel_pool": 1}
-                ),
-            )
+            self._channel = self.dial(self.target)
             self._stub = protocol_pb2_grpc.SandboxServiceStub(self._channel)
         return self._stub
 
@@ -144,6 +155,38 @@ class SandboxServiceClient:
             return await call(request, metadata=await self.metadata(), timeout=timeout_s or self.request_timeout_s)
         except grpc.aio.AioRpcError as error:
             _raise(error)
+
+    async def held_unary[T](
+        self,
+        destination: SandboxDestination,
+        call: Callable[[protocol_pb2_grpc.SandboxServiceAsyncStub], Callable[..., Awaitable[T]]],
+        request: Message,
+        *,
+        timeout_s: float | None = None,
+    ) -> T:
+        """Call the replica holding the Sandbox's runner connection, through its control Service, on a
+        connection dialed for this call alone: a replica that no longer holds it refuses with
+        UNAVAILABLE, and the caller's retry resolves the control Service again."""
+        if self.control_target is not None:
+            channel = self.dial(
+                self.control_target.format(sandbox=destination.sandbox, namespace=destination.owner.namespace)
+            )
+            try:
+                return await self.unary(
+                    call(protocol_pb2_grpc.SandboxServiceStub(channel)), request, timeout_s=timeout_s
+                )
+            except ServiceError as error:
+                if error.code != grpc.StatusCode.UNAVAILABLE:
+                    raise
+                # CLEANUP(added 2026-10-11): Call through the control Service alone once no live
+                # Sandbox's runner lacks the channel. Until then a Sandbox whose runner never
+                # connected has no control Service. Any replica serves its inbound route and refuses a
+                # channel-routed Sandbox before acting unless it holds the connection, so this retry
+                # never takes such a Sandbox's operation another way.
+                logger.debug("Sandbox %s: control Service unavailable, calling the service", destination.sandbox)
+            finally:
+                await channel.close()
+        return await self.unary(call(self.stub), request, timeout_s=timeout_s)
 
     async def list_sandboxes(self) -> list[Sandbox]:
         result = await self.unary(self.stub.ListSandboxes, Empty())
@@ -227,8 +270,8 @@ class Runner:
         self.destination = destination
 
     async def list_sessions(self) -> list[runner_pb2.SessionSummary]:
-        result = await self.service.unary(
-            self.service.stub.ListSessions, protocol_pb2.SandboxRequest(destination=self.destination)
+        result = await self.service.held_unary(
+            self.destination, lambda stub: stub.ListSessions, protocol_pb2.SandboxRequest(destination=self.destination)
         )
         return list(result.sessions)
 
@@ -236,8 +279,9 @@ class Runner:
         self, *, idempotency_key: str, spec: dict[str, object], setup_script: str | None = None
     ) -> protocol_pb2.CreateSessionResponse:
         # The key is for an explicit Open attempt, not a runner/session identifier.
-        return await self.service.unary(
-            self.service.stub.CreateSession,
+        return await self.service.held_unary(
+            self.destination,
+            lambda stub: stub.CreateSession,
             wire.create_proto(self.destination, idempotency_key, spec, setup_script),
             timeout_s=self.service.lifecycle_timeout_s,
         )
@@ -262,8 +306,9 @@ class Runner:
         )
 
     async def resume(self, session_id: str) -> runner_pb2.Attached:
-        return await self.service.unary(
-            self.service.stub.ResumeSession,
+        return await self.service.held_unary(
+            self.destination,
+            lambda stub: stub.ResumeSession,
             protocol_pb2.SessionRequest(
                 destination=protocol_pb2.SessionDestination(sandbox=self.destination, session_id=session_id)
             ),

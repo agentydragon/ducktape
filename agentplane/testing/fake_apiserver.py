@@ -266,6 +266,22 @@ class FakeApiServer:
         self.put(plural, body)
         return web.json_response(self.objects[plural][name])
 
+    async def patch_object(self, request: web.Request) -> web.Response:
+        """A JSON merge patch, with the `resourceVersion` precondition the real server applies when
+        the patch names one."""
+        plural, name = request.match_info["plural"], request.match_info["name"]
+        assert request.match_info["namespace"] == self.namespace_of[plural]
+        assert request.content_type == "application/merge-patch+json"
+        patch = await request.json()
+        current = self.objects[plural].get(name)
+        if current is None:
+            return web.json_response({"kind": "Status", "code": 404, "reason": "NotFound"}, status=404)
+        expected = patch.get("metadata", {}).get("resourceVersion")
+        if expected is not None and expected != current["metadata"]["resourceVersion"]:
+            return web.json_response({"kind": "Status", "code": 409, "reason": "Conflict"}, status=409)
+        self.put(plural, _merge_patch(current, patch))
+        return web.json_response(self.objects[plural][name])
+
     async def patch_status(self, request: web.Request) -> web.Response:
         plural, name = request.match_info["plural"], request.match_info["name"]
         assert request.match_info["namespace"] == self.namespace_of[plural]
@@ -275,6 +291,19 @@ class FakeApiServer:
         current = self.objects[plural][name]
         self.put(plural, {**current, "status": patch["status"]})
         return web.json_response(self.objects[plural][name])
+
+
+def _merge_patch(target: dict[str, Any], patch: dict[str, Any]) -> dict[str, Any]:
+    """RFC 7396: objects merge recursively, null removes a key, anything else replaces."""
+    merged = dict(target)
+    for key, value in patch.items():
+        if value is None:
+            merged.pop(key, None)
+        elif isinstance(value, dict) and isinstance(merged.get(key), dict):
+            merged[key] = _merge_patch(merged[key], value)
+        else:
+            merged[key] = value
+    return merged
 
 
 def sandbox(name: str) -> dict[str, Any]:
@@ -397,6 +426,7 @@ async def fake_apiserver(namespace_of: dict[str, str] | None = None) -> AsyncIte
     app.router.add_get("/apis/{group}/{version}/namespaces/{namespace}/{plural}/{name}", fake.get_object)
     app.router.add_post("/apis/{group}/{version}/namespaces/{namespace}/{plural}", fake.create_object)
     app.router.add_put("/apis/{group}/{version}/namespaces/{namespace}/{plural}/{name}", fake.replace_object)
+    app.router.add_patch("/apis/{group}/{version}/namespaces/{namespace}/{plural}/{name}", fake.patch_object)
     app.router.add_patch("/apis/{group}/{version}/namespaces/{namespace}/{plural}/{name}/status", fake.patch_status)
     # handler_cancellation: a watch handler outliving its disconnected client would otherwise
     # stall cleanup for the shutdown timeout.
