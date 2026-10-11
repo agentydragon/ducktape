@@ -8,11 +8,12 @@ import pytest_bazel
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import create_async_engine
 
-from agentplane.app.database_updates import Channel, DatabaseUpdates
+from agentplane.app.database_updates import Channel
 from agentplane.app.testing.history import ProjectedHistory as Ingestion, SeededEventLogStore as EventLogStore
 from agentplane.app.testing.projection_lease import LeaseFactory
 from agentplane.app.testing.thread_test_support import Replica, event_entry
 from agentplane.app.threads.store import ThreadStore
+from agentplane.postgres.wakeups import Wakeups
 from agentplane.proto import event_pb2
 
 # The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.
@@ -24,7 +25,7 @@ async def test_commits_wake_another_replica_and_leave_durable_replay(
     event_logs: EventLogStore,
     ingestion: Ingestion,
     replica: Replica,
-    database_updates: DatabaseUpdates,
+    database_updates: Wakeups,
     lease_for: LeaseFactory,
 ) -> None:
     changed, sessions_changed = asyncio.Event(), asyncio.Event()
@@ -56,7 +57,7 @@ async def test_listener_reconnect_wakes_every_channel_for_writes_during_the_gap(
     event_logs: EventLogStore,
     ingestion: Ingestion,
     replica: Replica,
-    database_updates: DatabaseUpdates,
+    database_updates: Wakeups,
     lease_for: LeaseFactory,
     db_url: str,
 ) -> None:

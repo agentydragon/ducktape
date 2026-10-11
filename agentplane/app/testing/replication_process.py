@@ -33,7 +33,7 @@ from starlette.types import ASGIApp, Message, Receive, Scope, Send
 from agentplane.app.action_policy import ActionPolicyInventory
 from agentplane.app.api import create_app
 from agentplane.app.database import connect
-from agentplane.app.database_updates import Channel, DatabaseUpdates, notify_threads
+from agentplane.app.database_updates import Channel, create_database_updates, notify_threads
 from agentplane.app.decisions import DecisionsClient
 from agentplane.app.egress_access import EgressAccess
 from agentplane.app.electric import ElectricProxy
@@ -268,7 +268,7 @@ async def _serve(
     engine = connect(database_url)
     store = ThreadStore(engine, AppSummaries(engine))
     ingestion = Ingestion(engine)
-    database_updates = DatabaseUpdates(engine.url)
+    database_updates = create_database_updates(engine.url)
     custom, core = cast(Any, FakeCustomObjectsApi()), cast(Any, FakeCoreV1Api())
     index = LiveIndex(
         stale_after_seconds=90, core_v1=core, refreshed={"sandboxes": datetime.now(UTC), "pods": datetime.now(UTC)}

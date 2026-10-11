@@ -19,11 +19,12 @@ from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
 
+from agentplane.changes import Changes
 from agentplane.history_service import protocol_pb2 as history_pb2
+from agentplane.history_service.channels import Channel
 from agentplane.history_service.storage.db import SessionHistory
-from agentplane.history_service.storage.history_changes import HistoryChanges
 from agentplane.history_service.storage.store import Store
-from agentplane.history_service.summary_changes import notify_summaries
+from agentplane.postgres.wakeups import notify
 from agentplane.thread_fold import projection_lease
 from agentplane.thread_fold.models import ThreadHistorySummary
 from agentplane.thread_fold.projection_lease import ProjectionLease, ProjectionLeaseLostError
@@ -58,15 +59,20 @@ class FoldShadow:
         """`engine` writes the fold tables; `history` reads the raw log, which this never writes."""
         self._sessions = async_sessionmaker(engine, expire_on_commit=False)
         self._projector = HistoryProjector(
-            engine, history_pages(history), projection_epoch=FOLD_EPOCH, page_size=page_size, notify=notify_summaries
+            engine,
+            history_pages(history),
+            projection_epoch=FOLD_EPOCH,
+            page_size=page_size,
+            notify=lambda session: notify(session, Channel.SUMMARIES),
         )
         self._slots = asyncio.Semaphore(concurrency)
         self._leases: dict[UUID, ProjectionLease] = {}
 
-    async def run(self, *, interval_s: float, changes: HistoryChanges) -> None:
+    async def run(self, *, interval_s: float, changes: Changes) -> None:
         """Catch up immediately while behind; wait for commits or `interval_s` to retry."""
         try:
-            with changes.subscribe() as changed:
+            changed = asyncio.Event()
+            with changes.subscribe(changed):
                 while True:
                     changed.clear()
                     try:

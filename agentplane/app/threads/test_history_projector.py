@@ -11,7 +11,7 @@ import pytest_bazel
 from sqlalchemy import event, select
 from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
 
-from agentplane.app.database_updates import Channel, DatabaseUpdates, notify_threads
+from agentplane.app.database_updates import Channel, notify_threads
 from agentplane.app.testing.history import ProjectedHistory as Ingestion, SeededEventLogStore as EventLogStore
 from agentplane.app.testing.projection_lease import LeaseFactory
 from agentplane.app.testing.retained_history import seed_retained_session
@@ -27,6 +27,7 @@ from agentplane.app.threads.summaries import AppSummaries, FeedEnd
 from agentplane.app.threads.view.content import ContentStore
 from agentplane.history_service import protocol_pb2 as history_pb2
 from agentplane.history_service.client import HistoryServiceClient
+from agentplane.postgres.wakeups import Wakeups
 from agentplane.proto import event_pb2, runner_pb2, sandbox_service_pb2
 from agentplane.thread_fold.models import ThreadCheckpoint, ThreadEntity, ThreadHistorySummary
 from agentplane.thread_fold.projection_lease import ProjectionLeaseLostError
@@ -201,7 +202,7 @@ async def test_raw_history_watch_wakes_multi_page_projection_without_polling(
     event_logs: EventLogStore,
     ingestion: Ingestion,
     runners: SandboxSessions,
-    database_updates: DatabaseUpdates,
+    database_updates: Wakeups,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(ingestion_module, "RECONCILE_S", 3600)

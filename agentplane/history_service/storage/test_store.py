@@ -8,7 +8,7 @@ import pytest_bazel
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from agentplane.history_service import protocol_pb2 as history_pb2
-from agentplane.history_service.storage.history_changes import HistoryChanges
+from agentplane.history_service.channels import Channel, create_wakeups
 from agentplane.history_service.storage.store import (
     HistoryConflictError,
     HistoryNotFoundError,
@@ -142,7 +142,7 @@ async def test_a_follower_and_the_ingress_each_bind_their_half_of_one_session(en
 
 async def test_history_notifies_after_commit_and_not_after_rollback(engine: AsyncEngine) -> None:
     store = Store(engine)
-    changes = HistoryChanges(engine.url)
+    wakeups = create_wakeups(engine.url)
     session_id = uuid4()
 
     async def wait_for_change(changed: asyncio.Event) -> None:
@@ -152,8 +152,9 @@ async def test_history_notifies_after_commit_and_not_after_rollback(engine: Asyn
         with pytest.raises(TimeoutError):
             await asyncio.wait_for(changed.wait(), 0.05)
 
-    async with changes.listener.listen():
-        with changes.subscribe() as changed:
+    changed = asyncio.Event()
+    async with wakeups.listener.listen():
+        with wakeups.changes[Channel.HISTORY].subscribe(changed):
             await opened(store, session_id)
             await wait_for_change(changed)
             changed.clear()

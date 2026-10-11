@@ -1041,7 +1041,6 @@ flowchart TD
         REQUIRED_SERVICE_WIRING[Candidate: no footgun defaults on service wiring]
         GATEWAY_NAME_SWEEP[Candidate: code says Runner Gateway for the gateway]
         WATCH_FRESHNESS_DEDUPE[Candidate: one watch freshness]
-        POSTGRES_WAKEUPS_SHARED[Candidate: one PostgreSQL wakeup class]
         GATEWAY_SANDBOX_READS[Candidate: the gateway reads Sandboxes read-only]
         SANDBOX_DEAD_CODE[Candidate: delete KubernetesBindings.run]
         RUNNER_ERRORS_REHOME[Blocked: errors beside the client that raises them]
@@ -1119,13 +1118,6 @@ history store. Also the stale `sealer_accounts` comment, the `serve_channel` tes
 
 **Candidate.** Only the Action Service uses `kubernetes_watch.Freshness`; `app/live.py` (without the
 clock-went-backwards guard) and egress `policy.py`/`admin.py` reimplement it. Both use `Freshness`.
-
-### `POSTGRES_WAKEUPS_SHARED` — one PostgreSQL wakeup class
-
-**Candidate.** `SummaryChanges`, `HistoryChanges`, `runner_gateway.SessionChanges` and
-`notification_service.Wakeups` are one payload-free listen-and-wake class with different channel
-names, and `app/changes.Changes` is its waiter set. One `agentplane/postgres/` class plus a
-`notify(session, channel)`, used by every site that outlives `FOLLOW_PATH_RETIRE`.
 
 ### `GATEWAY_SANDBOX_READS` — the gateway reads Sandboxes read-only
 

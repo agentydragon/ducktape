@@ -18,13 +18,14 @@ from httpx_sse import ServerSentEvent, aconnect_sse
 from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import create_async_engine
 
-from agentplane.app.database_updates import Channel, DatabaseUpdates
+from agentplane.app.database_updates import Channel
 from agentplane.app.testing.history import SeededEventLogStore as EventLogStore
 from agentplane.app.testing.replication_process import CommitBoundary, app_process
 from agentplane.app.testing.replication_source import SANDBOX, SESSION, ReplicationSource, add_replication_source
 from agentplane.app.threads.store import ThreadStore
 from agentplane.app.threads.view.content import ContentStore
 from agentplane.grpc_serving import serving
+from agentplane.postgres.wakeups import Wakeups
 from agentplane.proto import command_pb2, event_log_pb2, event_pb2, runner_pb2
 from agentplane.thread_fold.models import SessionProjectionLease
 
@@ -42,9 +43,7 @@ async def next_entry(stream: AsyncIterator[ServerSentEvent]) -> event_log_pb2.Ev
     return entry
 
 
-async def wait_snapshot(
-    event_logs: EventLogStore, updates: DatabaseUpdates, thread: UUID, cursor: int
-) -> runner_pb2.Attached:
+async def wait_snapshot(event_logs: EventLogStore, updates: Wakeups, thread: UUID, cursor: int) -> runner_pb2.Attached:
     changed = asyncio.Event()
     with updates.changes[Channel.THREADS].subscribe(changed):
         while True:
@@ -61,7 +60,7 @@ async def test_killed_ingester_recovers_exact_prefix_and_browser_handoff(
     store: ThreadStore,
     event_logs: EventLogStore,
     content: ContentStore,
-    database_updates: DatabaseUpdates,
+    database_updates: Wakeups,
     boundary: CommitBoundary,
 ) -> None:
     source = ReplicationSource(event_logs.peer)

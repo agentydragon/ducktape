@@ -22,7 +22,7 @@ from agentplane.action_service.client import OperatorActionServiceClient
 from agentplane.app.action_federation import FederatedOperatorActions
 from agentplane.app.action_policy import ActionPolicyInventory
 from agentplane.app.api import create_app
-from agentplane.app.database_updates import Channel, DatabaseUpdates
+from agentplane.app.database_updates import Channel, create_database_updates
 from agentplane.app.decisions import DecisionsClient
 from agentplane.app.egress_access import EgressAccess
 from agentplane.app.electric import ElectricProxy
@@ -36,6 +36,7 @@ from agentplane.app.testing.thread_test_support import Replica
 from agentplane.app.threads.bridge import RunnerBridge
 from agentplane.app.threads.store import ThreadStore
 from agentplane.app.threads.view.content import ContentStore
+from agentplane.postgres.wakeups import Wakeups
 from agentplane.runner.harness import Harness
 from agentplane.sandbox_service.client import SandboxServiceClient
 
@@ -158,7 +159,7 @@ class EventSource:
 
 # The app `create_app` builds, over one replica's operator sessions and listener, with a login that
 # needs no identity provider.
-ServeApp = Callable[[OperatorSessionStore, DatabaseUpdates], FastAPI]
+ServeApp = Callable[[OperatorSessionStore, Wakeups], FastAPI]
 
 
 @pytest.fixture
@@ -176,7 +177,7 @@ def serve(
     notifications_http: httpx.AsyncClient,
     notifications_token_file: Path,
 ) -> ServeApp:
-    def serving(sessions: OperatorSessionStore, updates: DatabaseUpdates) -> FastAPI:
+    def serving(sessions: OperatorSessionStore, updates: Wakeups) -> FastAPI:
         app = create_app(
             inventory,
             bridge,
@@ -216,13 +217,13 @@ def serve(
 
 
 @pytest.fixture
-def app(serve: ServeApp, operator_sessions: OperatorSessionStore, database_updates: DatabaseUpdates) -> FastAPI:
+def app(serve: ServeApp, operator_sessions: OperatorSessionStore, database_updates: Wakeups) -> FastAPI:
     return serve(operator_sessions, database_updates)
 
 
 @pytest.fixture
 def other_replica(serve: ServeApp, replica: Replica, db_url: str) -> FastAPI:
-    return serve(replica.operator_sessions, DatabaseUpdates(make_url(db_url)))
+    return serve(replica.operator_sessions, create_database_updates(make_url(db_url)))
 
 
 async def login(app: FastAPI, *, seconds: float = 3600) -> str:
@@ -289,7 +290,7 @@ async def test_a_logout_on_another_replica_ends_the_stream(app: FastAPI, other_r
 
 
 async def test_another_sessions_logout_leaves_the_stream_open(
-    app: FastAPI, other_replica: FastAPI, database_updates: DatabaseUpdates
+    app: FastAPI, other_replica: FastAPI, database_updates: Wakeups
 ) -> None:
     upstream = Upstream(FIRST)
     service = ActionService(upstream)

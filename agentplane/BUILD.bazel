@@ -19,6 +19,11 @@ load("//devinfra/python:defs.bzl", "py_library")
 package(default_visibility = ["//agentplane:__subpackages__"])
 
 py_library(
+    name = "changes",
+    srcs = ["changes.py"],
+)
+
+py_library(
     name = "grpc_options",
     srcs = ["grpc_options.py"],
     visibility = [

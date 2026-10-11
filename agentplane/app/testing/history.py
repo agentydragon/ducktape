@@ -9,7 +9,7 @@ from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from agentplane.app.database_updates import Channel, notify, notify_threads
+from agentplane.app.database_updates import Channel, notify_threads
 from agentplane.app.testing.history_service import HistoryService
 from agentplane.app.threads.events.event_log import EventLogStore
 from agentplane.app.threads.history_watch import HistoryWatch
@@ -19,6 +19,7 @@ from agentplane.app.threads.sessions import SandboxSessions
 from agentplane.app.threads.summaries import AppSummaries, HistorySummaries
 from agentplane.history_service import protocol_pb2 as history_pb2
 from agentplane.history_service.client import HistoryServiceClient
+from agentplane.postgres.wakeups import notify
 from agentplane.proto import event_log_pb2, runner_pb2
 from agentplane.thread_fold.models import ThreadHistorySummary
 from agentplane.thread_fold.projection_lease import ProjectionLease

@@ -3,8 +3,8 @@ from pathlib import Path
 
 import pytest_bazel
 
-from agentplane.app.changes import Changes
 from agentplane.app.threads.history_watch import HistoryWatch
+from agentplane.changes import Changes
 from agentplane.history_service.testing.backend import announce_fold_commit, announce_history_change, history_service
 
 

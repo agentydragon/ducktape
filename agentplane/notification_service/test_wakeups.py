@@ -1,4 +1,4 @@
-"""Real PostgreSQL commit wakeups, replica fanout, recovery and durable retry deadlines."""
+"""Inbox work recovered from the rows across listener startup and reconnect, and durable retry deadlines."""
 
 import asyncio
 from datetime import UTC, datetime, timedelta
@@ -6,12 +6,12 @@ from uuid import uuid4
 
 import pytest_bazel
 from sqlalchemy import func, select
-from sqlalchemy.ext.asyncio import AsyncEngine
 
+from agentplane.notification_service.channels import Channel
 from agentplane.notification_service.db import Inbox
 from agentplane.notification_service.models import ActionsSource, DestinationRef, Subscribe
 from agentplane.notification_service.store import Store
-from agentplane.notification_service.updates import Wakeups, notify
+from agentplane.postgres.wakeups import notify
 from agentplane.workload_auth.principal import WorkloadPrincipal
 
 PRINCIPAL = WorkloadPrincipal("test", "owner", "system:serviceaccount:test:owner", "pod", "pod-uid", "account-uid")
@@ -23,30 +23,11 @@ BODY = Subscribe(
 )
 
 
-async def test_notify_is_commit_scoped_and_fans_out(engine: AsyncEngine, store: Store) -> None:
-    first, second = Wakeups(engine.url), Wakeups(engine.url)
-    async with first.listener.listen(), second.listener.listen():
-        with first.subscribe() as a, second.subscribe() as b:
-            async with store.sessions.begin() as session:
-                await notify(session)
-                assert not a.is_set()
-                assert not b.is_set()
-                await session.rollback()
-            assert not a.is_set()
-            assert not b.is_set()
-            async with store.sessions.begin() as session:
-                await notify(session)
-                assert not a.is_set()
-                assert not b.is_set()
-            async with asyncio.timeout(10):
-                await a.wait()
-                await b.wait()
-
-
 async def test_startup_and_reconnect_drain_durable_work(store: Store) -> None:
     # Acceptance before LISTEN cannot be recovered from NOTIFY; it is recovered from the row.
     sub = await store.subscribe(PRINCIPAL, BODY)
-    with store.wakeups.subscribe() as changed:
+    changed = asyncio.Event()
+    with store.wakeups.changes[Channel.WORK].subscribe(changed):
         async with store.wakeups.listener.listen():
             assert changed.is_set()
             claim = await store.claim()
@@ -60,7 +41,7 @@ async def test_startup_and_reconnect_drain_durable_work(store: Store) -> None:
             inbox = await session.get(Inbox, claim.id)
             assert inbox is not None
             inbox.claim_until = datetime.now(UTC) - timedelta(seconds=1)
-            await notify(session)
+            await notify(session, Channel.WORK)
         changed.clear()
         async with store.wakeups.listener.listen():
             assert changed.is_set()

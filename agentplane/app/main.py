@@ -23,7 +23,7 @@ from agentplane.app.action_federation import FederatedOperatorActions
 from agentplane.app.action_policy import ActionPolicyInventory
 from agentplane.app.api import create_app
 from agentplane.app.database import connect
-from agentplane.app.database_updates import Channel, DatabaseUpdates, notify_threads
+from agentplane.app.database_updates import Channel, create_database_updates, notify_threads
 from agentplane.app.decisions import DecisionsClient
 from agentplane.app.egress_access import EgressAccess
 from agentplane.app.electric import ElectricProxy
@@ -44,6 +44,7 @@ from agentplane.app.threads.summaries import AppSummaries, HistorySummaries
 from agentplane.app.threads.view.content import ContentStore, HistoryContentStore
 from agentplane.history_service.client import HistoryServiceClient
 from agentplane.kubernetes_watch import STALE_AFTER_CYCLES
+from agentplane.postgres.wakeups import Wakeups
 from agentplane.sandbox_service.client import SandboxServiceClient
 from agentplane.sandbox_service.egress_views import EgressReader
 from agentplane.thread_fold.projector import HistoryProjector, service_pages
@@ -151,7 +152,7 @@ async def async_main(settings: Settings) -> None:
             resync_seconds=settings.resync_seconds,
         )
         engine = connect(settings.database_url)
-        database_updates = DatabaseUpdates(engine.url)
+        database_updates = create_database_updates(engine.url)
         match settings.thread_reads:
             case ThreadReads.APP:
                 summaries: AppSummaries | HistorySummaries = AppSummaries(engine)
@@ -248,7 +249,7 @@ async def async_main(settings: Settings) -> None:
 
 
 async def serve_then_close(
-    server: uvicorn.Server, *, ingester: Ingester, database_updates: DatabaseUpdates, engine: AsyncEngine
+    server: uvicorn.Server, *, ingester: Ingester, database_updates: Wakeups, engine: AsyncEngine
 ) -> None:
     """Serve until told to exit, then let go in the order the budgets assume: Uvicorn's graceful-shutdown
     timeout bounds the requests and streams still open, and the ingester's lease release and closing the

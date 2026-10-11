@@ -11,13 +11,13 @@ from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession
 
 from agentplane.grpc_serving import serving
 from agentplane.history_service import protocol_pb2 as history_pb2, protocol_pb2_grpc
+from agentplane.history_service.channels import Channel, create_wakeups
 from agentplane.history_service.evidence import EvidenceReader
 from agentplane.history_service.grpc_api import Resources, add_service
-from agentplane.history_service.storage.history_changes import HistoryChanges
 from agentplane.history_service.storage.store import Store
 from agentplane.history_service.summaries import SummaryReader
-from agentplane.history_service.summary_changes import SummaryChanges, notify_summaries
 from agentplane.history_service.thread_reads import ThreadReader
+from agentplane.postgres.wakeups import notify
 from agentplane.proto import event_log_pb2, event_pb2
 from agentplane.subjects import ServiceAccountRef
 from agentplane.testing.fake_apiserver import SANDBOX_NAMESPACE, TokenVerdict, fake_apiserver
@@ -55,12 +55,10 @@ async def stub(engine: AsyncEngine, history: Store) -> AsyncIterator[protocol_pb
                 pod_uid=f"{name}-pod-uid",
                 audiences=(AUDIENCE,),
             )
-        history_changes = HistoryChanges(engine.url)
-        summary_changes = SummaryChanges(engine.url)
+        wakeups = create_wakeups(engine.url)
         async with (
             k8s_client.ApiClient(k8s_client.Configuration(host=f"http://127.0.0.1:{fake.port}")) as api,
-            history_changes.listener.listen(),
-            summary_changes.listener.listen(),
+            wakeups.listener.listen(),
         ):
             server = grpc.aio.server()
             add_service(
@@ -76,8 +74,8 @@ async def stub(engine: AsyncEngine, history: Store) -> AsyncIterator[protocol_pb
                     evidence=EvidenceReader(engine, history),
                     reader_accounts=frozenset({READER}),
                     request_timeout_s=10,
-                    history_changes=history_changes,
-                    summary_changes=summary_changes,
+                    history_changes=wakeups.changes[Channel.HISTORY],
+                    summary_changes=wakeups.changes[Channel.SUMMARIES],
                     watch_lease_s=WATCH_LEASE_S,
                 ),
                 server,
@@ -189,7 +187,7 @@ async def test_summary_watch_announces_each_fold_commit_until_planned_renewal(
     assert isinstance(opening, history_pb2.WatchSessionSummariesResponse)
     assert opening.HasField("changed")  # whatever changed before the caller watched
     async with engine.begin() as connection, AsyncSession(bind=connection) as session:
-        await notify_summaries(session)
+        await notify(session, Channel.SUMMARIES)
     committed = await call.read()
     assert isinstance(committed, history_pb2.WatchSessionSummariesResponse)
     assert committed.HasField("changed")

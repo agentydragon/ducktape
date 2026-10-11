@@ -20,7 +20,6 @@ from fastapi.testclient import TestClient
 from agentplane.app.action_policy import ActionPolicyInventory
 from agentplane.app.api import create_app, upstream_http_error
 from agentplane.app.conftest import AGENT_AUTH
-from agentplane.app.database_updates import DatabaseUpdates
 from agentplane.app.decisions import DecisionsClient
 from agentplane.app.egress_access import EgressAccess
 from agentplane.app.electric import ElectricProxy
@@ -41,6 +40,7 @@ from agentplane.app.threads.sessions import SandboxSessions
 from agentplane.app.threads.store import ThreadStore
 from agentplane.app.threads.view.content import ContentStore
 from agentplane.grpc_serving import serving
+from agentplane.postgres.wakeups import Wakeups
 from agentplane.proto import event_log_pb2, runner_gateway_pb2_grpc, runner_pb2, sandbox_service_pb2
 from agentplane.runner.harness import Harness
 from agentplane.sandbox_service.client import SandboxServiceClient
@@ -143,7 +143,7 @@ def client(
     inventory: SandboxServiceClient,
     bridge: RunnerBridge,
     store: ThreadStore,
-    database_updates: DatabaseUpdates,
+    database_updates: Wakeups,
     operator_sessions: OperatorSessionStore,
     egress: EgressAccess,
     decisions: DecisionsClient,
@@ -686,7 +686,7 @@ def test_a_runner_that_does_not_answer_is_a_503(
     core_v1: FakeCoreV1Api,
     inventory: SandboxServiceClient,
     store: ThreadStore,
-    database_updates: DatabaseUpdates,
+    database_updates: Wakeups,
     operator_sessions: OperatorSessionStore,
     egress: EgressAccess,
     decisions: DecisionsClient,
@@ -785,7 +785,7 @@ async def test_unanswered_service_command_is_a_504_and_cancels_its_rpc(
     core_v1: FakeCoreV1Api,
     inventory: SandboxServiceClient,
     store: ThreadStore,
-    database_updates: DatabaseUpdates,
+    database_updates: Wakeups,
     operator_sessions: OperatorSessionStore,
     egress: EgressAccess,
     decisions: DecisionsClient,
@@ -1010,7 +1010,7 @@ async def test_a_thread_is_found_by_its_session_and_renamed_in_place(
     bridge: RunnerBridge,
     store: ThreadStore,
     event_logs: EventLogStore,
-    database_updates: DatabaseUpdates,
+    database_updates: Wakeups,
     operator_sessions: OperatorSessionStore,
     egress: EgressAccess,
     decisions: DecisionsClient,
@@ -1066,7 +1066,7 @@ async def test_a_thread_archives_and_unarchives_and_hides_from_the_default_listi
     bridge: RunnerBridge,
     store: ThreadStore,
     event_logs: EventLogStore,
-    database_updates: DatabaseUpdates,
+    database_updates: Wakeups,
     operator_sessions: OperatorSessionStore,
     egress: EgressAccess,
     decisions: DecisionsClient,
@@ -1121,7 +1121,7 @@ async def test_a_running_thread_cannot_be_archived(
     bridge: RunnerBridge,
     store: ThreadStore,
     event_logs: EventLogStore,
-    database_updates: DatabaseUpdates,
+    database_updates: Wakeups,
     operator_sessions: OperatorSessionStore,
     egress: EgressAccess,
     decisions: DecisionsClient,

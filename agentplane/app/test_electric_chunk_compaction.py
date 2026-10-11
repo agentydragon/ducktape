@@ -40,7 +40,6 @@ from fastapi import FastAPI
 from sqlalchemy import ColumnElement, delete, inspect, select, update
 from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
 
-from agentplane.app.changes import Changes
 from agentplane.app.database import connect
 from agentplane.app.electric import ElectricProxy, router
 from agentplane.app.testing.electric_service import electric_service
@@ -48,6 +47,7 @@ from agentplane.app.testing.history import ProjectedHistory as Ingestion, Seeded
 from agentplane.app.testing.history_service import HistoryService
 from agentplane.app.testing.replication_source import SANDBOX, SESSION, ReplicationSource
 from agentplane.app.threads.view.content import ContentStore
+from agentplane.changes import Changes
 from agentplane.history_service.client import HistoryServiceClient
 from agentplane.proto import event_pb2
 from agentplane.thread_fold.models import ThreadEntity, ThreadPayloadChunk

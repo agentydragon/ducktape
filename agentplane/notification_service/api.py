@@ -16,6 +16,7 @@ from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import ValidationError
 from sqlalchemy import select
 
+from agentplane.notification_service.channels import Channel
 from agentplane.notification_service.models import (
     Acknowledge,
     InboxPage,
@@ -106,7 +107,8 @@ async def _status_frames[S: SandboxNotificationStatus | SessionNoticeStates](
 ) -> AsyncGenerator[bytes]:
     """Subscribe before the first snapshot; NOTIFY invalidates, canonical rows are the source. A
     snapshot is sent when its `key` changes, and read again at its next deadline."""
-    with service.store.wakeups.subscribe() as changed:
+    changed = asyncio.Event()
+    with service.store.wakeups.changes[Channel.WORK].subscribe(changed):
         listener = service.store.wakeups.listener
         generation = listener.generation
         last: str | None = None

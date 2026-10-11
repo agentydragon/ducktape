@@ -13,7 +13,6 @@ from google.protobuf.json_format import MessageToDict
 from kubernetes_asyncio import client as k8s_client
 from tenacity import AsyncRetrying, retry_if_exception_type, stop_after_delay, wait_fixed
 
-from agentplane.app.database_updates import DatabaseUpdates
 from agentplane.app.live import LiveIndex
 from agentplane.app.testing.history import (
     ProjectedHistory as Ingestion,
@@ -28,6 +27,7 @@ from agentplane.app.threads.summaries import AppSummaries, FeedEnd, HistorySumma
 from agentplane.app.threads.thread_view import ThreadView
 from agentplane.app.threads.view.content import ContentStore, HistoryContentStore
 from agentplane.history_service.testing.backend import fold_history, history_service, ingest
+from agentplane.postgres.wakeups import Wakeups
 from agentplane.proto import command_pb2, runner_pb2
 from agentplane.runner.testing.fixtures import RunnerHandle
 from agentplane.runner.testing.scripted_model import ScriptedModel, Text
@@ -79,7 +79,7 @@ async def test_production_bridge_archives_native_evidence_across_bounded_service
     event_logs: EventLogStore,
     ingestion: Ingestion,
     content: ContentStore,
-    database_updates: DatabaseUpdates,
+    database_updates: Wakeups,
     runner: RunnerHandle,
     spec: runner_pb2.SessionSpec,
     model: ScriptedModel,

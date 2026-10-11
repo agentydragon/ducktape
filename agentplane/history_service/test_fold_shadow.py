@@ -10,8 +10,8 @@ from google.protobuf.timestamp_pb2 import Timestamp
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
+from agentplane.history_service.channels import Channel, create_wakeups
 from agentplane.history_service.fold_shadow import FOLD_EPOCH, FoldBacklog, FoldShadow
-from agentplane.history_service.storage.history_changes import HistoryChanges
 from agentplane.history_service.storage.store import Store
 from agentplane.proto import event_log_pb2, event_pb2
 from agentplane.sandbox_service.testing.delta_spans import claude_text
@@ -108,7 +108,7 @@ async def test_run_folds_without_waiting_out_the_interval_while_behind(engine: A
     entries = turn(1)
     session_id = await retained_session(history, entries)
     shadow = FoldShadow(engine=engine, history=history, concurrency=1, page_size=PAGE_SIZE)
-    changes = HistoryChanges(engine.url)
+    wakeups = create_wakeups(engine.url)
     sessions = async_sessionmaker(engine)
 
     async def caught_up(cursor: int) -> None:
@@ -121,9 +121,9 @@ async def test_run_folds_without_waiting_out_the_interval_while_behind(engine: A
                 return
             await asyncio.sleep(0.05)
 
-    async with changes.listener.listen(), asyncio.TaskGroup() as tasks:
+    async with wakeups.listener.listen(), asyncio.TaskGroup() as tasks:
         # More than a page behind: an interval wait between pages would outlast the timeout.
-        running = tasks.create_task(shadow.run(interval_s=3600, changes=changes))
+        running = tasks.create_task(shadow.run(interval_s=3600, changes=wakeups.changes[Channel.HISTORY]))
         async with asyncio.timeout(30):
             await caught_up(len(entries))
             await history.append(session_id, [entry(len(entries) + 1, harness_started=event_pb2.HarnessStarted())])

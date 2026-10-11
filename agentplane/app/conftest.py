@@ -17,7 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 from agentplane.app.action_policy import ActionPolicyInventory
 from agentplane.app.database import connect
 from agentplane.app.database_migrate import RUNNER
-from agentplane.app.database_updates import Channel, DatabaseUpdates
+from agentplane.app.database_updates import Channel, create_database_updates
 from agentplane.app.decisions import DecisionsClient
 from agentplane.app.egress_access import EgressAccess
 from agentplane.app.electric import ElectricProxy
@@ -39,6 +39,7 @@ from agentplane.app.threads.store import ThreadStore
 from agentplane.app.threads.summaries import AppSummaries
 from agentplane.app.threads.view.content import ContentStore
 from agentplane.history_service.client import HistoryServiceClient
+from agentplane.postgres.wakeups import Wakeups
 
 # The per-test database is created over psycopg, which SQLAlchemy loads from the URL scheme.
 # gazelle:include_dep @pypi//psycopg
@@ -151,8 +152,8 @@ def ingestion(engine: AsyncEngine, history_peer: HistoryService, history_client:
 
 
 @pytest.fixture
-async def database_updates(engine: AsyncEngine) -> AsyncIterator[DatabaseUpdates]:
-    updates = DatabaseUpdates(engine.url)
+async def database_updates(engine: AsyncEngine) -> AsyncIterator[Wakeups]:
+    updates = create_database_updates(engine.url)
     async with updates.listener.listen():
         yield updates
 
@@ -231,7 +232,7 @@ def bridge(
     event_logs: EventLogStore,
     content: ContentStore,
     ingester: Ingester,
-    database_updates: DatabaseUpdates,
+    database_updates: Wakeups,
 ) -> RunnerBridge:
     return RunnerBridge(runners=runners, event_logs=event_logs, content=content, ingester=ingester)
 
@@ -357,10 +358,7 @@ async def electric_http() -> AsyncIterator[httpx.AsyncClient]:
 
 @pytest.fixture
 def electric_proxy(
-    electric_http: httpx.AsyncClient,
-    content: ContentStore,
-    event_logs: EventLogStore,
-    database_updates: DatabaseUpdates,
+    electric_http: httpx.AsyncClient, content: ContentStore, event_logs: EventLogStore, database_updates: Wakeups
 ) -> ElectricProxy:
     return ElectricProxy(
         electric_http, content, event_logs=event_logs, thread_changes=database_updates.changes[Channel.THREADS]

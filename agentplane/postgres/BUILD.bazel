@@ -33,3 +33,26 @@ py_test(
         "@pypi//sqlalchemy",
     ],
 )
+
+py_library(
+    name = "wakeups",
+    srcs = ["wakeups.py"],
+    deps = [
+        ":listener",
+        "//agentplane:changes",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_test(
+    name = "test_wakeups",
+    srcs = ["test_wakeups.py"],
+    deps = [
+        ":conftest",
+        ":wakeups",
+        "//:conftest",
+        "@pypi//asyncpg",
+        "@pypi//pytest_bazel",
+        "@pypi//sqlalchemy",
+    ],
+)

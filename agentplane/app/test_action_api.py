@@ -59,7 +59,7 @@ from agentplane.app.api import CallerGrantView, create_app
 from agentplane.app.conftest import AGENT_AUTH
 from agentplane.app.consent import ConsentAllow
 from agentplane.app.database import connect
-from agentplane.app.database_updates import DatabaseUpdates
+from agentplane.app.database_updates import create_database_updates
 from agentplane.app.decisions import DecisionsClient
 from agentplane.app.egress_access import EgressAccess
 from agentplane.app.electric import ElectricProxy
@@ -76,6 +76,7 @@ from agentplane.app.threads.store import ThreadStore
 from agentplane.app.threads.summaries import AppSummaries
 from agentplane.app.threads.view.content import ContentStore
 from agentplane.history_service.client import HistoryServiceClient
+from agentplane.postgres.wakeups import Wakeups
 from agentplane.runner.harness import Harness
 from agentplane.sandbox_service.action_policy_views import MANAGED_BY_APP, MANAGED_BY_LABEL
 from agentplane.sandbox_service.client import SandboxServiceClient
@@ -156,7 +157,7 @@ async def review(
     inventory: SandboxServiceClient,
     bridge: RunnerBridge,
     store: ThreadStore,
-    database_updates: DatabaseUpdates,
+    database_updates: Wakeups,
     operator_sessions: OperatorSessionStore,
     egress: EgressAccess,
     decisions: DecisionsClient,
@@ -404,7 +405,7 @@ async def review(
             event_logs=EventLogStore(replica_engine, peer=history_peer, history_reader=history_client),
             content=ContentStore(replica_engine, history_reader=history_client),
             # Never started: nothing served here listens; the replica shares only the operator sessions.
-            database_updates=DatabaseUpdates(replica_engine.url),
+            database_updates=create_database_updates(replica_engine.url),
             operator_sessions=OperatorSessionStore(replica_engine),
             electric=electric_proxy,
             notifications_http=notifications_http,

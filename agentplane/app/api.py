@@ -47,7 +47,7 @@ from agentplane.app.consent import (
     decide_enrollment,
     preview_enrollment,
 )
-from agentplane.app.database_updates import Channel, DatabaseUpdates
+from agentplane.app.database_updates import Channel
 from agentplane.app.decisions import Decision, DecisionsClient, DecisionsUnavailableError
 from agentplane.app.egress_access import EgressAccess
 from agentplane.app.electric import ElectricProxy, router as electric_router
@@ -88,6 +88,7 @@ from agentplane.app.threads.store import MAX_PAGE, InvalidPageTokenError, Thread
 from agentplane.app.threads.thread_view import ThreadView
 from agentplane.app.threads.view.content import CommandIdConflictError, ContentStore
 from agentplane.history_service.client import HistoryServiceError
+from agentplane.postgres.wakeups import Wakeups
 from agentplane.proto import runner_pb2
 from agentplane.runner.errors import OpenTimeoutError, RunnerError
 from agentplane.runner.harness import Harness
@@ -1043,7 +1044,7 @@ def create_app(
     electric: ElectricProxy,
     event_logs: EventLogStore,
     content: ContentStore,
-    database_updates: DatabaseUpdates,
+    database_updates: Wakeups,
     operator_sessions: OperatorSessionStore,
     notifications_http: httpx.AsyncClient,
     notifications_token_file: FilePath,
