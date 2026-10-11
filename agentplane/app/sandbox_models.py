@@ -154,7 +154,7 @@ class SandboxView(BaseModel):
     launch_grants_pending: bool
     initializing: bool = False
     deleting: bool = Field(
-        default=False, description="Deletion was asked for: it seals, waits on retention holds, or is being removed."
+        default=False, description="Deletion was asked for: it seals, waits for its ingress, or is being removed."
     )
     pod: PodView | None = None
 

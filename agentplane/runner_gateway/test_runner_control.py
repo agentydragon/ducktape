@@ -66,7 +66,6 @@ def replica(cluster: Cluster, engine: AsyncEngine, delivery: CommandDelivery) ->
     return lambda holder: serve_channel(
         cluster,
         holder,
-        connections=ConnectionStore(engine),
         delivery=delivery,
         control=LifecycleControl(delivery.leases),
         timing=ControlTiming(heartbeat_s=0.05, liveness_s=1, touch_s=0.1, max_age_s=60),

@@ -34,7 +34,6 @@ PROVISIONING_ANNOTATION = f"{GROUP}/pending-launch-grants"
 KUBERNETES_GRANTS_ANNOTATION = f"{GROUP}/kubernetes-grants"
 KUBERNETES_GRANTS_READY_ANNOTATION = f"{GROUP}/kubernetes-grants-ready"
 KUBERNETES_GRANTS_ERROR_ANNOTATION = f"{GROUP}/kubernetes-grants-error"
-RETENTION_HOLDS_ANNOTATION = f"{GROUP}/retention-holds"
 # A `TeardownPhase` name, set by DeleteSandbox.
 TEARDOWN_ANNOTATION = f"{GROUP}/teardown"
 

@@ -356,8 +356,7 @@ class Runner:
                     session_id=session.session_id, cursor=cursor, flushed=self._flushed(session.session_id, cursor)
                 )
                 for session, cursor in zip(sessions, cursors, strict=True)
-            ],
-            pushes=self.config.ingress is not None,
+            ]
         )
 
     def _flushed(self, session_id: str, cursor: int) -> bool:
