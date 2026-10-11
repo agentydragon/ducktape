@@ -238,8 +238,10 @@ py_library(
     srcs = ["kubernetes_bindings.py"],
     visibility = ["//agentplane/sandbox_service:__subpackages__"],
     deps = [
+        ":action_policy_views",
         ":inventory",
         ":models",
+        "//agentplane:crd_group",
         "//agentplane/proto:sandbox_service_pb2",
         "//util:agent_sandbox",
         "@pypi//kubernetes_asyncio",
@@ -484,6 +486,7 @@ py_library(
     deps = [
         ":binding_storage",
         ":kubernetes_grants",
+        "//agentplane:crd_group",
         "//agentplane/proto:sandbox_service_pb2",
         "//util:agent_sandbox",
         "@pypi//kubernetes_asyncio",

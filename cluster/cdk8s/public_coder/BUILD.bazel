@@ -16,6 +16,7 @@ py_library(
         ":egress",
         ":proxy",
         ":sshpiper",
+        "//agentplane/action_service/policies:resources",
         "//agentplane/egress:resources",
         "//cluster/cdk8s:agent_access_profiles",
         "//cluster/cdk8s:config_format",

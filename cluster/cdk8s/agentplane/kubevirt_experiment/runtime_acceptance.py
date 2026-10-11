@@ -16,9 +16,14 @@ from uuid import uuid4
 from cdk8s import App, Chart
 from kubernetes_asyncio import client as k8s_client, config as k8s_config
 
+from agentplane.crd_group import GROUP
 from agentplane.proto import command_pb2, event_log_pb2, event_pb2, runner_pb2
 from agentplane.runner.client import RunnerClient
-from cluster.cdk8s.agentplane.kubevirt_experiment.policy import MANAGED_LABEL, SERVICE_ACCOUNT_ANNOTATION
+from cluster.cdk8s.agentplane.kubevirt_experiment.policy import (
+    MANAGED_LABEL,
+    SERVICE_ACCOUNT_ANNOTATION,
+    TEMPLATE_ANNOTATION,
+)
 from cluster.cdk8s.agentplane.kubevirt_experiment.vm import runner_vm
 from util.kubernetes import CustomObjectsClient
 
@@ -26,8 +31,7 @@ _NAMESPACE_PREFIX = "agentplane-vm-prototype-"
 _KUBEVIRT_API_VERSION = "kubevirt.io/v1"
 _VM_PLURAL = "virtualmachines"
 _VMI_PLURAL = "virtualmachineinstances"
-_TEMPLATE_ANNOTATION = "agentplane.allegedly.works/vm-template"
-_DISK_OWNER_ANNOTATION = "agentplane.allegedly.works/environment-uid"
+_DISK_OWNER_ANNOTATION = f"{GROUP}/environment-uid"
 _FORMAT_CONFIG_KEY = "config.json"
 _IMAGE_PULL_SECRET = "forgejo-images-creds"
 _SESSION_ROOT = "/workspace/agentplane-vm-acceptance"
@@ -151,7 +155,7 @@ async def _vm(custom: CustomObjectsClient, namespace: str, name: str) -> dict[st
     annotations = metadata.get("annotations", {})
     if not isinstance(labels, dict) or labels.get(MANAGED_LABEL) != "true":
         raise ValueError(f"VM {name!r} is not managed by this experiment")
-    if not isinstance(annotations, dict) or annotations.get(_TEMPLATE_ANNOTATION) != "prototype":
+    if not isinstance(annotations, dict) or annotations.get(TEMPLATE_ANNOTATION) != "prototype":
         raise ValueError(f"VM {name!r} is not the experiment runner template")
     if annotations.get(SERVICE_ACCOUNT_ANNOTATION) != f"vm-{name}-account":
         raise ValueError(f"VM {name!r} has a different launcher ServiceAccount")
@@ -535,7 +539,7 @@ async def create(args: argparse.Namespace) -> None:
                 args.namespace,
                 k8s_client.V1ServiceAccount(
                     metadata=k8s_client.V1ObjectMeta(
-                        name=account, labels={MANAGED_LABEL: "true", "agentplane.allegedly.works/caller": "true"}
+                        name=account, labels={MANAGED_LABEL: "true", f"{GROUP}/caller": "true"}
                     ),
                     image_pull_secrets=[k8s_client.V1LocalObjectReference(name=args.image_pull_secret)],
                 ),

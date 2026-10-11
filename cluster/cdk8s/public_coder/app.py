@@ -19,6 +19,7 @@ from external_secrets_crds.io.external_secrets import (
     ExternalSecretSpecTargetDeletionPolicy,
 )
 
+from agentplane.action_service.policies.resources import CALLER_LABEL
 from agentplane.egress.resources import placeholder_of
 from cluster.cdk8s import agent_access_profiles as access, external_creds, namespaces
 from cluster.cdk8s.clickhouse import client
@@ -333,9 +334,7 @@ def _deployment(scope: Construct) -> None:
         scope,
         "openclaw-service-account",
         metadata=k8s.ObjectMeta(
-            name=public_coder_egress.SERVICE_ACCOUNT,
-            namespace=NAMESPACE,
-            labels={"agentplane.allegedly.works/use-action-service": "true"},
+            name=public_coder_egress.SERVICE_ACCOUNT, namespace=NAMESPACE, labels={CALLER_LABEL: "true"}
         ),
         automount_service_account_token=False,
     )

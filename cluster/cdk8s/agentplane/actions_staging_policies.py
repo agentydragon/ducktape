@@ -25,7 +25,7 @@ from external_secrets_crds.io.external_secrets import (
     ExternalSecretSpecTargetDeletionPolicy,
 )
 
-from agentplane.action_service.policies.resources import BindingSpec, PolicySetSpec
+from agentplane.action_service.policies.resources import CALLER_LABEL, BindingSpec, PolicySetSpec
 from agentplane.action_service.sandbox.actions import SANDBOX_GROUP, SandboxAction
 from cluster.cdk8s import agent_access_profiles as access, external_creds
 from cluster.cdk8s.agentplane import app as app_component, dex, egress, testing
@@ -344,7 +344,7 @@ def add_staging_action_policies(scope: Construct) -> None:
         metadata=ApiObjectMetadata(
             name="claude-ai",
             namespace=_NAMESPACE,
-            labels={"agentplane.allegedly.works/use-action-service": "true"},
+            labels={CALLER_LABEL: "true"},
             annotations={
                 "description": "The principal for Connections enrolled from the Claude.ai MCP connector, selected at OAuth consent."
             },
@@ -367,7 +367,7 @@ def add_staging_action_policies(scope: Construct) -> None:
         metadata=ApiObjectMetadata(
             name="haku-agent",
             namespace=_NAMESPACE,
-            labels={"agentplane.allegedly.works/use-action-service": "true"},
+            labels={CALLER_LABEL: "true"},
             annotations={
                 "description": "The principal for the 'haku' sandbox preset: agents that clone haku-state and work from it, the way Haku itself does."
             },

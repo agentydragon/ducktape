@@ -45,9 +45,11 @@ py_library(
 py_library(
     name = "crd_group",
     srcs = ["crd_group.py"],
-    # Also the cluster validation that reads the checked-in manifests by apiVersion.
+    # Also the generators that write RBAC rules, labels and annotations under it, and the cluster
+    # validation that reads the checked-in manifests by apiVersion.
     visibility = [
         "//agentplane:__subpackages__",
+        "//cluster/cdk8s:__subpackages__",
         "//cluster/validation:__pkg__",
     ],
 )

@@ -20,12 +20,13 @@ from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, ValidationErro
 from agentplane.action_service.models import NamespacedName
 from agentplane.action_service.policies.kind import Spec
 from agentplane.action_service.policies.registry import Policy
+from agentplane.crd_group import GROUP
 from agentplane.subjects import ServiceAccountRef
 
 POLICY_SETS_PLURAL = "actionpolicysets"
 BINDINGS_PLURAL = "actionpolicybindings"
 SERVICE_ACCOUNTS_PLURAL = "serviceaccounts"
-CALLER_LABEL = "agentplane.allegedly.works/use-action-service"
+CALLER_LABEL = f"{GROUP}/use-action-service"
 CALLER_LABEL_SELECTOR = f"{CALLER_LABEL}=true"
 READY_CONDITION = "Ready"
 # metav1.Condition.message is capped by the CRD schema; a pydantic report for a large object can be longer.

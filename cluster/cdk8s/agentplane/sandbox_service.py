@@ -24,6 +24,7 @@ from cdk8s_plus_34 import (
 )
 from constructs import Construct
 
+from agentplane.crd_group import GROUP
 from agentplane.sandbox_service.kubernetes_grants import ClusterRoleBindingGrant, RoleBindingGrant
 from agentplane.sandbox_service.settings import CONFIG_FILE_ENV, Settings
 from agentplane.subjects import ServiceAccountRef
@@ -300,26 +301,19 @@ class SandboxService(Construct):
                 ),
                 RolePolicyRule(
                     resources=[
-                        custom_resource("agentplane.allegedly.works", resource)
+                        custom_resource(GROUP, resource)
                         for resource in ("egresspolicies", "egressbindings", "egresscredentials")
                     ],
                     verbs=["get", "list", "watch"],
                 ),
-                RolePolicyRule(
-                    resources=[custom_resource("agentplane.allegedly.works", "egressbindings")],
-                    verbs=["create", "delete"],
-                ),
+                RolePolicyRule(resources=[custom_resource(GROUP, "egressbindings")], verbs=["create", "delete"]),
                 RolePolicyRule(
                     resources=[
-                        custom_resource("agentplane.allegedly.works", resource)
-                        for resource in ("actionpolicysets", "actionpolicybindings")
+                        custom_resource(GROUP, resource) for resource in ("actionpolicysets", "actionpolicybindings")
                     ],
                     verbs=["get", "list", "watch"],
                 ),
-                RolePolicyRule(
-                    resources=[custom_resource("agentplane.allegedly.works", "actionpolicybindings")],
-                    verbs=["create", "delete"],
-                ),
+                RolePolicyRule(resources=[custom_resource(GROUP, "actionpolicybindings")], verbs=["create", "delete"]),
                 *role_binding_rules,
             ],
         )

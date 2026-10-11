@@ -37,6 +37,7 @@ from agentplane.action_service.operator_oidc_settings import OperatorOidcSetting
 from agentplane.action_service.settings import ActionServiceDeploymentSettings
 from agentplane.app.action_federation_settings import DirectFederationSettings
 from agentplane.app.settings import ThreadReads
+from agentplane.crd_group import GROUP
 from cluster.cdk8s import agent_access_profiles as access, cilium
 from cluster.cdk8s.agentplane import actions, app as app_component, app_settings, dex, egress
 from cluster.cdk8s.agentplane.actions_testing_fixtures import (
@@ -272,10 +273,7 @@ _TOKEN_RULE = RolePolicyRule(
 # ActionPolicySet/ActionPolicyBinding its Sandbox is auto-approved under, reading
 # their Ready condition to know the Action Service has seen each edit.
 _ACTION_POLICY_RULE = RolePolicyRule(
-    resources=[
-        custom_resource("agentplane.allegedly.works", "actionpolicysets"),
-        custom_resource("agentplane.allegedly.works", "actionpolicybindings"),
-    ],
+    resources=[custom_resource(GROUP, "actionpolicysets"), custom_resource(GROUP, "actionpolicybindings")],
     verbs=["create", "get", "patch", "delete"],
 )
 

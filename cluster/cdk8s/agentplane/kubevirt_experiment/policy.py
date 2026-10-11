@@ -23,10 +23,12 @@ from kyverno_clusterpolicy_crds.io.kyverno import (
     ClusterPolicySpecValidationFailureAction,
 )
 
+from agentplane.crd_group import GROUP
 from cluster.cdk8s.providers.kyverno.cluster_policy import Validate, match_resources
 
-MANAGED_LABEL = "agentplane.allegedly.works/managed"
-SERVICE_ACCOUNT_ANNOTATION = "agentplane.allegedly.works/launcher-service-account"
+MANAGED_LABEL = f"{GROUP}/managed"
+SERVICE_ACCOUNT_ANNOTATION = f"{GROUP}/launcher-service-account"
+TEMPLATE_ANNOTATION = f"{GROUP}/vm-template"
 TOKEN_VOLUME = "agentplane-egress-token"
 RELAY_CONTAINER = "egress-sidecar"
 TOKEN_DIRECTORY = "/var/run/agentplane-egress"
@@ -99,7 +101,7 @@ class KubeVirtProxyPolicy(ClusterPolicy):
         )
         identity_conditions = [
             {
-                "key": "{{vm.metadata.annotations.\"agentplane.allegedly.works/vm-template\" || ''}}",
+                "key": f"{{{{vm.metadata.annotations.\"{TEMPLATE_ANNOTATION}\" || ''}}}}",
                 "operator": "AnyNotIn",
                 "value": approved_templates,
             },

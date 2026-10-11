@@ -9,18 +9,18 @@ import logging
 from kubernetes_asyncio import client as k8s_client
 from kubernetes_asyncio.client import RbacAuthorizationV1Api
 
+from agentplane.crd_group import GROUP
 from agentplane.proto.sandbox_service_pb2 import ResolvedGrant, Sandbox
+from agentplane.sandbox_service.action_policy_views import MANAGED_BY_APP, MANAGED_BY_LABEL
 from agentplane.sandbox_service.inventory import SandboxInventory
 from agentplane.sandbox_service.models import SandboxNotFoundError
 from util.agent_sandbox import SANDBOX_API
 
 logger = logging.getLogger(__name__)
 
-MANAGED_BY_LABEL = "app.agentplane.allegedly.works/managed-by"
-MANAGED_BY_APP = "integration-app"
-SANDBOX_UID_ANNOTATION = "app.agentplane.allegedly.works/sandbox-uid"
-SANDBOX_NAME_ANNOTATION = "app.agentplane.allegedly.works/sandbox-name"
-KUBERNETES_BINDINGS_FINALIZER = "app.agentplane.allegedly.works/kubernetes-bindings"
+SANDBOX_UID_ANNOTATION = f"app.{GROUP}/sandbox-uid"
+SANDBOX_NAME_ANNOTATION = f"app.{GROUP}/sandbox-name"
+KUBERNETES_BINDINGS_FINALIZER = f"app.{GROUP}/kubernetes-bindings"
 
 
 class BindingConflictError(Exception):

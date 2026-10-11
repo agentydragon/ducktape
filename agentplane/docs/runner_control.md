@@ -241,8 +241,8 @@ kind: Lease
 metadata:
   name: <sandbox>-runner
   annotations:
-    agentplane.ducktape.dev/pod-uid: <the Pod the connection authenticated as>
-    agentplane.ducktape.dev/runner-boot-id: <from Hello>
+    agentplane.allegedly.works/pod-uid: <the Pod the connection authenticated as>
+    agentplane.allegedly.works/runner-boot-id: <from Hello>
 spec:
   holderIdentity: <replica Pod name>
   leaseTransitions: <connection epoch>
@@ -262,7 +262,7 @@ kind: EndpointSlice
 metadata:
   name: <sandbox>-control
   labels: { kubernetes.io/service-name: <sandbox>-control }
-  annotations: { agentplane.ducktape.dev/connection-epoch: "<epoch>" }
+  annotations: { agentplane.allegedly.works/connection-epoch: "<epoch>" }
 addressType: IPv4
 endpoints: [{ addresses: [<owning replica's Pod IP>] }]
 ports: [{ name: grpc, port: 8080 }]
@@ -466,11 +466,11 @@ owned by the `Sandbox`, so deleting it removes them:
 - a `coordination.k8s.io/v1` Lease `<sandbox>-runner`: `holderIdentity` is the replica's Pod name,
   `leaseTransitions` the connection epoch (one more for every accepted connection), `renewTime` the
   last frame received (written at most every 15 s), `leaseDurationSeconds` 30, and annotations
-  `agentplane.ducktape.dev/pod-uid` and `agentplane.ducktape.dev/runner-boot-id` the Pod the
+  `agentplane.allegedly.works/pod-uid` and `agentplane.allegedly.works/runner-boot-id` the Pod the
   connection authenticated as and the boot ID from `Hello`;
 - a headless, selector-less Service `<sandbox>-control` on the Runner Gateway's gRPC port, and its
   EndpointSlice `<sandbox>-control`, naming the holder's Pod IP and annotated
-  `agentplane.ducktape.dev/connection-epoch`.
+  `agentplane.allegedly.works/connection-epoch`.
 
 Accepting a connection updates the Lease with the `resourceVersion` it read (creating it if absent),
 re-reading and retrying on a conflict; then writes the EndpointSlice unless it already names a newer

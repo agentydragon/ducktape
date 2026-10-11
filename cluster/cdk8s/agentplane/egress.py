@@ -48,6 +48,7 @@ from trust_manager_crds.io.cert_manager.trust import (
     BundleSpecTargetNamespaceSelectorMatchExpressions,
 )
 
+from agentplane.crd_group import GROUP
 from agentplane.egress.database_migrate import MigrationSettings
 from agentplane.egress.settings import CONFIG_FILE_ENV, Settings
 from agentplane.history_service.ingress_settings import RUNNER_INGRESS_AUDIENCE
@@ -606,7 +607,7 @@ class Egress(Construct):
             rules=[
                 RolePolicyRule(
                     resources=[
-                        custom_resource("agentplane.allegedly.works", resource)
+                        custom_resource(GROUP, resource)
                         for resource in ["egresspolicies", "egressbindings", "egresscredentials"]
                     ],
                     verbs=["get", "list", "watch"],

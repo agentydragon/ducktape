@@ -17,7 +17,7 @@ from util.kubernetes import CustomObjectsClient
 
 ACTION_POLICY_API = (GROUP, VERSION)
 # Preserve these existing ownership stamps when adopting staging resources.
-MANAGED_BY_LABEL = "app.agentplane.allegedly.works/managed-by"
+MANAGED_BY_LABEL = f"app.{GROUP}/managed-by"
 MANAGED_BY_APP = "integration-app"
 
 

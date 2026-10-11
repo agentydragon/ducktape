@@ -10,8 +10,10 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_serializer
 
+from agentplane.crd_group import GROUP
+
 # The sandbox Actions' own namespace, for the labels they stamp and the annotation they read.
-PREFIX = "sandbox-actions.agentplane.allegedly.works"
+PREFIX = f"sandbox-actions.{GROUP}"
 # Where an offered SandboxTemplate says what a box made from it holds, for the agent choosing one.
 DESCRIPTION_ANNOTATION = f"{PREFIX}/description"
 

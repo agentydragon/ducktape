@@ -1051,7 +1051,6 @@ flowchart TD
         SERVICE_PROCESS_MODULE[Candidate: one service process module]
         REQUIRED_SERVICE_WIRING[Candidate: no footgun defaults on service wiring]
         GATEWAY_NAME_SWEEP[Candidate: code says Runner Gateway for the gateway]
-        AGENTPLANE_LABEL_DOMAIN[Candidate: one annotation domain]
         WATCH_FRESHNESS_DEDUPE[Candidate: one watch freshness]
         POSTGRES_WAKEUPS_SHARED[Candidate: one PostgreSQL wakeup class]
         GATEWAY_SANDBOX_READS[Candidate: the gateway reads Sandboxes read-only]
@@ -1129,13 +1128,6 @@ in `session_lifecycle.py`, and the runner's `control.py`, `main.py` flag help, `
 say "Sandbox Service" for the gateway; History Service docstrings say it writes and migrates the
 history store. Also the stale `sealer_accounts` comment, the `serve_channel` test helper, and the
 `CLEANUP` in `sandbox_service/teardown.py` that cites this plan.
-
-### `AGENTPLANE_LABEL_DOMAIN` — one annotation domain
-
-**Candidate.** Runner connection records annotate under `agentplane.ducktape.dev/*`, everything else
-under `agentplane.allegedly.works/*`, which is typed out by hand in `kubernetes_views.py`,
-`kubernetes_bindings.py` and ten cdk8s RBAC rules beside `crd_group.GROUP`. Use one domain from one
-constant; Agentplane state is disposable.
 
 ### `WATCH_FRESHNESS_DEDUPE` — one watch freshness
 

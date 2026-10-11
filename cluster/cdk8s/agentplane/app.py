@@ -60,6 +60,7 @@ from constructs import Construct
 from agentplane.action_service.sandbox.binding import DESCRIPTION_ANNOTATION
 from agentplane.app.oidc import OIDCSettings
 from agentplane.app.settings import CONFIG_FILE_ENV, Settings, ThreadReads
+from agentplane.crd_group import GROUP
 from cluster.cdk8s import cilium, node_scheduling, pod_policy
 from cluster.cdk8s.agentplane import (
     actions,
@@ -203,7 +204,7 @@ class App(Construct):
                 RolePolicyRule(resources=[cast(IApiResource, ApiResource.PODS)], verbs=["get", "list", "watch"]),
                 RolePolicyRule(
                     resources=[
-                        custom_resource("agentplane.allegedly.works", resource)
+                        custom_resource(GROUP, resource)
                         for resource in (
                             "egresspolicies",
                             "egressbindings",

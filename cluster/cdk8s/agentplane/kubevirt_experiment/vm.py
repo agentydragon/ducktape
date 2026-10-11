@@ -29,11 +29,14 @@ from kubevirt_virtualmachine_crds.io.kubevirt import (
     VirtualMachineSpecTemplateSpecVolumesPersistentVolumeClaim,
 )
 
-from cluster.cdk8s.agentplane.kubevirt_experiment.policy import MANAGED_LABEL, SERVICE_ACCOUNT_ANNOTATION
+from cluster.cdk8s.agentplane.kubevirt_experiment.policy import (
+    MANAGED_LABEL,
+    SERVICE_ACCOUNT_ANNOTATION,
+    TEMPLATE_ANNOTATION,
+)
 from cluster.cdk8s.providers.kubevirt.virtual_machine import VirtualMachine
 
 _RUNNER_TEMPLATE = "prototype"
-_VM_TEMPLATE_ANNOTATION = "agentplane.allegedly.works/vm-template"
 
 
 def prototype_vm(scope: Construct, *, namespace: str, name: str, image: str, public_key: str, uid: str | None) -> None:
@@ -45,7 +48,7 @@ def prototype_vm(scope: Construct, *, namespace: str, name: str, image: str, pub
             name=name,
             namespace=namespace,
             labels=labels,
-            annotations={SERVICE_ACCOUNT_ANNOTATION: name, "agentplane.allegedly.works/vm-template": "prototype"},
+            annotations={SERVICE_ACCOUNT_ANNOTATION: name, TEMPLATE_ANNOTATION: "prototype"},
         ),
         run_strategy="Halted",
         template=vm.VirtualMachineSpecTemplate(
@@ -180,7 +183,7 @@ def runner_vm(
             name=name,
             namespace=namespace,
             labels=labels,
-            annotations={SERVICE_ACCOUNT_ANNOTATION: f"vm-{name}-account", _VM_TEMPLATE_ANNOTATION: _RUNNER_TEMPLATE},
+            annotations={SERVICE_ACCOUNT_ANNOTATION: f"vm-{name}-account", TEMPLATE_ANNOTATION: _RUNNER_TEMPLATE},
         ),
         run_strategy="Halted",
         template=VirtualMachineSpecTemplate(

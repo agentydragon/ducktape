@@ -8,6 +8,7 @@ py_library(
     name = "policy",
     srcs = ["policy.py"],
     deps = [
+        "//agentplane:crd_group",
         "//cluster/cdk8s/providers/kyverno:cluster_policy",
         "//cluster/cdk8s/providers/kyverno:clusterpolicy",
         "@pypi//cdk8s",
@@ -40,6 +41,7 @@ py_binary(
     env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
     deps = [
         ":vm",
+        "//agentplane:crd_group",
         "//agentplane/proto:command_pb2",
         "//agentplane/proto:event_log_pb2",
         "//agentplane/proto:event_pb2",

@@ -12,6 +12,7 @@ from kubernetes_asyncio import client as k8s_client
 from pydantic import BaseModel, ConfigDict, Field, TypeAdapter
 from pydantic.alias_generators import to_camel
 
+from agentplane.crd_group import GROUP
 from agentplane.proto.sandbox_service_pb2 import (
     OwnerReference,
     ResolvedGrant,
@@ -25,17 +26,17 @@ from agentplane.sandbox_service.binding_storage import read_binding
 from agentplane.sandbox_service.kubernetes_grants import DnsName, KubernetesGrant
 from util.agent_sandbox import OperatingMode
 
-MANAGED_LABEL = "agentplane.allegedly.works/managed"
-CREATE_INTENT = "agentplane.allegedly.works/create-intent"
-INITIALIZING = "agentplane.allegedly.works/initializing"
-SANDBOX_BINDING_ANNOTATION = "agentplane.allegedly.works/sandbox-binding"
-PROVISIONING_ANNOTATION = "agentplane.allegedly.works/pending-launch-grants"
-KUBERNETES_GRANTS_ANNOTATION = "agentplane.allegedly.works/kubernetes-grants"
-KUBERNETES_GRANTS_READY_ANNOTATION = "agentplane.allegedly.works/kubernetes-grants-ready"
-KUBERNETES_GRANTS_ERROR_ANNOTATION = "agentplane.allegedly.works/kubernetes-grants-error"
-RETENTION_HOLDS_ANNOTATION = "agentplane.allegedly.works/retention-holds"
+MANAGED_LABEL = f"{GROUP}/managed"
+CREATE_INTENT = f"{GROUP}/create-intent"
+INITIALIZING = f"{GROUP}/initializing"
+SANDBOX_BINDING_ANNOTATION = f"{GROUP}/sandbox-binding"
+PROVISIONING_ANNOTATION = f"{GROUP}/pending-launch-grants"
+KUBERNETES_GRANTS_ANNOTATION = f"{GROUP}/kubernetes-grants"
+KUBERNETES_GRANTS_READY_ANNOTATION = f"{GROUP}/kubernetes-grants-ready"
+KUBERNETES_GRANTS_ERROR_ANNOTATION = f"{GROUP}/kubernetes-grants-error"
+RETENTION_HOLDS_ANNOTATION = f"{GROUP}/retention-holds"
 # A `TeardownPhase` name, set by DeleteSandbox.
-TEARDOWN_ANNOTATION = "agentplane.allegedly.works/teardown"
+TEARDOWN_ANNOTATION = f"{GROUP}/teardown"
 
 
 class _KubernetesModel(BaseModel):

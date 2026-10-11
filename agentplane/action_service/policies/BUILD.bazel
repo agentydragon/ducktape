@@ -57,10 +57,12 @@ py_library(
     visibility = [
         "//agentplane:__subpackages__",
         "//cluster/cdk8s/agentplane:__pkg__",
+        "//cluster/cdk8s/public_coder:__pkg__",
     ],
     deps = [
         ":kind",
         ":registry",
+        "//agentplane:crd_group",
         "//agentplane:subjects",
         "//agentplane/action_service:models",
         "@pypi//pydantic",

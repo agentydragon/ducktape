@@ -20,16 +20,17 @@ from kubernetes_asyncio import client as k8s_client
 from more_itertools import one
 from tenacity import AsyncRetrying, retry_if_exception, stop_after_attempt
 
+from agentplane.crd_group import GROUP
 from util.agent_sandbox import SANDBOX_API, SANDBOX_KIND
 from util.kubernetes_watch import ListWatch, WatchedKind, apply_to
 
 logger = logging.getLogger(__name__)
 
-POD_UID_ANNOTATION = "agentplane.ducktape.dev/pod-uid"
-RUNNER_BOOT_ID_ANNOTATION = "agentplane.ducktape.dev/runner-boot-id"
-CONNECTION_EPOCH_ANNOTATION = "agentplane.ducktape.dev/connection-epoch"
+POD_UID_ANNOTATION = f"{GROUP}/pod-uid"
+RUNNER_BOOT_ID_ANNOTATION = f"{GROUP}/runner-boot-id"
+CONNECTION_EPOCH_ANNOTATION = f"{GROUP}/connection-epoch"
 # Selects the Leases the cache holds; other controllers keep Leases in the Sandbox namespace too.
-CONNECTION_LABEL = "agentplane.ducktape.dev/runner-connection"
+CONNECTION_LABEL = f"{GROUP}/runner-connection"
 LEASE_DURATION_S = 30
 CONTROL_PORT = "grpc"
 # A selector-less Service gets no controller-managed slices; this names the slice's writer instead.

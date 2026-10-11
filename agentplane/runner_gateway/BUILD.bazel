@@ -62,6 +62,7 @@ py_library(
     name = "connection_records",
     srcs = ["connection_records.py"],
     deps = [
+        "//agentplane:crd_group",
         "//util:agent_sandbox",
         "//util:kubernetes_watch",
         "@pypi//kubernetes_asyncio",

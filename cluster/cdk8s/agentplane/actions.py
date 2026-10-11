@@ -30,6 +30,7 @@ from cdk8s_plus_34 import (
 from constructs import Construct
 
 from agentplane.action_service.settings import CONFIG_FILE_ENV, Settings
+from agentplane.crd_group import GROUP
 from agentplane.subjects import ServiceAccountRef
 from agentplane.workload_auth.audience import WORKLOAD_TOKEN_AUDIENCE
 from cluster.cdk8s import cilium, node_scheduling, pod_policy
@@ -140,14 +141,13 @@ class Actions(Construct):
             policy_namespace: [
                 RolePolicyRule(
                     resources=[
-                        custom_resource("agentplane.allegedly.works", resource)
-                        for resource in ("actionpolicysets", "actionpolicybindings")
+                        custom_resource(GROUP, resource) for resource in ("actionpolicysets", "actionpolicybindings")
                     ],
                     verbs=["get", "list", "watch"],
                 ),
                 RolePolicyRule(
                     resources=[
-                        custom_resource("agentplane.allegedly.works", resource)
+                        custom_resource(GROUP, resource)
                         for resource in ("actionpolicysets/status", "actionpolicybindings/status")
                     ],
                     verbs=["patch"],
