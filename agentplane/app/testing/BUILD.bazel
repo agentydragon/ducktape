@@ -92,7 +92,7 @@ py_library(
     name = "electric_service",
     srcs = ["electric_service.py"],
     deps = [
-        "//agentplane/history_service/storage:database_migrate",
+        "//agentplane/history_service/testing:history",
         "//agentplane/testing:electric_role",
         "//third_party/containers:electric_1_8_1",
         "//third_party/containers:postgres_18",

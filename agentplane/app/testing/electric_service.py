@@ -14,13 +14,13 @@ from testcontainers.core.network import Network
 
 # SQLAlchemy loads the driver selected by the URL scheme at runtime.
 # gazelle:include_dep @pypi//psycopg
-from agentplane.history_service.storage.database_migrate import RUNNER
+from agentplane.history_service.testing.history import migrate, migrated_template
 from agentplane.testing.electric_role import ensure_electric_role
 from third_party.containers import electric_1_8_1, postgres_18, ryuk
 from util.db_url import render_postgresql_url
 from util.oci import load_oci_image
 from util.testing.container_logs import LoggedContainer
-from util.testing.postgres import PostgresDatabaseTemplate, migrated_database_template
+from util.testing.postgres import PostgresDatabaseTemplate
 
 
 @dataclass(frozen=True)
@@ -73,7 +73,7 @@ def browser_postgres_server() -> Iterator[BrowserPostgres]:
             admin_url = f"postgresql+psycopg://postgres:postgres@{address}/postgres"
             ensure_electric_role(admin_url, ready_timeout_s=60)
 
-            with migrated_database_template(admin_url, "agentplane_browser_history_template", RUNNER) as template:
+            with migrated_template(admin_url, "agentplane_browser_history_template") as template:
                 yield BrowserPostgres(network, admin_url, template)
 
 
@@ -221,7 +221,7 @@ async def electric_service(
             admin_url = f"postgresql+psycopg://postgres:postgres@{address}/postgres"
             await asyncio.to_thread(ensure_electric_role, admin_url, ready_timeout_s=60)
             database_url = render_postgresql_url(admin_url, "postgresql+asyncpg")
-            await asyncio.to_thread(RUNNER.apply, database_url)
+            await asyncio.to_thread(migrate, database_url)
             async with _electric_process(
                 network,
                 database_url,
