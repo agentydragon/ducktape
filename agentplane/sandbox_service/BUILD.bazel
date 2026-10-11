@@ -353,7 +353,6 @@ py_test(
         "//agentplane:subjects",
         "//agentplane/proto:runner_pb2",
         "//agentplane/runner:errors",
-        "//agentplane/proto:runner_pb2",
         "//agentplane/sandbox_service:protocol_pb2",
         "//agentplane/sandbox_service/testing:fake_inventory",
         "//agentplane/sandbox_service/testing:fake_rbac",

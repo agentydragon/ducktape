@@ -43,7 +43,7 @@ async def serve_runner(*, attach: Attach, list_sessions: ListSessions, seal: Sea
             response_serializer=runner_pb2.SealResponse.SerializeToString,
         )
     server = grpc.aio.server()
-    server.add_generic_rpc_handlers([grpc.method_handlers_generic_handler(".agentplane.proto.runner.Runner", handlers)])
+    server.add_generic_rpc_handlers([grpc.method_handlers_generic_handler("agentplane.proto.runner.Runner", handlers)])
     port = server.add_insecure_port("127.0.0.1:0")
     await server.start()
     try:
