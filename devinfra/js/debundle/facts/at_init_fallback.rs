@@ -275,6 +275,7 @@ pub(crate) fn no_sync_member_argument_fallback_sources(
         sources: PositionBucketed::default(),
         lazy_depth: 0,
         past_await: false,
+        may_skip_await_depth: 0,
     };
     item.visit_with(&mut collector);
     collector.sources
@@ -350,6 +351,7 @@ struct NoSyncMemberArgumentSourceCollector<'a> {
     sources: PositionBucketed<BTreeSet<Id>>,
     lazy_depth: u32,
     past_await: bool,
+    may_skip_await_depth: u32,
 }
 
 impl NoSyncMemberArgumentSourceCollector<'_> {
@@ -375,9 +377,56 @@ impl LazyBoundary for NoSyncMemberArgumentSourceCollector<'_> {
     fn past_await_mut(&mut self) -> &mut bool {
         &mut self.past_await
     }
+    fn may_skip_await_depth_mut(&mut self) -> Option<&mut u32> {
+        Some(&mut self.may_skip_await_depth)
+    }
 }
 
 impl Visit for NoSyncMemberArgumentSourceCollector<'_> {
+    fn visit_opt_chain_expr(&mut self, node: &OptChainExpr) {
+        lazy_visit_may_skip(self, node);
+    }
+    fn visit_assign_expr(&mut self, node: &AssignExpr) {
+        if matches!(
+            node.op,
+            AssignOp::AndAssign | AssignOp::OrAssign | AssignOp::NullishAssign
+        ) {
+            lazy_visit_may_skip(self, node);
+        } else {
+            node.visit_children_with(self);
+        }
+    }
+    fn visit_if_stmt(&mut self, node: &IfStmt) {
+        lazy_visit_if_stmt(self, node);
+    }
+    fn visit_cond_expr(&mut self, node: &CondExpr) {
+        lazy_visit_cond_expr(self, node);
+    }
+    fn visit_bin_expr(&mut self, node: &BinExpr) {
+        lazy_visit_bin_expr(self, node);
+    }
+    fn visit_while_stmt(&mut self, node: &WhileStmt) {
+        lazy_visit_may_skip(self, node);
+    }
+    fn visit_do_while_stmt(&mut self, node: &DoWhileStmt) {
+        lazy_visit_may_skip(self, node);
+    }
+    fn visit_for_stmt(&mut self, node: &ForStmt) {
+        lazy_visit_may_skip(self, node);
+    }
+    fn visit_for_in_stmt(&mut self, node: &ForInStmt) {
+        lazy_visit_may_skip(self, node);
+    }
+    fn visit_for_of_stmt(&mut self, node: &ForOfStmt) {
+        lazy_visit_may_skip(self, node);
+    }
+    fn visit_try_stmt(&mut self, node: &TryStmt) {
+        lazy_visit_may_skip(self, node);
+    }
+    fn visit_switch_stmt(&mut self, node: &SwitchStmt) {
+        lazy_visit_may_skip(self, node);
+    }
+
     fn visit_call_expr(&mut self, node: &CallExpr) {
         if let Callee::Expr(callee) = &node.callee
             && is_no_sync_callback_member_call(callee, self.no_sync_callback_members)
@@ -396,7 +445,9 @@ impl Visit for NoSyncMemberArgumentSourceCollector<'_> {
 
     fn visit_await_expr(&mut self, node: &AwaitExpr) {
         node.visit_children_with(self);
-        self.past_await = true;
+        if self.may_skip_await_depth == 0 {
+            self.past_await = true;
+        }
     }
 
     fn visit_function(&mut self, node: &Function) {

@@ -255,6 +255,7 @@ where
         })
         .collect();
     value_flow.augment_calls(&body, &mut facts);
+    super::sync_effects::annotate_synchronous_calls(&body, &value_flow, &shadowed, &mut facts);
     ChunkFactAnalysis {
         facts,
         top_level_await,
@@ -409,6 +410,7 @@ fn assemble_statement_facts(
         local_effects,
         calls,
         constructor,
+        synchronous_calls: None,
         at_init_unresolved_sources,
         at_init_unresolved_inline_fn,
         first_order_unresolved_sources,

@@ -702,14 +702,36 @@ partition-independent: intra-module promoted edges are dropped by the
 quotient automatically, so the same promoted owner graph drives
 hypothetical planner partitions and the validator's actual one.
 
-**Algorithm.** `promote_at_init_calls` builds the call graph among
-chunk-declared, resolvable callees from first-order lazy calls, takes its
-SCCs, and closes each SCC's first-order lazy reads and rebinds over its
-successor SCCs in reverse topological order. Then for each callee C in an
-at-init statement S's `calls.eager`, it emits promoted edges from S's owner to
-every owner declaring a binding in C's closure. Rebind targets are promoted
-as `EagerUse` too, an order constraint only: write legality is enforced by the
-direct `LazyRebind` / `DeferredRebind` edge at the write site.
+**Algorithm.** The call-site execution pass records callable identities,
+argument and default values, returned values, and the local environment of a
+created closure. For each at-init call, it follows only bodies that can execute
+before suspension at that call site. Returning a closure does not execute its
+body. A complete result lists the reads and rebinds reachable through those
+calls; each promoted edge retains the lexical callee owner for the
+cross-module realizability check. Separate calls to the same factory keep
+separate argument environments. The pass memoizes call contexts and caps its
+work; recursive or unknown targets, unsupported syntax, and mutable captures
+fall back conservatively.
+
+For statements without a complete call-site result, `promote_at_init_calls`
+uses its SCC closure: it builds the call graph among chunk-declared, resolvable
+callees from first-order lazy calls, takes its SCCs, and closes each SCC's
+first-order lazy reads and rebinds over its successor SCCs in reverse
+topological order. Then each at-init callee contributes promoted edges to the
+bindings in that closure, augmented by the unresolved-call fallback below.
+Rebind targets are promoted as `EagerUse` in either path, an order constraint
+only: write legality is enforced by the direct `LazyRebind` /
+`DeferredRebind` edge at the write site.
+
+An `await` cuts off synchronous effects only on paths that must reach it.
+Conditional branches are joined conservatively; loops, switches, and
+try/catch/finally retain effects across possible paths. Under A11, the
+call-site pass also recognizes `new WeakMap()` and `Object.assign` to a fresh
+local function from plain object-literal data sources. Other constructor and
+member calls remain unknown and take the conservative path. Generator calls
+also take that path because their parameter defaults execute at call time
+while their bodies wait for iteration; spread arguments may likewise execute
+iterator code before the callee runs.
 
 **Hoisted-target filter.** Promoted reads filter out targets whose
 owner is a `FnDecl` — function declarations are hoisted at Phase-1
@@ -726,7 +748,7 @@ multiply that. The promotion pass dedupes per `(caller, target-owner)`
 pair, keeping the per-statement cost bounded by the
 transitive closure size rather than (closure × call-sites).
 
-**Resolvable callees.** A callee is precisely resolvable iff its
+**SCC-path resolvable callees.** In the fallback path, a callee is precisely resolvable iff its
 binding is declared _directly as a callable value_ (`function f`,
 single-declarator `const f = () => ...`, `class F`, exported forms)
 and is never rebound anywhere in the chunk. The chunk value-flow

@@ -29,16 +29,73 @@ use super::*;
 pub(crate) trait LazyBoundary: Visit {
     fn lazy_depth_mut(&mut self) -> &mut u32;
     fn past_await_mut(&mut self) -> &mut bool;
+    fn may_skip_await_depth_mut(&mut self) -> Option<&mut u32> {
+        None
+    }
 
     fn descend_lazy<F: FnOnce(&mut Self)>(&mut self, f: F) {
         // Each body has its own `past_await` scope: a nested function
         // starts pre-await regardless of the enclosing body's state.
         let saved_past_await = std::mem::replace(self.past_await_mut(), false);
+        let saved_may_skip_await = self
+            .may_skip_await_depth_mut()
+            .map(|depth| std::mem::replace(depth, 0));
         *self.lazy_depth_mut() += 1;
         f(self);
         *self.lazy_depth_mut() -= 1;
         *self.past_await_mut() = saved_past_await;
+        if let (Some(depth), Some(saved)) = (self.may_skip_await_depth_mut(), saved_may_skip_await)
+        {
+            *depth = saved;
+        }
     }
+}
+
+/// An `await` reached only through an optional path does not prove that
+/// subsequent code runs after suspension. Preserve the pre-branch state while
+/// still classifying reads inside the branch after its own await as deferred.
+pub(crate) fn lazy_visit_if_stmt<V: LazyBoundary>(v: &mut V, node: &IfStmt) {
+    node.test.visit_with(v);
+    let before_branch = *v.past_await_mut();
+    node.cons.visit_with(v);
+    *v.past_await_mut() = before_branch;
+    if let Some(alt) = &node.alt {
+        alt.visit_with(v);
+        *v.past_await_mut() = before_branch;
+    }
+}
+
+pub(crate) fn lazy_visit_cond_expr<V: LazyBoundary>(v: &mut V, node: &CondExpr) {
+    node.test.visit_with(v);
+    let before_branch = *v.past_await_mut();
+    node.cons.visit_with(v);
+    *v.past_await_mut() = before_branch;
+    node.alt.visit_with(v);
+    *v.past_await_mut() = before_branch;
+}
+
+pub(crate) fn lazy_visit_bin_expr<V: LazyBoundary>(v: &mut V, node: &BinExpr) {
+    node.left.visit_with(v);
+    let before_right = *v.past_await_mut();
+    node.right.visit_with(v);
+    if matches!(
+        node.op,
+        BinaryOp::LogicalAnd | BinaryOp::LogicalOr | BinaryOp::NullishCoalescing
+    ) {
+        *v.past_await_mut() = before_right;
+    }
+}
+
+pub(crate) fn lazy_visit_may_skip<V: LazyBoundary, N: VisitWith<V>>(v: &mut V, node: &N) {
+    let before = *v.past_await_mut();
+    if let Some(depth) = v.may_skip_await_depth_mut() {
+        *depth += 1;
+    }
+    node.visit_children_with(v);
+    if let Some(depth) = v.may_skip_await_depth_mut() {
+        *depth -= 1;
+    }
+    *v.past_await_mut() = before;
 }
 
 pub(crate) fn lazy_visit_function<V: LazyBoundary>(v: &mut V, node: &Function) {

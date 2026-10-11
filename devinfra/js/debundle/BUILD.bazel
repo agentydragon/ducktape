@@ -427,6 +427,7 @@ rust_library(
         "facts/mod.rs",
         "facts/purity_classification.rs",
         "facts/statement_facts.rs",
+        "facts/sync_effects.rs",
         "facts/value_flow.rs",
         "graph/build.rs",
         "graph/edge.rs",

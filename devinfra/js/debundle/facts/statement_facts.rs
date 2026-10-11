@@ -75,10 +75,8 @@ pub struct StatementFacts {
     /// syntactic position. The collector records bare identifiers; the
     /// chunk value-flow pass adds identities reached through aliases,
     /// parameters, returns and static object properties. The owner-graph
-    /// build uses `eager` to drive at-init call promotion (a call
-    /// from statement S to chunk-declared function `f` transitively
-    /// reads everything `f`'s body lazily reads — see docs/design.md
-    /// "At-init call promotion") and `lazy` to reconstruct the chunk
+    /// build uses `eager` for conservative at-init promotion when call-site
+    /// execution cannot be bounded, and `lazy` to reconstruct the chunk
     /// call graph so promotion follows call chains (e.g.
     /// `function f() { g(); } f();` promotes through `g`'s body too).
     /// `first_order_lazy` keeps calls nested inside a closure of the
@@ -88,6 +86,10 @@ pub struct StatementFacts {
     /// constructor body, instance fields and superclass constructor. Method
     /// bodies remain lazy until invoked by that constructor or another call.
     pub(crate) constructor: Option<ConstructorFacts>,
+    /// Effects of function bodies that can run while this statement evaluates.
+    /// `None` means the call analysis could not bound every target and the
+    /// conservative unresolved-call path must be used.
+    pub(crate) synchronous_calls: Option<SynchronousCalls>,
     /// Bindings referenced in the callee or arguments of at-init
     /// calls promotion can't follow (member calls `api.read()`,
     /// optional-chain calls, tagged templates). A function value
@@ -145,6 +147,12 @@ pub struct StatementFacts {
     pub dataflow_summarizable: bool,
     pub purity: Purity,
     pub kind: StatementKind,
+}
+
+#[derive(Debug, Clone, Default)]
+pub(crate) struct SynchronousCalls {
+    pub reads: BTreeSet<(Id, StatementOrdinal)>,
+    pub rebinds: BTreeSet<(Id, StatementOrdinal)>,
 }
 
 impl StatementFacts {

@@ -14,7 +14,8 @@ use swc_ecma_visit::{Visit, VisitWith};
 
 use super::{
     LazyBoundary, PositionBucketed, StatementFacts, TopLevelItemView, lazy_visit_arrow_expr,
-    lazy_visit_class, lazy_visit_class_member, lazy_visit_function, lazy_visit_getter_prop,
+    lazy_visit_bin_expr, lazy_visit_class, lazy_visit_class_member, lazy_visit_cond_expr,
+    lazy_visit_function, lazy_visit_getter_prop, lazy_visit_if_stmt, lazy_visit_may_skip,
     lazy_visit_method_prop, lazy_visit_setter_prop,
 };
 use crate::StatementOrdinal;
@@ -110,6 +111,10 @@ impl ChunkValueFlow {
         })
     }
 
+    pub(crate) fn is_declared(&self, id: &Id) -> bool {
+        self.declared_ids.contains(id)
+    }
+
     pub(crate) fn values_of_expr(&self, expr: &Expr) -> Values {
         match expr.unwrap_parens() {
             Expr::Ident(ident) => self.values_of_binding(&ident.to_id()),
@@ -195,6 +200,10 @@ impl ChunkValueFlow {
         self.returns.get(&function)
     }
 
+    pub(crate) fn values_of_property(&self, object: u32, property: &str) -> Option<&Values> {
+        self.properties.get(&(object, property.to_owned()))
+    }
+
     pub(crate) fn aliases_by_object(
         &self,
         objects: &BTreeSet<ValueOrigin>,
@@ -251,6 +260,7 @@ impl ChunkValueFlow {
                 incomplete_ident_calls: PositionBucketed::default(),
                 lazy_depth: 0,
                 past_await: false,
+                may_skip_await_depth: 0,
             };
             item.as_module_item().visit_with(&mut collector);
             for id in collector
@@ -286,6 +296,7 @@ impl ChunkValueFlow {
                     incomplete_ident_calls: PositionBucketed::default(),
                     lazy_depth: 0,
                     past_await: false,
+                    may_skip_await_depth: 0,
                 };
                 for member in &class.body {
                     if matches!(member, ClassMember::Constructor(_))
@@ -334,7 +345,7 @@ fn unknown() -> Values {
     BTreeSet::from([ValueOrigin::Unknown])
 }
 
-fn static_prop(prop: &MemberProp) -> Option<String> {
+pub(crate) fn static_prop(prop: &MemberProp) -> Option<String> {
     match prop {
         MemberProp::Ident(ident) => Some(ident.sym.to_string()),
         MemberProp::Computed(computed) => match computed.expr.unwrap_parens() {
@@ -573,6 +584,7 @@ struct FlowCallCollector<'a> {
     incomplete_ident_calls: PositionBucketed<BTreeSet<Id>>,
     lazy_depth: u32,
     past_await: bool,
+    may_skip_await_depth: u32,
 }
 
 impl LazyBoundary for FlowCallCollector<'_> {
@@ -582,6 +594,9 @@ impl LazyBoundary for FlowCallCollector<'_> {
 
     fn past_await_mut(&mut self) -> &mut bool {
         &mut self.past_await
+    }
+    fn may_skip_await_depth_mut(&mut self) -> Option<&mut u32> {
+        Some(&mut self.may_skip_await_depth)
     }
 }
 
@@ -610,6 +625,50 @@ impl FlowCallCollector<'_> {
 }
 
 impl Visit for FlowCallCollector<'_> {
+    fn visit_opt_chain_expr(&mut self, node: &OptChainExpr) {
+        lazy_visit_may_skip(self, node);
+    }
+    fn visit_assign_expr(&mut self, node: &AssignExpr) {
+        if matches!(
+            node.op,
+            AssignOp::AndAssign | AssignOp::OrAssign | AssignOp::NullishAssign
+        ) {
+            lazy_visit_may_skip(self, node);
+        } else {
+            node.visit_children_with(self);
+        }
+    }
+    fn visit_if_stmt(&mut self, node: &IfStmt) {
+        lazy_visit_if_stmt(self, node);
+    }
+    fn visit_cond_expr(&mut self, node: &CondExpr) {
+        lazy_visit_cond_expr(self, node);
+    }
+    fn visit_bin_expr(&mut self, node: &BinExpr) {
+        lazy_visit_bin_expr(self, node);
+    }
+    fn visit_while_stmt(&mut self, node: &WhileStmt) {
+        lazy_visit_may_skip(self, node);
+    }
+    fn visit_do_while_stmt(&mut self, node: &DoWhileStmt) {
+        lazy_visit_may_skip(self, node);
+    }
+    fn visit_for_stmt(&mut self, node: &ForStmt) {
+        lazy_visit_may_skip(self, node);
+    }
+    fn visit_for_in_stmt(&mut self, node: &ForInStmt) {
+        lazy_visit_may_skip(self, node);
+    }
+    fn visit_for_of_stmt(&mut self, node: &ForOfStmt) {
+        lazy_visit_may_skip(self, node);
+    }
+    fn visit_try_stmt(&mut self, node: &TryStmt) {
+        lazy_visit_may_skip(self, node);
+    }
+    fn visit_switch_stmt(&mut self, node: &SwitchStmt) {
+        lazy_visit_may_skip(self, node);
+    }
+
     fn visit_call_expr(&mut self, node: &CallExpr) {
         if let Callee::Expr(callee) = &node.callee {
             self.record(callee);
@@ -652,7 +711,7 @@ impl Visit for FlowCallCollector<'_> {
 
     fn visit_await_expr(&mut self, node: &AwaitExpr) {
         node.arg.visit_with(self);
-        if self.lazy_depth > 0 {
+        if self.lazy_depth > 0 && self.may_skip_await_depth == 0 {
             self.past_await = true;
         }
     }

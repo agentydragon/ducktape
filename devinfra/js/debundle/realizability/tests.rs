@@ -812,15 +812,13 @@ fn move_overlay_matches_committed_and_pure_on_promoted_edge_graphs() {
             "const a = 1; function read_a() { return a; } const g = read_a; const r = g(); const m = r + 1;",
             false,
         ),
-        // `r = api.read()` is a member call, so `r -> a` is a fallback-promoted
-        // edge from residual, and `api` reads `a` lazily. Moving the caller
-        // `r` out of residual must not make the overlay remove a residual ->
-        // `a` edge the gate never had: the removal would cancel the real lazy
-        // `api -> a` edge on that module pair and hide the TDZ cycle the move
-        // closes.
+        // `r = api.read()` resolves the object's static function property.
+        // Its promoted `r -> a` edge retains the lexical owner of the arrow
+        // stored on `api`. Moving `r` must preserve agreement between the
+        // overlay, committed graph, and reference gate.
         (
             "const a = 1; const api = { read: () => a }; const r = api.read(); const m = r + 1;",
-            true,
+            false,
         ),
         (
             "const a = 1; const read_a = () => a; const s = { v: read_a() }; const t = s.v + 1; const u = t;",

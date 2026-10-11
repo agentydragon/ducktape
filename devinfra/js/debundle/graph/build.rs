@@ -687,6 +687,31 @@ fn promote_at_init_calls(
     //    [`UnresolvedCallFallback`].
     let mut fallback: Option<UnresolvedCallFallback> = None;
     for stmt in facts {
+        if let Some(synchronous) = &stmt.synchronous_calls {
+            let caller = OwnerId(stmt.ordinal.0);
+            let mut emitted = BTreeSet::new();
+            for (target_binding, callee_ordinal) in
+                synchronous.reads.iter().chain(&synchronous.rebinds)
+            {
+                if target_is_hoisted(target_binding) {
+                    continue;
+                }
+                let Some(&target_owner) = binding_owner.get(target_binding) else {
+                    continue;
+                };
+                let callee_owner = OwnerId(callee_ordinal.0);
+                if caller == target_owner || !emitted.insert((target_owner, callee_owner)) {
+                    continue;
+                }
+                raw_edges.push((
+                    caller,
+                    target_owner,
+                    EdgeReason::eager_use(stmt.ordinal, target_binding.clone())
+                        .promoted_at_init(callee_owner),
+                ));
+            }
+            continue;
+        }
         if stmt.calls.eager.is_empty()
             && stmt.at_init_unresolved_sources.is_empty()
             && !stmt.at_init_unresolved_inline_fn

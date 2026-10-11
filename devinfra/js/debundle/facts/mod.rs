@@ -53,6 +53,7 @@ mod local_effect_targets;
 mod local_effects;
 mod purity_classification;
 mod statement_facts;
+mod sync_effects;
 mod value_flow;
 
 // Crate-internal re-exports: each submodule reaches its siblings'

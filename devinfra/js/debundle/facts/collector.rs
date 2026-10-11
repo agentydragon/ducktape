@@ -48,6 +48,7 @@ pub(crate) struct StatementFactsCollector {
     promise_global_unshadowed: bool,
     lazy_depth: u32,
     past_await: bool,
+    may_skip_await_depth: u32,
 }
 
 impl StatementFactsCollector {
@@ -400,6 +401,7 @@ pub(crate) struct SyncInlineEffectCollector {
     outer_past_await: bool,
     inline_depth: u32,
     past_await: bool,
+    may_skip_await_depth: u32,
     needs_owner_fallback: bool,
 }
 
@@ -411,6 +413,7 @@ impl SyncInlineEffectCollector {
             outer_past_await,
             inline_depth: 0,
             past_await: false,
+            may_skip_await_depth: 0,
             needs_owner_fallback: false,
         }
     }
@@ -479,7 +482,47 @@ impl TargetAccessRecorder for SyncInlineEffectCollector {
     fn record_member_write(&mut self, _id: &Id) {}
 }
 
+impl LazyBoundary for SyncInlineEffectCollector {
+    fn lazy_depth_mut(&mut self) -> &mut u32 {
+        &mut self.inline_depth
+    }
+    fn past_await_mut(&mut self) -> &mut bool {
+        &mut self.past_await
+    }
+    fn may_skip_await_depth_mut(&mut self) -> Option<&mut u32> {
+        Some(&mut self.may_skip_await_depth)
+    }
+}
+
 impl Visit for SyncInlineEffectCollector {
+    fn visit_opt_chain_expr(&mut self, node: &OptChainExpr) {
+        lazy_visit_may_skip(self, node);
+    }
+    fn visit_if_stmt(&mut self, node: &IfStmt) {
+        lazy_visit_if_stmt(self, node);
+    }
+    fn visit_cond_expr(&mut self, node: &CondExpr) {
+        lazy_visit_cond_expr(self, node);
+    }
+    fn visit_bin_expr(&mut self, node: &BinExpr) {
+        lazy_visit_bin_expr(self, node);
+    }
+    fn visit_while_stmt(&mut self, node: &WhileStmt) {
+        lazy_visit_may_skip(self, node);
+    }
+    fn visit_do_while_stmt(&mut self, node: &DoWhileStmt) {
+        lazy_visit_may_skip(self, node);
+    }
+    fn visit_for_stmt(&mut self, node: &ForStmt) {
+        lazy_visit_may_skip(self, node);
+    }
+    fn visit_try_stmt(&mut self, node: &TryStmt) {
+        lazy_visit_may_skip(self, node);
+    }
+    fn visit_switch_stmt(&mut self, node: &SwitchStmt) {
+        lazy_visit_may_skip(self, node);
+    }
+
     fn visit_ident(&mut self, node: &Ident) {
         self.record_read(&node.to_id());
     }
@@ -512,7 +555,7 @@ impl Visit for SyncInlineEffectCollector {
 
     fn visit_await_expr(&mut self, node: &AwaitExpr) {
         node.arg.visit_with(self);
-        if self.inline_depth > 0 {
+        if self.inline_depth > 0 && self.may_skip_await_depth == 0 {
             self.past_await = true;
         }
     }
@@ -550,10 +593,17 @@ impl Visit for SyncInlineEffectCollector {
     }
 
     fn visit_assign_expr(&mut self, node: &AssignExpr) {
+        let before_assignment = self.past_await;
         if self.active() {
             record_assign_target(&node.left, self);
         }
         node.visit_children_with(self);
+        if matches!(
+            node.op,
+            AssignOp::AndAssign | AssignOp::OrAssign | AssignOp::NullishAssign
+        ) {
+            self.past_await = before_assignment;
+        }
     }
 
     fn visit_update_expr(&mut self, node: &UpdateExpr) {
@@ -564,6 +614,7 @@ impl Visit for SyncInlineEffectCollector {
     }
 
     fn visit_for_in_stmt(&mut self, node: &ForInStmt) {
+        let before_loop = self.past_await;
         if self.active()
             && let ForHead::Pat(pattern) = &node.left
         {
@@ -572,9 +623,11 @@ impl Visit for SyncInlineEffectCollector {
         node.left.visit_with(self);
         node.right.visit_with(self);
         node.body.visit_with(self);
+        self.past_await = before_loop;
     }
 
     fn visit_for_of_stmt(&mut self, node: &ForOfStmt) {
+        let before_loop = self.past_await;
         if self.active()
             && let ForHead::Pat(pattern) = &node.left
         {
@@ -583,6 +636,7 @@ impl Visit for SyncInlineEffectCollector {
         node.left.visit_with(self);
         node.right.visit_with(self);
         node.body.visit_with(self);
+        self.past_await = before_loop;
     }
 }
 
@@ -592,6 +646,9 @@ impl LazyBoundary for StatementFactsCollector {
     }
     fn past_await_mut(&mut self) -> &mut bool {
         &mut self.past_await
+    }
+    fn may_skip_await_depth_mut(&mut self) -> Option<&mut u32> {
+        Some(&mut self.may_skip_await_depth)
     }
 }
 
@@ -615,6 +672,34 @@ impl TargetAccessRecorder for StatementFactsCollector {
 }
 
 impl Visit for StatementFactsCollector {
+    fn visit_opt_chain_expr(&mut self, node: &OptChainExpr) {
+        lazy_visit_may_skip(self, node);
+    }
+    fn visit_if_stmt(&mut self, node: &IfStmt) {
+        lazy_visit_if_stmt(self, node);
+    }
+    fn visit_cond_expr(&mut self, node: &CondExpr) {
+        lazy_visit_cond_expr(self, node);
+    }
+    fn visit_bin_expr(&mut self, node: &BinExpr) {
+        lazy_visit_bin_expr(self, node);
+    }
+    fn visit_while_stmt(&mut self, node: &WhileStmt) {
+        lazy_visit_may_skip(self, node);
+    }
+    fn visit_do_while_stmt(&mut self, node: &DoWhileStmt) {
+        lazy_visit_may_skip(self, node);
+    }
+    fn visit_for_stmt(&mut self, node: &ForStmt) {
+        lazy_visit_may_skip(self, node);
+    }
+    fn visit_try_stmt(&mut self, node: &TryStmt) {
+        lazy_visit_may_skip(self, node);
+    }
+    fn visit_switch_stmt(&mut self, node: &SwitchStmt) {
+        lazy_visit_may_skip(self, node);
+    }
+
     fn visit_var_decl(&mut self, node: &VarDecl) {
         if self.lazy_depth == 0 && node.kind == VarDeclKind::Var {
             for decl in &node.decls {
@@ -681,10 +766,13 @@ impl Visit for StatementFactsCollector {
         // flip `past_await` only after, so the pre-await reads/writes
         // still count as first-order.
         node.visit_children_with(self);
-        self.past_await = true;
+        if self.may_skip_await_depth == 0 {
+            self.past_await = true;
+        }
     }
 
     fn visit_assign_expr(&mut self, node: &AssignExpr) {
+        let before_assignment = self.past_await;
         record_assign_target(&node.left, self);
         if self.lazy_depth == 0 {
             match &node.left {
@@ -714,6 +802,12 @@ impl Visit for StatementFactsCollector {
         }
         node.left.visit_with(self);
         node.right.visit_with(self);
+        if matches!(
+            node.op,
+            AssignOp::AndAssign | AssignOp::OrAssign | AssignOp::NullishAssign
+        ) {
+            self.past_await = before_assignment;
+        }
     }
 
     fn visit_update_expr(&mut self, node: &UpdateExpr) {
@@ -735,6 +829,7 @@ impl Visit for StatementFactsCollector {
     }
 
     fn visit_for_in_stmt(&mut self, node: &ForInStmt) {
+        let before_loop = self.past_await;
         match &node.left {
             ForHead::Pat(pattern) => record_pat_write(pattern, self),
             ForHead::VarDecl(var) => {
@@ -747,9 +842,11 @@ impl Visit for StatementFactsCollector {
         node.left.visit_with(self);
         node.right.visit_with(self);
         node.body.visit_with(self);
+        self.past_await = before_loop;
     }
 
     fn visit_for_of_stmt(&mut self, node: &ForOfStmt) {
+        let before_loop = self.past_await;
         match &node.left {
             ForHead::Pat(pattern) => record_pat_write(pattern, self),
             ForHead::VarDecl(var) => {
@@ -762,6 +859,7 @@ impl Visit for StatementFactsCollector {
         node.left.visit_with(self);
         node.right.visit_with(self);
         node.body.visit_with(self);
+        self.past_await = before_loop;
     }
 
     // The S-chain's dataflow-summarizability of calls/news is
