@@ -189,6 +189,7 @@ py_library(
         "//agentplane/sandbox_service/testing:backend",
         "//agentplane/sandbox_service/testing:fake_inventory",
         "//agentplane/sandbox_service/testing:fake_rbac",
+        "//agentplane/sandbox_service/testing:history",
         "//agentplane/thread_fold:projection_lease",
         "//util/testing:postgres",
         "//util/testing:postgres_fixtures",
