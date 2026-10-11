@@ -158,7 +158,6 @@ py_library(
         "//agentplane:subjects",
         "//agentplane/testing:fake_apiserver",
         "//util:kubernetes",
-        "//util/testing:postgres",
         "//util/testing:postgres_fixtures",
         "@pypi//kubernetes_asyncio",
         "@pypi//pytest",

@@ -20,12 +20,20 @@ import time
 from collections.abc import Generator, Iterator
 
 import pytest
+from _pytest.fixtures import FixtureFunctionDefinition
 from sqlalchemy.engine import URL
 from testcontainers.postgres import PostgresContainer
 
 from third_party.containers import postgres_18, ryuk
+from util.db_migrations import MigrationRunner
 from util.oci import OciImage, load_oci_image
-from util.testing.postgres import DatabaseClones, DatabaseNames
+from util.testing.postgres import (
+    DatabaseClones,
+    DatabaseNames,
+    PostgresDatabaseTemplate,
+    database_name_for_test,
+    migrated_database_template,
+)
 from util.testing.undeclared_outputs import undeclared_outputs_dir
 
 # SQLAlchemy loads the psycopg dialect from the URL scheme at runtime.
@@ -116,3 +124,27 @@ def database_clones(database_names: DatabaseNames) -> Iterator[DatabaseClones]:
     """Own template clones for one test and drop them after dependent fixtures finish."""
     with DatabaseClones(database_names) as clones:
         yield clones
+
+
+def migrated_database_fixtures(
+    runner: MigrationRunner, *, drivername: str, template_name: str = "database_template", url_name: str = "db_url"
+) -> tuple[FixtureFunctionDefinition, FixtureFunctionDefinition]:
+    """Declare a session migration template and a function-scoped clone URL fixture.
+
+    Bind both returned fixtures in the suite's conftest. Explicit names let suites compose
+    several databases without the URL fixture resolving a different service's template.
+    """
+
+    @pytest.fixture(scope="session", name=template_name)
+    def template(postgres_admin_url: str, request: pytest.FixtureRequest) -> Iterator[PostgresDatabaseTemplate]:
+        with migrated_database_template(
+            postgres_admin_url, database_name_for_test(request.fixturename), runner
+        ) as migrated:
+            yield migrated
+
+    @pytest.fixture(name=url_name)
+    def url(request: pytest.FixtureRequest, database_clones: DatabaseClones) -> str:
+        source = request.getfixturevalue(template_name)
+        return database_clones.clone(source, drivername=drivername)
+
+    return template, url

@@ -3,7 +3,7 @@
 import asyncio
 import json
 import logging
-from collections.abc import AsyncIterator, Generator, Iterator
+from collections.abc import AsyncIterator, Generator
 
 import pytest
 from google.protobuf.json_format import MessageToDict
@@ -15,8 +15,14 @@ from agentplane.notification_service.database_migrate import RUNNER
 from agentplane.notification_service.store import Store
 from agentplane.runner.testing.fixtures import RunnerHandle, config, endpoint, harness, model, runner, spec, workspace
 from agentplane.sandbox_service.testing.fixtures import service_database_template
-from util.testing.postgres import DatabaseClones, PostgresDatabaseTemplate, migrated_database_template
-from util.testing.postgres_fixtures import database_clones, database_names, postgres_admin_url, postgres_container
+from util.testing.postgres import DatabaseClones, PostgresDatabaseTemplate
+from util.testing.postgres_fixtures import (
+    database_clones,
+    database_names,
+    migrated_database_fixtures,
+    postgres_admin_url,
+    postgres_container,
+)
 from util.testing.undeclared_outputs import undeclared_outputs_dir
 
 # gazelle:include_dep @pypi//asyncpg
@@ -55,15 +61,7 @@ async def failed_native_journal(request: pytest.FixtureRequest, runner: RunnerHa
         logger.warning("native journal capture failed: %s", type(error).__name__)
 
 
-@pytest.fixture(scope="session")
-def notification_database_template(postgres_admin_url: str) -> Iterator[PostgresDatabaseTemplate]:
-    with migrated_database_template(postgres_admin_url, "notifications_template", RUNNER) as template:
-        yield template
-
-
-@pytest.fixture
-def db_url(notification_database_template: PostgresDatabaseTemplate, database_clones: DatabaseClones) -> str:
-    return database_clones.clone(notification_database_template, drivername="postgresql+asyncpg")
+database_template, db_url = migrated_database_fixtures(RUNNER, drivername="postgresql+asyncpg")
 
 
 @pytest.fixture

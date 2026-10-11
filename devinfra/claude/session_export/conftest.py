@@ -1,7 +1,7 @@
 import asyncio
 import json
 import re
-from collections.abc import AsyncIterator, Awaitable, Callable, Coroutine, Iterator
+from collections.abc import AsyncIterator, Awaitable, Callable, Coroutine
 from contextlib import asynccontextmanager, suppress
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
@@ -21,8 +21,13 @@ from devinfra.claude.session_export.database_migrate import RUNNER
 from devinfra.claude.session_export.models import DEFAULT_ATTESTATION_STATUS, SESSION_STATUS_ARCHIVED, SessionSummary
 from devinfra.claude.session_export.oauth import CredentialStore, OAuthCredential
 from devinfra.claude.session_export.store import SessionStore, make_engine
-from util.testing.postgres import DatabaseClones, PostgresDatabaseTemplate, migrated_database_template
-from util.testing.postgres_fixtures import database_clones, database_names, postgres_admin_url, postgres_container
+from util.testing.postgres_fixtures import (
+    database_clones,
+    database_names,
+    migrated_database_fixtures,
+    postgres_admin_url,
+    postgres_container,
+)
 
 TEST_ORG_UUID = "test-org-uuid"
 TEST_COOKIE = SessionCookie(session_key=SecretStr("test-session-key"), org_uuid=TEST_ORG_UUID)
@@ -288,17 +293,9 @@ def credential_store(tmp_path: Path) -> Callable[..., CredentialStore]:
     return make
 
 
-@pytest.fixture(scope="session")
-def session_export_database_template(postgres_admin_url: str) -> Iterator[PostgresDatabaseTemplate]:
-    """One migrated session-export database per test process, cloned for each case."""
-    with migrated_database_template(postgres_admin_url, "session_export_template", RUNNER) as template:
-        yield template
-
-
-@pytest.fixture
-def database_url(session_export_database_template: PostgresDatabaseTemplate, database_clones: DatabaseClones) -> str:
-    """A fresh writable clone of the migrated session-export schema for this case."""
-    return database_clones.clone(session_export_database_template, drivername="postgresql+asyncpg")
+database_template, database_url = migrated_database_fixtures(
+    RUNNER, drivername="postgresql+asyncpg", url_name="database_url"
+)
 
 
 @pytest.fixture
