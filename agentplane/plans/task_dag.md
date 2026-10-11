@@ -1068,7 +1068,6 @@ flowchart TD
         NATIVE_PROCESS_DEDUP[Candidate: one native process wrapper]
         EGRESS_DECISIONS_CLIENT[Candidate: egress decisions client beside the server]
         LLM_INGRESS_MODEL_CONFIG_CONTRACT[Candidate: structural absent model config]
-        ACTION_SETTINGS_SINGLE_MODEL[Candidate: one Action Service settings model]
         ACTION_PROTOCOLS_CONCRETE[Candidate: concrete types for Action protocols]
         ACTION_OAUTH_REFERENCE_TYPE[Candidate: typed OAuth token reference]
         NOTIFICATION_GITHUB_PACKAGE[Candidate: one GitHub source package]
@@ -1239,13 +1238,6 @@ egress `/decisions` route. Move model and client into `agentplane/egress/`, drop
 **Candidate.** `llm_ingress/app.py` answers an absent model config with a 404 whose `detail` text
 `runner/model_config.py` string-matches. Carry the absent state structurally (204, or 200 with a
 nullable body).
-
-### `ACTION_SETTINGS_SINGLE_MODEL` — one Action Service settings model
-
-**Candidate.** `ActionServiceDeploymentSettings` re-declares part of `Settings`, which defaults
-`policy_namespace` and `caller_service_account_namespaces` to `agentplane-staging`. Author
-`Settings` through `SettingsFile` as the other services do, drop the Deployment model, make both
-namespaces required, and move `token_audience` from the CLI into the file.
 
 ### `ACTION_PROTOCOLS_CONCRETE` — concrete types for Action protocols
 

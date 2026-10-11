@@ -14,7 +14,9 @@ from cdk8s import Duration
 from cdk8s_plus_34 import DeploymentStrategy
 from cilium_crds.io.cilium import CiliumNetworkPolicySpecEgress
 
-from agentplane.action_service.settings import ActionServiceDeploymentSettings
+from agentplane.action_service.catalog import ActionGroup, Key
+from agentplane.action_service.mcp_settings import McpClientMetadataSettings, McpOAuthServer
+from agentplane.action_service.operator_oidc_settings import OperatorOidcSettings
 from agentplane.app.settings import AppSettingsConfig, ThreadReads
 from agentplane.llm_ingress.models import ModelConfig
 
@@ -88,17 +90,35 @@ class BearerMcpMount:
 
 
 @dataclass(frozen=True)
+class WebPushProps:
+    """The Action Service's Web Push identity; its VAPID private key is `secret_name`'s
+    `private-key-pem`."""
+
+    subject: str
+    public_base_url: str
+    allowed_push_hosts: Sequence[str]
+    secret_name: str
+
+
+@dataclass(frozen=True)
 class ActionsProps:
+    """This environment's values of agentplane/action_service `Settings` fields, and how its
+    Deployment reaches their secrets."""
+
     hostname: str
-    # Deployment-authored portion of agentplane/action_service `Settings`; runtime secrets arrive separately.
-    settings: ActionServiceDeploymentSettings
+    operator_oidc: OperatorOidcSettings
+    # Its own namespace included; the Action Service watches policies in its own.
+    caller_service_account_namespaces: frozenset[str]
+    mcp_servers: Mapping[Key, McpOAuthServer]
+    action_groups: Mapping[Key, ActionGroup]
+    mcp_client_metadata: McpClientMetadataSettings | None = None
+    web_push: WebPushProps | None = None
     # Secrets whose rotation should roll the Deployment, beyond agentplane-mcp-oauth
     # (always reloaded).
     extra_reload_secrets: Sequence[str] = ()
     # Keys mounted from the agentplane-mcp-oauth Secret at /etc/agentplane-mcp.
     oauth_secret_items: Sequence[str] = ("client-secret",)
-    # None/False omits the corresponding env var, volume, and mount.
-    web_push_secret_name: str | None = None
+    # None omits the corresponding env var, volume, and mount.
     github_mcp_client_secret_name: str | None = None
     bearer_mcp_mounts: Sequence[BearerMcpMount] = ()
     # CiliumNetworkPolicy egress rules appended after the shared DNS/claude.ai/

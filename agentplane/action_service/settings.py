@@ -5,7 +5,7 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-from pydantic import BaseModel, ConfigDict, Field, field_serializer, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 from pydantic_settings import BaseSettings, PydanticBaseSettingsSource, SettingsConfigDict, YamlConfigSettingsSource
 
 from agentplane.action_service.catalog import ActionGroup, Key
@@ -24,14 +24,6 @@ DEFAULT_DIRECT_WAIT_SECONDS = 30.0
 CONFIG_FILE_ENV = "AGENTPLANE_ACTIONS_CONFIG_FILE"
 
 
-def _validate_shared_mcp_client_metadata(
-    mcp_servers: dict[Key, McpOAuthServer], client_metadata: McpClientMetadataSettings | None
-) -> None:
-    uses_shared_cimd = any(server.use_shared_cimd for server in mcp_servers.values())
-    if uses_shared_cimd != (client_metadata is not None):
-        raise ValueError("configure mcp_client_metadata exactly when an MCP server uses the shared CIMD")
-
-
 class GitHubVisibilitySettings(BaseModel):
     """The unauthenticated GitHub REST lookup behind `github_public_repository` policies."""
 
@@ -43,53 +35,6 @@ class GitHubVisibilitySettings(BaseModel):
         ge=0,
         description="How long one repository's confirmed visibility is reused before GitHub is asked again.",
     )
-
-
-class WebPushDeploymentSettings(BaseModel):
-    """The Web Push fields cdk8s writes; the private key comes from the mounted Secret."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    subject: str
-    public_base_url: str
-    allowed_push_hosts: list[str]
-
-
-class ActionServiceDeploymentSettings(BaseModel):
-    """The Action Service settings authored by cdk8s and written to its YAML file.
-
-    Runtime-only inputs such as the database URL and Web Push private key come from
-    environment variables; `settings_file` validates those supplied leaves against the
-    complete runtime `Settings` model.
-    """
-
-    model_config = ConfigDict(extra="forbid")
-
-    operator_oidc: OperatorOidcSettings
-    policy_namespace: str
-    caller_service_account_namespaces: frozenset[str]
-
-    @field_serializer("caller_service_account_namespaces", when_used="json")
-    def serialize_caller_service_account_namespaces(self, value: frozenset[str]) -> list[str]:
-        return sorted(value)
-
-    direct_wait_seconds: float = Field(
-        ge=0,
-        allow_inf_nan=False,
-        description="How long a direct tool call waits before returning its Action request ID.",
-    )
-    max_wait_seconds: float = Field(
-        ge=0, allow_inf_nan=False, description="Maximum caller-requested wait on an Action receipt or result."
-    )
-    web_push: WebPushDeploymentSettings | None = None
-    mcp_client_metadata: McpClientMetadataSettings | None = None
-    mcp_servers: dict[Key, McpOAuthServer] = Field(default_factory=dict)
-    action_groups: dict[Key, ActionGroup] = Field(default_factory=dict)
-
-    @model_validator(mode="after")
-    def validate_shared_mcp_client_metadata(self) -> ActionServiceDeploymentSettings:
-        _validate_shared_mcp_client_metadata(self.mcp_servers, self.mcp_client_metadata)
-        return self
 
 
 class Settings(BaseSettings):
@@ -114,14 +59,12 @@ class Settings(BaseSettings):
     token_audience: str = Field(min_length=1, description="Accepted projected-token audience of Sandbox callers.")
     reader_accounts: frozenset[ServiceAccountRef] = frozenset()
     policy_namespace: str = Field(
-        default="agentplane-staging",
         description="Kubernetes namespace whose ActionPolicySets and ActionPolicyBindings this service watches; "
-        "it writes Ready conditions only on those objects.",
+        "it writes Ready conditions only on those objects."
     )
     caller_service_account_namespaces: frozenset[str] = Field(
-        default=frozenset({"agentplane-staging"}),
         description="Kubernetes namespaces whose labeled ServiceAccounts may authenticate Action Service callers "
-        "and whose ServiceAccounts this service watches; it does not grant Action approval.",
+        "and whose ServiceAccounts this service watches; it does not grant Action approval."
     )
     direct_wait_seconds: float = Field(
         default=DEFAULT_DIRECT_WAIT_SECONDS,
@@ -150,7 +93,9 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def shared_mcp_client_metadata(self) -> Settings:
-        _validate_shared_mcp_client_metadata(self.mcp_servers, self.mcp_client_metadata)
+        uses_shared_cimd = any(server.use_shared_cimd for server in self.mcp_servers.values())
+        if uses_shared_cimd != (self.mcp_client_metadata is not None):
+            raise ValueError("configure mcp_client_metadata exactly when an MCP server uses the shared CIMD")
         return self
 
     @classmethod

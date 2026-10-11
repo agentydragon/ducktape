@@ -34,7 +34,6 @@ from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpe
 from agentplane.action_service.catalog import ActionGroup, McpExecutorBinding
 from agentplane.action_service.mcp_settings import McpOAuthServer
 from agentplane.action_service.operator_oidc_settings import OperatorOidcSettings, OperatorTokenProfile
-from agentplane.action_service.settings import ActionServiceDeploymentSettings
 from agentplane.app.action_federation_settings import DirectFederationSettings
 from agentplane.app.settings import ThreadReads
 from cluster.cdk8s import agent_access_profiles as access, cilium
@@ -92,52 +91,45 @@ _ACTION_FEDERATION = DirectFederationSettings(
     target=_FEDERATION_TARGET,
     scope="openid",
 )
-_ACTIONS_SETTINGS = ActionServiceDeploymentSettings(
-    operator_oidc=_FEDERATION_TARGET,
-    policy_namespace=TESTING_NAMESPACE,
-    caller_service_account_namespaces=frozenset({TESTING_NAMESPACE}),
-    direct_wait_seconds=30,
-    max_wait_seconds=180,
-    mcp_servers={
-        "example": McpOAuthServer(
-            server_id="example",
-            server_url=_OAUTH_FIXTURE_MCP_URL,
-            client_id="agentplane-testing-mcp",
-            client_secret_file=Path("/etc/agentplane-mcp/client-secret"),
-            redirect_uri=f"https://{_HOSTNAME}/mcp-linkage/callback",
-            scopes=["openid"],
-        )
-    },
-    action_groups={
-        "everything": ActionGroup(
-            title="Upstream Everything",
-            description="Credentialless MCP reference server for testing acceptance.",
-            executor=McpExecutorBinding(
-                kind="mcp",
-                description="Community-built Everything image; no user account, workload token, or mounted credentials.",
-                config={
-                    "transport": "streamable-http",
-                    "url": f"http://{MCP_EVERYTHING_NAME}.{TESTING_NAMESPACE}.svc.cluster.local:{MCP_EVERYTHING_PORT}/mcp",
-                    "auth": "none",
-                },
-            ),
+_MCP_SERVERS = {
+    "example": McpOAuthServer(
+        server_id="example",
+        server_url=_OAUTH_FIXTURE_MCP_URL,
+        client_id="agentplane-testing-mcp",
+        client_secret_file=Path("/etc/agentplane-mcp/client-secret"),
+        redirect_uri=f"https://{_HOSTNAME}/mcp-linkage/callback",
+        scopes=["openid"],
+    )
+}
+_ACTION_GROUPS = {
+    "everything": ActionGroup(
+        title="Upstream Everything",
+        description="Credentialless MCP reference server for testing acceptance.",
+        executor=McpExecutorBinding(
+            kind="mcp",
+            description="Community-built Everything image; no user account, workload token, or mounted credentials.",
+            config={
+                "transport": "streamable-http",
+                "url": f"http://{MCP_EVERYTHING_NAME}.{TESTING_NAMESPACE}.svc.cluster.local:{MCP_EVERYTHING_PORT}/mcp",
+                "auth": "none",
+            },
         ),
-        "example": ActionGroup(
-            title="OAuth Example",
-            description="Dex-backed OAuth-linked MCP fixture for testing acceptance of the linkage flow.",
-            executor=McpExecutorBinding(
-                kind="mcp",
-                description="MCP tool protected by Dex-issued JWTs; no real credentials.",
-                config={
-                    "transport": "streamable-http",
-                    "url": _OAUTH_FIXTURE_MCP_URL,
-                    "server_id": "example",
-                    "auth": "oauth",
-                },
-            ),
+    ),
+    "example": ActionGroup(
+        title="OAuth Example",
+        description="Dex-backed OAuth-linked MCP fixture for testing acceptance of the linkage flow.",
+        executor=McpExecutorBinding(
+            kind="mcp",
+            description="MCP tool protected by Dex-issued JWTs; no real credentials.",
+            config={
+                "transport": "streamable-http",
+                "url": _OAUTH_FIXTURE_MCP_URL,
+                "server_id": "example",
+                "auth": "oauth",
+            },
         ),
-    },
-)
+    ),
+}
 
 
 ENV = Environment(
@@ -174,7 +166,10 @@ ENV = Environment(
     app=AppProps(hostname=_HOSTNAME, oidc_issuer=_DEX_ISSUER, reach_incluster_authentik=False, runner_zone=None),
     actions=ActionsProps(
         hostname="agentplane-actions-testing.allegedly.works",
-        settings=_ACTIONS_SETTINGS,
+        operator_oidc=_FEDERATION_TARGET,
+        caller_service_account_namespaces=frozenset({TESTING_NAMESPACE}),
+        mcp_servers=_MCP_SERVERS,
+        action_groups=_ACTION_GROUPS,
         extra_egress=[
             # The direct federation verifier fetches Dex's JWKS over the public-origin Gateway path.
             cilium.egress_via_gateway(_DEX_HOSTNAME),

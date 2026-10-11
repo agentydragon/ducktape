@@ -26,7 +26,6 @@ from agentplane.action_service.mcp_settings import McpClientMetadataSettings, Mc
 from agentplane.action_service.operator_oidc_settings import OperatorOidcSettings
 from agentplane.action_service.sandbox.actions import SandboxAction
 from agentplane.action_service.sandbox.binding import SandboxExecutorBinding
-from agentplane.action_service.settings import ActionServiceDeploymentSettings, WebPushDeploymentSettings
 from agentplane.app.action_federation_settings import ExchangeFederationSettings
 from agentplane.app.settings import ThreadReads
 from cluster.cdk8s import agent_access_profiles, cilium, external_creds, ha_mcp, node_scheduling
@@ -52,6 +51,7 @@ from cluster.cdk8s.agentplane.environment import (
     GitHubAppProps,
     LlmIngressProps,
     ReplicaProfile,
+    WebPushProps,
 )
 from cluster.cdk8s.agentplane.grpc_channel_config import LARGE_EVENT_GRPC_CHANNEL_OPTIONS
 from cluster.cdk8s.agentplane.llm_ingress import model_configs
@@ -113,186 +113,166 @@ _ACTION_FEDERATION = ExchangeFederationSettings(
     target=_FEDERATION_TARGET,
     scope="openid",
 )
-_ACTIONS_SETTINGS = ActionServiceDeploymentSettings(
-    operator_oidc=_FEDERATION_TARGET,
-    policy_namespace=STAGING_NAMESPACE,
-    caller_service_account_namespaces=frozenset({STAGING_NAMESPACE, public_coder_egress.NAMESPACE}),
-    direct_wait_seconds=30,
-    max_wait_seconds=180,
-    web_push=WebPushDeploymentSettings(
-        subject="mailto:agentydragon@gmail.com",
-        public_base_url=f"https://{_HOSTNAME}",
-        allowed_push_hosts=list(_WEB_PUSH_ALLOWED_HOSTS),
+_MCP_SERVERS = {
+    "github": McpOAuthServer(
+        server_id="github",
+        server_url=_GITHUB_MCP_URL,
+        client_id="configured-by-secret",
+        client_secret_file=Path("/etc/agentplane-github/client_secret"),
+        redirect_uri=f"https://{_HOSTNAME}/mcp-linkage/callback",
     ),
-    mcp_client_metadata=McpClientMetadataSettings(
-        url=AnyHttpUrl(_MCP_CLIENT_METADATA_URL), client_name="Agentplane staging"
+    "kubernetes_admin": McpOAuthServer(
+        server_id="kubernetes_admin",
+        server_url=_KUBERNETES_MCP_URL,
+        client_id="kubectl-passthrough-mcp",
+        redirect_uri=f"https://{_HOSTNAME}/mcp-linkage/callback",
     ),
-    mcp_servers={
-        "github": McpOAuthServer(
-            server_id="github",
-            server_url=_GITHUB_MCP_URL,
-            client_id="configured-by-secret",
-            client_secret_file=Path("/etc/agentplane-github/client_secret"),
-            redirect_uri=f"https://{_HOSTNAME}/mcp-linkage/callback",
+    "grocy_sf": McpOAuthServer(
+        server_id="grocy_sf",
+        server_url=_GROCY_SF_MCP_URL,
+        use_shared_cimd=True,
+        redirect_uri=f"https://{_HOSTNAME}/mcp-linkage/callback",
+    ),
+}
+_ACTION_GROUPS = {
+    "github": ActionGroup(
+        title="GitHub MCP",
+        description="GitHub's operator-linked MCP tools; every Action remains subject to operator approval.",
+        executor=McpExecutorBinding(
+            kind="mcp",
+            description="GitHub MCP executed with the linked operator GitHub account.",
+            config={
+                "transport": "streamable-http",
+                "url": _GITHUB_MCP_URL,
+                "server_id": "github",
+                "auth": "oauth",
+                # Actions (get_job_logs, actions_get, actions_list, ...) is not in GitHub
+                # MCP's default toolset catalog. `_REPOSITORY_SCOPED_ACTIONS` in
+                # actions_staging_policies.py already expects these tools; without this
+                # header the server never advertises them. Ported from haku-console's
+                # now-removed GitHub MCP wiring (cluster/cdk8s/haku/console_config.py,
+                # dropped in #7773), which configured this the same way.
+                "headers": {"X-MCP-Toolsets": "default,actions"},
+            },
         ),
-        "kubernetes_admin": McpOAuthServer(
-            server_id="kubernetes_admin",
-            server_url=_KUBERNETES_MCP_URL,
-            client_id="kubectl-passthrough-mcp",
-            redirect_uri=f"https://{_HOSTNAME}/mcp-linkage/callback",
+    ),
+    "kubernetes_admin": ActionGroup(
+        title="Kubernetes admin",
+        description=(
+            "The Kubernetes API with the linked operator's own permissions. Use it only for what your own "
+            "Kubernetes identity cannot do; each call waits for the operator's approval."
         ),
-        "grocy_sf": McpOAuthServer(
-            server_id="grocy_sf",
-            server_url=_GROCY_SF_MCP_URL,
-            use_shared_cimd=True,
-            redirect_uri=f"https://{_HOSTNAME}/mcp-linkage/callback",
+        executor=McpExecutorBinding(
+            kind="mcp",
+            description="kubectl-passthrough-mcp, run as the linked operator's Kubernetes identity.",
+            config={
+                "transport": "streamable-http",
+                "url": _KUBERNETES_MCP_URL,
+                "server_id": "kubernetes_admin",
+                "auth": "oauth",
+            },
         ),
-    },
-    action_groups={
-        "github": ActionGroup(
-            title="GitHub MCP",
-            description="GitHub's operator-linked MCP tools; every Action remains subject to operator approval.",
-            executor=McpExecutorBinding(
-                kind="mcp",
-                description="GitHub MCP executed with the linked operator GitHub account.",
-                config={
-                    "transport": "streamable-http",
-                    "url": _GITHUB_MCP_URL,
-                    "server_id": "github",
-                    "auth": "oauth",
-                    # Actions (get_job_logs, actions_get, actions_list, ...) is not in GitHub
-                    # MCP's default toolset catalog. `_REPOSITORY_SCOPED_ACTIONS` in
-                    # actions_staging_policies.py already expects these tools; without this
-                    # header the server never advertises them. Ported from haku-console's
-                    # now-removed GitHub MCP wiring (cluster/cdk8s/haku/console_config.py,
-                    # dropped in #7773), which configured this the same way.
-                    "headers": {"X-MCP-Toolsets": "default,actions"},
-                },
-            ),
+    ),
+    "grocy_sf": ActionGroup(
+        title="Grocy SF MCP",
+        description="Grocy SF household MCP tools; every Action remains subject to operator approval.",
+        executor=McpExecutorBinding(
+            kind="mcp",
+            description="Grocy SF MCP executed with the linked operator Grocy account.",
+            config={"transport": "streamable-http", "url": _GROCY_SF_MCP_URL, "server_id": "grocy_sf", "auth": "oauth"},
         ),
-        "kubernetes_admin": ActionGroup(
-            title="Kubernetes admin",
-            description=(
-                "The Kubernetes API with the linked operator's own permissions. Use it only for what your own "
-                "Kubernetes identity cannot do; each call waits for the operator's approval."
-            ),
-            executor=McpExecutorBinding(
-                kind="mcp",
-                description="kubectl-passthrough-mcp, run as the linked operator's Kubernetes identity.",
-                config={
-                    "transport": "streamable-http",
-                    "url": _KUBERNETES_MCP_URL,
-                    "server_id": "kubernetes_admin",
-                    "auth": "oauth",
-                },
-            ),
+    ),
+    "sandbox": ActionGroup(
+        title="Sandbox",
+        description=(
+            "Sandboxes that run as the calling ServiceAccount, and bounded commands in them. A "
+            "sandbox reaches what its caller's EgressBindings allow and is admitted back to this "
+            "service as that same caller, so it confers no authority the caller did not hold."
         ),
-        "grocy_sf": ActionGroup(
-            title="Grocy SF MCP",
-            description="Grocy SF household MCP tools; every Action remains subject to operator approval.",
-            executor=McpExecutorBinding(
-                kind="mcp",
-                description="Grocy SF MCP executed with the linked operator Grocy account.",
-                config={
-                    "transport": "streamable-http",
-                    "url": _GROCY_SF_MCP_URL,
-                    "server_id": "grocy_sf",
-                    "auth": "oauth",
-                },
-            ),
+        executor=SandboxExecutorBinding(
+            kind="sandbox",
+            description="Stamped and exec'd by this service, as the caller, in its own namespace.",
+            namespace=STAGING_NAMESPACE,
+            # Each describes itself in the annotation the sandbox Actions read. The integration app's
+            # runner template is offered for a caller that wants the harnesses or a state volume
+            # that survives its Pod.
+            templates={command_sandbox.NAME, command_sandbox.BUILD_NAME, "runner", "runner-ducktape"},
         ),
-        "sandbox": ActionGroup(
-            title="Sandbox",
-            description=(
-                "Sandboxes that run as the calling ServiceAccount, and bounded commands in them. A "
-                "sandbox reaches what its caller's EgressBindings allow and is admitted back to this "
-                "service as that same caller, so it confers no authority the caller did not hold."
-            ),
-            executor=SandboxExecutorBinding(
-                kind="sandbox",
-                description="Stamped and exec'd by this service, as the caller, in its own namespace.",
-                namespace=STAGING_NAMESPACE,
-                # Each describes itself in the annotation the sandbox Actions read. The integration app's
-                # runner template is offered for a caller that wants the harnesses or a state volume
-                # that survives its Pod.
-                templates={command_sandbox.NAME, command_sandbox.BUILD_NAME, "runner", "runner-ducktape"},
-            ),
-            # claude.ai and Claude Code reach these as MCP tools of their own, where `sandbox-self`
-            # auto-approves them for the Connection's claude-ai account.
-            direct_tools=frozenset(SandboxAction),
+        # claude.ai and Claude Code reach these as MCP tools of their own, where `sandbox-self`
+        # auto-approves them for the Connection's claude-ai account.
+        direct_tools=frozenset(SandboxAction),
+    ),
+    "ssh": ActionGroup(
+        title="SSH",
+        description="SSH commands on configured targets; every Action remains subject to operator approval.",
+        executor=McpExecutorBinding(
+            kind="mcp",
+            description="SSH MCP backend (ssh-mcp); Agentplane retains approval and execution authority.",
+            config={
+                "transport": "streamable-http",
+                "url": MCP_URL,
+                "auth": "static_bearer",
+                "bearer_file": "/run/secrets/ssh-mcp/bearer-token",
+            },
         ),
-        "ssh": ActionGroup(
-            title="SSH",
-            description="SSH commands on configured targets; every Action remains subject to operator approval.",
-            executor=McpExecutorBinding(
-                kind="mcp",
-                description="SSH MCP backend (ssh-mcp); Agentplane retains approval and execution authority.",
-                config={
-                    "transport": "streamable-http",
-                    "url": MCP_URL,
-                    "auth": "static_bearer",
-                    "bearer_file": "/run/secrets/ssh-mcp/bearer-token",
-                },
-            ),
+    ),
+    "home_assistant": ActionGroup(
+        title="Home Assistant MCP",
+        description="Home Assistant tools; every Action remains subject to operator approval.",
+        executor=McpExecutorBinding(
+            kind="mcp",
+            description="Home Assistant MCP backend (ha-mcp).",
+            config={
+                "transport": "streamable-http",
+                "url": _HOME_ASSISTANT_MCP_URL,
+                "auth": "static_bearer",
+                "bearer_file": "/run/secrets/ha-mcp/bearer-token",
+            },
         ),
-        "home_assistant": ActionGroup(
-            title="Home Assistant MCP",
-            description="Home Assistant tools; every Action remains subject to operator approval.",
-            executor=McpExecutorBinding(
-                kind="mcp",
-                description="Home Assistant MCP backend (ha-mcp).",
-                config={
-                    "transport": "streamable-http",
-                    "url": _HOME_ASSISTANT_MCP_URL,
-                    "auth": "static_bearer",
-                    "bearer_file": "/run/secrets/ha-mcp/bearer-token",
-                },
-            ),
+    ),
+    "tana": ActionGroup(
+        title="Tana MCP",
+        description="Tana read/write tools; every Action remains subject to operator approval.",
+        executor=McpExecutorBinding(
+            kind="mcp",
+            description="Tana MCP backend (tana-mcp).",
+            config={
+                "transport": "streamable-http",
+                "url": _TANA_MCP_URL,
+                "auth": "static_bearer",
+                "bearer_file": "/run/secrets/tana-mcp/bearer-token",
+            },
         ),
-        "tana": ActionGroup(
-            title="Tana MCP",
-            description="Tana read/write tools; every Action remains subject to operator approval.",
-            executor=McpExecutorBinding(
-                kind="mcp",
-                description="Tana MCP backend (tana-mcp).",
-                config={
-                    "transport": "streamable-http",
-                    "url": _TANA_MCP_URL,
-                    "auth": "static_bearer",
-                    "bearer_file": "/run/secrets/tana-mcp/bearer-token",
-                },
-            ),
+    ),
+    "gmail": ActionGroup(
+        title="Gmail",
+        description="Gmail read/write tools; every Action remains subject to operator approval.",
+        executor=McpExecutorBinding(
+            kind="mcp",
+            description="Gmail MCP backend (google-mcp), on a write-scoped Google credential.",
+            config={
+                "transport": "streamable-http",
+                "url": _GMAIL_MCP_URL,
+                "auth": "static_bearer",
+                "bearer_file": "/run/secrets/google-mcp/bearer-token",
+            },
         ),
-        "gmail": ActionGroup(
-            title="Gmail",
-            description="Gmail read/write tools; every Action remains subject to operator approval.",
-            executor=McpExecutorBinding(
-                kind="mcp",
-                description="Gmail MCP backend (google-mcp), on a write-scoped Google credential.",
-                config={
-                    "transport": "streamable-http",
-                    "url": _GMAIL_MCP_URL,
-                    "auth": "static_bearer",
-                    "bearer_file": "/run/secrets/google-mcp/bearer-token",
-                },
-            ),
+    ),
+    "google_calendar": ActionGroup(
+        title="Google Calendar",
+        description="Google Calendar read/write tools; every Action remains subject to operator approval.",
+        executor=McpExecutorBinding(
+            kind="mcp",
+            description="Google Calendar MCP backend (google-mcp), on a write-scoped Google credential.",
+            config={
+                "transport": "streamable-http",
+                "url": _CALENDAR_MCP_URL,
+                "auth": "static_bearer",
+                "bearer_file": "/run/secrets/google-mcp/bearer-token",
+            },
         ),
-        "google_calendar": ActionGroup(
-            title="Google Calendar",
-            description="Google Calendar read/write tools; every Action remains subject to operator approval.",
-            executor=McpExecutorBinding(
-                kind="mcp",
-                description="Google Calendar MCP backend (google-mcp), on a write-scoped Google credential.",
-                config={
-                    "transport": "streamable-http",
-                    "url": _CALENDAR_MCP_URL,
-                    "auth": "static_bearer",
-                    "bearer_file": "/run/secrets/google-mcp/bearer-token",
-                },
-            ),
-        ),
-    },
-)
+    ),
+}
 
 ENV = Environment(
     namespace=STAGING_NAMESPACE,
@@ -347,7 +327,19 @@ ENV = Environment(
     ),
     actions=ActionsProps(
         hostname=_ACTIONS_HOSTNAME,
-        settings=_ACTIONS_SETTINGS,
+        operator_oidc=_FEDERATION_TARGET,
+        caller_service_account_namespaces=frozenset({STAGING_NAMESPACE, public_coder_egress.NAMESPACE}),
+        mcp_servers=_MCP_SERVERS,
+        action_groups=_ACTION_GROUPS,
+        mcp_client_metadata=McpClientMetadataSettings(
+            url=AnyHttpUrl(_MCP_CLIENT_METADATA_URL), client_name="Agentplane staging"
+        ),
+        web_push=WebPushProps(
+            subject="mailto:agentydragon@gmail.com",
+            public_base_url=f"https://{_HOSTNAME}",
+            allowed_push_hosts=_WEB_PUSH_ALLOWED_HOSTS,
+            secret_name=_WEB_PUSH_SECRET,
+        ),
         extra_reload_secrets=(
             _GITHUB_MCP_CLIENT_SECRET,
             _WEB_PUSH_SECRET,
@@ -358,7 +350,6 @@ ENV = Environment(
         ),
         # The full OAuth linkage triad; testing mounts only the one MCP client's secret.
         oauth_secret_items=("client-secret", "jwt-signing-key", "encryption-key"),
-        web_push_secret_name=_WEB_PUSH_SECRET,
         github_mcp_client_secret_name=_GITHUB_MCP_CLIENT_SECRET,
         bearer_mcp_mounts=[
             BearerMcpMount(name="ssh-mcp", secret_name=_SSH_MCP_BEARER_SECRET, secret_key=BEARER_SECRET_KEY),

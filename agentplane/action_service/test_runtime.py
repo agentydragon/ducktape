@@ -58,9 +58,10 @@ from agentplane.testing.fake_apiserver import fake_apiserver
 from agentplane.workload_auth.principal import WorkloadPrincipalResolver
 from util.bazel.runfiles import get_required_path
 
-CALLER = CallerPrincipal(account=ServiceAccountRef(namespace="agentplane-test", name="fixture-caller"))
 OPERATOR = OperatorPrincipal(issuer="test", subject="operator")
 TOKEN_AUDIENCE = "action-service-test-audience"
+NAMESPACE = "agentplane-test"
+CALLER = CallerPrincipal(account=ServiceAccountRef(namespace=NAMESPACE, name="fixture-caller"))
 
 
 def _group(config: dict[str, JsonValue]) -> ActionGroup:
@@ -76,7 +77,13 @@ def _request(action: ActionIdentity) -> ExecutionRequest:
 
 
 async def test_empty_catalog_has_no_echo_fallback(engine: AsyncEngine) -> None:
-    settings = Settings(database_url="postgresql://unused", token_audience=TOKEN_AUDIENCE, _cli_parse_args=False)
+    settings = Settings(
+        database_url="postgresql://unused",
+        token_audience=TOKEN_AUDIENCE,
+        policy_namespace=NAMESPACE,
+        caller_service_account_namespaces={NAMESPACE},
+        _cli_parse_args=False,
+    )
     catalog = ActionCatalog(groups=settings.action_groups)
     async with running_executor(catalog) as executors:
         assert executors == {}
@@ -139,6 +146,8 @@ def test_unsupported_executor_kind_is_rejected_by_settings(kind: str) -> None:
             {
                 "database_url": "postgresql+asyncpg://test.invalid/test",
                 "token_audience": TOKEN_AUDIENCE,
+                "policy_namespace": NAMESPACE,
+                "caller_service_account_namespaces": [NAMESPACE],
                 "action_groups": {
                     "invalid": {
                         "title": "Unsupported backend",
@@ -155,7 +164,13 @@ def test_explicit_config_file_must_exist(tmp_path: Path, monkeypatch: pytest.Mon
     path = tmp_path / "settings.yaml" if path_kind == "missing" else tmp_path
     monkeypatch.setenv("AGENTPLANE_ACTIONS_CONFIG_FILE", str(path))
     with pytest.raises(ValueError, match="configured Action Service settings file"):
-        Settings(database_url="postgresql://unused", token_audience=TOKEN_AUDIENCE, _cli_parse_args=False)
+        Settings(
+            database_url="postgresql://unused",
+            token_audience=TOKEN_AUDIENCE,
+            policy_namespace=NAMESPACE,
+            caller_service_account_namespaces={NAMESPACE},
+            _cli_parse_args=False,
+        )
 
 
 def test_config_file_loads_reviewed_group_and_rejects_malformed_binding(
@@ -178,7 +193,13 @@ def test_config_file_loads_reviewed_group_and_rejects_malformed_binding(
     """)
     )
     monkeypatch.setenv("AGENTPLANE_ACTIONS_CONFIG_FILE", str(path))
-    settings = Settings(database_url="postgresql://unused", token_audience=TOKEN_AUDIENCE, _cli_parse_args=False)
+    settings = Settings(
+        database_url="postgresql://unused",
+        token_audience=TOKEN_AUDIENCE,
+        policy_namespace=NAMESPACE,
+        caller_service_account_namespaces={NAMESPACE},
+        _cli_parse_args=False,
+    )
     executor = settings.action_groups["remote"].executor
     assert isinstance(executor, McpExecutorBinding)
     assert executor.config == {"transport": "streamable-http", "url": "http://test-peer.invalid/mcp", "auth": "none"}
@@ -188,7 +209,13 @@ def test_config_file_loads_reviewed_group_and_rejects_malformed_binding(
         .replace("http://test-peer.invalid/mcp", "http://test-peer.invalid/mcp?token=test-only-private")
     )
     with pytest.raises(ValidationError) as error:
-        Settings(database_url="postgresql://unused", token_audience=TOKEN_AUDIENCE, _cli_parse_args=False)
+        Settings(
+            database_url="postgresql://unused",
+            token_audience=TOKEN_AUDIENCE,
+            policy_namespace=NAMESPACE,
+            caller_service_account_namespaces={NAMESPACE},
+            _cli_parse_args=False,
+        )
     assert "test-only-private" not in str(error.value)
 
 
@@ -282,7 +309,12 @@ async def test_main_serves_real_stdio_execution_and_closes_in_order(db_url: str,
         }
     )
     settings = Settings(
-        database_url=db_url, action_groups={"demo": group}, token_audience=TOKEN_AUDIENCE, _cli_parse_args=False
+        database_url=db_url,
+        action_groups={"demo": group},
+        token_audience=TOKEN_AUDIENCE,
+        policy_namespace=NAMESPACE,
+        caller_service_account_namespaces={NAMESPACE},
+        _cli_parse_args=False,
     )
     events: list[str] = []
     service_close = ActionService.close
@@ -377,7 +409,13 @@ async def test_main_failure_disposes_engine_after_owned_resources(failure: str) 
         raise RuntimeError("serve failed")
 
     engine.dispose = AsyncMock(side_effect=dispose)
-    settings = Settings(database_url="postgresql://unused", token_audience=TOKEN_AUDIENCE, _cli_parse_args=False)
+    settings = Settings(
+        database_url="postgresql://unused",
+        token_audience=TOKEN_AUDIENCE,
+        policy_namespace=NAMESPACE,
+        caller_service_account_namespaces={NAMESPACE},
+        _cli_parse_args=False,
+    )
     with (
         patch("agentplane.action_service.main.make_engine", return_value=engine),
         patch("agentplane.action_service.main.verify_schema", verify),
@@ -547,7 +585,12 @@ async def test_http_serves_before_optional_backend_connects(db_url: str, tmp_pat
         }
     )
     settings = Settings(
-        database_url=db_url, action_groups={"offline": group}, token_audience=TOKEN_AUDIENCE, _cli_parse_args=False
+        database_url=db_url,
+        action_groups={"offline": group},
+        token_audience=TOKEN_AUDIENCE,
+        policy_namespace=NAMESPACE,
+        caller_service_account_namespaces={NAMESPACE},
+        _cli_parse_args=False,
     )
 
     async def serve(server: uvicorn.Server) -> None:

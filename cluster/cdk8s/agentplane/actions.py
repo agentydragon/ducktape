@@ -6,6 +6,7 @@ objects (staging's policy sets, testing's MCP fixtures) come from `Environment.e
 from __future__ import annotations
 
 import json
+from typing import Any
 
 from cdk8s import ApiObjectMetadata, Duration, Size
 from cdk8s_plus_34 import (
@@ -90,16 +91,38 @@ class Actions(Construct):
 
         service_account = self._add_service_account()
         self._add_rbac(service_account)
-        # These leaves come from the container's environment variables and arguments, not the settings file.
-        supplied: list[tuple[str, ...]] = [("database_url",), ("token_audience",)]
-        if env.actions.web_push_secret_name is not None:
+        props = env.actions
+        content: dict[str, Any] = {
+            "token_audience": WORKLOAD_TOKEN_AUDIENCE,
+            "operator_oidc": props.operator_oidc.model_dump(mode="json", exclude_unset=True),
+            "policy_namespace": env.namespace,
+            "caller_service_account_namespaces": sorted(props.caller_service_account_namespaces),
+            "direct_wait_seconds": 30,
+            "max_wait_seconds": 180,
+        }
+        # These leaves come from the container's environment variables, not the settings file.
+        supplied: list[tuple[str, ...]] = [("database_url",)]
+        if props.web_push is not None:
+            content["web_push"] = {
+                "subject": props.web_push.subject,
+                "public_base_url": props.web_push.public_base_url,
+                "allowed_push_hosts": list(props.web_push.allowed_push_hosts),
+            }
             supplied.append(("web_push", "private_key_pem"))
+        if props.mcp_client_metadata is not None:
+            content["mcp_client_metadata"] = props.mcp_client_metadata.model_dump(mode="json", exclude_unset=True)
+        content["mcp_servers"] = {
+            key: server.model_dump(mode="json", exclude_unset=True) for key, server in props.mcp_servers.items()
+        }
+        content["action_groups"] = {
+            key: group.model_dump(mode="json", exclude_unset=True) for key, group in props.action_groups.items()
+        }
         settings = SettingsFile(
             self,
             "settings",
             metadata=ApiObjectMetadata(name="agentplane-actions-settings", namespace=env.namespace),
             model=Settings,
-            content=env.actions.settings.model_dump(mode="json", exclude_unset=True),
+            content=content,
             path="/etc/agentplane-actions/settings.yaml",
             supplied=supplied,
         )
@@ -135,9 +158,8 @@ class Actions(Construct):
         # The runtime policy and caller watch scopes are independent. Keep the policy
         # CR permissions in the policy namespace, and grant only ServiceAccount reads in
         # caller namespaces. No Secrets or serviceaccounts/token permissions are needed.
-        policy_namespace = self.env.actions.settings.policy_namespace
         rules_by_namespace: dict[str, list[RolePolicyRule]] = {
-            policy_namespace: [
+            namespace: [
                 RolePolicyRule(
                     resources=[
                         custom_resource("agentplane.allegedly.works", resource)
@@ -154,7 +176,7 @@ class Actions(Construct):
                 ),
             ]
         }
-        for caller_namespace in self.env.actions.settings.caller_service_account_namespaces:
+        for caller_namespace in self.env.actions.caller_service_account_namespaces:
             rules_by_namespace.setdefault(caller_namespace, []).append(
                 RolePolicyRule(resources=[custom_resource("", "serviceaccounts")], verbs=["get", "list", "watch"])
             )
@@ -221,9 +243,9 @@ class Actions(Construct):
         env[env_name(Settings, "reader_accounts")] = EnvValue.from_value(
             json.dumps([ServiceAccountRef(namespace=namespace, name=notifications.NAME).model_dump()])
         )
-        if self.env.actions.web_push_secret_name is not None:
+        if self.env.actions.web_push is not None:
             env[env_name(Settings, "web_push", "private_key_pem")] = (
-                SecretRef(namespace=namespace, name=self.env.actions.web_push_secret_name)
+                SecretRef(namespace=namespace, name=self.env.actions.web_push.secret_name)
                 .key("private-key-pem")
                 .env_value(self, "web-push-secret")
             )
@@ -275,7 +297,7 @@ class Actions(Construct):
             name="actions",
             image=f"{_ACTIONS_IMAGE}:{_PLACEHOLDER_TAG}",
             image_pull_policy=ImagePullPolicy.ALWAYS,
-            args=cli_args(Settings, host="0.0.0.0", port=self.service.pod_port, token_audience=WORKLOAD_TOKEN_AUDIENCE),
+            args=cli_args(Settings, host="0.0.0.0", port=self.service.pod_port),
             env_variables=env,
             ports=[self.service.port.container_port()],
             readiness=http_probe(
@@ -344,7 +366,7 @@ class Actions(Construct):
         # The Actions service owns OAuth and bearer verification; no browser forward-auth
         # hop. Keep REST/operator endpoints off this public origin.
         client_metadata_paths = []
-        client_metadata = self.env.actions.settings.mcp_client_metadata
+        client_metadata = self.env.actions.mcp_client_metadata
         if client_metadata is not None:
             metadata_url = client_metadata.url
             if metadata_url.host != self.env.actions.hostname or metadata_url.port != 443:

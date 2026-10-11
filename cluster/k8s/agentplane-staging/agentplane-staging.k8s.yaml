@@ -6180,6 +6180,7 @@ metadata:
   namespace: agentplane-staging
 data:
   settings.yaml: |
+    token_audience: agentplane-egress
     operator_oidc:
       issuer: https://auth.allegedly.works/application/o/agentplane-staging-actions/
       audience: agentplane-staging-actions
@@ -6362,7 +6363,6 @@ spec:
         - args:
             - --host=0.0.0.0
             - --port=8080
-            - --token-audience=agentplane-egress
           env:
             - name: AGENTPLANE_ACTIONS_DB_USER
               valueFrom:

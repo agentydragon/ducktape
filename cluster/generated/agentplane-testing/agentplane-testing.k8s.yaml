@@ -4496,6 +4496,7 @@ metadata:
   namespace: agentplane-testing
 data:
   settings.yaml: |
+    token_audience: agentplane-egress
     operator_oidc:
       issuer: https://agentplane-dex-testing.allegedly.works/dex
       audience: agentplane-testing
@@ -4570,7 +4571,6 @@ spec:
         - args:
             - --host=0.0.0.0
             - --port=8080
-            - --token-audience=agentplane-egress
           env:
             - name: AGENTPLANE_ACTIONS_DB_USER
               valueFrom:
