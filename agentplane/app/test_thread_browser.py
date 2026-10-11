@@ -60,6 +60,8 @@ from agentplane.history_service.fold.views import ThreadFeedErrorState, ThreadOp
 from agentplane.history_service.summary_changes import notify_summaries
 from agentplane.history_service.testing.history import History
 from agentplane.proto import command_pb2, event_log_pb2, event_pb2
+from agentplane.runner_gateway.session_registry import SessionRegistry
+from agentplane.sandbox_service.client import SandboxServiceClient
 from util.bazel.runfiles import get_required_path
 from util.testing.undeclared_outputs import undeclared_outputs_dir
 from util.testing.viewports import DESKTOP, MOBILE, SMALL_MOBILE, Viewport
@@ -82,6 +84,11 @@ async def service_history_db_url(electric: ElectricService) -> str:
     return electric.database_url
 
 
+@pytest.fixture
+def inventory(gateway_client: SandboxServiceClient) -> SandboxServiceClient:
+    return gateway_client
+
+
 async def test_archived_thread_page_survives_deleted_sandbox_and_reload(
     page: Page,
     db_url: str,
@@ -91,6 +98,7 @@ async def test_archived_thread_page_survives_deleted_sandbox_and_reload(
     thread_source: ReplicationSource,
     electric: ElectricService,
     certificate: BrowserCertificate,
+    gateway_port: int,
 ) -> None:
     thread_id = await event_logs.open(SANDBOX, SESSION)
     await history.set_attached(thread_id, thread_source.attached)
@@ -100,7 +108,7 @@ async def test_archived_thread_page_survives_deleted_sandbox_and_reload(
     async with (
         app_process(
             db_url,
-            runner_port=int(event_logs.reader.target.rsplit(":", 1)[1]),
+            runner_port=gateway_port,
             history=event_logs.reader,
             frontend_directory=directory,
             sandbox_present=False,
@@ -141,7 +149,7 @@ async def _seed_navigation_threads(
     threads: list[UUID] = []
     sources: list[ReplicationSource] = []
     for number in range(2):
-        source = ReplicationSource()
+        source = ReplicationSource(SessionRegistry(history.engine))
         source.attached.session_id = f"test-navigation-session-{number}"
         source.append(event_pb2.Event(harness_started=event_pb2.HarnessStarted(pid=123)))
         source.append(event_pb2.Event(turn_started=event_pb2.TurnStarted(turn_id="test-navigation-turn")))
@@ -174,13 +182,14 @@ async def test_switching_threads_starts_at_each_threads_tail(
     history: History,
     electric: ElectricService,
     certificate: BrowserCertificate,
+    gateway_port: int,
 ) -> None:
     threads, _ = await _seed_navigation_threads(event_logs, history, store)
     directory = get_required_path("_main/agentplane/app/frontend/dist/index.html").parent
     async with (
         app_process(
             db_url,
-            runner_port=int(event_logs.reader.target.rsplit(":", 1)[1]),
+            runner_port=gateway_port,
             history=event_logs.reader,
             frontend_directory=directory,
             sandbox_present=False,
@@ -217,6 +226,7 @@ async def test_returning_to_a_thread_lays_its_rows_out_at_the_heights_they_had(
     history: History,
     electric: ElectricService,
     certificate: BrowserCertificate,
+    gateway_port: int,
 ) -> None:
     """The history lays an unmeasured row out at a flat guess; one it has read before, at the height
     it read. Rows read on a thread's first visit are laid out at those heights on the return."""
@@ -225,7 +235,7 @@ async def test_returning_to_a_thread_lays_its_rows_out_at_the_heights_they_had(
     async with (
         app_process(
             db_url,
-            runner_port=int(event_logs.reader.target.rsplit(":", 1)[1]),
+            runner_port=gateway_port,
             history=event_logs.reader,
             frontend_directory=directory,
             sandbox_present=False,
@@ -277,13 +287,14 @@ async def test_returning_to_a_thread_reads_only_what_changed_while_the_reader_wa
     history: History,
     electric: ElectricService,
     certificate: BrowserCertificate,
+    gateway_port: int,
 ) -> None:
     threads, sources = await _seed_navigation_threads(event_logs, history, store)
     directory = get_required_path("_main/agentplane/app/frontend/dist/index.html").parent
     async with (
         app_process(
             db_url,
-            runner_port=int(event_logs.reader.target.rsplit(":", 1)[1]),
+            runner_port=gateway_port,
             history=event_logs.reader,
             frontend_directory=directory,
             sandbox_present=False,
@@ -472,7 +483,7 @@ async def test_projected_browser_streams_runner_events_and_loads_evidence_lazily
     history_client: HistoryServiceClient,
     electric: ElectricService,
 ) -> None:
-    source = ReplicationSource()
+    source = ReplicationSource(SessionRegistry(history.engine))
     source.attached.active_turn_id = "test-projected-turn"
     source.append(event_pb2.Event(harness_started=event_pb2.HarnessStarted(pid=123)))
     source.append(event_pb2.Event(turn_started=event_pb2.TurnStarted(turn_id="test-projected-turn")))

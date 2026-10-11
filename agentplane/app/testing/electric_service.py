@@ -15,6 +15,7 @@ from testcontainers.core.network import Network
 # SQLAlchemy loads the driver selected by the URL scheme at runtime.
 # gazelle:include_dep @pypi//psycopg
 from agentplane.history_service.testing.history import migrate, migrated_template
+from agentplane.runner_gateway.commands import db as commands_db
 from agentplane.testing.electric_role import ensure_electric_role
 from third_party.containers import electric_1_8_1, postgres_18, ryuk
 from util.db_url import render_postgresql_url
@@ -62,6 +63,16 @@ class BrowserPostgres:
             engine.dispose()
 
 
+def add_gateway_tables(database_url: str) -> None:
+    """The Runner Gateway's tables beside the history schema, as one service database holds both in the
+    app's other tests: the fake gateway answers where Sessions run from its registry."""
+    engine = create_engine(render_postgresql_url(database_url, "postgresql+psycopg"))
+    try:
+        commands_db.Base.metadata.create_all(engine)
+    finally:
+        engine.dispose()
+
+
 @contextmanager
 def browser_postgres_server() -> Iterator[BrowserPostgres]:
     """Start one logical-WAL PostgreSQL server and migrate its clone template once per shard."""
@@ -74,6 +85,7 @@ def browser_postgres_server() -> Iterator[BrowserPostgres]:
             ensure_electric_role(admin_url, ready_timeout_s=60)
 
             with migrated_template(admin_url, "agentplane_browser_history_template") as template:
+                add_gateway_tables(template.url)
                 yield BrowserPostgres(network, admin_url, template)
 
 
@@ -222,6 +234,7 @@ async def electric_service(
             await asyncio.to_thread(ensure_electric_role, admin_url, ready_timeout_s=60)
             database_url = render_postgresql_url(admin_url, "postgresql+asyncpg")
             await asyncio.to_thread(migrate, database_url)
+            await asyncio.to_thread(add_gateway_tables, database_url)
             async with _electric_process(
                 network,
                 database_url,

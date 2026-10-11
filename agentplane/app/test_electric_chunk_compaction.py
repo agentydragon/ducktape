@@ -52,6 +52,7 @@ from agentplane.history_service.fold.views import ThreadPayloadReference
 from agentplane.history_service.testing.backend import history_service
 from agentplane.history_service.testing.history import History
 from agentplane.proto import event_pb2
+from agentplane.runner_gateway.session_registry import SessionRegistry
 
 # gazelle:include_dep @pypi//protobuf
 
@@ -170,7 +171,7 @@ async def _followed_body(engine: AsyncEngine, token_file: Path) -> AsyncIterator
             event_logs = EventLogStore(
                 engine, history=history, history_reader=history_client, summaries=Summaries(engine, history_client)
             )
-            source = ReplicationSource()
+            source = ReplicationSource(SessionRegistry(history.engine))
             thread = await event_logs.open(SANDBOX, SESSION)
             await history.set_attached(thread, source.attached)
             started = (

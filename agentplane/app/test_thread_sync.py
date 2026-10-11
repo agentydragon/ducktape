@@ -20,6 +20,7 @@ from agentplane.history_service.client import HistoryServiceClient
 from agentplane.history_service.testing.backend import history_service
 from agentplane.history_service.testing.history import History
 from agentplane.proto import command_pb2, event_pb2
+from agentplane.runner_gateway.session_registry import SessionRegistry
 
 # gazelle:include_dep @pypi//protobuf
 
@@ -34,7 +35,7 @@ async def test_materialized_revisions_replicate_with_restricted_role(
         history = History(service.database_url)
         event_logs = EventLogStore(engine, history=history, history_reader=reader, summaries=Summaries(engine, reader))
         try:
-            source = ReplicationSource()
+            source = ReplicationSource(SessionRegistry(history.engine))
             source.append(event_pb2.Event(harness_started=event_pb2.HarnessStarted(pid=123)))
             source.append(event_pb2.Event(turn_started=event_pb2.TurnStarted(turn_id="turn", model="test-model")))
             source.append(

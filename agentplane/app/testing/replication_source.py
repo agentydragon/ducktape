@@ -9,7 +9,7 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from typing import override
-from uuid import NAMESPACE_URL, uuid5
+from uuid import NAMESPACE_URL, UUID, uuid5
 
 import grpc
 
@@ -23,6 +23,7 @@ from agentplane.proto import (
     runner_pb2,
     sandbox_service_pb2,
 )
+from agentplane.runner_gateway.session_registry import SessionRegistry
 
 # gazelle:include_dep @pypi//protobuf
 
@@ -37,9 +38,10 @@ class Opened:
 
 
 class ReplicationSource:
-    """One runner's Session; `gateway` admits its commands."""
+    """One runner's Session; `gateway` admits its commands and answers where Sessions run from `sessions`."""
 
-    def __init__(self) -> None:
+    def __init__(self, sessions: SessionRegistry) -> None:
+        self.sessions = sessions
         self.session_id = uuid5(NAMESPACE_URL, SANDBOX + "/" + SESSION)
         self.entries: list[event_log_pb2.EventEntry] = []
         self.attached = runner_pb2.Attached(
@@ -126,26 +128,24 @@ class Gateway(runner_gateway_pb2_grpc.RunnerGatewayServicer):
         self._admissions[command.command_id] = entry
         return entry
 
-    def _placement(self) -> runner_gateway_pb2.SessionSandbox:
-        return runner_gateway_pb2.SessionSandbox(session_id=str(self.source.session_id), sandbox=SANDBOX)
-
     @override
     async def BatchGetSessionSandboxes(
         self, request: runner_gateway_pb2.BatchGetSessionSandboxesRequest, context: grpc.aio.ServicerContext
     ) -> runner_gateway_pb2.SessionSandboxes:
-        placement = self._placement()
-        return runner_gateway_pb2.SessionSandboxes(
-            sessions=[placement] if placement.session_id in request.session_ids else []
-        )
+        found = await self.source.sessions.sandboxes({UUID(session_id) for session_id in request.session_ids})
+        return runner_gateway_pb2.SessionSandboxes(sessions=found)
 
     @override
     async def FindSessions(
         self, request: runner_gateway_pb2.FindSessionsRequest, context: grpc.aio.ServicerContext
     ) -> runner_gateway_pb2.SessionSandboxes:
-        matched = request.sandbox_name == SANDBOX or (
-            request.HasField("sandbox_name_contains") and request.sandbox_name_contains.lower() in SANDBOX
+        if request.HasField("sandbox_name"):
+            return runner_gateway_pb2.SessionSandboxes(
+                sessions=await self.source.sessions.find(sandbox_name=request.sandbox_name)
+            )
+        return runner_gateway_pb2.SessionSandboxes(
+            sessions=await self.source.sessions.find(sandbox_name_contains=request.sandbox_name_contains)
         )
-        return runner_gateway_pb2.SessionSandboxes(sessions=[self._placement()] if matched else [])
 
     @override
     async def GetCommand(

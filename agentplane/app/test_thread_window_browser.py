@@ -22,6 +22,7 @@ from agentplane.app.testing.thread_browser import (
     wheel_and_capture_anchor_at_scrollend,
 )
 from agentplane.proto import event_log_pb2, event_pb2
+from agentplane.sandbox_service.client import SandboxServiceClient
 from util.testing.undeclared_outputs import undeclared_outputs_dir
 
 # gazelle:include_dep @pypi//protobuf
@@ -32,6 +33,11 @@ pytest_plugins = ("agentplane.app.testing.thread_browser",)
 @pytest.fixture
 async def service_history_db_url(electric: ElectricService) -> str:
     return electric.database_url
+
+
+@pytest.fixture
+def inventory(gateway_client: SandboxServiceClient) -> SandboxServiceClient:
+    return gateway_client
 
 
 def _append_uneven_items(thread_browser: ThreadBrowser, prefix: str, numbers: range) -> event_log_pb2.EventEntry:
