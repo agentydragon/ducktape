@@ -12,8 +12,6 @@ service RunnerGateway {
   rpc ListSessions(agentplane.proto.sandbox_service.SandboxRequest) returns (agentplane.proto.runner.ListSessionsResponse);
   // Opens the Session the client named. A retry with the same ID and inputs returns it again.
   rpc CreateSession(agentplane.proto.sandbox_service.CreateSessionRequest) returns (agentplane.proto.sandbox_service.CreateSessionResponse);
-  // Read-only reconciliation by the original caller, sandbox incarnation and Open key.
-  rpc LookupSession(agentplane.proto.sandbox_service.LookupSessionRequest) returns (agentplane.proto.sandbox_service.LookupSessionResponse);
   rpc ResumeSession(agentplane.proto.sandbox_service.SessionRequest) returns (agentplane.proto.runner.Attached);
   // Returns the original matching CommandAdmitted entry, not command completion.
   rpc SubmitCommand(agentplane.proto.sandbox_service.SubmitCommandRequest) returns (agentplane.proto.event_log.EventEntry);

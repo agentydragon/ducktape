@@ -1,91 +1,33 @@
 """The Session registry in the gateway's own migrated database."""
 
 import asyncio
-from uuid import UUID, uuid4
+from uuid import uuid4
 
 import pytest
 import pytest_bazel
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from agentplane.runner_gateway.session_registry import (
-    OpenConflictError,
-    OpenReservation,
-    SessionNotFoundError,
-    SessionRegistry,
-)
+from agentplane.runner_gateway.session_registry import SessionConflictError, SessionNotFoundError, SessionRegistry
 
 
-async def test_client_session_id_is_stable_across_retries_and_replicas(
-    sessions: SessionRegistry, engine: AsyncEngine
-) -> None:
+async def test_a_session_registers_in_one_sandbox_incarnation(sessions: SessionRegistry, engine: AsyncEngine) -> None:
     replica = SessionRegistry(engine)
     uid = uuid4()
     session_id = uuid4()
+    where = {"sandbox_namespace": "testing", "sandbox_name": "worker"}
 
-    async def reserve(
-        on: SessionRegistry,
-        *,
-        requested: UUID = session_id,
-        key: str | None = None,
-        caller_name: str = "app",
-        sandbox_uid: UUID = uid,
-        payload: bytes = b"spec",
-        launch: str = "frozen",
-    ) -> OpenReservation:
-        return await on.reserve(
-            session_id=requested,
-            caller_namespace="testing",
-            caller_name=caller_name,
-            sandbox_namespace="testing",
-            sandbox_name="worker",
-            sandbox_uid=sandbox_uid,
-            open_key=key,
-            open_request=payload,
-            launch_spec=lambda candidate: f"{launch} {candidate}".encode(),
-        )
-
-    first, second = await asyncio.gather(reserve(sessions), reserve(replica))
-    assert first == second == OpenReservation(session_id, f"frozen {session_id}".encode())
-    assert await reserve(replica, launch="changed default should be ignored") == first
+    # Concurrent retries on two replicas both find it registered.
+    await asyncio.gather(
+        sessions.register(session_id, **where, sandbox_uid=uid), replica.register(session_id, **where, sandbox_uid=uid)
+    )
+    with pytest.raises(SessionConflictError):
+        await replica.register(session_id, **where, sandbox_uid=uuid4())
     # The client's ID is the runner's Session ID too, registered in this incarnation only.
-    assert (
-        await replica.public_id(str(session_id), sandbox_namespace="testing", sandbox_name="worker", sandbox_uid=uid)
-        == session_id
-    )
-    assert (
-        await replica.public_id(
-            str(session_id), sandbox_namespace="testing", sandbox_name="worker", sandbox_uid=uuid4()
-        )
-        is None
-    )
-    assert (
-        await replica.public_id("not-a-uuid", sandbox_namespace="testing", sandbox_name="worker", sandbox_uid=uid)
-        is None
-    )
+    assert await replica.public_id(str(session_id), **where, sandbox_uid=uid) == session_id
+    assert await replica.public_id(str(session_id), **where, sandbox_uid=uuid4()) is None
+    assert await replica.public_id("not-a-uuid", **where, sandbox_uid=uid) is None
     with pytest.raises(SessionNotFoundError):
-        await sessions.require(session_id, sandbox_namespace="testing", sandbox_name="worker", sandbox_uid=uuid4())
-    with pytest.raises(OpenConflictError, match="different inputs"):
-        await reserve(sessions, payload=b"different caller request")
-    with pytest.raises(OpenConflictError, match="could not be reserved"):
-        await reserve(sessions, caller_name="other")
-    with pytest.raises(OpenConflictError, match="could not be reserved"):
-        await reserve(sessions, sandbox_uid=uuid4())
-    assert await reserve(replica) == first  # a refused retry does not change the reservation
-
-    keyed = await reserve(sessions, requested=uuid4(), key="open-1")
-    assert (
-        await replica.lookup_open(
-            caller_namespace="testing",
-            caller_name="app",
-            sandbox_namespace="testing",
-            sandbox_name="worker",
-            sandbox_uid=uid,
-            open_key="open-1",
-        )
-        == keyed.session_id
-    )
-    with pytest.raises(OpenConflictError, match="could not be reserved"):
-        await reserve(sessions, requested=uuid4(), key="open-1")
+        await sessions.require(session_id, **where, sandbox_uid=uuid4())
 
 
 if __name__ == "__main__":
