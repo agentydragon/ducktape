@@ -22,7 +22,7 @@ from devinfra.claude.session_export.database_migrate import RUNNER
 from devinfra.claude.session_export.models import DEFAULT_ATTESTATION_STATUS, SESSION_STATUS_ARCHIVED, SessionSummary
 from devinfra.claude.session_export.oauth import CredentialStore, OAuthCredential
 from devinfra.claude.session_export.store import SessionStore, make_engine
-from util.testing.postgres import create_database_sync, force_drop_database_sync
+from util.testing.postgres import PostgresDatabaseTemplate
 from util.testing.postgres_fixtures import postgres_container
 
 TEST_ORG_UUID = "test-org-uuid"
@@ -289,17 +289,23 @@ def credential_store(tmp_path: Path) -> Callable[..., CredentialStore]:
     return make
 
 
-@pytest.fixture
-def database_url(postgres_container: PostgresContainer) -> Iterator[str]:
+@pytest.fixture(scope="session")
+def session_export_database_template(postgres_container: PostgresContainer) -> Iterator[PostgresDatabaseTemplate]:
+    """One migrated session-export database per test process, cloned for each case."""
     admin_url = (
         f"postgresql+psycopg://postgres:postgres@{postgres_container.get_container_host_ip()}"
         f":{postgres_container.get_exposed_port(5432)}/postgres"
     )
-    name = f"sessions_{uuid4().hex}"
-    url = create_database_sync(admin_url, name)
-    RUNNER.apply(url)
-    yield url
-    force_drop_database_sync(admin_url, name)
+    with PostgresDatabaseTemplate(admin_url, f"session_export_template_{uuid4().hex}") as template:
+        RUNNER.apply(template.url)
+        yield template
+
+
+@pytest.fixture
+def database_url(session_export_database_template: PostgresDatabaseTemplate) -> Iterator[str]:
+    """A fresh writable clone of the migrated session-export schema for this case."""
+    with session_export_database_template.clone(f"sessions_{uuid4().hex}") as url:
+        yield url
 
 
 @pytest.fixture
