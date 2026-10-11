@@ -32,6 +32,7 @@ from agentplane.action_service.models import ExecutionLease, ExecutionRequest, E
 from agentplane.action_service.testing.lifecycle import wait_available
 from mcp_infra.testing.remote_server import as_remote_server
 from util.testing.postgres_fixtures import migrated_database_fixtures
+from util.testing.sqlalchemy_engines import managed_async_engine
 
 # SQLAlchemy loads these dialects from URLs; Gazelle cannot infer them.
 # gazelle:include_dep @pypi//asyncpg
@@ -45,11 +46,8 @@ action_database_template, db_url = migrated_database_fixtures(
 
 @pytest.fixture
 async def engine(db_url: str) -> AsyncIterator[AsyncEngine]:
-    engine = make_engine(db_url)
-    try:
+    async with managed_async_engine(make_engine(db_url)) as engine:
         yield engine
-    finally:
-        await engine.dispose()
 
 
 @pytest.fixture

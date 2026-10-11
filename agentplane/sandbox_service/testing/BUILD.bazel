@@ -10,7 +10,6 @@ py_library(
     testonly = True,
     srcs = ["kubernetes.py"],
     deps = [
-        ":history",
         "//agentplane:subjects",
         "//agentplane/proto:sandbox_service_pb2",
         "//agentplane/runner_gateway/testing:grpc_service",
@@ -29,8 +28,11 @@ py_library(
         "//agentplane/workload_auth:principal",
         "//util:agent_sandbox",
         "//util:kubernetes",
+        "//util/testing:sqlalchemy_engines",
+        "@pypi//asyncpg",
         "@pypi//kubernetes_asyncio",
         "@pypi//protobuf",
+        "@pypi//sqlalchemy",
     ],
 )
 
@@ -87,8 +89,11 @@ py_library(
         "//agentplane/workload_auth:principal",
         "//util:agent_sandbox",
         "//util:kubernetes",
+        "//util/testing:sqlalchemy_engines",
         "@pypi//anyio",
+        "@pypi//asyncpg",
         "@pypi//kubernetes_asyncio",
+        "@pypi//sqlalchemy",
     ],
 )
 
@@ -105,7 +110,7 @@ py_library(
         "//agentplane/runner_gateway/testing:sessions",
         "//agentplane/sandbox_service:destinations",
         "//agentplane/sandbox_service:models",
-        "@pypi//asyncpg",
+        "//agentplane/thread_fold:models",
         "@pypi//grpcio",
         "@pypi//protobuf",
         "@pypi//sqlalchemy",
@@ -134,6 +139,9 @@ py_library(
     deps = [
         ":history",
         "//util/testing:postgres",
+        "//util/testing:sqlalchemy_engines",
+        "@pypi//asyncpg",
         "@pypi//pytest",
+        "@pypi//sqlalchemy",
     ],
 )

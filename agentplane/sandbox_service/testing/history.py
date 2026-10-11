@@ -14,8 +14,7 @@ from contextlib import asynccontextmanager, suppress
 from uuid import UUID
 
 import grpc
-from sqlalchemy.engine import make_url
-from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
+from sqlalchemy.ext.asyncio import AsyncEngine
 
 from agentplane.history_service.storage.db import Base
 from agentplane.proto.sandbox_service_pb2 import SandboxDestination
@@ -27,18 +26,7 @@ from agentplane.sandbox_service.destinations import DestinationUnavailableError
 from agentplane.sandbox_service.models import SandboxNotFoundError
 from agentplane.thread_fold.models import Base as FoldBase
 
-# gazelle:include_dep @pypi//asyncpg
 # gazelle:include_dep @pypi//protobuf
-
-
-@asynccontextmanager
-async def service_database(database_url: str) -> AsyncIterator[AsyncEngine]:
-    """Open an already initialized History + Commands test database and dispose its engine."""
-    engine = create_async_engine(make_url(database_url).set(drivername="postgresql+asyncpg"))
-    try:
-        yield engine
-    finally:
-        await engine.dispose()
 
 
 async def initialize_service_database(engine: AsyncEngine) -> None:

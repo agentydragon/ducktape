@@ -36,6 +36,7 @@ py_library(
         "//agentplane/sandbox_service/testing:fixtures",
         "//util/testing:postgres",
         "//util/testing:postgres_fixtures",
+        "//util/testing:sqlalchemy_engines",
         "//util/testing:undeclared_outputs",
         "@pypi//asyncpg",
         "@pypi//protobuf",
