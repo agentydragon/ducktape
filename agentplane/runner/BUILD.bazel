@@ -103,7 +103,10 @@ py_library(
     name = "harness_process",
     srcs = ["harness_process.py"],
     data = [":harness_supervisor"],
-    deps = [":cgroups"],
+    deps = [
+        ":cgroups",
+        "//agentplane/native:transport",
+    ],
 )
 
 rust_binary(

@@ -7,10 +7,15 @@ not a general runner, fixture framework, or provider-neutral API.
 from __future__ import annotations
 
 import argparse
+import asyncio
 import json
 import os
 import shlex
 import sys
+import threading
+from collections.abc import Iterator
+from contextlib import contextmanager
+from http.server import ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlsplit
 
@@ -23,9 +28,11 @@ from agentplane.capture.records import (
     RequestRecord,
     ResponseChunkRecord,
 )
-from agentplane.native.claude import scenarios as claude
+from agentplane.native.async_process import write_jsonl
+from agentplane.native.claude import scenarios as claude, wire as claude_wire
+from agentplane.native.claude.async_run import ClaudeRun
 from agentplane.native.codex import scenarios as codex
-from agentplane.native.process import NativeProcess, serve, write_jsonl
+from agentplane.native.codex.async_run import CodexRun
 
 SCENARIOS = (
     # keep-sorted start
@@ -57,6 +64,17 @@ _FAULT_PLANS = {
     "post_failure_follow_up": ("text_delta",),
     "connection_exhaustion": ("message_start", *("response_headers",) * 8),
     "post_exhaustion_follow_up": ("message_start", *("response_headers",) * 8),
+}
+
+# A deterministic shell wait that keeps a turn active while the scenario steers, queues, or
+# interrupts it.
+_WAIT_COMMAND = 'sh -c \'printf "wait_started\\n"; sleep 20; printf "wait_finished\\n"\''
+_CLAUDE_WAIT_THEN_REPLY = f"Use the Bash tool to run `{_WAIT_COMMAND}`; after it finishes reply ONLY WAIT_DONE."
+_CLAUDE_WAIT = f"Use the Bash tool to run `{_WAIT_COMMAND}`; do not answer early."
+_CODEX_WAIT = f"Use shell to run `{_WAIT_COMMAND}`; do not answer early."
+_FOLLOW_UPS = {
+    "post_failure_follow_up": "Reply with exactly: POST_FAILURE_FOLLOW_UP_OK",
+    "post_exhaustion_follow_up": "Reply with exactly: POST_EXHAUSTION_FOLLOW_UP_OK",
 }
 
 
@@ -94,6 +112,18 @@ def _prepare(workspace: Path) -> None:
     (workspace / "editable.txt").write_text("before\n")
 
 
+@contextmanager
+def _serve[Server: ThreadingHTTPServer](server: Server) -> Iterator[Server]:
+    """Run a loopback HTTP server on a daemon thread for the lifetime of the block."""
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        yield server
+    finally:
+        server.shutdown()
+        thread.join(timeout=5)
+
+
 def _prompt(scenario: str) -> str:
     return {
         "baseline": "Reply with exactly: CAPTURE_BASELINE_OK",
@@ -115,7 +145,11 @@ def _prompt(scenario: str) -> str:
     }[scenario]
 
 
-def run(args: argparse.Namespace) -> None:
+def _turn_timeout_s(scenario: str) -> float:
+    return 600 if "exhaustion" in scenario else 120
+
+
+async def run(args: argparse.Namespace) -> None:
     if args.output.exists():
         raise ValueError("output must not exist")
     _prepare(args.workspace)
@@ -136,62 +170,13 @@ def run(args: argparse.Namespace) -> None:
         upstream=args.endpoint, record=record, disconnect_after_events=_fault_plan(args.provider, args.scenario)
     )
     origin = f"http://127.0.0.1:{proxy.server_port}"
-    if args.provider == "claude":
-        proxy_endpoint = origin
-        environment = {
-            **os.environ,
-            **claude.environment(endpoint=origin, token=key, config_dir=str(args.workspace / ".claude")),
-        }
-    else:
-        proxy_endpoint = origin + urlsplit(args.endpoint).path.rstrip("/")
-        environment = {
-            **os.environ,
-            **codex.environment(endpoint=proxy_endpoint, token=key, codex_home=str(args.workspace / ".codex")),
-        }
-
-    def start_process(*, resume_id: str | None = None) -> NativeProcess:
-        command = (
-            claude.command(args.binary, model=args.model, resume_id=resume_id, hooks=hook_decision is not None)
-            if args.provider == "claude"
-            else codex.command(args.binary, endpoint=proxy_endpoint)
-        )
-        process = NativeProcess(args.output, command, cwd=args.workspace, environment=environment)
-        if hook_decision is not None and args.provider == "claude":
-            process.frame_handler = claude.hook_answers(deny_tools=hook_decision == "deny")
-        return process
-
-    with serve(proxy):
-        with start_process() as process:
-            if args.provider == "claude":
-                claude.launch_handshake(process, hooks=hook_decision is not None)
-                thread_id = None
-            else:
-                thread_id = codex.launch_handshake(
-                    process,
-                    cwd=str(args.workspace),
-                    model=args.model,
-                    effort="low",
-                    persist=args.scenario == "idle_resume",
-                    config=None
-                    if hook_decision is None
-                    else codex.hooks_config(
-                        shlex.join(
-                            [sys.executable, codex_hook.__file__, str(args.output / "hooks.jsonl"), hook_decision]
-                        )
-                    ),
-                )["thread_id"]
-            resume_id = _drive(args, process, thread_id)
-        if args.scenario == "idle_resume":
-            with start_process(resume_id=resume_id) as process:
-                if args.provider == "claude":
-                    claude.launch_handshake(process)
-                    claude.submit(process, "Reply with exactly: IDLE_RESUME_OK")
-                else:
-                    assert thread_id is not None
-                    codex.resume_handshake(process, thread_id=thread_id)
-                    codex.submit(
-                        process, thread_id=thread_id, request_id="capture-6", text="Reply with exactly: IDLE_RESUME_OK"
-                    )
+    with _serve(proxy):
+        if args.provider == "claude":
+            await _capture_claude(args, endpoint=origin, key=key, hook_decision=hook_decision)
+        else:
+            await _capture_codex(
+                args, endpoint=origin + urlsplit(args.endpoint).path.rstrip("/"), key=key, hook_decision=hook_decision
+            )
         response_rows = [json.loads(line) for line in (args.output / "llm-responses.jsonl").read_text().splitlines()]
         dropped = next((row for row in response_rows if row["kind"] == "connection_dropped"), None)
         if args.scenario in _FAULT_PLANS and dropped is None:
@@ -207,54 +192,123 @@ def run(args: argparse.Namespace) -> None:
         )
 
 
-def _drive(args: argparse.Namespace, process: NativeProcess, thread_id: str | None) -> str | None:
-    """Run the scenario's first process; returns the Claude session id an `idle_resume` needs."""
+async def _capture_claude(args: argparse.Namespace, *, endpoint: str, key: str, hook_decision: str | None) -> None:
+    environment = {
+        **os.environ,
+        **claude.environment(endpoint=endpoint, token=key, config_dir=str(args.workspace / ".claude")),
+    }
+
+    def start(*, resume_id: str | None = None) -> ClaudeRun:
+        return ClaudeRun(
+            args.output,
+            claude.command(args.binary, model=args.model, resume_id=resume_id, hooks=hook_decision is not None),
+            cwd=args.workspace,
+            environment=environment,
+            responder=None if hook_decision is None else claude.hook_answers(deny_tools=hook_decision == "deny"),
+            hooks=hook_decision is not None,
+        )
+
+    async with start() as session:
+        resume_id = await _drive_claude(args, session)
+    if args.scenario == "idle_resume":
+        assert resume_id is not None
+        async with start(resume_id=resume_id) as session:
+            await _claude_turn(session, "Reply with exactly: IDLE_RESUME_OK")
+
+
+async def _claude_turn(session: ClaudeRun, prompt: str, *, timeout_s: float = 120) -> claude_wire.ResultFrame:
+    """Send one user frame and wait for the turn's terminal frame."""
+    turn = await session.send(prompt)
+    return await asyncio.wait_for(turn.result(), timeout=timeout_s)
+
+
+async def _drive_claude(args: argparse.Namespace, session: ClaudeRun) -> str | None:
+    """Run the scenario's first process; returns the session id an `idle_resume` needs."""
     if args.scenario == "launch":
         return None
     if args.scenario in {"steering", "second_input"}:
-        if args.provider == "claude":
-            claude.submit_while_active(process)
-        else:
-            assert thread_id is not None
-            codex.submit_while_active(process, thread_id=thread_id, scenario=args.scenario)
+        # Claude has no separate steering frame: ordinary and mid-turn input share one native shape.
+        first = await session.send(_CLAUDE_WAIT_THEN_REPLY)
+        await asyncio.wait_for(first.active(), timeout=60)
+        await session.send("Reply ONLY SECOND_INPUT_OBSERVED after your current work.")
+        await asyncio.wait_for(first.result(), timeout=120)
         return None
     if args.scenario == "interrupt":
-        if args.provider == "claude":
-            claude.interrupt_active_turn(process, with_queued_input=False)
-        else:
-            assert thread_id is not None
-            codex.interrupt_active_turn(process, thread_id=thread_id, with_queued_input=False)
+        first = await session.send(_CLAUDE_WAIT)
+        await asyncio.wait_for(first.active(), timeout=60)
+        await session.interrupt(cancel_queued=False)
+        await asyncio.wait_for(first.result(), timeout=120)
         return None
     if args.scenario == "idle_resume":
-        if args.provider == "claude":
-            return claude.session_id(claude.submit(process, "Reply with exactly: IDLE_RESUME_SEED_OK")["terminal"])
-        assert thread_id is not None
-        codex.submit(
-            process, thread_id=thread_id, request_id="capture-3", text="Reply with exactly: IDLE_RESUME_SEED_OK"
-        )
-        return None
-    timeout_s = 600 if "exhaustion" in args.scenario else 120
-    if args.provider == "claude":
-        claude.submit(process, _prompt(args.scenario), timeout_s=timeout_s)
-    else:
-        assert thread_id is not None
-        codex.submit(process, thread_id=thread_id, request_id="capture-3", text=_prompt(args.scenario))
-    if args.scenario in {"post_failure_follow_up", "post_exhaustion_follow_up"}:
-        follow_up = (
-            "Reply with exactly: POST_FAILURE_FOLLOW_UP_OK"
-            if args.scenario == "post_failure_follow_up"
-            else "Reply with exactly: POST_EXHAUSTION_FOLLOW_UP_OK"
-        )
-        if args.provider == "claude":
-            claude.submit(process, follow_up)
-        else:
-            assert thread_id is not None
-            codex.submit(process, thread_id=thread_id, request_id="capture-4", text=follow_up)
+        return (await _claude_turn(session, "Reply with exactly: IDLE_RESUME_SEED_OK")).session_id
+    await _claude_turn(session, _prompt(args.scenario), timeout_s=_turn_timeout_s(args.scenario))
+    if (follow_up := _FOLLOW_UPS.get(args.scenario)) is not None:
+        await _claude_turn(session, follow_up)
     return None
 
 
+async def _capture_codex(args: argparse.Namespace, *, endpoint: str, key: str, hook_decision: str | None) -> None:
+    environment = {
+        **os.environ,
+        **codex.environment(endpoint=endpoint, token=key, codex_home=str(args.workspace / ".codex")),
+    }
+
+    def start(*, resume_thread_id: str | None = None) -> CodexRun:
+        return CodexRun(
+            args.output,
+            codex.command(args.binary, endpoint=endpoint),
+            cwd=args.workspace,
+            environment=environment,
+            thread_cwd=str(args.workspace),
+            model=args.model,
+            effort="low",
+            persist=args.scenario == "idle_resume",
+            config=None
+            if hook_decision is None
+            else codex.hooks_config(
+                shlex.join([sys.executable, codex_hook.__file__, str(args.output / "hooks.jsonl"), hook_decision])
+            ),
+            resume_thread_id=resume_thread_id,
+        )
+
+    async with start() as session:
+        await _drive_codex(args, session)
+        thread_id = session.thread_id
+    if args.scenario == "idle_resume":
+        async with start(resume_thread_id=thread_id) as session:
+            await _codex_turn(session, "Reply with exactly: IDLE_RESUME_OK")
+
+
+async def _codex_turn(session: CodexRun, text: str, *, timeout_s: float = 120) -> None:
+    turn = await session.start_turn(text)
+    await asyncio.wait_for(turn.completed(), timeout=timeout_s)
+
+
+async def _drive_codex(args: argparse.Namespace, session: CodexRun) -> None:
+    if args.scenario == "launch":
+        return
+    if args.scenario in {"steering", "second_input", "interrupt"}:
+        turn = await session.start_turn(_CODEX_WAIT)
+        await asyncio.wait_for(turn.started(), timeout=30)
+        if args.scenario == "steering":
+            await session.steer(turn, "Reply ONLY STEERED after the current tool action.")
+        elif args.scenario == "second_input":
+            # A second turn/start during an active turn joins it as input.
+            await session.start_turn("Reply ONLY SECOND_INPUT_OBSERVED after current work.")
+        else:
+            await session.interrupt(turn)
+        await asyncio.wait_for(turn.completed(), timeout=120)
+        return
+    if args.scenario == "idle_resume":
+        await _codex_turn(session, "Reply with exactly: IDLE_RESUME_SEED_OK")
+        return
+    await _codex_turn(session, _prompt(args.scenario), timeout_s=_turn_timeout_s(args.scenario))
+    if (follow_up := _FOLLOW_UPS.get(args.scenario)) is not None:
+        await _codex_turn(session, follow_up)
+
+
 def main() -> None:
-    run(parser().parse_args())
+    asyncio.run(run(parser().parse_args()))
 
 
 if __name__ == "__main__":

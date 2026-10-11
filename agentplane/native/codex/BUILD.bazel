@@ -11,10 +11,6 @@ py_library(
 py_library(
     name = "scenarios",
     srcs = ["scenarios.py"],
-    deps = [
-        ":driver",
-        "//agentplane/native:process",
-    ],
 )
 
 py_library(

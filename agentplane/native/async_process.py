@@ -1,4 +1,5 @@
-"""Async stdin/stdout/stderr pipes with non-destructive native-frame observation."""
+"""Direct stdin/stdout/stderr pipes to one native harness process, recorded as JSONL, with
+non-destructive native-frame observation. No PTY, facade, or lifecycle model."""
 
 from __future__ import annotations
 
@@ -6,21 +7,37 @@ import asyncio
 import json
 import os
 import signal
+import time
 from collections.abc import Awaitable, Callable
 from contextlib import suppress
 from pathlib import Path
 from typing import Any
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
-from agentplane.native.process import text, text_record, write_jsonl
-from agentplane.native.transport import FrameMatcher, NativeReceipt
+from agentplane.native.transport import MAX_FRAME_LINE_BYTES, FrameMatcher, NativeReceipt
 
 FrameResponder = Callable[[dict[str, Any]], Awaitable[BaseModel | None]]
 
-# Tool results ride inside single frames, so a line can run to megabytes. Keep the test transport
-# aligned with the runner, otherwise a behavior test can fail before exercising the harness.
-_LINE_LIMIT = 64 * 1024 * 1024
+
+class TextRecord(BaseModel):
+    time_ns: int = Field(ge=0)
+    text: str
+
+
+def write_jsonl(path: Path, value: BaseModel) -> None:
+    with path.open("ab") as output:
+        output.write(value.model_dump_json().encode() + b"\n")
+        output.flush()
+
+
+def _text_record(data: bytes) -> TextRecord:
+    """Store native evidence as its UTF-8 wire text, not a redundant base64 copy."""
+    try:
+        text = data.decode("utf-8")
+    except UnicodeDecodeError as error:
+        raise ValueError("native evidence must be UTF-8 text") from error
+    return TextRecord(time_ns=time.monotonic_ns(), text=text)
 
 
 class NativeProcessEofError(RuntimeError):
@@ -107,7 +124,7 @@ class AsyncNativeProcess:
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
             start_new_session=True,
-            limit=_LINE_LIMIT,
+            limit=MAX_FRAME_LINE_BYTES,
         )
         self._stdout_task = asyncio.create_task(self._stdout())
         self._stderr_task = asyncio.create_task(self._stderr())
@@ -132,7 +149,7 @@ class AsyncNativeProcess:
         assert self.process.stdin is not None
         payloads = [frame.model_dump_json(by_alias=True).encode() for frame in frames]
         for payload in payloads:
-            write_jsonl(self.logs / "stdin.jsonl", text_record(payload))
+            write_jsonl(self.logs / "stdin.jsonl", _text_record(payload))
         if not payloads:
             return
         async with self._stdin_lock:
@@ -190,9 +207,9 @@ class AsyncNativeProcess:
         assert self.process.stdout is not None
         try:
             while line := await self.process.stdout.readline():
-                value = text(line.rstrip(b"\r\n"))
-                write_jsonl(self.logs / "stdout.jsonl", text_record(value.encode()))
-                frame = json.loads(value)
+                record = _text_record(line.rstrip(b"\r\n"))
+                write_jsonl(self.logs / "stdout.jsonl", record)
+                frame = json.loads(record.text)
                 if not isinstance(frame, dict):
                     raise ValueError("native stdout frame must be a JSON object")
                 self._frames.append(frame)
@@ -210,4 +227,4 @@ class AsyncNativeProcess:
         assert self.process is not None
         assert self.process.stderr is not None
         while chunk := await self.process.stderr.read(65536):
-            write_jsonl(self.logs / "stderr.jsonl", text_record(chunk))
+            write_jsonl(self.logs / "stderr.jsonl", _text_record(chunk))

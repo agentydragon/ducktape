@@ -1065,7 +1065,6 @@ flowchart TD
         APP_TEST_CLIENT_MOVE[Candidate: app test client out of production]
         KUBEVIRT_GUEST_CONTROL[Candidate: KubeVirt guest dials out]
         RUNNER_CORE_SPLIT[Blocked: runner core out of the inbound servicer]
-        NATIVE_PROCESS_DEDUP[Candidate: one native process wrapper]
         EGRESS_DECISIONS_CLIENT[Candidate: egress decisions client beside the server]
         LLM_INGRESS_MODEL_CONFIG_CONTRACT[Candidate: structural absent model config]
         ACTION_SETTINGS_SINGLE_MODEL[Candidate: one Action Service settings model]
@@ -1220,13 +1219,6 @@ experiment instead also orphans the VM-only `RunnerConfig` fields and `cgroups.p
 `runner/service.py`; move them to their own module. The control and ingress clients share one
 lost-stream error and backoff, `IngressPusher` stops borrowing `ControlTiming`, and the unpassed
 `channel_options` parameters go.
-
-### `NATIVE_PROCESS_DEDUP` — one native process wrapper
-
-**Candidate.** `native/process.py` (sync, used only by capture), `native/async_process.py` (used
-only by test code, not `testonly`) and `runner/harness_process.py` wrap one process, with the 64 MiB
-line limit kept aligned by comment. Move capture onto `AsyncNativeProcess`, delete the sync wrapper,
-and make `async_process` test-only.
 
 ### `EGRESS_DECISIONS_CLIENT` — egress decisions client beside the server
 

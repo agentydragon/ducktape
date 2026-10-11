@@ -56,7 +56,7 @@ class ClaudeHarness:
         }
         # The inbound permission frame is recorded before this responder writes its approval, so
         # the run's native trace includes both sides of every fixture-injected approval.
-        responder = _hook_responder(deny_tools=deny_tools) if hooks else _allow_permission
+        responder = scenarios.hook_answers(deny_tools=deny_tools) if hooks else _allow_permission
         if driver_tools is not None:
             responder = _compose(driver_tools.respond, responder)
         return async_run.ClaudeRun(
@@ -76,17 +76,6 @@ async def _allow_permission(frame: dict[str, Any]) -> wire.ControlResponse | Non
         case wire.ControlRequestFrame(request_id=request_id, request=wire.CanUseTool(input=tool_input)):
             return driver.allow_tool(request_id, tool_input)
     return None
-
-
-def _hook_responder(*, deny_tools: bool) -> Callable[[dict[str, Any]], Awaitable[wire.ControlResponse | None]]:
-    """Answers every `PreToolUse` hook callback with allow or deny, and any resulting `can_use_tool`
-    permission prompt with allow, exactly as `scenarios.hook_answers` computes synchronously."""
-    answer = scenarios.hook_answers(deny_tools=deny_tools)
-
-    async def responder(frame: dict[str, Any]) -> wire.ControlResponse | None:
-        return answer(frame)
-
-    return responder
 
 
 def _compose(
