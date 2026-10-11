@@ -1,7 +1,7 @@
 """Test-only History + Commands schema setup, and Sessions attached directly to a runner.
 
 A runner Session a test attaches directly, bypassing CreateSession, is registered here under its
-own UUID, so the History Service ingester under test follows it like any other.
+own UUID, so the Session registry names it like any other.
 
 The History and Commands production Alembic runners use the same default ``alembic_version`` table,
 so a combined test database must not apply both runners. Build the test schema with SQLAlchemy

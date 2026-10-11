@@ -72,9 +72,7 @@ flowchart TB
     k8s -->|creates| sandbox
     gw -->|control Services, Leases| k8s
     gw -->|gRPC Attach: event follow| runner
-    hs -->|WatchSessions, FollowSession| gw
-    hs -->|retention holds| ss
-    hs -->|ingest, fold, read| hist_db
+    hs -->|fold, read| hist_db
     hi -->|append| hist_db
     notif -->|Sandbox lookups| ss
     notif -->|commands| gw
@@ -97,10 +95,8 @@ flowchart TB
 ```
 
 - **Sessions and Threads.** A Session is a runner's raw Event stream; a Thread is its
-  conversation view, folded by the History Service. Every new Sandbox's runner pushes its Events to
-  the History ingress. The History Service also follows each Session through the Runner Gateway,
-  which reads it from the runner over `Attach`; for a Sandbox created before runners pushed, that
-  is the only path, and both write the same log.
+  conversation view, folded by the History Service. Every runner pushes its Events to the History
+  ingress, the only way into retained history.
 - **Runner traffic is outbound.** Everything a runner sends goes through its Pod's egress
   sidecar to the egress proxy, which authenticates the Pod and substitutes credentials. Commands
   reach staging's runners over the `RunnerControl` stream they dial to the Runner Gateway, routed
@@ -108,7 +104,7 @@ flowchart TB
   ([runner control stream](docs/runner_control.md)).
 - **Databases.** Each service owns a database on one shared CNPG cluster: `app`,
   `sandbox_commands` (the Runner Gateway's Session registry and command admission),
-  `sandbox_service` (Session history, written by the History Service and its ingress), `actions`,
+  `sandbox_service` (Session history, written by the History ingress and the History Service's fold), `actions`,
   `egress` and `notifications`; the Sandbox Service has none. Only the history database is drawn.
   A second Electric over the `app` database still runs, but the app reads Threads through the
   History Service and its Electric.

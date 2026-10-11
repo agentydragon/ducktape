@@ -17,9 +17,8 @@ class SessionHistory(Base):
     __tablename__ = "session_history"
     __table_args__ = (
         CheckConstraint("last_cursor >= 0", name="history_last_cursor_nonnegative"),
-        # A runner locator is a physical binding, not a durable identity. Rows a History Service
-        # ingester created have no runner ID; imported locators with no UID still cannot be
-        # claimed twice.
+        # A runner locator is a physical binding, not a durable identity. Rows the ingress created
+        # have no runner ID; imported locators with no UID still cannot be claimed twice.
         Index(
             "ux_history_runner_locator",
             "sandbox_namespace",
