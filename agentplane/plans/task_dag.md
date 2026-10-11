@@ -1074,7 +1074,7 @@ flowchart TD
         NATIVE_PROCESS_DEDUP[Candidate: one native process wrapper]
         EGRESS_DECISIONS_CLIENT[Candidate: egress decisions client beside the server]
         EGRESS_RULES_API_TIDY[Candidate: egress rules API tidy]
-        LLM_INGRESS_MODEL_CONFIG_CONTRACT[Candidate: structural absent model config]
+        LLM_INGRESS_MODEL_CONFIG_NULL[Blocked: the ingress answers an absent model config with null]
         ACTION_SETTINGS_SINGLE_MODEL[Candidate: one Action Service settings model]
         ACTION_PROTOCOLS_CONCRETE[Candidate: concrete types for Action protocols]
         ACTION_OAUTH_REFERENCE_TYPE[Candidate: typed OAuth token reference]
@@ -1288,11 +1288,13 @@ egress `/decisions` route. Move model and client into `agentplane/egress/`, drop
 sleep; the central proxy serves aiohttp `admin.py` beside a FastAPI app with hand-built dict JSON.
 Move the host into the tests, wait on the condition, and serve both listeners on one stack.
 
-### `LLM_INGRESS_MODEL_CONFIG_CONTRACT` — structural absent model config
+### `LLM_INGRESS_MODEL_CONFIG_NULL` — the ingress answers an absent model config with `null`
 
-**Candidate.** `llm_ingress/app.py` answers an absent model config with a 404 whose `detail` text
-`runner/model_config.py` string-matches. Carry the absent state structurally (204, or 200 with a
-nullable body).
+**Blocked on every live runner reading `null`.** `runner/model_config.py` reads a 200 `null` body as
+"no configuration" and still string-matches the ingress's 404 `detail`. Once no live Sandbox runs a
+runner image older than that reader, `llm_ingress/app.py` answers 200 `null` and the runner's
+`CLEANUP` 404 branch goes. Stacked draft:
+[branch](https://github.com/agentydragon/ducktape/tree/claude/agentplane-runner-egress-action-cleanup-7lamy6-llm-model-config).
 
 ### `ACTION_SETTINGS_SINGLE_MODEL` — one Action Service settings model
 
