@@ -158,20 +158,6 @@ def test_unsupported_executor_kind_is_rejected_by_settings(kind: str) -> None:
         )
 
 
-@pytest.mark.parametrize("path_kind", ["missing", "directory"])
-def test_explicit_config_file_must_exist(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, path_kind: str) -> None:
-    path = tmp_path / "settings.yaml" if path_kind == "missing" else tmp_path
-    monkeypatch.setenv("AGENTPLANE_ACTIONS_CONFIG_FILE", str(path))
-    with pytest.raises(ValueError, match="configured Action Service settings file"):
-        Settings(
-            database_url="postgresql://unused",
-            token_audience=TOKEN_AUDIENCE,
-            policy_namespace=NAMESPACE,
-            caller_service_account_namespaces={NAMESPACE},
-            _cli_parse_args=False,
-        )
-
-
 def test_config_file_loads_reviewed_group_and_rejects_malformed_binding(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

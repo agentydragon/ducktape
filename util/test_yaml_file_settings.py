@@ -25,9 +25,10 @@ def test_environment_overrides_the_file(tmp_path: Path, monkeypatch: pytest.Monk
     assert ExampleSettings() == ExampleSettings(name="from-env", replicas=3)
 
 
-def test_a_named_file_that_is_not_there_is_refused(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+@pytest.mark.parametrize("name", ["never-written.yaml", ""], ids=["missing", "directory"])
+def test_a_named_path_that_is_not_a_file_is_refused(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, name: str) -> None:
     """pydantic-settings skips an absent YAML file, which would leave a bound deployment on defaults."""
-    monkeypatch.setenv(ExampleSettings.config_file_env, str(tmp_path / "never-written.yaml"))
+    monkeypatch.setenv(ExampleSettings.config_file_env, str(tmp_path / name))
     monkeypatch.setenv("EXAMPLE_TEST_NAME", "from-env")
 
     with pytest.raises(FileNotFoundError):
