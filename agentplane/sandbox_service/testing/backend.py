@@ -12,8 +12,6 @@ from typing import Any, cast
 
 from anyio.from_thread import start_blocking_portal
 from kubernetes_asyncio import client as k8s_client
-from sqlalchemy.engine import make_url
-from sqlalchemy.ext.asyncio import create_async_engine
 
 from agentplane.runner_gateway.testing.grpc_service import service
 from agentplane.runner_gateway.testing.resources import build_resources
@@ -40,10 +38,7 @@ from agentplane.subjects import ServiceAccountRef
 from agentplane.workload_auth.principal import POD_NAME_CLAIM, POD_UID_CLAIM, WorkloadPrincipalResolver
 from util.agent_sandbox import SANDBOX_API
 from util.kubernetes import CustomObjectsClient
-from util.testing.sqlalchemy_engines import managed_async_engine
-
-# SQLAlchemy loads the asyncpg dialect at runtime.
-# gazelle:include_dep @pypi//asyncpg
+from util.testing.sqlalchemy_engines import postgres_async_engine
 
 TOKEN = "test-consumer-sandbox-service-token"
 AUDIENCE = "test-consumer-sandbox-service"
@@ -97,9 +92,7 @@ def backend(
     bindings = KubernetesBindings(inventory, cast(k8s_client.RbacAuthorizationV1Api, rbac or FakeRbac()))
     with (
         start_blocking_portal() as portal,
-        portal.wrap_async_context_manager(
-            managed_async_engine(create_async_engine(make_url(database_url).set(drivername="postgresql+asyncpg")))
-        ) as engine,
+        portal.wrap_async_context_manager(postgres_async_engine(database_url)) as engine,
     ):
         provisioning = Provisioning(
             inventory,

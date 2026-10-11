@@ -95,6 +95,7 @@ py_library(
     visibility = ["//visibility:public"],
     deps = [
         ":postgres",
+        ":sqlalchemy_engines",
         ":undeclared_outputs",
         "//third_party/containers:postgres_18",
         "//third_party/containers:ryuk",
@@ -344,5 +345,8 @@ py_library(
     testonly = True,
     srcs = ["sqlalchemy_engines.py"],
     visibility = ["//visibility:public"],
-    deps = ["@pypi//sqlalchemy"],
+    deps = [
+        "@pypi//asyncpg",
+        "@pypi//sqlalchemy",
+    ],
 )
