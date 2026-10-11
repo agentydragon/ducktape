@@ -47,12 +47,11 @@ The browser login flow is fixed in #3516/#3519 except for:
   nothing in the SPA calls it, and it clears only the console session — not Authentik's — so a
   manual logout silently re-logs-in on the next 401. Needs RP-initiated logout to be meaningful.
 
-## Retained Console Recall database
+## Retained `vector` extension
 
-The Console Recall reader, access policy, indexer worker, and its dedicated DB role provisioning
-were removed. Keep the existing schema, indexed data, and pgvector extension until older replicas
-that validate the Recall ORM have left. Then add a forward migration to drop the Console-owned
-Recall schema and extension.
+Nothing at head uses pgvector, but the 0135 baseline still creates a `halfvec` column on a fresh
+database, so CNPG (`cluster/cdk8s/haku/database.py`) and the test fixtures keep provisioning it.
+Drop it, with the `agentplane/indexing:vector_type` import, when a new baseline replaces 0135.
 
 ## Small cleanups
 

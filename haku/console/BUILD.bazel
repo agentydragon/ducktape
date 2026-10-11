@@ -157,8 +157,8 @@ py_test(
     srcs = ["test_agent_authority_schema.py"],
     requires_docker = True,
     deps = [
-        # The shared conftest selects pgvector: migration 0037 creates `vector` columns, so stock
-        # Postgres cannot hold the console's schema.
+        # The shared conftest selects pgvector: the 0135 baseline creates a `halfvec` column, so
+        # stock Postgres cannot run the console's migrations.
         ":conftest",
         ":database_migrate",
         ":database_schema",

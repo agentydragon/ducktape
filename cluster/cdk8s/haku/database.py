@@ -1,5 +1,4 @@
-"""The console's CNPG Postgres: the distributed approval ledger for MCP tool calls and the
-retained `vector` extension for the historical Recall schema.
+"""The console's CNPG Postgres: the distributed approval ledger for MCP tool calls.
 
 This shares the `haku-console` Kustomization with the migration Job and the console
 workloads that read the `<cluster>-app` Secret CNPG mints, so nothing orders them behind
@@ -46,7 +45,8 @@ class Db(Construct):
             initdb=cnpg.same_owner_initdb(DATABASE),
             wal_archive=False,
         )
-        # The extension remains until a post-rollout migration removes Recall's retained schema.
+        # `vector`: the console's 0135 migration baseline creates a `halfvec` column on a fresh
+        # database (0136 drops it), and the migration role cannot install the extension itself.
         # This Database adopts the one created by `bootstrap.initdb`, hence `retain`: with
         # `delete`, dropping this object would drop the console's whole database.
         Database(

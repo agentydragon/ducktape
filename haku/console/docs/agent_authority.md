@@ -45,8 +45,7 @@ ToolCallPrincipal -> exactly one of operator_id | binding_id
   other capability. Credential bindings authenticate an Agent and never select any of these
   capabilities. A null or removed profile is fail-closed.
 
-The Console Recall integration and `recall_index_ids` profile field were removed. The database
-schema and data remain until a follow-up migration after the retiring image has converged.
+The Console Recall integration and `recall_index_ids` profile field were removed.
 
 ## Retired MCP OAuth admission
 

@@ -22,12 +22,6 @@ The original chain at `b78b07ffce` ran in disposable PostgreSQL CI:
 - Target `//haku/console:test_schema_baseline`.
 - Artifact `test.outputs/haku_console_schema.sql`.
 
-The baseline test compares a normalized schema-dump digest with that independent
-capture and checks that upgrade-at-head preserves object OIDs and seed registration.
-Only version banners, dump comments, psql restriction keys and blank lines are
-excluded, not schema SQL. Existing current-schema/ORM and row-preservation tests
-remain in `test_agent_authority_schema.py`.
-
-Future migrations are ordinary children of `0135`. Retire the landing-only digest
-assertion as the schema advances, rather than retaining historical migration tests
-or treating it as a freeze on schema changes. Specimen snapshots are untouched.
+That capture verified `0135` when it landed; later migrations are ordinary children. Current-schema
+tests: `test_agent_authority_schema.py` (ORM, row preservation) and `test_schema_baseline.py`
+(upgrade-at-head leaves the schema and object OIDs untouched).
