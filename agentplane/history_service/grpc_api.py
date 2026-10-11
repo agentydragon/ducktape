@@ -16,7 +16,6 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from agentplane.history_service import protocol_pb2 as history_pb2, protocol_pb2_grpc
 from agentplane.history_service.evidence import EvidenceNotFoundError, EvidenceReader
-from agentplane.history_service.storage.history_changes import HistoryChanges
 from agentplane.history_service.storage.store import HistoryNotFoundError, Store
 from agentplane.history_service.summaries import SummaryReader
 from agentplane.history_service.summary_changes import SummaryChanges
@@ -41,7 +40,6 @@ class Resources:
     # A public Session UUID is not itself authority: only these accounts read transcripts.
     reader_accounts: frozenset[ServiceAccountRef]
     request_timeout_s: float
-    history_changes: HistoryChanges
     summary_changes: SummaryChanges
     # How long one WatchSessionSummaries stream lasts before it asks the caller to reconnect.
     watch_lease_s: float
@@ -159,22 +157,8 @@ class HistoryService(protocol_pb2_grpc.HistoryServiceServicer):
             return await self.resources.evidence.native_frames(request)
 
     @override
-    async def WatchSessionHistory(  # type: ignore[override]
-        self, request: history_pb2.WatchSessionHistoryRequest, context: grpc.aio.ServicerContext
-    ) -> None:
-        await self._watch(context, self.resources.history_changes, history_pb2.WatchSessionHistoryResponse)
-
-    @override
     async def WatchSessionSummaries(  # type: ignore[override]
         self, request: history_pb2.WatchSessionSummariesRequest, context: grpc.aio.ServicerContext
-    ) -> None:
-        await self._watch(context, self.resources.summary_changes, history_pb2.WatchSessionSummariesResponse)
-
-    async def _watch(
-        self,
-        context: grpc.aio.ServicerContext,
-        changes: HistoryChanges | SummaryChanges,
-        response: type[history_pb2.WatchSessionHistoryResponse] | type[history_pb2.WatchSessionSummariesResponse],
     ) -> None:
         """Write `changed` on open and after each change, then `reconnect_required` once the lease ends."""
         async with errors(context):
@@ -182,11 +166,11 @@ class HistoryService(protocol_pb2_grpc.HistoryServiceServicer):
                 await self.resources.authenticate(context)
             deadline = asyncio.get_running_loop().time() + self.resources.watch_lease_s
             # Subscribed before the opening notice, so nothing committed after it goes unannounced.
-            with changes.subscribe() as changed:
+            with self.resources.summary_changes.subscribe() as changed:
                 while True:
                     changed.clear()
                     async with asyncio.timeout(self.resources.request_timeout_s):
-                        await context.write(response(changed=Empty()))
+                        await context.write(history_pb2.WatchSessionSummariesResponse(changed=Empty()))
                     lease = asyncio.timeout_at(deadline)
                     try:
                         async with lease:
@@ -196,7 +180,7 @@ class HistoryService(protocol_pb2_grpc.HistoryServiceServicer):
                             raise
                         break
             async with asyncio.timeout(self.resources.request_timeout_s):
-                await context.write(response(reconnect_required=Empty()))
+                await context.write(history_pb2.WatchSessionSummariesResponse(reconnect_required=Empty()))
 
 
 def add_service(resources: Resources, server: grpc.aio.Server) -> None:

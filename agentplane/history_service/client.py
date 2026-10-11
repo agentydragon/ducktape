@@ -187,27 +187,6 @@ class HistoryServiceClient:
         finally:
             call.cancel()
 
-    async def watch_session_history(self) -> AsyncIterator[None]:
-        """Yield once per committed-history invalidation until planned renewal, which returns; anything else raises."""
-        call = self.stub.WatchSessionHistory(history_pb2.WatchSessionHistoryRequest(), metadata=await self.metadata())
-        handshake: float | None = self.request_timeout_s
-        try:
-            while True:
-                try:
-                    async with asyncio.timeout(handshake):
-                        message = await call.read()
-                except grpc.aio.AioRpcError as error:
-                    _raise(error)
-                handshake = None
-                if message is grpc.aio.EOF:
-                    raise ConnectionError("History Service ended the history watch without planned renewal")
-                assert isinstance(message, history_pb2.WatchSessionHistoryResponse)
-                if message.HasField("reconnect_required"):
-                    return
-                yield
-        finally:
-            call.cancel()
-
     async def __aenter__(self) -> Self:
         return self
 

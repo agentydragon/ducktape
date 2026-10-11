@@ -31,6 +31,7 @@ exports_files(
         "0027_summary_first_event.py",
         "0028_event_log_copies_nullable.py",
         "0029_event_log_copies_drop.py",
+        "0030_thread_resume.py",
     ],
     visibility = ["//agentplane/app/migrations:__pkg__"],
 )
@@ -255,4 +256,10 @@ py_library(
         "@pypi//alembic",
         "@pypi//sqlalchemy",
     ],
+)
+
+py_library(
+    name = "0030_thread_resume",
+    srcs = ["0030_thread_resume.py"],
+    deps = ["@pypi//alembic"],
 )

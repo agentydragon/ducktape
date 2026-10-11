@@ -8,14 +8,14 @@ from collections.abc import Sequence
 from pathlib import Path
 from typing import cast
 
-import pytest
 import pytest_bazel
 from sqlalchemy import select
 
-from agentplane.app.testing.history import ProjectedHistory as Ingestion, SeededEventLogStore as EventLogStore
-from agentplane.app.testing.projection_lease import LeaseFactory
-from agentplane.app.testing.thread_test_support import SPEC, Replica, event_entry
+from agentplane.app.testing.history import SeededEventLogStore as EventLogStore
+from agentplane.app.testing.thread_test_support import SPEC, event_entry
 from agentplane.app.threads.store import ThreadStore
+from agentplane.history_service.fold_shadow import FOLD_EPOCH
+from agentplane.history_service.testing.history import History
 from agentplane.proto import command_pb2, event_pb2, runner_pb2
 from agentplane.runner.codex import CodexAdapter
 from agentplane.runner.config import CodexLaunch
@@ -23,7 +23,6 @@ from agentplane.runner.harness import Harness
 from agentplane.runner.observation import Observation
 from agentplane.runner.session import Session
 from agentplane.runner.store import SessionRecord
-from agentplane.thread_fold.fold import ObservationNotUnderstoodError
 from agentplane.thread_fold.models import (
     ThreadCheckpoint,
     ThreadEntity,
@@ -51,14 +50,13 @@ class _HarnessOutputRecorder:
 
 
 async def test_feed_failure_is_a_synced_operational_state_without_advancing_the_projection(
-    event_logs: EventLogStore, ingestion: Ingestion, replica: Replica, lease_for: LeaseFactory
+    event_logs: EventLogStore, history: History
 ) -> None:
     thread = await event_logs.open("sb-1", "s-operational")
-    lease = await lease_for(thread)
     attached = runner_pb2.Attached(session_id="s-operational", spec=SPEC)
-    await ingestion.set_attached(thread, attached, lease=lease)
-    await ingestion.record(thread, [event_entry(1, harness_started=event_pb2.HarnessStarted())], lease=lease)
-    async with replica.store._sessions() as session:
+    await history.set_attached(thread, attached)
+    await history.record(thread, [event_entry(1, harness_started=event_pb2.HarnessStarted())])
+    async with history.sessions() as session:
         checkpoint_before = await session.get(ThreadCheckpoint, thread)
         assert checkpoint_before is not None
         view_before = await session.get(
@@ -67,8 +65,8 @@ async def test_feed_failure_is_a_synced_operational_state_without_advancing_the_
         assert view_before is not None
         semantic_revision = (view_before.cursor, view_before.revision_cursor)
 
-    await ingestion.end_feed(thread, lease=lease, error="expected runner cursor 2, received 3", error_cursor=3)
-    async with replica.store._sessions() as session:
+    await history.end_feed(thread, error="expected runner cursor 2, received 3", error_cursor=3)
+    async with history.sessions() as session:
         checkpoint_after = await session.get(ThreadCheckpoint, thread)
         assert checkpoint_after is not None
         view_after = await session.get(
@@ -84,10 +82,8 @@ async def test_feed_failure_is_a_synced_operational_state_without_advancing_the_
         "feed_error": {"cursor": "3", "message": "expected runner cursor 2, received 3"},
     }
 
-    await ingestion.set_attached(
-        thread, runner_pb2.Attached(session_id="s-operational", spec=SPEC, last_cursor=1), lease=lease
-    )
-    async with replica.store._sessions() as session:
+    await history.set_attached(thread, runner_pb2.Attached(session_id="s-operational", spec=SPEC, last_cursor=1))
+    async with history.sessions() as session:
         view_reset = await session.get(
             ThreadEntity, (thread, checkpoint_after.projection_epoch, "view_state", "current")
         )
@@ -96,8 +92,8 @@ async def test_feed_failure_is_a_synced_operational_state_without_advancing_the_
     assert (view_reset.cursor, view_reset.revision_cursor) == semantic_revision
     assert reset.model_dump() == {"status": "active", "last_verified_cursor": "1", "feed_error": None}
 
-    await ingestion.end_feed(thread, lease=lease, error="projection invariant failed")
-    async with replica.store._sessions() as session:
+    await history.end_feed(thread, error="projection invariant failed")
+    async with history.sessions() as session:
         unknown_failure = await session.get(
             ThreadEntity, (thread, checkpoint_after.projection_epoch, "view_state", "current")
         )
@@ -111,11 +107,10 @@ async def test_feed_failure_is_a_synced_operational_state_without_advancing_the_
 
 
 async def test_codex_harness_nul_reaches_the_persisted_thread_payload(
-    store: ThreadStore, event_logs: EventLogStore, ingestion: Ingestion, lease_for: LeaseFactory
+    store: ThreadStore, event_logs: EventLogStore, history: History
 ) -> None:
     """An escaped NUL in Codex's stdout frame must survive adapter translation and thread folding."""
     thread = await event_logs.open("sb-1", "s-codex-nul")
-    lease = await lease_for(thread)
     output = "before\x00after"
     recorder = _HarnessOutputRecorder()
     adapter = CodexAdapter(
@@ -136,8 +131,8 @@ async def test_codex_harness_nul_reaches_the_persisted_thread_payload(
     native = event_entry(1, native=event_pb2.Native(direction=event_pb2.DIRECTION_FROM_HARNESS, line=harness_line))
     output_delta = event_entry(2, tool_output_delta=observed_output)
     output_delta.event.source_sequences.append(1)
-    await ingestion.record(
-        thread, [native, output_delta, event_entry(3, turn_started=event_pb2.TurnStarted(turn_id="next"))], lease=lease
+    await history.record(
+        thread, [native, output_delta, event_entry(3, turn_started=event_pb2.TurnStarted(turn_id="next"))]
     )
 
     entries = await event_logs.events(thread, limit=10)
@@ -146,7 +141,7 @@ async def test_codex_harness_nul_reaches_the_persisted_thread_payload(
     assert entries[1].event.tool_output_delta.text == output
     assert entries[1].event.source_sequences == [1]
     assert await event_logs.last_cursor(thread) == 3
-    async with store._sessions() as session:
+    async with history.sessions() as session:
         chunks = (
             await session.scalars(
                 select(ThreadPayloadChunk).where(
@@ -159,20 +154,15 @@ async def test_codex_harness_nul_reaches_the_persisted_thread_payload(
     assert [chunk.text for chunk in chunks] == [output]
 
 
-async def test_record_materializes_exact_payload_revisions_and_rolls_back_unknown_observations(
-    store: ThreadStore, event_logs: EventLogStore, ingestion: Ingestion, lease_for: LeaseFactory
+async def test_record_materializes_exact_payload_revisions_and_stalls_on_unknown_observations(
+    store: ThreadStore, event_logs: EventLogStore, history: History
 ) -> None:
     thread = await event_logs.open("sb-1", "s-1")
-    lease = await lease_for(thread)
     first = event_entry(1, text_delta=event_pb2.TextDelta(item_id="old", text="hello"))
     first.event.source_sequences.append(9007)
-    await ingestion.record(
-        thread, [first, event_entry(2, text_delta=event_pb2.TextDelta(item_id="old", text=" world"))], lease=lease
-    )
-    await ingestion.record(
-        thread, [event_entry(3, text_delta=event_pb2.TextDelta(item_id="old", text="!"))], lease=lease
-    )
-    async with store._sessions() as session:
+    await history.record(thread, [first, event_entry(2, text_delta=event_pb2.TextDelta(item_id="old", text=" world"))])
+    await history.record(thread, [event_entry(3, text_delta=event_pb2.TextDelta(item_id="old", text="!"))])
+    async with history.sessions() as session:
         item = await session.scalar(
             select(ThreadEntity).where(
                 ThreadEntity.thread_id == thread, ThreadEntity.entity_kind == "item", ThreadEntity.entity_id == "old"
@@ -198,7 +188,7 @@ async def test_record_materializes_exact_payload_revisions_and_rolls_back_unknow
         ).all()
     assert item is not None
     assert item.text_ref == {
-        "projection_epoch": "v1",
+        "projection_epoch": FOLD_EPOCH,
         "owner_cursor": "1",
         "owner_id": "old",
         "field": "text",
@@ -215,10 +205,8 @@ async def test_record_materializes_exact_payload_revisions_and_rolls_back_unknow
     assert {(row.entity_cursor, row.observation_cursor) for row in evidence} == {(1, 1), (1, 2), (1, 3)}
     assert [(row.entity_cursor, row.observation_cursor, row.source_sequence) for row in native_links] == [(1, 1, 9007)]
 
-    await ingestion.record(
-        thread, [event_entry(4, item_completed=event_pb2.ItemCompleted(item_id="old", text=""))], lease=lease
-    )
-    async with store._sessions() as session:
+    await history.record(thread, [event_entry(4, item_completed=event_pb2.ItemCompleted(item_id="old", text=""))])
+    async with history.sessions() as session:
         replacement = await session.scalar(
             select(ThreadPayloadManifest).where(
                 ThreadPayloadManifest.thread_id == thread, ThreadPayloadManifest.revision_cursor == 4
@@ -236,28 +224,31 @@ async def test_record_materializes_exact_payload_revisions_and_rolls_back_unknow
     assert item.text_ref["generation"] == item.text_ref["revision_cursor"] == "4"
     assert item.text_ref["chunk_count"] == "0"
 
-    with pytest.raises(ObservationNotUnderstoodError) as failure:
-        await ingestion.record(thread, [event_entry(5)], lease=lease)
-    assert failure.value.cursor == 5
+    # The fold stalls on what it does not model: nothing of the batch applies and the view reports it.
+    await history.record(thread, [event_entry(5)])
     assert await event_logs.last_cursor(thread) == 4
+    async with history.sessions() as session:
+        checkpoint = await session.get(ThreadCheckpoint, thread)
+        assert checkpoint is not None
+        view = await session.get(ThreadEntity, (thread, checkpoint.projection_epoch, "view_state", "current"))
+        assert view is not None
+    assert ThreadOperationalState.model_validate(view.state["operational"]).status == "failed"
 
 
 async def test_a_completion_that_is_the_streamed_text_keeps_the_body_and_stores_nothing(
-    store: ThreadStore, event_logs: EventLogStore, ingestion: Ingestion, lease_for: LeaseFactory
+    store: ThreadStore, event_logs: EventLogStore, history: History
 ) -> None:
     thread = await event_logs.open("sb-1", "s-1")
-    lease = await lease_for(thread)
-    await ingestion.record(
+    await history.record(
         thread,
         [
             event_entry(1, text_delta=event_pb2.TextDelta(item_id="answer", text="hello")),
             event_entry(2, tool_output_delta=event_pb2.ToolOutputDelta(item_id="tool", text="out")),
         ],
-        lease=lease,
     )
     # The answer's completion compares with a stored chunk and an append in its own batch; the
     # tool's with stored chunks alone.
-    await ingestion.record(
+    await history.record(
         thread,
         [
             event_entry(3, text_delta=event_pb2.TextDelta(item_id="answer", text=" world")),
@@ -269,9 +260,8 @@ async def test_a_completion_that_is_the_streamed_text_keeps_the_body_and_stores_
                 ),
             ),
         ],
-        lease=lease,
     )
-    async with store._sessions() as session:
+    async with history.sessions() as session:
         items = {
             row.entity_id: row
             for row in await session.scalars(
@@ -300,10 +290,9 @@ async def test_a_completion_that_is_the_streamed_text_keeps_the_body_and_stores_
 
 
 async def test_record_projects_confirmed_input_and_parallel_tool_revisions(
-    store: ThreadStore, event_logs: EventLogStore, ingestion: Ingestion, lease_for: LeaseFactory
+    store: ThreadStore, event_logs: EventLogStore, history: History
 ) -> None:
     thread = await event_logs.open("sb-1", "s-1")
-    lease = await lease_for(thread)
     command = command_pb2.Command(command_id="input", submit_input=command_pb2.SubmitInput(text="question"))
     confirmed = event_entry(
         2,
@@ -312,16 +301,15 @@ async def test_record_projects_confirmed_input_and_parallel_tool_revisions(
         ),
     )
     confirmed.event.source_sequences.extend([81, 82])
-    await ingestion.record(
+    await history.record(
         thread,
         [
             event_entry(1, command_admitted=event_pb2.CommandAdmitted(command=command)),
             confirmed,
             event_entry(3, tool_arguments_delta=event_pb2.ToolArgumentsDelta(item_id="tool-a", partial_json="{")),
         ],
-        lease=lease,
     )
-    await ingestion.record(
+    await history.record(
         thread,
         [
             event_entry(
@@ -344,9 +332,8 @@ async def test_record_projects_confirmed_input_and_parallel_tool_revisions(
                 ),
             ),
         ],
-        lease=lease,
     )
-    async with store._sessions() as session:
+    async with history.sessions() as session:
         entities = {
             (row.entity_kind, row.entity_id): row
             for row in (await session.scalars(select(ThreadEntity).where(ThreadEntity.thread_id == thread))).all()
@@ -381,11 +368,10 @@ async def test_record_projects_confirmed_input_and_parallel_tool_revisions(
 
 
 async def test_a_later_batch_touching_a_completed_item_keeps_its_completion(
-    store: ThreadStore, event_logs: EventLogStore, ingestion: Ingestion, lease_for: LeaseFactory
+    store: ThreadStore, event_logs: EventLogStore, history: History
 ) -> None:
     thread = await event_logs.open("sb-1", "s-1")
-    lease = await lease_for(thread)
-    await ingestion.record(
+    await history.record(
         thread,
         [
             event_entry(1, item_completed=event_pb2.ItemCompleted(item_id="answer", text="done")),
@@ -396,17 +382,15 @@ async def test_a_later_batch_touching_a_completed_item_keeps_its_completion(
                 ),
             ),
         ],
-        lease=lease,
     )
-    await ingestion.record(
+    await history.record(
         thread,
         [
             event_entry(3, text_delta=event_pb2.TextDelta(item_id="answer", text="late")),
             event_entry(4, tool_output_delta=event_pb2.ToolOutputDelta(item_id="tool", text="late")),
         ],
-        lease=lease,
     )
-    async with store._sessions() as session:
+    async with history.sessions() as session:
         rows = await session.scalars(
             select(ThreadEntity).where(ThreadEntity.thread_id == thread, ThreadEntity.entity_kind == EntityKind.ITEM)
         )
@@ -417,23 +401,21 @@ async def test_a_later_batch_touching_a_completed_item_keeps_its_completion(
 
 
 async def test_every_row_is_numbered_densely_in_thread_order_and_never_renumbered(
-    store: ThreadStore, event_logs: EventLogStore, ingestion: Ingestion, lease_for: LeaseFactory
+    store: ThreadStore, event_logs: EventLogStore, history: History
 ) -> None:
     """The index is a position in the thread, so it is dense, ordered and fixed once given."""
     thread = await event_logs.open("sb-1", "s-1")
-    lease = await lease_for(thread)
-    await ingestion.record(
+    await history.record(
         thread,
         [
             event_entry(1, harness_started=event_pb2.HarnessStarted(pid=1)),
             event_entry(2, text_delta=event_pb2.TextDelta(item_id="first", text="a")),
             event_entry(3, text_delta=event_pb2.TextDelta(item_id="second", text="b")),
         ],
-        lease=lease,
     )
 
     async def numbered() -> list[tuple[str, str, int]]:
-        async with store._sessions() as session:
+        async with history.sessions() as session:
             rows = (
                 await session.scalars(
                     select(ThreadEntity).where(ThreadEntity.thread_id == thread).order_by(ThreadEntity.entity_index)
@@ -449,13 +431,12 @@ async def test_every_row_is_numbered_densely_in_thread_order_and_never_renumbere
     assert [entity_id for kind, entity_id, _ in first_pass if kind == "item"] == ["first", "second"]
 
     # A revision keeps its number; a new row takes the next one.
-    await ingestion.record(
+    await history.record(
         thread,
         [
             event_entry(4, text_delta=event_pb2.TextDelta(item_id="first", text="c")),
             event_entry(5, text_delta=event_pb2.TextDelta(item_id="third", text="d")),
         ],
-        lease=lease,
     )
     after = await numbered()
     positions = {(kind, entity_id): index for kind, entity_id, index in after}

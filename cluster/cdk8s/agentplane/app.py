@@ -59,7 +59,7 @@ from constructs import Construct
 
 from agentplane.action_service.sandbox.binding import DESCRIPTION_ANNOTATION
 from agentplane.app.oidc import OIDCSettings
-from agentplane.app.settings import CONFIG_FILE_ENV, Settings, ThreadReads
+from agentplane.app.settings import CONFIG_FILE_ENV, Settings
 from agentplane.crd_group import GROUP
 from cluster.cdk8s import cilium, node_scheduling, pod_policy
 from cluster.cdk8s.agentplane import (
@@ -235,13 +235,10 @@ class App(Construct):
                 "postgresql+asyncpg://$(AGENTPLANE_DB_USER):$(AGENTPLANE_DB_PASSWORD)"
                 "@$(AGENTPLANE_DB_HOST):$(AGENTPLANE_DB_PORT)/$(AGENTPLANE_DB_NAME)"
             ),
-            env_name(Settings, "electric_url"): EnvValue.from_value(
-                electric.service(
-                    namespace,
-                    electric.HISTORY if self.env.thread_reads is ThreadReads.HISTORY_SERVICE else electric.APP,
-                ).url
-            ),
-            env_name(Settings, "thread_reads"): EnvValue.from_value(self.env.thread_reads),
+            env_name(Settings, "electric_url"): EnvValue.from_value(electric.service(namespace, electric.HISTORY).url),
+            # CLEANUP(added 2026-10-10): drop once staging and testing pin an app image without
+            #   `Settings.thread_reads`; the previous image defaults to its own projector without it.
+            "AGENTPLANE_THREAD_READS": EnvValue.from_value("history_service"),
             env_name(OIDCSettings, "issuer"): EnvValue.from_value(self.env.app.oidc_issuer),
             env_name(OIDCSettings, "public_base_url"): EnvValue.from_value(f"https://{self.env.app.hostname}"),
             env_name(OIDCSettings, "client_id"): self.oidc.key("client-id").env_value(self, "oidc-client-id-ref"),
@@ -511,7 +508,6 @@ class App(Construct):
                 # still requires its own configured operator authenticator;
                 # network reachability grants no review authority.
                 actions.service(namespace).egress(),
-                electric.service(namespace, electric.APP).egress(),
                 electric.service(namespace, electric.HISTORY).egress(),
                 EgressRule.to_endpoints(
                     {"k8s:io.kubernetes.pod.namespace": namespace, "k8s:cnpg.io/cluster": "postgres"},

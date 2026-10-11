@@ -35,7 +35,6 @@ from agentplane.action_service.catalog import ActionGroup, McpExecutorBinding
 from agentplane.action_service.mcp_settings import McpOAuthServer
 from agentplane.action_service.operator_oidc_settings import OperatorOidcSettings, OperatorTokenProfile
 from agentplane.app.action_federation_settings import DirectFederationSettings
-from agentplane.app.settings import ThreadReads
 from agentplane.crd_group import GROUP
 from cluster.cdk8s import agent_access_profiles as access, cilium
 from cluster.cdk8s.agentplane import actions, app as app_component, app_settings, dex, egress
@@ -158,7 +157,6 @@ ENV = Environment(
     fold_shadow=True,
     settle_deltas=True,
     history_compaction=CompactionRun.APPLY,
-    thread_reads=ThreadReads.HISTORY_SERVICE,
     db=DbProps(instances=1),
     llm_ingress=LlmIngressProps(litellm_key_secret_name=_LITELLM_KEY_SECRET, models=model_configs(TESTING_APP_MODELS)),
     egress=EgressProps(

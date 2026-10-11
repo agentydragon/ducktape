@@ -1,48 +1,42 @@
-"""Operator metadata and Thread views use current production projection metadata."""
+"""Operator metadata over Thread views read from the History Service's fold."""
 
-from datetime import UTC, datetime
-from uuid import UUID, uuid4
+from uuid import UUID
 
 import pytest
 import pytest_bazel
-from google.protobuf.json_format import MessageToDict
-from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
 
-from agentplane.app.testing.retained_history import seed_retained_session
-from agentplane.app.threads.models import EventLog
+from agentplane.app.testing.history import SeededEventLogStore as EventLogStore
+from agentplane.app.testing.thread_test_support import SPEC, event_entry
 from agentplane.app.threads.store import InvalidPageTokenError, ThreadStore
-from agentplane.app.threads.summaries import AppSummaries
+from agentplane.history_service.testing.history import History
 from agentplane.proto import event_pb2, runner_pb2
 from agentplane.runner.harness import Harness
-from agentplane.thread_fold.models import ThreadCheckpoint, ThreadHistorySummary
 
 # gazelle:include_dep @pypi//protobuf
 
 
-async def seed_projection(engine: AsyncEngine, *, sandbox: str, cursor: int) -> UUID:
-    thread = await seed_retained_session(engine, sandbox=sandbox)
-    async with async_sessionmaker(engine).begin() as session:
-        session.add(
-            ThreadCheckpoint(thread_id=thread, source_id="source", projection_epoch="epoch", through_cursor=cursor)
-        )
-        session.add(
-            ThreadHistorySummary(
-                thread_id=thread,
-                last_event_at=datetime(2026, 1, 1, tzinfo=UTC),
-                attached=MessageToDict(
-                    runner_pb2.Attached(
-                        last_cursor=cursor, harness_state=runner_pb2.HARNESS_STATE_RUNNING, active_turn_id="turn"
-                    )
-                ),
-            )
-        )
+async def seed_thread(
+    event_logs: EventLogStore, history: History, *, sandbox: str, session: str, cursor: int, **last: object
+) -> UUID:
+    """A running Thread folded through `cursor`, whose last entry carries `last`."""
+    thread = await event_logs.open(sandbox, session)
+    entries = [event_entry(index, harness_started=event_pb2.HarnessStarted()) for index in range(1, cursor)]
+    entries.append(event_entry(cursor, **(last or {"harness_started": event_pb2.HarnessStarted()})))
+    await history.record(thread, entries)
+    await history.set_attached(
+        thread,
+        runner_pb2.Attached(
+            spec=SPEC, last_cursor=cursor, harness_state=runner_pb2.HARNESS_STATE_RUNNING, active_turn_id="turn"
+        ),
+    )
     return thread
 
 
-async def test_thread_views_and_operator_edits_need_no_raw_events(engine: AsyncEngine) -> None:
-    thread = await seed_projection(engine, sandbox="one", cursor=7)
-    other = await seed_projection(engine, sandbox="two", cursor=3)
-    store = ThreadStore(engine, AppSummaries(engine))
+async def test_thread_views_and_operator_edits_need_no_raw_events(
+    store: ThreadStore, event_logs: EventLogStore, history: History
+) -> None:
+    thread = await seed_thread(event_logs, history, sandbox="one", session="test-session-one", cursor=7)
+    other = await seed_thread(event_logs, history, sandbox="two", session="test-session-two", cursor=3)
     view = await store.get_thread(thread)
     assert view is not None
     assert view.last_cursor == 7
@@ -63,14 +57,12 @@ async def test_thread_views_and_operator_edits_need_no_raw_events(engine: AsyncE
 @pytest.mark.parametrize(
     "status", [None, event_pb2.TURN_STATUS_COMPLETED, event_pb2.TURN_STATUS_FAILED, event_pb2.TURN_STATUS_INTERRUPTED]
 )
-async def test_thread_turn_status_comes_from_projection_summary(engine: AsyncEngine, status: int | None) -> None:
-    thread = await seed_projection(engine, sandbox="one", cursor=7)
-    async with async_sessionmaker(engine).begin() as session:
-        summary = await session.get(ThreadHistorySummary, thread)
-        assert summary is not None
-        summary.last_turn_status = status
-        summary.end = {}
-    store = ThreadStore(engine, AppSummaries(engine))
+async def test_thread_turn_status_comes_from_the_fold_summary(
+    store: ThreadStore, event_logs: EventLogStore, history: History, status: event_pb2.TurnStatus | None
+) -> None:
+    last = {} if status is None else {"turn_completed": event_pb2.TurnCompleted(turn_id="turn", status=status)}
+    thread = await seed_thread(event_logs, history, sandbox="one", session="test-session", cursor=7, **last)
+    await history.end_feed(thread, error=None)
     view = await store.get_thread(thread)
     assert view is not None
     assert view.last_turn_status == (None if status is None else event_pb2.TurnStatus.Name(status))
@@ -78,33 +70,43 @@ async def test_thread_turn_status_comes_from_projection_summary(engine: AsyncEng
     assert await store.list_threads() == [view]
 
 
-async def test_harness_model_and_cwd_come_from_the_attached_runner_spec(engine: AsyncEngine) -> None:
-    attached, unattached = uuid4(), uuid4()
-    async with async_sessionmaker(engine).begin() as session:
-        for thread in (attached, unattached):
-            session.add(EventLog(id=thread, sandbox="one"))
-        await session.flush()
-        spec = runner_pb2.SessionSpec(
-            harness=runner_pb2.HARNESS_CODEX, cwd="/test-attached", model="test-attached-model"
-        )
-        session.add(ThreadHistorySummary(thread_id=attached, attached=MessageToDict(runner_pb2.Attached(spec=spec))))
-        session.add(ThreadHistorySummary(thread_id=unattached))
-    views = {view.id: view for view in await ThreadStore(engine, AppSummaries(engine)).list_threads()}
+async def test_a_confirmed_resume_masks_the_ended_feed_until_a_later_incarnation_ends(
+    store: ThreadStore, event_logs: EventLogStore, history: History
+) -> None:
+    thread = await seed_thread(event_logs, history, sandbox="one", session="test-resumed-session", cursor=3)
+    await history.end_feed(thread, error=None)
+    await event_logs.resume_pending(thread)
+    resumed = await store.get_thread(thread)
+    assert resumed is not None
+    assert resumed.feed_status == "active"
+    await history.record(thread, [event_entry(4, harness_started=event_pb2.HarnessStarted(resumed=True))])
+    await history.set_attached(thread, runner_pb2.Attached(spec=SPEC, last_cursor=4))
+    await history.end_feed(thread, error=None)
+    ended = await store.get_thread(thread)
+    assert ended is not None
+    assert ended.feed_status == "ended"
+
+
+async def test_harness_model_and_cwd_come_from_the_attached_runner_spec(
+    store: ThreadStore, event_logs: EventLogStore, history: History
+) -> None:
+    attached = await seed_thread(event_logs, history, sandbox="one", session="test-attached-session", cursor=1)
+    unattached = await event_logs.open("one", "test-unattached-session")
+    views = {view.id: view for view in await store.list_threads()}
     assert (views[attached].harness, views[attached].model, views[attached].cwd) == (
-        Harness.CODEX,
-        "test-attached-model",
-        "/test-attached",
+        Harness(runner_pb2.Harness.Name(SPEC.harness)),
+        SPEC.model,
+        SPEC.cwd,
     )
     assert (views[unattached].harness, views[unattached].model, views[unattached].cwd) == (None, None, None)
 
 
-async def test_missing_projection_metadata_does_not_read_retained_raw_history(engine: AsyncEngine) -> None:
-    thread = await seed_retained_session(engine)
-    store = ThreadStore(engine, AppSummaries(engine))
-    with pytest.raises(ValueError, match="missing service projection metadata"):
-        await store.get_thread(thread)
-    with pytest.raises(ValueError, match="missing service projection metadata"):
-        await store.list_threads()
+async def test_a_session_not_folded_yet_reads_as_nothing_folded(store: ThreadStore, event_logs: EventLogStore) -> None:
+    thread = await event_logs.open("sb-1", "test-unfolded-session")
+    view = await store.get_thread(thread)
+    assert view is not None
+    assert (view.last_cursor, view.feed_status, view.model) == (0, None, None)
+    assert await store.list_threads() == [view]
 
 
 async def all_pages(
@@ -120,10 +122,14 @@ async def all_pages(
         page_token = page.next_page_token
 
 
-async def test_pages_follow_creation_order_under_each_filter(engine: AsyncEngine) -> None:
-    oldest, middle, newest = [await seed_projection(engine, sandbox=f"test-sandbox-{n}", cursor=1) for n in range(3)]
-    newest_other = await seed_projection(engine, sandbox="test-other", cursor=1)
-    store = ThreadStore(engine, AppSummaries(engine))
+async def test_pages_follow_creation_order_under_each_filter(
+    store: ThreadStore, event_logs: EventLogStore, history: History
+) -> None:
+    oldest, middle, newest = [
+        await seed_thread(event_logs, history, sandbox=f"test-sandbox-{n}", session=f"test-session-{n}", cursor=1)
+        for n in range(3)
+    ]
+    newest_other = await seed_thread(event_logs, history, sandbox="test-other", session="test-other-session", cursor=1)
     await store.rename(middle, "Searched thread")
     await store.archive(newest)
 
@@ -136,10 +142,9 @@ async def test_pages_follow_creation_order_under_each_filter(engine: AsyncEngine
     assert await store.archived_count() == 1
 
 
-async def test_a_page_token_continues_only_its_own_listing(engine: AsyncEngine) -> None:
+async def test_a_page_token_continues_only_its_own_listing(store: ThreadStore, event_logs: EventLogStore) -> None:
     for n in range(3):
-        await seed_projection(engine, sandbox=f"test-sandbox-{n}", cursor=1)
-    store = ThreadStore(engine, AppSummaries(engine))
+        await event_logs.open(f"test-sandbox-{n}", f"test-session-{n}")
     first = await store.list_page(limit=1)
     assert first.next_page_token is not None
 

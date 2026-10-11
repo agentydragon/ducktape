@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import os
-from enum import StrEnum
 from pathlib import Path
 from typing import Any
 
@@ -22,11 +21,6 @@ from util.urls import HttpEndpointUrl
 
 # Names the YAML settings file a deployment mounts; not a field, so not a flag.
 CONFIG_FILE_ENV = "AGENTPLANE_CONFIG_FILE"
-
-
-class ThreadReads(StrEnum):
-    APP = "app"
-    HISTORY_SERVICE = "history_service"
 
 
 class AppSettingsConfig(BaseSettings):
@@ -108,11 +102,8 @@ class Settings(AppSettingsConfig):
     port: int = Field(default=8080, description="Bind port.")
     kubeconfig: Path | None = Field(default=None, description="Kubeconfig to use; omit for in-cluster.")
     database_url: str = Field(description="SQLAlchemy asyncpg URL of the thread store.")
-    electric_url: HttpEndpointUrl = Field(description="Cluster-internal Electric root URL.")
-    thread_reads: ThreadReads = Field(
-        default=ThreadReads.APP,
-        description="Which fold Thread reads come from. `history_service` also stops the app's own projector, "
-        "whose checkpoint stays for switching back; point `electric_url` at the history Electric with it.",
+    electric_url: HttpEndpointUrl = Field(
+        description="Cluster-internal root URL of the Electric replicating the History Service fold."
     )
     egress_admin_timeout: float = Field(
         default=5, description="Seconds to wait for the proxy before showing rules only."
@@ -120,7 +111,7 @@ class Settings(AppSettingsConfig):
     shutdown_timeout: int = Field(
         default=5,
         description="Seconds Uvicorn waits after SIGTERM for open requests and streams before cancelling "
-        "them; the rest of the Deployment's grace period is the ingester's lease release and closing the database.",
+        "them; the rest of the Deployment's grace period is stopping Session discovery and closing the database.",
     )
     resync_seconds: int = Field(
         default=300,

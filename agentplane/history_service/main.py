@@ -83,7 +83,6 @@ async def serve(settings: Settings) -> None:
                 evidence=EvidenceReader(engine, history),
                 reader_accounts=settings.reader_accounts,
                 request_timeout_s=settings.request_timeout_s,
-                history_changes=history_changes,
                 summary_changes=summary_changes,
                 watch_lease_s=settings.watch_lease_s,
             )

@@ -27,7 +27,6 @@ from agentplane.action_service.operator_oidc_settings import OperatorOidcSetting
 from agentplane.action_service.sandbox.actions import SandboxAction
 from agentplane.action_service.sandbox.binding import SandboxExecutorBinding
 from agentplane.app.action_federation_settings import ExchangeFederationSettings
-from agentplane.app.settings import ThreadReads
 from cluster.cdk8s import agent_access_profiles, cilium, external_creds, ha_mcp, node_scheduling
 from cluster.cdk8s.agentplane import actions, command_sandbox, notifications, staging_config
 from cluster.cdk8s.agentplane.actions_staging_policies import add_staging_action_policies
@@ -305,7 +304,6 @@ ENV = Environment(
     fold_shadow=True,
     settle_deltas=True,
     history_compaction=CompactionRun.APPLY,
-    thread_reads=ThreadReads.HISTORY_SERVICE,
     notifications_github=GitHubAppProps(app_id=5188971, secret_name="agentplane-github-app"),
     kubernetes_binding_cleanup_namespaces=frozenset(agent_access_profiles.cleanup_namespaces()),
     kubernetes_cluster_binding_cleanup=True,

@@ -567,18 +567,16 @@ Each implementation node is one deployment, in this order: a server capability w
 the caller switch, then deleting the old path in a later release after bounded checks on both
 environments. Testing goes first, staging after its checks pass. Retained data is deleted only by a
 node that says so. There is no dual write of the raw log: there is one copy of its tables, and each
-node switches which service reads or writes it. Only the fold double-runs.
+node switches which service reads or writes it.
 
 ```mermaid
 flowchart TD
-    APP_PROJECTOR_RETIRE[In flight: delete app projector code]
     APP_PROJECTION_RETIRE[Blocked: drop app projection tables]
     HISTORY_SERVICE_OWNERSHIP[Capstone: History Service owns log and fold]
     SESSION_EVENT_COMPACTION[Candidate: settle stored history]
     HISTORY_REPACK[Blocked: return freed space to the volume]
     APP_ALEMBIC_SQUASH[Baseline final app schema]
     THREAD_READ_POLICY[Scoped archive reads]
-    APP_PROJECTOR_RETIRE --> APP_PROJECTION_RETIRE
     APP_PROJECTION_RETIRE --> HISTORY_SERVICE_OWNERSHIP
     SESSION_EVENT_COMPACTION --> HISTORY_REPACK
     APP_PROJECTION_RETIRE --> HISTORY_REPACK
@@ -586,15 +584,9 @@ flowchart TD
     HISTORY_SERVICE_OWNERSHIP -. enforce at the final owner .-> THREAD_READ_POLICY
 ```
 
-### `APP_PROJECTOR_RETIRE` — delete the app projector
-
-**In flight: #9836; Thread fold move lane.** Testing and staging read Threads from the History
-Service fold (`thread_reads`), and the app's Electric deployment is gone (#9839). Remove the app
-projector, its leases' code and the `thread_reads` switch. Retained tables stay.
-
 ### `APP_PROJECTION_RETIRE` — drop the app projection
 
-**Blocked on projector retirement.** An explicit deletion PR for the app projection tables and
+**Blocked on the app projector's deletion rolling out to staging.** An explicit deletion PR for the app projection tables and
 leases. The data is derived and rebuildable from the raw log.
 
 ### `HISTORY_SERVICE_OWNERSHIP` — capstone
@@ -741,11 +733,9 @@ flowchart TD
     ACTION_SANDBOX_DESIGN[Decision: Action Service Sandboxes through the Sandbox Service]
     ACTION_SANDBOX_PROVISIONING[Blocked: the Action Service stops creating Sandboxes]
     ACTION_SANDBOX_DESIGN --> ACTION_SANDBOX_PROVISIONING
-    APP_PROJECTOR_RETIRE[Delete app projector]
     HISTORY_SERVICE_OWNERSHIP[History Service ownership]
     FOLLOW_PATH_RETIRE[Delete following, WatchSessions and holds] --> HISTORY_SANDBOX_LOCATOR_DROP
     HISTORY_SANDBOX_LOCATOR_DROP --> HISTORY_DATABASE_RENAME
-    APP_PROJECTOR_RETIRE --> APP_ELECTRIC_RETIRE
 ```
 
 ### `HISTORY_SANDBOX_LOCATOR_DROP` — rows name only their Session and writer
@@ -796,7 +786,7 @@ once the Sandbox Service's lifetime handling covers them (`SANDBOX_IDLE_EXPIRY`)
 
 ### `APP_ELECTRIC_RETIRE` — Electric no longer reads the app database
 
-**Blocked on app projector retirement.** Drop the publication and replication slot on the `app`
+**Blocked on the app projector's deletion.** Drop the publication and replication slot on the `app`
 database and the `electric` role's grants there, and give the remaining Electric deployment the
 plain name if it carries a history-specific one.
 
@@ -816,20 +806,18 @@ roll.
 
 Dead code, finished gates, compatibility shims and stale names found by the 2026-10-10 PDT audit of
 devel. A gate counts as legacy once its rollout is finished on both testing and staging or nothing
-reads it; mid-rollout gates (read cutover, delta settlement) stay with their own
-nodes above. Lane named per node; leftovers of in-flight work belong to the lane already changing
-that code. Upstream-gated tombstones with a verifiable condition in code (`keepingOffset` in
+reads it; the mid-rollout delta settlement gate stays with its own nodes above. Lane named per
+node; leftovers of in-flight work belong to the lane already changing that code. Upstream-gated
+tombstones with a verifiable condition in code (`keepingOffset` in
 `thread_store.tsx`, the jsdom pragma in `markdown.test.tsx`) need no node.
 
 ```mermaid
 flowchart TD
-    APP_THREAD_VIEW_CLEANUP[Blocked: app Thread view shims]
+    APP_THREAD_VIEW_CLEANUP[Candidate: app Thread view shims]
     RUNNER_SESSION_RECORD_SHIMS[Blocked: drop runner session record compatibility]
     LEGACY_SANDBOX_RETIRE[Retire pre-dial-out Sandboxes]
     LEGACY_SANDBOX_RETIRE --> RUNNER_SESSION_RECORD_SHIMS
-    HISTORY_FOLD_ALWAYS_ON[Blocked: the History Service always folds]
-    APP_PROJECTOR_RETIRE[Delete app projector] --> HISTORY_FOLD_ALWAYS_ON
-    APP_PROJECTOR_RETIRE --> APP_THREAD_VIEW_CLEANUP
+    HISTORY_FOLD_ALWAYS_ON[Candidate: the History Service always folds]
     ACTION_EXECUTION_AUDIT_TRIM[Decision: execution reconciliation columns]
     REFACTOR_COHERENCE_AUDIT[Blocked: whole-refactor coherence audit]
     FOLLOW_PATH_RETIRE[Delete following, WatchSessions and holds] --> REFACTOR_COHERENCE_AUDIT
@@ -850,16 +838,15 @@ both fields required, and have `from_spec` set `event_source_id` explicitly.
 
 ### `APP_THREAD_VIEW_CLEANUP` — app Thread view shims
 
-**Blocked on app projector retirement; Thread fold move lane.** The frontend reads `requested_value` with a `.default(null)` because the app's own fold (epoch `v1`)
-still holds Command rows written before the field existed, and `thread_reads: APP` serves them;
-once that switch is gone, only the History Service fold (rebuilt in `history-v1`, every row
-carrying the field) is read and the default can go. Code only.
+**Candidate; Thread fold move lane.** The frontend reads `requested_value` with a `.default(null)`
+for Command rows written before the field existed; a fold rebuilt in a new epoch has none.
+Once staging and testing serve an app image without `Settings.thread_reads`, drop the manifests'
+`AGENTPLANE_THREAD_READS` (its CLEANUP tombstone in `cluster/cdk8s/agentplane/app.py`).
 
 ### `HISTORY_FOLD_ALWAYS_ON` — the History Service always folds
 
-**Blocked on app projector retirement; Legacy burn-down lane.** Both environments set `fold_shadow`
-and read Threads from the History Service fold, yet the setting defaults to off. After
-`APP_PROJECTOR_RETIRE` deletes `thread_reads`, delete `Settings.fold_shadow` and
+**Candidate; Legacy burn-down lane.** Both environments set `fold_shadow` and read Threads from the
+History Service fold, yet the setting defaults to off. Delete `Settings.fold_shadow` and
 `Environment.fold_shadow`, and rename `fold_shadow.py`/`FoldShadow` and their "shadow" comments for
 what the fold is. A fold that stops on an unexpected error is only logged, by design, so raw reads
 keep serving ([Thread view sync](../docs/thread_view_sync.md)); give that state a signal an operator
@@ -1033,7 +1020,6 @@ Refactors found by reading devel (2026-10-11 PDT) against the quality bar and
 flowchart TD
     GATEWAY_CLIENT_SPLIT[Session messages and client move to the gateway]
     RUNNER_INBOUND_RETIRE[Retire inbound runner access]
-    APP_PROJECTOR_RETIRE[Delete app projector]
     subgraph COHERENCE_REFACTORS[Coherence refactors]
         SERVICE_SETTINGS_BASE[Candidate: one config-file settings base]
         SERVICE_PROCESS_MODULE[Candidate: one service process module]
@@ -1044,9 +1030,9 @@ flowchart TD
         GATEWAY_SANDBOX_READS[Candidate: the gateway reads Sandboxes read-only]
         SANDBOX_DEAD_CODE[Candidate: delete KubernetesBindings.run]
         RUNNER_ERRORS_REHOME[Blocked: errors beside the client that raises them]
-        THREAD_FOLD_SINGLE_OWNER[Blocked: the fold has one owner]
+        THREAD_FOLD_SINGLE_OWNER[Candidate: the fold has one owner]
         SETTLE_DELTAS_ALWAYS_ON[Unscheduled: retire the settle_deltas flag]
-        APP_SERVICE_NAMES[Blocked: app names the right services]
+        APP_SERVICE_NAMES[Candidate: app names the right services]
         APP_TEST_CLIENT_MOVE[Candidate: app test client out of production]
         KUBEVIRT_GUEST_CONTROL[Candidate: KubeVirt guest dials out]
         RUNNER_CORE_SPLIT[Blocked: runner core out of the inbound servicer]
@@ -1060,8 +1046,6 @@ flowchart TD
     GATEWAY_CLIENT_SPLIT --> RUNNER_ERRORS_REHOME
     KUBEVIRT_GUEST_CONTROL --> RUNNER_INBOUND_RETIRE
     RUNNER_INBOUND_RETIRE --> RUNNER_CORE_SPLIT
-    APP_PROJECTOR_RETIRE --> THREAD_FOLD_SINGLE_OWNER
-    APP_PROJECTOR_RETIRE --> APP_SERVICE_NAMES
     COHERENCE_REFACTORS --> REFACTOR_COHERENCE_AUDIT[Whole-refactor coherence audit]
 ```
 
@@ -1129,11 +1113,12 @@ its own error type.
 
 ### `THREAD_FOLD_SINGLE_OWNER` — the fold has one owner
 
-**Blocked on `APP_PROJECTOR_RETIRE`.** With only the History Service running the fold,
+**Candidate; Thread fold move lane.** With only the History Service running the fold,
 `HistoryProjector` takes its `Store` instead of two single-implementation callables and drops its
 `grpc.RpcError` catch, the app's `HistoryWatch` calls the client directly, app-era wording goes,
 `EventLogStore.open` raises an app error instead of `EventReplicationError`, and `thread_fold` moves
-under `history_service/`.
+under `history_service/`: the view types the browser syncs become a public History Service module,
+and the fold engine, projector and tables private to it.
 
 ### `SETTLE_DELTAS_ALWAYS_ON` — delta settlement always on
 
@@ -1144,7 +1129,7 @@ and the `Store` flag (the ingester's copy goes with `FOLLOW_PATH_RETIRE`).
 
 ### `APP_SERVICE_NAMES` — the app names the right services
 
-**Blocked on `APP_PROJECTOR_RETIRE`**, which rewrites the same files. The app says Sandbox Service
+**Candidate.** The app says Sandbox Service
 for the gateway's command records (`bridge.py`, `api.py`, a settings description), answers every
 `ConnectionError` with "Sandbox Service unavailable", and calls the stored cursor a follow cursor.
 `threads/ingestion.py`'s `Ingester` then only discovers Sessions; rename it for that.

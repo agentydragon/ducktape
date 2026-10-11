@@ -29,13 +29,10 @@ from agentplane.app.model_catalog import ModelCatalog, ModelOption
 from agentplane.app.operator_sessions import OperatorSessionStore
 from agentplane.app.presets import PresetCatalog, SandboxPreset, ThreadPreset
 from agentplane.app.testing.egress_proxy import FakeEgressAdmin, decision
-from agentplane.app.testing.history import (
-    ProjectedHistory as Ingestion,
-    ProjectedIngester as Ingester,
-    SeededEventLogStore as EventLogStore,
-)
+from agentplane.app.testing.history import SeededEventLogStore as EventLogStore
 from agentplane.app.testing.model_test_data import TEST_REASONING_EFFORTS
 from agentplane.app.threads.bridge import RunnerBridge
+from agentplane.app.threads.ingestion import Ingester
 from agentplane.app.threads.sessions import SandboxSessions
 from agentplane.app.threads.store import ThreadStore
 from agentplane.app.threads.view.content import ContentStore
@@ -695,7 +692,6 @@ def test_a_runner_that_does_not_answer_is_a_503(
     reviewer: TokenReviewer,
     event_logs: EventLogStore,
     content: ContentStore,
-    ingestion: Ingestion,
     electric_proxy: ElectricProxy,
     notifications_http: httpx.AsyncClient,
     notifications_token_file: Path,
@@ -721,7 +717,7 @@ def test_a_runner_that_does_not_answer_is_a_503(
                     runners=runners,
                     event_logs=event_logs,
                     content=content,
-                    ingester=Ingester(runners=runners, event_logs=event_logs, ingestion=ingestion),
+                    ingester=Ingester(runners=runners, event_logs=event_logs),
                 ),
                 store,
                 TEST_MODELS,
@@ -795,7 +791,6 @@ async def test_unanswered_service_command_is_a_504_and_cancels_its_rpc(
     reviewer: TokenReviewer,
     event_logs: EventLogStore,
     content: ContentStore,
-    ingestion: Ingestion,
     electric_proxy: ElectricProxy,
     notifications_http: httpx.AsyncClient,
     notifications_token_file: Path,
@@ -806,7 +801,7 @@ async def test_unanswered_service_command_is_a_504_and_cancels_its_rpc(
     thread_id = await event_logs.open("live", session_id)
     async with unanswered_command_service(tmp_path / "wedged-token") as (service, cancelled):
         runners = SandboxSessions(live_index, service)
-        ingester = Ingester(runners=runners, event_logs=event_logs, ingestion=ingestion)
+        ingester = Ingester(runners=runners, event_logs=event_logs)
         app = create_app(
             inventory,
             RunnerBridge(runners=runners, event_logs=event_logs, content=content, ingester=ingester),

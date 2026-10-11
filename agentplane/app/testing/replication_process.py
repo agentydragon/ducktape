@@ -1,8 +1,6 @@
-"""Real app processes with test-only gates at ingestion commit and browser sync delivery.
+"""Real app processes with a test-only gate at browser sync delivery.
 
-The store's production record/fencing/projection code is unchanged. A SQLAlchemy transaction
-subclass pauses only the selected record call, after its real writes or after its real commit.
-Process readiness and checkpoint observations travel through a pipe, never filesystem sentinels.
+Process readiness and replay observations travel through a pipe, never filesystem sentinels.
 The replay gate holds actual Electric/reconciliation response bytes without rewriting data.
 """
 
@@ -12,7 +10,6 @@ import signal
 import socket
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from contextvars import ContextVar
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from enum import StrEnum
@@ -20,20 +17,18 @@ from multiprocessing.connection import Connection
 from multiprocessing.process import BaseProcess
 from pathlib import Path
 from tempfile import TemporaryDirectory
-from types import TracebackType
 from typing import Any, cast
 from uuid import UUID
 
 import httpx
 import uvicorn
 from fastapi.staticfiles import StaticFiles
-from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, AsyncSessionTransaction, async_sessionmaker
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from agentplane.app.action_policy import ActionPolicyInventory
 from agentplane.app.api import create_app
 from agentplane.app.database import connect
-from agentplane.app.database_updates import Channel, DatabaseUpdates, notify_threads
+from agentplane.app.database_updates import Channel, DatabaseUpdates
 from agentplane.app.egress_access import EgressAccess
 from agentplane.app.electric import ElectricProxy
 from agentplane.app.identity import CallerIdentity, CallerKind, require_caller
@@ -45,10 +40,11 @@ from agentplane.app.testing.replication_source import SANDBOX
 from agentplane.app.threads import ingestion as ingestion_module
 from agentplane.app.threads.bridge import RunnerBridge
 from agentplane.app.threads.events.event_log import EventLogStore
-from agentplane.app.threads.ingestion import Ingester, Ingestion
+from agentplane.app.threads.history_watch import HistoryWatch
+from agentplane.app.threads.ingestion import Ingester
 from agentplane.app.threads.sessions import SandboxSessions
 from agentplane.app.threads.store import ThreadStore
-from agentplane.app.threads.summaries import AppSummaries
+from agentplane.app.threads.summaries import Summaries
 from agentplane.app.threads.view.content import ContentStore
 from agentplane.egress.decisions_client import DecisionsClient
 from agentplane.history_service.client import HistoryServiceClient
@@ -57,27 +53,14 @@ from agentplane.sandbox_service.client import SandboxServiceClient
 from agentplane.sandbox_service.egress_views import EgressReader
 from agentplane.sandbox_service.testing.backend import seed_runner
 from agentplane.sandbox_service.testing.fake_inventory import NAMESPACE, FakeCoreV1Api, FakeCustomObjectsApi
-from agentplane.thread_fold.projection_lease import ProjectionLease
-from agentplane.thread_fold.projector import HistoryProjector, ProjectionProgress, service_pages
-from agentplane.thread_fold.recording import THREAD_FOLD_EPOCH, THREAD_FOLD_PAGE_SIZE
 
 # gazelle:include_dep @pypi//protobuf
 # gazelle:include_dep @pypi//asyncpg
 
 
-class CommitBoundary(StrEnum):
-    BEFORE = "before-commit"
-    AFTER = "after-commit"
-
-
 @dataclass(frozen=True)
 class Ready:
     url: str
-
-
-@dataclass(frozen=True)
-class Checkpoint:
-    boundary: CommitBoundary
 
 
 @dataclass(frozen=True)
@@ -161,60 +144,6 @@ class GatedConversationDelivery:
         await self._app(scope, receive, gated_send)
 
 
-@dataclass(frozen=True)
-class Gate:
-    boundary: CommitBoundary
-    connection: Connection
-
-    async def pause(self) -> None:
-        self.connection.send(Checkpoint(self.boundary))
-        await asyncio.Future[None]()  # Only SIGKILL releases this test process.
-
-
-_record_gate: ContextVar[Gate | None] = ContextVar("test_ingestion_commit_gate", default=None)
-
-
-class GatedTransaction(AsyncSessionTransaction):
-    async def __aexit__(
-        self, exc_type: type[BaseException] | None, exc: BaseException | None, traceback: TracebackType | None
-    ) -> None:
-        gate = _record_gate.get() if exc_type is None else None
-        if gate is not None and gate.boundary is CommitBoundary.BEFORE:
-            await self.session.flush()
-            await gate.pause()
-        await super().__aexit__(exc_type, exc, traceback)
-        if gate is not None and gate.boundary is CommitBoundary.AFTER:
-            await gate.pause()
-
-
-class GatedSession(AsyncSession):
-    def begin(self) -> AsyncSessionTransaction:
-        return GatedTransaction(self)
-
-
-class GatedProjector(HistoryProjector):
-    def __init__(self, engine: AsyncEngine, reader: HistoryServiceClient, gate: Gate, cursor: int) -> None:
-        super().__init__(
-            engine,
-            service_pages(reader),
-            projection_epoch=THREAD_FOLD_EPOCH,
-            page_size=THREAD_FOLD_PAGE_SIZE,
-            notify=notify_threads,
-        )
-        self._reader = reader
-        self._sessions = async_sessionmaker(engine, class_=GatedSession, expire_on_commit=False)
-        self._gate = gate
-        self._cursor = cursor
-
-    async def project_batch(self, thread_id: UUID, *, lease: ProjectionLease) -> ProjectionProgress:
-        page = await self._reader.read_session_events(str(thread_id), limit=1)
-        token = _record_gate.set(self._gate if page.last_cursor >= self._cursor else None)
-        try:
-            return await super().project_batch(thread_id, lease=lease)
-        finally:
-            _record_gate.reset(token)
-
-
 class ReadyServer(uvicorn.Server):
     def __init__(self, config: uvicorn.Config, connection: Connection, url: str) -> None:
         super().__init__(config)
@@ -230,9 +159,9 @@ class ReadyServer(uvicorn.Server):
 def _run(
     database_url: str,
     runner_port: int,
+    history_target: str,
+    history_token_file: Path,
     connection: Connection,
-    boundary: CommitBoundary | None,
-    cursor: int,
     frontend_directory: Path | None,
     sandbox_present: bool,
     replay_after: int | None,
@@ -242,9 +171,9 @@ def _run(
         _serve(
             database_url,
             runner_port,
+            history_target,
+            history_token_file,
             connection,
-            boundary,
-            cursor,
             frontend_directory,
             sandbox_present,
             replay_after,
@@ -256,9 +185,9 @@ def _run(
 async def _serve(
     database_url: str,
     runner_port: int,
+    history_target: str,
+    history_token_file: Path,
     connection: Connection,
-    boundary: CommitBoundary | None,
-    cursor: int,
     frontend_directory: Path | None,
     sandbox_present: bool,
     replay_after: int | None,
@@ -266,8 +195,6 @@ async def _serve(
 ) -> None:
     ingestion_module.RECONCILE_S = 0.05
     engine = connect(database_url)
-    store = ThreadStore(engine, AppSummaries(engine))
-    ingestion = Ingestion(engine)
     database_updates = DatabaseUpdates(engine.url)
     custom, core = cast(Any, FakeCustomObjectsApi()), cast(Any, FakeCoreV1Api())
     index = LiveIndex(
@@ -279,7 +206,7 @@ async def _serve(
         index.pods[SANDBOX] = running
     with TemporaryDirectory() as directory:
         token_file = Path(directory) / "token"
-        await asyncio.to_thread(token_file.write_text, "test-app-history-peer")
+        await asyncio.to_thread(token_file.write_text, "test-app-sandbox-peer")
         inventory = SandboxServiceClient(
             f"127.0.0.1:{runner_port}",
             gateway_target=f"127.0.0.1:{runner_port}",
@@ -291,33 +218,30 @@ async def _serve(
             lifecycle_timeout_s=10,
             follow_timeout_s=10,
         )
-        # The scripted peer serves both services' methods on one port.
-        history = HistoryServiceClient(f"127.0.0.1:{runner_port}", token_file=token_file, request_timeout_s=10)
-        event_logs = EventLogStore(engine, summaries=AppSummaries(engine), history_reader=history)
+        history = HistoryServiceClient(history_target, token_file=history_token_file, request_timeout_s=10)
+        summaries = Summaries(engine, history)
+        store = ThreadStore(engine, summaries)
+        event_logs = EventLogStore(engine, history_reader=history, summaries=summaries)
         content = ContentStore(engine, history_reader=history)
-        projector = (
-            GatedProjector(engine, history, Gate(boundary, connection), cursor)
-            if boundary is not None
-            else HistoryProjector(
-                engine,
-                service_pages(history),
-                projection_epoch=THREAD_FOLD_EPOCH,
-                page_size=THREAD_FOLD_PAGE_SIZE,
-                notify=notify_threads,
-            )
-        )
         runners = SandboxSessions(index, inventory)
-        ingester = Ingester(runners=runners, event_logs=event_logs, ingestion=ingestion, history_projector=projector)
+        ingester = Ingester(runners=runners, event_logs=event_logs)
         bridge = RunnerBridge(runners=runners, event_logs=event_logs, content=content, ingester=ingester)
         async with (
             inventory,
             history,
+            history.new_client() as watch_client,
             httpx.AsyncClient(base_url="http://test-unused-decisions.invalid") as decisions_http,
             httpx.AsyncClient(
                 base_url=electric_url or "http://test-unused-electric.invalid", timeout=65
             ) as electric_http,
             httpx.AsyncClient(base_url="http://test-unused-notifications.invalid") as notifications_http,
         ):
+            history_watch = HistoryWatch(
+                watch_client,
+                lambda: watch_client.watch_session_summaries(timeout_s=60),
+                database_updates.changes[Channel.THREADS].notify,
+                retry_interval_s=0.05,
+            )
             egress = EgressAccess(EgressReader(namespace=NAMESPACE, custom_objects=custom), inventory)
             action_policy = ActionPolicyInventory(namespace=NAMESPACE, custom_objects=custom)
             app = create_app(
@@ -368,6 +292,7 @@ async def _serve(
             try:
                 async with database_updates.listener.listen():
                     await ingester.start()
+                    watching = asyncio.create_task(history_watch.run(), name="test-app-history-watch")
                     try:
                         with socket.socket() as listener:
                             listener.bind(("127.0.0.1", 0))
@@ -376,6 +301,8 @@ async def _serve(
                                 sockets=[listener]
                             )
                     finally:
+                        watching.cancel()
+                        await asyncio.gather(watching, return_exceptions=True)
                         await ingester.close()
             finally:
                 await engine.dispose()
@@ -399,11 +326,6 @@ class AppProcess:
     process: BaseProcess
     observations: Connection
 
-    async def checkpoint(self) -> Checkpoint:
-        observation = await receive(self.observations)
-        assert isinstance(observation, Checkpoint), observation
-        return observation
-
     async def replay_held(self) -> ReplayHeld:
         observation = await receive(self.observations)
         assert isinstance(observation, ReplayHeld), observation
@@ -425,9 +347,8 @@ class AppProcess:
 async def app_process(
     database_url: str,
     runner_port: int,
+    history: HistoryServiceClient,
     *,
-    boundary: CommitBoundary | None = None,
-    cursor: int = 0,
     frontend_directory: Path | None = None,
     sandbox_present: bool = True,
     replay_after: int | None = None,
@@ -440,9 +361,9 @@ async def app_process(
         args=(
             database_url,
             runner_port,
+            history.target,
+            history.token_file,
             child,
-            boundary,
-            cursor,
             frontend_directory,
             sandbox_present,
             replay_after,

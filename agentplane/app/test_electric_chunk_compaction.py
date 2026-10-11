@@ -30,7 +30,7 @@ import json
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
-from datetime import timedelta
+from pathlib import Path
 from typing import Any
 from uuid import UUID
 
@@ -41,14 +41,14 @@ from sqlalchemy import ColumnElement, delete, inspect, select, update
 from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
 
 from agentplane.app.changes import Changes
-from agentplane.app.database import connect
 from agentplane.app.electric import ElectricProxy, router
 from agentplane.app.testing.electric_service import electric_service
-from agentplane.app.testing.history import ProjectedHistory as Ingestion, SeededEventLogStore as EventLogStore
-from agentplane.app.testing.history_service import HistoryService
+from agentplane.app.testing.history import SeededEventLogStore as EventLogStore
 from agentplane.app.testing.replication_source import SANDBOX, SESSION, ReplicationSource
+from agentplane.app.threads.summaries import Summaries
 from agentplane.app.threads.view.content import ContentStore
-from agentplane.history_service.client import HistoryServiceClient
+from agentplane.history_service.testing.backend import history_service
+from agentplane.history_service.testing.history import History
 from agentplane.proto import event_pb2
 from agentplane.thread_fold.models import ThreadEntity, ThreadPayloadChunk
 from agentplane.thread_fold.views import ThreadPayloadReference
@@ -157,26 +157,22 @@ class _FollowedBody:
 
 
 @asynccontextmanager
-async def _followed_body(
-    history_peer: HistoryService, history_client: HistoryServiceClient
-) -> AsyncIterator[_FollowedBody]:
-    async with electric_service() as service:
-        engine = connect(service.database_url)
+async def _followed_body(engine: AsyncEngine, token_file: Path) -> AsyncIterator[_FollowedBody]:
+    """`engine` is the app's database; the body lives in the history database Electric replicates."""
+    async with electric_service() as service, history_service(service.database_url, token_file) as history_client:
+        history = History(service.database_url)
         forwarded: list[httpx.Request] = []
 
         async def forward(request: httpx.Request) -> None:
             forwarded.append(request)
 
         try:
-            event_logs, ingestion = (
-                EventLogStore(engine, peer=history_peer, history_reader=history_client),
-                Ingestion(engine, peer=history_peer, history_reader=history_client),
+            event_logs = EventLogStore(
+                engine, history=history, history_reader=history_client, summaries=Summaries(engine, history_client)
             )
             source = ReplicationSource()
             thread = await event_logs.open(SANDBOX, SESSION)
-            lease = await ingestion.acquire(thread, timedelta(minutes=2))
-            assert lease is not None
-            await ingestion.set_attached(thread, source.attached, lease=lease)
+            await history.set_attached(thread, source.attached)
             started = (
                 event_pb2.Event(harness_started=event_pb2.HarnessStarted(pid=1)),
                 event_pb2.Event(turn_started=event_pb2.TurnStarted(turn_id="turn", model="test-model")),
@@ -187,8 +183,8 @@ async def _followed_body(
             for index, text in enumerate(_STREAMED):
                 delta = event_pb2.Event(text_delta=event_pb2.TextDelta(item_id=_ITEM, text=text))
                 events = (*started, delta) if index == 0 else (delta,)
-                await ingestion.record(thread, [source.append(event) for event in events], lease=lease)
-            async with async_sessionmaker(engine)() as session:
+                await history.record(thread, [source.append(event) for event in events])
+            async with history.sessions() as session:
                 text_ref = await session.scalar(
                     select(ThreadEntity.text_ref).where(
                         ThreadEntity.thread_id == thread, ThreadEntity.entity_id == _ITEM
@@ -221,7 +217,7 @@ async def _followed_body(
                         {key: value for key, value in opened.url.params.items() if key not in {"offset", "replica"}},
                     )
                     yield _FollowedBody(
-                        engine=engine,
+                        engine=history.engine,
                         thread=thread,
                         reference=reference,
                         proxy=proxy,
@@ -231,7 +227,7 @@ async def _followed_body(
                         keyed=await _open(keyed_shape),
                     )
         finally:
-            await engine.dispose()
+            await history.close()
 
 
 def _operations(batches: list[list[Message]]) -> list[list[tuple[str, int]]]:
@@ -245,11 +241,11 @@ def _key(row: Row) -> Row:
 
 
 async def test_compacting_in_place_reaches_every_reader_of_the_field_as_one_batch(
-    history_peer: HistoryService, history_client: HistoryServiceClient
+    engine: AsyncEngine, tmp_path: Path
 ) -> None:
     """Chunk 0 rewritten to the whole text and the other chunks deleted: every row the compacted body
     keeps is one a holder of the uncompacted body already has."""
-    async with _followed_body(history_peer, history_client) as body:
+    async with _followed_body(engine, tmp_path / "history-token") as body:
         async with async_sessionmaker(body.engine)() as session, session.begin():
             await session.execute(
                 update(ThreadPayloadChunk).where(*body.chunks, ThreadPayloadChunk.chunk_index == 0).values(text=_TEXT)
@@ -282,12 +278,12 @@ async def test_compacting_in_place_reaches_every_reader_of_the_field_as_one_batc
 
 
 async def test_compacting_by_reinsertion_reaches_every_reader_of_the_field_as_one_batch(
-    history_peer: HistoryService, history_client: HistoryServiceClient
+    engine: AsyncEngine, tmp_path: Path
 ) -> None:
     """Every chunk deleted and the compacted row inserted at chunk 0's key. Electric passes both halves
     on, so a holder keeps its text on screen only by applying the batch whole: applied change by
     change, chunk 0's delete withdraws it."""
-    async with _followed_body(history_peer, history_client) as body:
+    async with _followed_body(engine, tmp_path / "history-token") as body:
         async with async_sessionmaker(body.engine)() as session, session.begin():
             await session.execute(delete(ThreadPayloadChunk).where(*body.chunks))
             session.add(

@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import asyncio
 import secrets
 from collections.abc import AsyncIterator, Iterator
+from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any, cast
@@ -24,22 +26,20 @@ from agentplane.app.identity import TokenReviewer
 from agentplane.app.live import LiveIndex
 from agentplane.app.operator_sessions import BrowserSession, OperatorSession, OperatorSessionStore, SessionRow
 from agentplane.app.testing.egress_proxy import FakeEgressAdmin
-from agentplane.app.testing.history import (
-    ProjectedHistory as Ingestion,
-    ProjectedIngester as Ingester,
-    SeededEventLogStore as EventLogStore,
-)
-from agentplane.app.testing.history_service import HistoryService
-from agentplane.app.testing.projection_lease import LeaseFactory
+from agentplane.app.testing.history import SeededEventLogStore as EventLogStore
 from agentplane.app.testing.thread_test_support import SPEC, Replica, event_entry
 from agentplane.app.threads.bridge import RunnerBridge
+from agentplane.app.threads.history_watch import HistoryWatch
+from agentplane.app.threads.ingestion import Ingester
 from agentplane.app.threads.sessions import SandboxSessions
 from agentplane.app.threads.store import ThreadStore
-from agentplane.app.threads.summaries import AppSummaries
+from agentplane.app.threads.summaries import Summaries
 from agentplane.app.threads.view.content import ContentStore
 from agentplane.egress.decisions_client import DecisionsClient
 from agentplane.history_service.client import HistoryServiceClient
+from agentplane.history_service.testing.backend import history_service
 from agentplane.history_service.testing.fixtures import service_database_template
+from agentplane.history_service.testing.history import History
 from agentplane.runner.testing.failure_journal import pytest_runtest_makereport
 
 # The per-test database is created over psycopg, which SQLAlchemy loads from the URL scheme.
@@ -70,7 +70,6 @@ from agentplane.sandbox_service.testing.fake_inventory import (
 )
 from agentplane.sandbox_service.testing.fake_rbac import FakeRbac
 from agentplane.testing.electric_role import ensure_electric_role
-from agentplane.thread_fold.projection_lease import ProjectionLease
 from util.testing.postgres import DatabaseClones, PostgresDatabaseTemplate, migrated_database_template
 from util.testing.postgres_fixtures import (
     database_clones,
@@ -118,26 +117,50 @@ async def engine(db_url: str) -> AsyncIterator[AsyncEngine]:
 
 
 @pytest.fixture
-def store(engine: AsyncEngine) -> ThreadStore:
-    return ThreadStore(engine, AppSummaries(engine))
+async def history(service_history_db_url: str) -> AsyncIterator[History]:
+    history = History(service_history_db_url)
+    try:
+        async with history.folding():
+            yield history
+    finally:
+        await history.close()
 
 
 @pytest.fixture
-def history_peer() -> HistoryService:
-    return HistoryService()
+def history_token_file(tmp_path: Path) -> Path:
+    return tmp_path / "history-service-token"
 
 
 @pytest.fixture
-async def history_client(history_peer: HistoryService, tmp_path: Path) -> AsyncIterator[HistoryServiceClient]:
-    async with history_peer.connect(tmp_path / "history-token") as client:
+async def history_client(service_history_db_url: str, history_token_file: Path) -> AsyncIterator[HistoryServiceClient]:
+    async with history_service(service_history_db_url, history_token_file) as client:
         yield client
 
 
 @pytest.fixture
+def summaries(engine: AsyncEngine, history_client: HistoryServiceClient) -> Summaries:
+    return Summaries(engine, history_client)
+
+
+@pytest.fixture
+def store(engine: AsyncEngine, summaries: Summaries) -> ThreadStore:
+    return ThreadStore(engine, summaries)
+
+
+@pytest.fixture
 def event_logs(
-    engine: AsyncEngine, history_peer: HistoryService, history_client: HistoryServiceClient
+    engine: AsyncEngine,
+    history: History,
+    history_client: HistoryServiceClient,
+    summaries: Summaries,
+    register_attached_sessions: bool,
 ) -> EventLogStore:
-    return EventLogStore(engine, peer=history_peer, history_reader=history_client)
+    return EventLogStore(
+        engine,
+        history=None if register_attached_sessions else history,
+        history_reader=history_client,
+        summaries=summaries,
+    )
 
 
 @pytest.fixture
@@ -145,27 +168,49 @@ def content(engine: AsyncEngine, history_client: HistoryServiceClient) -> Conten
     return ContentStore(engine, history_reader=history_client)
 
 
-@pytest.fixture
-def ingestion(engine: AsyncEngine, history_peer: HistoryService, history_client: HistoryServiceClient) -> Ingestion:
-    return Ingestion(engine, peer=history_peer, history_reader=history_client)
-
-
-@pytest.fixture
-async def database_updates(engine: AsyncEngine) -> AsyncIterator[DatabaseUpdates]:
+@asynccontextmanager
+async def listening(
+    engine: AsyncEngine, history_client: HistoryServiceClient, history_token_file: Path
+) -> AsyncIterator[DatabaseUpdates]:
+    """A replica's notifications, woken by the History Service's fold commits as `main.py` wires them."""
     updates = DatabaseUpdates(engine.url)
-    async with updates.listener.listen():
+    async with (
+        HistoryServiceClient(
+            history_client.target, token_file=history_token_file, request_timeout_s=20
+        ) as watch_client,
+        updates.listener.listen(),
+    ):
+        watch = HistoryWatch(
+            watch_client,
+            lambda: watch_client.watch_session_summaries(timeout_s=60),
+            updates.changes[Channel.THREADS].notify,
+            retry_interval_s=0.05,
+        )
+        task = asyncio.create_task(watch.run())
+        try:
+            yield updates
+        finally:
+            task.cancel()
+            await asyncio.gather(task, return_exceptions=True)
+
+
+@pytest.fixture
+async def database_updates(
+    engine: AsyncEngine, history_client: HistoryServiceClient, history_token_file: Path
+) -> AsyncIterator[DatabaseUpdates]:
+    async with listening(engine, history_client, history_token_file) as updates:
         yield updates
 
 
 @pytest.fixture
 async def replica(
-    db_url: str, history_peer: HistoryService, history_client: HistoryServiceClient
+    db_url: str, event_logs: EventLogStore, history_client: HistoryServiceClient
 ) -> AsyncIterator[Replica]:
     async with managed_async_engine(connect(db_url)) as engine:
+        summaries = Summaries(engine, history_client)
         yield Replica(
-            ThreadStore(engine, AppSummaries(engine)),
-            EventLogStore(engine, peer=history_peer, history_reader=history_client),
-            Ingestion(engine, peer=history_peer, history_reader=history_client),
+            ThreadStore(engine, summaries),
+            EventLogStore(engine, history=event_logs.history, history_reader=history_client, summaries=summaries),
             OperatorSessionStore(engine),
         )
 
@@ -191,16 +236,6 @@ async def stored_login(store: OperatorSessionStore, login: OperatorSession) -> S
 
 
 @pytest.fixture
-def lease_for(ingestion: Ingestion) -> LeaseFactory:
-    async def acquire(session_id: UUID) -> ProjectionLease:
-        lease = await ingestion.acquire(session_id, timedelta(minutes=1))
-        assert lease is not None
-        return lease
-
-    return acquire
-
-
-@pytest.fixture
 def custom_objects() -> FakeCustomObjectsApi:
     return FakeCustomObjectsApi()
 
@@ -217,10 +252,8 @@ def runners(live_index: LiveIndex, inventory: SandboxServiceClient) -> SandboxSe
 
 
 @pytest.fixture
-async def ingester(
-    runners: SandboxSessions, event_logs: EventLogStore, ingestion: Ingestion
-) -> AsyncIterator[Ingester]:
-    ingester = Ingester(runners=runners, event_logs=event_logs, ingestion=ingestion)
+async def ingester(runners: SandboxSessions, event_logs: EventLogStore) -> AsyncIterator[Ingester]:
+    ingester = Ingester(runners=runners, event_logs=event_logs)
     yield ingester
     await ingester.close()
 

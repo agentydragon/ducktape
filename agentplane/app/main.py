@@ -23,7 +23,7 @@ from agentplane.app.action_federation import FederatedOperatorActions
 from agentplane.app.action_policy import ActionPolicyInventory
 from agentplane.app.api import create_app
 from agentplane.app.database import connect
-from agentplane.app.database_updates import Channel, DatabaseUpdates, notify_threads
+from agentplane.app.database_updates import Channel, DatabaseUpdates
 from agentplane.app.egress_access import EgressAccess
 from agentplane.app.electric import ElectricProxy
 from agentplane.app.identity import TokenReviewer
@@ -31,23 +31,21 @@ from agentplane.app.live import LiveIndex, watch_for
 from agentplane.app.oidc import OIDCSettings
 from agentplane.app.operator_sessions import OperatorSessionStore
 from agentplane.app.presets import PresetCatalog
-from agentplane.app.settings import Settings, ThreadReads
+from agentplane.app.settings import Settings
 from agentplane.app.shutdown import Drain, drain_of
 from agentplane.app.threads.bridge import RunnerBridge
 from agentplane.app.threads.events.event_log import EventLogStore
 from agentplane.app.threads.history_watch import HistoryWatch
-from agentplane.app.threads.ingestion import Ingester, Ingestion
+from agentplane.app.threads.ingestion import Ingester
 from agentplane.app.threads.sessions import SandboxSessions
 from agentplane.app.threads.store import ThreadStore
-from agentplane.app.threads.summaries import AppSummaries, HistorySummaries
-from agentplane.app.threads.view.content import ContentStore, HistoryContentStore
+from agentplane.app.threads.summaries import Summaries
+from agentplane.app.threads.view.content import ContentStore
 from agentplane.egress.decisions_client import DecisionsClient
 from agentplane.history_service.client import HistoryServiceClient
 from agentplane.kubernetes_watch import STALE_AFTER_CYCLES
 from agentplane.sandbox_service.client import SandboxServiceClient
 from agentplane.sandbox_service.egress_views import EgressReader
-from agentplane.thread_fold.projector import HistoryProjector, service_pages
-from agentplane.thread_fold.recording import THREAD_FOLD_EPOCH, THREAD_FOLD_PAGE_SIZE
 from util.bazel.runfiles import get_required_path
 from util.kubernetes import CustomObjectsClient
 
@@ -153,38 +151,18 @@ async def async_main(settings: Settings) -> None:
         )
         engine = connect(settings.database_url)
         database_updates = DatabaseUpdates(engine.url)
-        match settings.thread_reads:
-            case ThreadReads.APP:
-                summaries: AppSummaries | HistorySummaries = AppSummaries(engine)
-                content = ContentStore(engine, history_reader=history)
-                projector: HistoryProjector | None = HistoryProjector(
-                    engine,
-                    service_pages(history),
-                    projection_epoch=THREAD_FOLD_EPOCH,
-                    page_size=THREAD_FOLD_PAGE_SIZE,
-                    notify=notify_threads,
-                )
-            case ThreadReads.HISTORY_SERVICE:
-                summaries = HistorySummaries(engine, history)
-                content = HistoryContentStore(engine, history_reader=history)
-                projector = None
+        summaries = Summaries(engine, history)
+        content = ContentStore(engine, history_reader=history)
+        history_watch = HistoryWatch(
+            history_watch_client,
+            history_watch_client.watch_session_summaries,
+            database_updates.changes[Channel.THREADS].notify,
+            retry_interval_s=1,
+        )
         store = ThreadStore(engine, summaries)
         event_logs = EventLogStore(engine, history_reader=history, summaries=summaries)
         runners = SandboxSessions(live, inventory)
-        ingester = Ingester(
-            runners=runners, event_logs=event_logs, ingestion=Ingestion(engine), history_projector=projector
-        )
-        if projector is None:
-            history_watch = HistoryWatch(
-                history_watch_client,
-                history_watch_client.watch_session_summaries,
-                database_updates.changes[Channel.THREADS].notify,
-                retry_interval_s=1,
-            )
-        else:
-            history_watch = HistoryWatch(
-                history_watch_client, history_watch_client.watch_session_history, ingester.wake, retry_interval_s=1
-            )
+        ingester = Ingester(runners=runners, event_logs=event_logs)
         bridge = RunnerBridge(runners=runners, event_logs=event_logs, content=content, ingester=ingester)
 
         app = create_app(
@@ -219,8 +197,10 @@ async def async_main(settings: Settings) -> None:
 
         # The SPA, mounted last so the API routes above it win; index.html answers the rest.
         app.mount("/", SpaFiles(directory=get_required_path(FRONTEND_INDEX).parent, html=True), name="frontend")
-        watch_tasks = [asyncio.create_task(watch.run(), name="live-watch")]
-        watch_tasks.append(asyncio.create_task(history_watch.run(), name="history-watch"))
+        watch_tasks = [
+            asyncio.create_task(watch.run(), name="live-watch"),
+            asyncio.create_task(history_watch.run(), name="history-watch"),
+        ]
         try:
             await serve_then_close(
                 AppServer(
@@ -247,8 +227,8 @@ async def serve_then_close(
     server: uvicorn.Server, *, ingester: Ingester, database_updates: DatabaseUpdates, engine: AsyncEngine
 ) -> None:
     """Serve until told to exit, then let go in the order the budgets assume: Uvicorn's graceful-shutdown
-    timeout bounds the requests and streams still open, and the ingester's lease release and closing the
-    runner connections and the database have the rest of the Pod's grace period to themselves."""
+    timeout bounds the requests and streams still open, and stopping discovery and closing the runner
+    connections and the database have the rest of the Pod's grace period to themselves."""
     try:
         async with database_updates.listener.listen():
             try:

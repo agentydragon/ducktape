@@ -1,8 +1,8 @@
 """Fixtures and helpers shared by the real-browser thread tests, registered by each of them with
 `pytest_plugins = ("agentplane.app.testing.thread_browser",)`.
 
-A conftest fixture outranks a plugin's, so each test module defines `db_url` itself, as `electric`'s
-database, for the package conftest's stores to follow.
+A conftest fixture outranks a plugin's, so each test module defines `service_history_db_url` itself,
+as `electric`'s database, for the package conftest's history fixtures to follow.
 """
 
 import asyncio
@@ -37,6 +37,8 @@ from agentplane.app.testing.replication_source import (
 from agentplane.app.threads.store import ThreadStore
 from agentplane.app.threads.view.content import ContentStore
 from agentplane.grpc_serving import serving
+from agentplane.history_service.client import HistoryServiceClient
+from agentplane.history_service.testing.history import History
 from agentplane.proto import event_log_pb2, event_pb2
 from util.bazel.runfiles import get_required_path
 from util.testing.frontend_visual import CONTAINER_BASE_BROWSER_ARGS, chromium_executable
@@ -117,12 +119,13 @@ class ThreadBrowser:
     store: ThreadStore
     event_logs: EventLogStore
     content: ContentStore
+    history: History
     opened: Opened
     app: AppProcess
     ingress: Ingress
 
     async def start_replay(self) -> None:
-        """Release runner replay and wait until the browser applies its current projection."""
+        """Release the history copy and wait until the browser applies its current projection."""
         self.opened.replay.set()
         await expect_projected_cursor(self.page, self.source.entries[-1].cursor)
 
@@ -147,8 +150,8 @@ def replay_after() -> int | None:
 
 
 @pytest.fixture
-def thread_source(event_logs: EventLogStore) -> ReplicationSource:
-    source = ReplicationSource(event_logs.peer)
+def thread_source() -> ReplicationSource:
+    source = ReplicationSource()
     source.attached.active_turn_id = "test-browser-turn"
     source.append(event_pb2.Event(harness_started=event_pb2.HarnessStarted(pid=123)))
     source.append(
@@ -175,6 +178,8 @@ async def thread_browser(
     event_logs: EventLogStore,
     content: ContentStore,
     thread_source: ReplicationSource,
+    history: History,
+    history_client: HistoryServiceClient,
     replay_after: int | None,
     electric: ElectricService,
     certificate: BrowserCertificate,
@@ -187,15 +192,21 @@ async def thread_browser(
     add_replication_source(source, server)
     async with (
         serving(server, "127.0.0.1:0", grace_s=0) as runner_port,
+        source.ingesting(history),
         app_process(
-            db_url, runner_port, frontend_directory=directory, replay_after=replay_after, electric_url=electric.url
+            db_url,
+            runner_port,
+            history_client,
+            frontend_directory=directory,
+            replay_after=replay_after,
+            electric_url=electric.url,
         ) as app,
         http2_proxy(app.url, certificate) as ingress,
     ):
         async with asyncio.timeout(30):
             opened = await source.opened.get()
             await page.goto(f"{ingress.url}/#/threads/{thread_id}")
-        yield ThreadBrowser(page, source, store, event_logs, content, opened, app, ingress)
+        yield ThreadBrowser(page, source, store, event_logs, content, history, opened, app, ingress)
 
 
 def append_items(thread_browser: ThreadBrowser, prefix: str, numbers: range) -> event_log_pb2.EventEntry:

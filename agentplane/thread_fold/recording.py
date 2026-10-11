@@ -37,12 +37,6 @@ from agentplane.thread_fold.views import (
 # gazelle:include_dep @pypi//protobuf
 
 
-# The epoch the app's projection was built in.
-THREAD_FOLD_EPOCH = "v1"
-# Entries the app projector folds per transaction.
-THREAD_FOLD_PAGE_SIZE = 128
-
-
 class EventReplicationError(ValueError):
     """The runner stream conflicts with the archived prefix or skips an entry."""
 

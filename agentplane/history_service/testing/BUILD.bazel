@@ -20,7 +20,6 @@ py_library(
         "//agentplane/history_service:summaries",
         "//agentplane/history_service:summary_changes",
         "//agentplane/history_service:thread_reads",
-        "//agentplane/history_service/storage:history_changes",
         "//agentplane/history_service/storage:store",
         "//agentplane/sandbox_service:client",
         "//agentplane/workload_auth:principal",
@@ -52,6 +51,27 @@ py_library(
         "//util/testing:postgres",
         "//util/testing:sqlalchemy_engines",
         "@pypi//pytest",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
+    name = "history",
+    testonly = True,
+    srcs = ["history.py"],
+    deps = [
+        "//agentplane/history_service:fold_shadow",
+        "//agentplane/history_service:protocol_pb2",
+        "//agentplane/history_service:summary_changes",
+        "//agentplane/history_service/storage:database_migrate",
+        "//agentplane/history_service/storage:db",
+        "//agentplane/history_service/storage:store",
+        "//agentplane/proto:event_log_pb2",
+        "//agentplane/proto:runner_pb2",
+        "//agentplane/thread_fold:recording",
+        "//util/testing:postgres",
+        "@pypi//asyncpg",
+        "@pypi//protobuf",
         "@pypi//sqlalchemy",
     ],
 )

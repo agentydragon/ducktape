@@ -17,7 +17,7 @@ from cilium_crds.io.cilium import CiliumNetworkPolicySpecEgress
 from agentplane.action_service.catalog import ActionGroup, Key
 from agentplane.action_service.mcp_settings import McpClientMetadataSettings, McpOAuthServer
 from agentplane.action_service.operator_oidc_settings import OperatorOidcSettings
-from agentplane.app.settings import AppSettingsConfig, ThreadReads
+from agentplane.app.settings import AppSettingsConfig
 from agentplane.llm_ingress.models import ModelConfig
 
 
@@ -149,15 +149,13 @@ class Environment:
     app_config: AppSettingsConfig
     # Options for Sandbox Service's gRPC channel to the runner, authored into its ConfigMap.
     runner_grpc_channel_options: Mapping[str, int | str]
-    # Whether the History Service rebuilds the thread fold from the raw log beside the app's.
+    # Whether the History Service folds the raw log into the thread fold the app and browsers read.
     fold_shadow: bool
     # Whether the History Service's writers remove an item's streamed delta entries once its
     # completion provably holds them (agentplane/history_service/README.md#delta-settlement).
     settle_deltas: bool
     # Which run of the stored-history compaction Job the environment holds, or None for none.
     history_compaction: CompactionRun | None
-    # Which fold the app reads Threads from; the app's Electric upstream follows it.
-    thread_reads: ThreadReads
     db: DbProps
     llm_ingress: LlmIngressProps
     egress: EgressProps

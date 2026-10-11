@@ -8,7 +8,7 @@ from datetime import UTC, datetime, timedelta
 from google.protobuf.timestamp_pb2 import Timestamp
 
 from agentplane.app.operator_sessions import OperatorSessionStore
-from agentplane.app.testing.history import ProjectedHistory as Ingestion, SeededEventLogStore as EventLogStore
+from agentplane.app.testing.history import SeededEventLogStore as EventLogStore
 from agentplane.app.threads.store import ThreadStore
 from agentplane.proto import event_log_pb2, event_pb2, runner_pb2
 
@@ -19,7 +19,6 @@ class Replica:
 
     store: ThreadStore
     event_logs: EventLogStore
-    ingestion: Ingestion
     operator_sessions: OperatorSessionStore
 
 

@@ -70,14 +70,16 @@ default and writes only with `--apply`; settled items are skipped, so it resumes
 
 ## Thread fold
 
-With `fold_shadow` set, it folds every retained Session into its own copy of the thread
-projection (`agentplane.thread_fold`; `thread_*` tables, since a Thread is the projection of a
+With `fold_shadow` set, it folds every retained Session into the thread projection
+(`agentplane.thread_fold`; `thread_*` tables, since a Thread is the projection of a
 Session: [layering](../docs/thread_layering.md#authorities-and-representations)), in epoch `history-v1`, from cursor 0: a page per Session per
 cycle under the per-Session projection leases, so replicas share the work. The fold writes only those
 tables. Cycles run back to back while any Session is behind, and committed history changes wake a
 caught-up fold. `fold_interval_s` remains the retry interval after failures and while another replica
 holds a Session lease. Each cycle logs how many of its leased Sessions and events it is behind. A page that carries an item's completion carries its settlement, so the fold skips the settled
-cursors and drops evidence it recorded for them before they settled.
+cursors and drops evidence it recorded for them before they settled. This fold is the only one:
+the app reads every Thread from it, and Electric replicates its tables to browsers, so with
+`fold_shadow` off Thread reads stop advancing.
 
 Session summaries (`GetSessionSummary`, and `BatchGetSessionSummaries` for up to 200 named Sessions
 at once, leaving out any it has no history for) read that fold and report the committed cursor beside
@@ -87,10 +89,6 @@ the folded one.
 database, and every replica forwards that to its watchers as a payload-free `changed`. A stream opens
 with one `changed` to cover whatever the caller missed, and ends with `reconnect_required` after
 `watch_lease_s`.
-
-`WatchSessionHistory` uses the same invalidation pattern for committed raw history and feed-state
-changes. The app uses it to wake its local projection coordinator; it does not connect to the history
-database. The fold subscribes to the same PostgreSQL notifications in-process.
 
 `ReadThreadEntities` serves a window of a Session's fold rows, by entity index or by key, each as
 the `ThreadEntityView` JSON browsers sync. A caller holding rows of a replaced epoch gets

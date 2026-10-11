@@ -42,8 +42,7 @@ def reader(engine: AsyncEngine, history: Store) -> EvidenceReader:
     return EvidenceReader(engine, history)
 
 
-@pytest.fixture
-async def folded(engine: AsyncEngine, history: Store) -> UUID:
+async def fold(engine: AsyncEngine, history: Store, entries: list[event_log_pb2.EventEntry]) -> UUID:
     session_id = uuid4()
     await history.record_session(
         session_id,
@@ -52,8 +51,16 @@ async def folded(engine: AsyncEngine, history: Store) -> UUID:
         sandbox_uid=None,
         runner_session_id="test-runner-session",
     )
-    await history.append(
-        session_id,
+    await history.append(session_id, entries)
+    await FoldShadow(engine=engine, history=history, concurrency=1, page_size=1000).cycle()
+    return session_id
+
+
+@pytest.fixture
+async def folded(engine: AsyncEngine, history: Store) -> UUID:
+    return await fold(
+        engine,
+        history,
         [
             entry(1, native=NATIVE),
             entry(2, turn_started=event_pb2.TurnStarted(turn_id="test-turn")),
@@ -65,8 +72,6 @@ async def folded(engine: AsyncEngine, history: Store) -> UUID:
             entry(4, text_delta=event_pb2.TextDelta(item_id="test-reply", text="hello")),
         ],
     )
-    await FoldShadow(engine=engine, history=history, concurrency=1, page_size=1000).cycle()
-    return session_id
 
 
 async def test_evidence_pages_lead_to_the_native_frame(reader: EvidenceReader, folded: UUID) -> None:
@@ -122,6 +127,31 @@ async def test_a_frame_settled_before_the_fold_forgets_its_link_is_unavailable(
     )
 
     assert [(frame.source_sequence, frame.HasField("entry")) for frame in frames.frames] == [(3, False)]
+
+
+async def test_a_native_frame_beyond_the_retained_history_is_unavailable(
+    engine: AsyncEngine, history: Store, reader: EvidenceReader
+) -> None:
+    beyond = 2**53 + 9
+    session_id = await fold(
+        engine,
+        history,
+        [
+            entry(
+                1,
+                natives=(beyond,),
+                item_started=event_pb2.ItemStarted(item_id="test-reply", kind=event_pb2.ITEM_KIND_ASSISTANT_TEXT),
+            )
+        ],
+    )
+
+    frames = await reader.native_frames(
+        protocol_pb2.ReadNativeFramesRequest(
+            session_id=str(session_id), projection_epoch=FOLD_EPOCH, entity=REPLY, observation_cursor=1, limit=10
+        )
+    )
+
+    assert [(frame.source_sequence, frame.HasField("entry")) for frame in frames.frames] == [(beyond, False)]
 
 
 async def test_evidence_refuses_a_stale_epoch_and_an_unlinked_observation(reader: EvidenceReader, folded: UUID) -> None:
