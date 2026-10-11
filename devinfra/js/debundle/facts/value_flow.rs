@@ -166,6 +166,17 @@ impl ChunkValueFlow {
                 .union(&self.values_of_expr(&cond.alt))
                 .copied()
                 .collect(),
+            Expr::Bin(bin)
+                if matches!(
+                    bin.op,
+                    BinaryOp::LogicalAnd | BinaryOp::LogicalOr | BinaryOp::NullishCoalescing
+                ) =>
+            {
+                self.values_of_expr(&bin.left)
+                    .union(&self.values_of_expr(&bin.right))
+                    .copied()
+                    .collect()
+            }
             Expr::Seq(seq) => seq
                 .exprs
                 .last()

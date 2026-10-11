@@ -4,12 +4,60 @@
 use debundle_e2e_support::*;
 
 #[test]
+fn direct_alias_getter_is_observed_before_later_member_read() {
+    expect_sequenced_cycle_rejection(
+        FixtureOpts::new(
+            r#"const foo = { value: 1 };
+const alias = foo;
+Object.defineProperty(alias, "value", { get() { return 2; } });
+const result = foo.value;
+console.log(result);
+export { foo, alias, result };
+"#,
+            vec![
+                logical_module("mod_b_foo", &[Member::new("foo"), Member::new("alias")]),
+                logical_module("mod_a_result", &[Member::new("result")]),
+            ],
+        ),
+        &["mod_a_result", "anon_residual_sentinel"],
+    );
+}
+
+#[test]
 fn returned_object_getter_is_observed_before_later_member_read() {
     expect_sequenced_cycle_rejection(
         FixtureOpts::new(
             r#"const foo = { value: 1 };
 function getFoo() { return foo; }
 const alias = getFoo();
+Object.defineProperty(alias, "value", { get() { return 2; } });
+const result = foo.value;
+console.log(result);
+export { foo, getFoo, alias, result };
+"#,
+            vec![
+                logical_module(
+                    "mod_b_foo",
+                    &[
+                        Member::new("foo"),
+                        Member::new("getFoo"),
+                        Member::new("alias"),
+                    ],
+                ),
+                logical_module("mod_a_result", &[Member::new("result")]),
+            ],
+        ),
+        &["mod_a_result", "anon_residual_sentinel"],
+    );
+}
+
+#[test]
+fn logically_selected_returned_object_is_not_plain_data() {
+    expect_sequenced_cycle_rejection(
+        FixtureOpts::new(
+            r#"const foo = { value: 1 };
+function getFoo() { return foo; }
+const alias = getFoo() || {};
 Object.defineProperty(alias, "value", { get() { return 2; } });
 const result = foo.value;
 console.log(result);

@@ -157,10 +157,9 @@ impl ChunkCodeGraph {
         fluent_bindings: &BTreeSet<String>,
         locate: Option<&mut dyn FnMut(Span) -> Option<SourceLocation>>,
     ) -> Self {
-        let value_flow = crate::facts::ChunkValueFlow::analyze(body);
-        Self::build_full_with_locations_and_flow(
+        Self::build_full_with_optional_flow(
             body,
-            &value_flow,
+            None,
             shadowed,
             declared_pure,
             declared_pure_new,
@@ -175,6 +174,31 @@ impl ChunkCodeGraph {
     pub(crate) fn build_full_with_locations_and_flow(
         body: &[TopLevelItemView<'_>],
         value_flow: &crate::facts::ChunkValueFlow,
+        shadowed: &BTreeSet<&'static str>,
+        declared_pure: &BTreeSet<String>,
+        declared_pure_new: &BTreeSet<String>,
+        declared_pure_members: &BTreeMap<String, BTreeSet<String>>,
+        imported_purities: &BTreeMap<String, Arc<Purity>>,
+        fluent_bindings: &BTreeSet<String>,
+        locate: Option<&mut dyn FnMut(Span) -> Option<SourceLocation>>,
+    ) -> Self {
+        Self::build_full_with_optional_flow(
+            body,
+            Some(value_flow),
+            shadowed,
+            declared_pure,
+            declared_pure_new,
+            declared_pure_members,
+            imported_purities,
+            fluent_bindings,
+            locate,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn build_full_with_optional_flow(
+        body: &[TopLevelItemView<'_>],
+        value_flow: Option<&crate::facts::ChunkValueFlow>,
         shadowed: &BTreeSet<&'static str>,
         declared_pure: &BTreeSet<String>,
         declared_pure_new: &BTreeSet<String>,
