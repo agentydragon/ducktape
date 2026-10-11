@@ -13,8 +13,6 @@ flowchart LR
     App[Integration app] --> Sandbox[Sandbox Service]
     App --> Gateway[Runner Gateway]
     App --> History[History Service]
-    History --> Sandbox
-    History --> Gateway
     App --> Notifications[Notification service]
     App --> Actions[Action Service]
     Notifications --> Sandbox
@@ -45,12 +43,12 @@ presentation state and projections, but those must not become hidden sources of 
 
 ## Ownership
 
-- **Sandbox Service:** Sandbox provisioning and lifecycle, templates, grants and egress, retention
-  holds, teardown, and the runner endpoints each new Sandbox's runner dials. It has no database.
+- **Sandbox Service:** Sandbox provisioning and lifecycle, templates, grants and egress,
+  teardown, and the runner endpoints each new Sandbox's runner dials. It has no database.
 - **Runner Gateway:** the runner control stream, verified destination bindings, the Session registry,
-  authorized runner-session access, command admission and delivery, event following, the
+  authorized runner-session access, command admission and delivery, command receipt reads, the
   `sandbox_commands` database, and sealing a Sandbox's runner on the Sandbox Service's request.
-- **History Service:** the Session Event archive, its ingestion from runner journals, the Thread
+- **History Service:** the Session Event archive, the ingress runners push their journals to, the Thread
   fold of each Session, and the read API over both.
 - **Runner:** native harness scheduling/execution, durable command journal, canonical execution Events
   and causal receipts.
@@ -67,20 +65,20 @@ Thread identities never enter the Sandbox Service or Runner Gateway API.
 ## Session access without the app
 
 The [Runner Gateway](../runner_gateway/README.md) resolves explicit session destinations, exposes
-authorized command delivery and receipt/event following, and distinguishes available, unavailable,
+authorized command delivery and receipt reads, and distinguishes available, unavailable,
 and permanently removed destinations without querying the app; the
 [Sandbox Service](../sandbox_service/README.md) provisions, suspends and resumes Sandboxes.
 Notification-triggered wake and durable acceptance of commands for offline destinations are separate,
 deferred product features. A service boundary is not permission to silently create a second
 runner-command queue.
 
-Runner journals remain durable on runner state volumes. They are ingested into a Session Event
-archive that outlives the runner volume; the app reads history from that archive through the
+Runner journals remain durable on runner state volumes. Runners push them to the History Service,
+whose Session Event archive outlives the runner volume; the app reads history from that archive through the
 History Service and keeps its UI projections.
 
 The Sandbox Service and the Runner Gateway serve protobuf/gRPC APIs; the app retains its
-browser-facing HTTP API. The Runner Gateway is the only production client of runner control and event
-RPCs. It does not proxy runner outbound model, Actions, or egress traffic. Administrative/test
+browser-facing HTTP API. The Runner Gateway is the only production server of the runner control
+stream. It does not proxy runner outbound model, Actions, or egress traffic. Administrative/test
 exceptions must be explicit; there is no production direct-runner fallback in the app or notifications.
 
 ## Existing staging data

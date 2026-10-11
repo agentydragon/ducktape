@@ -11,12 +11,11 @@ an MCP approval gateway for any MCP-capable LLM product.
 
 - [Action Service](action_service/README.md): ActionRequests, Decisions, auto-approval policies,
   and an MCP endpoint over OAuth.
-- [Sandbox Service](sandbox_service/README.md): Sandbox lifecycle, grants, egress, retention holds
-  and teardown.
+- [Sandbox Service](sandbox_service/README.md): Sandbox lifecycle, grants, egress and teardown.
 - [Runner Gateway](runner_gateway/README.md): the runner control stream, Sessions, and command
   admission and delivery.
 - [History Service](history_service/README.md): retained Session history, read by the
-  integration app.
+  integration app and the Notification service.
 - [Runner](runner/README.md) and [native drivers](native/README.md): run Claude Code or Codex in a
   sandbox and journal what they do.
 - [Egress proxy](egress/README.md): authenticates sandbox workloads and substitutes credentials.
@@ -51,8 +50,10 @@ flowchart TB
     proxy[Egress proxy]
     llm[LLM ingress]
     k8s[Kubernetes API, agent-sandbox controller]
+    authentik([Authentik])
     electric[Electric]
     hist_db[(history DB)]
+    compact[History compaction Job]
     outside((LiteLLM, internet, cluster services))
 
     browser -->|HTTPS, SSE| app
@@ -64,6 +65,8 @@ flowchart TB
     app -->|HTTP: operator decisions| actions
     app -->|HTTP admin port: egress decisions| proxy
     app -->|Thread shapes for the browser| electric
+    app -->|SandboxTemplates, Sandbox and policy reads| k8s
+    app -->|OIDC| authentik
     electric -->|logical replication| hist_db
     hist_db -.->|staging: WAL archive, on-demand base backups| outside
 
@@ -72,6 +75,7 @@ flowchart TB
     k8s -->|creates| sandbox
     gw -->|control Services, Leases| k8s
     hs -->|ingest, fold, read| hist_db
+    compact -->|settle deltas| hist_db
     notif -->|Sandbox lookups| ss
     notif -->|commands| gw
     notif -->|command receipts| hs
@@ -104,8 +108,6 @@ flowchart TB
   `sandbox_commands` (the Runner Gateway's Session registry and command admission),
   `sandbox_service` (Session history, written by the History Service), `actions`,
   `egress` and `notifications`; the Sandbox Service has none. Only the history database is drawn.
-  A second Electric over the `app` database still runs, but the app reads Threads through the
-  History Service and its Electric.
 - **Sandbox Service and Runner Gateway.** The Sandbox Service owns Sandbox lifecycle, grants
   and teardown; the Runner Gateway owns everything that talks to a runner: Sessions,
   commands and the runner control stream. They run as separate Deployments with their own accounts,
