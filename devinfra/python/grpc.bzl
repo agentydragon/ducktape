@@ -76,6 +76,7 @@ def py_grpc_service_library(name, proto, py_proto, visibility = None):
         pyi_srcs = [":" + name + "_stub"],
         tags = ["no-lint", "no-mypy"],
         visibility = visibility,
-        deps = [name + "_service"],
-        pyi_deps = [py_proto],
+        # The stub names the message types. The mypy aspect follows `deps`, not `pyi_deps`, so a module
+        # that imports only the service module needs them here to type-check.
+        deps = [name + "_service", py_proto],
     )
