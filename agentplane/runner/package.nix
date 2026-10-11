@@ -15,6 +15,7 @@ python.pkgs.buildPythonApplication {
     aiosqlite
     greenlet # sqlalchemy's asyncio extension
     grpcio
+    grpcio-health-checking # agentplane.grpc_serving
     httpx
     protobuf
     pydantic
