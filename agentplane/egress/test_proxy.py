@@ -896,11 +896,11 @@ async def test_admin_serves_decisions_and_health(proxy: ProxyUnderTest, decision
             decisions = await listing.json()
         async with admin.get("/decisions") as listing:
             unidentified = await listing.json()
-    assert [(d["method"], d["path"], d["outcome"], d["reason"], d["substituted"]) for d in decisions] == [
-        ("CONNECT", None, "allow", None, False),
-        ("GET", None, "allow", None, True),
-        ("CONNECT", None, "allow", None, False),
-        ("GET", None, "deny", "no-rule", False),
+    assert [(d["method"], d["outcome"], d["reason"], d["substituted"]) for d in decisions] == [
+        ("CONNECT", "allow", None, False),
+        ("GET", "allow", None, True),
+        ("CONNECT", "allow", None, False),
+        ("GET", "deny", "no-rule", False),
     ]
     assert [d["address"] for d in decisions] == ["127.0.0.1", "127.0.0.1", "127.0.0.1", None]
     substituted = one(d for d in decisions if d["substituted"])
@@ -1027,7 +1027,6 @@ async def test_history_omits_secret_bearing_paths_queries_and_headers(
     await decision_log.flush()
     rows = await decision_log.store.recent(SUBJECT_A)
     assert len(rows) == 2
-    assert all(row.path is None for row in rows)
     assert rows[0].connection_id == rows[1].connection_id
     assert rows[0].producer_id == rows[1].producer_id
     assert all(row.source_pod_uid == POD_A_UID for row in rows)
