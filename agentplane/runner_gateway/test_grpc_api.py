@@ -385,7 +385,7 @@ async def test_lookup_open_scopes_reservation_and_waits_for_runner_confirmation(
         runner = remote.runner(DESTINATION)
         assert not (await runner.lookup(idempotency_key="lookup-key")).session_id
         reserved = await sessions.reserve(
-            session_id=None,
+            session_id=uuid4(),
             caller_namespace=OWNER.namespace,
             caller_name=OWNER.name,
             sandbox_namespace=SANDBOX_NAMESPACE,
@@ -452,33 +452,10 @@ async def test_lookup_reads_the_runners_launch_outcome(
     assert peer.requests.empty()  # looking up never reopens
 
 
-async def test_open_without_a_client_session_id_mints_one_and_survives_a_lost_response(
-    resources: Resources, token_file: Path, peer: Peer, cluster: Cluster
-) -> None:
-    """A client predating client-minted Session IDs names only its Open key."""
-    request = sandbox_service_pb2.CreateSessionRequest(
-        sandbox=DESTINATION,
-        idempotency_key="lost-response",
-        spec=runner_pb2.SessionSpec(harness=runner_pb2.HARNESS_CODEX, cwd="/state", model="test-model"),
-    )
-    request.override_mask.paths.extend(["harness", "cwd", "model"])
-    async with service_client(resources, token_file, cluster.provisioning) as remote:
-        call = remote.gateway.CreateSession(request, metadata=await remote.metadata(), timeout=10)
-        first = await peer.request()
-        call.cancel()  # reply unknown to caller, reservation and runner request already committed
-        with pytest.raises((asyncio.CancelledError, grpc.aio.AioRpcError)):
-            await call
-        recovering = remote.gateway.CreateSession(request, metadata=await remote.metadata(), timeout=5)
-        second = await peer.open()
-        recovered = await recovering
-    assert second == first.open
-    assert recovered.attached.session_id == recovered.session_id
-    assert second.session_id == f"r-{recovered.session_id}"
-
-
-async def test_open_refuses_a_session_id_that_is_not_a_uuid(resources: Resources, token_file: Path) -> None:
+@pytest.mark.parametrize("session_id", ["", "r-not-a-uuid"])
+async def test_open_requires_a_client_session_id(resources: Resources, token_file: Path, session_id: str) -> None:
     request = wire.create_proto(DESTINATION, uuid4(), {"harness": "HARNESS_CODEX", "cwd": "/state", "model": "m"}, None)
-    request.session_id = "r-not-a-uuid"
+    request.session_id = session_id
     async with service_client(resources, token_file) as remote:
         with pytest.raises(grpc.aio.AioRpcError) as refused:
             await remote.gateway.CreateSession(request, metadata=await remote.metadata(), timeout=5)

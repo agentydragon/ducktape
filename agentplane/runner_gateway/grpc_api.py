@@ -227,9 +227,9 @@ class RunnerGateway(runner_gateway_pb2_grpc.RunnerGatewayServicer):
             caller = await self.resources.authenticate(context)
             if len(request.idempotency_key) > 128 or len(request.setup_script) > 65_536:
                 raise ValueError("Open key or setup script is too long")
-            # CLEANUP(added 2026-10-11): Require session_id, and stop minting here, once the deployed
-            #   app sends it on every CreateSession (agentplane/sandbox_service/client.py's create).
-            client_id = parse_session_id(request.session_id) if request.session_id else None
+            if not request.session_id:
+                raise ValueError("session ID is required")
+            client_id = parse_session_id(request.session_id)
             overrides = wire.launch_overrides(request)
             binding = await self.held(request.sandbox, writes=True)
             sandbox_uid = UUID(request.sandbox.sandbox_uid)
@@ -257,7 +257,7 @@ class RunnerGateway(runner_gateway_pb2_grpc.RunnerGatewayServicer):
                     else None
                 )
                 launch = sandbox_service_pb2.FrozenLaunch(
-                    open=runner_pb2.Open(session_id=str(session_id) if client_id else f"r-{session_id}", spec=spec),
+                    open=runner_pb2.Open(session_id=str(session_id), spec=spec),
                     bootstrap=binding.bootstrap if binding is not None else "",
                 )
                 if setup_script is not None:

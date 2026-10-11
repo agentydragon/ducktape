@@ -118,9 +118,8 @@ registered but are not followed until their binding is established by a verified
   committed before runner contact; the Service returns the UUID and an attachment snapshot with it.
   A `{session_id}` placeholder in a selected `cwd` override is expanded to that UUID, just like
   the stored default cwd. Concurrent or response-lost retries with the same UUID use the original
-  settings; the same UUID with changed inputs, another caller or another Sandbox is rejected. A
-  request without a UUID (a client predating them) is reserved by its key alone: the Service mints
-  the public ID and gives the runner `r-<public ID>`. `ResumeSession` and `SubmitCommand`
+  settings; the same UUID with changed inputs, another caller or another Sandbox is rejected; a
+  request without one is invalid. `ResumeSession` and `SubmitCommand`
   accept the public ID and resolve it to the retained runner ID within the pinned
   Sandbox UID. Neither the UUID nor the key applies to runner-discovered native child sessions. The
   app opens every new Thread through it, with its Session ID as the key too.

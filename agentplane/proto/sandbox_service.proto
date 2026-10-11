@@ -64,14 +64,13 @@ message CreateSessionRequest {
   // inherits all defaults, regardless of spec's scalar default values.
   google.protobuf.FieldMask override_mask = 4;
   optional string setup_script = 5;
-  // A fresh UUID the client minted: the public Session ID, and the runner's Session ID. Reusing it
-  // with other inputs, another Sandbox or another caller is refused. When unset, the service mints
-  // the public ID and gives the runner `r-<public ID>`.
+  // Required: a fresh UUID the client minted, the public Session ID and the runner's Session ID.
+  // Reusing it with other inputs, another Sandbox or another caller is refused.
   string session_id = 6;
 }
 
 message CreateSessionResponse {
-  // Public Session ID (UUID): the request's session_id when it set one. Not the harness session ID.
+  // Public Session ID (UUID): the request's session_id. Not the harness session ID.
   string session_id = 1;
   agentplane.proto.runner.Attached attached = 2;
 }

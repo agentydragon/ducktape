@@ -102,12 +102,12 @@ Raw evidence; the projection does not change runner Events or command admission.
 One Sandbox can host multiple Threads. A Thread may resume through several harness
 processes on that Sandbox. Current runner storage calls its durable, resumable container
 a “session”; it already spans process restarts. That existing name does not establish
-the target product Thread/incarnation relationship. The Runner Gateway's Session registry holds
+the target product Thread/incarnation relationship. The Sandbox Service's Session registry holds
 the mapping, without duplicating the log's static Sandbox on each association.
 
 A Thread is a view/fold of one durable logical Session's Event log, with its own
-operator-set presentation; it is not a second execution source. Its id is the Runner
-Gateway's public Session UUID: `CreateSession` reserves it before runner contact, and the app
+operator-set presentation; it is not a second execution source. Its id is the Sandbox
+Service's public Session UUID: `CreateSession` reserves it before runner contact, and the app
 materializes the Thread under it from the Open reply, an Open-key lookup, or `ListSessions`
 discovery, whichever comes first. A suspend/resume on retained storage reuses that Session ID,
 native conversation, and Event sequence; a fresh harness process is an incarnation,
@@ -121,9 +121,9 @@ ID across Sandboxes only if it restores the same fenced journal and native state
 separate copied-state tests gate that claim. For existing histories, keep the
 app UUID as the canonical public ID and import its association to the existing
 `(sandbox, runner session_id)` into the durable history authority. That runner ID remains the physical storage/runtime locator: its
-native files, directories, and workspace paths need no rekey. A client that mints its
-Session's UUID gets it as the runner locator too; Sessions created before clients minted them keep
-the locator `r-<uuid>`, which never leaves the Runner Gateway. A future multi-Session Thread would
+native files, directories, and workspace paths need no rekey. The client mints its
+Session's UUID, which is the runner locator too; Sessions created before clients minted them kept
+the locator `r-<uuid>`, which never left the Runner Gateway. A future multi-Session Thread would
 need a new explicit model rather than overloading this one-to-one identity.
 
 Both identities resolve through the same registry row, so Resume, Follow and command take the

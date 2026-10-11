@@ -869,7 +869,7 @@ flowchart TD
     POD_INCARNATION[Decision: a Pod is the incarnation]
     SEAL_FINALIZER[Unscheduled: seal as a finalizer on every delete]
     COMMAND_RECORDS_RETIRE[Unscheduled: drop command submission records]
-    SESSION_ID_MINT_RETIRE[Blocked: clients always name the Session ID]
+    SESSION_ID_MINT_RETIRE[Candidate: drop the runner Session ID column]
     LOOKUP_SESSION_RETIRE[Candidate: Session status from history, no Open reservation]
     HISTORY_INGRESS_SAME_BINARY[Candidate: the History Service binary serves the ingress]
     AGENTPLANE_SANDBOX_RESOURCE -. to seal a suspended Sandbox on delete .-> SEAL_FINALIZER
@@ -878,11 +878,10 @@ flowchart TD
 
 ### `SESSION_ID_MINT_RETIRE` — clients always name the Session ID
 
-**Blocked on the deployed app sending `session_id` on every create.** `CreateSessionRequest.session_id` becomes required. The Runner Gateway stops
-minting IDs and handing the runner an `r-` locator (the `CLEANUP` tombstones in `grpc_api.py`'s
-`CreateSession` and `session_registry.py`), and the app stops sending the ID again as
-`idempotency_key` for older Sandbox Services. The gateway's `session.runner_session_id` then always
-equals the Session ID; drop it and its place in `ux_session_runner_locator` (stops for the operator).
+**Candidate; operator's go-ahead for the drop.** `CreateSession` requires the client's Session ID, and
+the runner's Session ID equals it. The gateway's `session.runner_session_id` is now always the Session
+ID; drop it and its place in `ux_session_runner_locator` (stops for the operator). The app's
+`idempotency_key` on create goes with `LOOKUP_SESSION_RETIRE`, which retires its only reader.
 
 ### `HISTORY_INGRESS_SAME_BINARY` — the History Service binary serves the ingress
 

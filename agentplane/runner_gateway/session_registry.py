@@ -4,7 +4,7 @@ in the service's own database."""
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import cast
-from uuid import UUID, uuid4
+from uuid import UUID
 
 from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert
@@ -34,7 +34,7 @@ class SessionRegistry:
     async def reserve(
         self,
         *,
-        session_id: UUID | None,
+        session_id: UUID,
         caller_namespace: str,
         caller_name: str,
         sandbox_namespace: str,
@@ -46,16 +46,13 @@ class SessionRegistry:
     ) -> OpenReservation:
         """Reserve a durable Session ID *before* runner attach, or recover a lost reply.
 
-        A retry names the same Session: by the client's Session ID, or, from a client that mints
-        none, by the Open key, which is opaque to the Service and scoped to the authenticated caller
-        and Sandbox incarnation. The request bytes identify the caller's original inputs; the launch
+        A retry names the same client-minted Session ID, scoped to the authenticated caller and
+        Sandbox incarnation. The request bytes identify the caller's original inputs; the launch
         factory freezes effective runner setup for the Session ID. Committing before runner contact
         lets a retry recover the same setup.
         """
         if not all((caller_namespace, caller_name, sandbox_namespace, sandbox_name)):
             raise ValueError("caller and sandbox are required")
-        if session_id is None and not open_key:
-            raise ValueError("a Session ID or an Open idempotency key is required")
         scope = (
             Session.caller_namespace == caller_namespace,
             Session.caller_name == caller_name,
@@ -63,16 +60,15 @@ class SessionRegistry:
             Session.sandbox_name == sandbox_name,
             Session.sandbox_uid == sandbox_uid,
         )
-        query = select(Session).where(*scope, Session.id == session_id if session_id else Session.open_key == open_key)
+        query = select(Session).where(*scope, Session.id == session_id)
         async with self._sessions.begin() as session:
             # Do not recompute today's defaults for an already reserved Open.
             row = await session.scalar(query)
             if row is None:
-                candidate = session_id or uuid4()
                 await session.execute(
                     insert(Session)
                     .values(
-                        id=candidate,
+                        id=session_id,
                         caller_namespace=caller_namespace,
                         caller_name=caller_name,
                         sandbox_namespace=sandbox_namespace,
@@ -80,10 +76,8 @@ class SessionRegistry:
                         sandbox_uid=sandbox_uid,
                         open_key=open_key or None,
                         open_request=open_request,
-                        launch_spec=launch_spec(candidate),
-                        # CLEANUP(added 2026-10-11): Drop the `r-` locator with service-minted IDs
-                        #   (grpc_api.py's CreateSession tombstone).
-                        runner_session_id=str(session_id) if session_id else f"r-{candidate}",
+                        launch_spec=launch_spec(session_id),
+                        runner_session_id=str(session_id),
                     )
                     .on_conflict_do_nothing()
                 )

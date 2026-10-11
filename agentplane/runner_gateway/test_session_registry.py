@@ -53,6 +53,14 @@ async def test_client_session_id_is_stable_across_retries_and_replicas(
     assert await sessions.runner_id(
         session_id, sandbox_namespace="testing", sandbox_name="worker", sandbox_uid=uid
     ) == str(session_id)
+    assert (
+        await replica.session_id(
+            sandbox_namespace="testing", sandbox_name="worker", sandbox_uid=uid, runner_session_id=str(session_id)
+        )
+        == session_id
+    )
+    with pytest.raises(SessionNotFoundError):
+        await sessions.runner_id(session_id, sandbox_namespace="testing", sandbox_name="worker", sandbox_uid=uuid4())
     with pytest.raises(OpenConflictError, match="different inputs"):
         await reserve(sessions, payload=b"different caller request")
     with pytest.raises(OpenConflictError, match="could not be reserved"):
@@ -75,79 +83,6 @@ async def test_client_session_id_is_stable_across_retries_and_replicas(
     )
     with pytest.raises(OpenConflictError, match="could not be reserved"):
         await reserve(sessions, requested=uuid4(), key="open-1")
-
-
-async def test_service_minted_reservation_is_stable_across_retries_and_replicas(
-    sessions: SessionRegistry, engine: AsyncEngine
-) -> None:
-    replica = SessionRegistry(engine)
-    uid = uuid4()
-
-    async def reserve(
-        on: SessionRegistry,
-        *,
-        key: str = "open-1",
-        caller_name: str = "app",
-        sandbox_uid: UUID = uid,
-        payload: bytes = b"spec",
-        launch: str = "frozen",
-    ) -> OpenReservation:
-        return await on.reserve(
-            session_id=None,
-            caller_namespace="testing",
-            caller_name=caller_name,
-            sandbox_namespace="testing",
-            sandbox_name="worker",
-            sandbox_uid=sandbox_uid,
-            open_key=key,
-            open_request=payload,
-            launch_spec=lambda candidate: f"{launch} {candidate}".encode(),
-        )
-
-    first, second = await asyncio.gather(reserve(sessions), reserve(replica))
-    assert first == second
-    assert first.launch_spec == f"frozen {first.session_id}".encode()
-    assert await reserve(replica, launch="changed default should be ignored") == first
-    assert (
-        await sessions.runner_id(first.session_id, sandbox_namespace="testing", sandbox_name="worker", sandbox_uid=uid)
-        == f"r-{first.session_id}"
-    )
-    assert (
-        await replica.session_id(
-            sandbox_namespace="testing",
-            sandbox_name="worker",
-            sandbox_uid=uid,
-            runner_session_id=f"r-{first.session_id}",
-        )
-        == first.session_id
-    )
-    with pytest.raises(SessionNotFoundError):
-        await sessions.runner_id(
-            first.session_id, sandbox_namespace="testing", sandbox_name="worker", sandbox_uid=uuid4()
-        )
-    assert await reserve(sessions, key="open-2") != first
-    assert await reserve(sessions, caller_name="other") != first
-    assert await reserve(sessions, sandbox_uid=uuid4()) != first
-    with pytest.raises(OpenConflictError, match="different inputs"):
-        await reserve(sessions, payload=b"different caller request")
-    assert await reserve(replica) == first  # a bad retry does not change the reservation
-    with pytest.raises(ValueError, match="required"):
-        await reserve(sessions, key="")
-
-    async def lookup(*, caller_name: str = "app", sandbox_uid: UUID = uid, key: str = "open-1") -> UUID | None:
-        return await replica.lookup_open(
-            caller_namespace="testing",
-            caller_name=caller_name,
-            sandbox_namespace="testing",
-            sandbox_name="worker",
-            sandbox_uid=sandbox_uid,
-            open_key=key,
-        )
-
-    assert await lookup() == first.session_id
-    assert await lookup(caller_name="not-this-caller") is None
-    assert await lookup(sandbox_uid=uuid4()) is None
-    assert await lookup(key="absent") is None
 
 
 async def test_a_runner_locator_belongs_to_one_session(engine: AsyncEngine) -> None:
