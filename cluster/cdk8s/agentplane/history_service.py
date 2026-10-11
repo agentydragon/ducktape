@@ -97,8 +97,8 @@ class HistoryService(Construct):
             path="/etc/agentplane-history-service/config.yaml",
             supplied=[("database_url",)],
         )
-        # The History Service takes over the whole `sandbox_service` database, so it connects
-        # as that database's owner; until it writes, its sessions are read-only (main.py).
+        # The History Service writes the `sandbox_service` database, so it connects as that
+        # database's owner; its read API's sessions are read-only (main.py).
         database_url = (
             SecretRef(namespace=env.namespace, name="postgres-sandbox-service").key("uri").env_value(self, "database")
         )
