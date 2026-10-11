@@ -1045,7 +1045,7 @@ flowchart TD
         SANDBOX_DEAD_CODE[Candidate: delete KubernetesBindings.run]
         RUNNER_ERRORS_REHOME[Blocked: errors beside the client that raises them]
         THREAD_FOLD_SINGLE_OWNER[Blocked: the fold has one owner]
-        SETTLE_DELTAS_ALWAYS_ON[Delta settlement always on]
+        SETTLE_DELTAS_ALWAYS_ON[Unscheduled: retire the settle_deltas flag]
         APP_SERVICE_NAMES[Blocked: app names the right services]
         APP_TEST_CLIENT_MOVE[Candidate: app test client out of production]
         KUBEVIRT_GUEST_CONTROL[Candidate: KubeVirt guest dials out]
@@ -1139,11 +1139,10 @@ under `history_service/`.
 
 ### `SETTLE_DELTAS_ALWAYS_ON` — delta settlement always on
 
-**In progress (delta settlement rollout).** Both environments set `settle_deltas`, yet
-`IngressSettings.settle_deltas` and `Store(settle_deltas=False)` default off, so a new writer
-silently stops settling. Settlement becomes unconditional: delete the setting,
-`Environment.settle_deltas` and the `Store` flag (the ingester's copy goes with
-`FOLLOW_PATH_RETIRE`). `SESSION_EVENT_COMPACTION` does not wait for this.
+**Unscheduled; operator, 2026-10-11 PDT: keep the flag for debugging for now, may retire it later.**
+Settlement is on by default; `ingester.settle_deltas` and `ingress.settle_deltas` turn it
+off. Retiring the flag makes settlement unconditional: delete the setting, `Environment.settle_deltas`
+and the `Store` flag (the ingester's copy goes with `FOLLOW_PATH_RETIRE`).
 
 ### `APP_SERVICE_NAMES` — the app names the right services
 
