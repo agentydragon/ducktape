@@ -8,12 +8,13 @@ import json
 import logging
 import os
 from collections.abc import AsyncGenerator, AsyncIterator, Awaitable, Callable
-from contextlib import AsyncExitStack, aclosing, suppress
+from contextlib import AsyncExitStack, aclosing, asynccontextmanager, suppress
 from pathlib import Path, PurePosixPath
 from typing import Any, override
 
 import grpc
 
+from agentplane.grpc_serving import serving
 from agentplane.proto import event_log_pb2, runner_pb2, runner_pb2_grpc
 from agentplane.runner.adapter import HarnessAdapter
 from agentplane.runner.claude import ClaudeAdapter
@@ -599,17 +600,17 @@ async def _consume(
         closing.set()
 
 
-async def serve(config: RunnerConfig, *, address: str = "127.0.0.1:0") -> tuple[grpc.aio.Server, Runner, int]:
-    """Start a runner and its server; the returned port is the bound one."""
+@asynccontextmanager
+async def serve(config: RunnerConfig, *, address: str, grace_s: float) -> AsyncIterator[tuple[Runner, int]]:
+    """A started runner served on `address`; yields it and the bound port."""
     runner = Runner(config)
-    server = grpc.aio.server()
-    try:
+    async with AsyncExitStack() as stack:
+        stack.push_async_callback(runner.stop)
         await runner.startup()
+        server = grpc.aio.server()
         runner_pb2_grpc.add_RunnerServicer_to_server(RunnerService(runner), server)
-        port = server.add_insecure_port(address)
-        await server.start()
-    except BaseException:
-        await server.stop(0)
-        await runner.stop()
-        raise
-    return server, runner, port
+        async with serving(server, address, grace_s=grace_s) as port:
+            yield runner, port
+            # Out of stack order: the runner stops while the server still carries its Sessions' last
+            # Events to open Attach streams.
+            await stack.aclose()

@@ -85,13 +85,11 @@ def sample_native(pid: int, directory: Path) -> NativeSample:
 
 @asynccontextmanager
 async def running_client(config: RunnerConfig) -> AsyncIterator[RunnerClient]:
-    server, runner, port = await serve(config)
-    try:
-        async with RunnerClient(f"127.0.0.1:{port}", channel_options=None) as client:
-            yield client
-    finally:
-        await runner.stop()
-        await server.stop(0)
+    async with (
+        serve(config, address="127.0.0.1:0", grace_s=0) as (_, port),
+        RunnerClient(f"127.0.0.1:{port}", channel_options=None) as client,
+    ):
+        yield client
 
 
 @pytest.mark.parametrize("history_size", [1, 10, 100])

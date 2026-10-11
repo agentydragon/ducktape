@@ -12,7 +12,6 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Protocol, cast
 
-import grpc
 import pytest
 
 from agentplane.harness_tests.claude.messages import AnthropicMessages
@@ -79,17 +78,12 @@ def config(harness: runner_pb2.Harness, endpoint: ModelEndpoint, tmp_path: Path)
 
 @dataclass
 class RunnerHandle:
-    server: grpc.aio.Server
     runner: Runner
     port: int
 
     @property
     def target(self) -> str:
         return f"127.0.0.1:{self.port}"
-
-    async def stop(self) -> None:
-        await self.runner.stop()
-        await self.server.stop(0)
 
 
 class RunnerClientFactory(Protocol):
@@ -106,10 +100,8 @@ def runner_client_factory() -> RunnerClientFactory:
 
 @pytest.fixture
 async def runner(config: RunnerConfig) -> AsyncIterator[RunnerHandle]:
-    server, started, port = await serve(config)
-    handle = RunnerHandle(server, started, port)
-    yield handle
-    await handle.stop()
+    async with serve(config, address="127.0.0.1:0", grace_s=0) as (started, port):
+        yield RunnerHandle(runner=started, port=port)
 
 
 @pytest.fixture

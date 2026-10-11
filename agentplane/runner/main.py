@@ -149,43 +149,41 @@ def main(
 
 
 async def async_main(config: RunnerConfig, listen: str, control: tuple[str, str] | None) -> None:
-    server, runner, port = await serve(config, address=listen)
-    host = listen.rsplit(":", 1)[0]
-    # The line a supervisor or test reads to find the port.
-    print(f"listening {host}:{port}", flush=True)
-    stopping = asyncio.Event()
-    loop = asyncio.get_running_loop()
-    for signum in (signal.SIGINT, signal.SIGTERM):
-        loop.add_signal_handler(signum, stopping.set)
-    # A broken control stream or ingress push must not take the harnesses down with it, nor each other.
-    dialing: list[asyncio.Task[None]] = []
-    if control is not None:
-        target, bearer = control
-        dialing.append(
-            asyncio.create_task(
-                RunnerControlClient(runner, target=target, bearer=bearer, timing=ControlTiming()).run(),
-                name="runner control stream",
+    async with serve(config, address=listen, grace_s=5) as (runner, port):
+        host = listen.rsplit(":", 1)[0]
+        # The line a supervisor or test reads to find the port.
+        print(f"listening {host}:{port}", flush=True)
+        stopping = asyncio.Event()
+        loop = asyncio.get_running_loop()
+        for signum in (signal.SIGINT, signal.SIGTERM):
+            loop.add_signal_handler(signum, stopping.set)
+        # A broken control stream or ingress push must not take the harnesses down with it, nor each other.
+        dialing: list[asyncio.Task[None]] = []
+        if control is not None:
+            target, bearer = control
+            dialing.append(
+                asyncio.create_task(
+                    RunnerControlClient(runner, target=target, bearer=bearer, timing=ControlTiming()).run(),
+                    name="runner control stream",
+                )
             )
-        )
-    if config.ingress is not None:
-        dialing.append(
-            asyncio.create_task(
-                IngressPusher(
-                    runner, target=config.ingress.target, bearer=config.ingress.bearer, timing=ControlTiming()
-                ).run(),
-                name="ingress push",
+        if config.ingress is not None:
+            dialing.append(
+                asyncio.create_task(
+                    IngressPusher(
+                        runner, target=config.ingress.target, bearer=config.ingress.bearer, timing=ControlTiming()
+                    ).run(),
+                    name="ingress push",
+                )
             )
-        )
-    for task in dialing:
-        task.add_done_callback(_report_dialing_end)
-    await stopping.wait()
-    for task in dialing:
-        task.remove_done_callback(_report_dialing_end)
-        task.cancel()
-    await asyncio.gather(*dialing, return_exceptions=True)
-    logger.info("stopping: %d session(s)", len(runner.sessions))
-    await runner.stop()
-    await server.stop(grace=5)
+        for task in dialing:
+            task.add_done_callback(_report_dialing_end)
+        await stopping.wait()
+        for task in dialing:
+            task.remove_done_callback(_report_dialing_end)
+            task.cancel()
+        await asyncio.gather(*dialing, return_exceptions=True)
+        logger.info("stopping: %d session(s)", len(runner.sessions))
 
 
 def _report_dialing_end(task: asyncio.Task[None]) -> None:

@@ -26,15 +26,11 @@ async def test_initialize_executes_once_and_replays_its_output(
 ) -> None:
     state = tmp_path / "state"
     state.mkdir()
-    server, runner, port = await serve(RunnerConfig(state_dir=state))
-    script = "mkdir -p workspaces\nprintf 'ready\\n' | tee -a workspaces/public-coder-ready\n"
-    try:
+    async with serve(RunnerConfig(state_dir=state), address="127.0.0.1:0", grace_s=0) as (_, port):
+        script = "mkdir -p workspaces\nprintf 'ready\\n' | tee -a workspaces/public-coder-ready\n"
         async with runner_client_factory(f"127.0.0.1:{port}") as client:
             first = await collect(client.initialize_events(script))
             repeated = await collect(client.initialize_events(script))
-    finally:
-        await runner.stop()
-        await server.stop(0)
 
     assert [(event.sequence, event.attempt) for event in first] == [(1, 1), (2, 1)]
     assert first[0].output == runner_pb2.InitializationOutput(
@@ -50,9 +46,8 @@ async def test_initialize_reconnect_replays_after_the_client_cursor(
 ) -> None:
     state = tmp_path / "state"
     state.mkdir()
-    server, runner, port = await serve(RunnerConfig(state_dir=state))
-    script = "printf 'first\\n'\nwhile [ ! -f continue ]; do sleep 0.01; done\nprintf 'second\\n' >&2\n"
-    try:
+    async with serve(RunnerConfig(state_dir=state), address="127.0.0.1:0", grace_s=0) as (_, port):
+        script = "printf 'first\\n'\nwhile [ ! -f continue ]; do sleep 0.01; done\nprintf 'second\\n' >&2\n"
         async with runner_client_factory(f"127.0.0.1:{port}") as client:
             disconnected = client.initialize_events(script)
             first = await disconnected.read()
@@ -60,9 +55,6 @@ async def test_initialize_reconnect_replays_after_the_client_cursor(
             disconnected.cancel()
             (state / "continue").touch()
             resumed = await collect(client.initialize_events(script, after_sequence=first.sequence))
-    finally:
-        await runner.stop()
-        await server.stop(0)
 
     assert first.output.data == b"first\n"
     assert [event.sequence for event in resumed] == [2, 3]
@@ -78,23 +70,19 @@ async def test_initialized_sandbox_refuses_a_different_script_after_restart(
     state = tmp_path / "state"
     state.mkdir()
     script = "printf 'first\\n' | tee -a initialized\n"
-    first_server, first_runner, first_port = await serve(RunnerConfig(state_dir=state))
-    try:
-        async with runner_client_factory(f"127.0.0.1:{first_port}") as first_client:
-            await first_client.initialize(script)
-    finally:
-        await first_runner.stop()
-        await first_server.stop(0)
+    async with (
+        serve(RunnerConfig(state_dir=state), address="127.0.0.1:0", grace_s=0) as (_, first_port),
+        runner_client_factory(f"127.0.0.1:{first_port}") as first_client,
+    ):
+        await first_client.initialize(script)
 
-    server, runner, port = await serve(RunnerConfig(state_dir=state))
-    try:
-        async with runner_client_factory(f"127.0.0.1:{port}") as client:
-            replayed = await collect(client.initialize_events(script))
-            with pytest.raises(grpc.aio.AioRpcError) as changed_script:
-                await client.initialize("printf 'changed\\n' >> initialized\n")
-    finally:
-        await runner.stop()
-        await server.stop(0)
+    async with (
+        serve(RunnerConfig(state_dir=state), address="127.0.0.1:0", grace_s=0) as (_, port),
+        runner_client_factory(f"127.0.0.1:{port}") as client,
+    ):
+        replayed = await collect(client.initialize_events(script))
+        with pytest.raises(grpc.aio.AioRpcError) as changed_script:
+            await client.initialize("printf 'changed\\n' >> initialized\n")
 
     assert replayed[0].output.data == b"first\n"
     assert replayed[-1].result.exit_code == 0
@@ -108,15 +96,11 @@ async def test_failed_initialize_is_replayed_and_never_rerun(
 ) -> None:
     state = tmp_path / "state"
     state.mkdir()
-    server, runner, port = await serve(RunnerConfig(state_dir=state))
-    script = "echo run >> runs\necho broken >&2\nexit 7\n"
-    try:
+    async with serve(RunnerConfig(state_dir=state), address="127.0.0.1:0", grace_s=0) as (_, port):
+        script = "echo run >> runs\necho broken >&2\nexit 7\n"
         async with runner_client_factory(f"127.0.0.1:{port}") as client:
             first = await collect(client.initialize_events(script))
             repeated = await collect(client.initialize_events(script))
-    finally:
-        await runner.stop()
-        await server.stop(0)
 
     assert (first[-1].result.executed, first[-1].result.exit_code) == (True, 7)
     assert first[0].output.data == b"broken\n"
