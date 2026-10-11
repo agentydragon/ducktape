@@ -324,7 +324,6 @@ journal.
 
 ```mermaid
 flowchart LR
-    RUNNER_OUTBOUND_SPOOL[Candidate: serve follows over the channel]
     RUNNER_OUTBOUND_LIFECYCLE[Candidate: lifecycle requests over the channel]
     RUNNER_OUTBOUND_ROLLOUT[Blocked: every template dials out]
     VM_CONTROL_NETWORKING[Blocked: integrate selected VM control path]
@@ -334,8 +333,12 @@ flowchart LR
     VM_PROCESS_ISOLATION[Blocked: harness/process resource boundary]
     VM_LIFECYCLE[Blocked: integrated lifecycle]
     RUNNER_OUTBOUND_LIFECYCLE --> VM_CONTROL_NETWORKING
-    RUNNER_OUTBOUND_SPOOL --> VM_CONTROL_NETWORKING
-    RUNNER_OUTBOUND_SPOOL --> RUNNER_OUTBOUND_ROLLOUT
+    RUNNER_INGRESS_PUSH[Runner pushes Events to its ingress] --> VM_CONTROL_NETWORKING
+    RUNNER_INGRESS_PUSH --> RUNNER_OUTBOUND_ROLLOUT
+    HISTORY_INGRESS[History Service ingress] --> RUNNER_OUTBOUND_ROLLOUT
+    SANDBOX_RUNNER_ENDPOINTS[Sandboxes name their runner's endpoints] --> RUNNER_OUTBOUND_ROLLOUT
+    CLIENT_SESSION_IDS[Clients mint Session IDs] --> RUNNER_OUTBOUND_ROLLOUT
+    SEAL_ON_INGRESS_ACK[Seal waits on the ingress acknowledgement] --> RUNNER_OUTBOUND_ROLLOUT
     RUNNER_OUTBOUND_LIFECYCLE --> RUNNER_OUTBOUND_ROLLOUT
     RUNNER_OUTBOUND_ROLLOUT --> LEGACY_SANDBOX_RETIRE[Blocked: operator deletes every pre-cutover Sandbox]
     LEGACY_SANDBOX_RETIRE --> RUNNER_INBOUND_RETIRE[Blocked: retire inbound runner access]
@@ -351,14 +354,6 @@ flowchart LR
     SANDBOX_VM_ISOLATION --> LOCAL_BAZEL[Blocked: bounded local Bazel client in VM]
 ```
 
-### `RUNNER_OUTBOUND_SPOOL` — serve follows over the channel
-
-**Candidate; the runner side is built.** The Sandbox Service agrees `events`,
-serves `FollowSession` over the owner's `Follow` streams with subscribers dialing the control
-Service, and moves its admission reconciliation onto locally held follows, advancing its cursor
-only after each commit. Test reconnect, checkpoint rollback and slow readers; never read a
-transport cancellation as harness cancellation.
-
 ### `RUNNER_OUTBOUND_LIFECYCLE` — lifecycle requests over the channel
 
 **Candidate.** Implement the explicit `ListSessions`, `Initialize`,
@@ -368,8 +363,10 @@ transport cancellation as harness cancellation.
 
 ### `RUNNER_OUTBOUND_ROLLOUT` — every template dials out
 
-**Blocked on follows and lifecycle requests.** Every Sandbox template starts its runner with the
-channel flags, and the canary template goes. Pre-cutover Sandboxes are not upgraded.
+**Blocked on lifecycle requests and the [ingress and control split](#11-runner-ingress-and-control-split).**
+Every Sandbox template starts its runner pushing Events to its ingress and holding its control
+stream, and the canary template goes. Pre-cutover Sandboxes are not upgraded: a clean cutover
+(operator, 2026-10-10 PDT), with the operator stopping their one running Sandbox for it.
 
 ### `LEGACY_SANDBOX_RETIRE` — delete pre-cutover Sandboxes
 
@@ -377,6 +374,10 @@ channel flags, and the canary template goes. Pre-cutover Sandboxes are not upgra
 PDT) and deletes every Sandbox created before it through `DeleteSandbox`, so each runner seals its
 journals and retention holds keep it until the History Service has archived them. Exit: no live
 Sandbox's runner lacks the channel.
+
+Pre-cutover Sandboxes are still archived the old way: the History Service follows them through the
+Sandbox Service and holds them until the seal, which is why `FOLLOW_PATH_RETIRE` waits for this
+node.
 
 ### `RUNNER_INBOUND_RETIRE` — remove inbound runner access
 
@@ -557,8 +558,9 @@ unless the operator reviews a change. Separate Sandbox initialization from per-s
 
 **Candidate.** Draft [#7859](https://github.com/agentydragon/ducktape/pull/7859)
 expires idle Sandboxes (`TODO(sandbox-lifetime)` in `action_service/sandbox/inventory.py`). Deleting
-one goes through [teardown](../sandbox_service/API.md#teardown), which waits on the History Service's
-retention hold, so history is archived first.
+one goes through [teardown](../sandbox_service/API.md#teardown), which waits until history is
+archived through the seal (a retention hold today, the ingress acknowledgement after
+`SEAL_ON_INGRESS_ACK`).
 
 ## 7. History Service extraction and delta settlement
 
@@ -732,8 +734,8 @@ a newer image) and resume, checking continuation and prompt-cache cost. The froz
 
 **Blocked on the lifecycle decision.** The Sandbox Service's Session
 record holds a sequence of Sandbox incarnations, at most one live; the locator ↔ Sandbox binding
-becomes per incarnation. The Session feed (`WatchSessions`) reports each incarnation's `sandbox_uid`, from
-which the History Service records it, and its seal ends that incarnation, not the Session. On the retained volume the runner journal and its
+becomes per incarnation. Each incarnation's runner announces its `sandbox_uid` on ingress, from which the
+History Service records it, and its seal ends that incarnation, not the Session. On the retained volume the runner journal and its
 cursors simply continue; the next incarnation journals that it resumed after a seal.
 
 ### `STATE_VOLUME_RETENTION` — keep the state volume at teardown
@@ -877,6 +879,168 @@ frontend reads `requested_value` with a `.default(null)` because the app's own f
 still holds Command rows written before the field existed, and `thread_reads: APP` serves them;
 once that switch is gone, only the History Service fold (rebuilt in `history-v1`, every row
 carrying the field) is read and the default can go. Code only.
+
+## 11. Runner ingress and control split
+
+Target and decisions: [History Service plan](history_service.md#target). The runner keeps dialing
+out, but to two endpoints its Sandbox names: an **ingress** it pushes its journal's Events to, and
+a **control hub** (the Sandbox Service) whose stream it holds for commands, receipts and lifecycle
+requests. The History Service is the ingress when history is kept. This replaces following the
+runner through the Sandbox Service, so the Sandbox Service-side event following
+(`docs/runner_channel.md` § Event following) is not built. Section 7's store, fold and database
+nodes and section 9 are unaffected.
+
+```mermaid
+flowchart TD
+    RUNNER_INGRESS_CONTRACT[Candidate: ingress and control contract]
+    HISTORY_INGRESS[Blocked: History Service ingress]
+    RUNNER_INGRESS_PUSH[Blocked: runner pushes Events to its ingress]
+    SANDBOX_RUNNER_ENDPOINTS[Blocked: Sandboxes name their runner's endpoints]
+    CLIENT_SESSION_IDS[Blocked: clients mint Session IDs]
+    APP_LIVE_FROM_HISTORY[Candidate: no live reads through the Sandbox Service]
+    SEAL_ON_INGRESS_ACK[Blocked: seal waits on the ingress acknowledgement]
+    RUNNER_OUTBOUND_ROLLOUT[Every template dials out]
+    LEGACY_SANDBOX_RETIRE[Retire pre-cutover Sandboxes]
+    FOLLOW_PATH_RETIRE[Blocked: delete following, WatchSessions and holds]
+    SANDBOX_SERVICE_DEPLOYMENT_SPLIT[Candidate: controller and hub as separate Deployments]
+    AGENTPLANE_SANDBOX_RESOURCE[Decision: our own Sandbox resource]
+    POD_INCARNATION[Decision: a Pod is the incarnation]
+    SEAL_FINALIZER_SPIKE[Candidate: does upstream run a deleting Sandbox]
+    SEAL_FINALIZER[Blocked: seal as a finalizer on every delete]
+    COMMAND_RECORDS_RETIRE[Unscheduled: drop command submission records]
+    RUNNER_INGRESS_CONTRACT --> HISTORY_INGRESS
+    RUNNER_INGRESS_CONTRACT --> RUNNER_INGRESS_PUSH
+    RUNNER_INGRESS_CONTRACT --> SANDBOX_RUNNER_ENDPOINTS
+    RUNNER_INGRESS_CONTRACT --> CLIENT_SESSION_IDS
+    HISTORY_INGRESS --> SEAL_ON_INGRESS_ACK
+    RUNNER_INGRESS_PUSH --> SEAL_ON_INGRESS_ACK
+    HISTORY_INGRESS --> RUNNER_OUTBOUND_ROLLOUT
+    RUNNER_INGRESS_PUSH --> RUNNER_OUTBOUND_ROLLOUT
+    SANDBOX_RUNNER_ENDPOINTS --> RUNNER_OUTBOUND_ROLLOUT
+    CLIENT_SESSION_IDS --> RUNNER_OUTBOUND_ROLLOUT
+    CLIENT_SESSION_IDS --> RUNNER_INBOUND_RETIRE[Retire inbound runner access]
+    SEAL_ON_INGRESS_ACK --> RUNNER_OUTBOUND_ROLLOUT
+    RUNNER_OUTBOUND_ROLLOUT --> LEGACY_SANDBOX_RETIRE
+    LEGACY_SANDBOX_RETIRE --> FOLLOW_PATH_RETIRE
+    APP_LIVE_FROM_HISTORY --> FOLLOW_PATH_RETIRE
+    SEAL_FINALIZER_SPIKE --> SEAL_FINALIZER
+    SEAL_ON_INGRESS_ACK --> SEAL_FINALIZER
+    AGENTPLANE_SANDBOX_RESOURCE -. if upstream will not run a deleting Sandbox .-> SEAL_FINALIZER
+    POD_INCARNATION -. if chosen, rewrites .-> SESSION_STATE_VOLUME_DESIGN[State volume design]
+    HISTORY_INGRESS -. receipts readable from history .-> COMMAND_RECORDS_RETIRE
+```
+
+### `RUNNER_INGRESS_CONTRACT` — ingress and control contract
+
+**Candidate; shape decided by the operator, 2026-10-10 PDT.** Rewrite
+[runner channel](../docs/runner_channel.md) § Event following as the ingress contract and add its
+proto. The runner pushes each Session's journal Events in cursor order to its one ingress
+(fan-out, if ever needed, is a separate service, not a list of sinks); the ingress acknowledges a
+cursor after committing it and the runner resumes after the last acknowledged cursor, so delivery
+is at least once and idempotent by cursor. Entries are the runner's verbatim `EventEntry`s. The
+ingress binds each Session to the workload identity of its first writer (from the Pod-bound token,
+its own egress audience) and refuses other writers. Control keeps `Connect`, without `events`;
+`Seal` reports when the ingress has acknowledged through each seal cursor. The hub reconciles an
+ambiguous submission over control (redelivering the same `command_id` returns its original
+receipt) instead of reading the journal (`AdmissionReconciler`, `journal_reader`). A historyless client
+implements the ingress itself and sends commands through the hub. Name the frames that announce a
+Session on ingress (`CLIENT_SESSION_IDS`).
+
+### `HISTORY_INGRESS` — History Service ingress
+
+**Blocked on the contract.** The History Service serves the ingress as its own Deployment, apart
+from its read API, since it takes untrusted input. Its store appends exactly as the follower
+ingester does now and acknowledges only after commit. Test duplicate and out-of-order pushes, a
+second writer identity refused, and resume after a History Service restart.
+
+### `RUNNER_INGRESS_PUSH` — runner pushes Events to its ingress
+
+**Blocked on the contract.** The runner pushes from its journal by reshaping the replay of its
+`Follow` side (#9853) into the push, and deletes `Follow` and the `events` capability, which the
+Sandbox Service never agrees (its `Follow` stub returns `UNIMPLEMENTED`). It keeps the last acknowledged cursor per Session on its volume, and never
+deletes a journal entry on acknowledgement. An unreachable ingress only lags; commands keep
+flowing.
+
+### `SANDBOX_RUNNER_ENDPOINTS` — Sandboxes name their runner's endpoints
+
+**Blocked on the contract.** The component that creates a Sandbox's Kubernetes objects sets its
+runner's ingress and control endpoints, and only it can: the request names the ingress (default:
+the History Service), the control endpoint is always the hub. Egress grants admit both, each with
+its own token audience.
+
+### `CLIENT_SESSION_IDS` — clients mint Session IDs
+
+**Blocked on the contract; operator, 2026-10-10 PDT.** The client puts a fresh UUID in the
+create-session control message; the runner journals it and announces the Session on ingress, and
+the History Service's index becomes the record of which Sessions exist. The hub keeps only what it
+needs to route: Session to Sandbox. `CreateSession` stops minting the runner Session ID it passes
+in `OpenSession` (#9858). A retried create carries the same ID, so the Open reservation and
+`LookupSession`, which reconciles it by scanning the journal over the inbound API, are deleted.
+
+### `APP_LIVE_FROM_HISTORY` — no live reads through the Sandbox Service
+
+**Candidate.** The app's live Thread updates come from the History Service (Electric already
+replicates its projection). Remove any remaining app or Notification Service use of
+`FollowSession`, and confirm nothing else follows a runner through the Sandbox Service.
+
+### `SEAL_ON_INGRESS_ACK` — seal waits on the ingress acknowledgement
+
+**Blocked on the ingress and the runner push.** Teardown waits until the runner reports the
+ingress has acknowledged through every seal cursor, instead of on History Service holds. A runner
+that cannot report keeps the Sandbox in sealing for the operator, as today.
+
+### `FOLLOW_PATH_RETIRE` — delete following, WatchSessions and holds
+
+**Blocked on legacy Sandbox retirement and live reads from history.** Delete `FollowSession`,
+`WatchSessions` and its change feed, the History Service follower ingester, and the hold API and
+`retention-holds` annotation. Stops for the operator before dropping
+stored registry columns.
+
+### `SANDBOX_SERVICE_DEPLOYMENT_SPLIT` — controller and hub as separate Deployments
+
+**Candidate; operator, 2026-10-10 PDT.** The Sandbox Service stays one service and one API owner
+(lifecycle and control of Sandboxes), but runs as two Deployments with separate ServiceAccounts: a
+single active controller holding the RBAC, ServiceAccount and egress grant permissions, and the
+replicated runner-facing hub with only Lease and EndpointSlice writes, so a hub bug cannot reach
+the controller's credentials.
+
+### `AGENTPLANE_SANDBOX_RESOURCE` — our own Sandbox resource
+
+**Decision; later.** An Agentplane custom resource whose spec is the recipe (template, grants,
+egress, session defaults, bootstrap command, runner endpoints) and the desired runner (image,
+running or stopped), with incarnations in its status. Recommendation: back it with an upstream
+Sandbox first and keep owning Pod and PVCs directly as the fallback; clients key off our resource
+either way. Replaces the annotations on the upstream Sandbox and the imperative-only
+`CreateSandbox`.
+
+### `POD_INCARNATION` — a Pod is the incarnation
+
+**Decision; later.** A Sandbox is its agent's volumes, with or without a running runner; an
+incarnation is a Pod. Changing the runner image is stop, replace the Pod, start, and needs no seal
+since the volume stays. If chosen, section 8's state volume and incarnation nodes are rewritten
+around it: keeping the volume means keeping the Sandbox.
+
+### `SEAL_FINALIZER_SPIKE` — does upstream run a deleting Sandbox
+
+**Candidate.** On testing, delete a suspended upstream Sandbox carrying a test finalizer and set it
+running: does the controller start its Pod while `deletionTimestamp` is set? Report the answer in
+this node's removal PR.
+
+### `SEAL_FINALIZER` — seal as a finalizer on every delete
+
+**Blocked on the spike and the ingress acknowledgement; operator, 2026-10-10 PDT.** Every Sandbox
+carries a seal finalizer, so any deletion (`kubectl`, namespace, `DeleteSandbox`) seals before its
+volume goes. It replaces the controller loop's seal from the replica holding the runner, the
+`teardown` annotation and the suspended-only delete guard. Deletion is
+one-way: a hold can delay it, never cancel it. If upstream will not run a deleting Sandbox, read
+the journal head off the volume with a Job, or wait for our own resource.
+
+### `COMMAND_RECORDS_RETIRE` — drop command submission records
+
+**Unscheduled; operator, 2026-10-10 PDT: keep them for now.** The runner journal already holds
+every admission, idempotent on `command_id`. Retiring the hub's submission records would make it
+stateless, with `GetCommand`, `ListCommands` and the command status UI reading receipts from
+history instead.
 
 ## Scope and retirement of stale gates
 

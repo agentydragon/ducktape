@@ -18,29 +18,30 @@ flowchart LR
     App -- thread and raw reads --> HS[History Service]
     Electric -- logical replication --> HSDB[(history database)]
     App -- auth proxy --> Electric
-    Runner -- one outbound gRPC connection: commands in, journal out --> SS
-    HS -- WatchSessions, FollowSession, holds --> SS
+    Runner -- control stream: commands, receipts, lifecycle --> SS
+    Runner -- pushes journal Events, acked by cursor --> HSI[History Service ingress]
+    HSI --> HSDB
     HS --> HSDB
     SS --> SSDB[(sandbox_commands database: command admission)]
 ```
 
-| Component       | Owns                                                                                                                                                                               | Does not own                       |
-| --------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------- |
-| Runner          | harness driving, journal, journal-ordered command admission, spool                                                                                                                 | durable history beyond its volume  |
-| Sandbox Service | provisioning, lifecycle, grants, egress, the runner channel and its authentication, durable command submission, locator ↔ Sandbox binding, live follow and replay, retention holds | stored history, folds              |
-| History Service | raw event log, delta settlement, thread fold and projection, read API, scoped history reads                                                                                        | runner connections, commands       |
-| App             | browser auth and API, app-only Thread metadata                                                                                                                                     | folds, raw history, runner routing |
+| Component       | Owns                                                                                                                                             | Does not own                       |
+| --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------- |
+| Runner          | harness driving, journal, journal-ordered command admission, pushing its journal to one ingress                                                  | durable history beyond its volume  |
+| Sandbox Service | provisioning, lifecycle, grants, egress, the runner control stream and its authentication, durable command submission, Session ↔ Sandbox routing | Events, stored history, folds      |
+| History Service | ingress, raw event log, delta settlement, thread fold and projection, read API, scoped history reads, the index of which Sessions exist          | Sandboxes, commands                |
+| App             | browser auth and API, app-only Thread metadata                                                                                                   | folds, raw history, runner routing |
 
 Properties the target keeps:
 
-- **One client surface:** the History Service subscribes with the same Sandbox Service calls a
-  historyless client uses (`WatchSessions`, `FollowSession`), plus retention holds, which any client
-  may place. The Sandbox Service stores no history and pushes to no one, so running without history
-  means running no subscriber, and someone's own archiver is another subscriber. Driving a runner
-  directly needs neither service.
+- **Ingress is pluggable, control is not:** a Sandbox names one ingress, set by whatever creates
+  its Kubernetes objects; the control endpoint is always the Sandbox Service's runner-facing hub, so lifecycle requests such as
+  `Seal` always have a path. A historyless client implements the ingress itself and sends commands
+  through the hub. The History Service knows Sessions from what it is pushed, not Sandboxes, and
+  binds each Session to the workload identity of its first writer.
 - **History Service outage:** runners keep running and commands keep flowing. The runner journal
-  is the buffer for every subscriber, so an outage is cursor lag; a hold keeps the Sandbox from
-  being deleted until the History Service catches up through the seal.
+  is the buffer, so an outage is unacknowledged lag; teardown waits until the ingress has
+  acknowledged through every seal cursor.
 - **Settlement beside the fold:** the log, settlement and fold evidence live in one database,
   and a settlement commits with the completion it settles, so every page carrying that completion
   carries the settlement and the fold drops the chunks' evidence when it reaches it. Readers outside
@@ -49,8 +50,6 @@ Properties the target keeps:
   Sandbox as an incarnation, and a teardown seal ends an incarnation, not the Session, so reviving a
   Session in a new Sandbox ([task DAG section 8](task_dag.md#8-sessions-that-outlive-their-sandbox))
   needs no change here.
-- **No reads of runners from the History Service:** it reads only through the Sandbox Service, so the locator ↔ Sandbox identity check stays where the authenticated runner channel
-  terminates.
 
 ## Facts the order rests on
 
@@ -97,15 +96,32 @@ Properties the target keeps:
 - **Existing runners:** not upgraded in place. Sandboxes on images that cannot dial out are archived
   and deleted, and inbound access is retired once none is left.
 
+## Decided (operator, 2026-10-10 PDT)
+
+- **Ingress and control split:** the runner dials out twice, pushing Events to its ingress and
+  holding a control stream to the Sandbox Service, which stays one service for Sandbox lifecycle
+  and control. Rejected: following runners through the Sandbox Service, which made it fan out a
+  journal it does not keep and needed holds for durability; and merging the raw log into the
+  Sandbox Service, which reverses the symmetric-client decision and couples live delivery to the
+  history database.
+- **One ingress per Sandbox:** fan-out, if needed, is its own service.
+- **Session IDs:** the client mints a UUID when creating a Session; the History Service's index
+  records which Sessions exist.
+- **Command submission records** stay in the Sandbox Service for now.
+- **Cutover:** clean, like the dial-out cutover; Sandboxes from before it are archived the old way
+  and deleted.
+- **Deployments:** the controller and the runner-facing hub run separately, with separate
+  ServiceAccounts.
+
 ## APIs
 
 The implemented APIs are `sandbox_service/protocol.proto` and `history_service/protocol.proto`
 ([Sandbox Service API](../sandbox_service/API.md)). Live browser updates are not an RPC: Electric
 replicates the projection tables behind the app's authorization proxy.
 
-| Caller               | Sandbox Service                            | History Service                    |
-| -------------------- | ------------------------------------------ | ---------------------------------- |
-| App                  | sandboxes, Sessions, `SubmitCommand`       | summaries, entities, payloads, raw |
-| History Service      | `WatchSessions`, `FollowSession`, holds    |                                    |
-| Historyless client   | Sessions, `SubmitCommand`, `FollowSession` |                                    |
-| Notification Service | `SubmitCommand`                            |                                    |
+| Caller               | Sandbox Service                      | History Service                    |
+| -------------------- | ------------------------------------ | ---------------------------------- |
+| App                  | sandboxes, Sessions, `SubmitCommand` | summaries, entities, payloads, raw |
+| Runner               | control stream                       | ingress                            |
+| Historyless client   | Sessions, `SubmitCommand`            | (implements its own ingress)       |
+| Notification Service | `SubmitCommand`                      |                                    |
