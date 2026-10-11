@@ -7,6 +7,10 @@ Proposing, moving, merging, and renaming modules and bindings; peel heuristics;
 
 Use the proposer to surface what's currently extractable:
 
+For an app-level multi-chunk spec, pass `--tree-config spec_config.yaml`
+to both `modules propose` and `modules apply` so proposals and the edit gate
+use the module roots mapped to the graph's chunk.
+
 1. **`debundle modules propose --format json > proposals.json`** —
    proposer proposals + diagnostics derived from the atomic DAG.
 2. **Skim the diagnostics.** Each diagnostic carries a `reason`

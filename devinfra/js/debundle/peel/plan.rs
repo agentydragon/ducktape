@@ -45,6 +45,10 @@ pub struct PlanWorkArgs {
     #[command(flatten)]
     pub common: CommonArgs,
 
+    /// Tree config for chunk-scoped module claims in a multi-chunk spec.
+    #[arg(long = "tree-config", env = "DEBUNDLE_TREE_CONFIG")]
+    pub tree_config: Option<PathBuf>,
+
     /// Hard line ceiling per emitted proposal.
     #[arg(long = "size-cap-lines", default_value_t = DEFAULT_SIZE_CAP_LINES)]
     pub size_cap_lines: usize,
@@ -466,6 +470,7 @@ pub fn run_plan_work_report(args: &PlanWorkArgs) -> Result<PlanWorkReport> {
     let mut report = propose_from_files(&ProposalOptions {
         owner_graph_path: args.common.owner_graph_path.clone(),
         modules_root: args.common.modules_root.clone(),
+        tree_config: args.tree_config.clone(),
         source_root: args.source_root.clone(),
         size_cap_lines: args.size_cap_lines,
     })?;
@@ -531,6 +536,7 @@ pub fn run_patch_plan_report(args: &PatchPlanArgs) -> Result<PatchPlanReport> {
             &ProposalOptions {
                 owner_graph_path: args.common.owner_graph_path.clone(),
                 modules_root: args.common.modules_root.clone(),
+                tree_config: None,
                 source_root: args.source_root.clone(),
                 size_cap_lines: DEFAULT_SIZE_CAP_LINES,
             },
@@ -575,6 +581,7 @@ pub fn run_graph_summary_report(args: &GraphSummaryArgs) -> Result<GraphSummaryR
             &ProposalOptions {
                 owner_graph_path: args.common.owner_graph_path.clone(),
                 modules_root: args.common.modules_root.clone(),
+                tree_config: None,
                 source_root: args.source_root.clone(),
                 size_cap_lines: args.size_cap_lines,
             },
@@ -649,6 +656,7 @@ pub fn run_explain_report(args: &ExplainArgs) -> Result<ExplainReport> {
             &ProposalOptions {
                 owner_graph_path: args.common.owner_graph_path.clone(),
                 modules_root: args.common.modules_root.clone(),
+                tree_config: None,
                 source_root: args.source_root.clone(),
                 size_cap_lines: args.size_cap_lines,
             },
@@ -1315,6 +1323,7 @@ fn resolve_owner_ids(
                     &ProposalOptions {
                         owner_graph_path: common.owner_graph_path.clone(),
                         modules_root: common.modules_root.clone(),
+                        tree_config: None,
                         source_root: source_root.map(Path::to_path_buf),
                         size_cap_lines,
                     },
@@ -1345,6 +1354,7 @@ fn resolve_owner_ids(
                     &ProposalOptions {
                         owner_graph_path: common.owner_graph_path.clone(),
                         modules_root: common.modules_root.clone(),
+                        tree_config: None,
                         source_root: source_root.map(Path::to_path_buf),
                         size_cap_lines,
                     },

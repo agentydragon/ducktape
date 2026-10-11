@@ -31,11 +31,12 @@ command: <spec_editing.md> § Renaming or disabling a module.
 Most commands take these paths, each as a flag or an env var; the flag wins if
 both are set.
 
-| Flag                  | Env var                | Meaning                                                                                                                                                     |
-| --------------------- | ---------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `--graph <path>`      | `DEBUNDLE_GRAPH`       | `owner_graph.json` for the chunk being inspected or edited. The graph path implies the chunk; multi-chunk callers point at different graphs per invocation. |
-| `--modules <dir>`     | `DEBUNDLE_MODULES`     | Per-module YAML tree root (the directory under `spec/modules/`).                                                                                            |
-| `--source-root <dir>` | `DEBUNDLE_SOURCE_ROOT` | Upstream snapshot root containing the original chunk bytes.                                                                                                 |
+| Flag                   | Env var                | Meaning                                                                                                                                                     |
+| ---------------------- | ---------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--graph <path>`       | `DEBUNDLE_GRAPH`       | `owner_graph.json` for the chunk being inspected or edited. The graph path implies the chunk; multi-chunk callers point at different graphs per invocation. |
+| `--modules <dir>`      | `DEBUNDLE_MODULES`     | Per-module YAML tree root (the directory under `spec/modules/`).                                                                                            |
+| `--source-root <dir>`  | `DEBUNDLE_SOURCE_ROOT` | Upstream snapshot root containing the original chunk bytes.                                                                                                 |
+| `--tree-config <file>` | `DEBUNDLE_TREE_CONFIG` | For `modules propose` and `modules apply`, scope an app-level modules tree to the chunk named by `--graph`.                                                 |
 
 `debundle run --out-root` reads `DEBUNDLE_OUT`. `debundle run
 --tree-source-root` (the spec-tree compile root for source-relative paths in
@@ -384,6 +385,14 @@ array. The rest are rejected:
   cells it references, or co-locate the owners manually first.
 
 ### Claiming fresh proposals (`modules apply`)
+
+For an app-level spec with several chunks, pass the same `--tree-config`
+to `modules propose` and `modules apply`. The config's `module_roots` maps
+the graph's chunk ID to its authored YAML subtrees. `modules apply` checks
+only those subtrees against the chunk graph and preserves each configured
+root's exact filesystem spelling; it normalizes only the logical module
+suffix. A destination outside the mapped roots is rejected. Single-chunk
+specs can omit the flag when `--modules` already names that chunk's tree.
 
 `landable_today` means the proposed owner set has no outgoing residual-cell
 dependency and its anonymous owners are addressable. It does not guarantee a

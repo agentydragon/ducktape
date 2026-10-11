@@ -1,8 +1,195 @@
 //! Fresh residual claims from current module proposals.
 
-use debundle_e2e_support::GraphFixture;
+use debundle_e2e_support::{
+    GraphFixture, TreeFixture, assert_module_exports, assert_node_output, debundler_path,
+    run_tree_fixture,
+};
 use serde_json::json;
 use std::fs;
+use std::process::Command;
+
+#[test]
+fn apply_ignores_modules_owned_by_other_chunks() {
+    let run = run_tree_fixture(
+        &TreeFixture {
+            chunks: &[
+                ("main", "const a = { value: 4 };\nconsole.log(a.value);\n"),
+                (
+                    "helper",
+                    "function a() { return 'other'; }\nfunction provider() { return 'helper'; }\nexport { a, provider };\n",
+                ),
+            ],
+            module_roots: &[("chunks/main", "main"), ("chunks/helper", "helper")],
+            modules: &[
+                ("chunks/main/empty.yaml", "members: []\n"),
+                (
+                    "chunks/helper/provider.yaml",
+                    "members: [{name: Other, selector: {binding: {name: a}}}]\nsource_matches:\n  - match: |\n      function Provider() { return 'helper'; }\n    bindings:\n      - local: Provider\n        name: Provider\n",
+                ),
+            ],
+        },
+        &[],
+    );
+    assert!(run.result.status.success(), "{}", run.result.stderr);
+    let modules = run.root().join("modules");
+    let graph = run.report_root.join("main/owner_graph.json");
+    let source = run.root().join("snapshot");
+    let config = run.root().join("spec_config.yaml");
+    let proposed = Command::new(debundler_path())
+        .args(["modules", "propose", "--graph"])
+        .arg(&graph)
+        .arg("--modules")
+        .arg(&modules)
+        .arg("--tree-config")
+        .arg(&config)
+        .args(["--size-cap-lines", "1", "--format", "json"])
+        .output()
+        .unwrap();
+    assert!(
+        proposed.status.success(),
+        "{}",
+        String::from_utf8_lossy(&proposed.stderr)
+    );
+    let report: serde_json::Value = serde_json::from_slice(&proposed.stdout).unwrap();
+    let proposal = report["proposals"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|row| {
+            row["binding_ids"]
+                .as_array()
+                .is_some_and(|ids| ids.contains(&json!("a")))
+        })
+        .expect("main binding is proposed");
+    let batch = run.root().join("apply.json");
+    fs::write(
+        &batch,
+        serde_json::to_vec(&json!([{
+            "proposal_id": proposal["proposed_module_id"],
+            "owner_ids": proposal["owner_ids"],
+            "module": "chunks/main/foo",
+            "readable_names": {"a": "foo"}
+        }]))
+        .unwrap(),
+    )
+    .unwrap();
+    let applied = Command::new(debundler_path())
+        .args(["modules", "apply", "--batch"])
+        .arg(&batch)
+        .arg("--modules")
+        .arg(&modules)
+        .arg("--tree-config")
+        .arg(&config)
+        .arg("--graph")
+        .arg(&graph)
+        .arg("--source-root")
+        .arg(&source)
+        .args(["--size-cap-lines", "1"])
+        .arg("--dry-run")
+        .output()
+        .unwrap();
+    assert!(
+        applied.status.success(),
+        "{}",
+        String::from_utf8_lossy(&applied.stderr)
+    );
+}
+
+#[test]
+fn apply_preserves_case_sensitive_chunk_root() {
+    let run = run_tree_fixture(
+        &TreeFixture {
+            chunks: &[("main", "const a = { value: 4 };\nconsole.log(a.value);\n")],
+            module_roots: &[("chunks/Main", "main")],
+            modules: &[("chunks/Main/empty.yaml", "members: []\n")],
+        },
+        &[],
+    );
+    assert!(run.result.status.success(), "{}", run.result.stderr);
+    let modules = run.root().join("modules");
+    let graph = run.report_root.join("main/owner_graph.json");
+    let config = run.root().join("spec_config.yaml");
+    let proposed = Command::new(debundler_path())
+        .args(["modules", "propose", "--graph"])
+        .arg(&graph)
+        .arg("--modules")
+        .arg(&modules)
+        .arg("--tree-config")
+        .arg(&config)
+        .args(["--size-cap-lines", "1", "--format", "json"])
+        .output()
+        .unwrap();
+    assert!(
+        proposed.status.success(),
+        "{}",
+        String::from_utf8_lossy(&proposed.stderr)
+    );
+    let report: serde_json::Value = serde_json::from_slice(&proposed.stdout).unwrap();
+    let proposal = report["proposals"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|row| {
+            row["binding_ids"]
+                .as_array()
+                .is_some_and(|ids| ids.contains(&json!("a")))
+        })
+        .expect("binding is proposed");
+    let batch = run.root().join("apply.json");
+    fs::write(
+        &batch,
+        serde_json::to_vec(&json!([{
+            "proposal_id": proposal["proposed_module_id"],
+            "owner_ids": proposal["owner_ids"],
+            "module": "chunks/Main/services/foo",
+            "readable_names": {"a": "foo"}
+        }]))
+        .unwrap(),
+    )
+    .unwrap();
+    let applied = Command::new(debundler_path())
+        .args(["modules", "apply", "--batch"])
+        .arg(&batch)
+        .arg("--modules")
+        .arg(&modules)
+        .arg("--tree-config")
+        .arg(&config)
+        .arg("--graph")
+        .arg(&graph)
+        .arg("--source-root")
+        .arg(run.root().join("snapshot"))
+        .args(["--size-cap-lines", "1"])
+        .output()
+        .unwrap();
+    assert!(
+        applied.status.success(),
+        "{}",
+        String::from_utf8_lossy(&applied.stderr)
+    );
+    assert!(modules.join("chunks/Main/services/foo.yaml").is_file());
+    assert!(!modules.join("chunks/main/services/foo.yaml").exists());
+    let out_root = run.root().join("rerun");
+    let emitted = Command::new(debundler_path())
+        .args(["run", "--tree-config"])
+        .arg(&config)
+        .arg("--tree-modules")
+        .arg(&modules)
+        .arg("--tree-vendor-marks")
+        .arg(run.root().join("vendor_marks.yaml"))
+        .arg("--tree-source-root")
+        .arg(run.root())
+        .arg("--out-root")
+        .arg(&out_root)
+        .output()
+        .unwrap();
+    assert!(
+        emitted.status.success(),
+        "{}",
+        String::from_utf8_lossy(&emitted.stderr)
+    );
+    assert_module_exports(&out_root, "app/main/services/foo.js", &["foo"], &[]);
+    assert_node_output(&out_root.join("app/main/entry.js"), "4\n", "");
+}
 
 fn provider_fixture() -> (GraphFixture, serde_json::Value) {
     let fixture = GraphFixture::new(

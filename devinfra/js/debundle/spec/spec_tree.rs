@@ -9,10 +9,10 @@ use output_layout::DebundleOutputLayout;
 use spec::{
     BundledPartialSwapBundle, BundledPartialSwapMark, BundledPartialSwapPackage, ChunkExportPurity,
     ChunkRenameMember, ChunkRenameSelector, ChunkRenames, EmitBrowserHarnessConfig,
-    LoadJsChunksArgs, LogicalModule, MaterializeLogicalModulesConfig, Member, OwnerGraphOptions,
-    PartialSwapMark, PartialSwapPackage, PartialSwapSymbol, SwapMark, SwapVendorChunksConfig,
-    TransformSpec, UnassignedMode, VendorLevel, VendorMark, VendorRole, WrapperShape,
-    WriteJsTreeConfig,
+    LoadJsChunksArgs, LogicalModule, MaterializeLogicalModulesConfig, Member, ModulePath,
+    OwnerGraphOptions, PartialSwapMark, PartialSwapPackage, PartialSwapSymbol, SwapMark,
+    SwapVendorChunksConfig, TransformSpec, UnassignedMode, VendorLevel, VendorMark, VendorRole,
+    WrapperShape, WriteJsTreeConfig,
 };
 use spec_modules::{
     collect_module_files, load_binding_patch_members, module_path_from_file, read_module_file,
@@ -66,6 +66,85 @@ struct AuthoringConfig {
     /// `TransformSpec::chunk_export_purity`.
     #[serde(default)]
     chunk_export_purity: BTreeMap<String, ChunkExportPurity>,
+}
+
+/// The authored YAML subtrees that belong to one graph chunk. A graph-backed
+/// edit must not resolve selectors from other chunks against this graph.
+#[derive(Debug, Clone)]
+pub struct ModuleTreeScope {
+    roots: Vec<PathBuf>,
+}
+
+impl ModuleTreeScope {
+    pub fn from_config(config_path: &Path, chunk_id: &str) -> Result<Self> {
+        let config: AuthoringConfig = read_yaml(config_path)?;
+        validate_module_roots(&config.module_roots)?;
+        let roots = if config.module_roots.is_empty() {
+            if config.main_chunk_id != chunk_id {
+                bail!("tree config has no module root for graph chunk {chunk_id:?}");
+            }
+            vec![PathBuf::new()]
+        } else {
+            config
+                .module_roots
+                .into_iter()
+                .filter_map(|(root, chunk)| (chunk == chunk_id).then_some(root))
+                .collect::<Vec<_>>()
+        };
+        if roots.is_empty() {
+            bail!("tree config has no module root for graph chunk {chunk_id:?}");
+        }
+        Ok(Self { roots })
+    }
+
+    pub fn roots(&self) -> &[PathBuf] {
+        &self.roots
+    }
+
+    pub fn contains(&self, path: &Path) -> bool {
+        self.roots.iter().any(|root| path.starts_with(root))
+    }
+
+    /// Canonicalize only the logical module suffix. The tree-root prefix is
+    /// an exact filesystem path from `module_roots`, not a logical module name.
+    pub fn canonical_destination(&self, raw: &str) -> Result<String> {
+        let path = Path::new(raw);
+        if path.is_absolute() || raw.contains('\\') {
+            bail!("invalid destination module path {raw:?}");
+        }
+        ModulePath::parse(raw, "")
+            .with_context(|| format!("invalid destination module path {raw:?}"))?;
+        for root in &self.roots {
+            if let Ok(suffix) = path.strip_prefix(root) {
+                let suffix = suffix
+                    .to_str()
+                    .context("destination module path is not UTF-8")?;
+                let suffix = ModulePath::parse(suffix, "")
+                    .with_context(|| format!("invalid destination module path {raw:?}"))?;
+                return Ok(if root.as_os_str().is_empty() {
+                    suffix.as_str().to_string()
+                } else {
+                    format!("{}/{}", root.display(), suffix.as_str())
+                });
+            }
+        }
+        bail!(
+            "destination module {raw:?} is outside the configured module roots for this chunk: {:?}",
+            self.roots
+        )
+    }
+
+    pub fn logical_destination<'a>(&self, destination: &'a str) -> Result<&'a str> {
+        let path = Path::new(destination);
+        for root in &self.roots {
+            if let Ok(suffix) = path.strip_prefix(root) {
+                return suffix
+                    .to_str()
+                    .context("destination module path is not UTF-8");
+            }
+        }
+        bail!("destination module {destination:?} is outside this chunk's module roots")
+    }
 }
 
 #[derive(Debug, Clone, Deserialize)]

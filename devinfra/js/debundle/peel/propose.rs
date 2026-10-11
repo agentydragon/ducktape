@@ -48,6 +48,7 @@ use analysis::{LineRange, OwnerGraphNodeReport, OwnerGraphReport, StatementKind}
 use anonymous_resolution::addressable_anonymous_statement_owner_ids;
 use spec::ModulePath;
 use spec_modules::load_active_claims;
+use spec_tree::ModuleTreeScope;
 
 use crate::quotient::{
     ClassId, OwnerIdx, QuotientGraph, SeedContractionRejected, SpecModuleGroup,
@@ -63,6 +64,8 @@ pub const DEFAULT_SIZE_CAP_LINES: usize = 10_000;
 pub struct ProposalOptions {
     pub owner_graph_path: PathBuf,
     pub modules_root: PathBuf,
+    /// Optional tree config that scopes active claims to the graph's chunk.
+    pub tree_config: Option<PathBuf>,
     pub source_root: Option<PathBuf>,
     /// Hard ceiling (in summed source-line counts) per emitted
     /// proposal. Frontiers exceeding the cap appear as diagnostics.
@@ -250,7 +253,19 @@ pub fn propose_from_graph(
     graph: &OwnerGraphReport,
     options: &ProposalOptions,
 ) -> Result<ProposalsReport> {
-    let claims = load_active_claims(&options.modules_root)?;
+    let claims = if let Some(config) = &options.tree_config {
+        let scope = ModuleTreeScope::from_config(config, &graph.chunk_id)?;
+        let mut claims = BTreeMap::new();
+        for root in scope.roots() {
+            let path = options.modules_root.join(root);
+            if path.exists() {
+                claims.extend(load_active_claims(&path)?);
+            }
+        }
+        claims
+    } else {
+        load_active_claims(&options.modules_root)?
+    };
     let addressable_anonymous_owner_ids = if options.source_root.is_some() {
         Some(addressable_anonymous_statement_owner_ids(
             graph,

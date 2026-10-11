@@ -11,6 +11,7 @@ use peel::OutputFormat;
 use peel::propose::{DEFAULT_SIZE_CAP_LINES, ProposalOptions, propose_from_graph};
 use serde::{Deserialize, Serialize};
 use spec::LogicalModule;
+use spec_tree::ModuleTreeScope;
 
 use crate::binding::{apply_doc_changes, canonical_module_path, load_module_docs, matches_in_docs};
 use crate::edit_gate::{ExpectedResolvedMember, Gate, post_edit_spec_from_docs};
@@ -24,6 +25,9 @@ pub struct ModulesApplyArgs {
     /// Root directory of per-module YAML files.
     #[arg(long = "modules", env = "DEBUNDLE_MODULES")]
     modules_root: PathBuf,
+    /// Tree config that scopes this graph-backed edit to its chunk's module roots.
+    #[arg(long = "tree-config", env = "DEBUNDLE_TREE_CONFIG")]
+    tree_config: Option<PathBuf>,
     /// Current owner graph, used to check proposal identity and the resulting partition.
     #[arg(long = "graph", env = "DEBUNDLE_GRAPH")]
     graph: PathBuf,
@@ -112,16 +116,25 @@ pub fn run_modules_apply(args: ModulesApplyArgs) -> Result<()> {
         bail!("apply batch is empty");
     }
     let graph = crate::load_owner_graph_report(&args.graph)?;
+    let scope = args
+        .tree_config
+        .as_deref()
+        .map(|config| ModuleTreeScope::from_config(config, &graph.chunk_id))
+        .transpose()?;
     let proposals = propose_from_graph(
         &graph,
         &ProposalOptions {
             owner_graph_path: args.graph.clone(),
             modules_root: args.modules_root.clone(),
+            tree_config: args.tree_config.clone(),
             source_root: Some(args.source_root.clone()),
             size_cap_lines: args.size_cap_lines,
         },
     )?;
-    let original_docs = load_module_docs(&args.modules_root)?;
+    let mut original_docs = load_module_docs(&args.modules_root)?;
+    if let Some(scope) = &scope {
+        original_docs.retain(|path, _| scope.contains(std::path::Path::new(path)));
+    }
     let mut docs = original_docs.clone();
     let mut selected_ids = BTreeSet::new();
     let mut selected_names = BTreeSet::new();
@@ -164,9 +177,18 @@ pub fn run_modules_apply(args: ModulesApplyArgs) -> Result<()> {
                 request.proposal_id
             );
         }
-        let destination = canonical_module_path(&request.module)?;
+        let destination = if let Some(scope) = &scope {
+            scope.canonical_destination(&request.module)?
+        } else {
+            canonical_module_path(&request.module)?
+        };
+        let logical_destination = if let Some(scope) = &scope {
+            scope.logical_destination(&destination)?
+        } else {
+            &destination
+        };
         if let Some(extends) = &proposal.extends_module_id
-            && destination != *extends
+            && logical_destination != extends
         {
             bail!(
                 "proposal {:?} extends module {:?}; use that destination",

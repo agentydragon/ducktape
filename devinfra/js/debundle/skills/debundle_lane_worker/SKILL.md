@@ -48,6 +48,9 @@ The orchestrator or project adapter provides:
    `modules apply` for fresh residual binding proposals; use `bindings assign`
    for existing claims, and `bindings rename` / `modules merge` for their
    respective edits. See `references/docs/cli.md` § Claiming fresh proposals.
+   In an app-level multi-chunk spec, pass `--tree-config` to both `modules
+propose` and `modules apply` so each sees only the graph chunk's mapped
+   YAML roots.
 
    For `modules apply`, first run `--dry-run --format json` and inspect each
    `selector_reviews` selector against the intended binding and source. Review

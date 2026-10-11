@@ -1064,6 +1064,12 @@ pub struct TreeRun {
     pub result: CommandResult,
 }
 
+impl TreeRun {
+    pub fn root(&self) -> &Path {
+        self._root.path()
+    }
+}
+
 /// Writes `fixture` and runs `debundle run` on it in tree form with
 /// `extra_args`, writing the JS tree.
 pub fn run_tree_fixture(fixture: &TreeFixture<'_>, extra_args: &[&str]) -> TreeRun {
