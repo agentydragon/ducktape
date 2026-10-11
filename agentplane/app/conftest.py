@@ -181,10 +181,7 @@ async def listening(
         updates.listener.listen(),
     ):
         watch = HistoryWatch(
-            watch_client,
-            lambda: watch_client.watch_session_summaries(timeout_s=60),
-            updates.changes[Channel.THREADS].notify,
-            retry_interval_s=0.05,
+            watch_client, updates.changes[Channel.THREADS].notify, watch_timeout_s=60, retry_interval_s=0.05
         )
         task = asyncio.create_task(watch.run())
         try:

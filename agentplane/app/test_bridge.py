@@ -50,6 +50,7 @@ from agentplane.app.threads.store import ThreadStore
 from agentplane.app.threads.summaries import Summaries
 from agentplane.app.threads.view.content import ContentStore
 from agentplane.history_service.client import HistoryServiceClient
+from agentplane.history_service.fold.models import ThreadCheckpoint, ThreadEntity, ThreadPayloadChunk
 from agentplane.history_service.testing.backend import history_service, ingest
 from agentplane.history_service.testing.history import History
 from agentplane.proto import command_pb2, event_log_pb2, event_pb2, runner_pb2
@@ -62,7 +63,6 @@ from agentplane.sandbox_service.client import SandboxServiceClient
 from agentplane.sandbox_service.testing.backend import Endpoint, seed_runner
 from agentplane.sandbox_service.testing.fake_inventory import FakeCoreV1Api, FakeCustomObjectsApi
 from agentplane.testing.failure_journal import call_failed, capture_native_journal
-from agentplane.thread_fold.models import ThreadCheckpoint, ThreadEntity, ThreadPayloadChunk
 from util.net import bind_free_port
 from util.testing.asgi import serve_app_in_loop
 from util.testing.undeclared_outputs import undeclared_outputs_dir

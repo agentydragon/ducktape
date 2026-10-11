@@ -154,8 +154,8 @@ async def async_main(settings: Settings) -> None:
         content = ContentStore(engine, history_reader=history)
         history_watch = HistoryWatch(
             history_watch_client,
-            lambda: history_watch_client.watch_session_summaries(timeout_s=settings.history_service_watch_timeout_s),
             database_updates.changes[Channel.THREADS].notify,
+            watch_timeout_s=settings.history_service_watch_timeout_s,
             retry_interval_s=1,
         )
         store = ThreadStore(engine, summaries)

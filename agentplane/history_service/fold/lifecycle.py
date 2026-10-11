@@ -6,9 +6,9 @@ from google.protobuf.json_format import MessageToDict, ParseDict
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from agentplane.history_service import protocol_pb2 as history_pb2
+from agentplane.history_service.fold.models import ThreadHistorySummary
+from agentplane.history_service.fold.recording import EventReplicationError, set_operational
 from agentplane.proto import event_log_pb2, runner_pb2
-from agentplane.thread_fold.models import ThreadHistorySummary
-from agentplane.thread_fold.recording import EventReplicationError, set_operational
 
 # gazelle:include_dep @pypi//protobuf
 
@@ -27,10 +27,10 @@ async def project_lifecycle(
     if page.HasField("feed_state"):
         feed = page.feed_state
         if not feed.HasField("attached") or feed.attached.last_cursor > page.last_cursor:
-            raise EventReplicationError("service lifecycle is outside its committed prefix")
+            raise EventReplicationError("stored feed state is outside the committed prefix")
         cursor = feed.attached.last_cursor
-        # A page may carry the latest service snapshot while the app is still replaying.
-        # Wait until the fold covers it; never leap the UI over unprojected Events.
+        # A page may carry a feed snapshot past the entries folded so far. Wait until the fold
+        # covers it; never leap the view over unfolded Events.
         if cursor <= through_cursor and (attached is None or cursor >= attached.last_cursor):
             same_cursor = attached is not None and cursor == attached.last_cursor
             attached = runner_pb2.Attached()

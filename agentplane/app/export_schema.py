@@ -35,10 +35,10 @@ from agentplane.app.threads.store import ThreadStore
 from agentplane.app.threads.summaries import Summaries
 from agentplane.app.threads.view.content import ContentStore
 from agentplane.history_service.client import HistoryServiceClient
+from agentplane.history_service.fold.views import ThreadEntityView
 from agentplane.runner.harness import Harness
 from agentplane.sandbox_service.client import SandboxServiceClient
 from agentplane.sandbox_service.egress_views import EgressReader
-from agentplane.thread_fold.views import ThreadEntityView
 
 
 def _openapi_document(api_client: k8s_client.ApiClient) -> dict[str, Any]:

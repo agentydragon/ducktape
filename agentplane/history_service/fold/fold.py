@@ -7,8 +7,8 @@ records and logical payload write intents for a later transactional storage work
 from __future__ import annotations
 
 from dataclasses import dataclass, replace
-from enum import StrEnum
 
+from agentplane.history_service.fold.views import CommandOutcome, PayloadField
 from agentplane.proto import command_pb2, event_log_pb2, event_pb2
 from agentplane.sandbox_service.settled_cursors import next_stored
 
@@ -27,21 +27,6 @@ class FoldContractError(ValueError):
     def __init__(self, cursor: int, message: str) -> None:
         self.cursor = cursor
         super().__init__(message)
-
-
-class PayloadField(StrEnum):
-    TEXT = "text"
-    ARGUMENTS = "arguments"
-    OUTPUT = "output"
-    CONFIRMED_INPUT = "confirmed_input"
-    COMMAND_INPUT = "command_input"
-
-
-class CommandOutcome(StrEnum):
-    PENDING = "pending"
-    EFFECTED = "effected"
-    FAILED = "failed"
-    NOOP = "noop"
 
 
 @dataclass(frozen=True)

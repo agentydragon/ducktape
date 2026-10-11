@@ -1033,7 +1033,6 @@ flowchart TD
         RUNNER_ERRORS_REHOME[Blocked: errors beside the client that raises them]
         HISTORY_LIST_SUMMARIES_RETIRE[Candidate: delete ListSessionSummaries]
         HISTORY_GRPC_CONFORM[Candidate: the History Service follows grpc_services.md]
-        THREAD_FOLD_SINGLE_OWNER[Candidate: the fold has one owner]
         SETTLE_DELTAS_ALWAYS_ON[Delta settlement always on]
         APP_SERVICE_NAMES[Candidate: app names the right services]
         APP_TEST_CLIENT_MOVE[Candidate: app test client out of production]
@@ -1149,15 +1148,6 @@ Sessions. Delete the RPC and its messages, `SessionSummaryPageToken`, the client
 RPCs stream outside it, so their faults escape unmapped. The client's
 `watch_session_summaries(timeout_s=)` puts a deadline on a long-lived stream; delete it and the
 app's `history_service_watch_timeout_s`.
-
-### `THREAD_FOLD_SINGLE_OWNER` — the fold has one owner
-
-**Candidate; Thread fold move lane.** With only the History Service running the fold,
-`HistoryProjector` takes its `Store` instead of two single-implementation callables and drops its
-`grpc.RpcError` catch, the app's `HistoryWatch` calls the client directly, app-era wording goes,
-`EventLogStore.open` raises an app error instead of `EventReplicationError`, and `thread_fold` moves
-under `history_service/`: the view types the browser syncs become a public History Service module,
-and the fold engine, projector and tables private to it.
 
 ### `SETTLE_DELTAS_ALWAYS_ON` — delta settlement always on
 

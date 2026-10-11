@@ -237,8 +237,8 @@ async def _serve(
         ):
             history_watch = HistoryWatch(
                 watch_client,
-                lambda: watch_client.watch_session_summaries(timeout_s=60),
                 database_updates.changes[Channel.THREADS].notify,
+                watch_timeout_s=60,
                 retry_interval_s=0.05,
             )
             egress = EgressAccess(EgressReader(namespace=NAMESPACE, custom_objects=custom), inventory)

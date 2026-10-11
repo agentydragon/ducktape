@@ -98,6 +98,7 @@ py_library(
     srcs = ["history.py"],
     visibility = ["//agentplane:__subpackages__"],
     deps = [
+        "//agentplane/history_service/fold:models",
         "//agentplane/history_service/storage:db",
         "//agentplane/proto:sandbox_service_pb2",
         "//agentplane/runner:client",
@@ -106,7 +107,6 @@ py_library(
         "//agentplane/runner_gateway/testing:sessions",
         "//agentplane/sandbox_service:destinations",
         "//agentplane/sandbox_service:models",
-        "//agentplane/thread_fold:models",
         "@pypi//grpcio",
         "@pypi//protobuf",
         "@pypi//sqlalchemy",

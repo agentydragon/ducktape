@@ -47,10 +47,7 @@ from agentplane.app.threads.store import ThreadStore
 from agentplane.app.threads.view.content import ContentStore
 from agentplane.grpc_serving import serving
 from agentplane.history_service.client import HistoryServiceClient
-from agentplane.history_service.summary_changes import notify_summaries
-from agentplane.history_service.testing.history import History
-from agentplane.proto import command_pb2, event_log_pb2, event_pb2
-from agentplane.thread_fold.models import (
+from agentplane.history_service.fold.models import (
     ThreadCheckpoint,
     ThreadEntity,
     ThreadEvidence,
@@ -59,7 +56,10 @@ from agentplane.thread_fold.models import (
     ThreadPayloadChunk,
     ThreadPayloadManifest,
 )
-from agentplane.thread_fold.views import ThreadFeedErrorState, ThreadOperationalState, ThreadViewState
+from agentplane.history_service.fold.views import ThreadFeedErrorState, ThreadOperationalState, ThreadViewState
+from agentplane.history_service.summary_changes import notify_summaries
+from agentplane.history_service.testing.history import History
+from agentplane.proto import command_pb2, event_log_pb2, event_pb2
 from util.bazel.runfiles import get_required_path
 from util.testing.undeclared_outputs import undeclared_outputs_dir
 from util.testing.viewports import DESKTOP, MOBILE, SMALL_MOBILE, Viewport

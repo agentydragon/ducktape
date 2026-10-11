@@ -11,10 +11,10 @@ from sqlalchemy import ColumnElement, Select, and_, or_, select
 from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
 
 from agentplane.history_service import protocol_pb2
+from agentplane.history_service.fold.models import ThreadCheckpoint, ThreadHistorySummary
 from agentplane.history_service.storage.db import SessionHistory
 from agentplane.history_service.storage.store import HistoryNotFoundError
 from agentplane.proto import event_pb2
-from agentplane.thread_fold.models import ThreadCheckpoint, ThreadHistorySummary
 
 MAX_PAGE = 200
 

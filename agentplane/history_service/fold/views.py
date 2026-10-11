@@ -8,7 +8,20 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, JsonValue
 
-from agentplane.thread_fold import fold
+
+class PayloadField(StrEnum):
+    TEXT = "text"
+    ARGUMENTS = "arguments"
+    OUTPUT = "output"
+    CONFIRMED_INPUT = "confirmed_input"
+    COMMAND_INPUT = "command_input"
+
+
+class CommandOutcome(StrEnum):
+    PENDING = "pending"
+    EFFECTED = "effected"
+    FAILED = "failed"
+    NOOP = "noop"
 
 
 class EntityKind(StrEnum):
@@ -25,7 +38,7 @@ class ThreadPayloadReference(BaseModel):
     projection_epoch: str
     owner_cursor: str
     owner_id: str
-    field: fold.PayloadField
+    field: PayloadField
     revision_cursor: str
     generation: str
     chunk_count: str = Field(
@@ -95,7 +108,7 @@ class ThreadCommandState(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     operation: str
-    outcome: fold.CommandOutcome
+    outcome: CommandOutcome
     outcome_cursor: str | None
     outcome_reason: str | None
     requested_value: str | None = None

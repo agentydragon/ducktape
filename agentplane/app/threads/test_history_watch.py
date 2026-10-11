@@ -13,9 +13,7 @@ async def test_fold_commits_and_renewals_wake_thread_readers(service_history_db_
     woken = asyncio.Event()
     async with history_service(service_history_db_url, tmp_path / "history-token", watch_lease_s=3) as history:
         watch = asyncio.create_task(
-            HistoryWatch(
-                history, lambda: history.watch_session_summaries(timeout_s=10), changes.notify, retry_interval_s=0.05
-            ).run()
+            HistoryWatch(history, changes.notify, watch_timeout_s=10, retry_interval_s=0.05).run()
         )
         try:
             with changes.subscribe(woken):

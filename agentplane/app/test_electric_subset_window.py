@@ -21,10 +21,10 @@ from sqlalchemy import select
 from agentplane.app.testing.electric_service import electric_service
 from agentplane.app.testing.history import fixture_session_id
 from agentplane.app.testing.replication_source import SANDBOX, SESSION, ReplicationSource
+from agentplane.history_service.fold.models import ThreadEntity
 from agentplane.history_service.fold_shadow import FOLD_EPOCH
 from agentplane.history_service.testing.history import History
 from agentplane.proto import event_pb2
-from agentplane.thread_fold.models import ThreadEntity
 
 # gazelle:include_dep @pypi//protobuf
 

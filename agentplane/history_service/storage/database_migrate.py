@@ -2,8 +2,8 @@
 
 from pathlib import Path
 
+from agentplane.history_service.fold import models as fold_models
 from agentplane.history_service.storage.db import Base
-from agentplane.thread_fold import models as fold_models
 from util.db_migrations import MigrationRunner, merged_metadata
 
 RUNNER = MigrationRunner(

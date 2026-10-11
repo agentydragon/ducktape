@@ -12,7 +12,7 @@ from sqlalchemy import Connection, create_engine, inspect, text
 from sqlalchemy.exc import DBAPIError
 
 from agentplane.app.database_migrate import RUNNER
-from agentplane.thread_fold import models as fold_models
+from agentplane.history_service.fold import models as fold_models
 
 # The migrated database is read back over psycopg, which SQLAlchemy loads from the URL scheme.
 # gazelle:include_dep @pypi//psycopg

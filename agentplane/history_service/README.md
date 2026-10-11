@@ -70,7 +70,7 @@ default and writes only with `--apply`; settled items are skipped, so it resumes
 ## Thread fold
 
 With `fold_shadow` set, it folds every retained Session into the thread projection
-(`agentplane.thread_fold`; `thread_*` tables, since a Thread is the projection of a
+(`agentplane.history_service.fold`; `thread_*` tables, since a Thread is the projection of a
 Session: [layering](../docs/thread_layering.md#authorities-and-representations)), in epoch `history-v1`, from cursor 0: a page per Session per
 cycle under the per-Session projection leases, so replicas share the work. The fold writes only those
 tables. Cycles run back to back while any Session is behind, and committed history changes wake a

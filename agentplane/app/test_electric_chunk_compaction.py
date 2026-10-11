@@ -47,11 +47,11 @@ from agentplane.app.testing.history import SeededEventLogStore as EventLogStore
 from agentplane.app.testing.replication_source import SANDBOX, SESSION, ReplicationSource
 from agentplane.app.threads.summaries import Summaries
 from agentplane.app.threads.view.content import ContentStore
+from agentplane.history_service.fold.models import ThreadEntity, ThreadPayloadChunk
+from agentplane.history_service.fold.views import ThreadPayloadReference
 from agentplane.history_service.testing.backend import history_service
 from agentplane.history_service.testing.history import History
 from agentplane.proto import event_pb2
-from agentplane.thread_fold.models import ThreadEntity, ThreadPayloadChunk
-from agentplane.thread_fold.views import ThreadPayloadReference
 
 # gazelle:include_dep @pypi//protobuf
 

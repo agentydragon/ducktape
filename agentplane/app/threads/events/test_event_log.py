@@ -14,13 +14,12 @@ from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
 
 from agentplane.app.testing.retained_history import seed_retained_session
 from agentplane.app.testing.thread_test_support import event_entry
-from agentplane.app.threads.events.event_log import EventLogStore
+from agentplane.app.threads.events.event_log import EventLogStore, SessionAdmissionError
 from agentplane.app.threads.models import EventLog
 from agentplane.app.threads.summaries import Summaries
 from agentplane.history_service import protocol_pb2 as history_pb2
 from agentplane.history_service.client import HistoryServiceClient
 from agentplane.proto import event_pb2
-from agentplane.thread_fold.recording import EventReplicationError
 
 # The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.
 # gazelle:include_dep @pypi//protobuf
@@ -230,7 +229,7 @@ async def test_failed_service_registration_does_not_create_app_thread(engine: As
         await store.open("sb-1", str(uuid4()))
     async with async_sessionmaker(engine)() as session:
         assert await session.scalar(select(func.count()).select_from(EventLog)) == 0
-    with pytest.raises(EventReplicationError, match="canonical"):
+    with pytest.raises(SessionAdmissionError, match="canonical"):
         await store.open("sb-1", "legacy-id")
 
 
@@ -258,7 +257,7 @@ async def test_open_refuses_a_runner_session_id(engine: AsyncEngine) -> None:
         summaries=Summaries(engine, cast(HistoryServiceClient, reader)),
         history_reader=cast(HistoryServiceClient, reader),
     )
-    with pytest.raises(EventReplicationError, match="canonical"):
+    with pytest.raises(SessionAdmissionError, match="canonical"):
         await current.open("sb-1", "s-retained")
 
 
@@ -288,7 +287,7 @@ async def test_public_session_alias_cannot_cross_sandboxes(engine: AsyncEngine) 
         summaries=Summaries(engine, cast(HistoryServiceClient, reader)),
         history_reader=cast(HistoryServiceClient, reader),
     )
-    with pytest.raises(EventReplicationError, match="another sandbox"):
+    with pytest.raises(SessionAdmissionError, match="another sandbox"):
         await current.open("sb-2", str(public_id))
     async with async_sessionmaker(engine)() as session:
         assert await session.scalar(select(func.count()).select_from(EventLog)) == 1
