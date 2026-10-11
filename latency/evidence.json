@@ -10909,6 +10909,50 @@
       ],
       "next_measurement": "Verify devel upload and subsequent substitution of identical image derivation",
       "measured_saving": null
+    },
+    "policy_check_evaluation": {
+      "observed_at_utc": "2026-10-11T03:31:35.174618+00:00",
+      "cache_pr": 9890,
+      "cache_state": "merged",
+      "consumer_run": 38108020148,
+      "consumer_job": 114377580846,
+      "marker_unpacked_kib": 0.3,
+      "policy_step_seconds": 31,
+      "wheel_pre_build_plan_seconds": 21.5,
+      "source_commit": "2d204ac1e5",
+      "probe_command": "NIX_SHOW_STATS=1 nix derivation show --option eval-cache false [--impure for packages/combined] <installables>",
+      "derivation_count": 13,
+      "derivations_identical": true,
+      "pairs": [
+        {
+          "order": [
+            "checks",
+            "packages",
+            "combined"
+          ],
+          "separate_wall_seconds": 18.145383,
+          "combined_wall_seconds": 19.471058,
+          "separate_evaluator_cpu_seconds": 8.949846,
+          "combined_evaluator_cpu_seconds": 8.989844
+        },
+        {
+          "order": [
+            "combined",
+            "packages",
+            "checks"
+          ],
+          "separate_wall_seconds": 13.395648,
+          "combined_wall_seconds": 13.750505,
+          "separate_evaluator_cpu_seconds": 8.100658,
+          "combined_evaluator_cpu_seconds": 8.74809
+        }
+      ],
+      "decision": "Do not publish combined invocation edit; no benefit observed; edit removed",
+      "limitations": [
+        "Local evaluation only, pinned artifacts, warm flake sources",
+        "No PR artifact overrides, builds or clean-runner download timing",
+        "CI pre-build-plan intervals do not isolate evaluation from fetching/planning"
+      ]
     }
   }
 }
