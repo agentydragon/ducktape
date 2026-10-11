@@ -331,6 +331,7 @@ flowchart LR
     VM_LIFECYCLE[Blocked: integrated lifecycle]
     RUNNER_OUTBOUND_ROLLOUT --> LEGACY_SANDBOX_RETIRE[Blocked: operator deletes every pre-cutover Sandbox]
     LEGACY_SANDBOX_RETIRE --> RUNNER_INBOUND_RETIRE[Blocked: retire inbound runner access]
+    KUBEVIRT_GUEST_CONTROL[KubeVirt guest dials out] --> RUNNER_INBOUND_RETIRE
     VM_PROVIDER --> VM_CONTROL_NETWORKING
     VM_CONTROL_NETWORKING --> VM_LIFECYCLE
     VM_IMAGE --> VM_PROCESS_ISOLATION
@@ -363,11 +364,13 @@ node.
 
 ### `RUNNER_INBOUND_RETIRE` — remove inbound runner access
 
-**Blocked on legacy Sandbox retirement.** Remove
+**Blocked on legacy Sandbox retirement and `KUBEVIRT_GUEST_CONTROL`.** Remove
 `Attach` command submission, the pull ingester, the runner control port and its network policy.
 With no inbound route left, the `runner_connection` table goes (a drop migration the operator
-merges) together with the routing check on its operations in `SubmitCommand`, leaving
-`Hello`/`Welcome` capabilities to negotiate only what a connection carries. The legacy
+merges) together with the routing check on its operations in `SubmitCommand`. Capability
+negotiation goes on both sides: `ControlOperation`, the runner's `CAPABILITIES`,
+`Hello`/`Welcome.capabilities`, `ConnectionStore.record_operations`/`read_operations` and every
+`control_routed` or inbound branch in the gateway. The legacy
 caller-chosen runner Session ID path goes too, as does the client's fallback to the service when a
 Sandbox has no control Service (the `CLEANUP` tombstone in `sandbox_service/client.py`), as do the
 runner SPEC's and Sandbox Service README's notes on the unauthenticated inbound listener.
@@ -751,13 +754,18 @@ Stops for the operator.
 `cluster/cdk8s/agentplane/database.py`. Rename in place (`ALTER DATABASE`/`ALTER ROLE ... RENAME`)
 and have the CNPG `Database` and managed role adopt the new names; recreating the database under a
 new name would copy the log. Verify the History Service and Electric reconnect with no data movement.
+The migrate env `AGENTPLANE_SANDBOX_SERVICE_DATABASE_URL` (pinned in
+`cluster/cdk8s/agentplane/test_sandbox_service.py`) and the `storage/migrate.py` and
+`cluster/cdk8s/agentplane/history_service.py` docstrings take the new name.
 
 ### `SANDBOX_DATABASE_RENAME` — name the Runner Gateway's database for it
 
 **Candidate.** `sandbox_commands` holds the Runner Gateway's Session registry and command
 admission; the Sandbox Service has no database. Rename it and its role and Secret for the gateway
 in place, as `HISTORY_DATABASE_RENAME` does, and point the Runner Gateway, its migration init
-container and `commands_database_url` at the new names.
+container and `commands_database_url` at the new names. Its migrate image
+`agentplane-sandbox-commands-migrate`, env `AGENTPLANE_SANDBOX_SERVICE_COMMANDS_DATABASE_URL` and
+`database.py`'s comment on `sandbox_commands` follow.
 
 ### `APP_ELECTRIC_RETIRE` — Electric no longer reads the app database
 
@@ -801,6 +809,7 @@ flowchart TD
     RUNNER_INBOUND_RETIRE[Retire inbound runner access] --> REFACTOR_COHERENCE_AUDIT
     HISTORY_SERVICE_OWNERSHIP[History Service ownership] --> REFACTOR_COHERENCE_AUDIT
     RUNNER_SESSION_RECORD_SHIMS --> REFACTOR_COHERENCE_AUDIT
+    COHERENCE_REFACTORS[Section 12 coherence refactors] --> REFACTOR_COHERENCE_AUDIT
 ```
 
 ### `RUNNER_SESSION_RECORD_SHIMS` — drop runner session record compatibility
@@ -827,7 +836,9 @@ and read Threads from the History Service fold, yet the setting defaults to off.
 `Environment.fold_shadow`, and rename `fold_shadow.py`/`FoldShadow` and their "shadow" comments for
 what the fold is. A fold that stops on an unexpected error is only logged, by design, so raw reads
 keep serving ([Thread view sync](../docs/thread_view_sync.md)); give that state a signal an operator
-sees (a metric or a status the read API reports) without ending the process.
+sees (a metric or a status the read API reports) without ending the process. Narrow
+`FoldShadow._advance`'s per-Session catch of `LookupError`, `ValueError`, `ConnectionError` and
+`OSError` to what that signal covers, and drop `FOLD_EPOCH`'s comment contrasting it with the app's.
 
 ### `ACTION_EXECUTION_AUDIT_TRIM` — execution reconciliation columns
 
@@ -838,18 +849,25 @@ drop both columns and the enum.
 
 ### `REFACTOR_COHERENCE_AUDIT` — the refactor reads as one design
 
-**Blocked on the cutover's retirements and the split**, which remove the transitional pieces the
-other nodes name. Sweep devel for unused modules, functions, settings, proto fields, tables and
-columns; one name per concept across code, settings, manifests, protos and docs (Sandbox Service,
-Runner Gateway, History Service, ingress, control; Session for the raw stream, Thread for its
-projection; no "hub", "follow" or "shadow" left); READMEs, `SPEC.md` files and `docs/` describing
-the code as it is, without cutover narration; no compatibility branch, optional-with-fallback
-setting or `CLEANUP` tombstone whose condition is met; the system diagram in `agentplane/README.md`
-showing exactly the deployed services and the traffic between them in `cluster/cdk8s/agentplane`.
-Known now: the cutover guards in `cluster/cdk8s/agentplane/test_sandbox_service.py` (a "removed
-stays removed" assertion, and a test defined after `__main__`), and the test-only
-`PostgresListener.wait_until_disconnected`. Findings are fixed in PRs of their own; this node leaves
-with the last of them.
+**Blocked on the cutover's retirements, the split and the section 12 refactors**, which remove the
+transitional pieces the other nodes name. Sweep devel for unused modules, functions, settings, proto
+fields, tables and columns; one name per concept across code, settings, manifests, protos and docs
+(Sandbox Service, Runner Gateway, History Service, ingress, control; Session for the raw stream,
+Thread for its projection; no "hub", "follow" or "shadow" left); READMEs, `SPEC.md` files and
+`docs/` describing the code as it is, without cutover narration; no compatibility branch,
+optional-with-fallback setting or `CLEANUP` tombstone whose condition is met; the system diagram in
+`agentplane/README.md` showing exactly the deployed services and the traffic between them in
+`cluster/cdk8s/agentplane`. Known now: the cutover guards in
+`cluster/cdk8s/agentplane/test_sandbox_service.py` (a "removed stays removed" assertion, and a test
+defined after `__main__`); the test-only `PostgresListener.wait_until_disconnected`;
+`runner/observation.py` probes the oneof with `getattr`; two `ClaudeHarness` classes
+(`native/claude/facade.py`, `harness_tests`); `//agentplane/capture:live_capture` is a hand-run
+probe not named `demo_`; egress and app test support each build a throwaway CA;
+`sandbox_service/models.py` holds only errors, `provisioning.py` makes its logger in a function, and
+`{session_id}` cwd templating runs twice in the gateway; operator routes are `/operator/v1/` in
+notifications but `/v1/operator/` in actions; `cluster/cdk8s/agentplane/kubevirt_experiment` is an
+experiment outside `x/`. Findings are fixed in PRs of their own; this node leaves with the last of
+them.
 
 ## 11. Runner ingress and control split
 
@@ -921,8 +939,10 @@ Also follow-only, so deleted here: the History Service's `SandboxServiceSettings
 `IngesterSettings` (with the duplicate `ingester.settle_deltas`), its `sandbox_service` config block
 and token volume in cdk8s, and its caller account on the Sandbox Service; `follow_lease_s` and
 `SessionChanges`; the client's `follow_timeout_s` and `Attachment` with the app's
-`sandbox_service_follow_timeout_s` and the Notification Service's `follow_timeout_s`; and
-`protocol.v1.Follow` once nothing sends `Open.follow`.
+`sandbox_service_follow_timeout_s` and the Notification Service's `follow_timeout_s`;
+`protocol.v1.Follow` once nothing sends `Open.follow`; `Store.read`; `SessionFeedState.ended` with
+its merge in `record_feed_state`, `FEED_STATUS_ENDED` and the app's `resume_pending` mask; and
+`register_attached_sessions` in `sandbox_service/testing`.
 
 With the holds goes teardown's path for a runner that pushes nothing: `SealResponse.pushes`,
 `TEARDOWN_PHASE_SEALED`, `SandboxInventory.record_seal` and `delete_if_released`. Every teardown
@@ -932,7 +952,10 @@ then waits for every seal to be `flushed`.
 
 **Unscheduled.** `RunnerGateway` still uses the Session and command messages in the Sandbox
 Service's proto package, and one `SandboxServiceClient` serves both services. Move those messages
-into the gateway's proto and give the gateway its own client.
+into the gateway's proto and give the gateway its own client. `FrozenLaunch` leaves the public
+Sandbox Service proto for a gateway-private message, `sandbox_service/wire.py` splits between
+gateway and client, the client's `Runner` handle is renamed, its `command_admission_timeout_s`
+stops being nullable, and the Notification Service's `SandboxServiceSettings` splits too.
 
 ### `AGENTPLANE_SANDBOX_RESOURCE` — our own Sandbox resource
 
@@ -979,6 +1002,343 @@ ReadWriteOnce, so the Job starts only once every container of the old Pod is gon
 every admission, idempotent on `command_id`. Retiring the Runner Gateway's submission records would make it
 stateless, with `GetCommand`, `ListCommands` and the command status UI reading receipts from
 history instead.
+
+## 12. Coherence refactors
+
+Refactors found by reading devel (2026-10-11 PDT) against the quality bar and
+[gRPC services](../docs/grpc_services.md). Each lands as its own PR; all of them feed
+`REFACTOR_COHERENCE_AUDIT`.
+
+```mermaid
+flowchart TD
+    GATEWAY_CLIENT_SPLIT[Session messages and client move to the gateway]
+    RUNNER_INBOUND_RETIRE[Retire inbound runner access]
+    APP_PROJECTOR_RETIRE[Delete app projector]
+    subgraph COHERENCE_REFACTORS[Coherence refactors]
+        RUNNER_GATEWAY_AUDIENCE[Candidate: the Runner Gateway's own token audience]
+        SERVICE_SETTINGS_BASE[Candidate: one config-file settings base]
+        SERVICE_PROCESS_MODULE[Blocked: one service process module]
+        GRPC_HEALTH_PROBES[Blocked: probes use gRPC health]
+        REQUIRED_SERVICE_WIRING[Candidate: no footgun defaults on service wiring]
+        SERVICE_DOCS_GATEWAY[Candidate: docs give the Runner Gateway its jobs]
+        GATEWAY_NAME_SWEEP[Candidate: code says Runner Gateway for the gateway]
+        SERVICE_DOCS_NARRATION_TRIM[Candidate: no changelogs in service docs]
+        AGENTPLANE_LABEL_DOMAIN[Candidate: one annotation domain]
+        WATCH_FRESHNESS_DEDUPE[Candidate: one watch freshness]
+        POSTGRES_WAKEUPS_SHARED[Candidate: one PostgreSQL wakeup class]
+        GATEWAY_SANDBOX_READS[Candidate: the gateway reads Sandboxes read-only]
+        SANDBOX_DEAD_CODE[Candidate: delete KubernetesBindings.run]
+        RUNNER_ERRORS_REHOME[Blocked: errors beside the client that raises them]
+        HISTORY_LIST_SUMMARIES_RETIRE[Candidate: delete ListSessionSummaries]
+        HISTORY_FEED_STATE_TRIM[Candidate: feed state without the Sandbox proto]
+        HISTORY_GRPC_CONFORM[Candidate: the History Service follows grpc_services.md]
+        THREAD_FOLD_SINGLE_OWNER[Blocked: the fold has one owner]
+        SETTLE_DELTAS_ALWAYS_ON[Decision: delta settlement always on]
+        INDEX_PRIMITIVES_CONSOLIDATE[Candidate: one Git index, table drop is a decision]
+        INDEX_DOCS[Candidate: indexing README points at the deployment]
+        APP_SERVICE_NAMES[Blocked: app names the right services]
+        APP_TEST_CLIENT_MOVE[Candidate: app test client out of production]
+        KUBEVIRT_GUEST_CONTROL[Candidate: KubeVirt guest dials out]
+        RUNNER_CORE_SPLIT[Blocked: runner core out of the inbound servicer]
+        RUNNER_HARNESS_ENUM[Candidate: Harness enum beside its owner]
+        NATIVE_PROCESS_DEDUP[Candidate: one native process wrapper]
+        EGRESS_DECISIONS_CLIENT[Candidate: egress decisions client beside the server]
+        EGRESS_RULES_API_TIDY[Candidate: egress rules API tidy]
+        LLM_INGRESS_MODEL_CONFIG_CONTRACT[Candidate: structural absent model config]
+        ACTION_SETTINGS_SINGLE_MODEL[Candidate: one Action Service settings model]
+        ACTION_PROTOCOLS_CONCRETE[Candidate: concrete types for Action protocols]
+        ACTION_OAUTH_REFERENCE_TYPE[Candidate: typed OAuth token reference]
+        NOTIFICATION_GITHUB_PACKAGE[Candidate: one GitHub source package]
+        CDK8S_SERVICE_CONSTRUCT[Candidate: one cdk8s service construct]
+        CDK8S_RUNNER_ENDPOINT_HELPER[Candidate: one runner-facing endpoint helper]
+        GRPC_CHANNEL_OPTIONS_CONSTANT[Candidate: one gRPC channel options constant]
+        CDK8S_RUNNER_TEMPLATE_MOVE[Candidate: runner Pod objects out of the app]
+        CDK8S_CALLER_WIRING[Candidate: one callers shape]
+        TEST_SUPPORT_REHOME[Candidate: test support beside its service]
+        TESTING_FAILURE_JOURNAL[Candidate: one failed-journal fixture]
+    end
+    GATEWAY_CLIENT_SPLIT --> RUNNER_ERRORS_REHOME
+    KUBEVIRT_GUEST_CONTROL --> RUNNER_INBOUND_RETIRE
+    RUNNER_INBOUND_RETIRE --> RUNNER_CORE_SPLIT
+    APP_PROJECTOR_RETIRE --> THREAD_FOLD_SINGLE_OWNER
+    APP_PROJECTOR_RETIRE --> APP_SERVICE_NAMES
+    COHERENCE_REFACTORS --> REFACTOR_COHERENCE_AUDIT[Whole-refactor coherence audit]
+```
+
+### `RUNNER_GATEWAY_AUDIENCE` — the Runner Gateway's own token audience
+
+**Candidate.** The gateway accepts the Sandbox Service's audience (`runner_gateway/settings.py:26`,
+`cluster/cdk8s/agentplane/chart.py:73`), and the combined client sends one token to both, so a token
+for one service is accepted by the other. Give the gateway `agentplane-runner-gateway` with its own
+token mount on each caller, drop both settings' literal audience defaults, and use
+`WORKLOAD_TOKEN_AUDIENCE` for the literal in `notifications.py`. Pairs with `GATEWAY_CLIENT_SPLIT`.
+
+### `SERVICE_SETTINGS_BASE` — one config-file settings base
+
+**Candidate.** `settings_customise_sources` is pasted into nine `Settings` classes and has drifted:
+four refuse a missing config file, the rest silently start on defaults. Move
+`homeassistant/provisioner/yaml_settings.py:YamlFileSettings` to `util/`, keep its missing-file
+check, subclass it in every service, and drop the no-op `__init__(self, **values)` overrides.
+
+### `SERVICE_PROCESS_MODULE` — one service process module
+
+**Blocked on #9973 and #9977**, after which `grpc_process.py` holds no gRPC code. Rename it for what
+it does, and have every main use its `kubernetes_configuration` (re-inlined in six mains),
+`background` (hand-rolled for the History Service fold task) and one `kubernetes_asyncio` log-level
+line; the History Service's two "ports must differ" checks go with it.
+
+### `GRPC_HEALTH_PROBES` — probes use gRPC health
+
+**Blocked on #9977**, which serves `grpc.health.v1` but keeps HTTP `/healthz` on 8081. Point the
+cdk8s probes at gRPC health and delete the `_HEALTH` ports and `health_port` settings, unless #9977
+schedules it itself.
+
+### `REQUIRED_SERVICE_WIRING` — no footgun defaults on service wiring
+
+**Candidate.** Both services' `Resources` default timeouts that copy the Settings defaults, and the
+gateway's defaults `sealer_accounts=frozenset()` and its channel options; only test builders rely on
+them (`sandbox_service/grpc_api.py:40`, `runner_gateway/grpc_api.py:77`). Make them required, as
+`launch_spec(sandbox_namespace=)` and `SandboxInventory.suspend`/`resume(uid=)` whose `None`
+branches only tests take.
+
+### `SERVICE_DOCS_GATEWAY` — docs give the Runner Gateway its jobs
+
+**Candidate.** `docs/service_boundaries.md` (with its diagram and cutover gates),
+`agentplane/AGENTS.md`, the README service list, `thread_layering.md`, `scoped_session_reads.md`,
+`runner_gateway/README.md`, the Notification Service README, `docs/api.md` and its generator
+docstring still give the gateway's registry, access and relay to the Sandbox Service.
+`workload_auth/README.md` says no destination reads the Pod, which `resolve_peer` does. The README
+diagram misses deployed edges (app to egress admin, notifications to GitHub and its webhook route,
+the Action Service's external egress and command Sandboxes); its Databases paragraph follows #9836
+and #9839.
+
+### `GATEWAY_NAME_SWEEP` — code says Runner Gateway for the gateway
+
+**Candidate.** Module docstrings, `proto/runner_control.proto`, the EndpointSlice
+`managed-by: agentplane-sandbox-service` (`runner_gateway/connection_records.py`), the agent prompt
+in `session_lifecycle.py`, and the runner's `control.py`, `main.py` flag help, `SPEC.md` and README
+say "Sandbox Service" for the gateway; History Service docstrings say it writes and migrates the
+history store. Also the stale `sealer_accounts` comment, the `serve_channel` test helper, and the
+`CLEANUP` in `sandbox_service/teardown.py` that cites this plan.
+
+### `SERVICE_DOCS_NARRATION_TRIM` — no changelogs in service docs
+
+**Candidate.** The Action Service README narrates about nine migrations and a file-backed adapter
+that no longer exists; Notification `docs/api.md` keeps cutover instructions; the runner README
+keeps schema-change narration; the egress README counts its watched kinds three ways and names the
+rendered manifests, not `cluster/cdk8s/agentplane/egress.py`. Describe the code as it is.
+
+### `AGENTPLANE_LABEL_DOMAIN` — one annotation domain
+
+**Candidate.** Runner connection records annotate under `agentplane.ducktape.dev/*`, everything else
+under `agentplane.allegedly.works/*`, which is typed out by hand in `kubernetes_views.py`,
+`kubernetes_bindings.py` and ten cdk8s RBAC rules beside `crd_group.GROUP`. Use one domain from one
+constant; Agentplane state is disposable.
+
+### `WATCH_FRESHNESS_DEDUPE` — one watch freshness
+
+**Candidate.** Only the Action Service uses `kubernetes_watch.Freshness`; `app/live.py` (without the
+clock-went-backwards guard) and egress `policy.py`/`admin.py` reimplement it. Both use `Freshness`.
+
+### `POSTGRES_WAKEUPS_SHARED` — one PostgreSQL wakeup class
+
+**Candidate.** `SummaryChanges`, `HistoryChanges`, `runner_gateway.SessionChanges` and
+`notification_service.Wakeups` are one payload-free listen-and-wake class with different channel
+names, and `app/changes.Changes` is its waiter set. One `agentplane/postgres/` class plus a
+`notify(session, channel)`, used by every site that outlives `FOLLOW_PATH_RETIRE`.
+
+### `GATEWAY_SANDBOX_READS` — the gateway reads Sandboxes read-only
+
+**Candidate.** The gateway builds the Sandbox Service's mutating `SandboxInventory` but only reads
+it, and alone uses `sandbox_service/destinations.py`, against service_boundaries.md § callers. Split
+a read-only Sandbox reader, move `destinations.py` into `runner_gateway/`, write the incarnation
+check (four copies) once, and drop the second `RunnerEndpoint` class name.
+
+### `SANDBOX_DEAD_CODE` — delete `KubernetesBindings.run`
+
+**Candidate.** Nothing calls it (`sandbox_service/kubernetes_bindings.py:295`); grant bindings
+reconcile through `Provisioning.reconcile_once`.
+
+### `RUNNER_ERRORS_REHOME` — errors beside the client that raises them
+
+**Blocked on `GATEWAY_CLIENT_SPLIT`.** `agentplane.runner.errors` is now every service's "session
+refused" vocabulary: the gateway, the Sandbox Service client and the app's Thread-identity conflicts
+raise it. Move it beside the gateway client, per grpc_services.md, and give the app's `bridge.py`
+its own error type.
+
+### `HISTORY_LIST_SUMMARIES_RETIRE` — delete `ListSessionSummaries`
+
+**Candidate.** No production caller since #9827, and its Sandbox filter never matches ingress-only
+Sessions. Delete the RPC and its messages, `SessionSummaryPageToken`, the client method,
+`SummaryReader.list_page` with `_token`/`_after`, their tests and the README paragraph.
+
+### `HISTORY_FEED_STATE_TRIM` — feed state without the Sandbox proto
+
+**Candidate.** `SessionFeedState.sealed` is typed `sandbox_service.Sealed`, the History Service's
+only reason to import that proto; `runner.Sealed` has the same `uint64 cursor = 1`, so the retype is
+wire-compatible with stored rows. Delete the test-only `Store.checkpoint` too.
+
+### `HISTORY_GRPC_CONFORM` — the History Service follows grpc_services.md
+
+**Candidate.** The servicer's error mapper is `reader`, not `errors(context)`, and both `Watch*`
+RPCs stream outside it, so their faults escape unmapped. The client's
+`watch_session_summaries(timeout_s=)` puts a deadline on a long-lived stream; delete it and the
+app's `history_service_watch_timeout_s`.
+
+### `THREAD_FOLD_SINGLE_OWNER` — the fold has one owner
+
+**Blocked on `APP_PROJECTOR_RETIRE`.** With only the History Service running the fold,
+`HistoryProjector` takes its `Store` instead of two single-implementation callables and drops its
+`grpc.RpcError` catch, the app's `HistoryWatch` calls the client directly, app-era wording goes,
+`EventLogStore.open` raises an app error instead of `EventReplicationError`, and `thread_fold` moves
+under `history_service/`. **Decision for the operator:** drop the writerless
+`ThreadHistorySummary.resumed_after_cursor` column with its `lifecycle.py` branch.
+
+### `SETTLE_DELTAS_ALWAYS_ON` — delta settlement always on
+
+**Decision.** Both environments set `settle_deltas`, yet `IngressSettings.settle_deltas` and
+`Store(settle_deltas=False)` default off, so a new writer silently stops settling. Recommendation:
+make settlement unconditional and delete the setting, `Environment.settle_deltas` and the `Store`
+flag (the ingester's copy goes with `FOLLOW_PATH_RETIRE`). The alternative is a required setting.
+`SESSION_EVENT_COMPACTION` does not wait for this.
+
+### `INDEX_PRIMITIVES_CONSOLIDATE` — one Git index
+
+**Candidate; the table drop is a decision.** `haku/recall_index`'s `sync`, `store`, `git_tree`,
+`embedding_sync`, `config` and `schema` are deployed nowhere and duplicate `agentplane/indexing`;
+its live half serves only that package. Delete the dead modules and their tests and move the live
+primitives into `agentplane/indexing`; `vector_type` stays where the haku migration imports it.
+**Decision for the operator:** drop the haku console's `recall_index` tables, a new migration.
+
+### `INDEX_DOCS` — indexing README points at the deployment
+
+**Candidate.** `agentplane/indexing/README.md` ships a hypothetical Deployment and "initial version"
+phrasing; point at `cluster/cdk8s/agentplane_index/workers.py` instead, and make
+`Maintenance.embedding_timeout_seconds` required.
+
+### `APP_SERVICE_NAMES` — the app names the right services
+
+**Blocked on `APP_PROJECTOR_RETIRE`**, which rewrites the same files. The app says Sandbox Service
+for the gateway's command records (`bridge.py`, `api.py`, a settings description), answers every
+`ConnectionError` with "Sandbox Service unavailable", and calls the stored cursor a follow cursor.
+`threads/ingestion.py`'s `Ingester` then only discovers Sessions; rename it for that.
+
+### `APP_TEST_CLIENT_MOVE` — app test client out of production
+
+**Candidate.** `agentplane/app/client.py` is `testonly` and imported only by
+`agentplane/acceptance`; move it to `app/testing/` or `acceptance/`.
+
+### `KUBEVIRT_GUEST_CONTROL` — KubeVirt guest dials out
+
+**Candidate.** `runner/guest_config.py`, live through the `agentplane-runner-vm` entry point and
+`cluster/cdk8s/agentplane/kubevirt_experiment`, pins an inbound `listen` with no control or ingress
+target, so `RUNNER_INBOUND_RETIRE` would strand it. Give `GuestConfig` both targets; retiring the
+experiment instead also orphans the VM-only `RunnerConfig` fields and `cgroups.py`.
+
+### `RUNNER_CORE_SPLIT` — runner core out of the inbound servicer
+
+**Blocked on `RUNNER_INBOUND_RETIRE`, or lands inside it.** `Runner`, the `OpenError` hierarchy,
+`build_attached`, `follow_journal` and `finish_command` live in the Attach servicer
+`runner/service.py`; move them to their own module. The control and ingress clients share one
+lost-stream error and backoff, `IngressPusher` stops borrowing `ControlTiming`, and the unpassed
+`channel_options` parameters go.
+
+### `RUNNER_HARNESS_ENUM` — `Harness` enum beside its owner
+
+**Candidate.** `runner/harness.py`'s `Harness` is imported by the app, acceptance and cdk8s, while
+the runner keeps `SessionRecord.harness: str`. Type the record with it, or move it to its owner.
+
+### `NATIVE_PROCESS_DEDUP` — one native process wrapper
+
+**Candidate.** `native/process.py` (sync, used only by capture), `native/async_process.py` (used
+only by test code, not `testonly`) and `runner/harness_process.py` wrap one process, with the 64 MiB
+line limit kept aligned by comment. Move capture onto `AsyncNativeProcess`, delete the sync wrapper,
+and make `async_process` test-only.
+
+### `EGRESS_DECISIONS_CLIENT` — egress decisions client beside the server
+
+**Candidate.** `app/decisions.py` mirrors egress `Outcome`/`Decision` and holds the client for the
+egress `/decisions` route. Move model and client into `agentplane/egress/`, drop the never-set
+`DecisionRecord.path`, and say at the model which written-but-unread columns operators query.
+
+### `EGRESS_RULES_API_TIDY` — egress rules API tidy
+
+**Candidate.** `rules_api.py` keeps a test-only staging `HOST` and polls `server.started` with a
+sleep; the central proxy serves aiohttp `admin.py` beside a FastAPI app with hand-built dict JSON.
+Move the host into the tests, wait on the condition, and serve both listeners on one stack.
+
+### `LLM_INGRESS_MODEL_CONFIG_CONTRACT` — structural absent model config
+
+**Candidate.** `llm_ingress/app.py` answers an absent model config with a 404 whose `detail` text
+`runner/model_config.py` string-matches. Carry the absent state structurally (204, or 200 with a
+nullable body).
+
+### `ACTION_SETTINGS_SINGLE_MODEL` — one Action Service settings model
+
+**Candidate.** `ActionServiceDeploymentSettings` re-declares part of `Settings`, which defaults
+`policy_namespace` and `caller_service_account_namespaces` to `agentplane-staging`. Author
+`Settings` through `SettingsFile` as the other services do, drop the Deployment model, make both
+namespaces required, and move `token_audience` from the CLI into the file.
+
+### `ACTION_PROTOCOLS_CONCRETE` — concrete types for Action protocols
+
+**Candidate.** `AccessTokenProvider`, `ExternalGrantAuthority` (also a footgun `| None = None`),
+`DecisionProvider` and `ExecutionLease` each have one production implementation, and
+`OperatorAuthenticator` is a union of two. Name the concrete types or unions.
+
+### `ACTION_OAUTH_REFERENCE_TYPE` — typed OAuth token reference
+
+**Candidate.** `ActionsOAuthProxy._reference` returns an indexed `tuple[UUID, str, str]` and its
+callers catch `Exception`, so a bug looks like a revoked token (`action_service/oauth.py:282`). A
+dataclass, and catches narrowed to the JWT, `ValueError` and `KeyError` failures.
+
+### `NOTIFICATION_GITHUB_PACKAGE` — one GitHub source package
+
+**Candidate.** `github_state.py` at the package root beside `sources/github{,_client,_models}.py`
+becomes `sources/github/{source,client,models,state}.py`, and the Actions source's hard-coded
+`timeout=5` becomes a `request_timeout_s` setting like the other backends'.
+
+### `CDK8S_SERVICE_CONSTRUCT` — one cdk8s service construct
+
+**Candidate.** Seven constructs in `cluster/cdk8s/agentplane/` hand-write one Deployment skeleton
+(ServiceAccount, security context, probes, Service, PDB, projected-token `JsonPatch`), and the CNPG
+egress rule is spelled eight times. One construct, and `database.py` exports `egress(namespace)`.
+
+### `CDK8S_RUNNER_ENDPOINT_HELPER` — one runner-facing endpoint helper
+
+**Candidate.** `HistoryIngress` and `RunnerGateway._add_runner_control_egress` each build the same
+EgressCredential, EgressPolicy and proxy NetworkPolicy; build them once.
+
+### `GRPC_CHANNEL_OPTIONS_CONSTANT` — one gRPC channel options constant
+
+**Candidate.** Both environments set every channel-options field to
+`LARGE_EVENT_GRPC_CHANNEL_OPTIONS`, and `notifications.py` and `history_service.py` read the app's
+copies. Use the constant (or the clients' default) instead of `Environment` and app-config plumbing.
+
+### `CDK8S_RUNNER_TEMPLATE_MOVE` — runner Pod objects out of the app
+
+**Candidate.** `cluster/cdk8s/agentplane/app.py` owns the runner `SandboxTemplate`, ServiceAccount,
+NetworkPolicy and `RUNNER_IMAGE`, and three files spell the `agentplane-runner` label. Move them
+beside `sandbox_pod.py` with one `runner_pods(namespace)`.
+
+### `CDK8S_CALLER_WIRING` — one callers shape
+
+**Candidate.** `RunnerGateway` takes a `callers` map, `SandboxService` and `HistoryService` take
+single callers and hard-code notifications, and `Notifications` admits the app and egress by literal
+labels. One `callers` shape everywhere, assembled in `chart.py`.
+
+### `TEST_SUPPORT_REHOME` — test support beside its service
+
+**Candidate.** `sandbox_service/testing/history.py`, `fixtures.py` and `delta_spans.py` build
+History Service schemas and serve its tests, and `sandbox_service/test_inventory.py` tests the
+gateway's `launch_spec`. Move them to `history_service/testing` and `runner_gateway/`.
+
+### `TESTING_FAILURE_JOURNAL` — one failed-journal fixture
+
+**Candidate.** `notification_service/conftest.py` (which swallows the error detail) and
+`app/test_bridge.py` each copy a failed native journal. One fixture in `agentplane/runner/testing`,
+where the runner-specific `agentplane/testing/failure_journal.py` belongs, and trim that package's
+visibility list.
 
 ## Scope and retirement of stale gates
 
