@@ -50,8 +50,13 @@ on:
   workflow_dispatch:
 
 concurrency:
-  group: nix-wheel-check-${{ inputs.pr_head_sha || github.ref }}
-  cancel-in-progress: true
+  # Keep PR identity stable across revisions. Separate fork event types so the
+  # skipped pull_request job cannot cancel its trusted pull_request_target run.
+  group: nix-wheel-check-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
+  # Mainline runs publish source-check markers to Attic: let the active run
+  # finish, retaining only the newest pending revision during merge bursts.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' || inputs.pr_head_sha != '' }}
+  queue: single
 
 permissions:
   contents: read
