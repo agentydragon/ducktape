@@ -388,7 +388,7 @@ class SandboxInventory:
                         TEARDOWN_ANNOTATION: TeardownPhase.Name(TeardownPhase.TEARDOWN_PHASE_SEALED),
                         RETENTION_HOLDS_ANNOTATION: self._holds(sandbox).seal(cursors).model_dump_json(),
                     },
-                },
+                }
             },
         )
 
