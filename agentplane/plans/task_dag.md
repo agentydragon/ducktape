@@ -620,6 +620,11 @@ state that survives the Sandbox and is attached to the next one. Section 7 is wr
 preclude this: the History Service keys by Session, a Session records each Sandbox incarnation, and
 a teardown seal closes an incarnation, not the Session.
 
+A related direction (operator, 2026-10-11 PDT; later, with more planning, not scheduled): Sessions
+living in a long-running, often-suspended Sandbox whose runner image upgrades between incarnations.
+Runner dial-out, the ingress and per-incarnation seals make it more reachable; `POD_INCARNATION` is
+one shape it could take.
+
 ```mermaid
 flowchart TD
     DURABLE_SESSION_LIFECYCLE[Decision: Session lifetime beyond its Sandbox]
