@@ -182,7 +182,7 @@ class DispatchStore:
             await session.execute(select(func.pg_notify(OUTCOME_CHANNEL, format_outcome(key))))
 
     async def read_outcome(self, key: CommandKey) -> Outcome:
-        """Admission from any source settles the attempt, including history ingestion's."""
+        """The admission settles the attempt, whichever delivery's receipt recorded it."""
         async with self._sessions() as session:
             admission, refusal = (
                 (

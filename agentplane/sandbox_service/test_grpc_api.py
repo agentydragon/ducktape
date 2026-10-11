@@ -21,7 +21,6 @@ from agentplane.protocol import command_pb2, event_log_pb2, event_pb2
 from agentplane.runner import protocol_pb2 as runner_pb2
 from agentplane.runner.errors import RunnerError, StreamClosedError
 from agentplane.sandbox_service import protocol_pb2, wire
-from agentplane.sandbox_service.admission_reconciliation import AdmissionReconciler
 from agentplane.sandbox_service.channel_control import ChannelControl
 from agentplane.sandbox_service.channel_delivery import ChannelDelivery
 from agentplane.sandbox_service.client import ReconnectRequiredError, SandboxServiceClient, SealedError, ServiceError
@@ -304,12 +303,7 @@ async def test_managed_open_keeps_runner_id_internal_and_retries_frozen_launch(
 
 
 async def test_public_session_command_survives_a_lost_reply(
-    resources: Resources,
-    token_file: Path,
-    peer: Peer,
-    engine: AsyncEngine,
-    sessions: SessionRegistry,
-    submissions: SubmissionStore,
+    resources: Resources, token_file: Path, peer: Peer, engine: AsyncEngine, submissions: SubmissionStore
 ) -> None:
     session_id = uuid4()
     physical = f"r-{session_id}"
@@ -330,15 +324,17 @@ async def test_public_session_command_survives_a_lost_reply(
         lost = await peer.attachments.get()
         assert (await lost.commands.get()).command == command
         await lost.closed.wait()
+        # The runner did journal it, but nothing reads its journal: the submission stays pending.
         assert (await submissions.read(session_id, "durable")).state == SubmissionState.PENDING_ADMISSION
 
-        # The runner did journal it. Reconciliation finds the admission and settles the submission.
+        # The caller's retry delivers it again, and the runner's original receipt settles it.
         receipt = admission(command, 1)
         peer.history[physical] = [receipt]
-        await AdmissionReconciler(submissions, sessions, resources.destinations, runner_grpc_channel_options={}).cycle()
-        await (await peer.attachments.get()).closed.wait()
+        assert await runner.command(str(session_id), command, after_cursor=0) == receipt
+        redelivered = await peer.attachments.get()
+        assert (await redelivered.commands.get()).command == command
+        await redelivered.closed.wait()
         assert (await submissions.read(session_id, "durable")).state == SubmissionState.ADMITTED
-        assert await submissions.read_pending_sessions() == set()
 
         assert await runner.command(str(session_id), command, after_cursor=0) == receipt
         assert peer.attachments.empty()  # an admitted retry needs no runner

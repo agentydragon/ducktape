@@ -86,8 +86,8 @@ Thread-page projection. Their cross-layer contract is [Thread, runner, and harne
   [runner channel](../docs/runner_channel.md) and keeps one `Connect` stream for as long as it runs,
   reconnecting on a fresh connection after any loss. It offers `commands` and `lifecycle`.
 - A delivered command is admitted exactly as an `Attach` command is, and answered from the journal:
-  its `CommandAdmitted` entry, also when the command was already journaled with the same payload.
-  Otherwise it is refused with its cause: an unknown session, a harness that is not running or a
+  its `CommandAdmitted` entry, also when the command was already journaled with the same payload,
+  even after its harness stopped or its journal was sealed. Otherwise it is refused with its cause: an unknown session, a harness that is not running or a
   sealed journal, a command ID already used for other work, or a command without an ID and an
   operation. Delivery never creates a session or starts a harness.
 - Each control request is answered once, by its request ID, with its verb's result or a refusal

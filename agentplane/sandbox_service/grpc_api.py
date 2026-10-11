@@ -623,16 +623,14 @@ class SandboxService(protocol_pb2_grpc.SandboxServiceServicer):
             else:
 
                 async def dispatch(command: command_pb2.Command) -> event_log_pb2.EventEntry:
-                    # A reconciled admission would already have settled the submission, so its
-                    # receipt, if any, lies after the reconciled cursor. The caller's follow cursor
-                    # is ignored.
-                    after_cursor = await submissions.read_reconciled_through(public_id)
+                    # The caller picks a follow cursor before any earlier admission of this command,
+                    # so a retry finds the original receipt in the replay.
                     async with self.runner(destination.sandbox, writes=True) as (client, _):
                         return await admit_running_command(
                             client,
                             runner_session_id,
                             command,
-                            after_cursor=after_cursor,
+                            after_cursor=request.follow.after_cursor,
                             timeout_s=self.resources.runner_admission_ack_timeout_s,
                         )
 

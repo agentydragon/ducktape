@@ -1,12 +1,13 @@
 """Durable command admission; transport authorization remains the caller's responsibility.
 
-Staged for the Sandbox Service `SubmitCommand` handler, which lands next. Do not pass a caller-supplied identity here: the RPC boundary must
-authenticate the caller and authorize the Session destination first.
+Do not pass a caller-supplied identity here: the RPC boundary must authenticate the caller and
+authorize the Session destination first. A submission whose receipt was lost stays pending until an
+exact retry delivers it again; nothing settles it in the background.
 """
 
 from __future__ import annotations
 
-from collections.abc import Awaitable, Callable, Sequence, Set
+from collections.abc import Awaitable, Callable, Set
 from dataclasses import dataclass
 from datetime import datetime
 from enum import StrEnum
@@ -90,15 +91,13 @@ class Submission:
         return result
 
 
-async def reconcile_admission(session: AsyncSession, session_id: UUID, entry: event_log_pb2.EventEntry) -> None:
-    """Record one journal entry's admission evidence, locking only the matching submission.
+async def record_receipt(session: AsyncSession, session_id: UUID, receipt: event_log_pb2.EventEntry) -> None:
+    """Record a runner's admission receipt on its submission, locking only that row.
 
-    Commands from other producers have no submission row and need nothing. Repeating an entry is
+    Commands from other producers have no submission row and need nothing. Repeating a receipt is
     idempotent.
     """
-    if not entry.event.HasField("command_admitted"):
-        return
-    command = entry.event.command_admitted.command
+    command = receipt.event.command_admitted.command
     row = await session.scalar(
         select(db.CommandSubmission)
         .where(db.CommandSubmission.session_id == session_id, db.CommandSubmission.command_id == command.command_id)
@@ -106,29 +105,18 @@ async def reconcile_admission(session: AsyncSession, session_id: UUID, entry: ev
     )
     if row is None:
         return
-    if not entry.cursor or not entry.origin.source_id or entry.origin.sequence != entry.cursor:
+    if not receipt.cursor or not receipt.origin.source_id or receipt.origin.sequence != receipt.cursor:
         raise SubmissionConflictError("invalid admission origin")
     if row.runner_command != command:
         raise SubmissionConflictError("admission differs from retained command")
-    if row.admission is not None and row.admission != entry:
+    if row.admission is not None and row.admission != receipt:
         raise SubmissionConflictError("conflicting admission receipt")
     # Positive durable evidence wins over a racing refusal; never regress an admission.
     row.state = SubmissionState.ADMITTED
-    receipt = event_log_pb2.EventEntry()
-    receipt.CopyFrom(entry)
-    row.admission = receipt
+    admission = event_log_pb2.EventEntry()
+    admission.CopyFrom(receipt)
+    row.admission = admission
     row.rejection = None
-
-
-async def record_receipt(session: AsyncSession, session_id: UUID, receipt: event_log_pb2.EventEntry) -> None:
-    """Record a receipt from the runner directly rather than from the contiguous journal.
-
-    It must come from the journal already being reconciled; the reconciliation cursor stays put.
-    """
-    progress = await session.get(db.AdmissionReconciliation, session_id)
-    if progress is not None and progress.source_id != receipt.origin.source_id:
-        raise SubmissionConflictError("admission source differs from the reconciled journal")
-    await reconcile_admission(session, session_id, receipt)
 
 
 class SubmissionStore:
@@ -189,7 +177,6 @@ class SubmissionStore:
             return [Submission.from_row(row) for row in await session.scalars(query)]
 
     async def record_admission(self, session_id: UUID, entry: event_log_pb2.EventEntry) -> Submission:
-        """Record a direct receipt. It is not a contiguous journal prefix, so the cursor stays put."""
         receipt = event_log_pb2.EventEntry()
         receipt.CopyFrom(entry)
         if not receipt.event.HasField("command_admitted"):
@@ -218,56 +205,6 @@ class SubmissionStore:
                 row.rejection = reason
             return Submission.from_row(row)
 
-    async def read_pending_sessions(self) -> set[UUID]:
-        """Sessions with a submission still awaiting admission evidence."""
-        async with self._sessions() as session:
-            rows = await session.scalars(
-                select(db.CommandSubmission.session_id)
-                .where(db.CommandSubmission.state == SubmissionState.PENDING_ADMISSION)
-                .distinct()
-            )
-            return set(rows)
-
-    async def read_reconciled_through(self, session_id: UUID) -> int:
-        """The last journal cursor reconciled; zero before the first."""
-        async with self._sessions() as session:
-            progress = await session.get(db.AdmissionReconciliation, session_id)
-            return 0 if progress is None else progress.reconciled_through
-
-    async def reconcile(self, session_id: UUID, entries: Sequence[event_log_pb2.EventEntry]) -> int:
-        """Reconcile a contiguous run of journal entries and advance the cursor in one transaction.
-
-        Entries at or before the cursor were already reconciled and are skipped, so a replayed batch
-        is harmless; a gap or a different journal source is a conflict. Returns the new cursor.
-        """
-        async with self._sessions.begin() as session:
-            if entries:
-                await session.execute(
-                    insert(db.AdmissionReconciliation)
-                    .values(session_id=session_id, source_id=entries[0].origin.source_id, reconciled_through=0)
-                    .on_conflict_do_nothing(index_elements=["session_id"])
-                )
-            # Serializes reconcilers of one Session; submissions lock only their own rows.
-            progress = await session.scalar(
-                select(db.AdmissionReconciliation)
-                .where(db.AdmissionReconciliation.session_id == session_id)
-                .with_for_update()
-            )
-            if progress is None:
-                return 0
-            for entry in entries:
-                if entry.origin.source_id != progress.source_id:
-                    raise SubmissionConflictError("entry source differs from the reconciled journal")
-                if entry.cursor <= progress.reconciled_through:
-                    continue
-                if entry.cursor != progress.reconciled_through + 1:
-                    raise SubmissionConflictError(
-                        f"expected {progress.reconciled_through + 1}, received {entry.cursor}"
-                    )
-                await reconcile_admission(session, session_id, entry)
-                progress.reconciled_through = entry.cursor
-            return progress.reconciled_through
-
 
 async def submit_command(
     store: SubmissionStore,
@@ -281,7 +218,7 @@ async def submit_command(
 
     The RPC must authorize first and provide a destination-bound dispatcher. Only proven
     non-admission may raise SubmissionRefusedError. Every other exception, cancellation included,
-    leaves the durable state for reconciliation or an exact retry.
+    leaves the submission pending until an exact retry delivers it again.
     """
     request = request.snapshot()
     current = await store.accept(session_id, request, caller=caller)

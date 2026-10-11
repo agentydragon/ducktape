@@ -84,6 +84,7 @@ def environment_chart(app: App, env: Environment) -> Chart:
         env,
         actions=actions.service(env.namespace),
         sandboxes=sandbox_service.service(env.namespace),
+        sandboxes_control_target=sandbox_service.control_target(env.namespace),
         history=history_service.service(env.namespace),
         history_audience=history_service.TOKEN_AUDIENCE,
     )

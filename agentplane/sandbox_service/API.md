@@ -156,26 +156,29 @@ registered but are not followed until their binding is established by a verified
   the original `EventEntry` containing its exact matching `CommandAdmitted`. For a public Session ID the
   submission is recorded in the `sandbox_commands` database before the runner is contacted, keyed by
   Session and command ID with the caller's identity. An exact retry by the same caller returns the
-  retained receipt without contacting the runner once the admission is known, whether from a direct
-  reply or from admission reconciliation; a different command or caller under the same ID is `ALREADY_EXISTS`.
-  Admission reconciliation reads the journal of each running Session with a pending submission, from
-  that Session's own cursor, every 15 seconds; it copies no history.
-  The service picks the replay cursor itself and ignores `follow`. For a legacy caller-chosen runner ID
-  nothing is recorded: specify a native `Follow` cursor before the possible admission when reconciling
-  an uncertain submission. Once a Sandbox's runner has agreed `commands` on the
+  retained receipt without contacting the runner once the admission is known; a different command or
+  caller under the same ID is `ALREADY_EXISTS`. A submission whose reply was lost is settled only by
+  delivering it again: an exact retry sends the same command, and the runner answers a command it
+  already journaled with its original receipt. Nothing reads the runner journal or delivers it again in
+  the background, so a submission nobody retries stays `PENDING_ADMISSION`. On the inbound relay the
+  receipt is found by replaying the journal after `follow`, so the caller names a cursor before the
+  command's possible admission; a stopped harness is refused there before any replay. For a legacy
+  caller-chosen runner ID nothing is recorded. Once a Sandbox's runner has agreed `commands` on the
   [runner channel](../docs/runner_channel.md), the Sandbox receives its commands only over it,
   through the submission's dispatch attempt. Such a Sandbox takes public Session IDs only, and with no
   live runner connection the call is `UNAVAILABLE` rather than relayed. A runner refusal returns
   `FAILED_PRECONDITION` (`ALREADY_EXISTS` for a conflicting command, `INVALID_ARGUMENT` for an
-  invalid one) and leaves the submission pending; an exact retry reopens the attempt. A recorded
+  invalid one) and leaves the submission pending; an exact retry reopens the attempt and is answered
+  with the original receipt even after the harness stopped or its journal was sealed. A recorded
   admission or rejection never changes, and submissions are kept forever: nothing expires or deletes
   them.
 - `GetCommand`, `ListCommands`: what the service retained for a public Session's submissions, for any
   allowed caller, without contacting the runner: the command, its state (`PENDING_ADMISSION`,
   `ADMITTED` with the same receipt `SubmitCommand` returns, or `REJECTED` with the runner's refusal),
   and when it was accepted. This is how a caller whose `SubmitCommand` response was lost, or that
-  reconnects, learns the outcome; a pending command may yet be admitted by an exact retry or by
-  admission reconciliation. Admission is the runner journaling the command, not the harness acting on
+  reconnects, learns the outcome; a pending command is settled only by an exact retry or a late
+  receipt for a delivery already sent, and `PENDING_ADMISSION` does not say whether the runner
+  journaled it. Admission is the runner journaling the command, not the harness acting on
   it. The Session must belong to the named Sandbox incarnation, whose owner is checked while it
   exists; the submissions outlive it. `ListCommands` pages in acceptance order and filters by state.
 
@@ -280,7 +283,7 @@ The service does not start without its `LISTEN` connection. Renewal and write bo
 - `DEADLINE_EXCEEDED`: operation or transport safety deadline expired (not planned follow renewal).
 
 Neither a successful write nor a timeout proves admission/rejection. A mutation may commit before
-its response is lost. Reconcile commands with the unchanged ID/payload and runner evidence; admission
+its response is lost. Settle a command by retrying it with the unchanged ID/payload; admission
 is neither harness consumption nor command completion nor inbox acknowledgement. A recorded submission
 is not a queue: nothing delivers it later, and the runner journal stays the receipt authority.
 

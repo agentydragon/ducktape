@@ -53,6 +53,7 @@ class Notifications(Construct):
         *,
         actions: ServiceRef,
         sandboxes: ServiceRef,
+        sandboxes_control_target: str,
         history: ServiceRef,
         history_audience: str,
     ) -> None:
@@ -111,6 +112,7 @@ class Notifications(Construct):
                 },
                 "sandbox_service": {
                     "target": f"{sandboxes.fqdn}:{sandboxes.port.number}",
+                    "control_target": sandboxes_control_target,
                     "grpc_channel_options": env.app_config.sandbox_service_grpc_channel_options,
                     "token_file": "/var/run/secrets/notifications/sandboxes",
                 },

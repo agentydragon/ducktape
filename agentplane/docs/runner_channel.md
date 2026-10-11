@@ -285,12 +285,12 @@ Sandbox, hence `-control`.
 
 Status: **accepted (operator, 2026-10-10 PDT); built for the `ListSessions`, `CreateSession` and
 `ResumeSession` RPCs and teardown sealing.** The Sandbox Service agrees `lifecycle` and sends those
-callers' requests over the channel (`sandbox_service/channel_control.py`); `LookupSession` and
-`journal_reader` still list Sessions through the inbound API, and so does every Sandbox whose runner
-never agreed `lifecycle`. A runner refuses `OpenSession` for a Session it created but could not
+callers' requests over the channel (`sandbox_service/channel_control.py`); `LookupSession` still
+reads Sessions through the inbound API, and so does every Sandbox whose runner never agreed
+`lifecycle`. A runner refuses `OpenSession` for a Session it created but could not
 start with `FAILED`; asked again, it confirms the stopped Session, so `CreateSession` follows an
-`OpenSession` that confirms a stopped harness with `ResumeSession`. Clients reach the holder through
-the control Service once configured with its address (`control_target`); a client without it calls
+`OpenSession` that confirms a stopped harness with `ResumeSession`. The App and the Notification
+Service reach the holder through the control Service (`control_target`); a client without it calls
 the Sandbox Service's own Service, where only the holder's replica serves a channel-routed Sandbox.
 
 A runner that lists `lifecycle` in `Hello` takes every remaining inbound call over `Connect` as a
@@ -344,7 +344,6 @@ calling RPC's deadline, like dispatch attempts, and a reconnect replays none of 
 | `ResumeSession` (`Attach` + retained spec)           | `ResumeSession` (built)                                          |
 | `LookupSession` (journal scan from cursor 0)         | none: a retried create confirms the client's Session ID          |
 | `FollowSession`                                      | none: Events go to the ingress ([Event ingress](#event-ingress)) |
-| `AdmissionReconciler`, `journal_reader`              | none: redelivery ([Dispatch attempts](#dispatch-attempts))       |
 | `Teardown` sealing (`Seal`)                          | `Seal` (built), repeated until every Session is flushed          |
 | `SubmitCommand` relay                                | `DeliverCommand` (built)                                         |
 
@@ -523,11 +522,12 @@ before the reopen ends the reopened wait too; the submission stays pending eithe
 latest refusal is kept. Reconnecting never scans pending submissions for delivery, so a stale
 interrupt or stop command is never fired at a reconnecting runner.
 
-**Ambiguous submissions settle by redelivery.** The Sandbox Service reads no journal. A submission
-whose receipt was lost is settled when its command is delivered again with the same `command_id`,
-within its attempt or a caller's retry: the runner answers a command it has already journaled with
-its original `CommandAdmitted` entry, even after its harness stopped or its journal was sealed. This
-needs no frame of its own. Without a retry, the submission stays `pending_admission`.
+**Ambiguous submissions settle by redelivery** (built). The Sandbox Service reads no journal to
+settle a submission. One whose receipt was lost is settled when its command is delivered again with
+the same `command_id`, within its attempt or a caller's retry: the runner answers a command it has
+already journaled with its original `CommandAdmitted` entry, even after its harness stopped or its
+journal was sealed. This needs no frame of its own. Without a retry, the submission stays
+`pending_admission`, and no background sweeper delivers or settles it.
 
 Each `Connect` stream carries at most 64 undelivered-receipt attempts; past that, a claim fails and the
 attempt waits for its next re-notification.

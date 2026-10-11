@@ -52,10 +52,19 @@ flowchart LR
     SESSION_INPUT_METADATA --> NOTIFICATION_NOTICE_METADATA
     SESSION_INPUT_METADATA_READ --> NOTIFICATION_PRESENTATION
     NOTIFICATION_NOTICE_METADATA --> NOTIFICATION_PRESENTATION
+    ADMISSION_RECONCILIATION_DROP[Blocked: drop the admission reconciliation table]
 ```
 
 Details: [Command admission](command_admission.md); later
 [notification presentation and input metadata](notification_presentation.md).
+
+### `ADMISSION_RECONCILIATION_DROP` — drop the admission reconciliation table
+
+**Blocked: drops the table once every Sandbox Service replica runs an image that settles ambiguous
+submissions by redelivery; the operator merges it.** That image neither reads nor writes the
+`admission_reconciliation` table or the `ix_command_submission_pending` index. A migration drops
+both, and the index leaves the `CommandSubmission` model with it (the CLEANUP tombstone in
+`sandbox_service/commands/db.py`). An operational hold on the rollout only; nothing else waits on it.
 
 ### `SESSION_INPUT_METADATA` — later typed annotations on input commands
 
@@ -324,7 +333,6 @@ journal.
 
 ```mermaid
 flowchart LR
-    RUNNER_OUTBOUND_LIFECYCLE[Candidate: lifecycle requests over the channel]
     RUNNER_OUTBOUND_ROLLOUT[Blocked: every template dials out]
     VM_CONTROL_NETWORKING[Blocked: integrate selected VM control path]
     VM_IMAGE[Candidate: packaged guest and storage]
@@ -332,11 +340,9 @@ flowchart LR
     VM_EGRESS[Candidate: production admission and egress integration]
     VM_PROCESS_ISOLATION[Blocked: harness/process resource boundary]
     VM_LIFECYCLE[Blocked: integrated lifecycle]
-    RUNNER_OUTBOUND_LIFECYCLE --> VM_CONTROL_NETWORKING
     HISTORY_INGRESS[History Service ingress] --> RUNNER_OUTBOUND_ROLLOUT
     CLIENT_SESSION_IDS[Clients mint Session IDs] --> RUNNER_OUTBOUND_ROLLOUT
     SEAL_ON_INGRESS_ACK[Seal waits on the ingress acknowledgement] --> RUNNER_OUTBOUND_ROLLOUT
-    RUNNER_OUTBOUND_LIFECYCLE --> RUNNER_OUTBOUND_ROLLOUT
     PROTO_DIRECTORY[Protos under agentplane/proto] --> RUNNER_OUTBOUND_ROLLOUT
     RUNNER_OUTBOUND_ROLLOUT --> LEGACY_SANDBOX_RETIRE[Blocked: operator deletes every pre-cutover Sandbox]
     LEGACY_SANDBOX_RETIRE --> RUNNER_INBOUND_RETIRE[Blocked: retire inbound runner access]
@@ -352,17 +358,9 @@ flowchart LR
     SANDBOX_VM_ISOLATION --> LOCAL_BAZEL[Blocked: bounded local Bazel client in VM]
 ```
 
-### `RUNNER_OUTBOUND_LIFECYCLE` — lifecycle requests over the channel
-
-**Candidate; both peers answer and send the requests.** The `ListSessions`, `CreateSession` and
-`ResumeSession` RPCs and teardown sealing use them ([runner channel](../docs/runner_channel.md)).
-Left: `LookupSession`'s and `journal_reader`'s listings, which run on any replica and still read
-the inbound API, and setting the App's and Notification Service's `control_target` in their
-manifests once their images carry it. `LookupSession`'s journal scan waits on how Events travel.
-
 ### `RUNNER_OUTBOUND_ROLLOUT` — every template dials out
 
-**Blocked on lifecycle requests and the [ingress and control split](#11-runner-ingress-and-control-split).**
+**Blocked on the [ingress and control split](#11-runner-ingress-and-control-split).**
 Every Sandbox template starts its runner pushing Events to its ingress and holding its control
 stream, and the canary template goes. The Sandbox Service sets both endpoints at creation once its
 config carries `runner_control` and `runner_ingress`, and no template may then
@@ -393,7 +391,7 @@ inbound listener.
 
 ### `VM_CONTROL_NETWORKING` — integrate the reviewed connection direction
 
-**Blocked on the reviewed outbound command, spool and lifecycle capabilities and VM provider.** Wire
+**Blocked on the VM provider.** Wire
 VM control reachability/authentication to the chosen path. An outbound channel may remove guest
 control-port exposure and endpoint discovery; retain the independently needed outbound API/credential
 proxy path. State which guest ports, endpoint discovery and network policies the chosen path

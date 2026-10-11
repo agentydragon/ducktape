@@ -74,7 +74,7 @@ read APIs must enforce session access and return only authorized fields.
 ## Admission dependency and metadata persistence
 
 [Durable command admission](command_admission.md) owns the base persistence, immediate-dispatch,
-retry and spool-reconciliation contract for all runner commands. This notification extension is a
+retry and redelivery contract for all runner commands. This notification extension is a
 later phase, outside the initial command-admission PR; it must not add another input-only queue.
 The source trace and admission recovery requirements live in that owning plan.
 
@@ -126,8 +126,8 @@ The [DAG](task_dag.md#2-service-owned-command-admission-and-later-notification-p
 
 Tests cover ordinary input, restricted provenance, destination authorization, identical/conflicting
 retries (including concurrent requests), crashes around dispatch, pending/rejected inputs, replay
-and mixed-origin coalescing. Cover admission before a lost reply, ingestion racing an RPC receipt,
-and crash/replay at the reconciliation checkpoint; prove none strands or regresses admission state. Keep
+and mixed-origin coalescing. Cover admission before a lost reply settled by a retry and racing
+receipts; prove none strands or regresses admission state. Keep
 metadata out of runner commands; keep historical annotations after inbox expiry. Exercise backend
 integration without the app. Add frontend visual coverage and one bounded real-notice demonstration
 with unchanged agent-facing text. No provider-outage injection or repeated harness matrix is needed;

@@ -85,6 +85,12 @@ def service(namespace: str) -> ServiceRef:
     )
 
 
+def control_target(namespace: str) -> str:
+    """Each Sandbox's control Service, `<sandbox>-control`, which names the replica holding its runner
+    connection, as the `{sandbox}`/`{namespace}` template the clients' `control_target` takes."""
+    return f"{{sandbox}}-control.{{namespace}}.svc:{service(namespace).pod_port}"
+
+
 def runner_channel(namespace: str) -> ServiceRef:
     """The listener runners dial out to (agentplane/docs/runner_channel.md), through the egress proxy."""
     return ServiceRef(

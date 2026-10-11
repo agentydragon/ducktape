@@ -17,9 +17,9 @@ archive wait and error mapping. The helper:
 - Cancels the attachment on every exit, without taking ownership of the client.
 
 Admission is not native user-message confirmation, model completion, or inbox
-acknowledgement. An uncertain result needs reconciliation against the runner journal
-with the same command ID/payload and an appropriate runner-log replay cursor. This
-helper adds no retry, command queue, Event authority, or exactly-once guarantee.
+acknowledgement. An uncertain result is settled by the caller retrying the same command
+ID/payload with a runner-log replay cursor before its possible admission. This helper
+adds no retry, command queue, Event authority, or exactly-once guarantee.
 
 Protocol-edge tests use a controllable gRPC peer. Native tests exercise both harnesses
 with scripted model endpoints, without the integration app or its database. They cover

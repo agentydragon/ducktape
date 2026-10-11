@@ -110,7 +110,9 @@ class CommandSubmission(Base):
         UniqueConstraint(
             "attempt_sandbox_uid", "attempt_runner_session_id", "command_id", name="submission_attempt_destination"
         ),
-        # Admission reconciliation polls for these; settled submissions accumulate.
+        # CLEANUP(added 2026-10-11): Unread. Remove it with the migration that drops it and the
+        #   `admission_reconciliation` table, once no Sandbox Service replica runs an image that reads
+        #   them. Until then it stays declared: the migrate step refuses an index the models lack.
         Index("ix_command_submission_pending", "session_id", postgresql_where=text("state = 'pending_admission'")),
     )
 
@@ -126,7 +128,8 @@ class CommandSubmission(Base):
     # Delivery over the runner channel (`agentplane/docs/runner_channel.md` § Dispatch attempts), absent
     # until the first channel submit. A pending submission is sent only while its attempt is open,
     # before `attempt_deadline`, so a reconnecting runner is never sent stale work. Each submit
-    # reopens the same attempt.
+    # reopens the same attempt. A submission whose receipt was lost and is never retried stays
+    # `pending_admission`; nothing settles it in the background.
     attempt_sandbox_uid: Mapped[UUID | None] = mapped_column()
     # The runner's own Session identifier, which `DeliverCommand` carries.
     attempt_runner_session_id: Mapped[str | None] = mapped_column(String)
@@ -137,22 +140,6 @@ class CommandSubmission(Base):
     attempt_refusal: Mapped[channel_pb2.CommandRefused | None] = mapped_column(
         ProtobufColumn(channel_pb2.CommandRefused)
     )
-
-
-class AdmissionReconciliation(Base):
-    """How far a Session's runner journal has been reconciled against its submissions.
-
-    Its own cursor, committed with the admissions it reconciled, so reconciliation neither waits on
-    nor shares a transaction with whoever stores the history.
-    """
-
-    __tablename__ = "admission_reconciliation"
-    __table_args__ = (CheckConstraint("reconciled_through >= 0", name="reconciled_through_nonnegative"),)
-
-    session_id: Mapped[UUID] = mapped_column(primary_key=True)
-    # The runner journal the cursor counts in; a different source is a conflict, not a reset.
-    source_id: Mapped[str] = mapped_column(String)
-    reconciled_through: Mapped[int] = mapped_column(BigInteger)
 
 
 class RunnerConnection(Base):

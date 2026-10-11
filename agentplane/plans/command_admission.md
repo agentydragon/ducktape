@@ -1,8 +1,9 @@
 # Durable command admission through Sandbox Service
 
-Status: the admission store, channel delivery and admission reconciliation are merged; the contract
-they implement is in the [Sandbox Service API](../sandbox_service/API.md#sessions-and-commands). The
-[task DAG](task_dag.md) owns the remaining work.
+Status: the admission store and channel delivery are merged, and an ambiguous submission settles by
+redelivery; the contract they implement is in the
+[Sandbox Service API](../sandbox_service/API.md#sessions-and-commands). The [task DAG](task_dag.md)
+owns the remaining work.
 
 ## Scope
 
@@ -75,11 +76,13 @@ Do not first migrate Sandbox Service to new inbound `InsertCommand`/`ListenSpool
 operations belong in the outbound protocol. Submission needs no replay cursor; lifecycle controls
 must be mapped explicitly rather than accidentally lost when retiring `Attach`.
 
-Direct receipts do not advance the archive cursor. Reconcile spooled admission in the same transaction
-as the archive checkpoint, and acknowledge only the committed prefix. Positive admission evidence
-must not be regressed by a racing refusal. The unique Session/command key and per-command updates
-arbitrate retries; do not serialize unrelated submissions with ingestion or hold DB locks across
-runner calls. Ingestion keeps its own prefix lock without unnecessarily blocking command FK checks.
+A submission whose receipt was lost settles only when its command is delivered again with the same
+`command_id`, within its open attempt or on a caller's retry: the runner answers a command it already
+journaled with its original `CommandAdmitted` entry, even after its harness stopped or its journal was
+sealed ([dispatch attempts](../docs/runner_channel.md#dispatch-attempts)). Without a retry it stays
+`pending_admission`; the Sandbox Service reads no runner journal to settle it. Positive admission
+evidence must not be regressed by a racing refusal. The unique Session/command key and per-command
+updates arbitrate retries; do not serialize unrelated submissions or hold DB locks across runner calls.
 
 ## Sequencing and acceptance
 
@@ -96,15 +99,13 @@ Cross-replica dispatch uses `NOTIFY` only to wake readers of durable state. Reta
 alone does not authorize future delivery: routing must refer to a bounded active submission/retry
 attempt, with its precise deadline/ownership semantics reviewed before channel implementation. Reconnect
 or a missed notification must not turn into an offline pending-command drain. Expiry/cancellation
-cannot retract a command already sent; persist and reconcile late admission receipts.
+cannot retract a command already sent; persist late admission receipts.
 
 The admission store (`sandbox_service/commands/`) persists submissions in the `sandbox_commands`
-database with its own per-Session reconciliation cursor, since history lives in another database
-with no shared transaction. `SubmitCommand` records public-Session commands there, and admission
-reconciliation settles pending ones from the runner journal, independent of history ingestion. New inbound RPC prototypes are not a
-selected rollout prerequisite.
+database, apart from history. `SubmitCommand` records public-Session commands there. New inbound RPC
+prototypes are not a selected rollout prerequisite.
 
 Acceptance covers authenticated destination/retry authorization, immutable/concurrent retries,
-unknown wire fields, lost replies, explicit refusal versus ambiguous disconnect, receipt/spool races,
-checkpoint rollback, reconnect and interrupts while another command awaits admission. Keep status
+unknown wire fields, lost replies settled by redelivery, explicit refusal versus ambiguous disconnect,
+racing receipts, reconnect and interrupts while another command awaits admission. Keep status
 reads/UI and notification-specific metadata, permissions and producer integration as later outcomes.

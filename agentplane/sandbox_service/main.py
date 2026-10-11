@@ -15,7 +15,6 @@ from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 
 from agentplane.runner_channel import protocol_pb2_grpc
 from agentplane.sandbox_service.action_policy import ActionPolicyBindings
-from agentplane.sandbox_service.admission_reconciliation import AdmissionReconciler
 from agentplane.sandbox_service.channel_control import ChannelControl
 from agentplane.sandbox_service.channel_delivery import ChannelDelivery
 from agentplane.sandbox_service.commands.connections import ConnectionStore
@@ -188,15 +187,6 @@ async def serve_with_engine(
             reconcile = asyncio.create_task(
                 SandboxController(provisioning, teardown).run(), name="sandbox-provisioning"
             )
-            admissions = asyncio.create_task(
-                AdmissionReconciler(
-                    submissions,
-                    sessions,
-                    resources.destinations,
-                    runner_grpc_channel_options=settings.runner_grpc_channel_options,
-                ).run(),
-                name="sandbox-admission-reconciliation",
-            )
             try:
                 await uvicorn.Server(
                     uvicorn.Config(health, host=settings.host, port=settings.health_port, access_log=False)
@@ -204,7 +194,7 @@ async def serve_with_engine(
             finally:
                 await server.stop(grace=5)
                 await channel_server.stop(grace=5)
-                for task in (lease_watch, reconcile, admissions):
+                for task in (lease_watch, reconcile):
                     task.cancel()
                     with suppress(asyncio.CancelledError):
                         await task

@@ -305,6 +305,7 @@ class App(Construct):
                 # runner ServiceAccount out of here.
                 sandbox_namespace=namespace,
                 sandbox_service_target=f"{sandbox_service.service(namespace).fqdn}:{sandbox_service.service(namespace).pod_port}",
+                sandbox_service_control_target=sandbox_service.control_target(namespace),
                 history_service_target=f"{history_service.service(namespace).fqdn}:{history_service.service(namespace).pod_port}",
                 notifications_url=f"http://{notifications.service(namespace).fqdn}:{notifications.service(namespace).port.number}",
                 notifications_token_file="/var/run/secrets/agentplane-notifications/token",

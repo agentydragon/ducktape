@@ -229,6 +229,30 @@ async def test_a_redelivered_command_is_admitted_once_and_answered_from_the_jour
     assert service.authorizations == ["Bearer test-placeholder"]
 
 
+@pytest.mark.parametrize("ending", ["stopped", "sealed"])
+async def test_a_redelivery_after_the_harness_ended_is_answered_with_the_original_receipt(
+    ending: str, runner: Runner, service: ScriptedService
+) -> None:
+    # The service settles a submission whose receipt was lost only by delivering it again.
+    service.frames.append(deliver(RUNNING, submit("test-input")))
+    service.dial()
+    async with asyncio.timeout(10):
+        pushed = await service.connected.get()
+        first = await service.receipts.get()
+    session = runner.sessions[RUNNING]
+    if ending == "stopped":
+        assert session.process is not None
+        await session.process.stop()
+    else:
+        pushed.put_nowait(seal("test-seal"))
+        await control_results(service, 1)
+    assert not session.running
+    pushed.put_nowait(deliver(RUNNING, submit("test-input")))
+    async with asyncio.timeout(10):
+        assert await service.receipts.get() == first
+    assert first.HasField("admitted")
+
+
 async def test_refusals_name_their_cause(service: ScriptedService) -> None:
     service.frames += [
         deliver(RUNNING, submit("test-conflict", "first")),

@@ -188,7 +188,9 @@ message SubmitCommandRequest {
 enum CommandState {
   COMMAND_STATE_UNSPECIFIED = 0;
   // Retained with no admission or rejection recorded. It may or may not have reached the runner;
-  // this promises neither eventual delivery nor safe cancellation.
+  // this promises neither eventual delivery nor safe cancellation. Once its SubmitCommand call has
+  // returned, only a late receipt for a delivery already sent or an exact retry settles it: the
+  // service never delivers it again, or reads the runner journal for it, on its own.
   COMMAND_STATE_PENDING_ADMISSION = 1;
   COMMAND_STATE_ADMITTED = 2;
   COMMAND_STATE_REJECTED = 3;

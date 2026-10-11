@@ -1,4 +1,4 @@
-"""Admission and reconciliation against migrated PostgreSQL."""
+"""Admission against migrated PostgreSQL."""
 
 import asyncio
 from uuid import UUID, uuid4
@@ -62,14 +62,11 @@ async def test_persist_before_dispatch(submissions: SubmissionStore, session_id:
     receipt = await submit_command(submissions, session_id, request, caller=CALLER, dispatch=dispatch)
     assert receipt == admission(request.copy_command())
     assert (await submissions.read(session_id, "input")).state == SubmissionState.ADMITTED
-    # A direct receipt is not a journal prefix.
-    assert await submissions.read_reconciled_through(session_id) == 0
-    await submissions.reconcile(session_id, [receipt])
-    await submissions.reconcile(session_id, [receipt])
+    await submissions.record_admission(session_id, receipt)
     assert (await submissions.read(session_id, "input")).get_receipt() == receipt
 
 
-async def test_lost_reply_recovers_via_spool_and_new_store(
+async def test_lost_reply_stays_pending_until_a_retry_delivers_it_again(
     submissions: SubmissionStore, session_id: UUID, engine: AsyncEngine
 ) -> None:
     request = make_input_submission(command_id="lost", text="hello")
@@ -81,7 +78,12 @@ async def test_lost_reply_recovers_via_spool_and_new_store(
     with pytest.raises(TimeoutError):
         await submit_command(submissions, session_id, request, caller=CALLER, dispatch=lost_reply)
     assert (await submissions.read(session_id, "lost")).state == SubmissionState.PENDING_ADMISSION
-    await submissions.reconcile(session_id, [receipt])
+
+    async def original_receipt(command: command_pb2.Command) -> event_log_pb2.EventEntry:
+        # The runner answers a command it already journaled with its original entry.
+        return receipt
+
+    assert await submit_command(submissions, session_id, request, caller=CALLER, dispatch=original_receipt) == receipt
 
     async def must_not_dispatch(command: command_pb2.Command) -> event_log_pb2.EventEntry:
         raise AssertionError("an admitted retry must not dispatch")
@@ -92,42 +94,29 @@ async def test_lost_reply_recovers_via_spool_and_new_store(
     )
 
 
-async def test_ingestion_and_direct_receipt_race(submissions: SubmissionStore, session_id: UUID) -> None:
+async def test_racing_receipts_record_one_admission(submissions: SubmissionStore, session_id: UUID) -> None:
     request = make_input_submission(command_id="race", text="hello")
     await submissions.accept(session_id, request, caller=CALLER)
     receipt = admission(request.copy_command())
     await asyncio.gather(
-        submissions.reconcile(session_id, [receipt]), submissions.record_admission(session_id, receipt)
+        submissions.record_admission(session_id, receipt), submissions.record_admission(session_id, receipt)
     )
     assert (await submissions.read(session_id, "race")).get_receipt() == receipt
     assert (await submissions.record_rejection(session_id, "race", "late refusal")).state == SubmissionState.ADMITTED
 
 
-async def test_reconciliation_and_cursor_roll_back_together(submissions: SubmissionStore, session_id: UUID) -> None:
-    request = make_input_submission(command_id="atomic", text="hello")
-    await submissions.accept(session_id, request, caller=CALLER)
-    receipt = admission(request.copy_command())
-    with pytest.raises(SubmissionConflictError, match="expected 2"):
-        await submissions.reconcile(session_id, [receipt, admission(request.copy_command(), 3)])
-    assert await submissions.read_reconciled_through(session_id) == 0
-    assert (await submissions.read(session_id, "atomic")).state == SubmissionState.PENDING_ADMISSION
-    await submissions.reconcile(session_id, [receipt])
-    assert (await submissions.read(session_id, "atomic")).state == SubmissionState.ADMITTED
-
-
-async def test_receipts_from_another_journal_conflict(submissions: SubmissionStore, session_id: UUID) -> None:
+async def test_a_different_receipt_for_an_admitted_command_conflicts(
+    submissions: SubmissionStore, session_id: UUID
+) -> None:
     request = make_input_submission(command_id="sourced", text="hello")
     await submissions.accept(session_id, request, caller=CALLER)
-    await submissions.reconcile(
-        session_id, [admission(make_input_submission(command_id="other", text="x").copy_command())]
-    )
-    foreign = admission(request.copy_command(), 2)
+    receipt = admission(request.copy_command())
+    await submissions.record_admission(session_id, receipt)
+    foreign = admission(request.copy_command())
     foreign.origin.source_id = "another-runner-source"
     with pytest.raises(SubmissionConflictError):
-        await submissions.reconcile(session_id, [foreign])
-    with pytest.raises(SubmissionConflictError):
         await submissions.record_admission(session_id, foreign)
-    assert (await submissions.read(session_id, "sourced")).state == SubmissionState.PENDING_ADMISSION
+    assert (await submissions.read(session_id, "sourced")).get_receipt() == receipt
 
 
 async def test_concurrent_identical_and_conflicting_acceptance(
@@ -204,7 +193,6 @@ async def test_admit_every_runner_operation_and_load_typed_columns(
         return admission(value)
 
     receipt = await submit_command(submissions, session_id, request, caller=CALLER, dispatch=dispatch)
-    await submissions.reconcile(session_id, [receipt])
     async with async_sessionmaker(engine)() as session:
         row = await session.get(db.CommandSubmission, (session_id, command.command_id))
         assert row is not None
@@ -281,25 +269,25 @@ async def test_interrupt_is_not_blocked_behind_an_input_receipt_wait(
         await task
 
 
-async def test_acceptance_does_not_wait_for_reconciliation_transaction(
+async def test_acceptance_does_not_wait_for_another_receipt_transaction(
     submissions: SubmissionStore, session_id: UUID, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    ingestion_waiting, release_ingestion = asyncio.Event(), asyncio.Event()
-    reconcile = store.reconcile_admission
+    receipt_waiting, release_receipt = asyncio.Event(), asyncio.Event()
+    record = store.record_receipt
 
-    async def pause_ingestion(session: AsyncSession, identity: UUID, entry: event_log_pb2.EventEntry) -> None:
-        await reconcile(session, identity, entry)
-        # The direct receipt below goes through the same function and must not pause.
+    async def pause_receipt(session: AsyncSession, identity: UUID, entry: event_log_pb2.EventEntry) -> None:
+        await record(session, identity, entry)
+        # The receipt below goes through the same function and must not pause.
         if entry.event.command_admitted.command.command_id == earlier.command.command_id:
-            ingestion_waiting.set()
-            await release_ingestion.wait()
+            receipt_waiting.set()
+            await release_receipt.wait()
 
-    monkeypatch.setattr(store, "reconcile_admission", pause_ingestion)
-    earlier = make_input_submission(command_id="being-ingested", text="earlier")
+    monkeypatch.setattr(store, "record_receipt", pause_receipt)
+    earlier = make_input_submission(command_id="being-recorded", text="earlier")
     await submissions.accept(session_id, earlier, caller=CALLER)
-    task = asyncio.create_task(submissions.reconcile(session_id, [admission(earlier.copy_command())]))
+    task = asyncio.create_task(submissions.record_admission(session_id, admission(earlier.copy_command())))
     try:
-        await asyncio.wait_for(ingestion_waiting.wait(), timeout=10)
+        await asyncio.wait_for(receipt_waiting.wait(), timeout=10)
         request = make_input_submission(command_id="independent", text="hello")
         result = await asyncio.wait_for(submissions.accept(session_id, request, caller=CALLER), timeout=10)
         assert result.state == SubmissionState.PENDING_ADMISSION
@@ -309,7 +297,7 @@ async def test_acceptance_does_not_wait_for_reconciliation_transaction(
         assert settled.state == SubmissionState.ADMITTED
         assert not task.done()
     finally:
-        release_ingestion.set()
+        release_receipt.set()
         await task
 
 

@@ -3114,6 +3114,7 @@ spec:
             - --namespace=agentplane-testing
             - --sandbox-namespace=agentplane-testing
             - --sandbox-service-target=agentplane-sandbox-service.agentplane-testing.svc.cluster.local:8080
+            - --sandbox-service-control-target={sandbox}-control.{namespace}.svc:8080
             - --history-service-target=agentplane-history-service.agentplane-testing.svc.cluster.local:8080
             - --notifications-url=http://agentplane-notifications.agentplane-testing.svc.cluster.local:8080
             - --notifications-token-file=/var/run/secrets/agentplane-notifications/token
@@ -4448,6 +4449,7 @@ data:
       token_file: /var/run/secrets/notifications/actions
     sandbox_service:
       target: agentplane-sandbox-service.agentplane-testing.svc.cluster.local:8080
+      control_target: "{sandbox}-control.{namespace}.svc:8080"
       grpc_channel_options:
         grpc.max_receive_message_length: 33554432
       token_file: /var/run/secrets/notifications/sandboxes
