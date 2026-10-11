@@ -10785,5 +10785,87 @@
       "138": "9f2693baec3426ebb1f3bc71832a9a4350acb4d1",
       "141": "249bd89a12b64474b57e83bbd17a57cc42dbbf82"
     }
+  },
+  "implementation_followup": {
+    "observed_at_utc": "2026-10-11T02:27:05.201595Z",
+    "indexing": {
+      "pr": 9875,
+      "state": "merged",
+      "baseline_invocation": "d522de09-0a2d-44b3-b442-2bf9a033777c",
+      "after_invocation": "06737103-73f9-4e30-9ba6-830ed3c09387",
+      "action_seconds": [
+        147.325,
+        41.3
+      ],
+      "pytest_seconds": [
+        133.94,
+        26.56
+      ],
+      "after_traced_peak_bytes": [
+        660404,
+        593644,
+        602362
+      ],
+      "cases": 3,
+      "max_history_events": 40000,
+      "max_materialized_items": 20000,
+      "timeout_changed": false,
+      "scope": "Production pure fold and serializer; bulk fixture persistence; initial admission and final update remain real",
+      "limitation": "Single pair; no whole-CI saving measured"
+    },
+    "cancellation": {
+      "pr": 9873,
+      "state": "merged",
+      "probes": [
+        {
+          "mode": "foreground",
+          "invocation": "36037e21-3ec0-41a4-a1ac-d725d254d507",
+          "stage_at_4s": "EXECUTING"
+        },
+        {
+          "mode": "forwarded",
+          "invocation": "8f874187-e5d2-4ba8-9a24-7518b3949470",
+          "stage_at_4s": "EXECUTING"
+        },
+        {
+          "mode": "explicit_child_cancel",
+          "invocation": "e6a3a7b4-4e65-4d5e-aa78-8f89f2717e88",
+          "stage_at_4s": "COMPLETED",
+          "status": "invocation cancelled"
+        }
+      ],
+      "limitations": [
+        "API-confirmed executing before signal; observation before fallback cleanup",
+        "Two failed connectivity probes inconclusive",
+        "No worker teardown timestamps or rollout distribution",
+        "Callers without child IDs get outer forwarding only"
+      ]
+    },
+    "gazelle": {
+      "pr": 9879,
+      "state": "open",
+      "head": "8ad09bc4598c06aade7834291b4ca6c421dfe0d9",
+      "removal_pr": 9880,
+      "removal_merged_into": "ci/gazelle-precommit",
+      "live_devel_requires_gazelle": true,
+      "staging_issue": "Workflow deletion now in open parent PR while live check remains required; restore staged migration before normal merge",
+      "measured_saving": null
+    },
+    "other_merged_prs": [
+      9844,
+      9845,
+      9847,
+      9852,
+      9860
+    ],
+    "report_validation": {
+      "render_invocation": "0e0220d9-17cc-4c34-9811-fbdaff0afa99",
+      "viewports": [
+        1280,
+        390
+      ],
+      "screenshots_inspected": true,
+      "html_anchors_and_json_valid": true
+    }
   }
 }
