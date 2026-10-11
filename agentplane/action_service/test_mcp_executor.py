@@ -35,13 +35,12 @@ from agentplane.action_service.models import (
     ActionState,
     CallerPrincipal,
     DecisionInput,
-    ExecutionLease,
     ExecutionRequest,
     ExecutionState,
     OperatorPrincipal,
     Verdict,
 )
-from agentplane.action_service.service import ActionService, ExecutionOutcomeUnknownError
+from agentplane.action_service.service import ActionService, ExecutionLease, ExecutionOutcomeUnknownError
 from agentplane.action_service.testing.lifecycle import wait_available
 from agentplane.subjects import ServiceAccountRef
 from util.bazel.runfiles import get_required_path

@@ -42,7 +42,7 @@ from agentplane.action_service.enrollments import (
 from agentplane.action_service.models import OperatorPrincipal, Verdict
 from agentplane.action_service.service import ActionService
 from agentplane.action_service.testing.callers import OTHER, PERSONAL, UNLABELED, admitted_callers
-from agentplane.action_service.testing.credentials import StaticOperatorAuthenticator
+from agentplane.action_service.testing.credentials import OperatorIdp
 from agentplane.action_service.updates import ActionUpdates
 from agentplane.subjects import ServiceAccountRef
 from agentplane.workload_auth.principal import WorkloadPrincipalResolver
@@ -60,7 +60,7 @@ class Consent:
 
 
 @pytest.fixture
-async def consent(engine: AsyncEngine) -> Consent:
+async def consent(engine: AsyncEngine, operator_idp: OperatorIdp) -> Consent:
     connections = ConnectionAuthority(make_sessionmaker(engine), admitted_callers(PERSONAL, OTHER))
     authority = EnrollmentAuthority(make_sessionmaker(engine), connections)
     request = EnrollmentInput(
@@ -74,7 +74,7 @@ async def consent(engine: AsyncEngine) -> Consent:
     )
     created = await authority.create(request)
     browser = EnrollmentPreviewInput(browser_binding="test-browser-" + "a" * 32)
-    operator = OperatorPrincipal(issuer="test-operator-issuer", subject="test-operator")
+    operator = operator_idp.principal("test-operator")
     preview = await authority.preview(created.handle, browser, operator)
     allow = EnrollmentAllow(
         browser_binding=browser.browser_binding,
@@ -238,15 +238,14 @@ async def test_preview_does_not_return_oauth_secrets_and_handles_are_hashed(
 
 
 async def test_operator_routes_require_auth_and_reject_redirect_injection(
-    consent: Consent, engine: AsyncEngine, db_url: str
+    consent: Consent, engine: AsyncEngine, db_url: str, operator_idp: OperatorIdp
 ) -> None:
-    token = "test-operator-token"
     catalog = ActionCatalog(groups={})
     actions = ActionService(ActionStore(make_sessionmaker(engine)), catalog, {})
     app = create_app(
         actions,
         Mock(spec=WorkloadPrincipalResolver),
-        StaticOperatorAuthenticator(token, consent.operator),
+        operator_idp.authenticator(),
         catalog,
         callers=admitted_callers(),
         updates=ActionUpdates(db_url),
@@ -258,7 +257,7 @@ async def test_operator_routes_require_auth_and_reject_redirect_injection(
     path = f"/v1/operator/connection-enrollments/{consent.handle}"
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test-actions") as http:
         assert (await http.post(f"{path}/preview", json=consent.browser.model_dump())).status_code == 401
-        http.headers["Authorization"] = f"Bearer {token}"
+        http.headers["Authorization"] = f"Bearer {operator_idp.bearer(consent.operator.subject)}"
         assert (await http.post(f"{path}/preview", json=consent.browser.model_dump())).status_code == 200
         injected = {**consent.allow.model_dump(), "redirect_url": "https://test-attacker.example"}
         assert (await http.post(f"{path}/decision", json=injected)).status_code == 422

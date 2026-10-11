@@ -51,33 +51,34 @@ NOW = datetime(2026, 9, 12, 12, 0, tzinfo=UTC)
 ECHO = ActionIdentity(group="agentplane", name="echo")
 
 
-class ScriptedProvider:
+# The fakes below stand in for the policy-set provider, overriding everything the aggregation calls,
+# so they need none of its configuration.
+
+
+class ScriptedProvider(PolicySetDecisionProvider):
     """Returns a fixed outcome; records every context it was asked to evaluate."""
 
     def __init__(self, name: str, verdict: ProviderVerdict, *, delay: float = 0.0, reason_code: str = "scripted"):
-        self._name = name
+        self.name = name
         self._verdict = verdict
         self._delay = delay
         self._reason_code = reason_code
         self.contexts: list[DecisionContext] = []
-
-    @property
-    def name(self) -> str:
-        return self._name
 
     async def decide(self, context: DecisionContext) -> ProviderOutcome:
         self.contexts.append(context)
         if self._delay:
             await asyncio.sleep(self._delay)
         return ProviderOutcome(
-            verdict=self._verdict, reason_code=self._reason_code, reason_description=f"{self._name} decided"
+            verdict=self._verdict, reason_code=self._reason_code, reason_description=f"{self.name} decided"
         )
 
 
-class HangingProvider:
-    @property
-    def name(self) -> str:
-        return "hanging"
+class HangingProvider(PolicySetDecisionProvider):
+    name = "hanging"
+
+    def __init__(self) -> None:
+        pass
 
     async def decide(self, context: DecisionContext) -> ProviderOutcome:
         del context
@@ -85,17 +86,18 @@ class HangingProvider:
         raise AssertionError("must be cancelled by the aggregator's bounded deadline")
 
 
-class ExplodingProvider:
-    @property
-    def name(self) -> str:
-        return "exploding"
+class ExplodingProvider(PolicySetDecisionProvider):
+    name = "exploding"
+
+    def __init__(self) -> None:
+        pass
 
     async def decide(self, context: DecisionContext) -> ProviderOutcome:
         del context
         raise RuntimeError("backend rejected Authorization: Bearer provider-secret-must-not-leak")
 
 
-class GatedProvider:
+class GatedProvider(PolicySetDecisionProvider):
     name = "gated-provider"
 
     def __init__(self, verdict: ProviderVerdict) -> None:

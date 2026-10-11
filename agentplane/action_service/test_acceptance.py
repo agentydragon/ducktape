@@ -13,7 +13,6 @@ import pytest_bazel
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from agentplane.action_service.api import _mcp_group_snapshot, create_app
-from agentplane.action_service.auth import OperatorAuthenticator
 from agentplane.action_service.catalog import (
     ActionCatalog,
     ActionDefinition,
@@ -31,19 +30,17 @@ from agentplane.action_service.models import (
     CancellationOutcome,
     CancellationResult,
     DecisionInput,
-    ExecutionLease,
     ExecutionRequest,
     ExecutionResult,
     ExecutionState,
-    Executor,
     OperatorPrincipal,
-    Principal,
     Verdict,
 )
 from agentplane.action_service.policies.resources import parse_binding, parse_policy_set
 from agentplane.action_service.policy_view import SubjectActionPolicyView
-from agentplane.action_service.service import ActionService
+from agentplane.action_service.service import ActionService, ExecutionLease, Executor
 from agentplane.action_service.testing.callers import admitted_callers, in_sync_index
+from agentplane.action_service.testing.credentials import OperatorIdp
 from agentplane.action_service.updates import ActionUpdates
 from agentplane.subjects import ServiceAccountRef
 from agentplane.workload_auth.principal import (
@@ -93,11 +90,6 @@ class FakeSandboxResolver:
         return WORKLOAD_TOKENS[token]
 
 
-class FakeOperatorAuthenticator:
-    async def authenticate(self, token: str) -> Principal | None:
-        return OPERATOR if token == "operator-bff" else None
-
-
 class CountingExecutor(Executor):
     def __init__(self) -> None:
         self.requests: list[ExecutionRequest] = []
@@ -118,6 +110,7 @@ class LeakyFailingExecutor(CountingExecutor):
 
 async def _client(
     service: ActionService,
+    operator_idp: OperatorIdp,
     *,
     catalog: ActionCatalog | None = None,
     reader_accounts: frozenset[ServiceAccountRef] = frozenset(),
@@ -125,7 +118,7 @@ async def _client(
     app = create_app(
         service,
         cast(WorkloadPrincipalResolver, FakeSandboxResolver()),
-        cast(OperatorAuthenticator, FakeOperatorAuthenticator()),
+        operator_idp.authenticator(),
         catalog or ActionCatalog(),
         callers=admitted_callers(ACCOUNT_A, ACCOUNT_B),
         updates=ActionUpdates("postgresql://unused-test-listener"),
@@ -140,8 +133,8 @@ def _workload(token: str) -> dict[str, str]:
     return {"Authorization": f"Bearer {token}"}
 
 
-def _operator() -> dict[str, str]:
-    return {"Authorization": "Bearer operator-bff"}
+def _operator(idp: OperatorIdp) -> dict[str, str]:
+    return {"Authorization": f"Bearer {idp.bearer('operator')}"}
 
 
 def _operator_path(request_id: str, suffix: str = "") -> str:
@@ -160,13 +153,13 @@ async def _terminal(client: httpx.AsyncClient, request_id: str, token: str = "wo
 
 
 async def test_p0_allow_deny_scope_forgery_redaction_and_single_execution(
-    engine: AsyncEngine, echo_catalog: ActionCatalog
+    engine: AsyncEngine, echo_catalog: ActionCatalog, operator_idp: OperatorIdp
 ) -> None:
     executor = CountingExecutor()
     store = ActionStore(make_sessionmaker(engine))
     service = ActionService(store, echo_catalog, {"agentplane": executor})
     await service.start()
-    client = await _client(service)
+    client = await _client(service, operator_idp)
     try:
         key = "submit-1"
         envelope = {
@@ -184,9 +177,9 @@ async def test_p0_allow_deny_scope_forgery_redaction_and_single_execution(
                 headers={"x-sandbox-uid": "forged-sandbox-uid", "x-caller-principal": CALLER_B.account.name},
             )
         ).status_code == 401
-        assert (await client.post("/v1/action-requests", json=envelope, headers=_operator())).status_code == 401, (
-            "operator auth is not consulted on the workload surface"
-        )
+        assert (
+            await client.post("/v1/action-requests", json=envelope, headers=_operator(operator_idp))
+        ).status_code == 401, "operator auth is not consulted on the workload surface"
 
         for forged_top_level in (
             "owner",
@@ -244,12 +237,14 @@ async def test_p0_allow_deny_scope_forgery_redaction_and_single_execution(
         assert (
             await client.get(f"/v1/action-requests/{request_id}", headers=_workload("workload-b"))
         ).status_code == 404
-        operator_list = await client.get("/v1/operator/action-requests", headers=_operator())
+        operator_list = await client.get("/v1/operator/action-requests", headers=_operator(operator_idp))
         assert operator_list.status_code == 200
         assert operator_list.json()[0]["arguments"] == envelope["arguments"]
-        operator_by_key = await client.get("/v1/operator/action-requests", params=by_key, headers=_operator())
+        operator_by_key = await client.get(
+            "/v1/operator/action-requests", params=by_key, headers=_operator(operator_idp)
+        )
         assert [row["id"] for row in operator_by_key.json()] == [request_id]
-        operator_detail = await client.get(_operator_path(request_id), headers=_operator())
+        operator_detail = await client.get(_operator_path(request_id), headers=_operator(operator_idp))
         assert operator_detail.json()["arguments"] == envelope["arguments"]
         assert operator_detail.json()["title"] == envelope["title"]
         assert operator_detail.json()["description"] == envelope["description"]
@@ -257,7 +252,7 @@ async def test_p0_allow_deny_scope_forgery_redaction_and_single_execution(
 
         stale = await client.post(
             _operator_path(request_id, "/decision"),
-            headers=_operator(),
+            headers=_operator(operator_idp),
             json={"verdict": "allow", "expected_version": 99, "idempotency_key": "stale"},
         )
         assert stale.status_code == 409
@@ -269,8 +264,8 @@ async def test_p0_allow_deny_scope_forgery_redaction_and_single_execution(
             "decision_note": "Reviewed scope — allowed for this request.",
         }
         allowed, duplicate_allow = await asyncio.gather(
-            client.post(_operator_path(request_id, "/decision"), headers=_operator(), json=decision),
-            client.post(_operator_path(request_id, "/decision"), headers=_operator(), json=decision),
+            client.post(_operator_path(request_id, "/decision"), headers=_operator(operator_idp), json=decision),
+            client.post(_operator_path(request_id, "/decision"), headers=_operator(operator_idp), json=decision),
         )
         assert allowed.status_code == duplicate_allow.status_code == 200
         assert allowed.json()["decision"]["decision_note"] == "Reviewed scope — allowed for this request."
@@ -282,7 +277,7 @@ async def test_p0_allow_deny_scope_forgery_redaction_and_single_execution(
             "echo": {"text": "hello", "nested": {"api_key": "[redacted]"}},
             "credential": "[redacted]",
         }
-        operator_terminal = (await client.get(_operator_path(request_id), headers=_operator())).json()
+        operator_terminal = (await client.get(_operator_path(request_id), headers=_operator(operator_idp))).json()
         assert operator_terminal["arguments"] == envelope["arguments"]
         assert operator_terminal["execution"]["result"] == terminal["execution"]["result"]
         # A human Decision carries no provider reason code; that projection is provider-only.
@@ -308,7 +303,7 @@ async def test_p0_allow_deny_scope_forgery_redaction_and_single_execution(
 
         replay = await client.post(
             _operator_path(request_id, "/decision"),
-            headers=_operator(),
+            headers=_operator(operator_idp),
             json={
                 "verdict": "allow",
                 "expected_version": 1,
@@ -321,7 +316,7 @@ async def test_p0_allow_deny_scope_forgery_redaction_and_single_execution(
         assert replay.json()["decision"] == terminal["decision"]
         late = await client.post(
             _operator_path(request_id, "/decision"),
-            headers=_operator(),
+            headers=_operator(operator_idp),
             json={**decision, "idempotency_key": "late-note", "decision_note": "must not overwrite"},
         )
         assert late.status_code == 409
@@ -362,7 +357,7 @@ async def test_p0_allow_deny_scope_forgery_redaction_and_single_execution(
         denied_pending = denied_submit.json()
         denied = await client.post(
             _operator_path(denied_pending["id"], "/decision"),
-            headers=_operator(),
+            headers=_operator(operator_idp),
             json={
                 "verdict": "deny",
                 "expected_version": denied_pending["version"],
@@ -383,13 +378,13 @@ async def test_p0_allow_deny_scope_forgery_redaction_and_single_execution(
 
 
 async def test_executor_exception_material_is_not_logged_projected_or_retried(
-    engine: AsyncEngine, caplog: Any, echo_catalog: ActionCatalog
+    engine: AsyncEngine, caplog: Any, echo_catalog: ActionCatalog, operator_idp: OperatorIdp
 ) -> None:
     executor = LeakyFailingExecutor()
     store = ActionStore(make_sessionmaker(engine))
     service = ActionService(store, echo_catalog, {"agentplane": executor})
     await service.start()
-    client = await _client(service)
+    client = await _client(service, operator_idp)
     try:
         pending = (
             await client.post(
@@ -405,7 +400,7 @@ async def test_executor_exception_material_is_not_logged_projected_or_retried(
         ).json()
         response = await client.post(
             _operator_path(pending["id"], "/decision"),
-            headers=_operator(),
+            headers=_operator(operator_idp),
             json={"verdict": "allow", "expected_version": pending["version"], "idempotency_key": "allow-leaky-failure"},
         )
         assert response.status_code == 200
@@ -435,7 +430,7 @@ async def test_executor_exception_material_is_not_logged_projected_or_retried(
 
 
 async def test_restart_resumes_only_pending_dispatch_and_leaves_inflight_work_to_the_lease_sweep(
-    engine: AsyncEngine, echo_catalog: ActionCatalog
+    engine: AsyncEngine, echo_catalog: ActionCatalog, operator_idp: OperatorIdp
 ) -> None:
     """A restart never assumes in-flight work died with the old process (see executor_liveness.md):
     pending dispatches resume immediately, but dispatching/running work is untouched until its own
@@ -466,7 +461,7 @@ async def test_restart_resumes_only_pending_dispatch_and_leaves_inflight_work_to
 
     restarted = ActionService(store, echo_catalog, {"agentplane": executor})
     await restarted.start()
-    client = await _client(restarted)
+    client = await _client(restarted, operator_idp)
     try:
         assert (await _terminal(client, str(pending_view.id)))["state"] == "succeeded"
         assert len(executor.requests) == 1
@@ -518,7 +513,9 @@ async def test_restart_resumes_only_pending_dispatch_and_leaves_inflight_work_to
     assert never_called.requests == []
 
 
-async def test_configured_catalog_is_discoverable_and_unknown_lookups_fail_clearly(engine: AsyncEngine) -> None:
+async def test_configured_catalog_is_discoverable_and_unknown_lookups_fail_clearly(
+    engine: AsyncEngine, operator_idp: OperatorIdp
+) -> None:
     catalog = ActionCatalog(
         groups={
             "github": ActionGroup(
@@ -541,7 +538,7 @@ async def test_configured_catalog_is_discoverable_and_unknown_lookups_fail_clear
     store = ActionStore(make_sessionmaker(engine))
     service = ActionService(store, catalog, {"github": CountingExecutor()})
     await service.start()
-    client = await _client(service, catalog=catalog)
+    client = await _client(service, operator_idp, catalog=catalog)
     try:
         groups = await client.get("/v1/action-groups", headers=_workload("workload-a"))
         assert groups.status_code == 200
@@ -574,7 +571,7 @@ async def test_configured_catalog_is_discoverable_and_unknown_lookups_fail_clear
             reason=McpUnavailableReason.CONNECT_FAILED, detail="ConnectError: test-only backend detail"
         )
         as_workload = await client.get("/v1/action-groups", headers=_workload("workload-a"))
-        as_operator = await client.get("/v1/action-groups", headers=_operator())
+        as_operator = await client.get("/v1/action-groups", headers=_operator(operator_idp))
         assert as_operator.status_code == 200
         assert as_workload.json()[0]["health"]["detail"] is None
         assert as_operator.json()[0]["health"]["detail"] == "ConnectError: test-only backend detail"
@@ -602,7 +599,7 @@ async def test_configured_catalog_is_discoverable_and_unknown_lookups_fail_clear
 
 
 async def test_operator_reads_a_named_subjects_effective_policy(
-    engine: AsyncEngine, echo_catalog: ActionCatalog
+    engine: AsyncEngine, echo_catalog: ActionCatalog, operator_idp: OperatorIdp
 ) -> None:
     """The operator asks about a subject by what a binding pins -- a namespaced ServiceAccount --
     and gets the same resolution admission uses, with each named set's standing. A workload bearer
@@ -628,10 +625,10 @@ async def test_operator_reads_a_named_subjects_effective_policy(
     service = ActionService(
         ActionStore(make_sessionmaker(engine)), echo_catalog, {"agentplane": CountingExecutor()}, policies=index
     )
-    client = await _client(service)
+    client = await _client(service, operator_idp)
     try:
         sandbox_path = f"/v1/operator/action-policy/service-accounts/{ACCOUNT_A.namespace}/{ACCOUNT_A.name}"
-        response = await client.get(sandbox_path, headers=_operator())
+        response = await client.get(sandbox_path, headers=_operator(operator_idp))
         assert response.status_code == 200, response.text
         view = SubjectActionPolicyView.model_validate(response.json())
         (binding,) = view.bindings
@@ -643,11 +640,13 @@ async def test_operator_reads_a_named_subjects_effective_policy(
         assert [(policy_set.name, policy_set.generation) for policy_set in binding.policy_sets] == [("reads", 2)]
         assert [(p.binding, p.policy_set, p.index) for p in view.auto_approve_if] == [("sandbox-a-reads", "reads", 0)]
         other = await client.get(
-            f"/v1/operator/action-policy/service-accounts/{ACCOUNT_B.namespace}/{ACCOUNT_B.name}", headers=_operator()
+            f"/v1/operator/action-policy/service-accounts/{ACCOUNT_B.namespace}/{ACCOUNT_B.name}",
+            headers=_operator(operator_idp),
         )
         assert SubjectActionPolicyView.model_validate(other.json()).bindings == []
         by_account = await client.get(
-            f"/v1/operator/action-policy/service-accounts/{account.namespace}/{account.name}", headers=_operator()
+            f"/v1/operator/action-policy/service-accounts/{account.namespace}/{account.name}",
+            headers=_operator(operator_idp),
         )
         assert [b.name for b in SubjectActionPolicyView.model_validate(by_account.json()).bindings] == ["client-reads"]
         assert (await client.get(sandbox_path)).status_code == 401
@@ -657,7 +656,9 @@ async def test_operator_reads_a_named_subjects_effective_policy(
         await service.close()
 
 
-async def test_catalog_admission_and_group_routing(engine: AsyncEngine, echo_catalog: ActionCatalog) -> None:
+async def test_catalog_admission_and_group_routing(
+    engine: AsyncEngine, echo_catalog: ActionCatalog, operator_idp: OperatorIdp
+) -> None:
     first, second = CountingExecutor(), CountingExecutor()
     echo_catalog.groups["other"] = echo_catalog.groups["agentplane"].model_copy(deep=True)
     echo_catalog.groups["unbound"] = echo_catalog.groups["agentplane"].model_copy(deep=True)
@@ -666,7 +667,7 @@ async def test_catalog_admission_and_group_routing(engine: AsyncEngine, echo_cat
     store = ActionStore(make_sessionmaker(engine))
     service = ActionService(store, echo_catalog, {"agentplane": first, "other": second, "offline": first})
     await service.start()
-    client = await _client(service, catalog=echo_catalog)
+    client = await _client(service, operator_idp, catalog=echo_catalog)
     try:
         for group, name in [("missing", "echo"), ("agentplane", "missing"), ("unbound", "echo")]:
             response = await client.post(
@@ -724,7 +725,7 @@ async def test_catalog_admission_and_group_routing(engine: AsyncEngine, echo_cat
             decision = await client.post(
                 _operator_path(submitted["id"], "/decision"),
                 json={"verdict": "allow", "expected_version": submitted["version"], "idempotency_key": group},
-                headers=_operator(),
+                headers=_operator(operator_idp),
             )
             decision.raise_for_status()
             terminal = await _terminal(client, submitted["id"])
@@ -761,12 +762,14 @@ async def test_catalog_admission_and_group_routing(engine: AsyncEngine, echo_cat
         await service.close()
 
 
-async def test_action_removed_before_allow_never_dispatches(engine: AsyncEngine, echo_catalog: ActionCatalog) -> None:
+async def test_action_removed_before_allow_never_dispatches(
+    engine: AsyncEngine, echo_catalog: ActionCatalog, operator_idp: OperatorIdp
+) -> None:
     executor = CountingExecutor()
     store = ActionStore(make_sessionmaker(engine))
     service = ActionService(store, echo_catalog, {"agentplane": executor})
     await service.start()
-    client = await _client(service, catalog=echo_catalog)
+    client = await _client(service, operator_idp, catalog=echo_catalog)
     try:
         view = await service.submit(
             ActionRequestInput(
@@ -794,7 +797,7 @@ async def test_action_removed_before_allow_never_dispatches(engine: AsyncEngine,
 
 
 async def test_submission_schema_error_is_http_422_and_does_not_persist(
-    engine: AsyncEngine, echo_catalog: ActionCatalog
+    engine: AsyncEngine, echo_catalog: ActionCatalog, operator_idp: OperatorIdp
 ) -> None:
     echo_catalog.groups["agentplane"].actions["echo"].input_schema = {
         "type": "object",
@@ -804,7 +807,7 @@ async def test_submission_schema_error_is_http_422_and_does_not_persist(
     store = ActionStore(make_sessionmaker(engine))
     executor = CountingExecutor()
     service = ActionService(store, echo_catalog, {"agentplane": executor})
-    client = await _client(service, catalog=echo_catalog)
+    client = await _client(service, operator_idp, catalog=echo_catalog)
     try:
         response = await client.post(
             "/v1/action-requests",
@@ -827,7 +830,7 @@ async def test_submission_schema_error_is_http_422_and_does_not_persist(
 
 
 async def test_operator_arguments_are_exact_but_caller_arguments_are_recursively_redacted(
-    engine: AsyncEngine, echo_catalog: ActionCatalog
+    engine: AsyncEngine, echo_catalog: ActionCatalog, operator_idp: OperatorIdp
 ) -> None:
     store = ActionStore(make_sessionmaker(engine))
     service = ActionService(store, echo_catalog, {"agentplane": CountingExecutor()})
@@ -837,7 +840,7 @@ async def test_operator_arguments_are_exact_but_caller_arguments_are_recursively
         "access_token": "exact-token",
         "null": None,
     }
-    client = await _client(service)
+    client = await _client(service, operator_idp)
     async with client:
         response = await client.post(
             "/v1/action-requests",
@@ -858,19 +861,21 @@ async def test_operator_arguments_are_exact_but_caller_arguments_are_recursively
             assert body["arguments"]["access_token"] == "[redacted]"
             assert body["arguments"]["nested"]["api_key"] == "[redacted]"
             assert body["arguments"]["nested"]["items"] == [{"password": "[redacted]", "safe": 42}]
-        assert (await client.get(_operator_path(request_id), headers=_operator())).json()["arguments"] == arguments
-        assert (await client.get("/v1/operator/action-requests", headers=_operator())).json()[0][
+        assert (await client.get(_operator_path(request_id), headers=_operator(operator_idp))).json()[
+            "arguments"
+        ] == arguments
+        assert (await client.get("/v1/operator/action-requests", headers=_operator(operator_idp))).json()[0][
             "arguments"
         ] == arguments
         assert (await client.get(_operator_path(request_id), headers=_workload("workload-a"))).status_code == 401
 
 
 async def test_cancellation_http_is_owner_only_and_needs_no_version(
-    engine: AsyncEngine, echo_catalog: ActionCatalog
+    engine: AsyncEngine, echo_catalog: ActionCatalog, operator_idp: OperatorIdp
 ) -> None:
     executor = CountingExecutor()
     service = ActionService(ActionStore(make_sessionmaker(engine)), echo_catalog, {"agentplane": executor})
-    async with await _client(service) as client:
+    async with await _client(service, operator_idp) as client:
         response = await client.post(
             "/v1/action-requests",
             headers=_workload("workload-a"),
@@ -885,9 +890,11 @@ async def test_cancellation_http_is_owner_only_and_needs_no_version(
         request_id = response.json()["id"]
         path = f"/v1/action-requests/{request_id}/cancel"
         assert (await client.post(path)).status_code == 401
-        assert (await client.post(path, headers=_operator())).status_code == 401
+        assert (await client.post(path, headers=_operator(operator_idp))).status_code == 401
         assert (await client.post(path, headers=_workload("workload-b"))).status_code == 404
-        assert (await client.post(_operator_path(request_id, "/cancel"), headers=_operator())).status_code == 404
+        assert (
+            await client.post(_operator_path(request_id, "/cancel"), headers=_operator(operator_idp))
+        ).status_code == 404
         response = await client.post(path, headers=_workload("workload-a"))
         assert response.status_code == 200
         result = CancellationResult.model_validate(response.json())
@@ -900,7 +907,7 @@ async def test_cancellation_http_is_owner_only_and_needs_no_version(
 
 
 async def test_service_reader_reads_every_owners_requests_and_holds_no_mutation_authority(
-    engine: AsyncEngine, echo_catalog: ActionCatalog
+    engine: AsyncEngine, echo_catalog: ActionCatalog, operator_idp: OperatorIdp
 ) -> None:
     service = ActionService(ActionStore(make_sessionmaker(engine)), echo_catalog, {"agentplane": CountingExecutor()})
     reader = _workload("workload-reader")
@@ -909,7 +916,7 @@ async def test_service_reader_reads_every_owners_requests_and_holds_no_mutation_
         "action": {"group": "agentplane", "name": "echo"},
         "arguments": {"text": "hello"},
     }
-    async with await _client(service, reader_accounts=frozenset({ACCOUNT_READER})) as client:
+    async with await _client(service, operator_idp, reader_accounts=frozenset({ACCOUNT_READER})) as client:
         submitted = await client.post(
             "/v1/action-requests", headers=_workload("workload-a"), json={**envelope, "idempotency_key": "reader-a"}
         )
@@ -921,7 +928,7 @@ async def test_service_reader_reads_every_owners_requests_and_holds_no_mutation_
         other_submitted.raise_for_status()
         denied = await client.post(
             _operator_path(request["id"], "/decision"),
-            headers=_operator(),
+            headers=_operator(operator_idp),
             json={"verdict": "deny", "expected_version": request["version"], "idempotency_key": "deny-test"},
         )
         denied.raise_for_status()
@@ -956,11 +963,11 @@ if __name__ == "__main__":
 
 
 async def test_operator_history_pages_exclude_pending_and_require_operator(
-    engine: AsyncEngine, echo_catalog: ActionCatalog
+    engine: AsyncEngine, echo_catalog: ActionCatalog, operator_idp: OperatorIdp
 ) -> None:
     service = ActionService(ActionStore(make_sessionmaker(engine)), echo_catalog, {"agentplane": CountingExecutor()})
     await service.start()
-    client = await _client(service)
+    client = await _client(service, operator_idp)
     path = "/v1/operator/action-requests/history"
     try:
         requests = []
@@ -980,7 +987,7 @@ async def test_operator_history_pages_exclude_pending_and_require_operator(
         for index in (0, 1):
             response = await client.post(
                 _operator_path(requests[index]["id"], "/decision"),
-                headers=_operator(),
+                headers=_operator(operator_idp),
                 json={
                     "verdict": "deny",
                     "expected_version": requests[index]["version"],
@@ -993,13 +1000,15 @@ async def test_operator_history_pages_exclude_pending_and_require_operator(
         )
         assert cancelled.status_code == 200
         assert (await client.get(path, headers=_workload("workload-a"))).status_code == 401
-        assert (await client.get(path, params={"limit": 101}, headers=_operator())).status_code == 422
-        assert (await client.get(path, params={"cursor": "invalid"}, headers=_operator())).status_code == 400
+        assert (await client.get(path, params={"limit": 101}, headers=_operator(operator_idp))).status_code == 422
+        assert (
+            await client.get(path, params={"cursor": "invalid"}, headers=_operator(operator_idp))
+        ).status_code == 400
         seen: list[str] = []
         cursor = None
         for _ in range(3):
             page = await client.get(
-                path, params={"limit": 1, **({"cursor": cursor} if cursor else {})}, headers=_operator()
+                path, params={"limit": 1, **({"cursor": cursor} if cursor else {})}, headers=_operator(operator_idp)
             )
             assert page.status_code == 200
             assert len(page.json()["items"]) == 1
@@ -1008,7 +1017,9 @@ async def test_operator_history_pages_exclude_pending_and_require_operator(
         assert set(seen) == {request["id"] for request in requests[:3]}
         assert cursor is None
         assert (
-            await client.get("/v1/operator/action-requests", params={"state": "decision_pending"}, headers=_operator())
+            await client.get(
+                "/v1/operator/action-requests", params={"state": "decision_pending"}, headers=_operator(operator_idp)
+            )
         ).json()[0]["id"] == requests[3]["id"]
     finally:
         await client.aclose()

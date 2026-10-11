@@ -66,7 +66,7 @@ class Tokens:
     def __init__(self) -> None:
         self.issued = 0
 
-    async def token(self) -> str:
+    async def __call__(self) -> str:
         self.issued += 1
         return f"test-token-{self.issued}"
 

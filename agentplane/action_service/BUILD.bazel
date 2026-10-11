@@ -69,7 +69,7 @@ py_library(
 py_library(
     name = "auth",
     srcs = ["auth.py"],
-    deps = [":models"],
+    deps = [":operator_oidc"],
 )
 
 py_library(
@@ -298,7 +298,6 @@ py_test(
     requires_docker = True,
     deps = [
         ":api",
-        ":auth",
         ":catalog",
         ":conftest",
         ":db",
@@ -310,6 +309,7 @@ py_test(
         "//agentplane:subjects",
         "//agentplane/action_service/policies:resources",
         "//agentplane/action_service/testing:callers",
+        "//agentplane/action_service/testing:credentials",
         "//agentplane/workload_auth:principal",
         "@pypi//httpx",
         "@pypi//pytest_bazel",
@@ -438,7 +438,7 @@ py_library(
         ":catalog",
         ":mcp_executor",
         ":mcp_linkage",
-        ":models",
+        ":service",
         "//agentplane/action_service/sandbox:actions",
         "//agentplane/action_service/sandbox:binding",
         "//agentplane/action_service/sandbox:executor",
@@ -1050,7 +1050,6 @@ py_library(
     srcs = ["providers.py"],
     deps = [
         ":catalog",
-        ":models",
         "//agentplane:subjects",
         "//agentplane/action_service/policies:resources",
         "@pypi//pydantic",

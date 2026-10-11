@@ -17,13 +17,13 @@ import pytest_bazel
 from pydantic import JsonValue
 
 from agentplane.action_service.catalog import ActionIdentity
-from agentplane.action_service.models import ExecutionLease, ExecutionRequest, ExecutionState
+from agentplane.action_service.models import ExecutionRequest, ExecutionState
 from agentplane.action_service.sandbox.actions import SandboxAction
 from agentplane.action_service.sandbox.binding import SandboxExecutorBinding
 from agentplane.action_service.sandbox.executor import SandboxExecutor
 from agentplane.action_service.sandbox.inventory import ForeignSandboxError, SandboxActionError
 from agentplane.action_service.sandbox.models import READY_CONDITION, SandboxCondition, SandboxInfo
-from agentplane.action_service.service import ExecutionOutcomeUnknownError
+from agentplane.action_service.service import ExecutionLease, ExecutionOutcomeUnknownError
 from agentplane.subjects import ServiceAccountRef
 from mcp_infra.exec.kubernetes import CommandResult, PodExecError
 from util.exec.models import Exited
@@ -97,9 +97,9 @@ def _request(action: str, arguments: dict[str, JsonValue], caller: ServiceAccoun
     )
 
 
-class _Lease:
+class _Lease(ExecutionLease):
     """A renewal window far shorter than the command, so an attempt that stopped renewing would
-    lapse here exactly as it lapses in Postgres."""
+    lapse here exactly as it lapses in Postgres. Counts renewals in place of a store's claim."""
 
     renewal_interval = timedelta(milliseconds=1)
 

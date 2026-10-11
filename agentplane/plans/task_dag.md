@@ -1069,7 +1069,7 @@ flowchart TD
         EGRESS_DECISIONS_CLIENT[Candidate: egress decisions client beside the server]
         LLM_INGRESS_MODEL_CONFIG_CONTRACT[Candidate: structural absent model config]
         ACTION_SETTINGS_SINGLE_MODEL[Candidate: one Action Service settings model]
-        ACTION_PROTOCOLS_CONCRETE[Candidate: concrete types for Action protocols]
+        ACTION_PROTOCOLS_CONCRETE[Candidate: concrete external-grant authority]
         ACTION_OAUTH_REFERENCE_TYPE[Candidate: typed OAuth token reference]
         NOTIFICATION_GITHUB_PACKAGE[Candidate: one GitHub source package]
         CDK8S_SERVICE_CONSTRUCT[Candidate: one cdk8s service construct]
@@ -1247,11 +1247,11 @@ nullable body).
 `Settings` through `SettingsFile` as the other services do, drop the Deployment model, make both
 namespaces required, and move `token_audience` from the CLI into the file.
 
-### `ACTION_PROTOCOLS_CONCRETE` — concrete types for Action protocols
+### `ACTION_PROTOCOLS_CONCRETE` — concrete external-grant authority
 
-**Candidate.** `AccessTokenProvider`, `ExternalGrantAuthority` (also a footgun `| None = None`),
-`DecisionProvider` and `ExecutionLease` each have one production implementation, and
-`OperatorAuthenticator` is a union of two. Name the concrete types or unions.
+**Candidate.** `ActionStore`'s `ExternalGrantAuthority` Protocol (also a footgun `| None = None`) has
+one production implementation, `ConnectionAuthority`. `db.py` cannot name it, because `connections.py`
+imports `db.py`'s rows: `ActionStore` first moves out of `db.py`, then takes a `ConnectionAuthority`.
 
 ### `ACTION_OAUTH_REFERENCE_TYPE` — typed OAuth token reference
 

@@ -36,7 +36,7 @@ from agentplane.action_service.models import ActionRequestInput, OperatorPrincip
 from agentplane.action_service.policy_informer import PolicyIndex
 from agentplane.action_service.service import ActionService
 from agentplane.action_service.testing.callers import OTHER, PERSONAL, UNLABELED, admitted_callers
-from agentplane.action_service.testing.credentials import StaticOperatorAuthenticator
+from agentplane.action_service.testing.credentials import OperatorIdp
 from agentplane.action_service.updates import ActionUpdates
 from agentplane.kubernetes_watch import Freshness
 from agentplane.subjects import ServiceAccountRef
@@ -277,17 +277,16 @@ async def test_unlabeled_removed_unsynced_and_expired_grants_do_not_authorize(en
 
 
 async def test_operator_routes_do_not_expose_binding_or_accept_workload_credentials(
-    engine: AsyncEngine, db_url: str
+    engine: AsyncEngine, db_url: str, operator_idp: OperatorIdp
 ) -> None:
     service = authority(engine)
     grant = await service.bind(binding())
-    token = "test-operator-token"
     catalog = ActionCatalog(groups={})
     actions = ActionService(ActionStore(make_sessionmaker(engine)), catalog, {})
     app = create_app(
         actions,
         Mock(spec=WorkloadPrincipalResolver),
-        StaticOperatorAuthenticator(token, OperatorPrincipal(issuer="test-operator-issuer", subject="test-operator")),
+        operator_idp.authenticator(),
         catalog,
         connections=service,
         callers=admitted_callers(),
@@ -300,7 +299,7 @@ async def test_operator_routes_do_not_expose_binding_or_accept_workload_credenti
         assert (
             await http.get("/v1/operator/connections", headers={"Authorization": "Bearer workload"})
         ).status_code == 401
-        http.headers["Authorization"] = f"Bearer {token}"
+        http.headers["Authorization"] = f"Bearer {operator_idp.bearer('test-operator')}"
         assert (await http.get("/v1/operator/caller-service-accounts")).json() == [
             OTHER.model_dump(),
             PERSONAL.model_dump(),

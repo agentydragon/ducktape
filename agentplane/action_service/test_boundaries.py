@@ -13,7 +13,7 @@ from kubernetes_asyncio import client as k8s_client
 from kubernetes_asyncio.client import AuthenticationV1Api
 
 from agentplane.action_service.api import create_app
-from agentplane.action_service.auth import DisabledOperatorAuthenticator, OperatorAuthenticator
+from agentplane.action_service.auth import DisabledOperatorAuthenticator
 from agentplane.action_service.catalog import ActionCatalog, ActionIdentity
 from agentplane.action_service.models import ActionRequestInput, ActionRequestView, ActionState, CallerPrincipal
 from agentplane.action_service.policies.resources import CALLER_LABEL
@@ -157,7 +157,7 @@ async def test_central_placeholder_replay_is_required_before_action_service_auth
     app = create_app(
         cast(ActionService, service),
         resolver,
-        cast(OperatorAuthenticator, DisabledOperatorAuthenticator()),
+        DisabledOperatorAuthenticator(),
         ActionCatalog(),
         callers=admitted_callers(ServiceAccountRef(namespace=NAMESPACE, name=PRINCIPAL_A.service_account_name)),
         updates=ActionUpdates("postgresql://unused-test-listener"),
@@ -224,7 +224,7 @@ async def test_an_unlabelled_account_authenticates_and_reaches_no_route(caplog: 
     app = create_app(
         cast(ActionService, service),
         resolver,
-        cast(OperatorAuthenticator, DisabledOperatorAuthenticator()),
+        DisabledOperatorAuthenticator(),
         ActionCatalog(),
         callers=admitted_callers(),
         updates=ActionUpdates("postgresql://unused-test-listener"),
