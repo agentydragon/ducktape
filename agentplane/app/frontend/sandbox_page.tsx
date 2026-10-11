@@ -435,7 +435,7 @@ export function SandboxPage({
     const sessionId = crypto.randomUUID();
     const spec = fromJson(SessionSpecSchema, {
       harness,
-      cwd: cwdTemplate, // Sandbox Service expands {session_id} to the public ID.
+      cwd: cwdTemplate, // The Runner Gateway expands {session_id} to the Session ID.
       model,
       reasoningEffort: effort,
       instructions,

@@ -26,7 +26,7 @@ class IngressSettings(BaseModel):
         default=8081,
         ge=1,
         le=65535,
-        description="The ingress's own listener, so the network fence admits Sandboxes to it and nothing else.",
+        description="The ingress's own listener, so the network fence admits the egress proxy to it and nothing else.",
     )
     settle_deltas: bool = Field(
         default=True,

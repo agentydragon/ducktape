@@ -61,7 +61,7 @@ async def serve(settings: Settings) -> None:
             add_service(resources, server)
             if settings.port == settings.ingress.port:
                 raise ValueError("gRPC and runner ingress ports must differ")
-            # A separate listener, so the network fence can admit runners to the ingress and nothing else.
+            # A separate listener, so the network fence can admit the egress proxy to the ingress and nothing else.
             ingress_server = grpc.aio.server()
             ingress.add_ingress(
                 ingress.Resources(

@@ -136,7 +136,7 @@ class _Journal:
         if self.batch:
             self.committed = await self.history.append(self.session_id, self.batch)
             self.batch.clear()
-        # The announced snapshot is stored once history covers it, as the follower stores its attach.
+        # The announced snapshot is stored once history covers it.
         if not self.snapshot_recorded and self.committed >= self.announce.last_cursor:
             await self.history.record_feed_state(self.session_id, SessionFeedState(attached=self.announce))
             self.snapshot_recorded = True

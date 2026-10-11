@@ -4,7 +4,7 @@ schema its init container migrates.
 
 Runners reach the ingress listener only through the egress proxy, which swaps the placeholder
 bearer for the Pod's own token for the ingress audience. It takes untrusted input, so it listens
-apart from the read API, and the network fence admits Sandboxes to it alone.
+apart from the read API, and the network fence admits the egress proxy to it alone.
 """
 
 from cdk8s import ApiObjectMetadata, Duration, Size

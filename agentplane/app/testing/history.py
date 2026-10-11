@@ -29,7 +29,7 @@ def fixture_session_id(sandbox: str, session_id: str) -> UUID:
 
 async def register_gateway_session(engine: AsyncEngine, session_id: UUID, *, sandbox: str) -> None:
     """Register the Session with the Runner Gateway, which shares the test's history database, unless
-    a Sandbox Service already did."""
+    a Runner Gateway already did."""
     async with async_sessionmaker(engine).begin() as session:
         if await session.get(GatewaySession, session_id) is None:
             session.add(
@@ -51,7 +51,7 @@ class SeededEventLogStore(EventLogStore):
         history_reader: HistoryServiceClient,
         summaries: Summaries,
     ) -> None:
-        # None where a Sandbox Service shares the history database and registers its Sessions itself.
+        # None where a Runner Gateway shares the history database and registers its Sessions itself.
         self.engine = engine
         self.history = history
         # The gateway's database (shared with history in service-database tests) or a fake gateway's map.
@@ -68,7 +68,7 @@ class SeededEventLogStore(EventLogStore):
         return public_id
 
     async def register(self, sandbox: str, session_id: str) -> UUID:
-        """Register a fixture's Session as running in `sandbox`, as a Sandbox Service would; a non-UUID
+        """Register a fixture's Session as running in `sandbox`, as a Runner Gateway would; a non-UUID
         `session_id` is an alias."""
         public_id = fixture_session_id(sandbox, session_id)
         if self.history is not None:
