@@ -14,7 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 
 from agentplane.proto import command_pb2, event_log_pb2, runner_control_pb2, runner_control_pb2_grpc
 from agentplane.runner_gateway.command_delivery import CommandDelivery, CommandRefusedError
-from agentplane.runner_gateway.commands.dispatch import DispatchStore
+from agentplane.runner_gateway.commands.dispatch import OUTCOME_CHANNEL, CommandKey, DispatchStore, Outcome
 from agentplane.runner_gateway.commands.store import CommandSubmission, SubmissionStore
 from agentplane.runner_gateway.connection_records import (
     CONNECTION_EPOCH_ANNOTATION,
@@ -281,14 +281,16 @@ async def session_id(engine: AsyncEngine) -> UUID:
     return session_id
 
 
-def deliver(delivery: CommandDelivery, cluster: Cluster, session_id: UUID) -> asyncio.Task[event_log_pb2.EventEntry]:
+def deliver(
+    delivery: CommandDelivery, cluster: Cluster, session_id: UUID, *, deadline_s: float = 10
+) -> asyncio.Task[event_log_pb2.EventEntry]:
     return asyncio.create_task(
         delivery.deliver(
             sandbox_uid=UUID(SANDBOX_UID),
             session_id=session_id,
             command_id=COMMAND.command_id,
             runner_session_id=RUNNER_SESSION,
-            deadline_s=10,
+            deadline_s=deadline_s,
         )
     )
 
@@ -327,6 +329,58 @@ async def test_delivered_command_returns_the_runner_receipt(
             )
         )
         assert await asyncio.wait_for(waiting, timeout=10) == admitted
+
+
+async def test_lost_outcome_notification_recovers_on_two_second_recheck(
+    listener: runner_control_pb2_grpc.RunnerControlAsyncStub,
+    delivery: CommandDelivery,
+    cluster: Cluster,
+    session_id: UUID,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A committed runner receipt survives a lost PostgreSQL outcome wakeup within the admission budget."""
+    delivery.recheck_s = 2
+    dropped = asyncio.Event()
+    reads = 0
+    read_outcome = delivery.dispatches.read_outcome
+
+    async def count_reads(key: CommandKey) -> Outcome:
+        nonlocal reads
+        reads += 1
+        return await read_outcome(key)
+
+    monkeypatch.setattr(delivery.dispatches, "read_outcome", count_reads)
+
+    def lose_first_outcome(channel: str, payload: object) -> None:
+        if channel == OUTCOME_CHANNEL and not dropped.is_set():
+            dropped.set()
+            return
+        delivery._notified(channel, payload)
+
+    monkeypatch.setattr(delivery.listener, "_notified", lose_first_outcome)
+    admitted = event_log_pb2.EventEntry(cursor=1)
+    admitted.origin.source_id, admitted.origin.sequence = "test-runner-source", 1
+    admitted.event.command_admitted.command.CopyFrom(COMMAND)
+    async with connect(listener) as call:
+        await call.write(HELLO)
+        assert (await read_frame(call)).HasField("welcome")
+        await until_cached(
+            delivery.leases, lambda: delivery.leases.read_live_epoch(UUID(SANDBOX_UID), liveness_s=1) is not None
+        )
+        waiting = deliver(delivery, cluster, session_id, deadline_s=15)
+        sent = await next_delivery(call)
+        reads_before_receipt = reads
+        assert reads_before_receipt >= 1
+        await call.write(
+            runner_control_pb2.RunnerFrame(
+                receipt=runner_control_pb2.CommandReceipt(
+                    session_id=RUNNER_SESSION, command_id=sent.command.command_id, admitted=admitted
+                )
+            )
+        )
+        await asyncio.wait_for(dropped.wait(), timeout=5)
+        assert await asyncio.wait_for(waiting, timeout=5) == admitted
+        assert reads > reads_before_receipt, "the waiter must re-read durable state after the lost wakeup"
 
 
 async def test_refusal_reaches_the_caller(
