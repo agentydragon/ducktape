@@ -22,7 +22,7 @@ import uuid
 from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
-from urllib.parse import urlencode
+from urllib.parse import urlencode, urlsplit
 
 import httpx
 from playwright.async_api import Page, async_playwright
@@ -384,7 +384,14 @@ async def browser_verify(
         browser = await playwright.chromium.launch(
             executable_path=chrome, headless=True, args=["--no-sandbox", "--disable-dev-shm-usage"]
         )
-        page: Page = await browser.new_page(viewport={"width": 1920, "height": 1200})
+        context = await browser.new_context(viewport={"width": 1920, "height": 1200})
+        parts = urlsplit(url)
+        login = await context.request.post(
+            f"{parts.scheme}://{parts.netloc}/login", data={"user": user, "password": password}
+        )
+        if login.status >= 400:
+            raise VerificationError(f"browser context could not authenticate to Grafana: HTTP {login.status}")
+        page: Page = await context.new_page()
         page.on("console", lambda message: console_errors.append(message.text) if message.type == "error" else None)
         page.on("pageerror", lambda error: page_errors.append(str(error)))
         page.on(
@@ -415,29 +422,38 @@ async def browser_verify(
         page.on("request", inspect_request)
 
         await page.goto(url, wait_until="domcontentloaded", timeout=60000)
-        user_input = page.locator('input[name="user"], input[autocomplete="username"]').first
-        if await user_input.count():
-            await user_input.fill(user)
-            await page.locator('input[name="password"], input[type="password"]').first.fill(password)
-            await page.locator('button[type="submit"]').first.click()
-            await page.wait_for_timeout(1000)
-            await page.goto(url, wait_until="domcontentloaded", timeout=60000)
         if "/login" in page.url:
             raise VerificationError("browser could not authenticate to Grafana")
         await page.wait_for_timeout(int(wait_seconds * 1000))
+        # Grafana mounts panels as they enter the viewport. Scroll through the dashboard
+        # so a long dashboard's lower panels are rendered and their queries are exercised.
+        seen_titles: set[str] = set()
+        visible_no_data = 0
+        for index in range(10):
+            for panel in panels_in(dashboard):
+                if panel.get("type") == "text":
+                    continue
+                title = panel.get("title", "")
+                if await page.get_by_text(title, exact=True).count():
+                    seen_titles.add(title)
+            visible_no_data += len(
+                [
+                    no_data_index
+                    for no_data_index in range(await page.get_by_text("No data", exact=True).count())
+                    if await page.get_by_text("No data", exact=True).nth(no_data_index).is_visible()
+                ]
+            )
+            await page.screenshot(path=str(screenshot_dir / f"{dashboard.get('uid', 'dashboard')}-{index:02}.png"))
+            await page.mouse.move(1200, 700)
+            await page.mouse.wheel(0, 900)
+            await page.mouse.move(310, 100)
+            await page.wait_for_timeout(1000)
         body_text = await page.locator("body").inner_text()
         missing_titles = [
             panel_name(panel)
             for panel in panels_in(dashboard)
-            if panel.get("type") != "text" and not await page.get_by_text(panel.get("title", ""), exact=True).count()
+            if panel.get("type") != "text" and panel.get("title", "") not in seen_titles
         ]
-        visible_no_data = len(
-            [
-                index
-                for index in range(await page.get_by_text("No data", exact=True).count())
-                if await page.get_by_text("No data", exact=True).nth(index).is_visible()
-            ]
-        )
         await page.screenshot(path=str(screenshot), full_page=True)
         await browser.close()
 

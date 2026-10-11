@@ -19,6 +19,13 @@ let
     pkgs.dbus
     pkgs.ncurses5 # libtinfo5 for GHC toolchain
     # Chromium headless shell shared library dependencies (@chrome_headless_shell)
+    pkgs.glib.out
+    pkgs.libx11
+    pkgs.libxext
+    pkgs.libxcb
+    pkgs.libgbm
+    pkgs.expat
+    pkgs.udev
     pkgs.alsa-lib
     pkgs.at-spi2-atk
     pkgs.cups.lib
