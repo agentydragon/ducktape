@@ -7,7 +7,7 @@ Session history lives in another database, keyed by the same public Session ID w
 from datetime import datetime
 from uuid import UUID
 
-from sqlalchemy import BigInteger, CheckConstraint, DateTime, Index, LargeBinary, String, UniqueConstraint, func, text
+from sqlalchemy import BigInteger, CheckConstraint, DateTime, String, UniqueConstraint, func
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 from agentplane.proto import command_pb2, event_log_pb2, runner_control_pb2 as control_pb2
@@ -24,32 +24,12 @@ class Session(Base):
     """A public Session in one Sandbox incarnation, which is also the runner's Session ID."""
 
     __tablename__ = "session"
-    # CLEANUP(added 2026-10-11): drop the index and the Open reservation columns below once the
-    #   SESSION_OPEN_COLUMNS_DROP migration lands; nothing reads or writes them.
-    __table_args__ = (
-        Index(
-            "ux_session_open_key",
-            "caller_namespace",
-            "caller_name",
-            "sandbox_namespace",
-            "sandbox_name",
-            "sandbox_uid",
-            "open_key",
-            unique=True,
-            postgresql_where=text("open_key IS NOT NULL"),
-        ),
-    )
 
     id: Mapped[UUID] = mapped_column(primary_key=True)
     sandbox_namespace: Mapped[str] = mapped_column(String)
     sandbox_name: Mapped[str] = mapped_column(String)
     # Absent for imported Sessions whose original Sandbox UID was not retained in app history.
     sandbox_uid: Mapped[UUID | None]
-    caller_namespace: Mapped[str | None] = mapped_column(String)
-    caller_name: Mapped[str | None] = mapped_column(String)
-    open_key: Mapped[str | None] = mapped_column(String)
-    open_request: Mapped[bytes | None] = mapped_column(LargeBinary)
-    launch_spec: Mapped[bytes | None] = mapped_column(LargeBinary)
 
 
 class CommandSubmission(Base):

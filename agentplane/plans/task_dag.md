@@ -814,16 +814,9 @@ flowchart TD
     SEAL_FINALIZER[Unscheduled: seal as a finalizer on every delete]
     COMMAND_RECORDS_RETIRE[Unscheduled: drop command submission records]
     RESUME_BY_SESSION_ID[Unscheduled: resume a Session by its ID alone]
-    SESSION_OPEN_COLUMNS_DROP[Candidate: drop the gateway's Open reservation columns]
     AGENTPLANE_SANDBOX_RESOURCE -. to seal a suspended Sandbox on delete .-> SEAL_FINALIZER
     POD_INCARNATION -. if chosen, rewrites .-> SESSION_STATE_VOLUME_DESIGN[State volume design]
 ```
-
-### `SESSION_OPEN_COLUMNS_DROP` — drop the gateway's Open reservation columns
-
-**Candidate.** No code reads or writes the Runner Gateway `session` columns `open_key`,
-`open_request`, `launch_spec`, `caller_namespace` and `caller_name`, nor the `ux_session_open_key`
-index. A migration drops them. Data drop: its own PR, which the operator merges.
 
 ### `GATEWAY_CLIENT_SPLIT` — Session messages and client move to the gateway
 

@@ -9,6 +9,7 @@ exports_files([
     "0006_connection_lease.py",
     "0007_redelivery.py",
     "0008_dial_out_only.py",
+    "0009_session_open_columns.py",
 ])
 
 py_library(
@@ -77,6 +78,15 @@ py_library(
 py_library(
     name = "0008_dial_out_only",
     srcs = ["0008_dial_out_only.py"],
+    deps = [
+        "@pypi//alembic",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
+    name = "0009_session_open_columns",
+    srcs = ["0009_session_open_columns.py"],
     deps = [
         "@pypi//alembic",
         "@pypi//sqlalchemy",
