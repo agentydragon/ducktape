@@ -6,6 +6,9 @@ from contextlib import asynccontextmanager
 import grpc
 from grpc_health.v1 import health, health_pb2_grpc
 
+# The generated health stubs' own stub chain, which the mypy aspect resolves for direct deps only.
+# gazelle:include_dep @pypi//protobuf
+
 
 @asynccontextmanager
 async def serving(server: grpc.aio.Server, address: str, *, grace_s: float) -> AsyncIterator[int]:
