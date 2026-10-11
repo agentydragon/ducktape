@@ -14,8 +14,9 @@ import pytest_bazel
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import ec
 from http_ece import decrypt
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from haku.console.conftest import TEST_WEB_PUSH, console_sessions, operator_identity_store
+from haku.console.conftest import TEST_WEB_PUSH, operator_identity_store
 from haku.console.notifications.push import Notifier, PostgresPushSubscriptionStore, PushIdentity
 from haku.console.tool_calls import AgentToolCallCaller, ToolCallRecord, ToolCallStatus
 
@@ -62,13 +63,13 @@ class _Subscriber:
 
 
 @pytest.fixture
-async def subscriptions(migrated_db_url: str) -> PostgresPushSubscriptionStore:
-    return PostgresPushSubscriptionStore(console_sessions(migrated_db_url))
+async def subscriptions(migrated_sessions: async_sessionmaker[AsyncSession]) -> PostgresPushSubscriptionStore:
+    return PostgresPushSubscriptionStore(migrated_sessions)
 
 
 @pytest.fixture
-async def operator_id(migrated_db_url: str) -> UUID:
-    return await operator_identity_store(migrated_db_url).resolve_configured_external_user_key("push-operator")
+async def operator_id(migrated_sessions: async_sessionmaker[AsyncSession]) -> UUID:
+    return await operator_identity_store(migrated_sessions).resolve_configured_external_user_key("push-operator")
 
 
 def _notifier(subscriptions: PostgresPushSubscriptionStore, handler: httpx.MockTransport) -> Notifier:
@@ -214,9 +215,9 @@ async def test_every_device_the_operator_enrolled_is_notified_and_retracted(
 
 
 async def test_one_operators_push_never_reaches_anothers_device(
-    subscriptions: PostgresPushSubscriptionStore, operator_id: UUID, migrated_db_url: str
+    subscriptions: PostgresPushSubscriptionStore, operator_id: UUID, migrated_sessions: async_sessionmaker[AsyncSession]
 ) -> None:
-    other = await operator_identity_store(migrated_db_url).resolve_configured_external_user_key("other-operator")
+    other = await operator_identity_store(migrated_sessions).resolve_configured_external_user_key("other-operator")
     for owner, endpoint in [(operator_id, "https://push.test/mine"), (other, "https://push.test/theirs")]:
         subscriber = _Subscriber()
         await subscriptions.save(
@@ -288,9 +289,9 @@ async def test_resubscribing_the_same_endpoint_replaces_rather_than_duplicates(
 
 
 async def test_delete_is_scoped_to_the_owning_operator(
-    subscriptions: PostgresPushSubscriptionStore, operator_id: UUID, migrated_db_url: str
+    subscriptions: PostgresPushSubscriptionStore, operator_id: UUID, migrated_sessions: async_sessionmaker[AsyncSession]
 ) -> None:
-    other = await operator_identity_store(migrated_db_url).resolve_configured_external_user_key("other-operator")
+    other = await operator_identity_store(migrated_sessions).resolve_configured_external_user_key("other-operator")
     await subscriptions.save(
         operator_id=operator_id, endpoint="https://push.test/a", p256dh="k", auth="a", user_agent=None
     )

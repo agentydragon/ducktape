@@ -32,7 +32,6 @@ import yaml
 from fastapi.testclient import TestClient
 from pydantic import SecretStr
 from sqlalchemy import select
-from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker, create_async_engine
 
 from haku.console.app import create_app
@@ -176,17 +175,10 @@ def console_settings(migrated_db_url: str, **overrides: Any) -> Settings:
     )
 
 
-def console_sessions(db_url: str) -> async_sessionmaker[AsyncSession]:
-    """The shared async sessionmaker tests inject into stores, mirroring create_app's one-engine wiring
-    (production builds a single async engine/sessionmaker and passes it to every store)."""
-    async_url = make_url(db_url).set(drivername="postgresql+asyncpg").render_as_string(hide_password=False)
-    return async_sessionmaker(create_async_engine(async_url, pool_pre_ping=True), expire_on_commit=False)
-
-
-def operator_identity_store(db_url: str) -> PostgresOperatorIdentityStore:
+def operator_identity_store(sessions: async_sessionmaker[AsyncSession]) -> PostgresOperatorIdentityStore:
     """The `PostgresOperatorIdentityStore` tests need, trusting the app-owned test OIDC issuer."""
     return PostgresOperatorIdentityStore(
-        console_sessions(db_url),
+        sessions,
         OperatorIdentityTrust(
             trust_domain=TEST_OPERATOR_IDENTITY.trust_domain, trusted_issuers=frozenset({TEST_OPERATOR_OIDC.issuer})
         ),
