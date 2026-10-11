@@ -22,7 +22,6 @@ from agentplane.history_service.evidence import EvidenceReader
 from agentplane.history_service.fold_runner import FoldRunner
 from agentplane.history_service.grpc_api import Resources, add_service
 from agentplane.history_service.ingress import Resources as IngressResources, Timing, add_ingress
-from agentplane.history_service.storage.history_changes import HistoryChanges, notify_history
 from agentplane.history_service.storage.store import Store
 from agentplane.history_service.summaries import SummaryReader
 from agentplane.history_service.summary_changes import SummaryChanges, notify_summaries

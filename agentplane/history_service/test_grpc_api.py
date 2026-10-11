@@ -16,6 +16,7 @@ from agentplane.history_service.grpc_api import Resources, add_service
 from agentplane.history_service.storage.store import Store
 from agentplane.history_service.summaries import SummaryReader
 from agentplane.history_service.summary_changes import SummaryChanges, notify_summaries
+from agentplane.history_service.testing.sessions import record_follower_session
 from agentplane.history_service.thread_reads import ThreadReader
 from agentplane.proto import event_log_pb2, event_pb2
 from agentplane.subjects import ServiceAccountRef
@@ -90,14 +91,14 @@ def bearer(token: str) -> tuple[tuple[str, str], ...]:
 
 
 async def test_reader_reads_history_of_a_deleted_sandbox(
-    stub: protocol_pb2_grpc.HistoryServiceAsyncStub, history: Store
+    stub: protocol_pb2_grpc.HistoryServiceAsyncStub, engine: AsyncEngine, history: Store
 ) -> None:
     session_id = uuid4()
-    await history.record_session(
+    await record_follower_session(
+        engine,
         session_id,
         sandbox_namespace=SANDBOX_NAMESPACE,
         sandbox_name="test-deleted-sandbox",
-        sandbox_uid=None,
         runner_session_id="test-legacy-runner",
     )
     await history.append(session_id, [EVENT])

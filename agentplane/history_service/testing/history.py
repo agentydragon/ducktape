@@ -33,6 +33,7 @@ from agentplane.history_service.storage.database_migrate import RUNNER
 from agentplane.history_service.storage.db import SessionHistory
 from agentplane.history_service.storage.store import Store
 from agentplane.history_service.summary_changes import notify_summaries
+from agentplane.history_service.testing.sessions import record_follower_session
 from agentplane.proto import event_log_pb2, runner_pb2
 from util.testing.postgres import PostgresDatabaseTemplate, migrated_database_template
 
@@ -71,11 +72,11 @@ class History:
         async with self.sessions() as session:
             if await session.get(SessionHistory, session_id) is not None:
                 return
-        await self.store.record_session(
+        await record_follower_session(
+            self.engine,
             session_id,
             sandbox_namespace=SANDBOX_NAMESPACE,
             sandbox_name=sandbox,
-            sandbox_uid=None,
             runner_session_id=str(session_id),
         )
 
