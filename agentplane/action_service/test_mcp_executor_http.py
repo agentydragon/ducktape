@@ -651,7 +651,7 @@ async def test_main_oauth_serves_during_backend_outage_and_recovers(
             assert (await client.get("/.well-known/oauth-authorization-server")).json() == metadata.json()
 
     with (
-        patch("agentplane.action_service.main.k8s_config.load_incluster_config"),
+        patch("agentplane.service_process.k8s_config.load_incluster_config"),
         patch.object(uvicorn.Server, "serve", serve),
     ):
         await async_main(settings)
@@ -760,7 +760,7 @@ async def test_production_http_composition_one_execution_no_replay(
             assert fake_server.calls[0]["params"]["arguments"] == {"text": "hi"}
 
     with (
-        patch("agentplane.action_service.main.k8s_config.load_incluster_config"),
+        patch("agentplane.service_process.k8s_config.load_incluster_config"),
         patch.object(uvicorn.Server, "serve", serve),
     ):
         await async_main(settings)
