@@ -1013,7 +1013,6 @@ flowchart TD
         ACTION_PROTOCOLS_CONCRETE[Candidate: concrete external-grant authority]
         CDK8S_RUNNER_ENDPOINT_HELPER[Candidate: one runner-facing endpoint helper]
         GRPC_CHANNEL_OPTIONS_CONSTANT[Candidate: one gRPC channel options constant]
-        CDK8S_CALLER_WIRING[Candidate: one callers shape]
     end
     GATEWAY_CLIENT_SPLIT --> RUNNER_ERRORS_REHOME
     KUBEVIRT_GUEST_CONTROL --> RUNNER_INBOUND_RETIRE
@@ -1133,12 +1132,6 @@ EgressCredential, EgressPolicy and proxy NetworkPolicy; build them once.
 **Candidate.** Both environments set every channel-options field to
 `LARGE_EVENT_GRPC_CHANNEL_OPTIONS`, and `notifications.py` and `history_service.py` read the app's
 copies. Use the constant (or the clients' default) instead of `Environment` and app-config plumbing.
-
-### `CDK8S_CALLER_WIRING` — one callers shape
-
-**Candidate.** `RunnerGateway` takes a `callers` map, `SandboxService` and `HistoryService` take
-single callers and hard-code notifications, and `Notifications` admits the app and egress by literal
-labels. One `callers` shape everywhere, assembled in `chart.py`.
 
 ## Scope and retirement of stale gates
 

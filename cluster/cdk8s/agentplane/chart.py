@@ -62,35 +62,39 @@ def environment_chart(app: App, env: Environment) -> Chart:
     llm_ingress.LlmIngress(chart, "llm-ingress", env)
     egress.Egress(chart, "egress", env, runners=runner_sandbox.pods(env.namespace))
     sandbox_pod.add_tool_config(chart, env)
+    app_caller = {
+        ServiceAccountRef(namespace=env.namespace, name=app_component.NAME): app_component.service(env.namespace).pods
+    }
+    notifications_caller = {
+        ServiceAccountRef(namespace=env.namespace, name=notifications.NAME): notifications.service(env.namespace).pods
+    }
+    # The ingester places retention holds and follows every Session (WatchSessions, FollowSession).
+    history_caller = {
+        ServiceAccountRef(namespace=env.namespace, name=history_service.NAME): history_service.service(
+            env.namespace
+        ).pods
+    }
     sandbox_service.SandboxService(
-        chart,
-        "sandbox-service",
-        env,
-        manager=ServiceAccountRef(namespace=env.namespace, name=app_component.NAME),
-        caller=app_component.service(env.namespace),
+        chart, "sandbox-service", env, callers=app_caller | notifications_caller | history_caller
     )
     runner_gateway.RunnerGateway(
         chart,
         "runner-gateway",
         env,
-        callers={
-            ServiceAccountRef(namespace=env.namespace, name=app_component.NAME): app_component.service(env.namespace),
-            ServiceAccountRef(namespace=env.namespace, name=notifications.NAME): notifications.service(env.namespace),
-            # Follows every Session for its ingester (WatchSessions, FollowSession).
-            ServiceAccountRef(namespace=env.namespace, name=history_service.NAME): history_service.service(
+        callers=app_caller | notifications_caller | history_caller,
+        sealers={
+            ServiceAccountRef(namespace=env.namespace, name=sandbox_service.NAME): sandbox_service.service(
                 env.namespace
-            ),
+            ).pods
         },
-        sealer=ServiceAccountRef(namespace=env.namespace, name=sandbox_service.NAME),
-        sealer_pods=sandbox_service.service(env.namespace).pods,
         runners=runner_sandbox.pods(env.namespace),
     )
     history_service.HistoryService(
         chart,
         "history-service",
         env,
-        reader=ServiceAccountRef(namespace=env.namespace, name=app_component.NAME),
-        caller=app_component.service(env.namespace),
+        # The app reads Threads; the Notification Service reads command receipts.
+        callers=app_caller | notifications_caller,
         sandboxes=sandbox_service.service(env.namespace),
         sandboxes_audience=sandbox_service.TOKEN_AUDIENCE,
         gateway=runner_gateway.service(env.namespace),
@@ -113,6 +117,7 @@ def environment_chart(app: App, env: Environment) -> Chart:
         gateway_control_target=runner_gateway.control_target(env.namespace),
         history=history_service.service(env.namespace),
         history_audience=history_service.TOKEN_AUDIENCE,
+        callers=[egress.proxy(env.namespace).pods, app_component.service(env.namespace).pods],
     )
     add_fleet_rules(
         chart,
