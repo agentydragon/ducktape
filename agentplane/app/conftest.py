@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import re
 import secrets
 from collections.abc import AsyncIterator, Generator, Iterator
 from datetime import UTC, datetime, timedelta
@@ -72,7 +71,12 @@ from agentplane.sandbox_service.testing.fake_inventory import (
 )
 from agentplane.sandbox_service.testing.fake_rbac import FakeRbac
 from agentplane.thread_fold.projection_lease import ProjectionLease
-from util.testing.postgres import create_database_sync, force_drop_database_sync
+from util.testing.postgres import (
+    PostgresDatabaseTemplate,
+    create_database_sync,
+    database_name_for_test,
+    force_drop_database_sync,
+)
 from util.testing.postgres_fixtures import postgres_container
 
 
@@ -96,17 +100,19 @@ def pytest_runtest_makereport(
 _CALL_REPORT = pytest.StashKey[pytest.TestReport]()
 
 
-def migrated_database(postgres_container: PostgresContainer, name: str) -> Iterator[str]:
-    """A pristine, migrated database named `name` on the shared container, as an asyncpg URL.
-
-    Not a fixture: a module whose cases only read can override `db_url` at module scope and pay
-    the creation and migration once, which is most of what a database costs here.
-    """
-    admin_url = (
+@pytest.fixture(scope="session")
+def postgres_admin_url(postgres_container: PostgresContainer) -> str:
+    """The sync admin URL for this test target's shared PostgreSQL container."""
+    return (
         f"postgresql+psycopg://postgres:postgres@{postgres_container.get_container_host_ip()}"
         f":{postgres_container.get_exposed_port(5432)}/postgres"
     )
-    admin_engine = create_engine(admin_url, isolation_level="AUTOCOMMIT")
+
+
+@pytest.fixture(scope="session")
+def app_database_template(postgres_admin_url: str) -> Iterator[PostgresDatabaseTemplate]:
+    """The app schema migrated once; each default `db_url` is a fresh clone of this template."""
+    admin_engine = create_engine(postgres_admin_url, isolation_level="AUTOCOMMIT")
     try:
         with admin_engine.connect() as connection:
             connection.execute(
@@ -117,17 +123,16 @@ def migrated_database(postgres_container: PostgresContainer, name: str) -> Itera
             )
     finally:
         admin_engine.dispose()
-    db_name = re.sub(r"[^a-z0-9_]", "_", name.lower())[:45].rstrip("_")
-    url = create_database_sync(admin_url, db_name)
-    async_url = make_url(url).set(drivername="postgresql+asyncpg").render_as_string(hide_password=False)
-    RUNNER.apply(async_url)
-    yield async_url
-    force_drop_database_sync(admin_url, db_name)
+
+    with PostgresDatabaseTemplate(postgres_admin_url, "agentplane_app_test_template") as template:
+        RUNNER.apply(template.url)
+        yield template
 
 
 @pytest.fixture
-def db_url(postgres_container: PostgresContainer, request: pytest.FixtureRequest) -> Iterator[str]:
-    yield from migrated_database(postgres_container, request.node.name)
+def db_url(app_database_template: PostgresDatabaseTemplate, request: pytest.FixtureRequest) -> Iterator[str]:
+    with app_database_template.clone(database_name_for_test(request.node.nodeid)) as url:
+        yield make_url(url).set(drivername="postgresql+asyncpg").render_as_string(hide_password=False)
 
 
 @pytest.fixture
@@ -135,7 +140,7 @@ def service_history_db_url(db_url: str) -> Iterator[str]:
     """A separate disposable database; its schema belongs to the service fixture."""
     app_url = make_url(db_url)
     admin = app_url.set(database="postgres", drivername="postgresql+psycopg").render_as_string(hide_password=False)
-    name = f"{app_url.database}_service"
+    name = database_name_for_test(f"{app_url.database}_service")
     created = create_database_sync(admin, name)
     try:
         yield make_url(created).set(drivername="postgresql+asyncpg").render_as_string(hide_password=False)
