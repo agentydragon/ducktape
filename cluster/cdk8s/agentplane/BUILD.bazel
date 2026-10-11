@@ -407,6 +407,7 @@ py_library(
     visibility = ["//cluster/cdk8s:__pkg__"],
     deps = [
         ":egress",
+        ":grpc_channel_config",
         "//agentplane:grpc_options",
         "//agentplane/app:action_federation_settings",
         "//agentplane/app:model_catalog",
@@ -538,7 +539,6 @@ py_library(
         ":egress_staging_credentials",
         ":environment",
         ":generation",
-        ":grpc_channel_config",
         ":llm_ingress",
         ":namespaces",
         ":notifications",
@@ -586,7 +586,6 @@ py_library(
         ":egress_testing_credentials",
         ":environment",
         ":generation",
-        ":grpc_channel_config",
         ":llm_ingress",
         ":namespaces",
         "//agentplane:crd_group",
@@ -908,6 +907,7 @@ py_library(
     deps = [
         ":database",
         ":environment",
+        ":grpc_channel_config",
         ":migrate_container",
         ":pod_disruption_budget",
         "//agentplane/notification_service:settings",
