@@ -1,6 +1,6 @@
 """Teardown's seal, run by the gateway replica holding the Sandbox's runner connection (or, for a runner
 reached through its inbound API, any gateway replica): fence and seal every Session, and name each
-one's seal as retention holders name the Session."""
+one's seal by its public Session ID."""
 
 import asyncio
 import logging
@@ -36,8 +36,8 @@ class Sealing:
     runner_grpc_channel_options: dict[str, int | str]
 
     async def seal(self, sandbox: Sandbox) -> runner_pb2.SealResponse:
-        """The runner's seal, each Session named as holders name it: the public Session ID, or the
-        runner's own ID for a Session opened with a caller-chosen one."""
+        """The runner's seal, each Session named by its public Session ID, or the runner's own ID for a
+        Session opened with a caller-chosen one."""
         sandbox_uid = UUID(sandbox.uid)
         if ControlOperation.LIFECYCLE in await self.connections.read_operations(sandbox_uid):
             # The caller resolves the control Service again and retries until it reaches the holder.

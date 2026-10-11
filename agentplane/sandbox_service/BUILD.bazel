@@ -39,7 +39,6 @@ py_library(
         ":binding_storage",
         ":kubernetes_views",
         ":models",
-        ":retention_holds",
         ":runner_endpoints",
         ":session_config",
         "//agentplane:subjects",
@@ -408,7 +407,6 @@ py_library(
         ":egress_views",
         ":models",
         ":provisioning",
-        ":retention_holds",
         "//agentplane:subjects",
         "//agentplane/proto:sandbox_service_pb2",
         "//agentplane/proto:sandbox_service_pb2_grpc",
@@ -565,47 +563,6 @@ py_library(
         "@pypi//pydantic",
         "@pypi//pydantic_settings",
         "@pypi//pyyaml",
-    ],
-)
-
-py_library(
-    name = "retention_holds",
-    srcs = ["retention_holds.py"],
-    deps = [
-        "//agentplane/proto:sandbox_service_pb2",
-        "@pypi//protobuf",
-        "@pypi//pydantic",
-    ],
-)
-
-py_test(
-    name = "test_retention_holds",
-    srcs = ["test_retention_holds.py"],
-    deps = [
-        ":action_policy",
-        ":client",
-        ":conftest",
-        ":egress",
-        ":grpc_api",
-        ":inventory",
-        ":kubernetes_bindings",
-        ":models",
-        ":provisioning",
-        "//:conftest",
-        "//agentplane:subjects",
-        "//agentplane/proto:sandbox_service_pb2",
-        "//agentplane/sandbox_service/testing:fake_inventory",
-        "//agentplane/sandbox_service/testing:fake_rbac",
-        "//agentplane/sandbox_service/testing:grpc_service",
-        "//agentplane/sandbox_service/testing:kubernetes",
-        "//agentplane/testing:fake_apiserver",
-        "//util:agent_sandbox",
-        "//util:kubernetes",
-        "@pypi//grpcio",
-        "@pypi//kubernetes_asyncio",
-        "@pypi//protobuf",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 

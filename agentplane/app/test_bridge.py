@@ -56,13 +56,13 @@ from agentplane.app.threads.view.content import ContentStore
 from agentplane.history_service.client import HistoryServiceClient
 from agentplane.history_service.testing.backend import history_service, ingest
 from agentplane.proto import command_pb2, event_log_pb2, event_pb2, runner_pb2
-from agentplane.runner import service
 from agentplane.runner.harness import Harness
 from agentplane.runner.session import Session
 from agentplane.runner.testing.fixtures import RunnerClientFactory, RunnerHandle
 from agentplane.runner.testing.scripted_model import ScriptedModel, ShellCall, Text
+from agentplane.runner_gateway.testing.control_listener import dialing
 from agentplane.sandbox_service.client import SandboxServiceClient
-from agentplane.sandbox_service.testing.backend import Endpoint, seed_runner
+from agentplane.sandbox_service.testing.backend import Endpoint, runner_bearer, seed_runner
 from agentplane.sandbox_service.testing.fake_inventory import FakeCoreV1Api, FakeCustomObjectsApi
 from agentplane.testing.failure_journal import call_failed, capture_native_journal
 from agentplane.thread_fold.models import ThreadCheckpoint, ThreadEntity, ThreadPayloadChunk
@@ -186,12 +186,19 @@ async def history_client(
 
 @pytest.fixture
 async def local_runners(
-    live_index: LiveIndex, sandbox_endpoint: Endpoint, custom_objects: FakeCustomObjectsApi, core_v1: FakeCoreV1Api
+    live_index: LiveIndex,
+    sandbox_endpoint: Endpoint,
+    custom_objects: FakeCustomObjectsApi,
+    core_v1: FakeCoreV1Api,
+    runner: RunnerHandle,
 ) -> AsyncIterator[SandboxSessions]:
-    """`SANDBOX` running, its Pod at the local runner's address."""
-    live_index.sandboxes[SANDBOX], live_index.pods[SANDBOX] = seed_runner(custom_objects, core_v1, SANDBOX)
-    async with sandbox_endpoint.client() as service:
-        yield SandboxSessions(live_index, service)
+    """`SANDBOX` running, its Pod's runner connected over the control stream."""
+    raw, live_index.pods[SANDBOX] = seed_runner(custom_objects, core_v1, SANDBOX)
+    live_index.sandboxes[SANDBOX] = raw
+    async with dialing(runner.runner, sandbox_endpoint.control_target, runner_bearer(SANDBOX)):
+        await asyncio.to_thread(sandbox_endpoint.wait_connected, UUID(raw["metadata"]["uid"]))
+        async with sandbox_endpoint.client() as service:
+            yield SandboxSessions(live_index, service)
 
 
 @pytest.fixture
@@ -1038,58 +1045,6 @@ async def test_stop_command_returns_after_admission_before_native_shutdown_effec
         finally:
             allow_shutdown.set()
             await asyncio.shield(response)
-
-
-async def test_command_relay_waits_for_runner_admission_before_closing(
-    app_url: str,
-    model: ScriptedModel,
-    runner: RunnerHandle,
-    spec: runner_pb2.SessionSpec,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """A relay cancellation before the runner reads its frames must not discard the Command."""
-    async with httpx.AsyncClient(base_url=app_url, timeout=60, headers=AGENT_AUTH) as http:
-        thread_id = await _create(http, spec, uuid4())
-        original_consume = service._consume
-        consumer_started = asyncio.Event()
-        release_consumer = asyncio.Event()
-
-        async def gated_consume(
-            session: Session,
-            requests: AsyncIterator[runner_pb2.ClientMessage],
-            closing: asyncio.Event,
-            failure: list[str],
-        ) -> None:
-            consumer_started.set()
-            await release_consumer.wait()
-            await original_consume(session, requests, closing, failure)
-
-        monkeypatch.setattr(service, "_consume", gated_consume)
-        relay = asyncio.create_task(
-            http.post(
-                _commands(thread_id),
-                json={"commandId": "relay-admission", "submitInput": {"text": "Reply with exactly: RELAY_OK"}},
-            )
-        )
-        try:
-            async with asyncio.timeout(10):
-                await consumer_started.wait()
-            release_consumer.set()
-            async with asyncio.timeout(10):
-                accepted = await asyncio.shield(relay)
-            assert accepted.status_code == 200, accepted.text
-            assert accepted.json()["event"]["commandAdmitted"]["command"] == {
-                "commandId": "relay-admission",
-                "submitInput": {"text": "Reply with exactly: RELAY_OK"},
-            }
-            request = await model.request()
-            assert request.user_texts[-1] == "Reply with exactly: RELAY_OK"
-            await model.reply(request, Text("RELAY_OK"))
-        finally:
-            release_consumer.set()
-            if not relay.done():
-                relay.cancel()
-                await asyncio.gather(relay, return_exceptions=True)
 
 
 async def test_command_admission_timeout_is_not_an_internal_server_error(

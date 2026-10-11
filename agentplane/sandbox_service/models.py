@@ -27,8 +27,3 @@ class SandboxTearingDownError(InventoryError):
 
     def __init__(self, name: str) -> None:
         super().__init__(f"sandbox {name} is being deleted")
-
-
-class HoldNotFoundError(InventoryError):
-    def __init__(self, session_id: str, holder: str) -> None:
-        super().__init__(f"no retention hold {session_id=} {holder=}")
