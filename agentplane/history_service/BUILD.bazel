@@ -254,7 +254,6 @@ py_test(
         ":fold_shadow",
         ":summaries",
         "//:conftest",
-        "//agentplane/history_service:protocol_pb2",
         "//agentplane/history_service/storage:conftest",
         "//agentplane/history_service/storage:store",
         "//agentplane/proto:event_log_pb2",

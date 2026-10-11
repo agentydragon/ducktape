@@ -155,10 +155,7 @@ class ProjectedIngester(Ingester):
         self._clients = contextlib.AsyncExitStack()
         self._history_watch_client = self._clients.push_async_exit(ingestion.reader.new_client())
         self._history_watch = HistoryWatch(
-            self._history_watch_client,
-            lambda: self._history_watch_client.watch_session_history(timeout_s=300),
-            self.wake,
-            retry_interval_s=1,
+            self._history_watch_client, self._history_watch_client.watch_session_history, self.wake, retry_interval_s=1
         )
         self._history_watch_task: asyncio.Task[None] | None = None
 

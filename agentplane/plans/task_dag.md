@@ -1045,8 +1045,6 @@ flowchart TD
         GATEWAY_SANDBOX_READS[Candidate: the gateway reads Sandboxes read-only]
         SANDBOX_DEAD_CODE[Candidate: delete KubernetesBindings.run]
         RUNNER_ERRORS_REHOME[Blocked: errors beside the client that raises them]
-        HISTORY_LIST_SUMMARIES_RETIRE[Candidate: delete ListSessionSummaries]
-        HISTORY_GRPC_CONFORM[Candidate: the History Service follows grpc_services.md]
         THREAD_FOLD_SINGLE_OWNER[Blocked: the fold has one owner]
         SETTLE_DELTAS_ALWAYS_ON[Delta settlement always on]
         APP_SERVICE_NAMES[Blocked: app names the right services]
@@ -1145,19 +1143,6 @@ reconcile through `Provisioning.reconcile_once`.
 refused" vocabulary: the gateway, the Sandbox Service client and the app's Thread-identity conflicts
 raise it. Move it beside the gateway client, per grpc_services.md, and give the app's `bridge.py`
 its own error type.
-
-### `HISTORY_LIST_SUMMARIES_RETIRE` — delete `ListSessionSummaries`
-
-**Candidate.** No production caller since #9827, and its Sandbox filter never matches ingress-only
-Sessions. Delete the RPC and its messages, `SessionSummaryPageToken`, the client method,
-`SummaryReader.list_page` with `_token`/`_after`, their tests and the README paragraph.
-
-### `HISTORY_GRPC_CONFORM` — the History Service follows grpc_services.md
-
-**Candidate.** The servicer's error mapper is `reader`, not `errors(context)`, and both `Watch*`
-RPCs stream outside it, so their faults escape unmapped. The client's
-`watch_session_summaries(timeout_s=)` puts a deadline on a long-lived stream; delete it and the
-app's `history_service_watch_timeout_s`.
 
 ### `THREAD_FOLD_SINGLE_OWNER` — the fold has one owner
 

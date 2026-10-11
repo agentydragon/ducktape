@@ -1,4 +1,4 @@
-"""Authenticated gRPC reads of retained Session history; the Sandbox Service still writes it."""
+"""Authenticated gRPC reads of retained Session history."""
 
 import asyncio
 import logging
@@ -52,42 +52,45 @@ class Resources:
         if not self.reader_accounts:
             raise ValueError("at least one history reader is required")
 
+    async def authenticate(self, context: grpc.aio.ServicerContext) -> None:
+        await authenticate(self.principals, self.reader_accounts, context)
+
+
+@asynccontextmanager
+async def errors(context: grpc.aio.ServicerContext) -> AsyncIterator[None]:
+    """Sanitize failures; no bearer or database detail reaches clients."""
+    try:
+        yield
+    except WorkloadPrincipalRejectedError:
+        await context.abort(grpc.StatusCode.UNAUTHENTICATED, "invalid workload bearer")
+    except HistoryNotFoundError:
+        await context.abort(grpc.StatusCode.NOT_FOUND, "session history not found")
+    except EvidenceNotFoundError:
+        await context.abort(grpc.StatusCode.NOT_FOUND, "entity evidence not found")
+    except ThreadScopeResetError:
+        await context.abort(grpc.StatusCode.FAILED_PRECONDITION, "thread projection epoch was reset")
+    except ValidationError:
+        # Stored rows outside the published view contract are a server fault, not a bad request.
+        logger.exception("stored thread entity failed validation")
+        await context.abort(grpc.StatusCode.INTERNAL, "stored thread entity is invalid")
+    except ValueError:
+        await context.abort(grpc.StatusCode.INVALID_ARGUMENT, "invalid session history request")
+    except TimeoutError:
+        await context.abort(grpc.StatusCode.DEADLINE_EXCEEDED, "history read deadline expired")
+    except ConnectionError, SQLAlchemyError, k8s_client.ApiException:
+        await context.abort(grpc.StatusCode.UNAVAILABLE, "history or authentication unavailable")
+
 
 class HistoryService(protocol_pb2_grpc.HistoryServiceServicer):
     def __init__(self, resources: Resources) -> None:
         self.resources = resources
 
-    @asynccontextmanager
-    async def reader(self, context: grpc.aio.ServicerContext) -> AsyncIterator[None]:
-        """Authenticate a reader and sanitize failures; no bearer or database detail reaches clients."""
-        try:
-            async with asyncio.timeout(self.resources.request_timeout_s):
-                await authenticate(self.resources.principals, self.resources.reader_accounts, context)
-                yield
-        except WorkloadPrincipalRejectedError:
-            await context.abort(grpc.StatusCode.UNAUTHENTICATED, "invalid workload bearer")
-        except HistoryNotFoundError:
-            await context.abort(grpc.StatusCode.NOT_FOUND, "session history not found")
-        except EvidenceNotFoundError:
-            await context.abort(grpc.StatusCode.NOT_FOUND, "entity evidence not found")
-        except ThreadScopeResetError:
-            await context.abort(grpc.StatusCode.FAILED_PRECONDITION, "thread projection epoch was reset")
-        except ValidationError:
-            # Stored rows outside the published view contract are a server fault, not a bad request.
-            logger.exception("stored thread entity failed validation")
-            await context.abort(grpc.StatusCode.INTERNAL, "stored thread entity is invalid")
-        except ValueError:
-            await context.abort(grpc.StatusCode.INVALID_ARGUMENT, "invalid session history request")
-        except TimeoutError:
-            await context.abort(grpc.StatusCode.DEADLINE_EXCEEDED, "history read deadline expired")
-        except ConnectionError, SQLAlchemyError, k8s_client.ApiException:
-            await context.abort(grpc.StatusCode.UNAVAILABLE, "history or authentication unavailable")
-
     @override
     async def ReadSessionEvents(
         self, request: history_pb2.ReadSessionEventsRequest, context: grpc.aio.ServicerContext
     ) -> history_pb2.ReadSessionEventsResponse:
-        async with self.reader(context):
+        async with errors(context), asyncio.timeout(self.resources.request_timeout_s):
+            await self.resources.authenticate(context)
             return await self.resources.history.read_page(
                 UUID(request.session_id), after_cursor=request.after_cursor, limit=request.limit
             )
@@ -96,7 +99,8 @@ class HistoryService(protocol_pb2_grpc.HistoryServiceServicer):
     async def ReadSessionObservations(
         self, request: history_pb2.ReadSessionObservationsRequest, context: grpc.aio.ServicerContext
     ) -> history_pb2.ReadSessionObservationsResponse:
-        async with self.reader(context):
+        async with errors(context), asyncio.timeout(self.resources.request_timeout_s):
+            await self.resources.authenticate(context)
             page = await self.resources.history.read_observations(
                 UUID(request.session_id),
                 before_cursor=request.before_cursor if request.HasField("before_cursor") else None,
@@ -112,24 +116,19 @@ class HistoryService(protocol_pb2_grpc.HistoryServiceServicer):
             )
 
     @override
-    async def ListSessionSummaries(
-        self, request: history_pb2.ListSessionSummariesRequest, context: grpc.aio.ServicerContext
-    ) -> history_pb2.ListSessionSummariesResponse:
-        async with self.reader(context):
-            return await self.resources.summaries.list_page(request)
-
-    @override
     async def GetSessionSummary(
         self, request: history_pb2.GetSessionSummaryRequest, context: grpc.aio.ServicerContext
     ) -> history_pb2.SessionSummary:
-        async with self.reader(context):
+        async with errors(context), asyncio.timeout(self.resources.request_timeout_s):
+            await self.resources.authenticate(context)
             return await self.resources.summaries.get(UUID(request.session_id))
 
     @override
     async def BatchGetSessionSummaries(
         self, request: history_pb2.BatchGetSessionSummariesRequest, context: grpc.aio.ServicerContext
     ) -> history_pb2.BatchGetSessionSummariesResponse:
-        async with self.reader(context):
+        async with errors(context), asyncio.timeout(self.resources.request_timeout_s):
+            await self.resources.authenticate(context)
             summaries = await self.resources.summaries.get_many(
                 {UUID(session_id) for session_id in request.session_ids}
             )
@@ -139,71 +138,65 @@ class HistoryService(protocol_pb2_grpc.HistoryServiceServicer):
     async def ReadThreadEntities(
         self, request: history_pb2.ReadThreadEntitiesRequest, context: grpc.aio.ServicerContext
     ) -> history_pb2.ReadThreadEntitiesResponse:
-        async with self.reader(context):
+        async with errors(context), asyncio.timeout(self.resources.request_timeout_s):
+            await self.resources.authenticate(context)
             return await self.resources.threads.entities(request)
 
     @override
     async def ReadEntityEvidence(
         self, request: history_pb2.ReadEntityEvidenceRequest, context: grpc.aio.ServicerContext
     ) -> history_pb2.ReadEntityEvidenceResponse:
-        async with self.reader(context):
+        async with errors(context), asyncio.timeout(self.resources.request_timeout_s):
+            await self.resources.authenticate(context)
             return await self.resources.evidence.evidence(request)
 
     @override
     async def ReadNativeFrames(
         self, request: history_pb2.ReadNativeFramesRequest, context: grpc.aio.ServicerContext
     ) -> history_pb2.ReadNativeFramesResponse:
-        async with self.reader(context):
+        async with errors(context), asyncio.timeout(self.resources.request_timeout_s):
+            await self.resources.authenticate(context)
             return await self.resources.evidence.native_frames(request)
 
     @override
     async def WatchSessionHistory(  # type: ignore[override]
         self, request: history_pb2.WatchSessionHistoryRequest, context: grpc.aio.ServicerContext
     ) -> None:
-        async with self.reader(context):
-            pass
-        loop = asyncio.get_running_loop()
-        deadline = loop.time() + self.resources.watch_lease_s
-        with self.resources.history_changes.subscribe() as changed:
-            while True:
-                changed.clear()
-                async with asyncio.timeout(self.resources.request_timeout_s):
-                    await context.write(history_pb2.WatchSessionHistoryResponse(changed=Empty()))
-                lease = asyncio.timeout_at(deadline)
-                try:
-                    async with lease:
-                        await changed.wait()
-                except TimeoutError:
-                    if not lease.expired():
-                        raise
-                    break
-        async with asyncio.timeout(self.resources.request_timeout_s):
-            await context.write(history_pb2.WatchSessionHistoryResponse(reconnect_required=Empty()))
+        await self._watch(context, self.resources.history_changes, history_pb2.WatchSessionHistoryResponse)
 
     @override
     async def WatchSessionSummaries(  # type: ignore[override]
         self, request: history_pb2.WatchSessionSummariesRequest, context: grpc.aio.ServicerContext
     ) -> None:
-        async with self.reader(context):
-            pass
-        loop = asyncio.get_running_loop()
-        deadline = loop.time() + self.resources.watch_lease_s
-        # Subscribed before the opening notice, so nothing committed after it goes unannounced.
-        with self.resources.summary_changes.subscribe() as changed:
-            while True:
-                changed.clear()
-                async with asyncio.timeout(self.resources.request_timeout_s):
-                    await context.write(history_pb2.WatchSessionSummariesResponse(changed=Empty()))
-                lease = asyncio.timeout_at(deadline)
-                try:
-                    async with lease:
-                        await changed.wait()
-                except TimeoutError:
-                    if not lease.expired():
-                        raise
-                    break
-        async with asyncio.timeout(self.resources.request_timeout_s):
-            await context.write(history_pb2.WatchSessionSummariesResponse(reconnect_required=Empty()))
+        await self._watch(context, self.resources.summary_changes, history_pb2.WatchSessionSummariesResponse)
+
+    async def _watch(
+        self,
+        context: grpc.aio.ServicerContext,
+        changes: HistoryChanges | SummaryChanges,
+        response: type[history_pb2.WatchSessionHistoryResponse] | type[history_pb2.WatchSessionSummariesResponse],
+    ) -> None:
+        """Write `changed` on open and after each change, then `reconnect_required` once the lease ends."""
+        async with errors(context):
+            async with asyncio.timeout(self.resources.request_timeout_s):
+                await self.resources.authenticate(context)
+            deadline = asyncio.get_running_loop().time() + self.resources.watch_lease_s
+            # Subscribed before the opening notice, so nothing committed after it goes unannounced.
+            with changes.subscribe() as changed:
+                while True:
+                    changed.clear()
+                    async with asyncio.timeout(self.resources.request_timeout_s):
+                        await context.write(response(changed=Empty()))
+                    lease = asyncio.timeout_at(deadline)
+                    try:
+                        async with lease:
+                            await changed.wait()
+                    except TimeoutError:
+                        if not lease.expired():
+                            raise
+                        break
+            async with asyncio.timeout(self.resources.request_timeout_s):
+                await context.write(response(reconnect_required=Empty()))
 
 
 def add_service(resources: Resources, server: grpc.aio.Server) -> None:

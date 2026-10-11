@@ -13,9 +13,7 @@ async def test_fold_commits_and_renewals_wake_thread_readers(service_history_db_
     woken = asyncio.Event()
     async with history_service(service_history_db_url, tmp_path / "history-token", watch_lease_s=3) as history:
         watch = asyncio.create_task(
-            HistoryWatch(
-                history, lambda: history.watch_session_summaries(timeout_s=10), changes.notify, retry_interval_s=0.05
-            ).run()
+            HistoryWatch(history, history.watch_session_summaries, changes.notify, retry_interval_s=0.05).run()
         )
         try:
             with changes.subscribe(woken):
@@ -35,9 +33,7 @@ async def test_raw_history_commits_wake_app_workers(service_history_db_url: str,
     woken = asyncio.Event()
     async with history_service(service_history_db_url, tmp_path / "history-token", watch_lease_s=3) as history:
         watch = asyncio.create_task(
-            HistoryWatch(
-                history, lambda: history.watch_session_history(timeout_s=10), woken.set, retry_interval_s=0.05
-            ).run()
+            HistoryWatch(history, history.watch_session_history, woken.set, retry_interval_s=0.05).run()
         )
         try:
             await asyncio.wait_for(woken.wait(), 10)

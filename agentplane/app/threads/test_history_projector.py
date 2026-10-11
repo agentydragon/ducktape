@@ -221,10 +221,7 @@ async def test_raw_history_watch_wakes_multi_page_projection_without_polling(
     coordinator = ObservedIngester()
     async with event_logs.reader.new_client() as watch_client:
         history_watch = HistoryWatch(
-            watch_client,
-            lambda: watch_client.watch_session_history(timeout_s=300),
-            coordinator.wake,
-            retry_interval_s=1,
+            watch_client, watch_client.watch_session_history, coordinator.wake, retry_interval_s=1
         )
         watch_task = asyncio.create_task(history_watch.run())
         try:

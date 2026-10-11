@@ -91,12 +91,6 @@ class Settings(AppSettingsConfig):
     sandbox_service_token_file: Path = Path("/var/run/secrets/agentplane-sandbox-service/token")
     history_service_token_file: Path = Path("/var/run/secrets/agentplane-history-service/token")
     history_service_request_timeout_s: float = Field(default=20, gt=0, allow_inf_nan=False)
-    history_service_watch_timeout_s: float = Field(
-        default=960,
-        gt=0,
-        allow_inf_nan=False,
-        description="Deadline of one summary watch stream. Keep above the History Service's watch_lease_s.",
-    )
     sandbox_service_request_timeout_s: float = Field(default=20, gt=0, allow_inf_nan=False)
     sandbox_service_lifecycle_timeout_s: float = Field(default=310, gt=0, allow_inf_nan=False)
     sandbox_service_follow_timeout_s: float = Field(default=960, gt=0, allow_inf_nan=False)

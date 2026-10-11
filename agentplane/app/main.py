@@ -176,18 +176,13 @@ async def async_main(settings: Settings) -> None:
         if projector is None:
             history_watch = HistoryWatch(
                 history_watch_client,
-                lambda: history_watch_client.watch_session_summaries(
-                    timeout_s=settings.history_service_watch_timeout_s
-                ),
+                history_watch_client.watch_session_summaries,
                 database_updates.changes[Channel.THREADS].notify,
                 retry_interval_s=1,
             )
         else:
             history_watch = HistoryWatch(
-                history_watch_client,
-                lambda: history_watch_client.watch_session_history(timeout_s=settings.history_service_watch_timeout_s),
-                ingester.wake,
-                retry_interval_s=1,
+                history_watch_client, history_watch_client.watch_session_history, ingester.wake, retry_interval_s=1
             )
         bridge = RunnerBridge(runners=runners, event_logs=event_logs, content=content, ingester=ingester)
 
