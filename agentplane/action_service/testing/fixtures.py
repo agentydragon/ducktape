@@ -7,7 +7,7 @@ without importing this package's conftest.
 from __future__ import annotations
 
 import asyncio
-from collections.abc import AsyncIterator, Callable, Iterator
+from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
 from datetime import timedelta
 
@@ -31,22 +31,16 @@ from agentplane.action_service.mcp_executor import McpActionGroupExecutor
 from agentplane.action_service.models import ExecutionLease, ExecutionRequest, ExecutionResult, ExecutionState, Executor
 from agentplane.action_service.testing.lifecycle import wait_available
 from mcp_infra.testing.remote_server import as_remote_server
-from util.testing.postgres import DatabaseClones, PostgresDatabaseTemplate, migrated_database_template
+from util.testing.postgres_fixtures import migrated_database_fixtures
 
 # SQLAlchemy loads these dialects from URLs; Gazelle cannot infer them.
 # gazelle:include_dep @pypi//asyncpg
 # gazelle:include_dep @pypi//psycopg
 
 
-@pytest.fixture(scope="session")
-def action_database_template(postgres_admin_url: str) -> Iterator[PostgresDatabaseTemplate]:
-    with migrated_database_template(postgres_admin_url, "actions_template", RUNNER) as template:
-        yield template
-
-
-@pytest.fixture
-def db_url(action_database_template: PostgresDatabaseTemplate, database_clones: DatabaseClones) -> str:
-    return database_clones.clone(action_database_template, drivername="postgresql+asyncpg")
+action_database_template, db_url = migrated_database_fixtures(
+    RUNNER, drivername="postgresql+asyncpg", template_name="action_database_template"
+)
 
 
 @pytest.fixture

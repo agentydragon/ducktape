@@ -42,7 +42,7 @@ py_library(
         "//agentplane/action_service:models",
         "//agentplane/action_service/github_policy:visibility",
         "//mcp_infra/testing:remote_server",
-        "//util/testing:postgres",
+        "//util/testing:postgres_fixtures",
         "@pypi//asyncpg",
         "@pypi//fastmcp_slim",
         "@pypi//httpx",

@@ -109,7 +109,6 @@ py_library(
         ":models",
         ":oauth",
         ":store",
-        "//util/testing:postgres",
         "//util/testing:postgres_fixtures",
         "@pypi//httpx",
         "@pypi//pydantic",
