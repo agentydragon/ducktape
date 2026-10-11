@@ -35,7 +35,7 @@ service SandboxService {
   rpc LookupSession(LookupSessionRequest) returns (LookupSessionResponse);
   rpc ResumeSession(SessionRequest) returns (ducktape.agentplane.runner.v1.Attached);
   // Returns the original matching CommandAdmitted entry, not command completion.
-  rpc SubmitCommand(SubmitCommandRequest) returns (agentplane.proto.event_log.EventEntry);
+  rpc SubmitCommand(SubmitCommandRequest) returns (.agentplane.proto.event_log.EventEntry);
   // A command submitted to a public Session ID, as retained: never contacts the runner.
   rpc GetCommand(GetCommandRequest) returns (CommandStatus);
   // The Session's submitted commands in acceptance order, as retained: never contacts the runner.
@@ -185,8 +185,8 @@ message FrozenLaunch {
 
 message SubmitCommandRequest {
   SessionDestination destination = 1;
-  agentplane.proto.command.Command command = 2;
-  agentplane.proto.event_log.Follow follow = 3;
+  .agentplane.proto.command.Command command = 2;
+  .agentplane.proto.event_log.Follow follow = 3;
 }
 
 // Runner admission only: whether the runner journaled the command, never what the harness did.
@@ -203,11 +203,11 @@ enum CommandState {
 
 message CommandStatus {
   // The command as submitted.
-  agentplane.proto.command.Command command = 1;
+  .agentplane.proto.command.Command command = 1;
   CommandState state = 2;
   google.protobuf.Timestamp accepted_at = 3;
   // Set when admitted: the runner's journal entry with the CommandAdmitted, as SubmitCommand returns it.
-  agentplane.proto.event_log.EventEntry admission = 4;
+  .agentplane.proto.event_log.EventEntry admission = 4;
   // Set when rejected: the runner's refusal.
   optional string rejection = 5;
 }
@@ -238,7 +238,7 @@ message FollowSessionRequest {
   SessionDestination destination = 1;
   // Entries after this cursor of the current Sandbox incarnation's runner journal. A cursor beyond
   // the journal's end fails with FAILED_PRECONDITION instead of an Attached snapshot.
-  agentplane.proto.event_log.Follow follow = 2;
+  .agentplane.proto.event_log.Follow follow = 2;
 }
 
 // The runner sealed this Sandbox incarnation of the Session at teardown: its journal is final.
@@ -252,7 +252,7 @@ message FollowSessionResponse {
     // Its last_cursor is the journal end at attach time: entries up to it are replayed, later ones live.
     ducktape.agentplane.runner.v1.Attached attached = 1;
     // Replayed and live entries have the same shape, with consecutive cursors.
-    agentplane.proto.event_log.EventEntry entry = 2;
+    .agentplane.proto.event_log.EventEntry entry = 2;
     // Runner attachment reached native EOF. This is not a fabricated execution Event.
     google.protobuf.Empty ended = 3;
     // Planned renewal: reconnect with fresh authorization from the committed cursor.
