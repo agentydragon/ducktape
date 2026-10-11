@@ -2835,9 +2835,7 @@ data:
     kubernetes_cluster_binding_cleanup: true
     runner_grpc_channel_options:
       grpc.max_receive_message_length: 33554432
-    runner_control_audience: agentplane-runner-control
     port: 8080
-    runner_control_port: 8082
     health_port: 8081
     runner_port: 7000
     runner_control:

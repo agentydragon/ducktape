@@ -148,9 +148,10 @@ class SandboxService(Construct):
                 "kubernetes_binding_cleanup_namespaces": sorted(env.kubernetes_binding_cleanup_namespaces),
                 "kubernetes_cluster_binding_cleanup": env.kubernetes_cluster_binding_cleanup,
                 "runner_grpc_channel_options": dict(env.runner_grpc_channel_options),
-                "runner_control_audience": RUNNER_CONTROL_AUDIENCE,
+                # CLEANUP(added 2026-10-11): set `runner_control_audience` (RUNNER_CONTROL_AUDIENCE) and
+                #   `runner_control_port` (control.pod_port) again once the staging and testing Sandbox
+                #   Service images contain #9905; older images reject the keys. Both equal the defaults.
                 "port": endpoint.port.number,
-                "runner_control_port": control.pod_port,
                 "health_port": _HEALTH.number,
                 "runner_port": RUNNER_PORT,
                 **(
