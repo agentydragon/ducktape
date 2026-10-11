@@ -114,6 +114,7 @@ py_library(
         "//third_party/containers:pgvector_pg18",
         "//util/testing:postgres",
         "//util/testing:postgres_fixtures",
+        "//util/testing:sqlalchemy_engines",
         "@pypi//asyncpg",
         "@pypi//psycopg",
         "@pypi//pytest",
