@@ -81,7 +81,12 @@ pub(crate) fn cross_module_imports_for_plan(
                     sink.submit(minted, CROSS_MODULE_IMPORT_CONTRIBUTOR);
                     (
                         ModuleId(LogicalModuleIndex(provider_index)),
-                        import_decl_for_plan(from_file, &provider.target_file, &resolved),
+                        import_decl_for_plan(
+                            from_file,
+                            &provider.target_file,
+                            &resolved,
+                            sink.chunk_top_level_mark,
+                        ),
                     )
                 })
         })
@@ -152,7 +157,12 @@ pub(crate) fn residual_entry_imports_for_moved_body(
     let resolved =
         disambiguate_residual_entry_import_locals(&imports, sink.ledger, scope, &mut minted);
     sink.submit(minted, RESIDUAL_ENTRY_IMPORT_CONTRIBUTOR);
-    Ok(vec![import_decl_for_plan(from_file, entry_file, &resolved)])
+    Ok(vec![import_decl_for_plan(
+        from_file,
+        entry_file,
+        &resolved,
+        sink.chunk_top_level_mark,
+    )])
 }
 
 pub(crate) fn collect_entry_exports_by_original_local(

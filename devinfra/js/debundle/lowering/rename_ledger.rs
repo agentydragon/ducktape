@@ -7,12 +7,11 @@
 //! [`SealedRenames`], and one post-seal executor pass per scope unit is
 //! the only mutation of that unit's AST. No pass invents a rename after
 //! seal; consumers that bridge pre- and post-rename names consult the
-//! sealed maps (e.g. `RuntimeImportLookup::original_by_renamed`, the
-//! inverse projection — injective by seal's target-collision rules).
+//! sealed maps. The naturalized body currently retains an inverse
+//! projection for source-binding lookups.
 //! There is no pre-seal trial application: capture facts reach seal from
-//! read-only walks of the **un-renamed** body. This makes the
-//! "X-layer renamed it, Y-layer keyed off the wrong-era name" bug class
-//! unrepresentable rather than defended against.
+//! read-only walks of the **un-renamed** body. A later planner must still
+//! use the source binding identity when it reads source-keyed tables.
 //!
 //! ## Scopes, origins, priorities
 //!
@@ -49,7 +48,7 @@
 //!   occupied-name set cannot express this, so the caller supplies the
 //!   `(source, target)` pairs a scope-aware walk of the **un-renamed**
 //!   body withholds ([`ScopeOccupancy::Body::captured`]): the read-only
-//!   `RenameCaptureProbe` over [`RenameLedger::pending_renames_by_name`]
+//!   `RenameCaptureProbe` over [`RenameLedger::pending_renames`]
 //!   for the entry body, the derive clone's candidate walk for module
 //!   bodies. Captured explicit/import-induced intents are hard errors;
 //!   cosmetic heuristic intents are dropped. The post-seal executor
@@ -145,11 +144,13 @@
 //! - **Free-alias function-local application**: free-source
 //!   return-object aliases rewrite references function-locally while
 //!   their intents live at `Module` scope (they join the module-wide
-//!   merged map so runtime-import planning can reverse-resolve them).
+//!   merged map so export growth and import planning can resolve them).
 //!   The module-level occupancy of their targets is deliberately not
-//!   checked; the deriving subtree's bound-name rule — applied at seal
-//!   to their `Function`-scope copies — is the capture guard. This is
-//!   also why `NaturalizedRenames` keeps its `merged` / `explicit`
+//!   checked; a pre-naturalization reference check rejects targets already
+//!   used by another source reference, and the deriving subtree's bound-name
+//!   rule — applied at seal to their `Function`-scope copies — guards local
+//!   capture. This is also why `NaturalizedRenames` keeps its inverse /
+//!   `explicit`
 //!   split: export locals and binding-comment keys may remap only
 //!   through renames that actually rename a top-level declaration.
 //!
@@ -169,26 +170,14 @@
 //!
 //! ## Hygiene boundary
 //!
-//! Intents are keyed by hygiene-aware [`Id`] — post-#2042 the chunk AST
-//! carries real `SyntaxContext`s and bare-string keys are how rename bugs
-//! breed. Contributors that only have a spec string resolve it at the
-//! collection point via `top_level_id(name, chunk_top_level_mark)`. The
-//! seal output is projected back to bare syms at the query boundary
-//! (`*_by_name`) because the application visitors are string-keyed; the
-//! projection asserts that no two hygiene contexts share a sym within
-//! one scope — that assert is the boundary's tripwire. Deleting the
-//! projection (an `Id`-keyed executor) requires emitting import/export
-//! decls under real contexts instead of `Ident::new_no_ctxt` (today one
-//! rename must hit both a no-ctxt emitted import local and the
-//! real-ctxt body references, which only sym-keyed application can do)
-//! and hygiene-resolving the `Function`-scope heuristic sources; see
-//! TODO.md "Rename pipeline".
-//!
-//! `Function`-scope heuristic sources are function-local bindings whose
-//! hygiene context the string-keyed derivation never resolves; they are
-//! keyed by `(sym, SyntaxContext::empty())`. Within one function scope a
-//! sym maps to at most one rename, so the empty-context encoding cannot
-//! collide.
+//! Intents and application visitors are keyed by hygiene-aware [`Id`].
+//! Spec strings resolve at collection via `top_level_id(name,
+//! chunk_top_level_mark)`, generated import/export locals carry that same
+//! context, and `Function`-scope heuristic sources resolve to the actual
+//! parameter or root declaration `Id`. The `*_by_name` projections remain
+//! for public-name and metadata consumers whose contracts use strings;
+//! they are not used to execute AST renames. Source-versus-emitted binding
+//! provenance after naturalization is a separate phase boundary.
 //!
 //! ## Contributor inventory
 //!
@@ -648,21 +637,21 @@ impl RenameLedger {
     }
 
     /// Pre-seal projection of the collected intents for `scope`: per
-    /// source sym, the highest-priority proposed target (same-priority
+    /// source Id, the highest-priority proposed target (same-priority
     /// disagreement resolves arbitrarily here — seal is the validator
     /// and hard-errors on it before any output is consumed). Callers use
     /// this to run the read-only capture probe over the un-renamed body
     /// so seal receives reference-precise capture facts without a trial
     /// application; on a successful seal the projection equals the
-    /// sealed by-name map (debug-asserted at the call sites).
-    pub fn pending_renames_by_name(&self, scope: &RenameScope) -> BTreeMap<String, String> {
-        let mut best: BTreeMap<String, (Atom, RenamePriority)> = BTreeMap::new();
+    /// sealed Id-keyed map (debug-asserted at the call sites).
+    pub fn pending_renames(&self, scope: &RenameScope) -> BTreeMap<Id, Atom> {
+        let mut best: BTreeMap<Id, (Atom, RenamePriority)> = BTreeMap::new();
         for intent in &self.intents {
             if intent.scope != *scope {
                 continue;
             }
             let priority = intent.origin.priority();
-            match best.entry(intent.from.0.to_string()) {
+            match best.entry(intent.from.clone()) {
                 std::collections::btree_map::Entry::Vacant(slot) => {
                     slot.insert((intent.to.clone(), priority));
                 }
@@ -673,9 +662,7 @@ impl RenameLedger {
                 }
             }
         }
-        best.into_iter()
-            .map(|(from, (to, _))| (from, to.to_string()))
-            .collect()
+        best.into_iter().map(|(from, (to, _))| (from, to)).collect()
     }
 
     /// Validate and freeze the collected intents.
@@ -1035,8 +1022,8 @@ impl SealedRenames {
     }
 
     /// One module's renames projected to bare names, sorted — plan-driven
-    /// and surviving free-source heuristics merged (pre-ledger: the
-    /// `NaturalizedRenames::merged` map).
+    /// and surviving free-source heuristics merged. The naturalizer inverts
+    /// this map into `NaturalizedRenames::original_by_renamed`.
     pub fn module_renames_by_name(&self, module: ModuleId) -> BTreeMap<String, String> {
         self.scope_renames_by_name(&RenameScope::Module(module))
     }
@@ -1048,8 +1035,12 @@ impl SealedRenames {
         self.scope_renames_at_priority(&RenameScope::Module(module), RenamePriority::Explicit)
     }
 
-    /// Typed per-scope view (tests; the production executors consume the
-    /// by-name projection — see the module doc's "Hygiene boundary").
+    /// Hygiene-aware explicit module renames for the AST executor.
+    pub fn module_explicit_renames(&self, module: ModuleId) -> BTreeMap<Id, Atom> {
+        self.scope_renames_at_priority_typed(&RenameScope::Module(module), RenamePriority::Explicit)
+    }
+
+    /// Typed per-scope view consumed by the AST executors.
     pub fn scope_renames(&self, scope: &RenameScope) -> Option<BTreeMap<Id, Atom>> {
         self.by_scope.get(scope).map(|renames| {
             renames
@@ -1059,13 +1050,9 @@ impl SealedRenames {
         })
     }
 
-    /// Project one scope's sealed renames onto bare syms for the
-    /// string-keyed application visitors. Lossy iff two hygiene contexts
-    /// share a sym within one scope — the current contributors resolve
-    /// every `from` through one context per scope (chunk-top-level for
-    /// `Chunk`/`Module`/`EntryPublicExports`, the string-era empty context
-    /// for `Function`), so that cannot happen; assert rather than silently
-    /// merge if it ever does.
+    /// Project one scope's sealed renames onto bare syms for name-only
+    /// planning and metadata. Lossy iff two hygiene contexts share a sym
+    /// within one scope; assert rather than silently merge if that happens.
     pub fn scope_renames_by_name(&self, scope: &RenameScope) -> BTreeMap<String, String> {
         self.scope_renames_by_name_filtered(scope, |_| true)
     }
@@ -1076,6 +1063,20 @@ impl SealedRenames {
         priority: RenamePriority,
     ) -> BTreeMap<String, String> {
         self.scope_renames_by_name_filtered(scope, |p| p == priority)
+    }
+
+    fn scope_renames_at_priority_typed(
+        &self,
+        scope: &RenameScope,
+        priority: RenamePriority,
+    ) -> BTreeMap<Id, Atom> {
+        self.by_scope
+            .get(scope)
+            .into_iter()
+            .flat_map(|renames| renames.iter())
+            .filter(|(_, (_, actual_priority))| *actual_priority == priority)
+            .map(|(from, (to, _))| (from.clone(), to.clone()))
+            .collect()
     }
 
     fn scope_renames_by_name_filtered(
@@ -1095,7 +1096,7 @@ impl SealedRenames {
             assert!(
                 previous.is_none(),
                 "two hygiene contexts share sym `{}` in {scope}; \
-                 the string-keyed application boundary cannot express this",
+                 the name-only projection cannot express this",
                 from.0,
             );
         }

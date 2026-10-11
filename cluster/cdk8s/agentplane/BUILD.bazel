@@ -268,6 +268,7 @@ py_library(
         ":llm_ingress",
         ":migrate_container",
         ":pod_disruption_budget",
+        ":runner_gateway",
         ":sandbox_pod",
         ":sandbox_service",
         "//agentplane/action_service/sandbox:binding",
@@ -508,6 +509,7 @@ py_library(
         ":history_service",
         ":llm_ingress",
         ":notifications",
+        ":runner_gateway",
         ":sandbox_pod",
         ":sandbox_service",
         "//agentplane:subjects",
@@ -793,6 +795,7 @@ py_test(
     deps = [
         ":conftest",
         ":notifications",
+        ":runner_gateway",
         ":sandbox_service",
         "//:conftest",
         "//agentplane/action_service/sandbox:binding",
@@ -806,15 +809,14 @@ py_test(
 )
 
 py_library(
-    name = "sandbox_service",
-    srcs = ["sandbox_service.py"],
+    name = "runner_gateway",
+    srcs = ["runner_gateway.py"],
     data = ["kubernetes_admin_instructions.md"],
     deps = [
         ":actions",
         ":database",
         ":egress",
         ":environment",
-        ":history_service",
         ":migrate_container",
         ":notifications",
         ":pod_disruption_budget",
@@ -824,9 +826,7 @@ py_library(
         "//agentplane/egress:resources",
         "//agentplane/runner_gateway:instructions",
         "//agentplane/runner_gateway:settings",
-        "//agentplane/sandbox_service:kubernetes_grants",
         "//agentplane/sandbox_service:runner_endpoints",
-        "//agentplane/sandbox_service:settings",
         "//cluster/cdk8s:api_resource",
         "//cluster/cdk8s:cilium",
         "//cluster/cdk8s:node_scheduling",
@@ -847,6 +847,35 @@ py_library(
     ],
 )
 
+py_library(
+    name = "sandbox_service",
+    srcs = ["sandbox_service.py"],
+    deps = [
+        ":egress",
+        ":environment",
+        ":history_service",
+        ":notifications",
+        ":pod_disruption_budget",
+        ":runner_gateway",
+        "//agentplane:subjects",
+        "//agentplane/sandbox_service:kubernetes_grants",
+        "//agentplane/sandbox_service:settings",
+        "//cluster/cdk8s:api_resource",
+        "//cluster/cdk8s:cilium",
+        "//cluster/cdk8s:node_scheduling",
+        "//cluster/cdk8s:pod_policy",
+        "//cluster/cdk8s:probes",
+        "//cluster/cdk8s:service_ref",
+        "//cluster/cdk8s:settings_file",
+        "//cluster/cdk8s:token_reviewer_rbac",
+        "//cluster/cdk8s/forgejo_registry:chart",
+        "//cluster/cdk8s/providers/cilium:network_policy",
+        "@pypi//cdk8s",
+        "@pypi//cdk8s_plus_34",
+        "@pypi//constructs",
+    ],
+)
+
 py_test(
     name = "test_sandbox_service",
     # Like test_egress: synthesizes both environments and imports service Settings.
@@ -859,6 +888,7 @@ py_test(
         ":conftest",
         ":history_service",
         ":notifications",
+        ":runner_gateway",
         ":sandbox_service",
         "//:conftest",
         "@pypi//more_itertools",

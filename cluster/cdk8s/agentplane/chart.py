@@ -21,6 +21,7 @@ from cluster.cdk8s.agentplane import (
     history_service,
     llm_ingress,
     notifications,
+    runner_gateway,
     sandbox_pod,
     sandbox_service,
 )
@@ -68,6 +69,22 @@ def environment_chart(app: App, env: Environment) -> Chart:
         manager=ServiceAccountRef(namespace=env.namespace, name=app_component.NAME),
         caller=app_component.service(env.namespace),
     )
+    runner_gateway.RunnerGateway(
+        chart,
+        "runner-gateway",
+        env,
+        token_audience=sandbox_service.TOKEN_AUDIENCE,
+        callers={
+            ServiceAccountRef(namespace=env.namespace, name=app_component.NAME): app_component.service(env.namespace),
+            ServiceAccountRef(namespace=env.namespace, name=notifications.NAME): notifications.service(env.namespace),
+            # Follows every Session for its ingester (WatchSessions, FollowSession).
+            ServiceAccountRef(namespace=env.namespace, name=history_service.NAME): history_service.service(
+                env.namespace
+            ),
+        },
+        sealer=ServiceAccountRef(namespace=env.namespace, name=sandbox_service.NAME),
+        sealer_pods=sandbox_service.service(env.namespace).pods,
+    )
     history_service.HistoryService(
         chart,
         "history-service",
@@ -76,6 +93,7 @@ def environment_chart(app: App, env: Environment) -> Chart:
         caller=app_component.service(env.namespace),
         sandboxes=sandbox_service.service(env.namespace),
         sandboxes_audience=sandbox_service.TOKEN_AUDIENCE,
+        gateway=runner_gateway.service(env.namespace),
     )
     history_ingress.HistoryIngress(chart, "history-ingress", env)
     app_component.App(chart, "app", env)
@@ -86,7 +104,8 @@ def environment_chart(app: App, env: Environment) -> Chart:
         env,
         actions=actions.service(env.namespace),
         sandboxes=sandbox_service.service(env.namespace),
-        sandboxes_control_target=sandbox_service.control_target(env.namespace),
+        gateway=runner_gateway.service(env.namespace),
+        gateway_control_target=runner_gateway.control_target(env.namespace),
         history=history_service.service(env.namespace),
         history_audience=history_service.TOKEN_AUDIENCE,
     )

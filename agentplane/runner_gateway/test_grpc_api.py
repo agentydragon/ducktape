@@ -23,7 +23,7 @@ from agentplane.runner.errors import RunnerError, StreamClosedError
 from agentplane.runner.testing.runner_server import UnimplementedRunner, serve_runner
 from agentplane.runner_gateway.commands.connections import ConnectionStore
 from agentplane.runner_gateway.commands.store import CommandSubmission, SubmissionState, SubmissionStore
-from agentplane.runner_gateway.grpc_api import LEGACY_SERVICE, Resources, add_legacy_service
+from agentplane.runner_gateway.grpc_api import Resources
 from agentplane.runner_gateway.session_changes import SessionChanges
 from agentplane.runner_gateway.session_registry import SessionRegistry
 from agentplane.runner_gateway.testing.grpc_service import service_client
@@ -858,37 +858,6 @@ async def test_destination_authority_and_incarnation(
         await remote.runner(destination).attach("session")
     assert rejected.value.code == code
     assert peer.attachments.empty()
-
-
-async def test_legacy_service_name_still_reaches_the_gateway(
-    resources: Resources, token_file: Path, engine: AsyncEngine, sessions: SessionRegistry, submissions: SubmissionStore
-) -> None:
-    # Clients from before the split call Session RPCs under the Sandbox Service's name.
-    session_id = uuid4()
-    await register(engine, session_id, f"r-{session_id}")
-    command = command_pb2.Command(command_id="test-command", submit_input=command_pb2.SubmitInput(text="test"))
-    await submissions.accept(session_id, CommandSubmission(command=command), caller=OWNER)
-    bearer = (await asyncio.to_thread(token_file.read_text)).strip()
-    server = grpc.aio.server()
-    add_legacy_service(replace(resources, sessions=sessions, submissions=submissions), server)
-    port = server.add_insecure_port("127.0.0.1:0")
-    await server.start()
-    try:
-        async with grpc.aio.insecure_channel(f"127.0.0.1:{port}") as channel:
-            status = await channel.unary_unary(
-                f"/{LEGACY_SERVICE}/GetCommand",
-                request_serializer=protocol_pb2.GetCommandRequest.SerializeToString,
-                response_deserializer=protocol_pb2.CommandStatus.FromString,
-            )(
-                protocol_pb2.GetCommandRequest(
-                    destination=protocol_pb2.SessionDestination(sandbox=DESTINATION, session_id=str(session_id)),
-                    command_id="test-command",
-                ),
-                metadata=(("authorization", f"Bearer {bearer}"),),
-            )
-    finally:
-        await server.stop(0)
-    assert (status.command, status.state) == (command, protocol_pb2.COMMAND_STATE_PENDING_ADMISSION)
 
 
 async def test_only_the_sandbox_service_may_seal(remote: SandboxServiceClient, peer: Peer) -> None:

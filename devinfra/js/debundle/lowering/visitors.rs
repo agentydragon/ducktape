@@ -8,7 +8,7 @@
 //!
 //! ## Scope-aware renaming
 //!
-//! The rename map is keyed by bare symbol, but a rename must never leak
+//! The rename map is keyed by hygiene-aware `Id`, but a rename must never leak
 //! into a subtree that re-binds the same name. When a function/arrow/
 //! method/catch/block introduces a binding whose name is a rename source,
 //! that name inside the subtree refers to the inner binding, not the
@@ -56,6 +56,7 @@
 //! their `break`/`continue` references are never renamed.
 
 use std::collections::{BTreeMap, BTreeSet};
+use swc_atoms::Atom;
 use swc_common::DUMMY_SP;
 use swc_ecma_ast::*;
 use swc_ecma_visit::{Visit, VisitMut, VisitMutWith, VisitWith};
@@ -87,18 +88,22 @@ impl RenameScopeStack {
 /// it is a rename SOURCE (its rename must be suppressed in the subtree) or a
 /// rename TARGET (renames into it inside the subtree would be captures).
 struct RenameNames<'a> {
-    sources: &'a BTreeMap<String, String>,
+    sources: &'a BTreeSet<String>,
     targets: &'a BTreeSet<String>,
 }
 
 impl RenameNames<'_> {
     fn is_relevant(&self, name: &str) -> bool {
-        self.sources.contains_key(name) || self.targets.contains(name)
+        self.sources.contains(name) || self.targets.contains(name)
     }
 }
 
-fn rename_targets(renames: &BTreeMap<String, String>) -> BTreeSet<String> {
-    renames.values().cloned().collect()
+fn rename_targets(renames: &BTreeMap<Id, Atom>) -> BTreeSet<String> {
+    renames.values().map(ToString::to_string).collect()
+}
+
+fn rename_sources(renames: &BTreeMap<Id, Atom>) -> BTreeSet<String> {
+    renames.keys().map(|id| id.0.to_string()).collect()
 }
 
 /// Names a single parameter pattern binds that are rename sources or targets.
@@ -179,15 +184,15 @@ fn shadowed_by_block_decls(stmts: &[Stmt], names: &RenameNames<'_>) -> BTreeSet<
     out
 }
 
-/// Generates the shared `VisitMut` methods that apply a string-keyed
+/// Generates the shared `VisitMut` methods that apply an `Id`-keyed
 /// rename map to identifiers, import specifiers, computed property/member
 /// keys, and named exports, suppressing renames in subtrees that re-bind
 /// the same name and recording target captures (see module docs). Used by
 /// both `IdentifierRenamer` (rename-only) and
 /// `RenameAndShorthandNaturalizer` (rename + shorthand collapse).
 ///
-/// Expects `self.renames: &BTreeMap<String, String>`,
-/// `self.targets: BTreeSet<String>`, `self.scopes: RenameScopeStack`, and
+/// Expects `self.renames: &BTreeMap<Id, Atom>`,
+/// `self.sources` and `self.targets: BTreeSet<String>`, `self.scopes: RenameScopeStack`, and
 /// `self.captured: BTreeSet<(String, String)>`.
 macro_rules! impl_rename_visit_mut {
     () => {
@@ -195,8 +200,8 @@ macro_rules! impl_rename_visit_mut {
             if self.scopes.is_shadowed(ident.sym.as_ref()) {
                 return;
             }
-            if let Some(to) = self.rename_target_for(ident.sym.as_ref()) {
-                ident.sym = to.into();
+            if let Some(to) = self.rename_target_for(&ident.to_id()) {
+                ident.sym = to;
             }
         }
 
@@ -205,7 +210,7 @@ macro_rules! impl_rename_visit_mut {
             if self.scopes.is_shadowed(original_local.as_ref()) {
                 return;
             }
-            let Some(to) = self.rename_target_for(original_local.as_ref()) else {
+            let Some(to) = self.rename_target_for(&spec.local.to_id()) else {
                 return;
             };
             if spec.imported.is_none() {
@@ -214,7 +219,7 @@ macro_rules! impl_rename_visit_mut {
                     DUMMY_SP,
                 )));
             }
-            spec.local.sym = to.into();
+            spec.local.sym = to;
         }
 
         fn visit_mut_prop_name(&mut self, prop_name: &mut PropName) {
@@ -240,12 +245,12 @@ macro_rules! impl_rename_visit_mut {
             if self.scopes.is_shadowed(ident.sym.as_ref()) {
                 return;
             }
-            let Some(to) = self.rename_target_for(ident.sym.as_ref()) else {
+            let Some(to) = self.rename_target_for(&ident.to_id()) else {
                 return;
             };
             let key = PropName::Ident(IdentName::new(ident.sym.clone(), ident.span));
             let mut value = ident.clone();
-            value.sym = to.into();
+            value.sym = to;
             *prop = Prop::KeyValue(KeyValueProp {
                 key,
                 value: Box::new(Expr::Ident(value)),
@@ -267,7 +272,7 @@ macro_rules! impl_rename_visit_mut {
             if self.scopes.is_shadowed(assign.key.id.sym.as_ref()) {
                 return;
             }
-            let Some(to) = self.rename_target_for(assign.key.id.sym.as_ref()) else {
+            let Some(to) = self.rename_target_for(&assign.key.id.to_id()) else {
                 return;
             };
             let key = PropName::Ident(IdentName::new(
@@ -275,7 +280,7 @@ macro_rules! impl_rename_visit_mut {
                 assign.key.id.span,
             ));
             let mut binding = assign.key.clone();
-            binding.id.sym = to.into();
+            binding.id.sym = to;
             let value = match assign.value.take() {
                 Some(default) => Pat::Assign(AssignPat {
                     span: assign.span,
@@ -377,15 +382,15 @@ macro_rules! impl_rename_helpers {
 
         fn rename_names(&self) -> RenameNames<'_> {
             RenameNames {
-                sources: self.renames,
+                sources: &self.sources,
                 targets: &self.targets,
             }
         }
 
-        fn rename_target_for(&mut self, name: &str) -> Option<String> {
-            let to = self.renames.get(name)?;
-            if to != name && self.scopes.is_shadowed(to) {
-                self.captured.insert((name.to_string(), to.clone()));
+        fn rename_target_for(&mut self, id: &Id) -> Option<Atom> {
+            let to = self.renames.get(id)?;
+            if to != &id.0 && self.scopes.is_shadowed(to) {
+                self.captured.insert((id.0.to_string(), to.to_string()));
                 return None;
             }
             Some(to.clone())
@@ -406,7 +411,8 @@ macro_rules! impl_rename_helpers {
 /// the mutating visitors consult the rename map at, the probe consults
 /// it at too, with the same scope pushes.
 pub(super) struct RenameCaptureProbe<'a> {
-    renames: &'a BTreeMap<String, String>,
+    renames: &'a BTreeMap<Id, Atom>,
+    sources: BTreeSet<String>,
     targets: BTreeSet<String>,
     scopes: RenameScopeStack,
     /// See [`IdentifierRenamer::captured`].
@@ -414,9 +420,10 @@ pub(super) struct RenameCaptureProbe<'a> {
 }
 
 impl<'a> RenameCaptureProbe<'a> {
-    pub(super) fn new(renames: &'a BTreeMap<String, String>) -> Self {
+    pub(super) fn new(renames: &'a BTreeMap<Id, Atom>) -> Self {
         Self {
             renames,
+            sources: rename_sources(renames),
             targets: rename_targets(renames),
             scopes: RenameScopeStack::default(),
             captured: BTreeSet::new(),
@@ -428,23 +435,23 @@ impl<'a> RenameCaptureProbe<'a> {
     /// Consult the rename map for `name` exactly like the mutating
     /// visitors do (recording a capture when the target is shadowed),
     /// discarding the would-be target.
-    fn probe(&mut self, name: &str) {
-        if self.scopes.is_shadowed(name) {
+    fn probe(&mut self, id: &Id) {
+        if self.scopes.is_shadowed(id.0.as_ref()) {
             return;
         }
-        let _ = self.rename_target_for(name);
+        let _ = self.rename_target_for(id);
     }
 }
 
 impl Visit for RenameCaptureProbe<'_> {
     fn visit_ident(&mut self, ident: &Ident) {
-        self.probe(ident.sym.as_ref());
+        self.probe(&ident.to_id());
     }
 
     fn visit_import_named_specifier(&mut self, spec: &ImportNamedSpecifier) {
         // Mirror: the mutating visitor only consults the map for the
         // local; `imported` is a public name, never renamed.
-        self.probe(spec.local.sym.as_ref());
+        self.probe(&spec.local.to_id());
     }
 
     fn visit_prop_name(&mut self, prop_name: &PropName) {
@@ -464,7 +471,7 @@ impl Visit for RenameCaptureProbe<'_> {
             prop.visit_children_with(self);
             return;
         };
-        self.probe(ident.sym.as_ref());
+        self.probe(&ident.to_id());
     }
 
     fn visit_object_pat_prop(&mut self, prop: &ObjectPatProp) {
@@ -475,7 +482,7 @@ impl Visit for RenameCaptureProbe<'_> {
         if let Some(value) = &assign.value {
             value.visit_with(self);
         }
-        self.probe(assign.key.id.sym.as_ref());
+        self.probe(&assign.key.id.to_id());
     }
 
     fn visit_labeled_stmt(&mut self, labeled: &LabeledStmt) {
@@ -546,7 +553,8 @@ impl Visit for RenameCaptureProbe<'_> {
 }
 
 pub(super) struct IdentifierRenamer<'a> {
-    pub(super) renames: &'a BTreeMap<String, String>,
+    pub(super) renames: &'a BTreeMap<Id, Atom>,
+    sources: BTreeSet<String>,
     targets: BTreeSet<String>,
     scopes: RenameScopeStack,
     /// `(source, target)` pairs whose rename was withheld because the
@@ -557,9 +565,10 @@ pub(super) struct IdentifierRenamer<'a> {
 }
 
 impl<'a> IdentifierRenamer<'a> {
-    pub(super) fn new(renames: &'a BTreeMap<String, String>) -> Self {
+    pub(super) fn new(renames: &'a BTreeMap<Id, Atom>) -> Self {
         Self {
             renames,
+            sources: rename_sources(renames),
             targets: rename_targets(renames),
             scopes: RenameScopeStack::default(),
             captured: BTreeSet::new(),
@@ -574,7 +583,8 @@ impl VisitMut for IdentifierRenamer<'_> {
 }
 
 pub(super) struct RenameAndShorthandNaturalizer<'a> {
-    pub(super) renames: &'a BTreeMap<String, String>,
+    pub(super) renames: &'a BTreeMap<Id, Atom>,
+    sources: BTreeSet<String>,
     targets: BTreeSet<String>,
     scopes: RenameScopeStack,
     /// See [`IdentifierRenamer::captured`].
@@ -582,9 +592,10 @@ pub(super) struct RenameAndShorthandNaturalizer<'a> {
 }
 
 impl<'a> RenameAndShorthandNaturalizer<'a> {
-    pub(super) fn new(renames: &'a BTreeMap<String, String>) -> Self {
+    pub(super) fn new(renames: &'a BTreeMap<Id, Atom>) -> Self {
         Self {
             renames,
+            sources: rename_sources(renames),
             targets: rename_targets(renames),
             scopes: RenameScopeStack::default(),
             captured: BTreeSet::new(),
