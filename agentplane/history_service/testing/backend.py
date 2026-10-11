@@ -22,7 +22,6 @@ from agentplane.history_service.evidence import EvidenceReader
 from agentplane.history_service.fold_shadow import FoldShadow
 from agentplane.history_service.grpc_api import Resources, add_service
 from agentplane.history_service.ingester import HistoryIngester
-from agentplane.history_service.storage.history_changes import HistoryChanges, notify_history
 from agentplane.history_service.storage.store import Store
 from agentplane.history_service.summaries import SummaryReader
 from agentplane.history_service.summary_changes import SummaryChanges, notify_summaries
@@ -74,7 +73,6 @@ async def history_service(
 ) -> AsyncIterator[HistoryServiceClient]:
     async with _history_engine(database_url, read_only=True) as engine:
         history = Store(engine)
-        history_changes = HistoryChanges(make_url(database_url))
         summary_changes = SummaryChanges(make_url(database_url))
         server = grpc.aio.server()
         add_service(
@@ -90,7 +88,6 @@ async def history_service(
                 evidence=EvidenceReader(engine, history),
                 reader_accounts=frozenset({READER}),
                 request_timeout_s=10,
-                history_changes=history_changes,
                 summary_changes=summary_changes,
                 watch_lease_s=watch_lease_s,
             ),
@@ -100,7 +97,6 @@ async def history_service(
         async with (
             serving(server, "127.0.0.1:0", grace_s=0) as port,
             HistoryServiceClient(f"127.0.0.1:{port}", token_file=token_file, request_timeout_s=20) as client,
-            history_changes.listener.listen(),
             summary_changes.listener.listen(),
         ):
             yield client
@@ -144,12 +140,3 @@ async def announce_fold_commit(database_url: str) -> None:
     ):
         await notify_summaries(session)
 
-
-async def announce_history_change(database_url: str) -> None:
-    """Commit a raw-history invalidation for app watch tests."""
-    async with (
-        _history_engine(database_url) as engine,
-        engine.begin() as connection,
-        AsyncSession(bind=connection) as session,
-    ):
-        await notify_history(session)

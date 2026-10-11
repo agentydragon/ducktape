@@ -20,7 +20,6 @@ py_library(
         "//agentplane/history_service:summaries",
         "//agentplane/history_service:summary_changes",
         "//agentplane/history_service:thread_reads",
-        "//agentplane/history_service/storage:history_changes",
         "//agentplane/history_service/storage:store",
         "//agentplane/sandbox_service:client",
         "//agentplane/workload_auth:principal",

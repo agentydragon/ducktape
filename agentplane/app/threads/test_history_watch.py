@@ -5,7 +5,7 @@ import pytest_bazel
 
 from agentplane.app.changes import Changes
 from agentplane.app.threads.history_watch import HistoryWatch
-from agentplane.history_service.testing.backend import announce_fold_commit, announce_history_change, history_service
+from agentplane.history_service.testing.backend import announce_fold_commit, history_service
 
 
 async def test_fold_commits_and_renewals_wake_thread_readers(service_history_db_url: str, tmp_path: Path) -> None:
@@ -26,24 +26,6 @@ async def test_fold_commits_and_renewals_wake_thread_readers(service_history_db_
                 woken.clear()
                 # After planned renewal the next stream opens with a notice of its own.
                 await asyncio.wait_for(woken.wait(), 10)
-        finally:
-            watch.cancel()
-            await asyncio.gather(watch, return_exceptions=True)
-
-
-async def test_raw_history_commits_wake_app_workers(service_history_db_url: str, tmp_path: Path) -> None:
-    woken = asyncio.Event()
-    async with history_service(service_history_db_url, tmp_path / "history-token", watch_lease_s=3) as history:
-        watch = asyncio.create_task(
-            HistoryWatch(
-                history, lambda: history.watch_session_history(timeout_s=10), woken.set, retry_interval_s=0.05
-            ).run()
-        )
-        try:
-            await asyncio.wait_for(woken.wait(), 10)
-            woken.clear()
-            await announce_history_change(service_history_db_url)
-            await asyncio.wait_for(woken.wait(), 10)
         finally:
             watch.cancel()
             await asyncio.gather(watch, return_exceptions=True)
