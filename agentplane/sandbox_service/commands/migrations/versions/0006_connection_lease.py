@@ -1,5 +1,7 @@
 """Runner connection ownership moved to a Lease per Sandbox; the row keeps only agreed operations."""
 
+from typing import Any
+
 import sqlalchemy as sa
 from alembic import op
 
@@ -8,7 +10,7 @@ down_revision = "0005_pending_submission_index"
 branch_labels = None
 depends_on = None
 
-_UNREAD = {
+_UNREAD: dict[str, sa.types.TypeEngine[Any]] = {
     "pod_uid": sa.String(),
     "connection_epoch": sa.BigInteger(),
     "owner_replica": sa.String(),
