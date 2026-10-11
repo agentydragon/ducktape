@@ -1,9 +1,26 @@
 {
-  "source_devel_commit": "787817a16ec2e9c812793e11364f6f9cc7b868ac",
-  "window_start_utc": "2026-10-05T00:00:00Z",
-  "window_end_utc": "2026-10-07T08:32:00Z",
-  "published_at_utc": "2026-10-07T08:58:42.397995+00:00",
+  "source_devel_commit": "75b225bba1234517575fb26b1d66daec01dd21ac",
+  "window_start_utc": "2026-10-09T21:40:00Z",
+  "window_end_utc": "2026-10-10T21:39:59Z",
+  "published_at_utc": "2026-10-10T22:13:09.455258+00:00",
   "attribution": "not collected",
-  "updated_at_utc": "2026-10-07T09:35:10.182323+00:00",
-  "update_scope": "Record merged #9369 and retain prior effect estimates; observation window unchanged; no post-merge measurements"
+  "followup_updated_at_utc": "2026-10-11T08:45:07.163457+00:00",
+  "mypy_followup_source_commit": "f3dac4506c7ae9d419832032a251247eec5b736d",
+  "implementation_followup_prs": [
+    9873,
+    9875,
+    9879,
+    9880,
+    9886,
+    9890,
+    9901
+  ],
+  "postgres_template_followup": {
+    "pr": 9925,
+    "head": "7b0a5cf90874395318bd7c7cccb4534f5220ff01",
+    "merge": "b24714540e8ad89d7b61b27cec69ba970a40c026",
+    "test_invocation": "4da16526-dbf4-5f4b-a368-5385137fcef7",
+    "source_devel_commit": "7726059851ac1fa9dc23dece1e27d01f92dc54bd"
+  },
+  "props_image_followup_pr": 9984
 }
