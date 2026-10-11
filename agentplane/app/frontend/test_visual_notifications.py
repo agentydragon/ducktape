@@ -26,7 +26,7 @@ async def test_settings_push_registration_follows_other_browser(view: VisualPage
 async def test_thread_notifications(view: VisualPage, app: AgentplaneFixture) -> None:
     await app.mount_thread(IDLE_THREAD)
     page = view.page
-    await page.get_by_role("button", name="Notifications").click()
+    await page.get_by_role("button", name="Notifications", exact=True).click()
     await expect(page.get_by_text("2 awaiting notice", exact=False)).to_be_visible()
     await expect(page.get_by_role("dialog").locator(".mantine-Badge-root")).to_have_count(0)
     await expect(page.get_by_text("GitHub check_run · completed · success", exact=False)).to_be_visible()
@@ -45,7 +45,7 @@ async def test_thread_notifications(view: VisualPage, app: AgentplaneFixture) ->
 async def test_subscription_filter_shows_cancelled_only_on_request(view: VisualPage, app: AgentplaneFixture) -> None:
     await app.mount_thread(IDLE_THREAD)
     page = view.page
-    await page.get_by_role("button", name="Notifications").click()
+    await page.get_by_role("button", name="Notifications", exact=True).click()
     await expect(
         page.get_by_text("Action d49b85b5-849f-4e7d-a644-d4a8b8c16127 · no current source error")
     ).to_be_visible()
@@ -71,7 +71,7 @@ async def test_subscription_filter_shows_cancelled_only_on_request(view: VisualP
 async def test_notification_drawer_updates_without_reopening(view: VisualPage, app: AgentplaneFixture) -> None:
     await app.mount_thread(IDLE_THREAD)
     page = view.page
-    await page.get_by_role("button", name="Notifications").click()
+    await page.get_by_role("button", name="Notifications", exact=True).click()
     await expect(page.get_by_text("Entries after acknowledgement · 5 not acknowledged")).to_be_visible()
     await app.publish_notification_change()
     await expect(page.get_by_text("Entries after acknowledgement · 6 not acknowledged")).to_be_visible()
@@ -81,7 +81,7 @@ async def test_notification_drawer_updates_without_reopening(view: VisualPage, a
 async def test_sandbox_notifications(view: VisualPage, app: AgentplaneFixture) -> None:
     await app.mount_app("/sandboxes/ready-sandbox")
     page = view.page
-    await page.get_by_role("button", name="Notifications").click()
+    await page.get_by_role("button", name="Notifications", exact=True).click()
     await expect(page.get_by_text("Session s-2")).to_be_visible()
     await expect(page.get_by_text("Session s-3")).to_be_visible()
     await expect(page.get_by_text("GitHub pull_request · synchronize", exact=False)).to_be_visible()
@@ -94,7 +94,7 @@ async def test_sandbox_notifications(view: VisualPage, app: AgentplaneFixture) -
 async def test_empty_notifications(view: VisualPage, app: AgentplaneFixture) -> None:
     await app.mount_app("/sandboxes/suspended-sandbox")
     page = view.page
-    await page.get_by_role("button", name="Notifications").click()
+    await page.get_by_role("button", name="Notifications", exact=True).click()
     await expect(page.get_by_text("No inbox for this Sandbox incarnation.")).to_be_visible()
     await view.capture()
 
@@ -103,13 +103,13 @@ async def test_notification_service_reconnect(view: VisualPage, app: AgentplaneF
     await app.set_notification_status_unavailable(True)
     await app.mount_thread(IDLE_THREAD)
     page = view.page
-    await page.get_by_role("button", name="Notifications").click()
+    await page.get_by_role("button", name="Notifications", exact=True).click()
     await expect(page.get_by_text("Reconnecting to notification status…")).to_be_visible()
     await view.capture(name="notification_status_unavailable")
     await app.set_notification_status_unavailable(False)
     await page.keyboard.press("Escape")
     await expect(page.get_by_text("Loading notification status…")).to_have_count(0)
-    await page.get_by_role("button", name="Notifications").click()
+    await page.get_by_role("button", name="Notifications", exact=True).click()
     await expect(page.get_by_text("2 awaiting notice", exact=False)).to_be_visible()
     await view.capture(name="notification_status_reconnected")
 
@@ -118,7 +118,7 @@ async def test_notification_service_reconnect(view: VisualPage, app: AgentplaneF
 async def test_thread_notifications_mobile_menu(view: VisualPage, app: AgentplaneFixture) -> None:
     await app.mount_thread(IDLE_THREAD)
     page = view.page
-    await expect(page.get_by_role("button", name="Notifications")).to_have_count(0)
+    await expect(page.get_by_role("button", name="Notifications", exact=True)).to_have_count(0)
     await page.get_by_role("button", name="More", exact=True).click()
     await expect(page.get_by_role("menuitem", name="Notifications")).to_be_visible()
     await view.capture(name="thread_notifications_mobile_menu")
@@ -131,7 +131,7 @@ async def test_thread_notifications_mobile_menu(view: VisualPage, app: Agentplan
 async def test_sandbox_notifications_mobile_menu(view: VisualPage, app: AgentplaneFixture) -> None:
     await app.mount_app("/sandboxes/ready-sandbox")
     page = view.page
-    await expect(page.get_by_role("button", name="Notifications")).to_have_count(0)
+    await expect(page.get_by_role("button", name="Notifications", exact=True)).to_have_count(0)
     await page.get_by_role("button", name="More Sandbox actions").click()
     await expect(page.get_by_role("menuitem", name="Notifications")).to_be_visible()
     await view.capture(name="sandbox_notifications_mobile_menu")

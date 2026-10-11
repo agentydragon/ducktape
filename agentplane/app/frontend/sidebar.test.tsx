@@ -10,6 +10,16 @@ import { RoutedThreadsLiveProvider, type ThreadsSnapshot } from "./live";
 import { Sidebar } from "./sidebar";
 import { scrollCapture } from "./threads/scroll_diagnostics";
 import { DEGRADED_AFTER_MS } from "./stream_status";
+import type { InboxNoticeState } from "./thread_notices";
+
+const NO_NOTICES: Omit<InboxNoticeState, "inbox_id" | "session_id"> = {
+  queued: 0,
+  unacknowledged: 0,
+  notice: null,
+  notice_wait_reason: null,
+  eligible_at: null,
+  error: null,
+};
 
 const fetchMock = vi.hoisted(() => {
   const fetch = vi.fn<(request: Request) => Promise<Response>>();
@@ -114,9 +124,20 @@ async function pushSnapshot(stream: EventTarget, value: ThreadsSnapshot): Promis
 async function render(
   threads: ThreadView[],
   sandboxes: Record<string, SandboxView>,
-  options: { initialPath?: string; settingsOpen?: boolean; open?: boolean } = {}
-): Promise<{ onOpenSettings: ReturnType<typeof vi.fn>; onClose: ReturnType<typeof vi.fn>; stream: EventTarget }> {
+  options: {
+    initialPath?: string;
+    settingsOpen?: boolean;
+    open?: boolean;
+    notices?: Record<string, Partial<InboxNoticeState>>;
+  } = {}
+): Promise<{
+  onOpenSettings: ReturnType<typeof vi.fn>;
+  onClose: ReturnType<typeof vi.fn>;
+  stream: EventTarget;
+  noticeUrls: string[];
+}> {
   const streams: EventTarget[] = [];
+  const noticeUrls: string[] = [];
   vi.stubGlobal(
     "EventSource",
     class extends EventTarget {
@@ -124,7 +145,26 @@ async function render(
       readyState = 0;
       constructor(url: string) {
         super();
-        expect(new URL(url, "http://test").pathname).toBe("/live/threads");
+        const { pathname, searchParams } = new URL(url, "http://test");
+        if (pathname === "/threads/notices/stream") {
+          noticeUrls.push(url);
+          const inboxes = searchParams
+            .getAll("thread_id")
+            .filter((session) => session in (options.notices ?? {}))
+            .map((session) => ({
+              ...NO_NOTICES,
+              inbox_id: session,
+              session_id: session,
+              ...options.notices?.[session],
+            }));
+          queueMicrotask(() =>
+            this.dispatchEvent(
+              new MessageEvent("snapshot", { data: JSON.stringify({ observed_at: "2026-01-01T00:00:00Z", inboxes }) })
+            )
+          );
+          return;
+        }
+        expect(pathname).toBe("/live/threads");
         streams.push(this);
         queueMicrotask(() =>
           this.dispatchEvent(new MessageEvent("snapshot", { data: JSON.stringify(snapshot(threads, sandboxes, url)) }))
@@ -167,7 +207,7 @@ async function render(
       </MantineProvider>
     )
   );
-  return { onOpenSettings, onClose, stream: streams[0] };
+  return { onOpenSettings, onClose, stream: streams[0], noticeUrls };
 }
 
 function rows(): HTMLElement[] {
@@ -704,4 +744,44 @@ it("keeps the scroll recorder in the lower-left sidebar across a threadless rout
   );
   await clickMenu("Stop and download recording");
   expect(stopRecording).toHaveBeenCalledOnce();
+});
+
+it("counts each listed thread's unprocessed notifications and flags failed delivery without acknowledging any", async () => {
+  const sandboxes = { box: sandbox("box") };
+  const threads = [
+    thread({ id: "00000000-0000-4000-8000-000000000001", sandbox: "box", name: "Three unprocessed thread" }),
+    thread({ id: "00000000-0000-4000-8000-000000000002", sandbox: "box", name: "One unprocessed thread" }),
+    thread({ id: "00000000-0000-4000-8000-000000000003", sandbox: "box", name: "Delivery-failed thread" }),
+    thread({
+      id: "00000000-0000-4000-8000-000000000004",
+      sandbox: "box",
+      name: "Empty-inbox thread",
+    }),
+  ];
+  const { noticeUrls } = await render(threads, sandboxes, {
+    notices: {
+      "00000000-0000-4000-8000-000000000001": {
+        queued: 2,
+        unacknowledged: 1,
+        notice_wait_reason: "debouncing",
+        eligible_at: "2026-01-01T00:05:00Z",
+      },
+      "00000000-0000-4000-8000-000000000002": { unacknowledged: 1, notice: "confirmed" },
+      "00000000-0000-4000-8000-000000000003": { queued: 1, notice: "attempted", error: "runner unreachable" },
+      "00000000-0000-4000-8000-000000000004": { notice: "confirmed" },
+    },
+  });
+  await act(async () => {});
+  expect(new URL(noticeUrls[0], "http://test").searchParams.getAll("thread_id")).toEqual(threads.map(({ id }) => id));
+  const badge = (name: string): [string | null, string | null] | undefined => {
+    const element = row(name).querySelector(".agentplane-sidebar-row-notices");
+    return element === null ? undefined : [element.getAttribute("data-state"), element.textContent];
+  };
+  // Queued and delivered-but-unacknowledged entries count alike: both still wait on the agent.
+  expect(badge("Three unprocessed thread")).toEqual(["pending", "3"]);
+  expect(badge("One unprocessed thread")).toEqual(["pending", "1"]);
+  expect(badge("Delivery-failed thread")).toEqual(["error", "1"]);
+  expect(badge("Empty-inbox thread")).toBeUndefined();
+  // Viewing the list sends nothing back: only the agent acknowledges its inbox.
+  expect(fetchMock.mock.calls.map(([request]) => request.method)).not.toContain("POST");
 });

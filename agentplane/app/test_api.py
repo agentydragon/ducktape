@@ -1179,12 +1179,19 @@ async def test_a_running_thread_cannot_be_archived(
     assert thread.archived is False
 
 
-if __name__ == "__main__":
-    pytest_bazel.main()
-
-
-def test_notification_diagnostics_require_operator_login(client: TestClient) -> None:
+@pytest.mark.parametrize(
+    "url",
+    [
+        "/sandboxes/ready-sandbox/notifications/stream",
+        "/threads/notices/stream?thread_id=00000000-0000-4000-8000-000000000001",
+    ],
+)
+def test_notification_diagnostics_require_operator_login(client: TestClient, url: str) -> None:
     # Workload authentication of the app is not operator authorization to inspect another inbox.
-    response = client.get("/sandboxes/ready-sandbox/notifications/stream")
+    response = client.get(url)
     assert response.status_code == 403
     assert response.json() == {"detail": "operator login required"}
+
+
+if __name__ == "__main__":
+    pytest_bazel.main()
