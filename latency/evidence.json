@@ -10567,5 +10567,223 @@
       }
     ],
     "derivation": "/nix/store/2mzcg57kkk9i4qpk07niqjrhmsk20h43-tarball.drv"
+  },
+  "mypy_followup": {
+    "date_utc": "2026-10-11",
+    "source_commit": "f3dac4506c7ae9d419832032a251247eec5b736d",
+    "disposition": "Batching deferred: preserve automatic per-target mypy aspect workflow. No implementation or parallelism change selected.",
+    "versions": {
+      "mypy": "2.3.1",
+      "rules_mypy": "0.41.0",
+      "python": "3.14"
+    },
+    "production_invocation": "45e95b43-8bae-5e6b-a944-631c9eb0da08",
+    "production_process_seconds": {
+      "n": 118,
+      "median": 17.2911815,
+      "p90": 23.981492,
+      "max": 35.534785,
+      "sum": 2122.264558
+    },
+    "production_cpu_seconds": 1733.491601,
+    "experiments": {
+      "baseline": [
+        {
+          "target": "test_history_watch",
+          "process": 29.674774,
+          "cpu": 23.01467,
+          "cache_bytes": 16630071,
+          "parsed": 686,
+          "status": 0
+        },
+        {
+          "target": "test_ingestion",
+          "process": 23.224593,
+          "cpu": 20.757087,
+          "cache_bytes": 17932615,
+          "parsed": 744,
+          "status": 0
+        },
+        {
+          "target": "mypy_cost_batch",
+          "process": 30.848056,
+          "cpu": 28.773266,
+          "cache_bytes": 18854200,
+          "parsed": 798,
+          "status": 0
+        },
+        {
+          "target": "test_store",
+          "process": 17.730644,
+          "cpu": 15.374018,
+          "cache_bytes": 17244441,
+          "parsed": 698,
+          "status": 0
+        },
+        {
+          "target": "test_indexing",
+          "process": 22.222851,
+          "cpu": 19.500711,
+          "cache_bytes": 18641208,
+          "parsed": 776,
+          "status": 0
+        }
+      ],
+      "nowrite": [
+        {
+          "target": "test_store",
+          "process": 18.041385,
+          "cpu": 16.146777,
+          "cache_bytes": 0,
+          "parsed": 698,
+          "status": 0
+        },
+        {
+          "target": "test_history_watch",
+          "process": 29.441489,
+          "cpu": 22.708315,
+          "cache_bytes": 0,
+          "parsed": 686,
+          "status": 0
+        },
+        {
+          "target": "mypy_cost_batch",
+          "process": 22.623671,
+          "cpu": 20.430446,
+          "cache_bytes": 0,
+          "parsed": 798,
+          "status": 0
+        },
+        {
+          "target": "test_indexing",
+          "process": 21.078191,
+          "cpu": 18.389609,
+          "cache_bytes": 0,
+          "parsed": 776,
+          "status": 0
+        },
+        {
+          "target": "test_ingestion",
+          "process": 21.204011,
+          "cpu": 18.916043,
+          "cache_bytes": 0,
+          "parsed": 744,
+          "status": 0
+        }
+      ],
+      "baseline2": [
+        {
+          "target": "test_indexing",
+          "process": 24.542165,
+          "cpu": 23.05186,
+          "cache_bytes": 18641208,
+          "parsed": 776,
+          "status": 0
+        },
+        {
+          "target": "test_store",
+          "process": 15.331325,
+          "cpu": 12.824832,
+          "cache_bytes": 17244441,
+          "parsed": 698,
+          "status": 0
+        },
+        {
+          "target": "test_ingestion",
+          "process": 19.848457,
+          "cpu": 17.161827,
+          "cache_bytes": 17932615,
+          "parsed": 744,
+          "status": 0
+        },
+        {
+          "target": "test_history_watch",
+          "process": 25.042122,
+          "cpu": 19.845837,
+          "cache_bytes": 16630071,
+          "parsed": 686,
+          "status": 0
+        },
+        {
+          "target": "mypy_cost_batch",
+          "process": 21.089641,
+          "cpu": 18.31268,
+          "cache_bytes": 18854200,
+          "parsed": 798,
+          "status": 0
+        }
+      ],
+      "nowrite2": [
+        {
+          "target": "mypy_cost_batch",
+          "process": 23.621832,
+          "cpu": 21.1385,
+          "cache_bytes": 0,
+          "parsed": 798,
+          "status": 0
+        },
+        {
+          "target": "test_store",
+          "process": 15.264339,
+          "cpu": 13.210012,
+          "cache_bytes": 0,
+          "parsed": 698,
+          "status": 0
+        },
+        {
+          "target": "test_history_watch",
+          "process": 24.433463,
+          "cpu": 19.129845,
+          "cache_bytes": 0,
+          "parsed": 686,
+          "status": 0
+        },
+        {
+          "target": "test_ingestion",
+          "process": 19.555077,
+          "cpu": 16.860601,
+          "cache_bytes": 0,
+          "parsed": 744,
+          "status": 0
+        },
+        {
+          "target": "test_indexing",
+          "process": 19.261448,
+          "cpu": 16.145725,
+          "cache_bytes": 0,
+          "parsed": 776,
+          "status": 0
+        }
+      ]
+    },
+    "invocations": {
+      "baseline": "847e460e-b171-459e-9e31-f13a19c102ac",
+      "nowrite": "e2bff13b-f271-4cfd-a4ac-39ea96889e49",
+      "baseline2": "9eefd5c1-2c0b-4524-8ce6-7526f1560d9a",
+      "nowrite2": "29c5ecc9-0bab-4d5f-ae3a-7b644a0bbcbf",
+      "negative_control": "340308f1-4380-435e-8889-a5fae2f497ba"
+    },
+    "module_counts": {
+      "individual_sum": 2904,
+      "union": 798,
+      "intersection": 661,
+      "batch": 798
+    },
+    "negative_control": "Two inserted return-type errors rejected separately and together; batch explicitly checked all four sources.",
+    "cache_shape": "16 SQLite shards, three support files; no cross-action cache propagation.",
+    "limitations": [
+      "cProfile adds overhead",
+      "First pair used ordinary exit; second pair uses upstream hard_exit",
+      "Worker variation; no population or whole-CI speedup estimate",
+      "Batch union of deps does not prove equivalent import visibility"
+    ],
+    "aspect_preserving_candidates": [
+      "Narrow irrelevant inputs while retaining py.typed, stubs and plugin/runtime requirements",
+      "Use os.devnull when cache propagation is disabled; modest measured CPU difference needs unprofiled confirmation"
+    ],
+    "upstream_review": {
+      "138": "9f2693baec3426ebb1f3bc71832a9a4350acb4d1",
+      "141": "249bd89a12b64474b57e83bbd17a57cc42dbbf82"
+    }
   }
 }
