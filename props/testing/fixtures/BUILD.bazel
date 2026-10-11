@@ -28,8 +28,6 @@ py_library(
         "//props/db/sync:model_metadata",
         "//util/bazel:runfiles",
         "//util/testing:postgres",
-        "//util/testing:postgres_fixtures",
-        "@pypi//opentelemetry_api",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",
         "@pypi//sqlalchemy",

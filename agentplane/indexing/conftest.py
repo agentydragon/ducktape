@@ -10,14 +10,14 @@ import pytest_asyncio
 from pygit2.enums import FileMode
 from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
-from testcontainers.postgres import PostgresContainer
 
 from agentplane.indexing.store import Store
 from haku.recall_index.chunking import DEFAULT_CHUNK_BUDGET
 from haku.recall_index.fake_embedder import FakeEmbedder
 from third_party.containers import pgvector_pg18
+from util.oci import OciImage
 from util.testing.postgres import DatabaseClones, PostgresDatabaseTemplate
-from util.testing.postgres_fixtures import database_clones, database_names, postgres_admin_url, start_postgres_container
+from util.testing.postgres_fixtures import database_clones, database_names, postgres_admin_url, postgres_container
 from util.testing.sqlalchemy_engines import managed_async_engine
 
 # gazelle:include_dep @pypi//asyncpg
@@ -26,12 +26,8 @@ from util.testing.sqlalchemy_engines import managed_async_engine
 
 
 @pytest.fixture(scope="session")
-def postgres_container() -> Generator[PostgresContainer]:
-    container = start_postgres_container(pgvector_pg18.IMAGE)
-    try:
-        yield container
-    finally:
-        container.stop()
+def postgres_image() -> OciImage:
+    return pgvector_pg18.IMAGE
 
 
 @pytest.fixture(scope="session")

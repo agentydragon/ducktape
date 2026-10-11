@@ -17,7 +17,13 @@ from agentplane.runner_gateway.session_registry import SessionRegistry
 from agentplane.sandbox_service.conftest import close_fake_clients, cluster, token_file
 from agentplane.sandbox_service.testing.kubernetes import Cluster
 from agentplane.testing.fake_apiserver import SANDBOX_NAMESPACE
-from util.testing.postgres_fixtures import database_clones, database_names, postgres_admin_url, postgres_container
+from util.testing.postgres_fixtures import (
+    database_clones,
+    database_names,
+    postgres_admin_url,
+    postgres_container,
+    postgres_image,
+)
 
 
 @pytest.fixture

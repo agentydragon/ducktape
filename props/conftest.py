@@ -27,7 +27,6 @@ from props.testing.fixtures.db import (
     db,
     engine,
     postgres_base_config,
-    postgres_container,
     postgres_template,
     pytest_addoption,
     session_monkeypatch,
@@ -73,7 +72,7 @@ from props.testing.fixtures.runs import (
 )
 from props.testing.fixtures.scopes import all_files_scope, subtract_file_example
 from util.testing.otel_tracing import configure_tracing
-from util.testing.postgres_fixtures import database_names
+from util.testing.postgres_fixtures import database_names, postgres_container, postgres_image
 
 
 def pytest_configure(config: pytest.Config) -> None:
