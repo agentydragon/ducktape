@@ -17,6 +17,7 @@ from util.testing.postgres import DatabaseClones, PostgresDatabaseTemplate
 from util.testing.postgres_fixtures import (
     database_clones,
     database_names,
+    engine,
     migrated_database_fixtures,
     postgres_admin_url,
     postgres_container,
@@ -50,12 +51,6 @@ database_template, db_url = migrated_database_fixtures(RUNNER, drivername="postg
 @pytest.fixture
 def sandbox_service_db_url(service_database_template: PostgresDatabaseTemplate, database_clones: DatabaseClones) -> str:
     return database_clones.clone(service_database_template, drivername="postgresql+asyncpg")
-
-
-@pytest.fixture
-async def engine(db_url: str) -> AsyncIterator[AsyncEngine]:
-    async with managed_async_engine(create_async_engine(db_url)) as engine:
-        yield engine
 
 
 @pytest.fixture

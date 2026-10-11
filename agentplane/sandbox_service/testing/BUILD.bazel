@@ -29,10 +29,8 @@ py_library(
         "//util:agent_sandbox",
         "//util:kubernetes",
         "//util/testing:sqlalchemy_engines",
-        "@pypi//asyncpg",
         "@pypi//kubernetes_asyncio",
         "@pypi//protobuf",
-        "@pypi//sqlalchemy",
     ],
 )
 
@@ -91,9 +89,7 @@ py_library(
         "//util:kubernetes",
         "//util/testing:sqlalchemy_engines",
         "@pypi//anyio",
-        "@pypi//asyncpg",
         "@pypi//kubernetes_asyncio",
-        "@pypi//sqlalchemy",
     ],
 )
 
@@ -140,8 +136,6 @@ py_library(
         ":history",
         "//util/testing:postgres",
         "//util/testing:sqlalchemy_engines",
-        "@pypi//asyncpg",
         "@pypi//pytest",
-        "@pypi//sqlalchemy",
     ],
 )
