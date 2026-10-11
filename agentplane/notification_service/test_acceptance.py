@@ -128,7 +128,7 @@ async def test_listen_deliver_read_ack_and_recover_lost_response_without_app(
                         notifications_service_url="http://notifications.test",
                     ),
                 ) as remote,
-                ingest(sandbox_service_db_url, remote),
+                ingest(sandbox_service_db_url, runner.runner),
                 history_service(sandbox_service_db_url, tmp_path / "history-token") as history,
                 history_changes.listener.listen(),
             ):

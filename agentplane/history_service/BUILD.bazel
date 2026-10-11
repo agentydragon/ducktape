@@ -160,7 +160,6 @@ py_test(
     srcs = ["test_evidence.py"],
     requires_docker = True,
     deps = [
-        ":conftest",
         ":evidence",
         ":fold_shadow",
         ":thread_reads",
@@ -213,7 +212,6 @@ py_test(
     srcs = ["test_fold_shadow.py"],
     requires_docker = True,
     deps = [
-        ":conftest",
         ":fold_shadow",
         "//:conftest",
         "//agentplane/history_service/storage:conftest",
@@ -251,7 +249,6 @@ py_test(
     srcs = ["test_summaries.py"],
     requires_docker = True,
     deps = [
-        ":conftest",
         ":fold_shadow",
         ":summaries",
         "//:conftest",
@@ -288,7 +285,6 @@ py_test(
     srcs = ["test_thread_reads.py"],
     requires_docker = True,
     deps = [
-        ":conftest",
         ":fold_shadow",
         ":thread_reads",
         "//:conftest",
@@ -300,64 +296,6 @@ py_test(
         "//agentplane/thread_fold:views",
         "@pypi//protobuf",
         "@pypi//pydantic",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-        "@pypi//sqlalchemy",
-    ],
-)
-
-py_library(
-    name = "ingester",
-    srcs = ["ingester.py"],
-    deps = [
-        "//agentplane/history_service:protocol_pb2",
-        "//agentplane/history_service/storage:store",
-        "//agentplane/proto:event_log_pb2",
-        "//agentplane/proto:sandbox_service_pb2",
-        "//agentplane/runner:errors",
-        "//agentplane/sandbox_service:client",
-        "@pypi//grpcio",
-        "@pypi//protobuf",
-        "@pypi//sqlalchemy",
-    ],
-)
-
-py_library(
-    name = "conftest",
-    testonly = True,
-    srcs = ["conftest.py"],
-    deps = [
-        "//agentplane/proto:event_log_pb2",
-        "//agentplane/proto:runner_gateway_pb2_grpc",
-        "//agentplane/proto:runner_pb2",
-        "//agentplane/proto:sandbox_service_pb2",
-        "//agentplane/proto:sandbox_service_pb2_grpc",
-        "//agentplane/sandbox_service:client",
-        "@pypi//grpcio",
-        "@pypi//protobuf",
-        "@pypi//pytest",
-    ],
-)
-
-py_test(
-    name = "test_ingester",
-    size = "medium",
-    srcs = ["test_ingester.py"],
-    deps = [
-        ":conftest",
-        ":ingester",
-        "//:conftest",
-        "//agentplane:grpc_serving",
-        "//agentplane/history_service:protocol_pb2",
-        "//agentplane/history_service/storage:conftest",
-        "//agentplane/history_service/storage:store",
-        "//agentplane/proto:event_log_pb2",
-        "//agentplane/proto:event_pb2",
-        "//agentplane/proto:runner_gateway_pb2_grpc",
-        "//agentplane/proto:sandbox_service_pb2",
-        "//agentplane/proto:sandbox_service_pb2_grpc",
-        "@pypi//grpcio",
-        "@pypi//protobuf",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
@@ -436,7 +374,6 @@ py_test(
     srcs = ["test_ingress.py"],
     requires_docker = True,
     deps = [
-        ":conftest",
         ":ingress",
         "//:conftest",
         "//agentplane:grpc_serving",
@@ -464,7 +401,6 @@ py_library(
         ":evidence",
         ":fold_shadow",
         ":grpc_api",
-        ":ingester",
         ":settings",
         ":summaries",
         ":summary_changes",
@@ -473,7 +409,6 @@ py_library(
         "//agentplane:grpc_serving",
         "//agentplane/history_service/storage:history_changes",
         "//agentplane/history_service/storage:store",
-        "//agentplane/sandbox_service:client",
         "//agentplane/workload_auth:principal",
         "@pypi//asyncpg",
         "@pypi//grpcio",
@@ -487,7 +422,6 @@ py_test(
     size = "medium",
     srcs = ["test_grpc_api.py"],
     deps = [
-        ":conftest",
         ":evidence",
         ":grpc_api",
         ":summaries",

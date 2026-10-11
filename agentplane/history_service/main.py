@@ -1,4 +1,4 @@
-"""Standalone History Service entry point: serves retained Session history and, when enabled, ingests it."""
+"""Standalone History Service entry point: serves retained Session history and folds it."""
 
 import asyncio
 import contextlib
@@ -6,7 +6,7 @@ import logging
 
 import grpc
 from kubernetes_asyncio import client as k8s_client, config as k8s_config
-from sqlalchemy.engine import URL, make_url
+from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import create_async_engine
 
 from agentplane.grpc_process import until_terminated
@@ -14,14 +14,12 @@ from agentplane.grpc_serving import add_health, serving
 from agentplane.history_service.evidence import EvidenceReader
 from agentplane.history_service.fold_shadow import FoldShadow
 from agentplane.history_service.grpc_api import Resources, add_service
-from agentplane.history_service.ingester import HistoryIngester
 from agentplane.history_service.settings import Settings
 from agentplane.history_service.storage.history_changes import HistoryChanges
 from agentplane.history_service.storage.store import Store
 from agentplane.history_service.summaries import SummaryReader
 from agentplane.history_service.summary_changes import SummaryChanges
 from agentplane.history_service.thread_reads import ThreadReader
-from agentplane.sandbox_service.client import SandboxServiceClient
 from agentplane.workload_auth.principal import WorkloadPrincipalResolver
 
 # The asyncpg dialect is loaded by SQLAlchemy from the configured driver name.
@@ -37,8 +35,8 @@ async def serve(settings: Settings) -> None:
     else:
         await k8s_config.load_kube_config(config_file=str(settings.kubeconfig), client_configuration=configuration)
     url = make_url(settings.database_url).set(drivername="postgresql+asyncpg")
-    # The Sandbox Service's init container migrates these tables; the ingester and the fold write
-    # through their own engines, and reads never write.
+    # The Sandbox Service's init container migrates these tables; the fold writes through its own
+    # engine, and reads never write.
     engine = create_async_engine(
         url, pool_size=4, max_overflow=2, connect_args={"server_settings": {"default_transaction_read_only": "on"}}
     )
@@ -89,11 +87,8 @@ async def serve(settings: Settings) -> None:
             add_health(server)
             add_service(resources, server)
             try:
-                # An ingester failure ends the process rather than leaving reads served with no writer.
-                async with serving(server, f"{settings.host}:{settings.port}", grace_s=5), asyncio.TaskGroup() as tasks:
-                    ingesting = tasks.create_task(ingest(settings, url), name="history-ingester")
+                async with serving(server, f"{settings.host}:{settings.port}", grace_s=5):
                     await until_terminated()
-                    ingesting.cancel()
             finally:
                 if shadow is not None:
                     shadow.cancel()
@@ -101,36 +96,6 @@ async def serve(settings: Settings) -> None:
                         await shadow
     finally:
         await fold_engine.dispose()
-        await engine.dispose()
-
-
-async def ingest(settings: Settings, url: URL) -> None:
-    # Each followed Session holds a claim connection and briefly a write connection.
-    engine = create_async_engine(
-        url, pool_size=settings.ingester.concurrency, max_overflow=settings.ingester.concurrency + 2
-    )
-    target = settings.sandbox_service
-    sandboxes = SandboxServiceClient(
-        target.target,
-        gateway_target=target.gateway_target,
-        namespace=None,  # the ingester follows the destinations the Session feed names
-        token_file=target.token_file,
-        command_admission_timeout_s=None,
-        request_timeout_s=target.request_timeout_s,
-        lifecycle_timeout_s=target.request_timeout_s,
-        follow_timeout_s=target.follow_timeout_s,
-        channel_options=target.grpc_channel_options,
-    )
-    try:
-        async with sandboxes:
-            await HistoryIngester(
-                Store(engine, settle_deltas=settings.ingester.settle_deltas),
-                engine,
-                sandboxes,
-                concurrency=settings.ingester.concurrency,
-                retry_interval_s=settings.ingester.retry_interval_s,
-            ).run()
-    finally:
         await engine.dispose()
 
 

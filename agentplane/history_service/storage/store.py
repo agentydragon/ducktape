@@ -69,53 +69,9 @@ class ObservationPage:
 class Store:
     def __init__(self, engine: AsyncEngine, *, settle_deltas: bool = False) -> None:
         """`settle_deltas`: `append` removes an item's streamed delta entries once its completion provably
-        holds their concatenation. Only the History Service ingester sets it."""
+        holds their concatenation. Only the runner ingress sets it."""
         self._sessions = async_sessionmaker(engine, expire_on_commit=False)
         self._settle_deltas = settle_deltas
-
-    async def record_session(
-        self,
-        session_id: UUID,
-        *,
-        sandbox_namespace: str,
-        sandbox_name: str,
-        sandbox_uid: UUID | None,
-        runner_session_id: str | None,
-    ) -> None:
-        """Create the history row a Session's entries append to, or confirm the existing one.
-
-        Ingesters call this from the Sandbox Service's Session feed before their first append. A
-        History Service ingester follows by public ID and never learns the runner session ID.
-        """
-        async with self._sessions.begin() as session:
-            created = await session.scalar(
-                insert(SessionHistory)
-                .values(
-                    id=session_id,
-                    sandbox_namespace=sandbox_namespace,
-                    sandbox_name=sandbox_name,
-                    sandbox_uid=sandbox_uid,
-                    runner_session_id=runner_session_id,
-                    source_id=None,
-                    last_cursor=0,
-                )
-                .on_conflict_do_nothing()
-                .returning(SessionHistory.id)
-            )
-            row = await session.get(SessionHistory, session_id, with_for_update=True)
-            if row is None:
-                raise HistoryConflictError(f"runner locator already belongs to another session, not {session_id}")
-            if row.sandbox_namespace is None:
-                # Pushed through the ingress first; the follower names its Sandbox.
-                row.sandbox_namespace, row.sandbox_name, row.sandbox_uid = sandbox_namespace, sandbox_name, sandbox_uid
-            elif (row.sandbox_namespace, row.sandbox_name, row.sandbox_uid) != (
-                sandbox_namespace,
-                sandbox_name,
-                sandbox_uid,
-            ) or runner_session_id not in (None, row.runner_session_id):
-                raise HistoryConflictError(f"session {session_id} has a different locator")
-            if created is not None:
-                await notify_history(session)
 
     async def bind_writer(self, session_id: UUID, writer: Writer) -> Checkpoint:
         """Bind the Session to `writer` if it has no writer yet, creating its row; refuse any other.
@@ -198,9 +154,8 @@ class Store:
     async def record_feed_state(self, session_id: UUID, feed: history_pb2.SessionFeedState) -> None:
         """Record only a covered runner snapshot; delayed copiers cannot rewind it or drop a seal.
 
-        The snapshot may name the runner session (a direct runner attach) or the public Session ID
-        (a Sandbox Service follow); it is stored under the runner's where the row knows it, as
-        either copier wrote it.
+        The snapshot may name the runner session or the public Session ID; it is stored under the
+        runner's where the row knows it (rows the retired follower created).
         """
         snapshot = history_pb2.SessionFeedState()
         snapshot.CopyFrom(feed)
@@ -213,7 +168,7 @@ class Store:
                 str(row.id),
             ):
                 raise HistoryConflictError("feed snapshot does not match the bound runner session")
-            # Rows a History Service ingester created know only the public ID.
+            # Rows the ingress created know only the public ID.
             snapshot.attached.session_id = row.runner_session_id or str(row.id)
             if snapshot.attached.last_cursor > row.last_cursor:
                 raise HistoryConflictError("feed snapshot is ahead of committed history")

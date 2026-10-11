@@ -5,9 +5,10 @@ from uuid import UUID, uuid4
 
 import pytest
 import pytest_bazel
-from sqlalchemy.ext.asyncio import AsyncEngine
+from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession
 
 from agentplane.history_service import protocol_pb2 as history_pb2
+from agentplane.history_service.storage.db import SessionHistory
 from agentplane.history_service.storage.history_changes import HistoryChanges
 from agentplane.history_service.storage.store import (
     HistoryConflictError,
@@ -31,14 +32,25 @@ def entry(cursor: int, source: str = "source", *, resumed: bool = False) -> even
     return result
 
 
+WRITER = Writer(namespace="testing", name="worker", uid="test-worker-account-uid")
+
+
 async def opened(store: Store, session_id: UUID) -> None:
-    await store.record_session(
-        session_id,
-        sandbox_namespace="testing",
-        sandbox_name="gone",
-        sandbox_uid=None,
-        runner_session_id="original-native-path",
-    )
+    await store.bind_writer(session_id, WRITER)
+
+
+async def follower_row(engine: AsyncEngine, session_id: UUID) -> None:
+    """A row the retired follower created: it names the runner session, and feed snapshots are stored under it."""
+    async with AsyncSession(engine) as session, session.begin():
+        session.add(
+            SessionHistory(
+                id=session_id,
+                sandbox_namespace="testing",
+                sandbox_name="gone",
+                runner_session_id="original-native-path",
+                last_cursor=0,
+            )
+        )
 
 
 @pytest.mark.asyncio
@@ -73,14 +85,6 @@ async def test_bad_batch_rolls_back_and_conflicting_duplicate_rejected(engine: A
         with pytest.raises(HistoryConflictError):
             await store.append(session_id, bad)
     assert await store.read(session_id) == (2, [entry(1), entry(2)])
-    with pytest.raises(HistoryConflictError, match="locator"):
-        await store.record_session(
-            session_id,
-            sandbox_namespace="testing",
-            sandbox_name="new",
-            sandbox_uid=None,
-            runner_session_id="original-native-path",
-        )
     with pytest.raises(HistoryNotFoundError):
         await store.append(uuid4(), [entry(1)])
 
@@ -97,47 +101,13 @@ async def test_two_replica_writers_serialize_on_history_row(engine: AsyncEngine)
     assert await right.read(session_id) == (2, [entry(1), entry(2)])
 
 
-@pytest.mark.asyncio
-async def test_recorded_session_keeps_its_id_and_fences_duplicate_locator(engine: AsyncEngine) -> None:
+async def test_a_session_binds_to_its_first_writer(engine: AsyncEngine) -> None:
     store = Store(engine)
-    session_id, uid = uuid4(), uuid4()
-    await store.record_session(
-        session_id, sandbox_namespace="testing", sandbox_name="worker", sandbox_uid=uid, runner_session_id="s-1"
-    )
-    await store.record_session(
-        session_id, sandbox_namespace="testing", sandbox_name="worker", sandbox_uid=uid, runner_session_id="s-1"
-    )
-    with pytest.raises(HistoryConflictError, match="belongs to another"):
-        await store.record_session(
-            uuid4(), sandbox_namespace="testing", sandbox_name="worker", sandbox_uid=uid, runner_session_id="s-1"
-        )
-    # A nullable legacy UID must not permit another ID for the same legacy locator.
-    await opened(store, uuid4())
-    with pytest.raises(HistoryConflictError, match="belongs to another"):
-        await opened(store, uuid4())
-
-
-async def test_a_follower_and_the_ingress_each_bind_their_half_of_one_session(engine: AsyncEngine) -> None:
-    """During the cutover a Session may reach history both ways; neither refuses the other's row."""
-    store = Store(engine)
-    writer = Writer(namespace="testing", name="worker", uid="test-worker-account-uid")
-    pushed_first, followed_first, uid = uuid4(), uuid4(), uuid4()
-    await store.bind_writer(pushed_first, writer)
-    await store.record_session(
-        pushed_first, sandbox_namespace="testing", sandbox_name="worker", sandbox_uid=uid, runner_session_id=None
-    )
-    await store.record_session(
-        followed_first, sandbox_namespace="testing", sandbox_name="worker", sandbox_uid=uid, runner_session_id=None
-    )
-    await store.bind_writer(followed_first, writer)
-    for session_id in (pushed_first, followed_first):
-        await store.bind_writer(session_id, writer)
-        with pytest.raises(WriterMismatchError):
-            await store.bind_writer(session_id, Writer(namespace="testing", name="worker", uid="test-recreated-uid"))
-        with pytest.raises(HistoryConflictError):
-            await store.record_session(
-                session_id, sandbox_namespace="testing", sandbox_name="other", sandbox_uid=uid, runner_session_id=None
-            )
+    session_id = uuid4()
+    await store.bind_writer(session_id, WRITER)
+    await store.bind_writer(session_id, WRITER)
+    with pytest.raises(WriterMismatchError):
+        await store.bind_writer(session_id, Writer(namespace="testing", name="worker", uid="test-recreated-uid"))
 
 
 async def test_history_notifies_after_commit_and_not_after_rollback(engine: AsyncEngine) -> None:
@@ -170,7 +140,7 @@ async def test_history_notifies_after_commit_and_not_after_rollback(engine: Asyn
 
             feed = history_pb2.SessionFeedState(
                 attached=runner_pb2.Attached(
-                    session_id="original-native-path", last_cursor=1, harness_state=runner_pb2.HARNESS_STATE_STOPPED
+                    session_id=str(session_id), last_cursor=1, harness_state=runner_pb2.HARNESS_STATE_STOPPED
                 )
             )
             await store.record_feed_state(session_id, feed)
@@ -217,7 +187,7 @@ async def test_feed_snapshot_requires_covered_bound_history_and_cannot_regress(e
     assert not (await store.read_page(session_id)).HasField("feed_state")
     feed = history_pb2.SessionFeedState(
         attached=runner_pb2.Attached(
-            session_id="original-native-path", last_cursor=1, harness_state=runner_pb2.HARNESS_STATE_STOPPED
+            session_id=str(session_id), last_cursor=1, harness_state=runner_pb2.HARNESS_STATE_STOPPED
         )
     )
     with pytest.raises(HistoryConflictError, match="ahead"):
@@ -236,7 +206,7 @@ async def test_feed_snapshot_requires_covered_bound_history_and_cannot_regress(e
     feed.attached.last_cursor = 2
     await store.record_feed_state(session_id, feed)
     stale = history_pb2.SessionFeedState(
-        attached=runner_pb2.Attached(session_id="original-native-path", last_cursor=1), ended=True
+        attached=runner_pb2.Attached(session_id=str(session_id), last_cursor=1), ended=True
     )
     await store.record_feed_state(session_id, stale)
     page = await store.read_page(session_id, after_cursor=2)
@@ -252,7 +222,7 @@ async def test_feed_snapshot_requires_covered_bound_history_and_cannot_regress(e
 async def test_followed_snapshot_is_stored_under_runner_id_and_seal_is_sticky(engine: AsyncEngine) -> None:
     store = Store(engine)
     session_id = uuid4()
-    await opened(store, session_id)
+    await follower_row(engine, session_id)
     await store.append(session_id, [entry(1), entry(2)])
     # A Sandbox Service follow names the public Session ID; a direct runner attach the runner's.
     followed = history_pb2.SessionFeedState(attached=runner_pb2.Attached(session_id=str(session_id), last_cursor=1))
@@ -279,32 +249,17 @@ async def test_followed_snapshot_is_stored_under_runner_id_and_seal_is_sticky(en
 
 
 @pytest.mark.asyncio
-async def test_row_without_runner_id_stores_followed_snapshot_under_public_id(engine: AsyncEngine) -> None:
+async def test_a_pushed_session_stores_its_snapshot_under_the_public_id(engine: AsyncEngine) -> None:
     store = Store(engine)
-    session_id, uid = uuid4(), uuid4()
-
-    async def record(*, sandbox_name: str = "worker", runner_session_id: str | None = None) -> None:
-        await store.record_session(
-            session_id,
-            sandbox_namespace="testing",
-            sandbox_name=sandbox_name,
-            sandbox_uid=uid,
-            runner_session_id=runner_session_id,
-        )
-
-    await record()
-    await record()
-    with pytest.raises(HistoryConflictError, match="locator"):
-        await record(sandbox_name="other")
-    with pytest.raises(HistoryConflictError, match="locator"):
-        await record(runner_session_id="learned-later")
+    session_id = uuid4()
+    await opened(store, session_id)
     await store.append(session_id, [entry(1)])
-    followed = history_pb2.SessionFeedState(attached=runner_pb2.Attached(session_id=str(session_id), last_cursor=1))
-    await store.record_feed_state(session_id, followed)
-    assert (await store.read_page(session_id)).feed_state == followed
-    followed.attached.session_id = "some-runner"
+    pushed = history_pb2.SessionFeedState(attached=runner_pb2.Attached(session_id=str(session_id), last_cursor=1))
+    await store.record_feed_state(session_id, pushed)
+    assert (await store.read_page(session_id)).feed_state == pushed
+    pushed.attached.session_id = "some-runner"
     with pytest.raises(HistoryConflictError, match="bound runner"):
-        await store.record_feed_state(session_id, followed)
+        await store.record_feed_state(session_id, pushed)
 
 
 def settled(page: history_pb2.ReadSessionEventsResponse) -> list[tuple[int, int]]:
