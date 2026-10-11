@@ -77,7 +77,7 @@ py_test(
     deps = [
         ":postgres",
         "//:conftest",
-        ":postgres_fixtures",
+        "//util/testing:postgres_fixtures",
         "@pypi//psycopg",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
