@@ -15,14 +15,14 @@ beside the Sandbox Service, against the target of one provisioner.
 The two kinds of box share the CRD, templates, the namespace quota and the egress sidecar. They
 differ in everything the Sandbox Service's `CreateSandbox` does around the CRD:
 
-| | LLM Sandbox (Sandbox Service today) | Action Sandbox (Action Service today) |
-| --- | --- | --- |
-| Runs as | a ServiceAccount minted per Sandbox, owned by it | the caller's own static ServiceAccount |
-| Egress, Action policies, Kubernetes grants | granted per Sandbox at create | the caller's standing bindings; none created |
-| Runner | `runner` container wired to the Runner Gateway and History ingress | none dialled; commands arrive by `pods/exec` |
-| Teardown | seal every Session, then delete | delete |
-| Owner key | requested name | (caller, name); names are per caller |
-| Lifetime | operator / app | caller's `dispose`; `TODO(sandbox-lifetime)` |
+|                                            | LLM Sandbox (Sandbox Service today)                                | Action Sandbox (Action Service today)        |
+| ------------------------------------------ | ------------------------------------------------------------------ | -------------------------------------------- |
+| Runs as                                    | a ServiceAccount minted per Sandbox, owned by it                   | the caller's own static ServiceAccount       |
+| Egress, Action policies, Kubernetes grants | granted per Sandbox at create                                      | the caller's standing bindings; none created |
+| Runner                                     | `runner` container wired to the Runner Gateway and History ingress | none dialled; commands arrive by `pods/exec` |
+| Teardown                                   | seal every Session, then delete                                    | delete                                       |
+| Owner key                                  | requested name                                                     | (caller, name); names are per caller         |
+| Lifetime                                   | operator / app                                                     | caller's `dispose`; `TODO(sandbox-lifetime)` |
 
 ## Decision
 
