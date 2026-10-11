@@ -109,8 +109,8 @@ def _seed_game_events(store: SqlStore, rows: list[GameEventRow]) -> None:
         s.add_all(rows)
 
 
-def test_economy_rebalance_migration_preserves_progress(db_url: str) -> None:
-    engine = create_engine(db_url)
+def test_economy_rebalance_migration_preserves_progress(empty_db_url: str) -> None:
+    engine = create_engine(empty_db_url)
     cfg = AlembicConfig()
     cfg.set_main_option("script_location", str(Path(__file__).parent / "migrations"))
 

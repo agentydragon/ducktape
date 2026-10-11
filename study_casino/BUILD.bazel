@@ -218,6 +218,7 @@ py_library(
     srcs = ["conftest.py"],
     visibility = ["//:__subpackages__"],
     deps = [
+        ":store",
         "//util/testing:postgres",
         "//util/testing:postgres_fixtures",
         "@pypi//psycopg",
