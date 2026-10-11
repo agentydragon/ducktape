@@ -10843,13 +10843,18 @@
     },
     "gazelle": {
       "pr": 9879,
-      "state": "open",
+      "state": "merged",
       "head": "8ad09bc4598c06aade7834291b4ca6c421dfe0d9",
       "removal_pr": 9880,
       "removal_merged_into": "ci/gazelle-precommit",
-      "live_devel_requires_gazelle": true,
-      "staging_issue": "Workflow deletion now in open parent PR while live check remains required; restore staged migration before normal merge",
-      "measured_saving": null
+      "live_devel_requires_gazelle": false,
+      "measured_saving": null,
+      "standalone_workflow_removed": true,
+      "applied_artifact": "latest@sha256:ca54f75a99c752b2759b6a0c41414c8718923bc237dd4ac933560667eb61c606",
+      "artifact_source_commit": "c5558627e0cdcbe3d05dc0272c4c76fa36151482",
+      "precommit_job_id": 114368771449,
+      "gazelle_hook_seconds": 12.03,
+      "verified_at_utc": "2026-10-11T02:44:13.934313+00:00"
     },
     "other_merged_prs": [
       9844,
