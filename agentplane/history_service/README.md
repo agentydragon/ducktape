@@ -7,7 +7,7 @@ grants nothing. Consumers use `client.py`; `testing/backend.py` serves the real 
 database.
 
 This service's `migrate` init container runs the history tables' migrations
-(`sandbox_service/session_history`), and this service is their only writer. Target and sequence:
+(`storage/`), and this service is their only writer. Target and sequence:
 [History Service plan](../plans/history_service.md).
 
 ## Ingester

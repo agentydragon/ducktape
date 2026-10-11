@@ -31,7 +31,7 @@ from agentplane.sandbox_service.kubernetes_grants import ClusterRoleBindingGrant
 from agentplane.sandbox_service.provisioning import Provisioning
 from agentplane.sandbox_service.runner_channel import ChannelTiming, RunnerChannelService
 from agentplane.sandbox_service.runner_endpoints import RunnerEndpoints
-from agentplane.sandbox_service.session_history.session_changes import SessionChanges
+from agentplane.sandbox_service.session_changes import SessionChanges
 from agentplane.sandbox_service.session_registry import SessionRegistry
 from agentplane.sandbox_service.settings import Settings
 from agentplane.sandbox_service.teardown import Teardown

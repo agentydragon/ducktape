@@ -6,7 +6,7 @@ A migration failure prevents the Pod from serving even existing lifecycle RPCs.
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-from agentplane.sandbox_service.session_history.database_migrate import RUNNER
+from agentplane.history_service.storage.database_migrate import RUNNER
 
 
 class Settings(BaseSettings):

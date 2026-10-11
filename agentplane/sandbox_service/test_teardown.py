@@ -29,10 +29,10 @@ from agentplane.sandbox_service.testing.fake_inventory import NAMESPACE, FakeCor
 from agentplane.sandbox_service.testing.sessions import register_session
 from util.agent_sandbox import SANDBOXES_PLURAL, OperatingMode
 
-# gazelle:include_dep //agentplane/sandbox_service/session_history:conftest
+# gazelle:include_dep //agentplane/history_service/storage:conftest
 # gazelle:include_dep @pypi//protobuf
 
-pytest_plugins = ("agentplane.sandbox_service.session_history.conftest",)
+pytest_plugins = ("agentplane.history_service.storage.conftest",)
 
 NAME = "test-torn-down"
 LEGACY = "test-legacy-session"

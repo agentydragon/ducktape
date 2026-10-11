@@ -21,12 +21,12 @@ from agentplane.history_service.evidence import EvidenceReader
 from agentplane.history_service.fold_shadow import FoldShadow
 from agentplane.history_service.grpc_api import Resources, add_service
 from agentplane.history_service.ingester import HistoryIngester
+from agentplane.history_service.storage.history_changes import HistoryChanges, notify_history
+from agentplane.history_service.storage.store import Store
 from agentplane.history_service.summaries import SummaryReader
 from agentplane.history_service.summary_changes import SummaryChanges, notify_summaries
 from agentplane.history_service.thread_reads import ThreadReader
 from agentplane.sandbox_service.client import SandboxServiceClient
-from agentplane.sandbox_service.session_history.history_changes import HistoryChanges, notify_history
-from agentplane.sandbox_service.session_history.store import Store
 from agentplane.subjects import ServiceAccountRef
 from agentplane.thread_fold.models import Base
 from agentplane.workload_auth.principal import POD_NAME_CLAIM, POD_UID_CLAIM, WorkloadPrincipalResolver

@@ -50,7 +50,7 @@ Properties the target keeps:
 ## Facts the order rests on
 
 - **The `sandbox_service` database holds Session history** (`session_history` and
-  `session_event`, `sandbox_service/session_history/db.py`; the package has its own migrations).
+  `session_event`, `history_service/storage/db.py`; the package has its own migrations).
   Handing it to the History Service moves the raw log with no copy. The Session registry and command
   admission live in the Sandbox Service's own `sandbox_commands` database.
 - **The app still keeps its own copy of the fold** (`thread_entity`, `thread_evidence`,

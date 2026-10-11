@@ -12,7 +12,7 @@ from sqlalchemy.ext.asyncio import create_async_engine
 
 from agentplane.history_service.ingress import Resources, Timing, add_ingress
 from agentplane.history_service.ingress_settings import IngressSettings
-from agentplane.sandbox_service.session_history.store import Store
+from agentplane.history_service.storage.store import Store
 from agentplane.workload_auth.principal import WorkloadPrincipalResolver
 
 # The asyncpg dialect is loaded by SQLAlchemy from the configured driver name.

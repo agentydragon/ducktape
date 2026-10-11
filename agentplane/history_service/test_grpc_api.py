@@ -12,20 +12,20 @@ from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession
 from agentplane.history_service import protocol_pb2 as history_pb2, protocol_pb2_grpc
 from agentplane.history_service.evidence import EvidenceReader
 from agentplane.history_service.grpc_api import Resources, add_service
+from agentplane.history_service.storage.history_changes import HistoryChanges
+from agentplane.history_service.storage.store import Store
 from agentplane.history_service.summaries import SummaryReader
 from agentplane.history_service.summary_changes import SummaryChanges, notify_summaries
 from agentplane.history_service.thread_reads import ThreadReader
 from agentplane.proto import event_log_pb2, event_pb2
-from agentplane.sandbox_service.session_history.history_changes import HistoryChanges
-from agentplane.sandbox_service.session_history.store import Store
 from agentplane.subjects import ServiceAccountRef
 from agentplane.testing.fake_apiserver import SANDBOX_NAMESPACE, TokenVerdict, fake_apiserver
 from agentplane.workload_auth.principal import WorkloadPrincipalResolver
 
 # gazelle:include_dep @pypi//protobuf
-# gazelle:include_dep //agentplane/sandbox_service/session_history:conftest
+# gazelle:include_dep //agentplane/history_service/storage:conftest
 
-pytest_plugins = ("agentplane.sandbox_service.session_history.conftest",)
+pytest_plugins = ("agentplane.history_service.storage.conftest",)
 
 AUDIENCE = "test-history-service"
 READER = ServiceAccountRef(namespace=SANDBOX_NAMESPACE, name="test-history-reader")

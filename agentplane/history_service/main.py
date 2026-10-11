@@ -16,12 +16,12 @@ from agentplane.history_service.fold_shadow import FoldShadow
 from agentplane.history_service.grpc_api import Resources, add_service
 from agentplane.history_service.ingester import HistoryIngester
 from agentplane.history_service.settings import Settings
+from agentplane.history_service.storage.history_changes import HistoryChanges
+from agentplane.history_service.storage.store import Store
 from agentplane.history_service.summaries import SummaryReader
 from agentplane.history_service.summary_changes import SummaryChanges
 from agentplane.history_service.thread_reads import ThreadReader
 from agentplane.sandbox_service.client import SandboxServiceClient
-from agentplane.sandbox_service.session_history.history_changes import HistoryChanges
-from agentplane.sandbox_service.session_history.store import Store
 from agentplane.workload_auth.principal import WorkloadPrincipalResolver
 
 # The asyncpg dialect is loaded by SQLAlchemy from the configured driver name.

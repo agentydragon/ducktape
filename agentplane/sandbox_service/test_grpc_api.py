@@ -37,7 +37,7 @@ from agentplane.sandbox_service.kubernetes_views import (
     PROVISIONING_ANNOTATION,
 )
 from agentplane.sandbox_service.protocol_pb2 import ResolvedGrant, SandboxDestination
-from agentplane.sandbox_service.session_history.session_changes import SessionChanges
+from agentplane.sandbox_service.session_changes import SessionChanges
 from agentplane.sandbox_service.session_registry import SessionRegistry
 from agentplane.sandbox_service.testing.grpc_service import service_client
 from agentplane.sandbox_service.testing.kubernetes import ACCOUNT, SANDBOX, SANDBOX_UID, Cluster
@@ -49,9 +49,9 @@ from util.agent_sandbox import SANDBOXES_PLURAL
 
 # gazelle:include_dep @pypi//protobuf
 # gazelle:include_dep @pypi//grpcio
-# gazelle:include_dep //agentplane/sandbox_service/session_history:conftest
+# gazelle:include_dep //agentplane/history_service/storage:conftest
 
-pytest_plugins = ("agentplane.sandbox_service.session_history.conftest",)
+pytest_plugins = ("agentplane.history_service.storage.conftest",)
 
 TOKEN = "test-grpc-token"
 AUDIENCE = "test-sandbox-service"

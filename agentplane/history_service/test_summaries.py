@@ -10,13 +10,13 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 
 from agentplane.history_service import protocol_pb2
 from agentplane.history_service.fold_shadow import FOLD_EPOCH, FoldShadow
+from agentplane.history_service.storage.store import Store
 from agentplane.history_service.summaries import SummaryReader
 from agentplane.proto import event_log_pb2, event_pb2
-from agentplane.sandbox_service.session_history.store import Store
 
-# gazelle:include_dep //agentplane/sandbox_service/session_history:conftest
+# gazelle:include_dep //agentplane/history_service/storage:conftest
 
-pytest_plugins = ("agentplane.sandbox_service.session_history.conftest",)
+pytest_plugins = ("agentplane.history_service.storage.conftest",)
 
 START = datetime(2026, 10, 10, 12, 0, tzinfo=UTC)
 

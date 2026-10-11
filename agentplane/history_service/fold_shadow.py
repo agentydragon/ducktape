@@ -20,10 +20,10 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
 
 from agentplane.history_service import protocol_pb2 as history_pb2
+from agentplane.history_service.storage.db import SessionHistory
+from agentplane.history_service.storage.history_changes import HistoryChanges
+from agentplane.history_service.storage.store import Store
 from agentplane.history_service.summary_changes import notify_summaries
-from agentplane.sandbox_service.session_history.db import SessionHistory
-from agentplane.sandbox_service.session_history.history_changes import HistoryChanges
-from agentplane.sandbox_service.session_history.store import Store
 from agentplane.thread_fold import projection_lease
 from agentplane.thread_fold.models import ThreadHistorySummary
 from agentplane.thread_fold.projection_lease import ProjectionLease, ProjectionLeaseLostError

@@ -7,8 +7,8 @@ from sqlalchemy import select, tuple_
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 from agentplane.history_service import protocol_pb2
-from agentplane.sandbox_service.session_history.db import SessionHistory
-from agentplane.sandbox_service.session_history.store import HistoryNotFoundError
+from agentplane.history_service.storage.db import SessionHistory
+from agentplane.history_service.storage.store import HistoryNotFoundError
 from agentplane.thread_fold.models import ThreadCheckpoint, ThreadEntity
 from agentplane.thread_fold.views import ThreadEntityView
 

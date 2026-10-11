@@ -25,6 +25,7 @@ from agentplane.action_service.service import ActionService
 from agentplane.action_service.testing.callers import admitted_callers
 from agentplane.action_service.testing.fixtures import RecordingExecutor
 from agentplane.action_service.updates import ActionUpdates
+from agentplane.history_service.storage.history_changes import HistoryChanges
 from agentplane.history_service.testing.backend import history_service, ingest
 from agentplane.notification_service.api import create_app
 from agentplane.notification_service.db import Inbox
@@ -38,7 +39,6 @@ from agentplane.runner.testing.scripted_model import ScriptedModel, Text
 from agentplane.sandbox_service.client import Runner
 from agentplane.sandbox_service.instructions import render_platform_instructions
 from agentplane.sandbox_service.protocol_pb2 import SandboxDestination, ServiceAccount
-from agentplane.sandbox_service.session_history.history_changes import HistoryChanges
 from agentplane.sandbox_service.testing.kubernetes import (
     ACCOUNT,
     SANDBOX,

@@ -32,7 +32,7 @@ from agentplane.sandbox_service.destinations import DestinationResolver
 from agentplane.sandbox_service.grpc_api import Resources
 from agentplane.sandbox_service.protocol_pb2 import SandboxDestination, TeardownPhase
 from agentplane.sandbox_service.runner_channel import ChannelTiming, RunnerChannelService
-from agentplane.sandbox_service.session_history.session_changes import SessionChanges
+from agentplane.sandbox_service.session_changes import SessionChanges
 from agentplane.sandbox_service.session_registry import SessionRegistry
 from agentplane.sandbox_service.teardown import Teardown
 from agentplane.sandbox_service.testing.grpc_service import service

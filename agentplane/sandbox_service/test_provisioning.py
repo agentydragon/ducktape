@@ -36,7 +36,7 @@ from agentplane.sandbox_service.kubernetes_views import SANDBOX_BINDING_ANNOTATI
 from agentplane.sandbox_service.protocol_pb2 import CreateSandboxRequest, SandboxDestination
 from agentplane.sandbox_service.provisioning import Provisioning
 from agentplane.sandbox_service.runner_endpoints import RunnerEndpoint, RunnerEndpoints
-from agentplane.sandbox_service.session_history.session_changes import SessionChanges
+from agentplane.sandbox_service.session_changes import SessionChanges
 from agentplane.sandbox_service.session_registry import SessionRegistry
 from agentplane.sandbox_service.testing.fake_inventory import (
     NAMESPACE,

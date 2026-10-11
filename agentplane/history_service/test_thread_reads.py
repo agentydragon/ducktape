@@ -9,15 +9,15 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 
 from agentplane.history_service import protocol_pb2
 from agentplane.history_service.fold_shadow import FOLD_EPOCH, PAGE_SIZE, FoldShadow
+from agentplane.history_service.storage.store import HistoryNotFoundError, Store
 from agentplane.history_service.thread_reads import ThreadReader, ThreadScopeResetError
 from agentplane.proto import event_log_pb2, event_pb2
-from agentplane.sandbox_service.session_history.store import HistoryNotFoundError, Store
 from agentplane.thread_fold.views import EntityKind, ThreadEntityView, ThreadItemEntityView
 
 # gazelle:include_dep @pypi//protobuf
-# gazelle:include_dep //agentplane/sandbox_service/session_history:conftest
+# gazelle:include_dep //agentplane/history_service/storage:conftest
 
-pytest_plugins = ("agentplane.sandbox_service.session_history.conftest",)
+pytest_plugins = ("agentplane.history_service.storage.conftest",)
 
 VIEW: TypeAdapter[ThreadEntityView] = TypeAdapter(ThreadEntityView)
 # More deltas than a fold page, so the window reflects several fold batches.

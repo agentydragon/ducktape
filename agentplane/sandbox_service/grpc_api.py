@@ -46,7 +46,7 @@ from agentplane.sandbox_service.protocol_pb2 import Sandbox, SandboxDestination
 from agentplane.sandbox_service.provisioning import Provisioning
 from agentplane.sandbox_service.retention_holds import MAX_HOLD_KEY_LENGTH
 from agentplane.sandbox_service.runner_channel import ChannelOperation
-from agentplane.sandbox_service.session_history.session_changes import SessionChanges
+from agentplane.sandbox_service.session_changes import SessionChanges
 from agentplane.sandbox_service.session_registry import SessionNotFoundError, SessionRegistry
 from agentplane.subjects import ServiceAccountRef
 from agentplane.workload_auth.bearer import parse_bearer, sole_header

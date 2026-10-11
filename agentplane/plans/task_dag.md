@@ -608,7 +608,7 @@ leases. The data is derived and rebuildable from the raw log.
 
 ### `HISTORY_SERVICE_OWNERSHIP` — capstone
 
-**Blocked on projection retirement and the store move.** The History Service is
+**Blocked on projection retirement.** The History Service is
 the only owner of the raw log and fold; the app is a facade over it. Each service's README states
 what unrelated agents can still do while it is down or rolling.
 
@@ -750,7 +750,7 @@ are irreplaceable, and a node that deletes a column or row stops for the operato
 ```mermaid
 flowchart TD
     HISTORY_SANDBOX_LOCATOR_DROP[Blocked: drop the Sandbox locator from the history database]
-    HISTORY_STORE_MOVE[Candidate: history store and migrations move to the History Service]
+    HISTORY_MIGRATE_IMAGE_RENAME[Candidate: name the history migration image for the History Service]
     HISTORY_WRITER_SWITCH_RETIRE[Blocked: delete the history_writer switch]
     HISTORY_DATABASE_RENAME[Blocked: rename the sandbox_service database and role]
     SANDBOX_DATABASE_RENAME[Blocked: name the sandbox_commands database for the Sandbox Service]
@@ -758,8 +758,6 @@ flowchart TD
     PROTO_DIRECTORY[Candidate: protos under agentplane/proto, packages named by path]
     APP_PROJECTOR_RETIRE[Delete app projector]
     HISTORY_SERVICE_OWNERSHIP[History Service ownership]
-    HISTORY_STORE_MOVE --> HISTORY_SERVICE_OWNERSHIP
-    HISTORY_STORE_MOVE --> HISTORY_DATABASE_RENAME
     FOLLOW_PATH_RETIRE[Delete following, WatchSessions and holds] --> HISTORY_SANDBOX_LOCATOR_DROP
     HISTORY_SANDBOX_LOCATOR_DROP --> HISTORY_DATABASE_RENAME
     HISTORY_DATABASE_RENAME --> SANDBOX_DATABASE_RENAME
@@ -776,15 +774,14 @@ rows the followers wrote, and `source_id` is never set. Rewrite feed snapshots s
 runner session ID under the public ID, then drop those columns with `ux_history_runner_locator`.
 Stops for the operator.
 
-### `HISTORY_STORE_MOVE` — the history store belongs to the History Service
+### `HISTORY_MIGRATE_IMAGE_RENAME` — the migration image says whose it is
 
-**Candidate; unaffected by the split.** Move the remaining store, models and
-Alembic migrations from `sandbox_service/session_history` into `history_service`, and rename the
-`agentplane-sandbox-service-history-migrate` image, whose init container already runs in the
-History Service Deployment.
-`session_history/session_changes.py`, which listens on `sandbox_commands`, moves next to the
-Session registry rather than with the store, unless `FOLLOW_PATH_RETIRE` has deleted the
-`WatchSessions` feed first.
+**Candidate.** `agentplane-sandbox-service-history-migrate` builds from
+`history_service/storage` and runs only as the History Service's init container. Publish it as
+`agentplane-history-migrate` beside the old name, point the History Service's manifests and Flux
+image automation at the new name once it has published, then delete the old `image_targets.json`
+entry and its `ImageRepository`/`ImagePolicy`. A manifest must not name the new image before it
+publishes.
 
 ### `HISTORY_WRITER_SWITCH_RETIRE` — one ingester, no switch
 
@@ -795,7 +792,7 @@ before: the old image reads a missing key as off and stops copying journals unti
 
 ### `HISTORY_DATABASE_RENAME` — name the database for its owner
 
-**Blocked on the store move and the column drop.** Rename the `sandbox_service` database and role
+**Blocked on the column drop.** Rename the `sandbox_service` database and role
 (and the `postgres-sandbox-service` Secret) for the History Service, resolving the `TODO` in
 `cluster/cdk8s/agentplane/database.py`. Rename in place (`ALTER DATABASE`/`ALTER ROLE ... RENAME`)
 and have the CNPG `Database` and managed role adopt the new names; recreating the database under a

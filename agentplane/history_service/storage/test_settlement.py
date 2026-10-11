@@ -4,9 +4,9 @@ import pytest
 import pytest_bazel
 
 from agentplane.history_service import protocol_pb2 as history_pb2
+from agentplane.history_service.storage.settlement import cursor_ranges, settle
 from agentplane.native.delta_templates import DeltaTemplate
 from agentplane.proto import event_log_pb2, event_pb2
-from agentplane.sandbox_service.session_history.settlement import cursor_ranges, settle
 from agentplane.sandbox_service.testing.delta_spans import (
     Span,
     claude_assistant,

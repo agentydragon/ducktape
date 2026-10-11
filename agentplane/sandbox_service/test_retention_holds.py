@@ -29,7 +29,7 @@ from agentplane.sandbox_service.models import SandboxNotFoundError
 from agentplane.sandbox_service.protocol_pb2 import Hold
 from agentplane.sandbox_service.provisioning import Provisioning
 from agentplane.sandbox_service.runner_endpoints import RunnerEndpoints
-from agentplane.sandbox_service.session_history.session_changes import SessionChanges
+from agentplane.sandbox_service.session_changes import SessionChanges
 from agentplane.sandbox_service.session_registry import SessionRegistry
 from agentplane.sandbox_service.testing.fake_inventory import NAMESPACE, FakeCoreV1Api, FakeCustomObjectsApi, sandbox
 from agentplane.sandbox_service.testing.fake_rbac import FakeRbac

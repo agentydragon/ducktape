@@ -17,15 +17,15 @@ from kubernetes_asyncio import client as k8s_client
 from sqlalchemy.exc import SQLAlchemyError
 
 from agentplane.history_service.protocol_pb2 import SessionFeedState
-from agentplane.proto import event_log_pb2, runner_ingress_pb2, runner_ingress_pb2_grpc, runner_pb2
-from agentplane.sandbox_service.protocol_pb2 import Sealed
-from agentplane.sandbox_service.session_history.store import (
+from agentplane.history_service.storage.store import (
     Checkpoint,
     HistoryConflictError,
     Store,
     Writer,
     WriterMismatchError,
 )
+from agentplane.proto import event_log_pb2, runner_ingress_pb2, runner_ingress_pb2_grpc, runner_pb2
+from agentplane.sandbox_service.protocol_pb2 import Sealed
 from agentplane.workload_auth.bearer import parse_bearer, sole_header
 from agentplane.workload_auth.principal import WorkloadPrincipalRejectedError, WorkloadPrincipalResolver
 

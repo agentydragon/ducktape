@@ -13,14 +13,14 @@ from kubernetes_asyncio import client as k8s_client
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from agentplane.history_service.ingress import Resources, Timing, add_ingress
+from agentplane.history_service.storage.store import Store
 from agentplane.proto import event_log_pb2, event_pb2, runner_ingress_pb2, runner_ingress_pb2_grpc, runner_pb2
-from agentplane.sandbox_service.session_history.store import Store
 from agentplane.workload_auth.principal import POD_NAME_CLAIM, POD_UID_CLAIM, WorkloadPrincipalResolver
 
-# gazelle:include_dep //agentplane/sandbox_service/session_history:conftest
+# gazelle:include_dep //agentplane/history_service/storage:conftest
 # gazelle:include_dep @pypi//protobuf
 
-pytest_plugins = ("agentplane.sandbox_service.session_history.conftest",)
+pytest_plugins = ("agentplane.history_service.storage.conftest",)
 
 AUDIENCE = "test-runner-ingress"
 NAMESPACE = "test-sandbox-namespace"

@@ -2,7 +2,7 @@
 
 from alembic import context
 
-from agentplane.sandbox_service.session_history.database_migrate import RUNNER
+from agentplane.history_service.storage.database_migrate import RUNNER
 
 context.configure(
     connection=context.config.attributes["connection"],

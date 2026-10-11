@@ -2,7 +2,7 @@
 
 from pathlib import Path
 
-from agentplane.sandbox_service.session_history.db import Base
+from agentplane.history_service.storage.db import Base
 from agentplane.thread_fold import models as fold_models
 from util.db_migrations import MigrationRunner, merged_metadata
 

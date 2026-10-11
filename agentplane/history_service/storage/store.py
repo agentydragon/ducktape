@@ -11,15 +11,15 @@ from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 from agentplane.history_service import protocol_pb2 as history_pb2
-from agentplane.proto import event_log_pb2
-from agentplane.sandbox_service.session_history.db import (
+from agentplane.history_service.storage.db import (
     SessionEvent,
     SessionEventSettledRange,
     SessionEventSettlement,
     SessionHistory,
 )
-from agentplane.sandbox_service.session_history.history_changes import notify_history
-from agentplane.sandbox_service.session_history.settlement import completion_target, settle, started_item
+from agentplane.history_service.storage.history_changes import notify_history
+from agentplane.history_service.storage.settlement import completion_target, settle, started_item
+from agentplane.proto import event_log_pb2
 
 # The generated protobuf stubs need the protobuf runtime as a direct mypy dependency.
 # gazelle:include_dep @pypi//protobuf

@@ -9,15 +9,15 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 from agentplane.history_service import protocol_pb2
 from agentplane.history_service.evidence import EvidenceNotFoundError, EvidenceReader
 from agentplane.history_service.fold_shadow import FOLD_EPOCH, FoldShadow
+from agentplane.history_service.storage.store import Store
 from agentplane.history_service.thread_reads import ThreadScopeResetError
 from agentplane.proto import event_log_pb2, event_pb2
-from agentplane.sandbox_service.session_history.store import Store
 from agentplane.thread_fold.views import EntityKind
 
 # gazelle:include_dep @pypi//protobuf
-# gazelle:include_dep //agentplane/sandbox_service/session_history:conftest
+# gazelle:include_dep //agentplane/history_service/storage:conftest
 
-pytest_plugins = ("agentplane.sandbox_service.session_history.conftest",)
+pytest_plugins = ("agentplane.history_service.storage.conftest",)
 
 REPLY = protocol_pb2.EntityKey(entity_kind=EntityKind.ITEM, entity_id="test-reply")
 NATIVE = event_pb2.Native(direction=event_pb2.DIRECTION_FROM_HARNESS, line='{"test": "native frame"}')

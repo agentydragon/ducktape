@@ -8,10 +8,8 @@ import pytest_bazel
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from agentplane.history_service import protocol_pb2 as history_pb2
-from agentplane.proto import event_log_pb2, runner_pb2
-from agentplane.sandbox_service import protocol_pb2
-from agentplane.sandbox_service.session_history.history_changes import HistoryChanges
-from agentplane.sandbox_service.session_history.store import (
+from agentplane.history_service.storage.history_changes import HistoryChanges
+from agentplane.history_service.storage.store import (
     HistoryConflictError,
     HistoryNotFoundError,
     ObservationPage,
@@ -19,6 +17,8 @@ from agentplane.sandbox_service.session_history.store import (
     Writer,
     WriterMismatchError,
 )
+from agentplane.proto import event_log_pb2, runner_pb2
+from agentplane.sandbox_service import protocol_pb2
 from agentplane.sandbox_service.testing.delta_spans import claude_text
 
 # gazelle:include_dep @pypi//protobuf

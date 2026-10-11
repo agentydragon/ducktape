@@ -6,8 +6,8 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 from agentplane.history_service import protocol_pb2
+from agentplane.history_service.storage.store import Store
 from agentplane.history_service.thread_reads import ThreadScopeResetError
-from agentplane.sandbox_service.session_history.store import Store
 from agentplane.thread_fold.models import ThreadCheckpoint, ThreadEntity, ThreadEvidence, ThreadNativeLink
 
 # gazelle:include_dep @pypi//protobuf
