@@ -59,12 +59,12 @@ from agentplane.proto import command_pb2, event_log_pb2, event_pb2, runner_pb2, 
 from agentplane.runner import service
 from agentplane.runner.harness import Harness
 from agentplane.runner.session import Session
+from agentplane.runner.testing.failure_journal import call_failed, capture_native_journal
 from agentplane.runner.testing.fixtures import RunnerClientFactory, RunnerHandle
 from agentplane.runner.testing.scripted_model import ScriptedModel, ShellCall, Text
 from agentplane.sandbox_service.client import SandboxServiceClient
 from agentplane.sandbox_service.testing.backend import Endpoint, seed_runner
 from agentplane.sandbox_service.testing.fake_inventory import FakeCoreV1Api, FakeCustomObjectsApi
-from agentplane.testing.failure_journal import call_failed, capture_native_journal
 from agentplane.thread_fold.models import ThreadCheckpoint, ThreadEntity, ThreadPayloadChunk
 from util.net import bind_free_port
 from util.testing.asgi import serve_app_in_loop

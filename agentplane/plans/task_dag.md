@@ -1057,7 +1057,6 @@ flowchart TD
         GRPC_CHANNEL_OPTIONS_CONSTANT[Candidate: one gRPC channel options constant]
         CDK8S_RUNNER_TEMPLATE_MOVE[Candidate: runner Pod objects out of the app]
         CDK8S_CALLER_WIRING[Candidate: one callers shape]
-        TESTING_FAILURE_JOURNAL[Candidate: one failed-journal fixture]
     end
     GATEWAY_CLIENT_SPLIT --> RUNNER_ERRORS_REHOME
     KUBEVIRT_GUEST_CONTROL --> RUNNER_INBOUND_RETIRE
@@ -1212,13 +1211,6 @@ beside `sandbox_pod.py` with one `runner_pods(namespace)`.
 **Candidate.** `RunnerGateway` takes a `callers` map, `SandboxService` and `HistoryService` take
 single callers and hard-code notifications, and `Notifications` admits the app and egress by literal
 labels. One `callers` shape everywhere, assembled in `chart.py`.
-
-### `TESTING_FAILURE_JOURNAL` — one failed-journal fixture
-
-**Candidate.** `notification_service/conftest.py` (which swallows the error detail) and
-`app/test_bridge.py` each copy a failed native journal. One fixture in `agentplane/runner/testing`,
-where the runner-specific `agentplane/testing/failure_journal.py` belongs, and trim that package's
-visibility list.
 
 ## Scope and retirement of stale gates
 

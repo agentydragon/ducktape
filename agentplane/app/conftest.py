@@ -40,6 +40,7 @@ from agentplane.app.threads.view.content import ContentStore
 from agentplane.egress.decisions_client import DecisionsClient
 from agentplane.history_service.client import HistoryServiceClient
 from agentplane.history_service.testing.fixtures import service_database_template
+from agentplane.runner.testing.failure_journal import pytest_runtest_makereport
 
 # The per-test database is created over psycopg, which SQLAlchemy loads from the URL scheme.
 # gazelle:include_dep @pypi//psycopg
@@ -69,7 +70,6 @@ from agentplane.sandbox_service.testing.fake_inventory import (
 )
 from agentplane.sandbox_service.testing.fake_rbac import FakeRbac
 from agentplane.testing.electric_role import ensure_electric_role
-from agentplane.testing.failure_journal import pytest_runtest_makereport
 from agentplane.thread_fold.projection_lease import ProjectionLease
 from util.testing.postgres import DatabaseClones, PostgresDatabaseTemplate, migrated_database_template
 from util.testing.postgres_fixtures import (

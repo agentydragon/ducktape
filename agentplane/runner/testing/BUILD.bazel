@@ -58,6 +58,17 @@ py_library(
 )
 
 py_library(
+    name = "failure_journal",
+    srcs = ["failure_journal.py"],
+    deps = [
+        ":fixtures",
+        "//util/testing:undeclared_outputs",
+        "@pypi//protobuf",
+        "@pypi//pytest",
+    ],
+)
+
+py_library(
     name = "fixtures",
     srcs = ["fixtures.py"],
     deps = [

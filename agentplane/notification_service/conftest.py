@@ -1,7 +1,5 @@
 """Real PostgreSQL, migrated by the same image-owned runner used in deployment."""
 
-import asyncio
-import logging
 from collections.abc import AsyncIterator
 
 import pytest
@@ -11,8 +9,8 @@ from agentplane.action_service.testing.fixtures import action_database_template,
 from agentplane.history_service.testing.fixtures import service_database_template
 from agentplane.notification_service.database_migrate import RUNNER
 from agentplane.notification_service.store import Store
-from agentplane.runner.testing.fixtures import RunnerHandle, config, endpoint, harness, model, runner, spec, workspace
-from agentplane.testing.failure_journal import call_failed, capture_native_journal, pytest_runtest_makereport
+from agentplane.runner.testing.failure_journal import failed_native_journal, pytest_runtest_makereport
+from agentplane.runner.testing.fixtures import config, endpoint, harness, model, runner, spec, workspace
 from util.testing.postgres import DatabaseClones, PostgresDatabaseTemplate
 from util.testing.postgres_fixtures import (
     database_clones,
@@ -29,21 +27,6 @@ from util.testing.sqlalchemy_engines import managed_async_engine
 
 # gazelle:include_dep @pypi//asyncpg
 # gazelle:include_dep @pypi//psycopg
-
-logger = logging.getLogger(__name__)
-
-
-@pytest.fixture
-async def failed_native_journal(request: pytest.FixtureRequest, runner: RunnerHandle) -> AsyncIterator[None]:
-    yield
-    if not call_failed(request):
-        return
-    try:
-        async with asyncio.timeout(3):
-            await capture_native_journal(request, runner)
-    except Exception as error:
-        logger.warning("native journal capture failed: %s", type(error).__name__)
-
 
 database_template, db_url = migrated_database_fixtures(RUNNER, drivername="postgresql+asyncpg")
 
