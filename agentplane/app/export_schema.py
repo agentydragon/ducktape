@@ -74,7 +74,7 @@ def _openapi_document(api_client: k8s_client.ApiClient) -> dict[str, Any]:
             content=content,
             ingester=Ingester(runners=runners, event_logs=event_logs),
         ),
-        ThreadStore(engine, summaries),
+        ThreadStore(engine, summaries, gateway=inventory),
         ModelCatalog(
             models=[
                 ModelOption(

@@ -1,8 +1,11 @@
 """App-side session discovery; every runner operation goes through Sandbox Service."""
 
+from uuid import UUID
+
 from agentplane.app.changes import Changes
 from agentplane.app.live import LiveIndex
 from agentplane.app.sandbox_models import sandbox_has_ready_pod
+from agentplane.app.threads.events.event_log import SessionNotRegisteredError
 from agentplane.proto.sandbox_service_pb2 import SandboxDestination, ServiceAccount
 from agentplane.sandbox_service.client import Runner, SandboxServiceClient
 from agentplane.sandbox_service.models import SandboxNotFoundError
@@ -29,6 +32,13 @@ class SandboxSessions:
 
     def running(self) -> set[str]:
         return {view.name for view in self._index.sandbox_views() if sandbox_has_ready_pod(view)}
+
+    async def sandbox_of(self, thread_id: UUID) -> str:
+        """The Sandbox the Runner Gateway routes the Thread's Session to."""
+        found = await self._service.session_sandboxes({str(thread_id)})
+        if not found:
+            raise SessionNotRegisteredError(thread_id)
+        return found[0].sandbox
 
     def client(self, sandbox: str) -> Runner:
         view = self._index.sandbox_view(sandbox)

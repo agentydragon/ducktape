@@ -220,7 +220,7 @@ async def _serve(
         )
         history = HistoryServiceClient(history_target, token_file=history_token_file, request_timeout_s=10)
         summaries = Summaries(engine, history)
-        store = ThreadStore(engine, summaries)
+        store = ThreadStore(engine, summaries, gateway=inventory)
         event_logs = EventLogStore(engine, history_reader=history, summaries=summaries)
         content = ContentStore(engine, history_reader=history)
         runners = SandboxSessions(index, inventory)

@@ -261,7 +261,7 @@ async def test_open_refuses_a_runner_session_id(engine: AsyncEngine) -> None:
         await current.open("sb-1", "s-retained")
 
 
-async def test_service_routes_use_public_identity(engine: AsyncEngine) -> None:
+async def test_a_thread_exists_by_its_public_identity(engine: AsyncEngine) -> None:
     public_id = await seed_retained_session(engine)
     reader = AsyncMock(spec=HistoryServiceClient)
     current = EventLogStore(
@@ -269,14 +269,8 @@ async def test_service_routes_use_public_identity(engine: AsyncEngine) -> None:
         summaries=Summaries(engine, cast(HistoryServiceClient, reader)),
         history_reader=cast(HistoryServiceClient, reader),
     )
-    route = await current.service_session(public_id)
-    assert route is not None
-    assert route.sandbox == "sb-1"
-    assert route.session_id == str(public_id)
-    assert await current.service_session(uuid4()) is None
-    async with async_sessionmaker(engine)() as session:
-        row = await session.get(EventLog, public_id)
-        assert row is not None
+    assert await current.exists(public_id)
+    assert not await current.exists(uuid4())
 
 
 async def test_public_session_alias_cannot_cross_sandboxes(engine: AsyncEngine) -> None:

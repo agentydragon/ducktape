@@ -27,7 +27,7 @@ async def follow(
     event_logs: EventLogStore, changes: Changes, thread_id: UUID, *, after_cursor: int
 ) -> AsyncGenerator[bytes]:
     """Follow the committed archive without requiring or starting a runner attachment."""
-    if await event_logs.service_session(thread_id) is None:
+    if not await event_logs.exists(thread_id):
         raise ThreadNotFoundError(thread_id)
     waiter = asyncio.Event()
     cursor = after_cursor

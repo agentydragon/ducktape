@@ -10,7 +10,7 @@ import pytest
 import pytest_bazel
 
 from agentplane.app.changes import Changes
-from agentplane.app.threads.events.event_log import EventLogStore, ServiceSessionReference
+from agentplane.app.threads.events.event_log import EventLogStore
 from agentplane.app.threads.events.stream import follow
 from agentplane.app.threads.summaries import FeedEnd, FeedSnapshot
 from agentplane.proto import event_log_pb2, runner_pb2
@@ -20,7 +20,7 @@ from agentplane.proto import event_log_pb2, runner_pb2
 
 async def test_terminal_stream_waits_without_spinning_for_service_suffix() -> None:
     logs = AsyncMock(spec=EventLogStore)
-    logs.service_session.return_value = ServiceSessionReference("sb", "s-1")
+    logs.exists.return_value = True
     logs.feed_state.return_value = FeedSnapshot(runner_pb2.Attached(last_cursor=1), FeedEnd())
     logs.last_cursor.return_value = 1
     logs.events.side_effect = [[], [event_log_pb2.EventEntry(cursor=1)], []]
@@ -40,7 +40,7 @@ async def test_stream_does_not_end_on_a_terminal_snapshot_behind_streamed_entrie
     """A runner attached before its harness started can record an end that later entries supersede.
     The archive can stream those entries before the fold clears that end."""
     logs = AsyncMock(spec=EventLogStore)
-    logs.service_session.return_value = ServiceSessionReference("sb", "s-1")
+    logs.exists.return_value = True
     stale = FeedSnapshot(runner_pb2.Attached(last_cursor=1), FeedEnd())
     current = FeedSnapshot(runner_pb2.Attached(last_cursor=2), FeedEnd())
     logs.feed_state.side_effect = [stale, stale, current, current]

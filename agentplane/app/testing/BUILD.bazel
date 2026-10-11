@@ -80,6 +80,7 @@ py_library(
         "//agentplane/proto:command_pb2",
         "//agentplane/proto:event_log_pb2",
         "//agentplane/proto:event_pb2",
+        "//agentplane/proto:runner_gateway_pb2",
         "//agentplane/proto:runner_gateway_pb2_grpc",
         "//agentplane/proto:runner_pb2",
         "//agentplane/proto:sandbox_service_pb2",
@@ -195,6 +196,8 @@ py_library(
         "//agentplane/app/threads/events:event_log",
         "//agentplane/history_service:client",
         "//agentplane/history_service/testing:history",
+        "//agentplane/runner_gateway:session_registry",
+        "//agentplane/runner_gateway/commands:db",
         "@pypi//sqlalchemy",
     ],
 )

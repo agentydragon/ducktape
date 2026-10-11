@@ -332,7 +332,7 @@ def app(
     return create_app(
         inventory,
         bridge,
-        ThreadStore(engine, summaries),
+        ThreadStore(engine, summaries, gateway=inventory),
         MODELS,
         egress,
         decisions,

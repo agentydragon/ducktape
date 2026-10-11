@@ -156,7 +156,7 @@ async def async_main(settings: Settings) -> None:
         history_watch = HistoryWatch(
             history_watch_client, database_updates.changes[Channel.THREADS].notify, retry_interval_s=1
         )
-        store = ThreadStore(engine, summaries)
+        store = ThreadStore(engine, summaries, gateway=inventory)
         event_logs = EventLogStore(engine, history_reader=history, summaries=summaries)
         runners = SandboxSessions(live, inventory)
         ingester = Ingester(runners=runners, event_logs=event_logs)

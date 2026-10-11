@@ -162,7 +162,7 @@ class ElectricProxy:
     async def scope(self, thread_id: UUID) -> ThreadScopeResponse | None:
         """The thread's scope, held until its runner's first events are folded; None if they are
         not by the end of the hold, and the reader asks again."""
-        if await self._event_logs.service_session(thread_id) is None:
+        if not await self._event_logs.exists(thread_id):
             raise HTTPException(status.HTTP_404_NOT_FOUND, f"no thread {thread_id}")
         waiter = asyncio.Event()
         with self._thread_changes.subscribe(waiter):

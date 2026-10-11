@@ -1,7 +1,8 @@
 """`ThreadStore`, the thread component's API over PostgreSQL.
 
 A thread is assembled from its event log: listing and reading it join the log with what an operator
-has set on the thread, its name and archive state, which is written here.
+has set on the thread, its name and archive state, which is written here, and with the Sandbox the
+Runner Gateway routes its Session to.
 """
 
 from __future__ import annotations
@@ -17,12 +18,13 @@ from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 from agentplane.app.database_updates import Channel, notify
-from agentplane.app.threads.events.event_log import ThreadNotFoundError
+from agentplane.app.threads.events.event_log import SessionNotRegisteredError, ThreadNotFoundError
 from agentplane.app.threads.models import EventLog, Thread
 from agentplane.app.threads.summaries import FeedError, FoldSummary, Summaries
 from agentplane.app.threads.thread_view import ThreadView
-from agentplane.proto import event_pb2, runner_pb2
+from agentplane.proto import event_pb2, runner_gateway_pb2, runner_pb2
 from agentplane.runner.harness import Harness
+from agentplane.sandbox_service.client import SandboxServiceClient
 
 # The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.
 # gazelle:include_dep @pypi//protobuf
@@ -76,9 +78,10 @@ class ThreadPage(BaseModel):
 
 
 class ThreadStore:
-    def __init__(self, engine: AsyncEngine, summaries: Summaries) -> None:
+    def __init__(self, engine: AsyncEngine, summaries: Summaries, *, gateway: SandboxServiceClient) -> None:
         self._sessions = async_sessionmaker(engine, expire_on_commit=False)
         self._summaries = summaries
+        self._gateway = gateway
 
     async def list_page(
         self,
@@ -103,12 +106,12 @@ class ThreadStore:
             .limit(limit + 1)
         )
         if sandbox is not None:
-            query = query.where(EventLog.sandbox == sandbox)
+            query = query.where(EventLog.id.in_(await self._find(sandbox_name=sandbox)))
         if search is not None:
             query = query.where(
                 or_(
                     Thread.name.icontains(search, autoescape=True),
-                    EventLog.sandbox.icontains(search, autoescape=True),
+                    EventLog.id.in_(await self._find(sandbox_name_contains=search)),
                     cast(EventLog.id, String).startswith(search.lower(), autoescape=True),
                 )
             )
@@ -120,10 +123,11 @@ class ThreadStore:
         async with self._sessions() as session:
             rows = list(await session.execute(query))
         page = rows[:limit]
-        summaries = await self._summaries.many({log.id for log, _ in page})
+        ids = {log.id for log, _ in page}
+        summaries, sandboxes = await self._summaries.many(ids), await self._sandboxes(ids)
         last = page[-1][0] if len(rows) > limit else None
         return ThreadPage(
-            threads=[_view(log, thread, summaries[log.id]) for log, thread in page],
+            threads=[_view(log, thread, summaries[log.id], sandboxes[log.id]) for log, thread in page],
             next_page_token=None
             if last is None
             else PageToken(listing=listing, created_at=last.created_at, id=last.id).encode(),
@@ -142,6 +146,25 @@ class ThreadStore:
                 return threads
             page_token = page.next_page_token
 
+    async def _find(self, **match: str) -> set[UUID]:
+        found = await self._gateway.find_sessions(runner_gateway_pb2.FindSessionsRequest(**match))
+        return {UUID(session.session_id) for session in found}
+
+    async def _sandboxes(self, thread_ids: set[UUID]) -> dict[UUID, str]:
+        """Each Thread's Sandbox; every app Thread's Session is registered with the gateway."""
+        if not thread_ids:
+            return {}
+        found = {
+            UUID(session.session_id): session.sandbox
+            for session in await self._gateway.session_sandboxes({str(thread_id) for thread_id in thread_ids})
+        }
+        if missing := thread_ids - found.keys():
+            raise SessionNotRegisteredError(min(missing))
+        return found
+
+    async def _view(self, log: EventLog, thread: Thread | None) -> ThreadView:
+        return _view(log, thread, await self._summaries.get(log.id), (await self._sandboxes({log.id}))[log.id])
+
     async def archived_count(self) -> int:
         async with self._sessions() as session:
             return (
@@ -159,14 +182,14 @@ class ThreadStore:
             if log is None:
                 return None
             thread = await session.get(Thread, thread_id)
-        return _view(log, thread, await self._summaries.get(thread_id))
+        return await self._view(log, thread)
 
     async def rename(self, thread_id: UUID, name: str | None) -> ThreadView:
         """Set or, with None, clear the thread's name."""
         async with self._sessions.begin() as session:
             log, thread = await _set_thread(session, thread_id, name=name)
             await notify(session, Channel.THREADS)
-        return _view(log, thread, await self._summaries.get(thread_id))
+        return await self._view(log, thread)
 
     async def archive(self, thread_id: UUID) -> ThreadView:
         """Hide the thread from a default listing without touching its events."""
@@ -179,7 +202,7 @@ class ThreadStore:
         async with self._sessions.begin() as session:
             log, thread = await _set_thread(session, thread_id, archived=archived)
             await notify(session, Channel.THREADS)
-        return _view(log, thread, await self._summaries.get(thread_id))
+        return await self._view(log, thread)
 
 
 async def _set_thread(session: AsyncSession, thread_id: UUID, **values: object) -> tuple[EventLog, Thread | None]:
@@ -196,7 +219,7 @@ async def _set_thread(session: AsyncSession, thread_id: UUID, **values: object) 
     return log, thread
 
 
-def _view(log: EventLog, thread: Thread | None, summary: FoldSummary) -> ThreadView:
+def _view(log: EventLog, thread: Thread | None, summary: FoldSummary, sandbox: str) -> ThreadView:
     last_turn_status = None if summary.last_turn_status is None else event_pb2.TurnStatus.Name(summary.last_turn_status)
     attachment = summary.feed.attached if summary.feed is not None else None
     end = summary.feed.end if summary.feed is not None else None
@@ -204,7 +227,7 @@ def _view(log: EventLog, thread: Thread | None, summary: FoldSummary) -> ThreadV
     spec = attachment.spec if attachment is not None and attachment.HasField("spec") else None
     return ThreadView(
         id=log.id,
-        sandbox=log.sandbox,
+        sandbox=sandbox,
         harness=None if spec is None else Harness(runner_pb2.Harness.Name(spec.harness)),
         model=None if spec is None else spec.model,
         cwd=None if spec is None else spec.cwd,

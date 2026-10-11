@@ -38,7 +38,7 @@ from agentplane.app.threads.store import ThreadStore
 from agentplane.app.threads.view.content import ContentStore
 from agentplane.egress.decisions_client import DecisionsClient
 from agentplane.grpc_serving import serving
-from agentplane.proto import event_log_pb2, runner_gateway_pb2_grpc, runner_pb2, sandbox_service_pb2
+from agentplane.proto import event_log_pb2, runner_gateway_pb2, runner_gateway_pb2_grpc, runner_pb2, sandbox_service_pb2
 from agentplane.runner.harness import Harness
 from agentplane.sandbox_service.client import SandboxServiceClient
 from agentplane.sandbox_service.kubernetes_grants import KubernetesGrant, RoleBindingGrant, RoleRef
@@ -745,6 +745,16 @@ async def unanswered_command_service(
     token_file: Path,
 ) -> AsyncIterator[tuple[SandboxServiceClient, asyncio.Queue[str]]]:
     class UnansweredGateway(runner_gateway_pb2_grpc.RunnerGatewayServicer):
+        @override
+        async def BatchGetSessionSandboxes(
+            self, request: runner_gateway_pb2.BatchGetSessionSandboxesRequest, context: grpc.aio.ServicerContext
+        ) -> runner_gateway_pb2.SessionSandboxes:
+            return runner_gateway_pb2.SessionSandboxes(
+                sessions=[
+                    runner_gateway_pb2.SessionSandbox(session_id=id, sandbox="live") for id in request.session_ids
+                ]
+            )
+
         @override
         async def SubmitCommand(
             self, request: sandbox_service_pb2.SubmitCommandRequest, context: grpc.aio.ServicerContext

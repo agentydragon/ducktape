@@ -138,15 +138,12 @@ class RunnerBridge:
         snapshot = await self._event_logs.feed_state(thread_id)
         if snapshot is not None and isinstance(snapshot.end, FeedError):
             raise RunnerError(f"runner history is rejected: {snapshot.end.message}")
-        runner_session = await self._event_logs.service_session(thread_id)
-        if runner_session is None:
-            raise ThreadNotFoundError(thread_id)
-        sessions = await self.list_sessions(runner_session.sandbox)
-        summary = next((row for row in sessions if row.session_id == str(thread_id)), None)
+        sandbox = await self._session_sandbox(thread_id)
+        session_id = str(thread_id)
+        sessions = await self.list_sessions(sandbox)
+        summary = next((row for row in sessions if row.session_id == session_id), None)
         if summary is None:
-            raise RunnerError(
-                f"runner has no retained session {runner_session.session_id!r}; this Thread cannot be resumed"
-            )
+            raise RunnerError(f"runner has no retained session {session_id!r}; this Thread cannot be resumed")
         if summary.setup_state in (runner_pb2.SETUP_STATE_FAILED, runner_pb2.SETUP_STATE_INTERRUPTED):
             raise RunnerError("Thread setup failed or was interrupted; create a new Thread to try again")
         if (
@@ -154,12 +151,12 @@ class RunnerBridge:
             or not summary.spec.cwd
             or not summary.spec.model
         ):
-            raise RunnerError(f"runner session {runner_session.session_id!r} has no recoverable session spec")
+            raise RunnerError(f"runner session {session_id!r} has no recoverable session spec")
         if (expected_harness is not None and runner_pb2.Harness.Name(summary.spec.harness) != expected_harness) or (
             expected_cwd is not None and summary.spec.cwd != expected_cwd
         ):
             raise RunnerError("runner's retained session spec does not match this Thread's harness and workspace")
-        attached = await self._runners.client(runner_session.sandbox).resume(runner_session.session_id)
+        attached = await self._runners.client(sandbox).resume(session_id)
         # The Thread mapping already exists. Do not make runner Resume depend on archive
         # catch-up; its feed exposes that later, and a stale view remains non-authoritative.
         await self._event_logs.resume_pending(thread_id)
@@ -174,9 +171,7 @@ class RunnerBridge:
         """
         if admitted := await self._content.admitted_command(thread_id, command):
             return admitted
-        runner_session = await self._event_logs.service_session(thread_id)
-        if runner_session is None:
-            raise ThreadNotFoundError(thread_id)
+        sandbox = await self._session_sandbox(thread_id)
         snapshot = await self._event_logs.feed_state(thread_id)
         if snapshot is not None and isinstance(snapshot.end, FeedError):
             raise RunnerError(f"runner history is rejected: {snapshot.end.message}")
@@ -185,25 +180,25 @@ class RunnerBridge:
         await self._ingester.start()
         try:
             return await self._command(
-                runner_session.sandbox,
-                runner_session.session_id,
-                command,
-                after_cursor=await self._event_logs.last_cursor(thread_id),
+                sandbox, str(thread_id), command, after_cursor=await self._event_logs.last_cursor(thread_id)
             )
         except TimeoutError as error:
             raise RunnerAdmissionTimeoutError(command.command_id) from error
 
     async def command_status(self, thread_id: UUID, command_id: str) -> CommandStatus:
         """What the Sandbox Service retained for the command, without contacting the runner."""
-        runner_session = await self._event_logs.service_session(thread_id)
-        if runner_session is None:
-            raise ThreadNotFoundError(thread_id)
-        status = await self._runners.client(runner_session.sandbox).get_command(runner_session.session_id, command_id)
+        sandbox = await self._session_sandbox(thread_id)
+        status = await self._runners.client(sandbox).get_command(str(thread_id), command_id)
         return CommandStatus(
             state=_COMMAND_STATES[status.state],
             admission=MessageToDict(status.admission) if status.HasField("admission") else None,
             rejection=status.rejection if status.HasField("rejection") else None,
         )
+
+    async def _session_sandbox(self, thread_id: UUID) -> str:
+        if not await self._event_logs.exists(thread_id):
+            raise ThreadNotFoundError(thread_id)
+        return await self._runners.sandbox_of(thread_id)
 
     async def _command(
         self, sandbox: str, session_id: str, command: command_pb2.Command, *, after_cursor: int

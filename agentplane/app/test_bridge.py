@@ -38,7 +38,7 @@ from agentplane.app.identity import TokenReviewer
 from agentplane.app.live import LiveIndex
 from agentplane.app.model_catalog import ModelCatalog, ModelOption
 from agentplane.app.operator_sessions import OperatorSessionStore
-from agentplane.app.testing.history import SeededEventLogStore as EventLogStore
+from agentplane.app.testing.history import SeededEventLogStore as EventLogStore, register_gateway_session
 from agentplane.app.testing.model_test_data import TEST_REASONING_EFFORTS
 from agentplane.app.threads.bridge import RunnerAdmissionTimeoutError, RunnerBridge
 from agentplane.app.threads.events.stream import follow
@@ -931,8 +931,11 @@ async def test_resume_after_tool_completion_preserves_the_result_and_does_not_re
         assert marker.read_text().splitlines() == [token]
 
 
-async def test_thread_resume_reports_missing_runner_recovery_state(app_url: str, event_logs: EventLogStore) -> None:
+async def test_thread_resume_reports_missing_runner_recovery_state(
+    app_url: str, event_logs: EventLogStore, history: History
+) -> None:
     thread_id = await event_logs.open(SANDBOX, "missing-runner-session")
+    await register_gateway_session(history.engine, thread_id, sandbox=SANDBOX)
     async with httpx.AsyncClient(base_url=app_url, timeout=60, headers=AGENT_AUTH) as http:
         response = await http.post(f"/threads/{thread_id}/resume")
     assert response.status_code == 409
@@ -1147,6 +1150,7 @@ async def test_command_returns_runner_receipt_before_app_archive_catches_up(
 ) -> None:
     thread = await event_logs.open(SANDBOX, SESSION)
     await history.open(thread, sandbox=SANDBOX)
+    await register_gateway_session(history.engine, thread, sandbox=SANDBOX)
     command = command_pb2.Command(
         command_id="ahead-of-archive", interrupt_turn=command_pb2.InterruptTurn(turn_id="target")
     )

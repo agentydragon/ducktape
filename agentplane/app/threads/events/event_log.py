@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from itertools import pairwise
 from uuid import UUID
 
@@ -33,12 +32,11 @@ class ThreadNotFoundError(Exception):
         super().__init__(f"no thread {thread_id}")
 
 
-@dataclass(frozen=True)
-class ServiceSessionReference:
-    """A public Sandbox Service Session identity and its Sandbox route."""
+class SessionNotRegisteredError(LookupError):
+    """An app Thread whose Session the Runner Gateway has no record of."""
 
-    sandbox: str
-    session_id: str
+    def __init__(self, thread_id: UUID) -> None:
+        super().__init__(f"the Runner Gateway has no Session {thread_id}")
 
 
 class EventLogStore:
@@ -81,12 +79,9 @@ class EventLogStore:
         """A runner-confirmed restart supersedes a normal terminal feed, not a replay error."""
         await self._summaries.resume_pending(thread_id)
 
-    async def service_session(self, thread_id: UUID) -> ServiceSessionReference | None:
+    async def exists(self, thread_id: UUID) -> bool:
         async with self._sessions() as session:
-            log = (
-                await session.execute(select(EventLog.sandbox, EventLog.id).where(EventLog.id == thread_id))
-            ).one_or_none()
-            return None if log is None else ServiceSessionReference(log.sandbox, str(log.id))
+            return await session.get(EventLog, thread_id) is not None
 
     async def last_cursor(self, thread_id: UUID) -> int:
         """The committed fold cursor, independent of archive progress."""

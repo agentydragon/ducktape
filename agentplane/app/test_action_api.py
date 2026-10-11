@@ -384,7 +384,7 @@ async def review(
         replica = create_app(
             inventory,
             bridge,
-            ThreadStore(replica_engine, replica_summaries),
+            ThreadStore(replica_engine, replica_summaries, gateway=inventory),
             ModelCatalog(
                 models=[
                     ModelOption(

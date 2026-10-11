@@ -143,8 +143,8 @@ def summaries(engine: AsyncEngine, history_client: HistoryServiceClient) -> Summ
 
 
 @pytest.fixture
-def store(engine: AsyncEngine, summaries: Summaries) -> ThreadStore:
-    return ThreadStore(engine, summaries)
+def store(engine: AsyncEngine, summaries: Summaries, inventory: SandboxServiceClient) -> ThreadStore:
+    return ThreadStore(engine, summaries, gateway=inventory)
 
 
 @pytest.fixture
@@ -199,12 +199,12 @@ async def database_updates(
 
 @pytest.fixture
 async def replica(
-    db_url: str, event_logs: EventLogStore, history_client: HistoryServiceClient
+    db_url: str, event_logs: EventLogStore, history_client: HistoryServiceClient, inventory: SandboxServiceClient
 ) -> AsyncIterator[Replica]:
     async with managed_async_engine(connect(db_url)) as engine:
         summaries = Summaries(engine, history_client)
         yield Replica(
-            ThreadStore(engine, summaries),
+            ThreadStore(engine, summaries, gateway=inventory),
             EventLogStore(engine, history=event_logs.history, history_reader=history_client, summaries=summaries),
             OperatorSessionStore(engine),
         )

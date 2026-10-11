@@ -18,6 +18,7 @@ from agentplane.proto import (
     command_pb2,
     event_log_pb2,
     event_pb2,
+    runner_gateway_pb2,
     runner_gateway_pb2_grpc,
     runner_pb2,
     sandbox_service_pb2,
@@ -124,6 +125,27 @@ class Gateway(runner_gateway_pb2_grpc.RunnerGatewayServicer):
         entry = self.source.append(event_pb2.Event(command_admitted=event_pb2.CommandAdmitted(command=command)))
         self._admissions[command.command_id] = entry
         return entry
+
+    def _placement(self) -> runner_gateway_pb2.SessionSandbox:
+        return runner_gateway_pb2.SessionSandbox(session_id=str(self.source.session_id), sandbox=SANDBOX)
+
+    @override
+    async def BatchGetSessionSandboxes(
+        self, request: runner_gateway_pb2.BatchGetSessionSandboxesRequest, context: grpc.aio.ServicerContext
+    ) -> runner_gateway_pb2.SessionSandboxes:
+        placement = self._placement()
+        return runner_gateway_pb2.SessionSandboxes(
+            sessions=[placement] if placement.session_id in request.session_ids else []
+        )
+
+    @override
+    async def FindSessions(
+        self, request: runner_gateway_pb2.FindSessionsRequest, context: grpc.aio.ServicerContext
+    ) -> runner_gateway_pb2.SessionSandboxes:
+        matched = request.sandbox_name == SANDBOX or (
+            request.HasField("sandbox_name_contains") and request.sandbox_name_contains.lower() in SANDBOX
+        )
+        return runner_gateway_pb2.SessionSandboxes(sessions=[self._placement()] if matched else [])
 
     @override
     async def GetCommand(
