@@ -340,6 +340,7 @@ flowchart LR
     CLIENT_SESSION_IDS[Clients mint Session IDs] --> RUNNER_OUTBOUND_ROLLOUT
     SEAL_ON_INGRESS_ACK[Seal waits on the ingress acknowledgement] --> RUNNER_OUTBOUND_ROLLOUT
     RUNNER_OUTBOUND_LIFECYCLE --> RUNNER_OUTBOUND_ROLLOUT
+    PROTO_PACKAGE_NAMES[Proto packages named by their path] --> RUNNER_OUTBOUND_ROLLOUT
     RUNNER_OUTBOUND_ROLLOUT --> LEGACY_SANDBOX_RETIRE[Blocked: operator deletes every pre-cutover Sandbox]
     LEGACY_SANDBOX_RETIRE --> RUNNER_INBOUND_RETIRE[Blocked: retire inbound runner access]
     VM_PROVIDER --> VM_CONTROL_NETWORKING
@@ -781,6 +782,8 @@ flowchart TD
     SANDBOX_DATABASE_RENAME[Blocked: name the sandbox_commands database for the Sandbox Service]
     APP_ELECTRIC_RETIRE[Blocked: remove Electric's access to the app database]
     PROTO_DIRECTORY[Unscheduled: cross-component protos under one proto directory]
+    PROTO_PACKAGE_NAMES[Blocked: proto packages named by their path]
+    PROTO_DIRECTORY --> PROTO_PACKAGE_NAMES
     SANDBOX_LOCAL_HISTORY_RETIRE[Delete Sandbox Service ingester and store]
     APP_PROJECTOR_RETIRE[Delete app projector]
     HISTORY_SERVICE_OWNERSHIP[History Service ownership]
@@ -849,6 +852,16 @@ inside one implementing package. Candidates: `sandbox_service/protocol.proto`,
 the shared `protocol/` messages already outside any service. Decide the location and Bazel
 package layout, then move each file with its generated-code imports in one change. Wait until the
 runner channel and History Service proto churn lands so moves do not conflict with open lanes.
+
+### `PROTO_PACKAGE_NAMES` — proto packages named by their path
+
+**Blocked on the proto location; operator direction, 2026-10-11 PDT.** Every agentplane proto's
+package is its directory from the ducktape root, with no version suffix (a file under
+`agentplane/proto/runner_ingress/` is `agentplane.proto.runner_ingress`). A gRPC service's full
+name includes its package, so renaming a runner-facing package (`runner`, `runner_channel`,
+`runner_ingress`) breaks the wire with deployed runners: those renames land before
+`RUNNER_OUTBOUND_ROLLOUT` so they ride the clean cutover, and that pulls the `PROTO_DIRECTORY`
+location decision ahead of it. `runner_ingress` already follows its current path.
 
 ## 10. Legacy burn-down
 

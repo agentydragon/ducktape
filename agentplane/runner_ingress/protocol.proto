@@ -1,9 +1,9 @@
 // The runner's push of its Sessions' journals to the one ingress its Sandbox names, served by the
 // History Service or by a client that keeps no history; contract in
-// agentplane/docs/runner_channel.md § Event ingress. An incompatible change is a new package.
+// agentplane/docs/runner_channel.md § Event ingress.
 syntax = "proto3";
 
-package ducktape.agentplane.runner_ingress.v1;
+package agentplane.runner_ingress;
 
 import "agentplane/protocol/event_log.proto";
 import "agentplane/runner/protocol.proto";
