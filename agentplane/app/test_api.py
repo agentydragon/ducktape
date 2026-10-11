@@ -48,6 +48,7 @@ from agentplane.sandbox_service.kubernetes_grants import KubernetesGrant, RoleBi
 from agentplane.sandbox_service.testing.backend import Endpoint, backend, seed_runner
 from agentplane.sandbox_service.testing.fake_inventory import (
     NAMESPACE,
+    RUNNER_ENDPOINTS,
     TEMPLATE,
     FakeCoreV1Api,
     FakeCustomObjectsApi,
@@ -279,7 +280,7 @@ def test_create_records_the_concrete_session_defaults_and_bootstrap(
     }
     sandbox_endpoint.reconcile()
     (binding,) = client.get(f"/sandboxes/{row['name']}/egress").json()
-    assert [policy["name"] for policy in binding["policies"]] == ["github"]
+    assert [policy["name"] for policy in binding["policies"]] == [*RUNNER_ENDPOINTS.egress_policies(), "github"]
     annotation = custom_objects.objects[("sandboxes", row["name"])]["metadata"]["annotations"]
     assert "agentplane.allegedly.works/sandbox-binding" in annotation
 
@@ -418,9 +419,9 @@ def test_create_with_picked_policies_grants_one_binding_the_sandbox_owns(
     assert response.status_code == 201, response.text
     row = response.json()
     sandbox_endpoint.reconcile()
-    # The new sandbox's egress is its own pick and nothing else: no binding names it in advance.
+    # The new sandbox's egress is its runner's endpoints and its own pick: no binding names it in advance.
     (binding,) = client.get(f"/sandboxes/{row['name']}/egress").json()
-    assert [policy["name"] for policy in binding["policies"]] == ["pypi"]
+    assert [policy["name"] for policy in binding["policies"]] == [*RUNNER_ENDPOINTS.egress_policies(), "pypi"]
     picked = custom_objects.objects[("egressbindings", binding["name"])]
     assert (
         picked["metadata"]["ownerReferences"][0]["uid"]
@@ -438,14 +439,14 @@ def test_a_default_policy_is_granted_whether_or_not_the_caller_picks_it(
     unpicked = client.post("/sandboxes", json={"name": "plain", "template": TEMPLATE}).json()
     sandbox_endpoint.reconcile()
     (binding,) = client.get(f"/sandboxes/{unpicked['name']}/egress").json()
-    assert [policy["name"] for policy in binding["policies"]] == ["github"]
+    assert [policy["name"] for policy in binding["policies"]] == [*RUNNER_ENDPOINTS.egress_policies(), "github"]
 
     picked = client.post(
         "/sandboxes", json={"name": "asked", "template": TEMPLATE, "egress_policies": ["github", "pypi"]}
     ).json()
     sandbox_endpoint.reconcile()
     (binding,) = client.get(f"/sandboxes/{picked['name']}/egress").json()
-    assert [policy["name"] for policy in binding["policies"]] == ["github", "pypi"]
+    assert [policy["name"] for policy in binding["policies"]] == [*RUNNER_ENDPOINTS.egress_policies(), "github", "pypi"]
 
 
 @pytest.mark.parametrize(
