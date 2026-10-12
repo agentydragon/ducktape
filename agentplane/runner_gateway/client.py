@@ -110,15 +110,16 @@ class RunnerGatewayClient:
         """
         if self.command_admission_timeout_s is None:
             raise ValueError("SubmitCommand requires an explicit client deadline")
-        receipt = await self.control.held_unary(
+        response = await self.control.held_unary(
             destination,
             lambda stub: stub.SubmitCommand,
-            sandbox_service_pb2.SubmitCommandRequest(
+            runner_gateway_pb2.SubmitCommandRequest(
                 destination=sandbox_service_pb2.SessionDestination(sandbox=destination, session_id=session_id),
                 command=command,
             ),
             timeout_s=self.command_admission_timeout_s,
         )
+        receipt = response.admission
         if not receipt.event.HasField("command_admitted") or receipt.event.command_admitted.command != command:
             raise ConnectionError("Runner Gateway did not return the exact command admission")
         return receipt
@@ -136,7 +137,7 @@ class Runner:
         result = await self.control.held_unary(
             self.destination,
             lambda stub: stub.ListSessions,
-            sandbox_service_pb2.SandboxRequest(destination=self.destination),
+            runner_gateway_pb2.ListSessionsRequest(destination=self.destination),
         )
         return list(result.sessions)
 
@@ -151,21 +152,22 @@ class Runner:
             timeout_s=self.control.lifecycle_timeout_s,
         )
 
-    async def seal(self) -> runner_pb2.SealResponse:
+    async def seal(self) -> runner_gateway_pb2.SealSandboxResponse:
         """Teardown's seal, which only the Sandbox Service may ask for."""
         return await self.control.held_unary(
             self.destination,
             lambda stub: stub.SealSandbox,
-            sandbox_service_pb2.SandboxRequest(destination=self.destination),
+            runner_gateway_pb2.SealSandboxRequest(destination=self.destination),
             timeout_s=self.control.lifecycle_timeout_s,
         )
 
     async def resume(self, session_id: str) -> runner_pb2.Attached:
-        return await self.control.held_unary(
+        response = await self.control.held_unary(
             self.destination,
             lambda stub: stub.ResumeSession,
-            sandbox_service_pb2.SessionRequest(
+            runner_gateway_pb2.ResumeSessionRequest(
                 destination=sandbox_service_pb2.SessionDestination(sandbox=self.destination, session_id=session_id)
             ),
             timeout_s=self.control.lifecycle_timeout_s,
         )
+        return response.attached

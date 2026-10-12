@@ -9,7 +9,7 @@ unsealed Sandbox.
 
 from dataclasses import dataclass
 
-from agentplane.proto import runner_pb2
+from agentplane.proto import runner_gateway_pb2
 from agentplane.proto.sandbox_service_pb2 import Sandbox, SandboxDestination
 from agentplane.runner_gateway.client import SandboxControlClient
 from agentplane.sandbox_service.inventory import SandboxInventory
@@ -25,7 +25,7 @@ class GatewaySealing:
 
     control: SandboxControlClient
 
-    async def seal(self, sandbox: Sandbox) -> runner_pb2.SealResponse:
+    async def seal(self, sandbox: Sandbox) -> runner_gateway_pb2.SealSandboxResponse:
         destination = SandboxDestination(owner=sandbox.service_account, sandbox=sandbox.name, sandbox_uid=sandbox.uid)
         return await self.control.runner(destination).seal()
 

@@ -36,8 +36,8 @@ The gateway keeps no Session history; runners push their Events to the
 - `SubmitCommand`: names the Session's Sandbox incarnation and public Session ID, like
   `ResumeSession`; the gateway refuses a Session not opened in that incarnation, and an incarnation
   that is gone or being torn down. It forwards
-  an unchanged common-protocol `Command` only to a running harness and returns the original
-  `EventEntry` containing its exact matching `CommandAdmitted`. Like the lifecycle calls, it reaches
+  an unchanged common-protocol `Command` only to a running harness and returns, as `admission`, the
+  original `EventEntry` containing its exact matching `CommandAdmitted`. Like the lifecycle calls, it reaches
   the replica holding the runner's connection through the Sandbox's control Service, and any other
   replica refuses with `UNAVAILABLE`; the command travels over the
   [runner control stream](../docs/runner_control.md#command-delivery). The gateway records nothing:

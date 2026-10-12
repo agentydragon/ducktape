@@ -13,8 +13,8 @@ from kubernetes_asyncio import client as k8s_client
 
 from agentplane.grpc_calls import ServiceError
 from agentplane.grpc_serving import serving
-from agentplane.proto import runner_gateway_pb2_grpc, runner_pb2
-from agentplane.proto.sandbox_service_pb2 import Sandbox, SandboxDestination, SandboxRequest, TeardownPhase
+from agentplane.proto import runner_gateway_pb2, runner_gateway_pb2_grpc, runner_pb2
+from agentplane.proto.sandbox_service_pb2 import Sandbox, SandboxDestination, TeardownPhase
 from agentplane.runner_gateway.destinations import DestinationResolver
 from agentplane.runner_gateway.testing.grpc_service import control_client
 from agentplane.sandbox_service.errors import SandboxTearingDownError
@@ -34,17 +34,19 @@ class ScriptedGateway(runner_gateway_pb2_grpc.RunnerGatewayServicer):
     """SealSandbox answers `seal`; while it is None it answers UNAVAILABLE, as for a runner nothing
     can reach."""
 
-    seal: runner_pb2.SealResponse | None = None
+    seal: runner_gateway_pb2.SealSandboxResponse | None = None
 
     @override
-    async def SealSandbox(self, request: SandboxRequest, context: grpc.aio.ServicerContext) -> runner_pb2.SealResponse:
+    async def SealSandbox(
+        self, request: runner_gateway_pb2.SealSandboxRequest, context: grpc.aio.ServicerContext
+    ) -> runner_gateway_pb2.SealSandboxResponse:
         if self.seal is None:
             await context.abort(grpc.StatusCode.UNAVAILABLE, "test runner unreachable")
         return self.seal
 
 
-def sealed(cursors: dict[str, int], *, flushed: frozenset[str]) -> runner_pb2.SealResponse:
-    return runner_pb2.SealResponse(
+def sealed(cursors: dict[str, int], *, flushed: frozenset[str]) -> runner_gateway_pb2.SealSandboxResponse:
+    return runner_gateway_pb2.SealSandboxResponse(
         sessions=[
             runner_pb2.SessionSeal(session_id=key, cursor=cursor, flushed=key in flushed)
             for key, cursor in cursors.items()

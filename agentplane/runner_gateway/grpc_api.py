@@ -15,7 +15,6 @@ from kubernetes_asyncio import client as k8s_client
 from sqlalchemy.exc import SQLAlchemyError
 
 from agentplane.proto import (
-    event_log_pb2,
     runner_control_pb2,
     runner_gateway_pb2,
     runner_gateway_pb2_grpc,
@@ -147,8 +146,8 @@ class RunnerGateway(runner_gateway_pb2_grpc.RunnerGatewayServicer):
 
     @override
     async def ListSessions(
-        self, request: sandbox_service_pb2.SandboxRequest, context: grpc.aio.ServicerContext
-    ) -> runner_pb2.ListSessionsResponse:
+        self, request: runner_gateway_pb2.ListSessionsRequest, context: grpc.aio.ServicerContext
+    ) -> runner_gateway_pb2.ListSessionsResponse:
         async with self.request(context):
             sessions = []
             for summary in await self.list_runner_sessions(request.destination):
@@ -163,7 +162,7 @@ class RunnerGateway(runner_gateway_pb2_grpc.RunnerGatewayServicer):
                     continue
                 summary.session_id = str(public_id)
                 sessions.append(summary)
-            return runner_pb2.ListSessionsResponse(sessions=sessions)
+            return runner_gateway_pb2.ListSessionsResponse(sessions=sessions)
 
     async def runner_session_id(self, destination: sandbox_service_pb2.SessionDestination) -> str:
         """The runner's ID for a Session registered in the destination's Sandbox incarnation."""
@@ -224,8 +223,8 @@ class RunnerGateway(runner_gateway_pb2_grpc.RunnerGatewayServicer):
 
     @override
     async def ResumeSession(
-        self, request: sandbox_service_pb2.SessionRequest, context: grpc.aio.ServicerContext
-    ) -> runner_pb2.Attached:
+        self, request: runner_gateway_pb2.ResumeSessionRequest, context: grpc.aio.ServicerContext
+    ) -> runner_gateway_pb2.ResumeSessionResponse:
         async with self.request(context, timeout_s=self.resources.lifecycle_timeout_s):
             destination = request.destination
             if not destination.session_id:
@@ -236,34 +235,37 @@ class RunnerGateway(runner_gateway_pb2_grpc.RunnerGatewayServicer):
                 self.resources.control, UUID(destination.sandbox.sandbox_uid), await self.runner_session_id(destination)
             )
             result.session_id = destination.session_id
-            return result
+            return runner_gateway_pb2.ResumeSessionResponse(attached=result)
 
     @override
     async def SubmitCommand(
-        self, request: sandbox_service_pb2.SubmitCommandRequest, context: grpc.aio.ServicerContext
-    ) -> event_log_pb2.EventEntry:
+        self, request: runner_gateway_pb2.SubmitCommandRequest, context: grpc.aio.ServicerContext
+    ) -> runner_gateway_pb2.SubmitCommandResponse:
         async with self.request(context, timeout_s=self.resources.runner_admission_ack_timeout_s):
             if not 1 <= len(request.command.command_id) <= 128 or request.command.WhichOneof("operation") is None:
                 raise ValueError("a command needs a 1 to 128 character ID and an operation")
             destination = request.destination
             # Refuses a Sandbox being torn down.
             await self.held(destination.sandbox, writes=True)
-            return await self.resources.control.deliver(
+            admission = await self.resources.control.deliver(
                 UUID(destination.sandbox.sandbox_uid), await self.runner_session_id(destination), request.command
             )
+            return runner_gateway_pb2.SubmitCommandResponse(admission=admission)
 
     @override
     async def BatchGetSessionSandboxes(
         self, request: runner_gateway_pb2.BatchGetSessionSandboxesRequest, context: grpc.aio.ServicerContext
-    ) -> runner_gateway_pb2.SessionSandboxes:
+    ) -> runner_gateway_pb2.BatchGetSessionSandboxesResponse:
         async with self.request(context):
             session_ids = {UUID(session_id) for session_id in request.session_ids}
-            return runner_gateway_pb2.SessionSandboxes(sessions=await self.resources.sessions.sandboxes(session_ids))
+            return runner_gateway_pb2.BatchGetSessionSandboxesResponse(
+                sessions=await self.resources.sessions.sandboxes(session_ids)
+            )
 
     @override
     async def FindSessions(
         self, request: runner_gateway_pb2.FindSessionsRequest, context: grpc.aio.ServicerContext
-    ) -> runner_gateway_pb2.SessionSandboxes:
+    ) -> runner_gateway_pb2.FindSessionsResponse:
         async with self.request(context):
             match request.WhichOneof("sandbox"):
                 case "sandbox_name":
@@ -272,16 +274,17 @@ class RunnerGateway(runner_gateway_pb2_grpc.RunnerGatewayServicer):
                     found = await self.resources.sessions.find(sandbox_name_contains=request.sandbox_name_contains)
                 case _:
                     raise ValueError("a Sandbox name match is required")
-            return runner_gateway_pb2.SessionSandboxes(sessions=found)
+            return runner_gateway_pb2.FindSessionsResponse(sessions=found)
 
     @override
     async def SealSandbox(
-        self, request: sandbox_service_pb2.SandboxRequest, context: grpc.aio.ServicerContext
-    ) -> runner_pb2.SealResponse:
+        self, request: runner_gateway_pb2.SealSandboxRequest, context: grpc.aio.ServicerContext
+    ) -> runner_gateway_pb2.SealSandboxResponse:
         async with errors(context), asyncio.timeout(SEAL_S + self.resources.admission_timeout_s):
             await authenticate(self.resources.principals, self.resources.sealer_accounts, context)
             view = await self.resources.destinations.sandboxes.incarnation(request.destination)
-            return await self.resources.sealing.seal(view)
+            sealed = await self.resources.sealing.seal(view)
+            return runner_gateway_pb2.SealSandboxResponse(sessions=sealed.sessions)
 
 
 def add_service(resources: Resources, server: grpc.aio.Server) -> None:

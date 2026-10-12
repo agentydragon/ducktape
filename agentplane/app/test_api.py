@@ -37,7 +37,7 @@ from agentplane.egress.decisions_client import DecisionsClient
 from agentplane.grpc_calls import dial
 from agentplane.grpc_serving import serving
 from agentplane.postgres.wakeups import WakeupListener
-from agentplane.proto import event_log_pb2, runner_gateway_pb2, runner_gateway_pb2_grpc, runner_pb2, sandbox_service_pb2
+from agentplane.proto import runner_gateway_pb2, runner_gateway_pb2_grpc, runner_pb2
 from agentplane.runner.harness import Harness
 from agentplane.runner_gateway.client import RunnerGatewayClient, SandboxControlClient
 from agentplane.sandbox_service.client import SandboxServiceClient
@@ -699,8 +699,8 @@ async def unanswered_command_service(token_file: Path) -> AsyncIterator[tuple[Ru
         @override
         async def BatchGetSessionSandboxes(
             self, request: runner_gateway_pb2.BatchGetSessionSandboxesRequest, context: grpc.aio.ServicerContext
-        ) -> runner_gateway_pb2.SessionSandboxes:
-            return runner_gateway_pb2.SessionSandboxes(
+        ) -> runner_gateway_pb2.BatchGetSessionSandboxesResponse:
+            return runner_gateway_pb2.BatchGetSessionSandboxesResponse(
                 sessions=[
                     runner_gateway_pb2.SessionSandbox(session_id=id, sandbox="live") for id in request.session_ids
                 ]
@@ -708,8 +708,8 @@ async def unanswered_command_service(token_file: Path) -> AsyncIterator[tuple[Ru
 
         @override
         async def SubmitCommand(
-            self, request: sandbox_service_pb2.SubmitCommandRequest, context: grpc.aio.ServicerContext
-        ) -> event_log_pb2.EventEntry:
+            self, request: runner_gateway_pb2.SubmitCommandRequest, context: grpc.aio.ServicerContext
+        ) -> runner_gateway_pb2.SubmitCommandResponse:
             try:
                 await asyncio.Event().wait()
             finally:

@@ -229,7 +229,6 @@ py_library(
         ":session_lifecycle",
         ":session_registry",
         "//agentplane:subjects",
-        "//agentplane/proto:event_log_pb2",
         "//agentplane/proto:runner_control_pb2",
         "//agentplane/proto:runner_gateway_pb2",
         "//agentplane/proto:runner_gateway_pb2_grpc",

@@ -5,29 +5,30 @@ syntax = "proto3";
 package agentplane.proto.runner_gateway;
 
 import "agentplane/proto/event_log.proto";
+import "agentplane/proto/command.proto";
 import "agentplane/proto/runner.proto";
 import "agentplane/proto/sandbox_service.proto";
 
 service RunnerGateway {
-  rpc ListSessions(agentplane.proto.sandbox_service.SandboxRequest) returns (agentplane.proto.runner.ListSessionsResponse);
+  rpc ListSessions(ListSessionsRequest) returns (ListSessionsResponse);
   // Opens the Session the client named. A retry with the same ID and inputs returns it again.
   rpc CreateSession(agentplane.proto.sandbox_service.CreateSessionRequest) returns (agentplane.proto.sandbox_service.CreateSessionResponse);
-  rpc ResumeSession(agentplane.proto.sandbox_service.SessionRequest) returns (agentplane.proto.runner.Attached);
+  rpc ResumeSession(ResumeSessionRequest) returns (ResumeSessionResponse);
   // Served only by the replica holding the runner connection of the Sandbox the Session runs in.
   // Returns the runner's CommandAdmitted entry, not command completion; a retry with the same
   // command returns the original one. The gateway keeps no record of the command.
-  rpc SubmitCommand(agentplane.proto.sandbox_service.SubmitCommandRequest) returns (agentplane.proto.event_log.EventEntry);
+  rpc SubmitCommand(SubmitCommandRequest) returns (SubmitCommandResponse);
   // Teardown's seal, called by the Sandbox Service alone: fence and seal every Session of the
   // incarnation, and return each one's final cursor and whether its ingress has acknowledged it,
   // keyed by public Session ID (or the runner's own ID for a Session opened with a caller-chosen
   // one). Idempotent.
-  rpc SealSandbox(agentplane.proto.sandbox_service.SandboxRequest) returns (agentplane.proto.runner.SealResponse);
+  rpc SealSandbox(SealSandboxRequest) returns (SealSandboxResponse);
   // Any allowed service caller. Which Sandbox each named Session runs in; a Session the gateway
   // never registered is left out. Carries no transcript.
-  rpc BatchGetSessionSandboxes(BatchGetSessionSandboxesRequest) returns (SessionSandboxes);
+  rpc BatchGetSessionSandboxes(BatchGetSessionSandboxesRequest) returns (BatchGetSessionSandboxesResponse);
   // Any allowed service caller. Every Session in a Sandbox whose name matches, deleted Sandboxes
   // included, in no particular order.
-  rpc FindSessions(FindSessionsRequest) returns (SessionSandboxes);
+  rpc FindSessions(FindSessionsRequest) returns (FindSessionsResponse);
 }
 
 // Where a Session runs: the Sandbox incarnation the gateway routes it to.
@@ -39,7 +40,8 @@ message SessionSandbox {
   string sandbox_uid = 4;
 }
 
-message SessionSandboxes { repeated SessionSandbox sessions = 1; }
+message BatchGetSessionSandboxesResponse { repeated SessionSandbox sessions = 1; }
+message FindSessionsResponse { repeated SessionSandbox sessions = 1; }
 
 message BatchGetSessionSandboxesRequest {
   // Public Session IDs; at most 1000.
@@ -54,3 +56,23 @@ message FindSessionsRequest {
     string sandbox_name_contains = 2;
   }
 }
+
+message ListSessionsRequest { agentplane.proto.sandbox_service.SandboxDestination destination = 1; }
+// Runner Sessions with a registered public Session, under their public IDs.
+message ListSessionsResponse { repeated agentplane.proto.runner.SessionSummary sessions = 1; }
+
+message ResumeSessionRequest { agentplane.proto.sandbox_service.SessionDestination destination = 1; }
+message ResumeSessionResponse { agentplane.proto.runner.Attached attached = 1; }
+
+// The gateway checks that the Session runs in the Sandbox whose control Service the call reached.
+message SubmitCommandRequest {
+  agentplane.proto.sandbox_service.SessionDestination destination = 1;
+  agentplane.proto.command.Command command = 2;
+}
+message SubmitCommandResponse {
+  // The runner's journal entry whose event is the matching CommandAdmitted.
+  agentplane.proto.event_log.EventEntry admission = 1;
+}
+
+message SealSandboxRequest { agentplane.proto.sandbox_service.SandboxDestination destination = 1; }
+message SealSandboxResponse { repeated agentplane.proto.runner.SessionSeal sessions = 1; }

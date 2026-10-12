@@ -547,7 +547,7 @@ py_library(
     ],
     deps = [
         ":inventory",
-        "//agentplane/proto:runner_pb2",
+        "//agentplane/proto:runner_gateway_pb2",
         "//agentplane/proto:sandbox_service_pb2",
         "//agentplane/runner_gateway:client",
         "@pypi//protobuf",
@@ -567,6 +567,7 @@ py_test(
         "//:conftest",
         "//agentplane:grpc_calls",
         "//agentplane:grpc_serving",
+        "//agentplane/proto:runner_gateway_pb2",
         "//agentplane/proto:runner_gateway_pb2_grpc",
         "//agentplane/proto:runner_pb2",
         "//agentplane/proto:sandbox_service_pb2",

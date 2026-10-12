@@ -21,7 +21,6 @@ from agentplane.proto import (
     runner_gateway_pb2,
     runner_gateway_pb2_grpc,
     runner_pb2,
-    sandbox_service_pb2,
 )
 
 # gazelle:include_dep @pypi//protobuf
@@ -42,23 +41,21 @@ class Placements:
 
     sandboxes: dict[UUID, str] = field(default_factory=dict)
 
-    def get(self, session_ids: Iterable[str]) -> runner_gateway_pb2.SessionSandboxes:
+    def get(self, session_ids: Iterable[str]) -> list[runner_gateway_pb2.SessionSandbox]:
         wanted = set(session_ids)
         return self._matching(lambda session_id, _: str(session_id) in wanted)
 
-    def find(self, request: runner_gateway_pb2.FindSessionsRequest) -> runner_gateway_pb2.SessionSandboxes:
+    def find(self, request: runner_gateway_pb2.FindSessionsRequest) -> list[runner_gateway_pb2.SessionSandbox]:
         if request.HasField("sandbox_name"):
             return self._matching(lambda _, sandbox: sandbox == request.sandbox_name)
         return self._matching(lambda _, sandbox: request.sandbox_name_contains.lower() in sandbox.lower())
 
-    def _matching(self, keep: Callable[[UUID, str], bool]) -> runner_gateway_pb2.SessionSandboxes:
-        return runner_gateway_pb2.SessionSandboxes(
-            sessions=[
-                runner_gateway_pb2.SessionSandbox(session_id=str(session_id), sandbox=sandbox)
-                for session_id, sandbox in self.sandboxes.items()
-                if keep(session_id, sandbox)
-            ]
-        )
+    def _matching(self, keep: Callable[[UUID, str], bool]) -> list[runner_gateway_pb2.SessionSandbox]:
+        return [
+            runner_gateway_pb2.SessionSandbox(session_id=str(session_id), sandbox=sandbox)
+            for session_id, sandbox in self.sandboxes.items()
+            if keep(session_id, sandbox)
+        ]
 
 
 class ReplicationSource:
@@ -131,35 +128,37 @@ class Gateway(runner_gateway_pb2_grpc.RunnerGatewayServicer):
 
     @override
     async def SubmitCommand(
-        self, request: sandbox_service_pb2.SubmitCommandRequest, context: grpc.aio.ServicerContext
-    ) -> event_log_pb2.EventEntry:
+        self, request: runner_gateway_pb2.SubmitCommandRequest, context: grpc.aio.ServicerContext
+    ) -> runner_gateway_pb2.SubmitCommandResponse:
         command = request.command
         self.commands.put_nowait(command)
         if previous := self._admissions.get(command.command_id):
             if previous.event.command_admitted.command != command:
                 await context.abort(grpc.StatusCode.ALREADY_EXISTS, "conflicting command")
-            return previous
+            return runner_gateway_pb2.SubmitCommandResponse(admission=previous)
         entry = self.source.append(event_pb2.Event(command_admitted=event_pb2.CommandAdmitted(command=command)))
         self._admissions[command.command_id] = entry
-        return entry
+        return runner_gateway_pb2.SubmitCommandResponse(admission=entry)
 
     @override
     async def BatchGetSessionSandboxes(
         self, request: runner_gateway_pb2.BatchGetSessionSandboxesRequest, context: grpc.aio.ServicerContext
-    ) -> runner_gateway_pb2.SessionSandboxes:
-        return self.source.placements.get(request.session_ids)
+    ) -> runner_gateway_pb2.BatchGetSessionSandboxesResponse:
+        return runner_gateway_pb2.BatchGetSessionSandboxesResponse(
+            sessions=self.source.placements.get(request.session_ids)
+        )
 
     @override
     async def FindSessions(
         self, request: runner_gateway_pb2.FindSessionsRequest, context: grpc.aio.ServicerContext
-    ) -> runner_gateway_pb2.SessionSandboxes:
-        return self.source.placements.find(request)
+    ) -> runner_gateway_pb2.FindSessionsResponse:
+        return runner_gateway_pb2.FindSessionsResponse(sessions=self.source.placements.find(request))
 
     @override
     async def ListSessions(
-        self, request: sandbox_service_pb2.SandboxRequest, context: grpc.aio.ServicerContext
-    ) -> runner_pb2.ListSessionsResponse:
-        return runner_pb2.ListSessionsResponse(
+        self, request: runner_gateway_pb2.ListSessionsRequest, context: grpc.aio.ServicerContext
+    ) -> runner_gateway_pb2.ListSessionsResponse:
+        return runner_gateway_pb2.ListSessionsResponse(
             sessions=[
                 runner_pb2.SessionSummary(
                     session_id=str(self.source.session_id),

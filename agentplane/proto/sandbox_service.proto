@@ -3,8 +3,6 @@ syntax = "proto3";
 
 package agentplane.proto.sandbox_service;
 
-import "agentplane/proto/command.proto";
-import "agentplane/proto/event_log.proto";
 import "agentplane/proto/runner.proto";
 import "google/protobuf/empty.proto";
 import "google/protobuf/field_mask.proto";
@@ -49,7 +47,6 @@ message SessionDestination {
 }
 
 message SandboxRequest { SandboxDestination destination = 1; }
-message SessionRequest { SessionDestination destination = 1; }
 message GetSandboxRequest { string name = 1; }
 
 message CreateSessionRequest {
@@ -73,15 +70,6 @@ message CreateSessionResponse {
   // Public Session ID (UUID): the request's session_id. Not the harness session ID.
   string session_id = 1;
   agentplane.proto.runner.Attached attached = 2;
-}
-
-// Commands name the public Session; the Runner Gateway checks that it runs in the Sandbox whose
-// control Service the call reached.
-message SubmitCommandRequest {
-  SessionDestination destination = 5;
-  agentplane.proto.command.Command command = 2;
-  reserved 1, 3, 4;
-  reserved "follow", "session_id";
 }
 
 message SessionDefaults {

@@ -298,7 +298,9 @@ async def test_missing_invalid_or_duplicate_bearer_is_rejected(
     remote: RunnerGatewayClient, metadata: tuple[tuple[str, str], ...]
 ) -> None:
     with pytest.raises(grpc.aio.AioRpcError) as rejected:
-        await remote.stub.ListSessions(sandbox_service_pb2.SandboxRequest(destination=DESTINATION), metadata=metadata)
+        await remote.stub.ListSessions(
+            runner_gateway_pb2.ListSessionsRequest(destination=DESTINATION), metadata=metadata
+        )
     assert rejected.value.code() == grpc.StatusCode.UNAUTHENTICATED
 
 
@@ -367,9 +369,9 @@ async def test_unlisted_callers_rejected_before_lookup(
                 await sandboxes.unary(call, request)
             assert rejected.value.code == grpc.StatusCode.PERMISSION_DENIED
         for gateway_call, gateway_request in (
-            (remote.stub.ListSessions, sandbox_service_pb2.SandboxRequest(destination=DESTINATION)),
-            (remote.stub.ResumeSession, sandbox_service_pb2.SessionRequest(destination=destination)),
-            (remote.stub.SubmitCommand, sandbox_service_pb2.SubmitCommandRequest(destination=destination)),
+            (remote.stub.ListSessions, runner_gateway_pb2.ListSessionsRequest(destination=DESTINATION)),
+            (remote.stub.ResumeSession, runner_gateway_pb2.ResumeSessionRequest(destination=destination)),
+            (remote.stub.SubmitCommand, runner_gateway_pb2.SubmitCommandRequest(destination=destination)),
         ):
             with pytest.raises(ServiceError) as rejected:
                 await remote.unary(gateway_call, gateway_request)
