@@ -329,9 +329,9 @@ def kustomize_kustomization(
     one raises, unless `namespaced_by_overlay` says this is a base only overlays that set the
     namespace include.
     """
-    if not namespace and not namespaced_by_overlay:
-        if unplaced := [entry.name for entry in config_map_generator if not entry.namespace]:
-            raise ValueError(f"configMapGenerator entries {unplaced=} have no namespace, nor does the Kustomization")
+    unplaced = [entry.name for entry in config_map_generator if not entry.namespace]
+    if unplaced and not namespace and not namespaced_by_overlay:
+        raise ValueError(f"configMapGenerator entries {unplaced=} have no namespace, nor does the Kustomization")
     manifest = _KustomizeKustomization(
         namespace=namespace,
         resources=resources,
