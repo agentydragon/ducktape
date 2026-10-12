@@ -219,9 +219,7 @@ async def test_a_session_the_history_service_has_not_recorded_opens_with_empty_h
 ) -> None:
     # The runner pushes a new Session to the History Service after OpenSession has answered.
     reader.read_session_events.side_effect = ServiceError(grpc.StatusCode.NOT_FOUND, "test-unrecorded-session")
-    reader.read_session_observations.side_effect = ServiceError(
-        grpc.StatusCode.NOT_FOUND, "test-unrecorded-session"
-    )
+    reader.read_session_observations.side_effect = ServiceError(grpc.StatusCode.NOT_FOUND, "test-unrecorded-session")
     thread_id = await remote.open(str(uuid4()))
     assert await remote.exists(thread_id)
     assert await remote.events(thread_id, limit=10) == []
