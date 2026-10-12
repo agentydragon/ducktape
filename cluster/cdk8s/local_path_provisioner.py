@@ -9,6 +9,7 @@ here names `cluster.local/local-path-provisioner`.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from enum import StrEnum
 
 from cdk8s import App, Chart
 from cdk8s_plus_34 import k8s
@@ -37,7 +38,7 @@ def _node_path(node: str, path: str) -> dict[str, object]:
     return {"node": node, "paths": [path]}
 
 
-def _storage_class(scope: Construct, name: str, *, reclaim_policy: str, topology: dict[str, str]) -> None:
+def _storage_class(scope: Construct, name: str, *, reclaim_policy: ReclaimPolicy, topology: dict[str, str]) -> None:
     """A WaitForFirstConsumer class whose one topology term ANDs every `topology` label."""
     k8s.KubeStorageClass(
         scope,
@@ -56,9 +57,14 @@ def _storage_class(scope: Construct, name: str, *, reclaim_policy: str, topology
     )
 
 
+class ReclaimPolicy(StrEnum):
+    DELETE = "Delete"
+    RETAIN = "Retain"
+
+
 @dataclass(frozen=True)
 class _Class:
-    reclaim_policy: str
+    reclaim_policy: ReclaimPolicy
     topology: dict[str, str]
 
 
@@ -72,30 +78,31 @@ _CLASSES = {
     # on a StorageClass), so Flux updates it in place -- no delete needed. Existing bound
     # PVCs are unaffected (the SC is only read at provision time).
     # See cluster/docs/plans/ovh_storage_tiering.md.
-    "local-path-ovh": _Class("Delete", _OVH_HDD),
+    "local-path-ovh": _Class(ReclaimPolicy.DELETE, _OVH_HDD),
     # Media-scoped OVH node-local storage: KS-5 7200rpm HDD data disks. Both keys are ANDed
     # in the same topology term -- zone keeps it OVH-scoped (never a non-OVH SSD node such as
     # wyrm2), and the tier is the hardware-keyed node label from
     # cluster/terraform/main/ovh-nodes.tf. Under WaitForFirstConsumer a PVC binds only where
     # an OVH hdd node is schedulable. See cluster/docs/plans/ovh_storage_tiering.md.
-    "local-path-ovh-hdd": _Class("Delete", _OVH_HDD),
+    "local-path-ovh-hdd": _Class(ReclaimPolicy.DELETE, _OVH_HDD),
     # Dedicated node-local storage for self-replicating data stores. The same topology as
     # local-path-ovh-hdd keeps claims on OVH HDD nodes, while Retain protects the data
     # directory from accidental PVC deletion.
-    "local-path-ovh-hdd-retain": _Class("Retain", _OVH_HDD),
+    "local-path-ovh-hdd-retain": _Class(ReclaimPolicy.RETAIN, _OVH_HDD),
     # Media-scoped OVH node-local storage: KS-GAME NVMe data disks. zone (OVH-only) ANDed
     # with the hardware-keyed tier=ssd node label. A PVC on this class binds only where an
     # OVH ssd node is schedulable, else it stays Pending (loud) instead of silently landing
     # on HDD. Reserved for fsync/latency-critical data (Forgejo git, forgejo-db,
     # seaweedfs-filer-db). See cluster/docs/plans/ovh_storage_tiering.md.
-    _OVH_SSD: _Class("Delete", {**node_scheduling.HIL_OVH_NODE_SELECTOR, _TIER: "ssd"}),
-    "local-path-proxmox": _Class("Delete", {_REGION: "proxmox"}),
+    _OVH_SSD: _Class(ReclaimPolicy.DELETE, {**node_scheduling.HIL_OVH_NODE_SELECTOR, _TIER: "ssd"}),
+    "local-path-proxmox": _Class(ReclaimPolicy.DELETE, {_REGION: "proxmox"}),
     # Home automation is intentionally hardware- and LAN-pinned: integrations use the
     # OptiPlex's Bluetooth radio and the home multicast domain. VolSync copies this
     # node-local state to replicated SeaweedFS storage for disaster recovery.
-    _HOME_SSD: _Class("Retain", {_REGION: "home", _TIER: "ssd"}),
+    _HOME_SSD: _Class(ReclaimPolicy.RETAIN, {_REGION: "home", _TIER: "ssd"}),
 }
-STORAGE_CLASSES = frozenset(_CLASSES)
+# All of them are node-local: a local-path volume is a directory on one node.
+NODE_LOCAL_STORAGE_CLASSES = frozenset(_CLASSES)
 
 
 def _storage_classes(scope: Construct) -> None:

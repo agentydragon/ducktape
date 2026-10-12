@@ -61,7 +61,8 @@ def _values() -> dict[str, object]:
                                             "protectedStorageClasses": [
                                                 {"name": name}
                                                 for name in sorted(
-                                                    local_path_provisioner.STORAGE_CLASSES | storage.STORAGE_CLASSES
+                                                    local_path_provisioner.NODE_LOCAL_STORAGE_CLASSES
+                                                    | storage.NODE_LOCAL_STORAGE_CLASSES
                                                 )
                                             ]
                                         }

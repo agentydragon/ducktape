@@ -47,7 +47,8 @@ _PARAMETERS = {
         "shared": "yes",
     },
 }
-STORAGE_CLASSES = frozenset(_PARAMETERS)
+# All of them are node-local: an LVM volume lives on one node's volume group.
+NODE_LOCAL_STORAGE_CLASSES = frozenset(_PARAMETERS)
 
 
 def _storage_class(scope: Construct, name: str, *, parameters: dict[str, str]) -> None:
