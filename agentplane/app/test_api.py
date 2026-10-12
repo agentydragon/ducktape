@@ -28,7 +28,7 @@ from agentplane.app.operator_sessions import OperatorSessionStore
 from agentplane.app.presets import PresetCatalog, SandboxPreset, ThreadPreset
 from agentplane.app.testing.egress_proxy import FakeEgressAdmin, decision
 from agentplane.app.testing.history import SeededEventLogStore
-from agentplane.app.testing.model_test_data import TEST_MODELS, TEST_REASONING_EFFORTS
+from agentplane.app.testing.model_test_data import TEST_MODELS
 from agentplane.app.threads.bridge import RunnerBridge
 from agentplane.app.threads.runner_directory import RunnerDirectory
 from agentplane.app.threads.store import ThreadStore
