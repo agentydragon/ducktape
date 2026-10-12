@@ -38,6 +38,7 @@ py_library(
     srcs = ["models.py"],
     visibility = [
         "//agentplane:__subpackages__",
+        "//cluster/cdk8s:__pkg__",
         "//cluster/cdk8s/agentplane:__pkg__",
     ],
     deps = ["@pypi//pydantic"],

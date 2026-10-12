@@ -67,13 +67,12 @@ from cluster.cdk8s.agentplane.environment import (
     LlmIngressProps,
     ReplicaProfile,
 )
-from cluster.cdk8s.agentplane.llm_ingress import model_configs
 from cluster.cdk8s.agentplane.namespaces import TESTING_NAMESPACE
 from cluster.cdk8s.api_resource import custom_resource, named_resource
 from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.generation import CNPG_DATABASE_READY
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT, HAND_WRITTEN_ROOT
-from cluster.cdk8s.model_selections import TESTING_APP_MODELS
+from cluster.cdk8s.model_selections import TESTING_APP_MODELS, model_configs
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, NetworkPolicy
 from model_catalog.catalog import GPT6_LUNA_RESPONSES
 

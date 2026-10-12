@@ -19,13 +19,11 @@ from cdk8s_plus_34 import (
 )
 from constructs import Construct
 
-from agentplane.llm_ingress.models import ModelConfig
 from agentplane.llm_ingress.settings import Settings
 from agentplane.workload_auth.audience import WORKLOAD_TOKEN_AUDIENCE
 from cluster.cdk8s import cilium, node_scheduling, pod_policy
 from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.forgejo_registry.chart import forgejo_images_creds_secret_ref
-from cluster.cdk8s.model_selections import RUNNER_CONTEXT_OVERRIDES, HarnessRoutes
 from cluster.cdk8s.probes import http_probe
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, Entity, IngressRule, NetworkPolicy
 from cluster.cdk8s.secret_ref import SecretRef
@@ -38,14 +36,6 @@ _PLACEHOLDER_TAG = "unset"  # always overridden by image-pins/kustomization.yaml
 _NAME = "agentplane-llm-ingress"
 _IMAGE_NAME = "git.allegedly.works/ducktape-ci/agentplane-llm-ingress"
 _LABELS = {"app.kubernetes.io/name": _NAME}
-
-
-def model_configs(models: HarnessRoutes) -> list[ModelConfig]:
-    return [
-        ModelConfig(model=route.id, total_context_budget_tokens=RUNNER_CONTEXT_OVERRIDES[route])
-        for route in sorted(models.all, key=lambda route: route.id)
-        if route in RUNNER_CONTEXT_OVERRIDES
-    ]
 
 
 def service(namespace: str) -> ServiceRef:
