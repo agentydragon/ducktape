@@ -662,14 +662,16 @@ export function SandboxPage({
               value={cwdTemplate}
               onChange={(event) => setCwdTemplate(event.currentTarget.value)}
             />
-            <Textarea
-              label="Thread setup script"
-              description="Runs once in the resolved working directory before the harness starts"
-              autosize
-              minRows={2}
-              value={setupScript}
-              onChange={(event) => setSetupScript(event.currentTarget.value)}
-            />
+            <Disclosure summary="Thread setup script" keepMounted>
+              <Textarea
+                aria-label="Thread setup script"
+                description="Runs once in the resolved working directory before the harness starts"
+                autosize
+                minRows={2}
+                value={setupScript}
+                onChange={(event) => setSetupScript(event.currentTarget.value)}
+              />
+            </Disclosure>
             <Table>
               <Table.Thead>
                 <Table.Tr>
