@@ -48,6 +48,7 @@ from agentplane.app.threads.summaries import Summaries
 from agentplane.app.threads.view.content import ContentStore
 from agentplane.changes import ChangeSignal
 from agentplane.egress.decisions_client import DecisionsClient
+from agentplane.grpc_calls import dial
 from agentplane.history_service.client import HistoryServiceClient
 from agentplane.history_service.fold.models import ThreadCheckpoint, ThreadEntity, ThreadPayloadChunk
 from agentplane.history_service.testing.backend import history_service, ingest
@@ -60,6 +61,7 @@ from agentplane.runner.session import Session
 from agentplane.runner.testing.failure_journal import FailureEvidence
 from agentplane.runner.testing.fixtures import RunnerHandle
 from agentplane.runner.testing.scripted_model import ScriptedModel, ShellCall, Text
+from agentplane.runner_gateway.client import RunnerGatewayClient
 from agentplane.runner_gateway.testing.control_listener import dialing
 from agentplane.sandbox_service.client import SandboxServiceClient
 from agentplane.sandbox_service.testing.backend import Endpoint, runner_bearer, seed_runner
@@ -112,8 +114,8 @@ async def failed_bridge_state(
             logging.getLogger(__name__).warning("bridge failure history state capture failed", exc_info=True)
         try:
             async with asyncio.timeout(5):
-                commands = await local_runners.service.gateway_unary(
-                    local_runners.service.gateway.ListCommands,
+                commands = await local_runners.gateway.unary(
+                    local_runners.gateway.stub.ListCommands,
                     sandbox_service_pb2.ListCommandsRequest(session_id=session_id, page_size=1000),
                 )
                 observed["gateway_commands"] = [MessageToDict(command) for command in commands.commands]
@@ -206,6 +208,7 @@ async def history_client(
 async def local_runners(
     live_index: LiveIndex,
     sandbox_endpoint: Endpoint,
+    gateway: RunnerGatewayClient,
     custom_objects: FakeCustomObjectsApi,
     core_v1: FakeCoreV1Api,
     runner: RunnerHandle,
@@ -215,8 +218,7 @@ async def local_runners(
     live_index.sandboxes[SANDBOX] = raw
     async with dialing(runner.runner, sandbox_endpoint.control_target, runner_bearer(SANDBOX)):
         await asyncio.to_thread(sandbox_endpoint.wait_connected, UUID(raw["metadata"]["uid"]))
-        async with sandbox_endpoint.client() as service:
-            yield SandboxSessions(live_index, service)
+        yield SandboxSessions(live_index, gateway)
 
 
 @pytest.fixture
@@ -982,7 +984,7 @@ async def test_thread_command_reports_id_conflict_after_runner_admitted_before_a
         command_id="reused-before-copy", interrupt_turn=command_pb2.InterruptTurn(turn_id="first-target")
     )
     # Admitted through the Sandbox Service, not the app.
-    await local_runners.service.command(str(thread), original)
+    await local_runners.gateway.command(str(thread), original)
 
     async with httpx.AsyncClient(base_url=app_url, timeout=60, headers=AGENT_AUTH) as http:
         conflict = await http.post(
@@ -1106,7 +1108,7 @@ async def test_command_returns_runner_receipt_before_app_archive_catches_up(
         return receipt
 
     monkeypatch.setattr(bridge._discovery, "wake", no_archive_yet)
-    monkeypatch.setattr(bridge._runners.service, "command", submit)
+    monkeypatch.setattr(bridge._runners.gateway, "command", submit)
     assert await bridge.command(thread, command) == receipt
     assert await content.admitted_command(thread, command) is None
     assert await event_logs.events(thread, limit=10) == []
@@ -1144,8 +1146,6 @@ async def replicas(
     history_token_file: Path,
 ) -> AsyncIterator[Replicas]:
     replica_engine = connect(db_url)
-    survivor_service = sandbox_endpoint.client()
-    survivor_runners = SandboxSessions(live_index, survivor_service)
     survivor_event_logs = SeededEventLogStore(
         replica_engine,
         history=event_logs.history,
@@ -1154,30 +1154,32 @@ async def replicas(
         summaries=Summaries(replica_engine, history_client),
     )
     owner_discovery = SessionDiscovery(runners=local_runners, event_logs=event_logs)
-    survivor_discovery = SessionDiscovery(runners=survivor_runners, event_logs=survivor_event_logs)
     owner = RunnerBridge(runners=local_runners, event_logs=event_logs, content=content, discovery=owner_discovery)
-    survivor = RunnerBridge(
-        runners=survivor_runners,
-        event_logs=survivor_event_logs,
-        content=ContentStore(replica_engine, history_reader=history_client),
-        discovery=survivor_discovery,
-    )
     try:
-        async with (
-            survivor_service,
-            listening(replica_engine, history_client, history_token_file) as replica_updates,
-            survivor_discovery,
-            owner_discovery,
-        ):
-            await owner_discovery.reconcile()
-            yield Replicas(
-                owner,
-                owner_discovery,
-                survivor,
-                survivor_discovery,
-                survivor_event_logs,
-                replica_updates.changes[Channel.THREADS],
+        # The survivor replica's own channel to the gateway.
+        async with dial(sandbox_endpoint.target) as survivor_channel:
+            survivor_runners = SandboxSessions(live_index, sandbox_endpoint.gateway(survivor_channel))
+            survivor_discovery = SessionDiscovery(runners=survivor_runners, event_logs=survivor_event_logs)
+            survivor = RunnerBridge(
+                runners=survivor_runners,
+                event_logs=survivor_event_logs,
+                content=ContentStore(replica_engine, history_reader=history_client),
+                discovery=survivor_discovery,
             )
+            async with (
+                listening(replica_engine, history_client, history_token_file) as replica_updates,
+                survivor_discovery,
+                owner_discovery,
+            ):
+                await owner_discovery.reconcile()
+                yield Replicas(
+                    owner,
+                    owner_discovery,
+                    survivor,
+                    survivor_discovery,
+                    survivor_event_logs,
+                    replica_updates.changes[Channel.THREADS],
+                )
     finally:
         await replica_engine.dispose()
 
@@ -1237,6 +1239,7 @@ async def test_replica_commands_and_database_stream_survive_discovery_owner_exit
 
 async def test_inventory_change_discovers_existing_runner_session_without_browser_open(
     sandbox_endpoint: Endpoint,
+    gateway: RunnerGatewayClient,
     custom_objects: FakeCustomObjectsApi,
     core_v1: FakeCoreV1Api,
     runner: RunnerHandle,
@@ -1257,8 +1260,7 @@ async def test_inventory_change_discovers_existing_runner_session_without_browse
         sandbox=SANDBOX,
         sandbox_uid=raw["metadata"]["uid"],
     )
-    service = sandbox_endpoint.client()
-    runners = SandboxSessions(live_index, service)
+    runners = SandboxSessions(live_index, gateway)
     discovered = asyncio.Event()
     running = runners.running
 
@@ -1267,9 +1269,9 @@ async def test_inventory_change_discovers_existing_runner_session_without_browse
         return running()
 
     monkeypatch.setattr(runners, "running", observed_running)
-    async with service, dialing(runner.runner, sandbox_endpoint.control_target, runner_bearer(SANDBOX)):
+    async with dialing(runner.runner, sandbox_endpoint.control_target, runner_bearer(SANDBOX)):
         await asyncio.to_thread(sandbox_endpoint.wait_connected, UUID(destination.sandbox_uid))
-        await service.runner(destination).create(session_id=uuid4(), spec=MessageToDict(spec))
+        await gateway.runner(destination).create(session_id=uuid4(), spec=MessageToDict(spec))
         async with SessionDiscovery(runners=runners, event_logs=event_logs) as discovery:
             async with asyncio.timeout(10):
                 await discovered.wait()

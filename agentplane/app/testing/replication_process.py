@@ -47,9 +47,11 @@ from agentplane.app.threads.store import ThreadStore
 from agentplane.app.threads.summaries import Summaries
 from agentplane.app.threads.view.content import ContentStore
 from agentplane.egress.decisions_client import DecisionsClient
+from agentplane.grpc_calls import dial
 from agentplane.history_service.client import HistoryServiceClient
 from agentplane.kubernetes_watch import Freshness
 from agentplane.runner.harness import Harness
+from agentplane.runner_gateway.client import RunnerGatewayClient, SandboxControlClient
 from agentplane.sandbox_service.client import SandboxServiceClient
 from agentplane.sandbox_service.egress_views import EgressReader
 from agentplane.sandbox_service.testing.backend import seed_runner
@@ -209,27 +211,13 @@ async def _serve(
     with TemporaryDirectory() as directory:
         token_file = Path(directory) / "token"
         await asyncio.to_thread(token_file.write_text, "test-app-sandbox-peer")
-        inventory = SandboxServiceClient(
-            f"127.0.0.1:{service_port}",
-            gateway_target=f"127.0.0.1:{service_port}",
-            control_target=f"127.0.0.1:{service_port}",
-            namespace=NAMESPACE,
-            token_file=token_file,
-            gateway_token_file=token_file,
-            command_admission_timeout_s=10,
-            request_timeout_s=10,
-            lifecycle_timeout_s=10,
-        )
         history = HistoryServiceClient(history_target, token_file=history_token_file, request_timeout_s=10)
         summaries = Summaries(engine, history)
-        store = ThreadStore(engine, summaries, gateway=inventory)
         event_logs = EventLogStore(engine, history_reader=history, summaries=summaries)
         content = ContentStore(engine, history_reader=history)
-        runners = SandboxSessions(index, inventory)
-        discovery = SessionDiscovery(runners=runners, event_logs=event_logs)
-        bridge = RunnerBridge(runners=runners, event_logs=event_logs, content=content, discovery=discovery)
         async with (
-            inventory,
+            # One peer serves both services.
+            dial(f"127.0.0.1:{service_port}") as channel,
             history,
             history.new_client() as watch_client,
             httpx.AsyncClient(base_url="http://test-unused-decisions.invalid") as decisions_http,
@@ -238,6 +226,25 @@ async def _serve(
             ) as electric_http,
             httpx.AsyncClient(base_url="http://test-unused-notifications.invalid") as notifications_http,
         ):
+            inventory = SandboxServiceClient(
+                channel, namespace=NAMESPACE, token_file=token_file, request_timeout_s=10, lifecycle_timeout_s=10
+            )
+            gateway = RunnerGatewayClient(
+                channel,
+                token_file=token_file,
+                command_admission_timeout_s=10,
+                request_timeout_s=10,
+                control=SandboxControlClient(
+                    control_target=f"127.0.0.1:{service_port}",
+                    token_file=token_file,
+                    request_timeout_s=10,
+                    lifecycle_timeout_s=10,
+                ),
+            )
+            store = ThreadStore(engine, summaries, gateway=gateway)
+            runners = SandboxSessions(index, gateway)
+            discovery = SessionDiscovery(runners=runners, event_logs=event_logs)
+            bridge = RunnerBridge(runners=runners, event_logs=event_logs, content=content, discovery=discovery)
             history_watch = HistoryWatch(
                 watch_client, database_updates.changes[Channel.THREADS].notify, retry_interval_s=0.05
             )

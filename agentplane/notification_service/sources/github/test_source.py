@@ -78,7 +78,8 @@ from agentplane.notification_service.sources.github.state import (
     SubjectKey,
 )
 from agentplane.notification_service.store import ConflictError, NotFoundError, Store
-from agentplane.sandbox_service.client import Runner, SandboxServiceClient
+from agentplane.runner_gateway.client import Runner, RunnerGatewayClient
+from agentplane.sandbox_service.client import SandboxServiceClient
 from agentplane.subjects import ServiceAccountRef
 from agentplane.workload_auth.principal import WorkloadPrincipal, WorkloadPrincipalResolver
 
@@ -300,6 +301,7 @@ async def test_signed_http_durable_acceptance_and_disabled_provider(
         create_autospec(ActionServiceClient),
         create_autospec(SandboxServiceClient),
         github,
+        gateway=create_autospec(RunnerGatewayClient),
         history=create_autospec(HistoryServiceClient),
         notice_debounce=NoticeDebounceSettings(),
         stale_confirmation_s=30,
@@ -589,6 +591,7 @@ async def test_rate_limit_retry_survives_ingress_and_restart(
         create_autospec(ActionServiceClient),
         create_autospec(SandboxServiceClient),
         github,
+        gateway=create_autospec(RunnerGatewayClient),
         history=create_autospec(HistoryServiceClient),
         notice_debounce=NoticeDebounceSettings(quiet_seconds=3600, max_wait_seconds=3600),
         stale_confirmation_s=30,
@@ -643,6 +646,7 @@ async def test_rate_limit_retry_survives_ingress_and_restart(
             service.actions,
             service.sandboxes,
             GitHub(GitHubClient(github.client.http, github.settings)),
+            gateway=service.gateway,
             history=service.history,
             notice_debounce=service.notice_debounce,
             stale_confirmation_s=30,

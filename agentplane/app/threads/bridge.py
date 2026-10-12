@@ -153,7 +153,7 @@ class RunnerBridge:
         # Wake Session discovery before relaying; the response does not wait for it.
         self._discovery.wake()
         try:
-            return await self._runners.service.command(str(thread_id), command)
+            return await self._runners.gateway.command(str(thread_id), command)
         except TimeoutError as error:
             raise RunnerAdmissionTimeoutError(command.command_id) from error
 
@@ -161,7 +161,7 @@ class RunnerBridge:
         """What the Runner Gateway retained for the command, without contacting the runner."""
         if not await self._event_logs.exists(thread_id):
             raise ThreadNotFoundError(thread_id)
-        status = await self._runners.service.get_command(str(thread_id), command_id)
+        status = await self._runners.gateway.get_command(str(thread_id), command_id)
         return CommandStatus(
             state=_COMMAND_STATES[status.state],
             admission=MessageToDict(status.admission) if status.HasField("admission") else None,

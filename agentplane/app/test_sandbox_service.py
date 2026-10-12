@@ -17,12 +17,12 @@ from agentplane.app.threads.bridge import MalformedMessageError, RunnerBridge
 from agentplane.app.threads.session_discovery import SessionDiscovery
 from agentplane.app.threads.sessions import SandboxSessions
 from agentplane.app.threads.view.content import ContentStore
+from agentplane.grpc_calls import ServiceError
 from agentplane.history_service.testing.backend import ingest
 from agentplane.postgres.wakeups import WakeupListener
 from agentplane.proto import command_pb2, runner_pb2
 from agentplane.runner.testing.fixtures import RunnerHandle
 from agentplane.runner.testing.scripted_model import ScriptedModel, Text
-from agentplane.sandbox_service.client import ServiceError
 from agentplane.sandbox_service.testing.kubernetes import SANDBOX, Cluster, authenticated_service, kubernetes
 from agentplane.testing.fake_apiserver import SANDBOX_NAMESPACE
 from util.agent_sandbox import SANDBOXES_PLURAL
@@ -66,7 +66,7 @@ async def test_production_bridge_archives_native_evidence_across_bounded_service
     async with (
         authenticated_service(
             cluster, runner.runner, tmp_path / "service-token", database_url=service_history_db_url
-        ) as remote,
+        ) as (_, remote),
         ingest(service_history_db_url, runner.runner),
     ):
         directory = SandboxSessions(live_index, remote)
@@ -122,13 +122,13 @@ async def test_stopped_service_never_falls_back_to_reachable_runner(
 ) -> None:
     async with authenticated_service(
         cluster, runner.runner, tmp_path / "service-token", database_url=service_history_db_url
-    ) as remote:
+    ) as (_, remote):
         directory = SandboxSessions(live_index, remote)
         assert await directory.client(SANDBOX).list_sessions() == []
-    async with remote:
-        with pytest.raises(ServiceError):
-            await directory.client(SANDBOX).list_sessions()
-        assert not runner.runner.sessions
+    # Each call to the Sandbox's runner dials its control Service anew, here with the gateway gone.
+    with pytest.raises(ServiceError):
+        await directory.client(SANDBOX).list_sessions()
+    assert not runner.runner.sessions
 
 
 if __name__ == "__main__":

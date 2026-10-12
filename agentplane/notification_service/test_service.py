@@ -20,6 +20,7 @@ from agentplane.notification_service.sources.actions import ActionServiceClient
 from agentplane.notification_service.store import ConflictError, Store
 from agentplane.proto import event_log_pb2, event_pb2
 from agentplane.proto.sandbox_service_pb2 import Sandbox, ServiceAccount
+from agentplane.runner_gateway.client import RunnerGatewayClient
 from agentplane.sandbox_service.client import SandboxServiceClient
 from agentplane.sandbox_service.errors import SandboxNotFoundError
 from agentplane.workload_auth.principal import WorkloadPrincipal
@@ -42,6 +43,7 @@ async def service(store: Store) -> Service:
         create_autospec(ActionServiceClient),
         create_autospec(SandboxServiceClient),
         github=None,
+        gateway=create_autospec(RunnerGatewayClient),
         history=create_autospec(HistoryServiceClient),
         notice_debounce=NoticeDebounceSettings(),
         stale_confirmation_s=30,
@@ -92,6 +94,7 @@ async def test_notice_debounce_deadline_is_durable_and_reads_are_immediate(
         service.actions,
         service.sandboxes,
         github=None,
+        gateway=service.gateway,
         history=service.history,
         notice_debounce=service.notice_debounce,
         stale_confirmation_s=service.stale_confirmation_s,
@@ -228,6 +231,7 @@ async def test_stale_inbox_retires_after_persisted_recheck(
         service.actions,
         service.sandboxes,
         github=None,
+        gateway=service.gateway,
         history=service.history,
         notice_debounce=service.notice_debounce,
         stale_confirmation_s=service.stale_confirmation_s,

@@ -765,7 +765,7 @@ runner through the Sandbox Service.
 
 ```mermaid
 flowchart TD
-    GATEWAY_CLIENT_SPLIT[Unscheduled: Session messages and client move to the gateway]
+    GATEWAY_CLIENT_SPLIT[Unscheduled: Session messages move to the gateway]
     AGENTPLANE_SANDBOX_RESOURCE[Decision: our own Sandbox resource]
     POD_INCARNATION[Decision: a Pod is the incarnation]
     SEAL_FINALIZER[Unscheduled: seal as a finalizer on every delete]
@@ -775,14 +775,14 @@ flowchart TD
     POD_INCARNATION -. if chosen, rewrites .-> SESSION_STATE_VOLUME_DESIGN[State volume design]
 ```
 
-### `GATEWAY_CLIENT_SPLIT` — Session messages and client move to the gateway
+### `GATEWAY_CLIENT_SPLIT` — Session messages move to the gateway
 
 **Unscheduled.** `RunnerGateway` still uses the Session and command messages in the Sandbox
-Service's proto package, and one `SandboxServiceClient` serves both services. Move those messages
-into the gateway's proto and give the gateway its own client. `FrozenLaunch` leaves the public
-Sandbox Service proto for a gateway-private message, `sandbox_service/wire.py` splits between
-gateway and client, the client's `Runner` handle is renamed, its `command_admission_timeout_s`
-stops being nullable, and the Notification Service's `SandboxServiceSettings` splits too.
+Service's proto package. Move those messages into the gateway's proto. `FrozenLaunch` leaves the
+public Sandbox Service proto for a gateway-private message, `sandbox_service/wire.py` splits between
+the gateway and `RunnerGatewayClient`, the client's `Runner` handle is renamed, its
+`command_admission_timeout_s` stops being nullable, and the Notification Service's
+`SandboxServiceSettings` splits too.
 
 ### `RESUME_BY_SESSION_ID` — resume a Session by its ID alone
 
@@ -847,10 +847,9 @@ Refactors found by reading devel (2026-10-11 PDT) against the quality bar and
 
 ```mermaid
 flowchart TD
-    GATEWAY_CLIENT_SPLIT[Session messages and client move to the gateway]
     RUNNER_INBOUND_RETIRE[Retire inbound runner access]
     subgraph COHERENCE_REFACTORS[Coherence refactors]
-        RUNNER_ERRORS_REHOME[Blocked: errors beside the client that raises them]
+        RUNNER_ERRORS_REHOME[Unscheduled: errors beside the client that raises them]
         SETTLE_DELTAS_ALWAYS_ON[Unscheduled: retire the settle_deltas flag]
         FEED_ENDED_RETIRE[Candidate: a feed ends where its harness stopped]
         KUBEVIRT_GUEST_CONTROL[Candidate: KubeVirt guest dials out]
@@ -862,7 +861,6 @@ flowchart TD
         OPERATOR_ROUTE_PREFIX[Candidate: one operator route prefix]
         NOTIFICATION_WRITE_ONLY_COLUMNS[Decision: audit columns nothing reads]
     end
-    GATEWAY_CLIENT_SPLIT --> RUNNER_ERRORS_REHOME
     KUBEVIRT_GUEST_CONTROL --> RUNNER_INBOUND_RETIRE
     RUNNER_INBOUND_RETIRE --> RUNNER_CORE_SPLIT
     COHERENCE_REFACTORS --> REFACTOR_COHERENCE_AUDIT[Whole-refactor coherence audit]
@@ -870,10 +868,11 @@ flowchart TD
 
 ### `RUNNER_ERRORS_REHOME` — errors beside the client that raises them
 
-**Blocked on `GATEWAY_CLIENT_SPLIT`.** `agentplane.runner.errors` is now every service's "session
-refused" vocabulary: the gateway, the Sandbox Service client and the app's Thread-identity conflicts
-raise it. Move it beside the gateway client, per grpc_services.md, and give the app's `bridge.py`
-its own error type.
+**Unscheduled.** `agentplane.runner.errors` is now every service's "session refused" vocabulary:
+the gateway, the status translation the Sandbox Service and Runner Gateway clients share
+(`agentplane/grpc_calls.py`, which raises it for `FAILED_PRECONDITION`) and the app's
+Thread-identity conflicts raise it. Move the client-side error beside that translation, per
+grpc_services.md, and give the app's `bridge.py` its own error type.
 
 ### `FEED_ENDED_RETIRE` — a feed ends where its harness stopped
 

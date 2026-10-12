@@ -12,6 +12,7 @@ import json
 from pathlib import Path
 from typing import Any, cast
 
+import grpc
 import httpx
 from kubernetes_asyncio import client as k8s_client
 from kubernetes_asyncio.client import CoreV1Api
@@ -34,27 +35,33 @@ from agentplane.app.threads.store import ThreadStore
 from agentplane.app.threads.summaries import Summaries
 from agentplane.app.threads.view.content import ContentStore
 from agentplane.egress.decisions_client import DecisionsClient
+from agentplane.grpc_calls import dial
 from agentplane.history_service.client import HistoryServiceClient
 from agentplane.history_service.fold.views import ThreadEntityView
 from agentplane.kubernetes_watch import Freshness
 from agentplane.runner.harness import Harness
+from agentplane.runner_gateway.client import RunnerGatewayClient, SandboxControlClient
 from agentplane.sandbox_service.client import SandboxServiceClient
 from agentplane.sandbox_service.egress_views import EgressReader
 
 
-def _openapi_document(api_client: k8s_client.ApiClient) -> dict[str, Any]:
+def _openapi_document(api_client: k8s_client.ApiClient, channel: grpc.aio.Channel) -> dict[str, Any]:
     # Only routes and models shape the document; the service clients are never called.
+    # Schema export never makes an RPC; the timeouts are inert placeholder arguments, not runtime defaults.
     inventory = SandboxServiceClient(
-        "schema.invalid:8080",
-        gateway_target="schema.invalid:8080",
-        control_target="schema.invalid:8080",
-        namespace="schema",
+        channel, namespace="schema", token_file=Path("/schema-unused-token"), request_timeout_s=1, lifecycle_timeout_s=1
+    )
+    gateway = RunnerGatewayClient(
+        channel,
         token_file=Path("/schema-unused-token"),
-        gateway_token_file=Path("/schema-unused-token"),
         command_admission_timeout_s=None,
-        # Schema export never makes an RPC; these are inert placeholder arguments, not runtime defaults.
         request_timeout_s=1,
-        lifecycle_timeout_s=1,
+        control=SandboxControlClient(
+            control_target="schema.invalid:8080",
+            token_file=Path("/schema-unused-token"),
+            request_timeout_s=1,
+            lifecycle_timeout_s=1,
+        ),
     )
     history = HistoryServiceClient("schema.invalid:8080", token_file=Path("/schema-unused-token"), request_timeout_s=1)
     # An engine connects lazily, so a URL nothing listens on is fine for a document.
@@ -66,7 +73,7 @@ def _openapi_document(api_client: k8s_client.ApiClient) -> dict[str, Any]:
         ContentStore(engine, history_reader=history),
     )
     live = LiveIndex(freshness=Freshness(stale_after_seconds=900), core_v1=CoreV1Api(api_client))
-    runners = SandboxSessions(live, inventory)
+    runners = SandboxSessions(live, gateway)
     document: dict[str, Any] = create_app(
         inventory,
         RunnerBridge(
@@ -75,7 +82,7 @@ def _openapi_document(api_client: k8s_client.ApiClient) -> dict[str, Any]:
             content=content,
             discovery=SessionDiscovery(runners=runners, event_logs=event_logs),
         ),
-        ThreadStore(engine, summaries, gateway=inventory),
+        ThreadStore(engine, summaries, gateway=gateway),
         ModelCatalog(
             models=[
                 ModelOption(
@@ -112,8 +119,8 @@ def _openapi_document(api_client: k8s_client.ApiClient) -> dict[str, Any]:
 
 
 async def openapi_document() -> dict[str, Any]:
-    async with k8s_client.ApiClient() as api_client:
-        return _openapi_document(api_client)
+    async with k8s_client.ApiClient() as api_client, dial("schema.invalid:8080") as channel:
+        return _openapi_document(api_client, channel)
 
 
 def main() -> None:

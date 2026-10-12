@@ -10,8 +10,8 @@ import grpc
 from kubernetes_asyncio import client as k8s_client
 
 from agentplane.grpc_serving import add_health, serving
+from agentplane.runner_gateway.client import SandboxControlClient
 from agentplane.sandbox_service.action_policy import ActionPolicyBindings
-from agentplane.sandbox_service.client import SandboxServiceClient
 from agentplane.sandbox_service.controller import SandboxController
 from agentplane.sandbox_service.egress import EgressInventory
 from agentplane.sandbox_service.grpc_api import Resources, add_service
@@ -85,27 +85,20 @@ async def sandboxes(
 
 
 async def serve(settings: Settings) -> None:
-    # Teardown calls only the gateway; this client's Sandbox Service target and token are never used.
-    gateway = SandboxServiceClient(
-        f"127.0.0.1:{settings.port}",
-        gateway_target=settings.gateway_target,
+    # Teardown seals through the replica holding each Sandbox's runner connection.
+    control = SandboxControlClient(
         control_target=settings.control_target,
-        namespace=settings.sandbox_namespace,
         token_file=settings.gateway_token_file,
-        gateway_token_file=settings.gateway_token_file,
-        command_admission_timeout_s=None,
         request_timeout_s=settings.admission_timeout_s,
         lifecycle_timeout_s=settings.lifecycle_timeout_s,
     )
-
     async with (
         k8s_client.ApiClient(await kubernetes_configuration(settings.kubeconfig)) as api,
         AsyncExitStack() as stack,
     ):
-        await stack.enter_async_context(gateway)
         server = grpc.aio.server()
         add_health(server)
-        await stack.enter_async_context(sandboxes(settings, api, server, sealing=GatewaySealing(gateway)))
+        await stack.enter_async_context(sandboxes(settings, api, server, sealing=GatewaySealing(control)))
         await stack.enter_async_context(serving(server, f"{settings.host}:{settings.port}", grace_s=5))
         await until_terminated()
 

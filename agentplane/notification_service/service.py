@@ -35,7 +35,8 @@ from agentplane.notification_service.store import ClaimLostError, ConflictError,
 from agentplane.proto import command_pb2, event_log_pb2, runner_pb2
 from agentplane.proto.sandbox_service_pb2 import SandboxDestination, ServiceAccount
 from agentplane.runner.errors import RunnerError
-from agentplane.sandbox_service.client import Runner, SandboxServiceClient
+from agentplane.runner_gateway.client import Runner, RunnerGatewayClient
+from agentplane.sandbox_service.client import SandboxServiceClient
 from agentplane.sandbox_service.errors import SandboxNotFoundError
 from agentplane.subjects import ServiceAccountRef
 from agentplane.workload_auth.principal import WorkloadPrincipal
@@ -87,12 +88,14 @@ class Service:
         sandboxes: SandboxServiceClient,
         github: GitHub | None,
         *,
+        gateway: RunnerGatewayClient,
         history: HistoryServiceClient,
         notice_debounce: NoticeDebounceSettings,
         stale_confirmation_s: float,
         operator_reader_account: str | None,
     ) -> None:
         self.store, self.actions, self.sandboxes, self.history = store, actions, sandboxes, history
+        self.gateway = gateway
         self.github = github
         self.operator_reader_account = operator_reader_account
         self.notice_debounce = notice_debounce
@@ -109,7 +112,7 @@ class Service:
             raise StaleDestinationError("uid_changed")
         if sandbox.service_account != ServiceAccount(namespace=owner.namespace, name=owner.name):
             raise OwnerMismatchError
-        return self.sandboxes.runner(
+        return self.gateway.runner(
             SandboxDestination(sandbox=destination.name, sandbox_uid=destination.uid, owner=sandbox.service_account)
         )
 
@@ -185,7 +188,7 @@ class Service:
             return
         if not current.admitted and (current.attempted or await self.store.attempt(claim, current)):
             # Its admission and confirmation are copied by a later claim, once the History Service has them.
-            await self.sandboxes.command(
+            await self.gateway.command(
                 claim.session_id,
                 command_pb2.Command(
                     command_id=str(current.command_id), submit_input=command_pb2.SubmitInput(text=current.text)

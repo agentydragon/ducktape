@@ -14,11 +14,12 @@ import pytest_bazel
 from kubernetes_asyncio import client as k8s_client
 from more_itertools import one
 
+from agentplane.grpc_calls import ServiceError
 from agentplane.proto import runner_pb2, sandbox_service_pb2
 from agentplane.proto.sandbox_service_pb2 import CreateSandboxRequest, SandboxDestination
 from agentplane.runner.errors import RunnerError
 from agentplane.sandbox_service.action_policy import ActionPolicyBindings
-from agentplane.sandbox_service.client import SandboxServiceClient, ServiceError
+from agentplane.sandbox_service.client import SandboxServiceClient
 from agentplane.sandbox_service.egress import EgressInventory
 from agentplane.sandbox_service.grpc_api import Resources
 from agentplane.sandbox_service.inventory import SandboxInventory

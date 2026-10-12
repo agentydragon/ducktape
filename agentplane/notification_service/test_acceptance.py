@@ -37,8 +37,8 @@ from agentplane.proto import command_pb2, event_log_pb2, runner_pb2
 from agentplane.proto.sandbox_service_pb2 import SandboxDestination, ServiceAccount
 from agentplane.runner.testing.fixtures import RunnerHandle
 from agentplane.runner.testing.scripted_model import ScriptedModel, Text
+from agentplane.runner_gateway.client import RunnerGatewayClient
 from agentplane.runner_gateway.instructions import render_platform_instructions
-from agentplane.sandbox_service.client import SandboxServiceClient
 from agentplane.sandbox_service.testing.kubernetes import (
     ACCOUNT,
     SANDBOX,
@@ -124,7 +124,7 @@ async def test_listen_deliver_read_ack_and_recover_lost_response_without_app(
                     actions_service_url="http://actions.test",
                     notifications_service_url="http://notifications.test",
                 ),
-            ) as remote,
+            ) as (sandboxes, remote),
             ingest(sandbox_service_db_url, runner.runner),
             history_service(sandbox_service_db_url, tmp_path / "history-token") as history,
             history_wakeups.listener.listen(),
@@ -133,8 +133,9 @@ async def test_listen_deliver_read_ack_and_recover_lost_response_without_app(
             service = Service(
                 store,
                 source,
-                remote,
+                sandboxes,
                 github=None,
+                gateway=remote,
                 history=history,
                 notice_debounce=NoticeDebounceSettings(quiet_seconds=0),
                 stale_confirmation_s=30,
@@ -282,13 +283,13 @@ async def test_listen_deliver_read_ack_and_recover_lost_response_without_app(
                     if history_cursor > 128:
                         break
                 assert history_cursor > 128
-                original = SandboxServiceClient.command
+                original = RunnerGatewayClient.command
                 lost = False
                 notice_sent = False
                 attempted_id: str | None = None
 
                 async def lose_response(
-                    self: SandboxServiceClient, session_id: str, command: command_pb2.Command
+                    self: RunnerGatewayClient, session_id: str, command: command_pb2.Command
                 ) -> event_log_pb2.EventEntry:
                     nonlocal lost, notice_sent, attempted_id
                     if command.HasField("submit_input"):
@@ -306,7 +307,7 @@ async def test_listen_deliver_read_ack_and_recover_lost_response_without_app(
                         raise ConnectionError("simulated lost admission response")
                     return receipt
 
-                monkeypatch.setattr(SandboxServiceClient, "command", lose_response)
+                monkeypatch.setattr(RunnerGatewayClient, "command", lose_response)
 
                 async def step_until_sent() -> None:
                     # A step sends only once the History Service has every entry the runner had,
@@ -348,8 +349,9 @@ async def test_listen_deliver_read_ack_and_recover_lost_response_without_app(
                 recovered = Service(
                     Store(engine, quotas=QuotaSettings()),
                     source,
-                    remote,
+                    sandboxes,
                     github=None,
+                    gateway=remote,
                     history=history,
                     notice_debounce=service.notice_debounce,
                     stale_confirmation_s=service.stale_confirmation_s,

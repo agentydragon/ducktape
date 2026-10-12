@@ -9,6 +9,7 @@ from kubernetes_asyncio import client as k8s_client
 from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import create_async_engine
 
+from agentplane.grpc_calls import dial
 from agentplane.history_service.client import HistoryServiceClient
 from agentplane.notification_service.api import create_app
 from agentplane.notification_service.service import Service
@@ -17,6 +18,7 @@ from agentplane.notification_service.sources.actions import ActionServiceClient
 from agentplane.notification_service.sources.github.client import GitHubClient
 from agentplane.notification_service.sources.github.source import GitHub
 from agentplane.notification_service.store import Store
+from agentplane.runner_gateway.client import RunnerGatewayClient, SandboxControlClient
 from agentplane.sandbox_service.client import SandboxServiceClient
 from agentplane.service_process import configure_logging, kubernetes_configuration
 from agentplane.workload_auth.principal import WorkloadPrincipalResolver
@@ -37,17 +39,8 @@ async def serve(settings: Settings) -> None:
                 base_url=str(settings.actions.url), timeout=settings.actions.request_timeout_s, follow_redirects=False
             ) as http,
             AsyncExitStack() as github_stack,
-            SandboxServiceClient(
-                settings.sandbox_service.target,
-                gateway_target=settings.sandbox_service.gateway_target,
-                namespace=settings.namespace,
-                token_file=settings.sandbox_service.token_file,
-                gateway_token_file=settings.sandbox_service.gateway_token_file,
-                request_timeout_s=settings.sandbox_service.request_timeout_s,
-                lifecycle_timeout_s=settings.sandbox_service.lifecycle_timeout_s,
-                command_admission_timeout_s=settings.sandbox_service.command_admission_timeout_s,
-                control_target=settings.sandbox_service.control_target,
-            ) as sandboxes,
+            dial(settings.sandbox_service.target) as sandbox_service_channel,
+            dial(settings.sandbox_service.gateway_target) as gateway_channel,
             HistoryServiceClient(
                 settings.history_service.target,
                 token_file=settings.history_service.token_file,
@@ -67,8 +60,26 @@ async def serve(settings: Settings) -> None:
                 Service(
                     Store(engine, quotas=settings.quotas),
                     ActionServiceClient(http, settings.actions.token_file),
-                    sandboxes,
+                    SandboxServiceClient(
+                        sandbox_service_channel,
+                        namespace=settings.namespace,
+                        token_file=settings.sandbox_service.token_file,
+                        request_timeout_s=settings.sandbox_service.request_timeout_s,
+                        lifecycle_timeout_s=settings.sandbox_service.lifecycle_timeout_s,
+                    ),
                     github,
+                    gateway=RunnerGatewayClient(
+                        gateway_channel,
+                        token_file=settings.sandbox_service.gateway_token_file,
+                        command_admission_timeout_s=settings.sandbox_service.command_admission_timeout_s,
+                        request_timeout_s=settings.sandbox_service.request_timeout_s,
+                        control=SandboxControlClient(
+                            control_target=settings.sandbox_service.control_target,
+                            token_file=settings.sandbox_service.gateway_token_file,
+                            request_timeout_s=settings.sandbox_service.request_timeout_s,
+                            lifecycle_timeout_s=settings.sandbox_service.lifecycle_timeout_s,
+                        ),
+                    ),
                     history=history,
                     notice_debounce=settings.notice_debounce,
                     stale_confirmation_s=settings.stale_inbox_confirmation_s,

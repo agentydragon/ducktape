@@ -41,7 +41,8 @@ bbr test //agentplane/app/...
   resolution. Preset names stop at the app boundary; Kubernetes and the runner receive resolved
   fields.
 - Sandbox provisioning and grants are owned by `../sandbox_service/`, Sessions and commands by
-  `../runner_gateway/`; both are reached through the authenticated `SandboxServiceClient`. The app retains read-only Kubernetes projections for UI updates.
+  `../runner_gateway/`, reached through their authenticated clients, `SandboxServiceClient` and
+  `RunnerGatewayClient`. The app retains read-only Kubernetes projections for UI updates.
 - `egress.py`: read-only egress-policy/binding projections for the UI, with mutations delegated to Sandbox
   Service. Bindings remain desired-state grants, with expiry/revocation per binding and Flux-owned
   bindings protected from app revocation ([composition](../docs/egress_composition.md)).

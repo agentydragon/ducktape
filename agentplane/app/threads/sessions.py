@@ -1,4 +1,4 @@
-"""App-side session discovery; every runner operation goes through Sandbox Service."""
+"""App-side session discovery; every runner operation goes through the Runner Gateway."""
 
 from uuid import UUID
 
@@ -7,7 +7,7 @@ from agentplane.app.sandbox_models import sandbox_has_ready_pod
 from agentplane.app.threads.events.event_log import SessionNotRegisteredError
 from agentplane.changes import ChangeSignal
 from agentplane.proto.sandbox_service_pb2 import SandboxDestination, ServiceAccount
-from agentplane.sandbox_service.client import Runner, SandboxServiceClient
+from agentplane.runner_gateway.client import Runner, RunnerGatewayClient
 from agentplane.sandbox_service.errors import SandboxNotFoundError
 
 # gazelle:include_dep @pypi//protobuf
@@ -23,9 +23,9 @@ class SandboxNotReachableError(Exception):
 
 
 class SandboxSessions:
-    def __init__(self, index: LiveIndex, service: SandboxServiceClient) -> None:
+    def __init__(self, index: LiveIndex, gateway: RunnerGatewayClient) -> None:
         self._index = index
-        self.service = service
+        self.gateway = gateway
         self._clients: dict[str, Runner] = {}
 
     @property
@@ -37,7 +37,7 @@ class SandboxSessions:
 
     async def sandbox_of(self, thread_id: UUID) -> str:
         """The Sandbox the Runner Gateway routes the Thread's Session to."""
-        found = await self.service.session_sandboxes({str(thread_id)})
+        found = await self.gateway.session_sandboxes({str(thread_id)})
         if not found:
             raise SessionNotRegisteredError(thread_id)
         return found[0].sandbox
@@ -54,5 +54,5 @@ class SandboxSessions:
             sandbox_uid=str(view.uid),
         )
         if str(view.uid) not in self._clients:
-            self._clients[str(view.uid)] = self.service.runner(destination)
+            self._clients[str(view.uid)] = self.gateway.runner(destination)
         return self._clients[str(view.uid)]

@@ -64,6 +64,7 @@ from agentplane.egress.decisions_client import DecisionsClient
 from agentplane.history_service.client import HistoryServiceClient
 from agentplane.postgres.wakeups import WakeupListener
 from agentplane.runner.harness import Harness
+from agentplane.runner_gateway.client import RunnerGatewayClient
 from agentplane.sandbox_service.client import SandboxServiceClient
 from agentplane.sandbox_service.testing.backend import seed_runner
 from agentplane.sandbox_service.testing.fake_inventory import (
@@ -302,6 +303,7 @@ async def test_a_frame_goes_out_per_change_with_health_through_the_quiet(seeded:
 @pytest.fixture
 def app(
     inventory: SandboxServiceClient,
+    gateway: RunnerGatewayClient,
     egress: EgressAccess,
     decisions: DecisionsClient,
     live_index: LiveIndex,
@@ -322,7 +324,7 @@ def app(
         ContentStore(engine, history_reader=history),
     )
     database_updates = create_database_updates(engine.url)
-    runners = SandboxSessions(live_index, inventory)
+    runners = SandboxSessions(live_index, gateway)
     bridge = RunnerBridge(
         runners=runners,
         event_logs=event_logs,
@@ -332,7 +334,7 @@ def app(
     return create_app(
         inventory,
         bridge,
-        ThreadStore(engine, summaries, gateway=inventory),
+        ThreadStore(engine, summaries, gateway=gateway),
         MODELS,
         egress,
         decisions,

@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any, cast
 from uuid import UUID
 
+import grpc
 import httpx
 import pytest
 from kubernetes_asyncio.client import CoreV1Api
@@ -37,6 +38,7 @@ from agentplane.app.threads.store import ThreadStore
 from agentplane.app.threads.summaries import Summaries
 from agentplane.app.threads.view.content import ContentStore
 from agentplane.egress.decisions_client import DecisionsClient
+from agentplane.grpc_calls import dial
 from agentplane.history_service.client import HistoryServiceClient
 from agentplane.history_service.testing.backend import history_service
 from agentplane.history_service.testing.fixtures import service_database_template
@@ -59,6 +61,7 @@ from agentplane.runner.testing.fixtures import (
     spec,
     workspace,
 )
+from agentplane.runner_gateway.client import RunnerGatewayClient
 from agentplane.sandbox_service.client import SandboxServiceClient
 from agentplane.sandbox_service.egress_views import EgressReader
 from agentplane.sandbox_service.kubernetes_grants import KubernetesGrant
@@ -142,8 +145,8 @@ def summaries(engine: AsyncEngine, history_client: HistoryServiceClient) -> Summ
 
 
 @pytest.fixture
-def store(engine: AsyncEngine, summaries: Summaries, inventory: SandboxServiceClient) -> ThreadStore:
-    return ThreadStore(engine, summaries, gateway=inventory)
+def store(engine: AsyncEngine, summaries: Summaries, gateway: RunnerGatewayClient) -> ThreadStore:
+    return ThreadStore(engine, summaries, gateway=gateway)
 
 
 @pytest.fixture
@@ -207,12 +210,12 @@ async def database_updates(
 
 @pytest.fixture
 async def replica(
-    db_url: str, event_logs: SeededEventLogStore, history_client: HistoryServiceClient, inventory: SandboxServiceClient
+    db_url: str, event_logs: SeededEventLogStore, history_client: HistoryServiceClient, gateway: RunnerGatewayClient
 ) -> AsyncIterator[Replica]:
     async with managed_async_engine(connect(db_url)) as engine:
         summaries = Summaries(engine, history_client)
         yield Replica(
-            ThreadStore(engine, summaries, gateway=inventory),
+            ThreadStore(engine, summaries, gateway=gateway),
             SeededEventLogStore(
                 engine,
                 history=event_logs.history,
@@ -255,9 +258,9 @@ def core_v1() -> FakeCoreV1Api:
 
 
 @pytest.fixture
-def runners(live_index: LiveIndex, inventory: SandboxServiceClient) -> SandboxSessions:
+def runners(live_index: LiveIndex, gateway: RunnerGatewayClient) -> SandboxSessions:
     """The runners `live_index` shows, dialled on a port nothing listens on."""
-    return SandboxSessions(live_index, inventory)
+    return SandboxSessions(live_index, gateway)
 
 
 @pytest.fixture
@@ -310,9 +313,20 @@ def sandbox_endpoint(
 
 
 @pytest.fixture
-async def inventory(sandbox_endpoint: Endpoint) -> AsyncIterator[SandboxServiceClient]:
-    async with sandbox_endpoint.client() as client:
-        yield client
+async def sandbox_channel(sandbox_endpoint: Endpoint) -> AsyncIterator[grpc.aio.Channel]:
+    """One channel to `sandbox_endpoint`, which serves both services, on this test's loop."""
+    async with dial(sandbox_endpoint.target) as channel:
+        yield channel
+
+
+@pytest.fixture
+def inventory(sandbox_endpoint: Endpoint, sandbox_channel: grpc.aio.Channel) -> SandboxServiceClient:
+    return sandbox_endpoint.sandboxes(sandbox_channel)
+
+
+@pytest.fixture
+def gateway(sandbox_endpoint: Endpoint, sandbox_channel: grpc.aio.Channel) -> RunnerGatewayClient:
+    return sandbox_endpoint.gateway(sandbox_channel)
 
 
 # The agent's credential, and what a test client carries: the app's other one is an OIDC session

@@ -6,6 +6,7 @@ from pathlib import Path
 
 import grpc
 
+from agentplane.grpc_calls import dial
 from agentplane.grpc_serving import serving
 from agentplane.sandbox_service import grpc_api
 from agentplane.sandbox_service.client import SandboxServiceClient
@@ -16,20 +17,9 @@ from agentplane.sandbox_service.client import SandboxServiceClient
 CALLER_TOKEN = "test-caller-token"
 
 
-def connect(
-    target: str, token_file: Path, *, namespace: str, command_admission_timeout_s: float | None, control_target: str
-) -> SandboxServiceClient:
-    """The client of both services at one target, with the control Service at `control_target`."""
+def sandbox_client(channel: grpc.aio.Channel, token_file: Path, *, namespace: str) -> SandboxServiceClient:
     return SandboxServiceClient(
-        target,
-        gateway_target=target,
-        control_target=control_target,
-        namespace=namespace,
-        token_file=token_file,
-        gateway_token_file=token_file,
-        command_admission_timeout_s=command_admission_timeout_s,
-        request_timeout_s=20,
-        lifecycle_timeout_s=310,
+        channel, namespace=namespace, token_file=token_file, request_timeout_s=20, lifecycle_timeout_s=310
     )
 
 
@@ -37,14 +27,5 @@ def connect(
 async def service_client(resources: grpc_api.Resources, token_file: Path) -> AsyncIterator[SandboxServiceClient]:
     server = grpc.aio.server()
     grpc_api.add_service(resources, server)
-    async with (
-        serving(server, "127.0.0.1:0", grace_s=0) as port,
-        connect(
-            f"127.0.0.1:{port}",
-            token_file,
-            namespace=resources.provisioning.inventory.namespace,
-            command_admission_timeout_s=20,
-            control_target=f"127.0.0.1:{port}",
-        ) as client,
-    ):
-        yield client
+    async with serving(server, "127.0.0.1:0", grace_s=0) as port, dial(f"127.0.0.1:{port}") as channel:
+        yield sandbox_client(channel, token_file, namespace=resources.provisioning.inventory.namespace)

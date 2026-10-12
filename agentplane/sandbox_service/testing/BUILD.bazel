@@ -11,9 +11,12 @@ py_library(
     srcs = ["kubernetes.py"],
     deps = [
         ":fake_inventory",
+        ":grpc_service",
+        "//agentplane:grpc_calls",
         "//agentplane:subjects",
         "//agentplane/proto:sandbox_service_pb2",
         "//agentplane/runner:service",
+        "//agentplane/runner_gateway:client",
         "//agentplane/runner_gateway:destinations",
         "//agentplane/runner_gateway:grpc_api",
         "//agentplane/runner_gateway/testing:control_listener",
@@ -61,6 +64,7 @@ py_library(
     testonly = True,
     srcs = ["grpc_service.py"],
     deps = [
+        "//agentplane:grpc_calls",
         "//agentplane:grpc_serving",
         "//agentplane/sandbox_service:client",
         "//agentplane/sandbox_service:grpc_api",
@@ -76,6 +80,7 @@ py_library(
         ":fake_rbac",
         ":grpc_service",
         "//agentplane:subjects",
+        "//agentplane/runner_gateway:client",
         "//agentplane/runner_gateway:destinations",
         "//agentplane/runner_gateway/testing:control_listener",
         "//agentplane/runner_gateway/testing:grpc_service",
@@ -93,6 +98,7 @@ py_library(
         "//util:kubernetes",
         "//util/testing:sqlalchemy_engines",
         "@pypi//anyio",
+        "@pypi//grpcio",
         "@pypi//kubernetes_asyncio",
     ],
 )

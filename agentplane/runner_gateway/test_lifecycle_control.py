@@ -14,9 +14,11 @@ import pytest_bazel
 from kubernetes_asyncio import client as k8s_client
 from sqlalchemy.ext.asyncio import AsyncEngine
 
+from agentplane.grpc_calls import ServiceError
 from agentplane.proto import runner_control_pb2, runner_control_pb2_grpc, runner_pb2
 from agentplane.proto.sandbox_service_pb2 import TeardownPhase
 from agentplane.runner.errors import RunnerError
+from agentplane.runner_gateway.client import RunnerGatewayClient
 from agentplane.runner_gateway.command_delivery import CommandDelivery
 from agentplane.runner_gateway.commands.dispatch import DispatchStore
 from agentplane.runner_gateway.connection_records import ConnectionHolder, ConnectionLeases
@@ -28,13 +30,12 @@ from agentplane.runner_gateway.lifecycle_control import (
     LifecycleControl,
 )
 from agentplane.runner_gateway.runner_control import ControlTiming
-from agentplane.runner_gateway.testing.grpc_service import service
+from agentplane.runner_gateway.testing.grpc_service import connect, service
 from agentplane.runner_gateway.testing.resources import build_resources
 from agentplane.runner_gateway.testing.runner_control import OTHER_REPLICA, REPLICA, RUNNER_TOKEN, serve_replica_control
 from agentplane.runner_gateway.testing.sessions import register_session
-from agentplane.sandbox_service.client import SandboxServiceClient, ServiceError
 from agentplane.sandbox_service.teardown import GatewaySealing, SealNotFlushedError, Teardown
-from agentplane.sandbox_service.testing.grpc_service import CALLER_TOKEN, connect
+from agentplane.sandbox_service.testing.grpc_service import CALLER_TOKEN
 from agentplane.sandbox_service.testing.kubernetes import DESTINATION, SANDBOX, SANDBOX_UID, Cluster
 from agentplane.subjects import ServiceAccountRef
 from agentplane.testing.fake_apiserver import SANDBOX_NAMESPACE, TokenVerdict
@@ -150,10 +151,8 @@ def attached(session_id: str, harness_state: runner_pb2.HarnessState) -> runner_
     )
 
 
-def client(token_file: Path, target: str, *, control_target: str) -> SandboxServiceClient:
-    return connect(
-        target, token_file, namespace=SANDBOX_NAMESPACE, command_admission_timeout_s=None, control_target=control_target
-    )
+def client(token_file: Path, target: str, *, control_target: str) -> AbstractAsyncContextManager[RunnerGatewayClient]:
+    return connect(target, token_file, command_admission_timeout_s=None, control_target=control_target)
 
 
 async def test_a_create_whose_harness_failed_resumes_the_session_on_retry(
@@ -297,8 +296,8 @@ async def test_an_answer_for_another_verb_fails_the_request(holder: Replica) -> 
             await listing
 
 
-def sandbox_service_teardown(cluster: Cluster, gateway: SandboxServiceClient) -> Teardown:
-    return Teardown(cluster.inventory, GatewaySealing(gateway))
+def sandbox_service_teardown(cluster: Cluster, gateway: RunnerGatewayClient) -> Teardown:
+    return Teardown(cluster.inventory, GatewaySealing(gateway.control))
 
 
 async def test_teardown_seals_over_the_holders_connection(

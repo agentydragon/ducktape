@@ -72,6 +72,7 @@ from agentplane.history_service.client import HistoryServiceClient
 from agentplane.history_service.testing.history import History
 from agentplane.postgres.wakeups import WakeupListener
 from agentplane.runner.harness import Harness
+from agentplane.runner_gateway.client import RunnerGatewayClient
 from agentplane.sandbox_service.action_policy_views import MANAGED_BY_APP, MANAGED_BY_LABEL
 from agentplane.sandbox_service.client import SandboxServiceClient
 from agentplane.sandbox_service.testing.fake_inventory import NAMESPACE, FakeCustomObjectsApi, egress_binding, sandbox
@@ -149,6 +150,7 @@ def db_url(action_api_template: PostgresDatabaseTemplate, database_clones: Datab
 async def review(
     db_url: str,
     inventory: SandboxServiceClient,
+    gateway: RunnerGatewayClient,
     bridge: RunnerBridge,
     store: ThreadStore,
     database_updates: WakeupListener,
@@ -375,7 +377,7 @@ async def review(
         replica = create_app(
             inventory,
             bridge,
-            ThreadStore(replica_engine, replica_summaries, gateway=inventory),
+            ThreadStore(replica_engine, replica_summaries, gateway=gateway),
             ModelCatalog(
                 models=[
                     ModelOption(

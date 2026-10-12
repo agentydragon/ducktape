@@ -29,6 +29,23 @@ py_library(
 )
 
 py_library(
+    name = "client",
+    srcs = ["client.py"],
+    deps = [
+        "//agentplane:grpc_calls",
+        "//agentplane/proto:command_pb2",
+        "//agentplane/proto:event_log_pb2",
+        "//agentplane/proto:runner_gateway_pb2",
+        "//agentplane/proto:runner_gateway_pb2_grpc",
+        "//agentplane/proto:runner_pb2",
+        "//agentplane/proto:sandbox_service_pb2",
+        "//agentplane/sandbox_service:wire",
+        "@pypi//grpcio",
+        "@pypi//protobuf",
+    ],
+)
+
+py_library(
     name = "lifecycle_control",
     srcs = ["lifecycle_control.py"],
     deps = [
@@ -322,6 +339,7 @@ py_test(
     srcs = ["test_lifecycle_control.py"],
     requires_docker = True,
     deps = [
+        ":client",
         ":command_delivery",
         ":conftest",
         ":connection_records",
@@ -329,6 +347,7 @@ py_test(
         ":lifecycle_control",
         ":runner_control",
         "//:conftest",
+        "//agentplane:grpc_calls",
         "//agentplane:subjects",
         "//agentplane/proto:runner_control_pb2",
         "//agentplane/proto:runner_control_pb2_grpc",
@@ -340,7 +359,6 @@ py_test(
         "//agentplane/runner_gateway/testing:resources",
         "//agentplane/runner_gateway/testing:runner_control",
         "//agentplane/runner_gateway/testing:sessions",
-        "//agentplane/sandbox_service:client",
         "//agentplane/sandbox_service:teardown",
         "//agentplane/sandbox_service/testing:grpc_service",
         "//agentplane/sandbox_service/testing:kubernetes",
@@ -360,6 +378,7 @@ py_test(
     size = "medium",
     srcs = ["test_grpc_api.py"],
     deps = [
+        ":client",
         ":command_delivery",
         ":conftest",
         ":connection_records",
@@ -369,6 +388,7 @@ py_test(
         ":runner_control",
         ":session_registry",
         "//:conftest",
+        "//agentplane:grpc_calls",
         "//agentplane:subjects",
         "//agentplane/proto:command_pb2",
         "//agentplane/proto:runner_control_pb2",
@@ -384,7 +404,6 @@ py_test(
         "//agentplane/runner_gateway/testing:resources",
         "//agentplane/runner_gateway/testing:runner_control",
         "//agentplane/runner_gateway/testing:sessions",
-        "//agentplane/sandbox_service:client",
         "//agentplane/sandbox_service:kubernetes_grants",
         "//agentplane/sandbox_service:kubernetes_views",
         "//agentplane/sandbox_service:wire",
@@ -416,10 +435,12 @@ py_test(
         "@platforms//os:linux",
     ],
     deps = [
+        ":client",
         ":conftest",
         ":destinations",
         ":grpc_api",
         "//:conftest",
+        "//agentplane:grpc_calls",
         "//agentplane/proto:command_pb2",
         "//agentplane/proto:event_log_pb2",
         "//agentplane/proto:runner_pb2",
@@ -431,7 +452,6 @@ py_test(
         "//agentplane/runner/testing:scripted_model",
         "//agentplane/runner_gateway/testing:grpc_service",
         "//agentplane/runner_gateway/testing:resources",
-        "//agentplane/sandbox_service:client",
         "//agentplane/sandbox_service/testing:grpc_service",
         "//agentplane/sandbox_service/testing:kubernetes",
         "//agentplane/testing:fake_apiserver",

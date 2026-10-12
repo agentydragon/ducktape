@@ -11,17 +11,17 @@ import pytest
 import pytest_bazel
 from kubernetes_asyncio import client as k8s_client
 
+from agentplane.grpc_calls import ServiceError
 from agentplane.grpc_serving import serving
 from agentplane.proto import runner_gateway_pb2_grpc, runner_pb2
 from agentplane.proto.sandbox_service_pb2 import Sandbox, SandboxDestination, SandboxRequest, TeardownPhase
 from agentplane.runner_gateway.destinations import DestinationResolver
-from agentplane.sandbox_service.client import ServiceError
+from agentplane.runner_gateway.testing.grpc_service import control_client
 from agentplane.sandbox_service.errors import SandboxTearingDownError
 from agentplane.sandbox_service.inventory import SandboxInventory
 from agentplane.sandbox_service.teardown import GatewaySealing, SealNotFlushedError, Teardown
 from agentplane.sandbox_service.testing.backend import seed_runner
 from agentplane.sandbox_service.testing.fake_inventory import FakeCoreV1Api, FakeCustomObjectsApi
-from agentplane.sandbox_service.testing.grpc_service import connect
 from util.agent_sandbox import SANDBOXES_PLURAL, OperatingMode
 
 # gazelle:include_dep @pypi//protobuf
@@ -61,17 +61,8 @@ def gateway() -> ScriptedGateway:
 async def teardown(inventory: SandboxInventory, gateway: ScriptedGateway, token_file: Path) -> AsyncIterator[Teardown]:
     server = grpc.aio.server()
     runner_gateway_pb2_grpc.add_RunnerGatewayServicer_to_server(gateway, server)
-    async with (
-        serving(server, "127.0.0.1:0", grace_s=0) as port,
-        connect(
-            f"127.0.0.1:{port}",
-            token_file,
-            namespace=inventory.namespace,
-            command_admission_timeout_s=None,
-            control_target=f"127.0.0.1:{port}",
-        ) as client,
-    ):
-        yield Teardown(inventory, GatewaySealing(client))
+    async with serving(server, "127.0.0.1:0", grace_s=0) as port:
+        yield Teardown(inventory, GatewaySealing(control_client(token_file, f"127.0.0.1:{port}")))
 
 
 @pytest.fixture

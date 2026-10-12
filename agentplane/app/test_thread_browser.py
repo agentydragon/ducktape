@@ -67,7 +67,7 @@ from agentplane.history_service.testing.electric_service import ElectricService
 from agentplane.history_service.testing.history import History
 from agentplane.postgres.wakeups import notify
 from agentplane.proto import command_pb2, event_log_pb2, event_pb2
-from agentplane.sandbox_service.client import SandboxServiceClient
+from agentplane.runner_gateway.client import RunnerGatewayClient
 from util.bazel.runfiles import get_required_path
 from util.testing.undeclared_outputs import undeclared_outputs_dir
 from util.testing.viewports import DESKTOP, MOBILE, SMALL_MOBILE, Viewport
@@ -112,7 +112,7 @@ async def service_history_db_url(electric: ElectricService) -> str:
 
 
 @pytest.fixture
-def inventory(gateway_client: SandboxServiceClient) -> SandboxServiceClient:
+def gateway(gateway_client: RunnerGatewayClient) -> RunnerGatewayClient:
     return gateway_client
 
 
