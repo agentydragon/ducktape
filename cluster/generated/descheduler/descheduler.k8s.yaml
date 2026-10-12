@@ -33,13 +33,24 @@ spec:
         - name: default
           pluginConfig:
             - args:
-                labelSelector:
-                  matchExpressions:
-                    - key: app.kubernetes.io/name
-                      operator: NotIn
-                      values:
-                        - agentplane-runner
                 nodeFit: true
+                podProtections:
+                  config:
+                    PodsWithPVC:
+                      protectedStorageClasses:
+                        - name: local-path-home-ssd
+                        - name: local-path-ovh
+                        - name: local-path-ovh-hdd
+                        - name: local-path-ovh-hdd-retain
+                        - name: local-path-ovh-ssd
+                        - name: local-path-proxmox
+                        - name: lvm-proxmox-hdd
+                        - name: lvm-proxmox-hdd-block
+                        - name: lvm-proxmox-hdd-shared
+                        - name: lvm-proxmox-ssd
+                        - name: lvm-proxmox-ssd-block
+                  extraEnabled:
+                    - PodsWithPVC
                 priorityThreshold:
                   value: 1000000
               name: DefaultEvictor

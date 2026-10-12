@@ -30,6 +30,10 @@ RELEASE = "openebs-lvm-localpv"
 OUTPUT_DIR = f"{GENERATED_ROOT}/openebs-lvm"
 _PROXMOX = {"topology.kubernetes.io/region": "proxmox"}
 _DRIVER = "local.csi.openebs.io"
+# Every StorageClass `_storage_classes` makes; keep in sync with it.
+STORAGE_CLASSES = frozenset(
+    {*(f"lvm-proxmox-{tier}{suffix}" for tier in ("ssd", "hdd") for suffix in ("", "-block")), "lvm-proxmox-hdd-shared"}
+)
 
 
 def _storage_class(scope: Construct, name: str, *, parameters: dict[str, str]) -> None:

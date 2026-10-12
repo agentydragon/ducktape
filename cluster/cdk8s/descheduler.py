@@ -12,11 +12,11 @@ from cdk8s import App, Chart
 from cdk8s_plus_34 import k8s
 from constructs import Construct
 
-from cluster.cdk8s import stateful_infra
-from cluster.cdk8s.agentplane import runner_sandbox
+from cluster.cdk8s import local_path_provisioner, stateful_infra
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on
 from cluster.cdk8s.helm import RETRY_FAILED_INSTALL, helm_release, https_helm_repository
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
+from cluster.cdk8s.openebs_lvm import storage
 
 NAME = "descheduler"
 NAMESPACE = "kube-system"
@@ -51,17 +51,21 @@ def _values() -> dict[str, object]:
                                 # than the class name: the PriorityClass belongs to another Flux
                                 # Kustomization (seaweedfs-cluster).
                                 "priorityThreshold": {"value": stateful_infra.PRIORITY},
-                                # Only pods this selects are evictable. An Agentplane runner Pod
-                                # carries its Sandbox's live Sessions and starts again only from
-                                # its state volume, so balancing must never move it.
-                                "labelSelector": {
-                                    "matchExpressions": [
-                                        {
-                                            "key": "app.kubernetes.io/name",
-                                            "operator": "NotIn",
-                                            "values": [runner_sandbox.NAME],
+                                # A node-local PV pins its Pod to one node, which nodeFit does not
+                                # see (it checks only the Pod's own scheduling constraints), so an
+                                # evicted Pod could only come back to the node it left.
+                                "podProtections": {
+                                    "extraEnabled": ["PodsWithPVC"],
+                                    "config": {
+                                        "PodsWithPVC": {
+                                            "protectedStorageClasses": [
+                                                {"name": name}
+                                                for name in sorted(
+                                                    local_path_provisioner.STORAGE_CLASSES | storage.STORAGE_CLASSES
+                                                )
+                                            ]
                                         }
-                                    ]
+                                    },
                                 },
                             },
                         },

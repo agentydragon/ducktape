@@ -29,6 +29,10 @@ _HOME_SSD = "local-path-home-ssd"
 # Classes provisioning onto SSD. OVH's tier=ssd nodes are exactly its control planes, so
 # a Cluster on local-path-ovh-ssd must tolerate them (cnpg.py).
 SSD_STORAGE_CLASSES = frozenset({_OVH_SSD, _HOME_SSD})
+# Every StorageClass `_storage_classes` makes; keep in sync with it.
+STORAGE_CLASSES = frozenset(
+    {"local-path-ovh", "local-path-ovh-hdd", "local-path-ovh-hdd-retain", _OVH_SSD, "local-path-proxmox", _HOME_SSD}
+)
 
 
 def _node_path(node: str, path: str) -> dict[str, object]:
