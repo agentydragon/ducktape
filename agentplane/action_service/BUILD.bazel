@@ -648,6 +648,7 @@ py_test(
         ":updates",
         ":waits",
         "//:conftest",
+        "//agentplane:changes",
         "//agentplane:subjects",
         "@pypi//pytest",
         "@pypi//pytest_bazel",

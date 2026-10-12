@@ -40,6 +40,7 @@ from agentplane.action_service.policies.resources import parse_binding, parse_po
 from agentplane.action_service.policy_informer import PolicyIndex
 from agentplane.action_service.service import ActionService
 from agentplane.action_service.testing.callers import PERSONAL, admitted_callers
+from agentplane.action_service.testing.lifecycle import wait_available
 from agentplane.action_service.updates import ActionUpdateBroker
 from agentplane.app.action_federation import FederatedOperatorActions
 from agentplane.app.action_federation_settings import DirectFederationSettings, ExchangeFederationSettings
@@ -187,6 +188,7 @@ async def review(
         engine = make_engine(db_url)
         stack.push_async_callback(engine.dispose)
         executor = await stack.enter_async_context(McpActionGroupExecutor("test_review", group, server))
+        await wait_available(group)
         private_key, public_key = generate_rsa_keypair()
         idp_sock = bind_free_port()
         idp_origin, app_url = f"http://127.0.0.1:{idp_sock.getsockname()[1]}", "http://test-app.invalid"

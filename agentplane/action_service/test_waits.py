@@ -30,6 +30,7 @@ from agentplane.action_service.models import (
 from agentplane.action_service.service import ActionService
 from agentplane.action_service.updates import CHANNEL, ActionUpdateBroker, UpdatesUnavailableError
 from agentplane.action_service.waits import ActionWaiter, WaitOptions, WaitUntil
+from agentplane.changes import ChangeSignal
 from agentplane.subjects import ServiceAccountRef
 
 CALLER = CallerPrincipal(account=ServiceAccountRef(namespace="agentplane-test", name="test-caller"))
@@ -41,7 +42,7 @@ class ObservedService(ActionService):
     """A read boundary signal lets tests order commits against actual waiter reads."""
 
     def __init__(self, store: ActionStore, catalog: ActionCatalog) -> None:
-        super().__init__(store, catalog, {})
+        super().__init__(store, catalog, {}, dispatches=ChangeSignal())
         self.reads: asyncio.Queue[ActionRequestView] = asyncio.Queue()
 
     async def get(self, request_id: UUID, principal: ReadPrincipal) -> ActionRequestView:

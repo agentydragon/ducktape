@@ -253,6 +253,7 @@ py_test(
         "//agentplane/action_service:updates",
         "//agentplane/action_service/policies:resources",
         "//agentplane/action_service/testing:callers",
+        "//agentplane/action_service/testing:lifecycle",
         "//agentplane/app/testing:history",
         "//agentplane/app/testing:model_test_data",
         "//agentplane/app/threads:bridge",
