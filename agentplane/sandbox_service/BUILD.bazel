@@ -641,3 +641,19 @@ py_library(
         "@pypi//protobuf",
     ],
 )
+
+py_test(
+    name = "test_client",
+    srcs = ["test_client.py"],
+    deps = [
+        ":client",
+        ":conftest",
+        "//:conftest",
+        "//agentplane:grpc_serving",
+        "//agentplane/proto:runner_gateway_pb2",
+        "//agentplane/proto:runner_gateway_pb2_grpc",
+        "@pypi//grpcio",
+        "@pypi//protobuf",
+        "@pypi//pytest_bazel",
+    ],
+)
