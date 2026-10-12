@@ -53,7 +53,7 @@ def add_own_sandbox(cluster: Cluster) -> None:
         {
             "apiVersion": reference["apiVersion"],
             "kind": reference["kind"],
-            "metadata": {"name": OWN_SANDBOX, "uid": OWN_SANDBOX_UID},
+            "metadata": {"name": OWN_SANDBOX, "uid": OWN_SANDBOX_UID, "creationTimestamp": "2026-09-01T11:00:00Z"},
             "spec": {"template": "test-template", "running": True},
         },
     )

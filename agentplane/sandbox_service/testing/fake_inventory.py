@@ -14,6 +14,8 @@ from uuid import uuid4
 
 from kubernetes_asyncio import client as k8s_client
 
+from agentplane import sandbox_resource
+from agentplane.crd_group import GROUP
 from agentplane.sandbox_service.egress_views import FLUX_KUSTOMIZATION_LABEL
 from agentplane.sandbox_service.kubernetes_views import MANAGED_LABEL
 from agentplane.sandbox_service.runner_endpoints import RunnerEndpoint, RunnerEndpoints
@@ -60,6 +62,11 @@ def merge_patch(target: dict[str, Any], patch: dict[str, Any]) -> None:
             target[key] = value
 
 
+def _store(group: str, plural: str) -> str:
+    """Agentplane's own Sandboxes share agent-sandbox's plural, so they are kept apart by group."""
+    return f"{plural}.{group}" if (group, plural) == (GROUP, sandbox_resource.SANDBOXES_PLURAL) else plural
+
+
 class FakeCustomObjectsApi:
     def __init__(self) -> None:
         self.create_fails = False
@@ -86,7 +93,8 @@ class FakeCustomObjectsApi:
     async def list_namespaced_custom_object(
         self, group: str, version: str, namespace: str, plural: str, *, label_selector: str = ""
     ) -> dict[str, Any]:
-        del group, version
+        del version
+        plural = _store(group, plural)
         assert namespace == NAMESPACE
         wanted = dict(item.split("=", 1) for item in label_selector.split(",") if item)
         items = [
@@ -99,7 +107,8 @@ class FakeCustomObjectsApi:
     async def create_namespaced_custom_object(
         self, group: str, version: str, namespace: str, plural: str, body: dict[str, Any]
     ) -> dict[str, Any]:
-        del group, version
+        del version
+        plural = _store(group, plural)
         assert namespace == NAMESPACE
         if self.create_fails:
             raise k8s_client.ApiException(status=500)
@@ -128,7 +137,8 @@ class FakeCustomObjectsApi:
     async def get_namespaced_custom_object(
         self, group: str, version: str, namespace: str, plural: str, name: str
     ) -> dict[str, Any]:
-        del group, version
+        del version
+        plural = _store(group, plural)
         assert namespace == NAMESPACE
         try:
             return self.objects[(plural, name)]
@@ -138,7 +148,8 @@ class FakeCustomObjectsApi:
     async def patch_namespaced_custom_object(
         self, group: str, version: str, namespace: str, plural: str, name: str, body: object, *, _content_type: str
     ) -> object:
-        del group, version
+        del version
+        plural = _store(group, plural)
         assert namespace == NAMESPACE
         assert _content_type == "application/merge-patch+json"
         assert isinstance(body, dict)
@@ -156,7 +167,8 @@ class FakeCustomObjectsApi:
     async def delete_namespaced_custom_object(
         self, group: str, version: str, namespace: str, plural: str, name: str, *, body: k8s_client.V1DeleteOptions
     ) -> object:
-        del group, version
+        del version
+        plural = _store(group, plural)
         assert namespace == NAMESPACE
         target = await self.get_namespaced_custom_object("", "", namespace, plural, name)
         metadata = target["metadata"]

@@ -220,6 +220,7 @@ class SandboxService(Construct):
                     resources=[custom_resource("agents.x-k8s.io", "sandboxes")],
                     verbs=["create", "get", "list", "watch", "patch", "delete"],
                 ),
+                RolePolicyRule(resources=[custom_resource(GROUP, "sandboxes")], verbs=["get", "list", "watch"]),
                 RolePolicyRule(resources=[cast(IApiResource, ApiResource.PODS)], verbs=["get", "list", "watch"]),
                 # Read the UID-owned ServiceAccount metadata when replaying Create; never read its tokens.
                 RolePolicyRule(

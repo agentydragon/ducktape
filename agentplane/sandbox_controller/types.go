@@ -55,6 +55,19 @@ type SandboxSpec struct {
 	Running  bool   `json:"running"`
 	// PolicySets names the PolicySets in the Sandbox's namespace its ServiceAccount is bound to.
 	PolicySets []string `json:"policySets,omitempty"`
+	// SessionDefaults and Bootstrap are the Runner Gateway's; the controller keeps them only so its
+	// updates round-trip them.
+	SessionDefaults *SessionDefaults `json:"sessionDefaults,omitempty"`
+	Bootstrap       string           `json:"bootstrap,omitempty"`
+}
+
+type SessionDefaults struct {
+	Harness         *string `json:"harness,omitempty"`
+	Model           *string `json:"model,omitempty"`
+	Cwd             *string `json:"cwd,omitempty"`
+	ReasoningEffort *string `json:"reasoningEffort,omitempty"`
+	Instructions    *string `json:"instructions,omitempty"`
+	SetupScript     *string `json:"setupScript,omitempty"`
 }
 
 // Incarnation is the Sandbox's current Pod.

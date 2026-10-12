@@ -38,6 +38,7 @@ from kubernetes_asyncio import client as k8s_client
 from kubernetes_asyncio.client import CoreV1Api
 from pydantic import BaseModel, ConfigDict, Field
 
+from agentplane import sandbox_resource
 from agentplane.action_service.policies import resources
 from agentplane.app.action_federation import OperatorFederationError, operator_actions, upstream_failure_detail
 from agentplane.app.action_policy import ActionPolicyInventory, ActionPolicyUnavailable, ActionPolicyView
@@ -49,9 +50,11 @@ from agentplane.app.sse import frame, sse_response
 from agentplane.app.threads.store import MAX_PAGE, ThreadStore
 from agentplane.app.threads.thread_view import ThreadView
 from agentplane.changes import ChangeSignal
+from agentplane.crd_group import GROUP, VERSION
 from agentplane.grpc_calls import ServiceError
 from agentplane.kubernetes_watch import Freshness
 from agentplane.postgres.wakeups import WakeupListener
+from agentplane.sandbox_resource import Sandbox
 from agentplane.sandbox_service.action_policy_views import ACTION_POLICY_API
 from agentplane.sandbox_service.egress_views import (
     BINDINGS_PLURAL,
@@ -61,7 +64,13 @@ from agentplane.sandbox_service.egress_views import (
     BindingView,
     matching_bindings,
 )
-from agentplane.sandbox_service.kubernetes_views import MANAGED_LABEL, sandbox_view, sandbox_views
+from agentplane.sandbox_service.kubernetes_views import (
+    MANAGED_LABEL,
+    own_sandbox_view,
+    own_sandbox_views,
+    sandbox_view,
+    sandbox_views,
+)
 from agentplane.subjects import ServiceAccountRef
 from util.agent_sandbox import SANDBOX_API, SANDBOXES_PLURAL
 from util.kubernetes import CustomObjectsClient
@@ -142,6 +151,8 @@ class LiveIndex:
     freshness: Freshness
     core_v1: CoreV1Api
     sandboxes: dict[str, object] = field(default_factory=dict)
+    # Agentplane's own Sandboxes, beside agent-sandbox's; a Pod's name holds one of the two.
+    own_sandboxes: dict[str, object] = field(default_factory=dict)
     pods: dict[str, k8s_client.V1Pod] = field(default_factory=dict, repr=False)
     bindings: dict[str, object] = field(default_factory=dict)
     policies: dict[str, object] = field(default_factory=dict)
@@ -159,15 +170,22 @@ class LiveIndex:
         api_client = self.core_v1.api_client  # type: ignore[attr-defined]
         return [
             http_sandbox_view(view)
-            for view in sandbox_views(self.sandboxes.values(), self.pods.values(), api_client=api_client)
+            for view in (
+                *sandbox_views(self.sandboxes.values(), self.pods.values(), api_client=api_client),
+                *own_sandbox_views(self.own_sandboxes.values(), self.pods.values(), api_client=api_client),
+            )
         ]
 
     def sandbox_view(self, name: str) -> SandboxView | None:
-        raw = self.sandboxes.get(name)
-        if raw is None:
+        own, raw = self.own_sandboxes.get(name), self.sandboxes.get(name)
+        if own is None and raw is None:
             return None
         # kubernetes_asyncio exposes this runtime attribute but omits it from generated SDK stubs.
         api_client = self.core_v1.api_client  # type: ignore[attr-defined]
+        if own is not None:
+            return http_sandbox_view(
+                own_sandbox_view(Sandbox.model_validate(own), self.pods.get(name), api_client=api_client)
+            )
         return http_sandbox_view(sandbox_view(raw, self.pods.get(name), api_client=api_client))
 
     def bindings_for(self, subject: ServiceAccountRef) -> list[BindingView]:
@@ -235,6 +253,14 @@ def watch_for(
                 key=_name,
                 names=lambda: set(index.sandboxes),
                 apply=lambda name, obj: apply_to(index.sandboxes, name, obj),
+            ),
+            WatchedKind(
+                name=f"{sandbox_resource.SANDBOXES_PLURAL}.{GROUP}",
+                list=custom_objects.list_namespaced_custom_object,
+                args=(GROUP, VERSION, sandbox_namespace, sandbox_resource.SANDBOXES_PLURAL),
+                key=_name,
+                names=lambda: set(index.own_sandboxes),
+                apply=lambda name, obj: apply_to(index.own_sandboxes, name, obj),
             ),
             WatchedKind(
                 name=PODS_PLURAL,

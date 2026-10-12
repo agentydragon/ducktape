@@ -4,8 +4,10 @@ Reconciles `Sandbox` into a state PVC that outlives every incarnation, its own S
 `PolicyBinding`, and, while running, one Pod from its `SandboxTemplate`. Contract: [`SPEC.md`](SPEC.md). The CRDs are in
 [`agentplane/crds`](../crds/BUILD.bazel). It is the Go controller the
 [Sandbox Service](../sandbox_service/README.md) is moving into, and does not yet do what that
-service does around a Sandbox: session defaults, bootstrap, runner endpoints and launch binding.
-Until it does, nothing creates these Sandboxes. Deletion waits for the
+service does around a Sandbox: runner endpoints and launch binding. `spec.sessionDefaults` and
+`spec.bootstrap` are the Runner Gateway's to read; the controller only carries them. Until
+`CreateSandbox` writes our kind, nothing creates these Sandboxes; the Sandbox Service, Runner
+Gateway and app already read them. Deletion waits for the
 [Runner Gateway](../runner_gateway/README.md)'s `SessionsSealed` condition.
 
 A [controller-runtime](https://github.com/kubernetes-sigs/controller-runtime) controller:

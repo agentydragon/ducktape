@@ -12,6 +12,7 @@ from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 
 from agentplane.proto import sandbox_service_pb2
 from agentplane.runner.harness import Harness
+from agentplane.sandbox_resource import SANDBOX_API_VERSIONS
 from agentplane.sandbox_service.kubernetes_grants import (
     ClusterRoleRef,
     DnsName,
@@ -20,7 +21,7 @@ from agentplane.sandbox_service.kubernetes_grants import (
     RoleRef,
 )
 from agentplane.subjects import ServiceAccountRef
-from util.agent_sandbox import SANDBOX_API, OperatingMode
+from util.agent_sandbox import OperatingMode
 
 # gazelle:include_dep @pypi//protobuf
 
@@ -188,7 +189,7 @@ def sandbox_has_ready_pod(view: SandboxView) -> bool:
         return False
     owner = owners[0]
     if (
-        owner.api_version != SANDBOX_API.api_version
+        owner.api_version not in SANDBOX_API_VERSIONS
         or owner.kind != "Sandbox"
         or owner.name != view.name
         or owner.uid != str(view.uid)

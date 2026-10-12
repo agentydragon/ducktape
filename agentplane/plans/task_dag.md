@@ -678,23 +678,24 @@ as annotations on agent-sandbox's `Sandbox` (`provisioning.py`, `kubernetes_bind
 ServiceAccount and its one `PolicyBinding` of those sets, both owned by the Sandbox; the binding
 never sets `expiresAt`. No Pod waits for the binding's readers. The Sandbox Service never writes
 `PolicyBinding`s. Runtime and time-limited grants are separate bindings (`POLICY_RUNTIME_GRANTS`).
-Left after #10162: session defaults, bootstrap command and runner endpoints.
+Left: runner endpoints, held on how Sandboxes reach platform services (operator's pick).
 
 ### `SANDBOX_IMAGE_REPLACE` — replace the runner image between incarnations
 
 **Candidate; the operator's "pause, replace the image, resume" (2026-10-12 PDT).** For pods and VMs
 alike, the controller accepts a new runner image only once the current incarnation is gone: the next
 Pod runs it, and a VM gets its containerDisk rewritten while `runStrategy: Halted`. Both keep the
-state PVC. The PVC records a state-schema version, and an image that does not declare that version
-is refused. The VM half is #8843's `ReplaceVmImage` and `VmTemplate.state_schema_version`, replaced
+state PVC. The runner owns its state's versioning: it migrates forward or reports that it cannot,
+and the controller gates nothing on versions. The VM half is #8843's `ReplaceVmImage` and `VmTemplate.state_schema_version`, replaced
 live in [the 2026-10-03 run](../debug/kubevirt/runtime-20261003.md).
 
 ### `SANDBOX_CREATE_CUTOVER` — Sandboxes are created as ours
 
-**Blocked on provisioning; decision card before the PR.** `CreateSandbox` and
-the rest of the Sandbox Service API, the app's live view and the Runner Gateway's destination
-lookup read and write our `Sandbox` instead of agent-sandbox's, replacing the imperative-only
-`CreateSandbox`. That lookup refuses new Sessions and commands for a deleting Sandbox, as it does for
+**In flight; the operator chose "both kinds" (2026-10-12): new Sandboxes are ours, existing
+agent-sandbox ones keep working.** The Sandbox Service, the app's live view and the Runner
+Gateway's destination lookup read both kinds, and our spec carries session defaults and the
+bootstrap command. Left: `CreateSandbox`, suspend, resume and delete write ours on testing,
+replacing the imperative-only `CreateSandbox`. That lookup refuses new Sessions and commands for a deleting Sandbox, as it does for
 one in agent-sandbox teardown, while the gateway seals it. Existing staging Sandboxes stay on agent-sandbox until `AGENT_SANDBOX_RETIRE`
 recreates them. The Sandbox Controller and our runner `SandboxTemplate`s exist on `agentplane-testing` only
 (`Environment.own_sandboxes`) until then: the cutover

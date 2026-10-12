@@ -11,6 +11,9 @@ applies to this package.
 ## Inventory and launch configuration
 
 `inventory.py` owns the Kubernetes-backed inventory and low-level Sandbox lifecycle operations.
+It reads both agent-sandbox's `Sandbox` and Agentplane's own (`agentplane/sandbox_resource.py`,
+reconciled by the [Sandbox Controller](../sandbox_controller/README.md)); our kind's view comes
+from its spec and conditions (`kubernetes_views.own_sandbox_view`).
 `session_config.py` owns the concrete, serialized launch fields; `kubernetes_grants.py` owns the
 selected grant shapes. Consumers import public models and read-only projections, not these mutation
 implementations. UI preset catalogs remain app-owned and are not interpreted by this package. The

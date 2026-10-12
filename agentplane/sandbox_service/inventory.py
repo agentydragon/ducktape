@@ -20,7 +20,9 @@ from kubernetes_asyncio import client as k8s_client
 from pydantic import BaseModel, ConfigDict, Field
 from tenacity import retry, retry_if_exception, stop_after_attempt
 
+from agentplane import sandbox_resource
 from agentplane.action_service.policies.resources import CALLER_LABEL
+from agentplane.crd_group import GROUP, VERSION
 from agentplane.proto.sandbox_service_pb2 import CreateSandboxRequest, Sandbox, SandboxBinding, TeardownPhase
 from agentplane.sandbox_service.binding_storage import read_binding
 from agentplane.sandbox_service.errors import (
@@ -39,6 +41,7 @@ from agentplane.sandbox_service.kubernetes_views import (
     SANDBOX_BINDING_ANNOTATION,
     TEARDOWN_ANNOTATION,
     SandboxResource,
+    own_sandbox_views,
     sandbox_view,
     sandbox_views,
 )
@@ -115,15 +118,22 @@ class SandboxInventory(SandboxReader):
         )
 
     async def list_sandboxes(self) -> list[Sandbox]:
-        sandboxes_page, pods = await asyncio.gather(
+        """Both kinds: agent-sandbox's Agentplane-managed ones, then all of Agentplane's own."""
+        sandboxes_page, own_page, pods = await asyncio.gather(
             self._custom_objects.list_namespaced_custom_object(
                 *SANDBOX_API, self._namespace, SANDBOXES_PLURAL, label_selector=f"{MANAGED_LABEL}=true"
+            ),
+            self._custom_objects.list_namespaced_custom_object(
+                GROUP, VERSION, self._namespace, sandbox_resource.SANDBOXES_PLURAL
             ),
             self._core_v1.list_namespaced_pod(self._namespace),
         )
         # kubernetes_asyncio exposes this runtime attribute but omits it from generated SDK stubs.
         api_client = self._core_v1.api_client  # type: ignore[attr-defined]
-        return sandbox_views(_ResourceList.model_validate(sandboxes_page).items, pods.items, api_client=api_client)
+        return [
+            *sandbox_views(_ResourceList.model_validate(sandboxes_page).items, pods.items, api_client=api_client),
+            *own_sandbox_views(_ResourceList.model_validate(own_page).items, pods.items, api_client=api_client),
+        ]
 
     async def create(
         self,

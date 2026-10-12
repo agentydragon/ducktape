@@ -12,6 +12,7 @@ from kubernetes_asyncio import client as k8s_client
 from pydantic import BaseModel, ConfigDict, Field, TypeAdapter
 from pydantic.alias_generators import to_camel
 
+from agentplane import sandbox_resource
 from agentplane.crd_group import GROUP
 from agentplane.proto.sandbox_service_pb2 import (
     OwnerReference,
@@ -20,6 +21,7 @@ from agentplane.proto.sandbox_service_pb2 import (
     SandboxBinding,
     SandboxPod,
     ServiceAccount,
+    SessionDefaults,
     TeardownPhase,
 )
 from agentplane.sandbox_service.binding_storage import read_binding
@@ -96,6 +98,17 @@ def sandbox_views(
     return views
 
 
+def own_sandbox_views(
+    sandboxes: Iterable[object], pods: Iterable[k8s_client.V1Pod], *, api_client: k8s_client.ApiClient
+) -> list[Sandbox]:
+    """`sandbox_views` for Agentplane's own Sandboxes."""
+    pods_by_name = {pod.metadata.name: pod for pod in pods}
+    return [
+        own_sandbox_view(parsed, pods_by_name.get(parsed.metadata.name), api_client=api_client)
+        for parsed in map(sandbox_resource.Sandbox.model_validate, sandboxes)
+    ]
+
+
 def sandbox_view(sandbox: object, pod: k8s_client.V1Pod | None, *, api_client: k8s_client.ApiClient) -> Sandbox:
     return _view(SandboxResource.model_validate(sandbox), pod, api_client=api_client)
 
@@ -124,6 +137,46 @@ def _view(sandbox: SandboxResource, pod: k8s_client.V1Pod | None, *, api_client:
         deleting=sandbox.metadata.deletion_timestamp is not None,
         teardown=sandbox.teardown,
         pod=_pod(pod, api_client=api_client) if pod is not None else None,
+    )
+
+
+def own_sandbox_view(
+    sandbox: sandbox_resource.Sandbox, pod: k8s_client.V1Pod | None, *, api_client: k8s_client.ApiClient
+) -> Sandbox:
+    """Agentplane's own Sandbox in the same projection. Its Pod runs as the ServiceAccount of its
+    name, which the Sandbox Controller binds; nothing is pending past that, since no Pod waits for its
+    grants. While it seals before deletion it is in teardown, as an agent-sandbox one is from
+    DeleteSandbox on, and it is deleting once its Sessions are sealed."""
+    metadata, spec = sandbox.metadata, sandbox.spec
+    created_at = Timestamp()
+    created_at.FromDatetime(metadata.creation_timestamp)
+    in_deletion = metadata.deletion_timestamp is not None
+    return Sandbox(
+        name=metadata.name,
+        uid=str(metadata.uid),
+        created_at=created_at,
+        operating_mode=OperatingMode.RUNNING if spec.running else OperatingMode.SUSPENDED,
+        namespace=metadata.namespace,
+        status=_struct(sandbox.status.model_dump(mode="json", by_alias=True, exclude_none=True)),
+        service_account=ServiceAccount(namespace=metadata.namespace, name=metadata.name),
+        binding=_own_binding(spec),
+        kubernetes_grants_ready=True,
+        deleting=in_deletion and sandbox.sessions_sealed,
+        teardown=TeardownPhase.TEARDOWN_PHASE_SEALING
+        if in_deletion and not sandbox.sessions_sealed
+        else TeardownPhase.TEARDOWN_PHASE_UNSPECIFIED,
+        pod=_pod(pod, api_client=api_client) if pod is not None else None,
+    )
+
+
+def _own_binding(spec: sandbox_resource.Spec) -> SandboxBinding | None:
+    if spec.session_defaults is None and spec.bootstrap is None:
+        return None
+    return SandboxBinding(
+        session_defaults=None
+        if spec.session_defaults is None
+        else ParseDict(spec.session_defaults.model_dump(by_alias=True, exclude_none=True), SessionDefaults()),
+        bootstrap=spec.bootstrap or "",
     )
 
 

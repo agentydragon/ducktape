@@ -2727,6 +2727,14 @@ rules:
       - patch
       - delete
   - apiGroups:
+      - agentplane.allegedly.works
+    resources:
+      - sandboxes
+    verbs:
+      - get
+      - list
+      - watch
+  - apiGroups:
       - ""
     resources:
       - pods
@@ -5357,6 +5365,14 @@ rules:
       - list
   - apiGroups:
       - agents.x-k8s.io
+    resources:
+      - sandboxes
+    verbs:
+      - get
+      - list
+      - watch
+  - apiGroups:
+      - agentplane.allegedly.works
     resources:
       - sandboxes
     verbs:

@@ -5,9 +5,10 @@ from dataclasses import dataclass
 from kubernetes_asyncio import client as k8s_client
 
 from agentplane.proto.sandbox_service_pb2 import Sandbox, SandboxBinding, SandboxDestination, TeardownPhase
+from agentplane.sandbox_resource import SANDBOX_API_VERSIONS
 from agentplane.sandbox_service.errors import SandboxTearingDownError
 from agentplane.sandbox_service.reader import SandboxReader
-from util.agent_sandbox import SANDBOX_API, OperatingMode
+from util.agent_sandbox import OperatingMode
 
 
 class DestinationUnavailableError(Exception):
@@ -61,7 +62,7 @@ class DestinationResolver:
             raise DestinationUnavailableError
         owner = controllers[0]
         if (
-            owner.api_version != SANDBOX_API.api_version
+            owner.api_version not in SANDBOX_API_VERSIONS
             or owner.kind != "Sandbox"
             or owner.name != view.name
             or owner.uid != str(view.uid)
