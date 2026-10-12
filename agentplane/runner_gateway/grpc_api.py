@@ -25,12 +25,7 @@ from agentplane.proto.sandbox_service_pb2 import SandboxBinding, SandboxDestinat
 from agentplane.runner.errors import RunnerError
 from agentplane.runner_gateway import session_lifecycle, wire
 from agentplane.runner_gateway.destinations import DestinationResolver, DestinationUnavailableError
-from agentplane.runner_gateway.lifecycle_control import (
-    CommandRefusedError,
-    ConnectionNotHeldError,
-    ControlRefusedError,
-    LifecycleControl,
-)
+from agentplane.runner_gateway.lifecycle_control import ConnectionNotHeldError, LifecycleControl
 from agentplane.runner_gateway.sealing import SEAL_S, Sealing
 from agentplane.runner_gateway.session_registry import SessionConflictError, SessionNotFoundError, SessionRegistry
 from agentplane.sandbox_service.errors import InventoryError, SandboxNotFoundError
@@ -62,26 +57,23 @@ class Resources(ServicerResources):
         return Sealing(self.sessions, control=self.control)
 
 
-def _command_refused(refused: CommandRefusedError) -> Status:
-    code = {
-        runner_control_pb2.CommandRefused.REASON_COMMAND_CONFLICT: grpc.StatusCode.ALREADY_EXISTS,
-        runner_control_pb2.CommandRefused.REASON_INVALID_COMMAND: grpc.StatusCode.INVALID_ARGUMENT,
-    }.get(refused.refusal.reason, grpc.StatusCode.FAILED_PRECONDITION)
-    return code, f"runner refused the command: {refused}"
-
-
-def _control_refused(refused: ControlRefusedError) -> Status:
-    if refused.refusal.reason == runner_control_pb2.ControlRefused.REASON_INVALID_REQUEST:
-        return grpc.StatusCode.INVALID_ARGUMENT, "runner rejected invalid request"
-    return grpc.StatusCode.FAILED_PRECONDITION, "runner rejected session or bootstrap state"
+def _runner_status(error: grpc.aio.AioRpcError) -> Status:
+    """A `Runner` call's failure: the runner's refusal, or the runner connection's loss or deadline."""
+    match code := error.code():
+        case grpc.StatusCode.UNAVAILABLE:
+            return code, "destination unavailable; no offline admission"
+        case grpc.StatusCode.DEADLINE_EXCEEDED:
+            return code, "service deadline expired"
+        case grpc.StatusCode.INVALID_ARGUMENT | grpc.StatusCode.ALREADY_EXISTS:
+            return code, f"runner refused the request: {code.name}"
+    return grpc.StatusCode.FAILED_PRECONDITION, f"runner refused the request: {code.name}"
 
 
 # No Kubernetes wire responses or bearer data reach clients.
 errors = status_mapping(
     Abort((SandboxNotFoundError, SessionNotFoundError), (grpc.StatusCode.NOT_FOUND, "sandbox incarnation not found")),
     Abort(SessionConflictError, (grpc.StatusCode.ALREADY_EXISTS, "session ID already belongs to another Sandbox")),
-    Abort(CommandRefusedError, _command_refused),
-    Abort(ControlRefusedError, _control_refused),
+    Abort(grpc.aio.AioRpcError, _runner_status),
     Abort((ValueError, ParseError), (grpc.StatusCode.INVALID_ARGUMENT, "invalid service request")),
     Abort(
         (InventoryError, RunnerError),
@@ -127,9 +119,8 @@ class RunnerGateway(runner_gateway_pb2_grpc.RunnerGatewayServicer):
 
     async def list_runner_sessions(self, destination: SandboxDestination) -> list[runner_pb2.SessionSummary]:
         await self.held(destination, writes=False)
-        listing = runner_control_pb2.ControlRequest(list_sessions=runner_pb2.ListSessionsRequest())
-        result = await self.resources.control.request(UUID(destination.sandbox_uid), listing)
-        return list(result.list_sessions.sessions)
+        runner = self.resources.control.runner(UUID(destination.sandbox_uid))
+        return list((await runner.ListSessions(runner_pb2.ListSessionsRequest())).sessions)
 
     @override
     async def ListSessions(
@@ -198,8 +189,7 @@ class RunnerGateway(runner_gateway_pb2_grpc.RunnerGatewayServicer):
             )
             # A retry recomputes the spec; the runner confirms it against the one it recorded.
             attachment = await session_lifecycle.open_session(
-                self.resources.control,
-                sandbox_uid,
+                self.resources.control.runner(sandbox_uid),
                 str(session_id),
                 spec,
                 bootstrap=binding.bootstrap if binding is not None else "",
@@ -218,9 +208,11 @@ class RunnerGateway(runner_gateway_pb2_grpc.RunnerGatewayServicer):
                 raise ValueError("session ID is required")
             # Refuses a Sandbox being torn down.
             await self.held(destination.sandbox, writes=True)
-            result = await session_lifecycle.resume_session(
-                self.resources.control, UUID(destination.sandbox.sandbox_uid), await self.runner_session_id(destination)
+            runner = self.resources.control.runner(UUID(destination.sandbox.sandbox_uid))
+            resumed = await runner.ResumeSession(
+                runner_control_pb2.ResumeSessionRequest(session_id=await self.runner_session_id(destination))
             )
+            result = resumed.attached
             result.session_id = destination.session_id
             return runner_gateway_pb2.ResumeSessionResponse(attached=result)
 
@@ -234,10 +226,12 @@ class RunnerGateway(runner_gateway_pb2_grpc.RunnerGatewayServicer):
             destination = request.destination
             # Refuses a Sandbox being torn down.
             await self.held(destination.sandbox, writes=True)
-            admission = await self.resources.control.deliver(
-                UUID(destination.sandbox.sandbox_uid), await self.runner_session_id(destination), request.command
+            delivered = await self.resources.control.runner(UUID(destination.sandbox.sandbox_uid)).DeliverCommand(
+                runner_control_pb2.DeliverCommandRequest(
+                    session_id=await self.runner_session_id(destination), command=request.command
+                )
             )
-            return runner_gateway_pb2.SubmitCommandResponse(admission=admission)
+            return runner_gateway_pb2.SubmitCommandResponse(admission=delivered.admission)
 
     @override
     async def BatchGetSessionSandboxes(

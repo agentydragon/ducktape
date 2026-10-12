@@ -14,31 +14,43 @@ ingress.
 
 The runner dials out to two endpoints its Sandbox names. It pushes its journals' Events to one
 **ingress** ([Event ingress](#event-ingress)), and holds a control stream to the Runner Gateway for
-commands, receipts and lifecycle requests. Each runner process is a gRPC client of the Runner
-Gateway and holds one HTTP/2 connection to it. On that connection it keeps one long-lived
-bidirectional `Connect` stream, which carries command delivery and lifecycle requests for every
-Session in its state directory. Events never travel on it, so no event catch-up can starve a
-command. The runner is the client, so service-to-runner traffic is messages on streams the runner
-opened, never reverse RPCs. No operation creates a Session or starts a stopped harness.
+commands and lifecycle requests. Each runner process is a gRPC client of the Runner Gateway and
+holds one HTTP/2 connection to it. On that connection it keeps one long-lived bidirectional
+`Connect` stream. Events never travel on it, so no event catch-up can starve a command. No
+operation creates a Session or starts a stopped harness.
+
+The runner serves the `Runner` service, and the gateway calls it **through** `Connect`: each unary
+call travels as a `Call` frame and comes back as a `Reply` with the call's gRPC status
+([Tunnelled calls](#tunnelled-calls)). Both sides use the generated servicer and stub, so a call
+keeps its deadline and status code as if the gateway had dialed the runner.
 
 ```protobuf
 service RunnerControl {
   rpc Connect(stream RunnerFrame) returns (stream ServiceFrame);
 }
 
+service Runner {
+  rpc ListSessions(runner.ListSessionsRequest) returns (runner.ListSessionsResponse);
+  rpc Initialize(InitializeRequest) returns (InitializeResponse);
+  rpc OpenSession(OpenSessionRequest) returns (OpenSessionResponse);
+  rpc ResumeSession(ResumeSessionRequest) returns (ResumeSessionResponse);
+  rpc Seal(runner.SealRequest) returns (runner.SealResponse);
+  rpc DeliverCommand(DeliverCommandRequest) returns (DeliverCommandResponse);
+}
+
 message RunnerFrame {
   oneof frame {
     Hello hello = 1;                  // first frame, exactly once
-    CommandReceipt receipt = 2;
     Heartbeat heartbeat = 3;
+    grpc_tunnel.Reply reply = 5;      // to a `call` on this stream
   }
 }
 
 message ServiceFrame {
   oneof frame {
     Welcome welcome = 1;              // reply to Hello, exactly once
-    DeliverCommand deliver = 2;
     Heartbeat heartbeat = 3;
+    grpc_tunnel.Call call = 7;        // a `Runner` call
   }
 }
 
@@ -51,31 +63,14 @@ message Welcome {
 }
 
 // The runner deduplicates on `command.command_id` within a session, so redelivery is safe.
-message DeliverCommand {
+message DeliverCommandRequest {
   string session_id = 1;
   agentplane.proto.command.Command command = 2;
 }
 
-message CommandReceipt {
-  string session_id = 1;
-  string command_id = 2;
-  oneof outcome {
-    // The runner journal's CommandAdmitted entry, with its cursor. Fresh or already journaled.
-    agentplane.proto.event_log.EventEntry admitted = 3;
-    CommandRefused refused = 4;
-  }
-}
-
-message CommandRefused {
-  enum Reason {
-    REASON_UNSPECIFIED = 0;
-    REASON_SESSION_UNKNOWN = 1;
-    REASON_HARNESS_STOPPED = 2;
-    REASON_COMMAND_CONFLICT = 3;      // same command_id, different payload
-    REASON_INVALID_COMMAND = 4;
-  }
-  Reason reason = 1;
-  string detail = 2;
+message DeliverCommandResponse {
+  // The runner journal's CommandAdmitted entry, with its cursor. Fresh or already journaled.
+  agentplane.proto.event_log.EventEntry admission = 1;
 }
 
 message Heartbeat {}
@@ -91,17 +86,54 @@ message Heartbeat {}
 - **Later streams bind to the epoch.** Every RPC other than `Connect` carries the connection epoch
   from `Welcome` in metadata and is refused once that epoch is superseded.
 - **Message size.** gRPC's default 4 MiB per message.
-- **Receipts are facts.** A receipt reports the runner journal. Re-delivering a command already
-  journaled with the same payload returns its existing `CommandAdmitted` entry, which the runner
-  already guarantees by deduplicating on `command_id`. The service never infers admission from a
-  stream write, a heartbeat or HTTP/2 flow-control progress. Which refusal reasons are terminal for
-  a submission is the [command admission](../runner_gateway/API.md#sessions-and-commands)
+- **Admissions are facts.** A `DeliverCommand` answer reports the runner journal. Re-delivering a
+  command already journaled with the same payload returns its existing `CommandAdmitted` entry,
+  which the runner already guarantees by deduplicating on `command_id`. The service never infers
+  admission from a stream write, a heartbeat or HTTP/2 flow-control progress. Which refusals are
+  terminal for a submission is the [command admission](../runner_gateway/API.md#sessions-and-commands)
   contract's decision, not the control stream's; today none is, and a refusal leaves it pending.
 - **Status codes.** The service ends a stream with a gRPC status naming the cause:
   `UNAUTHENTICATED`, `PERMISSION_DENIED` (not a Sandbox Pod of this service), `ABORTED` (superseded by a
   newer connection), `INVALID_ARGUMENT` (protocol error) or `UNAVAILABLE` (replica draining or the
   connection's maximum age). The runner logs the status and reconnects, except that
   `PERMISSION_DENIED` backs off to its maximum interval.
+- **`Runner` status codes.** A refused call names its cause: `NOT_FOUND` (unknown Session),
+  `ALREADY_EXISTS` (another spec, setup or bootstrap script for one already recorded, or a
+  `command_id` admitted with another payload), `INVALID_ARGUMENT`, `FAILED_PRECONDITION` (the
+  Sandbox is sealed, the Session's setup failed, its harness is stopped for a delivery, or it could
+  not be started) and `UNAVAILABLE` (the state volume failed; a retry may succeed). Anything else,
+  such as a harness that did not launch, is `UNKNOWN`.
+
+## Tunnelled calls
+
+The gateway's stub sits on a channel that never dials: an interceptor sends each call as a `Call`
+naming its method, serialized request and remaining deadline, and completes it from the `Reply` with
+the same `call_id`. The runner makes the call on its own gRPC server on a private Unix socket, so its
+servicer runs with the deadline, cancellation and status mapping of any gRPC server, and returns the
+outcome as a `Reply`. Calls run concurrently and replies come back in completion order.
+
+```protobuf
+// agentplane/proto/grpc_tunnel.proto
+message Call {
+  uint64 call_id = 1;                    // unique among the caller's calls on one stream
+  string method = 2;                     // `/package.Service/Method`
+  bytes request = 3;
+  google.protobuf.Duration timeout = 4;  // remaining deadline; absent for none
+}
+
+message Reply {
+  uint64 call_id = 1;
+  int32 code = 2;                        // gRPC status code; 0 is OK
+  string details = 3;
+  bytes response = 4;                    // with OK only
+}
+```
+
+`Connect` keeps owning authentication, fencing and liveness; a call is answered only on the stream
+that carried it. When the stream ends the gateway fails its unanswered calls with `UNAVAILABLE`,
+since whether they ran is unknown, and a call after it ends fails the same way; a call whose deadline
+passes fails with `DEADLINE_EXCEEDED` and its late reply is dropped. A reconnect replays none of
+them. Only unary calls are carried; nothing here needs a streaming `Runner` method.
 
 ## Event ingress
 
@@ -282,52 +314,26 @@ Sandbox, hence `-control`.
 
 ## Lifecycle operations
 
-Status: **built.** The Runner Gateway sends every Session call and teardown's seal over the control
-stream (`runner_gateway/lifecycle_control.py`). A runner refuses `OpenSession` for a Session it created but could not
-start with `FAILED`; asked again, it confirms the stopped Session, so `CreateSession` follows an
+Status: **built.** The Runner Gateway makes every Session call and teardown's seal through the
+control stream (`runner_gateway/lifecycle_control.py`). A runner fails `OpenSession` for a Session it created but could not
+start; asked again, it confirms the stopped Session, so `CreateSession` follows an
 `OpenSession` that confirms a stopped harness with `ResumeSession`. The App and the Notification
 Service reach the holder through the control Service (`control_target`, a required setting).
 
-Each control request names an explicit verb; nothing is inferred from which fields are present.
+Each operation is its own `Runner` method:
 
-```protobuf
-message ServiceFrame {
-  oneof frame {
-    // ...
-    ControlRequest control = 6;
-  }
-}
+- `ListSessions` reads.
+- `Initialize` bootstraps once per Sandbox; an identical retry replays the attempt's outcome.
+- `OpenSession` creates a Session with a spec and starts it; an existing Session is confirmed
+  only, never restarted.
+- `ResumeSession` restarts a stopped harness on its retained spec.
+- `Seal` fences, stops every harness and setup, and seals every journal.
 
-message RunnerFrame {
-  oneof frame {
-    // ...
-    ControlResult control_result = 4;
-  }
-}
-
-message ControlRequest {
-  string request_id = 1;              // chosen by the service; the runner answers each once
-  oneof verb {
-    ListSessions list_sessions = 2;   // read
-    Initialize initialize = 3;        // bootstrap once per Sandbox; an identical retry replays
-    OpenSession open = 4;             // create with a spec and start it; an existing Session is
-                                      // confirmed only, never restarted
-    ResumeSession resume = 5;         // restart a stopped harness on its retained spec
-    Seal seal = 6;                    // fence, stop every harness and setup, seal every journal
-  }
-}
-
-message ControlResult {
-  string request_id = 1;
-  oneof outcome { /* one result per verb */ ControlRefused refused = 9; }
-}
-```
-
-The contract's rule becomes: no operation creates a Session or starts a harness implicitly; only
-`OpenSession` and `ResumeSession` do. `Seal` travels on `Connect` behind every command already
-sent, so no command delivered before it lands after it. Only the replica holding the runner's
-stream sends control requests: callers reach it through the Sandbox's control Service
-([Connection records](#connection-records-in-kubernetes)), and background work such as sealing runs on the replica holding the Lease. Requests are bounded by the
+No operation creates a Session or starts a harness implicitly; only `OpenSession` and
+`ResumeSession` do. The runner orders `Seal` by arrival: it waits for every command admission
+already under way, and every call that arrives after it waits for it, so no command delivered
+before it lands after it. Only the replica holding the runner's stream calls the runner: callers reach it through the Sandbox's control Service
+([Connection records](#connection-records-in-kubernetes)), and background work such as sealing runs on the replica holding the Lease. Calls are bounded by the
 calling RPC's deadline, like command deliveries, and a reconnect replays none of them.
 
 | Runner Gateway caller | Control operation                                     |
@@ -362,7 +368,11 @@ Alternatives for the transport itself:
 1. **A gRPC bidirectional stream** (this design). It is the RPC stack every other Agentplane hop
    uses, with typed stubs, deadlines, status codes and per-stream flow control. The egress proxy
    already substitutes credentials in gRPC metadata on a bidirectional stream (BuildBuddy's Build
-   Event Service, [egress spec](../egress/SPEC.md)).
+   Event Service, [egress spec](../egress/SPEC.md)). Calls into the runner are tunnelled at the
+   message level ([Tunnelled calls](#tunnelled-calls)). Running gRPC's HTTP/2 transport itself over
+   the stream's bytes, so the gateway would dial the runner through it, needs a custom transport
+   that `grpcio` does not expose, and would put every call behind the one stream's flow-control
+   window.
 2. **One WebSocket of protobuf frames.** This was the operator's first selection, and the egress
    proxy relays WebSockets too. It needs hand-rolled close codes, versioning and a multiplexing
    scheme, and one byte stream gives no per-operation flow control. gRPC was chosen when the
@@ -463,10 +473,8 @@ harness nor proves that anything failed.
 
 `SubmitCommand` is served only by the replica holding the Sandbox's runner connection; callers reach
 it through the Sandbox's control Service, as they do for lifecycle requests, and any other replica
-refuses with `UNAVAILABLE`. The holder checks that the Session runs in that Sandbox incarnation,
-sends `DeliverCommand` with the runner's Session ID and the command, and waits within the RPC's
-deadline for the `CommandReceipt` naming the same Session and command ID. Concurrent deliveries of
-one command share its receipt, and a receipt nothing awaits is dropped.
+refuses with `UNAVAILABLE`. The holder checks that the Session runs in that Sandbox incarnation and
+calls `DeliverCommand` with the runner's Session ID and the command, within the RPC's deadline.
 
 The gateway records no command. A lost reply, a passed deadline or an ended connection leaves the
 outcome to the runner's journal, and the caller retries with the same command: the runner answers a

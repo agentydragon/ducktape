@@ -3,11 +3,11 @@
 from collections.abc import AsyncIterator
 from pathlib import Path
 
+import grpc
 import pytest
 import pytest_bazel
 
 from agentplane.proto import event_pb2, runner_pb2
-from agentplane.proto.runner_control_pb2 import ControlRefused
 from agentplane.runner.config import RunnerConfig
 from agentplane.runner.runner import Runner
 from agentplane.runner.store import SessionRecord
@@ -60,7 +60,7 @@ async def test_seal_ends_every_session_and_refuses_resume(
     session = await driver.attach("test-session-a", after_cursor=1)
     assert await read_to_seal(session) == (list(range(2, seals["test-session-a"] + 1)), seals["test-session-a"])
     for session_id in ("test-session-a", "test-session-new"):
-        assert await refusal(driver.attach(session_id, spec=SPEC)) == ControlRefused.REASON_SEALED
+        assert await refusal(driver.attach(session_id, spec=SPEC)) == grpc.StatusCode.FAILED_PRECONDITION
     assert not (config.state_dir / "sessions" / "test-session-new").exists()
 
 
@@ -73,7 +73,7 @@ async def test_a_restarted_runner_keeps_the_seal(
             assert {seal.session_id: seal.cursor for seal in (await driver.seal()).sessions} == last_cursors
             cursors, sealed = await read_to_seal(await driver.attach("test-session-b"))
             assert sealed == cursors[-1] == last_cursors["test-session-b"]
-            assert await refusal(driver.attach("test-session-b", spec=SPEC)) == ControlRefused.REASON_SEALED
+            assert await refusal(driver.attach("test-session-b", spec=SPEC)) == grpc.StatusCode.FAILED_PRECONDITION
 
 
 if __name__ == "__main__":

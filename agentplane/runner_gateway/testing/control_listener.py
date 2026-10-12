@@ -100,6 +100,8 @@ async def control_plane(
 @asynccontextmanager
 async def dialing(runner: Runner, target: str, bearer: str) -> AsyncIterator[None]:
     """`runner` keeps a control stream to `target`, as the runner process does with `--control-target`."""
-    client = runner_control.RunnerControlClient(runner, target=target, bearer=bearer, timing=RUNNER_TIMING)
+    client = runner_control.RunnerControlClient(
+        runner_control.RunnerService(runner), target=target, bearer=bearer, timing=RUNNER_TIMING
+    )
     async with background(client.run(), name="runner control stream"):
         yield

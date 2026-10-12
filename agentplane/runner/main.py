@@ -22,7 +22,7 @@ from typing import Annotated
 import typer
 
 from agentplane.runner.config import ClaudeLaunch, CodexLaunch, DebugCheckpoint, RunnerConfig, ServiceEndpoint
-from agentplane.runner.control import RunnerControlClient
+from agentplane.runner.control import RunnerControlClient, RunnerService
 from agentplane.runner.ingress import IngressPusher
 from agentplane.runner.reconnect import StreamTiming
 from agentplane.runner.runner import Runner
@@ -150,7 +150,9 @@ async def async_main(config: RunnerConfig, *, control: ServiceEndpoint, ingress:
         # A broken control stream or ingress push must not take the harnesses down with it, nor each other.
         dialing = [
             asyncio.create_task(
-                RunnerControlClient(runner, target=control.target, bearer=control.bearer, timing=StreamTiming()).run(),
+                RunnerControlClient(
+                    RunnerService(runner), target=control.target, bearer=control.bearer, timing=StreamTiming()
+                ).run(),
                 name="runner control stream",
             ),
             asyncio.create_task(

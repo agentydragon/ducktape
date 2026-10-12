@@ -5,11 +5,11 @@ from __future__ import annotations
 import asyncio
 from pathlib import Path
 
+import grpc
 import pytest
 import pytest_bazel
 
 from agentplane.proto import event_pb2, runner_pb2
-from agentplane.proto.runner_control_pb2 import ControlRefused
 from agentplane.runner.testing import events
 from agentplane.runner.testing.commands import submit_input
 from agentplane.runner.testing.driver import RunnerDriver, SessionSealedError, refusal
@@ -155,7 +155,7 @@ async def test_seal_stops_the_running_harness_and_ends_live_followers(
         await first.until(lambda _: False)
     assert sealed.value.cursor == seal.cursor == first.cursor
     assert events.of_kind(first.seen, "harness_exited")[-1].event.harness_exited.stopped_by_runner
-    assert await refusal(driver.attach("seal-1", spec=spec)) == ControlRefused.REASON_SEALED
+    assert await refusal(driver.attach("seal-1", spec=spec)) == grpc.StatusCode.FAILED_PRECONDITION
 
 
 async def test_resume_sends_the_model_the_reasoning_of_the_previous_harness(
@@ -184,8 +184,8 @@ async def test_open_rejects_a_mismatched_spec(driver: RunnerDriver, spec: runner
     other = runner_pb2.SessionSpec(
         harness=spec.harness, cwd=spec.cwd, model="agentplane-test/other-model", reasoning_effort=spec.reasoning_effort
     )
-    assert await refusal(driver.attach("spec-1", spec=other)) == ControlRefused.REASON_SPEC_CONFLICT
-    assert await refusal(driver.attach("spec-2")) == ControlRefused.REASON_SESSION_UNKNOWN
+    assert await refusal(driver.attach("spec-1", spec=other)) == grpc.StatusCode.ALREADY_EXISTS
+    assert await refusal(driver.attach("spec-2")) == grpc.StatusCode.NOT_FOUND
     instructed = runner_pb2.SessionSpec(
         harness=spec.harness,
         cwd=spec.cwd,
@@ -193,9 +193,9 @@ async def test_open_rejects_a_mismatched_spec(driver: RunnerDriver, spec: runner
         reasoning_effort=spec.reasoning_effort,
         instructions="Standing order the session was not created with.",
     )
-    assert await refusal(driver.attach("spec-1", spec=instructed)) == ControlRefused.REASON_SPEC_CONFLICT
+    assert await refusal(driver.attach("spec-1", spec=instructed)) == grpc.StatusCode.ALREADY_EXISTS
     relative = runner_pb2.SessionSpec(harness=spec.harness, cwd="work/../elsewhere", model=spec.model)
-    assert await refusal(driver.attach("spec-3", spec=relative)) == ControlRefused.REASON_INVALID_REQUEST
+    assert await refusal(driver.attach("spec-3", spec=relative)) == grpc.StatusCode.INVALID_ARGUMENT
 
 
 async def test_setup_runs_in_thread_cwd_before_harness_and_replays_output(
@@ -244,7 +244,7 @@ async def test_failed_setup_is_terminal_and_reopen_never_runs_it_again(
     assert len(events.of_kind(second.seen, "setup_finished")) == 1
     assert (
         await refusal(driver.attach("setup-failure", spec=spec, setup_script="exit 0"))
-        == ControlRefused.REASON_SPEC_CONFLICT
+        == grpc.StatusCode.ALREADY_EXISTS
     )
 
 

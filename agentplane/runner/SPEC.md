@@ -65,7 +65,8 @@ Thread-page projection. Their cross-layer contract is [Thread, runner, and harne
 
 - The runner dials the Runner Gateway's [runner control stream](../docs/runner_control.md) at
   `--control-target` and keeps one `Connect` stream for as long as it runs, reconnecting on a fresh
-  connection after any loss. It has no listener of its own.
+  connection after any loss, and serves the `Runner` service to the gateway through it. It accepts
+  no network connections.
 - `OpenSession` and `ResumeSession` answer with the session's `Attached` snapshot: the spec, setup
   and harness states, `last_cursor`, and the active turn id as of that position.
 - Delivered commands are client-chosen and idempotent; the runner serializes them with the session
@@ -74,15 +75,15 @@ Thread-page projection. Their cross-layer contract is [Thread, runner, and harne
   even after its harness stopped or its journal was sealed. Otherwise it is refused with its cause: an unknown session, a harness that is not running or a
   sealed journal, a command ID already used for other work, or a command without an ID and an
   operation. Delivery never creates a session or starts a harness.
-- Each control request is answered once, by its request ID, with its verb's result or a refusal
-  naming the cause. `ListSessions` and `Seal` answer as the RPCs of the same name do, and
-  `Initialize` with the attempt's terminal event once it has ended. `OpenSession` creates a session
+- Each `Runner` call is answered once, with its result or a gRPC status naming the cause.
+  `ListSessions` and `Seal` answer as the RPCs of the same name do, and `Initialize` with the
+  attempt's terminal event once it has ended. `OpenSession` creates a session
   from its spec and starts it; for an existing session with the same spec, and setup script when
   given, it only confirms it and never starts a stopped harness, and any other spec is refused.
   `ResumeSession` restarts a stopped harness on the retained spec, and is refused for an unknown or
   sealed session or one whose setup failed or was interrupted. A `Seal` takes effect after every
-  command delivered before it is answered, and deliveries and requests after it wait for it. A lost
-  connection drops the answers of requests in flight, never an operation halfway through.
+  command delivered before it is answered, and calls after it wait for it. A lost connection drops
+  the answers of calls in flight, never an operation halfway through.
 - The bearer it sends is a placeholder the egress proxy substitutes; the runner never holds the
   control token.
 

@@ -1,4 +1,4 @@
-"""Drive a runner as the Runner Gateway and its clients do: lifecycle requests and commands over the
+"""Drive a runner as the Runner Gateway and its clients do: calls to its `Runner` service over the
 runner's control stream, and each session's Events as its ingress committed them."""
 
 from __future__ import annotations
@@ -7,13 +7,13 @@ import asyncio
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
 
+import grpc
 import pytest
 
 from agentplane.proto import command_pb2, event_log_pb2, runner_control_pb2, runner_pb2
 from agentplane.runner.config import RunnerConfig
 from agentplane.runner.runner import Runner
 from agentplane.runner.testing.gateway import Gateway, dialing
-from agentplane.runner_gateway.lifecycle_control import CommandRefusedError, ControlRefusedError
 
 # gazelle:include_dep @pypi//protobuf
 
@@ -30,11 +30,11 @@ class SessionSealedError(StreamClosedError):
         self.cursor = cursor
 
 
-async def refusal(operation: Awaitable[object]) -> runner_control_pb2.ControlRefused.Reason:
-    """Why the runner refused the lifecycle request `operation` makes."""
-    with pytest.raises(ControlRefusedError) as refused:
+async def refusal(operation: Awaitable[object]) -> grpc.StatusCode:
+    """The status the runner refused the call `operation` makes with."""
+    with pytest.raises(grpc.aio.AioRpcError) as refused:
         await operation
-    return refused.value.refusal.reason
+    return refused.value.code()
 
 
 class SessionFollow:
@@ -59,11 +59,10 @@ class SessionFollow:
 
     async def command(self, command: command_pb2.Command) -> None:
         """Deliver `command` and return once the runner admitted it."""
-        receipt = await self._gateway.control.deliver(
-            runner_control_pb2.DeliverCommand(session_id=self.attached.session_id, command=command)
+        runner = await self._gateway.control.runner()
+        await runner.DeliverCommand(
+            runner_control_pb2.DeliverCommandRequest(session_id=self.attached.session_id, command=command)
         )
-        if receipt.HasField("refused"):
-            raise CommandRefusedError(receipt.refused)
 
     async def stop_runner_session(self, command_id: str) -> None:
         await self.command(
@@ -115,12 +114,6 @@ class RunnerDriver:
     def __init__(self, gateway: Gateway) -> None:
         self.gateway = gateway
 
-    async def _request(self, request: runner_control_pb2.ControlRequest) -> runner_control_pb2.ControlResult:
-        result = await self.gateway.control.request(request)
-        if result.HasField("refused"):
-            raise ControlRefusedError(result.refused)
-        return result
-
     async def attach(
         self,
         session_id: str,
@@ -134,10 +127,8 @@ class RunnerDriver:
         if spec is None:
             summary = next((found for found in await self.list_sessions() if found.session_id == session_id), None)
             if summary is None:
-                raise ControlRefusedError(
-                    runner_control_pb2.ControlRefused(
-                        reason=runner_control_pb2.ControlRefused.REASON_SESSION_UNKNOWN, detail=session_id
-                    )
+                raise grpc.aio.AioRpcError(
+                    grpc.StatusCode.NOT_FOUND, grpc.aio.Metadata(), grpc.aio.Metadata(), f"no session {session_id}"
                 )
             attached = runner_pb2.Attached(
                 session_id=summary.session_id,
@@ -149,33 +140,34 @@ class RunnerDriver:
                 launch_outcome=summary.launch_outcome,
             )
             return SessionFollow(self.gateway, attached, after_cursor)
-        opening = runner_control_pb2.OpenSession(session_id=session_id, spec=spec)
+        runner = await self.gateway.control.runner()
+        opening = runner_control_pb2.OpenSessionRequest(session_id=session_id, spec=spec)
         if setup_script is not None:
             opening.setup_script = setup_script
-        attached = (await self._request(runner_control_pb2.ControlRequest(open=opening))).open
+        attached = (await runner.OpenSession(opening)).attached
         if attached.harness_state == runner_pb2.HARNESS_STATE_STOPPED and attached.setup_state in (
             runner_pb2.SETUP_STATE_NOT_REQUIRED,
             runner_pb2.SETUP_STATE_SUCCEEDED,
         ):
-            resuming = runner_control_pb2.ResumeSession(session_id=session_id)
-            attached = (await self._request(runner_control_pb2.ControlRequest(resume=resuming))).resume
+            resumed = await runner.ResumeSession(runner_control_pb2.ResumeSessionRequest(session_id=session_id))
+            attached = resumed.attached
         return SessionFollow(self.gateway, attached, after_cursor)
 
     async def list_sessions(self) -> list[runner_pb2.SessionSummary]:
-        listing = runner_control_pb2.ControlRequest(list_sessions=runner_pb2.ListSessionsRequest())
-        return list((await self._request(listing)).list_sessions.sessions)
+        runner = await self.gateway.control.runner()
+        return list((await runner.ListSessions(runner_pb2.ListSessionsRequest())).sessions)
 
     async def seal(self) -> runner_pb2.SealResponse:
         """Seal the Sandbox and return once the ingress holds every session's seal, as teardown waits."""
-        sealed = (await self._request(runner_control_pb2.ControlRequest(seal=runner_pb2.SealRequest()))).seal
+        sealed = await (await self.gateway.control.runner()).Seal(runner_pb2.SealRequest())
         for session in sealed.sessions:
             await self.gateway.ingress.wait_sealed(session.session_id)
         return sealed
 
     async def initialize(self, script: str) -> runner_pb2.InitializationEvent:
         """The bootstrap's terminal event, `result` or `interrupted`, once the attempt has ended."""
-        initializing = runner_control_pb2.ControlRequest(initialize=runner_control_pb2.Initialize(script=script))
-        return (await self._request(initializing)).initialize
+        runner = await self.gateway.control.runner()
+        return (await runner.Initialize(runner_control_pb2.InitializeRequest(script=script))).outcome
 
 
 @asynccontextmanager

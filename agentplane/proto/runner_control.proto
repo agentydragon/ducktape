@@ -1,36 +1,63 @@
-// The runner-initiated control stream to the Runner Gateway; contract in
-// agentplane/docs/runner_control.md. An incompatible change rides a clean cutover: the operator
-// retires every Sandbox on the old protocol.
+// The runner control stream, which the runner dials to the Runner Gateway, and the `Runner` service
+// the runner serves over it; contract in agentplane/docs/runner_control.md. An incompatible change
+// rides a clean cutover: the operator retires every Sandbox on the old protocol.
 syntax = "proto3";
 
 package agentplane.proto.runner_control;
 
 import "agentplane/proto/command.proto";
 import "agentplane/proto/event_log.proto";
+import "agentplane/proto/grpc_tunnel.proto";
 import "agentplane/proto/runner.proto";
 
+// Served by the Runner Gateway; the runner opens one `Connect` stream and serves `Runner` on it.
 service RunnerControl {
   rpc Connect(stream RunnerFrame) returns (stream ServiceFrame);
+}
+
+// Served by the runner, and called by the Runner Gateway through the runner's `Connect` stream. Only
+// `OpenSession` and `ResumeSession` start a harness. A `Seal` waits for every command admission
+// already under way, and every call the runner receives after it waits for the `Seal`.
+service Runner {
+  rpc ListSessions(agentplane.proto.runner.ListSessionsRequest)
+      returns (agentplane.proto.runner.ListSessionsResponse);
+  // Bootstrap, at most once per Sandbox: answers with the attempt's terminal event, `result` or
+  // `interrupted`, once the attempt has ended; its output is not carried. The runner records the
+  // selected script at one fixed state path. An exact retry replays the one attempt's outcome, failed
+  // or interrupted included, without running the script again; any other script is refused with
+  // `ALREADY_EXISTS`.
+  rpc Initialize(InitializeRequest) returns (InitializeResponse);
+  // Create a Session with `spec` and start it. An existing Session is confirmed only, never
+  // restarted: its `spec`, and `setup_script` when present, must equal the stored ones, or the call
+  // fails with `ALREADY_EXISTS`.
+  rpc OpenSession(OpenSessionRequest) returns (OpenSessionResponse);
+  // Restart a stopped harness on the Session's retained spec. A running harness is left as it is.
+  rpc ResumeSession(ResumeSessionRequest) returns (ResumeSessionResponse);
+  rpc Seal(agentplane.proto.runner.SealRequest) returns (agentplane.proto.runner.SealResponse);
+  // Admit a command, or return its admission if it is already journaled with the same payload, even
+  // after its harness stopped or its journal was sealed; redelivery is therefore safe. The same
+  // `command_id` with another payload fails with `ALREADY_EXISTS`.
+  rpc DeliverCommand(DeliverCommandRequest) returns (DeliverCommandResponse);
 }
 
 message RunnerFrame {
   oneof frame {
     Hello hello = 1;  // first frame, exactly once
-    CommandReceipt receipt = 2;
     Heartbeat heartbeat = 3;
-    ControlResult control_result = 4;
+    agentplane.proto.grpc_tunnel.Reply reply = 5;  // to a `call` on this stream
   }
+  reserved 2, 4;
+  reserved "receipt", "control_result";
 }
 
 message ServiceFrame {
   oneof frame {
     Welcome welcome = 1;  // reply to Hello, exactly once
-    DeliverCommand deliver = 2;
     Heartbeat heartbeat = 3;
-    ControlRequest control = 6;
+    agentplane.proto.grpc_tunnel.Call call = 7;  // a `Runner` call
   }
-  reserved 4, 5;
-  reserved "open_follow", "close_follow";
+  reserved 2, 4, 5, 6;
+  reserved "deliver", "open_follow", "close_follow", "control";
 }
 
 message Hello {
@@ -45,95 +72,40 @@ message Welcome {
   reserved "capabilities";
 }
 
-// The runner deduplicates on `command.command_id` within a session, so redelivery is safe.
-message DeliverCommand {
-  string session_id = 1;
-  agentplane.proto.command.Command command = 2;
-}
-
-message CommandReceipt {
-  string session_id = 1;
-  string command_id = 2;
-  oneof outcome {
-    // The runner journal's CommandAdmitted entry, fresh or already journaled.
-    agentplane.proto.event_log.EventEntry admitted = 3;
-    CommandRefused refused = 4;
-  }
-}
-
-message CommandRefused {
-  enum Reason {
-    REASON_UNSPECIFIED = 0;
-    REASON_SESSION_UNKNOWN = 1;
-    REASON_HARNESS_STOPPED = 2;
-    REASON_COMMAND_CONFLICT = 3;  // same command_id, different payload
-    REASON_INVALID_COMMAND = 4;
-  }
-  Reason reason = 1;
-  string detail = 2;
-}
-
 message Heartbeat {}
 
-// Each request names its verb explicitly; nothing is inferred from which fields are present. Only
-// `OpenSession` and `ResumeSession` start a harness. Deliveries and requests after a `Seal` are
-// handled after it, and a `Seal` after every command delivered before it.
-message ControlRequest {
-  string request_id = 1;  // chosen by the service; the runner answers each once
-  oneof verb {
-    agentplane.proto.runner.ListSessionsRequest list_sessions = 2;
-    Initialize initialize = 3;
-    OpenSession open = 4;
-    ResumeSession resume = 5;
-    agentplane.proto.runner.SealRequest seal = 6;
-  }
-}
-
-// Bootstrap, at most once per Sandbox. The runner records the selected script at one fixed state
-// path. An exact retry replays the one attempt's outcome, failed or interrupted included, without
-// running the script again; any other script is refused.
-message Initialize {
+message InitializeRequest {
   string script = 1;
 }
 
-// Create a session with `spec` and start it. An existing session is confirmed only, never
-// restarted: its `spec`, and `setup_script` when present, must equal the stored ones.
-message OpenSession {
+message InitializeResponse {
+  agentplane.proto.runner.InitializationEvent outcome = 1;
+}
+
+message OpenSessionRequest {
   string session_id = 1;
   agentplane.proto.runner.SessionSpec spec = 2;
   optional string setup_script = 3;  // selected only at creation
 }
 
-// Restart a stopped harness on the session's retained spec. A running harness is left as it is.
-message ResumeSession {
+message OpenSessionResponse {
+  agentplane.proto.runner.Attached attached = 1;
+}
+
+message ResumeSessionRequest {
   string session_id = 1;
 }
 
-message ControlResult {
-  string request_id = 1;
-  oneof outcome {
-    agentplane.proto.runner.ListSessionsResponse list_sessions = 2;
-    // The attempt's terminal event, `result` or `interrupted`; its output is not carried.
-    agentplane.proto.runner.InitializationEvent initialize = 3;
-    agentplane.proto.runner.Attached open = 4;
-    agentplane.proto.runner.Attached resume = 5;
-    agentplane.proto.runner.SealResponse seal = 6;
-    ControlRefused refused = 9;
-  }
+message ResumeSessionResponse {
+  agentplane.proto.runner.Attached attached = 1;
 }
 
-message ControlRefused {
-  enum Reason {
-    REASON_UNSPECIFIED = 0;
-    REASON_SESSION_UNKNOWN = 1;
-    REASON_SPEC_CONFLICT = 2;  // the session exists with a different spec or setup script
-    REASON_SEALED = 3;
-    REASON_SETUP_FAILED = 4;  // the session's setup failed or was interrupted; it never resumes
-    REASON_INVALID_REQUEST = 5;  // a malformed session ID, spec, setup or bootstrap script, or no verb
-    REASON_BOOTSTRAP_CONFLICT = 6;  // the Sandbox already selected a different bootstrap script
-    // Anything else, such as a harness that failed to launch or a failed model-config lookup.
-    REASON_FAILED = 7;
-  }
-  Reason reason = 1;
-  string detail = 2;
+message DeliverCommandRequest {
+  string session_id = 1;
+  agentplane.proto.command.Command command = 2;
+}
+
+message DeliverCommandResponse {
+  // The runner journal's CommandAdmitted entry for the command.
+  agentplane.proto.event_log.EventEntry admission = 1;
 }

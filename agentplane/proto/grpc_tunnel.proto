@@ -1,0 +1,32 @@
+// Unary gRPC calls carried as messages on a stream the callee dialed, so the side that dials out
+// serves (`agentplane/grpc_tunnel.py`). The carrying stream authenticates, keeps liveness and orders
+// its frames; these messages only name and answer calls.
+
+syntax = "proto3";
+
+package agentplane.proto.grpc_tunnel;
+
+import "google/protobuf/duration.proto";
+
+// Caller to callee.
+message Call {
+  // Unique among the caller's calls on one carrying stream; the `Reply` names it.
+  uint64 call_id = 1;
+  // The full method name, `/package.Service/Method`.
+  string method = 2;
+  // The serialized request message.
+  bytes request = 3;
+  // The caller's deadline as time remaining when it sent the call; absent for none.
+  google.protobuf.Duration timeout = 4;
+}
+
+// Callee to caller, exactly once per call it receives. A carrying stream that ends leaves its
+// unanswered calls' outcomes unknown.
+message Reply {
+  uint64 call_id = 1;
+  // The call's gRPC status code; 0 is OK.
+  int32 code = 2;
+  string details = 3;
+  // The serialized response message, with OK only.
+  bytes response = 4;
+}

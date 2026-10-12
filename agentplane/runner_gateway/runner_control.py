@@ -1,5 +1,5 @@
 """The runner-initiated control listener: authentication, ownership, liveness, and the frames that
-carry command deliveries and lifecycle requests.
+carry the gateway's calls to the runner's `Runner` service.
 
 Contract: `agentplane/docs/runner_control.md`.
 """
@@ -16,9 +16,9 @@ import grpc
 from kubernetes_asyncio import client as k8s_client
 
 from agentplane import sandbox_resource
-from agentplane.proto import runner_control_pb2, runner_control_pb2_grpc
+from agentplane.proto import grpc_tunnel_pb2, runner_control_pb2, runner_control_pb2_grpc
 from agentplane.runner_gateway.connection_records import ConnectionRecords, ConnectionSupersededError, RecordOwner
-from agentplane.runner_gateway.lifecycle_control import ControlConnection, LifecycleControl
+from agentplane.runner_gateway.lifecycle_control import LifecycleControl, RunnerConnection
 from agentplane.sandbox_service.errors import SandboxNotFoundError
 from agentplane.sandbox_service.reader import SandboxReader
 from agentplane.workload_auth.grpc_caller import resolve_caller
@@ -196,17 +196,18 @@ class RunnerControlService(runner_control_pb2_grpc.RunnerControlServicer):
             async with writing, asyncio.timeout(self.timing.liveness_s):
                 await context.write(frame)
 
-        async def read(control: ControlConnection) -> None:
+        async def call(tunneled: grpc_tunnel_pb2.Call) -> None:
+            await send(runner_control_pb2.ServiceFrame(call=tunneled))
+
+        async def read(connection: RunnerConnection) -> None:
             nonlocal last_frame, last_frame_at
             async for frame in frames:
                 last_frame, last_frame_at = loop.time(), datetime.now(UTC)
                 match frame.WhichOneof("frame"):
                     case "heartbeat":
                         pass
-                    case "receipt":
-                        control.receive(frame.receipt)
-                    case "control_result":
-                        control.answer(frame.control_result)
+                    case "reply":
+                        connection.tunnel.answer(frame.reply)
                     case kind:
                         raise _StreamClosedError(grpc.StatusCode.INVALID_ARGUMENT, f"unexpected {kind} frame")
 
@@ -235,8 +236,8 @@ class RunnerControlService(runner_control_pb2_grpc.RunnerControlServicer):
                     last_touch = now
                 await send(runner_control_pb2.ServiceFrame(heartbeat=runner_control_pb2.Heartbeat()))
 
-        with self.control.connect(peer.sandbox_uid, epoch=epoch, send=send) as control:
-            tasks = [asyncio.create_task(read(control)), asyncio.create_task(keep_alive())]
+        async with self.control.connect(peer.sandbox_uid, epoch=epoch, send=call) as connection:
+            tasks = [asyncio.create_task(read(connection)), asyncio.create_task(keep_alive())]
             try:
                 done, _ = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
             finally:

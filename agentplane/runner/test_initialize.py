@@ -6,10 +6,10 @@ import asyncio
 import os
 from pathlib import Path
 
+import grpc
 import pytest_bazel
 
 from agentplane.proto import runner_pb2
-from agentplane.proto.runner_control_pb2 import ControlRefused
 from agentplane.runner.config import RunnerConfig
 from agentplane.runner.initialization import InitializationLog
 from agentplane.runner.testing.driver import RunnerDriver, refusal, running
@@ -81,7 +81,7 @@ async def test_initialized_sandbox_refuses_a_different_script_after_restart(tmp_
 
     assert replayed == first
     assert replayed.result.exit_code == 0
-    assert changed == ControlRefused.REASON_BOOTSTRAP_CONFLICT
+    assert changed == grpc.StatusCode.ALREADY_EXISTS
     assert (state / "initialized").read_text() == "first\n"
 
 

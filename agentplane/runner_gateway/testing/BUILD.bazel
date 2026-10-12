@@ -61,10 +61,12 @@ py_library(
     srcs = ["runner_control.py"],
     deps = [
         ":control_listener",
+        "//agentplane:grpc_tunnel",
         "//agentplane:sandbox_resource",
         "//agentplane/proto:runner_control_pb2",
         "//agentplane/proto:runner_control_pb2_grpc",
         "//agentplane/proto:runner_pb2",
+        "//agentplane/runner:control",
         "//agentplane/runner_gateway:connection_records",
         "//agentplane/runner_gateway:lifecycle_control",
         "//agentplane/runner_gateway:runner_control",

@@ -14,6 +14,7 @@ load("//devinfra/python:defs.bzl", "py_library", "py_test")
 # gazelle:resolve py agentplane.proto.runner_control_pb2_grpc //agentplane/proto:runner_control_pb2_grpc
 # gazelle:resolve py agentplane.proto.runner_ingress_pb2 //agentplane/proto:runner_ingress_pb2
 # gazelle:resolve py agentplane.proto.runner_ingress_pb2_grpc //agentplane/proto:runner_ingress_pb2_grpc
+# gazelle:resolve py agentplane.proto.grpc_tunnel_pb2 //agentplane/proto:grpc_tunnel_pb2
 
 package(default_visibility = ["//agentplane:__subpackages__"])
 
@@ -75,6 +76,17 @@ py_library(
     deps = [
         "@pypi//grpcio",
         "@pypi//grpcio_health_checking",
+        "@pypi//protobuf",
+    ],
+)
+
+py_library(
+    name = "grpc_tunnel",
+    srcs = ["grpc_tunnel.py"],
+    deps = [
+        ":grpc_serving",
+        "//agentplane/proto:grpc_tunnel_pb2",
+        "@pypi//grpcio",
         "@pypi//protobuf",
     ],
 )

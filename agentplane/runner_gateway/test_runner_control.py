@@ -45,12 +45,21 @@ type Replica = Callable[[ConnectionHolder], AbstractAsyncContextManager[runner_c
 @pytest.fixture
 def replica(cluster: Cluster, leases: ConnectionLeases) -> Replica:
     """Start a channel listener as one gateway replica; replicas share the cluster."""
-    return lambda holder: serve_replica_control(
-        cluster,
-        holder,
-        control=LifecycleControl(leases),
-        timing=ControlTiming(heartbeat_s=0.05, liveness_s=1, touch_s=0.1, max_age_s=60),
-    )
+
+    @asynccontextmanager
+    async def start(holder: ConnectionHolder) -> AsyncIterator[runner_control_pb2_grpc.RunnerControlAsyncStub]:
+        async with (
+            serve_replica_control(
+                cluster,
+                holder,
+                control=LifecycleControl(leases),
+                timing=ControlTiming(heartbeat_s=0.05, liveness_s=1, touch_s=0.1, max_age_s=60),
+            ) as target,
+            grpc.aio.insecure_channel(target) as channel,
+        ):
+            yield runner_control_pb2_grpc.RunnerControlStub(channel)
+
+    return start
 
 
 @pytest.fixture

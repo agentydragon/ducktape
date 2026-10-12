@@ -4,10 +4,9 @@ real runner cannot be made to show."""
 import asyncio
 import json
 from collections.abc import AsyncIterator
-from contextlib import suppress
-from dataclasses import dataclass, field, replace
+from dataclasses import replace
 from pathlib import Path
-from uuid import UUID, uuid4
+from uuid import uuid4
 
 import grpc
 import pytest
@@ -28,15 +27,14 @@ from agentplane.runner_gateway.grpc_api import Resources
 from agentplane.runner_gateway.lifecycle_control import LifecycleControl
 from agentplane.runner_gateway.runner_control import ControlTiming
 from agentplane.runner_gateway.session_registry import SessionRegistry
-from agentplane.runner_gateway.testing.control_listener import wait_connected
 from agentplane.runner_gateway.testing.grpc_service import gateway_client, service, service_client
 from agentplane.runner_gateway.testing.journal import admission
 from agentplane.runner_gateway.testing.resources import build_resources
 from agentplane.runner_gateway.testing.runner_control import (
-    HELLO,
     REPLICA,
-    RUNNER_TOKEN,
+    ScriptedRunner,
     attached,
+    connected,
     serve_replica_control,
 )
 from agentplane.runner_gateway.testing.sessions import register_on_fake_sandbox, register_session
@@ -57,77 +55,6 @@ from util.agent_sandbox import SANDBOXES_PLURAL
 
 AUDIENCE = "test-sandbox-service"
 SPEC: dict[str, object] = {"harness": "HARNESS_CODEX", "model": "test-model", "cwd": "/state"}
-
-type Connect = grpc.aio.StreamStreamCall[runner_control_pb2.RunnerFrame, runner_control_pb2.ServiceFrame]
-
-
-@dataclass
-class Peer:
-    """A runner holding the Sandbox's control stream. It answers session listings from `sessions` and
-    queues every other lifecycle request and every command delivery for the test to answer."""
-
-    call: Connect
-    sessions: dict[str, runner_pb2.SessionSummary] = field(default_factory=dict)
-    requests: asyncio.Queue[runner_control_pb2.ControlRequest] = field(default_factory=asyncio.Queue)
-    deliveries: asyncio.Queue[runner_control_pb2.DeliverCommand] = field(default_factory=asyncio.Queue)
-    # Every request and delivery the service sent, listings included.
-    received: list[runner_control_pb2.ServiceFrame] = field(default_factory=list)
-    _writing: asyncio.Lock = field(default_factory=asyncio.Lock)
-
-    async def write(self, frame: runner_control_pb2.RunnerFrame) -> None:
-        async with self._writing:
-            await self.call.write(frame)
-
-    async def serve(self) -> None:
-        while (frame := await self.call.read()) is not grpc.aio.EOF:
-            assert isinstance(frame, runner_control_pb2.ServiceFrame)
-            match frame.WhichOneof("frame"):
-                case "heartbeat":
-                    await self.write(runner_control_pb2.RunnerFrame(heartbeat=runner_control_pb2.Heartbeat()))
-                case "control" if frame.control.HasField("list_sessions"):
-                    self.received.append(frame)
-                    result = runner_control_pb2.ControlResult(request_id=frame.control.request_id)
-                    result.list_sessions.sessions.extend(self.sessions.values())
-                    await self.answer(result)
-                case "control":
-                    self.received.append(frame)
-                    self.requests.put_nowait(frame.control)
-                case "deliver":
-                    self.received.append(frame)
-                    self.deliveries.put_nowait(frame.deliver)
-
-    async def request(self) -> runner_control_pb2.ControlRequest:
-        async with asyncio.timeout(10):
-            return await self.requests.get()
-
-    async def answer(self, result: runner_control_pb2.ControlResult) -> None:
-        await self.write(runner_control_pb2.RunnerFrame(control_result=result))
-
-    async def open(self) -> runner_control_pb2.OpenSession:
-        """Answer the next request, an open, with its Session running."""
-        request = await self.request()
-        assert request.WhichOneof("verb") == "open"
-        await self.answer(
-            runner_control_pb2.ControlResult(
-                request_id=request.request_id, open=attached(request.open.session_id, runner_pb2.HARNESS_STATE_RUNNING)
-            )
-        )
-        return request.open
-
-    async def delivery(self) -> runner_control_pb2.DeliverCommand:
-        async with asyncio.timeout(10):
-            return await self.deliveries.get()
-
-    async def admit(self, delivered: runner_control_pb2.DeliverCommand, cursor: int) -> None:
-        await self.write(
-            runner_control_pb2.RunnerFrame(
-                receipt=runner_control_pb2.CommandReceipt(
-                    session_id=delivered.session_id,
-                    command_id=delivered.command.command_id,
-                    admitted=admission(delivered.command, cursor),
-                )
-            )
-        )
 
 
 @pytest.fixture
@@ -152,30 +79,20 @@ def resources(cluster: Cluster, engine: AsyncEngine, leases: ConnectionLeases) -
 
 
 @pytest.fixture
-async def peer(cluster: Cluster, resources: Resources) -> AsyncIterator[Peer]:
-    async with serve_replica_control(
-        cluster,
-        REPLICA,
-        control=resources.control,
-        timing=ControlTiming(heartbeat_s=0.05, liveness_s=5, touch_s=0.1, max_age_s=60),
-    ) as channel:
-        call = channel.Connect(metadata=(("authorization", f"Bearer {RUNNER_TOKEN}"),), timeout=60)
-        await call.write(HELLO)
-        welcome = await call.read()
-        assert isinstance(welcome, runner_control_pb2.ServiceFrame)
-        assert welcome.HasField("welcome")
-        peer = Peer(call)
-        serving = asyncio.create_task(peer.serve())
-        try:
-            await wait_connected(resources, UUID(SANDBOX_UID))
-            yield peer
-        finally:
-            call.cancel()
-            serving.cancel()
-            # The stream ends with the test's own cancellation, or with the service's when a test
-            # takes the runner's identity away.
-            with suppress(asyncio.CancelledError, grpc.aio.AioRpcError):
-                await serving
+async def peer(cluster: Cluster, resources: Resources) -> AsyncIterator[ScriptedRunner]:
+    """A runner holding the Sandbox's control stream. Its connection ends with the test, or with the
+    service when a test takes the runner's identity away."""
+    runner = ScriptedRunner()
+    async with (
+        serve_replica_control(
+            cluster,
+            REPLICA,
+            control=resources.control,
+            timing=ControlTiming(heartbeat_s=0.05, liveness_s=5, touch_s=0.1, max_age_s=60),
+        ) as listener,
+        connected(listener, runner, resources.control),
+    ):
+        yield runner
 
 
 @pytest.fixture
@@ -185,7 +102,7 @@ async def remote(cluster: Cluster, resources: Resources, token_file: Path) -> As
 
 
 async def test_managed_open_uses_the_client_session_id_and_retries_on_the_runner(
-    cluster: Cluster, resources: Resources, token_file: Path, peer: Peer
+    cluster: Cluster, resources: Resources, token_file: Path, peer: ScriptedRunner
 ) -> None:
     async with service_client(resources, token_file, cluster.provisioning) as remote:
         runner = remote.runner(DESTINATION)
@@ -207,18 +124,16 @@ async def test_managed_open_uses_the_client_session_id_and_retries_on_the_runner
         assert await retrying == created
 
         resuming = asyncio.create_task(runner.resume(public))
-        resume = await peer.request()
-        assert resume.resume.session_id == public
-        await peer.answer(
-            runner_control_pb2.ControlResult(
-                request_id=resume.request_id, resume=attached(public, runner_pb2.HARNESS_STATE_RUNNING)
-            )
+        resume = await peer.next(runner_control_pb2.ResumeSessionRequest)
+        assert resume.request.session_id == public
+        resume.outcome.set_result(
+            runner_control_pb2.ResumeSessionResponse(attached=attached(public, runner_pb2.HARNESS_STATE_RUNNING))
         )
         assert await resuming == created.attached
 
 
 async def test_a_retry_after_a_lost_reply_delivers_the_command_again(
-    cluster: Cluster, resources: Resources, token_file: Path, peer: Peer, engine: AsyncEngine
+    cluster: Cluster, resources: Resources, token_file: Path, peer: ScriptedRunner, engine: AsyncEngine
 ) -> None:
     session_id = uuid4()
     await register_on_fake_sandbox(engine, session_id)
@@ -226,12 +141,13 @@ async def test_a_retry_after_a_lost_reply_delivers_the_command_again(
     async with asyncio.timeout(10), service_client(resources, token_file, cluster.provisioning) as remote:
         with pytest.raises(TimeoutError):
             await remote.command(DESTINATION, str(session_id), command)
-        lost = await peer.delivery()
+        lost = (await peer.next(runner_control_pb2.DeliverCommandRequest)).request
         assert (lost.session_id, lost.command) == (str(session_id), command)
         # The gateway kept nothing: the retry reaches the runner again, which deduplicates it.
         retrying = asyncio.create_task(remote.command(DESTINATION, str(session_id), command))
-        assert await peer.delivery() == lost
-        await peer.admit(lost, 1)
+        retried = await peer.next(runner_control_pb2.DeliverCommandRequest)
+        assert retried.request == lost
+        retried.outcome.set_result(runner_control_pb2.DeliverCommandResponse(admission=admission(command, 1)))
         assert await retrying == admission(command, 1)
 
 
@@ -246,7 +162,7 @@ async def test_open_requires_a_client_session_id(resources: Resources, token_fil
 
 
 async def test_managed_open_expands_default_cwd_with_the_session_id(
-    remote: RunnerGatewayClient, peer: Peer, cluster: Cluster
+    remote: RunnerGatewayClient, peer: ScriptedRunner, cluster: Cluster
 ) -> None:
     cluster.set_binding(
         sandbox_service_pb2.SandboxBinding(
@@ -261,7 +177,7 @@ async def test_managed_open_expands_default_cwd_with_the_session_id(
 
 
 async def test_command_uses_runner_ack_budget_not_unary_request_budget(
-    resources: Resources, token_file: Path, peer: Peer, engine: AsyncEngine
+    resources: Resources, token_file: Path, peer: ScriptedRunner, engine: AsyncEngine
 ) -> None:
     command = command_pb2.Command(command_id="slow-ack", submit_input=command_pb2.SubmitInput(text="hi"))
     # Unary authorization/destination work must not cap the runner's separate receipt wait.
@@ -272,10 +188,10 @@ async def test_command_uses_runner_ack_budget_not_unary_request_budget(
         session_id = uuid4()
         await register_on_fake_sandbox(engine, session_id)
         submitted = asyncio.create_task(remote.command(DESTINATION, str(session_id), command))
-        delivered = await peer.delivery()
+        delivered = await peer.next(runner_control_pb2.DeliverCommandRequest)
         # Elapsed time is the subject: the ack lands after both 0.1 s budgets but inside the 1 s ack budget.
         await asyncio.sleep(0.2)
-        await peer.admit(delivered, 1)
+        delivered.outcome.set_result(runner_control_pb2.DeliverCommandResponse(admission=admission(command, 1)))
         assert await submitted == admission(command, 1)
 
 
@@ -380,7 +296,7 @@ async def test_open_and_resume_refuse_unready_grants_without_app(
     resources: Resources,
     token_file: Path,
     cluster: Cluster,
-    peer: Peer,
+    peer: ScriptedRunner,
     engine: AsyncEngine,
     sessions: SessionRegistry,
     pending_launch: bool,
@@ -440,7 +356,7 @@ async def test_invalid_command_is_not_submitted(
 
 @pytest.mark.parametrize("field", ["controller", "uid", "name", "kind", "apiVersion"])
 async def test_unverified_pod_owner_is_unavailable(
-    remote: RunnerGatewayClient, peer: Peer, cluster: Cluster, field: str
+    remote: RunnerGatewayClient, peer: ScriptedRunner, cluster: Cluster, field: str
 ) -> None:
     cluster.fake.pods[SANDBOX]["metadata"]["ownerReferences"][0][field] = (
         False if field == "controller" else "test-foreign"
@@ -453,7 +369,7 @@ async def test_unverified_pod_owner_is_unavailable(
 
 @pytest.mark.parametrize("condition", ["different-account", "suspended", "deleting"])
 async def test_unavailable_destination_does_not_contact_runner(
-    remote: RunnerGatewayClient, peer: Peer, cluster: Cluster, condition: str
+    remote: RunnerGatewayClient, peer: ScriptedRunner, cluster: Cluster, condition: str
 ) -> None:
     stored = cluster.fake.objects[SANDBOXES_PLURAL][SANDBOX]
     match condition:

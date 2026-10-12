@@ -12,8 +12,8 @@ bbr test //agentplane/runner/...
 
 - `runner.py`: the runner's sessions, their lifecycle, and journal follows; `main.py` is the process
   entry point, configured by flags and credentialed from its environment.
-- `control.py`: the runner's peer of the [runner control stream](../docs/runner_control.md) at
-  `--control-target`; `ingress.py` pushes every session's journal to the runner's ingress at
+- `control.py`: the `Runner` service, served through the
+  [runner control stream](../docs/runner_control.md) the runner dials at `--control-target`; `ingress.py` pushes every session's journal to the runner's ingress at
   `--ingress-target`; both reconnect through `reconnect.py`'s shared backoff.
 - `session.py`: one session's harness process and derived state; `store.py` the session metadata,
   ingress acknowledgements and durable directory creation.

@@ -1,5 +1,5 @@
 """What a runner dials, on one loopback port: a stand-in for the Runner Gateway's control listener that
-tests send lifecycle requests and commands through, and an ingress that commits every Session's Events
+tests call the runner's `Runner` service through, and an ingress that commits every Session's Events
 for tests to read (agentplane/docs/runner_control.md)."""
 
 from __future__ import annotations
@@ -9,20 +9,21 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from typing import override
-from uuid import uuid4
 
 import grpc
 
 from agentplane.grpc_serving import serving
+from agentplane.grpc_tunnel import TunnelCaller
 from agentplane.proto import (
     event_log_pb2,
+    grpc_tunnel_pb2,
     runner_control_pb2,
     runner_control_pb2_grpc,
     runner_ingress_pb2,
     runner_ingress_pb2_grpc,
 )
 from agentplane.runner.config import ServiceEndpoint
-from agentplane.runner.control import RunnerControlClient
+from agentplane.runner.control import RunnerControlClient, RunnerService
 from agentplane.runner.ingress import IngressPusher
 from agentplane.runner.reconnect import StreamTiming
 from agentplane.runner.runner import Runner
@@ -36,82 +37,74 @@ TIMING = StreamTiming(heartbeat_s=0.1, liveness_s=5, backoff_initial_s=0.05, bac
 
 
 class ControlListener(runner_control_pb2_grpc.RunnerControlServicer):
-    """Sends each request and delivery on the newest runner connection and waits for the runner's answer."""
+    """Calls the newest runner connection's `Runner` service for tests, and records each connection.
+    Scripted `closes` end the next connections right after `Welcome`, oldest first, and `silences`
+    leave the next ones silent after it."""
 
     def __init__(self) -> None:
-        # Connections opened so far; the newest is the one requests go to.
+        # Connections opened so far; the newest is the one calls go to.
         self.connections = 0
-        self._connection: asyncio.Queue[runner_control_pb2.ServiceFrame] | None = None
+        self.hellos: list[runner_control_pb2.Hello] = []
+        self.peers: list[str] = []
+        self.authorizations: list[str] = []
+        self.closes: list[grpc.StatusCode] = []
+        self.silences = 0
+        self._runner: runner_control_pb2_grpc.RunnerAsyncStub | None = None
         self._connected = asyncio.Condition()
-        self._results: dict[str, asyncio.Future[runner_control_pb2.ControlResult]] = {}
-        self._receipts: dict[tuple[str, str], asyncio.Future[runner_control_pb2.CommandReceipt]] = {}
 
     async def wait_connected(self, connections: int) -> None:
         """Until the runner holds a connection and has opened at least `connections` in all."""
         async with asyncio.timeout(30), self._connected:
-            await self._connected.wait_for(lambda: self.connections >= connections and self._connection is not None)
+            await self._connected.wait_for(lambda: self.connections >= connections and self._runner is not None)
 
-    async def request(self, request: runner_control_pb2.ControlRequest) -> runner_control_pb2.ControlResult:
-        request.request_id = str(uuid4())
-        answered: asyncio.Future[runner_control_pb2.ControlResult] = asyncio.get_running_loop().create_future()
-        self._results[request.request_id] = answered
-        try:
-            await self._send(runner_control_pb2.ServiceFrame(control=request))
-            return await answered
-        finally:
-            del self._results[request.request_id]
-
-    async def deliver(self, deliver: runner_control_pb2.DeliverCommand) -> runner_control_pb2.CommandReceipt:
-        # Deliveries of one command at once share the first receipt the runner sends for it.
-        key = (deliver.session_id, deliver.command.command_id)
-        answered = self._receipts.setdefault(key, asyncio.get_running_loop().create_future())
-        await self._send(runner_control_pb2.ServiceFrame(deliver=deliver))
-        return await asyncio.shield(answered)
-
-    async def _send(self, frame: runner_control_pb2.ServiceFrame) -> None:
+    async def runner(self) -> runner_control_pb2_grpc.RunnerAsyncStub:
+        """The runner's service through its newest connection, once it has one."""
         await self.wait_connected(1)
-        assert self._connection is not None
-        self._connection.put_nowait(frame)
-
-    def _answer(self, frame: runner_control_pb2.RunnerFrame) -> None:
-        match frame.WhichOneof("frame"):
-            case "control_result":
-                if (result := self._results.get(frame.control_result.request_id)) is not None:
-                    result.set_result(frame.control_result)
-            case "receipt":
-                key = (frame.receipt.session_id, frame.receipt.command_id)
-                if (receipt := self._receipts.pop(key, None)) is not None:
-                    receipt.set_result(frame.receipt)
+        assert self._runner is not None
+        return self._runner
 
     @override
     async def Connect(  # type: ignore[override]
         self, request_iterator: AsyncIterator[runner_control_pb2.RunnerFrame], context: grpc.aio.ServicerContext
     ) -> None:
-        await anext(request_iterator)  # Hello
-        outgoing: asyncio.Queue[runner_control_pb2.ServiceFrame] = asyncio.Queue()
-        async with self._connected:
-            self.connections += 1
-            self._connection = outgoing
-            self._connected.notify_all()
+        self.authorizations += [
+            str(value) for key, value in context.invocation_metadata() or () if key == "authorization"
+        ]
+        self.hellos.append((await anext(request_iterator)).hello)
+        self.peers.append(context.peer())
         await context.write(
-            runner_control_pb2.ServiceFrame(welcome=runner_control_pb2.Welcome(connection_epoch=self.connections))
+            runner_control_pb2.ServiceFrame(welcome=runner_control_pb2.Welcome(connection_epoch=len(self.hellos)))
         )
+        if self.closes:
+            await context.abort(self.closes.pop(0), "test service closes this connection")
+        if self.silences:
+            self.silences -= 1
+            await asyncio.Event().wait()
+        writing = asyncio.Lock()
 
-        async def send() -> None:
-            while True:
-                await context.write(await outgoing.get())
+        async def send(frame: runner_control_pb2.ServiceFrame) -> None:
+            async with writing:
+                await context.write(frame)
 
-        try:
-            async with asyncio.TaskGroup() as tasks:
-                sending = tasks.create_task(send())
+        async def call(tunneled: grpc_tunnel_pb2.Call) -> None:
+            await send(runner_control_pb2.ServiceFrame(call=tunneled))
+
+        async with TunnelCaller(call) as tunnel:
+            runner = runner_control_pb2_grpc.RunnerStub(tunnel.channel)
+            async with self._connected:
+                self.connections += 1
+                self._runner = runner
+                self._connected.notify_all()
+            try:
                 async for frame in request_iterator:
-                    if frame.HasField("heartbeat"):
-                        outgoing.put_nowait(runner_control_pb2.ServiceFrame(heartbeat=runner_control_pb2.Heartbeat()))
-                    self._answer(frame)
-                sending.cancel()
-        finally:
-            if self._connection is outgoing:
-                self._connection = None
+                    match frame.WhichOneof("frame"):
+                        case "heartbeat":
+                            await send(runner_control_pb2.ServiceFrame(heartbeat=runner_control_pb2.Heartbeat()))
+                        case "reply":
+                            tunnel.answer(frame.reply)
+            finally:
+                if self._runner is runner:
+                    self._runner = None
 
 
 class IngressStore(runner_ingress_pb2_grpc.RunnerIngressServicer):
@@ -188,7 +181,8 @@ async def dialing(runner: Runner, gateway: Gateway) -> AsyncIterator[None]:
     connections = gateway.control.connections
     async with (
         background(
-            RunnerControlClient(runner, target=target, bearer=bearer, timing=TIMING).run(), name="runner control stream"
+            RunnerControlClient(RunnerService(runner), target=target, bearer=bearer, timing=TIMING).run(),
+            name="runner control stream",
         ),
         background(IngressPusher(runner, target=target, bearer=bearer, timing=TIMING).run(), name="ingress push"),
     ):
