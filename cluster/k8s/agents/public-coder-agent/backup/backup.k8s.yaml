@@ -183,6 +183,7 @@ metadata:
   name: public-coder-agent-state-v2-restic
   namespace: public-coder-agent
 spec:
+  paused: true
   restic:
     cacheAccessModes:
       - ReadWriteOnce
