@@ -15,11 +15,6 @@ const READY_SANDBOX: SandboxView = {
   operating_mode: "Running",
   service_account: { namespace: "agentplane-test", name: "test-sandbox" },
   status: null,
-  kubernetes_grants: [],
-  kubernetes_grants_ready: true,
-  kubernetes_grant_error: null,
-  launch_grants_pending: false,
-  initializing: false,
   deleting: false,
   pod: {
     name: "test-sandbox",
@@ -29,7 +24,7 @@ const READY_SANDBOX: SandboxView = {
     node_name: "test-node",
     owner_references: [
       {
-        api_version: "agents.x-k8s.io/v1beta1",
+        api_version: "agentplane.allegedly.works/v1alpha1",
         kind: "Sandbox",
         name: "test-sandbox",
         uid: SANDBOX_UID,

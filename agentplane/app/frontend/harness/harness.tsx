@@ -56,20 +56,6 @@ const SANDBOXES: SandboxView[] = [
     operating_mode: "Running",
     service_account: { namespace: "agentplane-visual", name: "ready-sandbox" },
     status: { conditions: [{ type: "Ready", status: "True", reason: "PodReady", lastTransitionTime: ago(HOUR) }] },
-    kubernetes_grants: [
-      {
-        name: "workspace-read",
-        grant: {
-          kind: "RoleBinding",
-          namespace: "agentplane-visual",
-          role_ref: { kind: "Role", name: "workspace-reader" },
-        },
-      },
-    ],
-    kubernetes_grants_ready: true,
-    kubernetes_grant_error: null,
-    launch_grants_pending: false,
-    initializing: false,
     deleting: false,
     pod: {
       name: "ready-sandbox",
@@ -78,7 +64,7 @@ const SANDBOXES: SandboxView[] = [
       deleting: false,
       owner_references: [
         {
-          api_version: "agents.x-k8s.io/v1beta1",
+          api_version: "agentplane.allegedly.works/v1alpha1",
           kind: "Sandbox",
           name: "ready-sandbox",
           uid: "0f9c1d2e-0000-4000-8000-00000000a1b2",
@@ -109,11 +95,6 @@ const SANDBOXES: SandboxView[] = [
     operating_mode: "Running",
     service_account: { namespace: "agentplane-visual", name: "pending-sandbox" },
     status: { conditions: [{ type: "Ready", status: "False", reason: "PodPending" }] },
-    kubernetes_grants: [],
-    kubernetes_grants_ready: true,
-    kubernetes_grant_error: null,
-    launch_grants_pending: false,
-    initializing: false,
     deleting: false,
     pod: {
       name: "pending-sandbox",
@@ -122,7 +103,7 @@ const SANDBOXES: SandboxView[] = [
       deleting: false,
       owner_references: [
         {
-          api_version: "agents.x-k8s.io/v1beta1",
+          api_version: "agentplane.allegedly.works/v1alpha1",
           kind: "Sandbox",
           name: "pending-sandbox",
           uid: "0f9c1d2e-0000-4000-8000-00000000c3d4",
@@ -157,22 +138,10 @@ const SANDBOXES: SandboxView[] = [
     operating_mode: "Suspended",
     service_account: { namespace: "agentplane-visual", name: "suspended-sandbox" },
     status: { conditions: [{ type: "Ready", status: "False", reason: "Suspended" }] },
-    kubernetes_grants: [],
-    kubernetes_grants_ready: true,
-    kubernetes_grant_error: null,
-    launch_grants_pending: false,
-    initializing: false,
     deleting: false,
     pod: null,
   },
 ];
-
-function failGrantProvisioning(): void {
-  const sandbox = SANDBOXES[0]!;
-  sandbox.launch_grants_pending = true;
-  sandbox.kubernetes_grants_ready = false;
-  sandbox.kubernetes_grant_error = "ApiException (403)";
-}
 
 function addProvisioningSandbox(): void {
   SANDBOXES.push({
@@ -183,11 +152,6 @@ function addProvisioningSandbox(): void {
     operating_mode: "Running",
     service_account: { namespace: "agentplane-visual", name: "test-provisioning" },
     status: null,
-    kubernetes_grants: [],
-    kubernetes_grants_ready: true,
-    kubernetes_grant_error: null,
-    launch_grants_pending: false,
-    initializing: false,
     deleting: false,
     pod: null,
   });
@@ -2045,10 +2009,7 @@ routes.push(
         name: "public-coder",
         title: "Public coder",
         template: "runner",
-        egress_policies: ["github-public"],
-        action_policy_sets: ["public-coder"],
-        kubernetes_grants: ["workspace-read"],
-        policy_sets: [],
+        policy_sets: ["github-public", "public-coder"],
         session_defaults: {
           harness: "HARNESS_CODEX",
           model: "harness-codex-model",
@@ -2323,25 +2284,7 @@ routes.push(
           },
   ],
   ["GET", /^\/sandboxes\/templates$/, () => ["runner"]],
-  ["GET", /^\/sandboxes\/form$/, () => ({ policy_sets: null })],
-  [
-    "GET",
-    /^\/kubernetes-grants$/,
-    () => [
-      {
-        name: "workspace-read",
-        kind: "RoleBinding",
-        namespace: "agentplane-visual",
-        role_ref: { kind: "Role", name: "workspace-reader" },
-      },
-      {
-        name: "config-read",
-        kind: "RoleBinding",
-        namespace: "agentplane-visual",
-        role_ref: { kind: "Role", name: "config-reader" },
-      },
-    ],
-  ],
+  ["GET", /^\/sandboxes\/form$/, () => ({ policy_sets: ["github-public", "public-coder", "pypi"] })],
   ["GET", /^\/egress\/policies$/, () => POLICIES],
   ["GET", /^\/action-policy\/sets$/, () => ACTION_POLICY.bindings.flatMap((binding) => binding.policy_sets)],
   ["GET", /^\/actions$/, () => ACTIONS],
@@ -2944,7 +2887,6 @@ const visualHarness = {
   mountDisclosure(props: Parameters<typeof DisclosureVisual>[0]): void {
     mount(<DisclosureVisual {...props} />);
   },
-  failGrantProvisioning,
   addProvisioningSandbox,
   set(flag: Flag, on = true): void {
     if (on) flags.add(flag);

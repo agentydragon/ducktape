@@ -44,7 +44,6 @@ class Flag(StrEnum):
 class Scene(StrEnum):
     """A fixture builder taking no arguments; the value is its name on `window.agentplaneVisual`."""
 
-    FAIL_GRANT_PROVISIONING = "failGrantProvisioning"
     ADD_PROVISIONING_SANDBOX = "addProvisioningSandbox"
     LONG_PENDING_ACTION = "longPendingAction"
     HIDDEN_CODEPOINTS = "hiddenCodepoints"

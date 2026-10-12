@@ -82,9 +82,6 @@ class Client:
     async def presets(self) -> list[SandboxPresetView]:
         return [SandboxPresetView.model_validate(row) for row in await self._json("GET", "/presets")]
 
-    async def sandbox_form(self) -> SandboxForm:
-        return SandboxForm.model_validate(await self._json("GET", "/sandboxes/form"))
-
     async def templates(self) -> list[str]:
         return list(await self._json("GET", "/sandboxes/templates"))
 

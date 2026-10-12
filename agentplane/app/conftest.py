@@ -54,7 +54,6 @@ from agentplane.runner.testing.fixtures import config, endpoint, harness, model,
 from agentplane.runner_gateway.client import RunnerGatewayClient
 from agentplane.sandbox_service.client import SandboxServiceClient
 from agentplane.sandbox_service.egress_views import EgressReader
-from agentplane.sandbox_service.kubernetes_grants import KubernetesGrant
 from agentplane.sandbox_service.testing.backend import Endpoint, backend
 from agentplane.sandbox_service.testing.fake_inventory import (
     NAMESPACE,
@@ -64,7 +63,6 @@ from agentplane.sandbox_service.testing.fake_inventory import (
     FakeCustomObjectsApi,
     close_fake_api_clients,
 )
-from agentplane.sandbox_service.testing.fake_rbac import FakeRbac
 from agentplane.testing.electric_role import ensure_electric_role
 from util.testing.postgres import DatabaseClones, PostgresDatabaseTemplate, migrated_database_template
 from util.testing.postgres_fixtures import (
@@ -269,34 +267,10 @@ def bridge(
 
 
 @pytest.fixture
-def sandbox_grants() -> dict[str, KubernetesGrant]:
-    return {}
-
-
-@pytest.fixture
-def sandbox_rbac() -> FakeRbac:
-    return FakeRbac()
-
-
-@pytest.fixture
 def sandbox_endpoint(
-    custom_objects: FakeCustomObjectsApi,
-    core_v1: FakeCoreV1Api,
-    default_egress_policies: list[str],
-    sandbox_grants: dict[str, KubernetesGrant],
-    sandbox_rbac: FakeRbac,
-    tmp_path: Path,
-    service_history_db_url: str,
+    custom_objects: FakeCustomObjectsApi, core_v1: FakeCoreV1Api, tmp_path: Path, service_history_db_url: str
 ) -> Iterator[Endpoint]:
-    with backend(
-        custom_objects,
-        core_v1,
-        tmp_path / "sandbox-token",
-        default_policies=default_egress_policies,
-        grants=sandbox_grants,
-        rbac=sandbox_rbac,
-        database_url=service_history_db_url,
-    ) as endpoint:
+    with backend(custom_objects, core_v1, tmp_path / "sandbox-token", database_url=service_history_db_url) as endpoint:
         yield endpoint
 
 
@@ -347,12 +321,6 @@ def reviewer(authentication: FakeAuthenticationV1Api) -> TokenReviewer:
 def live_index(core_v1: FakeCoreV1Api) -> LiveIndex:
     """An index nothing is watching: the fixtures that need one drive it themselves."""
     return LiveIndex(freshness=Freshness(stale_after_seconds=90), core_v1=cast(CoreV1Api, core_v1))
-
-
-@pytest.fixture
-def default_egress_policies() -> list[str]:
-    """What the deployment grants every sandbox; overridden by the tests about that."""
-    return []
 
 
 @pytest.fixture

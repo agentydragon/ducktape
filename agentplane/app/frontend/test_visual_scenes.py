@@ -212,13 +212,6 @@ async def test_sandbox_status(view: VisualPage, app: AgentplaneFixture) -> None:
     await view.capture(target=view.page.locator("#app"))
 
 
-async def test_sandbox_status_grant_error(view: VisualPage, app: AgentplaneFixture) -> None:
-    await app.build(Scene.FAIL_GRANT_PROVISIONING)
-    await app.mount_app("/sandboxes/ready-sandbox?tab=status")
-    await view.check(context="fixture ready")
-    await view.capture(target=view.page.locator("#app"))
-
-
 @DESKTOP_AND_MOBILE
 async def test_sandbox_policy(view: VisualPage, app: AgentplaneFixture) -> None:
     await app.mount_app("/sandboxes/ready-sandbox?tab=policy")

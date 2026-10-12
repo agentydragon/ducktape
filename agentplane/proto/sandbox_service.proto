@@ -8,19 +8,18 @@ import "google/protobuf/empty.proto";
 import "google/protobuf/struct.proto";
 import "google/protobuf/timestamp.proto";
 
-// Sandboxes and their grants. The Sandbox Service alone holds the
-// RBAC, ServiceAccount and egress grant permissions; the Runner Gateway serves Sessions.
+// Sandboxes and their egress grants; the Runner Gateway serves Sessions.
 service SandboxService {
   rpc ListSandboxes(google.protobuf.Empty) returns (ListSandboxesResponse);
   rpc GetSandbox(GetSandboxRequest) returns (Sandbox);
-  // Persist the Suspended CR and return; the reconciler provisions and starts it.
-  // Retry with the same name and exact choices while the Sandbox CR exists.
+  // Persist the Sandbox and return; the Sandbox Controller starts it.
+  // Retry with the same name and exact choices while the Sandbox exists.
   rpc CreateSandbox(CreateSandboxRequest) returns (Sandbox);
   rpc SuspendSandbox(SandboxRequest) returns (google.protobuf.Empty);
   rpc ResumeSandbox(SandboxRequest) returns (google.protobuf.Empty);
   // Starts teardown of a suspended Sandbox and returns; refused while it runs (FAILED_PRECONDITION).
-  // The service seals every Session, then deletes the Sandbox once the runner's ingress has
-  // acknowledged every seal. GetSandbox reports the teardown phase.
+  // Every Session is sealed, and the Sandbox deleted once the runner's ingress has acknowledged
+  // every seal. GetSandbox reports the teardown phase.
   rpc DeleteSandbox(SandboxRequest) returns (google.protobuf.Empty);
   rpc ListTemplates(google.protobuf.Empty) returns (ListTemplatesResponse);
 
@@ -65,31 +64,15 @@ message SandboxBinding {
 message CreateSandboxRequest {
   string name = 1;
   string template = 2;
-  // EgressPolicy names to grant to the new sandbox.
-  repeated string egress_policies = 3;
-  repeated string action_policy_sets = 4;
-  repeated string kubernetes_grants = 5;
+  reserved 3, 4, 5;
+  reserved "egress_policies", "action_policy_sets", "kubernetes_grants";
   SessionDefaults session_defaults = 6;
   string bootstrap = 7;
-  // PolicySet names to bind, beside the service's defaults. Only for Agentplane's own Sandbox kind,
-  // which takes these in place of egress_policies, action_policy_sets and kubernetes_grants.
+  // PolicySet names to bind, beside the service's defaults.
   repeated string policy_sets = 8;
 }
 
 // Kubernetes names/status vocabulary is preserved, not recast as runner state.
-message RoleRef {
-  string kind = 1;
-  string name = 2;
-}
-message KubernetesGrant {
-  string kind = 1;
-  optional string namespace = 2;
-  RoleRef role_ref = 3;
-}
-message ResolvedGrant {
-  string name = 1;
-  KubernetesGrant grant = 2;
-}
 message OwnerReference {
   string api_version = 1;
   string kind = 2;
@@ -107,8 +90,9 @@ message SandboxPod {
   optional string node_name = 7;
 }
 message Sandbox {
-  reserved 3, 6, 7;
-  reserved "state", "conditions", "node_name";
+  reserved 3, 6, 7, 10, 11, 12, 17, 18;
+  reserved "state", "conditions", "node_name", "kubernetes_grants", "kubernetes_grants_ready",
+      "kubernetes_grant_error", "launch_grants_pending", "initializing";
 
   string name = 1;
   string uid = 2;
@@ -116,15 +100,10 @@ message Sandbox {
   string operating_mode = 5;
   ServiceAccount service_account = 8;
   SandboxBinding binding = 9;
-  repeated ResolvedGrant kubernetes_grants = 10;
-  bool kubernetes_grants_ready = 11;
-  optional string kubernetes_grant_error = 12;
   bool deleting = 13;
   SandboxPod pod = 14;
   string namespace = 15;
   google.protobuf.Struct status = 16;
-  bool launch_grants_pending = 17;
-  bool initializing = 18;
   TeardownPhase teardown = 19;
 }
 

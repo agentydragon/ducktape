@@ -14,10 +14,6 @@ function sandboxOwnedBy(apiVersion: string): SandboxView {
     operating_mode: "Running",
     service_account: { namespace: "agentplane-test", name: "test-sandbox" },
     status: null,
-    kubernetes_grants: [],
-    kubernetes_grants_ready: true,
-    kubernetes_grant_error: null,
-    launch_grants_pending: false,
     initializing: false,
     deleting: false,
     pod: {

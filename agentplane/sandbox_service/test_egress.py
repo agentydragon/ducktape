@@ -9,6 +9,7 @@ import pytest_bazel
 
 from agentplane.egress.resources import TargetMethod
 from agentplane.proto.sandbox_service_pb2 import Sandbox, ServiceAccount
+from agentplane.sandbox_resource import SANDBOX_API_VERSION, SANDBOX_KIND
 from agentplane.sandbox_service.egress import EgressInventory
 from agentplane.sandbox_service.egress_views import (
     BindingNotFoundError,
@@ -159,8 +160,8 @@ async def test_grant_creates_a_binding_the_sandbox_owns(
     created = custom_objects.objects[("egressbindings", granted.name)]
     (owner,) = created["metadata"]["ownerReferences"]
     assert owner == {
-        "apiVersion": "agents.x-k8s.io/v1beta1",
-        "kind": "Sandbox",
+        "apiVersion": SANDBOX_API_VERSION,
+        "kind": SANDBOX_KIND,
         "name": "live",
         "uid": str(LIVE_SANDBOX.uid),
         "controller": False,
@@ -201,8 +202,6 @@ async def test_a_grant_naming_a_policy_the_namespace_lacks_writes_nothing(
 
     assert refused.value.names == ["vanished"]
     assert set(custom_objects.objects) == before
-    with pytest.raises(UnknownPolicyError):
-        await egress.require_policies(["vanished"])
 
 
 @pytest.mark.usefixtures("seeded")

@@ -4,11 +4,8 @@ import type { SandboxStatusKind } from "./status_mark";
 
 type RawObject = Record<string, unknown>;
 
-// Mirrors SANDBOX_API_VERSIONS in agentplane/sandbox_resource.py: agent-sandbox's and Agentplane's own.
-const SANDBOX_API_VERSIONS: ReadonlySet<string> = new Set([
-  "agents.x-k8s.io/v1beta1",
-  "agentplane.allegedly.works/v1alpha1",
-]);
+// Agentplane's own `Sandbox` (agentplane/crd_group.py), which controls each runner Pod.
+const SANDBOX_API_VERSION = "agentplane.allegedly.works/v1alpha1";
 
 export interface RawCondition {
   type: string;
@@ -80,10 +77,6 @@ export function sandboxReady(sandbox: SandboxView | null | undefined): boolean {
     !sandbox ||
     sandbox.deleting ||
     sandbox.operating_mode !== "Running" ||
-    sandbox.initializing ||
-    sandbox.launch_grants_pending ||
-    !sandbox.kubernetes_grants_ready ||
-    sandbox.kubernetes_grant_error ||
     !sandbox.pod ||
     sandbox.pod.name !== sandbox.name ||
     sandbox.pod.namespace !== sandbox.namespace ||
@@ -95,7 +88,7 @@ export function sandboxReady(sandbox: SandboxView | null | undefined): boolean {
   if (controllers.length !== 1) return false;
   const owner = controllers[0];
   return (
-    SANDBOX_API_VERSIONS.has(owner.api_version) &&
+    owner.api_version === SANDBOX_API_VERSION &&
     owner.kind === "Sandbox" &&
     owner.name === sandbox.name &&
     owner.uid === sandbox.uid &&
@@ -107,11 +100,7 @@ export function sandboxReady(sandbox: SandboxView | null | undefined): boolean {
 
 export function sandboxSummary(sandbox: SandboxView): { label: string; kind: SandboxStatusKind } {
   if (sandbox.deleting) return { label: "Deleting", kind: "gone" };
-  if (sandbox.initializing) return { label: "Initializing", kind: "pending" };
   if (sandbox.operating_mode === "Suspended") return { label: "Suspended", kind: "suspended" };
-  if (sandbox.kubernetes_grant_error) return { label: "Grant error", kind: "failed" };
-  if (sandbox.launch_grants_pending || !sandbox.kubernetes_grants_ready)
-    return { label: "Applying grants", kind: "pending" };
   if (!sandbox.pod) return { label: "No Pod", kind: "pending" };
   if (sandbox.pod.deleting) return { label: "Pod deleting", kind: "gone" };
   if (sandboxReady(sandbox)) return { label: "Pod ready", kind: "ready" };
@@ -181,10 +170,6 @@ function conditionLine(condition: RawCondition): string {
 export function sandboxStatusDetail(sandbox: SandboxView): string {
   const lines = [`Sandbox: ${sandboxSummary(sandbox).label}`];
   lines.push(...rawConditions(sandbox.status).map((condition) => `Sandbox condition · ${conditionLine(condition)}`));
-  if (sandbox.initializing) lines.push("Sandbox initialization pending; controller will provision it");
-  if (sandbox.launch_grants_pending) lines.push("Launch grants pending");
-  if (!sandbox.kubernetes_grants_ready) lines.push("Kubernetes grants are still being applied");
-  if (sandbox.kubernetes_grant_error) lines.push(`Kubernetes grant error: ${sandbox.kubernetes_grant_error}`);
   if (sandbox.pod) {
     const status = sandbox.pod.status;
     lines.push(`Pod: ${podPhase(sandbox) ?? "phase unknown"}${sandbox.pod.deleting ? " · deleting" : ""}`);

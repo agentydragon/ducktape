@@ -19,11 +19,6 @@ service RunnerGateway {
   // Returns the runner's CommandAdmitted entry, not command completion; a retry with the same
   // command returns the original one. The gateway keeps no record of the command.
   rpc SubmitCommand(SubmitCommandRequest) returns (SubmitCommandResponse);
-  // Teardown's seal, called by the Sandbox Service alone: fence and seal every Session of the
-  // incarnation, and return each one's final cursor and whether its ingress has acknowledged it,
-  // keyed by public Session ID (or the runner's own ID for a Session opened with a caller-chosen
-  // one). Idempotent.
-  rpc SealSandbox(SealSandboxRequest) returns (SealSandboxResponse);
   // Any allowed service caller. Which Sandbox each named Session runs in; a Session the gateway
   // never registered is left out. Carries no transcript.
   rpc BatchGetSessionSandboxes(BatchGetSessionSandboxesRequest) returns (BatchGetSessionSandboxesResponse);
@@ -74,9 +69,6 @@ message SubmitCommandResponse {
   // The runner's journal entry whose event is the matching CommandAdmitted.
   agentplane.proto.event_log.EventEntry admission = 1;
 }
-
-message SealSandboxRequest { agentplane.proto.sandbox_service.SandboxDestination destination = 1; }
-message SealSandboxResponse { repeated agentplane.proto.runner.SessionSeal sessions = 1; }
 
 message CreateSessionRequest {
   agentplane.proto.sandbox_service.SandboxDestination sandbox = 1;

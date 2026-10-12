@@ -148,15 +148,6 @@ class SandboxRunner:
             timeout_s=self.control.lifecycle_timeout_s,
         )
 
-    async def seal(self) -> runner_gateway_pb2.SealSandboxResponse:
-        """Teardown's seal, which only the Sandbox Service may ask for."""
-        return await self.control.held_unary(
-            self.destination,
-            lambda stub: stub.SealSandbox,
-            runner_gateway_pb2.SealSandboxRequest(destination=self.destination),
-            timeout_s=self.control.lifecycle_timeout_s,
-        )
-
     async def resume(self, session_id: str) -> runner_pb2.Attached:
         response = await self.control.held_unary(
             self.destination,

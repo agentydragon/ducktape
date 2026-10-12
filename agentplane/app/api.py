@@ -65,15 +65,7 @@ from agentplane.app.operator_sessions import (
     request_session,
 )
 from agentplane.app.presets import PresetCatalog, SandboxPresetView
-from agentplane.app.sandbox_models import (
-    KubernetesGrantView,
-    NewSandbox,
-    SandboxView,
-    create_request,
-    grant_views,
-    sandbox_has_ready_pod,
-    sandbox_view,
-)
+from agentplane.app.sandbox_models import NewSandbox, SandboxView, create_request, sandbox_has_ready_pod, sandbox_view
 from agentplane.app.shutdown import Drain, DrainMiddleware, Shutdown, until_done
 from agentplane.app.threads import bridge as runner_bridge
 from agentplane.app.threads.events import stream
@@ -105,12 +97,6 @@ from agentplane.sandbox_service.egress_views import (
     UnknownPolicyError,
 )
 from agentplane.sandbox_service.errors import SandboxNotFoundError, SandboxRunningError
-from agentplane.sandbox_service.kubernetes_grants import (
-    DuplicateKubernetesGrantError,
-    KubernetesGrant,
-    UnknownKubernetesGrantError,
-    resolve_grants,
-)
 from agentplane.sse import sse_response
 from agentplane.subjects import ServiceAccountRef
 
@@ -144,7 +130,6 @@ class AppServices:
     notifications_token_file: FilePath
     models: ModelCatalog
     presets: PresetCatalog
-    kubernetes_grants: dict[str, KubernetesGrant]
     egress: EgressAccess
     action_policy: ActionPolicyInventory
     decisions: DecisionsClient
@@ -209,14 +194,6 @@ async def list_presets(services: Services) -> list[SandboxPresetView]:
     return services.presets.views()
 
 
-kubernetes_grants_router = APIRouter(prefix="/kubernetes-grants", tags=["kubernetes-grants"])
-
-
-@kubernetes_grants_router.get("")
-async def list_kubernetes_grants(services: Services) -> list[KubernetesGrantView]:
-    return grant_views(services.kubernetes_grants)
-
-
 @router.get("")
 async def list_sandboxes(inventory: Inventory) -> list[SandboxView]:
     return [sandbox_view(view) for view in await inventory.list_sandboxes()]
@@ -231,28 +208,18 @@ async def list_templates(inventory: Inventory) -> list[str]:
 class SandboxForm(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    policy_sets: list[str] | None = Field(
-        default=None,
-        description="The PolicySets a new Sandbox may name, where it is Agentplane's own kind, which takes "
-        "these in place of egress policies, Action policy sets and Kubernetes grants. Absent where it is "
-        "agent-sandbox's.",
-    )
+    policy_sets: list[str] = Field(description="The PolicySets a new Sandbox may name.")
 
 
 @router.get("/form")
 async def sandbox_form(services: Services) -> SandboxForm:
-    """Which grant fields the create form offers."""
-    if not services.presets.own_sandboxes:
-        return SandboxForm()
+    """What the create form offers."""
     return SandboxForm(policy_sets=await services.action_policy.policy_set_names())
 
 
 @router.post("", status_code=status.HTTP_201_CREATED)
-async def create_sandbox(spec: NewSandbox, services: Services, caller: Caller) -> SandboxView:
+async def create_sandbox(spec: NewSandbox, services: Services) -> SandboxView:
     """Create exactly the fields the caller selected; browser presets have already filled them."""
-    grants = resolve_grants(spec.kubernetes_grants, services.kubernetes_grants)
-    if grants and caller.kind is not CallerKind.OPERATOR:
-        raise HTTPException(status.HTTP_403_FORBIDDEN, "Kubernetes grant selection requires an operator session")
     return sandbox_view(await services.inventory.create(create_request(spec)))
 
 
@@ -997,8 +964,6 @@ _ERROR_STATUS: dict[type[Exception], int] = {
     # says it is not. The body parsed and named something that does not resolve.
     UnknownPolicyError: status.HTTP_422_UNPROCESSABLE_CONTENT,
     UnknownPolicySetError: status.HTTP_422_UNPROCESSABLE_CONTENT,
-    UnknownKubernetesGrantError: status.HTTP_422_UNPROCESSABLE_CONTENT,
-    DuplicateKubernetesGrantError: status.HTTP_422_UNPROCESSABLE_CONTENT,
     SandboxNotReachableError: status.HTTP_409_CONFLICT,
     runner_bridge.RunnerAdmissionTimeoutError: status.HTTP_504_GATEWAY_TIMEOUT,
     # The runner or the Sandbox's state refused a lifecycle request or a command: an unknown session.
@@ -1029,7 +994,6 @@ def create_app(
     reviewer: TokenReviewer | None = None,
     presets: PresetCatalog | None = None,
     operator_actions: FederatedOperatorActions | None = None,
-    kubernetes_grants: dict[str, KubernetesGrant] | None = None,
     *,
     electric: ElectricProxy,
     event_logs: EventLogStore,
@@ -1044,13 +1008,6 @@ def create_app(
     if set(catalog.harnesses) != set(Harness) or not any(catalog.harnesses.values()):
         raise ValueError(f"the model catalog needs every harness key and at least one offered model: {catalog=}")
     configured_presets = presets or PresetCatalog()
-    configured_grants = kubernetes_grants or {}
-    grant_views(configured_grants)  # validate catalog keys before serving requests
-    for name, preset in configured_presets.sandboxes.items():
-        try:
-            resolve_grants(preset.kubernetes_grants, configured_grants)
-        except (UnknownKubernetesGrantError, DuplicateKubernetesGrantError) as error:
-            raise ValueError(f"SandboxPreset {name!r}: {error}") from error
     for thread_preset_name, thread_preset in configured_presets.threads.items():
         if thread_preset.model not in catalog.harnesses[thread_preset.harness]:
             raise ValueError(
@@ -1100,7 +1057,6 @@ def create_app(
         notifications_token_file=notifications_token_file,
         models=catalog,
         presets=configured_presets,
-        kubernetes_grants=configured_grants,
         egress=egress,
         action_policy=action_policy,
         decisions=decisions,
@@ -1117,7 +1073,6 @@ def create_app(
         router,
         models,
         preset_router,
-        kubernetes_grants_router,
         runner_bridge.router,
         threads,
         actions_router,

@@ -18,7 +18,7 @@ def presets() -> PresetCatalog:
             "public-coder": SandboxPreset(
                 title="Public coder",
                 template="runner",
-                egress_policies=["github-agentydragon-agent"],
+                policy_sets=["github-agentydragon-agent"],
                 thread_preset="public-coder-codex",
                 bootstrap="mkdir -p /state/workspaces",
             )
@@ -55,19 +55,17 @@ def _preset(**grants: list[str]) -> SandboxPreset:
 
 
 @pytest.mark.parametrize(
-    ("own_sandboxes", "preset"),
+    "preset",
     [
-        (True, _preset(egress_policies=["github-agentydragon-agent"])),
-        (True, _preset(action_policy_sets=["github-reads"])),
-        (True, _preset(kubernetes_grants=["tool-config"])),
-        (False, _preset(policy_sets=["github-agentydragon-agent"])),
+        _preset(egress_policies=["github-agentydragon-agent"]),
+        _preset(action_policy_sets=["github-reads"]),
+        _preset(kubernetes_grants=["tool-config"]),
     ],
-    ids=["own-kind-egress", "own-kind-action", "own-kind-kubernetes", "agent-sandbox-policy-sets"],
+    ids=["egress", "action", "kubernetes"],
 )
-def test_a_preset_may_not_fill_fields_its_sandbox_kind_refuses(own_sandboxes: bool, preset: SandboxPreset) -> None:
+def test_a_preset_may_not_fill_fields_the_sandbox_service_refuses(preset: SandboxPreset) -> None:
     with pytest.raises(ValidationError, match="refuses"):
         PresetCatalog(
-            own_sandboxes=own_sandboxes,
             sandboxes={"misfit": preset},
             threads={"thread": ThreadPreset(title="Thread", harness=Harness.CODEX, model="preset-model")},
         )

@@ -12,7 +12,7 @@ from agentplane.acceptance.conftest import Sandboxes, wait_until_running
 from agentplane.app.testing.client import Client
 from agentplane.proto import runner_pb2
 from agentplane.runner.harness import Harness
-from util.agent_sandbox import OperatingMode
+from agentplane.sandbox_resource import OperatingMode
 
 # `runner_pb2.pyi` imports google.protobuf, which mypy follows for this direct dependency.
 # gazelle:include_dep @pypi//protobuf

@@ -19,21 +19,18 @@ import IconDotsVertical from "@tabler/icons-react/dist/esm/icons/IconDotsVertica
 import { type JSX, useEffect, useState } from "react";
 import { useSearchParams } from "react-router";
 
-import { readiness } from "./actions/policy";
 import {
   api,
   displayableError,
   models,
   modelsForHarness,
   harnessOptions,
-  type KubernetesGrantView,
   type ModelCatalog,
   type NewSandbox,
   type SandboxPresetView,
   type SandboxView,
   type SessionDefaults,
 } from "./client";
-import type { ActionPolicySetView } from "./actions/client";
 import { Disclosure } from "./disclosure";
 import { ConfirmDelete, deletable, SuspendResume } from "./lifecycle";
 import { liveSandboxesUrl, LiveStatus, useLive, type SandboxesSnapshot } from "./live";
@@ -46,9 +43,6 @@ import { TopbarTitle } from "./topbar";
 const EMPTY_FORM: NewSandbox = {
   name: "",
   template: "",
-  egress_policies: [],
-  action_policy_sets: [],
-  kubernetes_grants: [],
   policy_sets: [],
   bootstrap: "",
 };
@@ -58,12 +52,6 @@ const PRESET_PARAM = "preset";
 
 function hasSessionDefaults(defaults: SessionDefaults): boolean {
   return Object.values(defaults).some((value) => value !== undefined && value !== null && value !== "");
-}
-
-/** A set to pick, with the verdict the Action Service wrote on it: a refused set binds nothing. */
-function policySetOption(policySet: ActionPolicySetView): { value: string; label: string } {
-  const state = policySet.refused ? "invalid" : readiness(policySet.ready, policySet.generation).label;
-  return { value: policySet.name, label: state === "Ready" ? policySet.name : `${policySet.name} · ${state}` };
 }
 
 function StateBadge({ row }: { row: SandboxView }): JSX.Element {
@@ -80,23 +68,14 @@ export function SandboxList({ onOpen }: { onOpen: (name: string) => void }): JSX
   const [error, setError] = useState<string | null>(null);
   const [form, setForm] = useState<NewSandbox>(EMPTY_FORM);
   const [presets, setPresets] = useState<SandboxPresetView[]>([]);
-  const [kubernetesGrantOptions, setKubernetesGrantOptions] = useState<KubernetesGrantView[]>([]);
-  const [kubernetesGrantCatalogState, setKubernetesGrantCatalogState] = useState<"loading" | "ready" | "error">(
-    "loading"
-  );
   const [selectedPreset, setSelectedPreset] = useState<string | null>(null);
   const [thread, setThread] = useState<SessionDefaults>(EMPTY_THREAD);
   const [modelCatalog, setModelCatalog] = useState<ModelCatalog | null>(null);
   const modelOptions = thread.harness && modelCatalog ? modelsForHarness(modelCatalog, thread.harness) : [];
   const reasoningEfforts = modelOptions.find((option) => option.model === thread.model)?.reasoning_efforts ?? [];
-  // The namespace's egress policies; ticking some grants them to this sandbox alone.
-  const [egressPolicies, setEgressPolicies] = useState<string[]>([]);
   const [templates, setTemplates] = useState<string[]>([]);
-  // The namespace's action policy sets; a preset pre-fills the pick and the operator edits it.
-  const [policySets, setPolicySets] = useState<ActionPolicySetView[]>([]);
-  // Where Sandboxes are Agentplane's own kind, the PolicySets one may name, which replace the
-  // three grant pickers; null where they are agent-sandbox's.
-  const [ownPolicySets, setOwnPolicySets] = useState<string[] | null>(null);
+  // The PolicySets a new Sandbox may name; a preset pre-fills the pick and the operator edits it.
+  const [policySets, setPolicySets] = useState<string[]>([]);
   // The sandbox whose deletion is being confirmed, by name; deleting takes its volume with it.
   const [confirmingDelete, setConfirmingDelete] = useState<string | null>(null);
   const live = useLive<SandboxesSnapshot>(liveSandboxesUrl(), "Sandboxes");
@@ -114,9 +93,6 @@ export function SandboxList({ onOpen }: { onOpen: (name: string) => void }): JSX
       setForm((current) => ({
         ...current,
         template: "",
-        egress_policies: [],
-        action_policy_sets: [],
-        kubernetes_grants: [],
         policy_sets: [],
         bootstrap: "",
       }));
@@ -126,9 +102,6 @@ export function SandboxList({ onOpen }: { onOpen: (name: string) => void }): JSX
     setForm((current) => ({
       ...current,
       template: preset.template,
-      egress_policies: preset.egress_policies,
-      action_policy_sets: preset.action_policy_sets,
-      kubernetes_grants: preset.kubernetes_grants,
       policy_sets: preset.policy_sets,
       bootstrap: preset.bootstrap,
     }));
@@ -144,23 +117,9 @@ export function SandboxList({ onOpen }: { onOpen: (name: string) => void }): JSX
 
   useEffect(() => {
     void (async () => {
-      const { data: egressPolicyViews, error: policyFailure } = await api.GET("/egress/policies");
-      if (policyFailure) setError(displayableError(policyFailure));
-      else setEgressPolicies(egressPolicyViews.map((policy) => policy.name));
-      const { data: setViews, error: setFailure } = await api.GET("/action-policy/sets");
-      if (setFailure) setError(displayableError(setFailure));
-      else setPolicySets(setViews);
-      const { data: grantViews, error: grantFailure } = await api.GET("/kubernetes-grants");
-      if (grantFailure) {
-        setError(displayableError(grantFailure));
-        setKubernetesGrantCatalogState("error");
-      } else {
-        setKubernetesGrantOptions(grantViews);
-        setKubernetesGrantCatalogState("ready");
-      }
       const { data: sandboxForm, error: formFailure } = await api.GET("/sandboxes/form");
       if (formFailure) setError(displayableError(formFailure));
-      else setOwnPolicySets(sandboxForm.policy_sets ?? null);
+      else setPolicySets(sandboxForm.policy_sets);
       const { data: presetViews } = await api.GET("/presets");
       setPresets(presetViews ?? []);
       const { data: templateNames, error: templateFailure } = await api.GET("/sandboxes/templates");
@@ -276,68 +235,20 @@ export function SandboxList({ onOpen }: { onOpen: (name: string) => void }): JSX
           placeholder={templates.length > 0 ? "Choose a template" : "Loading templates…"}
           style={{ flex: "1 1 14rem" }}
         />
-        {ownPolicySets !== null ? (
-          <MultiSelect
-            label="Policy sets"
-            description="What this sandbox may reach and do"
-            hidePickedOptions
-            data={ownPolicySets}
-            value={form.policy_sets ?? []}
-            onChange={(picked) => setForm({ ...form, policy_sets: picked })}
-            style={{ flex: "1 1 18rem" }}
-          />
-        ) : (
-          <>
-            <MultiSelect
-              label="Egress policies"
-              description="What this sandbox may reach"
-              hidePickedOptions
-              data={egressPolicies.filter((policy) => !(form.egress_policies ?? []).includes(policy))}
-              value={form.egress_policies ?? []}
-              onChange={(picked) => setForm({ ...form, egress_policies: picked })}
-              style={{ flex: "1 1 12rem" }}
-            />
-            <MultiSelect
-              label="Action policy sets"
-              description="What its harness may do without the operator"
-              hidePickedOptions
-              data={policySets.map(policySetOption)}
-              value={form.action_policy_sets ?? []}
-              onChange={(picked) => setForm({ ...form, action_policy_sets: picked })}
-              style={{ flex: "1 1 12rem" }}
-            />
-            {/* TODO: The selected workspace-read grant can horizontally overflow the phone launch form
-              when this selector opens; constrain its pill layout without shifting the page. */}
-            <MultiSelect
-              label="Kubernetes grants"
-              description="Roles bound to this sandbox's ServiceAccount"
-              hidePickedOptions
-              data={kubernetesGrantOptions.map((grant) => ({
-                value: grant.name,
-                label: `${grant.name} · ${grant.kind} · ${grant.namespace ? `namespace ${grant.namespace}` : "cluster"} → ${grant.role_ref.kind}/${grant.role_ref.name}`,
-              }))}
-              value={form.kubernetes_grants ?? []}
-              onChange={(picked) => setForm({ ...form, kubernetes_grants: picked })}
-              disabled={kubernetesGrantCatalogState !== "ready"}
-              placeholder={
-                kubernetesGrantCatalogState === "ready"
-                  ? kubernetesGrantOptions.length > 0
-                    ? "Select Kubernetes grants"
-                    : "No Kubernetes grants available"
-                  : kubernetesGrantCatalogState === "loading"
-                    ? "Loading Kubernetes grants…"
-                    : "Could not load Kubernetes grants"
-              }
-              style={{ flex: "1 1 18rem" }}
-            />
-          </>
-        )}
+        <MultiSelect
+          label="Policy sets"
+          description="What this sandbox may reach and do"
+          hidePickedOptions
+          data={policySets}
+          value={form.policy_sets ?? []}
+          onChange={(picked) => setForm({ ...form, policy_sets: picked })}
+          style={{ flex: "1 1 18rem" }}
+        />
         <Button
           onClick={() => void create()}
           disabled={
             nameError !== null ||
             !form.template ||
-            kubernetesGrantCatalogState !== "ready" ||
             Boolean(selectedPreset && (!thread.model || !modelOptions.some((option) => option.model === thread.model)))
           }
         >

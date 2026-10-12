@@ -25,8 +25,8 @@ from more_itertools import one
 from agentplane.crd_group import GROUP, VERSION
 from agentplane.egress.resources import BINDINGS_PLURAL, CREDENTIALS_PLURAL, POLICIES_PLURAL
 from agentplane.policy_sets import POLICY_BINDINGS_PLURAL, POLICY_SETS_PLURAL
+from agentplane.sandbox_resource import SANDBOX_API_VERSION, SANDBOX_KIND, SANDBOXES_PLURAL
 from agentplane.workload_auth.principal import POD_NAME_CLAIM, POD_UID_CLAIM
-from util.agent_sandbox import SANDBOX_API, SANDBOX_KIND, SANDBOXES_PLURAL
 
 NAMESPACE = "agentplane-egress-test"
 SANDBOX_NAMESPACE = "agentplane-egress-test-sandboxes"
@@ -138,13 +138,6 @@ class FakeApiServer:
         for queue in self._watchers:
             queue.put_nowait(None)
 
-    def _store(self, request: web.Request) -> str:
-        """The store a request reads: its plural, or `<plural>.<group>` where this server keeps one
-        for a plural that two groups share."""
-        plural = request.match_info["plural"]
-        qualified = f"{plural}.{request.match_info.get('group')}"
-        return qualified if qualified in self.namespace_of else plural
-
     async def token_review(self, request: web.Request) -> web.Response:
         self.token_reviews += 1
         body = await request.json()
@@ -191,7 +184,7 @@ class FakeApiServer:
     async def list_or_watch(self, request: web.Request) -> web.StreamResponse:
         if not self.watch_available:
             return web.Response(status=503)
-        plural = self._store(request)
+        plural = request.match_info["plural"]
         assert request.match_info["namespace"] == self.namespace_of[plural]
         selector = request.query.get("labelSelector", "")
         # The client spells the flag `True`, which the real server parses like `true`.
@@ -257,7 +250,7 @@ class FakeApiServer:
         return response
 
     async def get_object(self, request: web.Request) -> web.Response:
-        plural, name = self._store(request), request.match_info["name"]
+        plural, name = request.match_info["plural"], request.match_info["name"]
         assert request.match_info["namespace"] == self.namespace_of[plural]
         obj = self.objects[plural].get(name)
         if obj is None:
@@ -265,7 +258,7 @@ class FakeApiServer:
         return web.json_response(obj)
 
     async def create_object(self, request: web.Request) -> web.Response:
-        plural = self._store(request)
+        plural = request.match_info["plural"]
         assert request.match_info["namespace"] == self.namespace_of[plural]
         body = await request.json()
         if body["metadata"]["name"] in self.objects[plural]:
@@ -275,7 +268,7 @@ class FakeApiServer:
 
     async def replace_object(self, request: web.Request) -> web.Response:
         """PUT, with the `resourceVersion` precondition the real server applies when the body names one."""
-        plural, name = self._store(request), request.match_info["name"]
+        plural, name = request.match_info["plural"], request.match_info["name"]
         assert request.match_info["namespace"] == self.namespace_of[plural]
         body = await request.json()
         current = self.objects[plural].get(name)
@@ -290,7 +283,7 @@ class FakeApiServer:
     async def patch_object(self, request: web.Request) -> web.Response:
         """A JSON merge patch, with the `resourceVersion` precondition the real server applies when
         the patch names one."""
-        plural, name = self._store(request), request.match_info["name"]
+        plural, name = request.match_info["plural"], request.match_info["name"]
         assert request.match_info["namespace"] == self.namespace_of[plural]
         assert request.content_type == "application/merge-patch+json"
         patch = await request.json()
@@ -304,7 +297,7 @@ class FakeApiServer:
         return web.json_response(self.objects[plural][name])
 
     async def patch_status(self, request: web.Request) -> web.Response:
-        plural, name = self._store(request), request.match_info["name"]
+        plural, name = request.match_info["plural"], request.match_info["name"]
         assert request.match_info["namespace"] == self.namespace_of[plural]
         patch = await request.json()
         self.status_patches.append((name, patch["status"]))
@@ -344,7 +337,12 @@ def _merge_patch(target: dict[str, Any], patch: dict[str, Any]) -> dict[str, Any
 
 
 def sandbox(name: str) -> dict[str, Any]:
-    return {"apiVersion": SANDBOX_API.api_version, "kind": SANDBOX_KIND, "metadata": {"name": name}, "spec": {}}
+    return {
+        "apiVersion": SANDBOX_API_VERSION,
+        "kind": SANDBOX_KIND,
+        "metadata": {"name": name, "creationTimestamp": "2026-09-01T11:00:00Z"},
+        "spec": {"template": "test-runner", "running": True},
+    }
 
 
 def sandbox_uid(name: str) -> str:
@@ -353,8 +351,11 @@ def sandbox_uid(name: str) -> str:
 
 
 def pod_for(fake: FakeApiServer, sandbox_name: str, *, pod_uid: str, ip: str) -> dict[str, Any]:
-    """The Sandbox's Pod, controlled by the stored Sandbox and carrying `pod_uid` and `ip`."""
-    owner = fake.objects[SANDBOXES_PLURAL][sandbox_name]["metadata"]
+    """The Sandbox's Pod, controlled by the stored Sandbox and carrying `pod_uid` and `ip`, which the
+    stored Sandbox reports as its incarnation as the Sandbox Controller would."""
+    stored = fake.objects[SANDBOXES_PLURAL][sandbox_name]
+    stored.setdefault("status", {})["incarnation"] = {"name": sandbox_name, "uid": pod_uid}
+    owner = stored["metadata"]
     return {
         "apiVersion": "v1",
         "kind": "Pod",
@@ -364,7 +365,7 @@ def pod_for(fake: FakeApiServer, sandbox_name: str, *, pod_uid: str, ip: str) ->
             "uid": pod_uid,
             "ownerReferences": [
                 {
-                    "apiVersion": SANDBOX_API.api_version,
+                    "apiVersion": SANDBOX_API_VERSION,
                     "kind": SANDBOX_KIND,
                     "name": sandbox_name,
                     "uid": owner["uid"],

@@ -10,9 +10,7 @@ py_library(
     testonly = True,
     srcs = ["kubernetes.py"],
     deps = [
-        ":fake_inventory",
         ":grpc_service",
-        "//agentplane:crd_group",
         "//agentplane:grpc_calls",
         "//agentplane:sandbox_resource",
         "//agentplane:subjects",
@@ -24,17 +22,12 @@ py_library(
         "//agentplane/runner_gateway/testing:control_listener",
         "//agentplane/runner_gateway/testing:grpc_service",
         "//agentplane/runner_gateway/testing:resources",
-        "//agentplane/sandbox_service:action_policy",
-        "//agentplane/sandbox_service:binding_storage",
         "//agentplane/sandbox_service:client",
         "//agentplane/sandbox_service:egress",
         "//agentplane/sandbox_service:inventory",
-        "//agentplane/sandbox_service:kubernetes_bindings",
-        "//agentplane/sandbox_service:kubernetes_views",
         "//agentplane/sandbox_service:provisioning",
         "//agentplane/testing:fake_apiserver",
         "//agentplane/workload_auth:principal",
-        "//util:agent_sandbox",
         "//util:kubernetes",
         "//util/testing:sqlalchemy_engines",
         "@pypi//kubernetes_asyncio",
@@ -47,20 +40,10 @@ py_library(
     testonly = True,
     srcs = ["fake_inventory.py"],
     deps = [
-        "//agentplane:crd_group",
         "//agentplane:sandbox_resource",
         "//agentplane/sandbox_service:egress_views",
-        "//agentplane/sandbox_service:kubernetes_views",
-        "//agentplane/sandbox_service:runner_endpoints",
         "@pypi//kubernetes_asyncio",
     ],
-)
-
-py_library(
-    name = "fake_rbac",
-    testonly = True,
-    srcs = ["fake_rbac.py"],
-    deps = ["@pypi//kubernetes_asyncio"],
 )
 
 py_library(
@@ -81,34 +64,24 @@ py_library(
     srcs = ["backend.py"],
     deps = [
         ":fake_inventory",
-        ":fake_rbac",
         ":grpc_service",
+        "//agentplane:sandbox_resource",
         "//agentplane:subjects",
         "//agentplane/runner_gateway:client",
         "//agentplane/runner_gateway:destinations",
         "//agentplane/runner_gateway/testing:control_listener",
         "//agentplane/runner_gateway/testing:grpc_service",
         "//agentplane/runner_gateway/testing:resources",
-        "//agentplane/sandbox_service:action_policy",
         "//agentplane/sandbox_service:client",
         "//agentplane/sandbox_service:egress",
         "//agentplane/sandbox_service:inventory",
-        "//agentplane/sandbox_service:kubernetes_bindings",
-        "//agentplane/sandbox_service:kubernetes_grants",
         "//agentplane/sandbox_service:provisioning",
         "//agentplane/testing:fake_apiserver",
         "//agentplane/workload_auth:principal",
-        "//util:agent_sandbox",
         "//util:kubernetes",
         "//util/testing:sqlalchemy_engines",
         "@pypi//anyio",
         "@pypi//grpcio",
         "@pypi//kubernetes_asyncio",
     ],
-)
-
-py_library(
-    name = "teardown",
-    srcs = ["teardown.py"],
-    deps = ["//agentplane/sandbox_service:inventory"],
 )

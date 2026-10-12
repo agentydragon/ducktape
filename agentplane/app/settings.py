@@ -38,13 +38,11 @@ class AppSettingsConfig(YamlFileSettings):
         default_factory=dict, description="App-owned Sandbox launch-form presets keyed by displayable name."
     )
     kubernetes_grants: dict[str, KubernetesGrant] = Field(
-        default_factory=dict, description="Enabled Kubernetes binding templates; launch requests select names only."
+        default_factory=dict,
+        description="The deployment's Kubernetes grant catalog, which the manifest generator expands into PolicySets.",
     )
-    own_sandboxes: bool = Field(
-        default=False,
-        description="The Sandbox Service creates Agentplane's own Sandbox kind: the launch form and presets "
-        "name policy sets in place of egress policies, Action policy sets and Kubernetes grants.",
-    )
+    # CLEANUP(added 2026-10-12): drop once the manifests stop setting it (the cdk8s PR after this one).
+    own_sandboxes: bool = False
     egress_admin_url: HttpEndpointUrl = Field(description="The egress proxy's admin port, serving /decisions.")
     action_federation: ActionFederationSettings
 

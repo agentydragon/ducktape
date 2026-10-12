@@ -28,7 +28,6 @@ def build_resources(
         principals=principals,
         destinations=destinations,
         caller_accounts=caller_accounts,
-        sealer_accounts=frozenset(),
         platform_instructions=platform_instructions,
         sessions=SessionRegistry(engine),
         control=LifecycleControl(ConnectionLeases()),

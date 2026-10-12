@@ -131,41 +131,6 @@ function ConditionsTable({ title, conditions }: { title: string; conditions: Raw
   );
 }
 
-function KubernetesGrantStatus({ sandbox }: { sandbox: SandboxView }): JSX.Element {
-  return (
-    <Stack gap="xs">
-      <Group gap="xs">
-        <Title order={5}>Kubernetes grants</Title>
-        {!sandbox.kubernetes_grants_ready && (
-          <Badge color={sandbox.kubernetes_grant_error ? "red" : "yellow"}>
-            {sandbox.kubernetes_grant_error ? "Error" : "Applying"}
-          </Badge>
-        )}
-      </Group>
-      {sandbox.kubernetes_grant_error && (
-        <Text c="red" role="alert">
-          {sandbox.kubernetes_grant_error}
-        </Text>
-      )}
-      {sandbox.kubernetes_grants.length > 0 ? (
-        sandbox.kubernetes_grants.map(({ name, grant }) => (
-          <Text key={name} size="sm">
-            {name} · {grant.kind}
-            {grant.kind === "RoleBinding" ? ` · namespace ${grant.namespace}` : " · cluster"} → {grant.role_ref.kind}/
-            {grant.role_ref.name}
-          </Text>
-        ))
-      ) : (
-        <Text size="sm" c="dimmed">
-          {sandbox.kubernetes_grants_ready
-            ? "No Kubernetes grants selected."
-            : "Waiting for the selected grants to apply."}
-        </Text>
-      )}
-    </Stack>
-  );
-}
-
 /** What Kubernetes says about the sandbox: the Sandbox CR's own status, then its Pod's. */
 function StatusView({ sandbox }: { sandbox: SandboxView }): JSX.Element {
   const [raw, setRaw] = useState(false);
@@ -586,13 +551,7 @@ export function SandboxPage({
       )}
       {error && <Text c="red">{error}</Text>}
       {live.snapshot !== null && sandbox === null && <Text c="red">There is no sandbox {name} any more.</Text>}
-      {sandbox && !ready && (
-        <Text>
-          {sandbox.launch_grants_pending || !sandbox.kubernetes_grants_ready
-            ? "Launch or Kubernetes grants are not ready; sessions cannot start yet."
-            : "Sessions need a ready Pod."}
-        </Text>
-      )}
+      {sandbox && !ready && <Text>Sandbox status: {sandboxSummary(sandbox).label}. Sessions need a ready Pod.</Text>}
       <Tabs
         value={tab}
         onChange={(value) => {
