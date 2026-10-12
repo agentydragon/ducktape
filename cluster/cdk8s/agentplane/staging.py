@@ -28,7 +28,7 @@ from agentplane.action_service.sandbox.actions import SandboxAction
 from agentplane.action_service.sandbox.binding import SandboxExecutorBinding
 from agentplane.app.action_federation_settings import ExchangeFederationSettings
 from cluster.cdk8s import agent_access_profiles, cilium, external_creds, ha_mcp, node_scheduling
-from cluster.cdk8s.agentplane import actions, command_sandbox, notifications, staging_config
+from cluster.cdk8s.agentplane import actions, command_sandbox, notifications, policy_controller, staging_config
 from cluster.cdk8s.agentplane.actions_staging_policies import add_staging_action_policies
 from cluster.cdk8s.agentplane.chart import environment_chart
 from cluster.cdk8s.agentplane.egress_credentials import (
@@ -418,6 +418,15 @@ def chart(app: App) -> Chart:
         ingress=[IngressRule.from_gateway(notification_service.pod_port)],
     )
     command_sandbox.CommandSandbox(chart, "command-sandbox", ENV)
+    # Staging alone: the grant catalog its sets draw on, and the delegation of RoleBinding writes in
+    # other namespaces, exist only here.
+    catalog = ENV.app_config.kubernetes_grants
+    policy_controller.PolicyController(
+        chart,
+        "policy-controller",
+        ENV,
+        sets={name: [catalog[grant] for grant in grants] for name, grants in agent_access_profiles.POLICY_SETS.items()},
+    )
     reader = ServiceAccount(
         chart,
         "external-creds-reader",

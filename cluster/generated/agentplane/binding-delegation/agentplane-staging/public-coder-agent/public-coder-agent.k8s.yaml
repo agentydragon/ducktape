@@ -57,3 +57,6 @@ subjects:
   - kind: ServiceAccount
     name: agentplane-sandbox-service
     namespace: agentplane-staging
+  - kind: ServiceAccount
+    name: agentplane-policy-controller
+    namespace: agentplane-staging

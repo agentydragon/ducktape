@@ -1,9 +1,9 @@
 # Reusable Kubernetes RBAC grant groups
 
 Status: **design decided (operator, 2026-10-12 PDT); the CRDs and the
-[Policy Controller](../policy_controller/SPEC.md) are built, not yet deployed.** The
-[task DAG](task_dag.md) tracks the rest as `K8S_POLICY_DEPLOY` through `POLICY_RUNTIME_GRANTS`,
-plus `MANAGED_SA_RBAC` (accounts without a Sandbox). Existing
+[Policy Controller](../policy_controller/SPEC.md) run in staging, with Flux-owned sets and no
+bindings yet.** The [task DAG](task_dag.md) tracks the rest as `POLICY_SANDBOX_CUTOVER` through
+`POLICY_RUNTIME_GRANTS`, plus `MANAGED_SA_RBAC` (accounts without a Sandbox). Existing
 [agent RBAC documentation](../../cluster/docs/agent_rbac.md) describes deployed/static
 ownership; it remains the source for current grant scope.
 

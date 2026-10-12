@@ -17,6 +17,11 @@ A [controller-runtime](https://github.com/kubernetes-sigs/controller-runtime) co
 
 ## Running
 
+Staging runs it from [`cluster/cdk8s/agentplane/policy_controller.py`](../../cluster/cdk8s/agentplane/policy_controller.py),
+which also renders the Flux-owned PolicySets from the grant catalog in
+[`agent_access_profiles.py`](../../cluster/cdk8s/agent_access_profiles.py) and alerts when a
+`PolicyBinding` outlives its `expiresAt`. Locally:
+
 ```bash
 bb run //agentplane/policy_controller/cmd:policy-controller -- \
   --policy-namespace=agentplane-staging --subject-namespaces=agentplane-staging
@@ -25,7 +30,9 @@ bb run //agentplane/policy_controller/cmd:policy-controller -- \
 It uses the in-cluster config or `KUBECONFIG`. Its ServiceAccount needs to list and watch
 PolicySets, PolicyBindings and ServiceAccounts, delete PolicyBindings, apply PolicyBinding status,
 read the referenced Roles and ClusterRoles, list and watch RoleBindings and ClusterRoleBindings
-cluster-wide, and create and delete them where sets grant, with `bind` on each referenced role.
+cluster-wide, and create and delete them where sets grant, with `bind` on each referenced role. It
+serves metrics on `:8080` and `/healthz`/`/readyz` on `:8081`, and replicas elect a leader by a
+Lease in the policy namespace.
 
 ## Design notes
 

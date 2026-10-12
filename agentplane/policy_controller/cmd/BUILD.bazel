@@ -15,7 +15,9 @@ go_library(
         "@io_k8s_sigs_controller_runtime//:controller-runtime",
         "@io_k8s_sigs_controller_runtime//pkg/cache",
         "@io_k8s_sigs_controller_runtime//pkg/client",
+        "@io_k8s_sigs_controller_runtime//pkg/healthz",
         "@io_k8s_sigs_controller_runtime//pkg/log/zap",
+        "@io_k8s_sigs_controller_runtime//pkg/metrics/server",
     ],
 )
 
@@ -23,4 +25,5 @@ go_binary(
     name = "policy-controller",
     embed = [":cmd_lib"],
     pure = "on",
+    visibility = ["//agentplane/policy_controller:__pkg__"],
 )

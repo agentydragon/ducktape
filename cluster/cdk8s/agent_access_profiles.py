@@ -160,6 +160,17 @@ TESTING_ACCESS = ("agentplane-testing-operator", "agentplane-testing-login")
 PUBLIC_INVENTORY = ("public-coder-node-read", "public-coder-cluster-metadata-read")
 HAKU_EXTRAS = ("cluster-diagnostics", "haku-sandbox-write")
 PUBLIC_GRANTS = (*SHARED_DIAGNOSTICS, *TESTING_ACCESS, *PUBLIC_INVENTORY)
+# The Flux-owned PolicySets the Policy Controller expands, one per launch choice: a set's rules
+# are its catalog grants, with one RoleBinding rule per role across all its namespaces.
+POLICY_SETS = {
+    "shared-diagnostics": SHARED_DIAGNOSTICS,
+    "testing-access": TESTING_ACCESS,
+    "public-inventory": PUBLIC_INVENTORY,
+    "cluster-diagnostics": ("cluster-diagnostics",),
+    "haku-sandbox-write": ("haku-sandbox-write",),
+    "coinbase-credentials": ("coinbase-credentials",),
+    "spend-policy-config": ("spend-policy-config",),
+}
 MANAGED_GRANTS = {
     "public-coder": PUBLIC_GRANTS,
     "finance-agent": (*PUBLIC_GRANTS, "coinbase-credentials", "spend-policy-config"),

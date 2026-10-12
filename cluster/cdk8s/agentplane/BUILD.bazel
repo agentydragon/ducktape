@@ -180,6 +180,29 @@ py_library(
 )
 
 py_library(
+    name = "policy_controller",
+    srcs = ["policy_controller.py"],
+    deps = [
+        ":environment",
+        ":service_workload",
+        "//agentplane/crds:policyset",
+        "//agentplane/sandbox_service:kubernetes_grants",
+        "//cluster/cdk8s:api_resource",
+        "//cluster/cdk8s:cilium",
+        "//cluster/cdk8s:probes",
+        "//cluster/cdk8s:service_ref",
+        "//cluster/cdk8s/providers/agentplane:policy_set",
+        "//cluster/cdk8s/providers/cilium:network_policy",
+        "//cluster/cdk8s/providers/prometheus_operator:prometheus_rule",
+        "//cluster/cdk8s/providers/prometheus_operator:service_monitor",
+        "//cluster/cdk8s/providers/prometheus_operator:servicemonitor",
+        "@pypi//cdk8s",
+        "@pypi//cdk8s_plus_34",
+        "@pypi//constructs",
+    ],
+)
+
+py_library(
     name = "llm_ingress",
     srcs = ["llm_ingress.py"],
     deps = [
@@ -308,6 +331,7 @@ py_library(
     visibility = ["//cluster/cdk8s:__pkg__"],
     deps = [
         ":environment",
+        ":policy_controller",
         ":sandbox_service",
         "//agentplane/sandbox_service:kubernetes_grants",
         "//cluster/cdk8s:flux",
@@ -536,6 +560,7 @@ py_library(
         ":llm_ingress",
         ":namespaces",
         ":notifications",
+        ":policy_controller",
         ":runner_sandbox",
         ":staging_config",
         "//agentplane/action_service:catalog",

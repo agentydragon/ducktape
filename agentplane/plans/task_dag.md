@@ -477,11 +477,9 @@ flowchart LR
     EGRESS_POLICY_MIGRATE[Candidate: egress policies move to PolicySet]
     ACTION_POLICY_MIGRATE --> OLD_POLICY_KINDS_DROP[Blocked: drop the old policy kinds]
     EGRESS_POLICY_MIGRATE --> OLD_POLICY_KINDS_DROP
-    ACTION_POLICY_MIGRATE --> POLICY_SANDBOX_CUTOVER
+    ACTION_POLICY_MIGRATE --> POLICY_SANDBOX_CUTOVER[Blocked: Sandboxes take policy sets]
     EGRESS_POLICY_MIGRATE --> POLICY_SANDBOX_CUTOVER
-    K8S_POLICY_DEPLOY[Candidate: deploy the controller] --> POLICY_SANDBOX_CUTOVER[Blocked: Sandboxes take policy sets]
     POLICY_SANDBOX_CUTOVER --> POLICY_RUNTIME_GRANTS[Blocked: time-limited grants of any rule type]
-    K8S_POLICY_DEPLOY --> MANAGED_SA_RBAC
     POLICY_SANDBOX_CUTOVER --> SANDBOX_RBAC
     POLICY_SANDBOX_CUTOVER --> OLD_POLICY_KINDS_DROP
     BOOTSTRAP_PROGRESS_CONTRACT[Candidate: asynchronous Sandbox bootstrap]
@@ -508,16 +506,9 @@ into an outage matrix. Source: [public-coder wiring](../../cluster/cdk8s/public_
 Kubernetes scope and egress/Action grants. Record intended authority in generated configuration,
 not ad hoc grants. Test an allowed and denied operation; do not add privileges as part of this review.
 
-### `K8S_POLICY_DEPLOY` — deploy the Policy Controller
-
-**Candidate.** A cdk8s Deployment with its own SA and RBAC: create/delete of
-bindings and `bind` limited to the generated `resourceNames`. Flux-owned sets are generated from
-`namespace_access` and `agent_access_profiles`. Alert on a `PolicyBinding` past its `expiresAt`. The
-README diagram gains the controller.
-
 ### `POLICY_SANDBOX_CUTOVER` — Sandboxes take policy sets
 
-**Blocked on the deployment and both policy migrations; decision card before the PR.** Every
+**Blocked on both policy migrations; decision card before the PR.** Every
 cutover recreates staging Sandboxes rather than converting their bindings, so the Action, egress and
 Kubernetes cutovers share one recreate under one card. Sandbox Service takes set names at create and writes the
 Sandbox's one `PolicyBinding`, owner-referenced to it (the agent-sandbox `Sandbox` until
@@ -563,7 +554,7 @@ presets' separate `egress_policies`, `action_policy_sets` and `kubernetes_grants
 
 ### `MANAGED_SA_RBAC` — grants for accounts without a Sandbox
 
-**Blocked on the caller review and the deployed controller.** The claude.ai caller gets a
+**Blocked on the caller review.** The claude.ai caller gets a
 Flux-owned `PolicyBinding` of the sets `CLAUDE_AI_SA` approves, of any rule type, replacing its
 static per-namespace grants in `agent_access_profiles.py`. Static Group subjects (Haku OIDC,
 public-coder) stay Flux bindings. Test an allowed and a denied request. Static caller accounts' bindings, this one among them, are Flux-owned, never Sandbox-owned.

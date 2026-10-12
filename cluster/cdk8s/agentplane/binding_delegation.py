@@ -1,4 +1,5 @@
-"""Per-target-namespace delegation for Agentplane-managed Sandbox RoleBindings.
+"""Per-target-namespace delegation for Agentplane-managed RoleBindings: the Sandbox Service's and the
+Policy Controller's, whose PolicySets are drawn from the same grant catalog.
 
 Each external namespace has its own Flux Kustomization. An absent or suspended
 service namespace cannot make the Agentplane app Kustomization fail to apply.
@@ -16,7 +17,7 @@ from cdk8s_plus_34 import k8s
 from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecSourceRef, KustomizationSpecSourceRefKind
 
 from agentplane.sandbox_service.kubernetes_grants import RoleBindingGrant
-from cluster.cdk8s.agentplane import sandbox_service
+from cluster.cdk8s.agentplane import policy_controller, sandbox_service
 from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on, kustomize_kustomization
 from cluster.cdk8s.generation import write_charts, write_yaml
@@ -76,7 +77,10 @@ def chart(app: App, env: Environment, target_namespace: str) -> Chart:
         "role-binding",
         metadata=k8s.ObjectMeta(name=role_name, namespace=target_namespace),
         role_ref=k8s.RoleRef(api_group=_RBAC_GROUP, kind="Role", name=role_name),
-        subjects=[k8s.Subject(kind="ServiceAccount", name=sandbox_service.NAME, namespace=env.namespace)],
+        subjects=[
+            k8s.Subject(kind="ServiceAccount", name=account, namespace=env.namespace)
+            for account in (sandbox_service.NAME, policy_controller.NAME)
+        ],
     )
     return scope
 
@@ -113,5 +117,5 @@ def add_flux_kustomizations(
             source,
             path=f"./{directory(env, target_namespace)}",
             depends_on=[flux_kustomization_depends_on(dependency)] if dependency is not None else None,
-            description=f"Delegates managed Sandbox RoleBinding reconciliation in {target_namespace}.",
+            description=f"Delegates managed RoleBinding reconciliation in {target_namespace}.",
         )

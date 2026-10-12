@@ -9,6 +9,7 @@
 # gazelle:resolve py agentplane_egresspolicy_crds //agentplane/crds:egresspolicy
 # gazelle:resolve py agentplane_egresscredential_crds //agentplane/crds:egresscredential
 # gazelle:resolve py agentplane_egressbinding_crds //agentplane/crds:egressbinding
+# gazelle:resolve py agentplane_policyset_crds //agentplane/crds:policyset
 
 load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
@@ -54,6 +55,17 @@ py_library(
     visibility = ["//cluster/cdk8s:__subpackages__"],
     deps = [
         "//agentplane/crds:actionpolicyset",
+        "@pypi//cdk8s",
+        "@pypi//constructs",
+    ],
+)
+
+py_library(
+    name = "policy_set",
+    srcs = ["policy_set.py"],
+    visibility = ["//cluster/cdk8s:__subpackages__"],
+    deps = [
+        "//agentplane/crds:policyset",
         "@pypi//cdk8s",
         "@pypi//constructs",
     ],

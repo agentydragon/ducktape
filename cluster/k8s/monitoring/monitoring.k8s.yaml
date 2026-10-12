@@ -310,6 +310,26 @@ spec:
                       type: Gauge
                     help: Flux GitRepository artifact size in bytes.
                     name: flux_gitrepository_artifact_size_bytes
+              - groupVersionKind:
+                  group: agentplane.allegedly.works
+                  kind: PolicyBinding
+                  version: v1alpha1
+                labelsFromPath:
+                  name:
+                    - metadata
+                    - name
+                  namespace:
+                    - metadata
+                    - namespace
+                metrics:
+                  - each:
+                      gauge:
+                        path:
+                          - spec
+                          - expiresAt
+                      type: Gauge
+                    help: A PolicyBinding's spec.expiresAt, in Unix seconds.
+                    name: agentplane_policybinding_expires_at
         enabled: true
       fullnameOverride: kube-state-metrics
       metricLabelsAllowlist:
@@ -343,6 +363,13 @@ spec:
               - source.toolkit.fluxcd.io
             resources:
               - gitrepositories
+            verbs:
+              - list
+              - watch
+          - apiGroups:
+              - agentplane.allegedly.works
+            resources:
+              - policybindings
             verbs:
               - list
               - watch

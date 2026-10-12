@@ -1,4 +1,6 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load")
+load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
 
 go_library(
     name = "policy_controller",
@@ -42,4 +44,28 @@ go_test(
         "@io_k8s_sigs_controller_runtime//pkg/client/fake",
         "@io_k8s_sigs_controller_runtime//pkg/reconcile",
     ],
+)
+
+pkg_tar(
+    name = "binary_layer",
+    srcs = ["//agentplane/policy_controller/cmd:policy-controller"],
+    package_dir = "/usr/local/bin",
+)
+
+# Talks only to the API server, through the in-cluster ServiceAccount CA, so it needs no system
+# CA bundle.
+oci_image(
+    name = "image",
+    base = "@debian_trixie_slim_linux_amd64",
+    entrypoint = ["/usr/local/bin/policy-controller"],
+    labels = {"org.opencontainers.image.source": "https://github.com/agentydragon/ducktape"},
+    tars = [":binary_layer"],
+    user = "1000:1000",
+    visibility = ["//visibility:public"],
+)
+
+oci_load(
+    name = "load",
+    image = ":image",
+    repo_tags = ["agentplane-policy-controller:latest"],
 )

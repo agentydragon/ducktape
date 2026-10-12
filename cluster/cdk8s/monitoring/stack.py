@@ -379,6 +379,7 @@ def _values() -> dict[str, object]:
                         ("kustomize.toolkit.fluxcd.io", "kustomizations"),
                         ("helm.toolkit.fluxcd.io", "helmreleases"),
                         ("source.toolkit.fluxcd.io", "gitrepositories"),
+                        ("agentplane.allegedly.works", "policybindings"),
                     )
                 ]
             },
@@ -404,6 +405,26 @@ def _values() -> dict[str, object]:
                                     },
                                 },
                             ),
+                            # A PolicyBinding still present past it is an expiry the Policy
+                            # Controller has not carried out (agentplane/policy_controller/SPEC.md).
+                            {
+                                "groupVersionKind": {
+                                    "group": "agentplane.allegedly.works",
+                                    "version": "v1alpha1",
+                                    "kind": "PolicyBinding",
+                                },
+                                "labelsFromPath": {
+                                    "namespace": ["metadata", "namespace"],
+                                    "name": ["metadata", "name"],
+                                },
+                                "metrics": [
+                                    {
+                                        "name": "agentplane_policybinding_expires_at",
+                                        "help": "A PolicyBinding's spec.expiresAt, in Unix seconds.",
+                                        "each": {"type": "Gauge", "gauge": {"path": ["spec", "expiresAt"]}},
+                                    }
+                                ],
+                            },
                         ]
                     },
                 },

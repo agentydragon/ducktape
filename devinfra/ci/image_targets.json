@@ -276,6 +276,11 @@
       "test": "//agentplane/history_service/...",
       "registry": "forgejo"
     },
+    "agentplane-policy-controller": {
+      "target": "//agentplane/policy_controller:image",
+      "test": "//agentplane/policy_controller/...",
+      "registry": "forgejo"
+    },
     "agentplane-runner-gateway": {
       "target": "//agentplane/runner_gateway:image",
       "test": "//agentplane/runner_gateway/...",

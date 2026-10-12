@@ -3939,6 +3939,10 @@ spec:
       kind: Deployment
       name: agentplane-notifications
       namespace: agentplane-staging
+    - apiVersion: apps/v1
+      kind: Deployment
+      name: agentplane-policy-controller
+      namespace: agentplane-staging
     - apiVersion: cert-manager.io/v1
       kind: Certificate
       name: agentplane-egress-root-ca
@@ -4075,7 +4079,7 @@ apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
   annotations:
-    description: Delegates managed Sandbox RoleBinding reconciliation in activitywatch.
+    description: Delegates managed RoleBinding reconciliation in activitywatch.
   name: agentplane-staging-binding-delegation-activitywatch
   namespace: ducktape-flux
 spec:
@@ -4096,7 +4100,7 @@ apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
   annotations:
-    description: Delegates managed Sandbox RoleBinding reconciliation in agent-sandbox-system.
+    description: Delegates managed RoleBinding reconciliation in agent-sandbox-system.
   name: agentplane-staging-binding-delegation-agent-sandbox-system
   namespace: ducktape-flux
 spec:
@@ -4117,7 +4121,7 @@ apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
   annotations:
-    description: Delegates managed Sandbox RoleBinding reconciliation in agentplane-index.
+    description: Delegates managed RoleBinding reconciliation in agentplane-index.
   name: agentplane-staging-binding-delegation-agentplane-index
   namespace: ducktape-flux
 spec:
@@ -4138,7 +4142,7 @@ apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
   annotations:
-    description: Delegates managed Sandbox RoleBinding reconciliation in agentplane-testing.
+    description: Delegates managed RoleBinding reconciliation in agentplane-testing.
   name: agentplane-staging-binding-delegation-agentplane-testing
   namespace: ducktape-flux
 spec:
@@ -4159,7 +4163,7 @@ apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
   annotations:
-    description: Delegates managed Sandbox RoleBinding reconciliation in airlock.
+    description: Delegates managed RoleBinding reconciliation in airlock.
   name: agentplane-staging-binding-delegation-airlock
   namespace: ducktape-flux
 spec:
@@ -4180,7 +4184,7 @@ apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
   annotations:
-    description: Delegates managed Sandbox RoleBinding reconciliation in authentik.
+    description: Delegates managed RoleBinding reconciliation in authentik.
   name: agentplane-staging-binding-delegation-authentik
   namespace: ducktape-flux
 spec:
@@ -4201,7 +4205,7 @@ apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
   annotations:
-    description: Delegates managed Sandbox RoleBinding reconciliation in cert-manager.
+    description: Delegates managed RoleBinding reconciliation in cert-manager.
   name: agentplane-staging-binding-delegation-cert-manager
   namespace: ducktape-flux
 spec:
@@ -4222,7 +4226,7 @@ apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
   annotations:
-    description: Delegates managed Sandbox RoleBinding reconciliation in cli-proxy-api.
+    description: Delegates managed RoleBinding reconciliation in cli-proxy-api.
   name: agentplane-staging-binding-delegation-cli-proxy-api
   namespace: ducktape-flux
 spec:
@@ -4243,7 +4247,7 @@ apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
   annotations:
-    description: Delegates managed Sandbox RoleBinding reconciliation in clickhouse.
+    description: Delegates managed RoleBinding reconciliation in clickhouse.
   name: agentplane-staging-binding-delegation-clickhouse
   namespace: ducktape-flux
 spec:
@@ -4264,7 +4268,7 @@ apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
   annotations:
-    description: Delegates managed Sandbox RoleBinding reconciliation in cnpg-system.
+    description: Delegates managed RoleBinding reconciliation in cnpg-system.
   name: agentplane-staging-binding-delegation-cnpg-system
   namespace: ducktape-flux
 spec:
@@ -4285,7 +4289,7 @@ apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
   annotations:
-    description: Delegates managed Sandbox RoleBinding reconciliation in ducktape-flux.
+    description: Delegates managed RoleBinding reconciliation in ducktape-flux.
   name: agentplane-staging-binding-delegation-ducktape-flux
   namespace: ducktape-flux
 spec:
@@ -4303,7 +4307,7 @@ apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
   annotations:
-    description: Delegates managed Sandbox RoleBinding reconciliation in flux-system.
+    description: Delegates managed RoleBinding reconciliation in flux-system.
   name: agentplane-staging-binding-delegation-flux-system
   namespace: ducktape-flux
 spec:
@@ -4321,7 +4325,7 @@ apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
   annotations:
-    description: Delegates managed Sandbox RoleBinding reconciliation in gatus.
+    description: Delegates managed RoleBinding reconciliation in gatus.
   name: agentplane-staging-binding-delegation-gatus
   namespace: ducktape-flux
 spec:
@@ -4342,7 +4346,7 @@ apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
   annotations:
-    description: Delegates managed Sandbox RoleBinding reconciliation in grocy-sf.
+    description: Delegates managed RoleBinding reconciliation in grocy-sf.
   name: agentplane-staging-binding-delegation-grocy-sf
   namespace: ducktape-flux
 spec:
@@ -4363,7 +4367,7 @@ apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
   annotations:
-    description: Delegates managed Sandbox RoleBinding reconciliation in grocy-vallejo.
+    description: Delegates managed RoleBinding reconciliation in grocy-vallejo.
   name: agentplane-staging-binding-delegation-grocy-vallejo
   namespace: ducktape-flux
 spec:
@@ -4384,7 +4388,7 @@ apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
   annotations:
-    description: Delegates managed Sandbox RoleBinding reconciliation in haku-ci.
+    description: Delegates managed RoleBinding reconciliation in haku-ci.
   name: agentplane-staging-binding-delegation-haku-ci
   namespace: ducktape-flux
 spec:
@@ -4405,7 +4409,7 @@ apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
   annotations:
-    description: Delegates managed Sandbox RoleBinding reconciliation in haku-console.
+    description: Delegates managed RoleBinding reconciliation in haku-console.
   name: agentplane-staging-binding-delegation-haku-console
   namespace: ducktape-flux
 spec:
@@ -4426,7 +4430,7 @@ apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
   annotations:
-    description: Delegates managed Sandbox RoleBinding reconciliation in haku-sandbox.
+    description: Delegates managed RoleBinding reconciliation in haku-sandbox.
   name: agentplane-staging-binding-delegation-haku-sandbox
   namespace: ducktape-flux
 spec:
@@ -4447,7 +4451,7 @@ apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
   annotations:
-    description: Delegates managed Sandbox RoleBinding reconciliation in litellm.
+    description: Delegates managed RoleBinding reconciliation in litellm.
   name: agentplane-staging-binding-delegation-litellm
   namespace: ducktape-flux
 spec:
@@ -4468,7 +4472,7 @@ apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
   annotations:
-    description: Delegates managed Sandbox RoleBinding reconciliation in local-path-storage.
+    description: Delegates managed RoleBinding reconciliation in local-path-storage.
   name: agentplane-staging-binding-delegation-local-path-storage
   namespace: ducktape-flux
 spec:
@@ -4489,7 +4493,7 @@ apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
   annotations:
-    description: Delegates managed Sandbox RoleBinding reconciliation in loki.
+    description: Delegates managed RoleBinding reconciliation in loki.
   name: agentplane-staging-binding-delegation-loki
   namespace: ducktape-flux
 spec:
@@ -4510,7 +4514,7 @@ apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
   annotations:
-    description: Delegates managed Sandbox RoleBinding reconciliation in monitoring.
+    description: Delegates managed RoleBinding reconciliation in monitoring.
   name: agentplane-staging-binding-delegation-monitoring
   namespace: ducktape-flux
 spec:
@@ -4531,7 +4535,7 @@ apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
   annotations:
-    description: Delegates managed Sandbox RoleBinding reconciliation in nix-cache.
+    description: Delegates managed RoleBinding reconciliation in nix-cache.
   name: agentplane-staging-binding-delegation-nix-cache
   namespace: ducktape-flux
 spec:
@@ -4552,7 +4556,7 @@ apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
   annotations:
-    description: Delegates managed Sandbox RoleBinding reconciliation in node-feature-discovery.
+    description: Delegates managed RoleBinding reconciliation in node-feature-discovery.
   name: agentplane-staging-binding-delegation-node-feature-discovery
   namespace: ducktape-flux
 spec:
@@ -4573,7 +4577,7 @@ apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
   annotations:
-    description: Delegates managed Sandbox RoleBinding reconciliation in nvidia-device-plugin.
+    description: Delegates managed RoleBinding reconciliation in nvidia-device-plugin.
   name: agentplane-staging-binding-delegation-nvidia-device-plugin
   namespace: ducktape-flux
 spec:
@@ -4594,7 +4598,7 @@ apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
   annotations:
-    description: Delegates managed Sandbox RoleBinding reconciliation in oci-cache.
+    description: Delegates managed RoleBinding reconciliation in oci-cache.
   name: agentplane-staging-binding-delegation-oci-cache
   namespace: ducktape-flux
 spec:
@@ -4615,7 +4619,7 @@ apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
   annotations:
-    description: Delegates managed Sandbox RoleBinding reconciliation in openebs.
+    description: Delegates managed RoleBinding reconciliation in openebs.
   name: agentplane-staging-binding-delegation-openebs
   namespace: ducktape-flux
 spec:
@@ -4636,7 +4640,7 @@ apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
   annotations:
-    description: Delegates managed Sandbox RoleBinding reconciliation in plaid-mcp.
+    description: Delegates managed RoleBinding reconciliation in plaid-mcp.
   name: agentplane-staging-binding-delegation-plaid-mcp
   namespace: ducktape-flux
 spec:
@@ -4657,7 +4661,7 @@ apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
   annotations:
-    description: Delegates managed Sandbox RoleBinding reconciliation in proxmox-proxy.
+    description: Delegates managed RoleBinding reconciliation in proxmox-proxy.
   name: agentplane-staging-binding-delegation-proxmox-proxy
   namespace: ducktape-flux
 spec:
@@ -4678,7 +4682,7 @@ apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
   annotations:
-    description: Delegates managed Sandbox RoleBinding reconciliation in public-coder-agent.
+    description: Delegates managed RoleBinding reconciliation in public-coder-agent.
   name: agentplane-staging-binding-delegation-public-coder-agent
   namespace: ducktape-flux
 spec:
@@ -4699,7 +4703,7 @@ apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
   annotations:
-    description: Delegates managed Sandbox RoleBinding reconciliation in study-casino.
+    description: Delegates managed RoleBinding reconciliation in study-casino.
   name: agentplane-staging-binding-delegation-study-casino
   namespace: ducktape-flux
 spec:
@@ -4720,7 +4724,7 @@ apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
   annotations:
-    description: Delegates managed Sandbox RoleBinding reconciliation in tana-mcp.
+    description: Delegates managed RoleBinding reconciliation in tana-mcp.
   name: agentplane-staging-binding-delegation-tana-mcp
   namespace: ducktape-flux
 spec:
@@ -4741,7 +4745,7 @@ apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
   annotations:
-    description: Delegates managed Sandbox RoleBinding reconciliation in vm-images-publisher.
+    description: Delegates managed RoleBinding reconciliation in vm-images-publisher.
   name: agentplane-staging-binding-delegation-vm-images-publisher
   namespace: ducktape-flux
 spec:

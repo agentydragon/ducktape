@@ -7301,6 +7301,514 @@ spec:
   ingress:
     - {}
 ---
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: PolicySet
+metadata:
+  name: cluster-diagnostics
+  namespace: agentplane-staging
+spec:
+  rules:
+    - type: kubernetes_cluster_role_binding
+      clusterRole: cluster-diagnostics-reader
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: PolicySet
+metadata:
+  name: coinbase-credentials
+  namespace: agentplane-staging
+spec:
+  rules:
+    - type: kubernetes_role_binding
+      role:
+        kind: Role
+        name: claude-ai-coinbase-reader
+      namespaces:
+        - agentplane-staging
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: PolicySet
+metadata:
+  name: haku-sandbox-write
+  namespace: agentplane-staging
+spec:
+  rules:
+    - type: kubernetes_role_binding
+      role:
+        kind: Role
+        name: haku-sandbox-admin
+      namespaces:
+        - haku-sandbox
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: PolicySet
+metadata:
+  name: public-inventory
+  namespace: agentplane-staging
+spec:
+  rules:
+    - type: kubernetes_cluster_role_binding
+      clusterRole: public-coder-agent-cluster-metadata-reader
+    - type: kubernetes_cluster_role_binding
+      clusterRole: public-coder-agent-node-reader
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: PolicySet
+metadata:
+  name: shared-diagnostics
+  namespace: agentplane-staging
+spec:
+  rules:
+    - type: kubernetes_role_binding
+      role:
+        kind: ClusterRole
+        name: agent-readable-namespace-logs
+      namespaces:
+        - activitywatch
+        - agentplane-index
+        - agentplane-staging
+        - agentplane-testing
+        - airlock
+        - authentik
+        - cert-manager
+        - cli-proxy-api
+        - clickhouse
+        - cnpg-system
+        - flux-system
+        - gatus
+        - grocy-sf
+        - grocy-vallejo
+        - haku-ci
+        - litellm
+        - local-path-storage
+        - loki
+        - monitoring
+        - node-feature-discovery
+        - nvidia-device-plugin
+        - oci-cache
+        - openebs
+        - proxmox-proxy
+        - study-casino
+        - tana-mcp
+    - type: kubernetes_role_binding
+      role:
+        kind: ClusterRole
+        name: agent-readable-namespace-metadata
+      namespaces:
+        - activitywatch
+        - agent-sandbox-system
+        - agentplane-index
+        - agentplane-staging
+        - agentplane-testing
+        - airlock
+        - authentik
+        - cert-manager
+        - cli-proxy-api
+        - clickhouse
+        - cnpg-system
+        - flux-system
+        - gatus
+        - grocy-sf
+        - grocy-vallejo
+        - haku-ci
+        - litellm
+        - local-path-storage
+        - loki
+        - monitoring
+        - nix-cache
+        - node-feature-discovery
+        - nvidia-device-plugin
+        - oci-cache
+        - openebs
+        - proxmox-proxy
+        - public-coder-agent
+        - study-casino
+        - tana-mcp
+        - vm-images-publisher
+    - type: kubernetes_role_binding
+      role:
+        kind: Role
+        name: agent-clickhouse-diagnostics-reader
+      namespaces:
+        - clickhouse
+    - type: kubernetes_role_binding
+      role:
+        kind: Role
+        name: agent-haku-console-metadata-reader
+      namespaces:
+        - haku-console
+    - type: kubernetes_role_binding
+      role:
+        kind: Role
+        name: agent-public-coder-extended-diagnostics-reader
+      namespaces:
+        - public-coder-agent
+    - type: kubernetes_role_binding
+      role:
+        kind: Role
+        name: ducktape-flux-reader
+      namespaces:
+        - ducktape-flux
+    - type: kubernetes_role_binding
+      role:
+        kind: Role
+        name: public-coder-agent-reader
+      namespaces:
+        - public-coder-agent
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: PolicySet
+metadata:
+  name: spend-policy-config
+  namespace: agentplane-staging
+spec:
+  rules:
+    - type: kubernetes_role_binding
+      role:
+        kind: Role
+        name: plaid-spend-finance-config-reader
+      namespaces:
+        - plaid-mcp
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: PolicySet
+metadata:
+  name: testing-access
+  namespace: agentplane-staging
+spec:
+  rules:
+    - type: kubernetes_role_binding
+      role:
+        kind: Role
+        name: agentplane-testing-login-reader
+      namespaces:
+        - public-coder-agent
+    - type: kubernetes_role_binding
+      role:
+        kind: Role
+        name: agentplane-testing-operator
+      namespaces:
+        - agentplane-testing
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: agentplane-policy-controller
+  namespace: agentplane-staging
+automountServiceAccountToken: true
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app.kubernetes.io/name: agentplane-policy-controller
+  name: agentplane-policy-controller
+  namespace: agentplane-staging
+spec:
+  minReadySeconds: 5
+  progressDeadlineSeconds: 600
+  replicas: 2
+  revisionHistoryLimit: 10
+  selector:
+    matchLabels:
+      cdk8s.io/metadata.addr: agentplane-policy-controller-deployment-c883d3e9
+  strategy:
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+    type: RollingUpdate
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: agentplane-policy-controller
+        cdk8s.io/metadata.addr: agentplane-policy-controller-deployment-c883d3e9
+    spec:
+      automountServiceAccountToken: true
+      containers:
+        - args:
+            - --policy-namespace=agentplane-staging
+            - --subject-namespaces=agentplane-staging
+          image: git.allegedly.works/ducktape-ci/agentplane-policy-controller:unset
+          imagePullPolicy: IfNotPresent
+          livenessProbe:
+            failureThreshold: 3
+            httpGet:
+              path: /healthz
+              port: 8081
+              scheme: HTTP
+            initialDelaySeconds: 10
+            periodSeconds: 30
+          name: policy-controller
+          ports:
+            - containerPort: 8080
+              name: metrics
+              protocol: TCP
+            - containerPort: 8081
+              name: health
+              protocol: TCP
+          readinessProbe:
+            failureThreshold: 3
+            httpGet:
+              path: /readyz
+              port: 8081
+              scheme: HTTP
+            initialDelaySeconds: 3
+            periodSeconds: 10
+          resources:
+            limits:
+              memory: 256Mi
+            requests:
+              cpu: 10m
+              memory: 64Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            privileged: false
+            readOnlyRootFilesystem: false
+            runAsNonRoot: true
+      dnsPolicy: ClusterFirst
+      hostNetwork: false
+      imagePullSecrets:
+        - name: forgejo-images-creds
+      nodeSelector:
+        topology.kubernetes.io/zone: hil-ovh
+      restartPolicy: Always
+      securityContext:
+        fsGroup: 1000
+        fsGroupChangePolicy: Always
+        runAsGroup: 1000
+        runAsNonRoot: true
+        runAsUser: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      serviceAccountName: agentplane-policy-controller
+      setHostnameAsFQDN: false
+      shareProcessNamespace: false
+      terminationGracePeriodSeconds: 30
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app.kubernetes.io/name: agentplane-policy-controller
+  name: agentplane-policy-controller
+  namespace: agentplane-staging
+spec:
+  externalIPs: []
+  ports:
+    - name: metrics
+      port: 8080
+      protocol: TCP
+      targetPort: 8080
+  selector:
+    cdk8s.io/metadata.addr: agentplane-policy-controller-deployment-c883d3e9
+  type: ClusterIP
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: agentplane-policy-controller
+  namespace: agentplane-staging
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: agentplane-policy-controller
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: agentplane-policy-controller
+  namespace: agentplane-staging
+rules:
+  - apiGroups:
+      - agentplane.allegedly.works
+    resources:
+      - policysets
+    verbs:
+      - get
+      - list
+      - watch
+  - apiGroups:
+      - agentplane.allegedly.works
+    resources:
+      - policybindings
+    verbs:
+      - get
+      - list
+      - watch
+      - delete
+  - apiGroups:
+      - agentplane.allegedly.works
+    resources:
+      - policybindings/status
+    verbs:
+      - patch
+  - apiGroups:
+      - ""
+    resources:
+      - serviceaccounts
+    verbs:
+      - get
+      - list
+      - watch
+  - apiGroups:
+      - coordination.k8s.io
+    resources:
+      - leases
+    verbs:
+      - get
+      - create
+      - update
+  - apiGroups:
+      - ""
+    resources:
+      - events
+    verbs:
+      - create
+      - patch
+  - apiGroups:
+      - rbac.authorization.k8s.io
+    resources:
+      - rolebindings
+    verbs:
+      - create
+      - delete
+  - apiGroups:
+      - rbac.authorization.k8s.io
+    resourceNames:
+      - claude-ai-coinbase-reader
+    resources:
+      - roles
+    verbs:
+      - bind
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: agentplane-policy-controller
+  namespace: agentplane-staging
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: agentplane-policy-controller
+subjects:
+  - apiGroup: ""
+    kind: ServiceAccount
+    name: agentplane-policy-controller
+    namespace: agentplane-staging
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: agentplane-staging-policy-controller
+rules:
+  - apiGroups:
+      - rbac.authorization.k8s.io
+    resources:
+      - rolebindings
+      - clusterrolebindings
+      - roles
+      - clusterroles
+    verbs:
+      - get
+      - list
+      - watch
+  - apiGroups:
+      - rbac.authorization.k8s.io
+    resources:
+      - clusterrolebindings
+    verbs:
+      - create
+      - delete
+  - apiGroups:
+      - rbac.authorization.k8s.io
+    resourceNames:
+      - agent-readable-namespace-logs
+      - agent-readable-namespace-metadata
+      - cluster-diagnostics-reader
+      - public-coder-agent-cluster-metadata-reader
+      - public-coder-agent-node-reader
+    resources:
+      - clusterroles
+    verbs:
+      - bind
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: agentplane-staging-policy-controller
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: agentplane-staging-policy-controller
+subjects:
+  - kind: ServiceAccount
+    name: agentplane-policy-controller
+    namespace: agentplane-staging
+---
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: agentplane-policy-controller
+  namespace: agentplane-staging
+spec:
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            k8s-app: kube-dns
+            k8s:io.kubernetes.pod.namespace: kube-system
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: UDP
+            - port: "53"
+              protocol: TCP
+    - toEntities:
+        - kube-apiserver
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/name: agentplane-policy-controller
+  ingress:
+    - fromEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: monitoring
+      toPorts:
+        - ports:
+            - port: "8080"
+              protocol: TCP
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: agentplane-policy-controller
+  namespace: agentplane-staging
+spec:
+  endpoints:
+    - path: /metrics
+      port: metrics
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: agentplane-policy-controller
+---
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: agentplane-policy-controller
+  namespace: agentplane-staging
+spec:
+  groups:
+    - name: agentplane-policy-controller
+      rules:
+        - alert: AgentplanePolicyBindingExpiryOverdue
+          annotations:
+            description: The Policy Controller deletes a PolicyBinding at its expiresAt; this one has outlived it, so its grants are still live. Check the agentplane-policy-controller Deployment and its logs.
+            summary: PolicyBinding {{ $labels.name }} still grants after its expiresAt
+          expr: time() - kube_customresource_agentplane_policybinding_expires_at{namespace="agentplane-staging"} > 300
+          labels:
+            severity: warning
+---
 apiVersion: v1
 kind: ServiceAccount
 metadata:

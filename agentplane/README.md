@@ -20,7 +20,7 @@ an MCP approval gateway for any MCP-capable LLM product.
   sandbox and journal what they do.
 - [Egress proxy](egress/README.md): authenticates sandbox workloads and substitutes credentials.
 - [Policy Controller](policy_controller/README.md): expires `PolicyBinding`s and keeps the
-  RoleBindings they grant. Not yet deployed.
+  RoleBindings they grant. Staging only; nothing writes a `PolicyBinding` yet.
 - [LLM ingress](llm_ingress/README.md): authenticated hop in front of LiteLLM.
 - [Notification service](notification_service/README.md): subscriptions and session inboxes.
 - [Indexing](indexing/README.md): Git semantic search.
@@ -43,6 +43,7 @@ flowchart TB
         hs[History Service]
         notif[Notification service]
         actions[Action Service]
+        policy[Policy Controller]
     end
     subgraph sandbox[Sandbox Pod]
         runner[Runner + native drivers]
@@ -83,6 +84,7 @@ flowchart TB
     notif -->|REST| github
     github -->|webhooks over an HTTPS route| notif
     actions -->|execute: Sandbox CRs, exec| k8s
+    policy -->|PolicyBindings, RoleBindings| k8s
     k8s -->|creates| cmd_sandbox
     cmd_sandbox -->|all outbound traffic| proxy
     actions -->|MCP servers, GitHub, web push| outside

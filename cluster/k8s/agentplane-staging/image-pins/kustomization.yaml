@@ -2,6 +2,8 @@ apiVersion: kustomize.config.k8s.io/v1alpha1
 kind: Component
 images:
   # Bootstrap only: CI publishes the first image after merge; Flux must select a real tag before rollout.
+  - name: git.allegedly.works/ducktape-ci/agentplane-policy-controller
+    newTag: unset # {"$imagepolicy": "flux-system:agentplane-policy-controller:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-runner-gateway-migrate
     newTag: devel-20261012015415-95a333c # {"$imagepolicy": "flux-system:agentplane-runner-gateway-migrate:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-llm-ingress
