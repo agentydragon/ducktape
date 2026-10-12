@@ -223,7 +223,7 @@ Same prerequisite, unscoped composer. Do not implement durability as a browser-o
 
 ### `THREAD_ON_DEMAND_RUNTIME` — disposable Sandbox for a durable Thread
 
-After revival ([task DAG section 8](task_dag.md#8-our-own-sandbox-resource-sessions-that-outlive-their-pod)), plus reviewed wake authority/budget. Wakes on a user message or notification, never on a read, as `DURABLE_SESSION_LIFECYCLE` directs.
+After revival ([task DAG section 7](task_dag.md#7-our-own-sandbox-resource-sessions-that-outlive-their-pod)), plus reviewed wake authority/budget. Wakes on a user message or notification, never on a read, as `DURABLE_SESSION_LIFECYCLE` directs.
 
 ### `AG` — hosted Agent and Thread model
 

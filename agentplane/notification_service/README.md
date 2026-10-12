@@ -21,6 +21,11 @@ an inbox to a replacement Sandbox.
 - [Plans and deferred work](../plans/notifications.md)
 - `/openapi.json` and authenticated `GET /v1/sources`: schemas and available sources.
 
+While the History Service is down or rolling, webhooks are still accepted and inbox entries still
+stored, but no notice reaches a Session: a delivery reads the Session's receipts from the History
+Service first and, failing that, releases its claim to retry later. A delivery also waits while the
+History Service lags the runner's journal, so a retry never precedes an admission it has not seen.
+
 ## Running and deployment
 
 Bazel targets: `:server`, `:migrate`, `:image`, `:migration_image`. The service needs its own PostgreSQL

@@ -10,6 +10,10 @@ service does around a Sandbox: runner endpoints and launch binding. `spec.sessio
 Gateway and app already read them. Deletion waits for the
 [Runner Gateway](../runner_gateway/README.md)'s `SessionsSealed` condition.
 
+Because the Runner Gateway sets that condition only once the History Service's ingress has
+acknowledged every seal, deleting a Sandbox waits while the History Service is down or rolling;
+everything else the controller does is unaffected.
+
 A [controller-runtime](https://github.com/kubernetes-sigs/controller-runtime) controller:
 
 - [`types.go`](types.go): the CRD types. `zz_generated.deepcopy.go` is controller-gen output; after

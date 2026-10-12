@@ -207,7 +207,6 @@ flowchart TD
     THREAD_READ_POLICY_DESIGN --> SANDBOX_COMPARTMENT_BOUNDARY
     THREAD_READ_POLICY_DESIGN --> THREAD_READ_POLICY
     SANDBOX_COMPARTMENT_BOUNDARY --> THREAD_READ_POLICY
-    HISTORY_SERVICE_OWNERSHIP[History Service ownership] -. enforce at the final owner .-> THREAD_READ_POLICY
     AGENT_MESSAGING_DESIGN --> AGENT_MESSAGE_INGRESS
     SESSION_INPUT_METADATA_READ[Input provenance reads] -. if direct-input delivery selected .-> AGENT_MESSAGE_RECEPTION
     AGENT_MESSAGE_INGRESS --> AGENT_MESSAGE_RECEPTION
@@ -329,7 +328,7 @@ journal.
 
 Direction for stateful VMs (operator, 2026-10-12 PDT; not scheduled): our own Sandbox resource
 (`AGENTPLANE_SANDBOX_RESOURCE`, `kind: pod | vm`) replaces agent-sandbox's, and both kinds keep their
-state on one filesystem PVC per Sandbox that Agentplane owns (section 8). Pods mount it as a volume,
+state on one filesystem PVC per Sandbox that Agentplane owns (section 7). Pods mount it as a volume,
 KubeVirt guests through virtiofs, so a Session can move between kinds.
 
 ```mermaid
@@ -337,7 +336,7 @@ flowchart LR
     VM_CONTROL_NETWORKING[Blocked: integrate selected VM control path]
     VM_IMAGE[Candidate: packaged guest and storage]
     VM_PROVIDER[Candidate: production provider and API]
-    AGENTPLANE_SANDBOX_RESOURCE[Our own Sandbox resource, section 8]
+    AGENTPLANE_SANDBOX_RESOURCE[Our own Sandbox resource, section 7]
     VM_EGRESS[Candidate: production admission and egress integration]
     VM_PROCESS_ISOLATION[Blocked: harness/process resource boundary]
     VM_LIFECYCLE[Blocked: integrated lifecycle]
@@ -470,10 +469,10 @@ flowchart LR
     PC_EGRESS_CREDENTIALS[Candidate: caller admission configuration] --> PC_EGRESS[Blocked: controlled egress cutover]
     CLAUDE_AI_SA[Decision: review caller authority] --> MANAGED_SA_RBAC[Blocked: account-owned grants]
     KUBERNETES_POLICY_SETS[Candidate: the grant catalog as named PolicySets]
-    KUBERNETES_POLICY_SETS --> SANDBOX_CONTROLLER_PROVISIONING[The controller provisions a Sandbox, section 8]
-    SANDBOX_CREATE_CUTOVER[Sandboxes are created as ours, section 8] --> POLICY_RUNTIME_GRANTS[Blocked: time-limited grants of any rule type]
+    KUBERNETES_POLICY_SETS --> SANDBOX_CONTROLLER_PROVISIONING[The controller provisions a Sandbox, section 7]
+    SANDBOX_CREATE_CUTOVER[Sandboxes are created as ours, section 7] --> POLICY_RUNTIME_GRANTS[Blocked: time-limited grants of any rule type]
     SANDBOX_CREATE_CUTOVER --> SANDBOX_RBAC
-    AGENT_SANDBOX_RETIRE[Agentplane stops using agent-sandbox, section 8] --> OLD_POLICY_KINDS_DROP[Blocked: drop the old policy kinds]
+    AGENT_SANDBOX_RETIRE[Agentplane stops using agent-sandbox, section 7] --> OLD_POLICY_KINDS_DROP[Blocked: drop the old policy kinds]
     BOOTSTRAP_PROGRESS_CONTRACT[Candidate: asynchronous Sandbox bootstrap]
     SANDBOX_RBAC[Blocked: bounded deployed grant checks]
     NOTIFICATION_INGRESS_BOUNDARY[Candidate: public-route security check]
@@ -564,24 +563,7 @@ the first Open until the script exits, and nothing shows its output or progress.
 Sandbox comes up and expose its progress and result, keeping successful bootstrap as the Open
 precondition unless the operator reviews a change.
 
-## 7. History Service ownership
-
-Target: [History Service plan](history_service.md).
-
-```mermaid
-flowchart TD
-    HISTORY_SERVICE_OWNERSHIP[Candidate: service READMEs state outage behavior]
-    THREAD_READ_POLICY[Scoped archive reads]
-    HISTORY_SERVICE_OWNERSHIP -. enforce at the final owner .-> THREAD_READ_POLICY
-```
-
-### `HISTORY_SERVICE_OWNERSHIP` — History Service ownership
-
-**Candidate; what is left of the capstone.** The History Service is the only owner of the raw log
-and fold and the app is a facade over it (#9836). Left: each service's README states what unrelated
-agents can still do while it is down or rolling.
-
-## 8. Our own Sandbox resource: Sessions that outlive their Pod
+## 7. Our own Sandbox resource: Sessions that outlive their Pod
 
 Not scheduled. A Session and its history are durable. The operator's direction (2026-10-12 PDT):
 the way a Session outlives its runner is our own Sandbox resource, which holds the state PVC and
@@ -608,7 +590,6 @@ flowchart TD
     SESSION_REVIVE[Blocked: start a stopped Sandbox again]
     THREAD_SUCCESSOR_DELIVERY[Blocked: commands unsettled across incarnations]
     HOSTED_THREAD_SURFACES[Blocked: show and revive stopped Sessions]
-    HISTORY_SERVICE_OWNERSHIP[History Service ownership]
     VM_PROVIDER[VM provider, section 4]
     DURABLE_SESSION_LIFECYCLE --> SESSION_STATE_VOLUME_DESIGN
     DURABLE_SESSION_LIFECYCLE --> SESSION_INCARNATIONS
@@ -625,7 +606,6 @@ flowchart TD
     CODEX_PORTABLE_STATE -. per harness .-> SESSION_REVIVE
     SESSION_REVIVE --> THREAD_SUCCESSOR_DELIVERY
     SESSION_REVIVE --> HOSTED_THREAD_SURFACES
-    HISTORY_SERVICE_OWNERSHIP --> HOSTED_THREAD_SURFACES
 ```
 
 ### `DURABLE_SESSION_LIFECYCLE` — Session lifetime and revival
@@ -767,11 +747,11 @@ replayed into the next one; it stays unknown and is shown as such. Moved from th
 
 ### `HOSTED_THREAD_SURFACES` — show and revive stopped Sessions
 
-**Blocked on revival and History Service ownership.** The app lists Sessions whose Sandbox has no
+**Blocked on revival.** The app lists Sessions whose Sandbox has no
 running incarnation, reads their history from the History Service, and offers an explicit revive.
 Moved from the freezer.
 
-## 9. Ownership and naming cleanup
+## 8. Ownership and naming cleanup
 
 Cleanups that leave one database per service and names that say what things are. Each node is one
 deployment; edges are the known order. Staging data follows
@@ -784,7 +764,6 @@ flowchart TD
     SANDBOX_DATABASE_RENAME[Unscheduled: name the sandbox_commands database for the Runner Gateway]
     ACTION_BOX_RENAME[Unscheduled: Action boxes stop being called sandboxes]
     ACTION_BOX_IDLE_REAPER[Unscheduled: delete Action boxes nobody uses]
-    HISTORY_SERVICE_OWNERSHIP[History Service ownership]
 ```
 
 ### `HISTORY_DATABASE_RENAME` — name the database for its owner
@@ -820,7 +799,7 @@ sandbox, so it no longer reads as a Session Sandbox: the `sandbox__*` Actions,
 `cluster/cdk8s/agentplane/command_sandbox.py`. The `sandbox__*` tool names are what agents and
 external Connections call, so renaming them is a wire change.
 
-## 10. Legacy burn-down
+## 9. Legacy burn-down
 
 Dead code, finished gates, compatibility shims and stale names found by the 2026-10-10 PDT audit of
 devel. A gate counts as legacy once its rollout is finished on both testing and staging or nothing
@@ -833,8 +812,7 @@ tombstones with a verifiable condition in code (`keepingOffset` in
 flowchart TD
     ACTION_EXECUTION_AUDIT_TRIM[Decision: execution reconciliation columns]
     REFACTOR_COHERENCE_AUDIT[Blocked: whole-refactor coherence audit]
-    HISTORY_SERVICE_OWNERSHIP[History Service ownership] --> REFACTOR_COHERENCE_AUDIT
-    COHERENCE_REFACTORS[Section 12 coherence refactors] --> REFACTOR_COHERENCE_AUDIT
+    COHERENCE_REFACTORS[Section 11 coherence refactors] --> REFACTOR_COHERENCE_AUDIT
 ```
 
 ### `ACTION_EXECUTION_AUDIT_TRIM` — execution reconciliation columns
@@ -846,7 +824,7 @@ drop both columns and the enum.
 
 ### `REFACTOR_COHERENCE_AUDIT` — the refactor reads as one design
 
-**Blocked on the cutover's retirements, the split and the section 12 refactors**, which remove the
+**Blocked on the cutover's retirements, the split and the section 11 refactors**, which remove the
 transitional pieces the other nodes name. Sweep devel for unused modules, functions, settings, proto
 fields, tables and columns; one name per concept across code, settings, manifests, protos and docs
 (Sandbox Service, Runner Gateway, History Service, ingress, control; Session for the raw stream,
@@ -860,7 +838,7 @@ optional-with-fallback setting or `CLEANUP` tombstone whose condition is met; th
 `cluster/cdk8s/agentplane/kubevirt_experiment` is an experiment outside `x/`. Findings are fixed in
 PRs of their own; this node leaves with the last of them.
 
-## 11. Runner ingress and control split
+## 10. Runner ingress and control split
 
 Target and decisions: [History Service plan](history_service.md#target). The runner keeps dialing
 out, but to two endpoints its Sandbox names: an **ingress** it pushes its journal's Events to, and
@@ -872,7 +850,7 @@ runner through the Sandbox Service.
 ```mermaid
 flowchart TD
     GATEWAY_CLIENT_SPLIT[Unscheduled: the gateway client stands alone]
-    AGENTPLANE_SANDBOX_RESOURCE[Our own Sandbox resource, section 8]
+    AGENTPLANE_SANDBOX_RESOURCE[Our own Sandbox resource, section 7]
     SEAL_FINALIZER[Unscheduled: seal as a finalizer on every delete]
     AGENTPLANE_SANDBOX_RESOURCE -. to seal a suspended Sandbox on delete .-> SEAL_FINALIZER
 ```
@@ -904,7 +882,7 @@ the Sandbox's volume, under the Sandbox's own ServiceAccount and egress sidecar 
 Session to its first writer), that pushes the unacknowledged tail and seals. The volume is
 ReadWriteOnce, so the Job starts only once every container of the old Pod is gone.
 
-## 12. Coherence refactors
+## 11. Coherence refactors
 
 Refactors found by reading devel (2026-10-11 PDT) against the quality bar and
 [gRPC services](../docs/grpc_services.md). Each lands as its own PR; all of them feed

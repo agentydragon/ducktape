@@ -8,6 +8,11 @@ through one protocol, over the control stream and Event ingress it dials. The co
 bbr test //agentplane/runner/...
 ```
 
+While its ingress (the History Service) is down or rolling, the runner keeps its harnesses
+running and admitting commands from the control stream, and keeps every journal entry on its state
+volume. Each Session's push retries with the control stream's backoff and resumes after the last
+acknowledged entry ([SPEC](SPEC.md#event-ingress)), so the outage delays history but loses none of it.
+
 ## Layout
 
 - `runner.py`: the runner's sessions, their lifecycle, and journal follows; `main.py` is the process

@@ -33,6 +33,14 @@ multi-session Thread history, and folded/Raw projections.
 bbr test //agentplane/app/...
 ```
 
+### While the History Service is down or rolling
+
+Thread lists, Thread views, the retained-event SSE API and Thread commands fail with the History
+Service's error: a command first looks for its admission in the archive and checks the Thread's
+feed state there (`threads/bridge.py`), so even a command the runner would accept is refused. Resume
+reads the feed state the same way. Sandbox lifecycle and Action review keep working.
+`HistoryWatch` reconnects on its own, and Sessions recorded meanwhile get their Threads once it does.
+
 ## Layout
 
 - `main.py`: the entry point; `Settings` names every knob as a flag, an `AGENTPLANE_*`

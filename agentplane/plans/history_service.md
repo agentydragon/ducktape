@@ -42,7 +42,7 @@ Properties the target keeps:
   acknowledged through every seal cursor.
 - **Sessions can outlive a Sandbox later:** the History Service keys by Session and records each
   Sandbox as an incarnation, and a teardown seal ends an incarnation, not the Session, so reviving a
-  Session in a new Sandbox ([task DAG section 8](task_dag.md#8-our-own-sandbox-resource-sessions-that-outlive-their-pod))
+  Session in a new Sandbox ([task DAG section 7](task_dag.md#7-our-own-sandbox-resource-sessions-that-outlive-their-pod))
   needs no change here.
 
 Invariants once the refactor is done (operator, 2026-10-11 PDT). Each one still broken is closed by

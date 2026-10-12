@@ -23,6 +23,10 @@ API and the binding annotation use `SessionDefaults` / `session_defaults`.
 intent stored on the Sandbox. `controller.py` reconciles Sandbox initialization, grants and
 teardown; `teardown.py` has the Runner Gateway seal each Session before deleting the Sandbox.
 
+Nothing here calls the History Service. Teardown is the one part that waits for it: the runner
+reports a seal flushed only once its ingress has acknowledged it, and the Sandbox is deleted only
+after every seal is (`teardown.py`).
+
 ## API
 
 The [authenticated gRPC API](API.md) has a standalone server entry point and Python client
