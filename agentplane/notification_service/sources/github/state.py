@@ -214,7 +214,7 @@ class GitHubState:
             now = datetime.now(UTC)
             if row.error_kind != kind or row.error_since is None:
                 row.error_since = now
-            row.error_kind, row.error, row.error_observed_at = kind.value, error, now
+            row.error_kind, row.error, row.error_observed_at = kind, error, now
             row.next_attempt = now + timedelta(seconds=retry_seconds)
             row.claim = row.claim_until = None
             if isinstance(row, GitHubRepositoryAccess):

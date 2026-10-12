@@ -31,6 +31,7 @@ from prometheus_client import Histogram
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncEngine
+from tenacity import RetryCallState, Retrying, wait_exponential
 
 from agentplane.action_service.db import McpLinkageFlowRow, McpOAuthTokenStateRow, McpServerLinkageRow, SessionMaker
 from agentplane.action_service.mcp_settings import McpClientMetadataSettings, McpOAuthServer
@@ -40,8 +41,7 @@ logger = logging.getLogger(__name__)
 _REFRESH_SKEW = timedelta(minutes=1)
 _REFRESH_SWEEP_INTERVAL = timedelta(seconds=30)
 _REFRESH_CLAIM_TTL = timedelta(seconds=30)
-_REFRESH_RETRY_BASE = timedelta(seconds=30)
-_REFRESH_RETRY_MAX = timedelta(minutes=15)
+_REFRESH_RETRY = wait_exponential(multiplier=30, max=timedelta(minutes=15))
 _REFRESH_ADVISORY_LOCK = 0x4147504D43524546
 MCP_OAUTH_TOKEN_REQUEST_DURATION = Histogram(
     "agentplane_mcp_oauth_token_request_duration_seconds",
@@ -538,11 +538,9 @@ class McpLinkageAuthority:
             state.refresh_failure_latest_at = now
             state.refresh_failure_action = action
             state.refresh_failure_error = message
-            state.refresh_retry_at = (
-                None
-                if action == "reconnect"
-                else now + min(_REFRESH_RETRY_MAX, _REFRESH_RETRY_BASE * (2 ** min(state.refresh_failure_count - 1, 8)))
-            )
+            retry = RetryCallState(Retrying(), None, (), {})
+            retry.attempt_number = state.refresh_failure_count
+            state.refresh_retry_at = None if action == "reconnect" else now + timedelta(seconds=_REFRESH_RETRY(retry))
             state.refresh_claim_id = None
             state.refresh_claim_expires_at = None
         logger.warning("MCP OAuth token refresh for %s failed, %s: %s", server_id, action, message)

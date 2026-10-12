@@ -114,12 +114,9 @@ class ActionStore:
         A decisive `vote` from admission's provider evaluation commits with the insert, so the
         request is never visible as pending: `decision_pending` only ever means waiting for a human.
 
-        A grant, where one is presented, has to still authorize this exact caller. Whether a caller
-        needed a grant at all is settled before this: a Connection's bearer only ever resolves
-        through `ActionsOAuthProxy`, which attaches the grant it resolved, and a workload's only
-        through TokenReview, which is its own proof. A caller ServiceAccount names the identity, not
-        how it authenticated -- a Pod running as it and a Connection acting as it are the same
-        subject with the same policy -- so the principal cannot answer that question here.
+        A presented grant must still authorize this exact caller. Whether one was needed is settled
+        upstream, since the principal names the identity, not how it authenticated: a Connection's
+        bearer resolves only through `ActionsOAuthProxy`, which attaches its grant.
         """
         async with self._sessions.begin() as session:
             if external_grant is not None and (
@@ -132,14 +129,14 @@ class ActionStore:
                 .values(
                     id=request_id,
                     idempotency_key=body.idempotency_key,
-                    action=body.action.model_dump(),
+                    action=body.action,
                     arguments=body.arguments,
                     title=body.title,
                     description=body.description,
                     caller_namespace=principal.account.namespace,
                     caller_name=principal.account.name,
-                    external_grant=external_grant.model_dump(mode="json") if external_grant is not None else None,
-                    state=ActionState.DECISION_PENDING.value,
+                    external_grant=external_grant,
+                    state=ActionState.DECISION_PENDING,
                     version=1,
                     created_at=now,
                     updated_at=now,
@@ -181,7 +178,7 @@ class ActionStore:
                 ActionRequestRow.caller_name == principal.account.name,
             )
         if states:
-            query = query.where(ActionRequestRow.state.in_([state.value for state in states]))
+            query = query.where(ActionRequestRow.state.in_(states))
         if idempotency_key is not None:
             query = query.where(ActionRequestRow.idempotency_key == idempotency_key)
         async with self._sessions() as session:
@@ -241,7 +238,7 @@ class ActionStore:
             return [
                 ActionEventView(
                     sequence=e.sequence,
-                    state=ActionState(e.state),
+                    state=e.state,
                     at=e.at,
                     actor=None if e.actor is None else TypeAdapter(Principal).validate_python(e.actor),
                 )
@@ -257,7 +254,7 @@ class ActionStore:
             # Operator-all read/decision authority does not confer cancellation ownership.
             if row is None or not _is_caller(row, principal):
                 raise ActionNotFoundError(str(request_id))
-            state = ActionState(row.state)
+            state = row.state
             if state is ActionState.CANCELLED:
                 outcome = CancellationOutcome.ALREADY_CANCELLED
             elif state in {ActionState.DENIED, ActionState.SUCCEEDED, ActionState.FAILED}:
@@ -270,11 +267,11 @@ class ActionStore:
                     execution = await session.scalar(
                         select(ExecutionRow).where(ExecutionRow.request_id == request_id).with_for_update()
                     )
-                    if execution is None or execution.state != ExecutionState.PENDING_DISPATCH.value:
+                    if execution is None or execution.state != ExecutionState.PENDING_DISPATCH:
                         raise ActionConflictError("allowed request has no pending dispatch")
-                    execution.state = ExecutionState.CANCELLED.value
+                    execution.state = ExecutionState.CANCELLED
                     execution.completed_at = now
-                row.state = ActionState.CANCELLED.value
+                row.state = ActionState.CANCELLED
                 row.version += 1
                 row.updated_at = now
                 _record_event(session, row, now, actor=principal)
@@ -300,14 +297,14 @@ class ActionStore:
                 )
             )
             if prior_key is not None:
-                if prior_key.request_id != request_id or prior_key.verdict != body.verdict.value:
+                if prior_key.request_id != request_id or prior_key.verdict != body.verdict:
                     raise ActionConflictError("decision idempotency key was already used for another decision")
                 return await self._view(session, row, principal), False
             if row.version != body.expected_version:
                 raise ActionConflictError(
                     f"request changed: expected version {body.expected_version}, current version {row.version}"
                 )
-            if row.state != ActionState.DECISION_PENDING.value:
+            if row.state != ActionState.DECISION_PENDING:
                 raise ActionConflictError(f"request was already decided; current state is {row.state}")
             should_dispatch = _record_decision(
                 session,
@@ -326,7 +323,7 @@ class ActionStore:
         async with self._sessions() as session:
             return list(
                 await session.scalars(
-                    select(ExecutionRow.request_id).where(ExecutionRow.state == ExecutionState.PENDING_DISPATCH.value)
+                    select(ExecutionRow.request_id).where(ExecutionRow.state == ExecutionState.PENDING_DISPATCH)
                 )
             )
 
@@ -348,34 +345,32 @@ class ActionStore:
             )
             if row is None or execution is None:
                 raise ActionNotFoundError(str(request_id))
-            if execution.state != ExecutionState.PENDING_DISPATCH.value:
+            if execution.state != ExecutionState.PENDING_DISPATCH:
                 return None
-            if row.state != ActionState.ALLOWED.value:
+            if row.state != ActionState.ALLOWED:
                 raise ActionConflictError(f"cannot dispatch request in {row.state}")
             now = datetime.now(UTC)
-            if row.external_grant is not None and not await self._grant_authorized(
-                session, ExternalGrantProvenance.model_validate(row.external_grant)
-            ):
+            if row.external_grant is not None and not await self._grant_authorized(session, row.external_grant):
                 # Preserve the historical Decision; the original grant no longer permits dispatch.
-                execution.state = ExecutionState.FAILED.value
+                execution.state = ExecutionState.FAILED
                 execution.error = {"code": "external_grant_not_authorized"}
                 execution.completed_at = now
-                row.state = ActionState.FAILED.value
+                row.state = ActionState.FAILED
                 row.version += 1
                 row.updated_at = now
                 _record_event(session, row, now)
                 return None
             # Authority is checked even during outages. Replica-local availability is not stored.
-            if can_dispatch is not None and not can_dispatch(ActionIdentity.model_validate(row.action)):
+            if can_dispatch is not None and not can_dispatch(row.action):
                 return None
             lease_token = uuid4()
             lease_expires_at = now + lease_duration
-            execution.state = ExecutionState.DISPATCHING.value
+            execution.state = ExecutionState.DISPATCHING
             execution.executor_id = executor_id
             execution.lease_token = lease_token
             execution.lease_expires_at = lease_expires_at
             execution.heartbeat_at = now
-            row.state = ActionState.DISPATCHING.value
+            row.state = ActionState.DISPATCHING
             row.version += 1
             row.updated_at = now
             _record_event(session, row, now)
@@ -396,7 +391,7 @@ class ActionStore:
             )
             if execution is None or not _owns_lease(execution, executor_id, lease_token):
                 return False
-            if execution.state not in {ExecutionState.DISPATCHING.value, ExecutionState.RUNNING.value}:
+            if execution.state not in {ExecutionState.DISPATCHING, ExecutionState.RUNNING}:
                 return False
             now = datetime.now(UTC)
             execution.lease_expires_at = now + lease_duration
@@ -414,23 +409,21 @@ class ActionStore:
             )
             if row is None or execution is None:
                 raise ActionNotFoundError(str(request_id))
-            if row.state != ActionState.DISPATCHING.value or execution.state != ExecutionState.DISPATCHING.value:
+            if row.state != ActionState.DISPATCHING or execution.state != ExecutionState.DISPATCHING:
                 raise ActionConflictError(f"cannot start execution in {row.state}/{execution.state}")
             now = datetime.now(UTC)
-            execution.state = ExecutionState.RUNNING.value
+            execution.state = ExecutionState.RUNNING
             execution.started_at = now
-            row.state = ActionState.RUNNING.value
+            row.state = ActionState.RUNNING
             row.version += 1
             row.updated_at = now
             _record_event(session, row, now)
             return ExecutionRequest(
                 request_id=row.id,
-                action=ActionIdentity.model_validate(row.action),
+                action=row.action,
                 arguments=row.arguments,
                 caller=ServiceAccountRef(namespace=row.caller_namespace, name=row.caller_name),
-                external_grant=ExternalGrantProvenance.model_validate(row.external_grant)
-                if row.external_grant is not None
-                else None,
+                external_grant=row.external_grant,
             )
 
     async def finish_execution(
@@ -456,18 +449,18 @@ class ActionStore:
             if not _owns_lease(execution, executor_id, lease_token):
                 raise ActionConflictError("caller is not the recognized owner of this execution's lease")
             now = datetime.now(UTC)
-            if execution.state in {ExecutionState.DISPATCHING.value, ExecutionState.RUNNING.value}:
+            if execution.state in {ExecutionState.DISPATCHING, ExecutionState.RUNNING}:
                 execution.completed_at = now
-            elif execution.state == ExecutionState.EXECUTION_UNKNOWN.value:
+            elif execution.state == ExecutionState.EXECUTION_UNKNOWN:
                 execution.reconciled_at = now
                 execution.reconciliation_source = ReconciliationSource.LATE_COMPLETION
                 execution.reconciled_by = executor_id
             else:
                 raise ActionConflictError(f"cannot finish execution in {execution.state}")
-            execution.state = result.state.value
+            execution.state = result.state
             execution.result = result.result
             execution.error = result.error
-            row.state = _TERMINAL_ACTION_STATE[result.state].value
+            row.state = _TERMINAL_ACTION_STATE[result.state]
             row.version += 1
             row.updated_at = now
             _record_event(session, row, now)
@@ -487,7 +480,7 @@ class ActionStore:
                 await session.scalars(
                     select(ExecutionRow)
                     .where(
-                        ExecutionRow.state.in_([ExecutionState.DISPATCHING.value, ExecutionState.RUNNING.value]),
+                        ExecutionRow.state.in_([ExecutionState.DISPATCHING, ExecutionState.RUNNING]),
                         ExecutionRow.lease_expires_at < now,
                     )
                     .with_for_update()
@@ -505,10 +498,10 @@ class ActionStore:
                     if executor_heartbeat is None or executor_heartbeat.heartbeat_at < executor_stale_before
                     else UnknownOutcomeReason.LEASE_EXPIRED
                 )
-                execution.state = ExecutionState.EXECUTION_UNKNOWN.value
+                execution.state = ExecutionState.EXECUTION_UNKNOWN
                 execution.error = {"kind": reason, "message": "dispatch outcome unknown; not replayed"}
                 execution.completed_at = now
-                row.state = ActionState.EXECUTION_UNKNOWN.value
+                row.state = ActionState.EXECUTION_UNKNOWN
                 row.version += 1
                 row.updated_at = now
                 _record_event(session, row, now)
@@ -534,17 +527,15 @@ class ActionStore:
         return ActionRequestView(
             id=row.id,
             idempotency_key=row.idempotency_key,
-            action=ActionIdentity.model_validate(row.action),
+            action=row.action,
             arguments=row.arguments if operator else _redact(row.arguments),
             title=row.title,
             description=row.description,
             caller=ServiceAccountRef(namespace=row.caller_namespace, name=row.caller_name)
             if isinstance(principal, (OperatorPrincipal, ServiceReaderPrincipal))
             else None,
-            external_grant=ExternalGrantProvenance.model_validate(row.external_grant)
-            if row.external_grant is not None
-            else None,
-            state=ActionState(row.state),
+            external_grant=row.external_grant,
+            state=row.state,
             version=row.version,
             created_at=row.created_at,
             updated_at=row.updated_at,
@@ -567,7 +558,7 @@ def _may_read(row: ActionRequestRow, principal: ReadPrincipal) -> bool:
 def _record_event(
     session: AsyncSession, row: ActionRequestRow, at: datetime, *, actor: Principal | None = None
 ) -> None:
-    if row.state != ActionState.DECISION_PENDING.value and row.history_at is None:
+    if row.state != ActionState.DECISION_PENDING and row.history_at is None:
         row.history_at = at
     session.add(
         ActionEventRow(
@@ -598,25 +589,25 @@ def _record_decision(
     session.add(
         DecisionRow(
             request_id=row.id,
-            verdict=verdict.value,
+            verdict=verdict,
             provider=provider,
             operator_issuer=None if operator is None else operator.issuer,
             operator_subject=None if operator is None else operator.subject,
             decision_note=decision_note,
             reason_code=reason_code,
             reason_description=reason_description,
-            policy_evidence=policy_evidence.model_dump(mode="json") if policy_evidence is not None else None,
+            policy_evidence=policy_evidence,
             idempotency_key=idempotency_key,
             decided_at=now,
         )
     )
-    row.state = ActionState.ALLOWED.value if verdict is Verdict.ALLOW else ActionState.DENIED.value
+    row.state = ActionState.ALLOWED if verdict is Verdict.ALLOW else ActionState.DENIED
     row.version += 1
     row.updated_at = now
     _record_event(session, row, now)
     should_dispatch = verdict is Verdict.ALLOW
     if should_dispatch:
-        session.add(ExecutionRow(request_id=row.id, state=ExecutionState.PENDING_DISPATCH.value, created_at=now))
+        session.add(ExecutionRow(request_id=row.id, state=ExecutionState.PENDING_DISPATCH, created_at=now))
     return should_dispatch
 
 
@@ -625,13 +616,13 @@ def _decision_view(row: DecisionRow | None) -> DecisionView | None:
         return None
     return DecisionView(
         id=row.id,
-        verdict=Verdict(row.verdict),
+        verdict=row.verdict,
         provider=row.provider,
         operator=operator_or_none(row.operator_issuer, row.operator_subject),
         decision_note=row.decision_note,
         reason_code=row.reason_code,
         reason_description=row.reason_description,
-        policy_evidence=PolicyEvidence.model_validate(row.policy_evidence) if row.policy_evidence is not None else None,
+        policy_evidence=row.policy_evidence,
         idempotency_key=row.idempotency_key,
         decided_at=row.decided_at,
     )
@@ -642,7 +633,7 @@ def _execution_view(row: ExecutionRow | None) -> ExecutionView | None:
         return None
     return ExecutionView(
         id=row.id,
-        state=ExecutionState(row.state),
+        state=row.state,
         result=_redact_value(row.result),
         error=_redact(row.error) if row.error is not None else None,
         created_at=row.created_at,

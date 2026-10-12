@@ -83,13 +83,8 @@ class PolicyIndex:
 
     @property
     def synced(self) -> bool:
-        """Whether this replica's copy is complete *and* still moving, which is what acting on it needs.
-
-        Listing every kind once is the weaker fact, and taking it for this one is how a replica whose
-        watches have wedged goes on auto-deciding from a snapshot it took hours ago: the bindings it
-        holds are the bindings an operator has since revoked, and nothing about the answers looks
-        wrong. A watch the server keeps refusing stops advancing `freshness` instead.
-        """
+        """Listed once **and** watches still advancing. Listing alone would let a wedged replica
+        auto-decide from a stale snapshot."""
         return self.listed and self.freshness.fresh(self.clock())
 
     def admits(self, ref: ServiceAccountRef) -> bool:

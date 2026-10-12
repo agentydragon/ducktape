@@ -122,7 +122,7 @@ async def test_rebind_keeps_token_and_history_but_not_old_pending_action_authori
         assert await service.authorize_action(db, after.provenance())
         stored = await db.get(ConnectionGrantRow, request.grant_id)
         assert stored is not None
-        assert stored.original_caller == PERSONAL.model_dump(mode="json")
+        assert stored.original_caller == PERSONAL
     with pytest.raises(ConnectionConflictError):
         await service.rebind(connection.id, expected_version=connection.version, caller=PERSONAL)
     with pytest.raises(GrantRejectedError):

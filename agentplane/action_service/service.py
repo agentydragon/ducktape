@@ -120,10 +120,7 @@ def _claim_failed(state: RetryCallState) -> None:
 
 
 class ExecutionLease:
-    """Handle an executor holds for the one Execution it is currently attempting.
-
-    The seam a future out-of-process worker would present over the wire, called in-process for v0.
-    """
+    """Handle an executor holds for the one Execution it is currently attempting."""
 
     def __init__(self, store: ActionStore, claim: ExecutionClaim, lease_duration: timedelta) -> None:
         self._store = store
@@ -147,27 +144,16 @@ class ExecutionLease:
 
 
 class Executor(ABC):
-    """One backend the service dispatches Executions to.
-
-    A base class and not a Protocol because the implementers are nameable and few, and because
-    winding down is the rarer half: inheriting supplies it, so a backend holding nothing says so by
-    not overriding rather than by restating the no-op.
-    """
+    """One backend the service dispatches Executions to."""
 
     @abstractmethod
     async def execute(self, request: ExecutionRequest, lease: ExecutionLease) -> ExecutionResult: ...
 
     def begin_drain(self) -> None:
-        """Stop offering this backend, without waiting for anything.
+        """Stop offering this backend, without waiting; teardown is `close`'s.
 
-        Deliberately synchronous and deliberately only the first half: shutdown marks every
-        executor unavailable in one pass and awaits their teardown afterwards, so that the second
-        backend stops being advertised at the same moment as the first rather than after it has
-        finished closing. Awaiting the rest is `close`'s, where a backend has one.
-
-        Nothing by default, which is what a backend owning no connection and no work of its own
-        has to do: what stops new dispatches reaching it is the service's own drain. The explicit
-        return says the empty body is the implementation and not a missing `abstractmethod`.
+        Synchronous so shutdown stops advertising every backend in one pass before awaiting any.
+        A backend owning no connection or work needs nothing here: the service's drain stops dispatch.
         """
         return
 

@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import AsyncIterator, Mapping
-from contextlib import asynccontextmanager
+from collections.abc import AsyncIterator, Iterator, Mapping
+from contextlib import asynccontextmanager, contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
@@ -71,10 +71,15 @@ _UPSTREAM_UNVERIFIED = "The upstream sign-in could not be verified; authorize a 
 _CONNECTION_GONE = "The Connection no longer exists; authorize a new connection."
 
 
-def _observe_failure(error: Exception) -> None:
-    failures = _VERIFY_FAILURES.get()
-    if failures is not None:
-        failures.append(error)
+@contextmanager
+def _observed() -> Iterator[None]:
+    """Record a failure for `load_access_token` to tell from a bad token, then let it propagate."""
+    try:
+        yield
+    except Exception as error:
+        if (failures := _VERIFY_FAILURES.get()) is not None:
+            failures.append(error)
+        raise
 
 
 class _ObservedStorage(BaseWrapper):
@@ -84,36 +89,24 @@ class _ObservedStorage(BaseWrapper):
         self.key_value = storage
 
     async def get(self, key: str, *, collection: str | None = None) -> dict[str, Any] | None:
-        try:
+        with _observed():
             return cast(dict[str, Any] | None, await super().get(key, collection=collection))
-        except Exception as error:
-            _observe_failure(error)
-            raise
 
     async def put(
         self, key: str, value: Mapping[str, Any], *, collection: str | None = None, ttl: SupportsFloat | None = None
     ) -> None:
-        try:
+        with _observed():
             await super().put(key, value, collection=collection, ttl=ttl)
-        except Exception as error:
-            _observe_failure(error)
-            raise
 
     async def delete(self, key: str, *, collection: str | None = None) -> bool:
-        try:
+        with _observed():
             return cast(bool, await super().delete(key, collection=collection))
-        except Exception as error:
-            _observe_failure(error)
-            raise
 
 
 class _ObservedVerifier(RetryableJWTVerifier):
     async def _fetch_jwks(self) -> dict[str, Any]:
-        try:
+        with _observed():
             return await super()._fetch_jwks()
-        except Exception as error:
-            _observe_failure(error)
-            raise
 
 
 @dataclass(frozen=True)

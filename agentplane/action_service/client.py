@@ -3,12 +3,12 @@
 from __future__ import annotations
 
 from collections.abc import AsyncIterator, Awaitable, Callable
-from contextlib import asynccontextmanager
-from typing import cast
+from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from uuid import UUID
 
 import httpx
 from anyio import CancelScope
+from pydantic import BaseModel, TypeAdapter
 
 from agentplane.action_service.catalog import ActionGroupView
 from agentplane.action_service.connections import Connection, ConnectionRebind, ConnectionRename, ConnectionVersion
@@ -40,81 +40,65 @@ class OperatorActionServiceClient:
         response.raise_for_status()
         return response
 
+    async def _call[T](
+        self, adapter: TypeAdapter[T], method: str, url: str, *, body: BaseModel | None = None, **kwargs
+    ) -> T:
+        json = body.model_dump(mode="json") if body is not None else None
+        return adapter.validate_json((await self._request(method, url, json=json, **kwargs)).content)
+
     async def service_account_action_policy(self, account: ServiceAccountRef) -> SubjectActionPolicyView:
-        response = await self._request(
-            "GET", f"/v1/operator/action-policy/service-accounts/{account.namespace}/{account.name}"
-        )
-        return SubjectActionPolicyView.model_validate(response.json())
+        url = f"/v1/operator/action-policy/service-accounts/{account.namespace}/{account.name}"
+        return await self._call(TypeAdapter(SubjectActionPolicyView), "GET", url)
 
     async def complete_mcp_linkage(self, state: str, code: str) -> McpLinkageView:
-        response = await self._request("GET", "/v1/mcp-linkage/callback", params={"state": state, "code": code})
-        return McpLinkageView.model_validate(response.json())
+        params = {"state": state, "code": code}
+        return await self._call(TypeAdapter(McpLinkageView), "GET", "/v1/mcp-linkage/callback", params=params)
 
     async def mcp_linkages(self) -> list[McpLinkageView]:
-        response = await self._request("GET", "/v1/operator/mcp-servers")
-        return [McpLinkageView.model_validate(row) for row in response.json()]
+        return await self._call(TypeAdapter(list[McpLinkageView]), "GET", "/v1/operator/mcp-servers")
 
     async def action_groups(self) -> list[ActionGroupView]:
-        response = await self._request("GET", "/v1/action-groups")
-        return [ActionGroupView.model_validate(row) for row in response.json()]
+        return await self._call(TypeAdapter(list[ActionGroupView]), "GET", "/v1/action-groups")
 
     async def mcp_linkage(self, server_id: str) -> McpLinkageView:
-        response = await self._request("GET", f"/v1/operator/mcp-servers/{server_id}/linkage")
-        return McpLinkageView.model_validate(response.json())
+        return await self._call(TypeAdapter(McpLinkageView), "GET", f"/v1/operator/mcp-servers/{server_id}/linkage")
 
     async def start_mcp_linkage(self, server_id: str, scopes: list[str]) -> McpLinkageStartView:
-        response = await self._request(
-            "POST",
-            f"/v1/operator/mcp-servers/{server_id}/linkage/start",
-            json=McpLinkageStart(scopes=scopes).model_dump(mode="json"),
-        )
-        return McpLinkageStartView.model_validate(response.json())
+        url = f"/v1/operator/mcp-servers/{server_id}/linkage/start"
+        return await self._call(TypeAdapter(McpLinkageStartView), "POST", url, body=McpLinkageStart(scopes=scopes))
 
     async def disconnect_mcp_linkage(self, server_id: str) -> McpLinkageView:
-        response = await self._request("POST", f"/v1/operator/mcp-servers/{server_id}/linkage/disconnect")
-        return McpLinkageView.model_validate(response.json())
+        url = f"/v1/operator/mcp-servers/{server_id}/linkage/disconnect"
+        return await self._call(TypeAdapter(McpLinkageView), "POST", url)
 
     async def caller_service_accounts(self) -> list[ServiceAccountRef]:
-        response = await self._request("GET", "/v1/operator/caller-service-accounts")
-        return [ServiceAccountRef.model_validate(row) for row in response.json()]
+        return await self._call(TypeAdapter(list[ServiceAccountRef]), "GET", "/v1/operator/caller-service-accounts")
 
     async def preview_enrollment(self, handle: str, body: EnrollmentPreviewInput) -> EnrollmentPreview:
-        response = await self._request(
-            "POST", f"/v1/operator/connection-enrollments/{handle}/preview", json=body.model_dump(mode="json")
-        )
-        return EnrollmentPreview.model_validate(response.json())
+        url = f"/v1/operator/connection-enrollments/{handle}/preview"
+        return await self._call(TypeAdapter(EnrollmentPreview), "POST", url, body=body)
 
     async def decide_enrollment(self, handle: str, body: EnrollmentDecisionInput) -> EnrollmentDecisionResult:
-        response = await self._request(
-            "POST", f"/v1/operator/connection-enrollments/{handle}/decision", json=body.model_dump(mode="json")
-        )
-        return EnrollmentDecisionResult.model_validate(response.json())
+        url = f"/v1/operator/connection-enrollments/{handle}/decision"
+        return await self._call(TypeAdapter(EnrollmentDecisionResult), "POST", url, body=body)
 
     async def connections(self) -> list[Connection]:
-        response = await self._request("GET", "/v1/operator/connections")
-        return [Connection.model_validate(row) for row in response.json()]
+        return await self._call(TypeAdapter(list[Connection]), "GET", "/v1/operator/connections")
 
     async def connection(self, connection_id: UUID) -> Connection:
-        response = await self._request("GET", f"/v1/operator/connections/{connection_id}")
-        return Connection.model_validate(response.json())
+        return await self._call(TypeAdapter(Connection), "GET", f"/v1/operator/connections/{connection_id}")
 
     async def rename_connection(self, connection_id: UUID, body: ConnectionRename) -> Connection:
-        response = await self._request(
-            "PATCH", f"/v1/operator/connections/{connection_id}", json=body.model_dump(mode="json")
-        )
-        return Connection.model_validate(response.json())
+        url = f"/v1/operator/connections/{connection_id}"
+        return await self._call(TypeAdapter(Connection), "PATCH", url, body=body)
 
     async def rebind_connection(self, connection_id: UUID, body: ConnectionRebind) -> Connection:
-        response = await self._request(
-            "POST", f"/v1/operator/connections/{connection_id}/rebind", json=body.model_dump(mode="json")
-        )
-        return Connection.model_validate(response.json())
+        url = f"/v1/operator/connections/{connection_id}/rebind"
+        return await self._call(TypeAdapter(Connection), "POST", url, body=body)
 
     async def unbind_connection(self, connection_id: UUID, body: ConnectionVersion) -> Connection:
-        response = await self._request(
-            "POST", f"/v1/operator/connections/{connection_id}/unbind", json=body.model_dump(mode="json")
-        )
-        return Connection.model_validate(response.json())
+        url = f"/v1/operator/connections/{connection_id}/unbind"
+        return await self._call(TypeAdapter(Connection), "POST", url, body=body)
 
     async def list_requests(
         self, *, states: tuple[ActionState, ...] = (), idempotency_key: str | None = None
@@ -122,16 +106,15 @@ class OperatorActionServiceClient:
         params: list[tuple[str, str]] = [("state", state) for state in states]
         if idempotency_key is not None:
             params.append(("idempotency_key", idempotency_key))
-        response = await self._request("GET", "/v1/operator/action-requests", params=params)
-        return [ActionRequestView.model_validate(row) for row in response.json()]
+        return await self._call(
+            TypeAdapter(list[ActionRequestView]), "GET", "/v1/operator/action-requests", params=params
+        )
 
     async def history(self, *, limit: int = 50, cursor: str | None = None) -> ActionHistoryPage:
-        response = await self._request(
-            "GET",
-            "/v1/operator/action-requests/history",
-            params={"limit": limit, **({"cursor": cursor} if cursor is not None else {})},
+        params = {"limit": limit, **({"cursor": cursor} if cursor is not None else {})}
+        return await self._call(
+            TypeAdapter(ActionHistoryPage), "GET", "/v1/operator/action-requests/history", params=params
         )
-        return ActionHistoryPage.model_validate(response.json())
 
     @asynccontextmanager
     async def _stream_operator(
@@ -148,40 +131,26 @@ class OperatorActionServiceClient:
             with CancelScope(shield=True):
                 await response.aclose()
 
-    @asynccontextmanager
-    async def stream_requests(self, *, state: ActionState | None = None) -> AsyncIterator[AsyncIterator[bytes]]:
-        async with self._stream_operator(
-            "/v1/operator/action-requests/stream", params={"state": state} if state else None
-        ) as chunks:
-            yield chunks
+    def stream_requests(self, *, state: ActionState | None = None) -> AbstractAsyncContextManager[AsyncIterator[bytes]]:
+        return self._stream_operator("/v1/operator/action-requests/stream", params={"state": state} if state else None)
 
-    @asynccontextmanager
-    async def stream_push_subscriptions(self) -> AsyncIterator[AsyncIterator[bytes]]:
-        async with self._stream_operator("/v1/operator/push/subscriptions/stream") as chunks:
-            yield chunks
+    def stream_push_subscriptions(self) -> AbstractAsyncContextManager[AsyncIterator[bytes]]:
+        return self._stream_operator("/v1/operator/push/subscriptions/stream")
 
-    @asynccontextmanager
-    async def stream_connections(self) -> AsyncIterator[AsyncIterator[bytes]]:
-        async with self._stream_operator("/v1/operator/connections/stream") as chunks:
-            yield chunks
+    def stream_connections(self) -> AbstractAsyncContextManager[AsyncIterator[bytes]]:
+        return self._stream_operator("/v1/operator/connections/stream")
 
-    @asynccontextmanager
-    async def stream_mcp_linkages(self) -> AsyncIterator[AsyncIterator[bytes]]:
-        async with self._stream_operator("/v1/operator/mcp-servers/stream") as chunks:
-            yield chunks
+    def stream_mcp_linkages(self) -> AbstractAsyncContextManager[AsyncIterator[bytes]]:
+        return self._stream_operator("/v1/operator/mcp-servers/stream")
 
-    @asynccontextmanager
-    async def stream_group_health(self) -> AsyncIterator[AsyncIterator[bytes]]:
-        async with self._stream_operator("/v1/operator/action-groups/stream") as chunks:
-            yield chunks
+    def stream_group_health(self) -> AbstractAsyncContextManager[AsyncIterator[bytes]]:
+        return self._stream_operator("/v1/operator/action-groups/stream")
 
     async def push_config(self) -> dict[str, str | None]:
-        response = await self._request("GET", "/v1/operator/push/config")
-        return cast(dict[str, str | None], response.json())
+        return await self._call(TypeAdapter(dict[str, str | None]), "GET", "/v1/operator/push/config")
 
     async def push_subscriptions(self) -> list[dict[str, object]]:
-        response = await self._request("GET", "/v1/operator/push/subscriptions")
-        return cast(list[dict[str, object]], response.json())
+        return await self._call(TypeAdapter(list[dict[str, object]]), "GET", "/v1/operator/push/subscriptions")
 
     async def register_push(self, subscription: dict[str, str], *, user_agent: str) -> None:
         await self._request(
@@ -192,11 +161,8 @@ class OperatorActionServiceClient:
         await self._request("DELETE", "/v1/operator/push/subscriptions", params={"endpoint": endpoint})
 
     async def get(self, request_id: UUID) -> ActionRequestView:
-        response = await self._request("GET", f"/v1/operator/action-requests/{request_id}")
-        return ActionRequestView.model_validate(response.json())
+        return await self._call(TypeAdapter(ActionRequestView), "GET", f"/v1/operator/action-requests/{request_id}")
 
     async def decide(self, request_id: UUID, body: DecisionInput) -> ActionRequestView:
-        response = await self._request(
-            "POST", f"/v1/operator/action-requests/{request_id}/decision", json=body.model_dump(mode="json")
-        )
-        return ActionRequestView.model_validate(response.json())
+        url = f"/v1/operator/action-requests/{request_id}/decision"
+        return await self._call(TypeAdapter(ActionRequestView), "POST", url, body=body)

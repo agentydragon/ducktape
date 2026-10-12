@@ -711,9 +711,7 @@ async def test_filter_order_and_duplicates_do_not_change_subscription_identity(
     assert (await store.subscribe(PRINCIPAL, retry, binding)).id == original.id
     # Existing noncanonical JSON is interpreted using the same set semantics.
     async with store.sessions.begin() as session:
-        row = await session.get(Subscription, original.id)
-        assert row is not None
-        row.creation = wire
+        await session.execute(update(Subscription).where(Subscription.id == original.id).values(creation=wire))
     assert (await store.subscribe(PRINCIPAL, body, binding)).id == original.id
     filters[0]["actions"] = ["deleted"]
     with pytest.raises(ConflictError):

@@ -163,7 +163,7 @@ async def test_owner_idempotence_cancel_and_version(store: Store) -> None:
     async with store.sessions() as session:
         row = await session.get(Subscription, first.id)
         assert row is not None
-        assert row.creation == BODY.model_dump(mode="json")
+        assert row.creation == BODY
     # The key is local to the session inbox, not the whole sandbox or account.
     other_session = await store.subscribe(PRINCIPAL, BODY.model_copy(update={"session_id": "other-session"}))
     assert other_session.inbox_id != first.inbox_id
@@ -247,7 +247,7 @@ async def test_creation_migrations_preserve_populated_inbox(store: Store, engine
         assert row.actions_after_sequence == 3
         assert row.github_start_position is None
         assert row.github_binding is None
-        assert row.creation == BODY.model_dump(mode="json")
+        assert row.creation == BODY
     assert await store.subscription(PRINCIPAL.account, subscription.id) == replayed
     assert await store.subscriptions(PRINCIPAL.account) == [replayed]
     assert await store.read(PRINCIPAL.account, subscription.inbox_id, 0, 128) == before

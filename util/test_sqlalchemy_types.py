@@ -1,4 +1,4 @@
-"""What the enum column types do with a value, including one their vocabulary does not hold."""
+"""What the column types do with a value, including one an enum vocabulary does not hold."""
 
 from __future__ import annotations
 
@@ -6,9 +6,10 @@ from enum import StrEnum
 
 import pytest
 import pytest_bazel
+from pydantic import BaseModel, ConfigDict
 
 from util.enum_vocab import UnknownValue
-from util.sqlalchemy_types import TextBackedStrEnumUnionColumn, TolerantTextBackedStrEnumUnionColumn
+from util.sqlalchemy_types import PydanticColumn, TextBackedStrEnumUnionColumn, TolerantTextBackedStrEnumUnionColumn
 
 
 class Fruit(StrEnum):
@@ -67,6 +68,24 @@ def test_a_known_member_binds_as_its_stored_spelling() -> None:
     column = TolerantTextBackedStrEnumUnionColumn(Fruit, Vegetable)
 
     assert (column.process_bind_param(Fruit.PEAR, None), column.process_bind_param(None, None)) == ("pear", None)
+
+
+class AliasedPayload(BaseModel):
+    model_config = ConfigDict(
+        alias_generator=lambda name: name.replace("snake_case", "camelCase"), populate_by_name=True
+    )
+
+    snake_case: str
+
+
+def test_pydantic_column_handles_containers_and_aliases() -> None:
+    column: PydanticColumn[list[AliasedPayload]] = PydanticColumn(list[AliasedPayload])
+    payload = [AliasedPayload(snake_case="value")]
+
+    stored = column.process_bind_param(payload, None)
+
+    assert stored == [{"camelCase": "value"}]
+    assert column.process_result_value(stored, None) == payload
 
 
 if __name__ == "__main__":

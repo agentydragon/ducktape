@@ -63,6 +63,7 @@ py_library(
         "@pypi//prometheus_client",
         "@pypi//pydantic",
         "@pypi//sqlalchemy",
+        "@pypi//tenacity",
     ],
 )
 
@@ -76,8 +77,11 @@ py_library(
     name = "db",
     srcs = ["db.py"],
     deps = [
+        ":catalog",
         ":models",
         ":updates",
+        "//agentplane:subjects",
+        "//util:sqlalchemy_types",
         "@pypi//asyncpg",
         "@pypi//pydantic",
         "@pypi//sqlalchemy",
@@ -178,6 +182,7 @@ py_library(
         "//agentplane:subjects",
         "@pypi//anyio",
         "@pypi//httpx",
+        "@pypi//pydantic",
     ],
 )
 
@@ -454,7 +459,6 @@ py_test(
         "@pypi//mcp",
         "@pypi//mcp_types",
         "@pypi//more_itertools",
-        "@pypi//pydantic",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",

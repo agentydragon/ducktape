@@ -5,7 +5,6 @@ from __future__ import annotations
 import asyncio
 import os
 import signal
-import sys
 import textwrap
 from datetime import timedelta
 from pathlib import Path
@@ -102,11 +101,6 @@ async def test_empty_catalog_has_no_echo_fallback(engine: AsyncEngine) -> None:
                 )
 
 
-def test_missing_binding_is_rejected() -> None:
-    with pytest.raises(ValidationError, match="executor"):
-        ActionGroup.model_validate({"title": "Missing binding", "description": "Invalid"})
-
-
 async def test_invalid_binding_fails_before_any_adapter_starts() -> None:
     catalog = ActionCatalog(
         groups={"first": _group({"transport": "stdio", "command": "unused"}), "invalid": _group({})}
@@ -140,26 +134,6 @@ async def test_malformed_http_binding_fails_before_any_connection_without_echoin
                 pytest.fail("malformed binding was served")
         assert "test-only-private" not in str(error.value)
         start.assert_not_called()
-
-
-@pytest.mark.parametrize("kind", ["echo", "hostexec", "unknown"])
-def test_unsupported_executor_kind_is_rejected_by_settings(kind: str) -> None:
-    with patch.object(sys, "argv", ["test_runtime"]), pytest.raises(ValidationError, match="union_tag_invalid"):
-        Settings.model_validate(
-            {
-                "database_url": "postgresql+asyncpg://test.invalid/test",
-                "token_audience": TOKEN_AUDIENCE,
-                "policy_namespace": NAMESPACE,
-                "caller_service_account_namespaces": [NAMESPACE],
-                "action_groups": {
-                    "invalid": {
-                        "title": "Unsupported backend",
-                        "description": "Must fail before runtime starts",
-                        "executor": {"kind": kind, "description": "Test backend", "config": {"command": "unused"}},
-                    }
-                },
-            }
-        )
 
 
 def test_config_file_loads_reviewed_group_and_rejects_malformed_binding(

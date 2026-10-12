@@ -33,9 +33,8 @@ from haku.console.identity.agent import (
     EnrollmentPhase,
 )
 from haku.console.identity.operator_identity import OperatorStatus
-from haku.console.pydantic_column import PydanticColumn
 from haku.console.tool_calls import ToolCallStatus
-from util.sqlalchemy_types import StrEnumColumn
+from util.sqlalchemy_types import PydanticColumn, StrEnumColumn
 
 
 class Base(DeclarativeBase):

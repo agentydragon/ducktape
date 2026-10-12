@@ -74,31 +74,9 @@ py_library(
 )
 
 py_library(
-    name = "pydantic_column",
-    srcs = ["pydantic_column.py"],
-    deps = [
-        "@pypi//pydantic",
-        "@pypi//sqlalchemy",
-    ],
-)
-
-py_test(
-    name = "test_pydantic_column",
-    srcs = ["test_pydantic_column.py"],
-    deps = [
-        ":conftest",
-        ":pydantic_column",
-        "//:conftest",
-        "@pypi//pydantic",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_library(
     name = "database_schema",
     srcs = ["database_schema.py"],
     deps = [
-        ":pydantic_column",
         "//haku/console/grants:envelope",
         "//haku/console/grants/kubernetes:models",
         "//haku/console/identity:agent",

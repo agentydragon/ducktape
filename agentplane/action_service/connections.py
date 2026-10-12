@@ -176,7 +176,7 @@ class ConnectionAuthority:
                     connection = ConnectionRow(
                         id=uuid4(),
                         display_name=name,
-                        bound_caller=request.service_account.model_dump(mode="json"),
+                        bound_caller=request.service_account,
                         binding_version=0,
                         version=1,
                         created_at=now,
@@ -191,7 +191,7 @@ class ConnectionAuthority:
                     prior = await _grants(db, connection_id)
                     revision = max((grant.revision for grant in prior), default=0) + 1
                     _revoke(prior, now)
-                    connection.bound_caller = request.service_account.model_dump(mode="json")
+                    connection.bound_caller = request.service_account
                     connection.binding_version = 0
                     connection.version += 1
                     connection.updated_at = now
@@ -199,7 +199,7 @@ class ConnectionAuthority:
                 id=request.grant_id,
                 connection_id=connection.id,
                 revision=revision,
-                original_caller=request.service_account.model_dump(mode="json"),
+                original_caller=request.service_account,
                 issuer=request.issuer,
                 client_id=request.client_id,
                 request_digest=digest,
@@ -294,7 +294,7 @@ class ConnectionAuthority:
         """The account a Connection's unrevoked grant acts as, refused unless still labeled."""
         if connection.bound_caller is None:
             raise GrantRejectedError("connection has no bound caller")
-        return self.require_caller(ServiceAccountRef.model_validate(connection.bound_caller))
+        return self.require_caller(connection.bound_caller)
 
     async def _locked_grant(self, db: AsyncSession, grant_id: UUID) -> ConnectionGrantRow:
         grant = await db.get(ConnectionGrantRow, grant_id)
@@ -342,9 +342,9 @@ class ConnectionAuthority:
             if row.bound_caller is None:
                 raise GrantRejectedError("connection is unbound")
             self.require_caller(caller)
-            if ServiceAccountRef.model_validate(row.bound_caller) == caller:
+            if row.bound_caller == caller:
                 return _view(row, grants)
-            row.bound_caller = caller.model_dump(mode="json")
+            row.bound_caller = caller
             row.binding_version += 1
             row.version += 1
             row.updated_at = datetime.now(UTC)
@@ -399,7 +399,7 @@ def _original_grant(row: ConnectionGrantRow) -> Grant:
         id=row.id,
         connection_id=row.connection_id,
         revision=row.revision,
-        caller=ServiceAccountRef.model_validate(row.original_caller),
+        caller=row.original_caller,
         issuer=row.issuer,
         client_id=row.client_id,
         status=GrantStatus(row.status),
@@ -418,5 +418,5 @@ def _view(row: ConnectionRow, grants: list[ConnectionGrantRow]) -> Connection:
         created_at=row.created_at,
         updated_at=row.updated_at,
         grants=[_original_grant(grant) for grant in grants],
-        bound_caller=ServiceAccountRef.model_validate(row.bound_caller) if row.bound_caller is not None else None,
+        bound_caller=row.bound_caller,
     )

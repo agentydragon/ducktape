@@ -229,8 +229,8 @@ class ActionPushNotifier:
                 if request.state == ActionState.DECISION_PENDING:
                     message: PushShow | PushRetract = PushShow(
                         action_id=str(request.id),
-                        action_group=request.action["group"],
-                        action_name=request.action["name"],
+                        action_group=request.action.group,
+                        action_name=request.action.name,
                         version=request.version,
                         url=f"{self._base_url}/#/actions/{request.id}",
                     )

@@ -101,7 +101,7 @@ class ClaimLostError(Exception):
 def refresh_status(row: RefreshRow) -> GitHubRefreshStatus:
     return GitHubRefreshStatus(
         last_success_at=row.last_success_at,
-        error_kind=SourceFailureKind(row.error_kind) if row.error_kind else None,
+        error_kind=row.error_kind,
         error=row.error,
         error_since=row.error_since,
         error_observed_at=row.error_observed_at,
@@ -161,13 +161,13 @@ async def subscription_view(session: AsyncSession, row: Subscription) -> Subscri
         github=await github_status(session, row),
         id=row.id,
         inbox_id=row.inbox_id,
-        source=Subscribe.model_validate(row.creation).source,
+        source=row.creation.source,
         idempotency_key=row.idempotency_key,
         version=row.version,
         cancelled=row.cancelled,
         expires_at=row.expires_at,
         last_success_at=row.last_success_at,
-        error_kind=SourceFailureKind(row.error_kind) if row.error_kind else None,
+        error_kind=row.error_kind,
         error_since=row.error_since,
         error_observed_at=row.error_observed_at,
         error=row.error,
@@ -273,7 +273,7 @@ class Store:
                 )
             )
             if row is not None:
-                if Subscribe.model_validate(row.creation) != body:
+                if row.creation != body:
                     raise ConflictError("idempotency key already names another subscription")
                 return await subscription_view(session, row)
             now = datetime.now(UTC)
@@ -327,7 +327,7 @@ class Store:
                 id=uuid4(),
                 inbox_id=inbox.id,
                 idempotency_key=body.idempotency_key,
-                creation=body.model_dump(mode="json"),
+                creation=body,
                 version=1,
                 actions_after_sequence=actions_after_sequence,
                 github_start_position=github_start_position,
@@ -491,11 +491,11 @@ class Store:
                             SubscriptionStatus(
                                 github=await github_status(session, sub),
                                 id=sub.id,
-                                source=Subscribe.model_validate(sub.creation).source,
+                                source=sub.creation.source,
                                 cancelled=sub.cancelled,
                                 expires_at=sub.expires_at,
                                 last_success_at=sub.last_success_at,
-                                error_kind=SourceFailureKind(sub.error_kind) if sub.error_kind else None,
+                                error_kind=sub.error_kind,
                                 error_since=sub.error_since,
                                 error_observed_at=sub.error_observed_at,
                                 error=sub.error,
@@ -765,7 +765,7 @@ class Store:
                 return
             row.next_attempt = datetime.now(UTC) + timedelta(seconds=5)
             self.source_succeeded(row)
-            spec = Subscribe.model_validate(row.creation).source
+            spec = row.creation.source
             assert isinstance(spec, ActionsSource)
             assert row.actions_after_sequence is not None
             for event in events:
@@ -1012,7 +1012,7 @@ class Store:
             assert row is not None
             if row.cancelled or row.version != source.version or row.expires_at <= datetime.now(UTC):
                 return
-            assert isinstance(Subscribe.model_validate(row.creation).source, GitHubSource)
+            assert isinstance(row.creation.source, GitHubSource)
             subject = await subject_key.load(session)
             if (
                 not fences

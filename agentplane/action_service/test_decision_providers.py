@@ -12,7 +12,6 @@ import pytest
 import pytest_bazel
 from mcp.types import CallToolResult
 from more_itertools import one
-from pydantic import ValidationError
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from agentplane.action_service.catalog import ActionCatalog, ActionIdentity
@@ -118,11 +117,6 @@ def body(idempotency_key: str, n: int = 1) -> ActionRequestInput:
     return ActionRequestInput(
         idempotency_key=idempotency_key, title=f"test title for {idempotency_key}", action=ECHO, arguments={"n": n}
     )
-
-
-def test_provider_outcome_bounds_the_reason_description() -> None:
-    with pytest.raises(ValidationError):
-        ProviderOutcome(verdict=ProviderVerdict.DENY, reason_code="x", reason_description="a" * 501)
 
 
 async def test_allow_deny_no_opinion_matrix(

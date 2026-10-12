@@ -234,7 +234,7 @@ class Service:
                 source = await self.store.source(claim)
                 if source is not None:
                     try:
-                        spec = Subscribe.model_validate(source.creation).source
+                        spec = source.creation.source
                         if isinstance(spec, ActionsSource):
                             assert source.actions_after_sequence is not None
                             events = await self.actions.events(owner, spec.request_id, source.actions_after_sequence)

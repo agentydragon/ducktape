@@ -69,6 +69,8 @@ py_library(
     name = "db",
     srcs = ["db.py"],
     deps = [
+        ":models",
+        "//util:sqlalchemy_types",
         "@pypi//pydantic",
         "@pypi//sqlalchemy",
     ],

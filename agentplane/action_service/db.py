@@ -24,8 +24,17 @@ from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase, Mapped, Mapper, mapped_column
 
-from agentplane.action_service.models import ExecutionState
+from agentplane.action_service.catalog import ActionIdentity
+from agentplane.action_service.models import (
+    ActionState,
+    ExecutionState,
+    ExternalGrantProvenance,
+    PolicyEvidence,
+    Verdict,
+)
 from agentplane.action_service.updates import CHANNEL, CONNECTIONS_CHANNEL, DISPATCH_CHANNEL, MCP_LINKAGE_CHANNEL
+from agentplane.subjects import ServiceAccountRef
+from util.sqlalchemy_types import PydanticColumn, TextBackedStrEnumColumn
 
 # SQLAlchemy loads asyncpg from the URL scheme; Gazelle cannot infer that runtime dependency.
 # gazelle:include_dep @pypi//asyncpg
@@ -54,10 +63,10 @@ class EnrollmentRow(Base):
     browser_hash: Mapped[str | None] = mapped_column(Text)
     operator_issuer: Mapped[str | None] = mapped_column(Text)
     operator_subject: Mapped[str | None] = mapped_column(Text)
-    verdict: Mapped[str | None] = mapped_column(Text)
+    verdict: Mapped[Verdict | None] = mapped_column(TextBackedStrEnumColumn(Verdict))
     decision_digest: Mapped[str | None] = mapped_column(Text)
-    # A `models.ServiceAccountRef`, set by an allow decision.
-    caller: Mapped[dict[str, JsonValue] | None] = mapped_column(JSONB(none_as_null=True))
+    # Set by an allow decision.
+    caller: Mapped[ServiceAccountRef | None] = mapped_column(PydanticColumn(ServiceAccountRef))
     display_name: Mapped[str | None] = mapped_column(Text)
     connection_id: Mapped[UUID | None] = mapped_column(PGUUID(as_uuid=True), ForeignKey("external_connection.id"))
     connection_version: Mapped[int | None] = mapped_column(Integer)
@@ -69,7 +78,7 @@ class ConnectionRow(Base):
 
     id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True)
     display_name: Mapped[str] = mapped_column(Text)
-    bound_caller: Mapped[dict[str, JsonValue] | None] = mapped_column(JSONB, nullable=True)
+    bound_caller: Mapped[ServiceAccountRef | None] = mapped_column(PydanticColumn(ServiceAccountRef), nullable=True)
     binding_version: Mapped[int] = mapped_column(Integer, default=0)
     version: Mapped[int] = mapped_column(Integer)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
@@ -84,7 +93,7 @@ class ConnectionGrantRow(Base):
     connection_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey("external_connection.id"))
     revision: Mapped[int] = mapped_column(Integer)
     # Immutable authorization evidence, independent of the current Connection binding.
-    original_caller: Mapped[dict[str, JsonValue]] = mapped_column(JSONB)
+    original_caller: Mapped[ServiceAccountRef] = mapped_column(PydanticColumn(ServiceAccountRef))
     issuer: Mapped[str] = mapped_column(Text)
     client_id: Mapped[str] = mapped_column(Text)
     request_digest: Mapped[str] = mapped_column(Text)
@@ -126,14 +135,14 @@ class ActionRequestRow(Base):
 
     id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
     idempotency_key: Mapped[str] = mapped_column(Text)
-    action: Mapped[dict[str, str]] = mapped_column(JSONB)
+    action: Mapped[ActionIdentity] = mapped_column(PydanticColumn(ActionIdentity))
     arguments: Mapped[dict[str, JsonValue]] = mapped_column(JSONB)
     title: Mapped[str] = mapped_column(Text)
     description: Mapped[str | None] = mapped_column(Text)
     caller_namespace: Mapped[str] = mapped_column(Text)
     caller_name: Mapped[str] = mapped_column(Text)
-    external_grant: Mapped[dict[str, JsonValue] | None] = mapped_column(JSONB(none_as_null=True))
-    state: Mapped[str] = mapped_column(Text)
+    external_grant: Mapped[ExternalGrantProvenance | None] = mapped_column(PydanticColumn(ExternalGrantProvenance))
+    state: Mapped[ActionState] = mapped_column(TextBackedStrEnumColumn(ActionState))
     version: Mapped[int] = mapped_column(Integer)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
@@ -147,7 +156,7 @@ class ActionEventRow(Base):
         PGUUID(as_uuid=True), ForeignKey("action_request.id", ondelete="CASCADE"), primary_key=True
     )
     sequence: Mapped[int] = mapped_column(Integer, primary_key=True)
-    state: Mapped[str] = mapped_column(Text)
+    state: Mapped[ActionState] = mapped_column(TextBackedStrEnumColumn(ActionState))
     at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     # Either kind of principal, and nothing queries by it, so it keeps its own shape.
     actor: Mapped[dict[str, JsonValue] | None] = mapped_column(JSONB(none_as_null=True))
@@ -181,7 +190,7 @@ class DecisionRow(Base):
 
     id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
     request_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey("action_request.id", ondelete="CASCADE"))
-    verdict: Mapped[str] = mapped_column(Text)
+    verdict: Mapped[Verdict] = mapped_column(TextBackedStrEnumColumn(Verdict))
     provider: Mapped[str] = mapped_column(Text)
     # Set together for a human Decision, both NULL for a DecisionProvider's.
     operator_issuer: Mapped[str | None] = mapped_column(Text)
@@ -189,8 +198,8 @@ class DecisionRow(Base):
     decision_note: Mapped[str | None] = mapped_column(Text)
     reason_code: Mapped[str | None] = mapped_column(Text)
     reason_description: Mapped[str | None] = mapped_column(Text)
-    # A `models.PolicyEvidence`; only a policy-set Decision has one.
-    policy_evidence: Mapped[dict[str, JsonValue] | None] = mapped_column(JSONB(none_as_null=True))
+    # Only a policy-set Decision has one.
+    policy_evidence: Mapped[PolicyEvidence | None] = mapped_column(PydanticColumn(PolicyEvidence))
     idempotency_key: Mapped[str] = mapped_column(Text)
     decided_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 
@@ -208,7 +217,7 @@ class ExecutionRow(Base):
 
     id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
     request_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey("action_request.id", ondelete="CASCADE"))
-    state: Mapped[str] = mapped_column(Text)
+    state: Mapped[ExecutionState] = mapped_column(TextBackedStrEnumColumn(ExecutionState))
     result: Mapped[JsonValue | None] = mapped_column(JSONB)
     error: Mapped[dict[str, JsonValue] | None] = mapped_column(JSONB)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
@@ -230,7 +239,7 @@ class ExecutionRow(Base):
 @event.listens_for(ExecutionRow, "after_insert")
 def _notify_dispatch(_mapper: Mapper[ExecutionRow], connection: Connection, row: ExecutionRow) -> None:
     # An Execution only ever enters `pending_dispatch` on insert; every replica's dispatcher wakes on commit.
-    if row.state == ExecutionState.PENDING_DISPATCH.value:
+    if row.state == ExecutionState.PENDING_DISPATCH:
         connection.execute(select(func.pg_notify(DISPATCH_CHANNEL, "")))
 
 

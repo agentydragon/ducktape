@@ -177,7 +177,7 @@ class EnrollmentAuthority:
                 raise EnrollmentConflictError("enrollment version changed")
             if isinstance(request, EnrollmentAllow):
                 self._require_caller(request.service_account)
-                row.caller = request.service_account.model_dump(mode="json")
+                row.caller = request.service_account
                 match request.connection:
                     case NewConnection(display_name=name):
                         row.display_name = name
@@ -189,7 +189,7 @@ class EnrollmentAuthority:
                             )
                         row.connection_id = connection_id
                         row.connection_version = version
-            row.verdict = request.verdict
+            row.verdict = Verdict(request.verdict)
             row.decision_digest = digest
             row.version += 1
             return _result(row)
@@ -213,8 +213,7 @@ class EnrollmentAuthority:
                 raise EnrollmentRejectedError("issuing operator does not match consent")
             if row.exchange_claimed_at is not None:
                 raise EnrollmentRejectedError("token exchange already claimed; restart authorization")
-            caller = ServiceAccountRef.model_validate(row.caller)
-            self._require_caller(caller)
+            caller = self._require_caller(row.caller)
             connection: NewConnection | ReconnectConnection
             if row.connection_id is not None and row.connection_version is not None:
                 connection = ReconnectConnection(
@@ -239,7 +238,7 @@ class EnrollmentAuthority:
             row = _require_live(await db.get(EnrollmentRow, grant_id, with_for_update=True))
             if row.verdict != Verdict.ALLOW or row.caller is None or row.exchange_claimed_at is not None:
                 raise EnrollmentRejectedError("enrollment cannot issue another token family")
-            self._require_caller(ServiceAccountRef.model_validate(row.caller))
+            self._require_caller(row.caller)
             row.exchange_claimed_at = datetime.now(UTC)
 
     def _require_caller(self, caller: ServiceAccountRef) -> ServiceAccountRef:
@@ -272,7 +271,6 @@ def _require_browser(row: EnrollmentRow, binding: str, operator: OperatorPrincip
 
 def _result(row: EnrollmentRow) -> EnrollmentDecisionResult:
     assert row.verdict is not None
-    verdict = Verdict(row.verdict)
     return EnrollmentDecisionResult(
-        verdict=verdict, redirect_url=row.upstream_url if verdict is Verdict.ALLOW else None
+        verdict=row.verdict, redirect_url=row.upstream_url if row.verdict is Verdict.ALLOW else None
     )

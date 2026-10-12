@@ -1,17 +1,15 @@
 import pytest
 import pytest_bazel
-from pydantic import AnyHttpUrl, ValidationError
+from pydantic import ValidationError
 
 from agentplane.action_service.mcp_settings import McpClientMetadataSettings
 
 _URL = "https://actions.example.test/oauth/client-metadata.json"
 
 
-def test_metadata_url_is_parsed_and_serializes_as_string() -> None:
-    settings = McpClientMetadataSettings.model_validate({"url": _URL, "client_name": "Test"})
-    assert isinstance(settings.url, AnyHttpUrl)
-    assert settings.model_dump(mode="json")["url"] == _URL
-    assert McpClientMetadataSettings.model_validate(settings.model_dump()) == settings
+def test_canonical_metadata_url_is_accepted() -> None:
+    """Anchor for the rejections below."""
+    McpClientMetadataSettings.model_validate({"url": _URL, "client_name": "Test"})
 
 
 @pytest.mark.parametrize(

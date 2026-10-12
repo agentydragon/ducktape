@@ -115,6 +115,7 @@ py_library(
     visibility = ["//visibility:public"],
     deps = [
         ":enum_vocab",
+        "@pypi//pydantic",
         "@pypi//sqlalchemy",
     ],
 )
@@ -126,6 +127,7 @@ py_test(
         ":enum_vocab",
         ":sqlalchemy_types",
         "//:conftest",
+        "@pypi//pydantic",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],

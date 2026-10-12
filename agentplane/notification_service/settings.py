@@ -2,7 +2,7 @@
 
 from datetime import date
 from pathlib import Path
-from typing import Any, ClassVar
+from typing import Annotated, Any, ClassVar
 
 from pydantic import AnyHttpUrl, BaseModel, ConfigDict, Field, SecretStr, model_validator
 from pydantic_settings import SettingsConfigDict
@@ -11,6 +11,7 @@ from util.urls import HttpEndpointUrl
 from util.yaml_file_settings import YamlFileSettings
 
 TOKEN_AUDIENCE = "agentplane-notifications"
+PositiveSeconds = Annotated[float, Field(gt=0, allow_inf_nan=False)]
 # The `sandbox_service` keys a config file may still carry for the Runner Gateway, by their
 # `runner_gateway` names.
 _RUNNER_GATEWAY_KEYS_IN_SANDBOX_SERVICE = {
@@ -27,7 +28,7 @@ class ActionsSettings(BaseModel):
     token_file: Path = Field(
         description="Path to the projected ServiceAccount token for Actions; reread for each request to follow rotation."
     )
-    request_timeout_s: float = Field(default=5, gt=0, allow_inf_nan=False)
+    request_timeout_s: PositiveSeconds = 5
 
 
 class GitHubSettings(BaseModel):
@@ -36,7 +37,7 @@ class GitHubSettings(BaseModel):
         default=AnyHttpUrl("https://api.github.com"),
         description="Trusted GitHub REST API base URL; receives App JWTs and installation tokens. Supports a path prefix.",
     )
-    request_timeout_s: float = Field(default=5, gt=0, allow_inf_nan=False)
+    request_timeout_s: PositiveSeconds = 5
     api_version: date = Field(default=date(2022, 11, 28), description="GitHub REST API version header date.")
 
     app_id: int = Field(gt=0, description="Public numeric GitHub App ID; not a secret.")
@@ -66,8 +67,8 @@ class GitHubSettings(BaseModel):
 class SandboxServiceSettings(BaseModel):
     model_config = ConfigDict(extra="forbid", hide_input_in_errors=True)
     target: str = Field(description="Sandbox Service gRPC host:port, for Sandbox lookups.")
-    request_timeout_s: float = Field(default=5, gt=0, allow_inf_nan=False)
-    lifecycle_timeout_s: float = Field(default=310, gt=0, allow_inf_nan=False)
+    request_timeout_s: PositiveSeconds = 5
+    lifecycle_timeout_s: PositiveSeconds = 310
     token_file: Path = Field(
         description="Path to the rotating projected ServiceAccount token used to authenticate to Sandbox Service."
     )
@@ -88,12 +89,10 @@ class RunnerGatewaySettings(BaseModel):
         "`{sandbox}-control.{namespace}.svc:8080`. Lifecycle calls go there, to the replica holding the "
         "runner connection."
     )
-    request_timeout_s: float = Field(default=5, gt=0, allow_inf_nan=False)
-    lifecycle_timeout_s: float = Field(default=310, gt=0, allow_inf_nan=False)
-    command_admission_timeout_s: float = Field(
+    request_timeout_s: PositiveSeconds = 5
+    lifecycle_timeout_s: PositiveSeconds = 310
+    command_admission_timeout_s: PositiveSeconds = Field(
         default=20,
-        gt=0,
-        allow_inf_nan=False,
         description="Seconds to wait for the runner admission receipt via the Runner Gateway; keep above its "
         "runner_admission_ack_timeout_s budget.",
     )
@@ -107,7 +106,7 @@ class HistoryServiceSettings(BaseModel):
     target: str = Field(
         description="History Service gRPC host:port; delivery reads the Session's runner entries there."
     )
-    request_timeout_s: float = Field(default=20, gt=0, allow_inf_nan=False)
+    request_timeout_s: PositiveSeconds = 20
     token_file: Path = Field(
         description="Path to the rotating projected ServiceAccount token used to authenticate to the History Service."
     )
@@ -168,12 +167,8 @@ class Settings(YamlFileSettings):
     )
     quotas: QuotaSettings = Field(default_factory=QuotaSettings)
     notice_debounce: NoticeDebounceSettings = Field(default_factory=NoticeDebounceSettings)
-    stale_inbox_confirmation_s: float = Field(
-        default=30,
-        gt=0,
-        le=3600,
-        allow_inf_nan=False,
-        description="Seconds between first and confirming unavailable UID-pinned Sandbox lookup.",
+    stale_inbox_confirmation_s: PositiveSeconds = Field(
+        default=30, le=3600, description="Seconds between first and confirming unavailable UID-pinned Sandbox lookup."
     )
     host: str = "0.0.0.0"
     port: int = Field(default=8080, ge=1, le=65535)

@@ -9,13 +9,14 @@ from __future__ import annotations
 
 import json
 import logging
-from collections.abc import AsyncIterator, Awaitable, Callable
+from collections.abc import AsyncIterator, Awaitable, Callable, Iterable
 from contextlib import asynccontextmanager
+from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import Annotated, cast
+from typing import Annotated, Any, cast
 from uuid import UUID
 
-from fastapi import Depends, FastAPI, HTTPException, Query, Request, Response, status
+from fastapi import APIRouter, Depends, FastAPI, HTTPException, Query, Request, Response, status
 from fastapi.responses import JSONResponse, StreamingResponse
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
@@ -103,7 +104,21 @@ class PushSubscriptionInput(BaseModel):
     auth: str = Field(min_length=1, max_length=200)
 
 
+@dataclass(frozen=True)
+class _Authenticators:
+    workload: WorkloadPrincipalAuthenticator
+    operator: OperatorAuthenticator
+    callers: PolicyIndex
+    reader_accounts: frozenset[ServiceAccountRef]
+
+
+def _authenticators(request: Request) -> _Authenticators:
+    return cast(_Authenticators, request.app.state.authenticators)
+
+
 _operator_bearer = HTTPBearer(auto_error=False)
+_Auth = Annotated[_Authenticators, Depends(_authenticators)]
+_Bearer = Annotated[HTTPAuthorizationCredentials | None, Depends(_operator_bearer)]
 
 
 IDEMPOTENCY_KEY_FILTER = (
@@ -111,78 +126,30 @@ IDEMPOTENCY_KEY_FILTER = (
 )
 
 
-def _sse_json(value: list[ActionRequestView]) -> bytes:
-    return json.dumps([item.model_dump(mode="json") for item in value], separators=(",", ":")).encode()
+def _sse_json(rows: Iterable[BaseModel]) -> bytes:
+    return json.dumps([row.model_dump(mode="json") for row in rows], separators=(",", ":")).encode()
 
 
 def _mcp_group_snapshot(catalog: ActionCatalog) -> bytes:
     """The operator's complete MCP catalog view, including currently available Actions."""
-    return json.dumps(
-        [row.model_dump(mode="json") for row in catalog.group_views(with_detail=True) if row.executor_kind == "mcp"],
-        separators=(",", ":"),
-    ).encode()
+    return _sse_json(row for row in catalog.group_views(with_detail=True) if row.executor_kind == "mcp")
 
 
-def _stream_operator_authorized(
-    principal: OperatorPrincipal, credentials: HTTPAuthorizationCredentials | None, authenticator: OperatorAuthenticator
-) -> Callable[[], Awaitable[bool]]:
-    """Recheck stream authorization on every snapshot and keepalive, not just at connect time."""
-
-    async def authorized() -> bool:
-        return credentials is not None and await authenticator.authenticate(credentials.credentials) == principal
-
-    return authorized
-
-
-def _service(request: Request) -> ActionService:
-    return cast(ActionService, request.app.state.action_service)
-
-
-def _catalog(request: Request) -> ActionCatalog:
-    return cast(ActionCatalog, request.app.state.action_catalog)
-
-
-def _updates(request: Request) -> ActionUpdateBroker:
-    return cast(ActionUpdateBroker, request.app.state.action_updates)
-
-
-def _workload_authenticator(request: Request) -> WorkloadPrincipalAuthenticator:
-    return cast(WorkloadPrincipalAuthenticator, request.app.state.workload_authenticator)
-
-
-def _operator_authenticator(request: Request) -> OperatorAuthenticator:
-    return cast(OperatorAuthenticator, request.app.state.operator_authenticator)
-
-
-def _callers(request: Request) -> PolicyIndex:
-    return cast(PolicyIndex, request.app.state.callers)
-
-
-def _reader_accounts(request: Request) -> frozenset[ServiceAccountRef]:
-    return cast(frozenset[ServiceAccountRef], request.app.state.reader_accounts)
-
-
-async def _try_workload(
-    request: Request, authenticator: WorkloadPrincipalAuthenticator, callers: PolicyIndex
-) -> CallerPrincipal | None:
+async def _try_workload(request: Request, auth: _Authenticators) -> CallerPrincipal | None:
     try:
-        principal = await authenticator(request)
+        principal = await auth.workload(request)
     except HTTPException:
         return None
-    return callers.admit(principal.account)
+    return auth.callers.admit(principal.account)
 
 
-async def _workload(
-    request: Request,
-    authenticator: Annotated[WorkloadPrincipalAuthenticator, Depends(_workload_authenticator)],
-    callers: Annotated[PolicyIndex, Depends(_callers)],
-) -> CallerPrincipal:
+async def _workload(request: Request, auth: _Auth) -> CallerPrincipal:
     """The ServiceAccount the bearer proves, once the index says that account may call here.
 
     Authenticating is not being admitted: without the label an account reaches no route, so a
     workload the operator has not named cannot queue Actions for them either.
     """
-    caller = await _try_workload(request, authenticator, callers)
+    caller = await _try_workload(request, auth)
     if caller is None:
         # Deliberately the authenticator's own generic refusal: which account was presented is not
         # the caller's to learn from the difference.
@@ -192,16 +159,11 @@ async def _workload(
     return caller
 
 
-async def _reader(
-    request: Request,
-    authenticator: Annotated[WorkloadPrincipalAuthenticator, Depends(_workload_authenticator)],
-    callers: Annotated[PolicyIndex, Depends(_callers)],
-    reader_accounts: Annotated[frozenset[ServiceAccountRef], Depends(_reader_accounts)],
-) -> CallerPrincipal | ServiceReaderPrincipal:
-    workload = await authenticator(request)
-    if workload.account in reader_accounts:
+async def _reader(request: Request, auth: _Auth) -> CallerPrincipal | ServiceReaderPrincipal:
+    workload = await auth.workload(request)
+    if workload.account in auth.reader_accounts:
         return ServiceReaderPrincipal(account=workload.account)
-    caller = callers.admit(workload.account)
+    caller = auth.callers.admit(workload.account)
     if caller is None:
         raise HTTPException(
             status.HTTP_401_UNAUTHORIZED, "invalid workload bearer", headers={"WWW-Authenticate": "Bearer"}
@@ -210,18 +172,15 @@ async def _reader(
 
 
 async def _try_operator(
-    credentials: HTTPAuthorizationCredentials | None, authenticator: OperatorAuthenticator
+    credentials: HTTPAuthorizationCredentials | None, auth: _Authenticators
 ) -> OperatorPrincipal | None:
     if credentials is None or credentials.scheme.lower() != "bearer":
         return None
-    return await authenticator.authenticate(credentials.credentials)
+    return await auth.operator.authenticate(credentials.credentials)
 
 
-async def _operator(
-    credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(_operator_bearer)],
-    authenticator: Annotated[OperatorAuthenticator, Depends(_operator_authenticator)],
-) -> OperatorPrincipal:
-    principal = await _try_operator(credentials, authenticator)
+async def _operator(credentials: _Bearer, auth: _Auth) -> OperatorPrincipal:
+    principal = await _try_operator(credentials, auth)
     if principal is None:
         raise HTTPException(
             status.HTTP_401_UNAUTHORIZED, "operator bearer required", headers={"WWW-Authenticate": "Bearer"}
@@ -230,22 +189,73 @@ async def _operator(
 
 
 async def _workload_or_operator(
-    request: Request,
-    workload_authenticator: Annotated[WorkloadPrincipalAuthenticator, Depends(_workload_authenticator)],
-    callers: Annotated[PolicyIndex, Depends(_callers)],
-    operator_credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(_operator_bearer)],
-    operator_authenticator: Annotated[OperatorAuthenticator, Depends(_operator_authenticator)],
+    request: Request, credentials: _Bearer, auth: _Auth
 ) -> CallerPrincipal | OperatorPrincipal:
     """Either bearer scheme, for the one route both callers read."""
-    workload = await _try_workload(request, workload_authenticator, callers)
-    if workload is not None:
-        return workload
-    operator = await _try_operator(operator_credentials, operator_authenticator)
-    if operator is not None:
-        return operator
-    raise HTTPException(
-        status.HTTP_401_UNAUTHORIZED, "workload or operator bearer required", headers={"WWW-Authenticate": "Bearer"}
-    )
+    principal = await _try_workload(request, auth) or await _try_operator(credentials, auth)
+    if principal is None:
+        raise HTTPException(
+            status.HTTP_401_UNAUTHORIZED, "workload or operator bearer required", headers={"WWW-Authenticate": "Bearer"}
+        )
+    return principal
+
+
+_Workload = Annotated[CallerPrincipal, Depends(_workload)]
+_Reader = Annotated[CallerPrincipal | ServiceReaderPrincipal, Depends(_reader)]
+_Operator = Annotated[OperatorPrincipal, Depends(_operator)]
+
+
+async def _stream_authorization(
+    principal: _Operator, credentials: _Bearer, auth: _Auth
+) -> Callable[[], Awaitable[bool]]:
+    """Recheck stream authorization on every snapshot and keepalive, not just at connect time."""
+
+    async def authorized() -> bool:
+        return credentials is not None and await auth.operator.authenticate(credentials.credentials) == principal
+
+    return authorized
+
+
+_StreamAuthorized = Annotated[Callable[[], Awaitable[bool]], Depends(_stream_authorization)]
+
+# Each detail is a fixed string or derived from the error. Starlette picks the handler of the most
+# specific registered class, and `_handle_error` resolves the same way.
+_ERRORS: dict[type[Exception], tuple[int, str | Callable[[Any], str]]] = {
+    ActionNotFoundError: (status.HTTP_404_NOT_FOUND, "action request not found"),
+    ActionUnavailableError: (status.HTTP_503_SERVICE_UNAVAILABLE, "ActionGroup is temporarily unavailable"),
+    UnknownActionError: (
+        status.HTTP_404_NOT_FOUND,
+        lambda error: f"unknown group/action {(error.group_key, error.action_key)!r}",
+    ),
+    ActionConflictError: (status.HTTP_409_CONFLICT, str),
+    ExternalGrantNotAuthorizedError: (status.HTTP_403_FORBIDDEN, "external grant is not authorized"),
+    UnsupportedActionError: (
+        status.HTTP_422_UNPROCESSABLE_CONTENT,
+        lambda error: f"unsupported group/action {error.args[0]!r}",
+    ),
+    InvalidActionArgumentsError: (status.HTTP_422_UNPROCESSABLE_CONTENT, str),
+    ServiceDrainingError: (status.HTTP_503_SERVICE_UNAVAILABLE, "Action Service is draining"),
+    ConnectionNotFoundError: (status.HTTP_404_NOT_FOUND, "Connection not found"),
+    ConnectionConflictError: (status.HTTP_409_CONFLICT, str),
+    GrantRejectedError: (status.HTTP_400_BAD_REQUEST, str),
+    EnrollmentRejectedError: (status.HTTP_403_FORBIDDEN, str),
+    EnrollmentNotFoundError: (status.HTTP_404_NOT_FOUND, str),
+    EnrollmentExpiredError: (status.HTTP_410_GONE, str),
+    EnrollmentConflictError: (status.HTTP_409_CONFLICT, str),
+    # A provider that refused or could not answer the token exchange; the subclasses keep their own.
+    McpLinkageError: (status.HTTP_502_BAD_GATEWAY, str),
+    McpLinkageConflictError: (status.HTTP_409_CONFLICT, str),
+    McpLinkageNotFoundError: (status.HTTP_404_NOT_FOUND, str),
+}
+
+
+async def _handle_error(request: Request, error: Exception) -> Response:
+    code, detail = next(_ERRORS[kind] for kind in type(error).__mro__ if kind in _ERRORS)
+    return _error(code, detail if isinstance(detail, str) else detail(error))
+
+
+def _error(status_code: int, detail: str) -> JSONResponse:
+    return JSONResponse(status_code=status_code, content={"detail": detail})
 
 
 def create_app(
@@ -278,58 +288,25 @@ def create_app(
 
     app = FastAPI(title="Agentplane Action Service", version="v1", lifespan=lifespan)
     app.state.action_service = service
-    app.state.reader_accounts = reader_accounts
-    app.state.workload_authenticator = WorkloadPrincipalAuthenticator(workload_resolver)
-    app.state.callers = callers
-    app.state.operator_authenticator = operator_authenticator
     app.state.action_catalog = catalog
-    app.state.action_updates = updates
+    app.state.authenticators = _Authenticators(
+        workload=WorkloadPrincipalAuthenticator(workload_resolver),
+        operator=operator_authenticator,
+        callers=callers,
+        reader_accounts=reader_accounts,
+    )
+    for error_type in _ERRORS:
+        app.add_exception_handler(error_type, _handle_error)
+    # Operator/BFF surface: deliberately different paths and authenticator. A workload bearer can
+    # never acquire operator-all read or decision authority merely by authenticating as a Sandbox.
+    operator = APIRouter(prefix="/v1/operator", dependencies=[Depends(_operator)])
 
     if connections is not None:
-        _connection_routes(app, connections)
+        _connection_routes(operator, connections, updates)
     if enrollments is not None:
-        _enrollment_routes(app, enrollments)
+        _enrollment_routes(operator, enrollments)
     if mcp_linkage is not None:
-        _mcp_linkage_routes(app, mcp_linkage)
-
-    @app.exception_handler(ActionNotFoundError)
-    async def not_found(request: Request, error: ActionNotFoundError) -> JSONResponse:
-        del request, error
-        return _error(status.HTTP_404_NOT_FOUND, "action request not found")
-
-    @app.exception_handler(ActionUnavailableError)
-    async def unavailable_action(request: Request, error: ActionUnavailableError) -> JSONResponse:
-        del request, error
-        return _error(status.HTTP_503_SERVICE_UNAVAILABLE, "ActionGroup is temporarily unavailable")
-
-    @app.exception_handler(UnknownActionError)
-    async def unknown_action(request: Request, error: UnknownActionError) -> JSONResponse:
-        del request
-        return _error(status.HTTP_404_NOT_FOUND, f"unknown group/action {(error.group_key, error.action_key)!r}")
-
-    @app.exception_handler(ActionConflictError)
-    async def conflict(request: Request, error: ActionConflictError) -> JSONResponse:
-        del request
-        return _error(status.HTTP_409_CONFLICT, str(error))
-
-    @app.exception_handler(ExternalGrantNotAuthorizedError)
-    async def external_grant_rejected(request: Request, error: ExternalGrantNotAuthorizedError) -> JSONResponse:
-        del request, error
-        return _error(status.HTTP_403_FORBIDDEN, "external grant is not authorized")
-
-    @app.exception_handler(UnsupportedActionError)
-    async def unsupported(request: Request, error: UnsupportedActionError) -> JSONResponse:
-        del request
-        return _error(status.HTTP_422_UNPROCESSABLE_ENTITY, f"unsupported group/action {error.args[0]!r}")
-
-    @app.exception_handler(InvalidActionArgumentsError)
-    async def invalid_arguments(request: Request, error: InvalidActionArgumentsError) -> JSONResponse:
-        del request
-        return _error(status.HTTP_422_UNPROCESSABLE_CONTENT, str(error))
-
-    @app.exception_handler(ServiceDrainingError)
-    async def draining_error(request: Request, error: ServiceDrainingError) -> JSONResponse:
-        return _error(status.HTTP_503_SERVICE_UNAVAILABLE, "Action Service is draining")
+        _mcp_linkage_routes(app, operator, mcp_linkage, updates)
 
     @app.middleware("http")
     async def drain_admission(request: Request, call_next: RequestResponseEndpoint) -> Response:
@@ -366,172 +343,107 @@ def create_app(
 
     # Workload surface: every endpoint resolves an ordinary Authorization bearer through the same
     # shared workload path the MCP surface uses. No operator adapter is consulted here.
-    @app.post("/v1/action-requests", response_model=ActionRequestView, status_code=status.HTTP_202_ACCEPTED)
-    async def submit(
-        body: ActionRequestInput,
-        principal: Annotated[CallerPrincipal, Depends(_workload)],
-        action_service: Annotated[ActionService, Depends(_service)],
-    ) -> ActionRequestView:
-        return await action_service.submit(body, principal)
+    @app.post("/v1/action-requests", status_code=status.HTTP_202_ACCEPTED)
+    async def submit(body: ActionRequestInput, principal: _Workload) -> ActionRequestView:
+        return await service.submit(body, principal)
 
-    @app.get("/v1/action-requests", response_model=list[ActionRequestView])
+    @app.get("/v1/action-requests")
     async def list_own_requests(
-        principal: Annotated[CallerPrincipal | ServiceReaderPrincipal, Depends(_reader)],
-        action_service: Annotated[ActionService, Depends(_service)],
+        principal: _Reader,
         state_filter: Annotated[list[ActionState] | None, Query(alias="state")] = None,
         idempotency_key: Annotated[str | None, Query(description=IDEMPOTENCY_KEY_FILTER)] = None,
     ) -> list[ActionRequestView]:
-        return await action_service.list_requests(
-            principal, states=tuple(state_filter or ()), idempotency_key=idempotency_key
-        )
+        return await service.list_requests(principal, states=tuple(state_filter or ()), idempotency_key=idempotency_key)
 
-    @app.get("/v1/action-requests/{request_id}", response_model=ActionRequestView)
-    async def get_own_request(
-        request_id: UUID,
-        principal: Annotated[CallerPrincipal | ServiceReaderPrincipal, Depends(_reader)],
-        action_service: Annotated[ActionService, Depends(_service)],
-    ) -> ActionRequestView:
-        return await action_service.get(request_id, principal)
+    @app.get("/v1/action-requests/{request_id}")
+    async def get_own_request(request_id: UUID, principal: _Reader) -> ActionRequestView:
+        return await service.get(request_id, principal)
 
-    @app.post("/v1/action-requests/{request_id}/cancel", response_model=CancellationResult)
-    async def cancel_own_request(
-        request_id: UUID,
-        principal: Annotated[CallerPrincipal, Depends(_workload)],
-        action_service: Annotated[ActionService, Depends(_service)],
-    ) -> CancellationResult:
-        return await action_service.cancel(request_id, principal)
+    @app.post("/v1/action-requests/{request_id}/cancel")
+    async def cancel_own_request(request_id: UUID, principal: _Workload) -> CancellationResult:
+        return await service.cancel(request_id, principal)
 
-    @app.get("/v1/action-requests/{request_id}/events", response_model=list[ActionEventView])
+    @app.get("/v1/action-requests/{request_id}/events")
     async def own_events(
         request_id: UUID,
-        principal: Annotated[CallerPrincipal | ServiceReaderPrincipal, Depends(_reader)],
-        action_service: Annotated[ActionService, Depends(_service)],
+        principal: _Reader,
         after_sequence: Annotated[int, Query(ge=0, le=2**31 - 1)] = 0,
         limit: Annotated[int | None, Query(ge=1, le=128)] = None,
     ) -> list[ActionEventView]:
-        return await action_service.events(request_id, principal, after_sequence=after_sequence, limit=limit)
+        return await service.events(request_id, principal, after_sequence=after_sequence, limit=limit)
 
     # Catalog discovery: the reviewed, config-driven ActionGroup/Action universe. Read-only, and the
     # same for every caller, so it carries no owner-scoping unlike the ActionRequest surface above.
     # Operators read this too, for the MCP servers settings page; theirs alone keeps each group's
     # health detail, which can carry backend exception text.
-    @app.get("/v1/action-groups", response_model=list[ActionGroupView])
+    @app.get("/v1/action-groups")
     async def list_action_groups(
         principal: Annotated[CallerPrincipal | OperatorPrincipal, Depends(_workload_or_operator)],
-        action_catalog: Annotated[ActionCatalog, Depends(_catalog)],
     ) -> list[ActionGroupView]:
-        return action_catalog.group_views(with_detail=isinstance(principal, OperatorPrincipal))
+        return catalog.group_views(with_detail=isinstance(principal, OperatorPrincipal))
 
-    @app.get("/v1/operator/action-groups/stream")
-    async def group_health_stream(
-        principal: Annotated[OperatorPrincipal, Depends(_operator)],
-        action_catalog: Annotated[ActionCatalog, Depends(_catalog)],
-        updates: Annotated[ActionUpdateBroker, Depends(_updates)],
-        credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(_operator_bearer)],
-        authenticator: Annotated[OperatorAuthenticator, Depends(_operator_authenticator)],
-    ) -> StreamingResponse:
+    @operator.get("/action-groups/stream")
+    async def group_health_stream(authorized: _StreamAuthorized) -> StreamingResponse:
         async def read() -> bytes:
-            return _mcp_group_snapshot(action_catalog)
+            return _mcp_group_snapshot(catalog)
 
-        return snapshot_stream(
-            updates.subscribe_mcp_health, read, _stream_operator_authorized(principal, credentials, authenticator)
-        )
+        return snapshot_stream(updates.subscribe_mcp_health, read, authorized)
 
-    @app.get("/v1/action-groups/{group_key}/actions/{action_key}", response_model=ActionView)
-    async def get_action(
-        group_key: str,
-        action_key: str,
-        principal: Annotated[CallerPrincipal, Depends(_workload)],
-        action_catalog: Annotated[ActionCatalog, Depends(_catalog)],
-    ) -> ActionView:
-        del principal
-        return action_catalog.action_view(group_key, action_key)
+    @app.get("/v1/action-groups/{group_key}/actions/{action_key}", dependencies=[Depends(_workload)])
+    async def get_action(group_key: str, action_key: str) -> ActionView:
+        return catalog.action_view(group_key, action_key)
 
-    @app.get("/v1/action-policy", response_model=CallerActionPolicyView)
-    async def own_action_policy(
-        principal: Annotated[CallerPrincipal, Depends(_workload)],
-        action_service: Annotated[ActionService, Depends(_service)],
-    ) -> CallerActionPolicyView:
+    @app.get("/v1/action-policy")
+    async def own_action_policy(principal: _Workload) -> CallerActionPolicyView:
         """The caller's own effective policy, from the resolution admission uses: the bindings on it, the
         sets that resolved, and the auto_approve_if entries in evaluation order. This surface only
         ever sees a Sandbox principal; an external grant reaches the service through `/mcp`, whose
         tool reads the grant `CallerTokenVerifier` verified."""
-        return action_service.caller_action_policy(principal, external_grant=None)
+        return service.caller_action_policy(principal, external_grant=None)
 
-    # Operator/BFF surface: deliberately different paths and authenticator. A workload bearer can
-    # never acquire operator-all read or decision authority merely by authenticating as a Sandbox.
-    @app.get("/v1/operator/action-requests", response_model=list[ActionRequestView])
+    @operator.get("/action-requests")
     async def operator_list_requests(
-        principal: Annotated[OperatorPrincipal, Depends(_operator)],
-        action_service: Annotated[ActionService, Depends(_service)],
+        principal: _Operator,
         state_filter: Annotated[list[ActionState] | None, Query(alias="state")] = None,
         idempotency_key: Annotated[str | None, Query(description=IDEMPOTENCY_KEY_FILTER)] = None,
     ) -> list[ActionRequestView]:
-        return await action_service.list_requests(
-            principal, states=tuple(state_filter or ()), idempotency_key=idempotency_key
-        )
+        return await service.list_requests(principal, states=tuple(state_filter or ()), idempotency_key=idempotency_key)
 
-    @app.get("/v1/operator/action-requests/history", response_model=ActionHistoryPage)
+    @operator.get("/action-requests/history")
     async def operator_history(
-        principal: Annotated[OperatorPrincipal, Depends(_operator)],
-        action_service: Annotated[ActionService, Depends(_service)],
-        limit: Annotated[int, Query(ge=1, le=100)] = 50,
-        cursor: str | None = None,
+        principal: _Operator, limit: Annotated[int, Query(ge=1, le=100)] = 50, cursor: str | None = None
     ) -> ActionHistoryPage:
         try:
-            items, next_cursor = await action_service.history(principal, limit=limit, cursor=cursor)
+            items, next_cursor = await service.history(principal, limit=limit, cursor=cursor)
         except ValueError as error:
             raise HTTPException(400, str(error)) from error
         return ActionHistoryPage(items=items, next_cursor=next_cursor)
 
-    @app.get("/v1/operator/action-requests/stream")
+    @operator.get("/action-requests/stream")
     async def operator_stream(
-        principal: Annotated[OperatorPrincipal, Depends(_operator)],
-        action_service: Annotated[ActionService, Depends(_service)],
-        action_updates: Annotated[ActionUpdateBroker, Depends(_updates)],
-        credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(_operator_bearer)],
-        authenticator: Annotated[OperatorAuthenticator, Depends(_operator_authenticator)],
-        state: Annotated[ActionState | None, Query()] = None,
+        principal: _Operator, authorized: _StreamAuthorized, state: Annotated[ActionState | None, Query()] = None
     ) -> StreamingResponse:
         async def read() -> bytes:
-            return _sse_json(await action_service.list_requests(principal, states=(state,) if state else ()))
+            return _sse_json(await service.list_requests(principal, states=(state,) if state else ()))
 
-        return snapshot_stream(
-            action_updates.subscribe_all,
-            read,
-            _stream_operator_authorized(principal, credentials, authenticator),
-            changed_event=True,
-        )
+        return snapshot_stream(updates.subscribe_all, read, authorized, changed_event=True)
 
-    @app.get("/v1/operator/action-requests/{request_id}", response_model=ActionRequestView)
-    async def operator_get_request(
-        request_id: UUID,
-        principal: Annotated[OperatorPrincipal, Depends(_operator)],
-        action_service: Annotated[ActionService, Depends(_service)],
-    ) -> ActionRequestView:
-        return await action_service.get(request_id, principal)
+    @operator.get("/action-requests/{request_id}")
+    async def operator_get_request(request_id: UUID, principal: _Operator) -> ActionRequestView:
+        return await service.get(request_id, principal)
 
-    @app.get("/v1/operator/action-policy/service-accounts/{namespace}/{name}", response_model=SubjectActionPolicyView)
-    async def operator_service_account_action_policy(
-        namespace: str,
-        name: str,
-        principal: Annotated[OperatorPrincipal, Depends(_operator)],
-        action_service: Annotated[ActionService, Depends(_service)],
-    ) -> SubjectActionPolicyView:
+    @operator.get("/action-policy/service-accounts/{namespace}/{name}")
+    async def operator_service_account_action_policy(namespace: str, name: str) -> SubjectActionPolicyView:
         """A subject's effective policy as the operator sees it: each binding with its labels and
         Ready verdict, each named set as present, refused or missing, and the resolved entries."""
-        del principal
-        return action_service.subject_action_policy(ServiceAccountRef(namespace=namespace, name=name))
+        return service.subject_action_policy(ServiceAccountRef(namespace=namespace, name=name))
 
-    @app.get("/v1/operator/push/config")
-    async def push_config(principal: Annotated[OperatorPrincipal, Depends(_operator)]) -> dict[str, str | None]:
-        del principal
+    @operator.get("/push/config")
+    async def push_config() -> dict[str, str | None]:
         return {"application_server_key": push_identity.application_server_key if push_identity else None}
 
-    @app.get("/v1/operator/push/subscriptions")
-    async def list_push_subscriptions(
-        principal: Annotated[OperatorPrincipal, Depends(_operator)],
-    ) -> list[dict[str, object]]:
+    @operator.get("/push/subscriptions")
+    async def list_push_subscriptions(principal: _Operator) -> list[dict[str, object]]:
         if push_subscriptions is None:
             return []
         return [
@@ -539,24 +451,15 @@ def create_app(
             for row in await push_subscriptions.list_for(principal)
         ]
 
-    @app.get("/v1/operator/push/subscriptions/stream")
-    async def push_subscriptions_stream(
-        principal: Annotated[OperatorPrincipal, Depends(_operator)],
-        action_updates: Annotated[ActionUpdateBroker, Depends(_updates)],
-        credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(_operator_bearer)],
-        authenticator: Annotated[OperatorAuthenticator, Depends(_operator_authenticator)],
-    ) -> StreamingResponse:
+    @operator.get("/push/subscriptions/stream")
+    async def push_subscriptions_stream(principal: _Operator, authorized: _StreamAuthorized) -> StreamingResponse:
         async def read() -> bytes:
             return json.dumps(await list_push_subscriptions(principal), separators=(",", ":")).encode()
 
-        return snapshot_stream(
-            action_updates.subscribe_push, read, _stream_operator_authorized(principal, credentials, authenticator)
-        )
+        return snapshot_stream(updates.subscribe_push, read, authorized)
 
-    @app.post("/v1/operator/push/subscriptions", status_code=status.HTTP_204_NO_CONTENT)
-    async def register_push_subscription(
-        body: PushSubscriptionInput, principal: Annotated[OperatorPrincipal, Depends(_operator)], request: Request
-    ) -> None:
+    @operator.post("/push/subscriptions", status_code=status.HTTP_204_NO_CONTENT)
+    async def register_push_subscription(body: PushSubscriptionInput, principal: _Operator, request: Request) -> None:
         if push_identity is None or push_subscriptions is None:
             raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "web push is not configured")
         try:
@@ -575,22 +478,16 @@ def create_app(
         except ValueError:
             raise HTTPException(status.HTTP_409_CONFLICT, "subscription is already registered") from None
 
-    @app.delete("/v1/operator/push/subscriptions", status_code=status.HTTP_204_NO_CONTENT)
-    async def remove_push_subscription(
-        endpoint: str, principal: Annotated[OperatorPrincipal, Depends(_operator)]
-    ) -> None:
+    @operator.delete("/push/subscriptions", status_code=status.HTTP_204_NO_CONTENT)
+    async def remove_push_subscription(endpoint: str, principal: _Operator) -> None:
         if push_subscriptions is None or not await push_subscriptions.delete(operator=principal, endpoint=endpoint):
             raise HTTPException(status.HTTP_404_NOT_FOUND, "no such push subscription")
 
-    @app.post("/v1/operator/action-requests/{request_id}/decision", response_model=ActionRequestView)
-    async def decide(
-        request_id: UUID,
-        body: DecisionInput,
-        principal: Annotated[OperatorPrincipal, Depends(_operator)],
-        action_service: Annotated[ActionService, Depends(_service)],
-    ) -> ActionRequestView:
-        return await action_service.decide(request_id, body, principal)
+    @operator.post("/action-requests/{request_id}/decision")
+    async def decide(request_id: UUID, body: DecisionInput, principal: _Operator) -> ActionRequestView:
+        return await service.decide(request_id, body, principal)
 
+    app.include_router(operator)
     # Match only the transport endpoint, without a slash redirect or intercepting unknown REST paths.
     if oauth is not None:
         app.router.routes.extend(oauth.get_routes(mcp_path="/mcp"))
@@ -598,100 +495,58 @@ def create_app(
     return app
 
 
-def _connection_routes(app: FastAPI, authority: ConnectionAuthority) -> None:
-    @app.exception_handler(ConnectionNotFoundError)
-    async def connection_not_found(request: Request, error: ConnectionNotFoundError) -> JSONResponse:
-        del request, error
-        return _error(status.HTTP_404_NOT_FOUND, "Connection not found")
-
-    @app.exception_handler(ConnectionConflictError)
-    async def connection_conflict(request: Request, error: ConnectionConflictError) -> JSONResponse:
-        del request
-        return _error(status.HTTP_409_CONFLICT, str(error))
-
-    @app.exception_handler(GrantRejectedError)
-    async def rebind_rejected(request: Request, error: GrantRejectedError) -> JSONResponse:
-        del request
-        return _error(status.HTTP_400_BAD_REQUEST, str(error))
-
-    @app.get("/v1/operator/caller-service-accounts", dependencies=[Depends(_operator)])
+def _connection_routes(operator: APIRouter, authority: ConnectionAuthority, updates: ActionUpdateBroker) -> None:
+    @operator.get("/caller-service-accounts")
     async def caller_service_accounts() -> list[ServiceAccountRef]:
         return authority.caller_service_accounts()
 
-    @app.get("/v1/operator/connections", dependencies=[Depends(_operator)])
+    @operator.get("/connections")
     async def connections() -> list[Connection]:
         return await authority.list()
 
-    @app.get("/v1/operator/connections/stream")
-    async def connections_stream(
-        principal: Annotated[OperatorPrincipal, Depends(_operator)],
-        updates: Annotated[ActionUpdateBroker, Depends(_updates)],
-        credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(_operator_bearer)],
-        authenticator: Annotated[OperatorAuthenticator, Depends(_operator_authenticator)],
-    ) -> StreamingResponse:
+    @operator.get("/connections/stream")
+    async def connections_stream(authorized: _StreamAuthorized) -> StreamingResponse:
         async def read() -> bytes:
-            return json.dumps(
-                [row.model_dump(mode="json") for row in await authority.list()], separators=(",", ":")
-            ).encode()
+            return _sse_json(await authority.list())
 
-        return snapshot_stream(
-            updates.subscribe_connections, read, _stream_operator_authorized(principal, credentials, authenticator)
-        )
+        return snapshot_stream(updates.subscribe_connections, read, authorized)
 
-    @app.get("/v1/operator/connections/{connection_id}", dependencies=[Depends(_operator)])
+    @operator.get("/connections/{connection_id}")
     async def connection(connection_id: UUID) -> Connection:
         return await authority.get(connection_id)
 
-    @app.patch("/v1/operator/connections/{connection_id}", dependencies=[Depends(_operator)])
+    @operator.patch("/connections/{connection_id}")
     async def rename_connection(connection_id: UUID, body: ConnectionRename) -> Connection:
         return await authority.rename(
             connection_id, expected_version=body.expected_version, display_name=body.display_name
         )
 
-    @app.post("/v1/operator/connections/{connection_id}/rebind", dependencies=[Depends(_operator)])
+    @operator.post("/connections/{connection_id}/rebind")
     async def rebind_connection(connection_id: UUID, body: ConnectionRebind) -> Connection:
         return await authority.rebind(
             connection_id, expected_version=body.expected_version, caller=body.service_account
         )
 
-    @app.post("/v1/operator/connections/{connection_id}/unbind", dependencies=[Depends(_operator)])
+    @operator.post("/connections/{connection_id}/unbind")
     async def unbind_connection(connection_id: UUID, body: ConnectionVersion) -> Connection:
         return await authority.unbind(connection_id, expected_version=body.expected_version)
 
 
-def _enrollment_routes(app: FastAPI, authority: EnrollmentAuthority) -> None:
-    @app.exception_handler(EnrollmentRejectedError)
-    async def enrollment_rejected(request: Request, error: EnrollmentRejectedError) -> JSONResponse:
-        del request
-        match error:
-            case EnrollmentNotFoundError():
-                code = status.HTTP_404_NOT_FOUND
-            case EnrollmentExpiredError():
-                code = status.HTTP_410_GONE
-            case EnrollmentConflictError():
-                code = status.HTTP_409_CONFLICT
-            case _:
-                code = status.HTTP_403_FORBIDDEN
-        return _error(code, str(error))
-
-    @app.post("/v1/operator/connection-enrollments/{handle}/preview")
-    async def enrollment_preview(
-        handle: str, body: EnrollmentPreviewInput, principal: Annotated[OperatorPrincipal, Depends(_operator)]
-    ) -> EnrollmentPreview:
+def _enrollment_routes(operator: APIRouter, authority: EnrollmentAuthority) -> None:
+    @operator.post("/connection-enrollments/{handle}/preview")
+    async def enrollment_preview(handle: str, body: EnrollmentPreviewInput, principal: _Operator) -> EnrollmentPreview:
         return await authority.preview(handle, body, principal)
 
-    @app.post("/v1/operator/connection-enrollments/{handle}/decision")
+    @operator.post("/connection-enrollments/{handle}/decision")
     async def enrollment_decision(
-        handle: str, body: EnrollmentDecisionInput, principal: Annotated[OperatorPrincipal, Depends(_operator)]
+        handle: str, body: EnrollmentDecisionInput, principal: _Operator
     ) -> EnrollmentDecisionResult:
         return await authority.decide(handle, body, principal)
 
 
-def _error(status_code: int, detail: str) -> JSONResponse:
-    return JSONResponse(status_code=status_code, content={"detail": detail})
-
-
-def _mcp_linkage_routes(app: FastAPI, authority: McpLinkageAuthority) -> None:
+def _mcp_linkage_routes(
+    app: FastAPI, operator: APIRouter, authority: McpLinkageAuthority, updates: ActionUpdateBroker
+) -> None:
     @app.get("/oauth/client-metadata.json")
     async def client_metadata_document() -> JSONResponse:
         document = authority.client_metadata_document()
@@ -700,42 +555,16 @@ def _mcp_linkage_routes(app: FastAPI, authority: McpLinkageAuthority) -> None:
             headers={"Cache-Control": "public, max-age=3600"},
         )
 
-    @app.exception_handler(McpLinkageError)
-    async def mcp_linkage_failed(request: Request, error: McpLinkageError) -> JSONResponse:
-        # A provider that refused or could not answer the token exchange; the more specific
-        # subclasses below keep their own status codes.
-        del request
-        return _error(status.HTTP_502_BAD_GATEWAY, str(error))
-
-    @app.exception_handler(McpLinkageConflictError)
-    async def mcp_linkage_conflict(request: Request, error: McpLinkageConflictError) -> JSONResponse:
-        del request
-        return _error(status.HTTP_409_CONFLICT, str(error))
-
-    @app.exception_handler(McpLinkageNotFoundError)
-    async def mcp_linkage_not_found(request: Request, error: McpLinkageNotFoundError) -> JSONResponse:
-        del request
-        return _error(status.HTTP_404_NOT_FOUND, str(error))
-
-    @app.get("/v1/operator/mcp-servers/{server_id}/linkage", response_model=McpLinkageView)
-    async def linkage_status(
-        server_id: str, principal: Annotated[OperatorPrincipal, Depends(_operator)]
-    ) -> McpLinkageView:
-        del principal
+    @operator.get("/mcp-servers/{server_id}/linkage")
+    async def linkage_status(server_id: str) -> McpLinkageView:
         return await authority.status(server_id)
 
-    @app.get("/v1/operator/mcp-servers", response_model=list[McpLinkageView])
-    async def list_mcp_linkages(principal: Annotated[OperatorPrincipal, Depends(_operator)]) -> list[McpLinkageView]:
-        del principal
+    @operator.get("/mcp-servers")
+    async def list_mcp_linkages() -> list[McpLinkageView]:
         return await authority.statuses()
 
-    @app.get("/v1/operator/mcp-servers/stream")
-    async def mcp_linkages_stream(
-        principal: Annotated[OperatorPrincipal, Depends(_operator)],
-        updates: Annotated[ActionUpdateBroker, Depends(_updates)],
-        credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(_operator_bearer)],
-        authenticator: Annotated[OperatorAuthenticator, Depends(_operator_authenticator)],
-    ) -> StreamingResponse:
+    @operator.get("/mcp-servers/stream")
+    async def mcp_linkages_stream(authorized: _StreamAuthorized) -> StreamingResponse:
         next_expiry: datetime | None = None
 
         async def read() -> bytes:
@@ -750,27 +579,18 @@ def _mcp_linkage_routes(app: FastAPI, authority: McpLinkageAuthority) -> None:
                 ),
                 default=None,
             )
-            return json.dumps([row.model_dump(mode="json") for row in rows], separators=(",", ":")).encode()
+            return _sse_json(rows)
 
-        return snapshot_stream(
-            updates.subscribe_mcp_linkages,
-            read,
-            _stream_operator_authorized(principal, credentials, authenticator),
-            refresh_at=lambda: next_expiry,
-        )
+        return snapshot_stream(updates.subscribe_mcp_linkages, read, authorized, refresh_at=lambda: next_expiry)
 
-    @app.post("/v1/operator/mcp-servers/{server_id}/linkage/start", response_model=McpLinkageStartView)
-    async def linkage_start(
-        server_id: str, body: McpLinkageStart, principal: Annotated[OperatorPrincipal, Depends(_operator)]
-    ) -> McpLinkageStartView:
+    @operator.post("/mcp-servers/{server_id}/linkage/start")
+    async def linkage_start(server_id: str, body: McpLinkageStart, principal: _Operator) -> McpLinkageStartView:
         return await authority.start(server_id, body, principal)
 
-    @app.get("/v1/mcp-linkage/callback", response_model=McpLinkageView)
+    @app.get("/v1/mcp-linkage/callback")
     async def linkage_callback(state: str, code: str) -> McpLinkageView:
         return await authority.callback(state, code)
 
-    @app.post("/v1/operator/mcp-servers/{server_id}/linkage/disconnect", response_model=McpLinkageView)
-    async def linkage_disconnect(
-        server_id: str, principal: Annotated[OperatorPrincipal, Depends(_operator)]
-    ) -> McpLinkageView:
+    @operator.post("/mcp-servers/{server_id}/linkage/disconnect")
+    async def linkage_disconnect(server_id: str, principal: _Operator) -> McpLinkageView:
         return await authority.disconnect(server_id, principal)

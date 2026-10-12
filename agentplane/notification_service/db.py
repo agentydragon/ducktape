@@ -18,6 +18,9 @@ from sqlalchemy import (
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
+from agentplane.notification_service.models import SourceFailureKind, Subscribe
+from util.sqlalchemy_types import PydanticColumn, StringBackedStrEnumColumn
+
 
 class Base(DeclarativeBase):
     pass
@@ -86,7 +89,7 @@ class Subscription(Base):
     id: Mapped[UUID] = mapped_column(primary_key=True)
     inbox_id: Mapped[UUID] = mapped_column(ForeignKey("inbox.id", ondelete="CASCADE"))
     idempotency_key: Mapped[str]
-    creation: Mapped[dict[str, JsonValue]] = mapped_column(JSONB)
+    creation: Mapped[Subscribe] = mapped_column(PydanticColumn(Subscribe))
     version: Mapped[int]
     actions_after_sequence: Mapped[int | None] = mapped_column(BigInteger)
     # Immutable lower bound for GitHub receipts eligible for this subscription.
@@ -114,7 +117,7 @@ class Subscription(Base):
     next_attempt: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     error: Mapped[str | None]
     last_success_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
-    error_kind: Mapped[str | None]
+    error_kind: Mapped[SourceFailureKind | None] = mapped_column(StringBackedStrEnumColumn(SourceFailureKind))
     error_since: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     error_observed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
@@ -186,7 +189,7 @@ class GitHubRefresh:
     """Shared refresh scheduling and observations; never copied into each subscription."""
 
     last_success_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
-    error_kind: Mapped[str | None]
+    error_kind: Mapped[SourceFailureKind | None] = mapped_column(StringBackedStrEnumColumn(SourceFailureKind))
     error: Mapped[str | None]
     error_since: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     error_observed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
