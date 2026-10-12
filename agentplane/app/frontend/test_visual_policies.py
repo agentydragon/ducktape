@@ -17,7 +17,7 @@ from agentplane.app.frontend.testing.visual_assertions import (
     _select_reconnect,
 )
 from agentplane.app.frontend.testing.visual_fixtures import DESKTOP_AND_MOBILE, MOBILE_ONLY
-from agentplane.app.frontend.visual_app import IDLE_THREAD, AgentplaneFixture
+from agentplane.app.frontend.visual_app import IDLE_THREAD, AgentplaneFixture, Flag, Scene
 from util.testing.page_capture import wait_for_stable
 from util.testing.viewports import DESKTOP, MOBILE, Viewport
 from util.testing.visual_capture import VisualPage
@@ -30,7 +30,7 @@ pytestmark = pytest.mark.asyncio(loop_scope="session")
 
 @DESKTOP_AND_MOBILE
 async def test_actions_sidebar_queue(view: VisualPage, app: AgentplaneFixture) -> None:
-    await app.show_pending_actions()
+    await app.set_flag(Flag.PENDING_ACTIONS)
     await app.mount_thread(IDLE_THREAD)
     await view.check(context="fixture ready")
     page = view.page
@@ -43,7 +43,7 @@ async def test_actions_sidebar_queue(view: VisualPage, app: AgentplaneFixture) -
 
 
 async def test_actions_sidebar_resize(view: VisualPage, app: AgentplaneFixture) -> None:
-    await app.show_pending_actions()
+    await app.set_flag(Flag.PENDING_ACTIONS)
     await app.mount_thread(IDLE_THREAD)
     page = view.page
     section = page.locator(".agentplane-actions-sidebar")
@@ -70,7 +70,7 @@ async def test_actions_sidebar_resize(view: VisualPage, app: AgentplaneFixture) 
 @DESKTOP_AND_MOBILE
 @pytest.mark.parametrize("expanded", [False, True], ids=["collapsed", "expanded"])
 async def test_sidebar_compact_pod_approval(view: VisualPage, app: AgentplaneFixture, expanded: bool) -> None:
-    await app.show_compact_pod_action()
+    await app.set_flag(Flag.COMPACT_POD_ACTION)
     await app.mount_thread(IDLE_THREAD)
     page = view.page
     await _open_phone_navigation(page)
@@ -282,7 +282,7 @@ async def test_compact_pr_with_description_requires_review(view: VisualPage, app
 
 @DESKTOP_AND_MOBILE
 async def test_wide_action_decisions(view: VisualPage, app: AgentplaneFixture, viewport: Viewport) -> None:
-    await app.show_pending_actions()
+    await app.set_flag(Flag.PENDING_ACTIONS)
     await app.mount_app("/actions")
     page = view.page
     approve = page.get_by_role("button", name="Approve").first
@@ -297,7 +297,7 @@ async def test_wide_action_decisions(view: VisualPage, app: AgentplaneFixture, v
 
 @DESKTOP_AND_MOBILE
 async def test_action_detail_ssh_raw_view(view: VisualPage, app: AgentplaneFixture, viewport: Viewport) -> None:
-    await app.show_pending_actions()
+    await app.set_flag(Flag.PENDING_ACTIONS)
     await app.mount_app("/actions/70000000-0000-4000-8000-000000000006")
     await view.check(context="fixture ready")
     page = view.page
@@ -315,7 +315,7 @@ async def test_action_detail_ssh_raw_view(view: VisualPage, app: AgentplaneFixtu
 
 @DESKTOP_AND_MOBILE
 async def test_action_detail_external_grant_audit(view: VisualPage, app: AgentplaneFixture) -> None:
-    await app.show_pending_actions()
+    await app.set_flag(Flag.PENDING_ACTIONS)
     await app.mount_app("/actions/70000000-0000-4000-8000-000000000001")
     await view.check(context="fixture ready")
     page = view.page
@@ -328,8 +328,8 @@ async def test_action_detail_external_grant_audit(view: VisualPage, app: Agentpl
 
 async def capture_long_ssh_preview_scrolled(view: VisualPage, app: AgentplaneFixture) -> None:
     """The fully expanded 55-line SSH preview stays a bounded box that scrolls to its end."""
-    await app.show_pending_actions()
-    await app.long_pending_action()
+    await app.set_flag(Flag.PENDING_ACTIONS)
+    await app.build(Scene.LONG_PENDING_ACTION)
     await app.mount_thread(IDLE_THREAD)
     await view.check(context="fixture ready")
     page = view.page
@@ -355,7 +355,7 @@ async def test_sidebar_long_ssh_preview_is_bounded_phone(view: VisualPage, app: 
 
 
 async def test_actions_raw_switches(view: VisualPage, app: AgentplaneFixture) -> None:
-    await app.show_pending_actions()
+    await app.set_flag(Flag.PENDING_ACTIONS)
     await app.mount_app("/actions")
     await view.check(context="fixture ready")
     page = view.page
@@ -451,7 +451,7 @@ async def test_oauth_clients_update_while_settings_stays_open(view: VisualPage, 
     page = view.page
     await _open_settings(page)
     await expect(page.get_by_text("Claude desktop")).to_be_visible()
-    await app.publish_connection_rename()
+    await app.publish(Flag.CONNECTION_RENAMED, "/connections/stream")
     await expect(page.get_by_text("Updated OAuth client")).to_be_visible()
     await view.capture(name="oauth_clients_live_rename")
 
@@ -485,7 +485,7 @@ async def test_consent_reconnect_warning_desktop(reconnect_review: VisualPage) -
 
 @DESKTOP_AND_MOBILE
 async def test_action_history_receipt(view: VisualPage, app: AgentplaneFixture) -> None:
-    await app.show_pending_actions()
+    await app.set_flag(Flag.PENDING_ACTIONS)
     await app.mount_app("/actions")
     await view.page.wait_for_selector(".agentplane-disclosure-summary", state="attached")
     await view.page.wait_for_selector('img[src^="data:image/"]', state="attached")
@@ -499,7 +499,7 @@ async def test_action_history_receipt(view: VisualPage, app: AgentplaneFixture) 
 
 @DESKTOP_AND_MOBILE
 async def test_gmail_draft_history_keeps_request_and_result_together(view: VisualPage, app: AgentplaneFixture) -> None:
-    await app.show_gmail_draft_history()
+    await app.set_flag(Flag.GMAIL_DRAFT_HISTORY)
     await app.mount_app("/actions")
     page = view.page
     await expect(page.get_by_text("prepare the release email", exact=True)).to_be_visible()
@@ -513,7 +513,7 @@ async def test_gmail_draft_history_keeps_request_and_result_together(view: Visua
 
 @DESKTOP_AND_MOBILE
 async def test_action_history_diagram(view: VisualPage, app: AgentplaneFixture) -> None:
-    await app.show_pending_actions()
+    await app.set_flag(Flag.PENDING_ACTIONS)
     await app.mount_app("/actions")
     await view.page.wait_for_selector(".agentplane-disclosure-summary", state="attached")
     await view.page.wait_for_selector('img[src^="data:image/"]', state="attached")
@@ -526,7 +526,7 @@ async def test_action_history_diagram(view: VisualPage, app: AgentplaneFixture) 
 
 
 async def test_action_history_raw_receipt(view: VisualPage, app: AgentplaneFixture) -> None:
-    await app.show_pending_actions()
+    await app.set_flag(Flag.PENDING_ACTIONS)
     await app.mount_app("/actions")
     await view.check(context="fixture ready")
     page = view.page
@@ -537,8 +537,8 @@ async def test_action_history_raw_receipt(view: VisualPage, app: AgentplaneFixtu
 
 
 async def test_action_history_paging_control(view: VisualPage, app: AgentplaneFixture) -> None:
-    await app.paginate_action_history()
-    await app.show_pending_actions()
+    await app.set_flag(Flag.PAGED_ACTION_HISTORY)
+    await app.set_flag(Flag.PENDING_ACTIONS)
     await app.mount_app("/actions")
     await view.page.wait_for_selector(".agentplane-disclosure-summary", state="attached")
     await view.page.wait_for_selector('[data-testid="action-history-load-more"]', state="attached")
@@ -572,9 +572,9 @@ async def test_mcp_servers_linkage_and_health_update_while_open(view: VisualPage
     page = view.page
     docs = page.locator('[data-mcp-server="linkage:example_docs"]')
     await expect(docs.get_by_text("linked", exact=True)).to_be_visible()
-    await app.publish_mcp_linkage_change()
+    await app.publish(Flag.MCP_LINKAGE_CHANGED, "/mcp-servers/stream")
     await expect(docs.get_by_text("expired", exact=True)).to_be_visible()
-    await app.publish_mcp_health_change()
+    await app.publish(Flag.MCP_HEALTH_CHANGED, "/action-groups/stream")
     await expect(docs.get_by_text("connect_failed", exact=True)).to_be_visible()
     await view.capture(name="mcp_linkage_and_health_live")
 

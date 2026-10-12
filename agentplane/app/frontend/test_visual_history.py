@@ -21,7 +21,7 @@ from agentplane.app.frontend.testing.visual_assertions import (
     _tool_steps,
 )
 from agentplane.app.frontend.testing.visual_fixtures import DESKTOP_AND_MOBILE, MOBILE_ONLY
-from agentplane.app.frontend.visual_app import IDLE_THREAD, RUNNING_THREAD, AgentplaneFixture
+from agentplane.app.frontend.visual_app import IDLE_THREAD, RUNNING_THREAD, AgentplaneFixture, Scene
 from util.testing.page_capture import wait_for_stable
 from util.testing.viewports import DESKTOP, MOBILE, MOBILE_TOUCH, Viewport
 from util.testing.visual_capture import VisualPage
@@ -44,7 +44,7 @@ async def test_completed_rollout_overview(completed_rollout: VisualPage) -> None
 
 @pytest_asyncio.fixture(loop_scope="session")
 async def reported_rollout(view: VisualPage, app: AgentplaneFixture) -> VisualPage:
-    await app.reported_rollout()
+    await app.build(Scene.REPORTED_ROLLOUT)
     await app.mount_thread(IDLE_THREAD)
     await view.page.wait_for_selector("[aria-label='Thread history'][data-layout-settled='true']", state="attached")
     await view.check(context="fixture ready")
@@ -192,7 +192,7 @@ async def test_debug_history_latest_session_error_raw_phone(view: VisualPage, ap
 
 @DESKTOP_AND_MOBILE
 async def test_debug_history_latest_session_interleaved_raw(view: VisualPage, app: AgentplaneFixture) -> None:
-    await app.interleaved_events()
+    await app.build(Scene.INTERLEAVED_EVENTS)
     await app.mount_thread(IDLE_THREAD)
     await view.check(context="fixture ready")
     page = view.page
@@ -211,7 +211,7 @@ async def test_debug_history_latest_session_raw(view: VisualPage, app: Agentplan
 
 @pytest.mark.parametrize("viewport", [DESKTOP, MOBILE_TOUCH], ids=["desktop", "mobile"])
 async def test_command_progress_semantics(view: VisualPage, app: AgentplaneFixture, viewport: Viewport) -> None:
-    await app.command_progress()
+    await app.build(Scene.COMMAND_PROGRESS)
     await app.mount_thread(RUNNING_THREAD)
     await view.check(context="fixture ready")
     page = view.page
@@ -276,7 +276,7 @@ async def test_cancel_unsent_input(view: VisualPage, app: AgentplaneFixture) -> 
     await view.page.evaluate(
         "() => Object.defineProperty(navigator, 'onLine', { configurable: true, get: () => false })"
     )
-    await app.remember_pending_input()
+    await app.build(Scene.REMEMBER_PENDING_INPUT)
     await app.mount_thread(RUNNING_THREAD)
     await view.check(context="fixture ready")
     row = view.page.locator('[data-command-id="locally-retained"]')
@@ -290,8 +290,8 @@ async def test_cancel_unsent_input(view: VisualPage, app: AgentplaneFixture) -> 
 
 
 async def test_debug_history_latest_session_pending_raw(view: VisualPage, app: AgentplaneFixture) -> None:
-    await app.pending_commands()
-    await app.remember_pending_input()
+    await app.build(Scene.PENDING_COMMANDS)
+    await app.build(Scene.REMEMBER_PENDING_INPUT)
     await app.mount_thread(RUNNING_THREAD)
     await view.check(context="fixture ready")
     page = view.page
@@ -302,7 +302,7 @@ async def test_debug_history_latest_session_pending_raw(view: VisualPage, app: A
 
 
 async def test_debug_history_stderr_disclosure(view: VisualPage, app: AgentplaneFixture) -> None:
-    await app.interleaved_events()
+    await app.build(Scene.INTERLEAVED_EVENTS)
     await app.mount_thread(IDLE_THREAD)
     await view.check(context="fixture ready")
     page = view.page
@@ -314,7 +314,7 @@ async def test_debug_history_stderr_disclosure(view: VisualPage, app: Agentplane
 
 
 async def test_thread_setup_progress(view: VisualPage, app: AgentplaneFixture) -> None:
-    await app.thread_setup_running()
+    await app.build(Scene.THREAD_SETUP_RUNNING)
     await app.mount_thread(IDLE_THREAD)
     await view.check(context="fixture ready")
     page = view.page
@@ -326,7 +326,7 @@ async def test_thread_setup_progress(view: VisualPage, app: AgentplaneFixture) -
 
 
 async def test_thread_setup_output(view: VisualPage, app: AgentplaneFixture) -> None:
-    await app.thread_setup()
+    await app.build(Scene.THREAD_SETUP)
     await app.mount_thread(IDLE_THREAD)
     await view.check(context="fixture ready")
     page = view.page

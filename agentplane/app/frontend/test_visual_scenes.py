@@ -12,6 +12,8 @@ from agentplane.app.frontend.visual_app import (
     SUSPENDED_THREAD,
     UNNAMED_THREAD,
     AgentplaneFixture,
+    Flag,
+    Scene,
 )
 from util.testing.visual_capture import VisualPage
 
@@ -66,7 +68,7 @@ async def test_session_error_phone(view: VisualPage, app: AgentplaneFixture) -> 
 
 
 async def test_session_interleaved(view: VisualPage, app: AgentplaneFixture) -> None:
-    await app.interleaved_events()
+    await app.build(Scene.INTERLEAVED_EVENTS)
     await app.mount_thread(IDLE_THREAD)
     await view.page.wait_for_selector('[data-thread-anchor="18"]', state="attached")
     await view.check(context="fixture ready")
@@ -74,7 +76,7 @@ async def test_session_interleaved(view: VisualPage, app: AgentplaneFixture) -> 
 
 
 async def test_session_lifecycle_group(view: VisualPage, app: AgentplaneFixture) -> None:
-    await app.lifecycle_group()
+    await app.build(Scene.LIFECYCLE_GROUP)
     await app.mount_thread(IDLE_THREAD)
     await view.page.wait_for_selector('[data-thread-anchor="50"]', state="attached")
     await view.check(context="fixture ready")
@@ -82,7 +84,7 @@ async def test_session_lifecycle_group(view: VisualPage, app: AgentplaneFixture)
 
 
 async def test_session_thread_setup(view: VisualPage, app: AgentplaneFixture) -> None:
-    await app.thread_setup()
+    await app.build(Scene.THREAD_SETUP)
     await app.mount_thread(IDLE_THREAD)
     await view.page.wait_for_selector(':text("Thread setup complete")', state="attached")
     await view.check(context="fixture ready")
@@ -112,7 +114,7 @@ async def test_threads_failed_turn(view: VisualPage, app: AgentplaneFixture) -> 
 
 
 async def test_threads_provisioning(view: VisualPage, app: AgentplaneFixture) -> None:
-    await app.add_provisioning_sandbox()
+    await app.build(Scene.ADD_PROVISIONING_SANDBOX)
     await app.mount_app("/")
     await view.page.wait_for_selector('a[href="#/sandboxes/test-provisioning"]', state="attached")
     await view.check(context="fixture ready")
@@ -120,7 +122,7 @@ async def test_threads_provisioning(view: VisualPage, app: AgentplaneFixture) ->
 
 
 async def test_threads_updates_disconnected(view: VisualPage, app: AgentplaneFixture) -> None:
-    await app.disconnect_thread_database()
+    await app.set_flag(Flag.THREAD_DATABASE_DISCONNECTED)
     await app.mount_app("/")
     await view.page.wait_for_selector('[role="alert"]', state="attached")
     await view.check(context="fixture ready")
@@ -128,7 +130,7 @@ async def test_threads_updates_disconnected(view: VisualPage, app: AgentplaneFix
 
 
 async def test_threads_watch_stale(view: VisualPage, app: AgentplaneFixture) -> None:
-    await app.stale_watch()
+    await app.set_flag(Flag.WATCH_STALE)
     await app.mount_app("/")
     await view.page.wait_for_selector('[role="alert"]', state="attached")
     await view.check(context="fixture ready")
@@ -143,7 +145,7 @@ async def test_sandboxes(view: VisualPage, app: AgentplaneFixture) -> None:
 
 
 async def test_sandboxes_stale(view: VisualPage, app: AgentplaneFixture) -> None:
-    await app.stale_watch()
+    await app.set_flag(Flag.WATCH_STALE)
     await app.mount_app("/sandboxes")
     await view.check(context="fixture ready")
     await view.capture(target=view.page.locator("#app"))
@@ -151,7 +153,7 @@ async def test_sandboxes_stale(view: VisualPage, app: AgentplaneFixture) -> None
 
 @DESKTOP_AND_MOBILE
 async def test_actions_sidebar_under_threads(view: VisualPage, app: AgentplaneFixture) -> None:
-    await app.show_pending_actions()
+    await app.set_flag(Flag.PENDING_ACTIONS)
     await app.mount_thread(IDLE_THREAD)
     await _open_phone_navigation(view.page)
     await view.page.wait_for_selector('.agentplane-actions-sidebar-toggle[aria-expanded="true"]', state="attached")
@@ -161,7 +163,7 @@ async def test_actions_sidebar_under_threads(view: VisualPage, app: AgentplaneFi
 
 @DESKTOP_AND_MOBILE
 async def test_actions(view: VisualPage, app: AgentplaneFixture) -> None:
-    await app.show_pending_actions()
+    await app.set_flag(Flag.PENDING_ACTIONS)
     await app.mount_app("/actions")
     await view.page.wait_for_selector(".agentplane-disclosure-summary", state="attached")
     await view.check(context="fixture ready")
@@ -169,8 +171,8 @@ async def test_actions(view: VisualPage, app: AgentplaneFixture) -> None:
 
 
 async def test_actions_history_groups_unavailable(view: VisualPage, app: AgentplaneFixture) -> None:
-    await app.fail_action_groups()
-    await app.show_pending_actions()
+    await app.set_flag(Flag.ACTION_GROUPS_UNAVAILABLE)
+    await app.set_flag(Flag.PENDING_ACTIONS)
     await app.mount_app("/actions")
     await view.page.wait_for_selector(".agentplane-disclosure-summary", state="attached")
     await view.page.wait_for_selector('[role="alert"]', state="attached")
@@ -179,8 +181,8 @@ async def test_actions_history_groups_unavailable(view: VisualPage, app: Agentpl
 
 
 async def test_actions_hidden_codepoints(view: VisualPage, app: AgentplaneFixture) -> None:
-    await app.hidden_codepoints()
-    await app.show_pending_actions()
+    await app.build(Scene.HIDDEN_CODEPOINTS)
+    await app.set_flag(Flag.PENDING_ACTIONS)
     await app.mount_app("/actions")
     await view.page.wait_for_selector(".cm-agentplane-special-char-bidi", state="attached")
     await view.page.wait_for_selector(".cm-agentplane-special-char-ignorable", state="attached")
@@ -211,7 +213,7 @@ async def test_sandbox_status(view: VisualPage, app: AgentplaneFixture) -> None:
 
 
 async def test_sandbox_status_grant_error(view: VisualPage, app: AgentplaneFixture) -> None:
-    await app.fail_grant_provisioning()
+    await app.build(Scene.FAIL_GRANT_PROVISIONING)
     await app.mount_app("/sandboxes/ready-sandbox?tab=status")
     await view.check(context="fixture ready")
     await view.capture(target=view.page.locator("#app"))
@@ -250,7 +252,7 @@ async def test_session_suspended_sandbox(view: VisualPage, app: AgentplaneFixtur
 
 
 async def test_session_inventory_stale(view: VisualPage, app: AgentplaneFixture) -> None:
-    await app.stale_watch()
+    await app.set_flag(Flag.WATCH_STALE)
     await app.mount_thread(IDLE_THREAD)
     await view.page.wait_for_selector(':text("so this page is not being updated")', state="attached")
     await view.page.wait_for_selector('[data-thread-anchor="34"]', state="attached")
@@ -260,7 +262,7 @@ async def test_session_inventory_stale(view: VisualPage, app: AgentplaneFixture)
 
 @MOBILE_ONLY
 async def test_session_inventory_stale_phone(view: VisualPage, app: AgentplaneFixture) -> None:
-    await app.stale_watch()
+    await app.set_flag(Flag.WATCH_STALE)
     await app.mount_thread(DELETED_SANDBOX_THREAD)
     await view.page.wait_for_selector(':text("Current availability unknown")', state="attached")
     await view.page.wait_for_selector('[data-thread-anchor="34"]', state="attached")
@@ -269,7 +271,7 @@ async def test_session_inventory_stale_phone(view: VisualPage, app: AgentplaneFi
 
 
 async def test_session_inventory_dropped(view: VisualPage, app: AgentplaneFixture) -> None:
-    await app.disconnect_inventory_stream()
+    await app.set_flag(Flag.INVENTORY_STREAM_DROPPED)
     await app.age_outage(90000)
     await app.mount_thread(IDLE_THREAD)
     await view.page.wait_for_selector('[data-connection="stale"]', state="attached")
@@ -281,7 +283,7 @@ async def test_session_inventory_dropped(view: VisualPage, app: AgentplaneFixtur
 
 @MOBILE_ONLY
 async def test_session_inventory_dropped_phone(view: VisualPage, app: AgentplaneFixture) -> None:
-    await app.disconnect_inventory_stream()
+    await app.set_flag(Flag.INVENTORY_STREAM_DROPPED)
     await app.age_outage(90000)
     await app.mount_thread(IDLE_THREAD)
     await view.page.wait_for_selector(':text("may be out of date")', state="attached")
@@ -299,7 +301,7 @@ async def test_session_unnamed(view: VisualPage, app: AgentplaneFixture) -> None
 
 
 async def test_session_markdown_code_fence(view: VisualPage, app: AgentplaneFixture) -> None:
-    await app.markdown_code_fence()
+    await app.build(Scene.MARKDOWN_CODE_FENCE)
     await app.mount_thread(IDLE_THREAD)
     await view.page.wait_for_selector(".agentplane-code-block", state="attached")
     await view.check(context="fixture ready")
@@ -330,7 +332,7 @@ async def test_session_standalone_reasoning_preview(view: VisualPage, app: Agent
 
 @DESKTOP_AND_MOBILE
 async def test_session_unfinished_reasoning(view: VisualPage, app: AgentplaneFixture) -> None:
-    await app.unfinished_reasoning()
+    await app.build(Scene.UNFINISHED_REASONING)
     await app.mount_thread(IDLE_THREAD)
     await view.page.wait_for_selector(".agentplane-step-title--streaming", state="attached")
     await view.check(context="fixture ready")
@@ -359,7 +361,7 @@ async def test_session_states(view: VisualPage, app: AgentplaneFixture) -> None:
 
 
 async def test_session_streaming_interleaved(view: VisualPage, app: AgentplaneFixture) -> None:
-    await app.streaming_interleaved()
+    await app.build(Scene.STREAMING_INTERLEAVED)
     await app.mount_thread(RUNNING_THREAD)
     await view.page.wait_for_selector('.agentplane-streaming-cursor[aria-label="Streaming"]', state="attached")
     await view.page.wait_for_selector('[aria-label="Thread history"][data-layout-settled="true"]', state="attached")
@@ -368,7 +370,7 @@ async def test_session_streaming_interleaved(view: VisualPage, app: AgentplaneFi
 
 
 async def test_session_resume(view: VisualPage, app: AgentplaneFixture) -> None:
-    await app.ended_attachment()
+    await app.build(Scene.ENDED_ATTACHMENT)
     await app.mount_thread(RUNNING_THREAD)
     await view.page.wait_for_selector('[aria-label="Harness not running"]', state="attached")
     await view.page.wait_for_selector('[aria-label="Resume harness"]', state="attached")
@@ -378,8 +380,8 @@ async def test_session_resume(view: VisualPage, app: AgentplaneFixture) -> None:
 
 @DESKTOP_AND_MOBILE
 async def test_session_pending(view: VisualPage, app: AgentplaneFixture) -> None:
-    await app.pending_commands()
-    await app.remember_pending_input()
+    await app.build(Scene.PENDING_COMMANDS)
+    await app.build(Scene.REMEMBER_PENDING_INPUT)
     await app.mount_thread(RUNNING_THREAD)
     await view.page.wait_for_selector('[data-command-id="queued-model"]', state="attached")
     await view.page.wait_for_selector('[data-thread-anchor="16"]', state="attached")
@@ -390,8 +392,8 @@ async def test_session_pending(view: VisualPage, app: AgentplaneFixture) -> None
 
 @DESKTOP_AND_MOBILE
 async def test_session_pending_input_echo(view: VisualPage, app: AgentplaneFixture) -> None:
-    await app.pending_input_echo()
-    await app.remember_input_echo()
+    await app.build(Scene.PENDING_INPUT_ECHO)
+    await app.build(Scene.REMEMBER_INPUT_ECHO)
     await app.mount_thread(RUNNING_THREAD)
     await view.page.wait_for_selector(
         '[data-command-id="locally-retained"] .agentplane-verbatim:has-text("This browser already knows the text it sent.")',
@@ -406,9 +408,9 @@ async def test_session_pending_input_echo(view: VisualPage, app: AgentplaneFixtu
 
 @DESKTOP_AND_MOBILE
 async def test_session_pending_failed(view: VisualPage, app: AgentplaneFixture) -> None:
-    await app.time_out_command_admission()
-    await app.pending_commands()
-    await app.remember_pending_input()
+    await app.set_flag(Flag.COMMAND_ADMISSION_TIMED_OUT)
+    await app.build(Scene.PENDING_COMMANDS)
+    await app.build(Scene.REMEMBER_PENDING_INPUT)
     await app.mount_thread(RUNNING_THREAD)
     await view.page.wait_for_selector('[data-stage="unconfirmed"]', state="attached")
     await view.page.wait_for_selector('[data-thread-anchor="16"]', state="attached")
@@ -419,7 +421,7 @@ async def test_session_pending_failed(view: VisualPage, app: AgentplaneFixture) 
 
 
 async def test_session_pending_controls(view: VisualPage, app: AgentplaneFixture) -> None:
-    await app.pending_commands()
+    await app.build(Scene.PENDING_COMMANDS)
     await app.mount_thread(RUNNING_THREAD)
     await view.page.wait_for_selector('[data-command-id="queued-interrupt"]', state="attached")
     await view.page.wait_for_selector('[data-thread-anchor="16"]', state="attached")
@@ -429,8 +431,8 @@ async def test_session_pending_controls(view: VisualPage, app: AgentplaneFixture
 
 @MOBILE_ONLY
 async def test_session_command_outcomes_phone(view: VisualPage, app: AgentplaneFixture) -> None:
-    await app.command_outcomes()
-    await app.remember_settled_commands()
+    await app.build(Scene.COMMAND_OUTCOMES)
+    await app.build(Scene.REMEMBER_SETTLED_COMMANDS)
     await app.mount_thread(RUNNING_THREAD)
     await view.page.wait_for_selector('[data-command-id="queued-model"]', state="attached")
     await view.page.wait_for_selector('[data-thread-anchor="16"]', state="attached")
@@ -441,7 +443,7 @@ async def test_session_command_outcomes_phone(view: VisualPage, app: AgentplaneF
 
 
 async def test_session_catching_up(view: VisualPage, app: AgentplaneFixture) -> None:
-    await app.withhold_entity_segments()
+    await app.set_flag(Flag.ENTITY_SEGMENTS_WITHHELD)
     await app.mount_thread(IDLE_THREAD)
     await view.page.wait_for_selector('[data-thread-catchup="true"]', state="attached")
     await view.check(context="fixture ready")
@@ -449,7 +451,7 @@ async def test_session_catching_up(view: VisualPage, app: AgentplaneFixture) -> 
 
 
 async def test_session_sync_unavailable(view: VisualPage, app: AgentplaneFixture) -> None:
-    await app.fail_sync_scope()
+    await app.set_flag(Flag.SYNC_SCOPE_UNAVAILABLE)
     await app.mount_thread(IDLE_THREAD)
     await view.page.wait_for_selector('[role="alert"]', state="attached")
     await view.check(context="fixture ready")
@@ -457,7 +459,7 @@ async def test_session_sync_unavailable(view: VisualPage, app: AgentplaneFixture
 
 
 async def test_session_sync_reconnecting(view: VisualPage, app: AgentplaneFixture) -> None:
-    await app.disconnect_entity_stream()
+    await app.set_flag(Flag.ENTITY_STREAM_DISCONNECTED)
     await app.age_outage(10000)
     await app.mount_thread(IDLE_THREAD)
     await view.page.wait_for_selector('[aria-label="Runner feed active · harness running"]', state="attached")
@@ -469,7 +471,7 @@ async def test_session_sync_reconnecting(view: VisualPage, app: AgentplaneFixtur
 
 @MOBILE_ONLY
 async def test_session_sync_reconnecting_phone(view: VisualPage, app: AgentplaneFixture) -> None:
-    await app.disconnect_entity_stream()
+    await app.set_flag(Flag.ENTITY_STREAM_DISCONNECTED)
     await app.age_outage(90000)
     await app.mount_thread(IDLE_THREAD)
     await view.page.wait_for_selector('[aria-label="Runner feed active · harness running"]', state="attached")

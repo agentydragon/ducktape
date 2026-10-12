@@ -12,7 +12,7 @@ from agentplane.app.frontend.testing.visual_assertions import (
     _open_standalone_reasoning,
 )
 from agentplane.app.frontend.testing.visual_fixtures import DESKTOP_AND_MOBILE, MOBILE_ONLY
-from agentplane.app.frontend.visual_app import IDLE_THREAD, RUNNING_THREAD, AgentplaneFixture
+from agentplane.app.frontend.visual_app import IDLE_THREAD, RUNNING_THREAD, AgentplaneFixture, Flag, Scene
 from util.testing.page_capture import wait_for_stable
 from util.testing.viewports import SMALL_MOBILE
 from util.testing.visual_capture import VisualPage
@@ -110,7 +110,7 @@ async def test_mobile_navigation_drawer_threads_failed_turn_phone_drawer(
 
 @MOBILE_ONLY
 async def test_mobile_navigation_drawer_threads_provisioning_phone(view: VisualPage, app: AgentplaneFixture) -> None:
-    await app.add_provisioning_sandbox()
+    await app.build(Scene.ADD_PROVISIONING_SANDBOX)
     page = await open_phone_drawer(view, app)
     await expect(page.locator('a[href="#/sandboxes/test-provisioning"]').first).to_be_visible()
     await view.capture(target=view.page.locator("#app"))
@@ -118,7 +118,7 @@ async def test_mobile_navigation_drawer_threads_provisioning_phone(view: VisualP
 
 @MOBILE_ONLY
 async def test_mobile_navigation_drawer_threads_disconnected_phone(view: VisualPage, app: AgentplaneFixture) -> None:
-    await app.disconnect_thread_stream()
+    await app.set_flag(Flag.THREAD_STREAM_DROPPED)
     await app.age_outage(10000)
     page = await open_phone_drawer(view, app)
     await expect(page.locator('[data-connection="degraded"]').first).to_be_visible()
@@ -150,7 +150,7 @@ async def test_mobile_drawer_covers_thread_controls(view: VisualPage, app: Agent
 
 @MOBILE_ONLY
 async def test_mobile_drawer_covers_jump_to_latest(view: VisualPage, app: AgentplaneFixture) -> None:
-    await app.streaming_interleaved()
+    await app.build(Scene.STREAMING_INTERLEAVED)
     await app.mount_thread(RUNNING_THREAD)
     await view.page.wait_for_selector("[aria-label='Thread history'][data-layout-settled='true']", state="attached")
     await view.check(context="fixture ready")
@@ -179,7 +179,7 @@ async def test_mobile_drawer_covers_jump_to_latest(view: VisualPage, app: Agentp
 
 
 async def test_disconnected_threads_tooltip(view: VisualPage, app: AgentplaneFixture) -> None:
-    await app.disconnect_thread_stream()
+    await app.set_flag(Flag.THREAD_STREAM_DROPPED)
     await app.age_outage(10000)
     await app.mount_app("/")
     await view.check(context="fixture ready")
@@ -192,7 +192,7 @@ async def test_disconnected_threads_tooltip(view: VisualPage, app: AgentplaneFix
 
 async def capture_paused_claude_harness_picker(view: VisualPage, app: AgentplaneFixture, route: str) -> None:
     """With Claude paused, the harness picker defaults to Codex and offers Claude disabled."""
-    await app.pause_claude()
+    await app.set_flag(Flag.CLAUDE_PAUSED)
     await app.mount_app(route)
     await view.page.wait_for_selector('[role="option"][data-combobox-disabled]', state="attached")
     await view.check(context="fixture ready")

@@ -6,7 +6,7 @@ from playwright.async_api import expect
 
 from agentplane.app.frontend.testing.visual_assertions import _open_settings
 from agentplane.app.frontend.testing.visual_fixtures import MOBILE_ONLY
-from agentplane.app.frontend.visual_app import IDLE_THREAD, AgentplaneFixture
+from agentplane.app.frontend.visual_app import IDLE_THREAD, AgentplaneFixture, Flag
 from util.testing.visual_capture import VisualPage
 
 pytest_plugins = ("util.testing.visual_fixtures", "agentplane.app.frontend.testing.visual_fixtures")
@@ -19,7 +19,7 @@ async def test_settings_push_registration_follows_other_browser(view: VisualPage
     await _open_settings(page)
     await page.get_by_role("tab", name="Notifications").click()
     await expect(page.get_by_text("Second browser")).to_have_count(0)
-    await app.publish_push_browser()
+    await app.publish(Flag.PUSH_BROWSER_ADDED, "/push/subscriptions/stream")
     await expect(page.get_by_text("Second browser")).to_be_visible()
     await view.capture(name="settings_push_live_registration")
 
@@ -74,7 +74,7 @@ async def test_notification_drawer_updates_without_reopening(view: VisualPage, a
     page = view.page
     await page.get_by_role("button", name="Notifications", exact=True).click()
     await expect(page.get_by_text("Entries after acknowledgement · 5 not acknowledged")).to_be_visible()
-    await app.publish_notification_change()
+    await app.publish(Flag.NOTIFICATION_EXTRA_ENTRY, "/notifications/stream")
     await expect(page.get_by_text("Entries after acknowledgement · 6 not acknowledged")).to_be_visible()
     await expect(page.get_by_text("GitHub workflow_run · completed")).to_be_visible()
 
@@ -101,13 +101,13 @@ async def test_empty_notifications(view: VisualPage, app: AgentplaneFixture) -> 
 
 
 async def test_notification_service_reconnect(view: VisualPage, app: AgentplaneFixture) -> None:
-    await app.set_notification_status_unavailable(True)
+    await app.set_flag(Flag.NOTIFICATION_STATUS_UNAVAILABLE)
     await app.mount_thread(IDLE_THREAD)
     page = view.page
     await page.get_by_role("button", name="Notifications", exact=True).click()
     await expect(page.get_by_text("Reconnecting to notification status…")).to_be_visible()
     await view.capture(name="notification_status_unavailable")
-    await app.set_notification_status_unavailable(False)
+    await app.set_flag(Flag.NOTIFICATION_STATUS_UNAVAILABLE, on=False)
     await page.keyboard.press("Escape")
     await expect(page.get_by_text("Loading notification status…")).to_have_count(0)
     await page.get_by_role("button", name="Notifications", exact=True).click()

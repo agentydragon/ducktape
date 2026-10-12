@@ -1,10 +1,10 @@
 """Python fixture setup for the Agentplane browser harness.
 
-These methods call concrete mock-data builders. There is no scene catalog, recipe
-schema, or generic operation dispatcher. Tests compose setup and choose the route
-before mounting React; subsequent interactions use ordinary Playwright locators.
+Tests compose setup (flags and scene builders on `window.agentplaneVisual`) and choose
+the route before mounting React; subsequent interactions use ordinary Playwright locators.
 """
 
+from enum import StrEnum
 from typing import Literal
 
 from playwright.async_api import Page, expect
@@ -14,6 +14,58 @@ RUNNING_THREAD = "5f1c4a2e-0000-4000-8000-000000000002"
 UNNAMED_THREAD = "5f1c4a2e-0000-4000-8000-000000000000"
 SUSPENDED_THREAD = "5f1c4a2e-0000-4000-8000-000000000004"
 DELETED_SANDBOX_THREAD = "5f1c4a2e-0000-4000-8000-000000000005"
+
+
+class Flag(StrEnum):
+    """A switch on the harness's mock services; the value is its name in harness.tsx's `Flag`."""
+
+    CLAUDE_PAUSED = "claudePaused"
+    WATCH_STALE = "watchStale"
+    THREAD_DATABASE_DISCONNECTED = "threadDatabaseDisconnected"
+    THREAD_STREAM_DROPPED = "threadStreamDropped"
+    INVENTORY_STREAM_DROPPED = "inventoryStreamDropped"
+    ENTITY_STREAM_DISCONNECTED = "entityStreamDisconnected"
+    ENTITY_SEGMENTS_WITHHELD = "entitySegmentsWithheld"
+    SYNC_SCOPE_UNAVAILABLE = "syncScopeUnavailable"
+    COMMAND_ADMISSION_TIMED_OUT = "commandAdmissionTimedOut"
+    PENDING_ACTIONS = "pendingActions"
+    COMPACT_POD_ACTION = "compactPodAction"
+    GMAIL_DRAFT_HISTORY = "gmailDraftHistory"
+    PAGED_ACTION_HISTORY = "pagedActionHistory"
+    ACTION_GROUPS_UNAVAILABLE = "actionGroupsUnavailable"
+    NOTIFICATION_STATUS_UNAVAILABLE = "notificationStatusUnavailable"
+    NOTIFICATION_EXTRA_ENTRY = "notificationExtraEntry"
+    PUSH_BROWSER_ADDED = "pushBrowserAdded"
+    CONNECTION_RENAMED = "connectionRenamed"
+    MCP_LINKAGE_CHANGED = "mcpLinkageChanged"
+    MCP_HEALTH_CHANGED = "mcpHealthChanged"
+
+
+class Scene(StrEnum):
+    """A fixture builder taking no arguments; the value is its name on `window.agentplaneVisual`."""
+
+    FAIL_GRANT_PROVISIONING = "failGrantProvisioning"
+    ADD_PROVISIONING_SANDBOX = "addProvisioningSandbox"
+    LONG_PENDING_ACTION = "longPendingAction"
+    HIDDEN_CODEPOINTS = "hiddenCodepoints"
+    ENDED_ATTACHMENT = "endedAttachment"
+    INTERLEAVED_EVENTS = "interleavedEvents"
+    LIFECYCLE_GROUP = "lifecycleGroup"
+    THREAD_SETUP = "threadSetup"
+    THREAD_SETUP_RUNNING = "threadSetupRunning"
+    SHELL_CALLS = "shellCalls"
+    MARKDOWN_CODE_FENCE = "markdownCodeFence"
+    STREAMING_INTERLEAVED = "streamingInterleaved"
+    UNFINISHED_REASONING = "unfinishedReasoning"
+    COMMAND_PROGRESS = "commandProgress"
+    PENDING_COMMANDS = "pendingCommands"
+    PENDING_INPUT_ECHO = "pendingInputEcho"
+    COMMAND_OUTCOMES = "commandOutcomes"
+    REMEMBER_PENDING_INPUT = "rememberPendingInput"
+    REMEMBER_INPUT_ECHO = "rememberInputEcho"
+    REMEMBER_SETTLED_COMMANDS = "rememberSettledCommands"
+    COMPLETED_ROLLOUT = "completedRollout"
+    REPORTED_ROLLOUT = "reportedRollout"
 
 
 class AgentplaneFixture:
@@ -78,136 +130,20 @@ class AgentplaneFixture:
             "([preview, body]) => window.agentplaneVisual.standardHistory(preview, body)", [long_preview, long_body]
         )
 
-    async def fail_grant_provisioning(self) -> None:
-        await self.page.evaluate("() => window.agentplaneVisual.failGrantProvisioning()")
-
-    async def add_provisioning_sandbox(self) -> None:
-        await self.page.evaluate("() => window.agentplaneVisual.addProvisioningSandbox()")
-
-    async def pause_claude(self) -> None:
-        await self.page.evaluate("() => window.agentplaneVisual.pauseClaude()")
-
-    async def stale_watch(self) -> None:
-        await self.page.evaluate("() => window.agentplaneVisual.staleWatch()")
-
-    async def disconnect_inventory_stream(self) -> None:
-        await self.page.evaluate("() => window.agentplaneVisual.disconnectInventoryStream()")
-
-    async def show_pending_actions(self) -> None:
-        await self.page.evaluate("() => window.agentplaneVisual.showPendingActions()")
-
-    async def show_compact_pod_action(self) -> None:
-        await self.page.evaluate("() => window.agentplaneVisual.showCompactPodAction()")
-
     async def show_action_preview(self, group: str, name: str, arguments: dict[str, object]) -> None:
         await self.page.evaluate(
             "([action, args]) => window.agentplaneVisual.showActionPreview(action, args)",
             [{"group": group, "name": name}, arguments],
         )
 
-    async def show_gmail_draft_history(self) -> None:
-        await self.page.evaluate("() => window.agentplaneVisual.showGmailDraftHistory()")
+    async def set_flag(self, flag: Flag, on: bool = True) -> None:
+        await self.page.evaluate("([flag, on]) => window.agentplaneVisual.set(flag, on)", [flag, on])
 
-    async def paginate_action_history(self) -> None:
-        await self.page.evaluate("() => window.agentplaneVisual.paginateActionHistory()")
-
-    async def publish_notification_change(self) -> None:
-        await self.page.evaluate("() => window.agentplaneVisual.publishNotificationChange()")
-
-    async def publish_push_browser(self) -> None:
-        await self.page.evaluate("() => window.agentplaneVisual.publishPushBrowser()")
-
-    async def publish_connection_rename(self) -> None:
-        await self.page.evaluate("() => window.agentplaneVisual.publishConnectionRename()")
-
-    async def publish_mcp_linkage_change(self) -> None:
-        await self.page.evaluate("() => window.agentplaneVisual.publishMcpLinkageChange()")
-
-    async def publish_mcp_health_change(self) -> None:
-        await self.page.evaluate("() => window.agentplaneVisual.publishMcpHealthChange()")
-
-    async def set_notification_status_unavailable(self, unavailable: bool) -> None:
+    async def publish(self, flag: Flag, path_suffix: str) -> None:
+        """Sets `flag` and serves the open streams whose path ends in `path_suffix` again."""
         await self.page.evaluate(
-            "unavailable => window.agentplaneVisual.setNotificationStatusUnavailable(unavailable)", unavailable
+            "([flag, suffix]) => window.agentplaneVisual.publish(flag, suffix)", [flag, path_suffix]
         )
 
-    async def fail_action_groups(self) -> None:
-        await self.page.evaluate("() => window.agentplaneVisual.failActionGroups()")
-
-    async def time_out_command_admission(self) -> None:
-        await self.page.evaluate("() => window.agentplaneVisual.timeOutCommandAdmission()")
-
-    async def long_pending_action(self) -> None:
-        await self.page.evaluate("() => window.agentplaneVisual.longPendingAction()")
-
-    async def hidden_codepoints(self) -> None:
-        await self.page.evaluate("() => window.agentplaneVisual.hiddenCodepoints()")
-
-    async def ended_attachment(self) -> None:
-        await self.page.evaluate("() => window.agentplaneVisual.endedAttachment()")
-
-    async def interleaved_events(self) -> None:
-        await self.page.evaluate("() => window.agentplaneVisual.interleavedEvents()")
-
-    async def lifecycle_group(self) -> None:
-        await self.page.evaluate("() => window.agentplaneVisual.lifecycleGroup()")
-
-    async def thread_setup(self) -> None:
-        await self.page.evaluate("() => window.agentplaneVisual.threadSetup()")
-
-    async def thread_setup_running(self) -> None:
-        await self.page.evaluate("() => window.agentplaneVisual.threadSetupRunning()")
-
-    async def shell_calls(self) -> None:
-        await self.page.evaluate("() => window.agentplaneVisual.shellCalls()")
-
-    async def markdown_code_fence(self) -> None:
-        await self.page.evaluate("() => window.agentplaneVisual.markdownCodeFence()")
-
-    async def streaming_interleaved(self) -> None:
-        await self.page.evaluate("() => window.agentplaneVisual.streamingInterleaved()")
-
-    async def unfinished_reasoning(self) -> None:
-        await self.page.evaluate("() => window.agentplaneVisual.unfinishedReasoning()")
-
-    async def disconnect_thread_database(self) -> None:
-        await self.page.evaluate("() => window.agentplaneVisual.disconnectThreadDatabase()")
-
-    async def disconnect_thread_stream(self) -> None:
-        await self.page.evaluate("() => window.agentplaneVisual.disconnectThreadStream()")
-
-    async def fail_sync_scope(self) -> None:
-        await self.page.evaluate("() => window.agentplaneVisual.failSyncScope()")
-
-    async def disconnect_entity_stream(self) -> None:
-        await self.page.evaluate("() => window.agentplaneVisual.disconnectEntityStream()")
-
-    async def withhold_entity_segments(self) -> None:
-        await self.page.evaluate("() => window.agentplaneVisual.withholdEntitySegments()")
-
-    async def command_progress(self) -> None:
-        await self.page.evaluate("() => window.agentplaneVisual.commandProgress()")
-
-    async def pending_commands(self) -> None:
-        await self.page.evaluate("() => window.agentplaneVisual.pendingCommands()")
-
-    async def pending_input_echo(self) -> None:
-        await self.page.evaluate("() => window.agentplaneVisual.pendingInputEcho()")
-
-    async def command_outcomes(self) -> None:
-        await self.page.evaluate("() => window.agentplaneVisual.commandOutcomes()")
-
-    async def remember_pending_input(self) -> None:
-        await self.page.evaluate("() => window.agentplaneVisual.rememberPendingInput()")
-
-    async def remember_input_echo(self) -> None:
-        await self.page.evaluate("() => window.agentplaneVisual.rememberInputEcho()")
-
-    async def remember_settled_commands(self) -> None:
-        await self.page.evaluate("() => window.agentplaneVisual.rememberSettledCommands()")
-
-    async def completed_rollout(self) -> None:
-        await self.page.evaluate("() => window.agentplaneVisual.completedRollout()")
-
-    async def reported_rollout(self) -> None:
-        await self.page.evaluate("() => window.agentplaneVisual.reportedRollout()")
+    async def build(self, scene: Scene) -> None:
+        await self.page.evaluate("scene => window.agentplaneVisual[scene]()", scene)

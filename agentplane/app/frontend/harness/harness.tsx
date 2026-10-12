@@ -1882,94 +1882,82 @@ const MCP_LINKAGES: McpLinkageView[] = [
   },
 ];
 
-function mcpGroup(key: string, executorDescription: string, health: ActionGroupView["health"]): ActionGroupView {
+type McpFailure = Pick<NonNullable<ActionGroupView["health"]>, "reason" | "detail" | "last_discovery_at" | "failures">;
+
+/** An MCP group, available unless `failure` says why it is disconnected. */
+function mcpGroup(key: string, executorDescription: string, failure?: McpFailure): ActionGroupView {
   return {
     key,
     title: key,
     description: `Test MCP backend ${key}.`,
     executor_kind: "mcp",
     executor_description: executorDescription,
-    available: health?.state === "available",
-    health,
+    available: failure === undefined,
+    health: failure
+      ? { state: "disconnected", retry_at: new Date(NOW + 20_000).toISOString(), ...failure }
+      : { state: "available", reason: null, detail: null, last_discovery_at: ago(60_000), retry_at: null, failures: 0 },
     actions: [],
   };
 }
 
+const LINKED = "Linked operator account.";
+const BEARER = "Test MCP backend behind a static bearer.";
 const MCP_GROUPS: ActionGroupView[] = [
-  mcpGroup("example_docs", "Linked operator account.", {
-    state: "available",
-    reason: null,
-    detail: null,
-    last_discovery_at: ago(60_000),
-    retry_at: null,
-    failures: 0,
-  }),
-  mcpGroup("example_cluster", "Linked operator account.", {
-    state: "disconnected",
+  mcpGroup("example_docs", LINKED),
+  mcpGroup("example_cluster", LINKED, {
     reason: "linkage_unavailable",
     detail: `the access token expired at ${ago(2 * HOUR)
       .replace("T", " ")
       .slice(0, 19)} UTC and has not been refreshed`,
     last_discovery_at: ago(3 * HOUR),
-    retry_at: new Date(NOW + 20_000).toISOString(),
     failures: 12,
   }),
-  mcpGroup("example_calendar", "Linked operator account.", {
-    state: "disconnected",
+  mcpGroup("example_calendar", LINKED, {
     reason: "linkage_unavailable",
     detail: "refreshing the token failed in a way retrying cannot fix; link the account again",
     last_discovery_at: ago(HOUR),
-    retry_at: new Date(NOW + 20_000).toISOString(),
     failures: 9,
   }),
-  mcpGroup("example_pantry", "Linked operator account.", {
-    state: "disconnected",
+  mcpGroup("example_pantry", LINKED, {
     reason: "linkage_unavailable",
     detail: "no account is linked",
     last_discovery_at: null,
-    retry_at: new Date(NOW + 20_000).toISOString(),
     failures: 4,
   }),
-  mcpGroup("example_mail", "Test MCP backend behind a static bearer.", {
-    state: "disconnected",
+  mcpGroup("example_mail", BEARER, {
     reason: "connect_failed",
     detail: "RuntimeError: Client failed to connect: All connection attempts failed",
     last_discovery_at: null,
-    retry_at: new Date(NOW + 20_000).toISOString(),
     failures: 7,
   }),
-  mcpGroup("gmail", "Test Gmail action group for Agentplane rendering.", {
-    state: "available",
-    reason: null,
-    detail: null,
-    last_discovery_at: ago(60_000),
-    retry_at: null,
-    failures: 0,
-  }),
-  mcpGroup("example_notes", "Test MCP backend behind a static bearer.", {
-    state: "available",
-    reason: null,
-    detail: null,
-    last_discovery_at: ago(60_000),
-    retry_at: null,
-    failures: 0,
-  }),
-  mcpGroup("ssh", "Test MCP backend behind a static bearer.", {
-    state: "available",
-    reason: null,
-    detail: null,
-    last_discovery_at: ago(60_000),
-    retry_at: null,
-    failures: 0,
-  }),
+  mcpGroup("gmail", "Test Gmail action group for Agentplane rendering."),
+  mcpGroup("example_notes", BEARER),
+  mcpGroup("ssh", BEARER),
 ];
 
-let notificationStatusUnavailable = false;
-let notificationExtraEntry = false;
-let pushBrowserAdded = false;
-let connectionRenamed = false;
-let mcpLinkageChanged = false;
-let mcpHealthChanged = false;
+/** Switches a test sets on the mock services, before mounting or (`publish`) while a stream is open. */
+type Flag =
+  | "claudePaused"
+  | "watchStale"
+  | "threadDatabaseDisconnected"
+  | "threadStreamDropped"
+  | "inventoryStreamDropped"
+  | "entityStreamDisconnected"
+  | "entitySegmentsWithheld"
+  | "syncScopeUnavailable"
+  | "commandAdmissionTimedOut"
+  | "pendingActions"
+  | "compactPodAction"
+  | "gmailDraftHistory"
+  | "pagedActionHistory"
+  | "actionGroupsUnavailable"
+  | "notificationStatusUnavailable"
+  | "notificationExtraEntry"
+  | "pushBrowserAdded"
+  | "connectionRenamed"
+  | "mcpLinkageChanged"
+  | "mcpHealthChanged";
+const flags = new Set<Flag>();
 
 // Only what a page still asks for: the sandboxes, their bindings and their threads arrive on the
 // live streams above.
@@ -1992,7 +1980,7 @@ routes.push(
         },
       ],
       harnesses: {
-        HARNESS_CLAUDE: availableClaudeModels,
+        HARNESS_CLAUDE: flags.has("claudePaused") ? [] : ["harness-claude-model", "next-model"],
         HARNESS_CODEX: ["harness-codex-model"],
       },
     }),
@@ -2023,7 +2011,7 @@ routes.push(
     "GET",
     /^\/sandboxes\/([^/]+)\/notifications$/,
     (match) =>
-      notificationStatusUnavailable
+      flags.has("notificationStatusUnavailable")
         ? new Response(null, { status: 503 })
         : {
             observed_at: ago(0),
@@ -2307,12 +2295,12 @@ routes.push(
     "GET",
     /^\/actions\/history$/,
     (_match, query) => {
-      const past = includeGmailDraftHistory
+      const past = flags.has("gmailDraftHistory")
         ? [GMAIL_DRAFT_ACTION]
         : ACTIONS.filter((request) => request.state !== "decision_pending");
-      return pageActionHistory && !query.has("cursor")
+      return flags.has("pagedActionHistory") && !query.has("cursor")
         ? { items: past.slice(0, 2), next_cursor: "second-page" }
-        : { items: pageActionHistory ? past.slice(2) : past, next_cursor: null };
+        : { items: flags.has("pagedActionHistory") ? past.slice(2) : past, next_cursor: null };
     },
   ],
   [
@@ -2363,7 +2351,7 @@ routes.push(
     "GET",
     /^\/action-groups$/,
     () =>
-      actionGroupsUnavailable
+      flags.has("actionGroupsUnavailable")
         ? Response.json({ detail: "the Action Service did not answer: connection refused" }, { status: 502 })
         : MCP_GROUPS,
   ],
@@ -2540,7 +2528,7 @@ routes.push(
     "GET",
     /^\/threads\/([0-9a-f-]+)\/sync\/scope$/,
     (match) =>
-      syncScopeUnavailable
+      flags.has("syncScopeUnavailable")
         ? // This persistent service failure is distinct from a retired epoch's 410, which the
           // production store resolves by reading the scope again.
           Response.json({ detail: "thread fold is temporarily unavailable" }, { status: 503 })
@@ -2552,7 +2540,7 @@ routes.push(
     (match, query, signal) =>
       query.get("live") !== "true"
         ? electricShape([], `visual-entities-${match[1]}`)
-        : !entityStreamConnected
+        : flags.has("entityStreamDisconnected")
           ? Response.json({ detail: "thread shape is temporarily unavailable" }, { status: 503 })
           : electricLive(`visual-entities-${match[1]}`, undefined, signal),
   ],
@@ -2561,7 +2549,7 @@ routes.push(
     /^\/threads\/([0-9a-f-]+)\/sync\/entities$/,
     (match, query, _signal, body) => {
       const rows = threadRows(match[1]).map((row) =>
-        withholdEntitySegments && row.entity_kind === "view_state" ? { ...row, revision_cursor: "8" } : row
+        flags.has("entitySegmentsWithheld") && row.entity_kind === "view_state" ? { ...row, revision_cursor: "8" } : row
       );
       return electricSubset(
         entitySubset(rows, subsetOf(query, body)).map((row) => shapeRow("thread_entity", row)),
@@ -2630,7 +2618,7 @@ routes.push(
     "POST",
     /^\/threads\/([0-9a-f-]+)\/commands$/,
     () =>
-      commandAdmissionTimedOut
+      flags.has("commandAdmissionTimedOut")
         ? Response.json({ detail: "runner admission was not confirmed within 15 seconds" }, { status: 504 })
         : UNANSWERED,
   ],
@@ -2670,7 +2658,7 @@ const WEDGED: WatchHealth = {
 };
 
 function watch(): WatchHealth {
-  return watchHealth;
+  return flags.has("watchStale") ? WEDGED : FRESH;
 }
 
 /** Live inventory and action streams remain EventSource; projected threads use Electric fetches above.
@@ -2678,28 +2666,10 @@ function watch(): WatchHealth {
  * and never reconnects. */
 class HarnessEventSource extends EventTarget {
   static readonly sources = new Set<HarnessEventSource>();
-  static publishNotifications(): void {
+  static publish(pathSuffix: string): void {
     for (const source of this.sources) {
-      if (source.url.includes("/notifications/stream") && source.readyState === this.OPEN)
-        source.serve(new URL(source.url, "http://harness"));
-    }
-  }
-  static publishPushBrowsers(): void {
-    for (const source of this.sources) {
-      if (source.url.includes("/push/subscriptions/stream") && source.readyState === this.OPEN)
-        source.serve(new URL(source.url, "http://harness"));
-    }
-  }
-  static publishConnections(): void {
-    for (const source of this.sources) {
-      if (source.url.includes("/connections/stream") && source.readyState === this.OPEN)
-        source.serve(new URL(source.url, "http://harness"));
-    }
-  }
-  static publishMcp(path: string): void {
-    for (const source of this.sources) {
-      if (source.url.endsWith(path) && source.readyState === this.OPEN)
-        source.serve(new URL(source.url, "http://harness"));
+      const url = new URL(source.url, "http://harness");
+      if (url.pathname.endsWith(pathSuffix) && source.readyState === this.OPEN) source.serve(url);
     }
   }
   static readonly CONNECTING = 0;
@@ -2737,17 +2707,17 @@ class HarnessEventSource extends EventTarget {
         threads: open === undefined || listed.includes(open) ? listed : [...listed, open],
         more: matching.length > limit,
         archived_count: all.filter((thread) => thread.archived).length,
-        updates_connected: threadDatabaseConnected,
+        updates_connected: !flags.has("threadDatabaseDisconnected"),
         watch: watch(),
       };
       this.dispatchEvent(new MessageEvent("snapshot", { data: JSON.stringify(snapshot) }));
-      if (dropThreadStream) this.drop();
+      if (flags.has("threadStreamDropped")) this.drop();
       return;
     }
     if (url.pathname === "/live/sandboxes") {
       const snapshot: SandboxesSnapshot = { sandboxes: SANDBOXES, watch: watch() };
       this.dispatchEvent(new MessageEvent("snapshot", { data: JSON.stringify(snapshot) }));
-      if (dropInventoryStream) this.drop();
+      if (flags.has("inventoryStreamDropped")) this.drop();
       return;
     }
     if (url.pathname === "/threads/notices/stream") {
@@ -2778,13 +2748,13 @@ class HarnessEventSource extends EventTarget {
         }));
       this.dispatchEvent(new MessageEvent("snapshot", { data: JSON.stringify({ observed_at: ago(0), inboxes }) }));
       // A dropped Thread listing takes the notice stream down with it, so the badges show stale too.
-      if (dropThreadStream) this.drop();
+      if (flags.has("threadStreamDropped")) this.drop();
       return;
     }
     const sandbox = url.pathname.startsWith("/live/sandboxes/") ? url.pathname.slice("/live/sandboxes/".length) : null;
     const notification = url.pathname.match(/^\/sandboxes\/([^/]+)\/notifications\/stream$/);
     if (notification) {
-      if (notificationStatusUnavailable) {
+      if (flags.has("notificationStatusUnavailable")) {
         this.drop();
         return;
       }
@@ -2801,7 +2771,7 @@ class HarnessEventSource extends EventTarget {
           pending_entries: Array<{ cursor: number; created_at: string; provider: string; summary: string }>;
         }>;
       };
-      if (notificationExtraEntry && snapshot.inboxes[0]) {
+      if (flags.has("notificationExtraEntry") && snapshot.inboxes[0]) {
         snapshot.inboxes[0].inbox.last_cursor = 10;
         snapshot.inboxes[0].unannounced_count += 1;
         snapshot.inboxes[0].pending_acknowledgement_count += 1;
@@ -2816,7 +2786,7 @@ class HarnessEventSource extends EventTarget {
       return;
     }
     if (url.pathname === "/push/subscriptions/stream") {
-      const browsers = pushBrowserAdded
+      const browsers = flags.has("pushBrowserAdded")
         ? [{ endpoint: "https://push.example/browser", user_agent: "Second browser", created_at: ago(0) }]
         : [];
       this.dispatchEvent(new MessageEvent("snapshot", { data: JSON.stringify(browsers) }));
@@ -2827,20 +2797,22 @@ class HarnessEventSource extends EventTarget {
       const match = "/connections".match(/^\/connections$/);
       if (!route || !match) throw new Error("Missing connections fixture");
       const rows = route[2](match, url.searchParams, undefined, undefined) as ReturnType<typeof sampleConnection>[];
-      if (connectionRenamed) rows[0].display_name = "Updated OAuth client";
+      if (flags.has("connectionRenamed")) rows[0].display_name = "Updated OAuth client";
       this.dispatchEvent(new MessageEvent("snapshot", { data: JSON.stringify(rows) }));
       return;
     }
     if (url.pathname === "/mcp-servers/stream") {
       const rows = MCP_LINKAGES.map((row) =>
-        row.server_id === "example_docs" && mcpLinkageChanged ? { ...row, status: "expired" as const } : row
+        row.server_id === "example_docs" && flags.has("mcpLinkageChanged")
+          ? { ...row, status: "expired" as const }
+          : row
       );
       this.dispatchEvent(new MessageEvent("snapshot", { data: JSON.stringify(rows) }));
       return;
     }
     if (url.pathname === "/action-groups/stream") {
       const rows = MCP_GROUPS.map((row) =>
-        row.key === "example_docs" && mcpHealthChanged
+        row.key === "example_docs" && flags.has("mcpHealthChanged")
           ? {
               ...row,
               available: false,
@@ -2862,9 +2834,9 @@ class HarnessEventSource extends EventTarget {
       const pending =
         previewAction !== null
           ? [previewAction]
-          : includeCompactPodAction
+          : flags.has("compactPodAction")
             ? [COMPACT_POD_ACTION]
-            : includePendingActions
+            : flags.has("pendingActions")
               ? ACTIONS.filter((request) => request.state === "decision_pending")
               : [];
       this.dispatchEvent(new MessageEvent("snapshot", { data: JSON.stringify(pending) }));
@@ -2898,21 +2870,7 @@ class HarnessEventSource extends EventTarget {
 window.EventSource = HarnessEventSource as unknown as typeof EventSource;
 
 // Mutable mock service state; Python fixture methods change it before mounting React.
-let availableClaudeModels = ["harness-claude-model", "next-model"];
-let pageActionHistory = false;
-let actionGroupsUnavailable = false;
-let commandAdmissionTimedOut = false;
-let syncScopeUnavailable = false;
-let entityStreamConnected = true;
-let withholdEntitySegments = false;
-let threadDatabaseConnected = true;
-let dropThreadStream = false;
-let dropInventoryStream = false;
-let includePendingActions = false;
-let includeCompactPodAction = false;
-let includeGmailDraftHistory = false;
 let previewAction: ActionRequestView | null = null;
-let watchHealth = FRESH;
 
 function mount(element: ReactNode): void {
   const container = document.getElementById("app");
@@ -2931,32 +2889,17 @@ const visualHarness = {
   },
   failGrantProvisioning,
   addProvisioningSandbox,
-  pauseClaude(): void {
-    availableClaudeModels = [];
+  set(flag: Flag, on = true): void {
+    if (on) flags.add(flag);
+    else flags.delete(flag);
   },
-  staleWatch(): void {
-    watchHealth = WEDGED;
-  },
-  disconnectThreadDatabase(): void {
-    threadDatabaseConnected = false;
-  },
-  disconnectThreadStream(): void {
-    dropThreadStream = true;
-  },
-  disconnectInventoryStream(): void {
-    dropInventoryStream = true;
+  /** Sets `flag` and serves the open streams whose path ends in `pathSuffix` again. */
+  publish(flag: Flag, pathSuffix: string): void {
+    flags.add(flag);
+    HarnessEventSource.publish(pathSuffix);
   },
   ageOutage(milliseconds: number): void {
     streamRegistry.now = () => Date.now() + milliseconds;
-  },
-  showPendingActions(): void {
-    includePendingActions = true;
-  },
-  showCompactPodAction(): void {
-    includeCompactPodAction = true;
-  },
-  showGmailDraftHistory(): void {
-    includeGmailDraftHistory = true;
   },
   showActionPreview(action: ActionRequestView["action"], args: ActionRequestView["arguments"]): void {
     previewAction = {
@@ -2969,47 +2912,6 @@ const visualHarness = {
           : `review ${action.name.replaceAll("_", " ")}`,
       description: "Check the exact call before approving.",
     };
-  },
-  paginateActionHistory(): void {
-    pageActionHistory = true;
-  },
-  publishNotificationChange(): void {
-    notificationExtraEntry = true;
-    HarnessEventSource.publishNotifications();
-  },
-  publishPushBrowser(): void {
-    pushBrowserAdded = true;
-    HarnessEventSource.publishPushBrowsers();
-  },
-  publishConnectionRename(): void {
-    connectionRenamed = true;
-    HarnessEventSource.publishConnections();
-  },
-  publishMcpLinkageChange(): void {
-    mcpLinkageChanged = true;
-    HarnessEventSource.publishMcp("/mcp-servers/stream");
-  },
-  publishMcpHealthChange(): void {
-    mcpHealthChanged = true;
-    HarnessEventSource.publishMcp("/action-groups/stream");
-  },
-  setNotificationStatusUnavailable(unavailable: boolean): void {
-    notificationStatusUnavailable = unavailable;
-  },
-  failActionGroups(): void {
-    actionGroupsUnavailable = true;
-  },
-  timeOutCommandAdmission(): void {
-    commandAdmissionTimedOut = true;
-  },
-  failSyncScope(): void {
-    syncScopeUnavailable = true;
-  },
-  disconnectEntityStream(): void {
-    entityStreamConnected = false;
-  },
-  withholdEntitySegments(): void {
-    withholdEntitySegments = true;
   },
   longPendingAction(): void {
     ACTIONS[1]!.arguments = {
