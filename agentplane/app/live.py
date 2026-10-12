@@ -49,10 +49,10 @@ from agentplane.app.shutdown import Shutdown
 from agentplane.app.threads.store import MAX_PAGE, ThreadStore
 from agentplane.app.threads.thread_view import ThreadView
 from agentplane.changes import ChangeSignal
+from agentplane.grpc_calls import ServiceError
 from agentplane.kubernetes_watch import Freshness
 from agentplane.postgres.wakeups import WakeupListener
 from agentplane.sandbox_service.action_policy_views import ACTION_POLICY_API
-from agentplane.sandbox_service.client import ServiceError
 from agentplane.sandbox_service.egress_views import (
     BINDINGS_PLURAL,
     CREDENTIALS_PLURAL,

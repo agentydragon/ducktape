@@ -63,10 +63,11 @@ from agentplane.app.threads.store import ThreadStore
 from agentplane.app.threads.summaries import Summaries
 from agentplane.app.threads.view.content import ContentStore
 from agentplane.egress.decisions_client import DecisionsClient
+from agentplane.grpc_calls import dial
 from agentplane.history_service.client import HistoryServiceClient
 from agentplane.postgres.wakeups import WakeupListener
 from agentplane.runner.harness import Harness
-from agentplane.runner_gateway.client import RunnerGatewayClient
+from agentplane.runner_gateway.client import RunnerGatewayClient, SandboxControlClient
 from agentplane.sandbox_service.client import SandboxServiceClient
 from agentplane.sandbox_service.testing.backend import seed_runner
 from agentplane.sandbox_service.testing.fake_inventory import (
@@ -271,16 +272,17 @@ async def test_threads_the_gateway_cannot_list_are_said_so_in_the_frame(
     """The sandbox stream still carries the sandbox, and so its lifecycle controls, when the Runner
     Gateway cannot say which Sessions run in it."""
     (token := tmp_path / "token").write_text("test-token")
-    async with SandboxServiceClient(
-        f"127.0.0.1:{pick_free_port()}",
-        gateway_target=f"127.0.0.1:{pick_free_port()}",
-        namespace=NAMESPACE,
-        token_file=token,
-        gateway_token_file=token,
-        command_admission_timeout_s=None,
-        request_timeout_s=5,
-        lifecycle_timeout_s=5,
-    ) as unreachable:
+    port = pick_free_port()
+    async with dial(f"127.0.0.1:{port}") as channel:
+        unreachable = RunnerGatewayClient(
+            channel,
+            token_file=token,
+            command_admission_timeout_s=None,
+            request_timeout_s=5,
+            control=SandboxControlClient(
+                control_target=f"127.0.0.1:{port}", token_file=token, request_timeout_s=5, lifecycle_timeout_s=5
+            ),
+        )
         frame = await threads_frame(
             ThreadStore(engine, summaries, gateway=unreachable), "runner-1", include_archived=False
         )
