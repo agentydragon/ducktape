@@ -87,12 +87,13 @@ def _recordings_claim(scope: Construct) -> None:
             name=_RECORDINGS_CLAIM_NAME,
             namespace=_NAMESPACE,
             annotations={
+                "kustomize.toolkit.fluxcd.io/prune": "disabled",
                 "description": (
                     "Session recordings. This is the audit trail for the SSH route: unlike an MCP tool call, "
                     "which leaves a structured per-call `mcp_tool_calls` row, a shell session has no equivalent "
                     "structured record, so the recordings are what remains. Local-path is RWO and binds to one "
                     "node, which is why the Deployment stays at one replica."
-                )
+                ),
             },
         ),
         spec=k8s.PersistentVolumeClaimSpec(

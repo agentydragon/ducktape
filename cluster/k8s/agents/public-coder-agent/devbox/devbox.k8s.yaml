@@ -111,6 +111,7 @@ kind: PersistentVolumeClaim
 metadata:
   annotations:
     description: Separately deletable local Bazel output, repository, and action cache for public-coder-devbox. Stop the VM before deleting this claim to reset it.
+    kustomize.toolkit.fluxcd.io/prune: disabled
   name: public-coder-devbox-bazel-cache
   namespace: public-coder-agent
 spec:

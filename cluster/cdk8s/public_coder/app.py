@@ -446,11 +446,12 @@ def _claims(scope: Construct) -> None:
             name=_STATE_CLAIM_NAME,
             namespace=NAMESPACE,
             annotations={
+                "kustomize.toolkit.fluxcd.io/prune": "disabled",
                 "description": (
                     "Worker-local replacement for the archived Public Coder OpenClaw state. "
                     "WaitForFirstConsumer binds it to ovh-ns102453 when the one-off restore Pod is created; "
                     "it must not be mounted by the Deployment before restore."
-                )
+                ),
             },
         ),
         spec=k8s.PersistentVolumeClaimSpec(
@@ -485,7 +486,10 @@ def _claims(scope: Construct) -> None:
         metadata=k8s.ObjectMeta(
             name=_DIAGNOSTICS_CLAIM_NAME,
             namespace=NAMESPACE,
-            annotations={"description": "Heap snapshots and Node diagnostic reports for the OpenClaw gateway"},
+            annotations={
+                "kustomize.toolkit.fluxcd.io/prune": "disabled",
+                "description": "Heap snapshots and Node diagnostic reports for the OpenClaw gateway",
+            },
         ),
         spec=k8s.PersistentVolumeClaimSpec(
             access_modes=["ReadWriteOnce"],
