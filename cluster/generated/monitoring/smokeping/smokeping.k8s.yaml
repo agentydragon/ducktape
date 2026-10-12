@@ -1,0 +1,120 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  annotations:
+    description: ICMP loss and RTT from the home LAN to the gateway, switch and OVH.
+  labels:
+    app.kubernetes.io/name: smokeping
+  name: smokeping
+  namespace: monitoring
+spec:
+  replicas: 1
+  revisionHistoryLimit: 2
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: smokeping
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: smokeping
+    spec:
+      automountServiceAccountToken: false
+      containers:
+        - args:
+            - --no-privileged
+            - --ping.interval=200ms
+            - 192.168.1.254
+            - 192.168.1.100
+            - 10.42.0.16
+          image: quay.io/superq/smokeping-prober:v0.12.0@sha256:2524b895bdae244984e937ecb8fdd755baedbf2bb108204bd1a1dc6732706303
+          imagePullPolicy: IfNotPresent
+          livenessProbe:
+            periodSeconds: 30
+            tcpSocket:
+              port: http
+          name: prober
+          ports:
+            - containerPort: 9374
+              name: http
+              protocol: TCP
+          readinessProbe:
+            periodSeconds: 30
+            tcpSocket:
+              port: http
+          resources:
+            limits:
+              cpu: 100m
+              memory: 64Mi
+            requests:
+              cpu: 10m
+              memory: 32Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            readOnlyRootFilesystem: true
+      nodeSelector:
+        kubernetes.io/hostname: optiplex
+      securityContext:
+        runAsGroup: 65532
+        runAsNonRoot: true
+        runAsUser: 65532
+        seccompProfile:
+          type: RuntimeDefault
+        sysctls:
+          - name: net.ipv4.ping_group_range
+            value: 65532 65532
+      terminationGracePeriodSeconds: 10
+---
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: smokeping
+  namespace: monitoring
+spec:
+  podMetricsEndpoints:
+    - interval: 30s
+      metricRelabelings:
+        - regex: 192\.168\.1\.254
+          replacement: gateway
+          sourceLabels:
+            - ip
+          targetLabel: target
+        - regex: 192\.168\.1\.100
+          replacement: switch
+          sourceLabels:
+            - ip
+          targetLabel: target
+        - regex: 10\.42\.0\.16
+          replacement: ovh-ns104952
+          sourceLabels:
+            - ip
+          targetLabel: target
+      path: /metrics
+      port: http
+      scrapeTimeout: 10s
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: smokeping
+---
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: smokeping
+  namespace: monitoring
+spec:
+  groups:
+    - name: smokeping
+      rules:
+        - alert: HomeGatewayUplinkLoss
+          annotations:
+            description: "optiplex has lost {{ $value | humanizePercentage }} of pings to the gateway (192.168.1.254) for 15 minutes while pings to the switch (192.168.1.100) are clean: the switch-to-gateway uplink (CRS310 ether1) is likely back in the 2.5G loss state. See debug/home_network_connectivity/2026_10_gateway_uplink_loss.md."
+            summary: Packet loss from the home LAN to the AT&T gateway, none to the switch
+          expr: |
+            (1 - sum(rate(smokeping_response_duration_seconds_count{job="monitoring/smokeping", target="gateway"}[5m])) / sum(rate(smokeping_requests_total{job="monitoring/smokeping", target="gateway"}[5m]))) > 0.03
+            and on ()
+            (1 - sum(rate(smokeping_response_duration_seconds_count{job="monitoring/smokeping", target="switch"}[5m])) / sum(rate(smokeping_requests_total{job="monitoring/smokeping", target="switch"}[5m]))) < 0.005
+          for: 15m
+          labels:
+            severity: warning

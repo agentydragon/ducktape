@@ -50,6 +50,16 @@ a stuck PHY is the likelier cause, and the hourly flaps are the remaining sympto
 Mimir is `http://mimir-gateway.monitoring.svc/prometheus`. Grafana's Explore view works, as
 does `curl` from a pod in a namespace whose egress reaches `monitoring`; `haku-sandbox` does.
 
+Ping loss per target (`gateway`, `switch`, an OVH node over Nebula) from `smokeping_prober` on
+`optiplex`, 5 pings/s each (`cluster/cdk8s/monitoring/smokeping.py`). Its
+`HomeGatewayUplinkLoss` alert fires when the gateway loses over 3% for 15 minutes while the
+switch stays clean; the "Home network overview" dashboard plots loss and RTT:
+
+```promql
+1 - sum by (target) (rate(smokeping_response_duration_seconds_count{job="monitoring/smokeping"}[5m]))
+  / sum by (target) (rate(smokeping_requests_total{job="monitoring/smokeping"}[5m]))
+```
+
 SYN-retransmit ratio per node. This was the only history of the loss before a dedicated
 prober existed. `wyrm2` is `10.42.0.20:9100` and `optiplex` is `10.42.0.18:9100`:
 

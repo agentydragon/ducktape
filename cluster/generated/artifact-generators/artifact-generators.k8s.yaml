@@ -694,6 +694,11 @@ spec:
       name: monitoring-mktxp
       originRevision: "@repo"
     - copy:
+        - from: "@repo/cluster/generated/monitoring/smokeping/**"
+          to: "@artifact/cluster/generated/monitoring/smokeping/"
+      name: monitoring-smokeping
+      originRevision: "@repo"
+    - copy:
         - from: "@repo/cluster/generated/monitoring/tempo/**"
           to: "@artifact/cluster/generated/monitoring/tempo/"
       name: monitoring-tempo

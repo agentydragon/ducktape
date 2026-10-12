@@ -1596,6 +1596,7 @@ py_library(
         "//cluster/cdk8s/monitoring:mktxp",
         "//cluster/cdk8s/monitoring:namespace",
         "//cluster/cdk8s/monitoring:rules",
+        "//cluster/cdk8s/monitoring:smokeping",
         "//cluster/cdk8s/monitoring:stack",
         "//cluster/cdk8s/monitoring:tempo",
         "//cluster/cdk8s/nix_cache:attic",

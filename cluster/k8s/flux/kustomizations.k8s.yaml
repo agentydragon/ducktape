@@ -706,6 +706,28 @@ spec:
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
+  annotations:
+    description: ICMP loss and RTT from the home LAN to the gateway, the switch and an OVH node.
+  name: monitoring-smokeping
+  namespace: ducktape-flux
+spec:
+  dependsOn:
+    - name: monitoring-crds
+      namespace: ducktape-flux
+  interval: 10m
+  path: ./cluster/generated/monitoring/smokeping
+  prune: true
+  retryInterval: 1m
+  sourceRef:
+    kind: ExternalArtifact
+    name: monitoring-smokeping
+    namespace: ducktape-flux
+  timeout: 5m
+  wait: true
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
   name: grafana-operator
   namespace: ducktape-flux
 spec:

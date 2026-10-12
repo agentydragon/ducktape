@@ -203,6 +203,7 @@ from cluster.cdk8s.monitoring import (
     mktxp as monitoring_mktxp,
     namespace as monitoring_namespace,
     rules as monitoring_rules,
+    smokeping,
     stack as monitoring_stack,
     tempo,
 )
@@ -505,6 +506,12 @@ def generate_manifests(root: Path) -> None:
             namespace=gateway_probe.NAMESPACE,
             config_map_generator=[gateway_probe.CONFIG_MAP],
         ),
+        monitoring_crds_kustomization,
+    )
+    monitoring_smokeping_artifact = artifact("monitoring-smokeping", smokeping.OUTPUT_DIR)
+    smokeping.smokeping(
+        flux_chart,
+        write_directory(root, monitoring_smokeping_artifact, functools.partial(smokeping.chart, mesh=mesh)),
         monitoring_crds_kustomization,
     )
     grafana_operator_artifact = artifact("grafana-operator", grafana_operator.OUTPUT_DIR)
@@ -1852,6 +1859,7 @@ def generate_manifests(root: Path) -> None:
             monitoring_loki_artifact,
             monitoring_mimir_artifact,
             monitoring_mktxp_artifact,
+            monitoring_smokeping_artifact,
             monitoring_tempo_artifact,
             node_feature_discovery_artifact,
             oci_cache_artifact,
