@@ -83,8 +83,11 @@ try_config() {
   ts "== attempt $name: $*"
   $SUDO mkdir -p "$dir/agent/images" && $SUDO cp "$work/airgap.tar.zst" "$dir/agent/images/"
   local start=$(date +%s)
+  # The Firecracker guest kernel has no CONFIG_KEYS, so kubelet cannot read
+  # kernel/keys/root_max{keys,bytes}; this gate makes that failure non-fatal.
   $SUDO "$work/k3s" server --data-dir "$dir" --write-kubeconfig "$work/kubeconfig-$name" --write-kubeconfig-mode 644 \
-    --disable traefik,metrics-server --node-name spike "$@" >"$OUT/k3s-$name.log" 2>&1 &
+    --disable traefik,metrics-server --node-name spike \
+    --kubelet-arg=feature-gates=KubeletInUserNamespace=true "$@" >"$OUT/k3s-$name.log" 2>&1 &
   local kc="$work/kubeconfig-$name" k="$work/k3s kubectl --kubeconfig $work/kubeconfig-$name"
   for _ in $(seq 120); do
     [ -f "$kc" ] && $k get node spike >/dev/null 2>&1 && break
