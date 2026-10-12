@@ -7,7 +7,7 @@ Reconciles `Sandbox` into a state PVC that outlives every incarnation, its own S
 service does around a Sandbox: launch binding. Its runner template reaches platform services over
 the egress sidecar's platform routes. `spec.sessionDefaults` and
 `spec.bootstrap` are the Runner Gateway's to read; the controller only carries them. The Sandbox
-Service's `CreateSandbox` writes these Sandboxes where its `own_sandboxes` setting is on (testing);
+Service's `CreateSandbox` writes these Sandboxes where its `own_sandboxes` setting is on;
 the Sandbox Service, Runner Gateway and app read both kinds. Deletion waits for the
 [Runner Gateway](../runner_gateway/README.md)'s `SessionsSealed` condition.
 
@@ -32,7 +32,7 @@ A [controller-runtime](https://github.com/kubernetes-sigs/controller-runtime) co
 
 ## Running
 
-Environments with `own_sandboxes` (`agentplane-testing` only, for now) run it from
+Environments whose app settings have `own_sandboxes` (staging and `agentplane-testing`) run it from
 `cluster/cdk8s/agentplane/sandbox_controller.py`, which also holds its RBAC, and get a runner
 `SandboxTemplate` of our kind beside each of agent-sandbox's (`runner_sandbox.py`).
 Locally:

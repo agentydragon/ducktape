@@ -7,6 +7,7 @@ sensitive grants are explicit profile selections rather than diagnostics.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Literal
 
@@ -171,6 +172,16 @@ POLICY_SETS = {
     "coinbase-credentials": ("coinbase-credentials",),
     "spend-policy-config": ("spend-policy-config",),
 }
+
+
+def covering_policy_sets(grants: Sequence[str]) -> list[str]:
+    """The POLICY_SETS whose grants together are exactly `grants`, in POLICY_SETS order."""
+    covering = [name for name, members in POLICY_SETS.items() if set(members) <= set(grants)]
+    if uncovered := set(grants) - {grant for name in covering for grant in POLICY_SETS[name]}:
+        raise ValueError(f"no PolicySet holds only launch grants among {sorted(grants)}: {sorted(uncovered)}")
+    return covering
+
+
 MANAGED_GRANTS = {
     "public-coder": PUBLIC_GRANTS,
     "finance-agent": (*PUBLIC_GRANTS, "coinbase-credentials", "spend-policy-config"),

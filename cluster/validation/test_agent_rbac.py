@@ -90,9 +90,9 @@ def test_managed_profiles_include_standing_serviceaccount_group_bindings() -> No
             ]
         )
     )
-    config: dict[str, Any] = {"sandbox_presets": {"public": {"kubernetes_grants": []}}, "kubernetes_grants": {}}
-    assert rbac.managed(config, "public", namespace="testing") == {Permission("testing", "", "pods", "get")}
-    assert not rbac.managed(config, "public", namespace="staging")
+    config: dict[str, Any] = {"sandbox_presets": {"public": {"policy_sets": []}}}
+    assert rbac.managed(config, {}, "public", namespace="testing") == {Permission("testing", "", "pods", "get")}
+    assert not rbac.managed(config, {}, "public", namespace="staging")
 
 
 def test_aggregation_is_not_silently_ignored() -> None:

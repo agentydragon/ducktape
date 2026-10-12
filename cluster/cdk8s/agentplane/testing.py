@@ -83,8 +83,6 @@ _DEX_ISSUER = f"https://{_DEX_HOSTNAME}/dex"
 # The Terraform-owned key, replicated into this namespace by `litellm/credentials.py`'s
 # ExternalSecret.
 _LITELLM_KEY_SECRET = "litellm-key-cheap-experiments"
-# Sandboxes here are Agentplane's own kind; the app's form and the deployment both follow it.
-_OWN_SANDBOXES = True
 _OAUTH_FIXTURE_MCP_URL = f"http://{OAUTH_FIXTURE_NAME}.{TESTING_NAMESPACE}.svc.cluster.local:{OAUTH_FIXTURE_PORT}/mcp"
 
 _FEDERATION_TARGET = OperatorOidcSettings(
@@ -165,12 +163,13 @@ ENV = Environment(
     image_pins=f"{HAND_WRITTEN_ROOT}/agentplane-testing-image-pins",
     extra_resources=(),
     replicas=ReplicaProfile(count=1, strategy=DeploymentStrategy.recreate(), min_ready=None, pdb_min_available=None),
-    app_config=app_settings.settings(
-        namespace=TESTING_NAMESPACE,
-        models=TESTING_APP_MODELS,
-        thread_preset_codex_model=GPT6_LUNA_RESPONSES,
-        action_federation=_ACTION_FEDERATION,
-        own_sandboxes=_OWN_SANDBOXES,
+    app_config=app_settings.on_policy_sets(
+        app_settings.settings(
+            namespace=TESTING_NAMESPACE,
+            models=TESTING_APP_MODELS,
+            thread_preset_codex_model=GPT6_LUNA_RESPONSES,
+            action_federation=_ACTION_FEDERATION,
+        )
     ),
     settle_deltas=True,
     db=DbProps(instances=1, wal_archive=False),
@@ -194,7 +193,6 @@ ENV = Environment(
             EgressRule.to_endpoints(cilium.endpoint_labels(TESTING_NAMESPACE, OAUTH_FIXTURE_NAME), OAUTH_FIXTURE_PORT),
         ],
     ),
-    own_sandboxes=_OWN_SANDBOXES,
     vm_sandboxes=True,
 )
 

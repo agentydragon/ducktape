@@ -381,7 +381,6 @@ ENV = Environment(
             EgressRule.to_endpoints(cilium.AUTHENTIK_SERVER_LABELS, 9000, server_names=["auth.allegedly.works"]),
         ],
     ),
-    own_sandboxes=False,
     vm_sandboxes=False,
 )
 
