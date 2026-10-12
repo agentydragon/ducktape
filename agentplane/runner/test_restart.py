@@ -64,7 +64,8 @@ def _pidfd_open(pid: int) -> int:
     fd = int(libc.syscall(_SYS_PIDFD_OPEN, pid, 0))
     if fd < 0:
         code = ctypes.get_errno()
-        raise (ProcessLookupError if code == errno.ESRCH else OSError)(code, os.strerror(code))
+        # EINVAL: the pid survives only as a process group or session id, its leader already gone.
+        raise (ProcessLookupError if code in {errno.ESRCH, errno.EINVAL} else OSError)(code, os.strerror(code))
     return fd
 
 
