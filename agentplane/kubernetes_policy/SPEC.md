@@ -18,8 +18,8 @@ the Kubernetes rule types of `PolicySet` (`agentplane/crds/manifests/crd-policys
   whose other sets are missing or invalid still grants the rest.
 - Every change to a set, a binding or a subject account, and every binding's `expiresAt`, converges
   the native bindings: missing ones are created, and those no live, unexpired binding grants are
-  deleted, including after a rule, namespace or set is removed. Native bindings changed by hand are
-  repaired within one resync period.
+  deleted, including after a rule, namespace or set is removed. So does a change to the native
+  bindings themselves: one deleted or edited by hand is restored.
 - A recreated ServiceAccount with a previous one's name gets new native bindings; those of the old
   account are deleted, since RBAC matches subjects by name alone.
 - The controller never creates a binding to a role that does not exist, and touches only native

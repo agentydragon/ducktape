@@ -1,7 +1,4 @@
-"""In-memory Kubernetes RBAC for backend provisioning and policy controller tests."""
-
-import asyncio
-from collections.abc import Callable
+"""In-memory Kubernetes RBAC for backend provisioning tests."""
 
 from kubernetes_asyncio import client as k8s_client
 
@@ -16,21 +13,6 @@ class FakeRbac:
         self.fail_on_create: int | None = None
         self.fail_on_delete: int | None = None
         self.deletes = 0
-        self._waiters: set[asyncio.Event] = set()
-
-    def _changed(self) -> None:
-        for waiter in self._waiters:
-            waiter.set()
-
-    async def wait_for(self, predicate: Callable[[], bool]) -> None:
-        """Returns once `predicate` holds, rechecking it after every binding created or deleted."""
-        while not predicate():
-            waiter = asyncio.Event()
-            self._waiters.add(waiter)
-            try:
-                await waiter.wait()
-            finally:
-                self._waiters.discard(waiter)
 
     async def read_namespaced_role(self, name: str, namespace: str) -> k8s_client.V1Role:
         if (namespace, name) in self.missing_roles:
@@ -60,7 +42,6 @@ class FakeRbac:
         if key in self.bindings:
             raise k8s_client.ApiException(status=409)
         self.bindings[key] = body
-        self._changed()
         return body
 
     async def delete_namespaced_role_binding(self, name: str, namespace: str) -> None:
@@ -71,7 +52,6 @@ class FakeRbac:
             del self.bindings[(namespace, name)]
         except KeyError:
             raise k8s_client.ApiException(status=404) from None
-        self._changed()
 
     async def read_cluster_role_binding(self, name: str) -> k8s_client.V1ClusterRoleBinding:
         try:
@@ -90,7 +70,6 @@ class FakeRbac:
         if body.metadata.name in self.cluster_bindings:
             raise k8s_client.ApiException(status=409)
         self.cluster_bindings[body.metadata.name] = body
-        self._changed()
         return body
 
     async def delete_cluster_role_binding(self, name: str) -> None:
@@ -101,7 +80,6 @@ class FakeRbac:
             del self.cluster_bindings[name]
         except KeyError:
             raise k8s_client.ApiException(status=404) from None
-        self._changed()
 
     async def list_namespaced_role_binding(
         self, namespace: str, *, label_selector: str
@@ -114,7 +92,3 @@ class FakeRbac:
     async def list_cluster_role_binding(self, *, label_selector: str) -> k8s_client.V1ClusterRoleBindingList:
         assert label_selector
         return k8s_client.V1ClusterRoleBindingList(items=list(self.cluster_bindings.values()))
-
-    async def list_role_binding_for_all_namespaces(self, *, label_selector: str) -> k8s_client.V1RoleBindingList:
-        assert label_selector
-        return k8s_client.V1RoleBindingList(items=list(self.bindings.values()))

@@ -1,12 +1,11 @@
 """Keeps the native RoleBindings and ClusterRoleBindings that PolicyBindings' Kubernetes rules expand to.
 
-PolicySets and PolicyBindings in the policy namespace, and the ServiceAccounts in the subject
-namespaces, are listed and watched into memory. Every change, and every binding's `expiresAt`,
-triggers a pass that recomputes the whole expansion and converges the native bindings this
-controller labels as its own: it creates the missing ones, deletes the rest, and applies each
-object's `KubernetesReady` condition. A periodic pass repairs native bindings changed by hand, which
-nothing watches. Nothing outside the label is ever touched, and another Agentplane instance's
-controller labels its own with its own policy namespace.
+PolicySets and PolicyBindings in the policy namespace, the ServiceAccounts in the subject
+namespaces, and the native bindings carrying this controller's label are listed and watched into
+memory. Every change, and every binding's `expiresAt`, triggers a pass that recomputes the whole
+expansion and converges the native bindings: it creates the missing ones, deletes the rest, and
+applies each object's `KubernetesReady` condition. Nothing outside the label is ever touched, and
+another Agentplane instance's controller labels its own with its own policy namespace.
 """
 
 from __future__ import annotations
@@ -92,6 +91,11 @@ class _Roles:
             raise RoleMissingError(f"{role.kind} {role.name}{where} not found")
 
 
+def _native_key(obj: Native) -> NativeKey:
+    # A ClusterRoleBinding's namespace is None.
+    return NativeKey(obj.metadata.namespace, obj.metadata.name)
+
+
 def _account_ref(obj: k8s_client.V1ServiceAccount) -> ServiceAccountRef:
     return ServiceAccountRef(namespace=obj.metadata.namespace, name=obj.metadata.name)
 
@@ -116,12 +120,12 @@ class KubernetesPolicyController:
         self._rbac = rbac
         self._policy_namespace = policy_namespace
         self._subject_namespaces = subject_namespaces
-        self._resync_seconds = resync_seconds
         self._clock = clock
         self._selector = f"{MANAGED_BY_LABEL}={FIELD_MANAGER},{POLICY_NAMESPACE_LABEL}={policy_namespace}"
         self._policy_sets: dict[str, PolicySet | InvalidResource] = {}
         self._bindings: dict[str, PolicyBinding | InvalidResource] = {}
         self._service_accounts: dict[ServiceAccountRef, str] = {}
+        self._natives: dict[NativeKey, Native] = {}
         self._changed = asyncio.Event()
         self._watch = ListWatch(
             kinds=[
@@ -154,6 +158,25 @@ class KubernetesPolicyController:
                     )
                     for namespace in sorted(subject_namespaces)
                 ),
+                # Our own writes come back through these too; the pass they start finds nothing to do.
+                WatchedKind(
+                    name="rolebindings",
+                    list=rbac.list_role_binding_for_all_namespaces,
+                    args=(),
+                    kwargs={"label_selector": self._selector},
+                    key=_native_key,
+                    names=partial(self._native_keys, cluster_wide=False),
+                    apply=lambda key, obj: apply_to(self._natives, key, obj),
+                ),
+                WatchedKind(
+                    name="clusterrolebindings",
+                    list=rbac.list_cluster_role_binding,
+                    args=(),
+                    kwargs={"label_selector": self._selector},
+                    key=_native_key,
+                    names=partial(self._native_keys, cluster_wide=True),
+                    apply=lambda key, obj: apply_to(self._natives, key, obj),
+                ),
             ],
             resync_seconds=resync_seconds,
             on_change=self._on_change,
@@ -163,6 +186,9 @@ class KubernetesPolicyController:
 
     def _accounts_in(self, namespace: str) -> set[ServiceAccountRef]:
         return {ref for ref in self._service_accounts if ref.namespace == namespace}
+
+    def _native_keys(self, *, cluster_wide: bool) -> set[NativeKey]:
+        return {key for key in self._natives if (key.namespace is None) == cluster_wide}
 
     def _apply_service_account(self, key: ServiceAccountRef, obj: k8s_client.V1ServiceAccount | None) -> None:
         if obj is None:
@@ -174,7 +200,7 @@ class KubernetesPolicyController:
         self._changed.set()
 
     async def _on_cycle(self, kind: WatchedKind, at: datetime) -> None:
-        pass  # A pass runs on every change and every resync anyway.
+        pass  # Every list ends in a change, and so in a pass.
 
     async def run(self) -> None:
         """Watch and reconcile until cancelled."""
@@ -185,9 +211,7 @@ class KubernetesPolicyController:
     async def _reconcile_forever(self) -> None:
         next_expiry: datetime | None = None
         while True:
-            timeout: float = self._resync_seconds
-            if next_expiry is not None:
-                timeout = min(timeout, max((next_expiry - self._clock()).total_seconds(), 0))
+            timeout = None if next_expiry is None else max((next_expiry - self._clock()).total_seconds(), 0)
             with contextlib.suppress(TimeoutError):
                 await asyncio.wait_for(self._changed.wait(), timeout)
             self._changed.clear()
@@ -205,7 +229,7 @@ class KubernetesPolicyController:
         now = self._clock()
         # The watch keeps applying changes while this pass awaits; it works from one snapshot, and
         # the change that interrupted it starts the next pass.
-        policy_sets, bindings = dict(self._policy_sets), dict(self._bindings)
+        policy_sets, bindings, actual = dict(self._policy_sets), dict(self._bindings), dict(self._natives)
         expansion = expand(
             policy_sets=policy_sets,
             bindings=bindings,
@@ -213,7 +237,6 @@ class KubernetesPolicyController:
             subject_namespaces=self._subject_namespaces,
             now=now,
         )
-        actual = await self._list_natives()
         for key in actual.keys() - expansion.natives.keys():
             await self._delete(key)
         failures: defaultdict[str, list[str]] = defaultdict(list)
@@ -242,13 +265,6 @@ class KubernetesPolicyController:
             await self._apply_condition(POLICY_BINDINGS_PLURAL, "PolicyBinding", binding, desired, now)
         return expansion.next_expiry
 
-    async def _list_natives(self) -> dict[NativeKey, Native]:
-        role_bindings = await self._rbac.list_role_binding_for_all_namespaces(label_selector=self._selector)
-        cluster_bindings = await self._rbac.list_cluster_role_binding(label_selector=self._selector)
-        return {NativeKey(item.metadata.namespace, item.metadata.name): item for item in role_bindings.items} | {
-            NativeKey(None, item.metadata.name): item for item in cluster_bindings.items
-        }
-
     async def _delete(self, key: NativeKey) -> None:
         try:
             if key.namespace is None:
@@ -256,6 +272,7 @@ class KubernetesPolicyController:
             else:
                 await self._rbac.delete_namespaced_role_binding(key.name, key.namespace)
         except k8s_client.ApiException as error:
+            # Already gone; the watch has not reported it yet.
             if error.status != 404:
                 raise
 
@@ -268,7 +285,7 @@ class KubernetesPolicyController:
             else:
                 await self._rbac.create_cluster_role_binding(body)
         except k8s_client.ApiException as error:
-            # Created since the list; the next pass checks it like any other.
+            # Already there; the watch event that reports it starts a pass that checks it.
             if error.status != 409:
                 raise
 

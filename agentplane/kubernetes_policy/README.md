@@ -20,7 +20,7 @@ subject_namespaces: [agentplane-staging]
 ```
 
 Its ServiceAccount needs to list and watch PolicySets, PolicyBindings and ServiceAccounts, apply
-their status, read the referenced Roles and ClusterRoles, list RoleBindings and ClusterRoleBindings
+their status, read the referenced Roles and ClusterRoles, list and watch RoleBindings and ClusterRoleBindings
 cluster-wide, and create and delete them where sets grant, with `bind` on each referenced role.
 
 ```bash
@@ -29,10 +29,10 @@ bb run //agentplane/kubernetes_policy:main_bin -- --kubeconfig ~/.kube/config
 
 ## Design notes
 
-- **No finalizer.** Each pass lists every native binding carrying this controller's label and
+- **No finalizer.** Each pass checks every native binding carrying this controller's label and
   deletes those no live, unexpired binding grants, so a `PolicyBinding` deleted while the
   controller was down loses its grants on the first pass after it starts. A finalizer would add
   nothing to that guarantee and would block deletion whenever the controller is down.
-- **Native bindings are not watched.** Passes start on PolicySet, PolicyBinding and ServiceAccount
-  changes, and our own writes would only trigger another pass. A native binding edited or deleted by
-  hand is repaired on the periodic pass.
+- **Roles are not watched.** A binding to a role that does not exist yet is granted on the first
+  pass after the role appears, which at the latest is the one after the next relist
+  (`resync_seconds`). Everything else a pass reads is watched, native bindings included.
