@@ -439,6 +439,7 @@ app/Sandbox Service database changes requires its own migration safety review.
 flowchart LR
     CLAUDE_CODE_WEB_BRIDGE[Unscheduled: a frontend for Claude Code web sessions]
     SERVICE_LOG_FLAGS[Unscheduled: logging flags in the services]
+    ISOLATED_ACCEPTANCE_CI[Unscheduled: acceptance tests in their own CI workflow]
 ```
 
 ### `CLAUDE_CODE_WEB_BRIDGE` — Claude Code web sessions in Agentplane
@@ -454,6 +455,19 @@ messages, by shimming the web interface's control protocol. Builds on the viewer
 every service at `INFO`. A setting for the level, per logger where it helps (request logging in the
 app, the gRPC clients), lets a debugging session turn detail up on one Deployment without an image.
 
+### `ISOLATED_ACCEPTANCE_CI` — acceptance tests in their own CI workflow
+
+**Unscheduled; operator, 2026-10-12 PDT: eventually.** Today the deployed vertical tests under
+`agentplane/acceptance/` run by hand against the stateful `agentplane-testing` environment, and CI
+never runs them. Move them into their own CI workflow that runs in isolation, so the cluster no
+longer carries a stateful environment for them. Options named: an isolated part of the operator's
+cluster, GitHub's runners, or BuildBuddy's; and the cheap-experiments LiteLLM key or a new key
+provisioned for CI. Constraint: an agent can still run, inspect and step through the tests itself.
+Open: where they run. The k3s-on-RBE spike (#10214, draft) shows a real kubelet runs in a
+BuildBuddy action, but with no ClusterIP Services, no KubeVirt and no Cilium, so tests that need
+those stay elsewhere. envtest covers only API-server behavior, not Pods, harnesses or LLM calls, so
+it does not replace these tests.
+
 ## 6. Existing access and lifecycle follow-ups
 
 These are bounded existing work, not dependencies on the broader multiagent model. Confirm current
@@ -464,11 +478,10 @@ observations. New database work follows the task-specific review and rollout req
 flowchart LR
     PC_EGRESS_CREDENTIALS[Candidate: caller admission configuration] --> PC_EGRESS[Blocked: controlled egress cutover]
     CLAUDE_AI_SA[Decision: review caller authority] --> MANAGED_SA_RBAC[Blocked: account-owned grants]
-    SANDBOX_CREATE_CUTOVER[Sandboxes are created as ours, section 7] --> POLICY_RUNTIME_GRANTS[Blocked: time-limited grants of any rule type]
-    SANDBOX_CREATE_CUTOVER --> SANDBOX_RBAC
+    POLICY_RUNTIME_GRANTS[Candidate: time-limited grants of any rule type]
     AGENT_SANDBOX_RETIRE[Agentplane stops using agent-sandbox, section 7] --> OLD_POLICY_KINDS_DROP[Blocked: drop the old policy kinds]
     BOOTSTRAP_PROGRESS_CONTRACT[Candidate: asynchronous Sandbox bootstrap]
-    SANDBOX_RBAC[Blocked: bounded deployed grant checks]
+    SANDBOX_RBAC[Candidate: bounded deployed grant checks]
     NOTIFICATION_INGRESS_BOUNDARY[Candidate: public-route security check]
     NETWORK_WORKLOAD_IDENTITY[Unscheduled: network-level workload identity]
     PC_KUBERNETES_POLICY_SET[Unscheduled: public-coder's Kubernetes access as one PolicySet]
@@ -505,7 +518,7 @@ not ad hoc grants. Test an allowed and denied operation; do not add privileges a
 
 ### `POLICY_RUNTIME_GRANTS` — time-limited grants
 
-**Blocked on Sandboxes being created as ours.** An operator-only grant/revoke RPC with optional `expiresAt`
+**Candidate.** An operator-only grant/revoke RPC with optional `expiresAt`
 for sets of any rule type, and UI chips showing each binding's set, expiry and ready conditions.
 One `expiresAt` serves every type: the Policy Controller deletes the binding at expiry, so no reader
 handles expiry itself.
@@ -531,7 +544,7 @@ public-coder until `PC_KUBERNETES_POLICY_SET`) stay Flux bindings. Test an allow
 
 ### `SANDBOX_RBAC` — bounded deployed grant checks
 
-**Blocked on Sandboxes being created as ours; security-relevant.** Inspect the managed-Sandbox grant path as `PolicySet`s leave it
+**Candidate; security-relevant.** Inspect the managed-Sandbox grant path as `PolicySet`s leave it
 and verify intended versus unrelated scope, including Role edits and credential-use boundaries,
 without recording credentials. Use [agent RBAC](../../cluster/docs/agent_rbac.md) and existing tests;
 only unresolved deployed wiring needs a live check, not a repeat of every already-covered operation.
@@ -592,7 +605,7 @@ flowchart TD
     DURABLE_SESSION_LIFECYCLE --> SESSION_INCARNATIONS
     SESSION_STATE_VOLUME_DESIGN --> AGENTPLANE_SANDBOX_RESOURCE
     AGENTPLANE_SANDBOX_RESOURCE --> SESSION_INCARNATIONS
-    AGENTPLANE_SANDBOX_RESOURCE --> AGENT_SANDBOX_RETIRE[Blocked: Agentplane stops using agent-sandbox]
+    AGENTPLANE_SANDBOX_RESOURCE --> AGENT_SANDBOX_RETIRE[Decision: Agentplane stops using agent-sandbox]
     AGENTPLANE_SANDBOX_RESOURCE -. stateful VMs .-> VM_PROVIDER
     SESSION_INCARNATIONS --> SESSION_REVIVE
     SESSION_INCARNATIONS --> SANDBOX_IDLE_EXPIRY[Unscheduled: idle runner Sandboxes stop]
@@ -644,22 +657,9 @@ calls the gateway to seal. Action Service boxes keep a catalog of their own ([AD
 
 ```mermaid
 flowchart TD
-    SANDBOX_CONTROLLER_PROVISIONING[In flight: the controller provisions a Sandbox]
     VM_PROVIDER[VM provider, section 4] --> SANDBOX_IMAGE_REPLACE[Blocked: replace a VM's runner image between incarnations]
-    SANDBOX_CREATE_CUTOVER[Blocked: Sandboxes are created as ours]
-    SANDBOX_CONTROLLER_PROVISIONING --> SANDBOX_CREATE_CUTOVER
-    SANDBOX_CREATE_CUTOVER --> AGENT_SANDBOX_RETIRE[Agentplane stops using agent-sandbox]
+    AGENT_SANDBOX_RETIRE[Decision: Agentplane stops using agent-sandbox]
 ```
-
-### `SANDBOX_CONTROLLER_PROVISIONING` — the controller provisions a Sandbox
-
-**Done on testing.** Our Sandbox carries
-the whole recipe the Sandbox Service keeps as annotations on agent-sandbox's: `policySets`, session
-defaults and the bootstrap command. The controller makes its ServiceAccount and one `PolicyBinding`,
-which never sets `expiresAt`. Our runner template reaches the Runner Gateway and the ingress over
-the egress sidecar's platform routes (`cluster/cdk8s/agentplane/platform_routes.py`), so no
-runner-endpoint egress policy is bound. Runtime and time-limited grants are separate bindings
-(`POLICY_RUNTIME_GRANTS`).
 
 ### `SANDBOX_IMAGE_REPLACE` — replace a VM's runner image between incarnations
 
@@ -674,25 +674,9 @@ and the controller has no version gate. So of #8843's `ReplaceVmImage` (replaced
 [the 2026-10-03 run](../debug/kubevirt/runtime-20261003.md)) the Halted-only rewrite carries over,
 and the exact `VmTemplate.state_schema_version` match does not.
 
-### `SANDBOX_CREATE_CUTOVER` — Sandboxes are created as ours
-
-**In flight; the operator chose "both kinds" (2026-10-12): new Sandboxes are ours, existing
-agent-sandbox ones keep working.** The Sandbox Service, the app's live view and the Runner
-Gateway's destination lookup read both kinds, and our spec carries session defaults and the
-bootstrap command. `CreateSandbox`, suspend, resume and delete write ours on testing
-(`own_sandboxes` in the Sandbox Service's settings). That lookup refuses new Sessions and commands for a deleting Sandbox, as it does for
-one in agent-sandbox teardown, while the gateway seals it. Existing staging Sandboxes stay on agent-sandbox until `AGENT_SANDBOX_RETIRE`
-recreates them. The Sandbox Controller and our runner `SandboxTemplate`s exist on `agentplane-testing` only
-(`Environment.own_sandboxes`) until then: the cutover
-lands on testing first, and staging gets the controller and the cutover only once testing holds
-(operator, 2026-10-12 PDT: testing down beats staging down). Where the app's `own_sandboxes`
-setting is on, the create form offers the namespace's `PolicySet`s in place of the three grant
-pickers and presets fill `policy_sets`; the acceptance suite asks for policy sets wherever the form
-offers them; testing has it on.
-
 ### `AGENT_SANDBOX_RETIRE` — Agentplane stops using agent-sandbox
 
-**Blocked on our resource; decision card before the PR.** Staging Sandboxes are recreated on our
+**Decision card before the PR.** Staging Sandboxes are recreated on our
 resource, not converted; until then they keep the old policy kinds, and the recreated ones get the controller's `PolicyBinding`. Then delete Agentplane's
 agent-sandbox runner `SandboxTemplate`s (`cluster/cdk8s/agentplane/runner_sandbox.py`, whose
 rendered spec ours now copy: build ours directly) and `Environment.own_sandboxes`, the Sandbox

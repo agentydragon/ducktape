@@ -39,13 +39,13 @@ def test_ducktape_preset_installs_hooks_without_direnv() -> None:
 
 def test_gaffer_write_policies_are_finance_agent_only() -> None:
     cfg = staging.ENV.app_config
-    finance_policies = cfg.sandbox_presets["finance-agent"].action_policy_sets
+    finance_policies = cfg.sandbox_presets["finance-agent"].policy_sets
     assert FINANCE_AGENT_GAFFER_BRANCH_CREATION_SET in finance_policies
     assert FINANCE_AGENT_GAFFER_PR_CREATION_SET in finance_policies
     for name, preset in cfg.sandbox_presets.items():
         if name == "finance-agent":
             continue
-        policies = preset.action_policy_sets
+        policies = preset.policy_sets
         assert FINANCE_AGENT_GAFFER_BRANCH_CREATION_SET not in policies
         assert FINANCE_AGENT_GAFFER_PR_CREATION_SET not in policies
 
@@ -64,15 +64,16 @@ def test_haku_preset_binds_what_its_account_binding_names(
     app_config = one(
         doc for doc in docs if doc["kind"] == "ConfigMap" and doc["metadata"]["name"] == "agentplane-app-config"
     )
-    preset = yaml.safe_load(app_config["data"]["config.yaml"])["sandbox_presets"]["haku"]["action_policy_sets"]
-    assert bound <= set(preset), f"preset is missing {sorted(bound - set(preset))}"
-    assert set(preset) == set(HAKU_ACTION_POLICY_SETS), "preset and its named bundle drifted"
-    assert set(preset) - bound == {DUCKTAPE_PR_FAILED_JOBS_SET}, "a second write joined the bundle"
+    preset = yaml.safe_load(app_config["data"]["config.yaml"])["sandbox_presets"]["haku"]["policy_sets"]
     assert len(preset) == len(set(preset))
+    assert bound <= set(preset), f"preset is missing {sorted(bound - set(preset))}"
+    action_sets = {doc["metadata"]["name"] for doc in docs if doc["kind"] == "ActionPolicySet"}
+    assert set(preset) & action_sets == set(HAKU_ACTION_POLICY_SETS), "preset and its named bundle drifted"
+    assert set(HAKU_ACTION_POLICY_SETS) - bound == {DUCKTAPE_PR_FAILED_JOBS_SET}, "a second write joined the bundle"
 
-    # Every name the preset binds must resolve to a set this namespace actually creates, or the
+    # Every name the preset binds must resolve to a PolicySet this namespace actually creates, or the
     # Sandbox Service refuses the launch outright.
-    created = {doc["metadata"]["name"] for doc in docs if doc["kind"] == "ActionPolicySet"}
+    created = {doc["metadata"]["name"] for doc in docs if doc["kind"] == "PolicySet"}
     assert set(preset) <= created, sorted(set(preset) - created)
 
 

@@ -9,13 +9,14 @@ a deletion of workload definitions, service endpoints, credentials, or model rou
 The UI and dedicated devbox SSH endpoints are unavailable while paused.
 
 Keep the namespace and the existing Flux owners: state, diagnostics, SSH recordings,
-and devbox cache PVCs remain declared with unchanged names/specs. VolSync backups
-remain enabled, including their controller-owned cache PVC. Do not suspend or delete
+and devbox cache PVCs remain declared with unchanged names/specs. The VolSync backup's
+ReplicationSource is paused (`spec.paused`); its Restic repository and controller-owned
+cache PVC are kept. Do not suspend or delete
 the Flux owners to pause the application; suspension alone leaves running pods up.
 Halting the devbox discards its ephemeral root disk, as a normal VM restart does;
 the separate cache PVC is retained.
 
-To resume, restore the three replica counts and the devbox run strategy, restore its
+To resume, restore the three replica counts, unpause the backup, restore the devbox run strategy, restore its
 image-restart opt-in/controller if desired, and restore Flux guest-readiness checks.
 Verify model budgets and credentials before resuming; do not recreate PVCs or change
 the embedding identity. The remainder of this document describes the retained setup.

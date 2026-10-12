@@ -3989,6 +3989,10 @@ spec:
       namespace: agentplane-staging
     - apiVersion: apps/v1
       kind: Deployment
+      name: agentplane-sandbox-controller
+      namespace: agentplane-staging
+    - apiVersion: apps/v1
+      kind: Deployment
       name: agentplane-actions
       namespace: agentplane-staging
     - apiVersion: apps/v1

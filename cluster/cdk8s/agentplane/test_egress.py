@@ -11,6 +11,7 @@ import yaml
 from cdk8s import Testing as Cdk8sTesting
 from more_itertools import one
 
+from cluster.cdk8s import agent_access_profiles
 from cluster.cdk8s.agentplane import binding_delegation, notifications, sandbox_service, staging, testing
 from cluster.cdk8s.agentplane.actions_staging_policies import AGENTPLANE_TESTING_POLICY, COINBASE_POLICY
 from cluster.cdk8s.agentplane.conftest import NAMESPACES
@@ -230,6 +231,11 @@ def test_haku_launches_on_codex_with_the_wider_qwen_context_window(
     assert not {"haku", "haku-codex"} & set(testing_config["thread_presets"])
 
 
+def _kubernetes_grants(policy_sets: list[str]) -> set[str]:
+    """The launch grants a preset's Kubernetes PolicySets hold."""
+    return {grant for name in policy_sets for grant in agent_access_profiles.POLICY_SETS.get(name, ())}
+
+
 @pytest.mark.parametrize("preset", ["public-coder", "finance-agent"])
 def test_public_diagnostics_share_haku_reads_but_not_privileged_grants(
     preset: str, agentplane_manifests: dict[str, list[dict[str, Any]]]
@@ -237,15 +243,13 @@ def test_public_diagnostics_share_haku_reads_but_not_privileged_grants(
     docs = agentplane_manifests[staging.ENV.namespace]
     config = yaml.safe_load(_by_name(docs, "ConfigMap", "agentplane-app-config")["data"]["config.yaml"])
     catalog = config["kubernetes_grants"]
-    selected = config["sandbox_presets"][preset]["kubernetes_grants"]
+    selected = _kubernetes_grants(config["sandbox_presets"][preset]["policy_sets"])
     credential_grants = {"coinbase-credentials", "spend-policy-config"} if preset == "finance-agent" else set()
     # Coinbase egress follows the Secret grant; haku-agent's egress PolicyBinding carries none.
-    assert (COINBASE_POLICY in config["sandbox_presets"][preset]["egress_policies"]) == (preset == "finance-agent")
+    assert (COINBASE_POLICY in config["sandbox_presets"][preset]["policy_sets"]) == (preset == "finance-agent")
     assert COINBASE_POLICY not in _by_name(docs, "PolicyBinding", "haku-agent")["spec"]["policySets"]
-    assert set(selected) == set(config["sandbox_presets"]["public-coder"]["kubernetes_grants"]) | credential_grants
-    assert len(selected) == len(set(selected))
-    haku = config["sandbox_presets"]["haku"]["kubernetes_grants"]
-    assert len(haku) == len(set(haku))
+    assert selected == _kubernetes_grants(config["sandbox_presets"]["public-coder"]["policy_sets"]) | credential_grants
+    haku = _kubernetes_grants(config["sandbox_presets"]["haku"]["policy_sets"])
     assert (
         set(haku) - set(selected)
         == {"cluster-diagnostics", "haku-sandbox-write", "coinbase-credentials"} - credential_grants
@@ -303,7 +307,7 @@ def test_public_diagnostics_share_haku_reads_but_not_privileged_grants(
             "config.yaml"
         ]
     )
-    assert "kubernetes_grants" not in testing_config["sandbox_presets"]["public-coder"]
+    assert not _kubernetes_grants(testing_config["sandbox_presets"]["public-coder"]["policy_sets"])
 
 
 @pytest.mark.parametrize("target_namespace", binding_delegation.external_scopes(staging.ENV))
@@ -386,9 +390,9 @@ def test_finance_aiquota_history_is_read_only_and_finance_only(
 ) -> None:
     docs = agentplane_manifests[staging.ENV.namespace]
     config = yaml.safe_load(_by_name(docs, "ConfigMap", "agentplane-app-config")["data"]["config.yaml"])
-    assert FINANCE_AIQUOTA_HISTORY_POLICY in config["sandbox_presets"]["finance-agent"]["egress_policies"]
+    assert FINANCE_AIQUOTA_HISTORY_POLICY in config["sandbox_presets"]["finance-agent"]["policy_sets"]
     for name in ("public-coder", "haku"):
-        assert FINANCE_AIQUOTA_HISTORY_POLICY not in config["sandbox_presets"][name]["egress_policies"]
+        assert FINANCE_AIQUOTA_HISTORY_POLICY not in config["sandbox_presets"][name]["policy_sets"]
     policy = _by_name(docs, "EgressPolicy", FINANCE_AIQUOTA_HISTORY_POLICY)
     assert policy["spec"]["rules"] == [
         {

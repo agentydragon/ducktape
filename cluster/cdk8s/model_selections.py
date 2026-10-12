@@ -2,6 +2,7 @@
 
 from dataclasses import dataclass
 
+from agentplane.llm_ingress.models import ModelConfig
 from model_catalog.catalog import (
     GPT6_LUNA_RESPONSES,
     GPT6_RESPONSES_ROUTES,
@@ -37,3 +38,11 @@ RUNNER_CONTEXT_OVERRIDES = {
     OLLAMA_QWEN_IQ4XS_256K.openai: 256 * 1024,
     OLLAMA_QWEN_IQ4XS_256K.native: 256 * 1024,
 }
+
+
+def model_configs(models: HarnessRoutes) -> list[ModelConfig]:
+    return [
+        ModelConfig(model=route.id, total_context_budget_tokens=RUNNER_CONTEXT_OVERRIDES[route])
+        for route in sorted(models.all, key=lambda route: route.id)
+        if route in RUNNER_CONTEXT_OVERRIDES
+    ]

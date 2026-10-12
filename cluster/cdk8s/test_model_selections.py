@@ -2,8 +2,7 @@
 
 import pytest_bazel
 
-from cluster.cdk8s.agentplane.llm_ingress import model_configs
-from cluster.cdk8s.model_selections import RUNNER_CONTEXT_OVERRIDES, HarnessRoutes
+from cluster.cdk8s.model_selections import RUNNER_CONTEXT_OVERRIDES, HarnessRoutes, model_configs
 from model_catalog.catalog import GPT6_LUNA_RESPONSES
 
 

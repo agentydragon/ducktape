@@ -67,13 +67,12 @@ from cluster.cdk8s.agentplane.environment import (
     LlmIngressProps,
     ReplicaProfile,
 )
-from cluster.cdk8s.agentplane.llm_ingress import model_configs
 from cluster.cdk8s.agentplane.namespaces import TESTING_NAMESPACE
 from cluster.cdk8s.api_resource import custom_resource, named_resource
 from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.generation import CNPG_DATABASE_READY
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT, HAND_WRITTEN_ROOT
-from cluster.cdk8s.model_selections import TESTING_APP_MODELS
+from cluster.cdk8s.model_selections import TESTING_APP_MODELS, model_configs
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, NetworkPolicy
 from model_catalog.catalog import GPT6_LUNA_RESPONSES
 
@@ -83,8 +82,6 @@ _DEX_ISSUER = f"https://{_DEX_HOSTNAME}/dex"
 # The Terraform-owned key, replicated into this namespace by `litellm/credentials.py`'s
 # ExternalSecret.
 _LITELLM_KEY_SECRET = "litellm-key-cheap-experiments"
-# Sandboxes here are Agentplane's own kind; the app's form and the deployment both follow it.
-_OWN_SANDBOXES = True
 _OAUTH_FIXTURE_MCP_URL = f"http://{OAUTH_FIXTURE_NAME}.{TESTING_NAMESPACE}.svc.cluster.local:{OAUTH_FIXTURE_PORT}/mcp"
 
 _FEDERATION_TARGET = OperatorOidcSettings(
@@ -165,12 +162,13 @@ ENV = Environment(
     image_pins=f"{HAND_WRITTEN_ROOT}/agentplane-testing-image-pins",
     extra_resources=(),
     replicas=ReplicaProfile(count=1, strategy=DeploymentStrategy.recreate(), min_ready=None, pdb_min_available=None),
-    app_config=app_settings.settings(
-        namespace=TESTING_NAMESPACE,
-        models=TESTING_APP_MODELS,
-        thread_preset_codex_model=GPT6_LUNA_RESPONSES,
-        action_federation=_ACTION_FEDERATION,
-        own_sandboxes=_OWN_SANDBOXES,
+    app_config=app_settings.on_policy_sets(
+        app_settings.settings(
+            namespace=TESTING_NAMESPACE,
+            models=TESTING_APP_MODELS,
+            thread_preset_codex_model=GPT6_LUNA_RESPONSES,
+            action_federation=_ACTION_FEDERATION,
+        )
     ),
     settle_deltas=True,
     db=DbProps(instances=1, wal_archive=False),
@@ -194,7 +192,6 @@ ENV = Environment(
             EgressRule.to_endpoints(cilium.endpoint_labels(TESTING_NAMESPACE, OAUTH_FIXTURE_NAME), OAUTH_FIXTURE_PORT),
         ],
     ),
-    own_sandboxes=_OWN_SANDBOXES,
     vm_sandboxes=True,
 )
 

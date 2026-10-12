@@ -17,6 +17,7 @@ from agentplane.sandbox_service.kubernetes_grants import KubernetesGrant
 # preset its baseline policies, so it refers to them; each comes from the module that creates the
 # policy answering to it, which is what lets either environment's preset name the same policy
 # without repeating the string.
+from cluster.cdk8s import agent_access_profiles
 from cluster.cdk8s.agentplane import egress
 from cluster.cdk8s.agentplane.egress import (
     BASIC_POLICY,
@@ -49,29 +50,8 @@ def settings(
     action_federation: ActionFederationSettings,
     action_policy_sets: list[str] | None = None,
     kubernetes_grants: dict[str, KubernetesGrant] | None = None,
-    own_sandboxes: bool,
 ) -> AppSettingsConfig:
-    public_coder_policies = [
-        BASIC_POLICY,
-        PACKAGES_POLICY,
-        GITHUB_AGENTYDRAGON_AGENT_POLICY,
-        GITHUB_CLONE_POLICY,
-        GITHUB_ACTIONS_LOGS_POLICY,
-        BUILDBUDDY_POLICY,
-        PUBLIC_CODER_VISUALS_POLICY,
-    ]
-    # Each egress policy has a PolicySet of the same name where Sandboxes are Agentplane's own kind.
-    public_coder_grants: dict[str, list[str]] = (
-        {"policy_sets": public_coder_policies}
-        if own_sandboxes
-        else {
-            "egress_policies": public_coder_policies,
-            **({"action_policy_sets": action_policy_sets} if action_policy_sets is not None else {}),
-        }
-    )
     return AppSettingsConfig(
-        # Set only where on, so the key stays out of the other environment's settings.
-        **({"own_sandboxes": True} if own_sandboxes else {}),
         models=ModelCatalog(
             models=[
                 ModelOption(
@@ -102,7 +82,16 @@ def settings(
             "public-coder": SandboxPreset(
                 title="Public coder",
                 template="runner",
-                **public_coder_grants,
+                egress_policies=[
+                    BASIC_POLICY,
+                    PACKAGES_POLICY,
+                    GITHUB_AGENTYDRAGON_AGENT_POLICY,
+                    GITHUB_CLONE_POLICY,
+                    GITHUB_ACTIONS_LOGS_POLICY,
+                    BUILDBUDDY_POLICY,
+                    PUBLIC_CODER_VISUALS_POLICY,
+                ],
+                **({"action_policy_sets": action_policy_sets} if action_policy_sets is not None else {}),
                 thread_preset=_THREAD_PRESET_PUBLIC_CODER_CODEX,
                 bootstrap=(
                     "marker=/state/workspaces/.agentplane-public-coder-ready\n"
@@ -117,3 +106,33 @@ def settings(
         egress_admin_url=AnyHttpUrl(egress.admin(namespace).url),
         action_federation=action_federation,
     )
+
+
+def on_policy_sets(cfg: AppSettingsConfig) -> AppSettingsConfig:
+    """The same settings where Sandboxes are Agentplane's own kind, which takes `policy_sets` alone.
+
+    Each egress policy and Action policy set has a PolicySet of its name (`egress_policies.py`,
+    `actions_staging_policies.py`); a preset's Kubernetes grants become the sets that cover them.
+    """
+    # `model_copy` is typed `Any` on this settings class.
+    converted: AppSettingsConfig = cfg.model_copy(
+        update={
+            "own_sandboxes": True,
+            "sandbox_presets": {
+                name: SandboxPreset.model_validate(
+                    {
+                        **preset.model_dump(
+                            exclude_unset=True, exclude={"egress_policies", "action_policy_sets", "kubernetes_grants"}
+                        ),
+                        "policy_sets": [
+                            *preset.egress_policies,
+                            *preset.action_policy_sets,
+                            *agent_access_profiles.covering_policy_sets(preset.kubernetes_grants),
+                        ],
+                    }
+                )
+                for name, preset in cfg.sandbox_presets.items()
+            },
+        }
+    )
+    return converted

@@ -104,8 +104,7 @@ it("lists registered browsers, identifies this browser, and unregisters it local
     expect(container.textContent).toContain("Browser notifications are not configured on this server");
     expect(
       [...container.querySelectorAll("button")].find((button) => button.textContent === "Register this browser")
-        ?.disabled
-    ).toBe(true);
+    ).toBeUndefined();
     const forget = [...container.querySelectorAll("button")].find((button) => button.textContent === "Forget");
     expect(forget).toBeDefined();
     await act(async () => forget?.click());
