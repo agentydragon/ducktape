@@ -66,7 +66,7 @@ summary would reach only the `Native` log. Settle with the scripted compaction t
 
 ## Notification ack id for driver-hosted MCP
 
-- `docs/driver_tools.md:38-41` and `native/claude/mcp.py:21-23` (2.1.252, marked confirmed): a
+- `docs/driver_tools.md:38-41` and `native/claude/testing/mcp.py:21-23` (2.1.252, marked confirmed): a
   notification needs an `mcp_response` with `"id": 0`; a bare `success` leaves the server `failed`.
 - `haku/cli_protocol/protocol.md:300-301` (2.1.220): "an empty JSON-RPC result is the convention".
   Its probes actually sent `{"jsonrpc": "2.0", "id": null, "result": {}}` (echoing the absent id),

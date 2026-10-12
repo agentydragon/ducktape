@@ -22,7 +22,7 @@ from agentplane.notification_service.models import (
     SubscriptionView,
 )
 from agentplane.notification_service.settings import NoticeDebounceSettings
-from agentplane.notification_service.sources.actions import Actions, SourceNotOwnedError
+from agentplane.notification_service.sources.actions import ActionServiceClient, SourceNotOwnedError
 from agentplane.notification_service.sources.github.client import (
     GitHubAccessError,
     GitHubRetryError,
@@ -83,14 +83,14 @@ class Service:
     def __init__(
         self,
         store: Store,
-        actions: Actions,
+        actions: ActionServiceClient,
         sandboxes: SandboxServiceClient,
-        github: GitHub | None = None,
+        github: GitHub | None,
         *,
         history: HistoryServiceClient,
         notice_debounce: NoticeDebounceSettings,
         stale_confirmation_s: float,
-        operator_reader_account: str | None = None,
+        operator_reader_account: str | None,
     ) -> None:
         self.store, self.actions, self.sandboxes, self.history = store, actions, sandboxes, history
         self.github = github

@@ -42,7 +42,7 @@ from agentplane.action_service.models import (
     Verdict,
 )
 from agentplane.action_service.service import ActionService, ExecutionLease, ExecutionOutcomeUnknownError
-from agentplane.action_service.testing.lifecycle import wait_available
+from agentplane.action_service.testing.lifecycle import wait_available, wait_for_state
 from agentplane.subjects import ServiceAccountRef
 from util.bazel.runfiles import get_required_path
 
@@ -85,15 +85,6 @@ async def _allowed_execution(service: ActionService, *, idempotency_key: str) ->
 def _without_server_info(result: dict[str, JsonValue]) -> dict[str, JsonValue]:
     """FastMCP stamps its own name and version into every result's `_meta`; the rest is the tool's answer."""
     return {key: value for key, value in result.items() if key != "_meta"}
-
-
-async def _poll_state(store: ActionStore, request_id: Any, *, want: ActionState) -> None:
-    for _ in range(200):
-        view = await store.get(request_id, CALLER)
-        if view.state is want:
-            return
-        await asyncio.sleep(0.01)
-    raise AssertionError(f"never reached {want}")
 
 
 async def test_start_mirrors_tool_catalog_into_the_action_group() -> None:
@@ -185,7 +176,7 @@ async def test_one_allowed_execution_calls_the_backend_tool_exactly_once(engine:
         await wait_available(executor._group)
         async with service:
             request_id = await _allowed_execution(service, idempotency_key="one-call")
-            await _poll_state(store, request_id, want=ActionState.SUCCEEDED)
+            await wait_for_state(store, request_id, CALLER, want=ActionState.SUCCEEDED)
             assert calls == [{"text": "hi"}]
             view = await store.get(request_id, CALLER)
             assert view.execution is not None
@@ -320,7 +311,7 @@ async def test_ambiguous_transport_loss_becomes_execution_unknown_without_retry(
                 # Sever the transport mid-call; the client's underlying subprocess dies with it.
                 await executor.close()
 
-                await _poll_state(store, view.id, want=ActionState.EXECUTION_UNKNOWN)
+                await wait_for_state(store, view.id, CALLER, want=ActionState.EXECUTION_UNKNOWN)
                 final = await store.get(view.id, CALLER)
                 assert final.execution is not None
                 assert final.execution.error is not None
@@ -592,7 +583,9 @@ async def test_approved_work_stays_unclaimed_during_outage_then_recovers(
             server.local_provider.remove_tool("echo_once")
         await executor.refresh_catalog()
         await services.enter_async_context(service)
-        await _poll_state(store, view.id, want=ActionState.FAILED if remove_action else ActionState.SUCCEEDED)
+        await wait_for_state(
+            store, view.id, CALLER, want=ActionState.FAILED if remove_action else ActionState.SUCCEEDED
+        )
         assert calls == ([] if remove_action else ["once"])
 
 

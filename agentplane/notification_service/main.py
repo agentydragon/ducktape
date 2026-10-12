@@ -13,7 +13,7 @@ from agentplane.history_service.client import HistoryServiceClient
 from agentplane.notification_service.api import create_app
 from agentplane.notification_service.service import Service
 from agentplane.notification_service.settings import Settings
-from agentplane.notification_service.sources.actions import Actions
+from agentplane.notification_service.sources.actions import ActionServiceClient
 from agentplane.notification_service.sources.github.client import GitHubClient
 from agentplane.notification_service.sources.github.source import GitHub
 from agentplane.notification_service.store import Store
@@ -25,11 +25,12 @@ from agentplane.workload_auth.principal import WorkloadPrincipalResolver
 
 
 async def serve(settings: Settings) -> None:
-    # Staging OOM: 22 notification sessions, 21 idle across two replicas.
-    engine = create_async_engine(
-        make_url(settings.database_url).set(drivername="postgresql+asyncpg"), pool_size=4, max_overflow=2
-    )
-    try:
+    async with AsyncExitStack() as stack:
+        # Staging OOM: 22 notification sessions, 21 idle across two replicas.
+        engine = create_async_engine(
+            make_url(settings.database_url).set(drivername="postgresql+asyncpg"), pool_size=4, max_overflow=2
+        )
+        stack.push_async_callback(engine.dispose)
         async with (
             k8s_client.ApiClient(await kubernetes_configuration(None)) as kube,
             httpx.AsyncClient(
@@ -65,7 +66,7 @@ async def serve(settings: Settings) -> None:
             app = create_app(
                 Service(
                     Store(engine, quotas=settings.quotas),
-                    Actions(http, settings.actions.token_file),
+                    ActionServiceClient(http, settings.actions.token_file),
                     sandboxes,
                     github,
                     history=history,
@@ -76,8 +77,6 @@ async def serve(settings: Settings) -> None:
                 principals,
             )
             await uvicorn.Server(uvicorn.Config(app, host=settings.host, port=settings.port)).serve()
-    finally:
-        await engine.dispose()
 
 
 def main() -> None:

@@ -83,7 +83,7 @@ from agentplane.app.threads.view.content import CommandIdConflictError, ContentS
 from agentplane.egress.decisions import Decision
 from agentplane.egress.decisions_client import DecisionsClient, DecisionsUnavailableError
 from agentplane.history_service.client import HistoryServiceError
-from agentplane.postgres.wakeups import Wakeups
+from agentplane.postgres.wakeups import WakeupListener
 from agentplane.proto import runner_pb2
 from agentplane.runner.errors import OpenTimeoutError, RunnerError
 from agentplane.runner.harness import Harness
@@ -1030,7 +1030,7 @@ def create_app(
     electric: ElectricProxy,
     event_logs: EventLogStore,
     content: ContentStore,
-    database_updates: Wakeups,
+    database_updates: WakeupListener,
     operator_sessions: OperatorSessionStore,
     notifications_http: httpx.AsyncClient,
     notifications_token_file: FilePath,
@@ -1080,11 +1080,11 @@ def create_app(
 
     @app.exception_handler(ConnectionError)
     async def upstream_unavailable(request: Request, error: ConnectionError) -> JSONResponse:
-        return JSONResponse({"detail": "Upstream service unavailable; outcome may be uncertain"}, status_code=503)
+        return JSONResponse({"detail": "Upstream service unavailable"}, status_code=503)
 
     @app.exception_handler(TimeoutError)
     async def upstream_deadline(request: Request, error: TimeoutError) -> JSONResponse:
-        return JSONResponse({"detail": "Upstream deadline expired; mutation outcome may be uncertain"}, status_code=504)
+        return JSONResponse({"detail": "Upstream deadline expired"}, status_code=504)
 
     app.state.inventory = inventory
     app.state.bridge = bridge

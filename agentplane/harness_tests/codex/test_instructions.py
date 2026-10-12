@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest_bazel
 
-from agentplane.harness_tests.codex import responses_sse as sse
+from agentplane.harness_tests.codex import responses_sse
 from agentplane.harness_tests.codex.harness import MODEL, CodexHarness
 from agentplane.harness_tests.codex.responses import OpenAIResponses
 from agentplane.native.codex import wire
@@ -32,7 +32,7 @@ async def test_a_resume_cannot_replace_the_threads_developer_instructions(
             # The instructions lead the thread, ahead of the first user message.
             assert request.item_kinds == ["message:developer", "message:user"]
             assert [message.text for message in request.messages("developer")] == [STARTED_WITH]
-            stream = sse.response_stream([sse.Message("SEED_OK")], model=MODEL)
+            stream = responses_sse.response_stream([responses_sse.Message("SEED_OK")], model=MODEL)
             await exchange.send(*stream.events)
         assert (await turn.completed()).params.turn.status is wire.TurnStatus.COMPLETED
 
@@ -51,7 +51,7 @@ async def test_a_resume_cannot_replace_the_threads_developer_instructions(
             assert request.instructions == RESUMED_BASE
             # One developer message, the thread's own — neither replaced nor joined by the new text.
             assert [message.text for message in request.messages("developer")] == [STARTED_WITH]
-            stream = sse.response_stream([sse.Message("NEXT_OK")], model=MODEL)
+            stream = responses_sse.response_stream([responses_sse.Message("NEXT_OK")], model=MODEL)
             await exchange.send(*stream.events)
         assert (await turn.completed()).params.turn.status is wire.TurnStatus.COMPLETED
         # Nothing on the wire reports the discarded override, so a client cannot tell it was

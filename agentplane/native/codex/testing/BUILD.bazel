@@ -1,0 +1,23 @@
+load("//devinfra/python:defs.bzl", "py_library")
+
+package(
+    default_testonly = True,
+    default_visibility = ["//agentplane:__subpackages__"],
+)
+
+py_library(
+    name = "async_run",
+    srcs = ["async_run.py"],
+    deps = [
+        "//agentplane/native/codex:facade",
+        "//agentplane/native/codex:scenarios",
+        "//agentplane/native/codex:wire",
+        "//agentplane/native/testing:async_process",
+    ],
+)
+
+py_library(
+    name = "dynamic_tools",
+    srcs = ["dynamic_tools.py"],
+    deps = ["//agentplane/native/codex:wire"],
+)

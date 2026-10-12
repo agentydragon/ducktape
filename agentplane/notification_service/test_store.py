@@ -521,7 +521,7 @@ async def test_health_is_durable_introspection_without_inbox_events(
         await store.record(claim, source, events())
         assert await store.notice(claim) is not None
     before = await store.read(PRINCIPAL.account, subscription.inbox_id, 0, 128)
-    recovered = Store(engine)
+    recovered = Store(engine, quotas=QuotaSettings())
     previous_kind = None
     previous_since = None
     for kind, error, delay in [

@@ -9,6 +9,8 @@ import asyncio
 from collections.abc import AsyncIterator, Iterator, Sequence, Set
 from contextlib import asynccontextmanager, contextmanager
 from datetime import UTC
+from types import TracebackType
+from typing import Self
 from uuid import UUID
 
 from more_itertools import one
@@ -232,6 +234,14 @@ class History:
         terminal.ended = True
         await self.store.record_feed_state(session_id, terminal)
         await self.fold()
+
+    async def __aenter__(self) -> Self:
+        return self
+
+    async def __aexit__(
+        self, exc_type: type[BaseException] | None, exc: BaseException | None, tb: TracebackType | None
+    ) -> None:
+        await self.close()
 
     async def close(self) -> None:
         await self.engine.dispose()

@@ -39,7 +39,7 @@ from kubernetes_asyncio import client as k8s_client
 from kubernetes_asyncio.client import CoreV1Api
 from pydantic import BaseModel, ConfigDict, Field
 
-from agentplane.action_service.policies import resources as policy_resources
+from agentplane.action_service.policies import resources
 from agentplane.app.action_federation import OperatorFederationError, operator_actions, upstream_failure_detail
 from agentplane.app.action_policy import ActionPolicyInventory, ActionPolicyUnavailable, ActionPolicyView
 from agentplane.app.database_updates import Channel
@@ -48,9 +48,9 @@ from agentplane.app.sandbox_models import SandboxView, sandbox_view as http_sand
 from agentplane.app.shutdown import Shutdown
 from agentplane.app.threads.store import MAX_PAGE, ThreadStore
 from agentplane.app.threads.thread_view import ThreadView
-from agentplane.changes import Changes
+from agentplane.changes import ChangeSignal
 from agentplane.kubernetes_watch import Freshness
-from agentplane.postgres.wakeups import Wakeups
+from agentplane.postgres.wakeups import WakeupListener
 from agentplane.sandbox_service.action_policy_views import ACTION_POLICY_API
 from agentplane.sandbox_service.egress_views import (
     BINDINGS_PLURAL,
@@ -140,7 +140,7 @@ class LiveIndex:
     action_policy_sets: set[str] = field(default_factory=set)
     action_policy_bindings: set[str] = field(default_factory=set)
     action_policy_changes: int = 0
-    changes: Changes = field(default_factory=Changes)
+    changes: ChangeSignal = field(default_factory=ChangeSignal)
 
     def sandbox_views(self) -> list[SandboxView]:
         # kubernetes_asyncio exposes this runtime attribute but omits it from generated SDK stubs.
@@ -257,17 +257,17 @@ def watch_for(
                 apply=lambda name, obj: apply_to(index.credentials, name, obj),
             ),
             WatchedKind(
-                name=policy_resources.POLICY_SETS_PLURAL,
+                name=resources.POLICY_SETS_PLURAL,
                 list=custom_objects.list_namespaced_custom_object,
-                args=(*ACTION_POLICY_API, sandbox_namespace, policy_resources.POLICY_SETS_PLURAL),
+                args=(*ACTION_POLICY_API, sandbox_namespace, resources.POLICY_SETS_PLURAL),
                 key=_name,
                 names=lambda: set(index.action_policy_sets),
                 apply=lambda name, obj: index.action_policy_seen(index.action_policy_sets, name, obj),
             ),
             WatchedKind(
-                name=policy_resources.BINDINGS_PLURAL,
+                name=resources.BINDINGS_PLURAL,
                 list=custom_objects.list_namespaced_custom_object,
-                args=(*ACTION_POLICY_API, sandbox_namespace, policy_resources.BINDINGS_PLURAL),
+                args=(*ACTION_POLICY_API, sandbox_namespace, resources.BINDINGS_PLURAL),
                 key=_name,
                 names=lambda: set(index.action_policy_bindings),
                 apply=lambda name, obj: index.action_policy_seen(index.action_policy_bindings, name, obj),
@@ -283,7 +283,7 @@ def watch_for(
 async def frames(
     snapshot: Callable[[], Awaitable[BaseModel]],
     health: Callable[[], WatchHealth],
-    *watched: Changes,
+    *watched: ChangeSignal,
     interval_s: float = HEALTH_INTERVAL_S,
 ) -> AsyncIterator[bytes]:
     """A snapshot per change, and a health frame every `interval_s` of quiet in between.
@@ -372,16 +372,16 @@ def _store(request: Request) -> ThreadStore:
     return store
 
 
-def _database_updates(request: Request) -> Wakeups:
+def _database_updates(request: Request) -> WakeupListener:
     updates = request.app.state.database_updates
-    if not isinstance(updates, Wakeups):
-        raise TypeError(f"app.state.database_updates is {type(updates).__name__}, not Wakeups")
+    if not isinstance(updates, WakeupListener):
+        raise TypeError(f"app.state.database_updates is {type(updates).__name__}, not WakeupListener")
     return updates
 
 
 Index = Annotated[LiveIndex, Depends(_index)]
 Store = Annotated[ThreadStore, Depends(_store)]
-Updates = Annotated[Wakeups, Depends(_database_updates)]
+Updates = Annotated[WakeupListener, Depends(_database_updates)]
 ActionPolicy = Annotated[ActionPolicyInventory, Depends(_action_policy)]
 Caller = Annotated[CallerIdentity, Depends(require_caller)]
 

@@ -22,7 +22,7 @@ from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
 
-from agentplane.changes import Changes
+from agentplane.changes import ChangeSignal
 from agentplane.history_service.fold import projection_lease
 from agentplane.history_service.fold.models import ThreadHistorySummary
 from agentplane.history_service.fold.projection_lease import ProjectionLease, ProjectionLeaseLostError
@@ -68,7 +68,7 @@ class FoldRunner:
         for session_id in list(self._leases):
             await self._release(session_id)
 
-    async def run(self, *, interval_s: float, changes: Changes, health: health.aio.HealthServicer) -> None:
+    async def run(self, *, interval_s: float, changes: ChangeSignal, health: health.aio.HealthServicer) -> None:
         """Folds until cancelled, reporting `HEALTH_SERVICE` SERVING while it does. An error it does
         not retry stops the fold, not the process, so raw reads stay served: it is logged and
         `HEALTH_SERVICE` turns NOT_SERVING."""
@@ -80,7 +80,7 @@ class FoldRunner:
             logger.exception("Thread fold stopped")
             await health.set(HEALTH_SERVICE, health_pb2.HealthCheckResponse.NOT_SERVING)
 
-    async def _fold(self, *, interval_s: float, changes: Changes) -> None:
+    async def _fold(self, *, interval_s: float, changes: ChangeSignal) -> None:
         """Catch up immediately while behind; wait for commits or `interval_s` to retry."""
         changed = asyncio.Event()
         with changes.subscribe(changed):

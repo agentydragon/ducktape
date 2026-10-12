@@ -59,9 +59,7 @@ async def errors(context: grpc.aio.ServicerContext) -> AsyncIterator[None]:
     except ValueError, ParseError, UnknownPolicyError, UnknownPolicySetError:
         await context.abort(grpc.StatusCode.INVALID_ARGUMENT, "invalid service request or grant selection")
     except TimeoutError:
-        await context.abort(
-            grpc.StatusCode.DEADLINE_EXCEEDED, "service deadline expired; mutation outcome may be uncertain"
-        )
+        await context.abort(grpc.StatusCode.DEADLINE_EXCEEDED, "service deadline expired")
     except InventoryError:
         await context.abort(grpc.StatusCode.FAILED_PRECONDITION, "sandbox state refused the request")
     except ConnectionError, k8s_client.ApiException:

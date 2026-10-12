@@ -5,7 +5,7 @@ from uuid import UUID
 from agentplane.app.live import LiveIndex
 from agentplane.app.sandbox_models import sandbox_has_ready_pod
 from agentplane.app.threads.events.event_log import SessionNotRegisteredError
-from agentplane.changes import Changes
+from agentplane.changes import ChangeSignal
 from agentplane.proto.sandbox_service_pb2 import SandboxDestination, ServiceAccount
 from agentplane.sandbox_service.client import Runner, SandboxServiceClient
 from agentplane.sandbox_service.errors import SandboxNotFoundError
@@ -29,7 +29,7 @@ class SandboxSessions:
         self._clients: dict[str, Runner] = {}
 
     @property
-    def changes(self) -> Changes:
+    def changes(self) -> ChangeSignal:
         return self._index.changes
 
     def running(self) -> set[str]:

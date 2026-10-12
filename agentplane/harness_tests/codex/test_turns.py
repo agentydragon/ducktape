@@ -7,7 +7,7 @@ import json
 import pytest_bazel
 from more_itertools import one
 
-from agentplane.harness_tests.codex import frames, responses_sse as sse
+from agentplane.harness_tests.codex import frames, responses_sse
 from agentplane.harness_tests.codex.harness import MODEL, CodexHarness
 from agentplane.harness_tests.codex.responses import OpenAIResponses
 from agentplane.native.codex import scenarios, wire
@@ -37,8 +37,9 @@ async def test_baseline_turn(codex: CodexHarness, openai_responses: OpenAIRespon
             assert request.prompt_cache_key == run.thread_id
             assert request.client_metadata.thread_id == run.thread_id
             assert request.client_metadata.turn_id == turn.id
-            stream = sse.response_stream(
-                [sse.Reasoning("brief", "enc_test_1"), sse.Message("CAPTURE_BASELINE_OK")], model=MODEL
+            stream = responses_sse.response_stream(
+                [responses_sse.Reasoning("brief", "enc_test_1"), responses_sse.Message("CAPTURE_BASELINE_OK")],
+                model=MODEL,
             )
             await exchange.send(*stream.events)
 
@@ -56,7 +57,9 @@ async def test_turn_effort_override_reaches_responses(codex: CodexHarness, opena
             async with await openai_responses.await_next_request() as exchange:
                 assert exchange.request.reasoning_config is not None
                 assert exchange.request.reasoning_config["effort"] == effort
-                await exchange.send(*sse.response_stream([sse.Message(f"{effort.upper()}_OK")], model=MODEL).events)
+                await exchange.send(
+                    *responses_sse.response_stream([responses_sse.Message(f"{effort.upper()}_OK")], model=MODEL).events
+                )
             assert (await turn.completed()).params.turn.status is wire.TurnStatus.COMPLETED
     assert len([frame for frame in run.native_frames() if frame.get("method") == "turn/started"]) == 2
 
@@ -65,8 +68,9 @@ async def test_idle_resume_replays_the_thread_from_disk(codex: CodexHarness, ope
     async with codex.start(openai_responses, persist=True) as first:
         turn = await first.start_turn("Reply with exactly: IDLE_RESUME_SEED_OK")
         async with await openai_responses.await_next_request() as exchange:
-            stream = sse.response_stream(
-                [sse.Reasoning("seed", "enc_test_1"), sse.Message("IDLE_RESUME_SEED_OK")], model=MODEL
+            stream = responses_sse.response_stream(
+                [responses_sse.Reasoning("seed", "enc_test_1"), responses_sse.Message("IDLE_RESUME_SEED_OK")],
+                model=MODEL,
             )
             await exchange.send(*stream.events)
         assert (await turn.completed()).params.turn.status is wire.TurnStatus.COMPLETED
@@ -87,7 +91,7 @@ async def test_idle_resume_replays_the_thread_from_disk(codex: CodexHarness, ope
             assert request.messages("assistant")[0].text == "IDLE_RESUME_SEED_OK"
             assert request.reasoning[0].encrypted_content == "enc_test_1"
             assert request.prompt_cache_key == first.thread_id
-            stream = sse.response_stream([sse.Message("IDLE_RESUME_OK")], model=MODEL)
+            stream = responses_sse.response_stream([responses_sse.Message("IDLE_RESUME_OK")], model=MODEL)
             await exchange.send(*stream.events)
         assert (await turn.completed()).params.turn.status is wire.TurnStatus.COMPLETED
     frames.assert_success(second.native_frames(), "IDLE_RESUME_OK")
@@ -100,17 +104,18 @@ async def test_rollout_saves_each_reasoning_item_under_the_id_the_app_server_ann
     async with codex.start(openai_responses, persist=True) as run:
         turn = await run.start_turn("Think, run a command, think again, then answer")
         async with await openai_responses.await_next_request() as exchange:
-            stream = sse.response_stream(
+            stream = responses_sse.response_stream(
                 [
-                    sse.Reasoning("first thought", "enc_rollout_1"),
-                    sse.FunctionCall("call_test_1", "exec_command", {"cmd": "true"}),
+                    responses_sse.Reasoning("first thought", "enc_rollout_1"),
+                    responses_sse.FunctionCall("call_test_1", "exec_command", {"cmd": "true"}),
                 ],
                 model=MODEL,
             )
             await exchange.send(*stream.events)
         async with await openai_responses.await_next_request() as exchange:
-            stream = sse.response_stream(
-                [sse.Reasoning("second thought", "enc_rollout_2"), sse.Message("ROLLOUT_DONE")], model=MODEL
+            stream = responses_sse.response_stream(
+                [responses_sse.Reasoning("second thought", "enc_rollout_2"), responses_sse.Message("ROLLOUT_DONE")],
+                model=MODEL,
             )
             await exchange.send(*stream.events)
         assert (await turn.completed()).params.turn.status is wire.TurnStatus.COMPLETED
@@ -140,8 +145,11 @@ async def test_resume_after_an_interrupted_partial_turn_keeps_the_user_item_not_
         seed_turn = await seeded.start_turn("Reply with exactly: CODEX_INTERRUPTED_RESUME_SEED_OK")
         async with await openai_responses.await_next_request() as exchange:
             await exchange.send(
-                *sse.response_stream(
-                    [sse.Reasoning("seed", "enc_interrupted_resume"), sse.Message("CODEX_INTERRUPTED_RESUME_SEED_OK")],
+                *responses_sse.response_stream(
+                    [
+                        responses_sse.Reasoning("seed", "enc_interrupted_resume"),
+                        responses_sse.Message("CODEX_INTERRUPTED_RESUME_SEED_OK"),
+                    ],
                     model=MODEL,
                 ).events
             )
@@ -152,7 +160,7 @@ async def test_resume_after_an_interrupted_partial_turn_keeps_the_user_item_not_
         await turn.started()
         async with await openai_responses.await_next_request() as exchange:
             await exchange.send(
-                *sse.response_stream([sse.Message(INTERRUPTED_RESUME_PARTIAL)], model=MODEL)
+                *responses_sse.response_stream([responses_sse.Message(INTERRUPTED_RESUME_PARTIAL)], model=MODEL)
                 .through("response.output_text.delta")
                 .events
             )
@@ -192,7 +200,9 @@ async def test_resume_after_an_interrupted_partial_turn_keeps_the_user_item_not_
             assert [message.text for message in replay.messages("assistant")] == ["CODEX_INTERRUPTED_RESUME_SEED_OK"]
             assert replay.reasoning[0].encrypted_content == "enc_interrupted_resume"
             await exchange.send(
-                *sse.response_stream([sse.Message("CODEX_INTERRUPTED_RESUME_RECOVERY_OK")], model=MODEL).events
+                *responses_sse.response_stream(
+                    [responses_sse.Message("CODEX_INTERRUPTED_RESUME_RECOVERY_OK")], model=MODEL
+                ).events
             )
         assert (await recovery.completed()).params.turn.status is wire.TurnStatus.COMPLETED
 
@@ -217,7 +227,7 @@ async def test_resume_after_crash_replays_the_in_flight_turn_but_not_its_live_fo
             assert [message.text for message in replay.messages("user")] == [IN_FLIGHT_INPUT, RECOVERY_INPUT]
             assert QUEUED_INPUT not in [message.text for message in replay.messages("user")]
             assert replay.messages("assistant") == []
-            stream = sse.response_stream([sse.Message("CODEX_CRASH_RESUME_OK")], model=MODEL)
+            stream = responses_sse.response_stream([responses_sse.Message("CODEX_CRASH_RESUME_OK")], model=MODEL)
             await exchange.send(*stream.events)
         assert (await recovery.completed()).params.turn.status is wire.TurnStatus.COMPLETED
 
@@ -254,7 +264,9 @@ async def test_resumed_redispatch_of_an_accepted_input_duplicates_native_history
             assert request.client_metadata.thread_id == first.thread_id
             assert request.client_metadata.turn_id == redispatched.id
             await exchange.send(
-                *sse.response_stream([sse.Message("CODEX_CRASH_WINDOW_REDISTPATCH")], model=MODEL).events
+                *responses_sse.response_stream(
+                    [responses_sse.Message("CODEX_CRASH_WINDOW_REDISTPATCH")], model=MODEL
+                ).events
             )
         assert (await redispatched.completed()).params.turn.status is wire.TurnStatus.COMPLETED
 

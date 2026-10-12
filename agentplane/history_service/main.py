@@ -1,6 +1,7 @@
 """History Service entry point: takes the journals runners push, serves retained Session history and folds it."""
 
 import asyncio
+from contextlib import AsyncExitStack
 
 import grpc
 from kubernetes_asyncio import client as k8s_client
@@ -26,16 +27,19 @@ from agentplane.workload_auth.principal import WorkloadPrincipalResolver
 
 async def serve(settings: Settings) -> None:
     url = make_url(settings.database_url).set(drivername="postgresql+asyncpg")
-    # The migration init container owns the schema; the ingress and the fold write through their own
-    # engines, and reads never write.
-    engine = create_async_engine(
-        url, pool_size=4, max_overflow=2, connect_args={"server_settings": {"default_transaction_read_only": "on"}}
-    )
-    # The fold writes only its own tables.
-    fold_engine = create_async_engine(url, pool_size=2, max_overflow=2)
-    ingress_engine = create_async_engine(url, pool_size=8, max_overflow=4)
-    wakeups = create_wakeups(url)
-    try:
+    async with AsyncExitStack() as stack:
+        # The migration init container owns the schema; the ingress and the fold write through their own
+        # engines, and reads never write.
+        engine = create_async_engine(
+            url, pool_size=4, max_overflow=2, connect_args={"server_settings": {"default_transaction_read_only": "on"}}
+        )
+        stack.push_async_callback(engine.dispose)
+        # The fold writes only its own tables.
+        fold_engine = create_async_engine(url, pool_size=2, max_overflow=2)
+        stack.push_async_callback(fold_engine.dispose)
+        ingress_engine = create_async_engine(url, pool_size=8, max_overflow=4)
+        stack.push_async_callback(ingress_engine.dispose)
+        wakeups = create_wakeups(url)
         async with (
             k8s_client.ApiClient(await kubernetes_configuration(settings.kubeconfig)) as api,
             wakeups.listener.listen(),
@@ -89,10 +93,6 @@ async def serve(settings: Settings) -> None:
                 serving(server, f"{settings.host}:{settings.port}", grace_s=5),
             ):
                 await until_terminated()
-    finally:
-        await ingress_engine.dispose()
-        await fold_engine.dispose()
-        await engine.dispose()
 
 
 def main() -> None:

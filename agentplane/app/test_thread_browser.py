@@ -29,7 +29,7 @@ from playwright.async_api import (
 from sqlalchemy import select, update
 
 from agentplane.app.testing import thread_view_marks
-from agentplane.app.testing.history import SeededEventLogStore as EventLogStore
+from agentplane.app.testing.history import SeededEventLogStore
 from agentplane.app.testing.http2_proxy import BrowserCertificate, http2_proxy
 from agentplane.app.testing.replication_process import app_process
 from agentplane.app.testing.replication_source import (
@@ -125,7 +125,7 @@ async def test_archived_thread_page_survives_deleted_sandbox_and_reload(
     page: Page,
     db_url: str,
     store: ThreadStore,
-    event_logs: EventLogStore,
+    event_logs: SeededEventLogStore,
     history: History,
     thread_source: ReplicationSource,
     electric: ElectricService,
@@ -175,7 +175,7 @@ async def test_archived_thread_page_survives_deleted_sandbox_and_reload(
 
 
 async def _seed_navigation_threads(
-    event_logs: EventLogStore, history: History, store: ThreadStore, placements: Placements
+    event_logs: SeededEventLogStore, history: History, store: ThreadStore, placements: Placements
 ) -> tuple[list[UUID], list[ReplicationSource]]:
     """Two threads of 130 messages, "Thread N message M", named "Test navigation thread N"."""
     threads: list[UUID] = []
@@ -210,7 +210,7 @@ async def test_switching_threads_starts_at_each_threads_tail(
     page: Page,
     db_url: str,
     store: ThreadStore,
-    event_logs: EventLogStore,
+    event_logs: SeededEventLogStore,
     history: History,
     electric: ElectricService,
     certificate: BrowserCertificate,
@@ -255,7 +255,7 @@ async def test_returning_to_a_thread_lays_its_rows_out_at_the_heights_they_had(
     page: Page,
     db_url: str,
     store: ThreadStore,
-    event_logs: EventLogStore,
+    event_logs: SeededEventLogStore,
     history: History,
     electric: ElectricService,
     certificate: BrowserCertificate,
@@ -317,7 +317,7 @@ async def test_returning_to_a_thread_reads_only_what_changed_while_the_reader_wa
     page: Page,
     db_url: str,
     store: ThreadStore,
-    event_logs: EventLogStore,
+    event_logs: SeededEventLogStore,
     history: History,
     electric: ElectricService,
     certificate: BrowserCertificate,
@@ -512,7 +512,7 @@ async def test_projected_browser_streams_runner_events_and_loads_evidence_lazily
     certificate: BrowserCertificate,
     db_url: str,
     store: ThreadStore,
-    event_logs: EventLogStore,
+    event_logs: SeededEventLogStore,
     content: ContentStore,
     history: History,
     history_client: HistoryServiceClient,
@@ -714,8 +714,8 @@ async def test_chronological_debug_is_lazy_paged_and_keeps_the_thread(
     await expect(observations).to_have_count(30)
     await expect(observations.first).to_have_attribute("data-debug-observation", str(last.cursor - 29))
     await expect(observations.last).to_have_attribute("data-debug-observation", str(last.cursor))
-    # The listing carries identity only: a page of 30 raw entries is what used to make opening this
-    # drawer wait on its own transfer and parse, and none of them is what the reader asked to see.
+    # The listing carries identity only, no payloads: opening the drawer must not wait on transferring
+    # and parsing a page of raw entries the reader did not ask to see.
     assert await dialog.locator("pre").count() == 0
     assert not any(re.search(r"/observations/\d+", url) for url in requests)
     for entry in (source.entries[-4], stderr, checkpoint, last):
@@ -1598,7 +1598,7 @@ async def test_a_reader_away_from_the_end_of_a_live_thread_can_jump_back_to_it(
 
 
 async def expect_archived_events(
-    event_logs: EventLogStore, thread_id: UUID, expected: list[event_log_pb2.EventEntry]
+    event_logs: SeededEventLogStore, thread_id: UUID, expected: list[event_log_pb2.EventEntry]
 ) -> list[event_log_pb2.EventEntry]:
     async with asyncio.timeout(15):
         while True:

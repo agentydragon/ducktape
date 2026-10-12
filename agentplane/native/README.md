@@ -1,11 +1,11 @@
 # Native harness drivers
 
 Drives the real Claude Code and Codex app-server binaries over their own stdio protocols:
-the test-only `async_process.py` owns the pipes and records every frame as JSONL; `claude/` and
-`codex/` hold the harness-specific wire models (`wire.py`, with the Anthropic content blocks in
-`claude/blocks.py`), frame constructors (`driver.py`), test-only async run facades, and the launch
-`command()`/`environment()` every consumer shares. `claude/async_run.py` and `codex/async_run.py`
-deliberately remain harness-specific: there is no harness-neutral facade.
+the test-only `testing/async_process.py` owns the pipes and records every frame as JSONL; `claude/`
+and `codex/` hold the harness-specific wire models (`wire.py`, with the Anthropic content blocks in
+`claude/blocks.py`), frame constructors (`driver.py`), test-only async run facades under `testing/`,
+and the launch `command()`/`environment()` every consumer shares. `claude/testing/async_run.py` and
+`codex/testing/async_run.py` deliberately remain harness-specific: there is no harness-neutral facade.
 
 The wire models describe only the frames a consumer reads, as observed from the pinned builds; a
 frame, event, or item of a kind they do not describe decodes to a named `Unknown*` variant rather

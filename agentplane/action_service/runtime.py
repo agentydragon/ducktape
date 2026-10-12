@@ -56,9 +56,8 @@ async def running_executor(
                         if linkage is not None
                         else McpActionGroupExecutor.from_group(key, group)
                     )
-                except ValidationError:
-                    # Pydantic's default exception text includes raw binding values.
-                    raise ValueError(f"ActionGroup {key!r} has an invalid MCP binding") from None
+                except ValidationError as error:
+                    raise ValueError(f"ActionGroup {key!r} has an invalid MCP binding") from error
 
     async with AsyncExitStack() as stack:
         for mcp_executor in supervised.values():

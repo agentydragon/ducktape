@@ -7,10 +7,10 @@ from __future__ import annotations
 import pytest_bazel
 from fastmcp import FastMCP
 
-from agentplane.harness_tests.claude import anthropic_sse as sse, frames
+from agentplane.harness_tests.claude import anthropic_sse, frames
 from agentplane.harness_tests.claude.harness import MODEL, ClaudeLauncher
 from agentplane.harness_tests.claude.messages import AnthropicMessages
-from agentplane.native.claude.mcp import DriverMcpServer
+from agentplane.native.claude.testing.mcp import DriverMcpServer
 
 TOOL_NAME = "mcp__driver__echo"
 
@@ -40,7 +40,9 @@ async def test_driver_hosted_tool_is_declared_and_called(
             # happened during startup, entirely off `mcp_message` control requests; the model's
             # very first request already carries our declared tool under its renamed identity.
             assert TOOL_NAME in exchange.request.tool_names
-            stream = sse.message_stream([sse.ToolUse("toolu_test_1", TOOL_NAME, {"message": "hi"})], model=MODEL)
+            stream = anthropic_sse.message_stream(
+                [anthropic_sse.ToolUse("toolu_test_1", TOOL_NAME, {"message": "hi"})], model=MODEL
+            )
             await exchange.send(*stream.events)
 
         async with await anthropic_messages.await_next_request() as exchange:
@@ -48,7 +50,7 @@ async def test_driver_hosted_tool_is_declared_and_called(
             assert result.tool_use_id == "toolu_test_1"
             assert result.is_error is False
             assert result.text == "ECHO: hi"
-            stream = sse.message_stream([sse.Text("ECHO_DONE")], model=MODEL)
+            stream = anthropic_sse.message_stream([anthropic_sse.Text("ECHO_DONE")], model=MODEL)
             await exchange.send(*stream.events)
 
         assert (await prompt.result()).result == "ECHO_DONE"
@@ -65,14 +67,16 @@ async def test_unknown_driver_tool_call_reaches_the_model_as_an_error(
         prompt = await run.send("Attempt an unregistered driver tool and report what happens.")
 
         async with await anthropic_messages.await_next_request() as exchange:
-            stream = sse.message_stream([sse.ToolUse("toolu_test_1", "mcp__driver__fail", {})], model=MODEL)
+            stream = anthropic_sse.message_stream(
+                [anthropic_sse.ToolUse("toolu_test_1", "mcp__driver__fail", {})], model=MODEL
+            )
             await exchange.send(*stream.events)
 
         async with await anthropic_messages.await_next_request() as exchange:
             (result,) = exchange.request.tool_results
             assert result.tool_use_id == "toolu_test_1"
             assert result.is_error is True
-            stream = sse.message_stream([sse.Text("UNKNOWN_TOOL_OBSERVED")], model=MODEL)
+            stream = anthropic_sse.message_stream([anthropic_sse.Text("UNKNOWN_TOOL_OBSERVED")], model=MODEL)
             await exchange.send(*stream.events)
 
         assert (await prompt.result()).result == "UNKNOWN_TOOL_OBSERVED"

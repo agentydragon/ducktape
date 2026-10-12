@@ -28,7 +28,7 @@ from agentplane.action_service.models import (
     Verdict,
 )
 from agentplane.action_service.service import ActionService
-from agentplane.action_service.updates import CHANNEL, ActionUpdates, UpdatesUnavailableError
+from agentplane.action_service.updates import CHANNEL, ActionUpdateBroker, UpdatesUnavailableError
 from agentplane.action_service.waits import ActionWaiter, WaitOptions, WaitUntil
 from agentplane.subjects import ServiceAccountRef
 
@@ -54,7 +54,7 @@ class ObservedService(ActionService):
 class Waiting:
     writer: ActionStore
     service: ObservedService
-    updates: ActionUpdates
+    updates: ActionUpdateBroker
     waiter: ActionWaiter
     request: ActionRequestView
 
@@ -75,13 +75,13 @@ async def waiting(engine: AsyncEngine, db_url: str, echo_catalog: ActionCatalog)
         request_id=uuid4(),
         vote=None,
     )
-    updates = ActionUpdates(db_url)
+    updates = ActionUpdateBroker(db_url)
     async with updates.listener.listen():
         yield Waiting(writer, reader, updates, ActionWaiter(reader, updates, max_wait_seconds=30), request)
 
 
 async def test_all_subscribers_receive_cross_replica_commit(waiting: Waiting, db_url: str) -> None:
-    second = ActionUpdates(db_url)
+    second = ActionUpdateBroker(db_url)
     async with second.listener.connection():
         with waiting.updates.subscribe_all() as first, second.subscribe_all() as other:
             await decide(waiting, Verdict.DENY)
@@ -248,7 +248,7 @@ async def test_listener_loss_fails_wait_but_immediate_read_recovers(waiting: Wai
 async def test_wait_held_across_reconnection_fails_even_with_a_terminal_receipt(
     waiting: Waiting, db_url: str, monkeypatch: pytest.MonkeyPatch, held_read: int
 ) -> None:
-    updates = ActionUpdates(db_url)
+    updates = ActionUpdateBroker(db_url)
     waiter = ActionWaiter(waiting.service, updates, max_wait_seconds=30)
     reading, release, reconnected = asyncio.Event(), asyncio.Event(), asyncio.Event()
     get = waiting.service.get

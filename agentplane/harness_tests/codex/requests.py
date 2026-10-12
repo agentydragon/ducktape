@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Annotated, Any, Literal
+from typing import Annotated, Literal
 
 from pydantic import BaseModel, Field
 
@@ -113,6 +113,3 @@ class ResponsesRequest(BaseModel):
     def item_kinds(self) -> list[str]:
         """The input's shape in order, e.g. ["message:user", "function_call", "function_call_output"]."""
         return [f"{item.type}:{item.role}" if isinstance(item, InputMessage) else item.type for item in self.input]
-
-    def raw_input(self) -> list[dict[str, Any]]:
-        return list(self.model_dump()["input"])

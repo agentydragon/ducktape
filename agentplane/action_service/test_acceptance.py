@@ -41,7 +41,7 @@ from agentplane.action_service.policy_view import SubjectActionPolicyView
 from agentplane.action_service.service import ActionService, ExecutionLease, Executor
 from agentplane.action_service.testing.callers import admitted_callers, in_sync_index
 from agentplane.action_service.testing.credentials import OperatorIdp
-from agentplane.action_service.updates import ActionUpdates
+from agentplane.action_service.updates import ActionUpdateBroker
 from agentplane.subjects import ServiceAccountRef
 from agentplane.workload_auth.principal import (
     WorkloadPrincipal,
@@ -121,7 +121,7 @@ async def _client(
         operator_idp.authenticator(),
         catalog or ActionCatalog(),
         callers=admitted_callers(ACCOUNT_A, ACCOUNT_B),
-        updates=ActionUpdates("postgresql://unused-test-listener"),
+        updates=ActionUpdateBroker("postgresql://unused-test-listener"),
         direct_wait_seconds=30,
         max_wait_seconds=30,
         reader_accounts=reader_accounts,
@@ -401,7 +401,7 @@ async def test_executor_exception_material_is_not_logged_projected_or_retried(
         assert failed["state"] == "failed"
         assert failed["execution"]["error"] == {
             "kind": "RuntimeError",
-            "message": "executor failed; see credential-safe adapter metrics",
+            "message": "executor failed; see the Action Service log",
         }
         assert len(executor.requests) == 1
 

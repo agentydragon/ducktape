@@ -17,7 +17,7 @@ from agentplane.action_service.operator_oidc import OidcOperatorAuthenticator
 from agentplane.action_service.operator_oidc_settings import OperatorOidcSettings, OperatorTokenProfile
 from agentplane.action_service.service import ActionService
 from agentplane.action_service.testing.callers import admitted_callers
-from agentplane.action_service.updates import ActionUpdates
+from agentplane.action_service.updates import ActionUpdateBroker
 from agentplane.workload_auth.principal import WorkloadPrincipalResolver
 from util.net import bind_free_port
 from util.testing.asgi import serve_app
@@ -45,7 +45,7 @@ async def test_signed_operator_admission(
         ),
         catalog,
         callers=admitted_callers(),
-        updates=ActionUpdates("postgresql://unused-test-listener"),
+        updates=ActionUpdateBroker("postgresql://unused-test-listener"),
         direct_wait_seconds=30,
         max_wait_seconds=30,
     )

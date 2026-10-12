@@ -124,7 +124,8 @@ class McpLinkageAuthority:
         servers: dict[str, McpOAuthServer],
         client_metadata: McpClientMetadataSettings | None = None,
         http: httpx2.AsyncClient | None = None,
-        engine: AsyncEngine | None = None,
+        *,
+        engine: AsyncEngine,
     ) -> None:
         self._sessions = sessions
         self._servers = dict(servers)
@@ -438,9 +439,9 @@ class McpLinkageAuthority:
         except McpLinkageError:
             _observe_oauth_metric("discovery", "rejected", started)
             raise
-        except httpx2.HTTPError, ValueError:
+        except (httpx2.HTTPError, ValueError) as error:
             _observe_oauth_metric("discovery", "transport", started)
-            raise McpLinkageConflictError("MCP OAuth metadata discovery failed") from None
+            raise McpLinkageConflictError("MCP OAuth metadata discovery failed") from error
         finally:
             if close:
                 await client.aclose()
@@ -449,17 +450,12 @@ class McpLinkageAuthority:
         while not self._stop.is_set():
             try:
                 await self._refresh_once()
-            except Exception as error:
-                # Type only: a database error's text can carry the tokens it was writing.
-                logger.warning("MCP OAuth refresh sweep failed (%s); retrying next sweep", type(error).__name__)
+            except Exception:
+                logger.warning("MCP OAuth refresh sweep failed; retrying next sweep", exc_info=True)
             with contextlib.suppress(TimeoutError):
                 await asyncio.wait_for(self._stop.wait(), timeout=_REFRESH_SWEEP_INTERVAL.total_seconds())
 
     async def _refresh_once(self) -> None:
-        if self._engine is None:
-            for server_id in self._servers:
-                await self._refresh_if_due(server_id)
-            return
         async with self._engine.connect() as connection:
             acquired = await connection.scalar(
                 text("SELECT pg_try_advisory_lock(:lock)"), {"lock": _REFRESH_ADVISORY_LOCK}
@@ -625,15 +621,15 @@ class McpLinkageAuthority:
             raise _RefreshError(
                 f"the token endpoint answered HTTP {error.response.status_code} {error.response.reason_phrase}",
                 action="retrying",
-            ) from None
+            ) from error
         except httpx2.HTTPError as error:
             _observe_oauth_metric(operation, "transport", started)
             raise _RefreshError(
                 f"the token endpoint was unreachable: {type(error).__name__}: {error}", action="retrying"
-            ) from None
-        except ValueError:
+            ) from error
+        except ValueError as error:
             _observe_oauth_metric(operation, "transport", started)
-            raise _RefreshError("the token endpoint's answer was not JSON", action="retrying") from None
+            raise _RefreshError("the token endpoint's answer was not JSON", action="retrying") from error
         finally:
             if close:
                 await client.aclose()

@@ -7,6 +7,7 @@ import mimetypes
 import os
 import socket
 from collections.abc import MutableMapping
+from contextlib import AsyncExitStack
 from pathlib import Path
 from typing import Any, cast
 
@@ -42,7 +43,7 @@ from agentplane.app.threads.view.content import ContentStore
 from agentplane.egress.decisions_client import DecisionsClient
 from agentplane.history_service.client import HistoryServiceClient
 from agentplane.kubernetes_watch import STALE_AFTER_CYCLES, Freshness
-from agentplane.postgres.wakeups import Wakeups
+from agentplane.postgres.wakeups import WakeupListener
 from agentplane.sandbox_service.client import SandboxServiceClient
 from agentplane.sandbox_service.egress_views import EgressReader
 from agentplane.service_process import background, configure_logging, kubernetes_configuration
@@ -207,16 +208,16 @@ async def async_main(settings: Settings) -> None:
 
 
 async def serve_then_close(
-    server: uvicorn.Server, *, discovery: SessionDiscovery, database_updates: Wakeups, engine: AsyncEngine
+    server: uvicorn.Server, *, discovery: SessionDiscovery, database_updates: WakeupListener, engine: AsyncEngine
 ) -> None:
     """Serve until told to exit, then let go in the order the budgets assume: Uvicorn's graceful-shutdown
     timeout bounds the requests and streams still open, and stopping discovery and closing the runner
     connections and the database have the rest of the Pod's grace period to themselves."""
-    try:
-        async with database_updates.listener.listen(), discovery:
-            await server.serve()
-    finally:
-        await engine.dispose()
+    async with AsyncExitStack() as stack:
+        stack.push_async_callback(engine.dispose)
+        await stack.enter_async_context(database_updates.listener.listen())
+        await stack.enter_async_context(discovery)
+        await server.serve()
 
 
 if __name__ == "__main__":

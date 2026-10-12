@@ -29,7 +29,7 @@ from agentplane.action_service.runtime import running_executor
 from agentplane.action_service.sandbox.inventory import SandboxClients
 from agentplane.action_service.service import ActionService
 from agentplane.action_service.settings import Settings
-from agentplane.action_service.updates import ActionUpdates
+from agentplane.action_service.updates import ActionUpdateBroker
 from agentplane.kubernetes_watch import STALE_AFTER_CYCLES, Freshness
 from agentplane.service_process import background, configure_logging, kubernetes_configuration
 from agentplane.workload_auth.principal import WorkloadPrincipalResolver
@@ -64,10 +64,11 @@ async def async_main(settings: Settings) -> None:
         configuration = await kubernetes_configuration(None)
         catalog = ActionCatalog(groups=settings.action_groups)
         visibility = RepositoryVisibilityService(
-            httpx.AsyncClient(base_url=settings.github_visibility.api_base_url, timeout=REQUEST_TIMEOUT_SECONDS),
+            await stack.enter_async_context(
+                httpx.AsyncClient(base_url=settings.github_visibility.api_base_url, timeout=REQUEST_TIMEOUT_SECONDS)
+            ),
             ttl_seconds=settings.github_visibility.cache_ttl_seconds,
         )
-        stack.push_async_callback(visibility.aclose)
         api = await stack.enter_async_context(ApiClient(configuration=configuration))
         policy_index = PolicyIndex(
             freshness=Freshness(stale_after_seconds=settings.policy_resync_seconds * STALE_AFTER_CYCLES)
@@ -102,7 +103,7 @@ async def async_main(settings: Settings) -> None:
             core_v1=CoreV1Api(api),
             exec_runner=KubernetesWebSocketExecRunner(configuration),
         )
-        updates = ActionUpdates(settings.database_url)
+        updates = ActionUpdateBroker(settings.database_url)
         executors = await stack.enter_async_context(
             running_executor(catalog, mcp_linkage, sandboxes, on_health_change=updates.wake_mcp_health)
         )

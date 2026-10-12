@@ -23,12 +23,12 @@ py_library(
         ":codex_hook",
         ":llm_recording_proxy",
         ":records",
-        "//agentplane/native:async_process",
-        "//agentplane/native/claude:async_run",
         "//agentplane/native/claude:scenarios",
         "//agentplane/native/claude:wire",
-        "//agentplane/native/codex:async_run",
+        "//agentplane/native/claude/testing:async_run",
         "//agentplane/native/codex:scenarios",
+        "//agentplane/native/codex/testing:async_run",
+        "//agentplane/native/testing:async_process",
     ],
 )
 

@@ -240,6 +240,7 @@ async def test_state_fence_survives_native_leader_exit_until_its_child_group_is_
         cwd=tmp_path,
         environment={},
         state_owner_descriptor=owner.descriptor,
+        process_isolation=None,
     )
     tool_pid: int | None = None
     owner_descriptor_closed = False
@@ -300,6 +301,7 @@ async def test_native_leader_exit_stops_background_tool(tmp_path: Path) -> None:
         cwd=tmp_path,
         environment={},
         state_owner_descriptor=owner.descriptor,
+        process_isolation=None,
     )
     try:
         await process.start()

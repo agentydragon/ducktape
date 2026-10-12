@@ -60,8 +60,7 @@ follows it; code that differs converges on it.
   gRPC logs it and answers `UNKNOWN`. `context.abort` outside the mapping is for request validation
   the RPC itself performs.
 - **Client:** the client class translates `grpc.aio.AioRpcError` in one place into its own exception
-  carrying the status code (`DEADLINE_EXCEEDED` becomes `TimeoutError`). Upstream `details()` is never
-  forwarded.
+  carrying the status code (`DEADLINE_EXCEEDED` becomes `TimeoutError`).
 
 ## Deadlines
 

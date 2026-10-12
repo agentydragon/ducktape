@@ -31,6 +31,7 @@ py_library(
     srcs = ["conftest.py"],
     deps = [
         ":database_migrate",
+        ":settings",
         ":store",
         "//agentplane/action_service/testing:fixtures",
         "//agentplane/history_service/testing:fixtures",

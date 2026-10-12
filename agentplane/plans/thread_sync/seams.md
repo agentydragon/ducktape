@@ -22,7 +22,7 @@ Electric sits behind one module on each side:
 ## Backend
 
 - **Shared, below the seam:** the fold tables; `ContentStore`;
-  `ThreadStore`; the app `Wakeups.changes[Channel.THREADS]`, the replica-local signal that a thread was written — what
+  `ThreadStore`; the app `WakeupListener.changes[Channel.THREADS]`, the replica-local signal that a thread was written — what
   a long poll or a push waits on. The `/threads` routes for thread metadata and commands
   (`POST /threads/{thread_id}/commands`) stay shared: commands are writes,
   not sync.

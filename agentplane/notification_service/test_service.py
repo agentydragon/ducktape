@@ -15,8 +15,8 @@ from agentplane.history_service.client import HistoryServiceClient
 from agentplane.notification_service.db import Entry, Inbox, Subscription
 from agentplane.notification_service.models import ActionsSource, DestinationRef, Subscribe, SubscriptionView
 from agentplane.notification_service.service import Service
-from agentplane.notification_service.settings import NoticeDebounceSettings
-from agentplane.notification_service.sources.actions import Actions
+from agentplane.notification_service.settings import NoticeDebounceSettings, QuotaSettings
+from agentplane.notification_service.sources.actions import ActionServiceClient
 from agentplane.notification_service.store import ConflictError, Store
 from agentplane.proto import event_log_pb2, event_pb2
 from agentplane.proto.sandbox_service_pb2 import Sandbox, ServiceAccount
@@ -39,11 +39,13 @@ BODY = Subscribe(
 async def service(store: Store) -> Service:
     return Service(
         store,
-        create_autospec(Actions),
+        create_autospec(ActionServiceClient),
         create_autospec(SandboxServiceClient),
+        github=None,
         history=create_autospec(HistoryServiceClient),
         notice_debounce=NoticeDebounceSettings(),
         stale_confirmation_s=30,
+        operator_reader_account=None,
     )
 
 
@@ -86,12 +88,14 @@ async def test_notice_debounce_deadline_is_durable_and_reads_are_immediate(
     await store.change(PRINCIPAL.account, overlap.id, None)
     await store.release(claim, None, notice_due_at=await service.get_notice_due_at(claim))
     restarted = Service(
-        Store(engine),
+        Store(engine, quotas=QuotaSettings()),
         service.actions,
         service.sandboxes,
+        github=None,
         history=service.history,
         notice_debounce=service.notice_debounce,
         stale_confirmation_s=service.stale_confirmation_s,
+        operator_reader_account=None,
     )
     recovered = restarted.store
     async with recovered.sessions() as session:
@@ -209,7 +213,7 @@ async def test_stale_inbox_retires_after_persisted_recheck(
         assert pending.next_attempt == pending.stale_check_at
         assert pending.delivery_error == f"destination pending retirement: {reason}"
     # A second replica cannot claim the inbox before the durable confirmation deadline.
-    assert await Store(engine).claim() is None
+    assert await Store(engine, quotas=QuotaSettings()).claim() is None
     async with service.store.sessions.begin() as session:
         await session.execute(
             update(Inbox)
@@ -220,12 +224,14 @@ async def test_stale_inbox_retires_after_persisted_recheck(
             )
         )
     restarted = Service(
-        Store(engine),
+        Store(engine, quotas=QuotaSettings()),
         service.actions,
         service.sandboxes,
+        github=None,
         history=service.history,
         notice_debounce=service.notice_debounce,
         stale_confirmation_s=service.stale_confirmation_s,
+        operator_reader_account=None,
     )
     assert await restarted.step()
     async with service.store.sessions() as session:
@@ -242,7 +248,7 @@ async def test_stale_inbox_retires_after_persisted_recheck(
     page = await service.store.read(PRINCIPAL.account, subscription.inbox_id, 0, 128)
     assert [entry.cursor for entry in page.entries] == [1, 2, 3]
     assert (page.notice is not None) == prepare_notice
-    assert await Store(engine).claim() is None
+    assert await Store(engine, quotas=QuotaSettings()).claim() is None
     with pytest.raises(ConflictError, match="retired"):
         await service.store.subscribe(PRINCIPAL, BODY.model_copy(update={"idempotency_key": "new"}))
 

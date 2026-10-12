@@ -60,7 +60,7 @@ from agentplane.action_service.service import ActionService, Executor
 from agentplane.action_service.testing.callers import in_sync_index
 from agentplane.action_service.testing.credentials import WORKLOAD_CREDENTIAL_PLACEHOLDER
 from agentplane.action_service.testing.fixtures import ScriptedExecutor, lifespan_in_own_task
-from agentplane.action_service.updates import ActionSubscription, ActionUpdates
+from agentplane.action_service.updates import ActionSubscription, ActionUpdateBroker
 from agentplane.subjects import ServiceAccountRef
 from agentplane.workload_auth.principal import (
     POD_NAME_CLAIM,
@@ -162,7 +162,7 @@ class Frontend:
     app: FastAPI
     store: ActionStore
     service: ActionService
-    updates: ActionUpdates
+    updates: ActionUpdateBroker
     tokens: dict[str, WorkloadPrincipal]
 
     def client(self, token: str = "test-token-a", *, egress: bool = False) -> Client[StreamableHttpTransport]:
@@ -254,7 +254,7 @@ async def _serve(
         dispatch_poll_interval=timedelta(hours=1),
         lease_sweep_interval=timedelta(hours=1),
     )
-    updates = ActionUpdates(db_url)
+    updates = ActionUpdateBroker(db_url)
     app = create_app(
         service,
         WorkloadPrincipalResolver(

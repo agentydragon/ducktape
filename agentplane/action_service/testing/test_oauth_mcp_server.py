@@ -56,7 +56,7 @@ async def test_full_linkage_cycle_and_tool_call(engine: AsyncEngine, execution_l
             server_id="example", server_url=f"{base_url}{PATH}", client_id=CLIENT_ID, redirect_uri=REDIRECT_URI
         )
         async with httpx2.AsyncClient(follow_redirects=False) as http:
-            authority = McpLinkageAuthority(make_sessionmaker(engine), {"example": server}, http=http)
+            authority = McpLinkageAuthority(make_sessionmaker(engine), {"example": server}, http=http, engine=engine)
             operator = OperatorPrincipal(issuer="test-oauth-fixture", subject="operator")
 
             start = await authority.start("example", McpLinkageStart(), operator)

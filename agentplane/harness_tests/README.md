@@ -20,7 +20,7 @@ the tests outside Bazel with a Nix-built Python is not supported: the binaries f
   parsed request exchange and explicitly send, close, respond to, abort, or await client closure.
 - `model_endpoint.py`: private HTTP lifecycle and fixture teardown that rejects every unsettled
   exchange.
-- `native/{claude,codex}/async_run.py`: harness-specific async context managers that own launch
+- `native/{claude,codex}/testing/async_run.py`: harness-specific async context managers that own launch
   and handshake. Each exposes typed input/turn handles and independent event cursors over the
   append-only native trace, so observing one receipt cannot drop another.
 - `claude/anthropic_sse.py`, `codex/responses_sse.py`: response builders in the two SSE dialects,

@@ -15,7 +15,7 @@ from agentplane.action_service.db import make_sessionmaker
 from agentplane.action_service.mcp_linkage import McpLinkageAuthority, McpLinkageStart, McpLinkageStatus
 from agentplane.action_service.mcp_settings import McpOAuthServer
 from agentplane.action_service.models import OperatorPrincipal
-from agentplane.action_service.updates import ActionUpdates
+from agentplane.action_service.updates import ActionUpdateBroker
 
 OPERATOR = OperatorPrincipal(issuer="test-linkage", subject="operator")
 TOKEN_ENDPOINT = "https://idp.example.test/token"
@@ -65,7 +65,7 @@ async def test_authorization_url_merges_provider_query_parameters(engine: AsyncE
         }
     )
     async with httpx2.AsyncClient(transport=_provider(httpx2.Response(200))) as http:
-        authority = McpLinkageAuthority(make_sessionmaker(engine), {server.server_id: server}, http=http)
+        authority = McpLinkageAuthority(make_sessionmaker(engine), {server.server_id: server}, http=http, engine=engine)
         started = await authority.start(server.server_id, McpLinkageStart(), OPERATOR)
         url = urlparse(started.authorization_url)
         query = parse_qs(url.query, keep_blank_values=True)
@@ -89,7 +89,7 @@ async def test_authorization_url_merges_provider_query_parameters(engine: AsyncE
 async def test_a_refreshed_token_is_served_and_wakes_the_servers_executors(engine: AsyncEngine) -> None:
     refreshed = httpx2.Response(200, json={"access_token": "test-only-refreshed-token", "expires_in": 3600})
     async with httpx2.AsyncClient(transport=_provider(refreshed)) as http:
-        authority = McpLinkageAuthority(make_sessionmaker(engine), {SERVER.server_id: SERVER}, http=http)
+        authority = McpLinkageAuthority(make_sessionmaker(engine), {SERVER.server_id: SERVER}, http=http, engine=engine)
         await _link(authority)
         changed = authority.subscribe_changes(SERVER.server_id)
         assert await authority.access_token_for_execution(SERVER.server_id) == "test-only-refreshed-token"
@@ -97,10 +97,10 @@ async def test_a_refreshed_token_is_served_and_wakes_the_servers_executors(engin
 
 
 async def test_linkage_changes_wake_streams_on_both_replicas(engine: AsyncEngine, db_url: str) -> None:
-    updates_a, updates_b = ActionUpdates(db_url), ActionUpdates(db_url)
+    updates_a, updates_b = ActionUpdateBroker(db_url), ActionUpdateBroker(db_url)
     refreshed = httpx2.Response(200, json={"access_token": "test-only-refreshed-token", "expires_in": 3600})
     async with httpx2.AsyncClient(transport=_provider(refreshed)) as http:
-        authority = McpLinkageAuthority(make_sessionmaker(engine), {SERVER.server_id: SERVER}, http=http)
+        authority = McpLinkageAuthority(make_sessionmaker(engine), {SERVER.server_id: SERVER}, http=http, engine=engine)
         async with updates_a.listener.listen(), updates_b.listener.listen():
             with updates_a.subscribe_mcp_linkages() as first, updates_b.subscribe_mcp_linkages() as second:
                 await _link(authority)
@@ -138,7 +138,7 @@ async def test_a_failed_refresh_reports_what_the_provider_answered(
     """A refusal needs the account linked again; an endpoint that did not answer is retried, and is
     reported while the token it holds is still good."""
     async with httpx2.AsyncClient(transport=_provider(refresh)) as http:
-        authority = McpLinkageAuthority(make_sessionmaker(engine), {SERVER.server_id: SERVER}, http=http)
+        authority = McpLinkageAuthority(make_sessionmaker(engine), {SERVER.server_id: SERVER}, http=http, engine=engine)
         await _link(authority)
         changed = authority.subscribe_changes(SERVER.server_id)
         await authority.access_token_for_execution(SERVER.server_id)

@@ -27,8 +27,7 @@ def config(tmp_path: Path) -> RunnerConfig:
 @pytest.fixture
 async def last_cursors(config: RunnerConfig) -> dict[str, int]:
     """Sessions whose harness already exited, written by a runner that has since stopped."""
-    runner = Runner(config)
-    try:
+    async with Runner(config) as runner:
         cursors = {}
         for session_id in SESSIONS:
             runner.store.write(session_id, SessionRecord.from_spec(SPEC))
@@ -36,8 +35,6 @@ async def last_cursors(config: RunnerConfig) -> dict[str, int]:
             await journal.append(event_pb2.HarnessStarted(pid=1))
             cursors[session_id] = (await journal.append(event_pb2.HarnessExited(exit_code=0))).cursor
         return cursors
-    finally:
-        await runner.stop()
 
 
 @pytest.fixture

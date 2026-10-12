@@ -20,7 +20,7 @@ from agentplane.action_service.policies.resources import CALLER_LABEL
 from agentplane.action_service.service import ActionService
 from agentplane.action_service.testing.callers import admitted_callers
 from agentplane.action_service.testing.credentials import WORKLOAD_CREDENTIAL_PLACEHOLDER
-from agentplane.action_service.updates import ActionUpdates
+from agentplane.action_service.updates import ActionUpdateBroker
 from agentplane.subjects import ServiceAccountRef
 from agentplane.workload_auth.principal import (
     POD_NAME_CLAIM,
@@ -160,7 +160,7 @@ async def test_central_placeholder_replay_is_required_before_action_service_auth
         DisabledOperatorAuthenticator(),
         ActionCatalog(),
         callers=admitted_callers(ServiceAccountRef(namespace=NAMESPACE, name=PRINCIPAL_A.service_account_name)),
-        updates=ActionUpdates("postgresql://unused-test-listener"),
+        updates=ActionUpdateBroker("postgresql://unused-test-listener"),
         direct_wait_seconds=30,
         max_wait_seconds=30,
     )
@@ -227,7 +227,7 @@ async def test_an_unlabelled_account_authenticates_and_reaches_no_route(caplog: 
         DisabledOperatorAuthenticator(),
         ActionCatalog(),
         callers=admitted_callers(),
-        updates=ActionUpdates("postgresql://unused-test-listener"),
+        updates=ActionUpdateBroker("postgresql://unused-test-listener"),
         direct_wait_seconds=30,
         max_wait_seconds=30,
     )

@@ -577,9 +577,10 @@ class ActionService:
                 },
             )
         except Exception as error:
+            logger.warning("executor failed for Action request %s", claim.request_id, exc_info=True)
             result = ExecutionResult(
                 state=ExecutionState.FAILED,
-                error={"kind": type(error).__name__, "message": "executor failed; see credential-safe adapter metrics"},
+                error={"kind": type(error).__name__, "message": "executor failed; see the Action Service log"},
             )
         completion = asyncio.create_task(
             self._store.finish_execution(claim.request_id, claim.executor_id, claim.lease_token, result),
@@ -603,5 +604,7 @@ class ActionService:
                     if not await lease.heartbeat():
                         return
             except Exception:
-                logger.warning("completion lease renewal failed; authenticated outcome delivery still pending")
+                logger.warning(
+                    "completion lease renewal failed; authenticated outcome delivery still pending", exc_info=True
+                )
                 return

@@ -10,7 +10,7 @@ from uuid import UUID
 from sqlalchemy import BigInteger, CheckConstraint, DateTime, String, UniqueConstraint, func
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
-from agentplane.proto import command_pb2, event_log_pb2, runner_control_pb2 as control_pb2
+from agentplane.proto import command_pb2, event_log_pb2, runner_control_pb2
 from util.sqlalchemy_protobuf import ProtobufColumn
 
 # gazelle:include_dep @pypi//protobuf
@@ -81,6 +81,6 @@ class CommandSubmission(Base):
     # The connection epoch the open attempt was sent on; it is sent at most once per epoch.
     attempt_sent_epoch: Mapped[int | None] = mapped_column(BigInteger)
     # The runner's refusal of the open attempt. The submission stays pending.
-    attempt_refusal: Mapped[control_pb2.CommandRefused | None] = mapped_column(
-        ProtobufColumn(control_pb2.CommandRefused)
+    attempt_refusal: Mapped[runner_control_pb2.CommandRefused | None] = mapped_column(
+        ProtobufColumn(runner_control_pb2.CommandRefused)
     )

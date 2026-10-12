@@ -26,7 +26,7 @@ from agentplane.app.identity import TokenReviewer
 from agentplane.app.live import LiveIndex
 from agentplane.app.operator_sessions import BrowserSession, OperatorSession, OperatorSessionStore, SessionRow
 from agentplane.app.testing.egress_proxy import FakeEgressAdmin
-from agentplane.app.testing.history import SeededEventLogStore as EventLogStore
+from agentplane.app.testing.history import SeededEventLogStore
 from agentplane.app.testing.replication_source import Placements
 from agentplane.app.testing.thread_test_support import SPEC, Replica, event_entry
 from agentplane.app.threads.bridge import RunnerBridge
@@ -42,7 +42,7 @@ from agentplane.history_service.testing.backend import history_service
 from agentplane.history_service.testing.fixtures import service_database_template
 from agentplane.history_service.testing.history import History
 from agentplane.kubernetes_watch import Freshness
-from agentplane.postgres.wakeups import Wakeups
+from agentplane.postgres.wakeups import WakeupListener
 from agentplane.runner.testing.failure_journal import pytest_runtest_makereport
 
 # The per-test database is created over psycopg, which SQLAlchemy loads from the URL scheme.
@@ -121,12 +121,8 @@ async def engine(db_url: str) -> AsyncIterator[AsyncEngine]:
 
 @pytest.fixture
 async def history(service_history_db_url: str) -> AsyncIterator[History]:
-    history = History(service_history_db_url)
-    try:
-        async with history.folding():
-            yield history
-    finally:
-        await history.close()
+    async with History(service_history_db_url) as history, history.folding():
+        yield history
 
 
 @pytest.fixture
@@ -165,8 +161,8 @@ def event_logs(
     summaries: Summaries,
     register_attached_sessions: bool,
     gateway_registry: AsyncEngine | Placements,
-) -> EventLogStore:
-    return EventLogStore(
+) -> SeededEventLogStore:
+    return SeededEventLogStore(
         engine,
         history=None if register_attached_sessions else history,
         gateway=gateway_registry,
@@ -183,7 +179,7 @@ def content(engine: AsyncEngine, history_client: HistoryServiceClient) -> Conten
 @asynccontextmanager
 async def listening(
     engine: AsyncEngine, history_client: HistoryServiceClient, history_token_file: Path
-) -> AsyncIterator[Wakeups]:
+) -> AsyncIterator[WakeupListener]:
     """A replica's notifications, woken by the History Service's fold commits as `main.py` wires them."""
     updates = create_database_updates(engine.url)
     async with (
@@ -204,20 +200,20 @@ async def listening(
 @pytest.fixture
 async def database_updates(
     engine: AsyncEngine, history_client: HistoryServiceClient, history_token_file: Path
-) -> AsyncIterator[Wakeups]:
+) -> AsyncIterator[WakeupListener]:
     async with listening(engine, history_client, history_token_file) as updates:
         yield updates
 
 
 @pytest.fixture
 async def replica(
-    db_url: str, event_logs: EventLogStore, history_client: HistoryServiceClient, inventory: SandboxServiceClient
+    db_url: str, event_logs: SeededEventLogStore, history_client: HistoryServiceClient, inventory: SandboxServiceClient
 ) -> AsyncIterator[Replica]:
     async with managed_async_engine(connect(db_url)) as engine:
         summaries = Summaries(engine, history_client)
         yield Replica(
             ThreadStore(engine, summaries, gateway=inventory),
-            EventLogStore(
+            SeededEventLogStore(
                 engine,
                 history=event_logs.history,
                 gateway=event_logs.gateway,
@@ -265,7 +261,7 @@ def runners(live_index: LiveIndex, inventory: SandboxServiceClient) -> SandboxSe
 
 
 @pytest.fixture
-async def discovery(runners: SandboxSessions, event_logs: EventLogStore) -> AsyncIterator[SessionDiscovery]:
+async def discovery(runners: SandboxSessions, event_logs: SeededEventLogStore) -> AsyncIterator[SessionDiscovery]:
     async with SessionDiscovery(runners=runners, event_logs=event_logs) as discovery:
         yield discovery
 
@@ -273,10 +269,10 @@ async def discovery(runners: SandboxSessions, event_logs: EventLogStore) -> Asyn
 @pytest.fixture
 def bridge(
     runners: SandboxSessions,
-    event_logs: EventLogStore,
+    event_logs: SeededEventLogStore,
     content: ContentStore,
     discovery: SessionDiscovery,
-    database_updates: Wakeups,
+    database_updates: WakeupListener,
 ) -> RunnerBridge:
     return RunnerBridge(runners=runners, event_logs=event_logs, content=content, discovery=discovery)
 
@@ -393,7 +389,10 @@ async def electric_http() -> AsyncIterator[httpx.AsyncClient]:
 
 @pytest.fixture
 def electric_proxy(
-    electric_http: httpx.AsyncClient, content: ContentStore, event_logs: EventLogStore, database_updates: Wakeups
+    electric_http: httpx.AsyncClient,
+    content: ContentStore,
+    event_logs: SeededEventLogStore,
+    database_updates: WakeupListener,
 ) -> ElectricProxy:
     return ElectricProxy(
         electric_http, content, event_logs=event_logs, thread_changes=database_updates.changes[Channel.THREADS]

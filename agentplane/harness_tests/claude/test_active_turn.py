@@ -6,7 +6,7 @@ import asyncio
 
 import pytest_bazel
 
-from agentplane.harness_tests.claude import anthropic_sse as sse, frames
+from agentplane.harness_tests.claude import anthropic_sse, frames
 from agentplane.harness_tests.claude.harness import MODEL, ClaudeLauncher
 from agentplane.harness_tests.claude.messages import AnthropicMessages
 from agentplane.native.claude import wire
@@ -39,7 +39,7 @@ async def test_queued_inputs_coalesce_into_one_native_user_message(
     async with claude.start(anthropic_messages, replay_user_messages=True) as run:
         initial = await run.send("Finish this first turn before taking later messages.")
         async with await anthropic_messages.await_next_request() as initial_exchange:
-            initial_stream = sse.message_stream([sse.Text("INITIAL_TURN_DONE")], model=MODEL)
+            initial_stream = anthropic_sse.message_stream([anthropic_sse.Text("INITIAL_TURN_DONE")], model=MODEL)
             content_started = next(
                 index for index, event in enumerate(initial_stream.events) if event.kind == "content_block_start"
             )
@@ -65,7 +65,7 @@ async def test_queued_inputs_coalesce_into_one_native_user_message(
             assert request.texts("user")[-1] == coalesced
             assert [text for text in request.texts("user") if "COALESCED_" in text] == [coalesced]
             assert request.texts("assistant") == ["INITIAL_TURN_DONE"]
-            stream = sse.message_stream([sse.Text("COALESCED_OK")], model=MODEL)
+            stream = anthropic_sse.message_stream([anthropic_sse.Text("COALESCED_OK")], model=MODEL)
             events = run.events()
             await exchange.send(*stream.events)
             await exchange.close()
@@ -104,7 +104,7 @@ async def test_interrupt_cancels_each_queued_input_before_native_message(
     async with claude.start(anthropic_messages, replay_user_messages=True) as run:
         initial = await run.send("Keep this first turn active until interrupted.")
         async with await anthropic_messages.await_next_request() as initial_exchange:
-            stream = sse.message_stream([sse.Text("never finished")], model=MODEL)
+            stream = anthropic_sse.message_stream([anthropic_sse.Text("never finished")], model=MODEL)
             await initial_exchange.send(*stream.through("content_block_start").events)
             await initial.active()
 
@@ -131,7 +131,7 @@ async def test_interrupt_cancels_each_queued_input_before_native_message(
                 for marker in (INTERRUPTED_QUEUE_FIRST, INTERRUPTED_QUEUE_SECOND)
                 for text in request.texts("user")
             )
-            stream = sse.message_stream([sse.Text("INTERRUPT_QUEUE_RECOVERY_OK")], model=MODEL)
+            stream = anthropic_sse.message_stream([anthropic_sse.Text("INTERRUPT_QUEUE_RECOVERY_OK")], model=MODEL)
             await recovery_exchange.send(*stream.events)
             await recovery_exchange.close()
             assert (await recovery.result()).result == "INTERRUPT_QUEUE_RECOVERY_OK"
@@ -153,7 +153,7 @@ async def test_plain_interrupt_preserves_queued_inputs_for_the_next_native_reque
     async with claude.start(anthropic_messages, replay_user_messages=True) as run:
         initial = await run.send("Keep this first turn active until interrupted without cancelling the queue.")
         async with await anthropic_messages.await_next_request() as initial_exchange:
-            stream = sse.message_stream([sse.Text("never finished")], model=MODEL)
+            stream = anthropic_sse.message_stream([anthropic_sse.Text("never finished")], model=MODEL)
             await initial_exchange.send(*stream.through("content_block_start").events)
             await initial.active()
 
@@ -173,7 +173,7 @@ async def test_plain_interrupt_preserves_queued_inputs_for_the_next_native_reque
             assert request.last_message.role == "user"
             assert request.texts("user")[-1] == coalesced
             assert [text for text in request.texts("user") if "PLAIN_INTERRUPT_QUEUE_" in text] == [coalesced]
-            stream = sse.message_stream([sse.Text(PLAIN_INTERRUPT_RESULT)], model=MODEL)
+            stream = anthropic_sse.message_stream([anthropic_sse.Text(PLAIN_INTERRUPT_RESULT)], model=MODEL)
             events = run.events()
             await queued_exchange.send(*stream.events)
             await queued_exchange.close()
@@ -193,7 +193,9 @@ async def test_runtime_effort_control_changes_next_anthropic_request(
         prompt = await run.send("Reply with exactly: HIGH_EFFORT_OK")
         async with await asyncio.wait_for(anthropic_messages.await_next_request(), timeout=25) as exchange:
             assert exchange.request.output_config == {"effort": "high"}
-            await exchange.send(*sse.message_stream([sse.Text("HIGH_EFFORT_OK")], model=selected_model).events)
+            await exchange.send(
+                *anthropic_sse.message_stream([anthropic_sse.Text("HIGH_EFFORT_OK")], model=selected_model).events
+            )
         assert (await prompt.result()).result == "HIGH_EFFORT_OK"
 
         answer = await run.set_effort("low")
@@ -201,7 +203,9 @@ async def test_runtime_effort_control_changes_next_anthropic_request(
         prompt = await run.send("Reply with exactly: LOW_EFFORT_OK")
         async with await asyncio.wait_for(anthropic_messages.await_next_request(), timeout=25) as exchange:
             assert exchange.request.output_config == {"effort": "low"}
-            await exchange.send(*sse.message_stream([sse.Text("LOW_EFFORT_OK")], model=selected_model).events)
+            await exchange.send(
+                *anthropic_sse.message_stream([anthropic_sse.Text("LOW_EFFORT_OK")], model=selected_model).events
+            )
         assert (await prompt.result()).result == "LOW_EFFORT_OK"
 
 
@@ -212,7 +216,7 @@ async def test_set_model_during_an_active_turn_controls_the_next_model_request(
         initial = await run.send("Wait; do not answer early.")
 
         async with await anthropic_messages.await_next_request() as exchange:
-            stream = sse.message_stream([sse.Text("never finished")], model=MODEL)
+            stream = anthropic_sse.message_stream([anthropic_sse.Text("never finished")], model=MODEL)
             await exchange.send(*stream.through("content_block_start").events)
             await initial.active()
 
@@ -225,7 +229,7 @@ async def test_set_model_during_an_active_turn_controls_the_next_model_request(
         prompt = await run.send("Reply with exactly: SELECTED_MODEL_OK")
         async with await anthropic_messages.await_next_request() as next_exchange:
             assert next_exchange.request.model == SELECTED_MODEL
-            stream = sse.message_stream([sse.Text("SELECTED_MODEL_OK")], model=SELECTED_MODEL)
+            stream = anthropic_sse.message_stream([anthropic_sse.Text("SELECTED_MODEL_OK")], model=SELECTED_MODEL)
             await next_exchange.send(*stream.events)
         assert (await prompt.result()).result == "SELECTED_MODEL_OK"
 
@@ -242,7 +246,9 @@ async def test_inputs_during_a_tool_coalesce_into_the_tool_result(
         first = await run.send("Wait with the shell, then reply WAIT_DONE.")
 
         async with await anthropic_messages.await_next_request() as exchange:
-            stream = sse.message_stream([sse.ToolUse("toolu_test_1", "Bash", {"command": WAIT_COMMAND})], model=MODEL)
+            stream = anthropic_sse.message_stream(
+                [anthropic_sse.ToolUse("toolu_test_1", "Bash", {"command": WAIT_COMMAND})], model=MODEL
+            )
             await exchange.send(*stream.events)
         active = await first.active()
         assert isinstance(active, wire.StreamEventFrame)
@@ -257,7 +263,7 @@ async def test_inputs_during_a_tool_coalesce_into_the_tool_result(
             assert SECOND_INPUT in result.text
             assert THIRD_INPUT in result.text
             assert SECOND_INPUT not in request.texts("user")
-            stream = sse.message_stream([sse.Text("SECOND_INPUT_OBSERVED")], model=MODEL)
+            stream = anthropic_sse.message_stream([anthropic_sse.Text("SECOND_INPUT_OBSERVED")], model=MODEL)
             await exchange.send(*stream.events)
 
         assert (await first.result()).result == "SECOND_INPUT_OBSERVED"
@@ -292,7 +298,7 @@ async def test_interrupt_aborts_the_in_flight_model_call(
         prompt = await run.send("Wait with the shell; do not answer early.")
 
         async with await anthropic_messages.await_next_request() as exchange:
-            stream = sse.message_stream([sse.Text("never finished")], model=MODEL)
+            stream = anthropic_sse.message_stream([anthropic_sse.Text("never finished")], model=MODEL)
             await exchange.send(*stream.through("content_block_start").events)
             await prompt.active()
 

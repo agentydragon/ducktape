@@ -8,7 +8,7 @@ from datetime import UTC, datetime, timedelta
 from google.protobuf.timestamp_pb2 import Timestamp
 
 from agentplane.app.operator_sessions import OperatorSessionStore
-from agentplane.app.testing.history import SeededEventLogStore as EventLogStore
+from agentplane.app.testing.history import SeededEventLogStore
 from agentplane.app.threads.store import ThreadStore
 from agentplane.proto import event_log_pb2, event_pb2, runner_pb2
 
@@ -18,7 +18,7 @@ class Replica:
     """Another app replica's stores, over its own connection pool on the same database."""
 
     store: ThreadStore
-    event_logs: EventLogStore
+    event_logs: SeededEventLogStore
     operator_sessions: OperatorSessionStore
 
 

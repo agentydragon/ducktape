@@ -125,10 +125,9 @@ class HeaderPresentation:
 
 @dataclass(frozen=True)
 class Presentation:
-    """One credential as a request actually presents it: which credential, and for every header
-    carrying its placeholder, how to rebuild that header's values around the real value."""
+    """One credential as a request actually presents it: for every header carrying its
+    placeholder, how to rebuild that header's values around the real value."""
 
-    credential: str
     headers: tuple[HeaderPresentation, ...]
     body: BodyPresentation | None = field(default=None, repr=False)
 
@@ -194,11 +193,7 @@ def present(
         if isinstance(target, JsonFieldTarget) and json_body is not None and json_body.get(target.field) == placeholder
     )
     body = BodyPresentation(document=json_body, fields=fields) if fields and json_body is not None else None
-    return (
-        Presentation(credential=credential.metadata.name, headers=tuple(presented), body=body)
-        if presented or body is not None
-        else None
-    )
+    return Presentation(headers=tuple(presented), body=body) if presented or body is not None else None
 
 
 def _headers_of(credential: EgressCredential) -> dict[str, str]:

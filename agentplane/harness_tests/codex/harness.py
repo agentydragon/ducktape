@@ -6,7 +6,9 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from agentplane.harness_tests.codex.responses import OpenAIResponses
-from agentplane.native.codex import async_run, dynamic_tools as dynamic_tools_mod, scenarios
+from agentplane.native.codex import scenarios
+from agentplane.native.codex.testing import async_run
+from agentplane.native.codex.testing.dynamic_tools import DynamicToolServer
 
 # Not in Codex's model catalog: a catalog model id switches Codex to code mode (one JS `exec` tool
 # the model scripts against), while a routed or unknown id keeps the classic function-call shape.
@@ -32,7 +34,7 @@ class CodexHarness:
         resume_thread_id: str | None = None,
         resume_base_instructions: str = "",
         resume_instructions: str = "",
-        dynamic_tools: dynamic_tools_mod.DynamicToolServer | None = None,
+        dynamic_tools: DynamicToolServer | None = None,
     ) -> async_run.CodexRun:
         endpoint = f"{openai_responses.origin}/v1"
         environment = {

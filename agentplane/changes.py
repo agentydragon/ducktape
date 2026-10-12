@@ -2,7 +2,7 @@
 
 A reader clears its waiter, reads the current state, and waits again, so a burst of changes
 coalesces into one read instead of a backlog of readings that are already out of date. One waiter
-can be registered with several `Changes`, which is how the live stream waits on the cluster index
+can be registered with several `ChangeSignal`s, which is how the live stream waits on the cluster index
 and the thread store at once.
 """
 
@@ -13,7 +13,7 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 
 
-class Changes:
+class ChangeSignal:
     def __init__(self) -> None:
         self._waiters: set[asyncio.Event] = set()
 

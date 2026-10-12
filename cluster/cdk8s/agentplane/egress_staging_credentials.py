@@ -469,15 +469,12 @@ def _activitywatch_read(
                 paths=["/api/0/**"],
                 credential_ref=EgressPolicySpecRulesCredentialRef(name="activitywatch-read"),
             ),
-            # Both spellings of the query endpoint, so the trailing slash is not load-bearing here
-            # either. The route used to admit `/api/0/query/` alone, which meant a POST to the short
-            # spelling died at this fence -- `403 denied; reason=no-rule` -- before the route could
-            # 301 it, so the redirect the route emits could never rescue it. The route now answers
-            # both spellings -- see its anchored block in
-            # cluster/k8s/activitywatch/bearer-proxy.conf.template -- and this rule matches it. Two
-            # paths are needed rather than one glob: `*` does not cross a `/` and `/api/0/query/**`
-            # does not match the bare `/api/0/query`, so no single pattern covers both without also
-            # admitting `/api/0/queryanything`.
+            # Both spellings of the query endpoint, as the route answers both (its anchored block in
+            # cluster/k8s/activitywatch/bearer-proxy.conf.template): a spelling this fence refuses
+            # dies with `403 denied; reason=no-rule` before the route could redirect it. Two paths
+            # rather than one glob: `*` does not cross a `/` and `/api/0/query/**` does not match the
+            # bare `/api/0/query`, so no single pattern covers both without also admitting
+            # `/api/0/queryanything`.
             EgressPolicySpecRules(
                 hosts=["activitywatch-read.allegedly.works"],
                 methods=[EgressPolicySpecRulesMethods.POST],

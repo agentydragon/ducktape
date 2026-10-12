@@ -41,7 +41,7 @@ async def test_recovery(view: VisualPage, app: AgentplaneFixture) -> None:
 
 Python tests own readiness, clicks, scrolls, assertions and capture. Pass browser geometry
 explicitly using `util/testing/viewports.py`, and pass crop locators to `view.capture()`.
-Load both `util.testing.visual_fixtures` and `agentplane.app.frontend.visual_fixtures`
+Load both `util.testing.visual_fixtures` and `agentplane.app.frontend.testing.visual_fixtures`
 plugins. The shared `view` yield fixture owns browser cleanup; the app plugin provides
 `app` and the default desktop viewport. Default screenshot names follow the pytest case
 ID, not a parallel output-name table. A screenshot name identifies an artifact; it must

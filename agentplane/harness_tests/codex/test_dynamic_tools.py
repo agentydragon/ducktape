@@ -8,11 +8,11 @@ from typing import Any
 
 import pytest_bazel
 
-from agentplane.harness_tests.codex import frames, responses_sse as sse
+from agentplane.harness_tests.codex import frames, responses_sse
 from agentplane.harness_tests.codex.harness import MODEL, CodexHarness
 from agentplane.harness_tests.codex.responses import OpenAIResponses
 from agentplane.native.codex import wire
-from agentplane.native.codex.dynamic_tools import DynamicTool, DynamicToolServer
+from agentplane.native.codex.testing.dynamic_tools import DynamicTool, DynamicToolServer
 
 TOOL_NAME = "lookup"
 
@@ -41,14 +41,16 @@ async def test_dynamic_tool_is_declared_and_called(codex: CodexHarness, openai_r
             # The declared tool already rode the model's very first request; no separate discovery
             # round trip is needed for a tool the driver declared up front.
             assert TOOL_NAME in exchange.request.tool_names
-            stream = sse.response_stream([sse.FunctionCall("call_test_1", TOOL_NAME, {"note": "hi"})], model=MODEL)
+            stream = responses_sse.response_stream(
+                [responses_sse.FunctionCall("call_test_1", TOOL_NAME, {"note": "hi"})], model=MODEL
+            )
             await exchange.send(*stream.events)
 
         async with await openai_responses.await_next_request() as exchange:
             (result,) = exchange.request.function_call_outputs
             assert result.call_id == "call_test_1"
             assert result.output == "LOOKUP: hi"
-            stream = sse.response_stream([sse.Message("LOOKUP_DONE")], model=MODEL)
+            stream = responses_sse.response_stream([responses_sse.Message("LOOKUP_DONE")], model=MODEL)
             await exchange.send(*stream.events)
 
         assert (await turn.completed()).params.turn.status is wire.TurnStatus.COMPLETED
