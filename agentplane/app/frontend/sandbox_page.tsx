@@ -570,7 +570,7 @@ export function SandboxPage({
         <Tabs.List>
           <Tabs.Tab value="sessions">Sessions</Tabs.Tab>
           <Tabs.Tab value="egress">Egress</Tabs.Tab>
-          <Tabs.Tab value="policy">Action policy</Tabs.Tab>
+          <Tabs.Tab value="policy">Policies</Tabs.Tab>
           <Tabs.Tab value="status">Status</Tabs.Tab>
         </Tabs.List>
         <Tabs.Panel value="egress" pt="sm">
