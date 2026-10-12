@@ -7,11 +7,12 @@ import pytest
 import pytest_bazel
 
 from agentplane.proto import event_pb2, runner_pb2
-from agentplane.runner.client import Attachment, RunnerClient
+from agentplane.proto.runner_control_pb2 import ControlRefused
 from agentplane.runner.config import RunnerConfig
-from agentplane.runner.errors import RunnerError, SessionSealedError
-from agentplane.runner.service import Runner, serve
+from agentplane.runner.service import Runner
 from agentplane.runner.store import SessionRecord
+from agentplane.runner.testing.driver import RunnerDriver, SessionFollow, SessionSealedError, refusal, running
+from agentplane.runner.testing.gateway import Gateway
 
 # gazelle:include_dep @pypi//protobuf
 
@@ -38,47 +39,41 @@ async def last_cursors(config: RunnerConfig) -> dict[str, int]:
 
 
 @pytest.fixture
-async def client(config: RunnerConfig, last_cursors: dict[str, int]) -> AsyncIterator[RunnerClient]:
+async def driver(config: RunnerConfig, last_cursors: dict[str, int], gateway: Gateway) -> AsyncIterator[RunnerDriver]:
     del last_cursors
-    async with (
-        serve(config, address="127.0.0.1:0", grace_s=0) as (_, port),
-        RunnerClient(f"127.0.0.1:{port}", capture_history=True) as client,
-    ):
-        yield client
+    async with running(config, gateway):
+        yield RunnerDriver(gateway)
 
 
-async def read_to_seal(attachment: Attachment) -> tuple[list[int], int]:
+async def read_to_seal(session: SessionFollow) -> tuple[list[int], int]:
     with pytest.raises(SessionSealedError) as sealed:
-        await attachment.until(lambda _: False)
-    return [entry.cursor for entry in attachment.seen], sealed.value.cursor
+        await session.until(lambda _: False)
+    return [entry.cursor for entry in session.seen], sealed.value.cursor
 
 
 async def test_seal_ends_every_session_and_refuses_resume(
-    client: RunnerClient, config: RunnerConfig, last_cursors: dict[str, int]
+    driver: RunnerDriver, config: RunnerConfig, last_cursors: dict[str, int]
 ) -> None:
-    seals = {seal.session_id: seal.cursor for seal in (await client.seal()).sessions}
+    seals = {seal.session_id: seal.cursor for seal in (await driver.seal()).sessions}
     assert seals == last_cursors
-    assert {seal.session_id: seal.cursor for seal in (await client.seal()).sessions} == seals
-    async with await client.attach("test-session-a", after_cursor=1) as attachment:
-        assert await read_to_seal(attachment) == (list(range(2, seals["test-session-a"] + 1)), seals["test-session-a"])
+    assert {seal.session_id: seal.cursor for seal in (await driver.seal()).sessions} == seals
+    session = await driver.attach("test-session-a", after_cursor=1)
+    assert await read_to_seal(session) == (list(range(2, seals["test-session-a"] + 1)), seals["test-session-a"])
     for session_id in ("test-session-a", "test-session-new"):
-        with pytest.raises(RunnerError):
-            await client.attach(session_id, spec=SPEC)
+        assert await refusal(driver.attach(session_id, spec=SPEC)) == ControlRefused.REASON_SEALED
     assert not (config.state_dir / "sessions" / "test-session-new").exists()
 
 
-async def test_a_restarted_runner_keeps_the_seal(config: RunnerConfig, last_cursors: dict[str, int]) -> None:
+async def test_a_restarted_runner_keeps_the_seal(
+    config: RunnerConfig, last_cursors: dict[str, int], gateway: Gateway
+) -> None:
+    driver = RunnerDriver(gateway)
     for _ in range(2):
-        async with (
-            serve(config, address="127.0.0.1:0", grace_s=0) as (_, port),
-            RunnerClient(f"127.0.0.1:{port}", capture_history=True) as client,
-        ):
-            assert {seal.session_id: seal.cursor for seal in (await client.seal()).sessions} == last_cursors
-            async with await client.attach("test-session-b") as attachment:
-                cursors, sealed = await read_to_seal(attachment)
+        async with running(config, gateway):
+            assert {seal.session_id: seal.cursor for seal in (await driver.seal()).sessions} == last_cursors
+            cursors, sealed = await read_to_seal(await driver.attach("test-session-b"))
             assert sealed == cursors[-1] == last_cursors["test-session-b"]
-            with pytest.raises(RunnerError):
-                await client.attach("test-session-b", spec=SPEC)
+            assert await refusal(driver.attach("test-session-b", spec=SPEC)) == ControlRefused.REASON_SEALED
 
 
 if __name__ == "__main__":

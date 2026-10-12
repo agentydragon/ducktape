@@ -95,7 +95,7 @@ with 409. Arbitrary user-provided shell,
 automatic reruns after source changes, and a script registry are out of scope.
 
 Thread setup is separate from Sandbox bootstrap. The app passes the selected Thread setup source
-with the first runner `Open`; the runner returns `Attached` promptly and records setup output and
+with the runner's `OpenSession`; the runner returns `Attached` promptly and records setup output and
 its result as typed events in the Thread's durable history. It creates the resolved `SessionSpec.cwd`
 and invokes `/bin/sh -eu` there. A successful exit starts the harness in that same directory. A
 failed or interrupted setup leaves a readable Thread and workspace, but cannot be retried in that

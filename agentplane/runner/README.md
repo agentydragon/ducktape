@@ -1,7 +1,7 @@
 # Agentplane runner
 
-A gRPC service that runs one native harness per session, Claude Code or Codex, and exposes both
-through one protocol. The contract is in <SPEC.md>; the wire definition is
+A process that runs one native harness per session, Claude Code or Codex, and exposes both
+through one protocol, over the control stream and Event ingress it dials. The contract is in <SPEC.md>; the wire definition is
 [`agentplane/proto/runner.proto`](../proto/runner.proto).
 
 ```sh
@@ -10,11 +10,11 @@ bbr test //agentplane/runner/...
 
 ## Layout
 
-- `service.py`: the `Attach` RPC, session lookup, and `serve()`; `main.py` is the process entry
-  point, configured by flags and credentialed from its environment.
-- `control.py`: the runner's peer of the [runner control stream](../docs/runner_control.md), off unless
-  `--control-target` is given; `ingress.py` pushes every session's journal to the runner's ingress,
-  off unless `--ingress-target` is given.
+- `service.py`: the runner's sessions, their lifecycle, and journal follows; `main.py` is the process
+  entry point, configured by flags and credentialed from its environment.
+- `control.py`: the runner's peer of the [runner control stream](../docs/runner_control.md) at
+  `--control-target`; `ingress.py` pushes every session's journal to the runner's ingress at
+  `--ingress-target`.
 - `session.py`: one session's harness process and derived state; `store.py` the session metadata,
   ingress acknowledgements and durable directory creation.
 - `journal.py`: one SQLite database per durable runner session. SQLAlchemy/aiosqlite transactions
@@ -32,11 +32,12 @@ bbr test //agentplane/runner/...
 - `claude.py`, `codex.py`: the adapters, one per harness, behind `adapter.py`. They parse frames
   with the wire models and reuse the frame constructors and launch configuration in
   <../native/README.md>.
-- `client.py`: a typed client over one attachment plus `list_sessions`, used by the tests.
 
 ## Tests
 
-Each test is one interaction script written against the client and run against both harnesses;
+Each test is one interaction script run against both harnesses, written against
+`testing/driver.py`: it plays the Runner Gateway's side of the control stream and reads each
+session's Events from the stand-in ingress in `testing/gateway.py`;
 the parametrized `model` fixture is the only place that knows the model API dialect. Harness
 fixtures live in `testing/`: `scripted_model.py` is the neutral vocabulary (`Text`, `Reasoning`,
 `ShellCall`, and the request markers), `claude_model.py` and `codex_model.py` speak the two
@@ -94,7 +95,7 @@ Explicit `BEGIN IMMEDIATE` reserves the writer before reading ids/cursors; no tr
 harness or network I/O. One retained connection serves the single runner-session writer.
 That SQLite transaction is not the native-execution fence: a runner owns its whole retained state
 directory through a nonblocking lifetime lock on the fixed `.agentplane-runner-owner` inode before
-opening a journal, listening, or launching a harness. A contender exits before it can serve state.
+opening a journal, dialing out, or launching a harness. A contender exits before it can serve state.
 The lock's open descriptor is inherited by the native-process supervisor. If the runner dies, that
 supervisor terminates and reaps the native harness process group while retaining the descriptor, so
 the replacement cannot start until native work is fenced. A child that remains in the group keeps
@@ -123,10 +124,10 @@ from opening it. Session metadata and native resume files remain beside the data
 
 The SQLite journal stores a recovery checkpoint in the same transaction as each event.
 Opening a session reads that checkpoint and validates the last event, without decoding
-historical frames. Attachments query exclusive-cursor pages of 128 events on the retained journal
-connection under its transaction lock, limited to the published cursor. A cancelled attachment
-waits for its read session to close before releasing that lock to a native callback. A slow
-attachment retains one page.
+historical frames. Journal follows, such as a session's ingress push, query exclusive-cursor pages of
+128 events on the retained journal connection under its transaction lock, limited to the published
+cursor. A cancelled follow waits for its read session to close before releasing that lock to a
+native callback. A slow follow retains one page.
 Completed command IDs and debug checkpoint identities are looked up by their indexed
 keys rather than retained in process-lifetime sets. Outstanding commands remain in memory.
 
@@ -137,10 +138,6 @@ SQLite temporary tables with `temp_store=FILE` and a 2 MiB temporary page cache.
 instance has its own scope, preserving reset-on-new-harness behavior. These lookup tables are
 scratch state: they disappear when the journal connection closes and are not recovery evidence.
 The current Claude message's block map and unconfirmed inputs remain in memory.
-
-The Python `RunnerClient` tracks its consumed cursor without retaining every received event.
-Tests that inspect an attachment's complete `seen` history explicitly enable
-`capture_history=True`; application clients use the bounded default.
 
 ## Ducktape development image
 

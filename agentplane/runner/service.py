@@ -1,22 +1,18 @@
-"""The gRPC surface: Attach streams over the sessions one runner process owns."""
+"""The sessions one runner process owns, and the lifecycle its control stream drives them through."""
 
 from __future__ import annotations
 
 import asyncio
 import hashlib
 import json
-import logging
 import os
 from collections.abc import AsyncGenerator, AsyncIterator, Awaitable, Callable
-from contextlib import AsyncExitStack, aclosing, asynccontextmanager, suppress
+from contextlib import AsyncExitStack, suppress
 from pathlib import Path, PurePosixPath
 from types import TracebackType
-from typing import Any, Self, assert_never, override
+from typing import Self, assert_never
 
-import grpc
-
-from agentplane.grpc_serving import serving
-from agentplane.proto import event_log_pb2, runner_pb2, runner_pb2_grpc
+from agentplane.proto import event_log_pb2, runner_pb2
 from agentplane.runner.adapter import HarnessAdapter
 from agentplane.runner.claude import ClaudeAdapter
 from agentplane.runner.codex import CodexAdapter
@@ -31,15 +27,13 @@ from agentplane.runner.store import SessionRecord, SessionStore, StateOwner, val
 
 # The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.
 # gazelle:include_dep @pypi//protobuf
-# gazelle:include_dep @pypi//grpcio
 
-logger = logging.getLogger(__name__)
 _MAX_BOOTSTRAP_BYTES = 65_536
 _FOLLOW_PAGE = 128
 
 
 class OpenError(Exception):
-    """A session operation the runner refuses; an Attach stream ends with this message."""
+    """A session operation the runner refuses."""
 
 
 class SessionUnknownError(OpenError):
@@ -103,11 +97,9 @@ class Runner:
         self._initialization_log: InitializationLog | None = None
         self._initialization_task: asyncio.Task[None] | None = None
 
-    async def initialize(
-        self, request: runner_pb2.InitializeRequest
-    ) -> tuple[InitializationLog, asyncio.Task[None] | None]:
-        """Select one sandbox bootstrap and return its replayable log and current execution."""
-        source = request.script.encode()
+    async def initialize(self, script: str) -> tuple[InitializationLog, asyncio.Task[None] | None]:
+        """Select one sandbox bootstrap and return its log and current execution."""
+        source = script.encode()
         if not source or len(source) > _MAX_BOOTSTRAP_BYTES:
             raise ValueError(f"initialize.script must contain 1..{_MAX_BOOTSTRAP_BYTES} UTF-8 bytes")
         async with self._initialize_lock:
@@ -229,25 +221,9 @@ class Runner:
             return None
         return await self._load(session_id) if self.store.exists(session_id) else None
 
-    async def open(self, request: runner_pb2.Open) -> Session:
-        """Attach's Open. Without a spec it only finds the session; with one it creates the session
-        or confirms it, then starts its harness if stopped."""
-        session_id = self._valid_session_id(request.session_id)
-        if not request.HasField("spec"):
-            if not self.store.exists(session_id):
-                raise SessionUnknownError(f"session {session_id} does not exist and Open carries no spec")
-            return await self._load(session_id)
-        self._refuse_sealed()
-        setup_script = request.setup_script if request.HasField("setup_script") else None
-        async with self._create_lock:
-            existing = self.store.exists(session_id)
-            session = await (self._confirm if existing else self._create)(session_id, request.spec, setup_script)
-        await self._start(session)
-        return session
-
     async def open_session(self, session_id: str, spec: runner_pb2.SessionSpec, setup_script: str | None) -> Session:
         """Create the session with `spec` and start it, or confirm an existing one with the same spec
-        without starting anything: unlike Attach's Open, this never restarts a stopped harness."""
+        without starting anything."""
         session_id = self._valid_session_id(session_id)
         self._refuse_sealed()
         async with self._create_lock:
@@ -415,117 +391,6 @@ class Runner:
         ]
 
 
-class RunnerService(runner_pb2_grpc.RunnerServicer):
-    def __init__(self, runner: Runner) -> None:
-        self.runner = runner
-
-    @override
-    async def Initialize(
-        self, request: runner_pb2.InitializeRequest, context: grpc.aio.ServicerContext
-    ) -> AsyncIterator[runner_pb2.InitializationEvent]:
-        try:
-            log, execution = await self.runner.initialize(request)
-            if request.after_sequence > log.last_sequence:
-                raise ValueError(
-                    f"after_sequence {request.after_sequence} is beyond the initialization log, "
-                    f"whose last sequence is {log.last_sequence}"
-                )
-        except InitializationConflictError as error:
-            await context.abort(grpc.StatusCode.FAILED_PRECONDITION, str(error))
-            return
-        except ValueError as error:
-            await context.abort(grpc.StatusCode.INVALID_ARGUMENT, str(error))
-            return
-
-        cursor = request.after_sequence
-        while True:
-            for event in log.since(cursor):
-                yield event
-                cursor = event.sequence
-            if execution is None:
-                return
-            if execution.done():
-                await execution
-                for event in log.since(cursor):
-                    yield event
-                    cursor = event.sequence
-                return
-            await log.wait_beyond(cursor)
-
-    @override
-    async def ListSessions(
-        self, request: runner_pb2.ListSessionsRequest, context: grpc.aio.ServicerContext
-    ) -> runner_pb2.ListSessionsResponse:
-        del request, context
-        return runner_pb2.ListSessionsResponse(sessions=self.runner.summaries())
-
-    @override
-    async def Seal(self, request: runner_pb2.SealRequest, context: grpc.aio.ServicerContext) -> runner_pb2.SealResponse:
-        del request, context
-        return await self.runner.seal()
-
-    @override
-    async def Attach(
-        self, request_iterator: AsyncIterator[runner_pb2.ClientMessage], context: grpc.aio.ServicerContext
-    ) -> AsyncIterator[runner_pb2.ServerMessage]:
-        del context
-        first = await anext(request_iterator, None)
-        if first is None or not first.HasField("open"):
-            yield runner_pb2.ServerMessage(error="the first client message must be Open")
-            return
-        try:
-            session = await self.runner.open(first.open)
-        except OpenError as error:
-            yield runner_pb2.ServerMessage(error=str(error))
-            return
-        except Exception as error:  # the stream must report a launch failure, not hang
-            logger.exception("session %s: open failed", first.open.session_id)
-            yield runner_pb2.ServerMessage(error=f"open failed: {error}")
-            return
-        if first.open.follow.after_cursor > session.journal.last_cursor:
-            yield runner_pb2.ServerMessage(
-                error=f"after_cursor {first.open.follow.after_cursor} is beyond the session log, "
-                f"whose last cursor is {session.journal.last_cursor}"
-            )
-            return
-        # The published log, not the stdout reader's batch in progress, which is not durable yet.
-        published = session.journal.recovery_state
-        opened_cursor = published.through_cursor
-        ended = not published.harness_running and not session.setup_active
-        yield runner_pb2.ServerMessage(attached=build_attached(session, published))
-        closing = asyncio.Event()
-        failure: list[str] = []
-        consumer = asyncio.create_task(
-            _consume(session, request_iterator, closing, failure), name=f"{session.session_id}-commands"
-        )
-        cursor = first.open.follow.after_cursor
-        try:
-            async with aclosing(
-                follow_journal(session.journal, cursor, stop=lambda: ended or closing.is_set(), closing=closing)
-            ) as entries:
-                async for entry in entries:
-                    if ended and entry.cursor > opened_cursor and entry.event.HasField("harness_started"):
-                        return
-                    yield runner_pb2.ServerMessage(event_entry=entry)
-                    cursor = entry.cursor
-                    if entry.cursor > opened_cursor and entry.event.HasField("harness_exited"):
-                        ended = True
-                    if entry.event.HasField("setup_finished"):
-                        ended = entry.event.setup_finished.exit_code != 0
-                    if entry.event.HasField("setup_interrupted"):
-                        ended = True
-                    if entry.event.HasField("harness_launch_failed"):
-                        ended = True
-            if session.journal.sealed_cursor is not None:
-                yield runner_pb2.ServerMessage(sealed=runner_pb2.Sealed(cursor=cursor))
-            elif not ended and failure:
-                yield runner_pb2.ServerMessage(error=failure[0])
-        finally:
-            if not consumer.done():
-                consumer.cancel()
-            await asyncio.gather(consumer, return_exceptions=True)
-
-
 def build_attached(session: Session, published: RecoveryState) -> runner_pb2.Attached:
     """The snapshot a follow opens with, at the journal's published cursor."""
     return runner_pb2.Attached(
@@ -539,35 +404,19 @@ def build_attached(session: Session, published: RecoveryState) -> runner_pb2.Att
     )
 
 
-async def follow_journal(
-    journal: Journal, cursor: int, *, stop: Callable[[], bool] = lambda: False, closing: asyncio.Event | None = None
-) -> AsyncGenerator[event_log_pb2.EventEntry]:
+async def follow_journal(journal: Journal, cursor: int) -> AsyncGenerator[event_log_pb2.EventEntry]:
     """Entries after `cursor`, then live ones as they are journaled. Pages are read only as the
-    consumer drains them, so a slow consumer holds at most one. Ends once caught up, if the journal
-    is sealed or `stop()` holds; `closing` wakes an idle follow to check `stop()` again."""
+    consumer drains them, so a slow consumer holds at most one. Ends once a sealed journal is read to
+    its seal."""
     while True:
         for entry in await journal.since(cursor, limit=_FOLLOW_PAGE):
             yield entry
             cursor = entry.cursor
         if cursor < journal.last_cursor:
             continue
-        if journal.sealed_cursor is not None or stop():
+        if journal.sealed_cursor is not None:
             return
-        await _wake(journal, closing, cursor)
-
-
-async def _wake(journal: Journal, closing: asyncio.Event | None, cursor: int) -> None:
-    waits: list[asyncio.Task[Any]] = [asyncio.create_task(journal.wait_beyond(cursor))]
-    if closing is not None:
-        waits.append(asyncio.create_task(closing.wait()))
-    try:
-        done, _ = await asyncio.wait(waits, return_when=asyncio.FIRST_COMPLETED)
-        for completed in done:
-            completed.result()
-    finally:
-        for wait in waits:
-            wait.cancel()
-        await asyncio.gather(*waits, return_exceptions=True)
+        await journal.wait_beyond(cursor)
 
 
 async def finish_command[T](command: Awaitable[T]) -> T:
@@ -578,40 +427,3 @@ async def finish_command[T](command: Awaitable[T]) -> T:
     except asyncio.CancelledError:
         await asyncio.gather(task, return_exceptions=True)
         raise
-
-
-async def _consume(
-    session: Session, requests: AsyncIterator[runner_pb2.ClientMessage], closing: asyncio.Event, failure: list[str]
-) -> None:
-    try:
-        async for message in requests:
-            match message.WhichOneof("message"):
-                case "command":
-                    await finish_command(session.command(message.command))
-                case "detach":
-                    return
-                case other:
-                    failure.append(f"unexpected client command after Open: {other}")
-                    return
-    except asyncio.CancelledError:
-        raise
-    except Exception as error:  # a command failure ends the stream with its reason, not a hang
-        logger.exception("session %s: command failed", session.session_id)
-        failure.append(f"command failed: {error}")
-    finally:
-        closing.set()
-
-
-@asynccontextmanager
-async def serve(config: RunnerConfig, *, address: str, grace_s: float) -> AsyncIterator[tuple[Runner, int]]:
-    """A started runner served on `address`; yields it and the bound port."""
-    async with AsyncExitStack() as stack:
-        runner = await stack.enter_async_context(Runner(config))
-        await runner.startup()
-        server = grpc.aio.server()
-        runner_pb2_grpc.add_RunnerServicer_to_server(RunnerService(runner), server)
-        async with serving(server, address, grace_s=grace_s) as port:
-            yield runner, port
-            # Out of stack order: the runner stops while the server still carries its Sessions' last
-            # Events to open Attach streams.
-            await stack.aclose()

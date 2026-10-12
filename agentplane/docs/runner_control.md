@@ -3,8 +3,8 @@
 Status: **accepted design, deployed.** The Runner Gateway's
 control listener (`runner_gateway/runner_control.py`), reachable through the egress proxy,
 authenticates, fences and keeps connections alive, and carries command deliveries and lifecycle
-requests (`runner_gateway/lifecycle_control.py`) for Sandboxes routed to it. The runner dials it when started
-with `--control-target` (`runner/control.py`), which the Sandbox Service passes to every Sandbox's
+requests (`runner_gateway/lifecycle_control.py`) for Sandboxes routed to it. The runner dials it at
+`--control-target` (`runner/control.py`), which the Sandbox Service passes to every Sandbox's
 runner (`runner_control`); runner Pods admit no connections. This is the contract it implements. It
 covers command delivery, authentication, connection ownership, lifecycle
 requests (listing, opening, resuming and sealing Sessions), and the push of Events to the runner's

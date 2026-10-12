@@ -22,10 +22,8 @@ Thread-page projection. Their cross-layer contract is [Thread, runner, and harne
   may have run any part of itself, and an unknown result does not permit a retry. A fresh
   initialization needs a new Sandbox.
 - Stdout, stderr, and the attempt's result or interruption are appended to a persistent event log with
-  dense Sandbox-scoped sequence numbers. `InitializeRequest.after_sequence` is a reconnect cursor:
-  the runner first replays later saved events, then follows live output through the current attempt.
-  Disconnecting a client does not stop the script or recording, and a future exact request can
-  replay the complete output after the runner restarts.
+  dense Sandbox-scoped sequence numbers. A request is answered with the attempt's terminal event once
+  it has ended. An abandoned request does not stop the script or recording.
 - The runner accepts source only over this in-cluster control protocol; how the integration app
   selects that source is outside the runner contract.
 
@@ -34,23 +32,22 @@ Thread-page projection. Their cross-layer contract is [Thread, runner, and harne
 - A session is one native conversation. Its id is client-chosen, up to 128 characters of
   `[A-Za-z0-9._-]` starting alphanumeric, and the runner keeps everything about it under
   `<state_dir>/sessions/<session_id>/`: the harness's own persistence and the runner's session log.
-- `Open` with an unknown id creates the session from `spec`; with a known id it attaches, and a
-  supplied `spec` must equal the stored one. Open with a spec starts the harness when it is not running,
-  resuming the native conversation when the session has one, and creates `spec.cwd`, which must
-  be absolute, when it does not exist yet. A harness that does not survive its launch and
-  handshake ends the stream with an error naming its exit status and the end of its stderr.
-- An unknown session may select one setup script on `Open`. The runner creates `spec.cwd`, executes
-  the script with `/bin/sh -eu` from that directory, and records started, stdout/stderr, and terminal
-  events in the session's durable Event log. `Open` does not wait for setup to complete. The harness
-  starts only after setup exits successfully. A failed or interrupted setup is terminal for that
-  session: later `Open` calls replay its history without rerunning the script or starting the
-  harness. A different setup source is refused. Start a new session to try again.
-- `Open` without a spec observes an existing session without starting its harness. A stopped
-  session replays its log and ends the stream; resuming requires an explicit spec.
+- `OpenSession` with an unknown id creates the session from `spec`, creating `spec.cwd`, which must
+  be absolute, when it does not exist yet, and starts its harness. With a known id it only confirms
+  the session: the `spec` must equal the stored one, and a stopped harness stays stopped.
+  `ResumeSession` restarts a stopped harness on the retained spec, resuming the native conversation
+  when the session has one. A harness that does not survive its launch and handshake refuses the
+  request with its exit status and the end of its stderr.
+- An unknown session may select one setup script on `OpenSession`. The runner creates `spec.cwd`,
+  executes the script with `/bin/sh -eu` from that directory, and records started, stdout/stderr, and
+  terminal events in the session's durable Event log. `OpenSession` does not wait for setup to
+  complete. The harness starts only after setup exits successfully. A failed or interrupted setup is
+  terminal for that session: it is never rerun, and `ResumeSession` is refused. A different setup
+  source is refused. Start a new session to try again.
 - `spec.instructions` are the session's standing instructions: what the session is for, and the
   orders that hold for every turn of it. They reach the model appended to the harness's own system
   prompt, so each harness keeps its coding-agent policy; empty is a session without any. They are
-  fixed for the session's life, because a `spec` supplied on re-attach must equal the stored one.
+  fixed for the session's life, because a `spec` supplied on reopening must equal the stored one.
 - The runner asks the workload-authenticated LLM ingress for `ModelConfig` when a
   session or model selection is made. Its `total_context_budget_tokens` is a client
   budget shared by input and output, not a provider maximum or an output request cap.
@@ -64,28 +61,15 @@ Thread-page projection. Their cross-layer contract is [Thread, runner, and harne
 - `ListSessions` returns every session in the state directory with its spec, harness state,
   setup state, active turn, and last cursor, so a client that keeps no record of its own finds them again.
 
-## Attachments
-
-- One `Attach` stream is one attachment. The first client message is `Open`; the first server
-  message is `Attached`, carrying the spec, setup and harness states, `last_cursor`, the log position at
-  attach time, and the active turn id as of that position.
-- The runner then replays every `EventEntry` with a cursor greater than `Open.follow.after_cursor`,
-  in order, and continues with live entries. A client that passes the last cursor it processed sees
-  neither a gap nor a duplicate; a cursor beyond `last_cursor` ends the stream with an error.
-- Multiple attachments independently replay and follow the session. Each may issue client-chosen,
-  idempotent `Command`s; the runner serializes them with the session lock and deduplicates by
-  `command_id`.
-- `Detach`, or a dropped connection, ends the stream and nothing else. The harness keeps running
-  and its events keep accruing in the log.
-- `StopRunnerSession` interrupts an active turn, stops the harness, reports `HarnessExited`, and
-  ends the streams after every observer drains the terminal events. The session stays resumable.
-
 ## Runner control stream
 
-- Given `--control-target`, the runner also dials the Runner Gateway's
-  [runner control stream](../docs/runner_control.md) and keeps one `Connect` stream for as long as it runs,
-  reconnecting on a fresh connection after any loss. It offers `commands` and `lifecycle`.
-- A delivered command is admitted exactly as an `Attach` command is, and answered from the journal:
+- The runner dials the Runner Gateway's [runner control stream](../docs/runner_control.md) at
+  `--control-target` and keeps one `Connect` stream for as long as it runs, reconnecting on a fresh
+  connection after any loss. It has no listener of its own.
+- `OpenSession` and `ResumeSession` answer with the session's `Attached` snapshot: the spec, setup
+  and harness states, `last_cursor`, and the active turn id as of that position.
+- Delivered commands are client-chosen and idempotent; the runner serializes them with the session
+  lock and deduplicates by `command_id`. A delivered command is answered from the journal:
   its `CommandAdmitted` entry, also when the command was already journaled with the same payload,
   even after its harness stopped or its journal was sealed. Otherwise it is refused with its cause: an unknown session, a harness that is not running or a
   sealed journal, a command ID already used for other work, or a command without an ID and an
@@ -104,8 +88,8 @@ Thread-page projection. Their cross-layer contract is [Thread, runner, and harne
 
 ## Event ingress
 
-- Given `--ingress-target`, the runner pushes every session's journal to that
-  [ingress](../docs/runner_control.md#event-ingress), one `Push` call per session until the ingress
+- The runner pushes every session's journal to the
+  [ingress](../docs/runner_control.md#event-ingress) at `--ingress-target`, one `Push` call per session until the ingress
   acknowledges the session's seal: at startup, when a session is created, and after a call is lost.
   Each call announces the session's `Attached` snapshot and sends the journal's entries after the
   ingress's first acknowledgement, replayed and then live, at most 1024 beyond the latest
@@ -119,15 +103,13 @@ Thread-page projection. Their cross-layer contract is [Thread, runner, and harne
 ## Teardown seal
 
 - `Seal` is for Sandbox teardown only. The runner first records, durably, that the Sandbox is sealed;
-  from then on, including after a restart, it refuses `Open` with a spec, so no session is created
-  or resumed. It then stops every setup script and harness, and seals each session's journal at its
+  from then on, including after a restart, it refuses `OpenSession` and `ResumeSession`, so no
+  session is created or resumed. It then stops every setup script and harness, and seals each session's journal at its
   final cursor, returning those cursors. Sealing again returns the same cursors. Each cursor comes
   with `flushed`: whether the ingress has acknowledged that seal, as the runner recorded it, so it
-  holds across a restart and is false for a runner that pushes nothing.
-- A sealed journal takes no further Events, so its commands are refused.
-- `Open` without a spec still follows a sealed session: it replays every entry through the seal's
-  cursor, then ends the stream with `Sealed`. A stream already following the session when it is
-  sealed ends the same way.
+  holds across a restart.
+- A sealed journal takes no further Events, so its commands are refused. Its ingress push sends
+  every entry through the seal's cursor, then `Sealed`.
 - An ordinary stop never seals, since a stopped session can resume. A seal ends this Sandbox's
   incarnation of the session's history.
 
@@ -192,14 +174,15 @@ harness's outcome. Tool names and argument shapes are the harness's own.
   unlisted route. Same-window changes and changes between unlisted models keep their existing
   behavior. This keeps the per-process context and compaction limit aligned with the route for the
   lifetime of its native thread; start a new session to use a different window.
-- `StopRunnerSession` is terminal as `HarnessExited`, naming its command id. A stopped harness is
-  instead a `CommandNoop`.
+- `StopRunnerSession` interrupts an active turn, stops the harness, and is terminal as
+  `HarnessExited`, naming its command id. The session stays resumable. A stopped harness is instead
+  a `CommandNoop`.
 
 ## Durability and restart
 
 - One runner has exclusive lifetime ownership of one retained `state_dir`. It takes a nonblocking
   POSIX exclusive lock on the fixed `<state_dir>/.agentplane-runner-owner` inode before it reads
-  sessions, opens a journal, listens, runs initialization, or starts a harness. A contender that
+  sessions, opens a journal, dials out, runs initialization, or starts a harness. A contender that
   cannot take that lock exits without serving the directory. The normal runner shutdown releases
   ownership only after its sessions stop and their journals close.
 - The owner descriptor crosses the runner/harness boundary through a native-process supervisor.
@@ -228,7 +211,7 @@ harness's outcome. Tool names and argument shapes are the harness's own.
   already published for another Event. Harness output recording failures stop the harness.
 - A runner that finds a session it had running reports `HarnessLost`, then `TurnCompleted` with
   `PROCESS_LOST` if a turn was active. It replays committed Events unchanged and
-  reconciles the remaining commands after the next explicit `Open` starts the
+  reconciles the remaining commands after the next `ResumeSession` starts the
   harness. There is no indeterminate command outcome.
 - A runner that finds a session whose setup had started without a terminal event records
   `SetupInterrupted`. It never executes that script again. The inherited state-owner descriptor
@@ -237,9 +220,8 @@ harness's outcome. Tool names and argument shapes are the harness's own.
   instead of `HarnessLost`.
 - A runner that receives SIGTERM stops every running harness through the stop ladder (stdin
   close, then SIGTERM, then SIGKILL, five seconds per step) without interrupting an active turn
-  first, records `HarnessExited` with `stopped_by_runner`, then stops its server with a five-second
-  grace and exits. Whatever supervises the runner must allow it at least twenty seconds before
-  killing it; a harness killed outright is `HarnessLost` on the next start instead.
+  first, records `HarnessExited` with `stopped_by_runner`, then exits. Whatever supervises the
+  runner must allow it at least twenty seconds before killing it; a harness killed outright is `HarnessLost` on the next start instead.
 
 ## Interrupted turns and continuation recovery
 
@@ -334,11 +316,7 @@ hooks off, so the runner's own handling of it is read off the harnesses' schemas
 
 ## Not covered yet
 
-- Read-only authorization for follower attachments; every attachment may issue commands.
 - Log compaction or retention; a session log grows for the session's lifetime.
-- Caller authentication and transport security on the inbound listener. It is plaintext and binds
-  loopback by default; hosted runners keep that default and take every call over the
-  [runner control stream](../docs/runner_control.md), whose every connection is authenticated.
 - Determining whether an incomplete tool call caused side effects outside the harness process group.
 - Duplicate-free recovery when native execution precedes durable runner evidence.
 
@@ -346,7 +324,7 @@ hooks off, so the runner's own handling of it is read off the harnesses' schemas
 
 - Session recovery reads a durable checkpoint, not all historical events. The checkpoint and
   event publication boundary commit atomically with each event and command outcome.
-- Each attachment reads bounded pages from durable storage. Slow readers do not accumulate
+- Each ingress push reads bounded pages from durable storage. A slow ingress does not accumulate
   a private copy of the intervening history in runner memory.
 - Historical command identities and debug checkpoints remain queryable in durable storage;
   in-memory scheduling tracks outstanding work and releases terminal commands.

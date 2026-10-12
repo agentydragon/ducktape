@@ -3,6 +3,7 @@
 import asyncio
 import shlex
 from collections.abc import AsyncIterator
+from contextlib import aclosing
 from dataclasses import replace
 from pathlib import Path
 from uuid import uuid4
@@ -19,10 +20,9 @@ from tenacity import AsyncRetrying, retry_if_exception_type, stop_after_delay, w
 from agentplane.grpc_calls import ServiceError
 from agentplane.proto import command_pb2, event_log_pb2, runner_pb2
 from agentplane.proto.sandbox_service_pb2 import SandboxBinding, SessionDefaults
-from agentplane.runner.client import RunnerClient
-from agentplane.runner.errors import RunnerError, StreamClosedError
+from agentplane.runner import service
+from agentplane.runner.errors import RunnerError
 from agentplane.runner.testing import events
-from agentplane.runner.testing.fixtures import RunnerHandle
 from agentplane.runner.testing.scripted_model import ScriptedModel, Text
 from agentplane.runner_gateway.client import Runner, RunnerGatewayClient
 from agentplane.runner_gateway.destinations import DestinationResolver
@@ -40,7 +40,7 @@ AUDIENCE = "test-native-grpc"
 
 
 @pytest.fixture
-def resources(cluster: Cluster, runner: RunnerHandle, engine: AsyncEngine) -> Resources:
+def resources(cluster: Cluster, runner: service.Runner, engine: AsyncEngine) -> Resources:
     cluster.fake.tokens[CALLER_TOKEN] = TokenVerdict(
         username=f"system:serviceaccount:{OWNER.namespace}:{OWNER.name}",
         pod_name="test-native-caller",
@@ -60,8 +60,8 @@ def resources(cluster: Cluster, runner: RunnerHandle, engine: AsyncEngine) -> Re
 
 
 @pytest.fixture(autouse=True)
-async def connected(cluster: Cluster, resources: Resources, runner: RunnerHandle) -> AsyncIterator[None]:
-    async with runner_connected(cluster, resources, runner.runner):
+async def connected(cluster: Cluster, resources: Resources, runner: service.Runner) -> AsyncIterator[None]:
+    async with runner_connected(cluster, resources, runner):
         yield
 
 
@@ -76,7 +76,7 @@ async def inspect(runner: Runner, session_id: str) -> runner_pb2.SessionSummary:
 
 
 async def complete_turn(
-    remote: RunnerGatewayClient, journal: RunnerClient, model: ScriptedModel, session_id: str, command_id: str
+    remote: RunnerGatewayClient, local: service.Runner, model: ScriptedModel, session_id: str, command_id: str
 ) -> list[event_log_pb2.EventEntry]:
     command = command_pb2.Command(command_id=command_id, submit_input=command_pb2.SubmitInput(text="Reply: GRPC_OK"))
     receipt = await remote.command(DESTINATION, session_id, command)
@@ -91,17 +91,15 @@ async def complete_turn(
     assert "New platform guidance." not in request.system_text
     assert str(SANDBOX_UID) in request.system_text
     await model.reply(request, Text("GRPC_OK"))
-    attachment = await journal.attach(session_id, after_cursor=receipt.cursor - 1)
     entries: list[event_log_pb2.EventEntry] = []
-    try:
-        async with asyncio.timeout(20):
-            while True:
-                entry = await attachment.next_entry()
-                entries.append(entry)
-                if events.turn_completed(entry):
-                    break
-    finally:
-        attachment.cancel()
+    async with (
+        asyncio.timeout(20),
+        aclosing(service.follow_journal(local.sessions[session_id].journal, receipt.cursor - 1)) as journal,
+    ):
+        async for entry in journal:
+            entries.append(entry)
+            if events.turn_completed(entry):
+                break
     assert events.of_kind(entries, "command_admitted") == [receipt]
     assert any(
         command.command_id in e.event.harness_user_message_confirmed.origin_command_ids
@@ -117,7 +115,7 @@ async def test_launch_delivery_and_restart_preserve_evidence_and_configuration(
     spec: runner_pb2.SessionSpec,
     cluster: Cluster,
     workspace: Path,
-    client: RunnerClient,
+    runner: service.Runner,
 ) -> None:
     bootstrap_marker = workspace / "bootstrap-runs"
     setup_marker = workspace / "setup-runs"
@@ -135,71 +133,56 @@ async def test_launch_delivery_and_restart_preserve_evidence_and_configuration(
         )
     )
     async with service_client(resources, token_file) as remote:
-        runner = remote.runner(DESTINATION)
+        destination = remote.runner(DESTINATION)
         requested = uuid4()
-        created = await runner.create(session_id=requested, spec={})
+        created = await destination.create(session_id=requested, spec={})
         session = created.session_id
         async with asyncio.timeout(15):
-            while (opened := await inspect(runner, session)).harness_state != runner_pb2.HARNESS_STATE_RUNNING:
+            while (opened := await inspect(destination, session)).harness_state != runner_pb2.HARNESS_STATE_RUNNING:
                 assert opened.setup_state not in (runner_pb2.SETUP_STATE_FAILED, runner_pb2.SETUP_STATE_INTERRUPTED)
                 await asyncio.sleep(0.05)
         assert opened.setup_state == runner_pb2.SETUP_STATE_SUCCEEDED
         assert session in opened.spec.instructions
-        assert (await runner.create(session_id=requested, spec={})).attached.spec == opened.spec
-        assert (await runner.list_sessions())[0].spec == opened.spec
+        assert (await destination.create(session_id=requested, spec={})).attached.spec == opened.spec
+        assert (await destination.list_sessions())[0].spec == opened.spec
         # The runner refuses a retry whose spec differs from the one it recorded.
         with pytest.raises(RunnerError):
-            await runner.create(session_id=requested, spec={"instructions": "Different task"})
+            await destination.create(session_id=requested, spec={"instructions": "Different task"})
         assert bootstrap_marker.read_text() == "B"
         assert setup_marker.read_text() == "S"
-        entries = await complete_turn(remote, client, model, session, "grpc-notice")
+        entries = await complete_turn(remote, runner, model, session, "grpc-notice")
         stop = command_pb2.Command(command_id="grpc-stop", stop_runner_session=command_pb2.StopRunnerSession())
         await remote.command(DESTINATION, session, stop)
-        tail = await client.attach(session, after_cursor=entries[-1].cursor)
-        try:
-            async with asyncio.timeout(20):
-                while True:
-                    try:
-                        entry = await tail.next_entry()
-                    except StreamClosedError:
-                        break
-                    assert entry.cursor > entries[-1].cursor
-        finally:
-            tail.cancel()
+        journal = runner.sessions[session].journal
+        async with asyncio.timeout(20), aclosing(service.follow_journal(journal, entries[-1].cursor)) as tail:
+            async for entry in tail:
+                if events.kind(entry) == "harness_exited":
+                    break
         with pytest.raises(RunnerError):
             await remote.command(
                 DESTINATION,
                 session,
                 command_pb2.Command(command_id="no-wake", submit_input=command_pb2.SubmitInput(text="no wake")),
             )
-        assert (await inspect(runner, session)).harness_state == runner_pb2.HARNESS_STATE_STOPPED
+        assert (await inspect(destination, session)).harness_state == runner_pb2.HARNESS_STATE_STOPPED
         # Observe the stopped journal too: rejected delivery added no admission and did not wake it.
-        stopped = await client.attach(session)
-        try:
-            async with asyncio.timeout(20):
-                cursor = 0
-                # A fresh follow of a stopped session can remain open for a future resume.
-                # Check its retained snapshot prefix, not an EOF that this attachment needn't see.
-                while cursor < stopped.attached.last_cursor:
-                    entry = await stopped.next_entry()
-                    assert entry.cursor > cursor
-                    cursor = entry.cursor
-                    assert entry.event.command_admitted.command.command_id != "no-wake"
-        finally:
-            stopped.cancel()
+        assert "no-wake" not in [
+            entry.event.command_admitted.command.command_id
+            for entry in await journal.since(0, limit=journal.last_cursor)
+        ]
     # Stop the service, change its configuration and stored defaults, and recover solely from the runner.
     cluster.set_binding(SandboxBinding(bootstrap="exit 42", session_defaults=SessionDefaults(model="changed")))
     async with service_client(
         replace(resources, platform_instructions="New platform guidance."), token_file
     ) as restarted:
-        runner = restarted.runner(DESTINATION)
-        resumed = await runner.resume(session)
+        destination = restarted.runner(DESTINATION)
+        resumed = await destination.resume(session)
         assert resumed.spec == opened.spec
         assert resumed.harness_state == runner_pb2.HARNESS_STATE_RUNNING
-        await complete_turn(restarted, client, model, session, "grpc-resumed")
-        assert (await runner.list_sessions())[0].spec == opened.spec
+        await complete_turn(restarted, runner, model, session, "grpc-resumed")
+        assert (await destination.list_sessions())[0].spec == opened.spec
         with pytest.raises(RunnerError):
-            await runner.create(
+            await destination.create(
                 session_id=uuid4(), spec={"harness": "HARNESS_CODEX", "cwd": "/workspace", "model": "test"}
             )
     assert bootstrap_marker.read_text() == "B"

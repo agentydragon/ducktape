@@ -12,7 +12,7 @@ from urllib.parse import urlsplit
 from pydantic import BaseModel, ConfigDict, Field, ValidationInfo, field_validator
 
 from agentplane.runner.cgroups import AgentCgroups
-from agentplane.runner.config import ClaudeLaunch, CodexLaunch, IngressEndpoint, RunnerConfig
+from agentplane.runner.config import ClaudeLaunch, CodexLaunch, RunnerConfig, ServiceEndpoint
 from agentplane.runner.main import async_main
 
 CONFIG_PATH = Path("/run/agentplane/config.json")
@@ -163,7 +163,6 @@ def make_runner_config(config: GuestConfig) -> RunnerConfig:
         workspace_root=WORKSPACE_DIR,
         native_state_dir=NATIVE_STATE_DIR,
         initialization_cwd=WORKSPACE_DIR,
-        ingress=IngressEndpoint(target=config.ingress.target, bearer=config.ingress.bearer),
     )
 
 
@@ -172,8 +171,13 @@ def main() -> None:
     config = read_guest_config()
     runner_config = make_runner_config(config)
     configure_runner_network_environment(runner_config.harness_environment)
-    # Nothing outside the guest reaches the listener; the runner is driven over its control stream.
-    asyncio.run(async_main(runner_config, "127.0.0.1:0", (config.control.target, config.control.bearer)))
+    asyncio.run(
+        async_main(
+            runner_config,
+            control=ServiceEndpoint(target=config.control.target, bearer=config.control.bearer),
+            ingress=ServiceEndpoint(target=config.ingress.target, bearer=config.ingress.bearer),
+        )
+    )
 
 
 def validate_main() -> None:

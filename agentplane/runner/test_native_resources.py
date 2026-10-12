@@ -3,8 +3,6 @@
 import json
 import os
 import stat
-from collections.abc import AsyncIterator
-from contextlib import asynccontextmanager
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
@@ -13,11 +11,11 @@ import pytest
 import pytest_bazel
 
 from agentplane.proto import event_pb2, runner_pb2
-from agentplane.runner.client import RunnerClient
 from agentplane.runner.config import RunnerConfig
-from agentplane.runner.service import serve
 from agentplane.runner.testing import events
 from agentplane.runner.testing.commands import submit_input
+from agentplane.runner.testing.driver import RunnerDriver, running
+from agentplane.runner.testing.gateway import Gateway
 from agentplane.runner.testing.scripted_model import ScriptedModel, Text
 from util.testing.undeclared_outputs import undeclared_outputs_dir
 
@@ -83,15 +81,6 @@ def sample_native(pid: int, directory: Path) -> NativeSample:
     )
 
 
-@asynccontextmanager
-async def running_client(config: RunnerConfig) -> AsyncIterator[RunnerClient]:
-    async with (
-        serve(config, address="127.0.0.1:0", grace_s=0) as (_, port),
-        RunnerClient(f"127.0.0.1:{port}") as client,
-    ):
-        yield client
-
-
 @pytest.mark.parametrize("history_size", [1, 10, 100])
 async def test_native_history_and_resume_resources(
     harness: runner_pb2.Harness,
@@ -99,6 +88,7 @@ async def test_native_history_and_resume_resources(
     model: ScriptedModel[Any],
     spec: runner_pb2.SessionSpec,
     history_size: int,
+    gateway: Gateway,
 ) -> None:
     """The loopback upstream receives the real native request, including resumed history.
 
@@ -113,28 +103,28 @@ async def test_native_history_and_resume_resources(
     artifact = undeclared_outputs_dir() / f"native-{name}-{history_size}-resources.json"
     samples: dict[str, Any] = {"harness": name, "completed_turns": history_size, "text_bytes_per_marker": 2048}
     try:
-        async with running_client(config) as client, await client.attach(session_id, spec=spec) as attachment:
-            started = await attachment.until(events.is_kind("harness_started"))
+        driver = RunnerDriver(gateway)
+        async with running(config, gateway):
+            session = await driver.attach(session_id, spec=spec)
+            started = await session.until(events.is_kind("harness_started"))
             for index in range(history_size):
-                await submit_input(attachment, f"input-{index}", inputs[index])
+                await submit_input(session, f"input-{index}", inputs[index])
                 request = await model.request()
                 assert request.user_texts == inputs[: index + 1]
                 assert request.assistant_texts == outputs[:index]
                 await model.reply(request, Text(outputs[index]))
-                done = await attachment.until(events.turn_completed)
+                done = await session.until(events.turn_completed)
                 assert done.event.turn_completed.status == event_pb2.TURN_STATUS_COMPLETED
             samples["before_restart"] = asdict(sample_native(started.event.harness_started.pid, directory))
-            cursor = attachment.cursor
+            cursor = session.cursor
 
         # New runner and new native process, using their durable directories. Do not replay
         # the runner archive into the test client or substitute synthetic native resume files.
-        async with (
-            running_client(config) as client,
-            await client.attach(session_id, spec=spec, after_cursor=cursor) as attachment,
-        ):
-            started = await attachment.until(events.is_kind("harness_started"))
+        async with running(config, gateway):
+            session = await driver.attach(session_id, spec=spec, after_cursor=cursor)
+            started = await session.until(events.is_kind("harness_started"))
             assert started.event.harness_started.resumed
-            await submit_input(attachment, "resumed-input", inputs[-1])
+            await submit_input(session, "resumed-input", inputs[-1])
             request = await model.request()
             assert request.user_texts == inputs
             assert request.assistant_texts == outputs[:-1]
@@ -145,7 +135,7 @@ async def test_native_history_and_resume_resources(
                 len(text.encode("utf-8")) for text in [*request.user_texts, *request.assistant_texts]
             )
             await model.reply(request, Text(outputs[-1]))
-            done = await attachment.until(events.turn_completed)
+            done = await session.until(events.turn_completed)
             assert done.event.turn_completed.status == event_pb2.TURN_STATUS_COMPLETED
     finally:
         artifact.write_text(json.dumps(samples, indent=2) + "\n")

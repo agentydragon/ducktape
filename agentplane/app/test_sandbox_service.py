@@ -19,7 +19,7 @@ from agentplane.grpc_calls import ServiceError
 from agentplane.history_service.testing.backend import ingest
 from agentplane.postgres.wakeups import WakeupListener
 from agentplane.proto import command_pb2, runner_pb2
-from agentplane.runner.testing.fixtures import RunnerHandle
+from agentplane.runner.service import Runner
 from agentplane.runner.testing.scripted_model import ScriptedModel, Text
 from agentplane.sandbox_service.testing.kubernetes import SANDBOX, Cluster, authenticated_service, kubernetes
 from agentplane.testing.fake_apiserver import SANDBOX_NAMESPACE
@@ -55,22 +55,23 @@ async def test_production_bridge_archives_native_evidence_across_bounded_service
     event_logs: SeededEventLogStore,
     content: ContentStore,
     database_updates: WakeupListener,
-    runner: RunnerHandle,
+    runner: Runner,
     spec: runner_pb2.SessionSpec,
     model: ScriptedModel,
     service_history_db_url: str,
 ) -> None:
     async with (
-        authenticated_service(
-            cluster, runner.runner, tmp_path / "service-token", database_url=service_history_db_url
-        ) as (_, remote),
-        ingest(service_history_db_url, runner.runner),
+        authenticated_service(cluster, runner, tmp_path / "service-token", database_url=service_history_db_url) as (
+            _,
+            remote,
+        ),
+        ingest(service_history_db_url, runner),
     ):
         directory = SandboxSessions(live_index, remote)
         bridge = RunnerBridge(runners=directory, event_logs=event_logs, content=content)
         with pytest.raises(MalformedMessageError):
             await bridge.create_session(SANDBOX, uuid4(), {"reasoning_effort": "low", "reasoningEffort": "high"})
-        assert not runner.runner.sessions
+        assert not runner.sessions
         opened = await bridge.create_session(SANDBOX, uuid4(), MessageToDict(spec))
         assert "Backend guidance" in opened.spec.instructions
         thread = UUID(opened.session_id)
@@ -99,24 +100,24 @@ async def test_production_bridge_archives_native_evidence_across_bounded_service
             stop=stop_after_delay(15), wait=wait_fixed(0.1), retry=retry_if_exception_type(AssertionError)
         ):
             with attempt:
-                native = await runner.runner.sessions[str(thread)].journal.since(0, limit=1000)
+                native = await runner.sessions[str(thread)].journal.since(0, limit=1000)
                 archived = await event_logs.events(thread, limit=1000)
                 assert archived == native
                 assert any(entry.event.HasField("harness_exited") for entry in archived)
 
 
 async def test_stopped_service_never_falls_back_to_reachable_runner(
-    cluster: Cluster, live_index: LiveIndex, tmp_path: Path, runner: RunnerHandle, service_history_db_url: str
+    cluster: Cluster, live_index: LiveIndex, tmp_path: Path, runner: Runner, service_history_db_url: str
 ) -> None:
     async with authenticated_service(
-        cluster, runner.runner, tmp_path / "service-token", database_url=service_history_db_url
+        cluster, runner, tmp_path / "service-token", database_url=service_history_db_url
     ) as (_, remote):
         directory = SandboxSessions(live_index, remote)
         assert await directory.client(SANDBOX).list_sessions() == []
     # Each call to the Sandbox's runner dials its control Service anew, here with the gateway gone.
     with pytest.raises(ServiceError):
         await directory.client(SANDBOX).list_sessions()
-    assert not runner.runner.sessions
+    assert not runner.sessions
 
 
 if __name__ == "__main__":

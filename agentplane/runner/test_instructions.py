@@ -5,9 +5,9 @@ from __future__ import annotations
 import pytest_bazel
 
 from agentplane.proto import runner_pb2
-from agentplane.runner.client import RunnerClient
 from agentplane.runner.testing import events
 from agentplane.runner.testing.commands import submit_input
+from agentplane.runner.testing.driver import RunnerDriver
 from agentplane.runner.testing.scripted_model import ScriptedModel, Text
 
 # The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.
@@ -27,21 +27,21 @@ def with_instructions(spec: runner_pb2.SessionSpec, instructions: str) -> runner
 
 
 async def test_a_session_without_instructions_sends_none(
-    client: RunnerClient, model: ScriptedModel, spec: runner_pb2.SessionSpec
+    driver: RunnerDriver, model: ScriptedModel, spec: runner_pb2.SessionSpec
 ) -> None:
-    async with await client.attach("no-instructions-1", spec=spec) as attachment:
-        assert attachment.attached.spec.instructions == ""
-        await submit_input(attachment, "input-1", "Reply with exactly: PLAIN_OK")
-        request = await model.request()
-        assert "Wren" not in request.system_text
-        await model.reply(request, Text("PLAIN_OK"))
-        await attachment.until(events.turn_completed)
+    session = await driver.attach("no-instructions-1", spec=spec)
+    assert session.attached.spec.instructions == ""
+    await submit_input(session, "input-1", "Reply with exactly: PLAIN_OK")
+    request = await model.request()
+    assert "Wren" not in request.system_text
+    await model.reply(request, Text("PLAIN_OK"))
+    await session.until(events.turn_completed)
 
 
 async def test_instructions_reach_the_model_on_every_turn_and_after_a_resume(
-    client: RunnerClient, model: ScriptedModel, spec: runner_pb2.SessionSpec
+    driver: RunnerDriver, model: ScriptedModel, spec: runner_pb2.SessionSpec
 ) -> None:
-    first = await client.attach("instructions-1", spec=with_instructions(spec, INSTRUCTIONS))
+    first = await driver.attach("instructions-1", spec=with_instructions(spec, INSTRUCTIONS))
     await submit_input(first, "input-1", "Reply with exactly: SEED_OK")
     request = await model.request()
     assert INSTRUCTIONS in request.system_text
@@ -54,15 +54,15 @@ async def test_instructions_reach_the_model_on_every_turn_and_after_a_resume(
     # A resume starts a fresh harness process, and the two carry the instructions there by different
     # routes: Claude Code re-sends them in its handshake, Codex replays the developer message its
     # thread stored when it was created. The runner SPEC has what that difference costs.
-    async with await client.attach("instructions-1", spec=first.attached.spec, after_cursor=first.cursor) as second:
-        assert second.attached.spec.instructions == INSTRUCTIONS
-        started = await second.until(events.is_kind("harness_started"))
-        assert started.event.harness_started.resumed
-        await submit_input(second, "input-2", "Reply with exactly: RESUMED_OK")
-        request = await model.request()
-        assert INSTRUCTIONS in request.system_text
-        await model.reply(request, Text("RESUMED_OK"))
-        await second.until(events.turn_completed)
+    second = await driver.attach("instructions-1", spec=first.attached.spec, after_cursor=first.cursor)
+    assert second.attached.spec.instructions == INSTRUCTIONS
+    started = await second.until(events.is_kind("harness_started"))
+    assert started.event.harness_started.resumed
+    await submit_input(second, "input-2", "Reply with exactly: RESUMED_OK")
+    request = await model.request()
+    assert INSTRUCTIONS in request.system_text
+    await model.reply(request, Text("RESUMED_OK"))
+    await second.until(events.turn_completed)
 
 
 if __name__ == "__main__":

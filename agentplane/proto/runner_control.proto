@@ -89,7 +89,9 @@ message ControlRequest {
   }
 }
 
-// Bootstrap once per Sandbox; an identical retry replays the one attempt's outcome.
+// Bootstrap, at most once per Sandbox. The runner records the selected script at one fixed state
+// path. An exact retry replays the one attempt's outcome, failed or interrupted included, without
+// running the script again; any other script is refused.
 message Initialize {
   string script = 1;
 }

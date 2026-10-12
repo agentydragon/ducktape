@@ -9,9 +9,9 @@ import pytest
 import pytest_bazel
 
 from agentplane.proto import event_log_pb2, event_pb2, runner_pb2
-from agentplane.runner.client import Attachment, RunnerClient
 from agentplane.runner.testing import events
 from agentplane.runner.testing.commands import change_model, change_reasoning_effort, interrupt_turn, submit_input
+from agentplane.runner.testing.driver import RunnerDriver, SessionFollow
 from agentplane.runner.testing.scripted_model import Reasoning, ScriptedModel, ShellCall, Text
 
 # The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.
@@ -21,391 +21,386 @@ WAIT_COMMAND = 'sh -c \'printf "wait_started\\n"; sleep 3; printf "wait_finished
 
 
 async def test_one_turn_streams_reasoning_and_text(
-    client: RunnerClient, model: ScriptedModel, spec: runner_pb2.SessionSpec
+    driver: RunnerDriver, model: ScriptedModel, spec: runner_pb2.SessionSpec
 ) -> None:
-    async with await client.attach("turn-1", spec=spec) as session:
-        assert session.attached.harness_state == runner_pb2.HARNESS_STATE_RUNNING
-        assert session.attached.active_turn_id == ""
-        await submit_input(session, "input-1", "Reply with exactly: BASELINE_OK")
+    session = await driver.attach("turn-1", spec=spec)
+    assert session.attached.harness_state == runner_pb2.HARNESS_STATE_RUNNING
+    assert session.attached.active_turn_id == ""
+    await submit_input(session, "input-1", "Reply with exactly: BASELINE_OK")
 
-        request = await model.request()
-        assert request.streaming
-        assert request.user_texts[-1] == "Reply with exactly: BASELINE_OK"
-        await model.reply(request, Reasoning("brief"), Text("BASELINE_OK"))
+    request = await model.request()
+    assert request.streaming
+    assert request.user_texts[-1] == "Reply with exactly: BASELINE_OK"
+    await model.reply(request, Reasoning("brief"), Text("BASELINE_OK"))
 
-        done = await session.until(events.turn_completed)
-        assert done.event.turn_completed.status == event_pb2.TURN_STATUS_COMPLETED
-        seen = session.seen
-        (started,) = events.of_kind(seen, "harness_started")
-        assert not started.event.harness_started.resumed
-        (turn,) = events.of_kind(seen, "turn_started")
-        assert turn.event.turn_started.turn_id == done.event.turn_completed.turn_id
-        (admitted,) = events.of_kind(seen, "command_admitted")
-        (confirmed,) = events.of_kind(seen, "harness_user_message_confirmed")
-        assert admitted.event.command_admitted.command.command_id == "input-1"
-        assert confirmed.event.harness_user_message_confirmed.origin_command_ids == ["input-1"]
-        assert confirmed.event.harness_user_message_confirmed.text == "Reply with exactly: BASELINE_OK"
-        assert confirmed.event.harness_user_message_confirmed.turn_id == turn.event.turn_started.turn_id
-        assert admitted.cursor < confirmed.cursor < done.cursor
+    done = await session.until(events.turn_completed)
+    assert done.event.turn_completed.status == event_pb2.TURN_STATUS_COMPLETED
+    seen = session.seen
+    (started,) = events.of_kind(seen, "harness_started")
+    assert not started.event.harness_started.resumed
+    (turn,) = events.of_kind(seen, "turn_started")
+    assert turn.event.turn_started.turn_id == done.event.turn_completed.turn_id
+    (admitted,) = events.of_kind(seen, "command_admitted")
+    (confirmed,) = events.of_kind(seen, "harness_user_message_confirmed")
+    assert admitted.event.command_admitted.command.command_id == "input-1"
+    assert confirmed.event.harness_user_message_confirmed.origin_command_ids == ["input-1"]
+    assert confirmed.event.harness_user_message_confirmed.text == "Reply with exactly: BASELINE_OK"
+    assert confirmed.event.harness_user_message_confirmed.turn_id == turn.event.turn_started.turn_id
+    assert admitted.cursor < confirmed.cursor < done.cursor
 
-        (reasoning,) = events.items(seen, event_pb2.ITEM_KIND_REASONING)
-        assert events.streamed_text(seen, reasoning) == "brief"
-        assert events.completed(seen, reasoning).text == "brief"
-        (text,) = events.items(seen, event_pb2.ITEM_KIND_ASSISTANT_TEXT)
-        assert events.streamed_text(seen, text) == "BASELINE_OK"
-        assert events.completed(seen, text).text == "BASELINE_OK"
-        assert not events.items(seen, event_pb2.ITEM_KIND_TOOL_CALL)
-        events.assert_contiguous(seen)
-        events.assert_sourced(seen)
-        assert {entry.event.native.direction for entry in events.of_kind(seen, "native")} == {
-            event_pb2.DIRECTION_TO_HARNESS,
-            event_pb2.DIRECTION_FROM_HARNESS,
-        }
+    (reasoning,) = events.items(seen, event_pb2.ITEM_KIND_REASONING)
+    assert events.streamed_text(seen, reasoning) == "brief"
+    assert events.completed(seen, reasoning).text == "brief"
+    (text,) = events.items(seen, event_pb2.ITEM_KIND_ASSISTANT_TEXT)
+    assert events.streamed_text(seen, text) == "BASELINE_OK"
+    assert events.completed(seen, text).text == "BASELINE_OK"
+    assert not events.items(seen, event_pb2.ITEM_KIND_TOOL_CALL)
+    events.assert_contiguous(seen)
+    events.assert_sourced(seen)
+    assert {entry.event.native.direction for entry in events.of_kind(seen, "native")} == {
+        event_pb2.DIRECTION_TO_HARNESS,
+        event_pb2.DIRECTION_FROM_HARNESS,
+    }
 
 
 async def test_effort_change_is_confirmed_and_used_by_next_model_request(
-    client: RunnerClient, model: ScriptedModel, spec: runner_pb2.SessionSpec
+    driver: RunnerDriver, model: ScriptedModel, spec: runner_pb2.SessionSpec
 ) -> None:
     if spec.harness == runner_pb2.HARNESS_CLAUDE:
         # Haiku rejects the native effort setting before a model request; use an effort-capable model.
         spec.model = "agentplane-test/claude-opus-4-6"
         model.model = spec.model
-    async with await client.attach("effort-change-1", spec=spec) as session:
-        assert session.attached.spec.reasoning_effort == "low"
-        for index, effort in enumerate(("high", "low"), start=1):
-            command_id = f"effort-{index}"
-            await change_reasoning_effort(session, command_id, effort)
-            admitted = await session.until(events.is_kind("command_admitted"))
-            assert admitted.event.command_admitted.command.command_id == command_id
-            assert admitted.event.command_admitted.command.change_reasoning_effort.effort == effort
-            if spec.harness == runner_pb2.HARNESS_CLAUDE:
-                # Claude's settings control response is the proof. Merely sending it is not.
-                changed = await session.until(events.is_kind("reasoning_effort_changed"))
-                assert changed.event.reasoning_effort_changed.command_id == command_id
-                assert changed.event.source_sequences
-            await submit_input(session, f"input-{index}", f"Reply with exactly: EFFORT_{index}_OK")
-            request = await model.request()
-            assert request.effort == effort
-            await model.reply(request, Text(f"EFFORT_{index}_OK"))
-            if spec.harness == runner_pb2.HARNESS_CODEX:
-                # The matched turn/start answer, not command admission, settles Codex's effect.
-                changed = await session.until(events.is_kind("reasoning_effort_changed"))
-                assert changed.event.reasoning_effort_changed.command_id == command_id
-                assert changed.event.source_sequences
-            assert changed.event.reasoning_effort_changed.effort == effort
-            await session.until(events.turn_completed)
-        events.assert_sourced(session.seen)
+    session = await driver.attach("effort-change-1", spec=spec)
+    assert session.attached.spec.reasoning_effort == "low"
+    for index, effort in enumerate(("high", "low"), start=1):
+        command_id = f"effort-{index}"
+        await change_reasoning_effort(session, command_id, effort)
+        admitted = await session.until(events.is_kind("command_admitted"))
+        assert admitted.event.command_admitted.command.command_id == command_id
+        assert admitted.event.command_admitted.command.change_reasoning_effort.effort == effort
+        if spec.harness == runner_pb2.HARNESS_CLAUDE:
+            # Claude's settings control response is the proof. Merely sending it is not.
+            changed = await session.until(events.is_kind("reasoning_effort_changed"))
+            assert changed.event.reasoning_effort_changed.command_id == command_id
+            assert changed.event.source_sequences
+        await submit_input(session, f"input-{index}", f"Reply with exactly: EFFORT_{index}_OK")
+        request = await model.request()
+        assert request.effort == effort
+        await model.reply(request, Text(f"EFFORT_{index}_OK"))
+        if spec.harness == runner_pb2.HARNESS_CODEX:
+            # The matched turn/start answer, not command admission, settles Codex's effect.
+            changed = await session.until(events.is_kind("reasoning_effort_changed"))
+            assert changed.event.reasoning_effort_changed.command_id == command_id
+            assert changed.event.source_sequences
+        assert changed.event.reasoning_effort_changed.effort == effort
+        await session.until(events.turn_completed)
+    events.assert_sourced(session.seen)
 
 
 async def test_tool_call_reports_arguments_and_result(
-    client: RunnerClient, model: ScriptedModel, spec: runner_pb2.SessionSpec
+    driver: RunnerDriver, model: ScriptedModel, spec: runner_pb2.SessionSpec
 ) -> None:
-    async with await client.attach("tool-1", spec=spec) as session:
-        await submit_input(session, "input-1", "Run the tool and report TOOL_DONE.")
+    session = await driver.attach("tool-1", spec=spec)
+    await submit_input(session, "input-1", "Run the tool and report TOOL_DONE.")
 
-        request = await model.request()
-        await model.reply(request, ShellCall("call_test_1", "printf TOOL_OUTPUT"))
-        request = await model.request()
-        (output,) = request.tool_outputs
-        assert output.call_id == "call_test_1"
-        assert "TOOL_OUTPUT" in output.text
-        await model.reply(request, Text("TOOL_DONE"))
+    request = await model.request()
+    await model.reply(request, ShellCall("call_test_1", "printf TOOL_OUTPUT"))
+    request = await model.request()
+    (output,) = request.tool_outputs
+    assert output.call_id == "call_test_1"
+    assert "TOOL_OUTPUT" in output.text
+    await model.reply(request, Text("TOOL_DONE"))
 
-        done = await session.until(events.turn_completed)
-        assert done.event.turn_completed.status == event_pb2.TURN_STATUS_COMPLETED
-        seen = session.seen
-        (call,) = events.items(seen, event_pb2.ITEM_KIND_TOOL_CALL)
-        (started,) = [
-            entry for entry in events.of_kind(seen, "item_started") if entry.event.item_started.item_id == call
-        ]
-        assert started.event.item_started.tool_name
-        assert "printf TOOL_OUTPUT" in json.dumps(json.loads(events.tool_arguments(seen, call)))
-        result = events.completed(seen, call)
-        assert result.HasField("tool")
-        assert result.tool.succeeded
-        (text,) = events.items(seen, event_pb2.ITEM_KIND_ASSISTANT_TEXT)
-        assert events.completed(seen, text).text == "TOOL_DONE"
-        assert [events.kind(entry) for entry in seen if events.kind(entry) in ("item_started", "turn_completed")] == [
-            "item_started",
-            "item_started",
-            "turn_completed",
-        ]
-        events.assert_sourced(seen)
+    done = await session.until(events.turn_completed)
+    assert done.event.turn_completed.status == event_pb2.TURN_STATUS_COMPLETED
+    seen = session.seen
+    (call,) = events.items(seen, event_pb2.ITEM_KIND_TOOL_CALL)
+    (started,) = [entry for entry in events.of_kind(seen, "item_started") if entry.event.item_started.item_id == call]
+    assert started.event.item_started.tool_name
+    assert "printf TOOL_OUTPUT" in json.dumps(json.loads(events.tool_arguments(seen, call)))
+    result = events.completed(seen, call)
+    assert result.HasField("tool")
+    assert result.tool.succeeded
+    (text,) = events.items(seen, event_pb2.ITEM_KIND_ASSISTANT_TEXT)
+    assert events.completed(seen, text).text == "TOOL_DONE"
+    assert [events.kind(entry) for entry in seen if events.kind(entry) in ("item_started", "turn_completed")] == [
+        "item_started",
+        "item_started",
+        "turn_completed",
+    ]
+    events.assert_sourced(seen)
 
 
 @pytest.mark.parametrize("partial", [False, True], ids=["exhausted-before-content", "retry-after-visible-text"])
 async def test_model_connection_loss_through_runner(
-    client: RunnerClient, model: ScriptedModel, spec: runner_pb2.SessionSpec, partial: bool
+    driver: RunnerDriver, model: ScriptedModel, spec: runner_pb2.SessionSpec, partial: bool
 ) -> None:
     """Pin native retries, runner outcomes, and a later input in the same session."""
-    async with await client.attach(f"model-failure-{partial}", spec=spec) as session:
-        await submit_input(session, "first-input", "Reply with exactly: FIRST_OK")
-        # Both runner adapters cap retries at two; see the native
-        # harness_tests/*/test_connection_loss.py for the raw retry frames.
-        attempts = 2 if partial else 3
-        for attempt in range(attempts):
-            request = await model.request()
-            assert request.user_texts[-1] == "Reply with exactly: FIRST_OK"
-            if partial and attempt == 1:
-                await model.reply(request, Text("FIRST_OK"))
-            else:
-                await model.drop_connection(request, after_text="ABANDONED_PARTIAL" if partial else None)
-
-        first = await session.until(events.turn_completed)
-        assert first.event.turn_completed.status == (
-            event_pb2.TURN_STATUS_COMPLETED if partial else event_pb2.TURN_STATUS_FAILED
-        )
-        (admitted,) = events.of_kind(session.seen, "command_admitted")
-        assert admitted.event.command_admitted.command.command_id == "first-input"
-        assert len(events.of_kind(session.seen, "harness_user_message_confirmed")) == 1
-        assert len(events.of_kind(session.seen, "turn_completed")) == 1
-        assert model.request_count == attempts
-        assert events.of_kind(session.seen, "native")
-
-        await submit_input(session, "follow-up", "Reply with exactly: AFTER_ERROR_OK")
+    session = await driver.attach(f"model-failure-{partial}", spec=spec)
+    await submit_input(session, "first-input", "Reply with exactly: FIRST_OK")
+    # Both runner adapters cap retries at two; see the native
+    # harness_tests/*/test_connection_loss.py for the raw retry frames.
+    attempts = 2 if partial else 3
+    for attempt in range(attempts):
         request = await model.request()
-        assert request.user_texts[-1] == "Reply with exactly: AFTER_ERROR_OK"
-        await model.reply(request, Text("AFTER_ERROR_OK"))
-        recovered = await session.until(events.turn_completed)
-        assert recovered.event.turn_completed.status == event_pb2.TURN_STATUS_COMPLETED
-        assert recovered.event.turn_completed.turn_id != first.event.turn_completed.turn_id
-        assert [
-            entry.event.command_admitted.command.command_id
-            for entry in events.of_kind(session.seen, "command_admitted")
-        ] == ["first-input", "follow-up"]
-        events.assert_contiguous(session.seen)
-        events.assert_sourced(session.seen)
+        assert request.user_texts[-1] == "Reply with exactly: FIRST_OK"
+        if partial and attempt == 1:
+            await model.reply(request, Text("FIRST_OK"))
+        else:
+            await model.drop_connection(request, after_text="ABANDONED_PARTIAL" if partial else None)
+
+    first = await session.until(events.turn_completed)
+    assert first.event.turn_completed.status == (
+        event_pb2.TURN_STATUS_COMPLETED if partial else event_pb2.TURN_STATUS_FAILED
+    )
+    (admitted,) = events.of_kind(session.seen, "command_admitted")
+    assert admitted.event.command_admitted.command.command_id == "first-input"
+    assert len(events.of_kind(session.seen, "harness_user_message_confirmed")) == 1
+    assert len(events.of_kind(session.seen, "turn_completed")) == 1
+    assert model.request_count == attempts
+    assert events.of_kind(session.seen, "native")
+
+    await submit_input(session, "follow-up", "Reply with exactly: AFTER_ERROR_OK")
+    request = await model.request()
+    assert request.user_texts[-1] == "Reply with exactly: AFTER_ERROR_OK"
+    await model.reply(request, Text("AFTER_ERROR_OK"))
+    recovered = await session.until(events.turn_completed)
+    assert recovered.event.turn_completed.status == event_pb2.TURN_STATUS_COMPLETED
+    assert recovered.event.turn_completed.turn_id != first.event.turn_completed.turn_id
+    assert [
+        entry.event.command_admitted.command.command_id for entry in events.of_kind(session.seen, "command_admitted")
+    ] == ["first-input", "follow-up"]
+    events.assert_contiguous(session.seen)
+    events.assert_sourced(session.seen)
 
 
 async def test_model_http_error_through_runner(
-    client: RunnerClient, model: ScriptedModel, spec: runner_pb2.SessionSpec
+    driver: RunnerDriver, model: ScriptedModel, spec: runner_pb2.SessionSpec
 ) -> None:
     """HTTP failure is a failed turn, not a lost admission or a reason to resend input."""
-    async with await client.attach("http-error", spec=spec) as session:
-        await submit_input(session, "first-input", "Reply with exactly: HTTP_ERROR")
-        for _ in range(3):
-            request = await model.request()
-            assert request.user_texts[-1] == "Reply with exactly: HTTP_ERROR"
-            await model.http_error(request)
-        failed = await session.until(events.turn_completed)
-        assert failed.event.turn_completed.status == event_pb2.TURN_STATUS_FAILED
-        assert len(events.of_kind(session.seen, "harness_user_message_confirmed")) == 1
-        assert events.of_kind(session.seen, "native")
-        await submit_input(session, "second-input", "Reply with exactly: AFTER_HTTP_ERROR_OK")
+    session = await driver.attach("http-error", spec=spec)
+    await submit_input(session, "first-input", "Reply with exactly: HTTP_ERROR")
+    for _ in range(3):
         request = await model.request()
-        assert request.user_texts[-1] == "Reply with exactly: AFTER_HTTP_ERROR_OK"
-        await model.reply(request, Text("AFTER_HTTP_ERROR_OK"))
-        success = await session.until(events.turn_completed)
-        assert success.event.turn_completed.status == event_pb2.TURN_STATUS_COMPLETED
-        assert success.event.turn_completed.turn_id != failed.event.turn_completed.turn_id
-        assert [
-            entry.event.command_admitted.command.command_id
-            for entry in events.of_kind(session.seen, "command_admitted")
-        ] == ["first-input", "second-input"]
-        events.assert_contiguous(session.seen)
-        events.assert_sourced(session.seen)
+        assert request.user_texts[-1] == "Reply with exactly: HTTP_ERROR"
+        await model.http_error(request)
+    failed = await session.until(events.turn_completed)
+    assert failed.event.turn_completed.status == event_pb2.TURN_STATUS_FAILED
+    assert len(events.of_kind(session.seen, "harness_user_message_confirmed")) == 1
+    assert events.of_kind(session.seen, "native")
+    await submit_input(session, "second-input", "Reply with exactly: AFTER_HTTP_ERROR_OK")
+    request = await model.request()
+    assert request.user_texts[-1] == "Reply with exactly: AFTER_HTTP_ERROR_OK"
+    await model.reply(request, Text("AFTER_HTTP_ERROR_OK"))
+    success = await session.until(events.turn_completed)
+    assert success.event.turn_completed.status == event_pb2.TURN_STATUS_COMPLETED
+    assert success.event.turn_completed.turn_id != failed.event.turn_completed.turn_id
+    assert [
+        entry.event.command_admitted.command.command_id for entry in events.of_kind(session.seen, "command_admitted")
+    ] == ["first-input", "second-input"]
+    events.assert_contiguous(session.seen)
+    events.assert_sourced(session.seen)
 
 
 async def test_failed_tool_is_reported_as_failed(
-    client: RunnerClient, model: ScriptedModel, spec: runner_pb2.SessionSpec
+    driver: RunnerDriver, model: ScriptedModel, spec: runner_pb2.SessionSpec
 ) -> None:
-    async with await client.attach("tool-2", spec=spec) as session:
-        await submit_input(session, "input-1", "Run the failing tool.")
+    session = await driver.attach("tool-2", spec=spec)
+    await submit_input(session, "input-1", "Run the failing tool.")
 
-        request = await model.request()
-        await model.reply(request, ShellCall("call_test_1", "sh -c 'printf failing; exit 23'"))
-        request = await model.request()
-        (output,) = request.tool_outputs
-        assert "failing" in output.text
-        await model.reply(request, Text("SEEN_FAILURE"))
+    request = await model.request()
+    await model.reply(request, ShellCall("call_test_1", "sh -c 'printf failing; exit 23'"))
+    request = await model.request()
+    (output,) = request.tool_outputs
+    assert "failing" in output.text
+    await model.reply(request, Text("SEEN_FAILURE"))
 
-        await session.until(events.turn_completed)
-        (call,) = events.items(session.seen, event_pb2.ITEM_KIND_TOOL_CALL)
-        assert not events.completed(session.seen, call).tool.succeeded
+    await session.until(events.turn_completed)
+    (call,) = events.items(session.seen, event_pb2.ITEM_KIND_TOOL_CALL)
+    assert not events.completed(session.seen, call).tool.succeeded
 
 
 @pytest.mark.parametrize("harness", [runner_pb2.HARNESS_CODEX])
 async def test_codex_input_during_a_turn_joins_it(
-    client: RunnerClient, model: ScriptedModel, spec: runner_pb2.SessionSpec
+    driver: RunnerDriver, model: ScriptedModel, spec: runner_pb2.SessionSpec
 ) -> None:
-    async with await client.attach("join-1", spec=spec) as session:
-        await submit_input(session, "input-1", "Wait with the shell, then reply.")
+    session = await driver.attach("join-1", spec=spec)
+    await submit_input(session, "input-1", "Wait with the shell, then reply.")
 
-        request = await model.request()
-        await model.reply(request, ShellCall("call_test_1", WAIT_COMMAND))
-        await session.until(events.is_kind("tool_arguments"))
-        await submit_input(session, "input-2", "Reply ONLY SECOND_INPUT_OBSERVED after your current work.")
-        confirmed = await session.until(
-            lambda entry: (
-                events.kind(entry) == "harness_user_message_confirmed"
-                and entry.event.harness_user_message_confirmed.origin_command_ids == ["input-2"]
-            )
+    request = await model.request()
+    await model.reply(request, ShellCall("call_test_1", WAIT_COMMAND))
+    await session.until(events.is_kind("tool_arguments"))
+    await submit_input(session, "input-2", "Reply ONLY SECOND_INPUT_OBSERVED after your current work.")
+    confirmed = await session.until(
+        lambda entry: (
+            events.kind(entry) == "harness_user_message_confirmed"
+            and entry.event.harness_user_message_confirmed.origin_command_ids == ["input-2"]
         )
-        assert (
-            confirmed.event.harness_user_message_confirmed.turn_id == session.attached.active_turn_id
-            or confirmed.event.harness_user_message_confirmed.turn_id
-            == events.of_kind(session.seen, "turn_started")[-1].event.turn_started.turn_id
-        )
+    )
+    assert (
+        confirmed.event.harness_user_message_confirmed.turn_id == session.attached.active_turn_id
+        or confirmed.event.harness_user_message_confirmed.turn_id
+        == events.of_kind(session.seen, "turn_started")[-1].event.turn_started.turn_id
+    )
 
-        request = await model.request()
-        assert "wait_finished" in request.tool_outputs[0].text
-        assert any(
-            "SECOND_INPUT_OBSERVED" in text
-            for text in request.user_texts + [output.text for output in request.tool_outputs]
-        )
-        await model.reply(request, Text("SECOND_INPUT_OBSERVED"))
+    request = await model.request()
+    assert "wait_finished" in request.tool_outputs[0].text
+    assert any(
+        "SECOND_INPUT_OBSERVED" in text
+        for text in request.user_texts + [output.text for output in request.tool_outputs]
+    )
+    await model.reply(request, Text("SECOND_INPUT_OBSERVED"))
 
-        done = await session.until(events.turn_completed)
-        assert done.event.turn_completed.status == event_pb2.TURN_STATUS_COMPLETED
-        assert len(events.of_kind(session.seen, "turn_started")) == 1
-        assert [
-            entry.event.harness_user_message_confirmed.origin_command_ids
-            for entry in events.of_kind(session.seen, "harness_user_message_confirmed")
-        ] == [["input-1"], ["input-2"]]
+    done = await session.until(events.turn_completed)
+    assert done.event.turn_completed.status == event_pb2.TURN_STATUS_COMPLETED
+    assert len(events.of_kind(session.seen, "turn_started")) == 1
+    assert [
+        entry.event.harness_user_message_confirmed.origin_command_ids
+        for entry in events.of_kind(session.seen, "harness_user_message_confirmed")
+    ] == [["input-1"], ["input-2"]]
 
 
 @pytest.mark.parametrize("harness", [runner_pb2.HARNESS_CLAUDE])
 async def test_claude_inputs_during_a_tool_are_confirmed_from_the_started_cohort(
-    client: RunnerClient, model: ScriptedModel, spec: runner_pb2.SessionSpec
+    driver: RunnerDriver, model: ScriptedModel, spec: runner_pb2.SessionSpec
 ) -> None:
     """Claude folds active-turn inputs into its tool-result continuation, without a user echo."""
-    async with await client.attach("claude-tool-input-1", spec=spec) as session:
-        await submit_input(session, "input-1", "Wait with the shell, then reply.")
+    session = await driver.attach("claude-tool-input-1", spec=spec)
+    await submit_input(session, "input-1", "Wait with the shell, then reply.")
 
-        request = await model.request()
-        await model.reply(request, ShellCall("call_test_1", WAIT_COMMAND))
-        await session.until(events.is_kind("tool_arguments"))
-        await submit_input(session, "input-2", "Reply ONLY SECOND_INPUT_OBSERVED after your current work.")
-        await submit_input(session, "input-3", "Reply ONLY THIRD_INPUT_OBSERVED after your current work.")
+    request = await model.request()
+    await model.reply(request, ShellCall("call_test_1", WAIT_COMMAND))
+    await session.until(events.is_kind("tool_arguments"))
+    await submit_input(session, "input-2", "Reply ONLY SECOND_INPUT_OBSERVED after your current work.")
+    await submit_input(session, "input-3", "Reply ONLY THIRD_INPUT_OBSERVED after your current work.")
 
-        request = await model.request()
-        assert "wait_finished" in request.tool_outputs[0].text
-        assert "SECOND_INPUT_OBSERVED" in request.tool_outputs[0].text
-        assert "THIRD_INPUT_OBSERVED" in request.tool_outputs[0].text
-        await model.reply(request, Text("SECOND_INPUT_OBSERVED"))
+    request = await model.request()
+    assert "wait_finished" in request.tool_outputs[0].text
+    assert "SECOND_INPUT_OBSERVED" in request.tool_outputs[0].text
+    assert "THIRD_INPUT_OBSERVED" in request.tool_outputs[0].text
+    await model.reply(request, Text("SECOND_INPUT_OBSERVED"))
 
-        done = await session.until(events.turn_completed)
-        assert done.event.turn_completed.status == event_pb2.TURN_STATUS_COMPLETED
-        confirmations = events.of_kind(session.seen, "harness_user_message_confirmed")
-        assert [entry.event.harness_user_message_confirmed.origin_command_ids for entry in confirmations] == [
-            ["input-1"],
-            ["input-2", "input-3"],
-        ]
-        assert confirmations[-1].event.harness_user_message_confirmed.text == (
-            "Reply ONLY SECOND_INPUT_OBSERVED after your current work.\n"
-            "Reply ONLY THIRD_INPUT_OBSERVED after your current work."
-        )
-        assert len(confirmations[-1].event.source_sequences) == 3  # tool result, then Claude's two lifecycle starts.
+    done = await session.until(events.turn_completed)
+    assert done.event.turn_completed.status == event_pb2.TURN_STATUS_COMPLETED
+    confirmations = events.of_kind(session.seen, "harness_user_message_confirmed")
+    assert [entry.event.harness_user_message_confirmed.origin_command_ids for entry in confirmations] == [
+        ["input-1"],
+        ["input-2", "input-3"],
+    ]
+    assert confirmations[-1].event.harness_user_message_confirmed.text == (
+        "Reply ONLY SECOND_INPUT_OBSERVED after your current work.\n"
+        "Reply ONLY THIRD_INPUT_OBSERVED after your current work."
+    )
+    assert len(confirmations[-1].event.source_sequences) == 3  # tool result, then Claude's two lifecycle starts.
 
 
 async def test_model_change_then_input_is_admitted_without_waiting_for_model_effect(
-    client: RunnerClient, model: ScriptedModel, harness: runner_pb2.Harness, spec: runner_pb2.SessionSpec
+    driver: RunnerDriver, model: ScriptedModel, harness: runner_pb2.Harness, spec: runner_pb2.SessionSpec
 ) -> None:
     """The next input may follow model admission; the harness evidence still defines the effect."""
-    async with await client.attach("switch-model-1", spec=spec) as attached:
-        selected = (
-            "agentplane-switched/claude-haiku-4-5-20251001"
-            if harness == runner_pb2.HARNESS_CLAUDE
-            else "agentplane-switched-model"
-        )
-        await change_model(attached, "switch-1", selected)
-        await submit_input(attached, "input-1", "Reply with exactly: SWITCHED_MODEL_OK")
-        request = await model.request()
-        assert request.model == selected
-        assert request.user_texts == ["Reply with exactly: SWITCHED_MODEL_OK"]
-        await model.reply(request, Text("SWITCHED_MODEL_OK"))
-        changed = await attached.until(events.is_kind("model_changed"))
-        assert changed.event.model_changed.model == selected
-        started = await attached.until(events.is_kind("turn_started"))
-        assert started.event.turn_started.model == selected
-        await attached.until(events.turn_completed)
-        assert [
-            entry.event.command_admitted.command.command_id
-            for entry in events.of_kind(attached.seen, "command_admitted")
-        ] == ["switch-1", "input-1"]
+    session = await driver.attach("switch-model-1", spec=spec)
+    selected = (
+        "agentplane-switched/claude-haiku-4-5-20251001"
+        if harness == runner_pb2.HARNESS_CLAUDE
+        else "agentplane-switched-model"
+    )
+    await change_model(session, "switch-1", selected)
+    await submit_input(session, "input-1", "Reply with exactly: SWITCHED_MODEL_OK")
+    request = await model.request()
+    assert request.model == selected
+    assert request.user_texts == ["Reply with exactly: SWITCHED_MODEL_OK"]
+    await model.reply(request, Text("SWITCHED_MODEL_OK"))
+    changed = await session.until(events.is_kind("model_changed"))
+    assert changed.event.model_changed.model == selected
+    started = await session.until(events.is_kind("turn_started"))
+    assert started.event.turn_started.model == selected
+    await session.until(events.turn_completed)
+    assert [
+        entry.event.command_admitted.command.command_id for entry in events.of_kind(session.seen, "command_admitted")
+    ] == ["switch-1", "input-1"]
 
 
 @pytest.mark.parametrize("harness", [runner_pb2.HARNESS_CLAUDE])
 async def test_claude_active_turn_model_command_has_a_native_causal_outcome(
-    client: RunnerClient, model: ScriptedModel, spec: runner_pb2.SessionSpec
+    driver: RunnerDriver, model: ScriptedModel, spec: runner_pb2.SessionSpec
 ) -> None:
     """Claude's set-model control request can settle while a model request is still active."""
-    async with await client.attach("switch-model-active-1", spec=spec) as session:
-        await submit_input(session, "input-1", "Wait; do not answer early.")
-        request = await model.request()
-        await model.hold(request)
-        confirmed = await session.until(events.is_kind("harness_user_message_confirmed"))
-        selected = "agentplane-switched/claude-haiku-4-5-20251001"
-        await change_model(session, "switch-active", selected)
-        admitted = await session.until(events.is_kind("command_admitted"))
-        assert admitted.event.command_admitted.command.command_id == "switch-active"
+    session = await driver.attach("switch-model-active-1", spec=spec)
+    await submit_input(session, "input-1", "Wait; do not answer early.")
+    request = await model.request()
+    await model.hold(request)
+    confirmed = await session.until(events.is_kind("harness_user_message_confirmed"))
+    selected = "agentplane-switched/claude-haiku-4-5-20251001"
+    await change_model(session, "switch-active", selected)
+    admitted = await session.until(events.is_kind("command_admitted"))
+    assert admitted.event.command_admitted.command.command_id == "switch-active"
 
-        await interrupt_turn(session, "interrupt-active", confirmed.event.harness_user_message_confirmed.turn_id)
-        interrupted = await session.until(events.turn_completed)
-        assert interrupted.event.turn_completed.status == event_pb2.TURN_STATUS_INTERRUPTED
+    await interrupt_turn(session, "interrupt-active", confirmed.event.harness_user_message_confirmed.turn_id)
+    interrupted = await session.until(events.turn_completed)
+    assert interrupted.event.turn_completed.status == event_pb2.TURN_STATUS_INTERRUPTED
 
-        def is_outcome(entry: event_log_pb2.EventEntry) -> bool:
-            return events.kind(entry) == "model_changed" and entry.event.model_changed.command_id == "switch-active"
+    def is_outcome(entry: event_log_pb2.EventEntry) -> bool:
+        return events.kind(entry) == "model_changed" and entry.event.model_changed.command_id == "switch-active"
 
-        seen = [entry for entry in session.seen if is_outcome(entry)]
-        outcome = seen[-1] if seen else await session.until(is_outcome)
-        assert events.kind(outcome) == "model_changed"
+    seen = [entry for entry in session.seen if is_outcome(entry)]
+    outcome = seen[-1] if seen else await session.until(is_outcome)
+    assert events.kind(outcome) == "model_changed"
 
 
 @pytest.mark.parametrize("harness", [runner_pb2.HARNESS_CODEX])
 async def test_codex_active_turn_model_command_takes_effect_on_its_next_turn_start(
-    client: RunnerClient, model: ScriptedModel, spec: runner_pb2.SessionSpec
+    driver: RunnerDriver, model: ScriptedModel, spec: runner_pb2.SessionSpec
 ) -> None:
     """Codex cannot select a model until its later turn/start response proves that selection."""
-    async with await client.attach("switch-model-active-1", spec=spec) as session:
-        await submit_input(session, "input-1", "Wait; do not answer early.")
-        request = await model.request()
-        await model.hold(request)
-        confirmed = await session.until(events.is_kind("harness_user_message_confirmed"))
-        selected = "agentplane-switched-model"
-        await change_model(session, "switch-active", selected)
-        admitted = await session.until(events.is_kind("command_admitted"))
-        assert admitted.event.command_admitted.command.command_id == "switch-active"
+    session = await driver.attach("switch-model-active-1", spec=spec)
+    await submit_input(session, "input-1", "Wait; do not answer early.")
+    request = await model.request()
+    await model.hold(request)
+    confirmed = await session.until(events.is_kind("harness_user_message_confirmed"))
+    selected = "agentplane-switched-model"
+    await change_model(session, "switch-active", selected)
+    admitted = await session.until(events.is_kind("command_admitted"))
+    assert admitted.event.command_admitted.command.command_id == "switch-active"
 
-        await interrupt_turn(session, "interrupt-active", confirmed.event.harness_user_message_confirmed.turn_id)
-        interrupted = await session.until(events.turn_completed)
-        assert interrupted.event.turn_completed.status == event_pb2.TURN_STATUS_INTERRUPTED
+    await interrupt_turn(session, "interrupt-active", confirmed.event.harness_user_message_confirmed.turn_id)
+    interrupted = await session.until(events.turn_completed)
+    assert interrupted.event.turn_completed.status == event_pb2.TURN_STATUS_INTERRUPTED
 
-        await submit_input(session, "input-2", "Reply with exactly: ACTIVE_MODEL_OK")
-        request = await model.request()
-        assert request.model == selected
-        await model.reply(request, Text("ACTIVE_MODEL_OK"))
-        changed = await session.until(events.is_kind("model_changed"))
-        assert changed.event.model_changed.command_id == "switch-active"
-        assert changed.event.model_changed.model == selected
-        await session.until(events.turn_completed)
+    await submit_input(session, "input-2", "Reply with exactly: ACTIVE_MODEL_OK")
+    request = await model.request()
+    assert request.model == selected
+    await model.reply(request, Text("ACTIVE_MODEL_OK"))
+    changed = await session.until(events.is_kind("model_changed"))
+    assert changed.event.model_changed.command_id == "switch-active"
+    assert changed.event.model_changed.model == selected
+    await session.until(events.turn_completed)
 
 
 async def test_interrupt_ends_the_turn_as_interrupted(
-    client: RunnerClient, model: ScriptedModel, spec: runner_pb2.SessionSpec
+    driver: RunnerDriver, model: ScriptedModel, spec: runner_pb2.SessionSpec
 ) -> None:
-    async with await client.attach("interrupt-1", spec=spec) as session:
-        await submit_input(session, "input-1", "Wait; do not answer early.")
+    session = await driver.attach("interrupt-1", spec=spec)
+    await submit_input(session, "input-1", "Wait; do not answer early.")
 
-        request = await model.request()
-        await model.hold(request)
-        confirmed = await session.until(events.is_kind("harness_user_message_confirmed"))
-        await interrupt_turn(session, "interrupt-1", confirmed.event.harness_user_message_confirmed.turn_id)
+    request = await model.request()
+    await model.hold(request)
+    confirmed = await session.until(events.is_kind("harness_user_message_confirmed"))
+    await interrupt_turn(session, "interrupt-1", confirmed.event.harness_user_message_confirmed.turn_id)
 
-        done = await session.until(events.turn_completed)
-        assert done.event.turn_completed.status == event_pb2.TURN_STATUS_INTERRUPTED
-        assert done.event.turn_completed.interrupted_by_command_id == "interrupt-1"
-        assert not events.of_kind(session.seen, "item_completed")
+    done = await session.until(events.turn_completed)
+    assert done.event.turn_completed.status == event_pb2.TURN_STATUS_INTERRUPTED
+    assert done.event.turn_completed.interrupted_by_command_id == "interrupt-1"
+    assert not events.of_kind(session.seen, "item_completed")
 
-        await submit_input(session, "input-2", "Reply with exactly: AFTER_INTERRUPT_OK")
-        request = await model.request()
-        assert request.user_texts[-1] == "Reply with exactly: AFTER_INTERRUPT_OK"
-        await model.reply(request, Text("AFTER_INTERRUPT_OK"))
-        done = await session.until(events.turn_completed)
-        assert done.event.turn_completed.status == event_pb2.TURN_STATUS_COMPLETED
+    await submit_input(session, "input-2", "Reply with exactly: AFTER_INTERRUPT_OK")
+    request = await model.request()
+    assert request.user_texts[-1] == "Reply with exactly: AFTER_INTERRUPT_OK"
+    await model.reply(request, Text("AFTER_INTERRUPT_OK"))
+    done = await session.until(events.turn_completed)
+    assert done.event.turn_completed.status == event_pb2.TURN_STATUS_COMPLETED
 
 
-async def _interrupt_and_reconcile(session: Attachment, turn_id: str) -> event_pb2.ConversationReconciled:
+async def _interrupt_and_reconcile(session: SessionFollow, turn_id: str) -> event_pb2.ConversationReconciled:
     await interrupt_turn(session, "interrupt-thinking", turn_id)
     done = await session.until(events.turn_completed)
     assert done.event.turn_completed.status == event_pb2.TURN_STATUS_INTERRUPTED
@@ -422,78 +417,76 @@ def _is_streamed(words: str) -> Callable[[event_log_pb2.EventEntry], bool]:
 
 @pytest.mark.parametrize("harness", [runner_pb2.HARNESS_CLAUDE])
 async def test_claude_interrupt_right_after_thinking_reports_it_absent_and_does_not_replay_it(
-    client: RunnerClient, model: ScriptedModel, spec: runner_pb2.SessionSpec
+    driver: RunnerDriver, model: ScriptedModel, spec: runner_pb2.SessionSpec
 ) -> None:
     """Claude keeps a thinking block only beside another block of its message, which the interrupt
     came too early to write; `harness_tests/claude/test_turns.py` pins that on the real binary."""
-    async with await client.attach("interrupt-thinking-1", spec=spec) as session:
-        await submit_input(session, "input-1", "Think, then answer.")
-        await model.hold_through(
-            await model.request(),
-            [Reasoning("DROPPED_THOUGHT"), Text("NEVER_SENT")],
-            lambda event: event.kind == "content_block_stop",
-        )
-        await session.until(events.is_kind("item_completed"))
-        turn_id = events.of_kind(session.seen, "turn_started")[-1].event.turn_started.turn_id
+    session = await driver.attach("interrupt-thinking-1", spec=spec)
+    await submit_input(session, "input-1", "Think, then answer.")
+    await model.hold_through(
+        await model.request(),
+        [Reasoning("DROPPED_THOUGHT"), Text("NEVER_SENT")],
+        lambda event: event.kind == "content_block_stop",
+    )
+    await session.until(events.is_kind("item_completed"))
+    turn_id = events.of_kind(session.seen, "turn_started")[-1].event.turn_started.turn_id
 
-        reconciled = await _interrupt_and_reconcile(session, turn_id)
+    reconciled = await _interrupt_and_reconcile(session, turn_id)
 
-        (thought,) = events.items(session.seen, event_pb2.ITEM_KIND_REASONING)
-        assert _dispositions(reconciled) == {thought: event_pb2.RECOVERY_DISPOSITION_ABSENT}
-        await submit_input(session, "input-2", "Reply with exactly: AFTER_INTERRUPT_OK")
-        request = await model.request()
-        assert request.reasoning_texts == []
-        await model.reply(request, Text("AFTER_INTERRUPT_OK"))
-        await session.until(events.turn_completed)
+    (thought,) = events.items(session.seen, event_pb2.ITEM_KIND_REASONING)
+    assert _dispositions(reconciled) == {thought: event_pb2.RECOVERY_DISPOSITION_ABSENT}
+    await submit_input(session, "input-2", "Reply with exactly: AFTER_INTERRUPT_OK")
+    request = await model.request()
+    assert request.reasoning_texts == []
+    await model.reply(request, Text("AFTER_INTERRUPT_OK"))
+    await session.until(events.turn_completed)
 
 
 @pytest.mark.parametrize("harness", [runner_pb2.HARNESS_CLAUDE])
 async def test_claude_interrupt_after_thinking_and_some_text_keeps_the_thinking(
-    client: RunnerClient, model: ScriptedModel, spec: runner_pb2.SessionSpec
+    driver: RunnerDriver, model: ScriptedModel, spec: runner_pb2.SessionSpec
 ) -> None:
-    async with await client.attach("interrupt-thinking-2", spec=spec) as session:
-        await submit_input(session, "input-1", "Think, then answer.")
-        await model.hold_through(
-            await model.request(),
-            [Reasoning("KEPT_THOUGHT"), Text("PARTIAL_ANSWER")],
-            lambda event: event.kind == "text_delta",
-        )
-        await session.until(_is_streamed("PARTIAL_ANSWER"))
-        turn_id = events.of_kind(session.seen, "turn_started")[-1].event.turn_started.turn_id
+    session = await driver.attach("interrupt-thinking-2", spec=spec)
+    await submit_input(session, "input-1", "Think, then answer.")
+    await model.hold_through(
+        await model.request(),
+        [Reasoning("KEPT_THOUGHT"), Text("PARTIAL_ANSWER")],
+        lambda event: event.kind == "text_delta",
+    )
+    await session.until(_is_streamed("PARTIAL_ANSWER"))
+    turn_id = events.of_kind(session.seen, "turn_started")[-1].event.turn_started.turn_id
 
-        reconciled = await _interrupt_and_reconcile(session, turn_id)
+    reconciled = await _interrupt_and_reconcile(session, turn_id)
 
-        (thought,) = events.items(session.seen, event_pb2.ITEM_KIND_REASONING)
-        assert _dispositions(reconciled)[thought] == event_pb2.RECOVERY_DISPOSITION_RETAINED
-        await submit_input(session, "input-2", "Reply with exactly: AFTER_INTERRUPT_OK")
-        request = await model.request()
-        assert request.reasoning_texts == ["KEPT_THOUGHT"]
-        await model.reply(request, Text("AFTER_INTERRUPT_OK"))
-        await session.until(events.turn_completed)
+    (thought,) = events.items(session.seen, event_pb2.ITEM_KIND_REASONING)
+    assert _dispositions(reconciled)[thought] == event_pb2.RECOVERY_DISPOSITION_RETAINED
+    await submit_input(session, "input-2", "Reply with exactly: AFTER_INTERRUPT_OK")
+    request = await model.request()
+    assert request.reasoning_texts == ["KEPT_THOUGHT"]
+    await model.reply(request, Text("AFTER_INTERRUPT_OK"))
+    await session.until(events.turn_completed)
 
 
 @pytest.mark.parametrize("harness", [runner_pb2.HARNESS_CLAUDE])
 async def test_claude_interrupt_after_thinking_and_a_tool_call_keeps_the_thinking(
-    client: RunnerClient, model: ScriptedModel, spec: runner_pb2.SessionSpec
+    driver: RunnerDriver, model: ScriptedModel, spec: runner_pb2.SessionSpec
 ) -> None:
-    async with await client.attach("interrupt-thinking-3", spec=spec) as session:
-        await submit_input(session, "input-1", "Think, then run the shell.")
-        # Only shell builtins: the harness's tool environment has no external commands.
-        await model.reply(
-            await model.request(), Reasoning("KEPT_THOUGHT"), ShellCall("call_test_1", "while :; do :; done")
-        )
-        await session.until(events.is_kind("tool_arguments"))
-        turn_id = events.of_kind(session.seen, "turn_started")[-1].event.turn_started.turn_id
+    session = await driver.attach("interrupt-thinking-3", spec=spec)
+    await submit_input(session, "input-1", "Think, then run the shell.")
+    # Only shell builtins: the harness's tool environment has no external commands.
+    await model.reply(await model.request(), Reasoning("KEPT_THOUGHT"), ShellCall("call_test_1", "while :; do :; done"))
+    await session.until(events.is_kind("tool_arguments"))
+    turn_id = events.of_kind(session.seen, "turn_started")[-1].event.turn_started.turn_id
 
-        reconciled = await _interrupt_and_reconcile(session, turn_id)
+    reconciled = await _interrupt_and_reconcile(session, turn_id)
 
-        (thought,) = events.items(session.seen, event_pb2.ITEM_KIND_REASONING)
-        assert _dispositions(reconciled)[thought] == event_pb2.RECOVERY_DISPOSITION_RETAINED
-        await submit_input(session, "input-2", "Reply with exactly: AFTER_INTERRUPT_OK")
-        request = await model.request()
-        assert request.reasoning_texts == ["KEPT_THOUGHT"]
-        await model.reply(request, Text("AFTER_INTERRUPT_OK"))
-        await session.until(events.turn_completed)
+    (thought,) = events.items(session.seen, event_pb2.ITEM_KIND_REASONING)
+    assert _dispositions(reconciled)[thought] == event_pb2.RECOVERY_DISPOSITION_RETAINED
+    await submit_input(session, "input-2", "Reply with exactly: AFTER_INTERRUPT_OK")
+    request = await model.request()
+    assert request.reasoning_texts == ["KEPT_THOUGHT"]
+    await model.reply(request, Text("AFTER_INTERRUPT_OK"))
+    await session.until(events.turn_completed)
 
 
 if __name__ == "__main__":

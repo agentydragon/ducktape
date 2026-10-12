@@ -4,12 +4,6 @@ package agentplane.proto.event_log;
 
 import "agentplane/proto/event.proto";
 
-message Follow {
-  // Entries strictly after this source-local cursor are replayed before live entries. Zero starts
-  // from the beginning. A cursor beyond the current log is an error.
-  uint64 after_cursor = 1;
-}
-
 message EventOrigin {
   // Globally unique, durable identity of the source which originally appended this Event.
   string source_id = 1;

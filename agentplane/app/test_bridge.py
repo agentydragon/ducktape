@@ -57,9 +57,9 @@ from agentplane.postgres.wakeups import WakeupListener
 from agentplane.proto import command_pb2, event_log_pb2, event_pb2, runner_pb2
 from agentplane.proto.sandbox_service_pb2 import SandboxDestination, ServiceAccount
 from agentplane.runner.harness import Harness
+from agentplane.runner.service import Runner
 from agentplane.runner.session import Session
 from agentplane.runner.testing.failure_journal import FailureEvidence
-from agentplane.runner.testing.fixtures import RunnerHandle
 from agentplane.runner.testing.scripted_model import ScriptedModel, ShellCall, Text
 from agentplane.runner_gateway.client import RunnerGatewayClient
 from agentplane.runner_gateway.testing.control_listener import dialing
@@ -80,7 +80,7 @@ SESSIONS = f"/sandboxes/{SANDBOX}/sessions"
 @pytest.fixture
 async def failed_bridge_state(
     request: pytest.FixtureRequest,
-    runner: RunnerHandle,
+    runner: Runner,
     event_logs: SeededEventLogStore,
     history_client: HistoryServiceClient,
     local_runners: SandboxSessions,
@@ -93,7 +93,7 @@ async def failed_bridge_state(
     if (evidence := FailureEvidence.for_failed_call(request)) is None:
         return
     state: dict[str, Any] = {}
-    for session_id, session in runner.runner.sessions.items():
+    for session_id, session in runner.sessions.items():
         observed: dict[str, Any] = {"runner_cursor": session.journal.last_cursor}
         state[session_id] = observed
         try:
@@ -122,8 +122,8 @@ async def _create(http: httpx.AsyncClient, spec: runner_pb2.SessionSpec, session
     return str(opened.json()["sessionId"])
 
 
-def _runner_session(runner: RunnerHandle, thread_id: str | UUID) -> Session:
-    return runner.runner.sessions[str(thread_id)]
+def _runner_session(runner: Runner, thread_id: str | UUID) -> Session:
+    return runner.sessions[str(thread_id)]
 
 
 def _commands(thread_id: str) -> str:
@@ -183,11 +183,11 @@ def register_attached_sessions() -> bool:
 
 @pytest.fixture
 async def history_client(
-    runner: RunnerHandle, service_history_db_url: str, history_token_file: Path
+    runner: Runner, service_history_db_url: str, history_token_file: Path
 ) -> AsyncIterator[HistoryServiceClient]:
     # The History Service reads what the local runner pushes to its ingress, as deployed.
     async with (
-        ingest(service_history_db_url, runner.runner),
+        ingest(service_history_db_url, runner),
         history_service(service_history_db_url, history_token_file) as client,
     ):
         yield client
@@ -200,12 +200,12 @@ async def local_runners(
     gateway: RunnerGatewayClient,
     custom_objects: FakeCustomObjectsApi,
     core_v1: FakeCoreV1Api,
-    runner: RunnerHandle,
+    runner: Runner,
 ) -> AsyncIterator[SandboxSessions]:
     """`SANDBOX` running, its Pod's runner connected over the control stream."""
     raw, live_index.pods[SANDBOX] = seed_runner(custom_objects, core_v1, SANDBOX)
     live_index.sandboxes[SANDBOX] = raw
-    async with dialing(runner.runner, sandbox_endpoint.control_target, runner_bearer(SANDBOX)):
+    async with dialing(runner, sandbox_endpoint.control_target, runner_bearer(SANDBOX)):
         await asyncio.to_thread(sandbox_endpoint.wait_connected, UUID(raw["metadata"]["uid"]))
         yield SandboxSessions(live_index, gateway)
 
@@ -598,7 +598,7 @@ async def test_http_error_is_archived_as_failed_turn_and_follow_up_succeeds(
 async def test_stream_recovery_reports_the_content_the_model_receives(
     app_url: str,
     model: ScriptedModel,
-    runner: RunnerHandle,
+    runner: Runner,
     history: History,
     spec: runner_pb2.SessionSpec,
     failed_bridge_state: None,
@@ -653,7 +653,7 @@ async def test_stream_recovery_reports_the_content_the_model_receives(
         )
 
 
-async def _interrupt_and_recover(http: httpx.AsyncClient, runner: RunnerHandle, thread_id: str, mode: str) -> int:
+async def _interrupt_and_recover(http: httpx.AsyncClient, runner: Runner, thread_id: str, mode: str) -> int:
     session = _runner_session(runner, thread_id)
     process = session.process
     assert process is not None
@@ -722,7 +722,7 @@ async def _interrupt_and_recover(http: httpx.AsyncClient, runner: RunnerHandle, 
 async def test_tool_recovery_reports_context_without_repeating_side_effects(
     app_url: str,
     model: ScriptedModel,
-    runner: RunnerHandle,
+    runner: Runner,
     history: History,
     spec: runner_pb2.SessionSpec,
     workspace: Path,
@@ -818,7 +818,7 @@ async def test_tool_recovery_reports_context_without_repeating_side_effects(
 async def test_resume_after_tool_completion_preserves_the_result_and_does_not_repeat_it(
     app_url: str,
     model: ScriptedModel,
-    runner: RunnerHandle,
+    runner: Runner,
     history: History,
     spec: runner_pb2.SessionSpec,
     workspace: Path,
@@ -990,7 +990,7 @@ async def test_thread_command_reports_id_conflict_after_runner_admitted_before_a
 
 async def test_stop_command_returns_after_admission_before_native_shutdown_effect(
     app_url: str,
-    runner: RunnerHandle,
+    runner: Runner,
     spec: runner_pb2.SessionSpec,
     monkeypatch: pytest.MonkeyPatch,
     failed_bridge_state: None,
@@ -1112,7 +1112,7 @@ async def replicas(
     sandbox_endpoint: Endpoint,
     local_runners: SandboxSessions,
     live_index: LiveIndex,
-    runner: RunnerHandle,
+    runner: Runner,
     database_updates: WakeupListener,
     db_url: str,
     event_logs: SeededEventLogStore,
@@ -1219,7 +1219,7 @@ async def test_history_openings_give_a_session_the_app_did_not_start_a_thread(
     gateway: RunnerGatewayClient,
     custom_objects: FakeCustomObjectsApi,
     core_v1: FakeCoreV1Api,
-    runner: RunnerHandle,
+    runner: Runner,
     store: ThreadStore,
     event_logs: SeededEventLogStore,
     spec: runner_pb2.SessionSpec,
@@ -1233,7 +1233,7 @@ async def test_history_openings_give_a_session_the_app_did_not_start_a_thread(
         sandbox_uid=raw["metadata"]["uid"],
     )
     async with (
-        dialing(runner.runner, sandbox_endpoint.control_target, runner_bearer(SANDBOX)),
+        dialing(runner, sandbox_endpoint.control_target, runner_bearer(SANDBOX)),
         history_client.new_client() as openings_client,
     ):
         await asyncio.to_thread(sandbox_endpoint.wait_connected, UUID(destination.sandbox_uid))

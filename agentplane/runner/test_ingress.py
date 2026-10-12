@@ -17,7 +17,7 @@ import pytest_bazel
 
 from agentplane.grpc_serving import serving
 from agentplane.proto import event_log_pb2, event_pb2, runner_ingress_pb2, runner_ingress_pb2_grpc, runner_pb2
-from agentplane.runner.config import IngressEndpoint, RunnerConfig
+from agentplane.runner.config import RunnerConfig
 from agentplane.runner.control import ControlTiming
 from agentplane.runner.ingress import IngressPusher
 from agentplane.runner.service import Runner
@@ -110,10 +110,7 @@ class ScriptedIngress(runner_ingress_pb2_grpc.RunnerIngressServicer):
 
 @pytest.fixture
 def config(tmp_path: Path) -> RunnerConfig:
-    # Each test starts its pusher against its own ingress; the endpoint here only makes Seal say so.
-    return RunnerConfig(
-        state_dir=tmp_path / "state", ingress=IngressEndpoint(target="test-ingress.invalid:1", bearer="test-bearer")
-    )
+    return RunnerConfig(state_dir=tmp_path / "state")
 
 
 async def journal_stderr(runner: Runner, session_id: str, count: int) -> None:

@@ -1,8 +1,7 @@
-"""Durable, replayable output from the one bootstrap attempt a sandbox may make."""
+"""Durable output from the one bootstrap attempt a sandbox may make."""
 
 from __future__ import annotations
 
-import asyncio
 import json
 import os
 from collections.abc import Sequence
@@ -14,7 +13,7 @@ from agentplane.proto import runner_pb2
 
 
 class InitializationLog:
-    """An append-only initialization event log with dense reconnect cursors."""
+    """An append-only initialization event log with dense sequences."""
 
     def __init__(self, path: Path) -> None:
         self.path = path
@@ -22,7 +21,6 @@ class InitializationLog:
         if path.exists():
             self._load()
         self._file = path.open("ab")
-        self._changed = asyncio.Event()
 
     def _load(self) -> None:
         data = self.path.read_bytes()
@@ -82,12 +80,6 @@ class InitializationLog:
         self._file.flush()
         os.fsync(self._file.fileno())
         self._events.append(event)
-        changed, self._changed = self._changed, asyncio.Event()
-        changed.set()
-
-    async def wait_beyond(self, sequence: int) -> None:
-        while self.last_sequence <= sequence:
-            await self._changed.wait()
 
     def close(self) -> None:
         self._file.close()

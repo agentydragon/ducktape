@@ -9,27 +9,26 @@ from __future__ import annotations
 
 import logging
 from collections.abc import AsyncIterator
-from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Protocol, cast
+from typing import Any, cast
 
 import pytest
 
 from agentplane.harness_tests.claude.messages import AnthropicMessages
 from agentplane.harness_tests.codex.responses import OpenAIResponses
 from agentplane.proto import runner_pb2
-from agentplane.runner.client import RunnerClient
 from agentplane.runner.config import RunnerConfig
-from agentplane.runner.service import Runner, serve
+from agentplane.runner.service import Runner
 from agentplane.runner.testing import launches
 from agentplane.runner.testing.claude_model import ClaudeModel
 from agentplane.runner.testing.codex_model import CodexModel
+from agentplane.runner.testing.driver import RunnerDriver
 from agentplane.runner.testing.failure_journal import FailureEvidence
+from agentplane.runner.testing.gateway import Gateway, dialing, serve_gateway
 from agentplane.runner.testing.scripted_model import ScriptedModel
 
 # The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.
 # gazelle:include_dep @pypi//protobuf
-# gazelle:include_dep @pypi//grpcio
 
 
 @pytest.fixture(params=[runner_pb2.HARNESS_CLAUDE, runner_pb2.HARNESS_CODEX], ids=["claude", "codex"])
@@ -78,41 +77,27 @@ def config(harness: runner_pb2.Harness, endpoint: ModelEndpoint, tmp_path: Path)
     return launches.config(harness, endpoint.origin, state_dir=tmp_path / "state", home=tmp_path / "home")
 
 
-@dataclass
-class RunnerHandle:
-    runner: Runner
-    port: int
-
-    @property
-    def target(self) -> str:
-        return f"127.0.0.1:{self.port}"
-
-
-class RunnerClientFactory(Protocol):
-    def __call__(self, target: str, *, capture_history: bool = False) -> RunnerClient: ...
-
-
-@pytest.fixture
-def runner_client_factory() -> RunnerClientFactory:
-    def create(target: str, *, capture_history: bool = False) -> RunnerClient:
-        return RunnerClient(target, capture_history=capture_history)
-
-    return create
-
-
 @pytest.fixture
 async def runner(
     request: pytest.FixtureRequest, config: RunnerConfig, caplog: pytest.LogCaptureFixture
-) -> AsyncIterator[RunnerHandle]:
-    """A served runner whose native evidence a failed test keeps in its undeclared outputs."""
+) -> AsyncIterator[Runner]:
+    """A started runner whose native evidence a failed test keeps in its undeclared outputs."""
     caplog.set_level(logging.INFO, logger="httpx")
-    async with serve(config, address="127.0.0.1:0", grace_s=0) as (started, port):
-        yield RunnerHandle(runner=started, port=port)
+    async with Runner(config) as started:
+        await started.startup()
+        yield started
         if (evidence := FailureEvidence.for_failed_call(request)) is not None:
             await evidence.preserve_runner(started)
 
 
 @pytest.fixture
-async def client(runner: RunnerHandle, runner_client_factory: RunnerClientFactory) -> AsyncIterator[RunnerClient]:
-    async with runner_client_factory(runner.target, capture_history=True) as client:
-        yield client
+async def gateway() -> AsyncIterator[Gateway]:
+    async with serve_gateway() as gateway:
+        yield gateway
+
+
+@pytest.fixture
+async def driver(runner: Runner, gateway: Gateway) -> AsyncIterator[RunnerDriver]:
+    """Drives `runner`, which dials `gateway` for the duration of the test."""
+    async with dialing(runner, gateway):
+        yield RunnerDriver(gateway)

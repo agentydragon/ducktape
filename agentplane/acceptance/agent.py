@@ -32,7 +32,7 @@ from agentplane.proto import command_pb2, event_pb2, runner_pb2
 TURN_SECONDS = 300.0
 # The runner's writable volume; the image's workspace is not writable by the runner's user.
 WORKING_DIRECTORY = "/state/work"
-# How long a Running sandbox may still be short of a listening runner. Generous because the gap is
+# How long a Running sandbox may still be short of a connected runner. Generous because the gap is
 # a container start, not a fixed cost, and a scenario that waits a few seconds here is cheaper than
 # one that fails a whole run.
 RUNNER_ANSWERS_SECONDS = 120.0
@@ -118,7 +118,7 @@ class Agent:
     async def open(
         cls, client: Client, *, sandbox: str, harness: runner_pb2.Harness, model: str, instructions: str = ""
     ) -> Agent:
-        """Open a session, waiting out a runner that is up but not yet listening.
+        """Open a session, waiting out a runner that is up but not yet connected.
 
         A Running Sandbox's runner may not answer yet. Retry that `503` with the same
         Session ID; other HTTP errors fail immediately.

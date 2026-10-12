@@ -74,7 +74,7 @@ async def receipt(runner: Runner, deliver: runner_control_pb2.DeliverCommand) ->
         return _refused(deliver, runner_control_pb2.CommandRefused.REASON_SESSION_UNKNOWN, "no such session")
     stored = await session.journal.get(command.command_id)
     if stored is None:
-        # Like Attach, delivery never starts a stopped harness.
+        # Delivery never starts a stopped harness.
         if not session.running:
             return _refused(
                 deliver, runner_control_pb2.CommandRefused.REASON_HARNESS_STOPPED, "the harness is not running"
@@ -111,8 +111,8 @@ def _control_refused(
 
 
 async def control(runner: Runner, request: runner_control_pb2.ControlRequest) -> runner_control_pb2.ControlResult:
-    """Carry out one lifecycle request with the operations the inbound API uses, and always answer it.
-    Initialization is answered with its terminal event only, once the attempt has ended."""
+    """Carry out one lifecycle request and always answer it. Initialization is answered with its
+    terminal event only, once the attempt has ended."""
     result = runner_control_pb2.ControlResult(request_id=request.request_id)
     try:
         match request.WhichOneof("verb"):
@@ -120,9 +120,7 @@ async def control(runner: Runner, request: runner_control_pb2.ControlRequest) ->
                 result.list_sessions.sessions.extend(runner.summaries())
             case "initialize":
                 try:
-                    log, execution = await runner.initialize(
-                        runner_pb2.InitializeRequest(script=request.initialize.script)
-                    )
+                    log, execution = await runner.initialize(request.initialize.script)
                 except ValueError as error:
                     raise InvalidRequestError(str(error)) from error
                 if execution is not None:

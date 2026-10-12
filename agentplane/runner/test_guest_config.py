@@ -5,7 +5,6 @@ import pytest_bazel
 from pydantic import ValidationError
 
 from agentplane.runner import guest_config
-from agentplane.runner.config import IngressEndpoint
 from agentplane.runner.guest_config import GuestConfig, make_runner_config
 
 
@@ -42,7 +41,6 @@ def test_guest_config_builds_explicit_proxy_and_persistent_paths() -> None:
     assert runner.harness_environment["HTTPS_PROXY"] == runner.harness_environment["HTTP_PROXY"]
     assert runner.harness_environment["KUBECONFIG"] == "/run/agentplane/kubeconfig"
     assert runner.harness_environment["SSL_CERT_FILE"] == "/run/agentplane/ca-certificates.crt"
-    assert runner.ingress == IngressEndpoint(target="test-history.test:8081", bearer="test-ingress-placeholder")
 
 
 @pytest.mark.parametrize(

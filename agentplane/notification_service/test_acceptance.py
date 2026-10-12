@@ -35,7 +35,7 @@ from agentplane.notification_service.sources.actions import ActionServiceClient
 from agentplane.notification_service.store import Store
 from agentplane.proto import command_pb2, event_log_pb2, runner_pb2
 from agentplane.proto.sandbox_service_pb2 import SandboxDestination, ServiceAccount
-from agentplane.runner.testing.fixtures import RunnerHandle
+from agentplane.runner.service import Runner
 from agentplane.runner.testing.scripted_model import ScriptedModel, Text
 from agentplane.runner_gateway.client import RunnerGatewayClient
 from agentplane.runner_gateway.instructions import render_platform_instructions
@@ -63,7 +63,7 @@ async def test_listen_deliver_read_ack_and_recover_lost_response_without_app(
     action_engine: AsyncEngine,
     echo_catalog: ActionCatalog,
     echo_executor: RecordingExecutor,
-    runner: RunnerHandle,
+    runner: Runner,
     spec: runner_pb2.SessionSpec,
     model: ScriptedModel,
     tmp_path: Path,
@@ -113,7 +113,7 @@ async def test_listen_deliver_read_ack_and_recover_lost_response_without_app(
             ) as action_http,
             authenticated_service(
                 cluster,
-                runner.runner,
+                runner,
                 token_file,
                 database_url=sandbox_service_db_url,
                 manager=delegate,
@@ -125,7 +125,7 @@ async def test_listen_deliver_read_ack_and_recover_lost_response_without_app(
                     notifications_service_url="http://notifications.test",
                 ),
             ) as (sandboxes, remote),
-            ingest(sandbox_service_db_url, runner.runner),
+            ingest(sandbox_service_db_url, runner),
             history_service(sandbox_service_db_url, tmp_path / "history-token") as history,
             history_wakeups.listener.listen(),
         ):
@@ -382,7 +382,7 @@ async def test_listen_deliver_read_ack_and_recover_lost_response_without_app(
                     f"/v1/inboxes/{inbox_id}/acknowledgement", json={"through_cursor": page["entries"][-1]["cursor"]}
                 )
                 assert ack.json()["acknowledged"] == 2
-                (native_session,) = runner.runner.sessions.values()
+                (native_session,) = runner.sessions.values()
                 journal = await native_session.journal.since(0, limit=1000)
                 admitted = [
                     entry.event.command_admitted.command.command_id

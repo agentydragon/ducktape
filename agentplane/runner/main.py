@@ -1,4 +1,5 @@
-"""The runner process: one gRPC listener over the sessions in a state directory.
+"""The runner process: the sessions in a state directory, driven over the control stream it dials to
+the Runner Gateway, their Events pushed to the ingress it dials.
 
 Credentials come from the runner's own environment, never from flags or the protocol:
 ANTHROPIC_AUTH_TOKEN for Claude sessions, OPENAI_API_KEY for Codex sessions. A harness child
@@ -20,10 +21,10 @@ from typing import Annotated
 
 import typer
 
-from agentplane.runner.config import ClaudeLaunch, CodexLaunch, DebugCheckpoint, IngressEndpoint, RunnerConfig
+from agentplane.runner.config import ClaudeLaunch, CodexLaunch, DebugCheckpoint, RunnerConfig, ServiceEndpoint
 from agentplane.runner.control import ControlTiming, RunnerControlClient
 from agentplane.runner.ingress import IngressPusher
-from agentplane.runner.service import serve
+from agentplane.runner.service import Runner
 
 logger = logging.getLogger(__name__)
 app = typer.Typer(add_completion=False)
@@ -64,7 +65,14 @@ def harness_environment(
 @app.command()
 def main(
     state_dir: Annotated[Path, typer.Option(help="Session logs and harness persistence live here.")],
-    listen: Annotated[str, typer.Option(help="Bind address; port 0 picks a free one.")] = "127.0.0.1:0",
+    control_target: Annotated[str, typer.Option(help="Runner Gateway runner-control host:port to dial.")],
+    control_bearer: Annotated[
+        str, typer.Option(help="Bearer placeholder the egress proxy substitutes on the runner control stream.")
+    ],
+    ingress_target: Annotated[str, typer.Option(help="Runner ingress host:port to push every Session's Events to.")],
+    ingress_bearer: Annotated[
+        str, typer.Option(help="Bearer placeholder the egress proxy substitutes on the runner ingress.")
+    ],
     claude_binary: Annotated[Path | None, typer.Option(help="Claude Code CLI; omit to refuse Claude sessions.")] = None,
     anthropic_base_url: Annotated[str | None, typer.Option(help="Anthropic Messages endpoint for Claude.")] = None,
     codex_binary: Annotated[Path | None, typer.Option(help="Codex CLI; omit to refuse Codex sessions.")] = None,
@@ -87,19 +95,6 @@ def main(
             "with, its value owned by the image rather than by this invocation; repeat per name.",
         ),
     ] = None,
-    control_target: Annotated[
-        str | None,
-        typer.Option(help="Runner Gateway runner-control host:port to dial; omit to serve only inbound Attach."),
-    ] = None,
-    control_bearer: Annotated[
-        str | None, typer.Option(help="Bearer placeholder the egress proxy substitutes on the runner control stream.")
-    ] = None,
-    ingress_target: Annotated[
-        str | None, typer.Option(help="Runner ingress host:port to push every Session's Events to; omit to push none.")
-    ] = None,
-    ingress_bearer: Annotated[
-        str | None, typer.Option(help="Bearer placeholder the egress proxy substitutes on the runner ingress.")
-    ] = None,
     test_debug_checkpoint_name: Annotated[
         str | None, typer.Option(hidden=True, help="Test-only crash-test checkpoint name.")
     ] = None,
@@ -120,10 +115,6 @@ def main(
         if openai_base_url is None:
             raise typer.BadParameter("--openai-base-url is required with --codex-binary")
         codex = CodexLaunch(binary=codex_binary, base_url=openai_base_url, api_key=os.environ["OPENAI_API_KEY"])
-    if (control_target is None) != (control_bearer is None):
-        raise typer.BadParameter("--control-target and --control-bearer must be set together")
-    if (ingress_target is None) != (ingress_bearer is None):
-        raise typer.BadParameter("--ingress-target and --ingress-bearer must be set together")
     if (test_debug_checkpoint_name is None) != (test_debug_checkpoint_command_id is None):
         raise typer.BadParameter("both test debug checkpoint options must be set together")
     config = RunnerConfig(
@@ -133,49 +124,39 @@ def main(
         ),
         claude=claude,
         codex=codex,
-        ingress=(
-            IngressEndpoint(target=ingress_target, bearer=ingress_bearer)
-            if ingress_target is not None and ingress_bearer is not None
-            else None
-        ),
         test_debug_checkpoint=(
             DebugCheckpoint(test_debug_checkpoint_name, test_debug_checkpoint_command_id)
             if test_debug_checkpoint_name is not None and test_debug_checkpoint_command_id is not None
             else None
         ),
     )
-    control = (control_target, control_bearer) if control_target is not None and control_bearer is not None else None
-    asyncio.run(async_main(config, listen, control))
+    asyncio.run(
+        async_main(
+            config,
+            control=ServiceEndpoint(target=control_target, bearer=control_bearer),
+            ingress=ServiceEndpoint(target=ingress_target, bearer=ingress_bearer),
+        )
+    )
 
 
-async def async_main(config: RunnerConfig, listen: str, control: tuple[str, str] | None) -> None:
-    async with serve(config, address=listen, grace_s=5) as (runner, port):
-        host = listen.rsplit(":", 1)[0]
-        # The line a supervisor or test reads to find the port.
-        print(f"listening {host}:{port}", flush=True)
+async def async_main(config: RunnerConfig, *, control: ServiceEndpoint, ingress: ServiceEndpoint) -> None:
+    async with Runner(config) as runner:
+        await runner.startup()
         stopping = asyncio.Event()
         loop = asyncio.get_running_loop()
         for signum in (signal.SIGINT, signal.SIGTERM):
             loop.add_signal_handler(signum, stopping.set)
         # A broken control stream or ingress push must not take the harnesses down with it, nor each other.
-        dialing: list[asyncio.Task[None]] = []
-        if control is not None:
-            target, bearer = control
-            dialing.append(
-                asyncio.create_task(
-                    RunnerControlClient(runner, target=target, bearer=bearer, timing=ControlTiming()).run(),
-                    name="runner control stream",
-                )
-            )
-        if config.ingress is not None:
-            dialing.append(
-                asyncio.create_task(
-                    IngressPusher(
-                        runner, target=config.ingress.target, bearer=config.ingress.bearer, timing=ControlTiming()
-                    ).run(),
-                    name="ingress push",
-                )
-            )
+        dialing = [
+            asyncio.create_task(
+                RunnerControlClient(runner, target=control.target, bearer=control.bearer, timing=ControlTiming()).run(),
+                name="runner control stream",
+            ),
+            asyncio.create_task(
+                IngressPusher(runner, target=ingress.target, bearer=ingress.bearer, timing=ControlTiming()).run(),
+                name="ingress push",
+            ),
+        ]
         for task in dialing:
             task.add_done_callback(_report_dialing_end)
         await stopping.wait()

@@ -86,7 +86,7 @@ from agentplane.grpc_calls import ServiceError
 from agentplane.history_service.client import HistoryServiceError
 from agentplane.postgres.wakeups import WakeupListener
 from agentplane.proto import runner_pb2
-from agentplane.runner.errors import OpenTimeoutError, RunnerError
+from agentplane.runner.errors import RunnerError
 from agentplane.runner.harness import Harness
 from agentplane.sandbox_service.action_policy_views import UnknownPolicySetError
 from agentplane.sandbox_service.client import SandboxServiceClient
@@ -1206,15 +1206,12 @@ def create_app(
         return JSONResponse(status_code=status.HTTP_409_CONFLICT, content={"detail": str(error)})
 
     @app.exception_handler(runner_bridge.RunnerAdmissionTimeoutError)
-    @app.exception_handler(OpenTimeoutError)
-    async def _runner_timed_out(
-        _request: Request, error: runner_bridge.RunnerAdmissionTimeoutError | OpenTimeoutError
-    ) -> JSONResponse:
+    async def _runner_timed_out(_request: Request, error: runner_bridge.RunnerAdmissionTimeoutError) -> JSONResponse:
         return JSONResponse(status_code=status.HTTP_504_GATEWAY_TIMEOUT, content={"detail": str(error)})
 
     @app.exception_handler(RunnerError)
     async def _runner_refused(_request: Request, error: RunnerError) -> JSONResponse:
-        # The runner refused an Open or a command: an unknown session, a spec mismatch, a bad cursor.
+        # The runner refused a lifecycle request or a command: an unknown session, a spec mismatch.
         return JSONResponse(status_code=status.HTTP_409_CONFLICT, content={"detail": str(error)})
 
     @app.exception_handler(runner_bridge.MalformedMessageError)

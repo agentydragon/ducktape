@@ -9,12 +9,13 @@ import pytest
 import pytest_bazel
 
 from agentplane.proto import event_pb2, runner_pb2
-from agentplane.runner.client import RunnerClient
+from agentplane.proto.runner_control_pb2 import ControlRefused
 from agentplane.runner.config import ClaudeLaunch, CodexLaunch, RunnerConfig
-from agentplane.runner.errors import RunnerError
 from agentplane.runner.model_config import HttpModelConfigResolver
 from agentplane.runner.service import Runner
 from agentplane.runner.store import SessionRecord, StateOwner, StateOwnershipError
+from agentplane.runner.testing.driver import RunnerDriver
+from agentplane.runner_gateway.lifecycle_control import ControlRefusedError
 
 # gazelle:include_dep @pypi//protobuf
 
@@ -78,12 +79,13 @@ async def test_failed_session_shutdown_still_closes_its_database(
 
 
 async def test_a_harness_that_dies_in_its_handshake_names_its_exit_and_stderr(
-    client: RunnerClient, config: RunnerConfig, harness: runner_pb2.Harness, spec: runner_pb2.SessionSpec
+    driver: RunnerDriver, config: RunnerConfig, harness: runner_pb2.Harness, spec: runner_pb2.SessionSpec
 ) -> None:
-    with pytest.raises(RunnerError) as raised:
-        await client.attach("launch-failure-1", spec=spec)
-    assert "exit_code=3" in str(raised.value)
-    assert REFUSAL in str(raised.value)
+    with pytest.raises(ControlRefusedError) as raised:
+        await driver.attach("launch-failure-1", spec=spec)
+    assert raised.value.refusal.reason == ControlRefused.REASON_FAILED
+    assert "exit_code=3" in raised.value.refusal.detail
+    assert REFUSAL in raised.value.refusal.detail
     assert config.native_state_dir is not None
     native_home = "claude" if harness == runner_pb2.HARNESS_CLAUDE else "codex"
     assert (config.native_state_dir / "launch-failure-1" / native_home).is_dir()
@@ -91,12 +93,13 @@ async def test_a_harness_that_dies_in_its_handshake_names_its_exit_and_stderr(
 
 @pytest.mark.parametrize("harness_binary", [Path("/nonexistent/agentplane-test-harness")])
 async def test_a_harness_the_supervisor_cannot_start_names_the_spawn_failure(
-    client: RunnerClient, spec: runner_pb2.SessionSpec
+    driver: RunnerDriver, spec: runner_pb2.SessionSpec
 ) -> None:
-    with pytest.raises(RunnerError) as raised:
-        await client.attach("launch-failure-2", spec=spec)
-    assert "exit_code=125" in str(raised.value)
-    assert "harness supervisor: start native harness" in str(raised.value)
+    with pytest.raises(ControlRefusedError) as raised:
+        await driver.attach("launch-failure-2", spec=spec)
+    assert raised.value.refusal.reason == ControlRefused.REASON_FAILED
+    assert "exit_code=125" in raised.value.refusal.detail
+    assert "harness supervisor: start native harness" in raised.value.refusal.detail
 
 
 async def test_summaries_report_the_published_log_not_a_batch_in_progress(tmp_path: Path) -> None:

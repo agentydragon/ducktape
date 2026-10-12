@@ -110,17 +110,17 @@ its veto was decorative.
   600 s, so a slow client never falls into the harness's own timeout with its less useful
   default.
 - **Claude maps directly.** The runner registers the client's events at `initialize`, forwards
-  each `hook_callback` as a request on the `Attach` stream, and answers the harness with the
-  client's decision.
+  each `hook_callback` as a request on its [control stream](runner_control.md), and answers the
+  harness with the client's decision.
 - **Codex needs the runner to be the shell hook.** A small command shipped in the runner image
-  calls back into the runner over a local socket; the runner asks the client over `Attach` the
+  calls back into the runner over a local socket; the runner asks over its control stream the
   same way and turns the answer into the command's exit and stdout. `bypass_hook_trust` is set,
   since the runner authored the config.
 - **Log before answering.** The hook's request and the client's decision are session-log events
   written before the harness gets its answer, so the thread shows what was asked and decided.
 - **Webhooks sit above the runner.** HTTP callback registration belongs to the app, which holds
-  the client side of the capability and fans out; the runner asks only the attachment that
-  declared the hook, and attachments are independent ([SPEC](../runner/SPEC.md) § Attachments).
+  the client side of the capability and fans out; the runner asks only the Runner Gateway, its one
+  caller.
 
 The first hook worth wiring is `PreToolUse` for credentialed egress: a deny with a reason is a
 far better signal to the agent than a 403 from the proxy.

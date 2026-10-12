@@ -489,9 +489,9 @@ one. Which lists the service enforces is its contract
 
 ## Decisions
 
-- **Connection direction:** the app dials the runner Pod's address directly, re-resolving on
-  reconnect; Pod replacement changes the address and the session log makes the cursor valid across
-  it. A Service per sandbox is not needed until something outside the cluster must reach a runner.
+- **Connection direction:** the runner dials out, to the Runner Gateway's
+  [control stream](../docs/runner_control.md) and to its Event ingress; runner Pods admit no
+  connections, so Pod replacement changes nothing a caller holds.
 - **Model credentials:** staging uses a dedicated key for OpenAI/Claude subscription and local
   Ollama chat routes; testing uses the `cheap-experiments` LiteLLM key. The Pod holds no
   key or workload token: a harness sends the inert placeholder the `agentplane-workload`
@@ -499,15 +499,8 @@ one. Which lists the service enforces is its contract
   and the authenticated LLM ingress replaces it with its one server-held key after resolving the
   `WorkloadPrincipal` the token proves. The model endpoint remains governed by the credentialless egress design
   in [the ADR](../docs/adr_sandbox_proxy_gateway.md) rather than excepted from it.
-- **Transport security on the runner port:** Cilium policy between the app namespace and the
-  sandbox Pods is the v0 control. Authentication on the port itself waits for the credentialed
-  readiness gate.
-- **No gRPC-Web or Connect proxy in front of the runners:** browsers cannot carry the
-  bidirectional `Attach`, and a standard proxy would still need per-sandbox routing to Pod
-  addresses that change on every resume. The app stays the one HTTP surface; the schema is shared
-  through proto-JSON and generated types instead. Splitting `Attach` into a server-streaming
-  `Open` plus unary commands waits for a second, non-browser client that wants it. Attachments are
-  independent; commands share the runner session's serialization and deduplication.
+- **No gRPC-Web or Connect surface for browsers:** the app stays the one HTTP surface; the schema is
+  shared through proto-JSON and generated types instead.
 - **Deletion takes only a suspended sandbox:** it removes the Pod and the volume with everything on
   it, and nothing brings that back. The rule lives in the API rather than in the browser, so it also
   binds the agent driving staging with a token; the two clicks it costs an operator are suspend and

@@ -10,7 +10,7 @@ import httpx
 from agentplane.harness_tests.claude import harness as claude_harness
 from agentplane.harness_tests.codex import harness as codex_harness
 from agentplane.proto import runner_pb2
-from agentplane.runner.config import ClaudeLaunch, CodexLaunch, RunnerConfig
+from agentplane.runner.config import ClaudeLaunch, CodexLaunch, RunnerConfig, ServiceEndpoint
 from agentplane.runner.model_config import HttpModelConfigResolver
 from util.bazel.runfiles import get_required_path
 
@@ -65,10 +65,21 @@ def codex_launch(endpoint: str) -> CodexLaunch:
 
 
 def runner_command(
-    harness: runner_pb2.Harness, endpoint: str, *, state_dir: Path, test_debug_checkpoint: tuple[str, str] | None = None
+    harness: runner_pb2.Harness,
+    endpoint: str,
+    *,
+    state_dir: Path,
+    gateway: ServiceEndpoint,
+    test_debug_checkpoint: tuple[str, str] | None = None,
 ) -> list[str]:
-    """The runner as its own process, configured like `config` is."""
-    command = [str(get_required_path(RUNNER_BINARY)), "--state-dir", str(state_dir)]
+    """The runner as its own process, configured like `config` is, dialing `gateway` for both its
+    control stream and its ingress."""
+    command = [
+        str(get_required_path(RUNNER_BINARY)),
+        *("--state-dir", str(state_dir)),
+        *("--control-target", gateway.target, "--control-bearer", gateway.bearer),
+        *("--ingress-target", gateway.target, "--ingress-bearer", gateway.bearer),
+    ]
     if harness == runner_pb2.HARNESS_CLAUDE:
         launch = claude_launch(endpoint)
         command += ["--claude-binary", str(launch.binary), "--anthropic-base-url", launch.base_url]

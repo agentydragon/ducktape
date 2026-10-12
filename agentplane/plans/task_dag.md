@@ -349,7 +349,6 @@ flowchart LR
     VM_EGRESS[Candidate: production admission and egress integration]
     VM_PROCESS_ISOLATION[Blocked: harness/process resource boundary]
     VM_LIFECYCLE[Blocked: integrated lifecycle]
-    RUNNER_INBOUND_RETIRE[Candidate: retire inbound runner access]
     VM_PROVIDER --> VM_CONTROL_NETWORKING
     AGENTPLANE_SANDBOX_RESOURCE -. stateful VMs .-> VM_PROVIDER
     VM_VIRTIOFS -. state volume in the guest .-> VM_IMAGE
@@ -364,13 +363,6 @@ flowchart LR
     SANDBOX_VM_ISOLATION --> LOCAL_BAZEL[Blocked: bounded local Bazel client in VM]
     SANDBOX_VM_ISOLATION --> KUBEVIRT_EXPERIMENT_RETIRE[Blocked: delete the KubeVirt experiment]
 ```
-
-### `RUNNER_INBOUND_RETIRE` — remove the runner's inbound server
-
-**Candidate.** Hosted runners and the KubeVirt guest take every call over the control stream and
-admit no connections; only tests still call the runner's own gRPC server. Delete that server, its `--listen` flag, the `Runner` service RPCs the channel duplicates
-and `protocol.v1.Follow` with `Open.follow`, and its client `runner/client.py`, test-only now, with
-the app's `OpenTimeoutError` handler. `--control-target` and `--ingress-target` become required.
 
 ### `VM_CONTROL_NETWORKING` — integrate the reviewed connection direction
 
@@ -846,7 +838,6 @@ tombstones with a verifiable condition in code (`keepingOffset` in
 flowchart TD
     ACTION_EXECUTION_AUDIT_TRIM[Decision: execution reconciliation columns]
     REFACTOR_COHERENCE_AUDIT[Blocked: whole-refactor coherence audit]
-    RUNNER_INBOUND_RETIRE[Retire inbound runner access] --> REFACTOR_COHERENCE_AUDIT
     HISTORY_SERVICE_OWNERSHIP[History Service ownership] --> REFACTOR_COHERENCE_AUDIT
     COHERENCE_REFACTORS[Section 12 coherence refactors] --> REFACTOR_COHERENCE_AUDIT
 ```
@@ -939,11 +930,10 @@ Refactors found by reading devel (2026-10-11 PDT) against the quality bar and
 
 ```mermaid
 flowchart TD
-    RUNNER_INBOUND_RETIRE[Retire inbound runner access]
     subgraph COHERENCE_REFACTORS[Coherence refactors]
         RUNNER_ERRORS_REHOME[Unscheduled: errors beside the client that raises them]
         SETTLE_DELTAS_ALWAYS_ON[Unscheduled: retire the settle_deltas flag]
-        RUNNER_CORE_SPLIT[Blocked: runner core out of the inbound servicer]
+        RUNNER_CORE_SPLIT[Candidate: runner control and ingress clients share their plumbing]
         ACTION_PROTOCOLS_CONCRETE[Candidate: concrete external-grant authority]
         COMMAND_SUBMISSION_DROP[Waits on rollout: drop the command_submission table]
         SERVICE_SETTING_NAMES[Candidate: settings name the service they configure]
@@ -951,7 +941,6 @@ flowchart TD
         NOTIFICATION_WRITE_ONLY_COLUMNS[Decision: audit columns nothing reads]
         EVENT_DRIVEN_WAKEUPS[Decision: which timed polls become event-driven]
     end
-    RUNNER_INBOUND_RETIRE --> RUNNER_CORE_SPLIT
     COHERENCE_REFACTORS --> REFACTOR_COHERENCE_AUDIT[Whole-refactor coherence audit]
 ```
 
@@ -977,13 +966,12 @@ migration removes the table and the model, as its own PR the operator merges aft
 Settlement is on by default; `ingress.settle_deltas` turns it off. Retiring the flag makes
 settlement unconditional: delete the setting, `Environment.settle_deltas` and the `Store` flag.
 
-### `RUNNER_CORE_SPLIT` — runner core out of the inbound servicer
+### `RUNNER_CORE_SPLIT` — runner control and ingress clients share their plumbing
 
-**Blocked on `RUNNER_INBOUND_RETIRE`, or lands inside it.** `Runner`, the `OpenError` hierarchy,
-`build_attached`, `follow_journal` and `finish_command` live in the Attach servicer
-`runner/service.py`; move them to their own module. The control and ingress clients share one
-lost-stream error and backoff, `IngressPusher` stops borrowing `ControlTiming`, and the unpassed
-`channel_options` parameters go.
+**Candidate.** The control and ingress clients share one lost-stream error and backoff, and
+`IngressPusher` stops borrowing `ControlTiming`.
+`runner/service.py` holds the runner's sessions and lifecycle, not a servicer, and takes a name
+that says so.
 
 ### `ACTION_PROTOCOLS_CONCRETE` — concrete external-grant authority
 

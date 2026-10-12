@@ -50,16 +50,7 @@ from agentplane.runner.testing.failure_journal import pytest_runtest_makereport
 # gazelle:include_dep @pypi//psycopg
 # The bridge tests run one script against a local runner over both harnesses; those fixtures live
 # with the runner.
-from agentplane.runner.testing.fixtures import (
-    config,
-    endpoint,
-    harness,
-    model,
-    runner,
-    runner_client_factory,
-    spec,
-    workspace,
-)
+from agentplane.runner.testing.fixtures import config, endpoint, harness, model, runner, spec, workspace
 from agentplane.runner_gateway.client import RunnerGatewayClient
 from agentplane.sandbox_service.client import SandboxServiceClient
 from agentplane.sandbox_service.egress_views import EgressReader

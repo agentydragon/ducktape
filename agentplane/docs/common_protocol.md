@@ -1,6 +1,6 @@
 # Common runner protocol
 
-The shared generated messages are `Command`, `Event`, `EventEntry`, and `Follow`.
+The shared generated messages are `Command`, `Event`, and `EventEntry`.
 The runner and app reuse them for command delivery and retained Event replay.
 
 The runner is the shared seam over Claude Code and Codex. Exact wire fields, replay,
@@ -12,8 +12,9 @@ replica ownership, and Raw-mode ordering. An app queue is an open product choice
 
 ## What the runner seam owns
 
-- Bidirectional Attach streams over Open, Command, and Detach, plus replayable
-  sequenced Events. Multiple attachments can follow and command the same session.
+- Session lifecycle requests and idempotent command delivery over the
+  [runner control stream](runner_control.md) the runner dials, plus replayable sequenced Events
+  pushed to its ingress.
 - Durable command-journal admission represented by `CommandAdmitted`, before causal effect/outcome
   Events afterwards. It does not call an unsupported native operation successful.
 - Native harness frames delivered verbatim as Native Events, with derived Events citing

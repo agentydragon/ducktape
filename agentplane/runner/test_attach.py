@@ -1,4 +1,4 @@
-"""Attachments come and go; the session and its log do not."""
+"""Followers come and go; the session and its log do not."""
 
 from __future__ import annotations
 
@@ -9,10 +9,10 @@ import pytest
 import pytest_bazel
 
 from agentplane.proto import event_pb2, runner_pb2
-from agentplane.runner.client import RunnerClient
-from agentplane.runner.errors import RunnerError, SessionSealedError
+from agentplane.proto.runner_control_pb2 import ControlRefused
 from agentplane.runner.testing import events
 from agentplane.runner.testing.commands import submit_input
+from agentplane.runner.testing.driver import RunnerDriver, SessionSealedError, refusal
 from agentplane.runner.testing.scripted_model import Reasoning, ScriptedModel, ShellCall, Text
 
 # The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.
@@ -21,53 +21,51 @@ from agentplane.runner.testing.scripted_model import Reasoning, ScriptedModel, S
 WAIT_COMMAND = 'sh -c \'printf "wait_started\\n"; sleep 3; printf "wait_finished\\n"\''
 
 
-async def test_reattach_resumes_from_the_cursor_without_gap_or_duplicate(
-    client: RunnerClient, model: ScriptedModel, spec: runner_pb2.SessionSpec
+async def test_a_new_follow_resumes_from_the_cursor_without_gap_or_duplicate(
+    driver: RunnerDriver, model: ScriptedModel, spec: runner_pb2.SessionSpec
 ) -> None:
-    first = await client.attach("reattach-1", spec=spec)
+    first = await driver.attach("reattach-1", spec=spec)
     await submit_input(first, "input-1", "Wait with the shell, then reply.")
     request = await model.request()
     await model.reply(request, ShellCall("call_test_1", WAIT_COMMAND))
     await first.until(events.is_kind("tool_arguments"))
-    # The connection drops mid-turn; the harness keeps running the tool.
-    first.cancel()
+    # The first follow is abandoned mid-turn; the harness keeps running the tool.
 
-    async with await client.attach("reattach-1", after_cursor=first.cursor) as second:
-        assert second.attached.harness_state == runner_pb2.HARNESS_STATE_RUNNING
-        assert (
-            second.attached.active_turn_id == events.of_kind(first.seen, "turn_started")[-1].event.turn_started.turn_id
-        )
-        request = await model.request()
-        assert "wait_finished" in request.tool_outputs[0].text
-        await model.reply(request, Text("RECONNECTED_OK"))
-        done = await second.until(events.turn_completed)
-        assert done.event.turn_completed.status == event_pb2.TURN_STATUS_COMPLETED
+    second = await driver.attach("reattach-1", after_cursor=first.cursor)
+    assert second.attached.harness_state == runner_pb2.HARNESS_STATE_RUNNING
+    assert second.attached.active_turn_id == events.of_kind(first.seen, "turn_started")[-1].event.turn_started.turn_id
+    request = await model.request()
+    assert "wait_finished" in request.tool_outputs[0].text
+    await model.reply(request, Text("RECONNECTED_OK"))
+    done = await second.until(events.turn_completed)
+    assert done.event.turn_completed.status == event_pb2.TURN_STATUS_COMPLETED
 
-        combined = [*first.seen, *second.seen]
-        events.assert_contiguous(combined)
-        assert len(events.of_kind(combined, "harness_started")) == 1
-        assert len(events.of_kind(combined, "turn_started")) == 1
+    combined = [*first.seen, *second.seen]
+    events.assert_contiguous(combined)
+    assert len(events.of_kind(combined, "harness_started")) == 1
+    assert len(events.of_kind(combined, "turn_started")) == 1
 
 
 async def test_replay_from_zero_returns_the_whole_log(
-    client: RunnerClient, model: ScriptedModel, spec: runner_pb2.SessionSpec
+    driver: RunnerDriver, model: ScriptedModel, spec: runner_pb2.SessionSpec
 ) -> None:
-    async with await client.attach("replay-1", spec=spec) as first:
-        await submit_input(first, "input-1", "Reply with exactly: REPLAY_SEED_OK")
-        request = await model.request()
-        await model.reply(request, Text("REPLAY_SEED_OK"))
-        await first.until(events.turn_completed)
+    first = await driver.attach("replay-1", spec=spec)
+    await submit_input(first, "input-1", "Reply with exactly: REPLAY_SEED_OK")
+    request = await model.request()
+    await model.reply(request, Text("REPLAY_SEED_OK"))
+    await first.until(events.turn_completed)
 
-    async with await client.attach("replay-1") as second:
-        assert second.attached.last_cursor == first.seen[-1].cursor
-        replayed = [await second.next_entry() for _ in first.seen]
-        assert [entry.SerializeToString() for entry in replayed] == [entry.SerializeToString() for entry in first.seen]
+    second = await driver.attach("replay-1")
+    # Native frames after the turn's result may still have arrived.
+    assert second.attached.last_cursor >= first.seen[-1].cursor
+    replayed = [await second.next_entry() for _ in first.seen]
+    assert [entry.SerializeToString() for entry in replayed] == [entry.SerializeToString() for entry in first.seen]
 
 
 async def test_resending_a_command_id_delivers_it_once(
-    client: RunnerClient, model: ScriptedModel, spec: runner_pb2.SessionSpec
+    driver: RunnerDriver, model: ScriptedModel, spec: runner_pb2.SessionSpec
 ) -> None:
-    first = await client.attach("retry-1", spec=spec)
+    first = await driver.attach("retry-1", spec=spec)
     await submit_input(first, "input-1", "Reply with exactly: ONCE_OK")
     request = await model.request()
     # Claude's exact confirmation evidence is its response-side model-message start; Codex obtains
@@ -75,49 +73,48 @@ async def test_resending_a_command_id_delivers_it_once(
     # the one common harness-confirmation effect after it.
     await model.reply(request, Text("ONCE_OK"))
     confirmed = await first.until(events.is_kind("harness_user_message_confirmed"))
-    first.cancel()
 
-    async with await client.attach("retry-1", after_cursor=first.cursor) as second:
-        await submit_input(second, "input-1", "Reply with exactly: ONCE_OK")
-        assert confirmed.event.harness_user_message_confirmed.origin_command_ids == ["input-1"]
-        assert request.user_texts.count("Reply with exactly: ONCE_OK") == 1
-        await second.until(events.turn_completed)
-        assert len(events.of_kind([*first.seen, *second.seen], "command_admitted")) == 1
+    second = await driver.attach("retry-1", after_cursor=first.cursor)
+    await submit_input(second, "input-1", "Reply with exactly: ONCE_OK")
+    assert confirmed.event.harness_user_message_confirmed.origin_command_ids == ["input-1"]
+    assert request.user_texts.count("Reply with exactly: ONCE_OK") == 1
+    await second.until(events.turn_completed)
+    assert len(events.of_kind([*first.seen, *second.seen], "command_admitted")) == 1
 
 
-async def test_attachments_share_events_and_detach_independently(
-    client: RunnerClient, model: ScriptedModel, spec: runner_pb2.SessionSpec
+async def test_followers_share_events_and_a_command_delivered_twice_at_once_runs_once(
+    driver: RunnerDriver, model: ScriptedModel, spec: runner_pb2.SessionSpec
 ) -> None:
-    async with await client.attach("observers-1", spec=spec) as first:
-        await first.until(events.is_kind("harness_started"))
-        replay_cursor = first.cursor
-        async with await client.attach("observers-1", after_cursor=replay_cursor) as second:
-            await asyncio.gather(
-                submit_input(first, "input-1", "Reply with exactly: SECOND_OK"),
-                submit_input(second, "input-1", "Reply with exactly: SECOND_OK"),
-            )
-            request = await model.request()
-            await model.reply(request, Text("SECOND_OK"))
-            await second.until(events.turn_completed)
-            await first.until(events.turn_completed)
-            assert [entry for entry in first.seen if entry.cursor > replay_cursor] == second.seen
-            events.assert_contiguous(first.seen)
-            assert len(events.of_kind(first.seen, "command_admitted")) == 1
-            assert request.user_texts.count("Reply with exactly: SECOND_OK") == 1
-        await submit_input(first, "input-2", "Reply with exactly: FIRST_STILL_HERE")
-        await model.reply(await model.request(), Text("FIRST_STILL_HERE"))
-        await first.until(events.turn_completed)
+    first = await driver.attach("observers-1", spec=spec)
+    await first.until(events.is_kind("harness_started"))
+    replay_cursor = first.cursor
+    second = await driver.attach("observers-1", after_cursor=replay_cursor)
+    await asyncio.gather(
+        submit_input(first, "input-1", "Reply with exactly: SECOND_OK"),
+        submit_input(second, "input-1", "Reply with exactly: SECOND_OK"),
+    )
+    request = await model.request()
+    await model.reply(request, Text("SECOND_OK"))
+    await second.until(events.turn_completed)
+    await first.until(events.turn_completed)
+    assert [entry for entry in first.seen if entry.cursor > replay_cursor] == second.seen
+    events.assert_contiguous(first.seen)
+    assert len(events.of_kind(first.seen, "command_admitted")) == 1
+    assert request.user_texts.count("Reply with exactly: SECOND_OK") == 1
+    await submit_input(first, "input-2", "Reply with exactly: FIRST_STILL_HERE")
+    await model.reply(await model.request(), Text("FIRST_STILL_HERE"))
+    await first.until(events.turn_completed)
 
 
 async def test_shutdown_stops_the_harness_and_open_resumes_the_conversation(
-    client: RunnerClient, model: ScriptedModel, spec: runner_pb2.SessionSpec
+    driver: RunnerDriver, model: ScriptedModel, spec: runner_pb2.SessionSpec
 ) -> None:
-    first = await client.attach("shutdown-1", spec=spec)
+    first = await driver.attach("shutdown-1", spec=spec)
     await submit_input(first, "input-1", "Reply with exactly: SEED_OK")
     request = await model.request()
     await model.reply(request, Text("SEED_OK"))
     await first.until(events.turn_completed)
-    observer = await client.attach("shutdown-1", after_cursor=first.cursor)
+    observer = await driver.attach("shutdown-1", after_cursor=first.cursor)
     await first.stop_runner_session("stop-1")
     exited = await first.until(events.is_kind("harness_exited"))
     assert exited.event.harness_exited.stopped_by_runner
@@ -125,47 +122,46 @@ async def test_shutdown_stops_the_harness_and_open_resumes_the_conversation(
     await observer.drain_until_end()
     assert events.of_kind(observer.seen, "harness_exited")[-1] == exited
 
-    replay = await client.attach("shutdown-1")
+    replay = await driver.attach("shutdown-1")
     assert replay.attached.harness_state == runner_pb2.HARNESS_STATE_STOPPED
     await replay.drain_until_end()
     assert replay.seen == first.seen
-    (summary,) = await client.list_sessions()
+    (summary,) = await driver.list_sessions()
     assert summary.harness_state == runner_pb2.HARNESS_STATE_STOPPED
 
-    async with await client.attach("shutdown-1", spec=spec, after_cursor=first.cursor) as second:
-        started = await second.until(events.is_kind("harness_started"))
-        assert started.event.harness_started.resumed
-        assert second.attached.harness_state == runner_pb2.HARNESS_STATE_RUNNING
-        await submit_input(second, "input-2", "Reply with exactly: RESUMED_OK")
-        request = await model.request()
-        assert request.user_texts == ["Reply with exactly: SEED_OK", "Reply with exactly: RESUMED_OK"]
-        assert request.assistant_texts == ["SEED_OK"]
-        await model.reply(request, Text("RESUMED_OK"))
-        done = await second.until(events.turn_completed)
-        assert done.event.turn_completed.status == event_pb2.TURN_STATUS_COMPLETED
+    second = await driver.attach("shutdown-1", spec=spec, after_cursor=first.cursor)
+    started = await second.until(events.is_kind("harness_started"))
+    assert started.event.harness_started.resumed
+    assert second.attached.harness_state == runner_pb2.HARNESS_STATE_RUNNING
+    await submit_input(second, "input-2", "Reply with exactly: RESUMED_OK")
+    request = await model.request()
+    assert request.user_texts == ["Reply with exactly: SEED_OK", "Reply with exactly: RESUMED_OK"]
+    assert request.assistant_texts == ["SEED_OK"]
+    await model.reply(request, Text("RESUMED_OK"))
+    done = await second.until(events.turn_completed)
+    assert done.event.turn_completed.status == event_pb2.TURN_STATUS_COMPLETED
 
 
 async def test_seal_stops_the_running_harness_and_ends_live_followers(
-    client: RunnerClient, model: ScriptedModel, spec: runner_pb2.SessionSpec
+    driver: RunnerDriver, model: ScriptedModel, spec: runner_pb2.SessionSpec
 ) -> None:
-    first = await client.attach("seal-1", spec=spec)
+    first = await driver.attach("seal-1", spec=spec)
     await submit_input(first, "input-1", "Reply with exactly: SEED_OK")
     await model.reply(await model.request(), Text("SEED_OK"))
     await first.until(events.turn_completed)
-    (seal,) = (await client.seal()).sessions
+    (seal,) = (await driver.seal()).sessions
     assert seal.session_id == "seal-1"
     with pytest.raises(SessionSealedError) as sealed:
         await first.until(lambda _: False)
     assert sealed.value.cursor == seal.cursor == first.cursor
     assert events.of_kind(first.seen, "harness_exited")[-1].event.harness_exited.stopped_by_runner
-    with pytest.raises(RunnerError):
-        await client.attach("seal-1", spec=spec)
+    assert await refusal(driver.attach("seal-1", spec=spec)) == ControlRefused.REASON_SEALED
 
 
 async def test_resume_sends_the_model_the_reasoning_of_the_previous_harness(
-    client: RunnerClient, model: ScriptedModel, spec: runner_pb2.SessionSpec
+    driver: RunnerDriver, model: ScriptedModel, spec: runner_pb2.SessionSpec
 ) -> None:
-    first = await client.attach("reasoning-1", spec=spec)
+    first = await driver.attach("reasoning-1", spec=spec)
     await submit_input(first, "input-1", "Reply with exactly: SEED_OK")
     await model.reply(await model.request(), Reasoning("SEED_THOUGHT"), Text("SEED_OK"))
     await first.until(events.turn_completed)
@@ -173,26 +169,23 @@ async def test_resume_sends_the_model_the_reasoning_of_the_previous_harness(
     await first.until(events.is_kind("harness_exited"))
     await first.drain_until_end()
 
-    async with await client.attach("reasoning-1", spec=spec, after_cursor=first.cursor) as second:
-        started = await second.until(events.is_kind("harness_started"))
-        assert started.event.harness_started.resumed
-        await submit_input(second, "input-2", "Reply with exactly: RESUMED_OK")
-        request = await model.request()
-        assert request.reasoning_texts == ["SEED_THOUGHT"]
-        await model.reply(request, Text("RESUMED_OK"))
-        await second.until(events.turn_completed)
+    second = await driver.attach("reasoning-1", spec=spec, after_cursor=first.cursor)
+    started = await second.until(events.is_kind("harness_started"))
+    assert started.event.harness_started.resumed
+    await submit_input(second, "input-2", "Reply with exactly: RESUMED_OK")
+    request = await model.request()
+    assert request.reasoning_texts == ["SEED_THOUGHT"]
+    await model.reply(request, Text("RESUMED_OK"))
+    await second.until(events.turn_completed)
 
 
-async def test_open_rejects_a_mismatched_spec(client: RunnerClient, spec: runner_pb2.SessionSpec) -> None:
-    async with await client.attach("spec-1", spec=spec):
-        pass
+async def test_open_rejects_a_mismatched_spec(driver: RunnerDriver, spec: runner_pb2.SessionSpec) -> None:
+    await driver.attach("spec-1", spec=spec)
     other = runner_pb2.SessionSpec(
         harness=spec.harness, cwd=spec.cwd, model="agentplane-test/other-model", reasoning_effort=spec.reasoning_effort
     )
-    with pytest.raises(RunnerError, match="different spec"):
-        await client.attach("spec-1", spec=other)
-    with pytest.raises(RunnerError, match="does not exist"):
-        await client.attach("spec-2")
+    assert await refusal(driver.attach("spec-1", spec=other)) == ControlRefused.REASON_SPEC_CONFLICT
+    assert await refusal(driver.attach("spec-2")) == ControlRefused.REASON_SESSION_UNKNOWN
     instructed = runner_pb2.SessionSpec(
         harness=spec.harness,
         cwd=spec.cwd,
@@ -200,19 +193,17 @@ async def test_open_rejects_a_mismatched_spec(client: RunnerClient, spec: runner
         reasoning_effort=spec.reasoning_effort,
         instructions="Standing order the session was not created with.",
     )
-    with pytest.raises(RunnerError, match="different spec"):
-        await client.attach("spec-1", spec=instructed)
+    assert await refusal(driver.attach("spec-1", spec=instructed)) == ControlRefused.REASON_SPEC_CONFLICT
     relative = runner_pb2.SessionSpec(harness=spec.harness, cwd="work/../elsewhere", model=spec.model)
-    with pytest.raises(RunnerError, match="absolute"):
-        await client.attach("spec-3", spec=relative)
+    assert await refusal(driver.attach("spec-3", spec=relative)) == ControlRefused.REASON_INVALID_REQUEST
 
 
 async def test_setup_runs_in_thread_cwd_before_harness_and_replays_output(
-    client: RunnerClient, spec: runner_pb2.SessionSpec
+    driver: RunnerDriver, spec: runner_pb2.SessionSpec
 ) -> None:
     gate = Path(spec.cwd) / "release-setup"
     script = 'pwd; printf "setup stderr\\n" >&2; while [ ! -f release-setup ]; do sleep 0.05; done'
-    first = await client.attach("setup-success", spec=spec, setup_script=script)
+    first = await driver.attach("setup-success", spec=spec, setup_script=script)
     assert first.attached.setup_state == runner_pb2.SETUP_STATE_RUNNING
     assert first.attached.harness_state == runner_pb2.HARNESS_STATE_STOPPED
     await first.until(events.is_kind("setup_output"))
@@ -230,37 +221,38 @@ async def test_setup_runs_in_thread_cwd_before_harness_and_replays_output(
         if entry.event.setup_output.WhichOneof("stream") == "stdout"
     )
     assert stdout == f"{spec.cwd}\n".encode()
-    first.cancel()
-    async with await client.attach("setup-success") as replay:
-        assert replay.attached.setup_state == runner_pb2.SETUP_STATE_SUCCEEDED
-        copied = [await replay.next_entry() for _ in first.seen]
-        assert [entry.SerializeToString() for entry in copied] == [entry.SerializeToString() for entry in first.seen]
+    replay = await driver.attach("setup-success")
+    assert replay.attached.setup_state == runner_pb2.SETUP_STATE_SUCCEEDED
+    copied = [await replay.next_entry() for _ in first.seen]
+    assert [entry.SerializeToString() for entry in copied] == [entry.SerializeToString() for entry in first.seen]
 
 
 async def test_failed_setup_is_terminal_and_reopen_never_runs_it_again(
-    client: RunnerClient, spec: runner_pb2.SessionSpec
+    driver: RunnerDriver, spec: runner_pb2.SessionSpec
 ) -> None:
     script = 'printf "one attempt\\n"; exit 7'
-    first = await client.attach("setup-failure", spec=spec, setup_script=script)
+    first = await driver.attach("setup-failure", spec=spec, setup_script=script)
     finished = await first.until(events.is_kind("setup_finished"))
     assert finished.event.setup_finished.exit_code == 7
     await first.drain_until_end()
     assert not events.of_kind(first.seen, "harness_started")
-    second = await client.attach("setup-failure", spec=spec)
+    second = await driver.attach("setup-failure", spec=spec)
     assert second.attached.setup_state == runner_pb2.SETUP_STATE_FAILED
     assert second.attached.harness_state == runner_pb2.HARNESS_STATE_STOPPED
     await second.drain_until_end()
     assert len(events.of_kind(second.seen, "setup_started")) == 1
     assert len(events.of_kind(second.seen, "setup_finished")) == 1
-    with pytest.raises(RunnerError, match="different setup script"):
-        await client.attach("setup-failure", spec=spec, setup_script="exit 0")
+    assert (
+        await refusal(driver.attach("setup-failure", spec=spec, setup_script="exit 0"))
+        == ControlRefused.REASON_SPEC_CONFLICT
+    )
 
 
 async def test_setup_exit_before_consuming_stdin_keeps_its_exit_status(
-    client: RunnerClient, spec: runner_pb2.SessionSpec
+    driver: RunnerDriver, spec: runner_pb2.SessionSpec
 ) -> None:
     script = "exit 3\n" + ("# filler\n" * 7_000)
-    first = await client.attach("setup-early-exit", spec=spec, setup_script=script)
+    first = await driver.attach("setup-early-exit", spec=spec, setup_script=script)
     finished = await first.until(events.is_kind("setup_finished"))
     assert finished.event.setup_finished.exit_code == 3
     await first.drain_until_end()
