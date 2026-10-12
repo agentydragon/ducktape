@@ -1,7 +1,7 @@
 # Sandbox Controller
 
 Reconciles `Sandbox` into a state PVC that outlives every incarnation, its own ServiceAccount and
-`PolicyBinding`, and, while running, one Pod from its `SandboxTemplate`. Contract: [`SPEC.md`](SPEC.md). The CRDs are in
+`PolicyBinding`, and, while running, one Pod or KubeVirt VM from its `SandboxTemplate`. Contract: [`SPEC.md`](SPEC.md). The CRDs are in
 [`agentplane/crds`](../crds/BUILD.bazel). It is the Go controller the
 [Sandbox Service](../sandbox_service/README.md) is moving into, and does not yet do what that
 service does around a Sandbox: launch binding. Its runner template reaches platform services over
@@ -21,8 +21,10 @@ A [controller-runtime](https://github.com/kubernetes-sigs/controller-runtime) co
   changing the types, regenerate it with
   `go run sigs.k8s.io/controller-tools/cmd/controller-gen@v0.20.0 object paths=./agentplane/sandbox_controller`
   from a module that resolves this package.
-- [`controller.go`](controller.go): one reconcile per `Sandbox`. Its Pod (`Owns`), its state PVC
-  (by the Sandbox label) and the templates it names (by a field index) map back to it.
+- [`controller.go`](controller.go): one reconcile per `Sandbox`. Its VM (`Owns`), its Pods, VMI and
+  state PVC (by the Sandbox label) and the templates it names (by a field index) map back to it.
+- [`vm.go`](vm.go): a VM Sandbox's VirtualMachine (types from `kubevirt.io/api`), its run strategy,
+  and the VMI and virt-launcher Pod its status comes from.
 - [`identity.go`](identity.go): the Sandbox's ServiceAccount and `PolicyBinding`, and the
   conflicts that keep a Pod from starting. The `PolicyBinding` types are the Policy Controller's.
 - [`cmd/main.go`](cmd/main.go): the manager, its cache limited to one namespace and, of the kinds
@@ -39,7 +41,8 @@ Locally:
 bb run //agentplane/sandbox_controller/cmd:sandbox-controller -- --namespace=<namespace>
 ```
 
-It uses the in-cluster config or `KUBECONFIG`, serves metrics on `:8080` and `/healthz`/`/readyz`
+It watches KubeVirt's VirtualMachines and VMIs, so the cluster needs KubeVirt's CRDs. It uses the
+in-cluster config or `KUBECONFIG`, serves metrics on `:8080` and `/healthz`/`/readyz`
 on `:8081`, and replicas elect a leader by a Lease in the namespace.
 
 ## Design notes
@@ -61,4 +64,7 @@ on `:8081`, and replicas elect a leader by a Lease in the namespace.
 - **Gotcha:** while agent-sandbox's `Sandbox` is installed, `kubectl get sandboxes` may resolve to
   either kind; name ours as `sandboxes.agentplane.allegedly.works`.
 - Tests drive `Reconcile` against controller-runtime's fake client, so which events enqueue which
-  Sandbox is not covered.
+  Sandbox is not covered, nor anything KubeVirt does: the tests create VMIs and launcher Pods by
+  hand.
+- **Gotcha:** the fake client's default managed-fields tracker panics on KubeVirt's `uint64`
+  fields, so the tests build it on a plain object tracker.

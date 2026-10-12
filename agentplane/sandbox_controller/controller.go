@@ -12,6 +12,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	kubevirtv1 "kubevirt.io/api/core/v1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
@@ -26,7 +27,8 @@ const (
 	// Set True by the Runner Gateway on a deleting Sandbox once its runner has sealed every Session
 	// and the ingress has acknowledged each seal; nothing of the Sandbox is deleted before.
 	SessionsSealed = "SessionsSealed"
-	// On the Pod, the state PVC, the ServiceAccount and the PolicyBinding: the Sandbox they belong to.
+	// On the Pod or the VirtualMachine and its VMI and virt-launcher Pod, the state PVC, the
+	// ServiceAccount and the PolicyBinding: the Sandbox they belong to.
 	SandboxLabel = "agentplane.allegedly.works/sandbox"
 	// On the state PVC, which has no owner reference: the Sandbox incarnation that created it, so a
 	// recreated Sandbox of the same name never takes over a previous one's state.
@@ -37,7 +39,8 @@ const (
 	templateIndex = "spec.template"
 )
 
-// Reconciler converges one Sandbox at a time: its state PVC, its Pod, and its Running condition.
+// Reconciler converges one Sandbox at a time: its state PVC, its Pod or VirtualMachine, and its
+// Running condition.
 //
 // +kubebuilder:object:generate=false
 type Reconciler struct {
@@ -47,17 +50,37 @@ type Reconciler struct {
 // StateVolumeName is the Sandbox's state PVC.
 func StateVolumeName(sandbox string) string { return sandbox + "-state" }
 
-// unready is why the Sandbox cannot have a Pod; its reason and message go on the Running condition.
+// unready is why the Sandbox cannot run; its reason and message go on the Running condition.
 //
 // +kubebuilder:object:generate=false
 type unready struct{ reason, message string }
+
+// workload is what runs the Sandbox, or ran it: its Pod, or its VirtualMachine with the VMI and
+// virt-launcher Pod of the VM's current run. A start deletes the other kind's first, so only one
+// kind is there unless someone else made it.
+//
+// +kubebuilder:object:generate=false
+type workload struct {
+	pod      *corev1.Pod
+	vm       *kubevirtv1.VirtualMachine
+	vmi      *kubevirtv1.VirtualMachineInstance
+	launcher *corev1.Pod
+}
+
+// incarnation is the Pod the runner runs in, if any.
+func (w workload) incarnation() *corev1.Pod {
+	if w.pod != nil {
+		return w.pod
+	}
+	return w.launcher
+}
 
 func (r *Reconciler) Reconcile(ctx context.Context, req reconcile.Request) (ctrl.Result, error) {
 	var sandbox Sandbox
 	if err := r.Get(ctx, req.NamespacedName, &sandbox); err != nil {
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
-	pod, err := r.pod(ctx, &sandbox)
+	w, err := r.workload(ctx, &sandbox)
 	if err != nil {
 		return ctrl.Result{}, err
 	}
@@ -65,11 +88,11 @@ func (r *Reconciler) Reconcile(ctx context.Context, req reconcile.Request) (ctrl
 		if !controllerutil.ContainsFinalizer(&sandbox, StateVolumeFinalizer) {
 			return ctrl.Result{}, nil
 		}
-		pod, blocked, err := r.finalize(ctx, &sandbox, pod)
+		w, blocked, err := r.finalize(ctx, &sandbox, w)
 		if err != nil || blocked == nil {
 			return ctrl.Result{}, err
 		}
-		return ctrl.Result{}, r.updateStatus(ctx, &sandbox, pod, blocked)
+		return ctrl.Result{}, r.updateStatus(ctx, &sandbox, w, blocked)
 	}
 	if controllerutil.AddFinalizer(&sandbox, StateVolumeFinalizer) {
 		if err := r.Update(ctx, &sandbox); err != nil {
@@ -85,11 +108,29 @@ func (r *Reconciler) Reconcile(ctx context.Context, req reconcile.Request) (ctrl
 		return ctrl.Result{}, err
 	}
 	if blocked == nil {
-		if pod, blocked, err = r.convergePod(ctx, &sandbox, pod, sandbox.Spec.Running, gate); err != nil {
+		if w, blocked, err = r.converge(ctx, &sandbox, w, sandbox.Spec.Running, gate); err != nil {
 			return ctrl.Result{}, err
 		}
 	}
-	return ctrl.Result{}, r.updateStatus(ctx, &sandbox, pod, blocked)
+	return ctrl.Result{}, r.updateStatus(ctx, &sandbox, w, blocked)
+}
+
+func (r *Reconciler) workload(ctx context.Context, sandbox *Sandbox) (workload, error) {
+	var w workload
+	var err error
+	if w.pod, err = r.pod(ctx, sandbox); err != nil {
+		return w, err
+	}
+	if w.vm, err = r.vm(ctx, sandbox); err != nil {
+		return w, err
+	}
+	if w.vmi, err = r.vmi(ctx, sandbox); err != nil {
+		return w, err
+	}
+	if w.launcher, err = r.launcher(ctx, sandbox, w.vmi); err != nil {
+		return w, err
+	}
+	return w, nil
 }
 
 // pod is the Sandbox's Pod, or nil; a same-name Pod it does not control is not its.
@@ -107,40 +148,57 @@ func (r *Reconciler) pod(ctx context.Context, sandbox *Sandbox) (*corev1.Pod, er
 // finalize seals the Sandbox's Sessions, then deletes the Pod, then the state PVC once no Pod can
 // be writing to it, then lets the Sandbox go. Each step's watch event runs the next. It returns why
 // the Sandbox is still there, or nil once the finalizer is removed.
-func (r *Reconciler) finalize(ctx context.Context, sandbox *Sandbox, pod *corev1.Pod) (*corev1.Pod, *unready, error) {
+func (r *Reconciler) finalize(ctx context.Context, sandbox *Sandbox, w workload) (workload, *unready, error) {
 	pvc, err := r.stateVolume(ctx, sandbox)
 	if err != nil {
-		return nil, nil, err
+		return w, nil, err
 	}
 	own := pvc != nil && pvc.Annotations[SandboxUIDAnnotation] == string(sandbox.UID)
 	// Without a state PVC of its own the Sandbox never had a runner, so it has no Session to seal.
 	if own && !meta.IsStatusConditionTrue(sandbox.Status.Conditions, SessionsSealed) {
 		// Only a running runner seals, so a stopped Sandbox runs once more; the Runner Gateway
 		// refuses every new Session and command for a deleting Sandbox.
-		pod, blocked, err := r.convergePod(ctx, sandbox, pod, true, nil)
+		w, blocked, err := r.converge(ctx, sandbox, w, true, nil)
 		if blocked == nil {
 			blocked = &unready{"Sealing", "waiting for the Runner Gateway to seal every Session"}
 		}
-		return pod, blocked, err
+		return w, blocked, err
 	}
-	if pod != nil {
-		if pod.DeletionTimestamp.IsZero() {
-			if err := client.IgnoreNotFound(r.Delete(ctx, pod, client.Preconditions{UID: &pod.UID})); err != nil {
-				return nil, nil, err
-			}
+	if w.pod != nil {
+		if err := r.deleteIfLive(ctx, w.pod); err != nil {
+			return w, nil, err
 		}
-		return pod, &unready{"Deleting", fmt.Sprintf("Pod %s is being deleted", pod.Name)}, nil
+		return w, &unready{"Deleting", fmt.Sprintf("Pod %s is being deleted", w.pod.Name)}, nil
+	}
+	if w.vm != nil {
+		// The VM's DataVolumes, the VM-local workspace among them, go with it.
+		if err := r.deleteIfLive(ctx, w.vm); err != nil {
+			return w, nil, err
+		}
+		return w, &unready{"Deleting", fmt.Sprintf("VM %s is being deleted", w.vm.Name)}, nil
+	}
+	if w.vmi != nil {
+		// KubeVirt removes a VMI only once its virt-launcher Pod is gone, so no guest still writes to
+		// the state PVC after this.
+		return w, &unready{"Deleting", fmt.Sprintf("VMI %s is being deleted", w.vmi.Name)}, nil
 	}
 	if own {
-		if pvc.DeletionTimestamp.IsZero() {
-			if err := client.IgnoreNotFound(r.Delete(ctx, pvc, client.Preconditions{UID: &pvc.UID})); err != nil {
-				return nil, nil, err
-			}
+		if err := r.deleteIfLive(ctx, pvc); err != nil {
+			return w, nil, err
 		}
-		return nil, &unready{"Deleting", fmt.Sprintf("PVC %s is being deleted", pvc.Name)}, nil
+		return w, &unready{"Deleting", fmt.Sprintf("PVC %s is being deleted", pvc.Name)}, nil
 	}
 	controllerutil.RemoveFinalizer(sandbox, StateVolumeFinalizer)
-	return nil, nil, r.Update(ctx, sandbox)
+	return w, nil, r.Update(ctx, sandbox)
+}
+
+// deleteIfLive deletes obj, that very object, unless its deletion has begun.
+func (r *Reconciler) deleteIfLive(ctx context.Context, obj client.Object) error {
+	if !obj.GetDeletionTimestamp().IsZero() {
+		return nil
+	}
+	uid := obj.GetUID()
+	return client.IgnoreNotFound(r.Delete(ctx, obj, client.Preconditions{UID: &uid}))
 }
 
 func (r *Reconciler) stateVolume(ctx context.Context, sandbox *Sandbox) (*corev1.PersistentVolumeClaim, error) {
@@ -194,48 +252,73 @@ func (r *Reconciler) template(ctx context.Context, sandbox *Sandbox) (*SandboxTe
 		}
 		return nil, nil, err
 	}
+	if (template.Spec.Pod == nil) == (template.Spec.VM == nil) {
+		return nil, &unready{"TemplateInvalid", fmt.Sprintf("SandboxTemplate %s must set exactly one of pod and vm", template.Name)}, nil
+	}
 	return &template, nil, nil
 }
 
-// convergePod starts a Pod for a Sandbox that is to run and has none, unless gate says why not
-// yet, and deletes the Pod of one that is not. It returns the Pod the Sandbox now has.
-func (r *Reconciler) convergePod(ctx context.Context, sandbox *Sandbox, pod *corev1.Pod, running bool, gate *unready) (*corev1.Pod, *unready, error) {
-	if pod != nil {
-		ended := pod.Status.Phase == corev1.PodSucceeded || pod.Status.Phase == corev1.PodFailed
-		if pod.DeletionTimestamp.IsZero() && (!running || ended) {
-			// An ended incarnation goes too, so a running Sandbox gets a new one.
-			if err := client.IgnoreNotFound(r.Delete(ctx, pod, client.Preconditions{UID: &pod.UID})); err != nil {
-				return nil, nil, err
+// converge starts a Pod or VM for a Sandbox that is to run and has none, unless gate says why not
+// yet, and stops the one of a Sandbox that is not. A running incarnation keeps its kind and spec
+// whatever the template now says. It returns the workload the Sandbox now has.
+func (r *Reconciler) converge(ctx context.Context, sandbox *Sandbox, w workload, running bool, gate *unready) (workload, *unready, error) {
+	if !running {
+		if w.pod != nil {
+			if err := r.deleteIfLive(ctx, w.pod); err != nil {
+				return w, nil, err
 			}
 		}
-		// A Pod still terminating keeps its name; the next one starts after its deletion event.
-		return pod, nil, nil
+		return w, nil, r.haltVM(ctx, w.vm)
 	}
-	if !running {
-		return nil, nil, nil
+	if w.pod != nil {
+		// An ended incarnation goes too, so a running Sandbox gets a new one. A Pod still terminating
+		// keeps its name; the next one starts after its deletion event.
+		if w.pod.Status.Phase == corev1.PodSucceeded || w.pod.Status.Phase == corev1.PodFailed {
+			if err := r.deleteIfLive(ctx, w.pod); err != nil {
+				return w, nil, err
+			}
+		}
+		return w, nil, nil
+	}
+	// KubeVirt replaces a running VM's VMI that ends. A stopped VM's last VMI still stopping, or a VM
+	// being deleted, holds the next start until its deletion event.
+	if (w.vm != nil && (vmRunning(w.vm) || !w.vm.DeletionTimestamp.IsZero())) || w.vmi != nil {
+		return w, nil, nil
 	}
 	if gate != nil {
-		return nil, gate, nil
+		return w, gate, nil
 	}
 	template, blocked, err := r.template(ctx, sandbox)
 	if template == nil {
-		return nil, blocked, err
+		return w, blocked, err
 	}
-	pod, blocked = render(sandbox, template)
+	if template.Spec.VM != nil {
+		return r.startVM(ctx, sandbox, w, template)
+	}
+	if w.vm != nil {
+		// A Pod cannot use the VM's disks, so switching to a Pod template drops the VM-local
+		// workspace; the state PVC stays.
+		if err := r.deleteIfLive(ctx, w.vm); err != nil {
+			return w, nil, err
+		}
+		return w, &unready{"Starting", fmt.Sprintf("VM %s is being deleted for the Pod template", w.vm.Name)}, nil
+	}
+	pod, blocked := render(sandbox, template)
 	if blocked != nil {
-		return nil, blocked, nil
+		return w, blocked, nil
 	}
 	if err := controllerutil.SetControllerReference(sandbox, pod, r.Scheme()); err != nil {
-		return nil, nil, err
+		return w, nil, err
 	}
 	if err := r.Create(ctx, pod); err != nil {
 		if apierrors.IsAlreadyExists(err) {
 			// A Pod this Sandbox does not control holds the name.
-			return nil, &unready{"PodConflict", fmt.Sprintf("Pod %s exists and is not this Sandbox's", pod.Name)}, nil
+			return w, &unready{"PodConflict", fmt.Sprintf("Pod %s exists and is not this Sandbox's", pod.Name)}, nil
 		}
-		return nil, nil, err
+		return w, nil, err
 	}
-	return pod, nil, nil
+	w.pod = pod
+	return w, nil, nil
 }
 
 // render is the template's Pod for this Sandbox, running as the Sandbox's ServiceAccount, with the
@@ -253,44 +336,46 @@ func render(sandbox *Sandbox, template *SandboxTemplate) (*corev1.Pod, *unready)
 			ClaimName: StateVolumeName(sandbox.Name),
 		}},
 	})
-	labels := maps.Clone(template.Spec.Pod.Labels)
-	if labels == nil {
-		labels = map[string]string{}
-	}
-	labels[SandboxLabel] = sandbox.Name
 	return &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:        sandbox.Name,
 			Namespace:   sandbox.Namespace,
-			Labels:      labels,
+			Labels:      withSandboxLabel(template.Spec.Pod.Labels, sandbox),
 			Annotations: maps.Clone(template.Spec.Pod.Annotations),
 		},
 		Spec: *spec,
 	}, nil
 }
 
-func (r *Reconciler) updateStatus(ctx context.Context, sandbox *Sandbox, pod *corev1.Pod, blocked *unready) error {
+func withSandboxLabel(labels map[string]string, sandbox *Sandbox) map[string]string {
+	labels = maps.Clone(labels)
+	if labels == nil {
+		labels = map[string]string{}
+	}
+	labels[SandboxLabel] = sandbox.Name
+	return labels
+}
+
+func (r *Reconciler) updateStatus(ctx context.Context, sandbox *Sandbox, w workload, blocked *unready) error {
 	status := sandbox.Status.DeepCopy()
 	status.Incarnation = nil
-	if pod != nil {
+	if pod := w.incarnation(); pod != nil {
 		status.Incarnation = &Incarnation{Name: pod.Name, UID: string(pod.UID)}
 	}
 	condition := metav1.Condition{Type: Running, Status: metav1.ConditionFalse, ObservedGeneration: sandbox.Generation}
 	switch {
 	case blocked != nil:
 		condition.Reason, condition.Message = blocked.reason, blocked.message
-	case pod == nil && !sandbox.Spec.Running:
-		condition.Reason, condition.Message = "Stopped", "no Pod; the state PVC is kept"
-	case pod == nil:
-		condition.Reason, condition.Message = "Starting", "the Pod is not created yet"
-	case !pod.DeletionTimestamp.IsZero() || !sandbox.Spec.Running:
-		condition.Reason, condition.Message = "Stopping", fmt.Sprintf("Pod %s is being deleted", pod.Name)
-	case pod.Status.Phase == corev1.PodPending || pod.Status.Phase == "":
-		condition.Reason, condition.Message = "Starting", fmt.Sprintf("Pod %s is not running yet", pod.Name)
-	case pod.Status.Phase == corev1.PodRunning:
-		condition.Status, condition.Reason, condition.Message = metav1.ConditionTrue, "PodRunning", fmt.Sprintf("Pod %s is running", pod.Name)
+	case w.pod != nil:
+		podCondition(&condition, sandbox, w.pod)
+	case w.vmi != nil || (w.vm != nil && vmRunning(w.vm)):
+		vmCondition(&condition, sandbox, w)
+	case sandbox.Spec.Running:
+		condition.Reason, condition.Message = "Starting", "no Pod or VM is created yet"
+	case w.vm != nil:
+		condition.Reason, condition.Message = "Stopped", fmt.Sprintf("VM %s is halted; its disks and the state PVC are kept", w.vm.Name)
 	default:
-		condition.Reason, condition.Message = "PodEnded", fmt.Sprintf("Pod %s ended (%s); a new one replaces it", pod.Name, pod.Status.Phase)
+		condition.Reason, condition.Message = "Stopped", "no Pod; the state PVC is kept"
 	}
 	meta.SetStatusCondition(&status.Conditions, condition)
 	if equality.Semantic.DeepEqual(status, &sandbox.Status) {
@@ -300,8 +385,21 @@ func (r *Reconciler) updateStatus(ctx context.Context, sandbox *Sandbox, pod *co
 	return r.Status().Update(ctx, sandbox)
 }
 
-// SetupWithManager wires the watches: each Sandbox, the objects it owns, its state PVC, and the
-// templates it names.
+func podCondition(condition *metav1.Condition, sandbox *Sandbox, pod *corev1.Pod) {
+	switch {
+	case !pod.DeletionTimestamp.IsZero() || !sandbox.Spec.Running:
+		condition.Reason, condition.Message = "Stopping", fmt.Sprintf("Pod %s is being deleted", pod.Name)
+	case pod.Status.Phase == corev1.PodPending || pod.Status.Phase == "":
+		condition.Reason, condition.Message = "Starting", fmt.Sprintf("Pod %s is not running yet", pod.Name)
+	case pod.Status.Phase == corev1.PodRunning:
+		condition.Status, condition.Reason, condition.Message = metav1.ConditionTrue, "PodRunning", fmt.Sprintf("Pod %s is running", pod.Name)
+	default:
+		condition.Reason, condition.Message = "PodEnded", fmt.Sprintf("Pod %s ended (%s); a new one replaces it", pod.Name, pod.Status.Phase)
+	}
+}
+
+// SetupWithManager wires the watches: each Sandbox, the objects it owns, the Pods, VMIs and state
+// PVC carrying its label, and the templates it names.
 func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
 	if err := mgr.GetFieldIndexer().IndexField(context.Background(), &Sandbox{}, templateIndex, func(obj client.Object) []string {
 		return []string{obj.(*Sandbox).Spec.Template}
@@ -330,9 +428,12 @@ func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
 	})
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&Sandbox{}).
-		Owns(&corev1.Pod{}).
+		Owns(&kubevirtv1.VirtualMachine{}).
 		Owns(&corev1.ServiceAccount{}).
 		Owns(&policycontroller.PolicyBinding{}).
+		// A virt-launcher Pod is its VMI's, not the Sandbox's, so Pods map back by the label.
+		Watches(&corev1.Pod{}, bySandboxLabel).
+		Watches(&kubevirtv1.VirtualMachineInstance{}, bySandboxLabel).
 		Watches(&corev1.PersistentVolumeClaim{}, bySandboxLabel).
 		Watches(&SandboxTemplate{}, byTemplate).
 		Complete(r)

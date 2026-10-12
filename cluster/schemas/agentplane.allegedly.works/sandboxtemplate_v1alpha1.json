@@ -7,12 +7,28 @@
     "spec": {
       "type": "object",
       "required": [
-        "pod",
         "stateVolume"
+      ],
+      "oneOf": [
+        {
+          "required": [
+            "pod"
+          ]
+        },
+        {
+          "required": [
+            "vm"
+          ]
+        }
       ],
       "properties": {
         "pod": {
-          "description": "A PodTemplateSpec. Each incarnation's Pod takes its labels, annotations and spec; the controller adds the state volume. The API server validates the result when the Pod is created.",
+          "description": "A PodTemplateSpec, for a Sandbox that runs as a Pod. Each incarnation's Pod takes its labels, annotations and spec; the controller adds the state volume. The API server validates the result when the Pod is created.",
+          "type": "object",
+          "x-kubernetes-preserve-unknown-fields": true
+        },
+        "vm": {
+          "description": "A KubeVirt VirtualMachineSpec, for a Sandbox that runs as a VM. The controller sets its run strategy, adds the state volume as a virtiofs filesystem, and prefixes each DataVolume template's name with the Sandbox's. KubeVirt validates the result when the VirtualMachine is written.",
           "type": "object",
           "x-kubernetes-preserve-unknown-fields": true
         },
@@ -24,7 +40,7 @@
           ],
           "properties": {
             "name": {
-              "description": "The Pod volume the controller fills with the Sandbox's state PVC. The template's containers mount it by this name and must not define it.",
+              "description": "The volume the controller fills with the Sandbox's state PVC. A Pod's containers mount it by this name, a VM guest mounts the virtiofs filesystem of this name, and the template must not define it.",
               "type": "string",
               "minLength": 1
             },

@@ -1,7 +1,9 @@
 # Sandbox Controller
 
-Reconciles Agentplane's own `Sandbox` (`agentplane/crds/manifests/crd-sandboxes.yaml`) into Pods
-and the state PVC. A Sandbox is its state, running or not; an **incarnation** is one Pod.
+Reconciles Agentplane's own `Sandbox` (`agentplane/crds/manifests/crd-sandboxes.yaml`) into Pods or
+a KubeVirt VirtualMachine, and the state PVC. A Sandbox is its state, running or not; an
+**incarnation** is one Pod, or one run of the VM. Its `SandboxTemplate` sets its kind: `pod` or
+`vm`, exactly one.
 
 ## State PVC
 
@@ -10,8 +12,8 @@ and the state PVC. A Sandbox is its state, running or not; an **incarnation** is
 - The PVC has no owner reference, so neither garbage collection nor the Pod going away removes it.
   It carries the Sandbox's UID; a Sandbox never uses or deletes a PVC another Sandbox created, and
   reports `StateVolumeConflict` instead.
-- Deleting the Sandbox deletes its PVC once its Sessions are sealed and its Pod is gone (below).
-  Stopping never does.
+- Deleting the Sandbox deletes its PVC once its Sessions are sealed and its Pod or VM is gone
+  (below). Stopping never does.
 
 ## Incarnations
 
@@ -20,8 +22,25 @@ and the state PVC. A Sandbox is its state, running or not; an **incarnation** is
   Sandbox is running is replaced by a new incarnation on the same PVC.
 - Clearing `spec.running` deletes the Pod.
 - Each incarnation reads `spec.template` and the template as they are when it starts. Editing
-  either never changes a running Pod.
-- A template that does not exist, or that defines the state volume itself, starts nothing.
+  either never changes a running Pod or VM, its kind included.
+- A template that does not exist, sets neither or both kinds, or defines the state volume itself,
+  starts nothing.
+
+## VMs
+
+- A VM Sandbox has one VirtualMachine, named after it and controlled by it. While `spec.running`
+  is set its run strategy is `Always`, so KubeVirt replaces a VMI that ends; clearing it sets
+  `Halted`. Stopping keeps the VM and its disks.
+- Each start of a halted VM sets its spec from the template as it is then; its disks stay.
+- The guest gets the state PVC as a virtiofs filesystem named after the template's state volume.
+- Each of the template's DataVolume templates is named `<sandbox>-<name>`, and the template's
+  volumes naming it follow. Those disks, the VM-local workspace among them, belong to the VM: they
+  outlive stops and go with the VM.
+- Starting a Sandbox whose template is now a Pod deletes its VM, and with it those disks, before
+  the Pod starts; the state PVC stays.
+- The VM, its VMI and its virt-launcher Pod carry the Sandbox label. The controller does not set
+  the launcher's ServiceAccount: KubeVirt sets one only from a volume the guest could read, so the
+  namespace's launcher admission sets the Sandbox's.
 
 ## Identity
 
@@ -36,18 +55,19 @@ and the state PVC. A Sandbox is its state, running or not; an **incarnation** is
 
 ## Deletion
 
-- A deleted Sandbox with a state PVC of its own keeps its Pod, and a stopped one runs once more,
+- A deleted Sandbox with a state PVC of its own keeps its Pod or VM, and a stopped one runs once more,
   until its `SessionsSealed` condition is True. The Runner Gateway sets it once the runner has
   sealed every Session and the ingress has acknowledged each seal, so history holds every Session
   through its seal before its state goes.
-- Then the Pod is deleted, then, once it is gone, the PVC, then the Sandbox.
+- Then the Pod or VM is deleted, then, once it and any VMI are gone, the PVC, then the Sandbox.
 - A Sandbox without a state PVC of its own never had a runner, so nothing is sealed.
 
 ## Status
 
-`status.incarnation` names the current Pod and its UID. The `Running` condition is True while the
-Pod runs. Otherwise it is False, with reason `Stopped`, `Starting`, `Stopping`, `PodEnded`,
-`Sealing`, `Deleting`,
+`status.incarnation` names the Pod the runner runs in and its UID: the Sandbox's Pod, or its VMI's
+virt-launcher Pod. The `Running` condition is True while the Pod runs (`PodRunning`) or the VMI runs
+(`VMRunning`). Otherwise it is False, with reason `Stopped`, `Starting`, `Stopping`, `PodEnded`,
+`VMEnded`, `Sealing`, `Deleting`,
 `TemplateNotFound`, `TemplateInvalid`, `StateVolumeConflict`, `ServiceAccountConflict`,
-`PolicyBindingConflict` or `PodConflict` (a Pod of the Sandbox's name that
+`PolicyBindingConflict`, `PodConflict` or `VMConflict` (a Pod or VM of the Sandbox's name that
 it does not control).

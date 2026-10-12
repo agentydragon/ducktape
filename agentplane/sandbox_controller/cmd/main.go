@@ -11,6 +11,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/selection"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
+	kubevirtv1 "kubevirt.io/api/core/v1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -49,13 +50,16 @@ func run(namespace, metricsAddress, probeAddress string) error {
 	if err := policycontroller.AddToScheme(scheme); err != nil {
 		return err
 	}
+	if err := kubevirtv1.AddToScheme(scheme); err != nil {
+		return err
+	}
 	labelled, err := labels.NewRequirement(sandboxcontroller.SandboxLabel, selection.Exists, nil)
 	if err != nil {
 		return err
 	}
 	ours := labels.NewSelector().Add(*labelled)
-	// The cache holds one namespace, and of its Pods, PVCs, ServiceAccounts and PolicyBindings only
-	// those carrying the Sandbox label.
+	// The cache holds one namespace, and of its Pods, PVCs, ServiceAccounts, PolicyBindings, VMs
+	// and VMIs only those carrying the Sandbox label.
 	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
 		Scheme:                 scheme,
 		Metrics:                metricsserver.Options{BindAddress: metricsAddress},
@@ -67,10 +71,12 @@ func run(namespace, metricsAddress, probeAddress string) error {
 		Cache: cache.Options{
 			DefaultNamespaces: map[string]cache.Config{namespace: {}},
 			ByObject: map[client.Object]cache.ByObject{
-				&corev1.Pod{}:                     {Label: ours},
-				&corev1.PersistentVolumeClaim{}:   {Label: ours},
-				&corev1.ServiceAccount{}:          {Label: ours},
-				&policycontroller.PolicyBinding{}: {Label: ours},
+				&corev1.Pod{}:                        {Label: ours},
+				&corev1.PersistentVolumeClaim{}:      {Label: ours},
+				&corev1.ServiceAccount{}:             {Label: ours},
+				&policycontroller.PolicyBinding{}:    {Label: ours},
+				&kubevirtv1.VirtualMachine{}:         {Label: ours},
+				&kubevirtv1.VirtualMachineInstance{}: {Label: ours},
 			},
 		},
 	})
