@@ -88,10 +88,11 @@ def _bazel_cache_claim(scope: Construct) -> None:
             name=_BAZEL_CACHE_CLAIM,
             namespace=NAMESPACE,
             annotations={
+                "kustomize.toolkit.fluxcd.io/prune": "disabled",
                 "description": (
                     "Separately deletable local Bazel output, repository, and action cache for "
                     "public-coder-devbox. Stop the VM before deleting this claim to reset it."
-                )
+                ),
             },
         ),
         spec=k8s.PersistentVolumeClaimSpec(

@@ -480,6 +480,7 @@ kind: PersistentVolumeClaim
 metadata:
   annotations:
     description: Worker-local replacement for the archived Public Coder OpenClaw state. WaitForFirstConsumer binds it to ovh-ns102453 when the one-off restore Pod is created; it must not be mounted by the Deployment before restore.
+    kustomize.toolkit.fluxcd.io/prune: disabled
   name: public-coder-agent-state-v2
   namespace: public-coder-agent
 spec:
@@ -495,6 +496,7 @@ kind: PersistentVolumeClaim
 metadata:
   annotations:
     description: Heap snapshots and Node diagnostic reports for the OpenClaw gateway
+    kustomize.toolkit.fluxcd.io/prune: disabled
   name: public-coder-agent-diagnostics
   namespace: public-coder-agent
 spec:
