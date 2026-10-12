@@ -34,16 +34,16 @@ from agentplane.sandbox_service.errors import SandboxNotFoundError
 
 class ServiceError(ConnectionError):
     def __init__(self, code: grpc.StatusCode) -> None:
-        super().__init__(f"gRPC call returned {code.name}; mutation outcome may be uncertain")
+        super().__init__(code.name)
         self.code = code
 
 
 def _raise(error: grpc.aio.AioRpcError) -> Never:
     # Do not include upstream details: they may contain credentials or native output.
     if error.code() == grpc.StatusCode.DEADLINE_EXCEEDED:
-        raise TimeoutError("outcome uncertain; reconcile using unchanged identifiers") from error
+        raise TimeoutError(error.code().name) from error
     if error.code() == grpc.StatusCode.FAILED_PRECONDITION:
-        raise RunnerError("the service refused the requested session or resource state") from error
+        raise RunnerError(error.code().name) from error
     raise ServiceError(error.code()) from error
 
 
