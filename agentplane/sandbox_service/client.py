@@ -34,7 +34,7 @@ from agentplane.sandbox_service.models import SandboxNotFoundError
 
 class ServiceError(ConnectionError):
     def __init__(self, code: grpc.StatusCode) -> None:
-        super().__init__(f"Sandbox Service returned {code.name}; mutation outcome may be uncertain")
+        super().__init__(code.name)
         self.code = code
 
 
