@@ -5,14 +5,20 @@ environment that points a workload at the sidecar. The runner SandboxTemplates (
 the sandbox Actions' box templates (command_sandbox.py) are both built from it, so both kinds of box sit
 behind the same egress path; only the command box also gets the system bazelrc that points Bazel at
 the trust store.
+
+The recipe speaks agent-sandbox's generated Pod types, which no template here is an object of:
+`render_pod_template` turns them into the Kubernetes JSON a template holds.
 """
 
 from __future__ import annotations
 
 import json
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
+from typing import Any
 
 from agent_sandbox_sandboxtemplate_crds.io.x_k8s.agents.extensions import (
+    SandboxTemplateSpecPodTemplate,
+    SandboxTemplateSpecPodTemplateMetadata,
     SandboxTemplateSpecPodTemplateSpec,
     SandboxTemplateSpecPodTemplateSpecContainers,
     SandboxTemplateSpecPodTemplateSpecContainersEnv,
@@ -34,7 +40,7 @@ from agent_sandbox_sandboxtemplate_crds.io.x_k8s.agents.extensions import (
     SandboxTemplateSpecPodTemplateSpecVolumesProjectedSources,
     SandboxTemplateSpecPodTemplateSpecVolumesProjectedSourcesServiceAccountToken,
 )
-from cdk8s import ApiObjectMetadata
+from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import ConfigMap, Role, RolePolicyRule
 from constructs import Construct
 
@@ -49,6 +55,7 @@ from cluster.cdk8s.agentplane import egress, notifications
 from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.config_format import yaml_config
 from cluster.cdk8s.forgejo_registry.chart import SECRET_NAME
+from cluster.cdk8s.providers.agent_sandbox.sandbox_template import SandboxTemplate
 from util.settings_contract import env_name
 
 _PLACEHOLDER_TAG = "unset"  # always overridden by image-pins/kustomization.yaml
@@ -225,7 +232,9 @@ def workload_security_context() -> SandboxTemplateSpecPodTemplateSpecContainersS
     )
 
 
-def _egress_sidecar(env: Environment) -> SandboxTemplateSpecPodTemplateSpecContainers:
+def _egress_sidecar(
+    env: Environment, extra_env: Sequence[SandboxTemplateSpecPodTemplateSpecContainersEnv]
+) -> SandboxTemplateSpecPodTemplateSpecContainers:
     return SandboxTemplateSpecPodTemplateSpecContainers(
         name=sidecar.CONTAINER_NAME,
         image=f"{_EGRESS_SIDECAR_IMAGE}:{_PLACEHOLDER_TAG}",
@@ -255,6 +264,7 @@ def _egress_sidecar(env: Environment) -> SandboxTemplateSpecPodTemplateSpecConta
                     {audience: audience_token_file(audience) for audience in _SUBSTITUTABLE_AUDIENCE_FILES}
                 ),
             ),
+            *extra_env,
         ],
         security_context=workload_security_context(),
         readiness_probe=SandboxTemplateSpecPodTemplateSpecContainersReadinessProbe(
@@ -331,16 +341,18 @@ def pod_spec(
     workload: SandboxTemplateSpecPodTemplateSpecContainers,
     service_account_name: str | None,
     workload_volumes: Sequence[SandboxTemplateSpecPodTemplateSpecVolumes] = (),
+    sidecar_env: Sequence[SandboxTemplateSpecPodTemplateSpecContainersEnv] = (),
 ) -> SandboxTemplateSpecPodTemplateSpec:
     """`workload` beside the egress sidecar, as uid 1000, with no ServiceAccount token in the Pod: the
     projected tokens are mounted by the sidecar alone, which is what keeps an account shared by
     several boxes out of the container a command runs in (agentplane/action_service/sandbox/README.md).
     `service_account_name` is the template's own; whoever creates a box from it may replace it.
-    `workload_volumes` are Pod volumes the workload mounts beyond the egress path's own."""
+    `workload_volumes` are Pod volumes the workload mounts beyond the egress path's own, and
+    `sidecar_env` is the sidecar's environment beyond the egress path's own."""
     return SandboxTemplateSpecPodTemplateSpec(
         # The workload first: with no default-container annotation, the first container is the one
         # `kubectl exec` and the sandbox Actions run a command in.
-        containers=[workload, _egress_sidecar(env)],
+        containers=[workload, _egress_sidecar(env, sidecar_env)],
         automount_service_account_token=False,
         image_pull_secrets=[SandboxTemplateSpecPodTemplateSpecImagePullSecrets(name=SECRET_NAME)],
         # With the rest of the namespace and with LiteLLM: a box's traffic through the egress proxy
@@ -357,3 +369,17 @@ def pod_spec(
         ),
         volumes=[*_egress_volumes(env), *workload_volumes],
     )
+
+
+def render_pod_template(labels: Mapping[str, str], spec: SandboxTemplateSpecPodTemplateSpec) -> dict[str, Any]:
+    """`spec` under `labels`, as a PodTemplateSpec's Kubernetes JSON: an agent-sandbox SandboxTemplate in
+    a chart of its own renders the generated types, and only its Pod template is kept."""
+    rendered: dict[str, Any] = SandboxTemplate(
+        Chart(App(), "pod-template"),
+        "sandboxtemplate",
+        metadata=ApiObjectMetadata(name="pod-template"),
+        pod_template=SandboxTemplateSpecPodTemplate(
+            metadata=SandboxTemplateSpecPodTemplateMetadata(labels=dict(labels)), spec=spec
+        ),
+    ).to_json()["spec"]["podTemplate"]
+    return rendered

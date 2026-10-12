@@ -256,10 +256,9 @@ class TestingNamespaceResourceLimits(Construct):
 TESTING_OPERATOR_ROLE_NAME = "agentplane-testing-operator"
 
 _SANDBOX_RULES = [
-    RolePolicyRule(resources=[custom_resource("extensions.agents.x-k8s.io", "sandboxtemplates")], verbs=["get"]),
+    RolePolicyRule(resources=[custom_resource(GROUP, "sandboxtemplates")], verbs=["get"]),
     RolePolicyRule(
-        resources=[custom_resource("agents.x-k8s.io", "sandboxes")],
-        verbs=["create", "get", "list", "watch", "patch", "delete"],
+        resources=[custom_resource(GROUP, "sandboxes")], verbs=["create", "get", "list", "watch", "patch", "delete"]
     ),
     RolePolicyRule(resources=[cast(IApiResource, ApiResource.PODS)], verbs=["get", "list", "watch"]),
     RolePolicyRule(
@@ -394,7 +393,6 @@ def agentplane_testing(
     artifact: ArtifactGeneratorSpecArtifacts,
     health_checks: list[KustomizationSpecHealthChecks],
     agentplane_crds: Kustomization,
-    agent_sandbox_controller: Kustomization,
     cert_manager_trust: Kustomization,
     cnpg: Kustomization,
     external_secrets_operator: Kustomization,
@@ -417,6 +415,6 @@ def agentplane_testing(
             )
         ],
         depends_on=flux_kustomization_depends_on_many(
-            agentplane_crds, agent_sandbox_controller, cert_manager_trust, cnpg, external_secrets_operator, kyverno
+            agentplane_crds, cert_manager_trust, cnpg, external_secrets_operator, kyverno
         ),
     )

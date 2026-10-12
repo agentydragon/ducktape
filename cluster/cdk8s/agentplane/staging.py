@@ -302,7 +302,6 @@ ENV = Environment(
     settle_deltas=True,
     notifications_github=GitHubAppProps(app_id=5188971, secret_name="agentplane-github-app"),
     kubernetes_binding_cleanup_namespaces=frozenset(agent_access_profiles.cleanup_namespaces()),
-    kubernetes_cluster_binding_cleanup=True,
     db=DbProps(instances=2, wal_archive=True),
     llm_ingress=LlmIngressProps(
         litellm_key_secret_name=_LITELLM_KEY_SECRET, models=model_configs(STAGING_APP_MODELS), log_llm_requests=True
@@ -532,7 +531,6 @@ def agentplane_staging(
     artifact: ArtifactGeneratorSpecArtifacts,
     health_checks: list[KustomizationSpecHealthChecks],
     agentplane_crds: Kustomization,
-    agent_sandbox_controller: Kustomization,
     cert_manager_trust: Kustomization,
     cnpg: Kustomization,
     external_secrets_operator: Kustomization,
@@ -577,6 +575,6 @@ def agentplane_staging(
         ],
         decryption=sops_decryption(ENV.extra_resources),
         depends_on=flux_kustomization_depends_on_many(
-            agentplane_crds, agent_sandbox_controller, cert_manager_trust, cnpg, external_secrets_operator
+            agentplane_crds, cert_manager_trust, cnpg, external_secrets_operator
         ),
     )

@@ -51,9 +51,9 @@ def _by_name(docs: list[dict[str, Any]], kind: str, name: str) -> dict[str, Any]
 
 
 def _default_policies(docs: list[dict[str, Any]]) -> list[str]:
-    """What the Sandbox Service grants every new sandbox."""
+    """The PolicySets the Sandbox Service binds every new Sandbox to."""
     config = _by_name(docs, "ConfigMap", f"{sandbox_service.NAME}-config")
-    defaults: list[str] = yaml.safe_load(config["data"]["config.yaml"])["default_egress_policies"]
+    defaults: list[str] = yaml.safe_load(config["data"]["config.yaml"])["default_policy_sets"]
     return defaults
 
 

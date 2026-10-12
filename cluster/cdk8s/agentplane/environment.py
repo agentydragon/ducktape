@@ -151,14 +151,12 @@ class Environment:
     app: AppProps
     actions: ActionsProps
     # Whether this environment has VM Sandboxes: the runner VM template (runner_vm.py) and the egress
-    # relay for their KubeVirt launchers (launcher_relay.py). Only our own Sandboxes have VMs, so it
-    # needs `own_sandboxes`.
+    # relay for their KubeVirt launchers (launcher_relay.py).
     vm_sandboxes: bool
     notifications_github: GitHubAppProps | None = None
-    # Binding scopes and cluster binding management the Sandbox Service keeps after their catalog
-    # entries are removed, so the bindings existing Sandboxes still hold can be cleaned up.
+    # Binding scopes delegated (binding_delegation.py) after their catalog entries are removed, so
+    # the bindings existing Sandboxes still hold can be cleaned up.
     kubernetes_binding_cleanup_namespaces: frozenset[str] = frozenset()
-    kubernetes_cluster_binding_cleanup: bool = False
     # Non-secret environment defaults shared by every SandboxTemplate workload container;
     # the common pod builder applies them, and the runner explicitly forwards these names to harnesses.
     sandbox_workload_env: Mapping[str, str] = field(default_factory=lambda: {"TZ": "America/Los_Angeles"})
@@ -177,14 +175,3 @@ class Environment:
     # same value — the separate flag buys only that inherited names apply first and stay
     # overridable. If nothing else needs that ordering, one flag is serving one name.
     harness_inherited_env: Sequence[str] = ("TZDIR",)
-
-    @property
-    def own_sandboxes(self) -> bool:
-        """Whether Sandboxes are Agentplane's own kind here, which the app's settings say: this
-        environment then runs the Sandbox Controller and our runner SandboxTemplates beside
-        agent-sandbox's."""
-        return self.app_config.own_sandboxes
-
-    def __post_init__(self) -> None:
-        if self.vm_sandboxes and not self.own_sandboxes:
-            raise ValueError(f"{self.namespace}: vm_sandboxes needs own_sandboxes")

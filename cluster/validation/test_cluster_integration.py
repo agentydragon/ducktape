@@ -218,21 +218,10 @@ def test_managed_agent_read_grants_cover_declarative_namespace_opt_ins(
         for namespace in rule["namespaces"]
     }
     assert actual == expected
-    sandbox_service_config = one(
-        doc
-        for doc in staging_docs
-        if doc["kind"] == "ConfigMap" and doc["metadata"]["name"] == "agentplane-sandbox-service-config"
-    )
-    cleanup_namespaces = set(
-        yaml.safe_load(sandbox_service_config["data"]["config.yaml"])["kubernetes_binding_cleanup_namespaces"]
-    )
     expected_namespaces = {namespace for namespace, _ in expected}
     expected_external_namespaces = expected_namespaces - {"agentplane-staging"}
-    assert expected_external_namespaces <= cleanup_namespaces
-
-    external_grant_namespaces = {grant["namespace"] for grant in catalog.values() if grant["kind"] == "RoleBinding"}
-    expected_external_scopes = (external_grant_namespaces | cleanup_namespaces) - {"agentplane-staging"}
-    assert expected_external_scopes == expected_external_namespaces | {
+    # Delegated: every catalog grant's namespace and every retained cleanup scope.
+    expected_external_scopes = expected_external_namespaces | {
         "ducktape-flux",
         "haku-console",
         "haku-sandbox",
@@ -304,8 +293,7 @@ def test_managed_agent_read_grants_cover_declarative_namespace_opt_ins(
         assert binding["metadata"] == {"name": delegation_role, "namespace": namespace}
         assert binding["roleRef"] == {"apiGroup": "rbac.authorization.k8s.io", "kind": "Role", "name": delegation_role}
         assert binding["subjects"] == [
-            {"kind": "ServiceAccount", "name": account, "namespace": "agentplane-staging"}
-            for account in ("agentplane-sandbox-service", "agentplane-policy-controller")
+            {"kind": "ServiceAccount", "name": "agentplane-policy-controller", "namespace": "agentplane-staging"}
         ]
 
         flux = flux_by_name[f"{delegation_name}{namespace}"]
@@ -578,6 +566,10 @@ def test_agent_permission_denials(agent_permissions: tuple[Rbac, dict, dict[str,
         Permission("agentplane-staging", "agents.x-k8s.io", "sandboxes", "create"),
         Permission("agentplane-staging", "agents.x-k8s.io", "sandboxes", "patch"),
         Permission("agentplane-staging", "agents.x-k8s.io", "sandboxes", "delete"),
+    }
+    denied |= {
+        Permission("agentplane-staging", "agentplane.allegedly.works", "sandboxes", verb)
+        for verb in ("create", "patch", "delete")
     }
     denied |= {
         Permission(namespace, "kustomize.toolkit.fluxcd.io", "kustomizations", "patch")

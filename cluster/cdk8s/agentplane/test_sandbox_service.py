@@ -83,28 +83,11 @@ def test_app_uses_independent_service(namespace: str, agentplane_manifests: dict
     assert "kubernetes_admin" in platform
     assert "pods_exec" in platform
     assert f"http://agentplane-actions.{namespace}.svc.cluster.local:8080" in platform
-    assert backend_config["kubernetes_binding_cleanup_namespaces"] == sorted(
-        backend_config["kubernetes_binding_cleanup_namespaces"]
-    )
     assert backend_config["caller_accounts"] == [
         {"namespace": namespace, "name": app.NAME},
         {"namespace": namespace, "name": notifications.NAME},
     ]
     assert gateway_config["caller_accounts"] == backend_config["caller_accounts"]
-    # Only the Sandbox Service may seal a Sandbox, with the token it is configured to send.
-    assert gateway_config["sealer_accounts"] == [{"namespace": namespace, "name": sandbox_service.NAME}]
-    gateway_token = one(volume for volume in service_pod["volumes"] if volume["name"] == "runner-gateway-token")
-    assert (
-        one(gateway_token["projected"]["sources"])["serviceAccountToken"]["audience"]
-        == gateway_config["token_audience"]
-    )
-    gateway_mount = one(
-        mount
-        for container in service_pod["containers"]
-        for mount in container["volumeMounts"]
-        if mount["name"] == "runner-gateway-token"
-    )
-    assert backend_config["gateway_token_file"] == f"{gateway_mount['mountPath']}/token"
     assert gateway_config["token_audience"] != backend_config["token_audience"]
     runner_policy = resource("CiliumNetworkPolicy", "agentplane-runner")["spec"]
     # Runners dial out; nothing connects to them.
@@ -187,31 +170,10 @@ def test_gateway_callers_send_the_gateway_audience(
         if arg.startswith("--runner-gateway-token-file=")
     )
     notices = config(f"{notifications.NAME}-settings", "settings.yaml")["sandbox_service"]
-    sealer = config(f"{sandbox_service.NAME}-config", "config.yaml")
     assert {
         _token_audience(pod(app.NAME), "app", app_token),
         _token_audience(pod(notifications.NAME), "notifications", notices["gateway_token_file"]),
-        _token_audience(pod(sandbox_service.NAME), "sandbox-service", sealer["gateway_token_file"]),
     } == {accepted}
-
-
-@pytest.mark.parametrize("namespace", NAMESPACES)
-def test_sandbox_reconciliation_can_watch_crs_and_read_owned_accounts(
-    namespace: str, agentplane_manifests: dict[str, list[dict[str, Any]]]
-) -> None:
-    role = one(
-        doc
-        for doc in agentplane_manifests[namespace]
-        if doc["kind"] == "Role" and doc["metadata"]["name"] == sandbox_service.NAME
-    )
-    rules = role["rules"]
-    sandbox = one(
-        rule for rule in rules if rule["apiGroups"] == ["agents.x-k8s.io"] and rule["resources"] == ["sandboxes"]
-    )
-    assert {"get", "list", "watch"} <= set(sandbox["verbs"])
-    accounts = one(rule for rule in rules if rule["apiGroups"] == [""] and rule["resources"] == ["serviceaccounts"])
-    assert {"create", "get", "patch", "delete"} <= set(accounts["verbs"])
-    assert "secrets" not in accounts["resources"]
 
 
 if __name__ == "__main__":
