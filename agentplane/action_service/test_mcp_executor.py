@@ -43,6 +43,7 @@ from agentplane.action_service.models import (
 )
 from agentplane.action_service.service import ActionService, ExecutionLease, ExecutionOutcomeUnknownError
 from agentplane.action_service.testing.lifecycle import wait_available, wait_for_state
+from agentplane.changes import ChangeSignal
 from agentplane.subjects import ServiceAccountRef
 from util.bazel.runfiles import get_required_path
 
@@ -171,6 +172,7 @@ async def test_one_allowed_execution_calls_the_backend_tool_exactly_once(engine:
         lease_sweep_interval=timedelta(seconds=1),
         executor_heartbeat_interval=timedelta(seconds=1),
         executor_health_timeout=timedelta(seconds=30),
+        dispatches=ChangeSignal(),
     )
     async with executor:
         await wait_available(executor._group)
@@ -279,6 +281,7 @@ async def test_ambiguous_transport_loss_becomes_execution_unknown_without_retry(
         lease_sweep_interval=timedelta(seconds=1),
         executor_heartbeat_interval=timedelta(seconds=1),
         executor_health_timeout=timedelta(seconds=30),
+        dispatches=ChangeSignal(),
     )
     async with executor:
         await wait_available(executor._group)
@@ -483,6 +486,7 @@ async def test_long_mcp_call_drains_with_live_execution_and_executor_leases(engi
         on_drain=executor.begin_drain,
         lease_duration=timedelta(milliseconds=300),
         executor_heartbeat_interval=timedelta(milliseconds=30),
+        dispatches=ChangeSignal(),
     )
     heartbeat = store.heartbeat_execution
     record = store.record_executor_heartbeat
@@ -547,10 +551,7 @@ async def test_approved_work_stays_unclaimed_during_outage_then_recovers(
     executor = McpActionGroupExecutor(GROUP_KEY, group, server)
     store = ActionStore(make_sessionmaker(engine))
     service = ActionService(
-        store,
-        ActionCatalog(groups={GROUP_KEY: group}),
-        {GROUP_KEY: executor},
-        dispatch_poll_interval=timedelta(milliseconds=10),
+        store, ActionCatalog(groups={GROUP_KEY: group}), {GROUP_KEY: executor}, dispatches=ChangeSignal()
     )
     async with executor, AsyncExitStack() as services:
         await wait_available(group)

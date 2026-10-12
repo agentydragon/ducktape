@@ -25,6 +25,7 @@ from agentplane.action_service.service import ActionService
 from agentplane.action_service.testing.callers import admitted_callers
 from agentplane.action_service.testing.fixtures import RecordingExecutor
 from agentplane.action_service.updates import ActionUpdateBroker
+from agentplane.changes import ChangeSignal
 from agentplane.history_service.channels import Channel, create_wakeups
 from agentplane.history_service.testing.backend import history_service, ingest
 from agentplane.notification_service.api import create_app
@@ -78,7 +79,10 @@ async def test_listen_deliver_read_ack_and_recover_lost_response_without_app(
     delegate = ServiceAccountRef(namespace=SANDBOX_NAMESPACE, name="notifications")
     other = ServiceAccountRef(namespace=SANDBOX_NAMESPACE, name="other")
     action_service = ActionService(
-        ActionStore(make_sessionmaker(action_engine)), echo_catalog, {"agentplane": echo_executor}
+        ActionStore(make_sessionmaker(action_engine)),
+        echo_catalog,
+        {"agentplane": echo_executor},
+        dispatches=ChangeSignal(),
     )
     async with action_service, kubernetes() as cluster, asyncio.timeout(60):
         for token, account in [("owner-token", owner), ("delegate-token", delegate), ("other-token", other)]:

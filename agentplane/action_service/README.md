@@ -170,7 +170,13 @@ subscribes before rechecking durable state and releases registrations on every e
 listener fails existing bounded waits even if they resume after reconnection: each subscription
 is fenced to its connection generation, including across awaited receipt reads. New waits can
 subscribe after recovery; immediate reads do not require the listener. There is no timed-query
-fallback. Consumers use scoped listener ownership, separate from the dispatch coordinator.
+fallback. Consumers use scoped listener ownership.
+
+The dispatch coordinator re-reads every pending dispatch at startup and whenever the API's broker
+wakes it: inserting an Execution in `pending_dispatch` notifies a payload-free channel in the same
+transaction, a group regaining health wakes it on its own replica, and losing or re-registering
+the listener wakes it too, so a commit made while the listener was down is still found. A failed
+re-read retries with exponential backoff; there is no periodic re-read.
 
 ### Trusted read-only services
 
@@ -379,8 +385,8 @@ retire that generation without cancelling concurrent calls. Connected sessions r
 and on tools-list/linkage notifications. Group diagnostics expose replica-local lifecycle, safe
 reason, last successful discovery, consecutive failures, and next retry time.
 
-Authorized pending dispatches stay unclaimed while their group is unavailable; the existing
-recovery loop retries eligibility. Canonical grant checks precede the availability gate under
+Authorized pending dispatches stay unclaimed while their group is unavailable; the group's return
+to health wakes the dispatch coordinator to retry eligibility. Canonical grant checks precede the availability gate under
 the claim's row locks, so revocation still fails unstarted work. Removed groups/Actions and
 incompatible schemas remain terminal. New requests to known unavailable groups return an explicit
 unavailable error (HTTP 503), not unknown-action. Replica-local health is never stored in Postgres.

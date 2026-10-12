@@ -59,7 +59,7 @@ from agentplane.action_service.models import (
     Verdict,
     operator_or_none,
 )
-from agentplane.action_service.updates import CHANNEL, CONNECTIONS_CHANNEL, MCP_LINKAGE_CHANNEL
+from agentplane.action_service.updates import CHANNEL, CONNECTIONS_CHANNEL, DISPATCH_CHANNEL, MCP_LINKAGE_CHANNEL
 from agentplane.subjects import ServiceAccountRef
 
 # SQLAlchemy loads asyncpg from the URL scheme; Gazelle cannot infer that runtime dependency.
@@ -273,6 +273,13 @@ class ExecutionRow(Base):
     reconciled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     reconciliation_source: Mapped[str | None] = mapped_column(Text)
     reconciled_by: Mapped[str | None] = mapped_column(Text)
+
+
+@event.listens_for(ExecutionRow, "after_insert")
+def _notify_dispatch(_mapper: Mapper[ExecutionRow], connection: Connection, row: ExecutionRow) -> None:
+    # An Execution only ever enters `pending_dispatch` on insert; every replica's dispatcher wakes on commit.
+    if row.state == ExecutionState.PENDING_DISPATCH.value:
+        connection.execute(select(func.pg_notify(DISPATCH_CHANNEL, "")))
 
 
 class ExecutorHeartbeatRow(Base):

@@ -127,6 +127,7 @@ async def async_main(settings: Settings) -> None:
                 ActionStore(make_sessionmaker(engine), external_grants=connections),
                 catalog,
                 executors,
+                dispatches=updates.dispatches,
                 providers=[PolicySetDecisionProvider(visibility=visibility)],
                 policies=policy_index,
                 on_drain=drain_backends,

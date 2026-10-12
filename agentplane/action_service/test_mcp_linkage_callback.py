@@ -28,6 +28,7 @@ from agentplane.action_service.models import OperatorPrincipal
 from agentplane.action_service.service import ActionService
 from agentplane.action_service.testing.callers import admitted_callers
 from agentplane.action_service.updates import ActionUpdateBroker
+from agentplane.changes import ChangeSignal
 from agentplane.workload_auth.principal import WorkloadPrincipalResolver
 
 
@@ -121,7 +122,7 @@ async def callback_client(
     linkage: McpLinkageAuthority, engine: AsyncEngine, db_url: str
 ) -> AsyncIterator[httpx.AsyncClient]:
     catalog = ActionCatalog(groups={})
-    actions = ActionService(ActionStore(make_sessionmaker(engine)), catalog, {})
+    actions = ActionService(ActionStore(make_sessionmaker(engine)), catalog, {}, dispatches=ChangeSignal())
     app = create_app(
         actions,
         Mock(spec=WorkloadPrincipalResolver),

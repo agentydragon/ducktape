@@ -51,6 +51,7 @@ from agentplane.action_service.policy_informer import PolicyIndex
 from agentplane.action_service.service import ActionService, Executor
 from agentplane.action_service.testing.callers import OTHER, PERSONAL, admitted_callers
 from agentplane.action_service.updates import ActionUpdateBroker
+from agentplane.changes import ChangeSignal
 from agentplane.subjects import ServiceAccountRef
 from agentplane.workload_auth.principal import WorkloadPrincipalRejectedError, WorkloadPrincipalResolver
 from util.net import bind_free_port
@@ -262,7 +263,7 @@ async def test_real_sdk_dcr_over_http_persists_client_metadata(
     redirect_uri: str,
 ) -> None:
     store = ActionStore(make_sessionmaker(engine), external_grants=oauth.connections)
-    service = ActionService(store, echo_catalog, {"agentplane": echo_executor})
+    service = ActionService(store, echo_catalog, {"agentplane": echo_executor}, dispatches=ChangeSignal())
     # Only the unrelated Kubernetes TokenReview boundary is fake. The request has
     # no workload token; OAuth routes, SDK HTTP, and PostgreSQL are real.
     app = create_app(
@@ -628,7 +629,7 @@ async def test_external_grant_reaches_canonical_mcp_admission_and_cancel(
     grant = await oauth.proxy.authenticate(bearer)
     assert grant is not None
     store = ActionStore(make_sessionmaker(engine), external_grants=oauth.connections)
-    service = ActionService(store, echo_catalog, {"agentplane": echo_executor})
+    service = ActionService(store, echo_catalog, {"agentplane": echo_executor}, dispatches=ChangeSignal())
     sandbox = _no_workload()
     app = create_app(
         service,

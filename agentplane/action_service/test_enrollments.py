@@ -44,6 +44,7 @@ from agentplane.action_service.service import ActionService
 from agentplane.action_service.testing.callers import OTHER, PERSONAL, UNLABELED, admitted_callers
 from agentplane.action_service.testing.credentials import OperatorIdp
 from agentplane.action_service.updates import ActionUpdateBroker
+from agentplane.changes import ChangeSignal
 from agentplane.subjects import ServiceAccountRef
 from agentplane.workload_auth.principal import WorkloadPrincipalResolver
 
@@ -241,7 +242,7 @@ async def test_operator_routes_require_auth_and_reject_redirect_injection(
     consent: Consent, engine: AsyncEngine, db_url: str, operator_idp: OperatorIdp
 ) -> None:
     catalog = ActionCatalog(groups={})
-    actions = ActionService(ActionStore(make_sessionmaker(engine)), catalog, {})
+    actions = ActionService(ActionStore(make_sessionmaker(engine)), catalog, {}, dispatches=ChangeSignal())
     app = create_app(
         actions,
         Mock(spec=WorkloadPrincipalResolver),

@@ -236,6 +236,7 @@ py_test(
         ":oidc",
         ":operator_sessions",
         "//:conftest",
+        "//agentplane:changes",
         "//agentplane:subjects",
         "//agentplane/action_service:api",
         "//agentplane/action_service:catalog",

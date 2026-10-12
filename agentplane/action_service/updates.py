@@ -15,12 +15,14 @@ from uuid import UUID
 
 from sqlalchemy.engine import make_url
 
+from agentplane.changes import ChangeSignal
 from agentplane.postgres.listener import PostgresListener
 
 CHANNEL = "agentplane_action_updates"
 PUSH_CHANNEL = "agentplane_push_updates"
 CONNECTIONS_CHANNEL = "agentplane_connection_updates"
 MCP_LINKAGE_CHANNEL = "agentplane_mcp_linkage_updates"
+DISPATCH_CHANNEL = "agentplane_action_dispatches"
 logger = logging.getLogger(__name__)
 
 
@@ -53,9 +55,12 @@ class ActionUpdateBroker:
         self._connection_subscribers: set[asyncio.Event] = set()
         self._linkage_subscribers: set[asyncio.Event] = set()
         self._health_subscribers: set[asyncio.Event] = set()
+        # Unlike the subscriptions, no availability check: a long-lived reconciler re-reads every
+        # pending dispatch on each wake, and connection loss and registration are wakes.
+        self.dispatches = ChangeSignal()
         self.listener = PostgresListener(
             make_url(database_url),
-            channels=(CHANNEL, PUSH_CHANNEL, CONNECTIONS_CHANNEL, MCP_LINKAGE_CHANNEL),
+            channels=(CHANNEL, PUSH_CHANNEL, CONNECTIONS_CHANNEL, MCP_LINKAGE_CHANNEL, DISPATCH_CHANNEL),
             application_name="agentplane-action-updates",
             notified=self._notified,
             invalidated=self._wake_all,
@@ -104,10 +109,15 @@ class ActionUpdateBroker:
             changed.set()
 
     def wake_mcp_health(self) -> None:
-        """The supervisor's replica-local catalog changed; stream readers re-read it."""
+        """The supervisor's replica-local catalog changed; stream readers re-read it, and dispatches
+        parked while their backend was unavailable are retried."""
         self._wake(self._health_subscribers)
+        self.dispatches.notify()
 
     def _notified(self, channel: str, payload: object) -> None:
+        if channel == DISPATCH_CHANNEL:
+            self.dispatches.notify()
+            return
         broadcast = {
             PUSH_CHANNEL: self._push_subscribers,
             CONNECTIONS_CHANNEL: self._connection_subscribers,
@@ -131,6 +141,7 @@ class ActionUpdateBroker:
             changed.set()
 
     def _wake_all(self) -> None:
+        self.dispatches.notify()
         for subscribers in (
             self._linkage_subscribers,
             self._health_subscribers,

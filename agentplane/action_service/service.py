@@ -24,6 +24,7 @@ from typing import Any, Self
 from uuid import UUID, uuid4
 
 import jsonschema
+from tenacity import AsyncRetrying, before_sleep_log, wait_exponential
 
 from agentplane.action_service.catalog import ActionCatalog, ActionIdentity, UnknownActionError
 from agentplane.action_service.db import ActionStore
@@ -57,6 +58,7 @@ from agentplane.action_service.policy_view import (
     subject_view,
 )
 from agentplane.action_service.providers import DecisionContext
+from agentplane.changes import ChangeSignal
 from agentplane.kubernetes_watch import Freshness
 from agentplane.subjects import ServiceAccountRef
 
@@ -73,7 +75,6 @@ DEFAULT_LEASE_DURATION = timedelta(seconds=30)
 DEFAULT_LEASE_SWEEP_INTERVAL = timedelta(seconds=5)
 DEFAULT_EXECUTOR_HEARTBEAT_INTERVAL = timedelta(seconds=10)
 DEFAULT_EXECUTOR_HEALTH_TIMEOUT = timedelta(seconds=45)
-DEFAULT_DISPATCH_POLL_INTERVAL = timedelta(seconds=1)
 DEFAULT_DRAIN_TIMEOUT = timedelta(seconds=20)
 DEFAULT_STOP_TIMEOUT = timedelta(seconds=5)
 
@@ -211,6 +212,7 @@ class ActionService:
         catalog: ActionCatalog,
         executors: Mapping[str, Executor],
         *,
+        dispatches: ChangeSignal,
         providers: Sequence[PolicySetDecisionProvider] = (),
         policies: PolicyIndex | None = None,
         clock: Callable[[], datetime] = lambda: datetime.now(UTC),
@@ -220,7 +222,6 @@ class ActionService:
         lease_sweep_interval: timedelta = DEFAULT_LEASE_SWEEP_INTERVAL,
         executor_heartbeat_interval: timedelta = DEFAULT_EXECUTOR_HEARTBEAT_INTERVAL,
         executor_health_timeout: timedelta = DEFAULT_EXECUTOR_HEALTH_TIMEOUT,
-        dispatch_poll_interval: timedelta = DEFAULT_DISPATCH_POLL_INTERVAL,
         drain_timeout: timedelta = DEFAULT_DRAIN_TIMEOUT,
         on_drain: Callable[[], None] | None = None,
         stop_timeout: timedelta = DEFAULT_STOP_TIMEOUT,
@@ -247,7 +248,7 @@ class ActionService:
         self._lease_sweep_interval = lease_sweep_interval
         self._executor_heartbeat_interval = executor_heartbeat_interval
         self._executor_health_timeout = executor_health_timeout
-        self._dispatch_poll_interval = dispatch_poll_interval
+        self._dispatches = dispatches
         self._tasks: set[asyncio.Task[None]] = set()
         self._scheduled: set[UUID] = set()
         self._heartbeat_task: asyncio.Task[None] | None = None
@@ -264,8 +265,6 @@ class ActionService:
         self._heartbeat_task = asyncio.create_task(self._heartbeat_loop(), name="action-executor-heartbeat")
         self._sweep_task = asyncio.create_task(self._sweep_loop(), name="action-lease-sweep")
         self._dispatch_task = asyncio.create_task(self._dispatch_loop(), name="action-dispatch-recovery")
-        for request_id in await self._store.pending_dispatches():
-            self._schedule(request_id)
 
     @property
     def draining(self) -> bool:
@@ -490,16 +489,24 @@ class ActionService:
             logger.error("action dispatch coordination failed; request will not be retried")
 
     async def _dispatch_loop(self) -> None:
-        """Reconcile durable pending dispatches so any healthy replica can take over."""
-        while True:
-            try:
-                for request_id in await self._store.pending_dispatches():
-                    self._schedule(request_id)
-            except asyncio.CancelledError:
-                raise
-            except Exception:
-                logger.warning("pending Action dispatch reconciliation failed; will retry", exc_info=True)
-            await asyncio.sleep(self._dispatch_poll_interval.total_seconds())
+        """Reconcile durable pending dispatches so any healthy replica can take over.
+
+        Reads every pending row at start and on each `dispatches` wake: a pending dispatch committed
+        on any replica, a backend regaining health, and the LISTEN connection's loss or registration,
+        since commits made while it was down are only in the table.
+        """
+        changed = asyncio.Event()
+        with self._dispatches.subscribe(changed):
+            while True:
+                # Clear before reading: a commit racing with the read stays a wakeup.
+                changed.clear()
+                async for attempt in AsyncRetrying(
+                    wait=wait_exponential(min=1, max=30), before_sleep=before_sleep_log(logger, logging.WARNING)
+                ):
+                    with attempt:
+                        for request_id in await self._store.pending_dispatches():
+                            self._schedule(request_id)
+                await changed.wait()
 
     async def _heartbeat_loop(self) -> None:
         """Prove this executor identity is alive, independent of any Execution it may hold."""

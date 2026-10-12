@@ -48,6 +48,7 @@ from agentplane.action_service.providers import DecisionContext
 from agentplane.action_service.service import ActionService
 from agentplane.action_service.testing.callers import OTHER, PERSONAL, admitted_callers, in_sync_index
 from agentplane.action_service.testing.fixtures import RecordingExecutor
+from agentplane.changes import ChangeSignal
 from agentplane.subjects import ServiceAccountRef
 
 ISSUER = "https://actions.example.test"
@@ -301,7 +302,9 @@ async def test_service_preserves_human_approval_and_canonical_external_provenanc
             return ProviderOutcome(verdict=ProviderVerdict.ALLOW, reason_code="scripted_allow", reason_description=None)
 
     provider = RecordingProvider()
-    service = ActionService(store, echo_catalog, {"agentplane": echo_executor}, providers=[provider])
+    service = ActionService(
+        store, echo_catalog, {"agentplane": echo_executor}, providers=[provider], dispatches=ChangeSignal()
+    )
     async with service:
         receipt = await service.submit(envelope, grant.principal(), external_grant=grant.provenance())
         assert receipt.state is ActionState.ALLOWED
@@ -357,6 +360,7 @@ async def test_bound_service_account_is_auto_approved_by_its_binding_only(
         {"agentplane": echo_executor},
         providers=[PolicySetDecisionProvider(visibility=github_visibility())],
         policies=index,
+        dispatches=ChangeSignal(),
     )
     async with service:
         allowed = await service.submit(envelope, grant.principal(), external_grant=grant.provenance())

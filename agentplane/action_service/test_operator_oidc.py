@@ -18,6 +18,7 @@ from agentplane.action_service.operator_oidc_settings import OperatorOidcSetting
 from agentplane.action_service.service import ActionService
 from agentplane.action_service.testing.callers import admitted_callers
 from agentplane.action_service.updates import ActionUpdateBroker
+from agentplane.changes import ChangeSignal
 from agentplane.workload_auth.principal import WorkloadPrincipalResolver
 from util.net import bind_free_port
 from util.testing.asgi import serve_app
@@ -34,7 +35,7 @@ async def test_signed_operator_admission(
     issuer = f"http://127.0.0.1:{sock.getsockname()[1]}"
     idp = build_mock_oidc_app(issuer_url=issuer, private_key=private, public_key=public)
     catalog = ActionCatalog()
-    service = ActionService(ActionStore(make_sessionmaker(engine)), catalog, {})
+    service = ActionService(ActionStore(make_sessionmaker(engine)), catalog, {}, dispatches=ChangeSignal())
     app = create_app(
         service,
         cast(WorkloadPrincipalResolver, None),

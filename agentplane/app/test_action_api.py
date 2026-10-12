@@ -67,6 +67,7 @@ from agentplane.app.threads.bridge import RunnerBridge
 from agentplane.app.threads.store import ThreadStore
 from agentplane.app.threads.summaries import Summaries
 from agentplane.app.threads.view.content import ContentStore
+from agentplane.changes import ChangeSignal
 from agentplane.egress.decisions_client import DecisionsClient
 from agentplane.history_service.client import HistoryServiceClient
 from agentplane.history_service.testing.history import History
@@ -198,7 +199,13 @@ async def review(
         )
         policies = admitted_callers(PERSONAL)
         service = await stack.enter_async_context(
-            ActionService(ActionStore(make_sessionmaker(engine)), catalog, {"test_review": executor}, policies=policies)
+            ActionService(
+                ActionStore(make_sessionmaker(engine)),
+                catalog,
+                {"test_review": executor},
+                policies=policies,
+                dispatches=ChangeSignal(),
+            )
         )
         connections = ConnectionAuthority(make_sessionmaker(engine), policies)
         enrollments = EnrollmentAuthority(make_sessionmaker(engine), connections)

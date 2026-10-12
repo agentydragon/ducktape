@@ -40,6 +40,7 @@ from agentplane.action_service.policy_evaluation import AUTO_APPROVE_REASON, PRO
 from agentplane.action_service.policy_informer import PolicyIndex
 from agentplane.action_service.providers import DecisionContext
 from agentplane.action_service.service import ActionService, InvalidActionArgumentsError
+from agentplane.changes import ChangeSignal
 from agentplane.kubernetes_watch import Freshness
 from agentplane.subjects import ServiceAccountRef
 
@@ -137,7 +138,11 @@ async def test_allow_deny_no_opinion_matrix(
     store = ActionStore(make_sessionmaker(engine))
 
     async with ActionService(
-        store, echo_catalog, {"agentplane": mcp_executor}, providers=[ScriptedProvider("p", ProviderVerdict.ALLOW)]
+        store,
+        echo_catalog,
+        {"agentplane": mcp_executor},
+        providers=[ScriptedProvider("p", ProviderVerdict.ALLOW)],
+        dispatches=ChangeSignal(),
     ) as allow_only:
         allowed = await allow_only.submit(body("matrix-allow"), CALLER)
         assert allowed.state is ActionState.ALLOWED
@@ -145,7 +150,11 @@ async def test_allow_deny_no_opinion_matrix(
         assert allowed.decision.verdict is Verdict.ALLOW
 
     async with ActionService(
-        store, echo_catalog, {"agentplane": mcp_executor}, providers=[ScriptedProvider("p", ProviderVerdict.DENY)]
+        store,
+        echo_catalog,
+        {"agentplane": mcp_executor},
+        providers=[ScriptedProvider("p", ProviderVerdict.DENY)],
+        dispatches=ChangeSignal(),
     ) as deny_only:
         denied = await deny_only.submit(body("matrix-deny"), CALLER)
         assert denied.state is ActionState.DENIED
@@ -153,7 +162,11 @@ async def test_allow_deny_no_opinion_matrix(
         assert denied.decision.verdict is Verdict.DENY
 
     async with ActionService(
-        store, echo_catalog, {"agentplane": mcp_executor}, providers=[ScriptedProvider("p", ProviderVerdict.NO_OPINION)]
+        store,
+        echo_catalog,
+        {"agentplane": mcp_executor},
+        providers=[ScriptedProvider("p", ProviderVerdict.NO_OPINION)],
+        dispatches=ChangeSignal(),
     ) as no_opinion_only:
         pending = await no_opinion_only.submit(body("matrix-no-opinion"), CALLER)
         assert pending.state is ActionState.DECISION_PENDING
@@ -166,7 +179,9 @@ async def test_deny_dominates_even_when_the_allow_vote_finishes_first(
     store = ActionStore(make_sessionmaker(engine))
     fast_allow = ScriptedProvider("fast-allow", ProviderVerdict.ALLOW, delay=0.0)
     slow_deny = ScriptedProvider("slow-deny", ProviderVerdict.DENY, delay=0.05)
-    service = ActionService(store, echo_catalog, {"agentplane": mcp_executor}, providers=[fast_allow, slow_deny])
+    service = ActionService(
+        store, echo_catalog, {"agentplane": mcp_executor}, providers=[fast_allow, slow_deny], dispatches=ChangeSignal()
+    )
     async with service:
         result = await service.submit(body("deny-dominance"), CALLER)
         assert result.state is ActionState.DENIED
@@ -181,7 +196,12 @@ async def test_provider_timeout_is_not_allow_and_does_not_block_other_providers(
     store = ActionStore(make_sessionmaker(engine))
 
     async with ActionService(
-        store, echo_catalog, {"agentplane": mcp_executor}, providers=[HangingProvider()], provider_timeout_seconds=0.02
+        store,
+        echo_catalog,
+        {"agentplane": mcp_executor},
+        providers=[HangingProvider()],
+        provider_timeout_seconds=0.02,
+        dispatches=ChangeSignal(),
     ) as alone:
         pending = await alone.submit(body("timeout-alone"), CALLER)
         assert pending.state is ActionState.DECISION_PENDING, "a timeout must never be treated as an allow"
@@ -192,6 +212,7 @@ async def test_provider_timeout_is_not_allow_and_does_not_block_other_providers(
         {"agentplane": mcp_executor},
         providers=[HangingProvider(), ScriptedProvider("deny", ProviderVerdict.DENY)],
         provider_timeout_seconds=0.02,
+        dispatches=ChangeSignal(),
     )
     async with with_deny:
         denied = await with_deny.submit(body("timeout-with-deny"), CALLER)
@@ -205,7 +226,9 @@ async def test_provider_exception_is_not_allow_and_material_is_not_projected_or_
     echo_catalog: ActionCatalog,
 ) -> None:
     store = ActionStore(make_sessionmaker(engine))
-    service = ActionService(store, echo_catalog, {"agentplane": mcp_executor}, providers=[ExplodingProvider()])
+    service = ActionService(
+        store, echo_catalog, {"agentplane": mcp_executor}, providers=[ExplodingProvider()], dispatches=ChangeSignal()
+    )
     async with service:
         pending = await service.submit(body("provider-explodes"), CALLER)
         assert pending.state is ActionState.DECISION_PENDING
@@ -219,7 +242,11 @@ async def test_human_fallback_when_no_provider_has_an_opinion(
 ) -> None:
     store = ActionStore(make_sessionmaker(engine))
     service = ActionService(
-        store, echo_catalog, {"agentplane": mcp_executor}, providers=[ScriptedProvider("p", ProviderVerdict.NO_OPINION)]
+        store,
+        echo_catalog,
+        {"agentplane": mcp_executor},
+        providers=[ScriptedProvider("p", ProviderVerdict.NO_OPINION)],
+        dispatches=ChangeSignal(),
     )
     async with service:
         pending = await service.submit(body("human-fallback"), CALLER)
@@ -239,7 +266,11 @@ async def test_stale_human_decision_after_auto_provider_already_decided(
 ) -> None:
     store = ActionStore(make_sessionmaker(engine))
     service = ActionService(
-        store, echo_catalog, {"agentplane": mcp_executor}, providers=[ScriptedProvider("policy", ProviderVerdict.DENY)]
+        store,
+        echo_catalog,
+        {"agentplane": mcp_executor},
+        providers=[ScriptedProvider("policy", ProviderVerdict.DENY)],
+        dispatches=ChangeSignal(),
     )
     async with service:
         auto_decided = await service.submit(body("stale-human-after-auto"), CALLER)
@@ -264,7 +295,9 @@ async def test_request_is_invisible_until_providers_finish(
     """No reader -- the operator queue, Web Push -- may see an auto-approved request as pending."""
     store = ActionStore(make_sessionmaker(engine))
     provider = GatedProvider(ProviderVerdict.ALLOW)
-    service = ActionService(store, echo_catalog, {"agentplane": mcp_executor}, providers=[provider])
+    service = ActionService(
+        store, echo_catalog, {"agentplane": mcp_executor}, providers=[provider], dispatches=ChangeSignal()
+    )
     async with service:
         async with asyncio.timeout(10), asyncio.TaskGroup() as tasks:
             submitted = tasks.create_task(service.submit(body("gated"), CALLER))
@@ -281,7 +314,9 @@ async def test_decision_context_carries_only_the_authenticated_caller(
 ) -> None:
     store = ActionStore(make_sessionmaker(engine))
     provider = ScriptedProvider("identity-check", ProviderVerdict.NO_OPINION)
-    service = ActionService(store, echo_catalog, {"agentplane": mcp_executor}, providers=[provider])
+    service = ActionService(
+        store, echo_catalog, {"agentplane": mcp_executor}, providers=[provider], dispatches=ChangeSignal()
+    )
     async with service:
         forged = ActionRequestInput(
             idempotency_key="identity-context", title="test title for identity-context", action=ECHO, arguments={"n": 1}
@@ -301,6 +336,7 @@ async def test_provider_reason_is_projected_separately_from_human_note(
         echo_catalog,
         {"agentplane": mcp_executor},
         providers=[ScriptedProvider("policy", ProviderVerdict.DENY, reason_code="untrusted_action")],
+        dispatches=ChangeSignal(),
     )
     async with service:
         result = await service.submit(body("reason-projection"), CALLER)
@@ -373,6 +409,7 @@ def _service(
         providers=[PolicySetDecisionProvider(visibility=visibility)],
         policies=index,
         clock=lambda: NOW,
+        dispatches=ChangeSignal(),
     )
 
 
@@ -562,7 +599,9 @@ async def test_invalid_arguments_are_rejected_before_persistence_and_provider_ev
     }
     store = ActionStore(make_sessionmaker(engine))
     provider = ScriptedProvider("policy", ProviderVerdict.NO_OPINION)
-    service = ActionService(store, echo_catalog, {"agentplane": mcp_executor}, providers=[provider])
+    service = ActionService(
+        store, echo_catalog, {"agentplane": mcp_executor}, providers=[provider], dispatches=ChangeSignal()
+    )
     async with service:
         with pytest.raises(InvalidActionArgumentsError, match="advertised Action schema"):
             await service.submit(

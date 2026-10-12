@@ -35,6 +35,8 @@ from agentplane.action_service.models import (
 )
 from agentplane.action_service.service import ActionService, ExecutionLease, Executor, ServiceDrainingError
 from agentplane.action_service.testing.lifecycle import wait_for_state
+from agentplane.action_service.updates import ActionUpdateBroker
+from agentplane.changes import ChangeSignal
 from agentplane.subjects import ServiceAccountRef
 
 CALLER = CallerPrincipal(account=ServiceAccountRef(namespace="agentplane-test", name="test-workload-a"))
@@ -210,6 +212,7 @@ async def test_action_service_restarts_and_worker_liveness_never_double_dispatch
         lease_sweep_interval=timedelta(seconds=0.02),
         executor_heartbeat_interval=timedelta(seconds=0.02),
         executor_health_timeout=timedelta(seconds=30),
+        dispatches=ChangeSignal(),
     )
     async with service:
         pending = await service.submit(
@@ -258,10 +261,10 @@ async def test_drain_fences_queued_dispatch_and_another_replica_claims_it(
     executor = GatedExecutor()
     executor.release.set()
     request_id = await _allowed_execution(store, idempotency_key="queued-drain")
-    first = ActionService(store, echo_catalog, {"agentplane": executor})
-    second = ActionService(store, echo_catalog, {"agentplane": executor})
+    first = ActionService(store, echo_catalog, {"agentplane": executor}, dispatches=ChangeSignal())
+    second = ActionService(store, echo_catalog, {"agentplane": executor}, dispatches=ChangeSignal())
     async with first:
-        # Entering schedules the durable row, but the queued task has not entered the claim RPC.
+        # Draining before the startup reconcile runs: nothing has entered the claim RPC.
         first.begin_drain()
         await first.close()
         assert await store.pending_dispatches() == [request_id]
@@ -274,6 +277,24 @@ async def test_drain_fences_queued_dispatch_and_another_replica_claims_it(
     async with second:
         await wait_for_state(store, request_id, CALLER, want=ActionState.SUCCEEDED)
         assert executor.calls == 1
+
+
+async def test_running_replica_wakes_for_a_dispatch_committed_elsewhere(
+    engine: AsyncEngine, db_url: str, echo_catalog: ActionCatalog
+) -> None:
+    store = ActionStore(make_sessionmaker(engine))
+    executor = GatedExecutor()
+    executor.release.set()
+    updates = ActionUpdateBroker(db_url)
+    startup = await _allowed_execution(store, idempotency_key="before-start")
+    service = ActionService(store, echo_catalog, {"agentplane": executor}, dispatches=updates.dispatches)
+    async with updates.listener.listen(), service:
+        # The startup read has run once its row finished; only the NOTIFY can surface the next one.
+        await wait_for_state(store, startup, CALLER, want=ActionState.SUCCEEDED)
+        # Allowed through the store, as another replica would: this one never schedules it locally.
+        request_id = await _allowed_execution(store, idempotency_key="allowed-elsewhere")
+        await wait_for_state(store, request_id, CALLER, want=ActionState.SUCCEEDED)
+    assert executor.calls == 2
 
 
 async def test_drain_includes_a_claim_whose_database_reply_is_still_in_flight(
@@ -300,7 +321,7 @@ async def test_drain_includes_a_claim_whose_database_reply_is_still_in_flight(
         return result
 
     request_id = await _allowed_execution(store, idempotency_key="claim-race")
-    service = ActionService(store, echo_catalog, {"agentplane": executor})
+    service = ActionService(store, echo_catalog, {"agentplane": executor}, dispatches=ChangeSignal())
     async with AsyncExitStack() as stack:
         try:
             with patch.object(store, "claim_execution", delayed_claim):
@@ -329,7 +350,13 @@ async def test_drain_waits_for_terminal_persistence_and_renews_its_lease(
     persisting, release_persistence, renewed = (asyncio.Event() for _ in range(3))
     finish = store.finish_execution
     heartbeat = store.heartbeat_execution
-    service = ActionService(store, echo_catalog, {"agentplane": executor}, lease_duration=timedelta(milliseconds=300))
+    service = ActionService(
+        store,
+        echo_catalog,
+        {"agentplane": executor},
+        lease_duration=timedelta(milliseconds=300),
+        dispatches=ChangeSignal(),
+    )
     request_id = await _allowed_execution(store, idempotency_key="terminal-persistence")
 
     async def delayed_finish(request_id: UUID, executor_id: str, lease_token: UUID, result: ExecutionResult) -> None:
@@ -372,8 +399,10 @@ async def test_forced_drain_persists_unknown_and_never_replays(
     store = ActionStore(make_sessionmaker(engine))
     executor = GatedExecutor()
     request_id = await _allowed_execution(store, idempotency_key="forced-drain")
-    first = ActionService(store, echo_catalog, {"agentplane": executor}, drain_timeout=timedelta(0))
-    second = ActionService(store, echo_catalog, {"agentplane": executor})
+    first = ActionService(
+        store, echo_catalog, {"agentplane": executor}, drain_timeout=timedelta(0), dispatches=ChangeSignal()
+    )
+    second = ActionService(store, echo_catalog, {"agentplane": executor}, dispatches=ChangeSignal())
     async with first:
         async with asyncio.timeout(5):
             await executor.started.wait()
@@ -402,6 +431,7 @@ async def test_forced_drain_bounds_unavailable_outcome_persistence(
         {"agentplane": executor},
         drain_timeout=timedelta(0),
         stop_timeout=timedelta(milliseconds=30),
+        dispatches=ChangeSignal(),
     )
     persisting = asyncio.Event()
     persistence_stopped = asyncio.Event()

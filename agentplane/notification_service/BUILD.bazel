@@ -180,6 +180,7 @@ py_test(
         ":settings",
         ":store",
         "//:conftest",
+        "//agentplane:changes",
         "//agentplane:subjects",
         "//agentplane/action_service:api",
         "//agentplane/action_service:auth",

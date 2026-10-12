@@ -61,6 +61,7 @@ from agentplane.action_service.testing.callers import in_sync_index
 from agentplane.action_service.testing.credentials import WORKLOAD_CREDENTIAL_PLACEHOLDER
 from agentplane.action_service.testing.fixtures import ScriptedExecutor, lifespan_in_own_task
 from agentplane.action_service.updates import ActionSubscription, ActionUpdateBroker
+from agentplane.changes import ChangeSignal
 from agentplane.subjects import ServiceAccountRef
 from agentplane.workload_auth.principal import (
     POD_NAME_CLAIM,
@@ -247,12 +248,7 @@ async def _serve(
     # Tests move requests through the store by hand (decide, claim); only the startup pass of the
     # dispatch and lease-sweep loops may run, so nothing dispatches or expires behind their back.
     service = ActionService(
-        store,
-        catalog,
-        executors,
-        policies=policies,
-        dispatch_poll_interval=timedelta(hours=1),
-        lease_sweep_interval=timedelta(hours=1),
+        store, catalog, executors, policies=policies, lease_sweep_interval=timedelta(hours=1), dispatches=ChangeSignal()
     )
     updates = ActionUpdateBroker(db_url)
     app = create_app(

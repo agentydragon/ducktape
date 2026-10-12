@@ -38,6 +38,7 @@ from agentplane.action_service.service import ActionService
 from agentplane.action_service.testing.callers import OTHER, PERSONAL, UNLABELED, admitted_callers
 from agentplane.action_service.testing.credentials import OperatorIdp
 from agentplane.action_service.updates import ActionUpdateBroker
+from agentplane.changes import ChangeSignal
 from agentplane.kubernetes_watch import Freshness
 from agentplane.subjects import ServiceAccountRef
 from agentplane.workload_auth.principal import WorkloadPrincipalResolver
@@ -282,7 +283,7 @@ async def test_operator_routes_do_not_expose_binding_or_accept_workload_credenti
     service = authority(engine)
     grant = await service.bind(binding())
     catalog = ActionCatalog(groups={})
-    actions = ActionService(ActionStore(make_sessionmaker(engine)), catalog, {})
+    actions = ActionService(ActionStore(make_sessionmaker(engine)), catalog, {}, dispatches=ChangeSignal())
     app = create_app(
         actions,
         Mock(spec=WorkloadPrincipalResolver),

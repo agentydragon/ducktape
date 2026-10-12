@@ -60,6 +60,7 @@ from agentplane.action_service.runtime import running_executor
 from agentplane.action_service.service import ActionService, ExecutionLease, ExecutionOutcomeUnknownError
 from agentplane.action_service.settings import Settings
 from agentplane.action_service.testing.lifecycle import wait_available, wait_retry
+from agentplane.changes import ChangeSignal
 from agentplane.subjects import ServiceAccountRef
 from util.net import bind_free_port
 from util.testing.asgi import serve_app_sync
@@ -739,7 +740,9 @@ async def test_production_http_composition_one_execution_no_replay(
         # Duplicate dispatch and restart recovery must both respect the durable single-Execution claim.
         await service._dispatch_once(pending.id)
         await service.close()
-        async with ActionService(ActionStore(make_sessionmaker(engine)), catalog, service._executors) as restarted:
+        async with ActionService(
+            ActionStore(make_sessionmaker(engine)), catalog, service._executors, dispatches=ChangeSignal()
+        ) as restarted:
             assert (await restarted.get(pending.id, caller)).execution == final.execution
             assert len(fake_server.calls) == (0 if outcome in {"schema_mismatch", "invalid_schema"} else 1)
             async with make_sessionmaker(engine)() as session:
