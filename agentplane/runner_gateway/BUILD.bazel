@@ -282,7 +282,10 @@ py_library(
     deps = [
         ":lifecycle_control",
         ":session_registry",
+        "//agentplane/proto:runner_control_pb2",
+        "//agentplane/proto:runner_control_pb2_grpc",
         "//agentplane/proto:runner_pb2",
+        "@pypi//grpcio",
         "@pypi//protobuf",
     ],
 )

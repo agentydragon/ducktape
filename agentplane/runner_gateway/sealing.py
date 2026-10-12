@@ -8,6 +8,10 @@ from agentplane.proto import runner_pb2
 from agentplane.runner_gateway.lifecycle_control import LifecycleControl
 from agentplane.runner_gateway.session_registry import SessionRegistry
 
+# The `Runner` stub types its calls; mypy reads stubs only from direct deps.
+# gazelle:include_dep //agentplane/proto:runner_control_pb2
+# gazelle:include_dep //agentplane/proto:runner_control_pb2_grpc
+# gazelle:include_dep @pypi//grpcio
 # gazelle:include_dep @pypi//protobuf
 
 # Stopping harnesses can take a while, and the Sandbox Service reconciles one Sandbox at a time. Seal is

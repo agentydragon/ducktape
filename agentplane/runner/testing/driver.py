@@ -15,6 +15,9 @@ from agentplane.runner.config import RunnerConfig
 from agentplane.runner.runner import Runner
 from agentplane.runner.testing.gateway import Gateway, dialing
 
+# The `Runner` stub types its calls; mypy reads stubs only from direct deps.
+# gazelle:include_dep //agentplane/proto:runner_control_pb2_grpc
+# gazelle:include_dep @pypi//grpcio
 # gazelle:include_dep @pypi//protobuf
 
 
