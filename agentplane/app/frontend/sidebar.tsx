@@ -12,7 +12,7 @@ import IconPlus from "@tabler/icons-react/dist/esm/icons/IconPlus.mjs";
 import IconSearch from "@tabler/icons-react/dist/esm/icons/IconSearch.mjs";
 import IconSettings from "@tabler/icons-react/dist/esm/icons/IconSettings.mjs";
 import IconX from "@tabler/icons-react/dist/esm/icons/IconX.mjs";
-import { type JSX, useEffect, useRef, useState, type PointerEvent } from "react";
+import { type JSX, useEffect, useState } from "react";
 import { Link, useLocation, useMatch, useNavigate } from "react-router";
 
 import { archiveThread, displayableError, type SandboxView, type ThreadView } from "./client";
@@ -26,6 +26,7 @@ import {
   type ThreadsSnapshot,
 } from "./live";
 import { MarkGlyph } from "./mark_glyph";
+import { ResizeHandle, usePaneSize } from "./resize_handle";
 import { sandboxStatusDetail, sandboxSummary } from "./sandbox_status";
 import { SANDBOX_STATUS_MARKS } from "./status_mark";
 import "./sidebar.css";
@@ -36,115 +37,7 @@ import { ThreadStatusIndicator } from "./thread_status_indicator";
 import { ScrollDebugTools } from "./threads/scroll_debug_tools";
 import { snapshotFresh, threadStatusFromSnapshot } from "./thread_status";
 
-const SIDEBAR_WIDTH_STORAGE_KEY = "agentplane-sidebar-width";
-const SIDEBAR_DEFAULT_WIDTH = 240;
-const SIDEBAR_MIN_WIDTH = 180;
-const SIDEBAR_MAX_WIDTH = 480;
-const SIDEBAR_KEYBOARD_STEP = 16;
 const SEARCH_PAUSE_MS = 300;
-
-function clampSidebarWidth(width: number): number {
-  return Math.min(SIDEBAR_MAX_WIDTH, Math.max(SIDEBAR_MIN_WIDTH, width));
-}
-
-function readStoredSidebarWidth(): number {
-  try {
-    const stored = window.localStorage.getItem(SIDEBAR_WIDTH_STORAGE_KEY);
-    const parsed = stored === null ? NaN : Number(stored);
-    return Number.isFinite(parsed) ? clampSidebarWidth(parsed) : SIDEBAR_DEFAULT_WIDTH;
-  } catch (reason: unknown) {
-    // A private window or blocked site data still just falls back to the default silently in
-    // the UI -- this is a per-viewer convenience, not state worth an error banner over.
-    console.warn("sidebar: failed to read stored width", reason);
-    return SIDEBAR_DEFAULT_WIDTH;
-  }
-}
-
-function writeStoredSidebarWidth(width: number): void {
-  try {
-    window.localStorage.setItem(SIDEBAR_WIDTH_STORAGE_KEY, String(width));
-  } catch (reason: unknown) {
-    console.warn("sidebar: failed to persist width", reason);
-  }
-}
-
-/** The sidebar's user-resized width: a per-viewer convenience persisted to `localStorage`, not
- * shared state -- a fresh viewer, another device, or a private window just gets the default.
- * `resizeBy` uses React's functional state update rather than reading the latest `width`, so two
- * key-repeat steps landing in the same batch still both apply instead of the second clobbering
- * the first with a stale base. */
-function useSidebarWidth(): { width: number; setWidth: (width: number) => void; resizeBy: (delta: number) => void } {
-  const [width, setWidthState] = useState(readStoredSidebarWidth);
-
-  function setWidth(next: number): void {
-    const clamped = clampSidebarWidth(next);
-    setWidthState(clamped);
-    writeStoredSidebarWidth(clamped);
-  }
-
-  function resizeBy(delta: number): void {
-    setWidthState((current) => {
-      const clamped = clampSidebarWidth(current + delta);
-      writeStoredSidebarWidth(clamped);
-      return clamped;
-    });
-  }
-
-  return { width, setWidth, resizeBy };
-}
-
-/** Drag (pointer) or arrow-key (keyboard) resize handle on the sidebar's trailing edge. `onDrag`
- * sets an absolute width computed from the drag's own start point; `onStep` nudges by a relative
- * amount, since arrow-key repeats can land faster than a re-render carries the new `width` prop
- * back in. */
-function SidebarResizeHandle({
-  width,
-  onDrag,
-  onStep,
-}: {
-  width: number;
-  onDrag: (width: number) => void;
-  onStep: (delta: number) => void;
-}): JSX.Element {
-  const dragRef = useRef<{ pointerId: number; startX: number; startWidth: number } | null>(null);
-
-  function onPointerDown(event: PointerEvent<HTMLDivElement>): void {
-    dragRef.current = { pointerId: event.pointerId, startX: event.clientX, startWidth: width };
-    event.currentTarget.setPointerCapture?.(event.pointerId);
-  }
-
-  function onPointerMove(event: PointerEvent<HTMLDivElement>): void {
-    const drag = dragRef.current;
-    if (drag === null || drag.pointerId !== event.pointerId) return;
-    onDrag(drag.startWidth + (event.clientX - drag.startX));
-  }
-
-  function onPointerUp(event: PointerEvent<HTMLDivElement>): void {
-    if (dragRef.current?.pointerId !== event.pointerId) return;
-    dragRef.current = null;
-    event.currentTarget.releasePointerCapture?.(event.pointerId);
-  }
-
-  return (
-    <div
-      className="agentplane-sidebar-resize-handle"
-      role="separator"
-      aria-orientation="vertical"
-      aria-label="Resize sidebar"
-      aria-valuenow={width}
-      aria-valuemin={SIDEBAR_MIN_WIDTH}
-      aria-valuemax={SIDEBAR_MAX_WIDTH}
-      tabIndex={0}
-      onPointerDown={onPointerDown}
-      onPointerMove={onPointerMove}
-      onPointerUp={onPointerUp}
-      onKeyDown={(event) => {
-        if (event.key === "ArrowLeft") onStep(-SIDEBAR_KEYBOARD_STEP);
-        else if (event.key === "ArrowRight") onStep(SIDEBAR_KEYBOARD_STEP);
-      }}
-    />
-  );
-}
 
 // Matches sidebar.css's own phone breakpoint.
 const PHONE_QUERY = "(max-width: 560px)";
@@ -351,7 +244,7 @@ function SidebarView({
   const sandboxRoute = useMatch("/sandboxes/:name");
   const { listing, setListing } = useThreadListing();
   const [search, setSearch] = useState(listing.search ?? "");
-  const { width, setWidth, resizeBy } = useSidebarWidth();
+  const pane = usePaneSize("agentplane-sidebar-width", 240, 180, 480);
   const data = live.snapshot;
   const fresh = snapshotFresh(live);
   const [error, setError] = useState<string | null>(null);
@@ -421,9 +314,9 @@ function SidebarView({
     <nav
       className={`agentplane-sidebar${open ? " agentplane-sidebar-open" : ""}`}
       aria-label="Threads"
-      style={{ width: `${width}px` }}
+      style={{ width: `${pane.size}px` }}
     >
-      <SidebarResizeHandle width={width} onDrag={setWidth} onStep={resizeBy} />
+      <ResizeHandle pane={pane} axis="x" className="agentplane-sidebar-resize-handle" aria-label="Resize sidebar" />
       <div className="agentplane-sidebar-header">
         <Text fw={700} size="xs" tt="uppercase" c="dimmed">
           Threads

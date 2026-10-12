@@ -380,7 +380,11 @@ ts_library(
     name = "live_stream",
     srcs = ["live_stream.ts"],
     tsconfig = TSCONFIG,
-    deps = [":client"],
+    deps = [
+        ":client",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+    ],
 )
 
 agentplane_vitest_test(
@@ -424,6 +428,7 @@ ts_library(
     srcs = ["live.tsx"],
     tsconfig = TSCONFIG,
     deps = [
+        ":format_time",
         ":live_stream",
         ":schema",
         ":stream_status",
@@ -585,6 +590,24 @@ js_library(
 )
 
 ts_library(
+    name = "format_time",
+    srcs = ["format_time.ts"],
+    tsconfig = TSCONFIG,
+    deps = ["//:node_modules/date-fns"],
+)
+
+ts_library(
+    name = "resize_handle",
+    srcs = ["resize_handle.tsx"],
+    tsconfig = TSCONFIG,
+    deps = [
+        "//:node_modules/@mantine/hooks",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+    ],
+)
+
+ts_library(
     name = "sidebar",
     srcs = [
         "sidebar.tsx",
@@ -600,6 +623,7 @@ ts_library(
         ":client",
         ":live",
         ":mark_glyph",
+        ":resize_handle",
         ":sandbox_status",
         ":sidebar_css",
         ":status_mark",
@@ -657,6 +681,7 @@ ts_library(
     srcs = ["notification_status.tsx"],
     tsconfig = TSCONFIG,
     deps = [
+        ":format_time",
         ":live_stream",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
@@ -669,6 +694,7 @@ ts_library(
     srcs = ["thread_notices.tsx"],
     tsconfig = TSCONFIG,
     deps = [
+        ":format_time",
         ":live_stream",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",

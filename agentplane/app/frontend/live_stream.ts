@@ -8,6 +8,8 @@
  * otherwise opens a new source after a backoff; sooner once the browser is back online or the page
  * is back in view.
  */
+import { type Dispatch, type SetStateAction, useEffect, useState } from "react";
+
 import { api } from "./client";
 
 /** `since` is when the stream entered the phase; `reconnecting` covers every failure since it was
@@ -102,4 +104,25 @@ export function followStream(url: string, { events, onConnection }: StreamHandle
     document.removeEventListener("visibilitychange", resumeInView);
     source.close();
   };
+}
+
+export interface SnapshotStream<T> {
+  /** The latest snapshot, or null before the first; a local write stands until the next frame. */
+  snapshot: T | null;
+  setSnapshot: Dispatch<SetStateAction<T | null>>;
+  connection: StreamConnection;
+}
+
+/** Follows the `snapshot` frames of `url`, while it is not null. */
+export function useSnapshotStream<T>(url: string | null): SnapshotStream<T> {
+  const [snapshot, setSnapshot] = useState<T | null>(null);
+  const [connection, setConnection] = useState<StreamConnection>(() => ({ phase: "connecting", since: Date.now() }));
+  useEffect(() => {
+    if (url === null) return;
+    return followStream(url, {
+      events: { snapshot: (message) => setSnapshot(JSON.parse(message.data) as T) },
+      onConnection: setConnection,
+    });
+  }, [url]);
+  return { snapshot, setSnapshot, connection };
 }

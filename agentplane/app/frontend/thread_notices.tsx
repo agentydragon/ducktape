@@ -6,9 +6,10 @@
  * Every snapshot is the Notification Service's current state, so a reconnect needs no resume.
  */
 import { Badge, Tooltip } from "@mantine/core";
-import { type JSX, useEffect, useState } from "react";
+import type { JSX } from "react";
 
-import { followStream, type StreamConnection } from "./live_stream";
+import { clockTime } from "./format_time";
+import { useSnapshotStream } from "./live_stream";
 
 /** `notification_service.models.InboxNoticeState`. */
 export type InboxNoticeState = {
@@ -44,28 +45,16 @@ export function threadNoticesUrl(threadIds: readonly string[]): string {
  * go without. */
 export function useThreadNotices(threadIds: readonly string[]): ThreadNotices {
   const url = threadIds.length === 0 ? null : threadNoticesUrl(threadIds);
-  const [snapshot, setSnapshot] = useState<Snapshot | null>(null);
-  const [connection, setConnection] = useState<StreamConnection | null>(null);
-  useEffect(() => {
-    if (url === null) return;
-    return followStream(url, {
-      events: { snapshot: (message) => setSnapshot(JSON.parse(message.data) as Snapshot) },
-      onConnection: setConnection,
-    });
-  }, [url]);
+  const { snapshot, connection } = useSnapshotStream<Snapshot>(url);
   if (url === null || snapshot === null) return { bySession: null, live: false };
   const bySession = new Map<string, InboxNoticeState[]>();
   for (const inbox of snapshot.inboxes)
     bySession.set(inbox.session_id, [...(bySession.get(inbox.session_id) ?? []), inbox]);
-  return { bySession, live: connection?.phase === "live" };
+  return { bySession, live: connection.phase === "live" };
 }
 
 function plural(count: number, noun: string): string {
   return `${count} ${noun}${count === 1 ? "" : "s"}`;
-}
-
-function clock(value: string): string {
-  return new Date(value).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 }
 
 /** A thread row's badge: how many inbox entries the agent has not yet acknowledged, whether still
@@ -97,7 +86,7 @@ export function ThreadNoticeBadge({
     queued === 0
       ? null
       : `${plural(queued, "notification")} queued for the next notice` +
-        (eligible === undefined ? "" : `, due around ${clock(eligible)} (estimate; new events push it back)`),
+        (eligible === undefined ? "" : `, due around ${clockTime(eligible)} (estimate; new events push it back)`),
     live ? null : "Notification status disconnected; this may be out of date.",
   ].filter((line): line is string => line !== null);
   const pending = queued + unacknowledged;

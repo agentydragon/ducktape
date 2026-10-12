@@ -15,6 +15,7 @@ import { createContext, type JSX, type ReactNode, useContext, useEffect, useStat
 import { useMatch } from "react-router";
 
 import type { components } from "./api/schema";
+import { ageAgo } from "./format_time";
 import { followStream, type StreamConnection } from "./live_stream";
 import { type StreamStatus, useStreamStatus } from "./stream_status";
 
@@ -143,22 +144,13 @@ export function useRequiredSandboxesLive(): Live<SandboxesSnapshot> {
   return live;
 }
 
-const AGE = new Intl.RelativeTimeFormat("en", { numeric: "auto" });
-
-/** An age a reader takes in at a glance: "40 minutes ago", not the 2417 seconds behind it. */
-function humanAge(seconds: number): string {
-  const [amount, unit]: [number, Intl.RelativeTimeFormatUnit] =
-    seconds < 90 ? [seconds, "second"] : seconds < 5400 ? [seconds / 60, "minute"] : [seconds / 3600, "hour"];
-  return AGE.format(-Math.round(amount), unit);
-}
-
 /** The oldest watched kind and how far behind it is, as the server last reported. */
 function stalest(health: WatchHealth): string {
   const [kind, age] = Object.entries(health.refreshed_seconds_ago).reduce(
     (oldest, entry) => (entry[1] > oldest[1] ? entry : oldest),
     ["nothing", 0]
   );
-  return `${kind} last updated ${humanAge(age)}`;
+  return `${kind} last updated ${ageAgo(age)}`;
 }
 
 /** Nothing while the server's watch is moving; otherwise how far behind it is. */

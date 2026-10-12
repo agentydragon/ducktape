@@ -15,21 +15,10 @@ import IconPower from "@tabler/icons-react/dist/esm/icons/IconPower.mjs";
 
 import { RunningChevrons, StatusDot } from "./custom_mark_icons";
 
-/**
- * `running`: a turn is in flight. `idle`: the harness is live and waiting for input. `turn_error`: as
- * `idle`, but the last turn to complete ended in an error; the next to complete without one makes the
- * thread `idle` again. `stopped`: the harness is down (shut down or lost), whether its runner feed is
- * still attached or has ended. `failed`: the runner feed failed. `archived`: the thread was archived,
- * whatever its retained history says. `inactive`: nothing else live to show (Sandbox suspended or gone,
- * setup or the harness's first launch still running, the feed ended with the harness not known to be down, or not confirmed).
- */
+/** Each kind's meaning is on its row of `THREAD_STATUS_MARKS`. */
 export type ThreadStatusKind = "running" | "idle" | "turn_error" | "stopped" | "failed" | "archived" | "inactive";
 
-/**
- * `ready`: the Pod is up and can take sessions. `pending`: on its way (grants applying, no Pod yet,
- * Pod not ready). `suspended`: deliberately off. `failed`: a grant error or a failed Pod. `gone`:
- * deleted, deleting, or a Pod that has ended.
- */
+/** Each kind's meaning is on its row of `SANDBOX_STATUS_MARKS`. */
 export type SandboxStatusKind = "ready" | "pending" | "suspended" | "failed" | "gone";
 
 /** An icon the page draws: a library icon, or one of custom_mark_icons.tsx, sized by the CSS around it. */
@@ -63,23 +52,35 @@ export interface ThreadStatusMark extends StatusMark {
 }
 
 export const THREAD_STATUS_MARKS: Record<ThreadStatusKind, ThreadStatusMark> = {
+  // A turn is in flight.
   running: { icon: RunningChevrons, color: GREEN, favicon: "chevrons", glyph: "»" },
+  // The harness is live and waiting for input.
   idle: { icon: StatusDot, color: BLUE, favicon: "dot", glyph: "●" },
+  // As `idle`, but the last turn to complete ended in an error; the next clean one makes it `idle`.
   // Red like `failed`, but a triangle where that is a dot: a failed runner feed is the infrastructure, this
   // is what the last turn did. "!" is plain text, where ⚠ may be drawn as emoji.
   turn_error: { icon: IconAlertTriangle, color: RED, favicon: "alert", glyph: "!" },
+  // The harness is down (shut down or lost), whether its runner feed is still attached or has ended.
   stopped: { icon: IconPower, color: GRAY, favicon: "power", glyph: "⏻" },
+  // The runner feed failed.
   failed: { icon: StatusDot, color: RED, favicon: "dot", glyph: "×" },
-  // An arrow onto a bar reads as filing away at tab-title size; box shapes read as a missing-glyph box
+  // Archived, whatever its retained history says. An arrow onto a bar reads as filing away at tab-title size; box shapes read as a missing-glyph box
   // there.
   archived: { icon: IconArchive, color: GRAY, favicon: "archive", glyph: "↧" },
+  // Nothing else live to show: Sandbox suspended or gone, setup or the harness's first launch still
+  // running, or the feed ended with the harness not known to be down, or not confirmed.
   inactive: { icon: StatusDot, color: GRAY, favicon: "dot", glyph: "○" },
 };
 
 export const SANDBOX_STATUS_MARKS: Record<SandboxStatusKind, StatusMark> = {
+  // The Pod is up and can take sessions.
   ready: { icon: IconPlayerPlay, color: BLUE },
+  // On its way: grants applying, no Pod yet, or Pod not ready.
   pending: { icon: IconClock, color: YELLOW },
+  // Deliberately off.
   suspended: { icon: IconPlayerPause, color: GRAY },
+  // A grant error or a failed Pod.
   failed: { icon: IconCircleX, color: RED },
+  // Deleted, deleting, or a Pod that has ended.
   gone: { icon: IconCircleX, color: GRAY },
 };

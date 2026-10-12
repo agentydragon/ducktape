@@ -2,6 +2,7 @@
 import { Accordion, Divider, Drawer, Group, Paper, ScrollArea, Select, Stack, Text } from "@mantine/core";
 import { useEffect, useState, type JSX } from "react";
 
+import { clockTime } from "./format_time";
 import { followStream, type StreamConnection } from "./live_stream";
 
 type Source = {
@@ -114,10 +115,6 @@ function sourceLabel(source: Source): string {
 
 function timestamp(value: string): string {
   return new Date(value).toLocaleString();
-}
-
-function entryTime(value: string): string {
-  return new Date(value).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 }
 
 export function NotificationStatus({
@@ -294,7 +291,7 @@ export function NotificationStatus({
                                 {entry.summary}
                               </Text>
                               <Text size="xs" c="dimmed" style={{ flexShrink: 0 }}>
-                                {entryTime(entry.created_at)}
+                                {clockTime(entry.created_at)}
                               </Text>
                             </Group>
                           </Stack>

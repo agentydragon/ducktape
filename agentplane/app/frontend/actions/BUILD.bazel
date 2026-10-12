@@ -97,6 +97,7 @@ ts_library(
         "//:node_modules/react-router",
         "//agentplane/app/frontend:client",
         "//agentplane/app/frontend:json_view",
+        "//agentplane/app/frontend:resize_handle",
         "//agentplane/app/frontend:stream_status",
         "//agentplane/app/frontend/actions/rendering:index",
     ],

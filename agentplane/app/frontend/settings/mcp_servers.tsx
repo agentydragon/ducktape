@@ -1,6 +1,6 @@
 import { Alert, Badge, Box, Button, Group, Paper, Stack, Text } from "@mantine/core";
-import { type JSX, type ReactNode, useEffect, useState } from "react";
-import { followStream, type StreamConnection } from "../live_stream";
+import { type JSX, type ReactNode, useState } from "react";
+import { useSnapshotStream } from "../live_stream";
 
 import { disconnectMcpLinkage, displayableError, startMcpLinkage, type McpLinkageView } from "../client";
 import type { ActionGroupView } from "../actions/client";
@@ -107,41 +107,10 @@ function HealthDetail({ health }: { health: McpHealth }): JSX.Element | null {
 }
 
 export function McpServers(): JSX.Element {
-  const [linkages, setLinkages] = useState<McpLinkageView[]>([]);
-  const [groups, setGroups] = useState<ActionGroupView[]>([]);
-  const [loading, setLoading] = useState(true);
+  const linkages = useSnapshotStream<McpLinkageView[]>("/mcp-servers/stream");
+  const health = useSnapshotStream<ActionGroupView[]>("/action-groups/stream");
   const [busy, setBusy] = useState<{ serverId: string; operation: "link" | "disconnect" } | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [linkageConnection, setLinkageConnection] = useState<StreamConnection>({
-    phase: "connecting",
-    since: Date.now(),
-  });
-  const [healthConnection, setHealthConnection] = useState<StreamConnection>({
-    phase: "connecting",
-    since: Date.now(),
-  });
-
-  useEffect(() => {
-    const received = new Set<string>();
-    function subscribe<T>(url: string, accept: (rows: T) => void, onConnection: (state: StreamConnection) => void) {
-      return followStream(url, {
-        events: {
-          snapshot: (message) => {
-            accept(JSON.parse(message.data) as T);
-            received.add(url);
-            if (received.size === 2) setLoading(false);
-          },
-        },
-        onConnection,
-      });
-    }
-    const stopLinkages = subscribe<McpLinkageView[]>("/mcp-servers/stream", setLinkages, setLinkageConnection);
-    const stopHealth = subscribe<ActionGroupView[]>("/action-groups/stream", setGroups, setHealthConnection);
-    return () => {
-      stopLinkages();
-      stopHealth();
-    };
-  }, []);
 
   async function link(linkage: McpLinkageView): Promise<void> {
     setBusy({ serverId: linkage.server_id, operation: "link" });
@@ -160,7 +129,9 @@ export function McpServers(): JSX.Element {
     setError(null);
     try {
       const updated = await disconnectMcpLinkage(linkage.server_id);
-      setLinkages((current) => current.map((item) => (item.server_id === updated.server_id ? updated : item)));
+      linkages.setSnapshot(
+        (current) => current?.map((item) => (item.server_id === updated.server_id ? updated : item)) ?? null
+      );
     } catch (failure) {
       setError(displayableError(failure));
     } finally {
@@ -168,7 +139,8 @@ export function McpServers(): JSX.Element {
     }
   }
 
-  const rows = mergeRows(groups, linkages);
+  const loading = linkages.snapshot === null || health.snapshot === null;
+  const rows = mergeRows(health.snapshot ?? [], linkages.snapshot ?? []);
 
   return (
     <Stack>
@@ -176,10 +148,10 @@ export function McpServers(): JSX.Element {
         Every configured MCP server, oauth-linked or not. Link one shared operator-managed OAuth account per
         oauth-linked server; Agents never receive these credentials.
       </Text>
-      {linkageConnection.phase === "reconnecting" && (
+      {linkages.connection.phase === "reconnecting" && (
         <Text role="status">OAuth linkage stream disconnected; showing last known state. Reconnecting…</Text>
       )}
-      {healthConnection.phase === "reconnecting" && (
+      {health.connection.phase === "reconnecting" && (
         <Text role="status">MCP health stream disconnected; showing last known state. Reconnecting…</Text>
       )}
       {error && <Alert color="red">{error}</Alert>}
