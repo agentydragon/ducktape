@@ -22,7 +22,7 @@ from agentplane.action_service.operator_oidc_settings import OperatorOidcSetting
 from agentplane.app.action_federation import FederatedOperatorActions
 from agentplane.app.action_federation_settings import DirectFederationSettings
 from agentplane.app.action_policy import ActionPolicyInventory, ActionPolicyUnavailable, ActionPolicyView
-from agentplane.app.api import create_app
+from agentplane.app.api import app_services, create_app
 from agentplane.app.conftest import stored_login
 from agentplane.app.database import connect
 from agentplane.app.database_updates import Channel, create_database_updates
@@ -215,8 +215,8 @@ async def test_a_policy_the_service_cannot_be_asked_for_is_said_so_in_the_frame(
         public_base_url="http://test-app.invalid",
     )
     # An app with a login, whose session middleware `_request` stands in for.
-    app.state.oidc = oidc
-    app.state.operator_actions = (
+    app_services(app).oidc = oidc
+    app_services(app).operator_actions = (
         FederatedOperatorActions(
             DirectFederationSettings(
                 service_url=AnyHttpUrl("http://test-actions.invalid"),

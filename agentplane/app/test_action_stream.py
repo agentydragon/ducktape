@@ -21,7 +21,7 @@ from starlette.types import Message, Scope
 from agentplane.action_service.client import OperatorActionServiceClient
 from agentplane.app.action_federation import FederatedOperatorActions
 from agentplane.app.action_policy import ActionPolicyInventory
-from agentplane.app.api import create_app
+from agentplane.app.api import app_services, create_app
 from agentplane.app.database_updates import Channel, create_database_updates
 from agentplane.app.egress_access import EgressAccess
 from agentplane.app.electric import ElectricProxy
@@ -110,7 +110,7 @@ class ActionService:
 async def operator_actions(app: FastAPI, transport: httpx.AsyncBaseTransport) -> AsyncIterator[None]:
     """`app`'s operator Action client, over `transport`, for as long as the block runs."""
     async with httpx.AsyncClient(base_url="https://test-actions.invalid", transport=transport) as http:
-        app.state.operator_actions = StreamActions(OperatorActionServiceClient(http, Tokens()))
+        app_services(app).operator_actions = StreamActions(OperatorActionServiceClient(http, Tokens()))
         yield
 
 
@@ -262,7 +262,7 @@ async def test_stream_cleanup(app: FastAPI, ending: str, caplog: pytest.LogCaptu
         if ending == "disconnect":
             browser.disconnect()
         elif ending == "drain":
-            app.state.drain.begin()
+            app_services(app).drain.begin()
         messages = await browser.ended()
     assert messages[0]["status"] == 200
     assert upstream.closed

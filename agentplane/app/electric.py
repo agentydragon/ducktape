@@ -18,7 +18,7 @@ from uuid import UUID
 
 import anyio
 import httpx
-from fastapi import APIRouter, HTTPException, Query, Request, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field
 from starlette.types import Receive, Scope, Send
@@ -300,11 +300,14 @@ class ElectricProxy:
 router = APIRouter(prefix="/threads/{thread_id}/sync", tags=["thread-sync"])
 
 
-def _proxy(request: Request) -> ElectricProxy:
-    proxy = request.app.state.electric
+def electric_proxy(request: Request) -> ElectricProxy:
+    proxy = request.app.state.services.electric
     if not isinstance(proxy, ElectricProxy):
-        raise TypeError(f"app.state.electric is {type(proxy).__name__}, not ElectricProxy")
+        raise TypeError(f"app.state.services.electric is {type(proxy).__name__}, not ElectricProxy")
     return proxy
+
+
+Proxy = Annotated[ElectricProxy, Depends(electric_proxy)]
 
 
 @router.get(
@@ -312,14 +315,15 @@ def _proxy(request: Request) -> ElectricProxy:
     response_model=ThreadScopeResponse,
     responses={status.HTTP_204_NO_CONTENT: {"description": "Still no fold at the end of the hold: ask again."}},
 )
-async def get_scope(request: Request, thread_id: UUID) -> ThreadScopeResponse | Response:
-    scope = await _proxy(request).scope(thread_id)
+async def get_scope(proxy: Proxy, thread_id: UUID) -> ThreadScopeResponse | Response:
+    scope = await proxy.scope(thread_id)
     return Response(status_code=status.HTTP_204_NO_CONTENT) if scope is None else scope
 
 
 @router.get("/entities")
 async def get_entities(
     request: Request,
+    proxy: Proxy,
     thread_id: UUID,
     projection_epoch: str,
     offset: Annotated[str | None, Query()] = None,
@@ -327,19 +331,20 @@ async def get_entities(
     live: Annotated[bool | None, Query()] = None,
 ) -> StreamingResponse:
     del offset, handle, live
-    return await _proxy(request).entities(request, thread_id, projection_epoch)
+    return await proxy.entities(request, thread_id, projection_epoch)
 
 
 @router.post("/entities")
 async def post_entities(
-    request: Request, thread_id: UUID, projection_epoch: str, subset: SubsetRequest
+    request: Request, proxy: Proxy, thread_id: UUID, projection_epoch: str, subset: SubsetRequest
 ) -> StreamingResponse:
-    return await _proxy(request).entities(request, thread_id, projection_epoch, subset)
+    return await proxy.entities(request, thread_id, projection_epoch, subset)
 
 
 @router.get("/chunks/{field}")
 async def get_chunks(
     request: Request,
+    proxy: Proxy,
     thread_id: UUID,
     field: PayloadField,
     projection_epoch: str,
@@ -348,11 +353,11 @@ async def get_chunks(
     live: Annotated[bool | None, Query()] = None,
 ) -> StreamingResponse:
     del offset, handle, live
-    return await _proxy(request).chunks(request, thread_id, projection_epoch, field)
+    return await proxy.chunks(request, thread_id, projection_epoch, field)
 
 
 @router.post("/chunks/{field}")
 async def post_chunks(
-    request: Request, thread_id: UUID, field: PayloadField, projection_epoch: str, subset: SubsetRequest
+    request: Request, proxy: Proxy, thread_id: UUID, field: PayloadField, projection_epoch: str, subset: SubsetRequest
 ) -> StreamingResponse:
-    return await _proxy(request).chunks(request, thread_id, projection_epoch, field, subset)
+    return await proxy.chunks(request, thread_id, projection_epoch, field, subset)

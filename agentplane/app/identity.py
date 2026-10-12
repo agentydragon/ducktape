@@ -79,9 +79,9 @@ class TokenReviewer:
 
 
 def _reviewer(request: Request) -> TokenReviewer | None:
-    reviewer = request.app.state.reviewer
+    reviewer = request.app.state.services.reviewer
     if reviewer is not None and not isinstance(reviewer, TokenReviewer):
-        raise TypeError(f"app.state.reviewer is {type(reviewer).__name__}, not TokenReviewer")
+        raise TypeError(f"app.state.services.reviewer is {type(reviewer).__name__}, not TokenReviewer")
     return reviewer
 
 

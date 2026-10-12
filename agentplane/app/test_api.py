@@ -17,7 +17,7 @@ import pytest_bazel
 from fastapi import FastAPI
 
 from agentplane.app.action_policy import ActionPolicyInventory
-from agentplane.app.api import create_app, upstream_http_error
+from agentplane.app.api import app_services, create_app, upstream_http_error
 from agentplane.app.conftest import AGENT_AUTH
 from agentplane.app.egress_access import EgressAccess
 from agentplane.app.electric import ElectricProxy
@@ -308,7 +308,7 @@ async def test_create_binds_the_sandbox_to_its_action_policy_sets(
 async def test_kubernetes_grant_picker_requires_an_approved_name_and_operator(
     app: FastAPI, client: httpx.AsyncClient, custom_objects: FakeCustomObjectsApi, core_v1: FakeCoreV1Api
 ) -> None:
-    app.state.kubernetes_grants = {
+    app_services(app).kubernetes_grants = {
         "config": RoleBindingGrant(
             kind="RoleBinding", namespace=NAMESPACE, role_ref=RoleRef(kind="Role", name="config-reader")
         )
@@ -338,12 +338,12 @@ async def test_operator_launch_provisions_the_selected_role_for_its_actual_sandb
     sandbox_rbac: FakeRbac,
     custom_objects: FakeCustomObjectsApi,
 ) -> None:
-    app.state.kubernetes_grants = {
+    app_services(app).kubernetes_grants = {
         "config": RoleBindingGrant(
             kind="RoleBinding", namespace=NAMESPACE, role_ref=RoleRef(kind="Role", name="config-reader")
         )
     }
-    sandbox_grants.update(app.state.kubernetes_grants)
+    sandbox_grants.update(app_services(app).kubernetes_grants)
     app.dependency_overrides[require_caller] = lambda: CallerIdentity(CallerKind.OPERATOR, "test-operator")
     try:
         response = await client.post(
@@ -922,25 +922,6 @@ async def test_presets_publish_editable_sandbox_and_session_defaults(client: htt
             "bootstrap": "mkdir -p /state/workspaces",
         }
     ]
-
-
-async def test_models_lists_what_each_harness_may_run(client: httpx.AsyncClient) -> None:
-    """The catalog the session form offers; a thread carries its model, a sandbox does not."""
-    assert (await client.get("/models")).json() == {
-        "models": [
-            {
-                "model": "test-claude-model",
-                "display_name": "Test Claude Model",
-                "reasoning_efforts": list(TEST_REASONING_EFFORTS),
-            },
-            {
-                "model": "test-codex-model",
-                "display_name": "Test Codex Model",
-                "reasoning_efforts": list(TEST_REASONING_EFFORTS),
-            },
-        ],
-        "harnesses": {"HARNESS_CLAUDE": ["test-claude-model"], "HARNESS_CODEX": ["test-codex-model"]},
-    }
 
 
 async def test_a_thread_is_found_by_its_session_and_renamed_in_place(

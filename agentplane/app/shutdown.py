@@ -89,9 +89,9 @@ class DrainMiddleware:
 
 
 def drain_of(app: FastAPI) -> Drain:
-    drain = app.state.drain
+    drain = app.state.services.drain
     if not isinstance(drain, Drain):
-        raise TypeError(f"app.state.drain is {type(drain).__name__}, not Drain")
+        raise TypeError(f"app.state.services.drain is {type(drain).__name__}, not Drain")
     return drain
 
 

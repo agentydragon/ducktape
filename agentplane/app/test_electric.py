@@ -24,7 +24,7 @@ from starlette.requests import ClientDisconnect
 from starlette.types import Message
 
 from agentplane.app.database_updates import Channel
-from agentplane.app.electric import SUBSET_BODY_LIMIT, SUBSET_ROW_LIMIT, ElectricProxy, router
+from agentplane.app.electric import SUBSET_BODY_LIMIT, SUBSET_ROW_LIMIT, ElectricProxy, electric_proxy, router
 from agentplane.app.testing.history import SeededEventLogStore
 from agentplane.app.testing.replication_source import SANDBOX, SESSION, Placements, ReplicationSource
 from agentplane.app.threads.view.content import ContentStore, ThreadScope
@@ -90,7 +90,7 @@ async def seeded(unfolded: Unfolded, content: ContentStore, history: History) ->
 
 def serving(proxy: ElectricProxy) -> FastAPI:
     app = FastAPI()
-    app.state.electric = proxy
+    app.dependency_overrides[electric_proxy] = lambda: proxy
     app.include_router(router)
     return app
 
@@ -509,7 +509,7 @@ async def test_slow_downstream_bounds_upstream_reads_and_disconnect_closes_respo
         "query_string": b"offset=now",
         "headers": [],
     }
-    response = await app.state.electric.entities(
+    response = await app.dependency_overrides[electric_proxy]().entities(
         Request(scope), thread_id=seeded.thread, projection_epoch=seeded.scope.projection_epoch
     )
     first = asyncio.Event()

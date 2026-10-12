@@ -53,6 +53,7 @@ py_library(
         ":presets",
         ":sandbox_models",
         ":shutdown",
+        ":sse",
         "//agentplane:grpc_calls",
         "//agentplane:subjects",
         "//agentplane/action_service:catalog",
@@ -81,6 +82,7 @@ py_library(
         "//agentplane/sandbox_service:egress_views",
         "//agentplane/sandbox_service:errors",
         "//agentplane/sandbox_service:kubernetes_grants",
+        "@pypi//authlib",
         "@pypi//fastapi",
         "@pypi//grpcio",
         "@pypi//httpx",
@@ -653,6 +655,7 @@ py_library(
         ":identity",
         ":sandbox_models",
         ":shutdown",
+        ":sse",
         "//agentplane:changes",
         "//agentplane:grpc_calls",
         "//agentplane:kubernetes_watch",
@@ -1386,4 +1389,10 @@ py_test(
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
+)
+
+py_library(
+    name = "sse",
+    srcs = ["sse.py"],
+    deps = ["@pypi//fastapi"],
 )

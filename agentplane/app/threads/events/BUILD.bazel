@@ -28,6 +28,7 @@ py_library(
     deps = [
         ":event_log",
         "//agentplane:changes",
+        "//agentplane/app:sse",
         "//agentplane/app/threads:summaries",
         "@pypi//protobuf",
     ],

@@ -37,7 +37,7 @@ class OperatorView(BaseModel):
 
 
 def _oauth(request: Request) -> OAuth:
-    return cast(OAuth, request.app.state.oauth)
+    return cast(OAuth, request.app.state.services.oauth)
 
 
 @router.get("/login")
@@ -87,7 +87,7 @@ async def callback(request: Request) -> RedirectResponse:
         LoginTokens(
             access_token=response.access_token, expires_at=response.expires_at, refresh_token=response.refresh_token
         )
-        if request.app.state.operator_actions is not None
+        if request.app.state.services.operator_actions is not None
         and response.expires_at is not None
         and response.expires_at > now
         else None

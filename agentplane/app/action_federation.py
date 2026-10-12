@@ -209,7 +209,7 @@ def operator_actions(request: Request, caller: CallerIdentity) -> OperatorAction
     again. The exchange itself happens at the first request the client makes."""
     if caller.kind is not CallerKind.OPERATOR:
         raise OperatorFederationError("operator_session_required")
-    provider = request.app.state.operator_actions
+    provider = request.app.state.services.operator_actions
     if provider is None:
         raise OperatorFederationError("operator_federation_not_configured", status_code=503)
     if not isinstance(provider, FederatedOperatorActions):

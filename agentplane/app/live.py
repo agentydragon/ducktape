@@ -23,7 +23,6 @@ backoff -- so the verdict, not a dropped connection, is what a stuck API server 
 from __future__ import annotations
 
 import asyncio
-import json
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import ExitStack
 from dataclasses import dataclass, field
@@ -46,6 +45,7 @@ from agentplane.app.database_updates import Channel
 from agentplane.app.identity import CallerIdentity, require_caller
 from agentplane.app.sandbox_models import SandboxView, sandbox_view as http_sandbox_view
 from agentplane.app.shutdown import Shutdown
+from agentplane.app.sse import frame, sse_response
 from agentplane.app.threads.store import MAX_PAGE, ThreadStore
 from agentplane.app.threads.thread_view import ThreadView
 from agentplane.changes import ChangeSignal
@@ -309,17 +309,13 @@ async def frames(
             stack.enter_context(changes.subscribe(waiter))
         while True:
             waiter.clear()
-            yield _frame("snapshot", (await snapshot()).model_dump(mode="json"))
+            yield frame("snapshot", (await snapshot()).model_dump(mode="json"))
             while True:
                 try:
                     await asyncio.wait_for(waiter.wait(), timeout=interval_s)
                     break
                 except TimeoutError:
-                    yield _frame("health", health().model_dump(mode="json"))
-
-
-def _frame(event: str, data: dict[str, object]) -> bytes:
-    return f"event: {event}\ndata: {json.dumps(data)}\n\n".encode()
+                    yield frame("health", health().model_dump(mode="json"))
 
 
 async def action_policy_frame(
@@ -373,30 +369,30 @@ class ActionPolicyFrames:
 
 
 def _index(request: Request) -> LiveIndex:
-    index = request.app.state.live
+    index = request.app.state.services.live
     if not isinstance(index, LiveIndex):
-        raise TypeError(f"app.state.live is {type(index).__name__}, not LiveIndex")
+        raise TypeError(f"app.state.services.live is {type(index).__name__}, not LiveIndex")
     return index
 
 
 def _action_policy(request: Request) -> ActionPolicyInventory:
-    inventory = request.app.state.action_policy
+    inventory = request.app.state.services.action_policy
     if not isinstance(inventory, ActionPolicyInventory):
-        raise TypeError(f"app.state.action_policy is {type(inventory).__name__}, not ActionPolicyInventory")
+        raise TypeError(f"app.state.services.action_policy is {type(inventory).__name__}, not ActionPolicyInventory")
     return inventory
 
 
 def _store(request: Request) -> ThreadStore:
-    store = request.app.state.store
+    store = request.app.state.services.store
     if not isinstance(store, ThreadStore):
-        raise TypeError(f"app.state.store is {type(store).__name__}, not ThreadStore")
+        raise TypeError(f"app.state.services.store is {type(store).__name__}, not ThreadStore")
     return store
 
 
 def _database_updates(request: Request) -> WakeupListener:
-    updates = request.app.state.database_updates
+    updates = request.app.state.services.database_updates
     if not isinstance(updates, WakeupListener):
-        raise TypeError(f"app.state.database_updates is {type(updates).__name__}, not WakeupListener")
+        raise TypeError(f"app.state.services.database_updates is {type(updates).__name__}, not WakeupListener")
     return updates
 
 
@@ -425,12 +421,6 @@ def _health(index: LiveIndex) -> WatchHealth:
     return index.health(datetime.now(UTC))
 
 
-def _stream(source: AsyncIterator[bytes]) -> StreamingResponse:
-    return StreamingResponse(
-        source, media_type="text/event-stream", headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"}
-    )
-
-
 @router.get("/sandboxes", responses=_SANDBOXES_FRAMES)
 async def live_sandboxes(index: Index, shutdown: Shutdown) -> StreamingResponse:
     """The sandbox list, pushed."""
@@ -438,7 +428,7 @@ async def live_sandboxes(index: Index, shutdown: Shutdown) -> StreamingResponse:
     async def snapshot() -> SandboxesSnapshot:
         return SandboxesSnapshot(sandboxes=index.sandbox_views(), watch=_health(index))
 
-    return _stream(shutdown.until(frames(snapshot, lambda: _health(index), index.changes)))
+    return sse_response(shutdown.until(frames(snapshot, lambda: _health(index), index.changes)))
 
 
 @router.get("/threads", responses=_THREADS_FRAMES)
@@ -477,7 +467,7 @@ async def live_threads(
             watch=_health(index),
         )
 
-    return _stream(
+    return sse_response(
         shutdown.until(frames(snapshot, lambda: _health(index), index.changes, updates.changes[Channel.THREADS]))
     )
 
@@ -513,6 +503,6 @@ async def live_sandbox(
             watch=_health(index),
         )
 
-    return _stream(
+    return sse_response(
         shutdown.until(frames(snapshot, lambda: _health(index), index.changes, updates.changes[Channel.THREADS]))
     )

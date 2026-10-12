@@ -146,9 +146,9 @@ router = APIRouter(prefix="/sandboxes/{name}/sessions", tags=["sessions"])
 
 
 def _bridge(request: Request) -> RunnerBridge:
-    bridge = request.app.state.bridge
+    bridge = request.app.state.services.bridge
     if not isinstance(bridge, RunnerBridge):
-        raise TypeError(f"app.state.bridge is {type(bridge).__name__}, not RunnerBridge")
+        raise TypeError(f"app.state.services.bridge is {type(bridge).__name__}, not RunnerBridge")
     return bridge
 
 

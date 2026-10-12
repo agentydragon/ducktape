@@ -95,9 +95,9 @@ def build_oauth(settings: OIDCSettings) -> OAuth:
 
 def settings(request: Request) -> OIDCSettings:
     """The app's OIDC settings; only a route or guard that already found a session may ask."""
-    configured = request.app.state.oidc
+    configured = request.app.state.services.oidc
     if not isinstance(configured, OIDCSettings):
-        raise TypeError(f"app.state.oidc is {type(configured).__name__}, not OIDCSettings")
+        raise TypeError(f"app.state.services.oidc is {type(configured).__name__}, not OIDCSettings")
     return configured
 
 
@@ -121,6 +121,6 @@ class TokenResponse(BaseModel):
 def operator_session(request: Request) -> OperatorSession | None:
     """The login of the session this request presented, which the session middleware only hands on
     unexpired, or None. Its tokens may be stale: the federation path reads them from the row."""
-    if request.app.state.oidc is None:
+    if request.app.state.services.oidc is None:
         return None
     return request_session(request).login

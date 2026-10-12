@@ -5,16 +5,18 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import logging
-from collections.abc import AsyncIterator, Callable
+from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import AbstractAsyncContextManager, AsyncExitStack, nullcontext
+from dataclasses import dataclass, field
 from pathlib import Path as FilePath
-from typing import Annotated
+from typing import Annotated, Any
 from uuid import UUID
 
 import grpc
 import httpx
 import httpx2
-from fastapi import APIRouter, Depends, FastAPI, Header, HTTPException, Path, Query, Request, Response, status
+from authlib.integrations.starlette_client import OAuth
+from fastapi import APIRouter, Depends, FastAPI, Header, HTTPException, Path, Query, Request, status
 from fastapi.responses import JSONResponse, RedirectResponse, StreamingResponse
 from google.protobuf.json_format import MessageToDict
 from pydantic import AfterValidator, BaseModel, ConfigDict, Field, field_validator
@@ -44,8 +46,16 @@ from agentplane.app.consent import (
 from agentplane.app.database_updates import Channel
 from agentplane.app.egress_access import EgressAccess
 from agentplane.app.electric import ElectricProxy, router as electric_router
-from agentplane.app.identity import CallerIdentity, CallerKind, TokenReviewer, require_caller
-from agentplane.app.live import LiveIndex, Updates, action_policy_frame, router as live_router
+from agentplane.app.identity import CallerKind, TokenReviewer, require_caller
+from agentplane.app.live import (
+    ActionPolicy,
+    Caller,
+    LiveIndex,
+    Store,
+    Updates,
+    action_policy_frame,
+    router as live_router,
+)
 from agentplane.app.model_catalog import ModelCatalog
 from agentplane.app.oidc import OIDCSettings, build_oauth
 from agentplane.app.operator_sessions import (
@@ -65,6 +75,7 @@ from agentplane.app.sandbox_models import (
     sandbox_view,
 )
 from agentplane.app.shutdown import Drain, DrainMiddleware, Shutdown, until_done
+from agentplane.app.sse import sse_response
 from agentplane.app.threads import bridge as runner_bridge
 from agentplane.app.threads.events import stream
 from agentplane.app.threads.events.debug import (
@@ -115,85 +126,98 @@ router = APIRouter(prefix="/sandboxes", tags=["sandboxes"])
 logger = logging.getLogger(__name__)
 
 
-def _models(request: Request) -> ModelCatalog:
-    models = request.app.state.models
-    if not isinstance(models, ModelCatalog):
-        raise TypeError(f"app.state.models is {type(models).__name__}, not a ModelCatalog")
-    return models
+@dataclass
+class AppServices:
+    """Everything the app's routes use, built once by `create_app` and held as `app.state.services`.
 
+    The modules below this one (`live`, `electric`, `identity`, `oidc`, `shutdown`, `action_federation`,
+    `auth_routes`, `threads.bridge`) read their own field by name: they define the types this class
+    names, so importing it would be a dependency cycle.
+    """
+
+    inventory: SandboxServiceClient
+    bridge: runner_bridge.RunnerBridge
+    store: ThreadStore
+    event_logs: EventLogStore
+    content: ContentStore
+    database_updates: WakeupListener
+    operator_sessions: OperatorSessionStore
+    notifications_http: httpx.AsyncClient
+    notifications_token_file: FilePath
+    models: ModelCatalog
+    presets: PresetCatalog
+    kubernetes_grants: dict[str, KubernetesGrant]
+    egress: EgressAccess
+    action_policy: ActionPolicyInventory
+    decisions: DecisionsClient
+    live: LiveIndex
+    oidc: OIDCSettings | None
+    reviewer: TokenReviewer | None
+    operator_actions: FederatedOperatorActions | None
+    electric: ElectricProxy
+    oauth: OAuth | None = field(init=False)
+    drain: Drain = field(default_factory=Drain)
+
+    def __post_init__(self) -> None:
+        self.oauth = None if self.oidc is None else build_oauth(self.oidc)
+
+
+def app_services(app: FastAPI) -> AppServices:
+    services = app.state.services
+    if not isinstance(services, AppServices):
+        raise TypeError(f"app.state.services is {type(services).__name__}, not AppServices")
+    return services
+
+
+def _service[T](pick: Callable[[AppServices], T]) -> Any:
+    """A `Depends` on one of the app's services, for an `Annotated` alias."""
+
+    def dependency(request: Request) -> T:
+        return pick(app_services(request.app))
+
+    return Depends(dependency)
+
+
+Services = Annotated[AppServices, _service(lambda services: services)]
+Inventory = Annotated[SandboxServiceClient, _service(lambda services: services.inventory)]
+Egress = Annotated[EgressAccess, _service(lambda services: services.egress)]
+Decisions = Annotated[DecisionsClient, _service(lambda services: services.decisions)]
+EventLogs = Annotated[EventLogStore, _service(lambda services: services.event_logs)]
+Content = Annotated[ContentStore, _service(lambda services: services.content)]
+OperatorSessions = Annotated[OperatorSessionStore, _service(lambda services: services.operator_sessions)]
+Models = Annotated[ModelCatalog, _service(lambda services: services.models)]
+
+
+def _require_operator_login(request: Request) -> None:
+    # Workload authentication of the app is not operator authorization to inspect another inbox.
+    if app_services(request.app).oidc is None or request_session(request).login is None:
+        raise HTTPException(403, "operator login required")
+
+
+OperatorLogin = Depends(_require_operator_login)
 
 models = APIRouter(prefix="/models", tags=["models"])
 
 
 @models.get("")
-async def list_models(catalog: Annotated[ModelCatalog, Depends(_models)]) -> ModelCatalog:
+async def list_models(catalog: Models) -> ModelCatalog:
     return catalog
 
 
 preset_router = APIRouter(prefix="/presets", tags=["presets"])
 
 
-def _presets(request: Request) -> PresetCatalog:
-    presets = request.app.state.presets
-    if not isinstance(presets, PresetCatalog):
-        raise TypeError(f"app.state.presets is {type(presets).__name__}, not PresetCatalog")
-    return presets
-
-
-Presets = Annotated[PresetCatalog, Depends(_presets)]
-
-
 @preset_router.get("")
-async def list_presets(presets: Presets) -> list[SandboxPresetView]:
-    return presets.views()
+async def list_presets(services: Services) -> list[SandboxPresetView]:
+    return services.presets.views()
 
 
 kubernetes_grants_router = APIRouter(prefix="/kubernetes-grants", tags=["kubernetes-grants"])
 
 
 @kubernetes_grants_router.get("")
-async def list_kubernetes_grants(request: Request) -> list[KubernetesGrantView]:
-    return grant_views(request.app.state.kubernetes_grants)
-
-
-def _inventory(request: Request) -> SandboxServiceClient:
-    inventory = request.app.state.inventory
-    if not isinstance(inventory, SandboxServiceClient):
-        raise TypeError(f"app.state.inventory is {type(inventory).__name__}, not SandboxServiceClient")
-    return inventory
-
-
-Inventory = Annotated[SandboxServiceClient, Depends(_inventory)]
-
-
-def _egress(request: Request) -> EgressAccess:
-    egress = request.app.state.egress
-    if not isinstance(egress, EgressAccess):
-        raise TypeError(f"app.state.egress is {type(egress).__name__}, not EgressAccess")
-    return egress
-
-
-Egress = Annotated[EgressAccess, Depends(_egress)]
-
-
-def _action_policy(request: Request) -> ActionPolicyInventory:
-    action_policy = request.app.state.action_policy
-    if not isinstance(action_policy, ActionPolicyInventory):
-        raise TypeError(f"app.state.action_policy is {type(action_policy).__name__}, not ActionPolicyInventory")
-    return action_policy
-
-
-ActionPolicy = Annotated[ActionPolicyInventory, Depends(_action_policy)]
-
-
-def _decisions(request: Request) -> DecisionsClient:
-    decisions = request.app.state.decisions
-    if not isinstance(decisions, DecisionsClient):
-        raise TypeError(f"app.state.decisions is {type(decisions).__name__}, not DecisionsClient")
-    return decisions
-
-
-Decisions = Annotated[DecisionsClient, Depends(_decisions)]
+async def list_kubernetes_grants(services: Services) -> list[KubernetesGrantView]:
+    return grant_views(services.kubernetes_grants)
 
 
 @router.get("")
@@ -208,14 +232,12 @@ async def list_templates(inventory: Inventory) -> list[str]:
 
 
 @router.post("", status_code=status.HTTP_201_CREATED)
-async def create_sandbox(
-    request: Request, spec: NewSandbox, inventory: Inventory, caller: Annotated[CallerIdentity, Depends(require_caller)]
-) -> SandboxView:
+async def create_sandbox(spec: NewSandbox, services: Services, caller: Caller) -> SandboxView:
     """Create exactly the fields the caller selected; browser presets have already filled them."""
-    grants = resolve_grants(spec.kubernetes_grants, request.app.state.kubernetes_grants)
+    grants = resolve_grants(spec.kubernetes_grants, services.kubernetes_grants)
     if grants and caller.kind is not CallerKind.OPERATOR:
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Kubernetes grant selection requires an operator session")
-    return sandbox_view(await inventory.create(create_request(spec)))
+    return sandbox_view(await services.inventory.create(create_request(spec)))
 
 
 @router.get("/{name}")
@@ -223,15 +245,15 @@ async def get_sandbox(inventory: Inventory, name: str) -> SandboxView:
     return sandbox_view(await inventory.get(name))
 
 
-@router.get("/{name}/notifications/stream")
+@router.get("/{name}/notifications/stream", dependencies=[OperatorLogin])
 async def sandbox_notifications_stream(
-    inventory: Inventory, request: Request, name: str, shutdown: Shutdown, updates: Updates
+    request: Request, services: Services, name: str, shutdown: Shutdown, updates: Updates
 ) -> StreamingResponse:
     """Operator-only SSE proxy; scope the upstream by the current Sandbox incarnation UID."""
-    _require_operator_login(request)
-    sandbox = sandbox_view(await inventory.get(name))
+    sandbox = sandbox_view(await services.inventory.get(name))
     return _notifications_proxy(
         request,
+        services,
         shutdown,
         updates,
         f"/v1/operator/sandboxes/{sandbox.namespace}/{sandbox.name}/notifications/stream",
@@ -239,19 +261,45 @@ async def sandbox_notifications_stream(
     )
 
 
-def _require_operator_login(request: Request) -> None:
-    # Workload authentication of the app is not operator authorization to inspect another inbox.
-    if request.app.state.oidc is None or request_session(request).login is None:
-        raise HTTPException(403, "operator login required")
-
-
 def _notifications_proxy(
-    request: Request, shutdown: Shutdown, updates: Updates, upstream: str, params: dict[str, str | list[str]]
+    request: Request,
+    services: AppServices,
+    shutdown: Shutdown,
+    updates: Updates,
+    upstream: str,
+    params: dict[str, str | list[str]],
 ) -> StreamingResponse:
     """Relay a Notification Service operator stream for as long as the operator session lasts."""
-    client = request.app.state.notifications_http
-    token_file = request.app.state.notifications_token_file
-    sessions = _operator_sessions(request)
+
+    async def chunks() -> AsyncIterator[bytes]:
+        async with services.notifications_http.stream(
+            "GET",
+            upstream,
+            params=params,
+            headers={"Authorization": f"Bearer {services.notifications_token_file.read_text().strip()}"},
+            timeout=httpx.Timeout(None, connect=5),
+        ) as response:
+            response.raise_for_status()
+            async for chunk in response.aiter_bytes():
+                yield chunk
+
+    return _operator_relay(
+        request, shutdown, updates, services.operator_sessions, chunks(), "Notification", (httpx.HTTPError, OSError)
+    )
+
+
+def _operator_relay(
+    request: Request,
+    shutdown: Shutdown,
+    updates: Updates,
+    sessions: OperatorSessionStore,
+    chunks: AsyncIterator[bytes],
+    label: str,
+    errors: tuple[type[Exception], ...],
+) -> StreamingResponse:
+    """Relay `chunks` until the operator session ends -- a logout on any replica, or its expiry, which
+    they share through PostgreSQL -- the app drains, or the browser goes. Headers are already sent
+    when `errors` interrupt the upstream, so the SSE connection just ends and EventSource reconnects."""
     session_id = operator_session_row(request).id
 
     async def session_over() -> None:
@@ -259,42 +307,31 @@ def _notifications_proxy(
 
     async def body() -> AsyncIterator[bytes]:
         try:
-            async with client.stream(
-                "GET",
-                upstream,
-                params=params,
-                headers={"Authorization": f"Bearer {token_file.read_text().strip()}"},
-                timeout=httpx.Timeout(None, connect=5),
-            ) as response:
-                response.raise_for_status()
-                async for chunk in shutdown.until(until_done(response.aiter_bytes(), session_over)):
-                    if await request.is_disconnected():
-                        return
-                    yield chunk
-        except httpx.HTTPError, OSError:
-            logger.warning("Notification stream interrupted", exc_info=True)
+            async for chunk in shutdown.until(until_done(chunks, session_over)):
+                if await request.is_disconnected():
+                    return
+                yield chunk
+        except errors:
+            logger.warning("%s stream interrupted", label, exc_info=True)
 
-    return StreamingResponse(body(), media_type="text/event-stream", headers={"Cache-Control": "no-cache"})
+    return sse_response(body())
 
 
 @router.post("/{name}/suspend", status_code=status.HTTP_204_NO_CONTENT)
-async def suspend_sandbox(inventory: Inventory, name: str) -> Response:
+async def suspend_sandbox(inventory: Inventory, name: str) -> None:
     await inventory.suspend(name)
-    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.post("/{name}/resume", status_code=status.HTTP_204_NO_CONTENT)
-async def resume_sandbox(inventory: Inventory, name: str) -> Response:
+async def resume_sandbox(inventory: Inventory, name: str) -> None:
     await inventory.resume(name)
-    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.delete("/{name}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_sandbox(inventory: Inventory, name: str) -> Response:
+async def delete_sandbox(inventory: Inventory, name: str) -> None:
     """Start deleting the sandbox and everything on its volume, once its runner's ingress has
     acknowledged every Session's seal; 409 while it is still running."""
     await inventory.delete(name)
-    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 class EgressGrant(BaseModel):
@@ -335,10 +372,9 @@ async def list_policies(egress: Egress) -> list[PolicyView]:
 
 
 @egress_router.delete("/bindings/{name}", status_code=status.HTTP_204_NO_CONTENT)
-async def revoke_binding(egress: Egress, name: str) -> Response:
+async def revoke_binding(egress: Egress, name: str) -> None:
     """Revoke a runtime binding by deleting the rule; one from git is refused with 409."""
     await egress.revoke(name)
-    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 action_policy_router = APIRouter(prefix="/action-policy", tags=["action-policy"])
@@ -353,40 +389,12 @@ async def list_policy_sets(action_policy: ActionPolicy) -> list[ActionPolicySetV
 threads = APIRouter(prefix="/threads", tags=["threads"])
 
 
-def _store(request: Request) -> ThreadStore:
-    store = request.app.state.store
-    if not isinstance(store, ThreadStore):
-        raise TypeError(f"app.state.store is {type(store).__name__}, not ThreadStore")
-    return store
-
-
-def _event_logs(request: Request) -> EventLogStore:
-    event_logs = request.app.state.event_logs
-    if not isinstance(event_logs, EventLogStore):
-        raise TypeError(f"app.state.event_logs is {type(event_logs).__name__}, not EventLogStore")
-    return event_logs
-
-
-def _content(request: Request) -> ContentStore:
-    content = request.app.state.content
-    if not isinstance(content, ContentStore):
-        raise TypeError(f"app.state.content is {type(content).__name__}, not ContentStore")
-    return content
-
-
-Store = Annotated[ThreadStore, Depends(_store)]
-EventLogs = Annotated[EventLogStore, Depends(_event_logs)]
-Content = Annotated[ContentStore, Depends(_content)]
-
-
 actions_router = APIRouter(prefix="/actions", tags=["actions"])
 push_router = APIRouter(prefix="/push", tags=["push"])
 consent_router = APIRouter(prefix="/connection-enrollments", tags=["connections"])
 
 
-async def _operator_actions(
-    request: Request, caller: Annotated[CallerIdentity, Depends(require_caller)]
-) -> AsyncIterator[OperatorActionServiceClient]:
+async def _operator_actions(request: Request, caller: Caller) -> AsyncIterator[OperatorActionServiceClient]:
     try:
         yield operator_actions(request, caller)
     except OperatorFederationError as error:
@@ -491,12 +499,7 @@ class CallerGrantView(BaseModel):
 
 @connections_router.get("/caller-grants/{namespace}/{name}")
 async def caller_grants(
-    namespace: str,
-    name: str,
-    request: Request,
-    caller: Annotated[CallerIdentity, Depends(require_caller)],
-    egress: Egress,
-    action_policy: ActionPolicy,
+    namespace: str, name: str, request: Request, caller: Caller, egress: Egress, action_policy: ActionPolicy
 ) -> CallerGrantView:
     """Inspect an account even without a Sandbox or current Action-caller label."""
     if caller.kind is not CallerKind.OPERATOR:
@@ -553,16 +556,6 @@ async def list_actions(
     state: Annotated[list[ActionState] | None, Query(description="Only requests in these states.")] = None,
 ) -> list[ActionRequestView]:
     return await client.list_requests(states=tuple(state or ()))
-
-
-def _operator_sessions(request: Request) -> OperatorSessionStore:
-    sessions = request.app.state.operator_sessions
-    if not isinstance(sessions, OperatorSessionStore):
-        raise TypeError(f"app.state.operator_sessions is {type(sessions).__name__}, not OperatorSessionStore")
-    return sessions
-
-
-OperatorSessions = Annotated[OperatorSessionStore, Depends(_operator_sessions)]
 
 
 async def _action_chunks(
@@ -628,29 +621,15 @@ async def action_stream(
     sessions: OperatorSessions,
     chunks: Annotated[AsyncIterator[bytes], Depends(_action_chunks)],
 ) -> StreamingResponse:
-    session_id = operator_session_row(request).id
-
-    async def session_over() -> None:
-        # The replicas share its end -- a logout on any of them, or its expiry -- through PostgreSQL.
-        await sessions.until_ended(session_id, updates.changes[Channel.OPERATOR_SESSIONS])
-
-    async def body() -> AsyncIterator[bytes]:
-        try:
-            async for chunk in shutdown.until(until_done(chunks, session_over)):
-                if await request.is_disconnected():
-                    return
-                yield chunk
-        except (
-            httpx.HTTPStatusError,
-            httpx.RequestError,
-            httpx2.HTTPStatusError,
-            httpx2.TransportError,
-            OperatorFederationError,
-        ):
-            # Headers are already sent. End the SSE connection so EventSource reconnects.
-            logger.warning("Action stream interrupted after response start", exc_info=True)
-
-    return StreamingResponse(body(), media_type="text/event-stream", headers={"Cache-Control": "no-cache"})
+    return _operator_relay(
+        request,
+        shutdown,
+        updates,
+        sessions,
+        chunks,
+        "Action",
+        (httpx.HTTPError, httpx2.HTTPStatusError, httpx2.TransportError, OperatorFederationError),
+    )
 
 
 @actions_router.get("/{request_id}")
@@ -682,10 +661,6 @@ def _operator_resource_stream(
     label: str,
 ) -> StreamingResponse:
     """Proxy an operator SSE resource, renewing upstream tokens and ending on logout."""
-    session_id = operator_session_row(request).id
-
-    async def session_over() -> None:
-        await sessions.until_ended(session_id, updates.changes[Channel.OPERATOR_SESSIONS])
 
     async def upstream() -> AsyncIterator[bytes]:
         while True:
@@ -697,16 +672,15 @@ def _operator_resource_stream(
             if not delivered:
                 return
 
-    async def body() -> AsyncIterator[bytes]:
-        try:
-            async for chunk in shutdown.until(until_done(upstream(), session_over)):
-                if await request.is_disconnected():
-                    return
-                yield chunk
-        except httpx.HTTPError, httpx2.TransportError, OperatorFederationError:
-            logger.warning("%s stream interrupted", label, exc_info=True)
-
-    return StreamingResponse(body(), media_type="text/event-stream", headers={"Cache-Control": "no-cache"})
+    return _operator_relay(
+        request,
+        shutdown,
+        updates,
+        sessions,
+        upstream(),
+        label,
+        (httpx.HTTPError, httpx2.TransportError, OperatorFederationError),
+    )
 
 
 @push_router.get("/subscriptions/stream")
@@ -770,9 +744,10 @@ async def list_threads(
     )
 
 
-@threads.get("/notices/stream")
+@threads.get("/notices/stream", dependencies=[OperatorLogin])
 async def thread_notices_stream(
     request: Request,
+    services: Services,
     shutdown: Shutdown,
     updates: Updates,
     thread_id: Annotated[list[UUID], Query(max_length=MAX_PAGE, description="The threads to follow.")],
@@ -780,9 +755,13 @@ async def thread_notices_stream(
     """Operator-only SSE of the named threads' live notification inboxes: entries queued for a
     notice, entries a notice delivered that the agent has not acknowledged, and how far the latest
     notice got. Following it acknowledges nothing."""
-    _require_operator_login(request)
     return _notifications_proxy(
-        request, shutdown, updates, "/v1/operator/notices/stream", {"session_id": [str(thread) for thread in thread_id]}
+        request,
+        services,
+        shutdown,
+        updates,
+        "/v1/operator/notices/stream",
+        {"session_id": [str(thread) for thread in thread_id]},
     )
 
 
@@ -812,7 +791,7 @@ async def rename_thread(store: Store, thread_id: UUID, body: ThreadRename) -> Th
 
 
 @threads.post("/{thread_id}/archive", status_code=status.HTTP_204_NO_CONTENT)
-async def archive_thread(store: Store, bridge: runner_bridge.Bridge, inventory: Inventory, thread_id: UUID) -> Response:
+async def archive_thread(store: Store, bridge: runner_bridge.Bridge, inventory: Inventory, thread_id: UUID) -> None:
     thread = await store.get_thread(thread_id)
     if thread is None:
         raise ThreadNotFoundError(thread_id)
@@ -835,21 +814,19 @@ async def archive_thread(store: Store, bridge: runner_bridge.Bridge, inventory: 
             ):
                 raise HTTPException(status.HTTP_409_CONFLICT, "stop the harness before archiving this thread")
     await store.archive(thread_id)
-    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @threads.post("/{thread_id}/unarchive", status_code=status.HTTP_204_NO_CONTENT)
-async def unarchive_thread(store: Store, thread_id: UUID) -> Response:
+async def unarchive_thread(store: Store, thread_id: UUID) -> None:
     await store.unarchive(thread_id)
-    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @threads.post("/{thread_id}/commands")
 async def thread_command(
-    request: Request,
     store: Store,
     content: Content,
-    catalog: Annotated[ModelCatalog, Depends(_models)],
+    bridge: runner_bridge.Bridge,
+    catalog: Models,
     thread_id: UUID,
     body: dict[str, object],
 ) -> dict[str, object]:
@@ -876,9 +853,6 @@ async def thread_command(
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail="model is incompatible with this thread's harness"
         )
-    bridge = request.app.state.bridge
-    if not isinstance(bridge, runner_bridge.RunnerBridge):
-        raise TypeError(f"app.state.bridge is {type(bridge).__name__}, not RunnerBridge")
     return MessageToDict(await bridge.command(thread_id, command))
 
 
@@ -993,11 +967,42 @@ async def thread_event_stream(
     cursor = last_event_id if last_event_id is not None else after
     if cursor > await event_logs.read_watermark(thread_id):
         raise HTTPException(status.HTTP_409_CONFLICT, "cursor is beyond the archived Thread prefix")
-    return StreamingResponse(
-        shutdown.until(stream.follow(event_logs, updates.changes[Channel.THREADS], thread_id, after_cursor=cursor)),
-        media_type="text/event-stream",
-        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    return sse_response(
+        shutdown.until(stream.follow(event_logs, updates.changes[Channel.THREADS], thread_id, after_cursor=cursor))
     )
+
+
+# Each answers its status with the exception's own text as the detail.
+_ERROR_STATUS: dict[type[Exception], int] = {
+    ThreadScopeChangedError: status.HTTP_410_GONE,
+    ThreadEvidenceNotFoundError: status.HTTP_404_NOT_FOUND,
+    InvalidPageTokenError: status.HTTP_400_BAD_REQUEST,
+    ThreadNotFoundError: status.HTTP_404_NOT_FOUND,
+    CommandIdConflictError: status.HTTP_409_CONFLICT,
+    SandboxNotFoundError: status.HTTP_404_NOT_FOUND,
+    SandboxRunningError: status.HTTP_409_CONFLICT,
+    BindingNotFoundError: status.HTTP_404_NOT_FOUND,
+    DecisionsUnavailableError: status.HTTP_502_BAD_GATEWAY,
+    FluxOwnedBindingError: status.HTTP_409_CONFLICT,
+    # 422 rather than 404: the sandbox in the path is there, and 404 on these routes already
+    # says it is not. The body parsed and named something that does not resolve.
+    UnknownPolicyError: status.HTTP_422_UNPROCESSABLE_CONTENT,
+    UnknownPolicySetError: status.HTTP_422_UNPROCESSABLE_CONTENT,
+    UnknownKubernetesGrantError: status.HTTP_422_UNPROCESSABLE_CONTENT,
+    DuplicateKubernetesGrantError: status.HTTP_422_UNPROCESSABLE_CONTENT,
+    SandboxNotReachableError: status.HTTP_409_CONFLICT,
+    runner_bridge.RunnerAdmissionTimeoutError: status.HTTP_504_GATEWAY_TIMEOUT,
+    # The runner refused a lifecycle request or a command: an unknown session, a spec mismatch.
+    RunnerError: status.HTTP_409_CONFLICT,
+    runner_bridge.MalformedMessageError: status.HTTP_422_UNPROCESSABLE_CONTENT,
+}
+
+
+def _detail_with_status(code: int) -> Callable[[Request, Exception], Awaitable[JSONResponse]]:
+    async def handler(_request: Request, error: Exception) -> JSONResponse:
+        return JSONResponse({"detail": str(error)}, status_code=code)
+
+    return handler
 
 
 def create_app(
@@ -1069,27 +1074,32 @@ def create_app(
     async def upstream_deadline(request: Request, error: TimeoutError) -> JSONResponse:
         return JSONResponse({"detail": "Upstream deadline expired"}, status_code=504)
 
-    app.state.inventory = inventory
-    app.state.bridge = bridge
-    app.state.store = store
-    app.state.event_logs = event_logs
-    app.state.content = content
-    app.state.database_updates = database_updates
-    app.state.operator_sessions = operator_sessions
-    app.state.notifications_http = notifications_http
-    app.state.notifications_token_file = notifications_token_file
-    app.state.models = catalog
-    app.state.presets = configured_presets
-    app.state.kubernetes_grants = configured_grants
-    app.state.egress = egress
-    app.state.action_policy = action_policy
-    app.state.decisions = decisions
-    app.state.live = live
-    app.state.oidc = oidc
-    app.state.reviewer = reviewer
-    app.state.operator_actions = operator_actions
-    app.state.electric = electric
-    app.state.drain = Drain()
+    for exception, code in _ERROR_STATUS.items():
+        app.add_exception_handler(exception, _detail_with_status(code))
+
+    services = AppServices(
+        inventory=inventory,
+        bridge=bridge,
+        store=store,
+        event_logs=event_logs,
+        content=content,
+        database_updates=database_updates,
+        operator_sessions=operator_sessions,
+        notifications_http=notifications_http,
+        notifications_token_file=notifications_token_file,
+        models=catalog,
+        presets=configured_presets,
+        kubernetes_grants=configured_grants,
+        egress=egress,
+        action_policy=action_policy,
+        decisions=decisions,
+        live=live,
+        oidc=oidc,
+        reviewer=reviewer,
+        operator_actions=operator_actions,
+        electric=electric,
+    )
+    app.state.services = services
     # Every route needs a caller. There is no unauthenticated path into the API: /healthz is
     # declared below, outside these routers.
     for api_router in (
@@ -1120,96 +1130,20 @@ def create_app(
             idle_seconds=oidc.session_idle_seconds,
             activity_step_seconds=oidc.session_activity_step_seconds,
         )
-        app.state.oauth = build_oauth(oidc)
         # Unguarded, because these are how a browser with no credential acquires one.
         app.include_router(auth_routes.router)
     # Outermost, so a request the drain refuses touches nothing below it.
-    app.add_middleware(DrainMiddleware, drain=app.state.drain, liveness_path="/healthz")
+    app.add_middleware(DrainMiddleware, drain=services.drain, liveness_path="/healthz")
 
-    @app.exception_handler(ThreadScopeChangedError)
-    async def _thread_scope_changed(_request: Request, error: ThreadScopeChangedError) -> JSONResponse:
-        return JSONResponse({"detail": str(error)}, status_code=status.HTTP_410_GONE)
-
-    @app.exception_handler(ThreadEvidenceNotFoundError)
-    async def _evidence_missing(_request: Request, error: ThreadEvidenceNotFoundError) -> JSONResponse:
-        return JSONResponse({"detail": str(error)}, status_code=status.HTTP_404_NOT_FOUND)
-
-    @app.exception_handler(InvalidPageTokenError)
-    async def _invalid_page_token(_request: Request, error: InvalidPageTokenError) -> JSONResponse:
-        return JSONResponse(status_code=status.HTTP_400_BAD_REQUEST, content={"detail": str(error)})
-
-    @app.exception_handler(ThreadNotFoundError)
-    async def _thread_not_found(_request: Request, error: ThreadNotFoundError) -> JSONResponse:
-        return JSONResponse(status_code=status.HTTP_404_NOT_FOUND, content={"detail": str(error)})
-
-    @app.exception_handler(CommandIdConflictError)
-    async def _command_id_conflict(_request: Request, error: CommandIdConflictError) -> JSONResponse:
-        return JSONResponse(status_code=status.HTTP_409_CONFLICT, content={"detail": str(error)})
-
-    @app.get("/healthz", include_in_schema=False)
-    async def healthz() -> Response:
+    @app.get("/healthz", include_in_schema=False, status_code=status.HTTP_204_NO_CONTENT)
+    async def healthz() -> None:
         # The Deployment's liveness probe: the process serves; the inventory's own reachability is
         # per request. Answered through the drain, unlike everything else.
-        return Response(status_code=status.HTTP_204_NO_CONTENT)
+        pass
 
-    @app.get("/readyz", include_in_schema=False)
-    async def readyz() -> Response:
+    @app.get("/readyz", include_in_schema=False, status_code=status.HTTP_204_NO_CONTENT)
+    async def readyz() -> None:
         # The Deployment's readiness probe: the drain middleware answers 503 here once shutdown begins.
-        return Response(status_code=status.HTTP_204_NO_CONTENT)
-
-    @app.exception_handler(SandboxNotFoundError)
-    async def _not_found(_request: Request, error: SandboxNotFoundError) -> JSONResponse:
-        return JSONResponse(status_code=status.HTTP_404_NOT_FOUND, content={"detail": str(error)})
-
-    @app.exception_handler(SandboxRunningError)
-    async def _still_running(_request: Request, error: SandboxRunningError) -> JSONResponse:
-        return JSONResponse(status_code=status.HTTP_409_CONFLICT, content={"detail": str(error)})
-
-    @app.exception_handler(BindingNotFoundError)
-    async def _binding_not_found(_request: Request, error: BindingNotFoundError) -> JSONResponse:
-        return JSONResponse(status_code=status.HTTP_404_NOT_FOUND, content={"detail": str(error)})
-
-    @app.exception_handler(DecisionsUnavailableError)
-    async def _decisions_unavailable(_request: Request, error: DecisionsUnavailableError) -> JSONResponse:
-        return JSONResponse(status_code=status.HTTP_502_BAD_GATEWAY, content={"detail": str(error)})
-
-    @app.exception_handler(FluxOwnedBindingError)
-    async def _flux_owned(_request: Request, error: FluxOwnedBindingError) -> JSONResponse:
-        return JSONResponse(status_code=status.HTTP_409_CONFLICT, content={"detail": str(error)})
-
-    @app.exception_handler(UnknownPolicyError)
-    async def _unknown_policy(_request: Request, error: UnknownPolicyError) -> JSONResponse:
-        # 422 rather than 404: the sandbox in the path is there, and 404 on these routes already
-        # says it is not. The body parsed and named something that does not resolve.
-        return JSONResponse(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, content={"detail": str(error)})
-
-    @app.exception_handler(UnknownPolicySetError)
-    async def _unknown_policy_set(_request: Request, error: UnknownPolicySetError) -> JSONResponse:
-        return JSONResponse(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, content={"detail": str(error)})
-
-    @app.exception_handler(UnknownKubernetesGrantError)
-    async def _unknown_kubernetes_grant(_request: Request, error: UnknownKubernetesGrantError) -> JSONResponse:
-        return JSONResponse(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, content={"detail": str(error)})
-
-    @app.exception_handler(DuplicateKubernetesGrantError)
-    async def _duplicate_kubernetes_grant(_request: Request, error: DuplicateKubernetesGrantError) -> JSONResponse:
-        return JSONResponse(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, content={"detail": str(error)})
-
-    @app.exception_handler(SandboxNotReachableError)
-    async def _not_reachable(_request: Request, error: SandboxNotReachableError) -> JSONResponse:
-        return JSONResponse(status_code=status.HTTP_409_CONFLICT, content={"detail": str(error)})
-
-    @app.exception_handler(runner_bridge.RunnerAdmissionTimeoutError)
-    async def _runner_timed_out(_request: Request, error: runner_bridge.RunnerAdmissionTimeoutError) -> JSONResponse:
-        return JSONResponse(status_code=status.HTTP_504_GATEWAY_TIMEOUT, content={"detail": str(error)})
-
-    @app.exception_handler(RunnerError)
-    async def _runner_refused(_request: Request, error: RunnerError) -> JSONResponse:
-        # The runner refused a lifecycle request or a command: an unknown session, a spec mismatch.
-        return JSONResponse(status_code=status.HTTP_409_CONFLICT, content={"detail": str(error)})
-
-    @app.exception_handler(runner_bridge.MalformedMessageError)
-    async def _malformed(_request: Request, error: runner_bridge.MalformedMessageError) -> JSONResponse:
-        return JSONResponse(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, content={"detail": str(error)})
+        pass
 
     return app

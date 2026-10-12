@@ -22,7 +22,7 @@ from starlette.types import Message, Scope
 from agentplane.action_service.client import OperatorActionServiceClient
 from agentplane.app.action_federation import FederatedOperatorActions
 from agentplane.app.action_policy import ActionPolicyInventory
-from agentplane.app.api import create_app
+from agentplane.app.api import app_services, create_app
 from agentplane.app.conftest import operator_token
 from agentplane.app.egress_access import EgressAccess
 from agentplane.app.electric import ElectricProxy
@@ -163,7 +163,7 @@ async def app(
     async with httpx.AsyncClient(
         base_url="https://test-actions.invalid", transport=httpx.MockTransport(answer)
     ) as http:
-        app.state.operator_actions = StubActions(OperatorActionServiceClient(http, operator_token))
+        app_services(app).operator_actions = StubActions(OperatorActionServiceClient(http, operator_token))
         yield app
         # Nothing a failed test left parked outlives it.
         gate.open()

@@ -40,7 +40,7 @@ from fastapi import FastAPI
 from sqlalchemy import ColumnElement, delete, inspect, select, update
 from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
 
-from agentplane.app.electric import ElectricProxy, router
+from agentplane.app.electric import ElectricProxy, electric_proxy, router
 from agentplane.app.testing.history import SeededEventLogStore
 from agentplane.app.testing.replication_source import SANDBOX, SESSION, Placements, ReplicationSource
 from agentplane.app.threads.summaries import Summaries
@@ -203,7 +203,8 @@ async def _followed_body(engine: AsyncEngine, token_file: Path) -> AsyncIterator
             httpx.AsyncClient(base_url=service.url, timeout=35, event_hooks={"request": [forward]}) as electric,
         ):
             app = FastAPI()
-            app.state.electric = ElectricProxy(electric, content, event_logs=event_logs, thread_changes=ChangeSignal())
+            sync_proxy = ElectricProxy(electric, content, event_logs=event_logs, thread_changes=ChangeSignal())
+            app.dependency_overrides[electric_proxy] = lambda: sync_proxy
             app.include_router(router)
             async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://app") as browser:
                 proxy = _Shape(
