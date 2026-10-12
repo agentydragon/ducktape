@@ -1,126 +1,98 @@
-# ADR: Action Service Sandboxes through the Sandbox Service
+# ADR: Action Service boxes are not Sandbox Service Sandboxes
 
-- **Status:** Proposed (draft for the operator's review)
-- **Date:** 2026-10-11
-- **Scope:** the `sandbox__*` Actions ([`action_service/sandbox/`](../action_service/sandbox/README.md))
-  and the [Sandbox Service API](../sandbox_service/API.md)
+- **Status:** Proposed (accepted in discussion with the operator on 2026-10-12, except the namespace
+  question below)
+- **Date:** 2026-10-12
+- **Scope:** the `sandbox__*` Actions ([`action_service/sandbox/`](../action_service/sandbox/README.md)),
+  the [Sandbox Service API](../sandbox_service/API.md) and the templates both stamp from
 
 ## Context
 
-The Action Service's `sandbox__*` Actions create, exec into and delete agent-sandbox `Sandbox`
-objects themselves: their own inventory, labels and template allowlist, with Sandbox CRUD and
-namespace-wide `pods/exec` on the Action Service's ServiceAccount. That is a second provisioner
-beside the Sandbox Service, against the target of one provisioner.
+Two components stamp agent-sandbox `Sandbox` objects: the Sandbox Service, for the Sandboxes that
+host Sessions, and the Action Service, whose `sandbox__*` Actions give a caller a shell. They share
+the CRD, the namespace and its quota, and the Pod shape in
+[`cluster/cdk8s/agentplane/sandbox_pod.py`](../../cluster/cdk8s/agentplane/sandbox_pod.py) (egress
+sidecar, tokens only the sidecar mounts, the interception CA, the proxy environment). Staging even
+offers the runner templates to the Action Service.
 
-The two kinds of box share the CRD, templates, the namespace quota and the egress sidecar. They
-differ in everything the Sandbox Service's `CreateSandbox` does around the CRD:
+The Sandbox that hosts a Session is heading to an Agentplane-owned resource: a state PVC that outlives
+each Pod or VM, a runner on the control channel, its own ServiceAccount with policy bindings owned by
+the Sandbox, pause, image swap and resume, and a seal before delete. An Action Service box has none of
+that:
 
-|                                            | LLM Sandbox (Sandbox Service today)                                | Action Sandbox (Action Service today)        |
-| ------------------------------------------ | ------------------------------------------------------------------ | -------------------------------------------- |
-| Runs as                                    | a ServiceAccount minted per Sandbox, owned by it                   | the caller's own static ServiceAccount       |
-| Egress, Action policies, Kubernetes grants | granted per Sandbox at create                                      | the caller's standing bindings; none created |
-| Runner                                     | `runner` container wired to the Runner Gateway and History ingress | none dialled; commands arrive by `pods/exec` |
-| Teardown                                   | seal every Session, then delete                                    | delete                                       |
-| Owner key                                  | requested name                                                     | (caller, name); names are per caller         |
-| Lifetime                                   | operator / app                                                     | caller's `dispose`; `TODO(sandbox-lifetime)` |
+|           | Session Sandbox (Sandbox Service)                       | Action Service box                           |
+| --------- | ------------------------------------------------------- | -------------------------------------------- |
+| Runs as   | a ServiceAccount minted per Sandbox, owned by it        | the caller's own static ServiceAccount       |
+| Grants    | policy bindings owned by the Sandbox                    | the caller's standing bindings; none created |
+| Runner    | dials the Runner Gateway and the History ingress        | none; commands arrive by `pods/exec`         |
+| State     | a PVC that outlives every incarnation                   | none beyond the Pod                          |
+| Lifecycle | pause, image swap, resume; seal every Session to delete | create, exec, delete                         |
+| Backends  | Pod or KubeVirt VM                                      | Pod                                          |
 
 ## Decision
 
-### 1. One `CreateSandbox`, two workload shapes
+### 1. Two kinds of box, one shared Pod recipe
 
-`CreateSandboxRequest` carries a `oneof workload`:
+They are different things, not one resource with two shapes. The Sandbox Service stays the
+provisioner of Session Sandboxes only: its `CreateSandbox` gains no caller-workload variant, no
+forwarded `run_as` identity and no exec RPC. The Action Service keeps provisioning its own boxes,
+as **plain Pods** rather than agent-sandbox `Sandbox` objects, so Agentplane can stop using
+agent-sandbox once Session Sandboxes move to their own resource. Action boxes lose agent-sandbox's
+suspend; `dispose` and an idle expiry bound their lifetime.
 
-```proto
-message CreateSandboxRequest {
-  string name = 1;
-  string template = 2;
-  oneof workload {
-    AgentWorkload agent = 3;        // today's egress_policies, action_policy_sets,
-                                     // kubernetes_grants, session_defaults, bootstrap
-    CallerWorkload caller = 4;
-  }
-}
-message CallerWorkload {
-  ServiceAccount run_as = 1;        // the Pod's serviceAccountName; no grants, no runner flags
-}
-```
+What they share is the Pod recipe, a cdk8s library (`sandbox_pod.py` today), not a service API.
 
-`Sandbox` reports which shape it is (`oneof workload` with the same two messages), and
-`ListSandboxes` takes a shape filter, so the app's fleet view and the controller's runner paths
-never meet a box with no runner. A field set that admits nonsense (a caller box with
-`session_defaults`, an agent box with `run_as`) is not representable.
+Rejected: **one `CreateSandbox` with an agent and a caller workload**, the first draft of this ADR.
+Every feature the Session Sandbox is gaining (state PVC, runner and control channel, owned bindings,
+pause and image swap, VM backend) is one a caller box must refuse, and the Sandbox Service would gain
+a forwarded identity and `pods/exec` to serve boxes that use none of its machinery.
 
-Rejected: **a second RPC (`CreateCallerSandbox`)**. Suspend, resume, delete, get and list are the
-same operations on the same CR; a second create would bring a second set of those or a shape check
-in each. Rejected: **options on the flat request** (`run_as` beside `egress_policies`), which is the
-flag-plus-optional combination STYLE.md rules out.
+### 2. Two template catalogs; no template is valid for both
 
-### 2. The caller's identity carries over as an asserted `run_as`, gated twice
+- **Session Sandbox templates** are an Agentplane template kind beside the Sandbox resource, read only
+  by the Sandbox Service: backend (`pod` or `vm`), runner image and harnesses, state volume size and
+  mount path, and the Pod (or VM) shape. The Sandbox Service fills in the per-Sandbox
+  ServiceAccount, the control and ingress targets and the state PVC; a template names none of them.
+- **Action Service box templates** are entries in the Action Service's reviewed configuration,
+  rendered by cdk8s: a name, the description an agent chooses by, and a complete Pod spec with
+  `automountServiceAccountToken: false`. The Action Service fills in the Pod name, its labels and
+  `serviceAccountName: <caller>`. A CiliumNetworkPolicy on the box label is the fence: DNS and the
+  egress proxy out, nothing in.
 
-Today the Sandbox Service never forwards an identity: a destination's owner is a selector, and any
-allowlisted service caller may operate on any owner. A caller box needs one: the Action Service has
-authenticated the human's OAuth grant to a static ServiceAccount (`ExecutionRequest.caller`) and the
-box must run as exactly that account.
+Each service reads only its own catalog, so "which templates may this caller choose" needs no flag.
+A box that wants the ducktape toolchain gets its own Action template on that image, not the runner
+template.
 
-- **Who may assert it:** a separate `run_as_callers` allowlist in the Sandbox Service settings
-  (the Action Service's account only). The app, which is allowlisted for agent boxes, cannot create
-  a caller box.
-- **Who may be run as:** an account carrying `agentplane.allegedly.works/use-action-service`, the
-  label that already admits it to the Action Service, in the Sandbox namespace. The Sandbox Service
-  reads the ServiceAccount before stamping. So a compromised Action Service can stamp boxes only as
-  accounts that could call it anyway, which is the authority its own Sandbox CRUD gives it today,
-  minus every other account in the namespace.
-- **Ownership:** caller boxes are keyed by (`run_as`, name). Every RPC naming a caller box must
-  name the same `run_as`, and the Sandbox Service checks it against the stored label, as the Action
-  inventory's `ForeignSandboxError` does now. Agent boxes keep their UID-pinned destinations.
+### 3. The egress path is in the template; each service checks it
 
-Rejected: **the Action Service forwards the caller's token**: there is none at dispatch (submission
-and dispatch are separated by a Decision and possibly a restart; see the Action sandbox README).
+cdk8s builds the egress sidecar into every template through the shared recipe, so the reviewed
+template is the whole Pod and the sidecar's image pin stays with the other image pins. VM Sandboxes
+get their relay from the admission policy on virt-launcher, not from a Pod spec, so injection at
+runtime would cover only pods anyway. Each service refuses at startup a template that lacks the
+sidecar or mounts the workload's ServiceAccount token. A box without the sidecar would already fail
+closed (its network policy allows only DNS and the proxy); the check makes that a configuration error
+instead of a box with no network.
 
-### 3. The Sandbox Service runs `exec`
+Rejected: **the service injects the sidecar at create.** It moves the sidecar's configuration into
+two services and makes the reviewed template differ from what runs.
 
-New RPC `ExecSandbox(ExecSandboxRequest) returns (ExecSandboxResponse)` with the script, `cwd`,
-timeout and output ceiling, on caller boxes only; the bounded result (`util/exec` models) comes
-back whole. The Action Service keeps the agent-facing schema, the per-deployment ceilings and the
-lease renewal around the call.
+### 4. Open: where Action boxes run
 
-With this the Action Service holds no RBAC on `Sandbox`, `SandboxTemplate` or Pods at all. The
-Sandbox Service already holds Sandbox CRUD and ServiceAccount creation in the namespace, so
-`pods/exec` there concentrates Pod authority in the component that already has the larger share.
+The `pods/exec` the Action Service needs cannot be scoped by label, so in the Session Sandboxes'
+namespace it reaches every Session Sandbox too. A namespace of their own scopes the Action Service's
+Pod create, delete and exec to Action boxes. But a Pod runs only as a ServiceAccount in its own
+namespace, and the callers' accounts (claude-ai and the rest) live in the Session Sandboxes'
+namespace, along with their `EgressBinding`s and `ActionPolicyBinding`s. The choice:
 
-Rejected: **exec stays in the Action Service.** Kubernetes RBAC cannot scope `pods/exec` by label,
-so it keeps namespace-wide exec into every LLM Sandbox as well. Rejected: **a runner in caller
-boxes, commands through the Runner Gateway.** It would give caller boxes Sessions, history and a
-seal they have no use for, and the gateway's command path admits harness commands, not scripts.
-
-### 4. Templates
-
-The offered-template allowlist and descriptions move with the provisioning: `ListTemplates` takes
-the shape and returns each template's description annotation, and the Sandbox Service refuses a
-template not offered for that shape. A template offered for caller boxes must keep
-`automountServiceAccountToken: false` (the shared-account invariant in the Action sandbox README);
-the Sandbox Service refuses one that does not, at startup.
-
-**Open question:** staging offers the app's `runner` and `runner-ducktape` templates to caller
-boxes, today stamped with no runner flags. Under this design the Sandbox Service does not inject
-runner flags into a caller box, so those offers keep working as they do; drop them instead if
-nobody uses them.
-
-### 5. Lifetime
-
-Caller boxes delete directly (no seal, no holds). `SANDBOX_IDLE_EXPIRY` stays separate; the
-`TODO(sandbox-lifetime)` moves into the Sandbox Service with the stamping code.
-
-## Rollout
-
-Clean cutover, like the runner dial-out's: the Action Service's own boxes carry
-`sandbox-actions.agentplane.allegedly.works/*` labels the Sandbox Service would not adopt. The
-operator disposes the existing ones (or the provisioning PR lists them first), then the release
-that switches the Action Service also removes its Sandbox and `pods/exec` RBAC.
+- **A dedicated namespace:** the caller accounts move there (or get counterparts there), and their
+  bindings with them; the Action Service loses all access to Session Sandboxes.
+- **The shared namespace for now:** no account moves; the Action Service keeps namespace-wide
+  `pods/exec`.
 
 ## Consequences
 
-- One provisioner; the Action Service becomes a Sandbox Service client like the app.
-- The Sandbox Service gains a forwarded identity, bounded by the two allowlists above, and
-  `pods/exec`.
-- `ACTION_SANDBOX_PROVISIONING` implements this; `SANDBOX_IDLE_EXPIRY` covers both shapes.
+- The Sandbox Service's API and authority stay as they are; the Action Service is not its client.
+- The Action Service swaps its agent-sandbox inventory for plain Pods and its `SandboxTemplate`
+  allowlist for its own template entries; staging stops offering it the runner templates.
+- Retiring agent-sandbox waits on the Session Sandbox resource and on Action boxes becoming plain
+  Pods, and on nothing else.
